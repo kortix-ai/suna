@@ -65,14 +65,6 @@ describe('quickEntryRecentSessions', () => {
       { id: 'c', title: 'Renamed', status: 'failed', lastActiveAt: '2026-10-12T10:00:00.000Z' },
     ]);
   });
-
-  test('leaves out an unused warm session, which nobody started', () => {
-    const recent = quickEntryRecentSessions([
-      session('warm', { status: 'running', metadata: { warm: true } }),
-      session('real', { name: 'Fix login' }),
-    ]);
-    expect(recent.map((s) => s.id)).toEqual(['real']);
-  });
 });
 
 describe('DesktopQuickEntry wiring', () => {

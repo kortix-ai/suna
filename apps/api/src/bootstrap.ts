@@ -218,8 +218,12 @@ async function startReplicaServices(kind: ProcessKind) {
   // A tip-proof read adopts the base tip another process asked the upstream
   // for (config-releases/base-tip.ts) when this mirror holds it: the per-prompt
   // grant read then needs no fetch on a process that has not proven it itself.
+  // Every tip this process asks for is shared the same way.
   await Promise.all([import('./config-releases/base-tip'), import('./projects/surface')]).then(
-    ([tips, projects]) => projects.useSharedTipProof(tips.storedBaseTipProof),
+    ([tips, projects]) => {
+      projects.useSharedTipProof(tips.storedBaseTipProof);
+      projects.publishTipProofsTo(tips.publishBaseTipProof);
+    },
   );
   // Every api process must learn that a base branch moved, not just the one
   // that handled the push — otherwise the turn-start gate answers `current`

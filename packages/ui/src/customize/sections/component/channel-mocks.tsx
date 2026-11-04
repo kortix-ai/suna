@@ -1,13 +1,13 @@
 'use client';
 
 /**
- * The previews beside the Email, Telegram and Computer heroes
+ * The previews beside the Email, Telegram, Discord and Computer heroes
  * (`channel-hero-frame.tsx`), drawn like the Slack and Teams ones: a glimpse
  * of the place the agent shows up, with one person asking and the agent
  * answering. Decorative: the hero's heading and lede say it in words.
  */
 
-import { EnvelopeSimpleIcon, PaperPlaneTiltIcon, TerminalWindowIcon } from '@phosphor-icons/react';
+import { EnvelopeSimpleIcon, HashIcon, PaperPlaneTiltIcon, TerminalWindowIcon } from '@phosphor-icons/react';
 import type { CSSProperties } from 'react';
 
 import { useTranslations } from '../../../i18n';
@@ -23,6 +23,9 @@ const TELEGRAM_UI = {
   '--telegram-bubble': TELEGRAM_BUBBLE,
   '--telegram-on-accent': TELEGRAM_ON_ACCENT,
 } as CSSProperties;
+
+/** Discord's own colours, so the mock reads as Discord at a glance: its blurple, and white on it. */
+const DISCORD_UI = { '--discord-accent': '#5865f2', '--discord-on-accent': '#ffffff' } as CSSProperties;
 
 /** An inbox thread: Maya writes to the project's address and the agent replies in the thread. */
 export function EmailThreadMock() {
@@ -81,6 +84,51 @@ export function TelegramChatMock() {
       <div className="mx-5 mb-4 flex h-9 items-center justify-between rounded-full border px-3">
         <span className="bg-muted h-2 w-28 rounded-full" />
         <PaperPlaneTiltIcon className="size-4 shrink-0 text-(--telegram-accent)" />
+      </div>
+    </div>
+  );
+}
+
+/** The bot as a Discord mention: the product name, never translated. */
+const DISCORD_BOT_MENTION = '@Kortix';
+
+/**
+ * A Discord thread started from a mention: Maya asks in `#launch`, the agent
+ * answers in the thread Kortix opened on her message.
+ */
+export function DiscordThreadMock() {
+  const t = useTranslations('connectorPages');
+  return (
+    <div className="flex min-w-0 flex-1 flex-col" style={DISCORD_UI}>
+      <div className="flex items-center gap-2 border-b px-5 py-3">
+        <HashIcon className="text-muted-foreground size-4 shrink-0" />
+        <p className="text-foreground truncate text-sm font-semibold">{t('mockDiscordThread')}</p>
+      </div>
+      <div className="flex flex-1 flex-col gap-4 px-5 py-4 text-sm">
+        <div className="flex gap-2.5">
+          <span className="bg-muted text-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
+            M
+          </span>
+          <div className="min-w-0 space-y-0.5">
+            <p className="text-foreground font-semibold">Maya</p>
+            <p className="text-foreground text-pretty">
+              <span className="rounded-sm bg-(--discord-accent)/15 px-0.5 text-(--discord-accent)">{DISCORD_BOT_MENTION}</span> {t('mockDiscordAsk')}
+            </p>
+            {/* Kortix's own mark on the message: ⏳ while the agent works, ✅ once it answered. */}
+            <span className="mt-1 inline-flex items-center gap-1 rounded-md border border-(--discord-accent)/40 bg-(--discord-accent)/10 px-1.5 py-0.5 text-xs text-foreground">
+              <span aria-hidden>✅</span>1
+            </span>
+          </div>
+        </div>
+        <div className="flex gap-2.5">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-(--discord-accent)">
+            <Kortix className="size-3.5 text-(--discord-on-accent)" />
+          </span>
+          <div className="min-w-0 space-y-0.5">
+            <p className="text-foreground font-semibold">Kortix</p>
+            <p className="text-foreground text-pretty">{t('mockDiscordReply')}</p>
+          </div>
+        </div>
       </div>
     </div>
   );

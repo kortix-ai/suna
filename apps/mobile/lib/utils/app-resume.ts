@@ -1,7 +1,7 @@
 /**
  * Deferred work for the app's return to the foreground. About 12 `AppState`
  * handlers fire on that tick (stream, auth refresh, probes). Work that can
- * wait (warm session, push registration, the OTA check) starts after them.
+ * wait (push registration, the OTA check) starts after them.
  */
 import { AppState } from 'react-native';
 

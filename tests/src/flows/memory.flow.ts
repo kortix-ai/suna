@@ -221,10 +221,10 @@ flow('MEMORY-1', meta([...Object.values(R), FEATURES, TOKEN_MINT]), async (ctx) 
   const id = randomUUID();
   const everyRoute = (client: Client) =>
     Promise.all([
-      client.get(LAYER, { params: { projectId, layerKey: 'company' } }),
-      client.get(PAGES, { params: { projectId, layerKey: 'company' } }),
-      client.post(PAGES, { type: 'people', title: 'Priya' }, { params: { projectId, layerKey: 'company' } }),
-      client.post(NOTES, { text: 'Launch moves to Nov 19' }, { params: { projectId, layerKey: 'company' } }),
+      client.get(LAYER, { params: { projectId, layerKey: 'mykortix' } }),
+      client.get(PAGES, { params: { projectId, layerKey: 'mykortix' } }),
+      client.post(PAGES, { type: 'people', title: 'Priya' }, { params: { projectId, layerKey: 'mykortix' } }),
+      client.post(NOTES, { text: 'Launch moves to Nov 19' }, { params: { projectId, layerKey: 'mykortix' } }),
       client.get(PAGE, { params: { projectId, pageId: id } }),
       client.patch(PAGE, { base_version: 1, body: 'x' }, { params: { projectId, pageId: id } }),
       client.del(PAGE, { params: { projectId, pageId: id } }),
@@ -232,20 +232,24 @@ flow('MEMORY-1', meta([...Object.values(R), FEATURES, TOKEN_MINT]), async (ctx) 
       client.get(SEARCH, { params: { projectId }, query: { q: 'Pricing' } }),
     ]);
   try {
+    await ctx.step('the project-wide Company layer is gone → 404 memory_not_found', async () => {
+      (await world.owner.get(LAYER, { params: { projectId, layerKey: 'company' } })).status(404).body().has('$.code', 'memory_not_found');
+    });
+
     await ctx.step('an anonymous caller → 401; a non-member → 403/404', async () => {
-      (await ctx.client.as(ctx.P.ANON).get(LAYER, { params: { projectId, layerKey: 'company' } })).status(401);
-      (await ctx.client.as(ctx.P.NONMEMBER).get(LAYER, { params: { projectId, layerKey: 'company' } })).status([403, 404]);
+      (await ctx.client.as(ctx.P.ANON).get(LAYER, { params: { projectId, layerKey: 'mykortix' } })).status(401);
+      (await ctx.client.as(ctx.P.NONMEMBER).get(LAYER, { params: { projectId, layerKey: 'mykortix' } })).status([403, 404]);
     });
 
     await ctx.step('project_channels off: the memory routes are not gated on Channels (never 403 feature_disabled)', async () => {
-      const r = await world.owner.get(LAYER, { params: { projectId, layerKey: 'company' } });
+      const r = await world.owner.get(LAYER, { params: { projectId, layerKey: 'mykortix' } });
       if (r.statusCode === 403) fail('memory is gated on project_channels', r.text());
       r.status([200, 503]);
     });
 
     await ctx.step('the routes of the page store are gone: remember, export, confirm, restore, Recent changes and undo → 404', async () => {
       for (const [method, path] of REMOVED) {
-        const params = { projectId, layerKey: 'company', pageId: id, versionId: id };
+        const params = { projectId, layerKey: 'mykortix', pageId: id, versionId: id };
         const r = method === 'GET' ? await world.owner.get(path, { params }) : await world.owner.post(path, {}, { params });
         r.status(404);
       }
@@ -300,29 +304,31 @@ flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.r
     });
 
     if (!storage) {
-      await ctx.step('no drive storage on this target: a note in the Company, channel and DM layers → 503 drive_storage_unavailable', async () => {
-        for (const layerKey of ['company', launch.space_id, dmId]) {
+      await ctx.step('no drive storage on this target: a note in the channel and DM layers → 503 drive_storage_unavailable', async () => {
+        for (const layerKey of [launch.space_id, dmId]) {
           (await world.owner.post(NOTES, { text: 'Launch moves to Nov 19' }, { params: { projectId, layerKey } })).status(503).body().has('$.code', 'drive_storage_unavailable');
         }
       });
       return;
     }
 
-    await ctx.step('the layers name their folders: /Company/Memory, the channel’s Memory folder, the owner’s Memory folder with agent folder worker', async () => {
+    await ctx.step('the layers name their folders: the channel’s Memory folder, the owner’s Memory folder with agent folder worker; no Company layer', async () => {
       const { personalFolder } = await driveOf(world.owner, projectId);
-      read<MemoryLayer>((await world.owner.get(LAYER, { params: { projectId, layerKey: 'company' } })).status(200), (b) =>
-        b.schema(MemoryLayerSchema).has('$.folder', '/Company/Memory').has('$.agent_folder', null).has('$.can_write', true));
-      (await world.owner.get(LAYER, { params: { projectId, layerKey: launch.space_id } })).status(200).body().has('$.folder', '/Company/Channels/launch/Memory');
+      (await world.owner.get(LAYER, { params: { projectId, layerKey: 'company' } })).status(404).body().has('$.code', 'memory_not_found');
+      read<MemoryLayer>((await world.owner.get(LAYER, { params: { projectId, layerKey: launch.space_id } })).status(200), (b) =>
+        b.schema(MemoryLayerSchema).has('$.folder', '/Company/Channels/launch/Memory').has('$.agent_folder', null).has('$.can_write', true));
       (await world.owner.get(LAYER, { params: { projectId, layerKey: dmId } })).status(200).body()
         .has('$.folder', `${personalFolder}/Memory`).has('$.agent_folder', `${personalFolder}/Memory/worker`);
     });
 
-    await ctx.step('every member reads and writes Company and channel memory', async () => {
-      (await asMember.get(LAYER, { params: { projectId, layerKey: 'company' } })).status(200).body().has('$.can_write', true);
-      (await asMember.post(PAGES, { type: 'people', title: 'Priya' }, { params: { projectId, layerKey: launch.space_id } })).status(201).body().has('$.can_delete', true);
+    await ctx.step('nothing is shared with every member: a plain member gets 404 on the Company layer and on a channel layer no agent of theirs reaches', async () => {
+      (await asMember.get(LAYER, { params: { projectId, layerKey: 'company' } })).status(404).body().has('$.code', 'memory_not_found');
+      (await asMember.get(LAYER, { params: { projectId, layerKey: launch.space_id } })).status(404).body().has('$.code', 'memory_not_found');
+      (await asMember.post(PAGES, { type: 'people', title: 'Priya' }, { params: { projectId, layerKey: launch.space_id } })).status(404);
     });
 
     await ctx.step('archive #launch → its layer reads {read_only: true, can_write: false}; create, note, edit and delete → 409 layer_read_only', async () => {
+      (await world.owner.post(PAGES, { type: 'people', title: 'Priya' }, { params: { projectId, layerKey: launch.space_id } })).status(201);
       const page = (await world.owner.get(PAGES, { params: { projectId, layerKey: launch.space_id } })).status(200).json<{ pages: MemoryPageSummary[] }>().pages[0]!;
       (await world.owner.patch(SPACE, { archived: true }, { params: { projectId, spaceId: launch.space_id } })).status(200);
       (await world.owner.get(LAYER, { params: { projectId, layerKey: launch.space_id } })).status(200).body().has('$.read_only', true).has('$.can_write', false);
@@ -380,17 +386,27 @@ flow(
     try {
       if (!(await hasStorage(world))) return await noStorage(ctx, world);
       const { driveId } = await driveOf(world.owner, projectId);
-      const layer = { params: { projectId, layerKey: 'company' } };
+      // #11606 removed the project-wide `company` layer: a person's memory is
+      // the My Kortix layer, in their own Drive folder.
+      const layer = { params: { projectId, layerKey: 'mykortix' } };
+      let ROOT = '';
       const pageOf = (pageId: string) => ({ params: { projectId, pageId } });
 
       let before: Record<string, string> = {};
-      await ctx.step('a file already in /Company/Memory (written through Files) is a page in place: listed, read, nothing written', async () => {
+      await ctx.step('the My Kortix layer names its folder: a probe page lands at <root>/root-probe.md and is deleted again', async () => {
+        const probe = read<MemoryPage>((await world.owner.post(PAGES, { type: 'other', title: 'root-probe', body: 'probe' }, layer)).status(201), (b) => b.schema(MemoryPageSchema));
+        if (!probe.path.endsWith('/root-probe.md')) fail('the probe page is not at the layer root', probe.path);
+        ROOT = probe.path.slice(0, -'/root-probe.md'.length);
+        (await world.owner.del(PAGE, pageOf(probe.page_id))).status(200);
+      });
+
+      await ctx.step('a file already in the layer folder (written through Files) is a page in place: listed, read, nothing written', async () => {
         (await world.owner.put('/v1/drives/:driveId/files/content', '# Launch plan\n\nShip on 2026-11-02, pricing at $49.\n', {
-          params: { driveId }, query: { path: '/Company/Memory/launch-plan.md' }, headers: { 'content-type': 'application/octet-stream' }, raw: true,
+          params: { driveId }, query: { path: `${ROOT}/launch-plan.md` }, headers: { 'content-type': 'application/octet-stream' }, raw: true,
         })).status(200);
         before = await checksums(world.owner, driveId);
         const pages = read<{ pages: MemoryPageSummary[] }>((await world.owner.get(PAGES, layer)).status(200), (b) => b.schema(MemoryPageListSchema)).pages;
-        const launch = pages.find((p) => p.path === '/Company/Memory/launch-plan.md');
+        const launch = pages.find((p) => p.path === `${ROOT}/launch-plan.md`);
         if (!launch || launch.title !== 'Launch plan' || launch.type !== 'other') fail('the file is not a page', pages);
         (await world.owner.get(PAGE, pageOf(launch.page_id))).status(200).body().has('$.body', 'Ship on 2026-11-02, pricing at $49.\n');
         if (changed(before, await checksums(world.owner, driveId)).length) fail('a read changed Files', changed(before, await checksums(world.owner, driveId)));
@@ -399,7 +415,7 @@ flow(
       let created: MemoryPage;
       await ctx.step('create → 201: decisions/pricing.md with front-matter and a # title; the same title again → 409 title_taken with page_id', async () => {
         created = read<MemoryPage>((await world.owner.post(PAGES, { type: 'decisions', title: 'Pricing', summary: 'Stays at $49', body: 'We charge $49 per seat.' }, layer)).status(201), (b) =>
-          b.schema(MemoryPageSchema).has('$.path', '/Company/Memory/decisions/pricing.md').has('$.type', 'decisions').has('$.updated_by.kind', 'person'));
+          b.schema(MemoryPageSchema).has('$.path', `${ROOT}/decisions/pricing.md`).has('$.type', 'decisions').has('$.updated_by.kind', 'person'));
         const file = (await world.owner.get('/v1/drives/:driveId/files/content', { params: { driveId }, query: { path: created.path } })).status(200).text();
         if (!file.startsWith('---\nsummary: Stays at $49\nupdated_by: ') || !file.endsWith('---\n# Pricing\n\nWe charge $49 per seat.\n')) fail('the file', file);
         (await world.owner.post(PAGES, { type: 'decisions', title: 'pricing' }, layer)).status(409).body().has('$.code', 'title_taken').has('$.page_id', created.page_id);
@@ -426,7 +442,7 @@ flow(
       });
 
       await ctx.step('a note → 201: one line appended to Notes.md, listed first; search finds the pre-existing file', async () => {
-        (await world.owner.post(NOTES, { text: 'Launch moves to Nov 19' }, layer)).status(201).body().has('$.type', 'note').has('$.path', '/Company/Memory/Notes.md');
+        (await world.owner.post(NOTES, { text: 'Launch moves to Nov 19' }, layer)).status(201).body().has('$.type', 'note').has('$.path', `${ROOT}/Notes.md`);
         read((await world.owner.get(PAGES, layer)).status(200), (b) => b.schema(MemoryPageListSchema).has('$.pages[0].title', 'Notes'));
         const hits = read<{ hits: { title: string }[] }>((await world.owner.get(SEARCH, { params: { projectId }, query: { q: 'ship on' } })).status(200), (b) => b.schema(MemorySearchResultSchema)).hits;
         if (!hits.some((h) => h.title === 'Launch plan')) fail('search', hits);
@@ -604,10 +620,10 @@ flow(
         (await asMember.get(ONBOARDING, { params })).status(200).body().has('$.get_started', { visible: true, create_channel: true, remember: false, open_dm: false });
         const general = (await world.owner.get(SPACES, { params })).status(200).json<{ spaces: (Space & { is_default: boolean })[] }>().spaces.find((s) => s.is_default);
         if (!general) fail('no #general', null);
-        // A note in #general's memory is a Drive write; a target without drive storage answers 503 and the member records the row's mark instead.
-        const note = await asMember.post(NOTES, { text: 'Launch moves to Monday' }, { params: { projectId, layerKey: general.space_id } });
-        if (note.statusCode === 503) (await mark(asMember, 'get_started.remember')).status(204);
-        else note.status(201);
+        // A public channel's memory is shared with no plain member (nothing is shared with the whole
+        // project): the member's note in #general → 404, and the member records the row's mark instead.
+        (await asMember.post(NOTES, { text: 'Launch moves to Monday' }, { params: { projectId, layerKey: general.space_id } })).status(404);
+        (await mark(asMember, 'get_started.remember')).status(204);
         (await asMember.get(ONBOARDING, { params })).status(200).body().has('$.get_started', { visible: true, create_channel: true, remember: true, open_dm: false });
         (await asMember.post(DM, { agent_name: 'worker' }, { params })).status(200);
         (await asMember.get(ONBOARDING, { params })).status(200).body().has('$.get_started', { visible: false, create_channel: true, remember: true, open_dm: true });

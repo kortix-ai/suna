@@ -107,7 +107,8 @@ export async function threadTurnLayers(sessionId: string, prompterUserId: string
   const read = prompterUserId === null ? plan : promptLayers(plan, prompterUserId);
   const needsGrants = read.some((layer) => layer.scope === 'dm');
   const [grants, mounts] = await Promise.all([needsGrants ? listFolderGrants(drive) : [], readSessionDriveMounts(sessionId)]);
-  const own = plan[1]!;
+  // The thread's own layer leads the plan (`threadPlan`); a private channel thread's DM follows it.
+  const own = plan[0]!;
   const layers = await Promise.all(
     read.map(async (planned): Promise<TurnLayer | null> => {
       const personal = planned.dmUserId ? personalFolderFor(grants, planned.dmUserId) : null;

@@ -3,6 +3,7 @@
 import { EnvelopeSimpleIcon, MonitorIcon, PlugIcon } from '@phosphor-icons/react';
 import { useState, type ComponentType } from 'react';
 
+import { Discord } from '../icons/discord';
 import { MicrosoftTeams } from '../icons/microsoft-teams';
 import { Slack } from '../icons/slack';
 import { Telegram } from '../icons/telegram';
@@ -37,6 +38,7 @@ export const NATIVE_MARK: Record<NativeConnectorApp, { Mark: ComponentType<{ cla
   slack: { Mark: Slack, brand: true },
   teams: { Mark: MicrosoftTeams, brand: true },
   telegram: { Mark: Telegram, brand: true },
+  discord: { Mark: Discord, brand: true },
   email: { Mark: EnvelopeSimpleIcon, brand: false },
   computer: { Mark: MonitorIcon, brand: false },
 };

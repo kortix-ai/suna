@@ -327,7 +327,7 @@ describe('kortix agents — default, scope, config', () => {
     expect(scope.stdout).toContain('My Kortix');
     expect(scope.stdout).toContain('secrets              none');
     expect(scope.stdout).toContain('connectors           none');
-    expect(scope.stdout).toContain('builtin_agents: { my_kortix: false }');
+    expect(scope.stdout).toContain('builtin_agents.my_kortix');
     expect(scope.stdout).not.toContain('all (default)');
     expect(scope.stdout).not.toContain('Change it');
 

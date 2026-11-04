@@ -5,6 +5,7 @@ export function bindProjectPlatformResources(projectId: string) {
     gateway: {
       logs: (opts?: Parameters<typeof P.listGatewayLogs>[1]) => P.listGatewayLogs(projectId, opts),
       log: (logId: string) => P.getGatewayLog(projectId, logId),
+      logFacets: (opts?: Parameters<typeof P.getGatewayLogFacets>[1]) => P.getGatewayLogFacets(projectId, opts),
       overview: (days?: number) => P.getGatewayOverview(projectId, days),
       series: (days?: number) => P.getGatewaySeries(projectId, days),
       breakdown: (days?: number) => P.getGatewayBreakdown(projectId, days),

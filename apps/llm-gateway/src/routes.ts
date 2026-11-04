@@ -1,19 +1,22 @@
 import {
-  gatewayErrorResponse, gatewayOverloadedResponse, readAdmittedBody,
+  readRequestOrigin,
+  gatewayErrorResponse, gatewayOverloadedResponse, readAdmittedBody, readAdmittedBytes,
   releaseWhenResponseEnds, requestTooLargeResponse, type InflightBudget,
 } from '@kortix/llm-gateway';
-import type { ClaudeCodeRequest } from '@kortix/llm-gateway';
+import type { AudioRequest, ClaudeCodeRequest, RequestOrigin, VoicesRequest } from '@kortix/llm-gateway';
 import type { Hono } from 'hono';
 import { cloudflareSafe, messagesAuthorization, perRequestCapBytes } from './server';
 
-type Protocol = 'chat' | 'messages' | 'responses' | 'images';
-type InferenceRequest = { authorization: string | undefined; rawBody: string; signal?: AbortSignal };
+type Protocol = 'chat' | 'messages' | 'responses' | 'images' | 'audio';
+type InferenceRequest = { authorization: string | undefined; rawBody: string; signal?: AbortSignal; origin?: RequestOrigin };
 type Gateway = {
   chatCompletions: (request: InferenceRequest) => Promise<Response>;
   messages: (request: InferenceRequest) => Promise<Response>;
   responses: (request: InferenceRequest) => Promise<Response>;
   listModels: (authorization: string | undefined, options: { managedOnly: boolean; scope?: 'picker' }) => Promise<Response>;
   images: (request: InferenceRequest & { operation: 'generations' | 'edits' }) => Promise<Response>;
+  audio: (request: AudioRequest) => Promise<Response>;
+  voices: (request: VoicesRequest) => Promise<Response>;
   claudeCode: (request: ClaudeCodeRequest) => Promise<Response>;
 };
 
@@ -65,6 +68,8 @@ function inference(
           // disconnected client left the provider generating, and billing, a
           // turn nobody would read.
           rawBody: body.body, signal: c.req.raw?.signal,
+          // The session message the call comes from, for the request log.
+          origin: readRequestOrigin((name) => c.req.header(name)),
         };
         body.body = '';
         const res = await cloudflareSafe(await call(request));
@@ -78,6 +83,48 @@ function inference(
       console.error(protocol === 'chat' ? '[gateway] request failed' : `[gateway] ${protocol} request failed`, error);
       recordOutcome(503);
       return failure(protocol, requestId);
+    }
+  };
+}
+
+/**
+ * Speech-to-text and text-to-speech (pipeline/audio.ts). The body is admitted
+ * against the same in-flight budget as every inference body, and kept as
+ * bytes: a transcription upload is multipart audio, which a text decode
+ * would corrupt.
+ */
+function audio(gateway: Gateway, inflight: InflightBudget, recordOutcome: (status: number) => void, operation: AudioRequest['operation']) {
+  return async (c: { req: { raw: Request; header: (name: string) => string | undefined } }) => {
+    // Read before the body is consumed: for a Request built from FormData, Bun
+    // derives the content type (the multipart boundary) from the unread body.
+    const contentType = c.req.header('content-type') ?? '';
+    try {
+      const body = await readAdmittedBytes(c.req.raw, perRequestCapBytes, inflight);
+      if (!body.ok) {
+        const status = body.reason === 'too_large' ? 413 : 503;
+        if (body.reason !== 'client_aborted') recordOutcome(status);
+        return status === 413 ? requestTooLargeResponse() : gatewayOverloadedResponse(body.retryAfterSeconds ?? 1);
+      }
+      try {
+        const request: AudioRequest = {
+          operation,
+          authorization: c.req.header('authorization'),
+          contentType,
+          body: body.body,
+          signal: c.req.raw.signal,
+        };
+        body.body = new Uint8Array(0);
+        const res = await cloudflareSafe(await gateway.audio(request));
+        recordOutcome(res.status);
+        return releaseWhenResponseEnds(res, body.release);
+      } catch (error) {
+        body.release();
+        throw error;
+      }
+    } catch (error) {
+      console.error(`[gateway] audio.${operation} request failed`, error);
+      recordOutcome(503);
+      return failure('audio', '');
     }
   };
 }
@@ -128,18 +175,45 @@ function claudeCode(gateway: Gateway, inflight: InflightBudget, recordOutcome: (
  * `models?scope=managed` → managed lineup only (~3KB); `?scope=picker` → the
  * project's servable set (~80KB), fetched by sandboxes on every boot so their
  * `kortix` provider matches the web picker. See wire.ts.
+ * `audio/transcriptions` (multipart), `audio/speech` (streamed audio) and
+ * `audio/voices?model=` are the OpenAI audio shapes, served by Kortix's
+ * managed audio models and billed at the price the upstream reports.
  */
-export function registerRoutes(app: Hono, gateway: Gateway, inflight: InflightBudget, recordOutcome: (status: number) => void) {
-  const chat = inference(inflight, recordOutcome, 'chat', gateway.chatCompletions);
-  const messages = inference(inflight, recordOutcome, 'messages', gateway.messages);
-  const responses = inference(inflight, recordOutcome, 'responses', gateway.responses);
+export function registerRoutes(
+  app: Hono,
+  gateway: Gateway,
+  inflight: InflightBudget,
+  recordOutcome: (status: number) => void,
+  rateLimit: (request: Request, headers?: Headers) => Response | null,
+) {
+  // Every model route checks the per-credential limit first (token-rate-limit.ts).
+  const limited = <C extends { req: { raw: Request } }>(handler: (c: C) => Promise<Response>) =>
+    async (c: C) => {
+      const headers = new Headers();
+      const response = rateLimit(c.req.raw, headers) ?? await handler(c);
+      headers.forEach((value, name) => response.headers.set(name, value));
+      return response;
+    };
+  const chat = limited(inference(inflight, recordOutcome, 'chat', gateway.chatCompletions));
+  const messages = limited(inference(inflight, recordOutcome, 'messages', gateway.messages));
+  const responses = limited(inference(inflight, recordOutcome, 'responses', gateway.responses));
   // The project's ChatGPT login generates and edits images (pipeline/images.ts).
   // A thrown error gets the Responses-style 503 envelope.
   const images = (operation: 'generations' | 'edits') =>
-    inference(inflight, recordOutcome, 'images', (request) => gateway.images({ ...request, operation }));
+    limited(inference(inflight, recordOutcome, 'images', (request) => gateway.images({ ...request, operation })));
   const generations = images('generations');
   const edits = images('edits');
-  const claude = claudeCode(gateway, inflight, recordOutcome);
+  const transcriptions = limited(audio(gateway, inflight, recordOutcome, 'transcriptions'));
+  const speech = limited(audio(gateway, inflight, recordOutcome, 'speech'));
+  const voices = limited((c: { req: { raw: Request; header: (name: string) => string | undefined; query: (name: string) => string | undefined } }) =>
+    gateway.voices({ authorization: c.req.header('authorization'), model: c.req.query('model') ?? '', signal: c.req.raw.signal })
+      .then(cloudflareSafe));
+  const claude = limited(claudeCode(gateway, inflight, recordOutcome));
+  const models = limited((c: { req: { raw: Request; header: (name: string) => string | undefined; query: (name: string) => string | undefined } }) =>
+    gateway.listModels(c.req.header('authorization'), {
+      managedOnly: c.req.query('scope') === 'managed',
+      scope: c.req.query('scope') === 'picker' ? 'picker' : undefined,
+    }).then(cloudflareSafe));
   for (const prefix of ['/', '/v1/', '/v1/llm/', '/v1/openai/']) {
     app.all(prefix + 'claude-code/*', claude);
     app.post(prefix + 'chat/completions', chat);
@@ -147,9 +221,9 @@ export function registerRoutes(app: Hono, gateway: Gateway, inflight: InflightBu
     app.post(prefix + 'responses', responses);
     app.post(prefix + 'images/generations', generations);
     app.post(prefix + 'images/edits', edits);
-    app.get(prefix + 'models', (c) => gateway.listModels(c.req.header('authorization'), {
-      managedOnly: c.req.query('scope') === 'managed',
-      scope: c.req.query('scope') === 'picker' ? 'picker' : undefined,
-    }).then(cloudflareSafe));
+    app.post(prefix + 'audio/transcriptions', transcriptions);
+    app.post(prefix + 'audio/speech', speech);
+    app.get(prefix + 'audio/voices', voices);
+    app.get(prefix + 'models', models);
   }
 }

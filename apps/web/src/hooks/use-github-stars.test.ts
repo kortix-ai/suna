@@ -94,7 +94,7 @@ describe('use-github-stars source', () => {
 
   test('carries no hardcoded star count', () => {
     // `setStars(20000)` used to run on every failure, so an outage rendered an
-    // invented "20,000" at 72px under "GitHub stars on kortix-ai/suna". Only
+    // invented "20,000" at 72px under "GitHub stars on kortix-ai/CompanyOS". Only
     // executable lines are checked — the prose above the code is allowed to
     // name the number it removed.
     const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');

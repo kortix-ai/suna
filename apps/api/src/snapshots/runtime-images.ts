@@ -38,33 +38,41 @@ export const MY_KORTIX_RUNTIME_SPEC: SandboxImageSpec = Object.freeze({
 const myKortixImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
 let metaRuntimeFingerprint: Promise<string> | null = null;
 
+/** Every input of the My Kortix image, under the repository root `root`. */
+export function metaRuntimeArtifacts(root: string) {
+  return [
+    { label: 'agent', path: resolve(root, 'apps/kortix-sandbox-agent-server/src') },
+    { label: 'agent-package', path: resolve(root, 'apps/kortix-sandbox-agent-server/package.json') },
+    // The daemon's compile flags (`--bytecode`) change the binary with no
+    // source change; without this a flag change kept the old image.
+    { label: 'agent-build', path: resolve(root, 'apps/kortix-sandbox-agent-server/scripts/build.sh') },
+    { label: 'api-contract', path: resolve(root, 'packages/api-contract/src') },
+    { label: 'cli', path: resolve(root, 'apps/cli/src') },
+    { label: 'cli-package', path: resolve(root, 'apps/cli/package.json') },
+    { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },
+    // The rest of the Kortix defaults' staged artifacts (defaults.ts): the
+    // same inputs as a project agent's image fingerprint.
+    { label: 'machine-doc', path: resolve(root, 'apps/sandbox/MACHINE.md') },
+    { label: 'slack-cli', path: resolve(root, 'apps/sandbox/slack-cli') },
+    { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/my-kortix-dockerfile.ts') },
+    { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
+    { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },
+    { label: 'manifest-schema', path: resolve(root, 'packages/manifest-schema/src') },
+    { label: 'registry', path: resolve(root, 'packages/registry/src') },
+    { label: 'shared', path: resolve(root, 'packages/shared/src') },
+    { label: 'starter', path: resolve(root, 'packages/starter/src') },
+    // The managed skills baked into the image live under templates/, not
+    // src/ — without this a SKILL.md edit never re-fingerprints the image.
+    { label: 'starter-templates', path: resolve(root, 'packages/starter/templates') },
+  ];
+}
+
 function currentMetaRuntimeFingerprint(): Promise<string> {
   if (metaRuntimeFingerprint) return metaRuntimeFingerprint;
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
   metaRuntimeFingerprint = buildRuntimeArtifactFingerprint({
     sandboxVersion: 'meta-v5',
-    artifacts: [
-      { label: 'agent', path: resolve(root, 'apps/kortix-sandbox-agent-server/src') },
-      { label: 'agent-package', path: resolve(root, 'apps/kortix-sandbox-agent-server/package.json') },
-      { label: 'api-contract', path: resolve(root, 'packages/api-contract/src') },
-      { label: 'cli', path: resolve(root, 'apps/cli/src') },
-      { label: 'cli-package', path: resolve(root, 'apps/cli/package.json') },
-      { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },
-      // The rest of the Kortix defaults' staged artifacts (defaults.ts): the
-      // same inputs as a project agent's image fingerprint.
-      { label: 'machine-doc', path: resolve(root, 'apps/sandbox/MACHINE.md') },
-      { label: 'slack-cli', path: resolve(root, 'apps/sandbox/slack-cli') },
-      { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/my-kortix-dockerfile.ts') },
-      { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
-      { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },
-      { label: 'manifest-schema', path: resolve(root, 'packages/manifest-schema/src') },
-      { label: 'registry', path: resolve(root, 'packages/registry/src') },
-      { label: 'shared', path: resolve(root, 'packages/shared/src') },
-      { label: 'starter', path: resolve(root, 'packages/starter/src') },
-      // The managed skills baked into the image live under templates/, not
-      // src/ — without this a SKILL.md edit never re-fingerprints the image.
-      { label: 'starter-templates', path: resolve(root, 'packages/starter/templates') },
-    ],
+    artifacts: metaRuntimeArtifacts(root),
   });
   return metaRuntimeFingerprint;
 }

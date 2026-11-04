@@ -44,7 +44,7 @@ describe('Platinum CI worker plan', () => {
   // cut preview hosts to 8 GB and left the templates at 16 GB, so every NEW
   // preview host failed on 2026-09-28 (a running host is reused and hid it).
   test('the templates never ask for more RAM than a preview host gets', () => {
-    expect(buildPlatinumTemplateSpec({ lockHash, repository: 'kortix-ai/suna', cacheSha: sha }).default_ram_mb)
+    expect(buildPlatinumTemplateSpec({ lockHash, repository: 'kortix-ai/CompanyOS', cacheSha: sha }).default_ram_mb)
       .toBeLessThanOrEqual(PREVIEW_HOST_RAM_MB);
     expect(buildPlatinumWarmTemplateRequest(lockHash).default_ram_mb).toBeLessThanOrEqual(PREVIEW_HOST_RAM_MB);
   });
@@ -55,7 +55,7 @@ describe('Platinum CI worker plan', () => {
     expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v13-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
-      repository: 'kortix-ai/suna',
+      repository: 'kortix-ai/CompanyOS',
       cacheSha: sha,
     });
 

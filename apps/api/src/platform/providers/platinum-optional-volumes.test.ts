@@ -304,3 +304,68 @@ describe('optional volumes held by Platinum (#2427)', () => {
     expect(result.metadata?.droppedVolumes).toBeUndefined();
   });
 });
+
+// A volume still saving the last box's writes (`409 volume_flushing`) is not a
+// refusal: the create waits `retry_after` and tries again with the same mounts.
+// Prod 2026-11-01: 33 stateless sessions failed on it in one day.
+describe('a volume still saving the last box: the create waits and tries again', () => {
+  const flushing = (retryAfter: number) =>
+    refusal(409, {
+      error: 'volume kws-x: the last writes of sandbox sbx_old (mount vm_1) are still being saved on host host_1; retry shortly',
+      code: 'volume_flushing',
+      retry_after: retryAfter,
+    });
+
+  /** A fake clock: `Bun.sleep` moves `Date.now` instead of waiting. */
+  function fakeClock() {
+    let now = 1_800_000_000_000;
+    const slept: number[] = [];
+    const clock = spyOn(Date, 'now').mockImplementation(() => now);
+    const sleep = spyOn(Bun, 'sleep').mockImplementation(async (ms: number | Date) => {
+      slept.push(Number(ms));
+      now += Number(ms);
+    });
+    return { slept, restore: () => { clock.mockRestore(); sleep.mockRestore(); } };
+  }
+
+  test('it waits retry_after, then boots with every mount, on a new attempt', async () => {
+    createSequence = [{ error: flushing(5) }, { error: flushing(5) }, { result: { id: 'sbx_ok', state: 'running' } }];
+    const clock = fakeClock();
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    const result = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 2, volumes, optionalVolumes: ['/drives/company'] });
+    warn.mockRestore();
+    clock.restore();
+
+    const creates = createCalls();
+    expect(creates).toHaveLength(3);
+    for (const c of creates) expect(c.body?.volumes).toEqual(sentVolumes);
+    expect(new Set(creates.map((c) => c.headers['Idempotency-Key'])).size).toBe(3);
+    expect(clock.slept).toEqual([5_000, 5_000]);
+    expect(result.externalId).toBe('sbx_ok');
+    expect(result.metadata?.droppedVolumes).toBeUndefined();
+  });
+
+  test('it gives up after two minutes and fails as before, naming the workspace', async () => {
+    createSequence = [{ error: flushing(5) }];
+    const clock = fakeClock();
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    const err = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1, volumes: workspace }).catch((e) => e);
+    warn.mockRestore();
+    clock.restore();
+
+    expect((err as Error).message).toContain('[workspace]');
+    expect(clock.slept.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(120_000);
+    expect(createCalls().length).toBe(clock.slept.length + 1);
+    expect(clock.slept.length).toBe(24);
+  });
+
+  test('retry_after outside 1..15 s is clamped', async () => {
+    createSequence = [{ error: flushing(600) }, { result: { id: 'sbx_ok', state: 'running' } }];
+    const clock = fakeClock();
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1, volumes: workspace });
+    warn.mockRestore();
+    clock.restore();
+    expect(clock.slept).toEqual([15_000]);
+  });
+});

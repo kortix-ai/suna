@@ -1,0 +1,68 @@
+name: GitHub ranges refresh
+
+# Regenerates infra/terraform/modules/network/github-ipv4-ranges.json from
+# https://api.github.com/meta and merges a change into dev. The API's egress
+# subnets route these ranges through the NAT, whose EIPs the kortix-managed
+# GitHub App publishes for organization IP allow lists. A range GitHub adds and
+# this file lacks leaves from a task's own public IP, which such an allow list
+# refuses. The next deploy of each environment applies the new list.
+#
+# Merged without review: the file only decides which GitHub traffic keeps the
+# NAT EIP, and the script refuses a list outside 20 to 150 ranges.
+
+on:
+  schedule:
+    - cron: '17 5 * * 1' # Mondays 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-ranges-refresh
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    name: Regenerate + merge
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Regenerate the ranges
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: infra/terraform/modules/network/scripts/refresh-github-ranges.sh
+
+      - name: Open and merge the PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          FILE=infra/terraform/modules/network/github-ipv4-ranges.json
+          if git diff --quiet -- "$FILE"; then
+            echo "GitHub ranges unchanged."
+            exit 0
+          fi
+          git diff --stat -- "$FILE"
+          BR="bot/github-ranges-refresh"
+          git config user.name "kortix-bot"
+          git config user.email "bot@kortix.ai"
+          git checkout -B "$BR"
+          git add "$FILE"
+          git commit -m "chore(infra): refresh GitHub IP ranges ($(date -u +%F))"
+          git push --force origin "$BR"
+          BODY="Automated weekly refresh of the GitHub IPv4 ranges that the API's egress subnets route through the NAT (api.github.com/meta, api + git + web).
+
+          $(git diff HEAD~1 --stat -- "$FILE")
+
+          The next deploy of each environment applies it."
+          PR="$(gh pr list --base dev --head "$BR" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$PR" ]; then
+            PR="$(gh pr create --base dev --head "$BR" --title "chore(infra): refresh GitHub IP ranges" --body "$BODY" | grep -oE '[0-9]+$')"
+          fi
+          gh pr merge "$PR" --squash --delete-branch

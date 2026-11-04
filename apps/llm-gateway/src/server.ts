@@ -44,6 +44,7 @@ import { createGatewayLogger } from './observability/logger';
 import { registerHealth } from './health';
 import { trackInflight } from './inflight';
 import { registerRoutes } from './routes';
+import { createTokenRateLimit } from './token-rate-limit';
 import { createTraffic } from './traffic';
 
 export interface GatewayServer {
@@ -149,6 +150,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   const app = new Hono();
   app.use('*', async (c, next) => {
     await next();
+    c.header('Cache-Control', 'private, no-store');
     c.header('Content-Security-Policy', "default-src 'none';frame-ancestors 'none'");
     c.header('X-Frame-Options', 'DENY');
     // Permissions-Policy has no wildcard directive: deny each browser capability explicitly.
@@ -159,6 +161,21 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   }
   const inflightRequests = trackInflight(app);
   registerHealth(app, api, inflight, traces, trafficSnapshot, upstreamSignals);
-  registerRoutes(app, gateway, inflight, recordOutcome);
+  registerRoutes(app, gateway, inflight, recordOutcome, createTokenRateLimit(config.requestsPerMinutePerCredential));
+  // Register fallbacks after the handlers so supported methods keep their behavior.
+  const methodsByPath = new Map<string, Set<string>>();
+  for (const { path, method } of app.routes) {
+    if (method === 'ALL') continue;
+    const methods = methodsByPath.get(path) ?? new Set<string>();
+    methods.add(method);
+    if (method === 'GET') methods.add('HEAD');
+    methodsByPath.set(path, methods);
+  }
+  for (const [path, methods] of methodsByPath) {
+    app.all(path, (c) => {
+      c.header('Allow', [...methods].join(', '));
+      return c.json({ error: { message: 'Method not allowed' } }, 405);
+    });
+  }
   return { app, traces, inflightRequests };
 }

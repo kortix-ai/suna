@@ -76,7 +76,7 @@ export const openSource = {
   /** The one number on this section. Read live; never hardcoded. */
   stars: {
     /** Sits under the digits, and is the accessible label with them. */
-    caption: 'GitHub stars on kortix-ai/suna',
+    caption: 'GitHub stars on kortix-ai/CompanyOS',
   },
 
   /**
@@ -91,5 +91,5 @@ export const openSource = {
 
   /** Secondary: the proof the number is about something real. */
   repoLabel: 'Read the source',
-  repoHref: 'https://github.com/kortix-ai/suna',
+  repoHref: 'https://github.com/kortix-ai/CompanyOS',
 } as const;

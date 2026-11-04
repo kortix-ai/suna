@@ -41,7 +41,11 @@ import type {
   RuntimeCommand,
 } from '../../../commands/registry.ts';
 import { AgentsSegment, useAgentsSummary } from '../../agents/agents-segment.tsx';
+import { OutputsPicker } from '../../artifacts/outputs-picker.tsx';
+import { type SessionOutput, outputReference, outputsSummary } from '../../artifacts/session-outputs.ts';
+import { useSessionOutputs } from '../../artifacts/use-session-outputs.ts';
 import { copyToClipboard } from '../../../lib/clipboard.ts';
+import { openUrl as openUrlDefault } from '../../../lib/open-url.ts';
 import { contextModel, contextReading } from '../../../lib/context-usage.ts';
 import { theme } from '../../../theme.ts';
 import { lastReplyText, transcriptMarkdown } from '../transcript-export.ts';
@@ -82,9 +86,12 @@ export interface ComposerProps {
   messages?: readonly SessionLogMessage[];
   /** The session's title, for the `/export` heading and file name. */
   title?: string;
+  /** The Kortix web origin: an artifact's browser link is built on it. */
+  webBaseUrl?: string;
   /** Test seams. Production copies with the system tool and writes with Bun. */
   copyText?: (text: string) => Promise<{ ok: boolean; error?: string }>;
   writeFile?: (path: string, text: string) => Promise<unknown>;
+  openUrl?: (url: string) => Promise<unknown>;
 }
 
 /** `kortix-fix-the-login-bug-1a2b3c4d.md`: the title, slugged, and the id. */
@@ -97,10 +104,13 @@ export function exportFileName(title: string, sessionId: string): string {
   return `kortix-${slug ? `${slug}-` : ''}${sessionId.slice(0, 8)}.md`;
 }
 
-type Picker = 'model' | 'effort' | 'agent' | null;
+type Picker = 'model' | 'effort' | 'agent' | 'outputs' | null;
 
 /** The built-ins this composer runs on its own session. */
-const LOCAL_COMMANDS = new Set<string>(['model', 'effort', 'agent', 'stop', 'copy', 'export']);
+const LOCAL_COMMANDS = new Set<string>(['model', 'effort', 'agent', 'shown', 'stop', 'copy', 'export']);
+
+/** What `/shown` says when the session has handed over nothing yet. */
+export const NO_OUTPUTS = 'Nothing to open yet. Artifacts, pages and files this session shows appear here.';
 
 export function Composer({
   session,
@@ -119,12 +129,15 @@ export function Composer({
   messages = [],
   title = 'Kortix session',
   showTray = true,
+  webBaseUrl = '',
   copyText = copyToClipboard,
   writeFile = (path, text) => Bun.write(path, text),
+  openUrl = openUrlDefault,
 }: ComposerProps) {
   const [picker, setPicker] = useState<Picker>(null);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [restore, setRestore] = useState<{ text: string; seq: number } | null>(null);
+  const [insert, setInsert] = useState<{ text: string; seq: number } | null>(null);
   const [inputMetrics, setInputMetrics] = useState<PromptInputMetrics>({
     rows: 1,
     aboveRows: 0,
@@ -135,6 +148,9 @@ export function Composer({
   // What this session started (agents, workflow runs) and held messages; `/agents` lists them.
   const agentsSummary = useAgentsSummary(projectId, sessionId);
   const selection = useComposerSelection(session, projectId);
+  // What this session handed over (shown + published); `/shown` lists it.
+  const outputs = useSessionOutputs({ projectId, sessionId, messages, webBaseUrl });
+  const outputsLine = outputsSummary(outputs);
 
   const covered = picker !== null || panel !== null;
 
@@ -248,26 +264,94 @@ export function Composer({
             );
           return;
         }
+        if (entry.name === 'shown') {
+          if (outputs.length === 0) return void onToast?.(NO_OUTPUTS);
+          setPicker('outputs');
+          return;
+        }
         setPicker(entry.name as Exclude<Picker, null>);
         return;
       }
       onCommand(entry.name as CommandName, args);
     },
-    [session, stop, onCommand, onToast, messages, title, sessionId, copyText, writeFile],
+    [session, stop, onCommand, onToast, messages, title, sessionId, copyText, writeFile, outputs.length],
   );
 
-  // Alt+M / Alt+E / Alt+G open the pickers from anywhere in the input.
-  const onKey = useCallback((key: KeyEvent) => {
-    const opened: Picker = matchesComposerBinding(key, 'composer.model')
-      ? 'model'
-      : matchesComposerBinding(key, 'composer.effort')
-        ? 'effort'
-        : matchesComposerBinding(key, 'composer.agent')
-          ? 'agent'
-          : null;
-    if (opened) setPicker(opened);
-    return opened !== null;
-  }, []);
+  // Alt+M / Alt+E / Alt+G / Alt+O open the pickers from anywhere in the input.
+  const onKey = useCallback(
+    (key: KeyEvent) => {
+      const opened: Picker = matchesComposerBinding(key, 'composer.model')
+        ? 'model'
+        : matchesComposerBinding(key, 'composer.effort')
+          ? 'effort'
+          : matchesComposerBinding(key, 'composer.agent')
+            ? 'agent'
+            : matchesComposerBinding(key, 'composer.outputs')
+              ? 'outputs'
+              : null;
+      if (opened === 'outputs' && outputs.length === 0) {
+        onToast?.(NO_OUTPUTS);
+        return true;
+      }
+      if (opened) setPicker(opened);
+      return opened !== null;
+    },
+    [outputs.length, onToast],
+  );
+
+  // ── outputs ───────────────────────────────────────────────────────────────
+
+  const openOutput = useCallback(
+    (output: SessionOutput) => {
+      if (output.url) {
+        const url = output.url;
+        closePicker();
+        void Promise.resolve(openUrl(url)).then(
+          () => onToast?.(`Opened ${url}`),
+          (error: unknown) =>
+            onToast?.(`Could not open ${url}: ${error instanceof Error ? error.message : String(error)}`, 'error'),
+        );
+        return;
+      }
+      if (output.path) {
+        closePicker();
+        onCommand('files', output.path);
+      }
+    },
+    [openUrl, onToast, onCommand, closePicker],
+  );
+
+  const referenceOutput = useCallback(
+    (output: SessionOutput) => {
+      setInsert((current) => ({ text: outputReference(output), seq: (current?.seq ?? 0) + 1 }));
+      closePicker();
+    },
+    [closePicker],
+  );
+
+  const copyOutput = useCallback(
+    (output: SessionOutput) => {
+      const text = output.url ?? output.path ?? output.title;
+      void copyText(text).then((result) =>
+        result.ok
+          ? onToast?.(`Copied ${text}`)
+          : onToast?.(`Copy failed: ${result.error ?? 'no clipboard tool'}. ${text}`, 'error'),
+      );
+    },
+    [copyText, onToast],
+  );
+
+  const outputDetails = useCallback(
+    (output: SessionOutput) => {
+      if (!output.artifactId) {
+        onToast?.(output.path ? 'A file opens in /files: press Enter.' : 'A web page has no details: press Enter to open it.');
+        return;
+      }
+      closePicker();
+      onCommand('artifacts', output.artifactId);
+    },
+    [onToast, onCommand, closePicker],
+  );
 
   // ── render ────────────────────────────────────────────────────────────────
 
@@ -328,6 +412,9 @@ export function Composer({
       </text>
       <text fg={theme.dim} wrapMode="none">
         {status.length ? <span fg={theme.busy}>{`${status.join(' · ')}  `}</span> : null}
+        {outputsLine ? <span fg={theme.fg}>{'▣ '}</span> : null}
+        {outputsLine ? <span fg={theme.dim}>{outputsLine}</span> : null}
+        {outputsLine ? <span fg={theme.faint}>{' · '}</span> : null}
         {agentsSummary.text ? <AgentsSegment summary={agentsSummary} /> : null}
         {agentsSummary.text ? <span fg={theme.faint}>{' · '}</span> : null}
         <span fg={selection.modelIsDefault ? theme.dim : theme.fg}>{selection.modelLabel}</span>
@@ -399,6 +486,19 @@ export function Composer({
         />
       ) : null}
 
+      {picker === 'outputs' ? (
+        <OutputsPicker
+          outputs={outputs}
+          now={Date.now()}
+          width={pickerWidth}
+          onClose={closePicker}
+          onOpen={openOutput}
+          onReference={referenceOutput}
+          onCopy={copyOutput}
+          onDetails={outputDetails}
+        />
+      ) : null}
+
       {errorLine ? (
         <text fg={theme.danger} wrapMode="none">
           {errorLine}
@@ -424,6 +524,7 @@ export function Composer({
         onMetrics={setInputMetrics}
         onActivate={onRequestFocus}
         seed={seed}
+        insert={insert}
         footer={showTray ? tray : null}
       />
     </box>

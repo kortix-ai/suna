@@ -44,7 +44,7 @@ export interface CreateSandboxOpts {
   /**
    * True ⇒ the box runs in `location` or not at all. False/absent ⇒ Platinum
    * boots it in its home region when `location` cannot hold the image and no
-   * copy is running (platinum.ts). Set for warm (speculative) session boxes.
+   * copy is running (platinum.ts). Set for a box that mounts the project's Files.
    */
   locationRequired?: boolean;
   /**
@@ -64,6 +64,11 @@ export interface CreateSandboxOpts {
   sandboxId?: string;
   /** Monotonic across restarts; stable on retries of the same create attempt. */
   createAttempt?: number;
+  /**
+   * Internal to the Platinum provider: until when a create keeps waiting out
+   * a volume that still saves the last box's writes (`409 volume_flushing`).
+   */
+  volumeFlushDeadline?: number;
   /**
    * Runtime contract hosted by the provider object. Missing means `session`
    * for backward compatibility with every existing caller.

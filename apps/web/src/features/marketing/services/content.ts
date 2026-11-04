@@ -41,19 +41,6 @@ export const hero = {
   sub: 'Our team maps how your company works, connects your data and ships the agents and apps that run it, on Kortix. Everything lives in a git repo you own.',
   /** One quiet line under the buttons. The price waits for the pricing section. */
   terms: 'Strategy and build, one team · One flat monthly fee · Everything in a repo you own',
-  /** The logo row: products built on Kortix (case-studies/content.ts naming rules). */
-  logosLabel: 'Built on Kortix',
-  logos: [
-    {
-      src: '/media/case-studies/cityu.svg',
-      alt: 'City University of Hong Kong',
-      width: 262,
-      height: 147,
-    },
-    { src: '/media/case-studies/writer.svg', alt: 'WRITER', width: 110, height: 35 },
-    { src: '/media/case-studies/wring.svg', alt: 'Wring', width: 74, height: 28 },
-  ],
-  logosLink: 'See the work',
 } as const;
 
 /** Why companies buy this: the gap between the mandate and the team. */
@@ -326,7 +313,7 @@ export const faq = {
     {
       id: 'talk',
       q: 'Can we talk before we pay?',
-      a: 'Yes. Book an intro call. We look at how your company works and pick the first function together.',
+      a: 'Yes. The intro call is free and commits you to nothing. We look at how your company works and pick the first function to hand to agents. You pay only when you decide to start.',
     },
   ],
 } as const;

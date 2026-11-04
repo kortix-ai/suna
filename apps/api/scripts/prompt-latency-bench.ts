@@ -21,7 +21,12 @@
  *   bun scripts/prompt-latency-bench.ts report <file.jsonl>…  # print the table again
  *     (with BENCH_API_LOG set, re-read the delivery lines from that log first)
  *
- * Env: BENCH_SESSIONS (6), BENCH_TURNS (3, max 3), BENCH_MODEL (kortix model id),
+ * BENCH_FLOW=web measures the web composer's path instead: the first prompt rides
+ * the create (`pending_prompt`), the stream attaches at once, and the row
+ * "web: create→first token" is the time from Enter to the first streamed token.
+ * Its prompt asks for a reply of many tokens, so the first token is not the last.
+ *
+ * Env: BENCH_SESSIONS (6), BENCH_TURNS (3, max 3), BENCH_MODEL (kortix model id), BENCH_FLOW (api | web), BENCH_AGENT,
  * BENCH_PROVIDER (sandbox provider), BENCH_LABEL (run), BENCH_OUT
  * (<repo>/output/prompt-latency-<label>.jsonl), BENCH_API_LOG, BENCH_DB_URL,
  * BENCH_KEEP=1 (leave the sessions running, e.g. to open one in the web app),
@@ -66,6 +71,13 @@ interface Session {
   label: string; at: string; sessionId: string | null; externalId: string | null; provider: string | null;
   harness: string | null; createStatus: number | null; createMs: number | null; createTiming: Timing;
   readyMs: number | null; turns: Turn[]; error?: string; timedOut?: boolean;
+  /**
+   * BENCH_FLOW=web only. The web composer's new session: one POST /sessions
+   * carrying the prompt (`pending_prompt`), the /events stream attached at once
+   * and /start long-polled (use-project-home-send.ts, use-session.ts). Times
+   * are from the start of that POST: what a person waits after Enter.
+   */
+  web?: { readyMs: number | null; busyMs: number | null; firstTokenMs: number | null; idleMs: number | null };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -171,6 +183,83 @@ async function runTurn(sessionId: string, spec: { label: string; text: string },
   if (!turn.text) turn.error ??= 'idle with no assistant text';
   if (turn.error) turn.seen = frames.slice(from, i).map((f) => (f.type === 'session.status' ? `${f.type}:${f.payload.status?.type}` : f.type)).slice(0, 60);
   return turn;
+}
+
+const WEB_PROMPT = 'Count from one to twenty in English words, separated by commas. No other text.';
+
+/** BENCH_FLOW=web: the web composer's new session (see Session.web). */
+async function runWebSession(round: number): Promise<Session> {
+  const s: Session = {
+    label: LABEL, at: new Date().toISOString(), sessionId: null, externalId: null, provider: null, harness: null,
+    createStatus: null, createMs: null, createTiming: {}, readyMs: null, turns: [],
+    web: { readyMs: null, busyMs: null, firstTokenMs: null, idleMs: null },
+  };
+  const web = s.web!;
+  const frames: Frame[] = [];
+  let events: AbortController | null = null;
+  let polling = true;
+  const t0 = performance.now();
+  try {
+    const created = await api(`/projects/${PROJECT}/sessions`, {
+      method: 'POST',
+      body: JSON.stringify({
+        ...(env.BENCH_PROVIDER ? { provider: env.BENCH_PROVIDER } : {}),
+        ...(env.BENCH_AGENT ? { agent_name: env.BENCH_AGENT } : {}),
+        pending_prompt: {
+          text: WEB_PROMPT, agent: env.BENCH_AGENT || null, variant: null, attachment_names: [],
+          model: env.BENCH_MODEL ? { providerID: 'kortix', modelID: env.BENCH_MODEL } : null,
+        },
+      }),
+    });
+    Object.assign(s, { createStatus: created.status, createMs: created.ms, createTiming: created.timing });
+    s.sessionId = created.body?.session_id ?? created.body?.id ?? null;
+    if (!s.sessionId) throw new Error(`create ${created.status}: ${JSON.stringify(created.body).slice(0, 300)}`);
+    const sessionId = s.sessionId;
+    events = openEvents(sessionId, frames);
+    // use-session.ts: /start long-polled until ready, beside the stream.
+    void (async () => {
+      while (polling && web.readyMs === null && performance.now() - t0 < BOOT_TIMEOUT_MS) {
+        const st = await api(`/projects/${PROJECT}/sessions/${sessionId}/start?wait_ms=15000`, {
+          method: 'POST', signal: AbortSignal.timeout(30_000),
+        }).catch(() => null);
+        if (st?.body?.stage === 'ready') {
+          web.readyMs = Math.round(performance.now() - t0);
+          s.readyMs = web.readyMs;
+          s.externalId = st.body.sandbox?.external_id ?? null;
+          s.provider = st.body.sandbox?.provider ?? null;
+        } else if (st?.body?.stage === 'failed' && st.body?.retriable === false) {
+          s.error ??= `start failed: ${JSON.stringify(st.body).slice(0, 300)}`;
+          return;
+        } else await sleep(200);
+      }
+    })();
+    const assistant = new Set<string>();
+    let i = 0;
+    while (web.idleMs === null && !s.error && performance.now() - t0 < BOOT_TIMEOUT_MS + TURN_TIMEOUT_MS) {
+      await sleep(25);
+      for (; i < frames.length; i++) {
+        const { t, type, payload } = frames[i];
+        const at = Math.round(t - t0);
+        if (type === 'session.status' && payload.status?.type === 'busy') web.busyMs ??= at;
+        if (type === 'message.updated' && payload.info?.role === 'assistant') assistant.add(payload.info.id);
+        if (type === 'message.part.delta' && payload.delta && (!payload.messageID || assistant.has(payload.messageID))) web.firstTokenMs ??= at;
+        if (type === 'session.error') s.error = `session.error: ${JSON.stringify(payload.error ?? payload).slice(0, 300)}`;
+        const idle = type === 'session.idle' || (type === 'session.status' && payload.status?.type === 'idle');
+        if (idle && web.busyMs !== null) { web.idleMs = at; break; }
+      }
+    }
+    if (web.idleMs === null && !s.error) { s.error = 'no idle before timeout'; s.timedOut = true; }
+    console.error(`  web create=${s.createMs}ms ready=${web.readyMs} busy=${web.busyMs} first-token=${web.firstTokenMs} idle=${web.idleMs} ${s.error ?? ''}`);
+  } catch (err) {
+    s.error = err instanceof Error ? err.message : String(err);
+    s.timedOut = err instanceof Error && err.name === 'TimeoutError';
+  } finally {
+    polling = false;
+    events?.abort();
+    if (s.sessionId && env.BENCH_KEEP !== '1') await api(`/projects/${PROJECT}/sessions/${s.sessionId}`, { method: 'DELETE' }).catch(() => {});
+  }
+  console.error(`[${LABEL}] web session ${round}/${SESSIONS}: create=${s.createMs}ms first-token=${web.firstTokenMs}ms ${s.error ?? ''}`);
+  return s;
 }
 
 async function runSession(round: number): Promise<Session> {
@@ -297,6 +386,9 @@ export function table(sessions: Session[]): string {
     ['delivery: log proxy total', turns.map((t) => t.proxy?.total ?? NaN)],
     ['delivery: created→forwarded (DB)', turns.map((t) => t.forwardedMs ?? NaN)],
     ['create→first token (T1)', ok.map((s) => (s.readyMs ?? NaN) + (s.turns[0]?.firstTokenMs ?? NaN))],
+    ['web: create→ready (/start)', sessions.map((s) => s.web?.readyMs ?? NaN)],
+    ['web: create→busy', sessions.map((s) => (s.error ? NaN : s.web?.busyMs ?? NaN))],
+    ['web: create→first token', sessions.map((s) => (s.error ? NaN : s.web?.firstTokenMs ?? NaN))],
     ['POST→busy', turns.map((t) => t.busyMs ?? NaN)],
     ['POST→first token', turns.map((t) => t.firstTokenMs ?? NaN)],
     ['POST→idle', turns.map((t) => t.idleMs ?? NaN)],
@@ -385,7 +477,8 @@ async function main(): Promise<void> {
   const startedAt = async () => (env.BENCH_API_LOG ? (await api('/health')).body?.started_at ?? null : null);
   const apiStartedAt = await startedAt();
   const sessions: Session[] = [];
-  for (let round = 1; round <= SESSIONS; round++) sessions.push(await runSession(round));
+  const run = env.BENCH_FLOW === 'web' ? runWebSession : runSession;
+  for (let round = 1; round <= SESSIONS; round++) sessions.push(await run(round));
   if ((await startedAt()) !== apiStartedAt) {
     throw new Error('the API restarted or hot-reloaded during the run: restart the stack and run again');
   }

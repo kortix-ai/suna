@@ -24,6 +24,7 @@ const exists = async (label: string) => label === LABEL;
 
 beforeEach(() => {
   configState.KORTIX_PREVIEW_BASE_DOMAIN = 'p.acme.com';
+  configState.KORTIX_PREVIEW_BASE_DOMAIN_ALIASES = undefined;
   configState.INTERNAL_KORTIX_ENV = 'dev';
 });
 
@@ -118,5 +119,14 @@ describe('GET /tls-check rate limit', () => {
     expect(refused.headers.get('retry-after')).not.toBeNull();
     const other = await app.request('/tls-check?domain=evil.com', { headers: { 'x-forwarded-for': '203.0.113.8' } });
     expect(other.status).toBe(403);
+  });
+});
+
+describe('alias base domains (self-host domain move)', () => {
+  test('issues for a preview host under an alias base, and only for a real sandbox', async () => {
+    configState.KORTIX_PREVIEW_BASE_DOMAIN_ALIASES = 'p.old-acme.cloud';
+    expect(await previewTlsCheckStatus(`dev-p8081-${LABEL}.p.old-acme.cloud`, exists)).toBe(200);
+    expect(await previewTlsCheckStatus('dev-p8081-sbx-01cccccccccccccccccccccccc.p.old-acme.cloud', exists)).toBe(404);
+    expect(await previewTlsCheckStatus(`dev-p8081-${LABEL}.p.unrelated.cloud`, exists)).toBe(403);
   });
 });

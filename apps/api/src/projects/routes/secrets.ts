@@ -41,6 +41,7 @@ import {
 } from '../lib/access';
 import { SecretSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
+import { savedProjectConfig } from '../config-summary/service';
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
   isSystemProjectSecretName,
@@ -177,9 +178,14 @@ export function registerSecretsRoutes(): void {
     // the manifest from the warm git mirror and refresh it behind the response.
     allowStaleMirrorReads();
     try {
-      const gitRow = await withProjectGitAuth(loaded.row);
-      stages.git_auth = Math.round(performance.now() - started);
-      const projectConfig = await loadProjectConfig(gitRow, []);
+      // The saved config summary first: no credential, no git (config-summary/service.ts).
+      const saved = await savedProjectConfig(loaded.row);
+      const projectConfig = saved
+        ? saved.config
+        : await withProjectGitAuth(loaded.row).then((gitRow) => {
+            stages.git_auth = Math.round(performance.now() - started);
+            return loadProjectConfig(gitRow, []);
+          });
       required = projectConfig?.env?.required ?? [];
       optional = projectConfig?.env?.optional ?? [];
       manifestStatus = projectConfig?.manifest_raw ? 'loaded' : 'missing';

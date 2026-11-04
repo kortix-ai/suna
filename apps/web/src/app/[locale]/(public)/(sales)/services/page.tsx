@@ -27,9 +27,7 @@ import {
 } from '@/features/marketing/services/content';
 import { cn } from '@kortix/ui';
 import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
-import {
-  ArrowRightIcon,
-} from '@phosphor-icons/react';
+import { ArrowRightIcon } from '@phosphor-icons/react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -49,9 +47,6 @@ import type { ReactNode } from 'react';
  */
 
 const CHECKOUT_URL = process.env.NEXT_PUBLIC_SERVICES_CHECKOUT_URL;
-
-/** A third-party logo is drawn for a white ground: white in both themes (color.md, logo tile rule). */
-const LOGO_TILE_BACKGROUND = 'bg-white';
 
 /** "Join now": the Stripe checkout when it is configured, else the intro call. */
 function JoinButton({
@@ -182,7 +177,7 @@ export default function ServicesPage() {
 
   return (
     <PageFrame>
-      {/* ── hero: one promise, one ask, the logos ──────────────────────────── */}
+      {/* ── hero: one promise, one ask ─────────────────────────────────────── */}
       <section
         id="hero"
         className="relative overflow-hidden px-6 pt-32 pb-16 lg:px-28 lg:pt-40 lg:pb-20"
@@ -204,40 +199,15 @@ export default function ServicesPage() {
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg">
             {hero.sub}
           </p>
-          <div className="flex flex-wrap justify-center gap-2.5 pt-2">
+          <div className="flex justify-center pt-2">
             <IntroButton variant="primary" className="hit-area-y-1" />
-            <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
-              <a href="#case-studies">{hero.logosLink}</a>
-            </MarketingButton>
           </div>
           <p className="text-muted-foreground text-sm text-pretty">{hero.terms}</p>
         </div>
-
-        {/* The proof sits right under the ask: products built on Kortix. */}
-        <div className="relative mt-10 flex flex-wrap items-center justify-center gap-3">
-          <span className="text-muted-foreground text-sm">{hero.logosLabel}</span>
-          {hero.logos.map((logo) => (
-            <span
-              key={logo.alt}
-              className={cn(LOGO_TILE_BACKGROUND, 'flex h-12 items-center rounded-md border px-4')}
-            >
-              <Image
-                src={logo.src}
-                alt={logo.alt}
-                width={logo.width}
-                height={logo.height}
-                unoptimized
-                // A stacked mark (CityU) reads small at a wordmark's height.
-                className={logo.width / logo.height > 2.5 ? 'h-6 w-auto' : 'h-9 w-auto'}
-              />
-            </span>
-          ))}
-        </div>
-
       </section>
 
       {/* ── proof first: the work, then the ask again ────────────────────── */}
-      <CaseStudies allLink />
+      <CaseStudies />
       <div className="flex flex-col items-start gap-5 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between lg:px-28">
         <p className="text-foreground text-lg font-medium text-balance">{caseCta}</p>
         <div className="flex flex-wrap gap-2.5">

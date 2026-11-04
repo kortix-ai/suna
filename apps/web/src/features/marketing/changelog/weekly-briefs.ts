@@ -8,7 +8,7 @@ import 'server-only';
  * it with the releases, so a new summary appears within one cache lifetime
  * (1 h) and needs no deploy.
  */
-const REPO = 'kortix-ai/suna';
+const REPO = 'kortix-ai/CompanyOS';
 const REF = 'kortix/changelog-weekly';
 
 /** Week id (`2026-W42`) → its highlight lines. */

@@ -289,20 +289,25 @@ mock.module('./provider-balancer', () => ({
   selectProvider: async () => 'platinum',
 }));
 
+const ensureSandboxImageMock = async (_gitProject: unknown, opts: Record<string, unknown>) => {
+  imageRequests.push(opts);
+  const queued = imageResolutionQueue.shift();
+  if (queued) return queued;
+  return {
+    snapshotName: 'snap-test-1',
+    slug: 'default',
+    contentHash: 'hash-1',
+    isDefault: true,
+    built: false,
+  };
+};
+
 mock.module('../../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
-  ensureSandboxImage: async (_gitProject: unknown, opts: Record<string, unknown>) => {
-    imageRequests.push(opts);
-    const queued = imageResolutionQueue.shift();
-    if (queued) return queued;
-    return {
-      snapshotName: 'snap-test-1',
-      slug: 'default',
-      contentHash: 'hash-1',
-      isDefault: true,
-      built: false,
-    };
-  },
+  ensureSandboxImage: ensureSandboxImageMock,
+  // Session starts resolve through the budgeted entry point; the budget is
+  // covered in snapshots/builder-session-image.test.ts.
+  ensureSessionImage: ensureSandboxImageMock,
   ensureMyKortixSandboxImage: async (opts: Record<string, unknown>) => {
     imageRequests.push(opts);
     return {
@@ -664,8 +669,10 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     }
   });
 
-  test('a warm (speculative) box asks the provider to keep its region; any other box may fall back', async () => {
-    for (const [metadata, required] of [[{ warm: true }, true], [undefined, false]] as const) {
+  // Only the session's placement decides it. A leftover `warm` marker from the
+  // removed warm sessions (2026-11-03) no longer pins a box to its region.
+  test('a box without a required placement may fall back, whatever its metadata says', async () => {
+    for (const [metadata, required] of [[{ warm: true }, false], [undefined, false]] as const) {
       providerCreateOpts = [];
       const opened = waitFor((resolve) => {
         onComputeOpened = resolve;

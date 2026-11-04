@@ -13,7 +13,7 @@
  * Used by every external-URL egress site that takes a caller-influenced URL:
  * connector spec/route/graphql/mcp fetches, marketplace source add, and
  * audit-webhook delivery. See F-1 (weekly pentest, runs #1–#4) and
- * https://github.com/kortix-ai/suna/issues/4442.
+ * https://github.com/kortix-ai/CompanyOS/issues/4442.
  */
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';

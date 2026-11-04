@@ -2,6 +2,8 @@
 
 import { uiRoutes } from '../../../lib/routes';
 import { useSessionIds } from '../../../providers/session-ids';
+import { MESSAGE_LINK_AT_PARAM, MESSAGE_LINK_PARAM } from '../../../session/thread/message-link';
+import { RUNTIME_SESSION_PARAM } from '../../../session/tool/tools/session-spawn-urls';
 
 /**
  * The real, routable URL for a session.
@@ -20,6 +22,26 @@ import { useSessionIds } from '../../../providers/session-ids';
  */
 export function projectSessionHref(projectId: string, sessionId: string): string {
   return uiRoutes().session(projectId, sessionId);
+}
+
+/**
+ * A session's URL opened at one message: `rs` selects the sub-thread that
+ * holds it, `m` names the message, `at` (epoch ms) names the instant the
+ * session page falls back to when the message is not in the thread. Empty
+ * parts are left out, so a target with none of them is the session's URL.
+ */
+export function projectSessionMessageHref(
+  projectId: string,
+  sessionId: string,
+  target: { messageId?: string | null; at?: number | null; threadId?: string | null },
+): string {
+  const params = new URLSearchParams();
+  if (target.threadId) params.set(RUNTIME_SESSION_PARAM, target.threadId);
+  if (target.messageId) params.set(MESSAGE_LINK_PARAM, target.messageId);
+  if (target.at != null && Number.isFinite(target.at)) params.set(MESSAGE_LINK_AT_PARAM, String(Math.trunc(target.at)));
+  const qs = params.toString();
+  const href = projectSessionHref(projectId, sessionId);
+  return qs ? `${href}${href.includes('?') ? '&' : '?'}${qs}` : href;
 }
 
 /**

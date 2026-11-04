@@ -21,6 +21,7 @@
  * never been derived from the mutable slug.
  */
 import { config } from '../config';
+import { aliasFormsOf, forRequestDomain } from '../shared/domain-aliases';
 
 /** Hostname shape for an App on a real domain. Kept in one regexp. */
 /** `<env>-<slug>-<route key>`, plus `--<service>` for a service other than the primary `http` (slugs never hold `--`). */
@@ -74,11 +75,20 @@ function registrableDomain(origin: string): string | null {
  * has no App domain at all. Never falls back to a domain the deployment does
  * not own.
  */
-export function appsBaseDomain(): string | null {
+function primaryAppsBaseDomain(): string | null {
   const configured = process.env.KORTIX_APPS_BASE_DOMAIN;
   if (configured && normalizeDomain(configured)) return normalizeDomain(configured);
   const derived = registrableDomain(config.KORTIX_URL);
   return derived ? `apps.${derived}` : null;
+}
+
+/**
+ * The base domain App URLs are built on. A request that arrived on a self-host
+ * alias domain gets the alias form, so its links stay on that domain.
+ */
+export function appsBaseDomain(): string | null {
+  const primary = primaryAppsBaseDomain();
+  return primary ? forRequestDomain(primary) : null;
 }
 
 /** `http://<label>.apps.localhost:<port>`: a local-mode host this API answers. */
@@ -111,12 +121,26 @@ export function appServiceUrl(row: { slug: string; routeKey: string }, service: 
   return `https://${label}.${appsBaseDomain()}`;
 }
 
+/**
+ * Every base domain an App host may sit under: the primary one, then the
+ * self-host alias bases (KORTIX_APPS_BASE_DOMAIN_ALIASES) that keep links from
+ * before a domain move working. URLs are only ever built on the primary.
+ */
+export function appsServedBaseDomains(): string[] {
+  const primary = primaryAppsBaseDomain();
+  const aliases = [
+    ...aliasFormsOf(primary),
+    ...(config.KORTIX_APPS_BASE_DOMAIN_ALIASES ?? '').split(',').map(normalizeDomain),
+  ];
+  return [...new Set([primary, ...aliases])].filter((domain): domain is string => Boolean(domain));
+}
+
 export function resolveAppHost(hostname: string): ResolvedAppHost | null {
   const host = hostname.toLowerCase().replace(/\.$/, '');
   const local = LOCAL_HOST.exec(host);
   if (local) return { routeKey: local[1]!, local: true, service: local[2] ?? 'http' };
-  const domain = appsBaseDomain();
-  if (!domain || !host.endsWith(`.${domain}`)) return null;
+  const domain = appsServedBaseDomains().find((base) => host.endsWith(`.${base}`));
+  if (!domain) return null;
   const label = host.slice(0, -(domain.length + 1));
   if (label.includes('.')) return null;
   const match = APP_LABEL.exec(label);

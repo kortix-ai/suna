@@ -15,6 +15,7 @@ import {
   loadSlackInstall,
   loadTeamsInstall,
   loadTelegramInstall,
+  loadDiscordInstall,
 } from '../channels/install-store';
 import { agentPolicySet } from '../iam/agent-scope';
 import { canonicalConnectorAlias, resolveSessionConnectorConnection } from '../projects/lib/session-connector-bindings';
@@ -120,6 +121,7 @@ async function channelInstalled(
   if (platform === 'slack') return (await loadSlackInstall(projectId).catch(() => null)) != null;
   if (platform === 'teams') return (await loadTeamsInstall(projectId).catch(() => null)) != null;
   if (platform === 'telegram') return (await loadTelegramInstall(projectId).catch(() => null)) != null;
+  if (platform === 'discord') return (await loadDiscordInstall(projectId).catch(() => null)) != null;
   if (platform === 'email') return hasEmailInboxes(projectId).catch(() => false);
   return false;
 }

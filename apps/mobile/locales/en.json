@@ -636,13 +636,13 @@
     "allCredentials": "All your credentials and connections",
     "subscriptionData": "Your subscription and billing data",
     "gracePeriod": "30-Day Grace Period",
-    "gracePeriodDescription": "Your account will be scheduled for deletion in 30 days. You can cancel this request anytime during the grace period.",
+    "gracePeriodDescription": "Your account will be scheduled for deletion in 14 days. You can cancel this request anytime during the grace period.",
     "typeDeleteToConfirm": "Type {{text}} to confirm",
     "deletePlaceholder": "DELETE",
     "deleteAccount": "Delete account",
     "cancelDeletion": "Cancel deletion",
     "processing": "Processing...",
-    "deletionScheduledSuccess": "Your account will be deleted in 30 days. You can cancel this request anytime.",
+    "deletionScheduledSuccess": "Your account will be deleted in 14 days. You can cancel this request anytime.",
     "cancelDeletionTitle": "Cancel Account Deletion",
     "cancelDeletionDescription": "Do you want to cancel the deletion of your account? Your account and all data will be preserved.",
     "back": "Back",
@@ -655,20 +655,20 @@
     "notAvailableTitle": "Not available on this server",
     "projectsAndSessions": "Projects and sessions",
     "credentialsAndConnections": "Credentials and connections",
-    "subscriptionAndBilling": "Subscription and billing",
+    "subscriptionAndBilling": "Subscription",
     "when": "When",
-    "in30Days": "In 30 days",
+    "in14Days": "In 14 days",
     "immediately": "Immediately",
     "deleteTitle": "Delete account?",
     "deleteNowTitle": "Delete account now?",
-    "deleteScheduledDescription": "Your account is deleted in 30 days. You can cancel before then.",
+    "deleteScheduledDescription": "Your account is deleted in 14 days. You can cancel before then.",
     "deleteNowDescription": "Your account and its data are deleted now. This cannot be undone.",
     "deleteNow": "Delete now",
     "deleting": "Deleting…",
     "cancelling": "Cancelling…",
     "finalTitle": "Are you sure?",
-    "finalDescriptionNow": "Everything in your account is deleted now: projects, sessions, credentials, and billing. This cannot be undone.",
-    "finalDescriptionScheduled": "Everything in your account is deleted in 30 days: projects, sessions, credentials, and billing. You can cancel before then."
+    "finalDescriptionNow": "Your projects, sessions, and credentials are deleted now. Billing records are kept as long as the law requires. This cannot be undone.",
+    "finalDescriptionScheduled": "Your projects, sessions, and credentials are deleted in 14 days. Billing records are kept as long as the law requires. You can cancel before then."
   },
   "connections": {
     "title": "Connections",
@@ -1286,5 +1286,16 @@
     "retryHour_other": "Try again in {{count}} hours.",
     "unavailable": "Image unavailable",
     "details": "Image details"
+  },
+  "sessionImage": {
+    "title": "Preparing the sandbox image",
+    "states": {
+      "resolving": "Choosing the image for this session.",
+      "serving_last_ready": "Starting from the last ready image. The new one builds in the background.",
+      "waiting_for_build": "The first image for this project is building. The session starts when it is ready.",
+      "building": "Building the first image for this project. This happens once and takes a few minutes.",
+      "copying_to_region": "Copying the image to this session's region.",
+      "waiting_for_provider": "The image is finishing. The session starts when it is ready."
+    }
   }
 }

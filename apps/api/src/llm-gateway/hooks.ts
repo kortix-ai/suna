@@ -448,13 +448,15 @@ async function byokFeeFor(event: UsageEvent): Promise<number> {
   }
 }
 
-/** The public route of each image operation; any other event is a chat completion. */
-const IMAGE_ROUTES = new Map<unknown, string>([
+/** The public route of each image and audio operation; any other event is a chat completion. */
+const OPERATION_ROUTES = new Map<unknown, string>([
   ['images.generations', '/v1/llm/images/generations'],
   ['images.edits', '/v1/llm/images/edits'],
+  ['audio.transcriptions', '/v1/llm/audio/transcriptions'],
+  ['audio.speech', '/v1/llm/audio/speech'],
 ]);
 
-const routeOf = (event: UsageEvent) => IMAGE_ROUTES.get(event.operation) ?? '/v1/llm/chat/completions';
+const routeOf = (event: UsageEvent) => OPERATION_ROUTES.get(event.operation) ?? '/v1/llm/chat/completions';
 
 export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
   // The request is over: its cost is in the logged spend (or it cost nothing),

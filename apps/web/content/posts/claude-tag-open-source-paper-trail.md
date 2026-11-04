@@ -30,7 +30,7 @@ An open-source alternative already exists for the surface. open-tag rebuilds the
 
 ## The agent is a file a colleague can read
 
-Kortix keeps the same decisions as files in the project's git repo. The header of the starter manifest marks the `agents:` map "GOVERNANCE ONLY": it carries the connectors, secrets, Kortix permissions and skills grants, the workspace settings and the enabled flag, plus the `file` field that names the agent's `.md`. Everything about how the agent behaves, from its description and model to temperature and prompt, sits in that file's frontmatter and body ([kortix.yaml](https://github.com/kortix-ai/suna/blob/dev/packages/starter/templates/base/kortix.yaml)). The starter's front-door agent is granted all four in seven lines:
+Kortix keeps the same decisions as files in the project's git repo. The header of the starter manifest marks the `agents:` map "GOVERNANCE ONLY": it carries the connectors, secrets, Kortix permissions and skills grants, the workspace settings and the enabled flag, plus the `file` field that names the agent's `.md`. Everything about how the agent behaves, from its description and model to temperature and prompt, sits in that file's frontmatter and body ([kortix.yaml](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/kortix.yaml)). The starter's front-door agent is granted all four in seven lines:
 
 ```yaml
 agents:
@@ -44,7 +44,7 @@ agents:
 
 Anything narrower is denied by default. The manifest calls v2 "deny-by-default": an omitted grant resolves to none, so a scoped specialist starts locked down. A legal agent and an engineering agent can hold different grants in the same file, and the difference between the two fits on one screen.
 
-The agent's own file states where its authority comes from. Its frontmatter description reads, in part, "Its access is what kortix.yaml grants it." Its body tells the agent that "the session you're in is an isolated sandbox", and that the sandbox is "an ephemeral branch of this repo". A session that goes wrong leaves a branch instead of a broken production system, and its output arrives as a change you can read ([agents/kortix.md](https://github.com/kortix-ai/suna/blob/dev/packages/starter/templates/base/agents/kortix.md)).
+The agent's own file states where its authority comes from. Its frontmatter description reads, in part, "Its access is what kortix.yaml grants it." Its body tells the agent that "the session you're in is an isolated sandbox", and that the sandbox is "an ephemeral branch of this repo". A session that goes wrong leaves a branch instead of a broken production system, and its output arrives as a change you can read ([agents/kortix.md](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/agents/kortix.md)).
 
 A change to a grant is a diff on a file, so it can be reviewed like any other change. That is the property a console page cannot offer: the file, its history, and the name of the person who approved the last edit to it. When a contract ends, you still have all three.
 

@@ -13,13 +13,6 @@
 // single global DB lease — see apps/api/src/shared/leader-election.ts — so only
 // one side ever runs cron). Flipping is instant and instantly reversible.
 const STRICT_TRANSPORT_SECURITY = 'max-age=31536000';
-const MAINTENANCE_LEVELS = new Set([
-  'none',
-  'info',
-  'warning',
-  'critical',
-  'blocking',
-]);
 const DEFAULT_MAINTENANCE = {
   level: 'none',
   title: '',
@@ -35,8 +28,8 @@ const DEFAULT_MAINTENANCE = {
 // hid the real failure from users, from OpenCode's retry classifier and from
 // whoever was debugging: a gateway content-encoding bug surfaced on dev as
 // "Kortix is temporarily unavailable" for days while the gateway logged 200s.
-// A blocking maintenance page now comes ONLY from an explicit admin state
-// (readMaintenanceConfig). Everything the origin says passes through with
+// A blocking maintenance response now comes ONLY from an explicit operator
+// switch (maintenanceOverride). Everything the origin says passes through with
 // its status, body and headers intact; only an origin that cannot be reached
 // at all gets a synthetic response, and that one names itself.
 const WEBHOOK_RELAY_USER_AGENT = 'Kortix-Webhook-Relay/1.0';
@@ -163,45 +156,23 @@ async function keepPreflight(key, request, response) {
   await cache.put(key, stored).catch(() => {});
 }
 
-async function readMaintenanceConfig(env) {
-  if (env.MAINTENANCE_LEVEL_OVERRIDE === 'blocking') {
-    return {
-      ...DEFAULT_MAINTENANCE,
-      level: 'blocking',
-      title: env.MAINTENANCE_TITLE_OVERRIDE || 'Scheduled maintenance',
-      message:
-        env.MAINTENANCE_MESSAGE_OVERRIDE ||
-        'Kortix is temporarily unavailable for maintenance.',
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  if (!env.MAINTENANCE_STATE_URL) return null;
-
-  try {
-    const response = await fetch(env.MAINTENANCE_STATE_URL, {
-      headers: { Accept: 'application/json' },
-      cf: { cacheEverything: true, cacheTtl: 2 },
-    });
-    if (!response.ok) {
-      // State URL is unreachable or errored — return null so the router
-      // does not enter maintenance mode. A transient Vercel/Edge Config
-      // blip should not cause a full lockdown.
-      return null;
-    }
-
-    const config = await response.json();
-    if (!config || !MAINTENANCE_LEVELS.has(config.level)) {
-      return null;
-    }
-    return { ...DEFAULT_MAINTENANCE, ...config };
-  } catch {
-    // Network error reaching the state URL — fail open, not closed.
-    // A blocking lockdown should only result from an explicit admin
-    // action persisted in DB + Edge Config, never from a transient
-    // fetch failure.
-    return null;
-  }
+// The one write freeze: an operator sets MAINTENANCE_LEVEL_OVERRIDE=blocking on
+// this worker and redeploys it. It reads nothing per request. Until 2026-11 the
+// worker also fetched kortix.com/api/maintenance/edge (Vercel Edge Config)
+// before every write: ~115,000 Vercel function calls a day for a level no
+// release or workflow set. The admin "Full lockdown" level now locks the web
+// app only (apps/web middleware); it does not stop API or gateway writes.
+function maintenanceOverride(env) {
+  if (env.MAINTENANCE_LEVEL_OVERRIDE !== 'blocking') return null;
+  return {
+    ...DEFAULT_MAINTENANCE,
+    level: 'blocking',
+    title: env.MAINTENANCE_TITLE_OVERRIDE || 'Scheduled maintenance',
+    message:
+      env.MAINTENANCE_MESSAGE_OVERRIDE ||
+      'Kortix is temporarily unavailable for maintenance.',
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 function maintenanceResponse(config, isGateway, request) {
@@ -244,19 +215,6 @@ function maintenanceResponse(config, isGateway, request) {
       }),
       { status: 503, headers },
     ),
-  );
-}
-
-function maintenanceConfigResponse(config, source) {
-  return addSecurityHeaders(
-    new Response(JSON.stringify(config), {
-      status: 200,
-      headers: {
-        'Cache-Control': 'public, max-age=2, must-revalidate',
-        'Content-Type': 'application/json',
-        'X-Maintenance-Source': source,
-      },
-    }),
   );
 }
 
@@ -342,56 +300,12 @@ export default {
     }
 
     const targetUrl = new URL(url.pathname + url.search, backendUrl);
-    const isMaintenanceConfigRead =
-      !isGateway &&
-      request.method === 'GET' &&
-      url.pathname === '/v1/system/maintenance';
-
-    if (isMaintenanceConfigRead) {
-      try {
-        const primaryResponse = await fetch(
-          new Request(targetUrl, {
-            method: 'GET',
-            headers: request.headers,
-            redirect: 'manual',
-            signal: AbortSignal.timeout(2_000),
-          }),
-        );
-        if (primaryResponse.ok) {
-          const primaryConfig = await primaryResponse.json();
-          if (primaryConfig && MAINTENANCE_LEVELS.has(primaryConfig.level)) {
-            return maintenanceConfigResponse(
-              { ...DEFAULT_MAINTENANCE, ...primaryConfig },
-              'database',
-            );
-          }
-        }
-      } catch {
-        // The independent store or automatic blocking response is returned below.
-      }
-
-      const fallback = await readMaintenanceConfig(env);
-      if (fallback) {
-        return maintenanceConfigResponse(fallback, 'edge-config');
-      }
-      // Both API and Edge Config are unreachable — return a safe default.
-      // Prefer none to blocking so a transient API blip (deploy, GC pause)
-      // doesn't flood every user with the maintenance page. If the admin
-      // truly intended a lockdown, it persists in Edge Config and this
-      // path won't be reached.
-      return maintenanceConfigResponse(
-        { ...DEFAULT_MAINTENANCE, updatedAt: new Date().toISOString() },
-        'automatic',
-      );
-    }
-
     const preflightKey = isGateway ? null : preflightCacheKey(request, url);
     const edgePreflight = await cachedPreflight(preflightKey);
     if (edgePreflight) return edgePreflight;
 
-    // Blocking maintenance refuses writes only, so a read never waits on the
-    // maintenance state (a Vercel round trip on every edge-cache miss).
-    const maintenance = isReadOnlyRequest(request) ? null : await readMaintenanceConfig(env);
+    // The write freeze refuses writes only; reads always reach the origin.
+    const maintenance = isReadOnlyRequest(request) ? null : maintenanceOverride(env);
     const isMaintenanceConfigWrite =
       !isGateway &&
       request.method === 'PUT' &&

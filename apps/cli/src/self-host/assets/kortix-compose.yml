@@ -16,6 +16,9 @@ services:
       KORTIX_PUBLIC_CONNECTORS_ENABLED: ${KORTIX_PUBLIC_CONNECTORS_ENABLED}
       KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: ${KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION}
       KORTIX_PUBLIC_APP_URL: ${PUBLIC_URL}
+      # Extra domains this instance serves in full. A page requested on one
+      # gets runtime URLs on that domain (apps/web lib/domain-alias-env.ts).
+      KORTIX_DOMAIN_ALIASES: ${KORTIX_DOMAIN_ALIASES:-}
       KORTIX_PUBLIC_AUTH_METHODS: ${KORTIX_PUBLIC_AUTH_METHODS}
       KORTIX_PUBLIC_DISABLE_LANDING_PAGE: ${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}
       SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
@@ -123,6 +126,28 @@ services:
       KORTIX_CAPTURE_STS_ENDPOINT: http://capture-store:9000
       # No bucket events without SQS: the index reader finds new items by polling.
       KORTIX_CAPTURE_INDEX_POLL_SECONDS: "30"
+      # Project snapshots: a prebuilt copy of the project at each commit of the
+      # base branch, so a new sandbox downloads one archive instead of cloning
+      # the repository over Git (and a repository over the 32 MiB config
+      # archive cap still gets its config without Git). They live in their own
+      # bucket in the same bundled MinIO, which the API creates with a 30-day
+      # expiry rule. A sandbox downloads a presigned URL on the API origin:
+      # Caddy, or the API's own passthrough, serves /kortix-project-snapshots/*,
+      # the same way as /kortix-capture/*. `prefer-s3` falls back to Git on any
+      # failure. KORTIX_PROJECT_SNAPSHOT_MODE=git in .env turns the checkout
+      # back to Git; the config release still uses a snapshot when one exists,
+      # verified file by file against the commit, and falls back to Git too.
+      # PROXY_TARGET is removed in domain mode — see renderFullDockerCompose().
+      KORTIX_PROJECT_SNAPSHOT_MODE: ${KORTIX_PROJECT_SNAPSHOT_MODE:-prefer-s3}
+      KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: kortix-project-snapshots
+      KORTIX_PROJECT_SNAPSHOT_S3_REGION: us-east-1
+      KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: http://capture-store:9000
+      KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: ${KORTIX_URL}
+      KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET: http://capture-store:9000
+      KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: "true"
+      KORTIX_PROJECT_SNAPSHOT_S3_CREATE_BUCKET: "true"
+      KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: ${CAPTURE_STORE_ROOT_USER}
+      KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: ${CAPTURE_STORE_ROOT_PASSWORD}
       LLM_GATEWAY_PROXY_TARGET: http://llm-gateway:8090
       # KORTIX_LLM_BASE_URL must use the public Caddy route. The proxy target
       # above is internal control-plane wiring. Without this explicit override,
@@ -150,7 +175,8 @@ services:
 
   # Kortix Capture's object store: MinIO, because it implements STS AssumeRole
   # with a session policy, which the API uses to hand each device credentials
-  # that reach only that device's folder. No port is published: the API and
+  # that reach only that device's folder. The project snapshots use a second
+  # bucket in it (see the project snapshot block of kortix-api above). No port is published: the API and
   # Caddy reach it over the Compose network, and devices reach it through them
   # on the API origin (see the Capture block of kortix-api above).
   #

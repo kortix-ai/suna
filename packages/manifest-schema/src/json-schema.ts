@@ -530,7 +530,7 @@ function onRunTriggerSchema(): JsonSchemaFragment {
         type: 'string',
         enum: ['skip', 'allow'],
         description:
-          '`skip` holds a fire while the previous run is active. Only with `run.session: fresh`. Default: `skip` for a schedule, `allow` for others.',
+          '`skip` holds a fire while the previous run is active. With `run.session: reuse`, `pinned` or `keyed`: while the previous prompt still waits in that session. Default: `skip` for a schedule, `allow` for others.',
       },
       on: {
         description: 'What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event.',
@@ -631,7 +631,7 @@ function triggerSchema(): JsonSchemaFragment {
       // in a UTC day (KRTX-1721).
       max_runs_per_hour: { type: 'integer', minimum: 1 },
       max_runs_per_day: { type: 'integer', minimum: 1 },
-      // Fresh session mode only: skip holds a fire while the previous run is active (KRTX-1721).
+      // skip holds a fire while the previous run is active, or its prompt still waits (KRTX-1721).
       overlap: { type: 'string', enum: ['skip', 'allow'] },
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN, description: 'Flat form of `on.webhook.secret`, with `type: webhook`.' },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
@@ -1338,7 +1338,7 @@ export function buildManifestSchema(): JsonSchemaFragment {
       },
       default_agent: {
         ...NON_BLANK_STRING,
-        description: 'The agent that runs when nothing names one and My Kortix is off, and the agent My Kortix starts when it names none. A session or trigger that names no agent runs My Kortix while it is on. A declared agent that is enabled and whose `mode` is `primary` or `all`.',
+        description: 'The agent a session or trigger runs when it names none, and the agent My Kortix starts when it names none. A declared agent that is enabled and whose `mode` is `primary` or `all`, or `mykortix` when `builtin_agents.my_kortix` is true. Omitted: My Kortix when it is on.',
       },
       runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES], deprecated: true, description: 'Selects nothing: every new session runs pi.' },
       ...shared,
@@ -1526,12 +1526,12 @@ export function buildManifestSchema(): JsonSchemaFragment {
       },
       builtin_agents: {
         type: 'object',
-        description: 'Built-in agents the platform adds to this project. Absent = on.',
+        description: 'Built-in agents the platform adds to this project. Each is off unless set to true.',
         properties: {
           my_kortix: {
             type: 'boolean',
-            default: true,
-            description: 'My Kortix, the built-in agent you talk to. false removes it from this project.',
+            default: false,
+            description: 'My Kortix, the built-in agent you talk to (slug `mykortix`). true adds it to this project; absent, false or a file Kortix cannot read leaves it out.',
           },
         },
         additionalProperties: false,

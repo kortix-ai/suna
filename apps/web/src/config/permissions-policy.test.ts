@@ -8,9 +8,10 @@ const resolved: NextConfig = await config(PHASE_DEVELOPMENT_SERVER);
 test('web sends a restrictive Permissions-Policy on the catch-all header rule', async () => {
   const rules = await resolved.headers?.();
   const headers = rules?.find((rule) => rule.source === '/:path*')?.headers;
+  // The microphone for this origin only (a voice call); camera and location for nobody.
   expect(headers).toContainEqual({
     key: 'Permissions-Policy',
-    value: 'camera=(), microphone=(), geolocation=()',
+    value: 'camera=(), microphone=(self), geolocation=()',
   });
   expect(headers).toContainEqual({ key: 'X-Content-Type-Options', value: 'nosniff' });
   expect(headers).toContainEqual({ key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' });

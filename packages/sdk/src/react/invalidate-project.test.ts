@@ -236,3 +236,34 @@ test('rename leaves the quota object under the projects prefix untouched', () =>
   expect(qc.getQueryData<typeof quota>(qk.projects.quota('acct_1'))).toBe(quota);
   expect(qc.getQueryData<ProjectsListEntry[]>(qk.projects.list('acct_1'))).toEqual([{ project_id: ID, name: 'Old' }]);
 });
+
+// The project name, icon, account and flags read the bare project row
+// (`qk.project.summary`, GET /projects/:id), not the git-backed detail. A
+// rename must reach that entry too, or the project home keeps the old name.
+describe('the bare project row (qk.project.summary)', () => {
+  test('invalidateProjectIdentity invalidates it', async () => {
+    const qc = client();
+    qc.setQueryData(qk.project.summary(ID), { project_id: ID, name: 'Old' });
+
+    await invalidateProjectIdentity(qc, ID);
+
+    expect(qc.getQueryState(qk.project.summary(ID))?.isInvalidated).toBe(true);
+  });
+
+  test('writeProjectNameOptimistically paints the new name on it, and restoreProjectName puts the old one back', () => {
+    const qc = client();
+    qc.setQueryData(qk.project.summary(ID), { project_id: ID, name: 'Old', icon: '🐢' });
+
+    const snapshot = writeProjectNameOptimistically(qc, ID, 'New');
+    expect(qc.getQueryData<Record<string, unknown>>(qk.project.summary(ID))).toEqual({ project_id: ID, name: 'New', icon: '🐢' });
+
+    restoreProjectName(qc, ID, snapshot);
+    expect(qc.getQueryData<Record<string, unknown>>(qk.project.summary(ID))).toEqual({ project_id: ID, name: 'Old', icon: '🐢' });
+  });
+
+  test('writeProjectNameOptimistically does not fabricate an uncached row', () => {
+    const qc = client();
+    writeProjectNameOptimistically(qc, ID, 'New');
+    expect(qc.getQueryData(qk.project.summary(ID))).toBeUndefined();
+  });
+});

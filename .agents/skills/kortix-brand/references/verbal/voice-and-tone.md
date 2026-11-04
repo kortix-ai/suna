@@ -47,7 +47,7 @@ The in-product agent speaks as "I'm Kortix" in the first chat (`apps/web/transla
 | Write | Never | Note |
 | --- | --- | --- |
 | Kortix | KORTIX, kortix (in prose) | The company and the platform. Lead with it. `kortix` is the CLI command in mono. |
-| Suna | — | The open-source repo (`kortix-ai/suna`). In outward copy, write Kortix unless you mean the repo. |
+| Suna | — | The open-source repo (`kortix-ai/CompanyOS`). In outward copy, write Kortix unless you mean the repo. |
 | Kortix Cloud | Kortix cloud | The managed hosting. Capitalize both words. |
 | Platinum.dev | Platinum.Dev | The compute floor. Lowercase `.dev`. |
 | GitHub | Github | Brand casing. The live homepage icon title says "Github". |

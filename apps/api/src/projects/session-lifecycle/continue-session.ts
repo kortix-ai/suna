@@ -4,7 +4,7 @@
  * transient failures a freshly woken runtime throws.
  */
 
-import { projectSessions } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -27,6 +27,7 @@ import { sessionTransitionLeaves, transitionSession } from './status-transitions
 import { promptAgent } from './agent-availability';
 import { effortVariantForPrompt } from '../lib/effort-default';
 import type { ContinueSessionCommand, SessionDeliveryOutcome } from './types';
+import { onDevTunnel, staleDevTunnelReason } from '../../platform/dev-tunnel-stamp';
 import { PromptNeverLandedError, postPrompt, readRuntimeMessage } from './runtime-client';
 
 export async function continueSession(
@@ -102,6 +103,15 @@ export async function continueSession(
     });
     return 'no-session';
   }
+  // A box an earlier dev stack created calls a dead quick tunnel: it would take
+  // the prompt and never answer, and no start gives it the new URL. To this
+  // stack the session is gone: a channel starts its conversation over in a new
+  // session, which answers. A stable API URL (deployed envs) never reads the box.
+  const stale = await staleDevTunnelBox(sessionId);
+  if (stale) {
+    logger.warn('[session-lifecycle] refusing delivery to a box of an earlier dev tunnel', { sessionId, reason: stale });
+    return 'no-session';
+  }
   const userId = command.userId ?? (await resolveProjectAutomationActor(session.accountId));
   if (!userId) {
     console.warn('[session-lifecycle] no actor for follow-up delivery', { sessionId });
@@ -146,6 +156,10 @@ export async function continueSession(
     modelOverride: command.overrides?.model ?? undefined,
     sessionModelRef: sessionMeta.opencode_model,
   });
+  // The agent this turn runs: the prompt body carries it to the proxy, whose
+  // pre-prompt env sync resolves that agent's grant. The delivery's env
+  // prefetch must name the SAME string, or the sync cannot take it.
+  const turnAgent = promptAgent(command.overrides?.agent, session.agentName);
   const sendPrompt = async (
     externalId: string,
     opencodeSessionId: string,
@@ -168,7 +182,7 @@ export async function continueSession(
           ...(projectEffortVariant && !command.overrides?.variant
             ? { variant: projectEffortVariant }
             : {}),
-          agent: promptAgent(command.overrides?.agent, session.agentName),
+          agent: turnAgent,
         },
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
@@ -260,7 +274,7 @@ export async function continueSession(
         error: err instanceof Error ? err.message : String(err),
       }),
     );
-  const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend: revalidateBeforeSend, identityBound: turnIdentity, tl })
+  const outcome = await deliverAfterWake({ command, session, sessionId, userId, turnAgent, awakeEarly, sendPrompt, beforeSend: revalidateBeforeSend, identityBound: turnIdentity, tl })
     .catch(async (err) => {
       if (wokeFrom) await undoWake();
       throw err;
@@ -269,4 +283,15 @@ export async function continueSession(
     await undoWake();
   }
   return outcome;
+}
+
+/** Why the session's box cannot answer: an earlier dev tunnel made it. No read unless this stack runs on a quick tunnel. */
+async function staleDevTunnelBox(sessionId: string): Promise<string | null> {
+  if (!onDevTunnel()) return null;
+  const [box] = await db
+    .select({ config: sessionSandboxes.config })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, sessionId))
+    .limit(1);
+  return box ? staleDevTunnelReason(box.config) : null;
 }

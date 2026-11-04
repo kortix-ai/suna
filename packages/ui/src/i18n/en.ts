@@ -773,10 +773,6 @@ const catalog = {
           "name": "Marketplace",
           "description": "Browse and install skills from community and vendor registries. Sources, updates, and team scopes are still changing."
         },
-        "warm_sessions": {
-          "name": "Warm Sessions",
-          "description": "Keep one sandbox ready for instant session starts. The idle sandbox uses compute."
-        },
         "secrets_egress": {
           "name": "Network-Enforced Secrets",
           "description": "Control which tools and destinations can receive project secrets."
@@ -800,14 +796,6 @@ const catalog = {
         "event_triggers": {
           "name": "Composio event triggers",
           "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. Kortix also checks your connected apps itself."
-        },
-        "volumes": {
-          "name": "Volumes",
-          "description": "Shared Files for this project."
-        },
-        "drives": {
-          "name": "Drive",
-          "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."
         },
         "session_log_restore": {
           "name": "Session log restore",
@@ -852,6 +840,14 @@ const catalog = {
         "agent_teams": {
           "name": "Agent teams",
           "description": "A lead session starts named teammates that share one task list. Each teammate takes a task, works on it in its own session and tells the lead when it is done. You see every teammate and its tasks under the lead's composer. Messages between sessions work without this flag."
+        },
+        "voice_call": {
+          "name": "Voice calls",
+          "description": "Call the session's agent from the session page and talk it through. It hears you, answers in a voice, sees a screen you share, and works in the same session, so the conversation stays in the chat."
+        },
+        "shared_drives": {
+          "name": "Shared drives",
+          "description": "Drives the whole team can use: an admin makes a Drive and adds agents to it. Every session of those agents mounts it, and everyone who may use one of them can open it. Off, every person has only My files."
         }
       },
       "channelsSwitch": {
@@ -1210,6 +1206,7 @@ const catalog = {
         "chat": "Chat",
         "slack": "Slack",
         "telegram": "Telegram",
+        "discord": "Discord",
         "teams": "Teams",
         "email": "Email",
         "scheduled": "Scheduled",
@@ -1390,6 +1387,17 @@ const catalog = {
       "label": "Restart session",
       "pending": "Restarting…",
       "ownerOnly": "Only the session owner or a project manager can restart this session."
+    },
+    "image": {
+      "title": "Preparing the sandbox image",
+      "states": {
+        "resolving": "Choosing the image for this session.",
+        "serving_last_ready": "Starting from the last ready image. The new one builds in the background.",
+        "waiting_for_build": "The first image for this project is building. The session starts when it is ready.",
+        "building": "Building the first image for this project. This happens once and takes a few minutes.",
+        "copying_to_region": "Copying the image to this session's region.",
+        "waiting_for_provider": "The image is finishing. The session starts when it is ready."
+      }
     }
   },
   "sessionDelete": {
@@ -1662,7 +1670,7 @@ const catalog = {
       "sending": "Sending..."
     },
     "unified": {
-      "welcome": "Welcome to Kortix CompanyOS",
+      "welcome": "Welcome to {name}",
       "email": "Email",
       "emailPlaceholder": "Your email address",
       "password": "Password",
@@ -4278,6 +4286,7 @@ const catalog = {
       "textedac6130dac7": "Commit a SKILL.md to the repo without a chat session.",
       "textfc73e9ad2dae": "Replied in Slack",
       "text8faf56a14a8d": "Replied in Telegram",
+      "text3416de570ab5": "Replied in Discord",
       "text8ccfe10f2f2d": "Publish to your Teams catalog",
       "text36f6474748b3": "Publishing the app to your Teams catalog…",
       "text45b9df5730ac": "Waiting for a Teams admin to approve the app",
@@ -4514,7 +4523,7 @@ const catalog = {
       "texta5e68dfbff0b": "#d63a37",
       "texta619e901f9c0": "Failed to paste: {value0}",
       "texta63fb2eebd02": "Every tool runs without asking. Only the rules below can stop one.",
-      "texta64b1e9803b3": "GitHub stars on kortix-ai/suna",
+      "texta64b1e9803b3": "GitHub stars on kortix-ai/CompanyOS",
       "texta67b04cd5c49": "Worker",
       "texta680491a9229": "Last activity: {value0}",
       "texta6879661926e": "Downloading {value0}…",
@@ -6311,11 +6320,11 @@ const catalog = {
     "getAKey": "Get a key"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "Search model, provider or error",
+    "searchPlaceholder": "Search model, provider, error or id",
     "requestsLabel": "{count, plural, one {request} other {requests}}",
     "errorsLabel": "{count, plural, one {error} other {errors}}",
     "medianLatency": "median latency",
-    "noMatch": "No loaded request matches “{query}”",
+    "noMatch": "No request matches “{query}”",
     "histogram": "Requests over time",
     "close": "Close",
     "now": "Now",
@@ -6323,7 +6332,33 @@ const catalog = {
     "topModel": "Top model",
     "noRequests": "No requests",
     "cardErrors": "Errors",
-    "cardMedianLatency": "Median latency"
+    "cardMedianLatency": "Median latency",
+    "noFilterMatch": "No request matches these filters",
+    "sessionColumn": "Session",
+    "untitledSession": "Untitled session",
+    "openInSession": "Open in session",
+    "openMessage": "Open at this message",
+    "onlyThisSession": "Only this session",
+    "noSession": "Not from a session",
+    "fromGatewayKey": "Sent with a gateway key, not from a session",
+    "messageLabel": "Message",
+    "turnLabel": "Turn",
+    "threadLabel": "Subagent thread",
+    "sessionIdLabel": "Session id",
+    "byTimeHint": "Sent before sessions named their messages: the link opens the turn that was running at that time.",
+    "filter": "Filter",
+    "filterTime": "Time",
+    "filterModel": "Model",
+    "filterProvider": "Provider",
+    "filterError": "Error",
+    "clearFilters": "Clear filters",
+    "facetEmptyDay": "None in the last 24 hours",
+    "facetEmptyWeek": "None in the last 7 days",
+    "windowAny": "Any time",
+    "window15m": "Last 15 minutes",
+    "window1h": "Last hour",
+    "window24h": "Last 24 hours",
+    "window7d": "Last 7 days"
   },
   "modelsList": {
     "onCount": "{on} of {total} on",
@@ -6459,7 +6494,7 @@ const catalog = {
     "createProjectInstead": "Create a new project instead"
   },
   "projectSelector": {
-    "welcome": "Welcome to Kortix CompanyOS",
+    "welcome": "Welcome to {name}",
     "welcomeBack": "Welcome back",
     "descriptionNew": "Create your first project, or join one your team shared.",
     "descriptionReturning": "Open a project, or create a new one.",
@@ -6743,6 +6778,23 @@ const catalog = {
     "channelAccessAllowAria": "Allow {name}",
     "channelAccessRemoveTitle": "Remove {name}?",
     "telegramRemoveDescription": "{name} can no longer talk to the bot. To allow them again, add their user ID or allow their next request.",
+    "discordHeroTitle": "Bring your agent to Discord",
+    "discordHeroLede": "Add the Kortix app to your server. Mention it in a channel and the agent answers in a thread. People can also message it directly.",
+    "discordUnavailable": "Discord is not set up on this Kortix deployment.",
+    "discordPitch": "Chat with your agent in your Discord server.",
+    "discordAddToDiscord": "Add to Discord",
+    "discordConnectedLede": "Mention @Kortix in a channel, or message it directly. It answers the people you allow.",
+    "discordOpen": "Open Discord",
+    "discordDisconnected": "Discord disconnected",
+    "discordUsersDescription": "Only these people can talk to the bot. When someone else mentions or messages it, they show up here.",
+    "discordUsersEmptyDescription": "Ask someone to mention or message the bot, then allow their request or add their user ID.",
+    "discordUsersLoadError": "Could not load the Discord users.",
+    "discordAddByIdHint": "The bot replies to anyone it does not know with their user ID.",
+    "discordAddByIdInvalid": "A Discord user ID is a number of 17 to 20 digits, such as 123456789012345678.",
+    "discordRemoveDescription": "{name} can no longer talk to the bot. To allow them again, add their user ID or allow their next request.",
+    "mockDiscordThread": "launch",
+    "mockDiscordAsk": "Did the deploy finish?",
+    "mockDiscordReply": "Yes, 4 minutes ago. All checks are green and the site is live.",
     "otherWaysToConnect": "Other ways to connect",
     "computerHeroTitle": "Bring your agent to your computer",
     "computerConnectedTitle": "{count, plural, one {Your computer is connected} other {# computers are connected}}",
@@ -7450,48 +7502,49 @@ const catalog = {
       "write": "Can edit",
       "manage": "Can share"
     },
-    "addAccess": "Add a person, team or agent",
+    "addAccess": "Add an agent",
     "notGrantable": "This folder holds the tree together and can't be shared. Share a folder inside it.",
-    "viewOnlyAccess": "Only people who can share this folder can change who has access.",
+    "viewOnlyAccess": "Only project managers can change which agents get this folder.",
     "noGrants": "Nobody has been given access here yet. Project admins can open every folder.",
     "myFolder": "My folder",
     "myFolderHint": "Your own folder: only you and the project's admins can open it, and it is your desktop in your sessions",
     "sharedWithMeHint": "Folders other people shared with you",
     "sessionNoFolders": "No folders are mounted in this session.",
-    "folderAccessDescription": "Choose who can open this folder and everything in it. A session gets the folder when its agent, its project or the person who started it has access.",
+    "folderAccessDescription": "Choose which agents get this folder. Every session of a picked agent mounts it, and everyone who may use that agent can open it.",
     "whoCanAccess": "Who can access",
     "whoCanAccessFolder": "Who can access {name}",
-    "accessPanelDescription": "People, teams and agents with access get this folder and everything in it.",
-    "accessPanelRoot": "Open a folder to choose who can access it. Company is shared with everyone in the project. Each person's own folder opens for them and the project's admins.",
+    "accessPanelDescription": "Agents with access get this folder and everything in it, and so does everyone who may use them.",
+    "accessPanelRoot": "Open a folder to choose which agents get it. Each person's own folder opens for them and the project's admins.",
     "audienceEveryoneDescription": "Everyone who works in this project, and every session in it.",
     "audienceAdmins": "Admins only",
     "audienceAdminsShort": "Project managers can open and share it",
-    "audienceAdminsDescription": "Project managers can open and share it. No session gets it until you share it.",
+    "audienceAdminsDescription": "Project managers can open it. No agent gets it until you add one.",
     "audienceOnlyYou": "Only you",
     "audienceOnlyOwner": "Only {name}",
     "audienceOwnerDescription": "A person's own folder opens for them and the project's admins. Each time an admin opens it, its owner can see that.",
-    "audienceSpecific": "Specific people, teams or agents",
-    "audienceSpecificDescription": "Only the people, teams and agents you pick, plus project managers. An agent gets the folder in every one of its sessions.",
+    "audienceSpecific": "Specific agents",
+    "audienceSpecificDescription": "Every session of the agents you pick mounts it. Everyone who may use one of them can open it, plus project managers.",
     "inheritedEveryoneNote": "Everyone in this project already has access through {path}. Change it there to narrow it.",
     "everyoneCan": "Everyone in this project",
     "alsoNamed": "Also give access to",
-    "peopleWithAccess": "People, teams and agents",
+    "peopleWithAccess": "Agents",
     "agentMountsMeta": "Every session of this agent",
     "teamMeta": "Team",
     "levelFor": "Access for {name}",
     "inheritedTitle": "Has access from a folder above",
     "resultEveryone": "Everyone in this project can open this folder.",
     "resultAdmins": "Only project managers can open this folder.",
-    "resultSpecific": "{count, plural, one {Only project managers and the one you picked can open this folder.} other {Only project managers and the # you picked can open this folder.}}",
+    "resultSpecific": "{count, plural, one {Project managers and everyone who may use the agent you picked can open this folder.} other {Project managers and everyone who may use the # agents you picked can open this folder.}}",
     "you": "You",
     "manageFolderAccess": "Manage access",
     "viewFolderAccess": "See access",
     "myDrive": "My files",
     "allFiles": "All files",
+    "drivesSection": "Drives",
     "volumeHint": "A separate volume. Sessions mount each one on its own under /drives.",
     "teamFolders": "Team folders",
     "adminSection": "Admin",
-    "newTeamFolder": "New team folder",
+    "newTeamFolder": "New folder",
     "audienceQuestion": "Who can open it?",
     "badgeEveryone": "Everyone",
     "badgePeople": "{count, plural, one {# person} other {# people}}",
@@ -7522,6 +7575,7 @@ const catalog = {
     "accountStorageIncomplete": "Some projects could not be measured right now.",
     "folderInfo": {
       "audienceYouAndAdmins": "You and project admins",
+      "audienceAgentUsers": "Everyone who may use {agent}",
       "audienceOwnerAndAdmins": "Owner and admins",
       "boxPathHint": "Where sessions see this folder. Click to copy.",
       "pathCopied": "Copied",
@@ -8143,7 +8197,7 @@ const catalog = {
       "project": {
         "title": "Project setting",
         "label": "My Kortix",
-        "help": "New sessions start with My Kortix. Kortix maintains its prompt and tools. To turn it off, set <code>builtin_agents.my_kortix: false</code> in kortix.yaml."
+        "help": "My Kortix is on in this project. Kortix maintains its prompt and tools. To turn it off, delete <code>builtin_agents.my_kortix</code> from kortix.yaml or set it to false."
       }
     },
     "modelView": {
@@ -9281,6 +9335,28 @@ const catalog = {
     "agentControl": "Kortix has control",
     "returnControl": "Return control",
     "escape": "Esc"
+  },
+  "voiceCall": {
+    "title": "Voice call",
+    "call": "Call",
+    "start": "Start a voice call",
+    "end": "End call",
+    "connecting": "Connecting…",
+    "listening": "Listening",
+    "speaking": "Speaking",
+    "reconnecting": "Reconnecting…",
+    "you": "You",
+    "mute": "Mute microphone",
+    "unmute": "Unmute microphone",
+    "noMicrophone": "No microphone access. Allow the microphone for this site and call again.",
+    "shareScreen": "Share screen",
+    "stopSharing": "Stop sharing screen",
+    "ended": "Call ended",
+    "failed": "Could not start the call",
+    "lost": "Could not reconnect the call",
+    "unavailable": "This session's sandbox started before voice calls were turned on. Calls work from its next start.",
+    "callAgain": "Call again",
+    "close": "Close"
   },
   "agentCapabilities": {
     "skillsTitle": "Skills",

@@ -87,6 +87,179 @@ test('staged web artifacts: regenerate, stage, refuse partial inputs and preserv
   }
 });
 
+test('staged web artifacts: regenerate the kortix.yaml reference region from staged schema inputs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'web-artifacts-kortix-doc-'));
+  const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+  const write = (path, value) => {
+    mkdirSync(join(dir, path, '..'), { recursive: true });
+    writeFileSync(join(dir, path), value);
+  };
+  const run = (env = process.env) =>
+    spawnSync('sh', [join(root, 'scripts/refresh-staged-web-artifacts.sh')], {
+      cwd: dir,
+      encoding: 'utf8',
+      env,
+    });
+  try {
+    git('init', '-q');
+    git('config', 'user.name', 'Synthetic');
+    git('config', 'user.email', 'agent@kortix.ai');
+    git('config', 'core.hooksPath', '/dev/null');
+    for (const script of ['generate-kortix-yaml-doc.mjs', 'docs-generated-region.mjs']) {
+      write(`apps/web/scripts/${script}`, '');
+      copyFileSync(join(root, 'apps/web/scripts', script), join(dir, 'apps/web/scripts', script));
+    }
+    copyFileSync(join(root, 'apps/web/scripts/build-content-timestamps.mjs'), join(dir, 'apps/web/scripts/build-content-timestamps.mjs'));
+    symlinkSync(join(root, 'apps/web/node_modules'), join(dir, 'apps/web/node_modules'), 'dir');
+    write('apps/api/src/feature-flags/registry.ts', '');
+    copyFileSync(
+      join(root, 'apps/api/src/feature-flags/registry.ts'),
+      join(dir, 'apps/api/src/feature-flags/registry.ts'),
+    );
+    mkdirSync(join(dir, 'apps/web/public/schema'), { recursive: true });
+    for (const schemaFile of ['kortix.schema.json', 'kortix.v3.schema.json']) {
+      copyFileSync(
+        join(root, 'apps/web/public/schema', schemaFile),
+        join(dir, 'apps/web/public/schema', schemaFile),
+      );
+    }
+    write(
+      'apps/web/content/docs/developers.mdx',
+      "# Developers\n\n{/* generated:kortix-yaml:start */}\n\nstale\n\n{/* generated:kortix-yaml:end */}\n",
+    );
+    execFileSync('bun', ['apps/web/scripts/generate-kortix-yaml-doc.mjs'], {
+      cwd: dir,
+      stdio: 'pipe',
+    });
+    git('add', '.');
+    git('commit', '-qm', 'fixture');
+    // The repo commits the content-timestamps manifest alongside the pages.
+    // The manifest's value is the commit date of the fixture commit (the only
+    // commit touching the page), deterministic from here on.
+    execFileSync('node', ['apps/web/scripts/build-content-timestamps.mjs', '--strict'], { cwd: dir, stdio: 'pipe' });
+    git('add', 'apps/web/src/lib/seo/content-timestamps.json');
+    git('commit', '-qm', 'timestamps');
+
+    // A published-schema change staged without the regenerated region: the
+    // commit must carry the fresh region (the KRTX-3954 shape, where the
+    // region went stale one schema change earlier).
+    const schemaPath = join(dir, 'apps/web/public/schema/kortix.schema.json');
+    const schema = readFileSync(schemaPath, 'utf8');
+    const overlap = 'while the previous prompt still waits in that session.';
+    assert.ok(schema.includes(overlap), 'fixture schema expected to carry the overlap description');
+    writeFileSync(schemaPath, schema.replace(overlap, 'while the previous prompt waits in the session queue.'));
+    git('add', 'apps/web/public/schema/kortix.schema.json');
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    const stagedDoc = git('show', ':apps/web/content/docs/developers.mdx');
+    assert.match(stagedDoc, /waits in the session queue/);
+    assert.doesNotMatch(stagedDoc, /waits in that session/);
+
+    // Idempotent: a second run changes nothing.
+    const first = git('diff', '--cached');
+    const second = run();
+    assert.equal(second.status, 0, second.stderr);
+    assert.equal(git('diff', '--cached'), first);
+
+    // An unstaged hand edit of the page is refused, never overwritten.
+    const stagedPage = git('show', ':apps/web/content/docs/developers.mdx');
+    write('apps/web/content/docs/developers.mdx', `${stagedPage}\n<!-- hand edit -->`);
+    const refused = run();
+    assert.notEqual(refused.status, 0);
+    assert.match(refused.stderr, /unstaged/);
+    assert.match(readFileSync(join(dir, 'apps/web/content/docs/developers.mdx'), 'utf8'), /hand edit/);
+    writeFileSync(join(dir, 'apps/web/content/docs/developers.mdx'), stagedPage);
+
+    // The generator needs bun (it shares the region helper that reads the
+    // flag registry .ts). Without it the commit is refused with the
+    // regenerate command, never a silent stale doc.
+    const stubBin = join(dir, 'stub-bin');
+    mkdirSync(stubBin);
+    for (const tool of ['git', 'grep', 'node', 'sh']) {
+      symlinkSync(
+        execFileSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).trim(),
+        join(stubBin, tool),
+      );
+    }
+    const noBun = run({ ...process.env, PATH: stubBin });
+    assert.notEqual(noBun.status, 0);
+    assert.match(noBun.stderr, /generate-kortix-yaml-doc\.mjs/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('staged web artifacts: regenerate the learnings index from staged ledger entries', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'web-artifacts-learnings-'));
+  const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+  const write = (path, value) => {
+    mkdirSync(join(dir, path, '..'), { recursive: true });
+    writeFileSync(join(dir, path), value);
+  };
+  const run = () =>
+    spawnSync('sh', [join(root, 'scripts/refresh-staged-web-artifacts.sh')], {
+      cwd: dir,
+      encoding: 'utf8',
+    });
+  let n = 0;
+  const entry = (slug) => {
+    n += 1;
+    const stamp = `2026-01-0${n}T0${n}0000Z-${slug}.md`;
+    write(
+      `.agents/skills/learnings/entries/${stamp}`,
+      `---\nrecorded: 2026-01-0${n}T00:00:00Z\nincident_date: 2026-01-0${n}\n---\n# Fixture entry ${slug}\n\n**Rule:** Run the synthetic command.\n`,
+    );
+  };
+  try {
+    git('init', '-q');
+    git('config', 'user.name', 'Synthetic');
+    git('config', 'user.email', 'agent@kortix.ai');
+    git('config', 'core.hooksPath', '/dev/null');
+    const indexScript = '.agents/skills/learnings/scripts/index.sh';
+    mkdirSync(join(dir, '.agents/skills/learnings/scripts'), { recursive: true });
+    copyFileSync(join(root, indexScript), join(dir, indexScript));
+    entry('first');
+    git('add', '.');
+
+    // Staging an entry without its index line: the commit carries the
+    // regenerated MEMORY.md (the KRTX-3954 shape, five entries one index).
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    const memory = git('show', ':.agents/skills/learnings/MEMORY.md');
+    assert.match(memory, /Fixture entry first/);
+    git('add', '.');
+    git('commit', '-qm', 'fixture');
+
+    entry('second');
+    git('add', '.agents/skills/learnings/entries');
+    assert.equal(run().status, 0);
+    assert.match(git('show', ':.agents/skills/learnings/MEMORY.md'), /Fixture entry second/);
+    git('add', '.agents/skills/learnings/MEMORY.md');
+
+    // An unstaged or untracked entry would make the committed index list a
+    // line the committed entries cannot generate. Refused, never a silent
+    // stale or unreadable ledger.
+    const stagedMemory = git('show', ':.agents/skills/learnings/MEMORY.md');
+    entry('third');
+    const refused = run();
+    assert.notEqual(refused.status, 0);
+    assert.match(refused.stderr, /unstaged/);
+    assert.equal(git('show', ':.agents/skills/learnings/MEMORY.md'), stagedMemory);
+
+    // An entry without a # title fails the index build with the file named.
+    write(
+      '.agents/skills/learnings/entries/2026-01-09T000900Z-untitled.md',
+      '---\nrecorded: 2026-01-09T00:00:00Z\n---\nno title line\n',
+    );
+    git('add', '.agents/skills/learnings/entries');
+    const noTitle = run();
+    assert.notEqual(noTitle.status, 0);
+    assert.match(noTitle.stderr, /no # title line/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('staged web artifacts: regenerate the audit-actions doc from staged audit label inputs', () => {
   const dir = mkdtempSync(join(tmpdir(), 'web-artifacts-audit-doc-'));
   const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });

@@ -587,13 +587,13 @@
     "allCredentials": "すべての認証情報と連携",
     "subscriptionData": "サブスクリプションと請求データ",
     "gracePeriod": "30日間の献猶期間",
-    "gracePeriodDescription": "アカウントは30日後に削除予定となります。献猷期間中はいつでもこのリクエストをキャンセルできます。",
+    "gracePeriodDescription": "アカウントは14日後に削除予定となります。献猷期間中はいつでもこのリクエストをキャンセルできます。",
     "typeDeleteToConfirm": "{{text}}と入力して確認",
     "deletePlaceholder": "削除",
     "deleteAccount": "アカウント削除",
     "cancelDeletion": "削除キャンセル",
     "processing": "処理中...",
-    "deletionScheduledSuccess": "アカウントは30日後に削除されます。いつでもこのリクエストをキャンセルできます。",
+    "deletionScheduledSuccess": "アカウントは14日後に削除されます。いつでもこのリクエストをキャンセルできます。",
     "cancelDeletionTitle": "アカウント削除キャンセル",
     "cancelDeletionDescription": "アカウントの削除をキャンセルしますか？アカウントとすべてのデータが保存されます。",
     "back": "戻る",
@@ -606,20 +606,20 @@
     "notAvailableTitle": "このサーバーでは利用できません",
     "projectsAndSessions": "プロジェクトとセッション",
     "credentialsAndConnections": "認証情報と接続",
-    "subscriptionAndBilling": "サブスクリプションと請求",
+    "subscriptionAndBilling": "サブスクリプション",
     "when": "削除のタイミング",
-    "in30Days": "30日後",
+    "in14Days": "14日後",
     "immediately": "今すぐ",
     "deleteTitle": "アカウントを削除しますか？",
     "deleteNowTitle": "今すぐアカウントを削除しますか？",
-    "deleteScheduledDescription": "アカウントは30日後に削除されます。それまではキャンセルできます。",
+    "deleteScheduledDescription": "アカウントは14日後に削除されます。それまではキャンセルできます。",
     "deleteNowDescription": "アカウントとそのデータは今すぐ削除されます。元に戻すことはできません。",
     "deleteNow": "今すぐ削除",
     "deleting": "削除中…",
     "cancelling": "キャンセル中…",
     "finalTitle": "本当によろしいですか？",
-    "finalDescriptionNow": "アカウント内のすべて（プロジェクト、セッション、認証情報、請求情報）が今すぐ削除されます。元に戻すことはできません。",
-    "finalDescriptionScheduled": "アカウント内のすべて（プロジェクト、セッション、認証情報、請求情報）が30日後に削除されます。それまではキャンセルできます。"
+    "finalDescriptionNow": "プロジェクト、セッション、認証情報は今すぐ削除されます。請求記録は法律で定められた期間保管されます。元に戻すことはできません。",
+    "finalDescriptionScheduled": "プロジェクト、セッション、認証情報は14日後に削除されます。請求記録は法律で定められた期間保管されます。それまではキャンセルできます。"
   },
   "models": {
     "selectModel": "モデルを選択",
@@ -1279,5 +1279,16 @@
     "retryHour_other": "{{count}}時間後に再試行してください。",
     "unavailable": "画像を表示できません",
     "details": "画像の詳細"
+  },
+  "sessionImage": {
+    "title": "サンドボックスイメージを準備しています",
+    "states": {
+      "resolving": "このセッションのイメージを選択しています。",
+      "serving_last_ready": "最後に準備できたイメージで起動します。新しいイメージはバックグラウンドでビルドされます。",
+      "waiting_for_build": "このプロジェクトの最初のイメージをビルド中です。準備ができるとセッションが開始します。",
+      "building": "このプロジェクトの最初のイメージをビルドしています。これは一度だけで、数分かかります。",
+      "copying_to_region": "このセッションのリージョンにイメージをコピーしています。",
+      "waiting_for_provider": "イメージを仕上げています。準備ができるとセッションが開始します。"
+    }
   }
 }

@@ -30,7 +30,7 @@ describe('a badge with no brand of its own', () => {
   });
 
   test('a platform this build does not know is a neutral mark in the text color, not the Telegram plane', () => {
-    const svg = renderToStaticMarkup(<ChannelBrandMark platform={'Discord' as ChannelPlatform} />);
+    const svg = renderToStaticMarkup(<ChannelBrandMark platform={'Mastodon' as ChannelPlatform} />);
     expect(svg).toContain('currentColor');
     expect(svg).not.toContain('#29B6F6');
   });

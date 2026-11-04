@@ -72,8 +72,9 @@ export interface GitTriggerSpec {
   /** Any trigger type (`max_runs_per_day`): runs started in a UTC day. Omitted when unset: no daily cap. */
   maxRunsPerDay?: number;
   /**
-   * `overlap` (KRTX-1721), fresh session mode only: `skip` holds a fire while
-   * the trigger's previous run is still active (`lib/trigger-overlap.ts`).
+   * `overlap` (KRTX-1721): `skip` holds a fire while the trigger's previous run
+   * is still active, or (reuse, pinned, keyed) while its previous prompt still
+   * waits in that session's queue (`lib/trigger-overlap.ts`).
    * Omitted when unset: `skip` for a cron trigger, `allow` for the others.
    */
   overlap?: 'skip' | 'allow';
@@ -229,6 +230,25 @@ export interface ParsedManifest {
    * prompt files from `overlay`.
    */
   legacy?: { from: 1 | 2; overlay: Record<string, string>; dropped: string[]; deletes: string[]; error?: string };
+  /**
+   * Set when the file on the default branch is not YAML: this manifest is the
+   * last commit's file that is, which the project runs until the file is
+   * fixed. A write refuses it (`manifestWrites`): an edit of this text would
+   * revert every change since `commit`.
+   */
+  fallback?: ManifestFallback;
+}
+
+/** Where a last-good manifest came from, and why (`ParsedManifest.fallback`). */
+export interface ManifestFallback {
+  /** The syntax error of the file on the default branch. */
+  error: string;
+  line?: number;
+  column?: number;
+  /** The default-branch commit whose file is not YAML. */
+  brokenCommit: string;
+  /** The commit this manifest was read at. */
+  commit: string;
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */

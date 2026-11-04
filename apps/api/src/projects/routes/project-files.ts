@@ -1,4 +1,5 @@
 /** A project's repository contents: files, archive, search, history, branches, commits, and diffs. */
+import { isManifestSyntaxError, manifestCandidatePaths, parseManifestText } from '@kortix/manifest-schema';
 import { createHash } from 'node:crypto';
 import { canonicalTreePath, normalizeTreePath } from '../git/mirror';
 import { callerKortixSessionId } from '../../middleware/caller-session';
@@ -88,6 +89,19 @@ const DirectoryListingSchema = z
   })
   .openapi('ProjectDirectoryListing');
 
+/** Why `content` may not be saved as the manifest at `path`, or null (not the manifest, or valid YAML). */
+function manifestSyntaxErrorOf(path: string, content: string, manifestPath: string | null): string | null {
+  if (!manifestCandidatePaths(manifestPath).includes(path)) return null;
+  try {
+    parseManifestText(content);
+    return null;
+  } catch (err) {
+    if (!isManifestSyntaxError(err)) return null;
+    const at = err.line ? `${path}:${err.line}${err.column ? `:${err.column}` : ''}` : path;
+    return `${at} is not valid YAML (${err.message}). Fix it and save again.`;
+  }
+}
+
 export function registerProjectFilesRoutes(): void {
   projectsApp.openapi(
     createRoute({
@@ -130,6 +144,10 @@ export function registerProjectFilesRoutes(): void {
         actingTokenId: c.get('iamTokenId'), row: loaded.row,
       });
       if (denier?.isDenied(path)) return c.json({ error: 'File not found' }, 404);
+      // The push gate's rule for an edit made here: the default branch never
+      // gets a kortix.yaml that is not YAML (the git proxy checks pushes).
+      const syntaxError = body.ref === loaded.row.defaultBranch ? manifestSyntaxErrorOf(path, body.content, loaded.row.manifestPath) : null;
+      if (syntaxError) return c.json({ error: syntaxError, code: 'manifest_invalid' }, 409);
       try {
         const gitProject = await withProjectGitAuth(loaded.row);
         if (!(await remoteBranchExists(gitProject, body.ref))) return c.json({ error: 'Branch not found' }, 404);

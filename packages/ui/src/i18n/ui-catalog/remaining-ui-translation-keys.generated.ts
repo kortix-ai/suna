@@ -266,7 +266,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textd9d167d882e5',
   'Get the app for your desktop, your phone, or your terminal.': 'text86522c506bbf',
   'git push origin main': 'text16f880284c51',
-  'GitHub stars on kortix-ai/suna': 'texta64b1e9803b3',
+  'GitHub stars on kortix-ai/CompanyOS': 'texta64b1e9803b3',
   'Give agents access to outside tools — and reach them from Slack, Teams or email.':
     'text5c61792162c9',
   'Give another app a private address that starts an agent when it sends a request.':

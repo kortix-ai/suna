@@ -43,6 +43,7 @@ import { cloudChildReport, cloudChildToolDetails, cloudSpawnSession, cloudStopCh
 import type { ControlPlane } from './extensions/control-plane'
 import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
 import { TEAM_TASK_TOOLS, teamTasks } from './extensions/team-tasks'
+import { VOICE_CALL_FLAG, voice } from './extensions/voice'
 import { BUNDLED_WORKFLOWS } from './extensions/bundled-workflows'
 import { isWorkflowRunner, WORKFLOW_TOOL, WorkflowRuns, type WorkflowControlAnswer } from './extensions/workflow'
 import { contextRecord } from './extensions/context-record'
@@ -60,6 +61,7 @@ import { CLAUDE_AGENT_PROVIDER_ID } from '@kortix/api-contract/claude-agent'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
+import { withMessageIdentity } from './message-identity'
 import { TransientRetry, type RetryPlan } from './transient-retry'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
@@ -386,6 +388,26 @@ function replying(agent: Agent | null, turn: PiTurnEvents | null | undefined): {
   return message && turn?.messageId ? { id: turn.messageId, timestamp: message.timestamp } : null
 }
 
+/**
+ * Load, ahead of time, the modules `PiRuntime.start` imports. Boot calls this
+ * while the config release downloads, so `start` finds them evaluated instead
+ * of loading the coding agent, its tools and extensions after the release
+ * lands. The same specifiers as `start`: a module loads once per process.
+ * Never throws; a failed load surfaces where `start` imports it.
+ */
+export function preloadPiRuntimeModules(): void {
+  void Promise.all([
+    import('./model'),
+    import('./tools'),
+    import('@earendil-works/pi-agent-core'),
+    import('@earendil-works/pi-coding-agent'),
+    import('./extensions/host'),
+    import('./extensions/subagents'),
+    import('./extensions/workflow'),
+    import('./codemode'),
+  ]).catch(() => undefined)
+}
+
 export class PiRuntime {
   /** `ses_pi<sha>` of the session, or the root a restored dump names (adopted at `start`). */
   rootId: string
@@ -446,6 +468,7 @@ export class PiRuntime {
   private policy: PermissionPolicy = {}
   private adapter: PiTurnEvents | null = null
   private queue: Promise<unknown> = Promise.resolve()
+  private reconfigurePending = false
   private active: Turn | null = null
   private runningTools = 0
   /** Steered messages the running turn has not read, in send order (kortixd's queue in front of pi's). */
@@ -702,9 +725,12 @@ export class PiRuntime {
       if (this.compiledAgent()?.options) logger.warn('[pi] the agent sets `options`; pi does not apply provider options', { agent: this.agentName })
       const agent = new core.Agent({
         // `sessionId` names the thread, so a Claude subscription model keeps one Claude session per thread.
-        streamFn: withAgentSampling(
-          (model, context, options) => this.models!.models.streamSimple(model, context, { ...options, sessionId: this.rootId }),
-          () => this.sampling(this.compiledAgent(), this.selected!),
+        streamFn: withMessageIdentity(
+          withAgentSampling(
+            (model, context, options) => this.models!.models.streamSimple(model, context, { ...options, sessionId: this.rootId }),
+            () => this.sampling(this.compiledAgent(), this.selected!),
+          ),
+          { reserveMessageId: () => this.adapter!.reserveMessageId(), turnId: () => this.turnParent },
         ),
         convertToLlm,
         toolExecution: 'parallel',
@@ -745,7 +771,7 @@ export class PiRuntime {
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
         // The nested-call gate is first: pi runs `tool_call` handlers in load order and stops at the first block.
-        extensions: [this.nestedCallGate(), this.presentationExtension(), this.turnExtension(), ...this.contextExtensions(), subagents(this.kortixHost()), workflow(this.kortixHost()), ...this.multiAgentExtensions(), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
+        extensions: [this.nestedCallGate(), this.presentationExtension(), this.turnExtension(), ...this.contextExtensions(), subagents(this.kortixHost()), workflow(this.kortixHost()), ...this.voiceExtensions(), ...this.multiAgentExtensions(), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         // Every provider a turn may switch to: the gateway, and Claude subscription models.
@@ -801,6 +827,11 @@ export class PiRuntime {
    * runs on the new settings, a running turn finishes on the old ones.
    */
   async reconfigure(): Promise<{ changed: boolean }> {
+    if (this.active) {
+      this.reconfigurePending = true
+      return { changed: false }
+    }
+    this.reconfigurePending = false
     if (!this.agent || !this.models) return { changed: false }
     const { createPiModels } = await import('./model')
     const before = `${this.selected?.modelID}|${this.agentName}|${this.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG ?? ''}`
@@ -894,8 +925,8 @@ export class PiRuntime {
     const modelId = input.model
       ? promptModelId(input.model)
       : input.agent ? nativeModelId(this.compiled?.agent?.[agentName]?.model) : null
-    if (modelId && modelId !== selectId(this.selected!.providerID, this.selected!.modelID)) this.selected = this.models!.select(modelId)
-    this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected: this.selected! })
+    const selected = modelId ? this.models!.select(modelId) : this.selected!
+    this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected })
     this.dismissOpenQuestions()
     if (input.noReply) {
       // `noReply`: the next turn's model sees this message, and none
@@ -1242,6 +1273,11 @@ export class PiRuntime {
       turn.resolve('aborted')
       return
     }
+    if (this.reconfigurePending) await this.reconfigure()
+    const modelId = turn.input.model
+      ? promptModelId(turn.input.model)
+      : turn.input.agent ? nativeModelId(this.compiled?.agent?.[turn.agent]?.model) : null
+    if (modelId) this.selected = this.models!.select(modelId)
     // The turn's first model call reads every `noReply` message before it.
     this.unreadNoReply.clear()
     this.applyAgent(turn.agent)
@@ -1728,6 +1764,13 @@ export class PiRuntime {
     return enabledFeatureFlags(this.env).has(AGENT_TEAMS_FLAG)
   }
 
+  /** Voice calls with this session: the project's `voice_call` flag on, a top-level cloud session. */
+  private voiceExtensions(): InlineExtension[] {
+    const session = this.controlPlane()?.sessionId
+    if (!session || this.subagentContext.depth !== 0 || !enabledFeatureFlags(this.env).has(VOICE_CALL_FLAG)) return []
+    return [voice(session)]
+  }
+
   /** The lead whose task list this session uses: itself at depth 0, its lead as a teammate; null without agent teams. */
   private teamListLead(): string | null {
     const plane = this.controlPlane()
@@ -2073,9 +2116,12 @@ export class PiRuntime {
       retryPlan: (message) => retryStatus(retry.plan(message)),
     })
     const agent = new core.Agent({
-      streamFn: withAgentSampling(
-        (m, context, options) => this.models!.models.streamSimple(m, context, { ...options, sessionId: child.id }),
-        () => this.sampling(this.compiled?.agent?.[input.agent], selected),
+      streamFn: withMessageIdentity(
+        withAgentSampling(
+          (m, context, options) => this.models!.models.streamSimple(m, context, { ...options, sessionId: child.id }),
+          () => this.sampling(this.compiled?.agent?.[input.agent], selected),
+        ),
+        { reserveMessageId: () => adapter.reserveMessageId(), turnId: () => messageId, threadId: child.id },
       ),
       toolExecution: 'sequential',
       initialState: {

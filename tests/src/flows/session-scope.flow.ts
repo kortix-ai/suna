@@ -272,7 +272,6 @@ flow(
       'email',
       'telegram',
       'teams',
-      'warm',
       'trigger_session_key',
       'deletedAt',
       'deletedBy',
@@ -285,7 +284,6 @@ flow(
       'workspace_mode',
       'repository_access',
       'sandbox_slug',
-      'warmSandboxLocation',
       // The gateway fallback record. The turn-end revert writes `_from` into
       // the model pin, so a client value would pick the session's model.
       'opencode_model_fallback_from',
@@ -344,7 +342,6 @@ flow(
       ['source', 'trigger:scheduler'],
       ['trigger_kind', 'git'],
       ['trigger_slug', 'forged-trigger'],
-      ['warmSandboxLocation', 'us-east'],
     ] as const) {
       await ctx.step(`POST /sessions with metadata.${key} → 400 (server-managed)`, async () => {
         (
@@ -384,7 +381,7 @@ flow(
       const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
       read.status(200).body().has('$.metadata.kind', 'scope-probe');
       const metadata = read.json<{ metadata: Record<string, unknown> }>().metadata;
-      for (const key of ['legacy_migration', 'slack', 'email', 'warm']) {
+      for (const key of ['legacy_migration', 'slack', 'email']) {
         if (key in metadata) throw new Error(`metadata.${key} must not be stored, got ${JSON.stringify(metadata[key])}`);
       }
     });
@@ -425,7 +422,7 @@ flow(
     const sessionCount = async () =>
       (await db.query<{ n: number }>('SELECT count(*)::int AS n FROM kortix.project_sessions WHERE project_id = $1::uuid', [project.id])).rows[0]?.n ?? 0;
     try {
-      await ctx.step('the project runs My Kortix (no builtin_agents key); a My Kortix session and a worker each hold a session-bound credential', async () => {
+      await ctx.step('the project runs My Kortix (the seeded starter sets builtin_agents.my_kortix: true); a My Kortix session and a worker each hold a session-bound credential', async () => {
         meta = await seedBoundSession(ctx, db, project, 'SCOPE-8 meta');
         await db.query(`UPDATE kortix.project_sessions SET agent_name = 'mykortix' WHERE session_id = $1`, [meta.sessionId]);
         worker = await seedBoundSession(ctx, db, project, 'SCOPE-8 worker', 'scope-8-worker');

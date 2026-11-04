@@ -3,6 +3,9 @@
  * memory layer (Drive folder rights, DMs private to their owner), the file
  * list a turn carries (`system`, at the thread's mount paths), the "Used
  * memory" record written once per thread, and search over files.
+ *
+ * Drive is agent-first: there is no project-wide Company layer, and a public
+ * channel's folder is granted to nobody (project admins reach it by role).
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, memoryThreadLoads, projectSessions, projectSpaces, projects, sessionSandboxes } from '@kortix/db';
@@ -66,17 +69,20 @@ beforeAll(async () => {
     status: 'active',
     metadata: {
       driveMounts: [
-        { driveId: drive.driveId, kind: 'project', mountPath: '/drives/company', readOnly: false, subdir: '/Company', role: 'drive' },
+        // The writer agent's own Drive, the channel folder an admin granted to the agent, and Priya's folder.
+        { driveId: drive.driveId, kind: 'project', mountPath: '/drives/writer', readOnly: false, subdir: '/Agents/writer', role: 'drive' },
+        { driveId: drive.driveId, kind: 'project', mountPath: '/drives/marketing', readOnly: false, subdir: '/Company/Channels/marketing', role: 'drive' },
         { driveId: drive.driveId, kind: 'project', mountPath: '/drives/me', readOnly: false, subdir: priyaFolder, role: 'me' },
       ],
     },
   });
-  // Files already in Drive before Channels: read in place, nothing copied.
+  // Left over from the old project-wide Company layer: no thread, list or search reads it any more.
   volume.put('/Company/Memory/launch-plan.md', '# Launch plan\n\nShip on 2026-11-02, pricing at $49.\n');
   // The folder index agents keep: never a page, never listed to a turn, never a search hit.
   volume.put('/Company/Memory/MEMORY.md', '- [Launch plan](launch-plan.md) — pricing dates\n');
   volume.put('/Company/Channels/marketing/Memory/decisions/pricing.md', '# Pricing\n\nStays at $49 per seat.\n');
   volume.put('/Company/Channels/old/Memory/old-pricing.md', '# Old pricing\n');
+  volume.put('/Company/Channels/old/Memory/archive.md', '# Archive\n\nOld pricing notes.\n');
   volume.put(`${priyaFolder}/Memory/writer/tone.md`, '# Tone\n\nPlain words; pricing in euros.\n');
   volume.put(`${priyaFolder}/Memory/researcher/sources.md`, '# Sources\n');
 });
@@ -99,10 +105,15 @@ describe('who opens a layer', () => {
     await expect(resolveLayer(project, PRIYA_DM, person(SAM, true))).rejects.toMatchObject({ status: 404, code: 'memory_not_found' });
   });
 
-  test('Company and channels: every member writes, an archived channel is read-only, a caller outside the project gets 404', async () => {
-    expect(await resolveLayer(project, 'company', person(SAM))).toMatchObject({ root: '/Company/Memory', canWrite: true });
-    expect(await resolveLayer(project, OLD, person(SAM))).toMatchObject({ readOnly: true, canWrite: false });
-    await expect(resolveLayer(project, 'company', person(OUTSIDER, false, false))).rejects.toMatchObject({ status: 404 });
+  test('no Company layer for anyone; a public channel is admins-only, archived read-only; outside the project 404', async () => {
+    // The project-wide layer is gone: a member and an admin both get 404.
+    await expect(resolveLayer(project, 'company', person(SAM))).rejects.toMatchObject({ status: 404, code: 'memory_not_found' });
+    await expect(resolveLayer(project, 'company', person(SAM, true))).rejects.toMatchObject({ status: 404, code: 'memory_not_found' });
+    // Nothing grants a public channel's folder: a member gets 404, an admin manages it by role.
+    await expect(resolveLayer(project, MARKETING, person(SAM))).rejects.toMatchObject({ status: 404, code: 'memory_not_found' });
+    expect(await resolveLayer(project, MARKETING, person(SAM, true))).toMatchObject({ root: '/Company/Channels/marketing/Memory', canWrite: true });
+    expect(await resolveLayer(project, OLD, person(SAM, true))).toMatchObject({ readOnly: true, canWrite: false });
+    await expect(resolveLayer(project, MARKETING, person(OUTSIDER, false, false))).rejects.toMatchObject({ status: 404 });
     await expect(resolveLayer(project, 'not-a-key', person(SAM))).rejects.toMatchObject({ status: 404 });
   });
 
@@ -110,7 +121,7 @@ describe('who opens a layer', () => {
     const key = config.PLATINUM_API_KEY;
     (config as { PLATINUM_API_KEY?: string }).PLATINUM_API_KEY = '';
     try {
-      await expect(resolveLayer(project, 'company', person(SAM))).rejects.toMatchObject({ status: 403, code: 'feature_disabled' });
+      await expect(resolveLayer(project, PRIYA_DM, person(PRIYA))).rejects.toMatchObject({ status: 403, code: 'feature_disabled' });
     } finally {
       (config as { PLATINUM_API_KEY?: string }).PLATINUM_API_KEY = key;
     }
@@ -118,11 +129,12 @@ describe('who opens a layer', () => {
 });
 
 describe('the turn list and "Used memory"', () => {
-  test('a private channel thread lists Company, the channel and the owner’s DM at their mount paths', async () => {
+  test('a private channel thread lists the channel and the owner’s DM at their mount paths, no Company layer', async () => {
     const turn = (await memoryTurnContext(PROJECT, PRIVATE_THREAD, PRIYA))!;
     expect(turn.firstTurn).toBe(true);
-    expect(turn.system).toContain('### Company: /drives/company/Memory/\n- launch plan (launch-plan.md)');
-    expect(turn.system).toContain('### #marketing: /drives/company/Channels/marketing/Memory/\n- pricing (decisions/pricing.md)');
+    expect(turn.system).not.toContain('### Company');
+    expect(turn.system).not.toContain('launch-plan.md');
+    expect(turn.system).toContain('### #marketing: /drives/marketing/Memory/\n- pricing (decisions/pricing.md)');
     expect(turn.system).toContain('### Your memory with writer: /drives/me/Memory/ (save here only from the DM)\n- tone (writer/tone.md)');
     expect(turn.system).not.toContain('researcher/');
     expect(turn.system).not.toContain('MEMORY.md');
@@ -132,7 +144,8 @@ describe('the turn list and "Used memory"', () => {
 
   test('a thread with no recorded mounts is told the folders are not mounted', async () => {
     const turn = (await memoryTurnContext(PROJECT, THREAD, PRIYA))!;
-    expect(turn.system).toContain('### Company: not mounted in this thread');
+    expect(turn.system).toContain('### #marketing: not mounted in this thread');
+    expect(turn.system).not.toContain('### Company');
     expect(turn.loaded.every((layer) => layer.page_ids.length === 0)).toBe(true);
   });
 
@@ -141,20 +154,19 @@ describe('the turn list and "Used memory"', () => {
     const first = (await memoryTurnContext(PROJECT, PRIVATE_THREAD, PRIYA))!;
     await recordThreadLoad(PRIVATE_THREAD, first.loaded);
     await recordThreadLoad(PRIVATE_THREAD, []);
-    expect((await db.select().from(memoryThreadLoads).where(eq(memoryThreadLoads.sessionId, PRIVATE_THREAD)))[0]!.layers).toHaveLength(3);
+    expect((await db.select().from(memoryThreadLoads).where(eq(memoryThreadLoads.sessionId, PRIVATE_THREAD)))[0]!.layers).toHaveLength(2);
     expect((await memoryTurnContext(PROJECT, PRIVATE_THREAD, PRIYA))!.firstTurn).toBe(false);
     const owner = await threadUsage(PRIVATE_THREAD, PRIYA);
     expect(owner.layers.map((layer) => [layer.layer_key, layer.pages.map((p) => [p.page_id, p.type])])).toEqual([
-      ['company', [[pageIdOf('company', 'launch-plan.md'), 'other']]],
       [MARKETING, [[pageIdOf(MARKETING, 'decisions/pricing.md'), 'decisions']]],
       [PRIYA_DM, [[pageIdOf(PRIYA_DM, 'writer/tone.md'), 'other']]],
     ]);
-    expect((await threadUsage(PRIVATE_THREAD, SAM)).layers.map((layer) => layer.scope)).toEqual(['company', 'channel']);
-    volume.files.delete('/Company/Memory/launch-plan.md');
+    expect((await threadUsage(PRIVATE_THREAD, SAM)).layers.map((layer) => layer.scope)).toEqual(['channel']);
+    volume.files.delete('/Company/Channels/marketing/Memory/decisions/pricing.md');
     try {
-      expect((await threadUsage(PRIVATE_THREAD, PRIYA)).layers.map((layer) => layer.scope)).toEqual(['channel', 'dm']);
+      expect((await threadUsage(PRIVATE_THREAD, PRIYA)).layers.map((layer) => layer.scope)).toEqual(['dm']);
     } finally {
-      volume.put('/Company/Memory/launch-plan.md', '# Launch plan\n\nShip on 2026-11-02, pricing at $49.\n');
+      volume.put('/Company/Channels/marketing/Memory/decisions/pricing.md', '# Pricing\n\nStays at $49 per seat.\n');
     }
   });
 });
@@ -162,18 +174,21 @@ describe('the turn list and "Used memory"', () => {
 describe('search over files', () => {
   const titles = (result: { hits: { title: string }[] }) => result.hits.map((hit) => hit.title).sort();
 
-  test('a person searches Company, live channels and their own Memory folder; never another member’s', async () => {
+  test('a member searches only their own Memory folder; an admin the live channels; never another member’s, never Company', async () => {
     const priya = await searchMemory(project, person(PRIYA), { q: 'pricing', limit: 20 });
-    expect(titles(priya)).toEqual(['Launch plan', 'Pricing', 'Tone']);
+    expect(titles(priya)).toEqual(['Tone']);
     expect(priya.hits.find((hit) => hit.title === 'Tone')).toMatchObject({ layer_key: PRIYA_DM, scope: 'dm', layer_name: 'writer' });
-    expect(priya.hits[0]!.title).toBe('Pricing'); // a title hit ranks first
-    expect(titles(await searchMemory(project, person(SAM), { q: 'pricing', limit: 20 }))).toEqual(['Launch plan', 'Pricing']);
+    expect(titles(await searchMemory(project, person(SAM), { q: 'pricing', limit: 20 }))).toEqual([]);
+    expect(titles(await searchMemory(project, person(SAM, true), { q: 'pricing', limit: 20 }))).toEqual(['Pricing']);
   });
 
-  test('an archived channel only when named; another member’s DM by name is 404; type and limit narrow', async () => {
-    expect(titles(await searchMemory(project, person(SAM), { q: 'pricing', layer: OLD, limit: 20 }))).toEqual(['Old pricing']);
-    await expect(searchMemory(project, person(SAM), { q: 'pricing', layer: PRIYA_DM, limit: 20 })).rejects.toMatchObject({ status: 404 });
-    expect(titles(await searchMemory(project, person(PRIYA), { q: 'pricing', type: 'decisions', limit: 20 }))).toEqual(['Pricing']);
-    expect((await searchMemory(project, person(PRIYA), { q: 'pricing', limit: 1 })).hits).toHaveLength(1);
+  test('an archived channel only when named, and only for an admin; another member’s DM by name is 404; type and limit narrow', async () => {
+    const old = await searchMemory(project, person(SAM, true), { q: 'pricing', layer: OLD, limit: 20 });
+    expect(titles(old)).toEqual(['Archive', 'Old pricing']);
+    expect(old.hits[0]!.title).toBe('Old pricing'); // a title hit ranks first
+    await expect(searchMemory(project, person(SAM), { q: 'pricing', layer: OLD, limit: 20 })).rejects.toMatchObject({ status: 404 });
+    await expect(searchMemory(project, person(SAM, true), { q: 'pricing', layer: PRIYA_DM, limit: 20 })).rejects.toMatchObject({ status: 404 });
+    expect(titles(await searchMemory(project, person(SAM, true), { q: 'pricing', type: 'decisions', limit: 20 }))).toEqual(['Pricing']);
+    expect((await searchMemory(project, person(SAM, true), { q: 'pricing', layer: OLD, limit: 1 })).hits).toHaveLength(1);
   });
 });

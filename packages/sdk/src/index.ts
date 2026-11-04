@@ -615,6 +615,102 @@ export {
   pickerProviderList,
   type PickerProviderListInput,
 } from './core/models/provider-selection';
+/**
+ * Provider connections: the catalogue rows, how each provider connects, which
+ * providers a project's secrets connect, the list order, and who may use a new
+ * connection. The web Models page and the TUI `/providers` screen read these.
+ */
+export {
+  CODEX_AUTH_JSON_SECRET_NAME,
+  FIRST_CLASS_PROVIDER_IDS,
+  LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
+  PROVIDER_SUBSCRIPTIONS,
+  buildLlmProviderCatalog,
+  connectionAccessSummary,
+  connectionLabelOwnerName,
+  connectionNeedsReconnection,
+  connectionSharing,
+  orderProviderRows,
+  providerConnectMethod,
+  providerConnectedVia,
+  providerDisconnectPlan,
+  providerIdsWithCredentials,
+  providerKeyAccessFields,
+  supportsPooledProviderKey,
+  type ConnectionAccessChoice,
+  type ConnectionAccessSummary,
+  type LlmProviderCatalogSource,
+  type LlmProviderEntry,
+  type LlmProviderModel,
+  type LlmProviderSource,
+  type ProviderConnectMethod,
+  type ProviderConnectedVia,
+  type ProviderSubscription,
+} from './core/models/provider-connections';
+/**
+ * Connectors: a connector's status and provider label, its accounts and who may
+ * use each one, the Add account draft, sharing an account, the managed Connect
+ * Link poll, and one-click OAuth for direct servers. The web connectors pages
+ * and the TUI `/connectors` screen read these.
+ */
+export {
+  connectorDerivedState,
+  connectorDisplayName,
+  connectorProviderLabel,
+  connectorSetupStatus,
+  connectorStatusTone,
+  connectorUsable,
+  isConnectorAuthChallenge,
+  isManagedConnectorProvider,
+  type ConnectorDerivedState,
+  type ConnectorSetupStatus,
+  type ConnectorStatusTone,
+} from './core/connectors/connector-status';
+export {
+  connectionSharedWithEveryoneAfter,
+  connectorAccountNeedsSignIn,
+  connectorAccountVisibility,
+  connectorAudienceVisibility,
+  connectorConnectionRows,
+  emptyProjectConnectionSlot,
+  grantConnectionAccess,
+  listedConnectorAccounts,
+  newConnectorAccountAudienceFor,
+  newConnectorAccountGrantees,
+  newConnectorAccountLabelTaken,
+  newConnectorAccountReady,
+  planConnectionShare,
+  planPrivateConnectionShare,
+  proposeConnectorAccountLabel,
+  type ConnectionAudienceSelection,
+  type ConnectionSharePlan,
+  type ConnectorAccountVisibility,
+  type NewConnectorAccountAudience,
+  type NewConnectorAccountDraft,
+} from './core/connectors/connector-accounts';
+export {
+  CONNECT_LINK_POLL_INTERVAL_MS,
+  CONNECT_LINK_TIMEOUT_MS,
+  DEFAULT_PROJECT_CONNECTION_LABEL,
+  connectLinkTimeoutMessage,
+  connectLinkUrl,
+  isSharedDefaultConnectConflict,
+  pollConnectLinkFinalize,
+  projectConnectionConnectRestDeps,
+  projectConnectionConnectSteps,
+  type ConnectLinkPollOptions,
+  type ProjectConnectRoute,
+  type ProjectConnectionConnectDeps,
+} from './core/connectors/connect-link';
+export {
+  buildOAuth2ClientRegistrationInput,
+  oauth2AutoConnectPlan,
+  startConnectionOAuth2SignIn,
+  waitForConnectionOAuth2,
+  type ConnectionOAuth2SignInDeps,
+  type ConnectionOAuth2SignInStart,
+  type OAuth2AutoConnectPlan,
+} from './core/connectors/connector-oauth2-sign-in';
 export {
   latestPromptModel,
   resolveComposerModel,

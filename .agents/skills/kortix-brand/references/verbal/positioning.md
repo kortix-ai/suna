@@ -15,7 +15,8 @@ Rule format: **Rule.** — *Why:* — *Where:* — *When silent:*.
 | Comparative | The leading open-source alternative to Claude Cowork and ChatGPT Work | Search, social, launch, GitHub. Anchors against the known category. |
 | Manifesto line | A company is going to be a git repository | The deep thesis. Manifesto, founder voice, vision talks. Never a page title. |
 | Mission | Take a company from human to AGI, and let it keep every byte of itself on the way there. | Founder voice, about, hiring. Never a category. |
-| Promise | Hand it an outcome, AI agents run it 24/7 | What Kortix does for a company, beside what it is (D18, D29). Home hero subhead, the Outcomes section header, pitches. Never a page title. |
+| Promise | Hand it an outcome, AI agents run it 24/7 | What Kortix does for a company, beside what it is (D18, D29). The Outcomes section header, pitches. Not the home hero subhead since D35. Never a page title. |
+| Positioning line | The cloud-native agent harness for companies | What Kortix is underneath (D35). Home hero subhead, README tagline, docs index, Guide and Developers intros. The name stays CompanyOS; this line defines it. |
 
 **Rule.** Use "CompanyOS" as the category and "The open-source CompanyOS" as the tagline. — *Why:* D28 (2026-10-29, founder) renames the category from "AI Operating System" to CompanyOS; D10 (2026-10-04) set the operating-system idea. An operating system is the layer everything else runs on: agents, skills, memory, connectors, computers, channels and triggers. The phrase names that layer, and it scales from one person to a company. — *Where:* app | marketing | mobile | deck | email | CLI | GitHub. — *When silent:* use the tagline in titles and the category noun in sentences.
 
@@ -54,7 +55,7 @@ Kortix is the open-source CompanyOS: your agents, their skills, your company mem
 | PWA manifest `name` | "Kortix" | `description` = Short. |
 | README, GitHub About | Tagline (README) and Short (About) | Already correct. |
 | CLI banner and `--help` | Tagline | Already correct. |
-| Auth screen subtitle | None | The heading "Welcome to Kortix CompanyOS" stands alone (D30). |
+| Auth screen subtitle | None | The heading "Welcome to Kortix CompanyOS" stands alone (D30). A branded self-host instance shows its own product name there. |
 | Transactional email footer | "Kortix CompanyOS – the open-source operating system for your company" | Shipped since 2026-10-01 (`BRAND_FOOTER`). |
 | Slack and Teams app description | Standard, then one sentence on the channel | "Start a session from any Slack thread." |
 | Package descriptions (root, CLI, SDK) | Short (root, CLI); "the Kortix API" (SDK) | Not "agent platform". |
@@ -101,7 +102,7 @@ Source: README comparison table (README.md, "How it compares"), publicly documen
 
 **Rule.** Keep every comparison consistent with the README table. Change the README first. — *Why:* One canonical comparison. — *Where:* marketing | social | deck. — *When silent:* link to the README table instead of retyping it.
 
-**Rule.** Use "the leading open-source alternative" and no other superlative. — *Why:* Decided 2026-07-31 and used in the hero. It rests on the star count (20,239 on 2026-10-01, `gh api repos/kortix-ai/suna`). "The best", "#1" and "the go-to" are not allowed. — *Where:* marketing | social | README. — *When silent:* cite the star count, not the adjective. Round down: "20,000+ GitHub stars".
+**Rule.** Use "the leading open-source alternative" and no other superlative. — *Why:* Decided 2026-07-31 and used in the hero. It rests on the star count (20,239 on 2026-10-01, `gh api repos/kortix-ai/CompanyOS`). "The best", "#1" and "the go-to" are not allowed. — *Where:* marketing | social | README. — *When silent:* cite the star count, not the adjective. Round down: "20,000+ GitHub stars".
 
 ## 5. Audiences and pitches
 

@@ -593,13 +593,13 @@
     "allCredentials": "Todas tus credenciales y conexiones",
     "subscriptionData": "Tu suscripción y datos de facturación",
     "gracePeriod": "Período de Gracia de 30 Días",
-    "gracePeriodDescription": "Tu cuenta será programada para eliminación en 30 días. Puedes cancelar esta solicitud en cualquier momento durante el período de gracia.",
+    "gracePeriodDescription": "Tu cuenta será programada para eliminación en 14 días. Puedes cancelar esta solicitud en cualquier momento durante el período de gracia.",
     "typeDeleteToConfirm": "Escribe {{text}} para confirmar",
     "deletePlaceholder": "ELIMINAR",
     "deleteAccount": "Eliminar Cuenta",
     "cancelDeletion": "Cancelar Eliminación",
     "processing": "Procesando...",
-    "deletionScheduledSuccess": "Tu cuenta será eliminada en 30 días. Puedes cancelar esta solicitud en cualquier momento.",
+    "deletionScheduledSuccess": "Tu cuenta será eliminada en 14 días. Puedes cancelar esta solicitud en cualquier momento.",
     "cancelDeletionTitle": "Cancelar Eliminación de Cuenta",
     "cancelDeletionDescription": "¿Quieres cancelar la eliminación de tu cuenta? Tu cuenta y todos los datos serán preservados.",
     "back": "Atrás",
@@ -612,20 +612,20 @@
     "notAvailableTitle": "No disponible en este servidor",
     "projectsAndSessions": "Proyectos y sesiones",
     "credentialsAndConnections": "Credenciales y conexiones",
-    "subscriptionAndBilling": "Suscripción y facturación",
+    "subscriptionAndBilling": "Suscripción",
     "when": "Cuándo",
-    "in30Days": "En 30 días",
+    "in14Days": "En 14 días",
     "immediately": "Inmediatamente",
     "deleteTitle": "¿Eliminar cuenta?",
     "deleteNowTitle": "¿Eliminar cuenta ahora?",
-    "deleteScheduledDescription": "Tu cuenta se eliminará en 30 días. Puedes cancelarlo antes.",
+    "deleteScheduledDescription": "Tu cuenta se eliminará en 14 días. Puedes cancelarlo antes.",
     "deleteNowDescription": "Tu cuenta y sus datos se eliminan ahora. Esto no se puede deshacer.",
     "deleteNow": "Eliminar ahora",
     "deleting": "Eliminando…",
     "cancelling": "Cancelando…",
     "finalTitle": "¿Estás seguro?",
-    "finalDescriptionNow": "Todo lo de tu cuenta se elimina ahora: proyectos, sesiones, credenciales y facturación. Esto no se puede deshacer.",
-    "finalDescriptionScheduled": "Todo lo de tu cuenta se eliminará en 30 días: proyectos, sesiones, credenciales y facturación. Puedes cancelarlo antes."
+    "finalDescriptionNow": "Tus proyectos, sesiones y credenciales se eliminan ahora. Los registros de facturación se conservan durante el tiempo que exige la ley. Esto no se puede deshacer.",
+    "finalDescriptionScheduled": "Tus proyectos, sesiones y credenciales se eliminarán en 14 días. Los registros de facturación se conservan durante el tiempo que exige la ley. Puedes cancelarlo antes."
   },
   "models": {
     "selectModel": "Elegir Modelo",
@@ -1284,5 +1284,16 @@
     "retryHour_other": "Vuelve a intentarlo en {{count}} horas.",
     "unavailable": "Imagen no disponible",
     "details": "Detalles de la imagen"
+  },
+  "sessionImage": {
+    "title": "Preparando la imagen del sandbox",
+    "states": {
+      "resolving": "Eligiendo la imagen para esta sesión.",
+      "serving_last_ready": "Iniciando desde la última imagen lista. La nueva se crea en segundo plano.",
+      "waiting_for_build": "Se está creando la primera imagen de este proyecto. La sesión se inicia cuando esté lista.",
+      "building": "Creando la primera imagen de este proyecto. Ocurre una sola vez y tarda unos minutos.",
+      "copying_to_region": "Copiando la imagen a la región de esta sesión.",
+      "waiting_for_provider": "La imagen se está terminando. La sesión se inicia cuando esté lista."
+    }
   }
 }

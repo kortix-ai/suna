@@ -61,7 +61,6 @@ mock.module('@/lib/utils/i18n', () => ({ applyProfileLocale: async () => {} }));
 mock.module('@/lib/notifications/registration', () => ({ unregisterPushOnSignOut: async () => {} }));
 mock.module('@/lib/query/query-cache', () => ({ queryCachePersistence: { release: async () => {} } }));
 mock.module('@/lib/session/saved-copy-registry', () => ({ releaseSavedCopies: async () => {} }));
-mock.module('@/lib/session/warm-session-pool', () => ({ warmSessionPool: { reset: noop } }));
 // Sign-out resets these; this file never signs out through `signOut()`.
 const store = { getState: () => ({ reset: noop, clear: noop }) };
 for (const name of [

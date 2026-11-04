@@ -10,8 +10,8 @@
  * and the client waited on a turn that never started (2026-09-30: a first
  * prompt from project home, on web and on mobile).
  *
- * This suite drives the two accept routes over HTTP with a real token:
- * `POST .../sessions/:id/prompts` and `POST .../sessions/warm/claim`.
+ * This suite drives the accept route over HTTP with a real token:
+ * `POST .../sessions/:id/prompts`.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
@@ -50,8 +50,6 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'instance-scope-accept-test-project',
     repoUrl: 'https://example.com/instance-scope-accept-test.git',
-    // Warm sessions are opt-in per project (KRTX-1871): the claim answers 403 without it.
-    metadata: { experimental: { warm_sessions: true } },
   });
   await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
@@ -95,7 +93,7 @@ afterAll(async () => {
 });
 
 /** A running session the member owns, with a sandbox row stamped `boxInstanceId`. */
-async function seedSession(boxInstanceId: string, opts: { warm?: boolean } = {}): Promise<string> {
+async function seedSession(boxInstanceId: string): Promise<string> {
   const sessionId = crypto.randomUUID();
   await db.insert(projectSessions).values({
     sessionId,
@@ -107,7 +105,7 @@ async function seedSession(boxInstanceId: string, opts: { warm?: boolean } = {})
     status: 'running',
     createdBy: MEMBER,
     visibility: 'private',
-    metadata: opts.warm ? { warm: true } : {},
+    metadata: {},
   });
   await db.insert(sessionSandboxes).values({
     sandboxId: crypto.randomUUID(),
@@ -175,46 +173,6 @@ describe('POST /prompts — instance scope', () => {
     const res = await post(`/sessions/${sessionId}/prompts`, prompt());
 
     expect(res.status).toBe(202);
-    expect(await commandCount(sessionId)).toBe(1);
-  });
-});
-
-describe('POST /sessions/warm/claim — instance scope', () => {
-  const claim = (sessionId: string) =>
-    post('/sessions/warm/claim', {
-      session_id: sessionId,
-      pending_prompt: { text: 'say hi', agent: AGENT, model: null, variant: null },
-    });
-  const isWarm = async (sessionId: string) => {
-    const [row] = await db
-      .select({ metadata: projectSessions.metadata })
-      .from(projectSessions)
-      .where(eq(projectSessions.sessionId, sessionId));
-    return (row?.metadata as Record<string, unknown> | null)?.warm === true;
-  };
-
-  test("refuses another instance's warm session; it keeps its marker and gets no prompt", async () => {
-    config.KORTIX_INSTANCE_ID = MINE;
-    const sessionId = await seedSession(PEER, { warm: true });
-
-    const res = await claim(sessionId);
-
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: 'WARM_SESSION_ALREADY_CLAIMED' });
-    expect(await isWarm(sessionId)).toBe(true);
-    expect(await commandCount(sessionId)).toBe(0);
-    // Out of the warm pool for the next test: the lookup returns the newest row.
-    await db.delete(projectSessions).where(eq(projectSessions.sessionId, sessionId));
-  });
-
-  test("claims this instance's own warm session and stores its first prompt", async () => {
-    config.KORTIX_INSTANCE_ID = MINE;
-    const sessionId = await seedSession(MINE, { warm: true });
-
-    const res = await claim(sessionId);
-
-    expect(res.status).toBe(200);
-    expect(await isWarm(sessionId)).toBe(false);
     expect(await commandCount(sessionId)).toBe(1);
   });
 });

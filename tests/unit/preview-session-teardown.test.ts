@@ -139,7 +139,7 @@ describe('preview teardown and sweep against the provider API', () => {
     }));
     stubPlatinum(full);
     const code = await runPlatinumPreviewSuite({
-      repository: 'kortix-ai/suna',
+      repository: 'kortix-ai/CompanyOS',
       sha: 'b'.repeat(40),
       prNumber: 1,
       runId: '1',

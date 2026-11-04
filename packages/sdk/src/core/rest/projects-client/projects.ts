@@ -1,4 +1,4 @@
-// Projects — project CRUD, detail, feature flags, warm pool, onboarding.
+// Projects — project CRUD, detail, feature flags, onboarding.
 
 import type { CatalogModel } from '@kortix/llm-catalog';
 import type { ManifestIssue } from './change-request-recovery';
@@ -70,6 +70,7 @@ export type FeatureFlagKey =
   /** @deprecated Withdrawn — the monitor box was removed; an App with a schedule or a `type: app` trigger replaces it. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'monitors'
   | 'reminders'
+  /** @deprecated Withdrawn — warm sessions were removed; a session boots on its own. The API sends `false` for every project. Removed in the next major. */
   | 'warm_sessions'
   | 'secrets_egress'
   /** @deprecated Withdrawn — the pi worker split left the product; pi runs in the session sandbox. The API no longer lists, resolves, or accepts it. Removed in the next major. */
@@ -103,6 +104,8 @@ export type FeatureFlagKey =
   | 'connectors_v2'
   | 'project_channels'
   | 'agent_rooms'
+  /** Shared Drives: an admin makes a Drive and adds agents to it. Off by default: people have only My files. */
+  | 'shared_drives'
   | 'goals'
   | 'workspace_volume'
   | 'artifacts'
@@ -115,6 +118,8 @@ export type FeatureFlagKey =
   | 'chrome'
   /** Agent teams: a lead session with named teammates and a shared task list. Experimental, off by default. */
   | 'agent_teams'
+  /** Voice calls: talk with the session's agent from the session page, with screen share. Off by default. */
+  | 'voice_call'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -140,6 +145,7 @@ type GraduatedFeatureFlagKey =
   | 'connectors_v2'
   | 'connectors_api_discover'
   | 'meta_agent'
+  | 'warm_sessions'
   | 'volumes'
   | 'drives';
 /** The keys `KortixProject.experimental` carries on every response. */
@@ -153,7 +159,6 @@ type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'marketplace',
   'reminders',
-  'warm_sessions',
   'secrets_egress',
   'pooled_provider_secrets',
   'us_region',
@@ -162,6 +167,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'session_log_restore',
   'project_channels',
   'agent_rooms',
+  'shared_drives',
   'goals',
   'workspace_volume',
   'artifacts',
@@ -170,6 +176,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'session_groups',
   'chrome',
   'agent_teams',
+  'voice_call',
 ] as const;
 
 /**
@@ -287,7 +294,7 @@ export interface ProjectConfigSummary {
   /** @deprecated Use `default_agent`. */
   open_code_default_agent: string | null;
   /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml;
-   *  absent there = on). `my_kortix` is My Kortix, the agent named `mykortix`.
+   *  `true` = on, absent = off). `my_kortix` is My Kortix, the agent named `mykortix`.
    *  Absent from an older API. */
   builtin_agents?: { my_kortix: boolean };
   agent_discovery: 'opencode' | 'declarative';

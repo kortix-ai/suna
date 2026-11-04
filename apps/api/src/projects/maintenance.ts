@@ -259,7 +259,9 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
           metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${JSON.stringify({
             branch_gc: { deleted_at: now.toISOString(), branch_name: row.branchName, remote_deleted: remoteDeleted },
           })}::jsonb`,
-          updatedAt: new Date(),
+          // No updatedAt: clients read it as the last activity of a session
+          // with no activity stamp, and a sweep is not activity. The
+          // branch_gc.deleted_at filter above keeps the row out of the next batch.
         })
         .where(eq(projectSessions.sessionId, row.sessionId));
       if (remoteDeleted) await auditBranchDeleted({ ...row, deleted: typeof metadata.deletedAt === 'string' });

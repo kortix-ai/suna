@@ -161,9 +161,9 @@ function SpaceHeader({ projectId, space }: { projectId: string; space: ManifestS
   const config = useProjectConfig(projectId);
   const sidebar = useOptionalSidebar();
   const roomsOn = useFeatureFlag(projectId, 'agent_rooms').enabled;
-  // `builtin_agents.my_kortix: false` turns My Kortix off: no Ask button then.
+  // My Kortix runs only with `builtin_agents.my_kortix: true`: no Ask button otherwise.
   const items = spaceHeader(space).filter(
-    (item) => item !== 'ask_my_kortix' || config?.builtin_agents?.my_kortix !== false,
+    (item) => item !== 'ask_my_kortix' || config?.builtin_agents?.my_kortix === true,
   );
   const agents = agentsInSpace(space.name, config?.agents ?? []);
   const strip: ReactNode[] = [];

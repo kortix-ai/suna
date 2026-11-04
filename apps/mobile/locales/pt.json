@@ -587,13 +587,13 @@
     "allCredentials": "Todas as suas credenciais e conexões",
     "subscriptionData": "Seus dados de assinatura e cobrança",
     "gracePeriod": "Período de Carência de 30 Dias",
-    "gracePeriodDescription": "Sua conta será agendada para exclusão em 30 dias. Você pode cancelar esta solicitação a qualquer momento durante o período de carência.",
+    "gracePeriodDescription": "Sua conta será agendada para exclusão em 14 dias. Você pode cancelar esta solicitação a qualquer momento durante o período de carência.",
     "typeDeleteToConfirm": "Digite {{text}} para confirmar",
     "deletePlaceholder": "EXCLUIR",
     "deleteAccount": "Excluir Conta",
     "cancelDeletion": "Cancelar Exclusão",
     "processing": "Processando...",
-    "deletionScheduledSuccess": "Sua conta será excluída em 30 dias. Você pode cancelar esta solicitação a qualquer momento.",
+    "deletionScheduledSuccess": "Sua conta será excluída em 14 dias. Você pode cancelar esta solicitação a qualquer momento.",
     "cancelDeletionTitle": "Cancelar Exclusão de Conta",
     "cancelDeletionDescription": "Você quer cancelar a exclusão da sua conta? Sua conta e todos os dados serão preservados.",
     "back": "Voltar",
@@ -606,20 +606,20 @@
     "notAvailableTitle": "Indisponível neste servidor",
     "projectsAndSessions": "Projetos e sessões",
     "credentialsAndConnections": "Credenciais e conexões",
-    "subscriptionAndBilling": "Assinatura e faturamento",
+    "subscriptionAndBilling": "Assinatura",
     "when": "Quando",
-    "in30Days": "Em 30 dias",
+    "in14Days": "Em 14 dias",
     "immediately": "Imediatamente",
     "deleteTitle": "Excluir conta?",
     "deleteNowTitle": "Excluir conta agora?",
-    "deleteScheduledDescription": "Sua conta será excluída em 30 dias. Você pode cancelar antes disso.",
+    "deleteScheduledDescription": "Sua conta será excluída em 14 dias. Você pode cancelar antes disso.",
     "deleteNowDescription": "Sua conta e seus dados são excluídos agora. Isso não pode ser desfeito.",
     "deleteNow": "Excluir agora",
     "deleting": "Excluindo…",
     "cancelling": "Cancelando…",
     "finalTitle": "Tem certeza?",
-    "finalDescriptionNow": "Tudo na sua conta é excluído agora: projetos, sessões, credenciais e faturamento. Isso não pode ser desfeito.",
-    "finalDescriptionScheduled": "Tudo na sua conta será excluído em 30 dias: projetos, sessões, credenciais e faturamento. Você pode cancelar antes disso."
+    "finalDescriptionNow": "Seus projetos, sessões e credenciais são excluídos agora. Os registros de faturamento são mantidos pelo tempo exigido por lei. Isso não pode ser desfeito.",
+    "finalDescriptionScheduled": "Seus projetos, sessões e credenciais serão excluídos em 14 dias. Os registros de faturamento são mantidos pelo tempo exigido por lei. Você pode cancelar antes disso."
   },
   "models": {
     "selectModel": "Selecionar Modelo",
@@ -1284,5 +1284,16 @@
     "retryHour_other": "Tente novamente em {{count}} horas.",
     "unavailable": "Imagem indisponível",
     "details": "Detalhes da imagem"
+  },
+  "sessionImage": {
+    "title": "Preparando a imagem do sandbox",
+    "states": {
+      "resolving": "Escolhendo a imagem para esta sessão.",
+      "serving_last_ready": "Iniciando a partir da última imagem pronta. A nova é criada em segundo plano.",
+      "waiting_for_build": "A primeira imagem deste projeto está sendo criada. A sessão começa quando ela estiver pronta.",
+      "building": "Criando a primeira imagem deste projeto. Isso acontece uma vez e leva alguns minutos.",
+      "copying_to_region": "Copiando a imagem para a região desta sessão.",
+      "waiting_for_provider": "A imagem está sendo finalizada. A sessão começa quando ela estiver pronta."
+    }
   }
 }

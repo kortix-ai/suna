@@ -188,6 +188,19 @@ describe('managed models: one Platinum inference candidate', () => {
     }
   });
 
+  test('an audio model resolves to the same upstream and key with no token price: its answers report the price', () => {
+    expect(managedCandidates({ id: 'stt-private' })).toEqual([{
+      provider: 'platinum',
+      kind: 'openai-compat',
+      baseUrl: 'https://platinum.example/v1/inference',
+      apiKey: 'pt_live_test',
+      billingMode: 'credits',
+      markup: 2,
+      resolvedModel: 'stt-private',
+      publicProvider: 'kortix',
+    }]);
+  });
+
   test('without the Platinum inference key no managed model is served', () => {
     config.PLATINUM_INFERENCE_API_KEY = undefined;
     try {

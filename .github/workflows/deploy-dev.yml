@@ -415,9 +415,14 @@ jobs:
       IMAGE: ${{ needs.build-api.outputs.image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install checksum-verified Trivy from GitHub Releases
+        run: |
+          bash infra/scripts/install-trivy.sh "$RUNNER_TEMP/trivy-bin"
+          echo "$RUNNER_TEMP/trivy-bin" >> "$GITHUB_PATH"
       - name: Trivy image scan (fail on fixable CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           scan-type: image
           image-ref: ${{ env.IMAGE }}
           scanners: vuln
@@ -1088,18 +1093,18 @@ jobs:
           push: true
           cache-from: type=registry,ref=kortix/kortix-frontend:dev-buildcache
           cache-to: type=registry,ref=kortix/kortix-frontend:dev-buildcache,mode=max
+          # :dev-<sha8> is pushed by this build, like the API's. A retag that
+          # read :dev-latest back from Docker Hub 5 s after the push got the
+          # previous run's image (2026-11-03: dev-68fd3646 served 01:19 build
+          # output of d34d3283, and verify timed out on the commit).
           tags: |
             kortix/kortix-frontend:dev-latest
-      - name: Retag :dev-latest → :dev-<sha8>
+            kortix/kortix-frontend:dev-${{ needs.detect-changes.outputs.sha8 }}
+      - name: Name the pushed image
         id: tag
         run: |
           set -euo pipefail
-          SHA8="${GITHUB_SHA::8}"
-          docker buildx imagetools create \
-            --tag "kortix/kortix-frontend:dev-${SHA8}" \
-            "kortix/kortix-frontend:dev-latest"
-          echo "image=kortix/kortix-frontend:dev-${SHA8}" >> "$GITHUB_OUTPUT"
-          echo "Pushed kortix/kortix-frontend:dev-${SHA8} + :dev-latest"
+          echo "image=kortix/kortix-frontend:dev-${{ needs.detect-changes.outputs.sha8 }}" >> "$GITHUB_OUTPUT"
 
   deploy-web-ecs:
     name: Deploy frontend to dev (ECS Fargate)

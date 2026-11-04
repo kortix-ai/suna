@@ -1,7 +1,8 @@
 /**
  * Channel connector writes, kept in the conversations they belong to: Slack
  * writes out of other projects' conversations, Telegram writes of a chat's
- * session in that chat.
+ * session in that chat. Discord confines every call, reads too
+ * (channel-discord-scope.ts).
  *
  * Every rule below reads the call's declared arguments. The gateway refuses a
  * channel call with any other argument before these gates run (`invalid_args`,
@@ -69,6 +70,8 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { chatThreads, projectSessions } from '@kortix/db';
 import { isRecord } from '@kortix/shared/guards';
 import { db } from '../shared/db';
+// A cycle: each side reads the other's functions only at call time.
+import { discordCallRefusal } from './channel-discord-scope';
 import {
   CHANNEL_READ_SCOPES,
   CONVERSATION_NOT_IN_PROJECT,
@@ -191,23 +194,36 @@ function refuse(message: string): ChannelWriteGate {
  */
 export const TELEGRAM_READS: ReadonlySet<string> = new Set(['get_chat', 'get_me']);
 
-/** How many sessions up the lineage `sessionTelegramChats` reads. */
+/** How many sessions up the lineage `sessionChannelChats` reads. */
 const LINEAGE_HOPS = 8;
+
+/** The platforms whose sessions write only into their own chats, and how a session names its chat. */
+const SESSION_CHATS = {
+  // A thread is the chat id, or `<chat id>:<topic id>` for a forum topic.
+  telegram: { chat: (m: Record<string, unknown>) => telegramChatId(m.chat_id), ofThread: (id: string) => id.split(':')[0]! },
+  // A thread is the Discord channel the conversation runs in: a thread or a DM.
+  discord: { chat: (m: Record<string, unknown>) => discordChannelId(m.thread_id), ofThread: (id: string) => id },
+} as const;
 
 /**
  * The chats a session answers, as numeric chat ids: every chat that started or
  * is bound to the session or a session before it. The lineage runs up
  * `spawned_by_session` (a session another session started) and
  * `reminder_successor_of` (the session a failed reminder's successor
- * replaces), both server-managed keys. Null when no Telegram chat started and
- * none is bound to any of them: that session writes to any chat.
+ * replaces), both server-managed keys. Null when no chat of `platform` started
+ * and none is bound to any of them: that session writes to any chat.
  *
  * A session cannot shed its chat by starting another one: a lineage that is
  * longer than LINEAGE_HOPS, or that names a session that is not on record,
  * answers only the chats found so far (none: it writes to no chat).
  */
-export async function sessionTelegramChats(projectId: string, sessionId: string | null): Promise<string[] | null> {
+export async function sessionChannelChats(
+  platform: keyof typeof SESSION_CHATS,
+  projectId: string,
+  sessionId: string | null,
+): Promise<string[] | null> {
   if (!sessionId) return null;
+  const { chat, ofThread } = SESSION_CHATS[platform];
   const chats = new Set<string>();
   const seen = new Set<string>();
   let confined = false;
@@ -226,20 +242,17 @@ export async function sessionTelegramChats(projectId: string, sessionId: string 
       db
         .select({ threadId: chatThreads.threadId })
         .from(chatThreads)
-        .where(
-          and(eq(chatThreads.projectId, projectId), inArray(chatThreads.sessionId, frontier), eq(chatThreads.platform, 'telegram')),
-        ),
+        .where(and(eq(chatThreads.projectId, projectId), inArray(chatThreads.sessionId, frontier), eq(chatThreads.platform, platform))),
     ]);
-    // A thread is the chat id, or `<chat id>:<topic id>` for a forum topic.
-    for (const row of threads) chats.add(row.threadId.split(':')[0]!);
+    for (const row of threads) chats.add(ofThread(row.threadId));
     if (hop > 0 && sessions.length < frontier.length) confined = true;
     const parents = new Set<string>();
     for (const row of sessions) {
       const metadata = isRecord(row.metadata) ? row.metadata : {};
-      if (metadata.source === 'telegram') {
+      if (metadata.source === platform) {
         confined = true;
-        const chat = isRecord(metadata.telegram) ? telegramChatId(metadata.telegram.chat_id) : null;
-        if (chat) chats.add(chat);
+        const id = isRecord(metadata[platform]) ? chat(metadata[platform]) : null;
+        if (id) chats.add(id);
       }
       for (const parent of [metadata.spawned_by_session, metadata.reminder_successor_of]) {
         if (typeof parent === 'string' && parent && !seen.has(parent)) parents.add(parent);
@@ -248,6 +261,16 @@ export async function sessionTelegramChats(projectId: string, sessionId: string 
     frontier = [...parents];
   }
   return confined || chats.size ? [...chats] : null;
+}
+
+/** The Telegram chats a session answers (`sessionChannelChats`). */
+export function sessionTelegramChats(projectId: string, sessionId: string | null): Promise<string[] | null> {
+  return sessionChannelChats('telegram', projectId, sessionId);
+}
+
+/** A Discord snowflake as a string; null for anything else. */
+export function discordChannelId(value: unknown): string | null {
+  return typeof value === 'string' && /^\d{17,20}$/.test(value) ? value : null;
 }
 
 /** A chat id as Telegram issues it, normalized to its decimal string; null for anything else. */
@@ -286,6 +309,11 @@ export async function gateChannelWrite(
   input: Omit<ChannelReadInput, 'risk'>,
   ownership: ChannelOwnership = dbChannelOwnership,
 ): Promise<ChannelWriteGate> {
+  // Every Discord action, read or write: one bot token serves every project (channel-discord-scope.ts).
+  if (input.platform === 'discord') {
+    const refusal = await discordCallRefusal(input);
+    return refusal ? refuse(refusal) : PASS;
+  }
   if (input.platform === 'telegram') {
     if (TELEGRAM_READS.has(input.actionPath)) return PASS;
     const own = await sessionTelegramChats(input.projectId, input.sessionId ?? null);

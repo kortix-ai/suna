@@ -210,14 +210,12 @@ describe('projectSessionsRefetchInterval — converging on a pending title', () 
   });
 });
 
-describe('adopted warm sessions and the title window', () => {
-  // An adopted warm session was CREATED when the user landed on the project
-  // home — possibly long before the send. Its title generation starts at the
-  // first prompt, i.e. at adoption, which stamps metadata.last_activity_at
-  // (apps/api/src/projects/routes/warm-sessions.ts). Windowing on created_at
-  // alone skipped the fast title poll for exactly the sessions the home send
-  // produces, leaving "New session" in the sidebar for up to the 60s poll.
-  test('a titleless session adopted just now is awaiting its title even when created long ago', () => {
+describe('a late first prompt and the title window', () => {
+  // A session created empty gets its title from its first prompt, which stamps
+  // metadata.last_activity_at and can come long after the create. Windowing on
+  // created_at alone skipped the fast title poll for such a session, leaving
+  // "New session" in the sidebar for up to the 60s poll.
+  test('a titleless session first prompted just now is awaiting its title even when created long ago', () => {
     const adopted = session({
       created_at: new Date(NOW - 30 * 60_000).toISOString(),
       metadata: { last_activity_at: new Date(NOW - 3_000).toISOString() },

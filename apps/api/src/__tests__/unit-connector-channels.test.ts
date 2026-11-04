@@ -229,7 +229,7 @@ connectors:
 connectors:
   - slug: x
     provider: channel
-    platform: discord
+    platform: matrix
 `).errors[0],
       ).error,
     ).toMatch(/platform/);

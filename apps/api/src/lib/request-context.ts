@@ -183,6 +183,15 @@ export function runWithContext<T>(method: string, path: string, fn: () => T, inc
 }
 
 /**
+ * Run `fn` outside any request context: background work started by a request
+ * (a rebuild behind the response) must not inherit its per-request flags,
+ * caches or Server-Timing stages.
+ */
+export function runOutsideRequestContext<T>(fn: () => T): T {
+  return storage.exit(fn);
+}
+
+/**
  * Get the current request context (or undefined if not in a request).
  */
 export function getRequestContext(): RequestContext | undefined {

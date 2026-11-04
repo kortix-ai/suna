@@ -41,9 +41,9 @@ export function connectorNeedsAttention(c: AdminConnector): boolean {
  * site. A connector's `name` is optional and may be whitespace; the slug is
  * the only field guaranteed to be present and non-empty.
  */
-export function connectorDisplayName(connector: Pick<AdminConnector, 'name' | 'slug'>): string {
-  return connector.name?.trim() || connector.slug;
-}
+import { connectorDisplayName } from '@kortix/sdk';
+
+export { connectorDisplayName };
 
 /**
  * A connector card's one-line description: `12 tools · MCP`.

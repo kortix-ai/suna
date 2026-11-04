@@ -18,12 +18,10 @@ const {
   isSandboxAuthored,
   isTerminalTurnEnd,
   isTurnStartRequest,
-  isWarmPoolBox,
   llmActivityGrantMs,
   previewGrantMs,
   turnDeliveryGraceMs,
   turnGrantMs,
-  warmPoolGrantMs,
 } = await import('./sandbox-deadline-policy');
 
 const KNOBS = [
@@ -31,7 +29,6 @@ const KNOBS = [
   'KORTIX_SANDBOX_LLM_ACTIVITY_GRANT_MINUTES',
   'KORTIX_SANDBOX_PREVIEW_GRANT_MINUTES',
   'KORTIX_SANDBOX_TURN_DELIVERY_GRACE_MINUTES',
-  'KORTIX_SANDBOX_WARM_GRANT_MINUTES',
 ];
 afterEach(() => {
   for (const knob of KNOBS) delete process.env[knob];
@@ -64,17 +61,6 @@ describe('the grants', () => {
     expect(previewGrantMs()).toBeLessThan(turnGrantMs());
   });
 
-  // An unclaimed warm box can NEVER be observed again — no turns, no LLM calls,
-  // no human traffic — so a floor is its whole lifetime. It must outlive the
-  // 15-minute boot floor or the warm pool is reaped before it can be handed out.
-  test('an unclaimed warm box gets a bounded hour, well past the 15-minute boot floor', () => {
-    expect(warmPoolGrantMs()).toBe(60 * 60_000);
-    expect(warmPoolGrantMs()).toBeGreaterThan(15 * 60_000);
-    // Bounded, not exempt: the unbounded exemption it replaces let warm boxes
-    // hold for hours as pure billed dead time.
-    expect(warmPoolGrantMs()).toBeLessThan(NON_TURN_DEADLINE_CAP_MS);
-  });
-
   test('the idle tail reuses KORTIX_SANDBOX_AUTOSTOP_MINUTES, already 15 in prod', () => {
     expect(idleGraceMs()).toBe(15 * 60_000);
   });
@@ -84,13 +70,11 @@ describe('the grants', () => {
     process.env.KORTIX_SANDBOX_LLM_ACTIVITY_GRANT_MINUTES = '90';
     process.env.KORTIX_SANDBOX_PREVIEW_GRANT_MINUTES = '10';
     process.env.KORTIX_SANDBOX_TURN_DELIVERY_GRACE_MINUTES = '8';
-    process.env.KORTIX_SANDBOX_WARM_GRANT_MINUTES = '5';
 
     expect(turnGrantMs()).toBe(60 * 60_000);
     expect(llmActivityGrantMs()).toBe(90 * 60_000);
     expect(previewGrantMs()).toBe(10 * 60_000);
     expect(turnDeliveryGraceMs()).toBe(8 * 60_000);
-    expect(warmPoolGrantMs()).toBe(5 * 60_000);
   });
 
   test('every default grant stays inside the non-turn deadline cap', () => {
@@ -99,7 +83,6 @@ describe('the grants', () => {
       llmActivityGrantMs(),
       previewGrantMs(),
       turnDeliveryGraceMs(),
-      warmPoolGrantMs(),
     ]) {
       expect(grant).toBeLessThanOrEqual(NON_TURN_DEADLINE_CAP_MS);
     }
@@ -211,18 +194,6 @@ describe('isTerminalTurnEnd — a retry is not a turn end', () => {
     expect(isTerminalTurnEnd('error')).toBe(true);
     expect(isTerminalTurnEnd('error', null)).toBe(true);
     expect(isTerminalTurnEnd('error', {})).toBe(true);
-  });
-});
-
-describe('isWarmPoolBox — only speculative session sandboxes', () => {
-  test('the actual warm-session marker is recognized', () => {
-    expect(isWarmPoolBox({ warm: true, source: 'ui' })).toBe(true);
-  });
-
-  test('ordinary sessions and legacy warm-pool metadata are not warm', () => {
-    for (const metadata of [null, undefined, {}, { warm: 'true' }, { warm: false }, { warm_session: { state: 'available' } }]) {
-      expect(isWarmPoolBox(metadata)).toBe(false);
-    }
   });
 });
 

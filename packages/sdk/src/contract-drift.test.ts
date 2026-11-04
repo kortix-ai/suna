@@ -35,7 +35,11 @@ import type { SessionLogPage } from './core/session-log/source';
 import type { KortixAccount } from './core/rest/projects-client/accounts';
 import type { ChangeRequest } from './core/rest/projects-client/change-requests';
 import type { KortixProject } from './core/rest/projects-client/projects';
-import type { SessionStartResult } from './core/rest/projects-client/session-sandbox';
+import type {
+  SessionStartImageState,
+  SessionStartImageStep,
+  SessionStartResult,
+} from './core/rest/projects-client/session-sandbox';
 import type {
   AddProjectMemoryNoteInput,
   CreateProjectMemoryPageInput,
@@ -69,7 +73,6 @@ import type {
   SessionTurnEnded,
   SessionTurnFailure,
   SessionTurnStatus,
-  WarmProjectSessionResult,
 } from './core/rest/projects-client/sessions';
 import type {
   ProjectTrigger,
@@ -161,9 +164,14 @@ export function contractDrift(): void {
 
   fits<SessionStartResult>(wire<C.SessionStartResult>());
   noPhantom<NoPhantom<SessionStartResult, C.SessionStartResult>>();
-
-  fits<WarmProjectSessionResult>(wire<C.WarmProjectSessionResult>());
-  noPhantom<NoPhantom<WarmProjectSessionResult, C.WarmProjectSessionResult>>();
+  // `boot` both ways: a key the server adds to it (`image`) must reach the SDK type.
+  fits<NonNullable<SessionStartResult['boot']>>(wire<NonNullable<C.SessionStartResult['boot']>>());
+  noPhantom<NoPhantom<NonNullable<SessionStartResult['boot']>, NonNullable<C.SessionStartResult['boot']>>>();
+  noPhantom<NoPhantom<NonNullable<C.SessionStartResult['boot']>, NonNullable<SessionStartResult['boot']>>>();
+  fits<SessionStartImageStep>(wire<C.SessionStartImageStep>());
+  noPhantom<NoPhantom<SessionStartImageStep, C.SessionStartImageStep>>();
+  fits<SessionStartImageState>(wire<C.SessionStartImageState>());
+  fits<C.SessionStartImageState>(wire<SessionStartImageState>());
 
   fits<ProjectTrigger>(wire<C.Trigger>());
   noPhantom<NoPhantom<ProjectTrigger, C.Trigger>>();

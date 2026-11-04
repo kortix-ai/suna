@@ -1,7 +1,12 @@
 //! Windows implementation of the capture engine.
 //!
-//! * Screen: GDI `BitBlt` of the monitor holding the focused window (works in
-//!   every interactive session, no consent prompt, no Graphics Capture border).
+//! * Screen: DXGI Desktop Duplication of the monitor holding the focused
+//!   window: the composed desktop, so GPU-rendered content (AutoCAD's drawing
+//!   area, games, video, flip-model DirectX apps) is in the frame. GDI `BitBlt`
+//!   misses that content and paints it black; it stays the fallback when
+//!   duplication is unavailable (a desktop switch, no GPU output, a rotated
+//!   monitor whose turn is not proven). Neither asks for consent or draws a
+//!   Graphics Capture border.
 //!   Hidden apps are painted black in `mod.rs::redact` from the z-ordered
 //!   window list, because a desktop grab cannot exclude windows.
 //! * Foreground / process: `GetForegroundWindow`, `QueryFullProcessImageNameW`,
@@ -29,8 +34,22 @@ use windows::Graphics::Imaging::{BitmapAlphaMode, BitmapPixelFormat, SoftwareBit
 use windows::Media::Ocr::OcrEngine;
 use windows::Storage::Streams::DataWriter;
 use windows::Win32::Foundation::{CloseHandle, BOOL, ERROR_SUCCESS, HWND, LPARAM, RECT, SIZE};
+use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
+use windows::Win32::Graphics::Direct3D11::{
+    D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D, D3D11_CPU_ACCESS_READ,
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION,
+    D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
+};
 use windows::Win32::Graphics::Dwm::{
     DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS,
+};
+use windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_MODE_ROTATION, DXGI_MODE_ROTATION_ROTATE180,
+    DXGI_MODE_ROTATION_ROTATE270, DXGI_MODE_ROTATION_ROTATE90, DXGI_SAMPLE_DESC,
+};
+use windows::Win32::Graphics::Dxgi::{
+    CreateDXGIFactory1, IDXGIFactory1, IDXGIOutput1, IDXGIOutput5, IDXGIOutputDuplication,
+    IDXGIResource, DXGI_ERROR_ACCESS_LOST, DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_FRAME_INFO,
 };
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
@@ -72,8 +91,9 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumChildWindows, EnumWindows, GetClassNameW, GetCursorPos, GetForegroundWindow,
-    GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
-    IsWindowVisible, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
+    GetWindowDisplayAffinity, GetWindowLongW, GetWindowRect, GetWindowTextW,
+    GetWindowThreadProcessId, IsIconic, IsWindowVisible, GWL_EXSTYLE, WDA_EXCLUDEFROMCAPTURE,
+    WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 };
 
 pub fn init() {
@@ -472,6 +492,7 @@ pub fn windows(fg: &Foreground) -> Vec<WinInfo> {
             let title = window_text(hwnd);
             let class = class_name(hwnd);
             let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+            let overlay = WS_EX_LAYERED.0 | WS_EX_TRANSPARENT.0;
             let is_fg = hwnd_id(hwnd) == fg.id;
             // Titleless windows are shell chrome or invisible helpers; keep menus and the focused window.
             if title.is_empty() && class != "#32768" && !is_fg {
@@ -481,6 +502,13 @@ pub fn windows(fg: &Foreground) -> Vec<WinInfo> {
                 continue;
             }
             if class == "Progman" || class == "WorkerW" {
+                continue;
+            }
+            // A window excluded from capture is not in the image at all.
+            let mut affinity = 0u32;
+            if GetWindowDisplayAffinity(hwnd, &mut affinity).is_ok()
+                && affinity == WDA_EXCLUDEFROMCAPTURE.0
+            {
                 continue;
             }
             let pid = real_pid(hwnd, window_pid(hwnd));
@@ -494,6 +522,7 @@ pub fn windows(fg: &Foreground) -> Vec<WinInfo> {
                 title,
                 rect,
                 focused: is_fg,
+                overlay: ex & overlay == overlay,
             });
         }
     }
@@ -530,7 +559,7 @@ pub fn screenshot(focus: Option<Rect>) -> Result<Shot> {
         }
         let r = mi.rcMonitor;
         let (w, h) = (r.right - r.left, r.bottom - r.top);
-        let image = blit(r)?;
+        let image = grab(mon, r)?;
         Ok(Shot {
             image,
             display: Display {
@@ -544,6 +573,288 @@ pub fn screenshot(focus: Option<Rect>) -> Result<Shot> {
             },
         })
     }
+}
+
+/// The pixels of one monitor: Desktop Duplication, else GDI `BitBlt`.
+fn grab(mon: HMONITOR, r: RECT) -> Result<RgbImage> {
+    let key = mon.0 as isize;
+    let now = unsafe { GetTickCount() };
+    let waiting = RETRY_AT.with(|t| {
+        t.borrow()
+            .get(&key)
+            .is_some_and(|at| (now.wrapping_sub(*at) as i32) < 0)
+    });
+    if waiting {
+        return blit(r);
+    }
+    match duplicate(mon, r) {
+        Ok(image) => Ok(image),
+        Err(e) => {
+            // A lost duplication (a desktop switch or mode change ends one) opens
+            // again on a later tick; until then BitBlt. Say why once per reason.
+            DUPS.with(|d| d.borrow_mut().remove(&key));
+            RETRY_AT.with(|t| t.borrow_mut().insert(key, now.wrapping_add(DUP_RETRY_MS)));
+            let why = format!("{e:#}");
+            FALLBACKS.with(|f| {
+                if f.borrow_mut().insert((key, why.clone())) {
+                    eprintln!("desktop duplication unavailable, using BitBlt: {why}");
+                }
+            });
+            blit(r)
+        }
+    }
+}
+
+/// One monitor's Desktop Duplication, kept open across ticks. `staging` holds
+/// the last frame, so a tick with no new frame (nothing changed) reads it again.
+struct Dup {
+    ctx: ID3D11DeviceContext,
+    device: ID3D11Device,
+    dup: IDXGIOutputDuplication,
+    staging: Option<ID3D11Texture2D>,
+    /// The monitor's rotation: the desktop texture is in the panel's own
+    /// orientation. `clockwise` is decided on the first frame of a 90/270 monitor.
+    rotation: DXGI_MODE_ROTATION,
+    clockwise: Option<bool>,
+}
+
+/// How long a monitor whose duplication failed uses BitBlt before trying again.
+const DUP_RETRY_MS: u32 = 10_000;
+
+thread_local! {
+    static DUPS: RefCell<HashMap<isize, Dup>> = RefCell::new(HashMap::new());
+    static RETRY_AT: RefCell<HashMap<isize, u32>> = RefCell::new(HashMap::new());
+    static FALLBACKS: RefCell<std::collections::HashSet<(isize, String)>> =
+        RefCell::new(std::collections::HashSet::new());
+}
+
+/// Duplicate the output of the adapter that drives `mon`. On a hybrid-GPU
+/// laptop that is the integrated GPU even when the app draws on the discrete
+/// one; duplicating from any other adapter fails.
+fn open_dup(mon: HMONITOR) -> Result<Dup> {
+    unsafe {
+        let factory: IDXGIFactory1 = CreateDXGIFactory1()?;
+        let mut a = 0;
+        while let Ok(adapter) = factory.EnumAdapters1(a) {
+            a += 1;
+            let mut o = 0;
+            while let Ok(output) = adapter.EnumOutputs(o) {
+                o += 1;
+                let desc = output.GetDesc()?;
+                if desc.Monitor != mon {
+                    continue;
+                }
+                let mut device = None;
+                let mut ctx = None;
+                D3D11CreateDevice(
+                    &adapter,
+                    D3D_DRIVER_TYPE_UNKNOWN,
+                    None,
+                    D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                    None,
+                    D3D11_SDK_VERSION,
+                    Some(&mut device),
+                    None,
+                    Some(&mut ctx),
+                )?;
+                let device: ID3D11Device = device.ok_or_else(|| anyhow!("no D3D11 device"))?;
+                let ctx = ctx.ok_or_else(|| anyhow!("no D3D11 context"))?;
+                // DuplicateOutput1 converts an HDR desktop to 8-bit BGRA.
+                let dup1 = output
+                    .cast::<IDXGIOutput5>()
+                    .and_then(|o5| o5.DuplicateOutput1(&device, 0, &[DXGI_FORMAT_B8G8R8A8_UNORM]));
+                let dup = match dup1 {
+                    Ok(dup) => dup,
+                    Err(_) => output.cast::<IDXGIOutput1>()?.DuplicateOutput(&device)?,
+                };
+                return Ok(Dup {
+                    ctx,
+                    device,
+                    dup,
+                    staging: None,
+                    rotation: desc.Rotation,
+                    clockwise: None,
+                });
+            }
+        }
+        bail!("no DXGI output for the monitor")
+    }
+}
+
+/// A lost duplication (a mode change, a fullscreen switch, a UAC prompt) is
+/// opened again at once; a second loss in one tick falls back to BitBlt.
+fn duplicate(mon: HMONITOR, r: RECT) -> Result<RgbImage> {
+    match duplicate_once(mon, r) {
+        Err(e) if is_access_lost(&e) => {
+            DUPS.with(|d| d.borrow_mut().remove(&(mon.0 as isize)));
+            duplicate_once(mon, r)
+        }
+        other => other,
+    }
+}
+
+fn is_access_lost(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<windows::core::Error>()
+        .is_some_and(|w| w.code() == DXGI_ERROR_ACCESS_LOST)
+}
+
+fn duplicate_once(mon: HMONITOR, r: RECT) -> Result<RgbImage> {
+    let key = mon.0 as isize;
+    DUPS.with(|cell| {
+        let mut dups = cell.borrow_mut();
+        let d = match dups.entry(key) {
+            std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
+            std::collections::hash_map::Entry::Vacant(v) => v.insert(open_dup(mon)?),
+        };
+        unsafe {
+            // Later ticks take a frame only when one is ready; none means nothing
+            // changed and the staging texture is still the screen. A fresh
+            // duplication waits up to ~600 ms for its first desktop image: some
+            // drivers first hand out a frame with none (LastPresentTime 0, black).
+            for attempt in 0..4 {
+                let wait = if d.staging.is_some() { 0 } else { 150 };
+                let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
+                let mut res: Option<IDXGIResource> = None;
+                match d.dup.AcquireNextFrame(wait, &mut info, &mut res) {
+                    Ok(()) => {
+                        let fresh = d.staging.is_none();
+                        let copied = if fresh && info.LastPresentTime == 0 && attempt < 3 {
+                            Ok(false)
+                        } else {
+                            copy_frame(d, res).map(|_| true)
+                        };
+                        let _ = d.dup.ReleaseFrame();
+                        if copied? {
+                            break;
+                        }
+                    }
+                    Err(e) if e.code() == DXGI_ERROR_WAIT_TIMEOUT && d.staging.is_some() => break,
+                    Err(e) if e.code() == DXGI_ERROR_WAIT_TIMEOUT && attempt < 3 => {}
+                    Err(e) => return Err(anyhow::Error::new(e).context("AcquireNextFrame")),
+                }
+            }
+            read_staging(d, r)
+        }
+    })
+}
+
+/// Copy the acquired desktop texture into the CPU-readable staging texture.
+unsafe fn copy_frame(d: &mut Dup, res: Option<IDXGIResource>) -> Result<()> {
+    let tex: ID3D11Texture2D = res.ok_or_else(|| anyhow!("no desktop image"))?.cast()?;
+    let mut desc = D3D11_TEXTURE2D_DESC::default();
+    tex.GetDesc(&mut desc);
+    if desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM {
+        bail!("desktop format {}", desc.Format.0);
+    }
+    let fits = d.staging.as_ref().is_some_and(|s| {
+        let mut sd = D3D11_TEXTURE2D_DESC::default();
+        s.GetDesc(&mut sd);
+        sd.Width == desc.Width && sd.Height == desc.Height
+    });
+    if !fits {
+        let sd = D3D11_TEXTURE2D_DESC {
+            Width: desc.Width,
+            Height: desc.Height,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: desc.Format,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_STAGING,
+            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+            ..Default::default()
+        };
+        let mut staging = None;
+        d.device.CreateTexture2D(&sd, None, Some(&mut staging))?;
+        d.staging = staging;
+    }
+    let staging = d
+        .staging
+        .as_ref()
+        .ok_or_else(|| anyhow!("no staging texture"))?;
+    d.ctx.CopyResource(staging, &tex);
+    Ok(())
+}
+
+/// The staging texture as RGB, checked against the monitor size GDI reports.
+unsafe fn read_staging(d: &mut Dup, r: RECT) -> Result<RgbImage> {
+    let staging = d.staging.as_ref().ok_or_else(|| anyhow!("no frame yet"))?;
+    let mut desc = D3D11_TEXTURE2D_DESC::default();
+    staging.GetDesc(&mut desc);
+    let (w, h) = (desc.Width, desc.Height);
+    let quarter =
+        d.rotation == DXGI_MODE_ROTATION_ROTATE90 || d.rotation == DXGI_MODE_ROTATION_ROTATE270;
+    let (dw, dh) = if quarter { (h, w) } else { (w, h) };
+    if dw as i32 != r.right - r.left || dh as i32 != r.bottom - r.top {
+        bail!(
+            "duplicated {dw}x{dh}, monitor {}x{}",
+            r.right - r.left,
+            r.bottom - r.top
+        );
+    }
+    let mut map = D3D11_MAPPED_SUBRESOURCE::default();
+    d.ctx.Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut map))?;
+    let pitch = map.RowPitch as usize;
+    let src = std::slice::from_raw_parts(map.pData as *const u8, pitch * h as usize);
+    let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+    for row in src.chunks_exact(pitch) {
+        for px in row[..w as usize * 4].chunks_exact(4) {
+            rgb.extend_from_slice(&[px[2], px[1], px[0]]);
+        }
+    }
+    d.ctx.Unmap(staging, 0);
+    let panel = RgbImage::from_raw(w, h, rgb).ok_or_else(|| anyhow!("frame buffer size"))?;
+    use image::imageops::{rotate180, rotate270, rotate90};
+    Ok(if d.rotation == DXGI_MODE_ROTATION_ROTATE180 {
+        rotate180(&panel)
+    } else if quarter {
+        let cw = match d.clockwise {
+            Some(cw) => cw,
+            None => {
+                let cw = turns_clockwise(&panel, r)?;
+                d.clockwise = Some(cw);
+                cw
+            }
+        };
+        if cw {
+            rotate90(&panel)
+        } else {
+            rotate270(&panel)
+        }
+    } else {
+        panel
+    })
+}
+
+/// Which quarter turn of a rotated monitor's texture matches the desktop. A
+/// wrong turn would paint redaction at mirrored positions, so the direction is
+/// proven once against a GDI grab, which is always right side up: the better
+/// turn must match it closely and beat the other by a clear margin. Otherwise
+/// the error sends this monitor to BitBlt, and duplication is tried again later.
+fn turns_clockwise(panel: &RgbImage, r: RECT) -> Result<bool> {
+    let gdi = blit(r)?;
+    let thumb = |i: &RgbImage| image::imageops::thumbnail(&image::imageops::grayscale(i), 64, 64);
+    let g = thumb(&gdi);
+    // Mean absolute luma difference per thumbnail pixel.
+    let diff = |i: RgbImage| -> f64 {
+        let t = thumb(&i);
+        let sum: u64 = t
+            .as_raw()
+            .iter()
+            .zip(g.as_raw())
+            .map(|(a, b)| u64::from(a.abs_diff(*b)))
+            .sum();
+        sum as f64 / t.as_raw().len().max(1) as f64
+    };
+    let cw = diff(image::imageops::rotate90(panel));
+    let ccw = diff(image::imageops::rotate270(panel));
+    let (best, other) = (cw.min(ccw), cw.max(ccw));
+    if best > 24.0 || best * 2.0 > other {
+        bail!("rotation not proven (diff {cw:.1} clockwise, {ccw:.1} counterclockwise)");
+    }
+    Ok(cw < ccw)
 }
 
 /// The pixels of one rectangle of the virtual screen (GDI `BitBlt`).
@@ -613,6 +924,10 @@ pub fn displays() -> Vec<DisplayInfo> {
             LPARAM(&mut monitors as *mut _ as isize),
         );
     }
+    // A monitor that is gone keeps no duplication (a D3D device) open.
+    let live: std::collections::HashSet<isize> = monitors.iter().map(|m| m.0 as isize).collect();
+    DUPS.with(|d| d.borrow_mut().retain(|k, _| live.contains(k)));
+    RETRY_AT.with(|t| t.borrow_mut().retain(|k, _| live.contains(k)));
     monitors
         .into_iter()
         .filter_map(|mon| unsafe {
@@ -641,12 +956,15 @@ pub fn displays() -> Vec<DisplayInfo> {
 }
 
 pub fn screenshot_display(d: &DisplayInfo) -> Result<RgbImage> {
-    blit(RECT {
-        left: d.rect.x,
-        top: d.rect.y,
-        right: d.rect.right(),
-        bottom: d.rect.bottom(),
-    })
+    grab(
+        HMONITOR(d.id as _),
+        RECT {
+            left: d.rect.x,
+            top: d.rect.y,
+            right: d.rect.right(),
+            bottom: d.rect.bottom(),
+        },
+    )
 }
 
 // ------------------------------------------------------ UI Automation (AX)

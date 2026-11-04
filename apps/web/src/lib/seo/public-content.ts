@@ -208,7 +208,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'case-studies',
     title: 'Case studies',
     description:
-      'What runs on Kortix today: a science agent at City University of Hong Kong, an AI-run hedge fund desk, a cloud company built by agents, Kortix itself and more.',
+      'What runs on CompanyOS: a science agent at City University of Hong Kong, and agents that evaluate every deal, write software, analyze credit and match invoices.',
     htmlPath: '/case-studies',
   },
   {
@@ -402,6 +402,7 @@ const MDX_BLOCK_TAGS = new Set([
   'Callout',
   'Card',
   'ExampleRun',
+  'Expandable',
   'Fact',
   'Step',
   'Tab',
@@ -515,9 +516,9 @@ function renderMdxTagLine(line: string, stack: MdxRenderContext[]): string | nul
     stack.push({ tag });
     return attrs.title ? `### ${attrs.title}` : null;
   }
-  // A tab or an accordion item shows one of several panels. Markdown shows
-  // every panel in order, each under its label.
-  if (tag === 'Tab' || tag === 'AccordionItem') {
+  // A tab, an accordion item or an expandable shows one panel at a time.
+  // Markdown shows every panel in order, each under its label.
+  if (tag === 'Tab' || tag === 'AccordionItem' || tag === 'Expandable') {
     stack.push({ tag });
     return attrs.title ? `**${attrs.title}**` : null;
   }
@@ -698,7 +699,7 @@ function renderMarketingMarkdown(record: PublicContentRecord): string {
     `- [Documentation](${CANONICAL_ORIGIN}/docs)`,
     `- [Blog](${CANONICAL_ORIGIN}/blog)`,
     `- [Use cases](${CANONICAL_ORIGIN}/use-cases)`,
-    `- [GitHub](https://github.com/kortix-ai/suna)`,
+    `- [GitHub](https://github.com/kortix-ai/CompanyOS)`,
   ];
 
   if (record.slug === 'pricing' || record.slug === 'enterprise') {

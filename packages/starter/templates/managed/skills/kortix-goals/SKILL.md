@@ -19,11 +19,12 @@ Three things, three questions:
 | Trigger (a loop is one) | when work starts: the heartbeat, a reply, a merged change request |
 | Goal | what done means: the folder below |
 
-A goal is a folder in Files, `Goals/<slug>/` in the company folder by default
-(`/drives/company/Goals/<slug>/` in a session). It is shared context: every
-session that works the goal reads it and appends to it. Sessions come and go;
-a new session with no transcript must be able to continue from the folder.
-The person shares the folder or keeps it private with normal Files sharing.
+A goal is a folder in Files, `Goals/<slug>/` in the user's own folder by
+default (`/drives/me/Goals/<slug>/` in a session). It is the goal's context:
+every session that works the goal reads it and appends to it. Sessions come
+and go; a new session with no transcript must be able to continue from the
+folder. Only the user sees their own folder. `--folder` puts it in another
+read-write folder `/drives/README.md` lists.
 
 | File | Holds | Who writes |
 | --- | --- | --- |
@@ -49,7 +50,7 @@ The CLI enforces every edge. You cannot reach `verifying` except through
 <commands>
 | Command | Who | What it does |
 | --- | --- | --- |
-| `kortix goals new "<goal>" [--slug s] [--user <user_id>] [--agent <name>] [--every 4h] [--folder <dir>]` | the session that takes the goal | creates `Goals/<slug>/` (company folder unless `--folder`), makes this session the owner, marks it unattended, arms the heartbeat. State `draft` |
+| `kortix goals new "<goal>" [--slug s] [--user <user_id>] [--agent <name>] [--every 4h] [--folder <dir>]` | the session that takes the goal | creates `Goals/<slug>/` (the user's own folder unless `--folder`), makes this session the owner, marks it unattended, arms the heartbeat. State `draft` |
 | `kortix goals transition active --reason "…"` | owner | from draft (1 to 8 done criteria) or from waiting_on_user |
 | `kortix goals transition waiting_on_user --reason "<the question>"` | owner | the reason is the question the assigned user sees |
 | `kortix goals transition stopped --reason "<the person's words>"` | owner | only when a person said stop |

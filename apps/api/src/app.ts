@@ -19,8 +19,12 @@ import { notificationsApp } from './notifications/routes';
 import { drivesApp } from './drives/routes';
 import { feedbackApp } from './feedback';
 import {
+  channelAppWebhookRoutes,
   channelWebhookRoutes,
+  discordInbound,
+  discordOauthApp,
   emailWebhookApp,
+  registerDiscordOauthRoutes,
   registerEmailWebhookRoutes,
   registerSlackWebhookRoutes,
   registerTeamsWebhookRoutes,
@@ -63,6 +67,7 @@ import { registerPlatformEndpoints } from './routes/platform-endpoints';
 import { registerRetiredRoutes } from './routes/retired';
 import { dispatchInProcess } from './inbound-dispatch';
 import { registerCaptureStoreProxy } from './capture/store-proxy';
+import { registerProjectSnapshotStoreProxy } from './git-proxy/project-snapshot-store-proxy';
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
@@ -87,6 +92,9 @@ registerPlatformEndpoints(app);
 // /<capture bucket>/* — the Capture store's S3 path prefix, only when
 // KORTIX_CAPTURE_S3_PROXY_TARGET is set (self-host without a domain).
 registerCaptureStoreProxy(app);
+// /<snapshot bucket>/* — sandboxes download project snapshots here, only when
+// KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET is set (self-host without a domain).
+registerProjectSnapshotStoreProxy(app);
 
 // /v1/capture/* — Kortix Capture device sign-in (public, RFC 8628), the
 // device credential endpoint (device token), the approval reads and the agent
@@ -264,6 +272,9 @@ app.route('/v1/webhooks/teams', teamsWebhookApp); // /v1/webhooks/teams/messages
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', channelWebhookRoutes(telegramInbound)); // /v1/webhooks/telegram/:projectId — Telegram updates
+registerDiscordOauthRoutes();
+app.route('/v1/webhooks/discord/oauth', discordOauthApp); // /v1/webhooks/discord/oauth/callback — Add to Discord
+app.route('/v1/webhooks/discord', channelAppWebhookRoutes(discordInbound)); // /v1/webhooks/discord — the application's interactions
 registerEmailWebhookRoutes();
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/resend — Resend inbound inbox email (Svix-signed)
 registerSendEmailHookRoutes();

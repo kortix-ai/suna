@@ -13,6 +13,8 @@ export interface AgentSpec {
   path: string;
   /** False: the agent cannot start a session (`enabled: false`, or a validation error on its block). */
   enabled: boolean;
+  /** `mode: subagent`: the agent only runs as another agent's subagent. */
+  subagent?: true;
   /** Which connectors (by slug) this agent may use. `[]` = none (default). */
   connectors: GrantSet;
   /** Connectors that must resolve before the session starts. */
@@ -76,7 +78,12 @@ export interface LoadedAgents {
   /** The manifest's validation errors (`runtimeManifest`): an agent one of
    *  them names is off, and a refusal to start it names them. */
   issues?: ManifestIssue[];
-  /** The manifest's explicit `builtin_agents` booleans. Absent key = not
-   *  set; `resolveBuiltinAgents` (lib/my-kortix-agent.ts) reads it as on. */
-  builtinAgents?: Partial<Record<BuiltinAgentKey, boolean>>;
+  /** Which built-in agents the project runs, resolved by
+   *  `projectBuiltinAgents` (lib/my-kortix-agent.ts): `builtin_agents.<key>: true`
+   *  = on, anything else off. Unset = off. */
+  builtinAgents?: Record<BuiltinAgentKey, boolean>;
+  /** Set when kortix.yaml is not YAML: the parser's message. The project is in
+   *  repair mode: only My Kortix runs, and a session for any other agent is
+   *  refused with 422 `manifest_invalid`. */
+  manifestSyntaxError?: string;
 }

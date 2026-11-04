@@ -30,7 +30,7 @@ Open WebUI is designed around a conversation. Everything else in it arranges its
 
 ## The setup is files, not settings
 
-Kortix takes the open question Open WebUI leaves and answers it with files. The agents, their instructions and the connections to other systems are files in a repository the company holds. A change arrives as a diff. ([Kortix on GitHub](https://github.com/kortix-ai/suna))
+Kortix takes the open question Open WebUI leaves and answers it with files. The agents, their instructions and the connections to other systems are files in a repository the company holds. A change arrives as a diff. ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS))
 
 A new teammate clones it and inherits the same working setup. An agent is a Markdown file under `agents/`, plus its own `agents.<name>` block in `kortix.yaml`, which carries the governance. The agent file and `kortix.yaml`, with the OpenCode config, define the project. A reviewer can read the setup like documentation and review a change like code.
 

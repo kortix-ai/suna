@@ -14,7 +14,6 @@
  * the same change that adds the server reader.
  */
 import { SUBAGENT_NOTIFY_PARENT_KEY } from '@kortix/api-contract/runtime-relay';
-import { WARM_SESSION_LOCATION_KEY } from './warm-sessions';
 
 export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Soft delete (`deleteSession`).
@@ -25,6 +24,7 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // is stamped only by session-model-repoint.ts, when a retired managed id gets
   // moved to a servable one at boot — a client value here would forge history.
   'opencode_model',
+  'model_switches',
   'opencode_model_source',
   'opencode_model_repointed_from',
   // The gateway fallback record (`llm-gateway/resolution/session-model-fallback.ts`).
@@ -78,14 +78,12 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // restart copy into the sandbox (`legacy-migration-rehydrate.ts`).
   'legacy_migration',
   // Channel origin. Reply targets and the channel runtime env
-  // (`session-channel-env.ts`, the Slack/Teams/email/Telegram relays).
+  // (`session-channel-env.ts`, the Slack/Teams/email/Telegram/Discord relays).
   'slack',
   'teams',
   'email',
   'telegram',
-  // Warm-session marker and trusted provisioning intent (`lib/warm-sessions.ts`).
-  'warm',
-  WARM_SESSION_LOCATION_KEY,
+  'discord',
   // Activity-ordered session list (`session-list.ts` `orderByActivity`). The
   // server stamps conversation activity; a client value would let it fake a
   // sidebar position.

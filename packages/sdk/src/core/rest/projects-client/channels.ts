@@ -1,4 +1,4 @@
-// Project channels — Slack, Teams, email and Telegram connection installs.
+// Project channels — Slack, Teams, email, Telegram and Discord connection installs.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
@@ -126,7 +126,7 @@ export interface ChannelInstallCompletion {
 }
 
 async function completeChannelInstall(
-  service: 'slack' | 'teams',
+  service: 'slack' | 'teams' | 'discord',
   projectId: string,
   input: ChannelInstallCompletionInput,
 ): Promise<ChannelInstallCompletion> {
@@ -215,7 +215,7 @@ export interface TelegramUsers {
 }
 
 /** A chat platform whose bot keeps an allowed-user list and access requests. */
-export type ChannelAccessPlatform = 'telegram';
+export type ChannelAccessPlatform = 'telegram' | 'discord';
 
 /** A chat user, as the platform's bot knows them. */
 export interface ChannelUser {
@@ -959,4 +959,63 @@ export async function updateChannelBinding(
     ),
     'Failed to update channel binding',
   );
+}
+
+/** Whether this deployment has the Kortix Discord application, and the "Add to Discord" link. */
+export interface DiscordMode {
+  available: boolean;
+  /** Discord's authorize page with a signed state for this user and project; null without write access. */
+  install_url: string | null;
+}
+
+/** The project's Discord server. */
+export interface DiscordInstallation {
+  guild_id: string;
+  guild_name: string | null;
+  /** Discord user ids allowed to talk to the bot; anyone else gets a pairing reply. */
+  allowed_user_ids: string[];
+  /** How many people wrote to the bot and are not allowed yet. */
+  access_request_count: number;
+}
+
+// A literal path, so route-contract.test.ts resolves the Discord routes to
+// `/channels/discord/…` and fails when the API drops one.
+const discordPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/channels/discord`;
+
+const DEFAULT_DISCORD_MODE: DiscordMode = { available: false, install_url: null };
+
+/** Whether Discord is available here, and the "Add to Discord" link. Unavailable on any failure. */
+export async function getDiscordMode(projectId: string): Promise<DiscordMode> {
+  const res = await backendApi.get<DiscordMode>(`${discordPath(projectId)}/mode`, { showErrors: false });
+  if (!res.success || !res.data) return DEFAULT_DISCORD_MODE;
+  return res.data;
+}
+
+/** The project's Discord server, or null when none is connected. */
+export async function getDiscordInstallation(projectId: string): Promise<DiscordInstallation | null> {
+  const res = await backendApi.get<DiscordInstallation | null>(`${discordPath(projectId)}/installation`, { showErrors: false });
+  if (!res.success) return null;
+  return res.data ?? null;
+}
+
+/** Finish an "Add to Discord" install as the signed-in user. Same contract as `completeSlackInstall`. */
+export function completeDiscordInstall(
+  projectId: string,
+  input: ChannelInstallCompletionInput,
+): Promise<ChannelInstallCompletion> {
+  return completeChannelInstall('discord', projectId, input);
+}
+
+/** Replace the Discord user ids allowed to talk to the bot. */
+export async function setDiscordAllowedUsers(projectId: string, userIds: string[]): Promise<DiscordInstallation> {
+  return unwrap(
+    await backendApi.put<DiscordInstallation>(`${discordPath(projectId)}/allowed-users`, { user_ids: userIds }, { showErrors: false }),
+    'Failed to update allowed Discord users',
+  );
+}
+
+/** Disconnect the project's Discord server. The bot leaves it when no other project has it. */
+export async function disconnectDiscord(projectId: string): Promise<void> {
+  const res = await backendApi.delete(discordPath(projectId), { showErrors: false });
+  if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect Discord');
 }

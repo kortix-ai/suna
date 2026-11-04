@@ -710,8 +710,8 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'files repository drive browser explorer',
   },
   {
-    // The project's shared folders: the sidebar Drive row (`filesRow`). Only
-    // for projects with the `drives` flag on, like the row itself. The id
+    // The project's shared folders: the sidebar Drive row (`filesRow`). Drive
+    // is on for every project (the `drives` flag graduated in #11478). The id
     // predates the move from `/customize/files` to `/drive` (#10258).
     id: 'proj-shared-files',
     label: 'Drive',
@@ -721,7 +721,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/drive',
     requiresProject: true,
-    requiresFlag: 'drives',
     keywords: 'files folders drive shared company my folder access share',
   },
   {
@@ -739,8 +738,8 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'artifacts docs doc slides deck presentation board design dashboard page published share',
   },
   {
-    // The repo browser under Customize → Repo, where it moves when the
-    // `drives` flag is on (#10258). `command-palette.tsx` gates the row on
+    // The repo browser under Customize → Repo, where it moved with Drive
+    // (#10258). `command-palette.tsx` gates the row on
     // the tab's own verdict, so it shows exactly when the tab does.
     id: 'proj-repo',
     label: 'Repo',
@@ -983,7 +982,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/docs/credits',
+    href: '/docs/guide#billing',
     // `explained` stays in the keywords because /credits-explained was the
     // original public URL and is still what people type for this page.
     keywords: 'credits coins billing usage tokens cost explain explained',

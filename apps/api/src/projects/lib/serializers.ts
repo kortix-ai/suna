@@ -26,6 +26,7 @@ import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flag
 // Re-exported here so every importer and mock keeps working.
 export { requestAuditContext } from '../../middleware/request-audit';
 import { CHANNEL_ACCESS_PLATFORMS } from '../../shared/channel-access-platforms';
+import { forRequestApiUrl } from '../../shared/domain-aliases';
 import { normalizeJsonObject } from '../../shared/json';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -85,7 +86,7 @@ export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
  * metadata whole, so nothing loses access to them — only the inventory listing
  * stops shipping a copy per row. Keys clients DO read off the list —
  * `pending_prompt`, `session_name`, `last_activity_at`, `spawned_by_session`,
- * `legacy_migration`, `source`, `trigger_*`, `sandbox_slug`, `warm` — are
+ * `legacy_migration`, `source`, `trigger_*`, `sandbox_slug` — are
  * deliberately NOT here.
  */
 export const LIST_OMITTED_SESSION_METADATA_KEYS = [
@@ -205,16 +206,15 @@ export function serializeSession(
     // A legacy `e2b` row passes through as stored: E2B support is discontinued.
     sandbox_provider: row.sandboxProvider as ProjectSession['sandbox_provider'],
     sandbox_id: row.sandboxId,
-    sandbox_url: row.sandboxUrl,
+    sandbox_url: forRequestApiUrl(row.sandboxUrl),
     runtime_session_id: row.runtimeSessionId,
     opencode_session_id: row.runtimeSessionId,
     name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
     labels: canAccess ? (row.labels ?? []) : [],
     agent_name: row.agentName,
-    // Lifecycle reads report the stored state. The visible inventory hides
-    // unused warm sessions; masking a ready runtime as provisioning leaves
-    // manager and CLI reads permanently showing Starting.
+    // Lifecycle reads report the stored state: masking a ready runtime as
+    // provisioning leaves manager and CLI reads permanently showing Starting.
     status: row.status,
     error: row.error,
     // Inventory filters inaccessible rows. Keep this boundary fail-closed for
@@ -351,6 +351,8 @@ export function serializeProject(
     // hosts read false as "show the legacy catalog".
     // `meta_agent` was removed on 2026-11-02: My Kortix follows kortix.yaml
     // `builtin_agents.my_kortix` alone, and older SDKs and hosts still read the key.
+    // `warm_sessions` was removed on 2026-11-03 and stays `false`: older web, SDK
+    // and mobile builds pre-create a session only while they read true.
     // `volumes` and `drives` graduated on 2026-11-02: every project has a Drive
     // where the platform stores one. Both keys stay, equal to that availability,
     // because older web, SDK, TUI and CLI builds show the Drive only while they read true.
@@ -364,6 +366,7 @@ export function serializeProject(
       connectors_v2: true,
       connectors_api_discover: true,
       meta_agent: true,
+      warm_sessions: false,
       volumes: isPlatinumConfigured(),
       drives: isPlatinumConfigured(),
     },

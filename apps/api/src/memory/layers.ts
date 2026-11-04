@@ -3,8 +3,7 @@
  *
  * | Key          | Folder                               | Who reads it        |
  * |--------------|--------------------------------------|---------------------|
- * | `company`    | `/Company/Memory`                    | every project member |
- * | a channel id | `/Company/Channels/<slug>/Memory`    | every project member |
+ * | a channel id | `/Company/Channels/<slug>/Memory`    | project admins, and agents granted it (nothing is shared with every member) |
  * | a private channel id | `/Channels/<space_id>/Memory` | the channel's members only |
  * | a DM id      | `/Users/<owner>/Memory`, agent folder `Memory/<agent>` first | the DM owner only |
  * | `mykortix`   | the viewer's own `/Users/<viewer>/Memory/mykortix` | the viewer only     |
@@ -14,7 +13,7 @@
  * checked against membership (`canSeeSpace`): anyone else, a project manager
  * included, gets 404. An archived channel is read-only.
  */
-import { COMPANY_MEMORY_DIR, MEMORY_DIR_NAME } from '../drives/folders';
+import { MEMORY_DIR_NAME } from '../drives/folders';
 import { folderAccess, folderAccessAtLeast } from '../drives/folders';
 import { type DriveCaller, type DriveRow, driveSubjectFor, ensureProjectDrive, personalFolderFor } from '../drives/service';
 import { driveStorageAvailable } from '../drives/volumes';
@@ -128,13 +127,12 @@ export async function dmAgentsOf(projectId: string, userId: string) {
 
 /** The layer of a route key; 404 for anything the viewer may not read. */
 export async function resolveLayer(project: Project, key: string, viewer: Viewer): Promise<Layer> {
-  if (key !== 'company' && key !== MY_KORTIX_MEMORY_LAYER_KEY && !isUuid(key)) throw notFound();
+  // `company` (the old project-wide layer) is gone: nothing is shared with the whole project.
+  if (key !== MY_KORTIX_MEMORY_LAYER_KEY && !isUuid(key)) throw notFound();
   const { drive, caller } = await driveCallerOf(project, viewer);
   const base = { key, projectId: project.projectId, drive, agentFolder: null as string | null, skip: [] as string[], isDefault: false };
   let layer: Omit<Layer, 'canWrite'>;
-  if (key === 'company') {
-    layer = { ...base, scope: 'company', spaceId: null, name: 'Company', root: COMPANY_MEMORY_DIR, readOnly: false };
-  } else if (key === MY_KORTIX_MEMORY_LAYER_KEY) {
+  if (key === MY_KORTIX_MEMORY_LAYER_KEY) {
     // The viewer's own My Kortix folder: no space row, no other person's.
     const personal = personalFolderFor(caller.grants, viewer.userId) ?? caller.personalFolder;
     const root = spaceDriveFolders('dm', MY_KORTIX_AGENT_NAME, personal)?.memory;

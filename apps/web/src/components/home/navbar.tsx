@@ -561,7 +561,7 @@ export function Navbar({ solidAtTop = false }: { solidAtTop?: boolean } = {}) {
                   for a missing count. No number, no chip. */}
               {stars !== null && !starsLoading && (
                 <Link
-                  href="https://github.com/kortix-ai/suna"
+                  href="https://github.com/kortix-ai/CompanyOS"
                   target="_blank"
                   rel="noopener noreferrer"
                   className={cn(BAR_LINK, 'mr-4 hidden gap-2 xl:flex')}

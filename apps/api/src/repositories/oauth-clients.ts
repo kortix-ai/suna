@@ -60,6 +60,15 @@ function mapRow(r: typeof oauthClients.$inferSelect): OAuthClient {
 }
 
 /**
+ * localhost/127.0.0.1/[::1]/*.localhost — the hosts an http:// redirect may
+ * target while every deployed app must use https (RFC 8252 §7.3). Shared with
+ * the headless auth redirect guard (auth/headless.ts).
+ */
+export function isLoopbackHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname.endsWith('.localhost');
+}
+
+/**
  * A redirect URI is compared byte-for-byte at /authorize and /token, so it is
  * stored exactly as given — after proving it is an absolute http(s) URL with
  * no fragment. http is allowed only on loopback (RFC 8252 §7.3) so a local dev
@@ -84,7 +93,7 @@ export function normalizeRedirectUris(input: unknown, opts: { native?: boolean }
       throw new OAuthClientInputError(`redirect_uri is not an absolute URL: ${value}`);
     }
     if (url.hash) throw new OAuthClientInputError(`redirect_uri must not carry a fragment: ${value}`);
-    const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]' || url.hostname.endsWith('.localhost');
+    const loopback = isLoopbackHost(url.hostname);
     if (url.protocol === 'http:' && !loopback) throw new OAuthClientInputError(`redirect_uri must use https (http is allowed on localhost only): ${value}`);
     const web = url.protocol === 'http:' || url.protocol === 'https:';
     const nativeScheme = opts.native && !web && !['javascript:', 'data:', 'vbscript:', 'file:', 'blob:'].includes(url.protocol);

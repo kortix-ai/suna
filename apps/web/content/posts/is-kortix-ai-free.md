@@ -12,7 +12,7 @@ Yes, Kortix is open source and free to self-host. The cloud version is metered b
 
 ## The software is free to keep
 
-Kortix is open source. Read it, fork it, audit it ([Kortix on GitHub](https://github.com/kortix-ai/suna)). Self-hosting carries no fee to Kortix. `kortix self-host init` and `kortix self-host start` install a Docker Compose stack on a Linux server you control. Billing is off by default: no credits, no plan limits and no managed models ([self-hosting docs](https://kortix.com/docs/host)). You still pay the companies that supply the metal and the tokens. Sessions run on Platinum, the reference compute provider, and each project adds its own model key in the app. Those two bills exist on any host, including ours.
+Kortix is open source. Read it, fork it, audit it ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)). Self-hosting carries no fee to Kortix. `kortix self-host init` and `kortix self-host start` install a Docker Compose stack on a Linux server you control. Billing is off by default: no credits, no plan limits and no managed models ([self-hosting docs](https://kortix.com/docs/host)). You still pay the companies that supply the metal and the tokens. Sessions run on Platinum, the reference compute provider, and each project adds its own model key in the app. Those two bills exist on any host, including ours.
 
 ## What the Free plan includes
 

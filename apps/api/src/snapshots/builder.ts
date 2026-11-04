@@ -36,8 +36,9 @@ import { claimSnapshotBuild, holdSnapshotBuild, releaseSnapshotBuild, waitForSna
 import { enabledTemplateBuildProviders } from './provider-coverage';
 import { config, type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
-import { eq } from 'drizzle-orm';
-import { projects } from '@kortix/db';
+import type { SessionStartImageState } from '@kortix/api-contract';
+import { and, desc, eq } from 'drizzle-orm';
+import { projects, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveSessionPlacement } from '../platform/services/sandbox-region';
 import { preparePlatinumTemplateRegion } from './providers/platinum-templates';
@@ -145,6 +146,193 @@ export async function findServableLastReadyImage(
 }
 
 /**
+ * How long a session start waits for its image to be chosen before it boots
+ * the image its project booted last. A normal resolution takes about 1 s.
+ */
+export const SESSION_IMAGE_BUDGET_MS = 8_000;
+
+/**
+ * A resolution in one of these states is waiting on a build, which takes
+ * minutes: the budget cannot end in the new image, so the session does not wait
+ * it out. Every new session in the window after a runtime change paid the full
+ * 8 s here (preview, 2026-11-02: `image:serving_last_ready=+8004ms`).
+ */
+const BUILD_WAIT_STATES: ReadonlySet<ImageStep['state']> = new Set(['waiting_for_build', 'building']);
+
+/**
+ * The image for a session start, never a silent wait.
+ *
+ * `ensureSandboxImage` already boots the last ready image instead of waiting
+ * for a build. This bounds everything else (a slow database, a slow provider,
+ * a lock): past `budgetMs`, or as soon as the resolution reports a build, the
+ * session boots the image its project's latest session booted
+ * (`lastBootedImage`), says so through `onStep`, and logs the step. The
+ * resolution keeps running behind it. With no earlier boot to fall back to, the
+ * session waits, and `onStep` names what it waits on.
+ */
+export async function ensureSessionImage(
+  project: GitBackedProject,
+  opts: Parameters<typeof ensureSandboxImage>[1] & {
+    budgetMs?: number;
+    /** Injected in tests. */
+    lastBooted?: typeof lastBootedImage;
+    /** Injected in tests. */
+    resolve?: typeof ensureSandboxImage;
+  } = {},
+): Promise<EnsureSandboxImageResult> {
+  const started = Date.now();
+  let current: ImageStep = { state: 'resolving', image: null };
+  let answered = false;
+  const OVER_BUDGET = Symbol('over-budget');
+  let buildNeeded = () => {};
+  const buildWait = new Promise<typeof OVER_BUDGET>((resolve) => {
+    buildNeeded = () => resolve(OVER_BUDGET);
+  });
+  const resolution = (opts.resolve ?? ensureSandboxImage)(project, {
+    ...opts,
+    source: opts.source ?? 'session-start',
+    onStep: (step) => {
+      current = step;
+      if (!answered) opts.onStep?.(step);
+      if (BUILD_WAIT_STATES.has(step.state)) buildNeeded();
+    },
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const first = await Promise.race([
+    resolution,
+    buildWait,
+    new Promise<typeof OVER_BUDGET>((resolve) => {
+      timer = setTimeout(() => resolve(OVER_BUDGET), opts.budgetMs ?? SESSION_IMAGE_BUDGET_MS);
+    }),
+  ]).finally(() => clearTimeout(timer));
+  if (first !== OVER_BUDGET) return first;
+
+  const provider = opts.provider ?? 'platinum';
+  const fallback = await (opts.lastBooted ?? lastBootedImage)(project.projectId, opts.slug, provider).catch(() => null);
+  const context = {
+    projectId: project.projectId,
+    slug: opts.slug ?? DEFAULT_SANDBOX_SLUG,
+    provider,
+    waitingOn: current.state,
+    elapsedMs: Date.now() - started,
+  };
+  if (!fallback) {
+    // Only past the budget: a project's first image build is not a slow step.
+    if (!BUILD_WAIT_STATES.has(current.state)) {
+      logger.warn('[snapshots] image resolution over budget; no earlier boot to fall back to', context);
+    }
+    return resolution;
+  }
+  answered = true;
+  // The resolution still finishes, and its builds and records land; nobody waits on it.
+  resolution.catch((error: unknown) =>
+    logger.warn('[snapshots] image resolution failed after its session booted the previous image', {
+      ...context,
+      error: error instanceof Error ? error.message : String(error),
+    }),
+  );
+  logger.warn(
+    BUILD_WAIT_STATES.has(current.state)
+      ? '[snapshots] session image is building; booting the previous image'
+      : '[snapshots] image resolution over budget; booting the previous image',
+    { ...context, image: fallback.snapshotName },
+  );
+  opts.onStep?.({ state: 'serving_last_ready', image: fallback.snapshotName });
+  return fallback;
+}
+
+/**
+ * The image the project's latest session booted on `provider` with template
+ * `slug`, from that session's own record (`runtimeArtifact`). Durable across
+ * restarts and deploys, unlike an in-memory cache. Only a record with its
+ * machine size qualifies: compute metering bills from it.
+ */
+export async function lastBootedImage(
+  projectId: string,
+  slug: string | undefined,
+  provider: string,
+): Promise<EnsureSandboxImageResult | null> {
+  const wanted = slug ?? DEFAULT_SANDBOX_SLUG;
+  const rows = await db
+    .select({ metadata: sessionSandboxes.metadata })
+    .from(sessionSandboxes)
+    .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.provider, provider as never)))
+    .orderBy(desc(sessionSandboxes.createdAt))
+    .limit(25);
+  for (const row of rows) {
+    const booted = bootedImageOf((row.metadata as Record<string, unknown> | null)?.runtimeArtifact, wanted, provider);
+    if (booted) return booted;
+  }
+  return null;
+}
+
+/** A session's `runtimeArtifact` record as a bootable image, when it is one for `slug` on `provider` with its machine size. */
+export function bootedImageOf(value: unknown, slug: string, provider: string): EnsureSandboxImageResult | null {
+  if (!value || typeof value !== 'object') return null;
+  const artifact = value as Record<string, unknown>;
+  const spec = artifact.spec as Partial<SandboxImageSpec> | undefined;
+  if (
+    artifact.sandboxSlug !== slug ||
+    artifact.provider !== provider ||
+    typeof artifact.providerArtifactRef !== 'string' ||
+    typeof artifact.contentHash !== 'string' ||
+    typeof spec?.cpu !== 'number' ||
+    typeof spec.memoryGb !== 'number' ||
+    typeof spec.diskGb !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    snapshotName: artifact.providerArtifactRef,
+    slug,
+    contentHash: artifact.contentHash,
+    built: false,
+    isDefault: artifact.isPlatformDefault === true,
+    runtimeProfile: artifact.runtimeProfile === 'mykortix' ? 'mykortix' : 'standard',
+    spec: { cpu: spec.cpu, memoryGb: spec.memoryGb, diskGb: spec.diskGb },
+  };
+}
+
+/** A step a session start can wait on while its image is chosen (api-contract `SessionStartImageState`). */
+export interface ImageStep {
+  state: SessionStartImageState;
+  /** The image the step is about; null while it is not chosen yet. */
+  image: string | null;
+}
+
+/** A step slower than this is logged by name. Every step of a normal resolution takes well under it. */
+export const SLOW_IMAGE_STEP_MS = 2_000;
+
+/**
+ * Time each step of an image resolution. A slow step is logged with its name,
+ * so a session that waited on its image says where (2026-11-02: one first
+ * session waited 67 s in this function and no log line named a step).
+ */
+function imageStepTimer(
+  project: Pick<GitBackedProject, 'projectId'>,
+  opts: { slug?: string; source?: SnapshotBuildSource; onTiming?: (step: string, ms: number) => void },
+) {
+  return async <T>(step: string, run: () => Promise<T>): Promise<T> => {
+    const started = Date.now();
+    try {
+      return await run();
+    } finally {
+      const ms = Date.now() - started;
+      opts.onTiming?.(step, ms);
+      if (ms >= SLOW_IMAGE_STEP_MS) {
+        logger.warn('[snapshots] slow image step', {
+          step,
+          ms,
+          projectId: project.projectId,
+          slug: opts.slug ?? 'default',
+          source: opts.source ?? 'session-start',
+        });
+      }
+    }
+  };
+}
+
+/**
  * Make sure a provider-side snapshot exists for `(project, slug)` and return
  * its name. Builds inline if the provider doesn't have it yet.
  */
@@ -174,9 +362,15 @@ export async function ensureSandboxImage(
     publish?: boolean;
     /** Internal: this call already waited once for another replica's build. */
     peerBuildAwaited?: boolean;
+    /** Each step a caller may be waiting on (`SessionStartImageState`), as it begins. */
+    onStep?: (step: ImageStep) => void;
+    /** How long each internal step took, for the caller's timeline. */
+    onTiming?: (step: string, ms: number) => void;
   } = {},
 ): Promise<EnsureSandboxImageResult> {
-  const template = await resolveTemplateBySlug(project, opts.slug);
+  const timed = imageStepTimer(project, opts);
+  opts.onStep?.({ state: 'resolving', image: null });
+  const template = await timed('template', () => resolveTemplateBySlug(project, opts.slug));
   const buildProvider = opts.provider ?? template.provider;
   const publish = opts.publish ?? true;
 
@@ -185,7 +379,7 @@ export async function ensureSandboxImage(
     throw new SnapshotBuildError(`Sandbox provider ${buildProvider} is not configured`);
   }
 
-  const identity = await computeTemplateIdentity(project, template);
+  const identity = await timed('identity', () => computeTemplateIdentity(project, template));
 
   // Trust-the-row fast path. If the template row already recorded THIS exact
   // snapshot (same content hash + name) as active, boot straight off it without
@@ -212,13 +406,20 @@ export async function ensureSandboxImage(
 
   // Cache hit? (checks the ACTIVE provider — so a row built elsewhere doesn't
   // count, and we rebuild on this provider.)
-  let state = await provider.getSnapshotState(identity.snapshotName);
+  let state = await timed('provider-state', () => provider.getSnapshotState(identity.snapshotName));
   // Built at home but not yet copied to the region this project's sessions
   // boot in: Platinum refuses that create (409 replicating) and the session
   // waits it out in 10 s retries. Serve it like a build in flight instead.
   // A boot checks for 3 s; a build waits for the copy.
   const regionWaitMs = canServeLastKnownGoodRuntime({ source: opts.source ?? 'session-start' }) ? 3_000 : undefined;
-  if (state === 'active' && !(await templateRegionResident(project.projectId, buildProvider, identity.snapshotName, regionWaitMs))) {
+  if (
+    state === 'active' &&
+    !(await timed('region', () =>
+      templateRegionResident(project.projectId, buildProvider, identity.snapshotName, regionWaitMs, {
+        onPrepare: () => opts.onStep?.({ state: 'copying_to_region', image: identity.snapshotName }),
+      }),
+    ))
+  ) {
     state = 'building';
   }
   if (state === 'active') {
@@ -253,13 +454,16 @@ export async function ensureSandboxImage(
   // stops being safe). Pre-builds and explicit manual/CR builds skip this and
   // build inline — producing the new image IS their job.
   if (canServeLastKnownGoodRuntime({ source: opts.source ?? 'session-start' })) {
-    const servable = await findServableLastReadyImage(provider, {
-      project,
-      template,
-      identity,
-      buildProvider,
-    });
+    const servable = await timed('last-ready', () =>
+      findServableLastReadyImage(provider, {
+        project,
+        template,
+        identity,
+        buildProvider,
+      }),
+    );
     if (servable) {
+      opts.onStep?.({ state: 'serving_last_ready', image: servable.snapshotName });
       // A build already in flight for this identity needs no second trigger;
       // `waitForProviderBuild`'s cross-replica dedupe exists precisely so we do
       // not issue a conflicting same-name build.
@@ -295,7 +499,8 @@ export async function ensureSandboxImage(
       snapshotName: identity.snapshotName,
       source: opts.source ?? 'session-start',
     });
-    state = await waitForProviderBuild(provider, identity.snapshotName);
+    opts.onStep?.({ state: 'waiting_for_build', image: identity.snapshotName });
+    state = await timed('wait-build', () => waitForProviderBuild(provider, identity.snapshotName));
     if (state === 'active') {
       if (publish) await recordTemplateBuilt(template.templateId, {
         snapshotName: identity.snapshotName,
@@ -347,6 +552,8 @@ export async function ensureSandboxImage(
   // the branches above handle (active, building, failed).
   const buildKey = `${buildProvider}:${identity.snapshotName}${publish ? '' : ':unpublished'}`;
   let pending = inflightBuilds.get(buildKey);
+  // This process builds this image for another caller already: wait for it.
+  if (pending) opts.onStep?.({ state: 'waiting_for_build', image: identity.snapshotName });
   if (!pending) {
     pending = (async (): Promise<EnsureSandboxImageResult | typeof BUILT_BY_PEER> => {
       if (!(await claimSnapshotBuild(buildKey))) {
@@ -355,9 +562,11 @@ export async function ensureSandboxImage(
             `Sandbox image ${identity.snapshotName} is being built by another API replica on ${buildProvider}`,
           );
         }
-        await waitForSnapshotBuildRelease(buildKey);
+        opts.onStep?.({ state: 'waiting_for_build', image: identity.snapshotName });
+        await timed('peer-build', () => waitForSnapshotBuildRelease(buildKey));
         return BUILT_BY_PEER;
       }
+      opts.onStep?.({ state: 'building', image: identity.snapshotName });
       const stopHeartbeat = holdSnapshotBuild(buildKey);
       try {
         return await runInlineBuild(project, template, identity, {
@@ -376,7 +585,7 @@ export async function ensureSandboxImage(
     })().finally(() => inflightBuilds.delete(buildKey));
     inflightBuilds.set(buildKey, pending);
   }
-  const result = await pending;
+  const result = await timed('build', () => pending);
   return result === BUILT_BY_PEER ? ensureSandboxImage(project, { ...opts, peerBuildAwaited: true }) : result;
 }
 
@@ -394,13 +603,18 @@ export async function templateRegionResident(
   deps: {
     readMetadata?: (projectId: string) => Promise<unknown>;
     prepare?: typeof preparePlatinumTemplateRegion;
+    /** Where the project's boxes run (`resolveSessionPlacement`). Injected in tests. */
+    placement?: typeof resolveSessionPlacement;
+    /** Called once, right before the copy to the region starts. */
+    onPrepare?: () => void;
   } = {},
 ): Promise<boolean> {
   if (provider !== 'platinum') return true;
   try {
     const readMetadata = deps.readMetadata ?? readProjectMetadata;
-    const region = (await resolveSessionPlacement(projectId, await readMetadata(projectId))).location;
+    const region = (await (deps.placement ?? resolveSessionPlacement)(projectId, await readMetadata(projectId))).location;
     if (!region) return true;
+    deps.onPrepare?.();
     await (deps.prepare ?? preparePlatinumTemplateRegion)(snapshotName, region, { timeoutMs });
     return true;
   } catch (err) {

@@ -10,7 +10,7 @@ let firstChat: ComponentProps<typeof FirstChat> | undefined;
 let firstChatPending = false;
 /** Whether the address carries `?chat=first` (the sidebar row, onboarding). */
 let firstChatRequested = true;
-/** `metadata.onboarding_completed_at` on the project detail; `null` = not onboarded. */
+/** `metadata.onboarding_completed_at` on the project row; `null` = not onboarded. */
 let onboardedAt: string | null = '2026-10-01T00:00:00Z';
 /** The onboarding leaves: `project.settings.write` (the stamp) and `project.session.start` (the kickoff). */
 let canWrite = true;
@@ -62,12 +62,13 @@ mock.module('@kortix/ui/internal/stores/first-chat-store', () => ({
 }));
 mock.module('@tanstack/react-query', () => ({
   ...realQuery,
-  // One answer fits every query: the project detail (its metadata decides
+  // One answer fits every query: the bare project row (its metadata decides
   // onboarding), an empty sandbox list and no access requests.
   useQuery: () => ({
     isSuccess: true,
     data: {
-      project: { account_id: 'a1', metadata: onboardedAt ? { onboarding_completed_at: onboardedAt } : {} },
+      account_id: 'a1',
+      metadata: onboardedAt ? { onboarding_completed_at: onboardedAt } : {},
       items: [],
       requests: [],
     },
@@ -95,6 +96,7 @@ mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
 mock.module('@kortix/ui/internal/stores/account-panel-store', () => ({ ...realAccountPanel, hubTarget: () => null }));
 mock.module('@kortix/sdk', () => ({
   ...realSdk,
+  getProject: mock(),
   getProjectDetail: mock(),
   listProjectAccessRequests: mock(),
   listProjectSandboxes: mock(),
@@ -111,6 +113,7 @@ mock.module('@kortix/sdk/react', () => ({
       sandboxes: () => [],
       accessRequests: () => [],
       detail: () => [],
+      summary: () => [],
     },
   },
 }));

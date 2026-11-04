@@ -50,7 +50,7 @@ const WEBFETCH: PermissionRequest = {
   id: 'perm_webfetch',
   sessionID: 'ses_dbg',
   permission: 'webfetch',
-  patterns: ['https://api.github.com/repos/kortix-ai/suna/commits'],
+  patterns: ['https://api.github.com/repos/kortix-ai/CompanyOS/commits'],
   metadata: {},
   always: [],
 };

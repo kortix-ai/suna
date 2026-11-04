@@ -24,3 +24,18 @@ output "vpc_cidr" {
 output "availability_zones" {
   value = local.azs
 }
+
+output "s3_gateway_endpoint_id" {
+  description = "S3 gateway endpoint on the private route tables (S3 traffic skips the NAT)."
+  value       = aws_vpc_endpoint.s3.id
+}
+
+output "egress_subnet_ids" {
+  description = "Egress subnet IDs: tasks with a public IP reach the internet directly and GitHub through the NAT."
+  value       = aws_subnet.egress[*].id
+}
+
+output "github_prefix_list_id" {
+  description = "Managed prefix list of GitHub's IPv4 ranges, routed through the NAT from the egress subnets."
+  value       = aws_ec2_managed_prefix_list.github.id
+}

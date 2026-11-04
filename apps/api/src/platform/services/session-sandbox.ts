@@ -43,17 +43,19 @@ import {
   buildSandboxInitAttemptMetadata,
   buildSandboxInitFailureMetadata,
   buildSandboxInitSuccessMetadata,
+  isSnapshotStillBuilding,
   retrySandboxProvisionCreate,
   SANDBOX_INIT_MAX_ATTEMPTS,
   sandboxInitMetadataPatch,
 } from './sandbox-init-state';
 import {
-  ensureSandboxImage,
+  ensureSessionImage,
   ensureMyKortixSandboxImage,
   deleteSandboxImage,
   resolveTemplate,
   DEFAULT_SANDBOX_SLUG,
   type EnsureSandboxImageResult,
+  type ImageStep,
   type SandboxImageSpec,
 } from '../../snapshots/builder';
 import { templateResidentialProxy } from '../../snapshots/templates';
@@ -67,11 +69,11 @@ import { startComputeSession } from '../../billing/services/compute-metering';
 import { resolveAgentGrant } from '../../projects/agents';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
-import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { instanceStampMetadata } from '../../projects/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { myKortixAgentGrant } from '../../projects/lib/my-kortix-agent';
+import { devTunnelStamp } from '../dev-tunnel-stamp';
 import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
 import { agentPrincipalModeFor } from '../../iam/agent-principal';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
@@ -173,6 +175,33 @@ function isSnapshotMissingOnProvider(error: unknown): boolean {
  * credential. The grant is read from the default branch, so any `[[agents]]`
  * change activates only through a merged change request.
  */
+/**
+ * Each image step a session start waits on, written to its sandbox row
+ * (`metadata.imageStep`, read by `/start` into `boot.image`) and to the
+ * provision timeline. Writes run in order, off the provisioning path: a
+ * failed write costs the client one step label, never the session.
+ */
+function imageStepReporter(sandboxId: string, tl: ProvisionTimeline): (step: ImageStep) => void {
+  let writes: Promise<unknown> = Promise.resolve();
+  return (step) => {
+    tl.note(`image:${step.state}`);
+    const imageStep = { state: step.state, image: step.image, since: new Date().toISOString() };
+    writes = writes
+      .then(() =>
+        db
+          .update(sessionSandboxes)
+          .set({ metadata: patchedSandboxMetadata({ merge: { imageStep } }), updatedAt: new Date() })
+          .where(eq(sessionSandboxes.sandboxId, sandboxId)),
+      )
+      .catch((error: unknown) =>
+        logger.warn('[session-sandbox] image step write failed', {
+          sandboxId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+  };
+}
+
 export async function mintSessionToken(opts: {
   accountId: string;
   userId: string;
@@ -392,6 +421,8 @@ interface SessionProvisionContext {
   providerWasExplicitlySelected: boolean;
   resolveGitProject: () => Promise<GitBackedProject>;
   resolveImage: (gitProject: GitBackedProject, targetProvider: string) => Promise<EnsureSandboxImageResult>;
+  /** Record the image step this session waits on (`imageStepReporter`). */
+  reportImageStep: (step: ImageStep) => void;
   /** The template slug this session boots. */
   slug: string;
   // Kortix Drive: a project with drives boots its sessions on Platinum only,
@@ -561,6 +592,7 @@ export async function provisionSessionSandbox(opts: {
     workspaceVolumePromise: undefined,
   };
   const tl = new ProvisionTimeline(sandboxId, 'provision');
+  const reportImageStep = imageStepReporter(sandboxId, tl);
 
   const slug = (opts.sandboxSlug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
   // Resolve the project + fresh provider-neutral git access (the snapshot
@@ -582,12 +614,14 @@ export async function provisionSessionSandbox(opts: {
   ): Promise<EnsureSandboxImageResult> =>
     isMyKortixSandboxSlug(slug)
       ? ensureMyKortixSandboxImage({ source: 'session-start', provider: targetProvider, projectId })
-      : ensureSandboxImage(gitProject, {
+      : ensureSessionImage(gitProject, {
           slug,
           accountId,
           source: 'session-start',
           provider: targetProvider,
           allowProjectImage: opts.allowProjectImage,
+          onStep: reportImageStep,
+          onTiming: (step) => tl.note(`image-step:${step}`),
         });
 
   // Kick image resolution off NOW, in parallel with the token round-trip below.
@@ -663,13 +697,6 @@ export async function provisionSessionSandbox(opts: {
   const sessionToken = tokenResult.value;
   const [sandbox] = sandboxRows;
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
-  // A WARM-POOL box is the one box the control plane can never observe again
-  // until somebody claims it: no turns, no LLM calls, no human preview traffic.
-  // Under the bare 20-minute boot floor every warm box was therefore reaped
-  // before it could be handed out, which defeats the whole feature. Grant its
-  // (bounded) lifetime here, at the one moment we know it is warm. No-op for
-  // every other box, and fire-and-forget: the row already carries the floor.
-  void grantWarmPoolLifetime(sandboxId, sandbox.metadata);
   tl.mark('row+tokens');
 
   const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
@@ -707,9 +734,8 @@ export async function provisionSessionSandbox(opts: {
     serverType,
     location: placement.location,
     // A box that mounts the project's Files never leaves their region: the
-    // home region could not mount them. Nor does a warm (speculative) box:
-    // the warm marker of projects/sandbox-deadline-policy.ts isWarmPoolBox.
-    locationRequired: placement.required || sandbox.metadata?.warm === true,
+    // home region could not mount them.
+    locationRequired: placement.required,
     envVars: {
       ...extraEnvVars,
       // One sandbox, one session-scoped Kortix credential. Provider, connector,
@@ -742,6 +768,7 @@ export async function provisionSessionSandbox(opts: {
       providerWasExplicitlySelected,
       resolveGitProject,
       resolveImage,
+      reportImageStep,
       slug,
       drivesRequirePlatinum,
       drivesSyncAllowed,
@@ -1037,6 +1064,10 @@ async function createAttemptSandbox(
     onAttemptFailure: async (attempt, error, willRetry, maxAttempts) => {
       state.lastProvisionAttempt = attempt;
       state.lastProvisionMaxAttempts = maxAttempts;
+      // Retries of up to 10 s each while the provider finishes the image: say so.
+      if (willRetry && isSnapshotStillBuilding(error)) {
+        ctx.reportImageStep({ state: 'waiting_for_provider', image: state.imageInfo?.snapshotName ?? null });
+      }
       const snapshot = sandbox.metadata as Record<string, unknown> | null;
       await transitionSandbox(willRetry ? 'reprovision' : 'failProvisioning', sandbox.sandboxId, {
         metadata: sandboxInitMetadataPatch(
@@ -1222,6 +1253,8 @@ async function activateProvisionedSandbox(
       {
         ...result.metadata,
         provisioningStage: firstStage?.id,
+        // The box has its image: no image step is pending any more.
+        imageStep: null,
         provisionTimeline: timeline,
         providerExternalId: result.externalId,
         ...boot.box,
@@ -1232,6 +1265,9 @@ async function activateProvisionedSandbox(
           sandboxSlug: state.imageInfo!.slug,
           isPlatformDefault: state.imageInfo!.isDefault,
           runtimeProfile: state.imageInfo!.runtimeProfile ?? 'standard',
+          // The machine size the image boots with. A later session start that
+          // falls back to this image (`lastBootedImage`) meters compute from it.
+          ...(state.imageInfo!.spec ? { spec: state.imageInfo!.spec } : {}),
           branch,
           provider: providerName,
         },
@@ -1256,7 +1292,8 @@ async function activateProvisionedSandbox(
     columns: {
       externalId: result.externalId,
       baseUrl: result.baseUrl || null,
-      config: { serviceKey: sessionToken },
+      // On a quick-tunnel dev stack, the tunnel this box calls back to (platform/dev-tunnel-stamp.ts).
+      config: { serviceKey: sessionToken, ...devTunnelStamp() },
       lastUsedAt: new Date(),
     },
     metadata: sandboxInitMetadataPatch(snapshot, finishMetadata),

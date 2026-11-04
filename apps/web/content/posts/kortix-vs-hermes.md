@@ -42,7 +42,7 @@ Hermes set out to be a personal agent, and for that job these defaults are right
 
 ## A review gate needs a repo underneath
 
-Reviewing an agent's work assumes the work has a readable shape, and that the reader can be someone else. In Kortix the project is that shape. Agents, the skills they load, company memory, connector grants and triggers live as files in a git repo the company owns ([Kortix on GitHub](https://github.com/kortix-ai/suna)).
+Reviewing an agent's work assumes the work has a readable shape, and that the reader can be someone else. In Kortix the project is that shape. Agents, the skills they load, company memory, connector grants and triggers live as files in a git repo the company owns ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)).
 
 ```yaml
 # kortix.yaml
@@ -87,7 +87,7 @@ One person who wants an assistant that learns their habits can install Hermes on
 
 ## Side by side
 
-Both columns follow each project's own documentation in October 2026: [Hermes on GitHub](https://github.com/nousresearch/hermes-agent) and the [Hermes docs](https://hermes-agent.nousresearch.com/docs), against [Kortix on GitHub](https://github.com/kortix-ai/suna) and [Kortix pricing](https://kortix.com/pricing).
+Both columns follow each project's own documentation in October 2026: [Hermes on GitHub](https://github.com/nousresearch/hermes-agent) and the [Hermes docs](https://hermes-agent.nousresearch.com/docs), against [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS) and [Kortix pricing](https://kortix.com/pricing).
 
 ```compare
 them: Hermes

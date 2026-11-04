@@ -607,6 +607,11 @@ placeholder rows on `loading` and its boot screen only on `none`.
 `useSession().conversationEmpty` is true when the saved copy proves the conversation empty
 (a complete read of the runtime found no messages), no turn ended since, and nothing is open
 or queued. A host renders the composer then, not a boot screen.
+`useSession().bootImage` is the sandbox image step of a provisioning box (`/start`'s
+`boot.image`, a `SessionStartImageStep`): `state` is `resolving`, `serving_last_ready`,
+`waiting_for_build`, `building`, `copying_to_region` or `waiting_for_provider`, with
+`image` and `since`. A boot screen names that step. It is `null` outside the `provisioning`
+phase, once ready, and against an API that does not send it.
 
 A host that registers a saved-copy store (`setSavedCopyStore(createSavedCopyStore({ storage,
 userId }))`) gets the kept copy painted before the first frame; the server's copy reconciles
@@ -1737,3 +1742,28 @@ an unavailable origin creates a root with `metadata.origin_session_id`.
 same-project parent. This groups the new session without inheriting the parent's
 sharing or automation identity. A session-bound credential retains its own
 server-derived parent regardless of that field.
+
+### Durable session model controls
+
+`session.setModel()` remains a local preference for later sends from that SDK handle.
+`session.getModel()` reads the durable pin (`{ model: string | null }`).
+`session.changeModel(model)` saves the pin without sending a prompt.
+Pi reconfigures without restarting; the running turn finishes before the next turn uses the new model.
+
+```ts
+await session.switchModel({
+  model: 'kortix/glm-5.3-flash',
+  prompt: 'Continue verification with the new model.',
+  idempotency_key: 'verification-model-1',
+});
+```
+
+The switch saves the pin and queues the continuation in one database transaction.
+Reuse the same key and payload after a transport failure. A different payload with the same key is refused.
+Self-switches are limited to three per hour. A queued continuation waits for the current turn.
+The response contains `prompt_id` and `deduped`; inspect `push_failed` before reporting live application.
+
+CLI: `kortix sessions model get [session-id]`, `set [session-id] <model>`,
+and `switch [session-id] <model> --prompt "Continue verification" --idempotency-key verification-model-1`.
+The new verbs default to `KORTIX_SESSION_ID`. The existing `sessions model <session-id> <model>` remains supported.
+Never send a peer message to yourself to continue a model switch.

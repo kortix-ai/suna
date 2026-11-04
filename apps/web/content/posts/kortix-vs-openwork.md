@@ -38,7 +38,7 @@ That gap does not close with a release, because review needs two versions of the
 
 ## The record is a branch, and the branch outlives the session
 
-The starter project's own agent file puts the difference plainly. The path is `packages/starter/templates/base/agents/kortix.md` in [Kortix on GitHub](https://github.com/kortix-ai/suna/blob/dev/packages/starter/templates/base/agents/kortix.md) (checked October 2026). It tells the agent that the session is "an ephemeral branch of this repo", and that "Only what you commit + push survives".
+The starter project's own agent file puts the difference plainly. The path is `packages/starter/templates/base/agents/kortix.md` in [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/agents/kortix.md) (checked October 2026). It tells the agent that the session is "an ephemeral branch of this repo", and that "Only what you commit + push survives".
 
 The file addresses the agent directly, and it treats the branch, not the conversation, as the thing that lasts. A session that runs six hours and edits forty files leaves a diff against `main` and nothing else. When the sandbox is gone, that diff is what a colleague opens. Approval attaches to the same object the work lives in, which is why the gate is a merge and not a message. Session work reaches `main` through a [change request](/docs/git). Merge is default-deny for agents.
 

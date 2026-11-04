@@ -22,30 +22,46 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'All case studies': 'text4bba111d6e4f',
   'Case studies': 'text6b1df2ba950c',
   'Case studies.': 'text0949ea4157c6',
-  'SciencePal: a science agent for researchers.': 'text8ce3e896977d',
-  'The institute’s AI research assistant, built from Kortix’s open-source code. It searches large literature databases and cites its sources, and it runs specialist agents for protein design and materials science, from property prediction to experiment design.':
-    'textd5c8e08391bf',
-  'An autonomous cloud company.': 'text6e78e53edc57',
-  'Platinum is a sandbox cloud for AI agents, run by agents on Kortix. Engineering agents take Linear issues, build and test the change and open the pull request. QA agents drive the real dashboard, record every flow and report to Slack with the video. People set the direction and approve.':
-    'textd60b9e2162fb',
-  'Fiber network design, run by agents.': 'textfef24d788a3e',
-  'The company runs its engineering and operations on Kortix, self-hosted in its own cloud. Agents design outside-plant fiber routes from GIS data and satellite imagery for an engineer to review, build bills of materials from the GIS layers, track schedule health across projects and keep live dashboards current on a schedule.':
-    'texta03de23a9f48',
+  'A science agent for researchers.': 'text9be6f4e5dd42',
+  'The institute’s AI research assistant. It searches the scientific literature with citations and runs agents for protein design and materials science.':
+    'textbc76493f60fc',
+  'Autonomous software engineering.': 'text0b42434e3eea',
+  'Engineering agents pick up issues, write the code and test every flow on video. People approve what ships.':
+    'textb35acf6e7819',
+  'Autonomous fiber network design.': 'text431417f96d98',
+  'Agents design fiber routes from GIS data and imagery and build the bill of materials for each route.':
+    'text2eb1d24bcc04',
   'Kortix, run on Kortix.': 'textf2d996d89263',
-  'Our own company is one Kortix project. An intake agent triages every new issue and hands it to a worker agent, which fixes it on its own machine and opens the pull request. A compliance agency keeps our SOC 2 policies and evidence current. People review, approve and sign.':
-    'text2a5f5b48cbfb',
-  'An AI-run hedge fund desk.': 'text0c3fe4098db1',
-  'Our own structured-credit desk, on real public SEC data. Agents pull every new asset-backed deal from EDGAR, extract each figure with its page citation, argue the deal through six analyst lenses, red-team the verdict and draft the memo. A person decides at investment committee.':
-    'text2ddef32a065d',
-  'An executive search firm, rebuilt around agents.': 'text0213c53e2373',
-  'A firm with four decades of history and offices on three continents, restructured to run on agents. Agents research candidates, prepare client and pitch materials, and run the firm’s internal operations.':
-    'text34d46d84a6a6',
+  'Our company is one Kortix project. Agents triage and fix issues, keep SOC 2 evidence current and run sales and support. People approve.':
+    'text34ff4020f800',
+  'Every deal, evaluated by agents.': 'textdd57f275a118',
+  'Asset management': 'textacf058bd8604',
+  'Every deal that comes in gets a full analysis. Agents screen it against the mandate, read the filings and market data, stress-test the thesis and the downside, and write the investment memo. The investment committee decides.':
+    'text313f92aeb061',
+  'Autonomous candidate research.': 'textdc7f8ac95166',
+  'Agents research candidates for every search and write a profile of each one. Consultants choose the shortlist.':
+    'textb5947f5f79c9',
   'The enterprise AI platform, built from Kortix’s open-source code.': 'textc81f1483737e',
-  'WRITER built its core agent platform from Kortix’s open-source code. Enterprises such as Salesforce, Vanguard, KPMG, Dropbox and H&R Block run their marketing, sales and support agents on WRITER.':
-    'textae75b4c89c6d',
+  'Enterprises such as Salesforce, Vanguard and KPMG run their marketing, sales and support agents on WRITER.':
+    'text4a271fd37da2',
   'Autonomous AWS cost optimization.': 'text2b7f6fe76645',
-  'Wring cuts its customers’ AWS bills with agents on Kortix. The agents find the AWS credit programs each customer qualifies for, prepare the applications and follow each one through to the decision. The customer approves, the agents do the paperwork.':
-    'textbe861096c12b',
+  'Agents find the AWS credit programs each customer qualifies for and prepare the applications. The customer approves.':
+    'text1d5d31148fec',
+  'Autonomous credit analysis.': 'text25bf11bde520',
+  'Agents spread the financials, check them against the bank’s credit policy and write the credit memo. A credit officer decides.':
+    'textedcda83a14c8',
+  'Claims, from first notice to payout.': 'text9060ed10df3a',
+  'Agents take the first notice of loss, check coverage, validate the claim, flag fraud and draft the settlement. An adjuster approves the payout.':
+    'textbe5e1747cddb',
+  'Disruptions and EU261 claims, end to end.': 'text66ab060f0449',
+  'Agents rebook passengers in a disruption, check each EU261 claim against the flight record and draft the payment or the answer. People approve large payouts.':
+    'textb7827a3c054c',
+  'Prior authorization, without the paperwork.': 'text3dffbe0d084f',
+  'Agents read the chart, match it to the payer’s rules, assemble the request and track it to a decision. A clinician signs every request.':
+    'text607ed431d026',
+  'Autonomous invoice matching.': 'texta6c03c86526a',
+  'Agents match every supplier invoice to its order and receipt and chase each discrepancy. People approve amounts above a limit.':
+    'textaafd2677aaa5',
   'Arcadia · Identity': 'texte5ef926b9bd7',
   'Arcadia · Groups': 'text50e40164f19a',
   'From your directory': 'texta67b277c1791',
@@ -198,7 +214,7 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'Open proposals': 'text23caaccd7b6e',
   'Updated by an agent': 'text5ac2ceb659a9',
   'Needs attention': 'textc1ebc7817870',
-  'CompanyOS': 'text40866a29060e',
+  CompanyOS: 'text40866a29060e',
   Services: 'text604dce445e32',
   Site: 'textfa7955814e32',
   arcadia: 'text3259138318d8',
@@ -463,7 +479,7 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   '- HELPDESK_API_KEY': 'texteca665e8b7c8',
   'secrets: [HELPDESK_API_KEY]': 'text92a51dd3e468',
   'No lock-in.': 'text68a08970653c',
-  'github.com/kortix-ai/suna': 'text70d13140dd29',
+  'github.com/kortix-ai/CompanyOS': 'text70d13140dd29',
   'Customize → Models → Providers': 'text541a2ff8599c',
   'Terminal: your laptop': 'textcc59c4ac4977',
   'Every agent, skill and memory file, with its history.': 'text0749a8e92dda',

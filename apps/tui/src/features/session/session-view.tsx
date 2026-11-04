@@ -23,6 +23,7 @@
  * ordinary typing is exact and only the overlay case is an estimate.
  */
 
+import { webDashboardUrl } from '@kortix/cli/src/web-url.ts';
 import {
   type SessionHealthResult,
   type SessionLogMessage,
@@ -459,6 +460,7 @@ export function SessionView({
               messages={thread?.messages}
               title={title}
               showTray={showTray}
+              webBaseUrl={webDashboardUrl(host.backendUrl)}
             />
               </>
             )}

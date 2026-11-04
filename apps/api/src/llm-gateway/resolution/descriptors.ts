@@ -153,8 +153,9 @@ export function livePricing(
  * A managed model's one upstream: Kortix Platinum inference. Platinum owns the
  * model's upstream chain, failover and privacy terms, and reports its price as
  * `usage.cost`, which the gateway bills; `pricing` applies only without it.
+ * An audio model has no token `pricing`: its price is always reported.
  */
-export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
+export function managedCandidates(managed: Pick<ManagedModel, 'id'> & Partial<Pick<ManagedModel, 'pricing'>>): UpstreamDescriptor[] {
   // CLOUD-ONLY gate, defense-in-depth: the lineup is already empty with
   // KORTIX_MANAGED_PROVIDER_ENABLED off (loadManagedLineup); guard here too so
   // no managed credential is read if a future caller reaches this directly.
@@ -167,7 +168,7 @@ export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.id,
-    pricing: managed.pricing,
+    ...(managed.pricing ? { pricing: managed.pricing } : {}),
     publicProvider: 'kortix',
   }];
 }

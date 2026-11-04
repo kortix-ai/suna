@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { peerMessagePromptText } from '@kortix/shared';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -108,6 +109,23 @@ function renderRow(turn: SessionLogTurn): string {
     ),
   );
 }
+
+test.each(['message', 'idle_notice', 'shutdown_request', 'shutdown_response'] as const)('incoming synthetic %s remains visible in the transcript (KRTX-4000)', (kind) => {
+  const thread = sessionLogOfV1Rows('p', 'rs', [
+    {
+      info: { id: 'peer-prompt', sessionID: 'rs', role: 'user', agent: 'build', model: { providerID: 'test', modelID: 'test' }, time: { created: 1 } },
+      parts: [{ id: 'peer-text', sessionID: 'rs', messageID: 'peer-prompt', type: 'text', synthetic: true, text: peerMessagePromptText({ kind, from: 'reviewer', fromShortId: '12345678', messageId: 'peer-1', summary: null, text: 'The synthetic check passed.' }) }],
+    },
+  ]).threads[0];
+  if (!thread) throw new Error('Missing peer thread');
+  const turn = sessionLogTurns(thread)[0];
+  if (!turn) throw new Error('Missing peer turn');
+  const html = renderRow(turn);
+  expect(html).toContain('data-testid="peer-message-turn"');
+  expect(html).toContain('reviewer');
+  expect(html).toContain('The synthetic check passed.');
+  expect(html).not.toContain('carries no authority');
+});
 
 describe('an automatic provider-error recovery chain renders as one story (KRTX-2597)', () => {
   test('the harness continuation renders no user bubble', () => {

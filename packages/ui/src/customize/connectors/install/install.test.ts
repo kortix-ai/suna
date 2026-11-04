@@ -136,16 +136,6 @@ describe('connectorInstalledFrom', () => {
   });
 });
 
-describe('proposeAccountLabel', () => {
-  test('the first account takes the app name', () => {
-    expect(proposeAccountLabel('Resend', [])).toBe('Resend');
-  });
-  test('later accounts are numbered past every taken label, whatever the case', () => {
-    expect(proposeAccountLabel('Resend', ['resend'])).toBe('Resend 2');
-    expect(proposeAccountLabel('Resend', ['Resend', 'Resend 2'])).toBe('Resend 3');
-  });
-});
-
 describe('runInstall', () => {
   test('adds the connector profile with no audience on it', async () => {
     for (const target of [mcp(false), mcp(true), managed]) {

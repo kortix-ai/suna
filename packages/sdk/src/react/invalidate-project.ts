@@ -26,11 +26,14 @@ export async function invalidateProjectIdentity(
   await Promise.all([
     qc.invalidateQueries({ queryKey: qk.projects.scope() }),
     qc.invalidateQueries({ queryKey: qk.project.detail(projectId) }),
+    // The name readers (`useProjectName`) read the bare row.
+    qc.invalidateQueries({ queryKey: qk.project.summary(projectId) }),
   ]);
 }
 
 type ProjectsListEntry = { project_id: string; name: string };
 type ProjectDetailEntry = { project?: { name?: string } };
+type ProjectRowEntry = { name?: string };
 
 /**
  * Exactly what `writeProjectNameOptimistically` overwrote, restorable with
@@ -42,6 +45,8 @@ type ProjectDetailEntry = { project?: { name?: string } };
  */
 export interface ProjectNameSnapshot {
   detail: ProjectDetailEntry | undefined;
+  /** The bare project row (`qk.project.summary`), which `useProjectName` reads. */
+  row?: ProjectRowEntry | undefined;
   lists: Array<{ queryKey: QueryKey; data: ProjectsListEntry[] | undefined }>;
 }
 
@@ -73,6 +78,7 @@ export function writeProjectNameOptimistically(
   const lists = qc.getQueriesData<ProjectsListEntry[]>(listQueries);
   const snapshot: ProjectNameSnapshot = {
     detail: qc.getQueryData<ProjectDetailEntry>(qk.project.detail(projectId)),
+    row: qc.getQueryData<ProjectRowEntry>(qk.project.summary(projectId)),
     lists: lists.map(([queryKey, data]) => ({ queryKey, data })),
   };
 
@@ -84,6 +90,9 @@ export function writeProjectNameOptimistically(
     qk.project.detail(projectId),
     (prev: ProjectDetailEntry | undefined) =>
       prev?.project ? { ...prev, project: { ...prev.project, name } } : prev,
+  );
+  qc.setQueryData(qk.project.summary(projectId), (prev: ProjectRowEntry | undefined) =>
+    prev ? { ...prev, name } : prev,
   );
 
   return snapshot;
@@ -114,4 +123,5 @@ export function restoreProjectName(
     qc.setQueryData(queryKey, data);
   }
   qc.setQueryData(qk.project.detail(projectId), snapshot.detail);
+  qc.setQueryData(qk.project.summary(projectId), snapshot.row);
 }

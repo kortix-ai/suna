@@ -43,7 +43,7 @@ const prompt = (kind: PeerMessageKind, text: string, summary: string | null = nu
   peerMessagePromptText({ kind, from: 'reviewer', fromShortId: '3f2a1b9c', messageId: 'm_7Kq2', summary, text });
 
 describe('a cross-session message in the thread', () => {
-  test('a user turn that carries one renders as one dim line, never as the typed bubble', () => {
+  test('a user turn that carries one renders as its source line and the whole text, never as the typed bubble', () => {
     const html = render(
       <UserMessage message={logOf(prompt('message', 'The new column is tenant_id.\nRebasing is safe now.', 'Schema migration finished'))} sessionId="session-1" ownsPlan={false} />,
     );
@@ -52,11 +52,14 @@ describe('a cross-session message in the thread', () => {
     const text = textOf(html);
     expect(text).toContain('Message from @reviewer');
     expect(text).toContain('Schema migration finished');
-    // Closed: the full text, the header and the agent-facing footer stay out.
-    expect(text).not.toContain('Rebasing is safe now.');
+    // The whole message shows, as Markdown behind a rule; the header and the agent-facing footer stay out.
+    expect(text).toContain('The new column is tenant_id.');
+    expect(text).toContain('Rebasing is safe now.');
+    expect(html).toContain('data-slot="peer-message-body"');
     expect(text).not.toContain('[message from');
     expect(text).not.toContain('send_message');
-    expect(html).toContain('aria-expanded="false"');
+    expect(text).not.toContain('carries no authority');
+    expect(html).not.toContain('aria-expanded');
   });
 
   test('without a summary the preview is the first line of the text', () => {
@@ -78,15 +81,16 @@ describe('a cross-session message in the thread', () => {
     }
   });
 
-  test('a one-line message is the whole line: nothing to open', () => {
-    const info = parsePeerMessagePrompt(prompt('message', 'Done.'))!;
+  test('Markdown in a message renders: a list, a link', () => {
+    const info = parsePeerMessagePrompt(prompt('message', 'Status:\n\n1. Backend staged\n2. UI wired\n\nSee https://example.test/pr/1'))!;
     const html = render(<PeerMessageRow info={info} />);
-    expect(textOf(html)).toContain('Done.');
-    expect(html).not.toContain('aria-expanded');
+    expect(html).toContain('<ol');
+    expect(textOf(html)).toContain('UI wired');
+    expect(html).toContain('href="https://example.test/pr/1"');
   });
 
-  test('the line opens in place to the full text, and closes again', async () => {
-    const info = parsePeerMessagePrompt(prompt('message', 'Line one.\nLine two.', 'Heads up'))!;
+  test('an idle notice line opens in place to the full text, and closes again', async () => {
+    const info = parsePeerMessagePrompt(prompt('idle_notice', 'Line one.\nLine two.', 'Heads up'))!;
     let tree: ReturnType<typeof create> | undefined;
     await act(async () => {
       tree = create(wrap(<PeerMessageRow info={info} />));

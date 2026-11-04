@@ -36,8 +36,6 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 import { SessionPage } from '@/components/session/SessionPage';
 import { SessionConnecting } from '@/components/session/SessionConnecting';
 import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
-import { appIsActive, useWarmProjectSession } from '@/hooks/useWarmProjectSession';
-import { warmSessionPool } from '@/lib/session/warm-session-pool';
 import { useAuthContext } from '@/contexts';
 import { usePushStore } from '@/stores/push-store';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
@@ -205,10 +203,6 @@ export function ProjectScreen() {
   const { data: project } = useProject(projectId);
   const accountsQuery = useAccounts();
 
-  // Warm sessions (web parity): one booted session held while this project is
-  // open and the app is in the foreground, so a home send skips the sandbox
-  // boot. Gated by the project's `warm_sessions` flag (billed compute).
-  useWarmProjectSession(projectId, project?.experimental?.warm_sessions === true);
   // KRTX-1742 (the inbox, its home bell, reading a session's notifications)
   // is behind the project's `notification_center` flag, off by default.
   // Unknown while the project loads: off.
@@ -219,12 +213,6 @@ export function ProjectScreen() {
   useEffect(() => {
     if (notificationCenterOn) void carryOverLegacyKinds();
   }, [notificationCenterOn]);
-  // Opening a session any other way uses it: a held warm session with that id
-  // is no longer a candidate, so drop it and keep one ready.
-  const releaseWarmSession = useCallback((sessionId: string) => {
-    const dropped = warmSessionPool.dropBySessionId(sessionId);
-    if (dropped && appIsActive()) void warmSessionPool.ensure(dropped, { excludeSessionId: sessionId });
-  }, []);
 
   // Persisted tab state (survives app restarts)
   const activeSessionId = useTabStore((s) => s.activeSessionId);
@@ -245,14 +233,14 @@ export function ProjectScreen() {
     setHomeKey((key) => key + 1);
   }, []);
   const {
-    connectingProjectSessionId, connectError, restartingSession,
+    connectingProjectSessionId, connectError, connectImage, restartingSession,
     connectingRow, connectingFirstPrompt, connectingTitle, activeProjectSession,
     openedThreadRef, openedProjectSessionIdsRef, pendingThreadFocusRef, returnThreadRef,
     isHomeRef, ensuringRef, navigateToSession, goHome, refreshSessionLists,
     firstPromptRef, freshSessionIdRef, erroredSessionRef, setConnectError, setConnectingProjectSessionId, showUpgradeForError,
     handleOpenProjectSession, handleOpenSessionById, handleRestartSession,
     handleCancelConnect, takeInitialDraft,
-  } = useProjectSessionConnect(projectId, projectSessions, activeSessionId, activePageId, releaseWarmSession, setHomeKey);
+  } = useProjectSessionConnect(projectId, projectSessions, activeSessionId, activePageId, setHomeKey);
 
   // Review items that wait for the user. The project sheet that used to show
   // this as its Review row's badge is deleted (COR-123/COR-160 Task 3); the
@@ -709,6 +697,7 @@ export function ProjectScreen() {
               firstMessage={connectingFirstPrompt?.text}
               firstFiles={connectingFirstPrompt?.files}
               error={connectError}
+              imageStep={connectImage}
               onCancel={handleCancelConnect}
               onRestart={handleRestartSession}
               restarting={restartingSession}

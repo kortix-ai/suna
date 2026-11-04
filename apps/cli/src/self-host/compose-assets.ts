@@ -2,6 +2,9 @@ import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parse, stringify } from 'yaml';
 
+import type { DomainAliasHosts } from './domain-aliases';
+import { ACME_DNS_IMAGE, accountFileName, CADDY_ACME_DNS_DIR, WILDCARD_CADDY_IMAGE } from './wildcard-tls';
+
 import kortixCompose from './assets/kortix-compose.yml' with { type: 'text' };
 import kortixCaddyfile from './assets/Caddyfile.txt' with { type: 'text' };
 import kortixUpdaterScript from './assets/updater.sh' with { type: 'text' };
@@ -123,13 +126,7 @@ const CADDY_GLOBAL_CLOSE = 'email {$KORTIX_ACME_EMAIL}\n}';
  * bytes stay identical — only the site address and the leading comment above
  * each block differ (they stay per-family below).
  */
-const WILDCARD_SITE_BODY = `	header Strict-Transport-Security "max-age=2592000"
-
-	tls {
-		on_demand
-	}
-
-	reverse_proxy {
+const WILDCARD_SITE_PROXY = `	reverse_proxy {
 		dynamic a {
 			name kortix-api
 			port 8008
@@ -144,6 +141,33 @@ const WILDCARD_SITE_BODY = `	header Strict-Transport-Security "max-age=2592000"
 		health_timeout 2s
 	}
 }`;
+
+const WILDCARD_SITE_BODY = `	header Strict-Transport-Security "max-age=2592000"
+
+	tls {
+		on_demand
+	}
+
+${WILDCARD_SITE_PROXY}`;
+
+/**
+ * A wildcard base on wildcard TLS (see wildcard-tls.ts): one `*.<base>`
+ * certificate through the ACME DNS-01 challenge, written into the bundled
+ * acme-dns with this base's own credentials file. The public resolvers check
+ * the challenge before Caddy asks the CA to validate it.
+ */
+function wildcardDnsSiteBlock(base: string, comment: string): string {
+  return `${comment}
+*.${base} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	tls {
+		dns acmedns ${CADDY_ACME_DNS_DIR}/${accountFileName(base)}
+		resolvers 1.1.1.1 8.8.8.8
+	}
+
+${WILDCARD_SITE_PROXY}`;
+}
 
 /**
  * The wildcard App-serving site block. Every deployed App publishes on
@@ -217,10 +241,45 @@ export interface RenderCaddyfileOptions {
    * (KORTIX_CAPTURE_STORE=external) instead of the bundled on-box MinIO. When
    * true, the Caddyfile's `@capture` handler is dropped: devices upload
    * straight to the external store, so no request ever reaches the box on
-   * `/kortix-capture/*`. When false (the default), the base file is returned
-   * unchanged with the `@capture` handler intact.
+   * `/kortix-capture/*`. The `@snapshots` handler goes with it: the project
+   * snapshot bucket lived in the same on-box MinIO. When false (the default),
+   * the base file is returned unchanged with both handlers intact.
    */
   captureStoreExternal?: boolean;
+  /**
+   * Hosts this instance also serves in full (KORTIX_DOMAIN_ALIASES; see
+   * domain-aliases.ts). Each alias host joins the site address of its primary
+   * twin: web app, API, and the Apps/preview wildcards. Omitted or empty: the
+   * rendered file is unchanged.
+   */
+  domainAliases?: DomainAliasHosts;
+  /**
+   * Wildcard bases on wildcard TLS (KORTIX_WILDCARD_TLS_BASES; see
+   * wildcard-tls.ts), with the primary Apps and preview bases they are compared
+   * against. Each listed base gets its own `*.<base>` block with one DNS-01
+   * wildcard certificate; every other base stays on per-host on-demand TLS.
+   * Omitted or empty: the rendered file is unchanged.
+   */
+  wildcardTls?: { bases: readonly string[]; appsBaseDomain?: string; previewBaseDomain?: string };
+}
+
+/**
+ * The API site address line of the base Caddyfile. Alias API hosts are appended
+ * to it; the guard in renderCaddyfile throws if the line ever changes.
+ */
+const CADDY_API_SITE = '\n{$KORTIX_API_DOMAIN} {\n';
+
+/**
+ * The web-app site address line of the base Caddyfile. Alias web-app hosts are
+ * appended to it, so each alias serves the same frontend and Supabase routes.
+ */
+const CADDY_APP_SITE = '\n{$KORTIX_DOMAIN} {\n';
+
+function withWildcardAliases(block: string, primaryAddress: string, bases: readonly string[]): string {
+  if (bases.length === 0) return block;
+  const address = `${primaryAddress} {`;
+  if (!block.includes(address)) throw new Error(`Caddy site address ${primaryAddress} changed; cannot add aliases`);
+  return block.replace(address, `${[primaryAddress, ...bases.map((b) => `*.${b}`)].join(', ')} {`);
 }
 
 /**
@@ -231,6 +290,13 @@ export interface RenderCaddyfileOptions {
  * mode, the same loud-failure contract as CADDY_GLOBAL_CLOSE.
  */
 const CAPTURE_CADDY_BLOCK = /\n\t# Kortix Capture:[\s\S]*?\n\t@capture path[\s\S]*?\n\t\}\n/;
+
+/**
+ * The base Caddyfile's `@snapshots` matcher + handler: the project snapshot
+ * bucket in the same bundled store. Dropped with the `@capture` block when the
+ * store is external, because no on-box MinIO is left to serve it.
+ */
+const SNAPSHOT_CADDY_BLOCK = /\n\t# Project snapshots:[\s\S]*?\n\t@snapshots path[\s\S]*?\n\t\}\n/;
 
 /**
  * The Caddyfile actually written for an instance: the base reverse proxy, plus
@@ -244,22 +310,75 @@ export function renderCaddyfile(options: RenderCaddyfileOptions = {}): string {
       throw new Error('Caddyfile @capture block changed; cannot drop it for an external capture store');
     }
     caddyfile = caddyfile.replace(CAPTURE_CADDY_BLOCK, '');
+    if (!SNAPSHOT_CADDY_BLOCK.test(caddyfile)) {
+      throw new Error('Caddyfile @snapshots block changed; cannot drop it for an external capture store');
+    }
+    caddyfile = caddyfile.replace(SNAPSHOT_CADDY_BLOCK, '');
   }
-  const blocks = [
-    options.appsHostingConfigured ? APPS_SITE_BLOCK : null,
-    options.previewHostingConfigured ? PREVIEW_SITE_BLOCK : null,
-  ].filter((block): block is string => block !== null);
-  if (blocks.length === 0) return caddyfile;
-  if (!caddyfile.includes(CADDY_GLOBAL_CLOSE)) {
-    throw new Error('Caddyfile global options block changed; cannot inject on_demand_tls');
+  const aliases = options.domainAliases ?? { app: [], api: [], apps: [], preview: [] };
+  if (aliases.api.length > 0) {
+    if (!caddyfile.includes(CADDY_API_SITE)) {
+      throw new Error('Caddyfile API site address changed; cannot add alias API hosts');
+    }
+    caddyfile = caddyfile.replace(CADDY_API_SITE, `\n${['{$KORTIX_API_DOMAIN}', ...aliases.api].join(', ')} {\n`);
   }
-  // on_demand_tls is GLOBAL-only and Caddy allows one global block, so the
-  // `ask` is injected once no matter how many wildcard families are served.
-  const withOnDemand = caddyfile.replace(
-    CADDY_GLOBAL_CLOSE,
-    `email {$KORTIX_ACME_EMAIL}\n\n\ton_demand_tls {\n\t\task ${EDGE_TLS_CHECK_URL}\n\t}\n}`,
+  const wildcard = new Set(options.wildcardTls?.bases ?? []);
+  const family = (
+    configured: boolean | undefined,
+    block: string,
+    primaryAddress: string,
+    primaryBase: string | undefined,
+    aliasBases: readonly string[],
+    comment: string,
+  ): { onDemand: string | null; dns: string[] } => {
+    if (!configured) return { onDemand: null, dns: [] };
+    const primaryOnDns = Boolean(primaryBase && wildcard.has(primaryBase));
+    const dnsBases = [...(primaryOnDns ? [primaryBase!] : []), ...aliasBases.filter((b) => wildcard.has(b))];
+    const onDemandAliases = aliasBases.filter((b) => !wildcard.has(b));
+    let onDemand: string | null = null;
+    if (!primaryOnDns) onDemand = withWildcardAliases(block, primaryAddress, onDemandAliases);
+    else if (onDemandAliases.length > 0) {
+      onDemand = withWildcardAliases(block, primaryAddress, onDemandAliases).replace(`${primaryAddress}, `, '');
+    }
+    return { onDemand, dns: dnsBases.map((b) => wildcardDnsSiteBlock(b, comment)) };
+  };
+  const apps = family(
+    options.appsHostingConfigured,
+    APPS_SITE_BLOCK,
+    '*.{$KORTIX_APPS_BASE_DOMAIN}',
+    options.wildcardTls?.appsBaseDomain,
+    aliases.apps,
+    '# Deployed Kortix Apps under one wildcard certificate (DNS-01 via the bundled acme-dns).',
   );
-  return `${withOnDemand.trimEnd()}\n\n${blocks.join('\n\n')}\n`;
+  const previews = family(
+    options.previewHostingConfigured,
+    PREVIEW_SITE_BLOCK,
+    '*.{$KORTIX_PREVIEW_BASE_DOMAIN}',
+    options.wildcardTls?.previewBaseDomain,
+    aliases.preview,
+    '# Sandbox previews under one wildcard certificate (DNS-01 via the bundled acme-dns).',
+  );
+  const onDemandBlocks = [apps.onDemand, previews.onDemand].filter((block): block is string => block !== null);
+  const blocks = [...(apps.onDemand ? [apps.onDemand] : []), ...apps.dns, ...(previews.onDemand ? [previews.onDemand] : []), ...previews.dns];
+  if (aliases.app.length > 0) {
+    if (!caddyfile.includes(CADDY_APP_SITE)) {
+      throw new Error('Caddyfile web-app site address changed; cannot add alias hosts');
+    }
+    caddyfile = caddyfile.replace(CADDY_APP_SITE, `\n${['{$KORTIX_DOMAIN}', ...aliases.app].join(', ')} {\n`);
+  }
+  if (onDemandBlocks.length > 0) {
+    if (!caddyfile.includes(CADDY_GLOBAL_CLOSE)) {
+      throw new Error('Caddyfile global options block changed; cannot inject on_demand_tls');
+    }
+    // on_demand_tls is GLOBAL-only and Caddy allows one global block, so the
+    // `ask` is injected once no matter how many wildcard families are served.
+    caddyfile = caddyfile.replace(
+      CADDY_GLOBAL_CLOSE,
+      `email {$KORTIX_ACME_EMAIL}\n\n\ton_demand_tls {\n\t\task ${EDGE_TLS_CHECK_URL}\n\t}\n}`,
+    );
+  }
+  if (blocks.length === 0) return caddyfile;
+  return `${caddyfile.trimEnd()}\n\n${blocks.join('\n\n')}\n`;
 }
 
 export function writeKortixRuntimeAssets(root: string, options: RenderCaddyfileOptions = {}): void {
@@ -304,11 +423,38 @@ export interface RenderComposeOptions {
    * is stripped from kortix-api's `environment` so the operator's
    * KORTIX_CAPTURE_S3_* / KORTIX_CAPTURE_STS_* values flow through from .env
    * via `env_file`. The operator (or Terraform) owns the bucket, so the API is
-   * pinned to never create it. When false (the default), the bundled store is
-   * rendered exactly as before.
+   * pinned to never create it. The bundled KORTIX_PROJECT_SNAPSHOT_* wiring is
+   * stripped too, so .env alone decides the snapshot store (unset: none).
+   * When false (the default), the bundled store is rendered exactly as before.
    */
   captureStoreExternal?: boolean;
+  /**
+   * Whether wildcard TLS is set up (KORTIX_ACME_DNS_ZONE; see wildcard-tls.ts).
+   * When true, the `acme-dns` service is added, Caddy runs the kortix/caddy
+   * image with the acmedns module, and Caddy reads the per-base credentials
+   * from ./acme-dns/accounts. When false, neither changes: a stack without
+   * wildcard TLS keeps the stock Caddy image.
+   */
+  wildcardTlsConfigured?: boolean;
 }
+
+/**
+ * The bundled acme-dns: the DNS server for the one zone the operator delegates
+ * to this box (wildcard-tls.ts). Port 53 is published on the box's own address
+ * (KORTIX_ACME_DNS_LISTEN_IP), never 0.0.0.0, because the host resolver
+ * (systemd-resolved) already holds 127.0.0.53:53. The HTTP API is published on
+ * loopback only; Caddy reaches it as http://acme-dns over the Compose network.
+ */
+const ACME_DNS_SERVICE: YamlRecord = {
+  image: ACME_DNS_IMAGE,
+  ports: [
+    '${KORTIX_ACME_DNS_LISTEN_IP}:53:53/udp',
+    '${KORTIX_ACME_DNS_LISTEN_IP}:53:53/tcp',
+    '127.0.0.1:13750:80', // ACME_DNS_LOOPBACK_URL in wildcard-tls.ts
+  ],
+  volumes: ['./acme-dns/config.cfg:/etc/acme-dns/config.cfg:ro', 'kortix-acme-dns-data:/var/lib/acme-dns'],
+  restart: 'unless-stopped',
+};
 
 /**
  * The external-store Capture wiring on kortix-api: it reads the operator's own
@@ -343,6 +489,16 @@ const EXTERNAL_CAPTURE_API_ENV: Readonly<Record<string, string>> = {
  * one place so the replica/port topology below and updater.sh agree on the
  * exact same service set.
  */
+/**
+ * The .env keys the caddy container reads as environment variables. A change to
+ * one of them needs a recreate; any other caddy-facing key changes only the
+ * rendered Caddyfile, and a reload applies it with no dropped connection.
+ */
+export function caddyEnvironmentKeys(): ReadonlySet<string> {
+  const compose = parse(kortixCompose) as { services?: { caddy?: { environment?: Record<string, string> } } };
+  return new Set(Object.keys(compose.services?.caddy?.environment ?? {}));
+}
+
 export const ROLLING_APP_SERVICES = ['kortix-api', 'llm-gateway', 'frontend'] as const;
 
 /**
@@ -396,6 +552,12 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
     // workers keep the local control plane responsive within that limit.
     const kongEnv = { ...asRecord(kong.environment) } as Record<string, string>;
     kongEnv.KONG_NGINX_WORKER_PROCESSES ||= '2';
+    // Kong keeps an upstream's resolved address for the DNS record's TTL
+    // (Docker's resolver answers 600 s). A recreated supabase-auth gets a new
+    // container address, so Kong sent every /auth/v1 call to the old one and
+    // answered 502 until Kong itself restarted (a domain move, 2026-11-03:
+    // ~4 min without sign-in). 5 s makes Kong find the new container at once.
+    kongEnv.KONG_DNS_VALID_TTL ||= '5';
     kong.environment = kongEnv;
     // Upstream declares `depends_on: studio: condition: service_healthy` —
     // but Kong here runs fully declarative (KONG_DATABASE=off, its routes
@@ -549,12 +711,18 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   if (!options.domainConfigured) {
     delete services.caddy;
   } else {
-    // Domain mode: Caddy serves the Capture store's path prefix itself (see
-    // assets/Caddyfile.txt), so uploads do not depend on the API. Every other
-    // mode has no Caddy and the API forwards the prefix.
+    if (options.wildcardTlsConfigured && services.caddy) {
+      services.caddy.image = WILDCARD_CADDY_IMAGE;
+      services.caddy.volumes = [...(services.caddy.volumes as string[]), `./acme-dns/accounts:${CADDY_ACME_DNS_DIR}:ro`];
+      services['acme-dns'] = { ...ACME_DNS_SERVICE };
+    }
+    // Domain mode: Caddy serves the Capture and project snapshot path
+    // prefixes itself (see assets/Caddyfile.txt), so transfers do not depend
+    // on the API. Every other mode has no Caddy and the API forwards them.
     const api = services['kortix-api'];
     const apiEnv = asRecord(api?.environment);
     delete apiEnv.KORTIX_CAPTURE_S3_PROXY_TARGET;
+    delete apiEnv.KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET;
   }
 
   // The Cloudflare tunnel service is likewise opt-in: only present when
@@ -590,6 +758,13 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
       // set; drop PROXY_TARGET, which has no external analogue.
       const apiEnv = { ...asRecord(api.environment), ...EXTERNAL_CAPTURE_API_ENV } as Record<string, string>;
       delete apiEnv.KORTIX_CAPTURE_S3_PROXY_TARGET;
+      // The project snapshots lived in the same bundled MinIO. Without it the
+      // explicit wiring goes, so .env decides: unset is the API default
+      // (`git`, no snapshots), and an operator may point
+      // KORTIX_PROJECT_SNAPSHOT_* at a store of their own.
+      for (const key of Object.keys(apiEnv)) {
+        if (key.startsWith('KORTIX_PROJECT_SNAPSHOT_')) delete apiEnv[key];
+      }
       api.environment = apiEnv;
       if (isRecord(api.depends_on)) {
         const dependencies = { ...api.depends_on };
@@ -623,10 +798,9 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   // measurements this table is derived from.
   applyMemLimits(services);
 
-  const document: YamlRecord = {
-    services,
-    volumes: deepMerge(asRecord(base.volumes), asRecord(kortix.volumes)),
-  };
+  const volumes = deepMerge(asRecord(base.volumes), asRecord(kortix.volumes));
+  if (services['acme-dns']) volumes['kortix-acme-dns-data'] = null;
+  const document: YamlRecord = { services, volumes };
   return stringify(document, { lineWidth: 0 });
 }
 

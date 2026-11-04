@@ -5,7 +5,7 @@
 #   - kortix-{dev,staging,preview,prod}-env, kortix-*-web-env
 #                              runtime blobs; CI reads a key from them instead of
 #                              keeping a copy (one source of truth)
-# The default role kortix-gha-ecs-deploy trusts repo:kortix-ai/suna:* and reads
+# The default role kortix-gha-ecs-deploy trusts repo:<repo>:* for every name in security-baseline/github-repos.tf and reads
 # kortix-*-env-*. Callers need `permissions: id-token: write` and a checkout
 # that contains .github/actions (a sparse checkout is enough).
 #

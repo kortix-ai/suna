@@ -12,9 +12,10 @@ Before every publish:
 1. **Title = a name**, 2–4 words, no colon, dash or arrow: `--title "Scheduler migration"`,
    never `--title "Scheduler migration: off the cron VM"`. The explanation goes in
    `--description`.
-2. **Share when asked.** "So the team can review it", "share with the team" or
-   "for the project" → add `--visibility project`, on the publish or with
-   `kortix artifacts share <id> --visibility project`. In a private channel
+2. **Private unless told otherwise.** A named person ("send it to Ada") →
+   `--with <email>`. Only an explicit "everyone in the project" →
+   `--visibility project`. "The team" or "for review" names nobody: ask who,
+   or share with the people named in the thread. In a private channel
    (`/drives/README.md` says so) never use `--visibility project` or `public`:
    the artifact stays private to the channel's members.
 3. **Answer first**: the recommendation or result is the first paragraph.
@@ -151,10 +152,11 @@ id, its path in Drive and its app link. Hand it over with `show` (the app link
 as `url`) and one line on what it shows. Never paste the content into the chat.
 
 A new artifact is **private**: the person who runs this session (and you) can
-see it. Share it when the user asks. "Share it with the team", "something the
-team can review" or "for everyone on the project" each mean
-`--visibility project`; pass it on the first publish. Named people mean
-`--with`. Only an explicit "public" or "anyone with the link" means public:
+see it. Share it only as far as the user asks. Named people mean `--with`.
+Only an explicit "everyone in the project" means `--visibility project`; "the
+team" or "for review" alone does not: ask who, or share with the people named
+in the thread. Only an explicit "public" or "anyone with the link" means
+public:
 
     kortix artifacts share <id> --visibility project        # every project member
     kortix artifacts share <id> --with ada@example.com      # chosen people (private)
@@ -176,8 +178,9 @@ saved after you pulled, for example a person editing the doc: pull again,
 merge, save. `kortix artifacts versions <id>` lists every save from the Drive
 history; `restore <id> <version-id>` writes one back as a new save.
 `kortix artifacts rm <id>` stops sharing; the files stay in Drive.
-If the request also asks to share ("so the team can review it"), share the
-artifact you saved: `kortix artifacts share <id> --visibility project`.
+If the request also asks to share, share the artifact you saved as far as the
+user asked: `--with <email>` for named people, `--visibility project` only for
+an explicit "everyone in the project".
 </update>
 
 <comments>

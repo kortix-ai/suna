@@ -7,11 +7,11 @@
 # Two stages run in order:
 #   1. FE-relevance — if a push changed NOTHING that feeds the apps/web build
 #      (only sibling apps / infra / tests / docs), skip it on every branch.
-#   2. Deploy-target — staging auto-builds. Production deploys through the
-#      gated workflow. Dev uses ECS. PR previews use Platinum or Daytona.
+#   2. Deploy-target — staging and production deploy only through their gated
+#      workflows. Dev uses ECS. PR previews use Platinum or Daytona.
 #
-# Staging defaults to BUILD on uncertainty. Dev and PR previews default to SKIP.
-# Production auto-builds always skip because deploy-prod.yml owns that release.
+# Dev and PR previews default to SKIP. Staging and production auto-builds always
+# skip because deploy-staging.yml and deploy-prod.yml own those deploys.
 #
 # WHY THIS EXISTS
 # A backend/infra-only push to `prod` (e.g. a rollback that only flips
@@ -52,8 +52,14 @@ if ! printf '%s\n' "$changed" | grep -qvE "$SAFE"; then
 fi
 
 # ── Stage 2: deploy-target gate ──────────────────────────────────────────────
-# FE-relevant changes are present. Staging always deploys; per-PR previews are
-# OPT-IN (previews on every PR were the bulk of build spend).
+# FE-relevant changes are present. Per-PR previews are OPT-IN (previews on every
+# PR were the bulk of build spend).
+#
+# `staging` is NOT here either: deploy-staging.yml uploads its own build and
+# points staging.kortix.com at it with `vercel alias set`. A git build of the
+# staging branch was never served and doubled every staging build (2026-10-13
+# to 2026-11-02: 136 unused builds, 45 % of all finished builds). Belt-and-
+# braces with `git.deploymentEnabled.staging: false` in vercel.json.
 #
 # `prod` is NOT here: a push to prod must never auto-deploy the frontend.
 # The 2026-08-10 v0.12.7 outage shipped the new frontend to kortix.com while
@@ -67,7 +73,10 @@ case "${VERCEL_ENV:-}:$REF" in
   *:prod)
     echo "vercel-ignore: prod deploys only via deploy-prod.yml after the API is live — skipping auto build."
     exit 0 ;;
-  production:*|*:staging)
+  *:staging)
+    echo "vercel-ignore: staging deploys only via deploy-staging.yml, which aliases staging.kortix.com — skipping auto build."
+    exit 0 ;;
+  production:*)
     echo "vercel-ignore: environment branch (${REF:-$VERCEL_ENV}) — building frontend."
     exit 1 ;;
 esac

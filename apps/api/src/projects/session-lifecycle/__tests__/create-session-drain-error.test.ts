@@ -34,7 +34,9 @@ let claimed: SessionLifecycleCommandRow[] = [];
 let failedCalls: Array<{ commandId: string; message: string; retryable: boolean; attempts: number }> = [];
 let succeededCalls: string[] = [];
 
+const realConfig = await import('../../../config');
 mock.module('../../../config', () => ({
+  ...realConfig,
   config: cfg,
   SANDBOX_VERSION: 'test',
   KNOWN_PROVIDERS: ['platinum', 'daytona'],
