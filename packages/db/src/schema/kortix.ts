@@ -4553,6 +4553,56 @@ export const gatewaySpendPendingDays = kortixSchema.table('gateway_spend_pending
 });
 
 /**
+ * Per-(project, UTC day, session, requested model) rollup of settled gateway
+ * days. The gateway sessions reader (listProjectGatewaySessionSpend,
+ * apps/api/src/shared/session-costs.ts) sums these few thousand rows instead
+ * of scanning every raw gateway_request_logs row in the window — the raw scan
+ * is what 5xx'd GET /gateway/sessions once daily volume grew past the route's
+ * deadline (KRTX-4021). The gateway-spend-backfill worker recomputes each
+ * closed UTC day from the raw rows (settleLastGatewaySessionDay) and marks
+ * the day in gateway_session_days; the reader reads the raw rows for every
+ * day the marks do not cover, so the two halves always add up.
+ *
+ * Money columns use the per-row rules of shared/llm-spend.ts and llm-value.ts
+ * (total_cost = rowTotalSpendSql, value = rowLlmValueSql with its pinned
+ * pricing snapshot): a rule change needs a forward migration that clears the
+ * marks so the worker re-settles, and a reader deploy in the same release.
+ */
+export const gatewaySessionDaily = kortixSchema.table('gateway_session_daily', {
+  projectId: uuid('project_id')
+    .notNull()
+    .references(() => projects.projectId, { onDelete: 'cascade' }),
+  day: date('day', { mode: 'string' }).notNull(),
+  sessionId: text('session_id').notNull(),
+  requestedModel: text('requested_model').notNull(),
+  requests: integer('requests').default(0).notNull(),
+  errors: integer('errors').default(0).notNull(),
+  totalCost: numeric('total_cost').default('0').notNull(),
+  inputTokens: bigint('input_tokens', { mode: 'number' }).default(0).notNull(),
+  outputTokens: bigint('output_tokens', { mode: 'number' }).default(0).notNull(),
+  value: numeric('value').default('0').notNull(),
+  valueRows: integer('value_rows').default(0).notNull(),
+  unpricedRows: integer('unpriced_rows').default(0).notNull(),
+  lastAt: timestamp('last_at', { withTimezone: true }),
+}, (table) => [
+  primaryKey({ name: 'gateway_session_daily_pk', columns: [table.projectId, table.day, table.sessionId, table.requestedModel] }),
+  // The worker's delete-then-insert recompute addresses one day at a time; the
+  // primary key leads with project_id, so the day index keeps the DELETE off a
+  // sequential scan.
+  index('idx_gateway_session_daily_day').on(table.day),
+]);
+
+/**
+ * UTC days whose gateway_session_daily rollup is settled (recomputed from the
+ * raw log rows by the gateway-spend-backfill worker). Readers treat every day
+ * not marked here as raw. One mark row per settled day; the worker inserts
+ * the mark in the same transaction that writes the rollup rows.
+ */
+export const gatewaySessionDays = kortixSchema.table('gateway_session_days', {
+  day: date('day', { mode: 'string' }).primaryKey(),
+});
+
+/**
  * Per-project OTLP trace-export config — "connect any tool" for the gateway's
  * gen_ai.* spans (Langfuse/Datadog/Honeycomb/Braintrust/etc, anything OTLP).
  * One row per project (PK = project_id, upsert-only, mirrors

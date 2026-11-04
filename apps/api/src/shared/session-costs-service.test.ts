@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { gatewayRequestLogs, projectSessions, sandboxComputeSessions } from '@kortix/db';
+import {
+  gatewayRequestLogs,
+  gatewaySessionDaily,
+  projectSessions,
+  sandboxComputeSessions,
+} from '@kortix/db';
 import { Column, SQL, type SQLWrapper, Table, getTableColumns, is, sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { CostSort } from './cost-window';
@@ -13,6 +18,12 @@ type QueryRecord = {
 
 let queryRecords: QueryRecord[] = [];
 let resultForQuery: (fields: Record<string, unknown>, table: unknown) => unknown[] = () => [];
+
+let executeRecords: SQL[] = [];
+// The coverage probe runs first and answers with the rollup boundary; null =
+// nothing settled (read everything raw). Tests that exercise settled days
+// override it with their own rows.
+let resultForExecute: (query: SQL) => unknown[] = () => [];
 
 // The mock never talks to Postgres, so render the recorded WHERE clause to real
 // SQL to assert which columns and bounds a query actually carries.
@@ -223,6 +234,10 @@ mock.module('./db', () => ({
         return createQueryBuilder(record, resultForQuery(fields, table));
       },
     }),
+    execute: (query: SQL) => {
+      executeRecords.push(query);
+      return resultForExecute(query);
+    },
   },
 }));
 
@@ -290,7 +305,9 @@ const costWindow = {
 
 beforeEach(() => {
   queryRecords = [];
+  executeRecords = [];
   resultForQuery = () => [];
+  resultForExecute = () => [];
 });
 
 describe('listSessionCosts service', () => {
@@ -759,7 +776,7 @@ describe('listProjectGatewaySessionSpend service', () => {
             errors: 0,
             cost: '0.4',
             tokens: '50',
-            models: 1,
+            models: ['brainstorm-6.1-sol'],
             lastAt: new Date('2026-07-01T11:00:00.000Z'),
           },
         ];
@@ -803,5 +820,161 @@ describe('listProjectGatewaySessionSpend service', () => {
         },
       ],
     });
+  });
+
+  test('nothing settled: no rollup query, no day exclusion, the raw scan answers everything', async () => {
+    // The coverage probe answered with win_day only (first_unsettled null —
+    // the probe's own fallback when nothing is marked yet).
+    resultForExecute = () => [{ win_day: '2026-11-01', first_unsettled: null }];
+    resultForQuery = (fields, table) => {
+      if (table === gatewayRequestLogs && 'tokens' in fields) {
+        return [
+          {
+            sessionId,
+            requests: 2,
+            errors: 0,
+            cost: '0.4',
+            tokens: '50',
+            models: ['brainstorm-6.1-sol'],
+            lastAt: new Date('2026-07-01T11:00:00.000Z'),
+          },
+        ];
+      }
+      return [];
+    };
+
+    const result = await listProjectGatewaySessionSpend({ accountId, projectId, days: 45 });
+    expect(result.sessions).toHaveLength(1);
+    expect(queryRecords.find((record) => record.table === gatewaySessionDaily)).toBeUndefined();
+    const llmRecord = queryRecords.find(
+      (record) => record.table === gatewayRequestLogs && 'tokens' in record.fields,
+    );
+    const rendered = renderWhere(llmRecord);
+    expect(rendered.sql).not.toContain('not (');
+    expect(rendered.sql).toContain('make_interval');
+  });
+
+  test('the first unsettled day stays raw without a rollup query', async () => {
+    // win_day + 1 is unmarked: the rollup range (win_day, first_unsettled) is
+    // empty, so the rollup query must NOT run — an unsettled day must never be
+    // answered from a table the worker has not filled.
+    resultForExecute = () => [{ win_day: '2026-11-01', first_unsettled: '2026-11-02' }];
+    resultForQuery = () => [];
+
+    await listProjectGatewaySessionSpend({ accountId, projectId, days: 30 });
+    expect(queryRecords.find((record) => record.table === gatewaySessionDaily)).toBeUndefined();
+    const llmRecord = queryRecords.find(
+      (record) => record.table === gatewayRequestLogs && 'tokens' in record.fields,
+    );
+    const rendered = renderWhere(llmRecord);
+    expect(rendered.sql).toContain('make_interval');
+  });
+
+  test('settled days merge with the raw days into one row per session', async () => {
+    resultForExecute = () => [{ win_day: '2026-11-01', first_unsettled: '2026-11-04' }];
+    resultForQuery = (fields, table) => {
+      if (table === gatewaySessionDaily) {
+        return [
+          {
+            sessionId,
+            requests: 10,
+            errors: 1,
+            estimated_usage_value: '0.3000000000',
+            priced_requests: 4,
+            unpriced_requests: 6,
+            cost: '2.5000000000',
+            tokens: '500',
+            models: ['brainstorm-6.1-sol', 'brainstorm-6.1'],
+            lastAt: new Date('2026-07-01T09:00:00.000Z'),
+          },
+        ];
+      }
+      if (table === gatewayRequestLogs && 'tokens' in fields) {
+        return [
+          {
+            sessionId,
+            requests: 2,
+            errors: 0,
+            estimated_usage_value: null,
+            priced_requests: 0,
+            unpriced_requests: 2,
+            cost: '0.4',
+            tokens: '50',
+            models: ['brainstorm-6.1-sol'],
+            lastAt: new Date('2026-07-01T11:00:00.000Z'),
+          },
+        ];
+      }
+      return [];
+    };
+
+    const result = await listProjectGatewaySessionSpend({ accountId, projectId, days: 7 });
+    expect(result.sessions).toHaveLength(1);
+    const session = result.sessions[0];
+    // Rollup + raw add up: the merged row is the raw scan the old query made.
+    expect(session).toMatchObject({
+      session_id: sessionId,
+      requests: 12,
+      errors: 1,
+      llm_cost: 2.9,
+      tokens: 550,
+      models: 2,
+      estimated_usage_value: 0.3,
+      priced_requests: 4,
+      unpriced_requests: 8,
+      total_cost: 2.9,
+    });
+    // last_at is the max across both halves.
+    expect(session?.last_at).toBe('2026-07-01T11:00:00.000Z');
+    // The rollup query reads the marked days only, by day range.
+    const rollupRecord = queryRecords.find((record) => record.table === gatewaySessionDaily);
+    const rollupWhere = renderWhere(rollupRecord);
+    expect(rollupWhere.sql).toContain('"gateway_session_daily"."day" > $');
+    expect(rollupWhere.sql).toContain('"gateway_session_daily"."day" < $');
+  });
+
+  test('a session only the raw days know is not lost to the rollup', async () => {
+    resultForExecute = () => [{ win_day: '2026-11-01', first_unsettled: '2026-11-04' }];
+    resultForQuery = (fields, table) => {
+      if (table === gatewaySessionDaily) {
+        return [
+          {
+            sessionId,
+            requests: 1,
+            errors: 0,
+            estimated_usage_value: null,
+            priced_requests: 0,
+            unpriced_requests: 1,
+            cost: '0.1',
+            tokens: '10',
+            models: ['brainstorm-6.1'],
+            lastAt: new Date('2026-07-01T09:00:00.000Z'),
+          },
+        ];
+      }
+      if (table === gatewayRequestLogs && 'tokens' in fields) {
+        return [
+          {
+            sessionId: 'newer-session',
+            requests: 3,
+            errors: 0,
+            estimated_usage_value: 0.2,
+            priced_requests: 3,
+            unpriced_requests: 0,
+            cost: '0.3',
+            tokens: '30',
+            models: ['brainstorm-6.1-sol'],
+            lastAt: new Date('2026-07-01T12:00:00.000Z'),
+          },
+        ];
+      }
+      return [];
+    };
+
+    const result = await listProjectGatewaySessionSpend({ accountId, projectId, days: 7 });
+    expect(result.sessions.map((session) => session.session_id).sort()).toEqual([
+      'newer-session',
+      sessionId,
+    ]);
   });
 });

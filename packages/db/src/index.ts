@@ -42,6 +42,8 @@ export {
   gatewayBudgets,
   gatewaySpendDaily,
   gatewaySpendPendingDays,
+  gatewaySessionDaily,
+  gatewaySessionDays,
   gatewayOtelConfigs,
   // Kortix tables
   projects,
