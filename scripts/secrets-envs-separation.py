@@ -6,10 +6,9 @@ Called by scripts/e2e-secrets-envs.sh (pnpm test:envs). Tracked exceptions live 
 scripts/secrets-shared-with-prod.allowlist — every entry is a debt with a reason.
 
 The key name never decides. `DATABASE_URL`, `SUPABASE_URL` and `KORTIX_URL` carry
-production reach with no KEY/SECRET/TOKEN in the name, while `BETTERSTACK_MCP_URL` is
-harmless. So every key in a non-prod profile is compared by VALUE against prod, whether
-or not prod defines that key, and every value's URL host is checked against the prod
-hosts. Only apps/api/.env.prod may name a prod host.
+production reach with no KEY/SECRET/TOKEN in the name. So every key in a non-prod profile
+is compared by VALUE against prod, whether or not prod defines that key, and every value's
+URL host is checked against the prod hosts. Only apps/api/.env.prod may name a prod host.
 """
 import json, os, re, subprocess, sys
 from pathlib import Path
