@@ -22,8 +22,8 @@ export type CallOptions = {
   playwright: () => Promise<{ chromium: any }>
   /** The browser to launch (a host's own Chromium). */
   executable?: string
-  /** The CDP port the agent's browser tool drives the call's browser on (127.0.0.1 only). */
-  cdp: number
+  /** Hosts (host:port) the call browser may load besides public ones (a proof's call page on localhost); else none. */
+  allow?: string[]
   /** The relay session the call runs on: an agent's own (default: a new one). */
   session?: string
   lang?: string
@@ -39,16 +39,31 @@ export type CallOptions = {
   state?: (s: 'opened' | 'in') => void
 }
 
-/** A web call: `done` says how it ended (left, ended, failed), `leave` leaves it (closes its browser). */
-export type WebCall = { done: Promise<string>; leave(): Promise<void> }
+/** A web call: `done` says how it ended (left, ended, failed), `leave` leaves it (closes its browser), `cdp` is the port
+ * its browser's CDP listens on (127.0.0.1), as Chromium bound it. */
+export type WebCall = { done: Promise<string>; leave(): Promise<void>; cdp: Promise<number> }
 
-/** A free port on 127.0.0.1, for the call browser's CDP. */
-export function freePort(): number {
-  const s = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } })
-  const port = s.port
-  s.stop(true)
-  return port
+// Loopback, private, link-local, shared and unspecified addresses: the box and its networks, never a call's.
+const PRIVATE4: [string, number][] = [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.168.0.0', 16]]
+const v4 = (a: string) => a.split('.').reduce((n, x) => n * 256 + Number(x), 0)
+const privateAddress = (a: string): boolean => {
+  if (a.includes(':')) {
+    const x = a.toLowerCase()
+    const mapped = x.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1]
+    return mapped ? privateAddress(mapped) : x === '::' || x === '::1' || /^f[cd]/.test(x) || /^fe[89ab]/.test(x)
+  }
+  return PRIVATE4.some(([net, bits]) => Math.floor(v4(a) / 2 ** (32 - bits)) === Math.floor(v4(net) / 2 ** (32 - bits)))
 }
+/** A host the call browser may load: a public address, or a name whose every address is public (a name pointing at the
+ * box or its network is not). */
+export async function publicHost(hostname: string, lookup: (h: string) => Promise<string[]>): Promise<boolean> {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '')
+  if (!h || h === 'localhost' || h.endsWith('.localhost')) return false
+  if (/^[\d.]+$/.test(h) || h.includes(':')) return !privateAddress(h)
+  const addresses = await lookup(h).catch(() => [] as string[])
+  return addresses.length > 0 && !addresses.some(privateAddress)
+}
+const resolve = async (h: string) => (await import('node:dns/promises')).lookup(h, { all: true }).then((r) => r.map((x) => x.address))
 
 export function openCall(o: CallOptions): WebCall {
   const ended = Promise.withResolvers<string>()
@@ -57,6 +72,7 @@ export function openCall(o: CallOptions): WebCall {
   const dir = mkdtempSync(`${tmpdir()}/kortix-voice-call-`)
   let context, relay: WebSocket | undefined, page, quitting = false, outRate = 24000, inRate = 16000
   let opened: Promise<number> | undefined
+  const cdp = Promise.withResolvers<number>()
   const quit = async (why: string) => {
     if (quitting) return
     quitting = true
@@ -89,31 +105,54 @@ export function openCall(o: CallOptions): WebCall {
     context = await chromium.launchPersistentContext(dir, {
       headless: true,
       ...(o.executable ? { executablePath: o.executable } : {}),
-      // Fake devices (a box has none; the microphone is the voice's), autoplay without a gesture, and the CDP port the
-      // agent's browser tool connects to.
-      args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--disable-blink-features=AutomationControlled', `--remote-debugging-port=${o.cdp}`, '--remote-debugging-address=127.0.0.1'],
+      // Fake devices (a box has none; the microphone is the voice's), autoplay without a gesture, and a CDP port of
+      // Chromium's own choosing for the agent's browser tool (read back from DevToolsActivePort, never picked ahead).
+      args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--disable-blink-features=AutomationControlled', '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1'],
       permissions: ['microphone'],
       locale: 'en-US',
     })
     context.on('close', () => void quit(quitting ? 'left' : 'ended'))
+    // Every request the call browser makes goes only to a public host (callLink checked the address; a redirect, the
+    // page's own navigation, a fetch or a socket could still reach the box or its network): the rest are refused.
+    const allowed = new Map<string, Promise<boolean>>()
+    const may = (url: string) => {
+      let u: URL
+      try { u = new URL(url) } catch { return Promise.resolve(false) }
+      if (u.protocol === 'data:' || u.protocol === 'blob:' || u.protocol === 'about:') return Promise.resolve(true)
+      if (o.allow?.includes(u.host)) return Promise.resolve(true)
+      if (!allowed.has(u.hostname)) allowed.set(u.hostname, publicHost(u.hostname, resolve))
+      return allowed.get(u.hostname)!
+    }
+    await context.route('**/*', async (route: any) => ((await may(route.request().url())) ? route.continue() : route.abort('blockedbyclient')))
+    await context.routeWebSocket?.(/.*/, async (ws: any) => ((await may(ws.url())) ? ws.connectToServer() : ws.close()))
     await context.addInitScript(botMicrophone)
     await context.addInitScript(callEars)
+    // The call is the page opened here, its sound that page's own frame: never another page of this browser (a tab the
+    // agent's tool opens, a popup) nor a frame inside it (a widget, another site's iframe).
+    const first = context.pages()[0] ?? (await context.newPage())
+    page = first
+    const main = first.mainFrame()
     // The relay's rate, asked by the ears at the first remote voice: the relay call opens then.
     await context.exposeBinding('__kortixEarRate', (source) => {
-      page = source.page
+      if (source.frame !== main) return 16000
       if (!opened) opened = connect(true).then((rate) => (log('in the call'), o.state?.('in'), rate))
       return opened.catch(() => 16000)
     })
     await context.exposeBinding('__kortixHear', (source, b64: string) => {
-      if (source.page !== page) return // one call's sound: the page that started it
+      if (source.frame !== main || typeof b64 !== 'string' || b64.length > 200_000) return
       if (relay?.readyState === 1) relay.send(Buffer.from(b64, 'base64'))
     })
-    const first = context.pages()[0] ?? (await context.newPage())
-    page = first
+    // The CDP port Chromium bound, from its profile (the first line of DevToolsActivePort).
+    for (let i = 0; i < 50; i++) {
+      const port = Number((await Bun.file(`${dir}/DevToolsActivePort`).text().catch(() => '')).split('\n')[0])
+      if (port > 0) { cdp.resolve(port); break }
+      await Bun.sleep(100)
+    }
     await first.goto(o.url, { waitUntil: 'domcontentloaded', timeout: 45_000 })
-    log('opened', o.url, 'cdp', o.cdp)
+    log('opened', o.url)
     o.state?.('opened')
   }
-  run().catch((err) => (log('failed:', err instanceof Error ? err.message : err), quit('failed')))
-  return { done: ended.promise, leave: () => quit('left') }
+  run().catch((err) => (log('failed:', err instanceof Error ? err.message : err), cdp.reject(err), quit('failed')))
+  cdp.promise.catch(() => {})
+  return { done: ended.promise, leave: () => quit('left'), cdp: cdp.promise }
 }
