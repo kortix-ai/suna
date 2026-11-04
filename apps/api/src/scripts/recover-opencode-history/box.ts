@@ -76,8 +76,16 @@ export function parseCopyOutput(stdout: string): { boxTemp: string; home: string
   return { boxTemp, home, pinnedRoot: pin && /^ses_[A-Za-z0-9]+$/.test(pin) ? pin : null };
 }
 
-/** Platinum's per-request download cap (docs/filesystem.md); the same bound for Daytona. */
+/** Platinum's per-request download cap (its filesystem API limits); the same bound for Daytona. */
 export const MAX_FILE_BYTES = 256 * 1024 * 1024;
 
-/** Absolute, no `..`: a sidecar path read from the store is only ever a path to download. */
-export const isSafeBoxPath = (path: string) => path.startsWith('/') && !path.split('/').includes('..');
+/**
+ * A sidecar path comes from the store's own rows, so it is only ever downloaded
+ * from the daemon's attachment folder (`<home>/.local/share/kortix/attachments/`):
+ * never `auth.json` or any other file of the box.
+ */
+export const isSafeBoxPath = (path: string) =>
+  /^\/(home\/kortix|opt\/kortix\/home|root)\/\.local\/share\/kortix\/attachments\/[^/]+$/.test(path) && !path.split('/').includes('..');
+
+/** A store this large is set aside (`too_large`): the conversion holds it in memory several times over. */
+export const MAX_STORE_BYTES = 128 * 1024 * 1024;

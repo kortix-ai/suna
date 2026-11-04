@@ -44,7 +44,7 @@ import { config } from '../config';
 import { db } from '../shared/db';
 import { recoverSessionLog, sidecarPaths } from './recover-opencode-history/convert';
 import { readOpenCodeStore, UnsupportedStoreError } from './recover-opencode-history/opencode-store';
-import { RecoverableBoxError, type BoxReader } from './recover-opencode-history/box';
+import { MAX_STORE_BYTES, RecoverableBoxError, type BoxReader } from './recover-opencode-history/box';
 import { daytonaBox } from './recover-opencode-history/daytona-box';
 import { platinumBox } from './recover-opencode-history/platinum-box';
 import { RECOVERY_KEY, rowParked, stamp, stillRecoverable, writeRecoveredLog, type RecoveryStamp } from './recover-opencode-history/write';
@@ -180,6 +180,9 @@ async function recoverOne(box: BoxReader, c: Candidate, apply: boolean): Promise
     const copied = await box.copyStore(c.external_id, join(local, 'store'));
     if (!copied) {
       result = { outcome: 'no_store' };
+    } else if (copied.bytes > MAX_STORE_BYTES) {
+      boxTemp = copied.boxTemp;
+      result = { outcome: 'too_large', bytes: copied.bytes };
     } else {
       boxTemp = copied.boxTemp;
       const store = readOpenCodeStore(copied.dbPath);
@@ -259,7 +262,9 @@ async function main(): Promise<void> {
         if (args.apply) {
           const value: RecoveryStamp = {
             at: new Date().toISOString(),
-            outcome: r.outcome === 'retry' && !r.retryable ? 'failed' : r.outcome,
+            // A skip means the session changed under the recovery (someone opened it): look again
+            // next run. A session that has a log by then is no longer a candidate.
+            outcome: r.outcome === 'retry' && !r.retryable ? 'failed' : r.outcome === 'skipped' ? 'retry' : r.outcome,
             attempts: c.attempts + 1,
             ...(r.detail && { detail: r.detail.slice(0, 300) }),
             ...(r.messages !== undefined && { messages: r.messages, threads: r.threads }),

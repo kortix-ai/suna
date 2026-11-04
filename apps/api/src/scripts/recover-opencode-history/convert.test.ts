@@ -166,3 +166,17 @@ describe('the recovered log', () => {
     expect(SessionLogSchema.safeParse(missing.log).success).toBe(true);
   });
 });
+
+describe('the box copy', () => {
+  test('downloads a sidecar only from the attachment folder, never another file of the box', async () => {
+    const { isSafeBoxPath, parseCopyOutput } = await import('./box');
+    expect(isSafeBoxPath('/home/kortix/.local/share/kortix/attachments/prt_x')).toBe(true);
+    expect(isSafeBoxPath('/opt/kortix/home/.local/share/kortix/attachments/prt_x')).toBe(true);
+    expect(isSafeBoxPath('/home/kortix/.local/share/opencode/auth.json')).toBe(false);
+    expect(isSafeBoxPath('/home/kortix/.local/share/kortix/attachments/../../opencode/auth.json')).toBe(false);
+    expect(isSafeBoxPath('/etc/passwd')).toBe(false);
+    expect(parseCopyOutput('noise\nfound|/tmp/kortix-recover.Ab12|/home/kortix|ses_abc')).toEqual({ boxTemp: '/tmp/kortix-recover.Ab12', home: '/home/kortix', pinnedRoot: 'ses_abc' });
+    expect(parseCopyOutput('none')).toBeNull();
+    expect(() => parseCopyOutput('found|/etc|/home/kortix|')).toThrow();
+  });
+});
