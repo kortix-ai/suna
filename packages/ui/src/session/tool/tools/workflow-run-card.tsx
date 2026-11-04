@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
-import { ArrowClockwiseIcon, CaretDownIcon, SquareIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, CaretDownIcon, CaretRightIcon, SquareIcon } from '@phosphor-icons/react';
 import { Button } from '../../../primitives/button';
 import { Hint } from '../../../primitives/hint';
 
@@ -141,9 +141,12 @@ export function WorkflowRunCard({
 }
 
 /**
- * A run's agents under their phases (Paper C19): a small phase header, its rows
- * sorted by state, a dashed rule between phases, and a phase not started as one
- * muted row. The card draws it, and so does the agents line's run row.
+ * A run's agents under their phases. Each phase is one row: its progress ring
+ * (done and failed agents of that phase), its name and "2 of 7 done", and on
+ * the right why it waits or how many failed. A phase opens in place onto its
+ * agents, nested on a trunk with rounded elbows (the session list's recipe), so
+ * the card stays short: every phase starts closed. A run with no phases lists
+ * its agents flat. The card draws it, and so does the agents line's run row.
  */
 export function WorkflowRunRows({
   run,
@@ -151,72 +154,205 @@ export function WorkflowRunRows({
   now,
   onOpen,
   stop,
+  openPhases,
 }: {
   run: WorkflowRun;
   live: boolean;
   now: number;
   onOpen: (agent: WorkflowRunAgent) => void;
   stop: AgentStopState;
+  /** Phases that start open; every other phase starts closed. */
+  openPhases?: readonly string[];
+}) {
+  const t = useTranslations('tools.workflow');
+  const groups = groupRows(run);
+  const unfinished = run.agents.filter((agent) => agent.status === 'running' || agent.status === 'starting').length;
+  return (
+    <div onKeyDown={moveBetweenRows} className="flex flex-col p-1.5">
+      {groups.map((group, index) => {
+        if (!group.phase) {
+          return (
+            <CappedAgentList key="loose" agents={group.agents} live={live} now={now} onOpen={onOpen} stop={stop} />
+          );
+        }
+        const after = groups[index - 1]?.phase?.title;
+        // One phrase for why a phase has not started: the agents it waits on, else the phase before it.
+        const waits =
+          group.agents.length === 0 && group.phase.status === 'pending'
+            ? unfinished > 0
+              ? t('waitsFor', { count: unfinished })
+              : after
+                ? t('startsAfter', { phase: after })
+                : null
+            : null;
+        return (
+          <PhaseRow
+            key={`phase:${group.phase.title}`}
+            phase={group.phase}
+            agents={group.agents}
+            waits={waits}
+            defaultOpen={openPhases?.includes(group.phase.title) ?? false}
+            live={live}
+            now={now}
+            onOpen={onOpen}
+            stop={stop}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/** One phase: a row with its ring that opens onto its agents, nested on the trunk. */
+function PhaseRow({
+  phase,
+  agents,
+  waits,
+  defaultOpen,
+  live,
+  now,
+  onOpen,
+  stop,
+}: {
+  phase: WorkflowRun['phases'][number];
+  agents: WorkflowRunAgent[];
+  waits: string | null;
+  defaultOpen: boolean;
+  live: boolean;
+  now: number;
+  onOpen: (agent: WorkflowRunAgent) => void;
+  stop: AgentStopState;
+}) {
+  const t = useTranslations('tools.workflow');
+  const [open, setOpen] = useState(defaultOpen);
+  const bodyId = useId();
+  const tally = countAgents(agents);
+  const opens = agents.length > 0;
+  const pending = !opens && phase.status === 'pending';
+  // A closed phase still says it is at work: "4 running · 1 failed".
+  const running = agents.filter((agent) => agent.status === 'running' || agent.status === 'starting').length;
+  const meta =
+    waits ??
+    ([running > 0 ? t('runningCount', { count: running }) : null, tally.failed > 0 ? t('failedSuffix', { count: tally.failed }) : null]
+      .filter(Boolean)
+      .join(' · ') ||
+      null);
+  const row = (
+    <>
+      <RunProgressRing
+        done={tally.done}
+        failed={tally.failed}
+        total={tally.total}
+        ended={phase.status === 'done' && tally.total > 0 && tally.done === tally.total ? 'done' : phase.status === 'stopped' ? 'stopped' : undefined}
+      />
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span className={cn('min-w-0 truncate text-sm', pending ? 'text-muted-foreground' : 'text-foreground')}>{phase.title}</span>
+        {opens && <span className="text-muted-foreground shrink-0 tabular-nums">{t('progress', { done: tally.done, total: tally.total })}</span>}
+      </span>
+      {/* The caret's column (size-3 + gap-2 = pr-5) is reserved, so this text ends where the agent rows' does. */}
+      <span className="flex shrink-0 items-center gap-2">
+        {meta && <span className="text-muted-foreground">{meta}</span>}
+        <CaretRightIcon
+          aria-hidden
+          className={cn(
+            'text-muted-foreground size-3 shrink-0 transition-transform duration-(--duration-fast) motion-reduce:transition-none',
+            !opens && 'invisible',
+            open && 'rotate-90',
+          )}
+        />
+      </span>
+    </>
+  );
+  // px-2.5 puts the ring on the header's and the agent rows' left edge; the trunk hangs from its
+  // centre: ml-4 pl-0.5 = px-2.5 + half of the size-4 ring.
+  const rowClass = 'flex min-h-9 w-full min-w-0 items-center gap-2.5 rounded-md px-2.5 py-2 text-left';
+  return (
+    <section aria-label={phase.title} data-workflow-phase={phase.title} className="flex flex-col">
+      {opens ? (
+        <button
+          type="button"
+          data-workflow-row
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => setOpen((value) => !value)}
+          className={cn(rowClass, 'hover:bg-muted/40 cursor-pointer transition-colors')}
+        >
+          {row}
+        </button>
+      ) : (
+        <div className={rowClass}>{row}</div>
+      )}
+      {opens && open && (
+        <div id={bodyId} className="ml-4 pr-5 pl-0.5">
+          <CappedAgentList agents={agents} live={live} now={now} onOpen={onOpen} stop={stop} nested />
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** A list of agent rows; past 25 it shows the first 20 and "Show all". Nested, each row hangs off the trunk. */
+function CappedAgentList({
+  agents,
+  live,
+  now,
+  onOpen,
+  stop,
+  nested = false,
+}: {
+  agents: WorkflowRunAgent[];
+  live: boolean;
+  now: number;
+  onOpen: (agent: WorkflowRunAgent) => void;
+  stop: AgentStopState;
+  nested?: boolean;
 }) {
   const t = useTranslations('tools.workflow');
   const [all, setAll] = useState(false);
-  const groups = groupRows(run);
-  const total = groups.reduce((n, group) => n + group.agents.length, 0);
-  const capped = total > CAP_FROM && !all;
-  // The first CAP rows across the groups, in drawing order, while capped.
-  const visible = groups.map((group, index) => {
-    const before = groups.slice(0, index).reduce((n, g) => n + g.agents.length, 0);
-    return capped ? group.agents.slice(0, Math.max(0, CAP - before)) : group.agents;
-  });
-  const unfinished = run.agents.filter((agent) => agent.status === 'running' || agent.status === 'starting').length;
+  const capped = agents.length > CAP_FROM && !all;
+  const rows = capped ? agents.slice(0, CAP) : agents;
   return (
-    <div onKeyDown={moveBetweenRows} className="flex flex-col">
-        {groups.map((group, index) => {
-          // A phase is a parent: its agents sit under it, a dashed rule apart from the next.
-          const rows = visible[index]!;
-          const divider = index > 0 && 'border-border border-t border-dashed';
-          if (group.phase?.status === 'pending' && group.agents.length === 0) {
-            const after = groups[index - 1]?.phase?.title;
-            // One phrase for why it has not started: the agents it waits on, else the phase before it.
-            const waits = unfinished > 0 ? t('waitsFor', { count: unfinished }) : after ? t('startsAfter', { phase: after }) : null;
-            return (
-              <div key={`phase:${group.phase.title}`} className={cn('flex min-h-10 min-w-0 items-center gap-2.5 px-4', divider)}>
-                <span className="flex shrink-0">
-                  <SessionStatusMark status="starting" />
-                </span>
-                <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">{group.phase.title}</span>
-                {waits && <span className="text-muted-foreground shrink-0">{waits}</span>}
-              </div>
-            );
-          }
-          if (rows.length === 0) return null;
-          const tally = countAgents(group.agents);
-          return (
-            <section key={`phase:${group.phase?.title ?? ''}`} aria-label={group.phase?.title} className={cn('flex flex-col p-1.5', divider)}>
-              {group.phase && (
-                <h4 className="text-muted-foreground flex min-w-0 items-center gap-1.5 px-2.5 pt-1 pb-0.5">
-                  <span className="text-foreground min-w-0 truncate font-medium">{group.phase.title}</span>
-                  <span className="shrink-0 tabular-nums">{t('progress', { done: tally.done, total: tally.total })}</span>
-                </h4>
-              )}
-              <ul role="list" className="flex flex-col">
-                {rows.map((agent) => (
-                  <AgentRow key={agent.id} agent={agent} live={live} now={now} onOpen={onOpen} stop={stop} />
-                ))}
-              </ul>
-            </section>
-          );
-        })}
-        {capped && (
+    <ul role="list" className="flex flex-col">
+      {rows.map((agent, index) => (
+        <AgentRow
+          key={agent.id}
+          agent={agent}
+          live={live}
+          now={now}
+          onOpen={onOpen}
+          stop={stop}
+          // The trunk ends at the last agent row; "Show all" hangs under it, not on it.
+          trunk={nested ? { continues: index < rows.length - 1 } : undefined}
+        />
+      ))}
+      {capped && (
+        <li className={cn(nested && 'pl-3.5')}>
           <button
             type="button"
+            data-workflow-row
             onClick={() => setAll(true)}
-            className="text-muted-foreground hover:text-foreground border-border flex h-9 w-full cursor-pointer items-center border-t border-dashed px-4 text-left"
+            className="text-muted-foreground hover:text-foreground flex h-9 w-full cursor-pointer items-center rounded-md px-2.5 text-left"
           >
-            {t('showAll', { count: total })}
+            {t('showAll', { count: agents.length })}
           </button>
-        )}
-      </div>
+        </li>
+      )}
+    </ul>
+  );
+}
+
+/**
+ * The trunk beside one nested row (the session list's `ChildRunBranch`): a row
+ * with siblings below carries the trunk through its height; the last one ends
+ * at its own rounded elbow, which meets the row's first line.
+ */
+function TrunkLines({ continues }: { continues: boolean }) {
+  return (
+    <>
+      {continues && <span aria-hidden className="border-border pointer-events-none absolute top-0 -bottom-px left-0 border-l-2" />}
+      {/* Whole-pixel geometry: the elbow meets the row's first line at py-2 (7.36px) + half its 20px line = 17px. */}
+      <span aria-hidden className="border-border pointer-events-none absolute top-0 left-0 h-[17px] w-3.5 rounded-bl-md border-b-2 border-l-2" />
+    </>
   );
 }
 
@@ -254,12 +390,15 @@ function AgentRow({
   now,
   onOpen,
   stop,
+  trunk,
 }: {
   agent: WorkflowRunAgent;
   live: boolean;
   now: number;
   onOpen: (agent: WorkflowRunAgent) => void;
   stop: AgentStopState;
+  /** Nested under a phase: the row hangs off the trunk; `continues` carries it on to the next row. */
+  trunk?: { continues: boolean };
 }) {
   const t = useTranslations('tools.workflow');
   const working = agent.status === 'running' || agent.status === 'starting';
@@ -281,7 +420,8 @@ function AgentRow({
 
   const body = (
     <>
-      <span className="flex h-4.5 shrink-0 items-center">
+      {/* On the title's line (h-5 = its 18.4px), so a failure's reason below never pulls the glyph off the trunk's elbow. */}
+      <span className="flex h-5 shrink-0 items-center">
         <SessionStatusMark status={runGlyphStatus(agent.status)} />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
@@ -304,12 +444,13 @@ function AgentRow({
   );
 
   const rowClass = cn(
-    'flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 py-2',
+    'flex min-h-9 min-w-0 flex-1 items-start gap-2.5 rounded-md px-2.5 py-2',
     agent.sessionId && 'hover:bg-muted/40',
   );
 
   return (
-    <li className="flex min-w-0 items-start">
+    <li className={cn('relative flex min-w-0 items-start', trunk && 'pl-3.5')}>
+      {trunk && <TrunkLines continues={trunk.continues} />}
       {agent.sessionId ? (
         <button
           type="button"

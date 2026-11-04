@@ -3202,7 +3202,8 @@
       "json": "JSON",
       "jsonKeys": "{count, plural, other {JSON · # 个键}}",
       "jsonItems": "{count, plural, other {JSON · # 项}}",
-      "failedSentence": "该工作流在完成前停止了。"
+      "failedSentence": "该工作流在完成前停止了。",
+      "runningCount": "{count} 个运行中"
     },
     "agent": {
       "backgroundWorking": "正在后台工作",
@@ -25322,7 +25323,11 @@
       "runsLabel": "工作流运行",
       "previousAgent": "上一个代理",
       "nextAgent": "下一个代理",
-      "moreActions": "更多操作"
+      "moreActions": "更多操作",
+      "attachments": "已附加的图片",
+      "removeAttachment": "移除 {name}",
+      "attachImages": "附加图片",
+      "attachFailed": "无法附加图片"
     },
     "tasks": {
       "label": "团队任务",

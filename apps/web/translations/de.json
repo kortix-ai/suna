@@ -3202,7 +3202,8 @@
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # Schlüssel} other {JSON · # Schlüssel}}",
       "jsonItems": "{count, plural, one {JSON · # Eintrag} other {JSON · # Einträge}}",
-      "failedSentence": "Der Workflow hat aufgehört, bevor er fertig war."
+      "failedSentence": "Der Workflow hat aufgehört, bevor er fertig war.",
+      "runningCount": "{count} laufen"
     },
     "agent": {
       "backgroundWorking": "Arbeitet im Hintergrund",
@@ -25322,7 +25323,11 @@
       "runsLabel": "Workflow-Läufe",
       "previousAgent": "Vorheriger Agent",
       "nextAgent": "Nächster Agent",
-      "moreActions": "Weitere Aktionen"
+      "moreActions": "Weitere Aktionen",
+      "attachments": "Angehängte Bilder",
+      "removeAttachment": "{name} entfernen",
+      "attachImages": "Bilder anhängen",
+      "attachFailed": "Das Bild konnte nicht angehängt werden"
     },
     "tasks": {
       "label": "Aufgaben des Teams",

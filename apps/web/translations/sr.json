@@ -3202,7 +3202,8 @@
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # кључ} few {JSON · # кључа} other {JSON · # кључева}}",
       "jsonItems": "{count, plural, one {JSON · # ставка} few {JSON · # ставке} other {JSON · # ставки}}",
-      "failedSentence": "Tok rada je stao pre nego što je završio."
+      "failedSentence": "Tok rada je stao pre nego što je završio.",
+      "runningCount": "{count} radi"
     },
     "agent": {
       "backgroundWorking": "Ради у позадини",
@@ -25322,7 +25323,11 @@
       "runsLabel": "Покретања workflow-а",
       "previousAgent": "Претходни агент",
       "nextAgent": "Следећи агент",
-      "moreActions": "Још радњи"
+      "moreActions": "Још радњи",
+      "attachments": "Priložene slike",
+      "removeAttachment": "Ukloni {name}",
+      "attachImages": "Priloži slike",
+      "attachFailed": "Slika nije mogla da se priloži"
     },
     "tasks": {
       "label": "Задаци тима",

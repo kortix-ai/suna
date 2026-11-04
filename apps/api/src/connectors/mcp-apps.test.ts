@@ -173,6 +173,49 @@ describe('the ways to connect one app (catalogue detail)', () => {
     expect(v2AppKey('API')).toBe('');
   });
 
+  test('YouTube is one app: the toolkit whose name matches no record joins the registry\'s <slug>.com', async () => {
+    const catalog = createConnectorCatalog({
+      source: {
+        items: () =>
+          connectorsV2Items({
+            apps: () => [],
+            index: async () => [
+              record('curated/google-youtube-data', 'openapi', 'YouTube Data', 'youtube.com'),
+              record('openapi/acme', 'openapi', 'Acme Platform', 'acme.com'),
+            ],
+            toolkits: async () => [
+              toolkit('youtube', 'YouTube'),
+              toolkit('youtube_transcript', 'YouTube Transcript'),
+              toolkit('zeta', 'Zeta'),
+            ],
+          }),
+        surfaces: async () => [],
+      },
+    });
+    const ids = async (q: string) => (await catalog.list({ q })).items.map((item) => [item.id, item.domain]);
+    // One YouTube card, and it is the one-click toolkit, not the API that asks for a key.
+    expect(await ids('youtube')).toEqual([
+      ['composio:youtube', 'youtube.com'],
+      ['composio:youtube_transcript', 'youtube_transcript.composio'],
+    ]);
+    // No registry domain for the slug: the toolkit keeps its own card.
+    expect(await ids('zeta')).toEqual([['composio:zeta', 'zeta.composio']]);
+    // The API stays one more way on the app page, after the toolkit.
+    const ways = await connectorsV2Surfaces('youtube.com', {
+      items: () =>
+        connectorsV2Items({
+          apps: () => [],
+          index: async () => [record('curated/google-youtube-data', 'openapi', 'YouTube Data', 'youtube.com')],
+          toolkits: async () => [toolkit('youtube', 'YouTube')],
+        }),
+      surfaces: async () => [variant('youtube-data-api', 'openapi', null, true)],
+    });
+    expect(ways.map((way) => [way.id, way.recommended === true])).toEqual([
+      ['composio:youtube', true],
+      ['youtube-data-api', false],
+    ]);
+  });
+
   test('an app with no one-click server recommends its managed toolkit; a registry record on another domain still counts', async () => {
     const items = async () => [
       { ...record('jira-openapi', 'openapi', 'Bitbucket', 'bitbucket.org') },
