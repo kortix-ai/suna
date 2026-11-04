@@ -844,6 +844,10 @@ const catalog = {
         "voice_call": {
           "name": "Voice calls",
           "description": "Call the session's agent from the session page and talk it through. It hears you, answers in a voice, sees a screen you share, and works in the same session, so the conversation stays in the chat."
+        },
+        "shared_drives": {
+          "name": "Shared drives",
+          "description": "Drives the whole team can use: an admin makes a Drive and adds agents to it. Every session of those agents mounts it, and everyone who may use one of them can open it. Off, every person has only My files."
         }
       },
       "channelsSwitch": {
@@ -9308,6 +9312,7 @@ const catalog = {
   },
   "voiceCall": {
     "title": "Voice call",
+    "call": "Call",
     "start": "Start a voice call",
     "end": "End call",
     "connecting": "Connecting…",
