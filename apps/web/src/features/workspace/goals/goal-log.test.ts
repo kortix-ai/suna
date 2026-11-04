@@ -35,6 +35,13 @@ describe('parseGoalLog', () => {
     ]);
   });
 
+  test('inline code that starts with three backticks is not a fence', () => {
+    expect(parseGoalLog('```js``` x\n- 2026-11-04T19:00:00Z next')).toEqual([
+      { kind: 'text', markdown: '```js``` x' },
+      { kind: 'entry', at: '2026-11-04T19:00:00Z', text: 'next' },
+    ]);
+  });
+
   test('a shorter fence inside a longer one does not close it', () => {
     const log = '````md\n```\n- 2026-11-04T18:00:00Z example\n```\n````\n- 2026-11-04T19:00:00Z next';
     expect(parseGoalLog(log)).toEqual([

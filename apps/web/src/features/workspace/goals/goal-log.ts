@@ -19,7 +19,9 @@ export function parseGoalLog(markdown: string): GoalLogBlock[] {
   // The open fence (its run of ``` or ~~~), or null: a fenced code block is text as written, timestamps and all.
   let fence: string | null = null;
   for (const line of markdown.replace(/^\s*# [^\n]*\n+/, '').split('\n')) {
-    const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    const run = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    // A backtick fence's info string has no backtick: "```js``` x" is inline code, not a fence.
+    const marker = run && (run[0] === '~' || fence !== null || !line.trim().slice(run.length).includes('`')) ? run : undefined;
     const inFence = fence !== null || !!marker;
     // A fence closes only on the same character, at least as long (CommonMark).
     if (marker && fence === null) fence = marker;
