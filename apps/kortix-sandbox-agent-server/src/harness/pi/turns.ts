@@ -169,6 +169,12 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       return rt.questions.reject(requestId) ? OK : answer(404, { error: 'no such question' })
     },
 
+    async parkAsks() {
+      const rt = runtime()
+      if (!rt) return answer(200, { parked: 0 })
+      return answer(200, { parked: rt.parkOpenAsks() })
+    },
+
     async compact(sessionId) {
       const rt = runtime()
       if (!rt) return NOT_STARTED

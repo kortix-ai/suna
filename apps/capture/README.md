@@ -162,10 +162,12 @@ library from the bucket.
 ## Updates
 
 The machine service updates the app in the background from each Kortix
-release. It checks at start and every 6 hours, on the channel the build came
+release. It checks at start and every 6 hours (never within 10 minutes of a
+wake from sleep), on the channel the build came
 from (`stable` for `X.Y.Z`, `dev` for `X.Y.Z-dev.N`). It installs only an
 Ed25519-signed manifest whose installer matches its size and SHA-256. A new
-version that does not report healthy is rolled back and never tried again.
+version that does not report healthy is rolled back and tried again after 7 days;
+a newer version is tried at once.
 
 | IT setting | Windows (policy key) | macOS (`config.json` or profile) | Linux (`/etc/kortix/capture.json`) |
 |---|---|---|---|

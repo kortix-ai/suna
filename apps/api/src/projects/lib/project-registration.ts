@@ -15,6 +15,7 @@ import {
   upsertProjectGitCredential,
 } from './project-git-write';
 import { type ProjectRow, clampProjectName, deriveProjectName } from './serializers';
+import { captureProductEvent } from '../../shared/product-analytics';
 
 type GitHubInstallation = typeof accountGithubInstallations.$inferSelect;
 
@@ -145,6 +146,13 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
         error: err instanceof Error ? err.message : String(err),
       });
     });
+  captureProductEvent({
+    userId: input.userId,
+    accountId: input.accountId,
+    event: 'project_created',
+    dedupeKey: row.projectId,
+    properties: { project_id: row.projectId, origin: 'github_import', git_auth: input.auth.kind },
+  });
   return row;
 }
 

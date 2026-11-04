@@ -53,3 +53,22 @@ test('sessions sharing a box each get their own calls, one relay serves them, a 
   expect(b.sent.at(-1)).toBe('Still here?')
   expect(a.sent).toHaveLength(1)
 })
+
+test("a call is named by the agent its session runs: a call to another agent never greets as the default one", async () => {
+  const e = fakePi('ses_pi_e')
+  attach(e.pi, 'ses_e', { agent: 'my-engineering_agent' })
+  await e.emit('session_start')
+  expect(brain.nameOf('ses_e')).toBe('My Engineering Agent')
+  const port = await relayPort()
+  const greeting = await new Promise<string>((done) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/stream?session=ses_e&tts=mock&recall=0`)
+    const timer = setTimeout(() => (ws.close(), done('')), 8000)
+    ws.onmessage = (m) => {
+      if (typeof m.data !== 'string') return
+      const j = JSON.parse(m.data) as { type: string; role?: string; text?: string }
+      if (j.type === 'text' && j.role === 'agent') clearTimeout(timer), ws.close(), done(j.text ?? '')
+    }
+  })
+  expect(greeting).toContain('My Engineering Agent')
+  await e.emit('session_shutdown')
+})

@@ -524,9 +524,8 @@ const nextConfig = (): NextConfig => ({
       // top-level segments were shared in Slack, saved as bookmarks and baked
       // into agent transcripts, so every one keeps resolving. `agent` became
       // `agents`, `config` became `settings`; the rest kept their names.
-      // `review` is NOT in this list: Review left Customize on 2026-10-02 and
-      // `/projects/:id/review` is its own page again. Redirecting it here
-      // would loop with `customize/review/page.tsx`, which sends it back.
+      // `review` is NOT in this list: `/projects/:id/review` is Review's own
+      // page (2026-11-04), and `customize/review/page.tsx` redirects to it.
       {
         source: '/projects/:id/agent/:path*',
         destination: '/projects/:id/customize/agents/:path*',
@@ -1127,6 +1126,9 @@ const nextConfig = (): NextConfig => ({
             },
           ]
         : []),
+      // PostHog, same origin (lib/analytics/posthog-client.ts): fewer requests
+      // lost to ad blockers, no third-party host in connect-src. Static
+      // assets (recorder, surveys) come from the assets host.
       {
         source: '/ingest/static/:path*',
         destination: 'https://eu-assets.i.posthog.com/static/:path*',
@@ -1134,10 +1136,6 @@ const nextConfig = (): NextConfig => ({
       {
         source: '/ingest/:path*',
         destination: 'https://eu.i.posthog.com/:path*',
-      },
-      {
-        source: '/ingest/flags',
-        destination: 'https://eu.i.posthog.com/flags',
       },
       // /docs is a Blume static build in public/docs/. Astro writes clean URLs as
       // directories, and Next's static handler does not resolve a directory index,

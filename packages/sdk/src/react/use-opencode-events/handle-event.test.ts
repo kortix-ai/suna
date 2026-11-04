@@ -80,8 +80,7 @@ mock.module('../../platform/ui', () => ({
 
 // `session.compacted` calls the REAL runtime-client singleton
 // (`core/runtime/client`'s `getClient()`) directly — not the `client` this
-// harness injects via `createEventHandler` (that one only backs the default
-// `reconcileSessionTail` closure). Mock the singleton so `getImpl` overrides
+// harness injects via `createEventHandler`). Mock the singleton so `getImpl` overrides
 // below can actually reach it, and so the unmocked default (a real sandbox
 // URL never being configured in this test process) doesn't throw
 // `RuntimeNotReadyError` before the code under test even runs.
@@ -122,16 +121,12 @@ function buildHandler(
     projectId?: string;
     /** The stream session's project, when it differs from the route's `projectId`. */
     notificationProjectId?: string;
-    reconcileSessionTail?: Parameters<typeof createEventHandler>[0]['reconcileSessionTail'];
-    userPartsGraceMs?: number;
     /** Wire the REAL sync-store reducer instead of the spy, exactly as
      *  production does, for tests whose contract depends on the order in
      *  which the reducer and `handle-event.ts` see the same event. */
     realSyncStore?: boolean;
     /** The Kortix session of the stream the handler serves. */
     sessionId?: string;
-    /** The box serves its log (`runtime.log.v1`). */
-    logNative?: boolean;
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -184,9 +179,6 @@ function buildHandler(
     projectId: overrides.projectId,
     notificationProjectId: overrides.notificationProjectId ?? overrides.projectId ?? null,
     sessionId: overrides.sessionId,
-    reconcileSessionTail: overrides.reconcileSessionTail,
-    userPartsGraceMs: overrides.userPartsGraceMs,
-    logNative: overrides.logNative,
     startCompaction: startCompaction.fn,
   });
 
@@ -468,89 +460,19 @@ describe('session lifecycle cache mutations', () => {
 // ============================================================================
 
 describe('session.compacted', () => {
-  test('success: patches the runtime-session cache AND the session-list mirror directly', async () => {
-    const { handleEvent, queryClient, stopCompaction } = buildHandler({
-      getImpl: async () => ({ data: session('ses_a', { time: { created: 1, updated: 9 } }) }),
-    });
-    queryClient.setQueryData(runtimeKeys.sessions(), [session('ses_a', { title: 'Old' })]);
-    queryClient.setQueryData(
-      runtimeKeys.runtimeSession('ses_a'),
-      session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
-    );
-
-    handleEvent({
-      id: 'evt_1',
-      type: 'session.compacted',
-      properties: { sessionID: 'ses_a' },
-    });
-    expect(stopCompaction.calls.map((c) => c[0])).toEqual(['ses_a']);
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(
-      queryClient.getQueryData<Session>(runtimeKeys.runtimeSession('ses_a'))?.time.compacting,
-    ).toBeUndefined();
-    expect(
-      queryClient.getQueryData<Session[]>(runtimeKeys.sessions())?.[0].time.compacting,
-    ).toBeUndefined();
-  });
-
-  test('failure: a rejected refetch invalidates the runtime-session query instead of leaving it stale forever', async () => {
-    const { handleEvent, queryClient } = buildHandler({
+  // The compaction block arrives over the session log: the frame only ends the compaction.
+  test('ends the compaction and reads nothing', async () => {
+    let sessionReads = 0;
+    const { handleEvent, stopCompaction } = buildHandler({
       getImpl: async () => {
-        throw new Error('sandbox proxy 502');
+        sessionReads++;
+        return { data: undefined };
       },
     });
-    // Seed a cache entry so `invalidateQueries` has something to mark.
-    queryClient.setQueryData(
-      runtimeKeys.runtimeSession('ses_a'),
-      session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
-    );
-    let invalidatedRuntimeSession = 0;
-    const orig = queryClient.invalidateQueries.bind(queryClient);
-    queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
-      if (JSON.stringify(opts.queryKey) === JSON.stringify(runtimeKeys.runtimeSession('ses_a')))
-        invalidatedRuntimeSession++;
-      return orig(opts);
-    }) as typeof queryClient.invalidateQueries;
-
-    handleEvent({
-      id: 'evt_1',
-      type: 'session.compacted',
-      properties: { sessionID: 'ses_a' },
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(invalidatedRuntimeSession).toBe(1);
-  });
-
-  test('no data returned (not a throw either): still invalidates rather than leaving the row untouched', async () => {
-    const { handleEvent, queryClient } = buildHandler({
-      getImpl: async () => ({ data: undefined }),
-    });
-    queryClient.setQueryData(
-      runtimeKeys.runtimeSession('ses_a'),
-      session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
-    );
-    let invalidatedRuntimeSession = 0;
-    const orig = queryClient.invalidateQueries.bind(queryClient);
-    queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
-      if (JSON.stringify(opts.queryKey) === JSON.stringify(runtimeKeys.runtimeSession('ses_a')))
-        invalidatedRuntimeSession++;
-      return orig(opts);
-    }) as typeof queryClient.invalidateQueries;
-
-    handleEvent({
-      id: 'evt_1',
-      type: 'session.compacted',
-      properties: { sessionID: 'ses_a' },
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(invalidatedRuntimeSession).toBe(1);
+    handleEvent({ id: 'evt_c', type: 'session.compacted', properties: { sessionID: 'ses_1' } } as never);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(stopCompaction.calls).toEqual([['ses_1']]);
+    expect(sessionReads).toBe(0);
   });
 });
 
@@ -1011,17 +933,10 @@ describe('kortix session title mirroring', () => {
 // ============================================================================
 
 describe('session-log control frames', () => {
-  test('a log.status frame moves the thread status like session.status: idle reconciles the tail', () => {
-    const reconciled: string[] = [];
-    const { handleEvent, applySyncEvent } = buildHandler({
-      sessionId: 'kortix-1',
-      reconcileSessionTail: async (sessionID) => {
-        reconciled.push(sessionID);
-      },
-    });
+  test('a log.status frame moves the thread status like session.status', () => {
+    const { handleEvent, applySyncEvent } = buildHandler({ sessionId: 'kortix-1' });
     handleEvent({ id: 'evt_1', type: 'log.status', properties: { thread_id: 'ses_1', status: 'idle' } } as never);
     expect(applySyncEvent.calls).toEqual([[{ type: 'session.status', properties: { sessionID: 'ses_1', status: { type: 'idle' } } }]]);
-    expect(reconciled).toEqual(['ses_1']);
   });
 
   test('a log.status compacting starts the thread compaction, and its next status ends it', () => {
@@ -1032,14 +947,17 @@ describe('session-log control frames', () => {
     expect(stopCompaction.calls).toEqual([['ses_1']]);
   });
 
-  test('on a box that serves its log, a turn end, an error and a compaction re-read no transcript tail and no session', async () => {
-    const reconciled: string[] = [];
+  // The session log holds the transcript (`runtime.log.v1`, every box past the runtime floor).
+  test('a turn end, an error, a compaction, a revert and a part-less user message read no transcript tail and no session', async () => {
+    let transcriptReads = 0;
     let sessionReads = 0;
+    useSyncStore.getState().markSessionRevertNeedsTailReconcile('ses_1');
+    useSyncStore.getState().upsertMessage('ses_1', { id: 'msg_user_np', sessionID: 'ses_1', role: 'user', time: { created: 1 } } as never);
     const { handleEvent } = buildHandler({
       sessionId: 'kortix-1',
-      logNative: true,
-      reconcileSessionTail: async (sessionID) => {
-        reconciled.push(sessionID);
+      messagesImpl: async () => {
+        transcriptReads++;
+        return { data: [] };
       },
       getImpl: async () => {
         sessionReads++;
@@ -1048,10 +966,19 @@ describe('session-log control frames', () => {
     });
     handleEvent({ id: 'evt_n1', type: 'log.status', properties: { thread_id: 'ses_1', status: 'idle' } } as never);
     handleEvent({ id: 'evt_n2', type: 'session.idle', properties: { sessionID: 'ses_1' } } as never);
-    handleEvent({ id: 'evt_n3', type: 'session.compacted', properties: { sessionID: 'ses_1' } } as never);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(reconciled).toEqual([]);
+    handleEvent({ id: 'evt_n3', type: 'session.status', properties: { sessionID: 'ses_1', status: { type: 'idle' } } } as never);
+    handleEvent({ id: 'evt_n4', type: 'session.compacted', properties: { sessionID: 'ses_1' } } as never);
+    handleEvent({ id: 'evt_n5', type: 'session.error', properties: { sessionID: 'ses_1', error: { name: 'APIError', data: { message: 'x' } } } } as never);
+    handleEvent({ id: 'evt_n6', type: 'session.next.revert.committed', properties: { sessionID: 'ses_1', messageID: 'msg_1' } } as never);
+    handleEvent({
+      id: 'evt_n7',
+      type: 'message.updated',
+      properties: { sessionID: 'ses_1', info: { id: 'msg_user_np', sessionID: 'ses_1', role: 'user', time: { created: 1 } } },
+    } as never);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(transcriptReads).toBe(0);
     expect(sessionReads).toBe(0);
+    expect(useSyncStore.getState().sessionRevertNeedsTailReconcile['ses_1']).toBeUndefined();
   });
 
   test("a log.state frame's pending asks a new permission and answers one the log dropped", () => {
@@ -1076,24 +1003,29 @@ describe('session-log control frames', () => {
   });
 });
 
-describe('session.status', () => {
-  test('idle status reconciles the transcript without a prior busy frame', () => {
-    const reconciled: string[] = [];
-    const { handleEvent } = buildHandler({
-      reconcileSessionTail: async (sessionID) => {
-        reconciled.push(sessionID);
-      },
-    });
+describe('a parked ask', () => {
+  const PROJECT_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
-    handleEvent({
-      id: 'evt_1',
-      type: 'session.status',
-      properties: { sessionID: 'ses_1', status: { type: 'idle' } },
-    });
+  test('question.parked and permission.parked drop the live card and refetch the stored asks', () => {
+    const { handleEvent, queryClient, removeQuestion, removePermission } = buildHandler({ projectId: PROJECT_ID, sessionId: 'kortix-1' });
+    const invalidated: string[] = [];
+    const real = queryClient.invalidateQueries.bind(queryClient);
+    queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
+      invalidated.push(JSON.stringify(opts.queryKey));
+      return real(opts);
+    }) as typeof queryClient.invalidateQueries;
 
-    expect(reconciled).toEqual(['ses_1']);
+    handleEvent({ id: 'evt_1', type: 'question.parked', properties: { sessionID: 'ses_1', requestID: 'que_1' } } as never);
+    handleEvent({ id: 'evt_2', type: 'permission.parked', properties: { sessionID: 'ses_1', requestID: 'perm_1' } } as never);
+
+    expect(removeQuestion.calls).toEqual([['que_1']]);
+    expect(removePermission.calls).toEqual([['perm_1']]);
+    expect(invalidated.filter((key) => key === JSON.stringify(qk.project.asks(PROJECT_ID)))).toHaveLength(2);
+    expect(invalidated).toContain(JSON.stringify(qk.project.needsInput(PROJECT_ID)));
   });
+});
 
+describe('session.status', () => {
   test('busy → idle fires notifyTaskComplete and invalidates git/file caches', () => {
     const { handleEvent, queryClient } = buildHandler();
     useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
@@ -1345,23 +1277,6 @@ describe('turn end refreshes open file viewers', () => {
 });
 
 describe('session.idle', () => {
-  test('reconciles the transcript when the busy frame was missed', () => {
-    const reconciled: string[] = [];
-    const { handleEvent } = buildHandler({
-      reconcileSessionTail: async (sessionID) => {
-        reconciled.push(sessionID);
-      },
-    });
-
-    handleEvent({
-      id: 'evt_1',
-      type: 'session.idle',
-      properties: { sessionID: 'ses_1' },
-    });
-
-    expect(reconciled).toEqual(['ses_1']);
-  });
-
   test('busy → idle fires notifyTaskComplete', () => {
     const { handleEvent } = buildHandler();
     useSyncStore.getState().setStatus('ses_1', {
@@ -1488,12 +1403,13 @@ describe('session.error', () => {
     expect(notifications).toEqual([]);
   });
 
-  test('non-abort errors rehydrate real messages from the injected client', async () => {
-    const rehydrated: Message[] = [assistantMessage('msg_real')];
-    const { handleEvent, queryClient } = buildHandler({
-      messagesImpl: async () => ({
-        data: rehydrated.map((info) => ({ info, parts: [] })),
-      }),
+  test('a non-abort error clears the optimistic rows and reads no transcript tail', async () => {
+    let fetchCount = 0;
+    const { handleEvent } = buildHandler({
+      messagesImpl: async () => {
+        fetchCount++;
+        return { data: [] };
+      },
     });
     useSyncStore.getState().optimisticAdd('ses_1', userMessage('msg_optimistic'), []);
 
@@ -1505,13 +1421,10 @@ describe('session.error', () => {
         error: { name: 'UnknownError', data: { message: 'boom' } },
       },
     });
-
-    // The rehydrate fetch is fire-and-forget (`.then()`), so wait a tick.
-    await Promise.resolve();
     await Promise.resolve();
 
-    expect(useSyncStore.getState().messages.ses_1?.some((m) => m.id === 'msg_real')).toBe(true);
-    expect(queryClient).toBeInstanceOf(QueryClient);
+    expect(fetchCount).toBe(0);
+    expect(useSyncStore.getState().messages.ses_1?.some((m) => m.id === 'msg_optimistic') ?? false).toBe(false);
   });
 
   test('an abort-shaped error skips the rehydrate fetch entirely', async () => {
@@ -1846,114 +1759,6 @@ describe('remaining event kinds — smoke coverage', () => {
       properties: { serverID: 'srv_1', path: 'src/app.ts' },
     });
     expect(fetchLspDiagnosticsDebounced.calls.length).toBe(1);
-  });
-});
-
-describe('a USER message.updated whose parts never arrive is re-read from the server', () => {
-  // Seen live: the runtime persists a user message and emits `message.updated`
-  // (info only) then `message.part.updated` (the text). When the part frame is
-  // lost — a stream reconnect during the boot hand-off — the transcript holds
-  // a user message with NO parts: an empty bubble, forever, until a reload.
-  // The tail is re-read after a short grace when that happens.
-  test('no parts after the grace → one tail reconcile with reason sse-gap', async () => {
-    const calls: Array<[string, string]> = [];
-    const { handleEvent } = buildHandler({
-      reconcileSessionTail: async (sessionID, reason) => {
-        calls.push([sessionID, reason]);
-      },
-      userPartsGraceMs: 0,
-    });
-    // `applySyncEvent` is a spy here; the message lands in the store as it
-    // would have via the real one.
-    useSyncStore
-      .getState()
-      .upsertMessage('ses_up', {
-        id: 'msg_user_np',
-        sessionID: 'ses_up',
-        role: 'user',
-        time: { created: 1 },
-      } as never);
-    handleEvent({
-      id: 'evt_u',
-      type: 'message.updated',
-      properties: {
-        sessionID: 'ses_up',
-        info: { id: 'msg_user_np', sessionID: 'ses_up', role: 'user', time: { created: 1 } },
-      },
-    } as never);
-    await new Promise((r) => setTimeout(r, 5));
-    expect(calls).toEqual([['ses_up', 'sse-gap']]);
-  });
-
-  test('parts present by then → nothing is fetched', async () => {
-    const calls: Array<[string, string]> = [];
-    const { handleEvent } = buildHandler({
-      reconcileSessionTail: async (sessionID, reason) => {
-        calls.push([sessionID, reason]);
-      },
-      userPartsGraceMs: 0,
-    });
-    useSyncStore
-      .getState()
-      .upsertPart(
-        'msg_user_p',
-        {
-          id: 'prt_1',
-          messageID: 'msg_user_p',
-          sessionID: 'ses_up2',
-          type: 'text',
-          text: 'hi',
-        } as never,
-        'ses_up2',
-      );
-    handleEvent({
-      id: 'evt_u2',
-      type: 'message.updated',
-      properties: {
-        sessionID: 'ses_up2',
-        info: { id: 'msg_user_p', sessionID: 'ses_up2', role: 'user', time: { created: 1 } },
-      },
-    } as never);
-    await new Promise((r) => setTimeout(r, 5));
-    expect(calls).toEqual([]);
-  });
-});
-
-describe('session.next.revert.committed → tail-reconcile wiring (F2 consumer)', () => {
-  // The store's applyEvent refuses to guess-delete when this tab never saw
-  // the staging and raises `sessionRevertNeedsTailReconcile` instead.
-  // handle-event is the one consumer: it must fetch the server's truncated
-  // tail and clear the flag. applySyncEvent is a spy in this harness, so the
-  // flag is seeded directly — exactly the state the store leaves behind.
-  test('consumes the needs-reconcile flag: fetches the tail, clears the flag', () => {
-    useSyncStore.getState().markSessionRevertNeedsTailReconcile('ses_rw');
-    const calls: Array<[string, string]> = [];
-    const { handleEvent } = buildHandler({
-      reconcileSessionTail: async (sessionID, reason) => {
-        calls.push([sessionID, reason]);
-      },
-    });
-    handleEvent({
-      type: 'session.next.revert.committed',
-      properties: { sessionID: 'ses_rw', messageID: 'msg_1' },
-    } as never);
-    expect(calls).toEqual([['ses_rw', 'manual']]);
-    expect(useSyncStore.getState().sessionRevertNeedsTailReconcile['ses_rw']).toBeUndefined();
-  });
-
-  test('no flag (tracked-revert tab) → no reconcile fetch', () => {
-    useSyncStore.getState().clearSessionRevertNeedsTailReconcile('ses_rw2');
-    const calls: Array<[string, string]> = [];
-    const { handleEvent } = buildHandler({
-      reconcileSessionTail: async (sessionID, reason) => {
-        calls.push([sessionID, reason]);
-      },
-    });
-    handleEvent({
-      type: 'session.next.revert.committed',
-      properties: { sessionID: 'ses_rw2', messageID: 'msg_1' },
-    } as never);
-    expect(calls).toEqual([]);
   });
 });
 

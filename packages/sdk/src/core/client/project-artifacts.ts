@@ -13,6 +13,15 @@ export function bindProjectArtifacts(projectId: string) {
         ticket: (...args: DropFirst<Parameters<typeof P.createArtifactLiveTicket>>) => P.createArtifactLiveTicket(projectId, ...args),
         signal: (...args: DropFirst<Parameters<typeof P.signalArtifactLiveAgent>>) => P.signalArtifactLiveAgent(projectId, ...args),
       },
+      /** Co-editing of a doc: the REST calls `createArtifactDocSync` drives. */
+      doc: {
+        get: (...args: DropFirst<Parameters<typeof P.getArtifactDoc>>) => P.getArtifactDoc(projectId, ...args),
+        seed: (...args: DropFirst<Parameters<typeof P.seedArtifactDoc>>) => P.seedArtifactDoc(projectId, ...args),
+        push: (...args: DropFirst<Parameters<typeof P.pushArtifactDocUpdate>>) => P.pushArtifactDocUpdate(projectId, ...args),
+        lease: (...args: DropFirst<Parameters<typeof P.leaseArtifactDoc>>) => P.leaseArtifactDoc(projectId, ...args),
+        flushed: (...args: DropFirst<Parameters<typeof P.markArtifactDocFlushed>>) => P.markArtifactDocFlushed(projectId, ...args),
+        reset: (...args: DropFirst<Parameters<typeof P.resetArtifactDoc>>) => P.resetArtifactDoc(projectId, ...args),
+      },
       comments: {
         readScreenshot: (...args: DropFirst<Parameters<typeof P.readArtifactCommentScreenshot>>) => P.readArtifactCommentScreenshot(projectId, ...args),
         list: (...args: DropFirst<Parameters<typeof P.listArtifactComments>>) => P.listArtifactComments(projectId, ...args),

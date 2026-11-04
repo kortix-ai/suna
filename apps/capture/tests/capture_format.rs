@@ -561,6 +561,11 @@ fn generate(out: &Path) -> Result<()> {
     device["os_version"] = json!("26.0");
     device["arch"] = json!("aarch64");
     device["member"] = json!({"email": "person@example.com"});
+    assert!(device["machine"]["cpu_cores"].as_u64().is_some_and(|n| n > 0));
+    device["machine"] = json!({"os_name": "macOS 26.0", "os_build": "25A354", "cpu": "Apple M3 Pro",
+        "cpu_cores": 12, "memory_bytes": 38_654_705_664u64, "disk_free_bytes": 412_316_860_416u64,
+        "disk_total_bytes": 994_662_584_320u64, "gpus": [], "booted_at_ms": T0 - 3_600_000,
+        "timezone": "Europe/Berlin", "utc_offset": "+01:00", "locale": "en-US"});
     device["updated_at_ms"] = json!(T0 + 120_000);
     put_json(&t, &format!("{DEVICE}/device.json"), &device);
 

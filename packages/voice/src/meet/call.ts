@@ -44,22 +44,38 @@ export type CallOptions = {
 export type WebCall = { done: Promise<string>; leave(): Promise<void>; cdp: Promise<number> }
 
 // Loopback, private, link-local, shared and unspecified addresses: the box and its networks, never a call's.
-const PRIVATE4: [string, number][] = [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.168.0.0', 16]]
+const PRIVATE4: [string, number][] = [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 3]]
 const v4 = (a: string) => a.split('.').reduce((n, x) => n * 256 + Number(x), 0)
-const privateAddress = (a: string): boolean => {
-  if (a.includes(':')) {
-    const x = a.toLowerCase()
-    const mapped = x.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1]
-    return mapped ? privateAddress(mapped) : x === '::' || x === '::1' || /^f[cd]/.test(x) || /^fe[89ab]/.test(x)
-  }
-  return PRIVATE4.some(([net, bits]) => Math.floor(v4(a) / 2 ** (32 - bits)) === Math.floor(v4(net) / 2 ** (32 - bits)))
+const private4 = (a: string) => !/^\d+\.\d+\.\d+\.\d+$/.test(a) || PRIVATE4.some(([net, bits]) => Math.floor(v4(a) / 2 ** (32 - bits)) === Math.floor(v4(net) / 2 ** (32 - bits)))
+/** An IPv6 address as its eight 16-bit groups ("::ffff:7f00:1" and "::ffff:127.0.0.1" alike); undefined when malformed. */
+const groups6 = (a: string): number[] | undefined => {
+  let x = a.toLowerCase().replace(/%.*$/, '')
+  const tail = x.match(/(\d+\.\d+\.\d+\.\d+)$/)?.[1]
+  if (tail) { const n = v4(tail); x = x.slice(0, -tail.length) + `${(n >>> 16).toString(16)}:${(n & 0xffff).toString(16)}` }
+  const [head, rest] = x.split('::')
+  const h = head ? head.split(':') : [], r = rest !== undefined ? (rest ? rest.split(':') : []) : []
+  const all = rest !== undefined ? [...h, ...Array(8 - h.length - r.length).fill('0'), ...r] : h
+  if (all.length !== 8 || all.some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return undefined
+  return all.map((g) => parseInt(g, 16))
 }
-/** A host the call browser may load: a public address, or a name whose every address is public (a name pointing at the
- * box or its network is not). */
+/** A resolved address the call browser may not reach: private or special in IPv4, or in IPv6 anything outside global
+ * unicast (2000::/3), and the ranges that carry an IPv4 inside (mapped, NAT64, 6to4, Teredo) by the IPv4 they carry. */
+const privateAddress = (a: string): boolean => {
+  if (!a.includes(':')) return private4(a)
+  const g = groups6(a)
+  if (!g) return true
+  const inner = (hi: number, lo: number) => `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`
+  if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) return private4(inner(g[6]!, g[7]!)) // ::ffff:a.b.c.d
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return private4(inner(g[6]!, g[7]!)) // NAT64
+  if (g[0] === 0x2002) return private4(inner(g[1]!, g[2]!)) // 6to4
+  if (g[0] === 0x2001 && g[1] === 0) return true // Teredo
+  if (g[0] === 0x2001 && g[1] === 0xdb8) return true // documentation
+  return (g[0]! & 0xe000) !== 0x2000 // only global unicast
+}
+/** A host the call browser may load: a name (never an address written as one) whose every address is public. */
 export async function publicHost(hostname: string, lookup: (h: string) => Promise<string[]>): Promise<boolean> {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '')
-  if (!h || h === 'localhost' || h.endsWith('.localhost')) return false
-  if (/^[\d.]+$/.test(h) || h.includes(':')) return !privateAddress(h)
+  if (!h || h === 'localhost' || h.endsWith('.localhost') || /^[\d.]+$/.test(h) || h.includes(':')) return false
   const addresses = await lookup(h).catch(() => [] as string[])
   return addresses.length > 0 && !addresses.some(privateAddress)
 }

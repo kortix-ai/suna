@@ -53,8 +53,22 @@ export function windowId(minutes: number | null, fallback: string): string {
   return fallback;
 }
 
+/**
+ * The instant `Date` can represent, else null. The provider's header is untrusted
+ * input: a reset past year 275760 is no reset time, never a throw out of a read
+ * that runs after the answer was already served.
+ */
+function representable(milliseconds: number): Date | null {
+  const date = new Date(milliseconds);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function epochIso(seconds: number | null): string | null {
-  return seconds !== null && seconds > 0 ? new Date(seconds * 1000).toISOString() : null;
+  return seconds !== null && seconds > 0 ? representable(seconds * 1000)?.toISOString() ?? null : null;
+}
+
+function afterIso(seconds: number | null, now: number): string | null {
+  return seconds !== null ? representable(now + seconds * 1000)?.toISOString() ?? null : null;
 }
 
 function codexWindows(headers: Headers, now: number): SubscriptionUsageWindow[] {
@@ -69,7 +83,7 @@ function codexWindows(headers: Headers, now: number): SubscriptionUsageWindow[] 
       id: windowId(minutes, slot),
       window_minutes: minutes,
       used_percent: percent(used),
-      resets_at: resetAt !== null ? epochIso(resetAt) : resetAfter !== null ? new Date(now + resetAfter * 1000).toISOString() : null,
+      resets_at: resetAt !== null ? epochIso(resetAt) : resetAfter !== null ? afterIso(resetAfter, now) : null,
     });
   }
   return windows;

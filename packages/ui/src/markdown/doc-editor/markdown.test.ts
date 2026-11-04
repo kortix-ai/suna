@@ -25,7 +25,8 @@ describe('doc Markdown round trip', () => {
 
   test('a loose task list (blank lines between items) still opens as a task list with its state', () => {
     const html = markdownToHtml('- [x] Done\n\n- [ ] Open\n');
-    expect(html).toContain('<ul data-type="taskList">');
+    // `data-md` after it keeps the loose spelling (doc-fidelity.ts).
+    expect(html).toContain('<ul data-type="taskList"');
     expect(html).toContain('data-checked="true"');
     expect(html).toContain('data-checked="false"');
   });
@@ -43,7 +44,8 @@ describe('doc Markdown round trip', () => {
       '<img class="kx-embed-image" src="https://opengraph.githubassets.com/1/a/b/pull/1" alt="" referrerpolicy="no-referrer"></a></div>';
     const saved = htmlToMarkdown(`<p>Before</p>${card}<p>After</p>`);
     expect(saved).toBe(`Before\n\n${card}\n\nAfter\n`);
-    expect(markdownToHtml(saved)).toContain(card);
+    // The editor writes the address line from the href, so it keeps this card's own spelling in `data-md`.
+    expect(markdownToHtml(saved).replace(/ data-md="[^"]*"/g, '')).toContain(card);
   });
 
   test('a card without an image keeps the favicon before its address through a save', () => {

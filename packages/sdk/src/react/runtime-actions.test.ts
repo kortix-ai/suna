@@ -64,9 +64,8 @@ const actions = await import('./runtime-actions');
 describe('runtime actions', () => {
   beforeEach(() => calls.splice(0));
 
-  test('owns runtime project, path, and file operations', async () => {
-    expect((await actions.getRuntimeProjectInfo()).worktree).toBe('/workspace');
-    expect((await actions.getRuntimePathInfo()).directory).toBe('/workspace');
+  // The project and path facts read the workspace route (runtime-workspace-native.test.ts).
+  test('owns runtime file operations', async () => {
     expect(await actions.readRuntimeTextFile('src/index.ts')).toBe('content');
     expect(calls).toContainEqual(['file.read', { path: 'src/index.ts' }]);
   });

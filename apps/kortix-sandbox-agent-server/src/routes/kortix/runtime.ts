@@ -243,6 +243,13 @@ export function createRuntimeRouter(
       return answer(c, () => turns.rejectQuestion(c.req.param('requestId')))
     })
 
+    // apps/api parks the asks when a message waits behind a turn that waits on a person.
+    app.post('/asks/park', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.parkAsks())
+    })
+
     app.post('/sessions/:sessionId/compact', async (c) => {
       const auth = authorize(cfg, c)
       if (!auth.ok) return auth.response

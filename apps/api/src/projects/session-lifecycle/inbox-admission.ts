@@ -180,6 +180,12 @@ export interface InboxAdmissionDeps {
   turnPrompter?: (sessionId: string, messageId: string) => Promise<string | null>;
   /** The reads a `steer` row needs. Absent: a steer row is admitted as a queue row. */
   steer?: SteerAdmissionDeps;
+  /**
+   * The head row waits behind a live turn: park the asks that turn holds for a
+   * person, so it goes on and the row is not stuck behind a question or a
+   * permission ask (lib/session-asks.ts). Fire-and-forget.
+   */
+  parkAsks?: (sessionId: string) => Promise<void>;
 }
 
 /**
@@ -305,8 +311,29 @@ export async function sessionKeepsMessageIds(sessionId: string | null | undefine
   }
 }
 
+/**
+ * When each session's asks were last parked from here. replica-local: a
+ * throttle only; another replica parks at most once more per window, and a
+ * second park is a no-op in the runtime.
+ */
+const parkedAt = new Map<string, number>();
+const PARK_THROTTLE_MS = 15_000;
+
+/** `InboxAdmissionDeps.parkAsks`: one runtime call per session per window, only when an ask may still wait live. */
+async function parkWaitingAsks(sessionId: string): Promise<void> {
+  const now = Date.now();
+  if (now - (parkedAt.get(sessionId) ?? 0) < PARK_THROTTLE_MS) return;
+  parkedAt.set(sessionId, now);
+  if (parkedAt.size > 5_000) for (const [id, at] of parkedAt) if (now - at >= PARK_THROTTLE_MS) parkedAt.delete(id);
+  const { sessionHasLiveAsk } = await import('../lib/session-asks');
+  if (!(await sessionHasLiveAsk(sessionId))) return;
+  const { parkRuntimeAsks } = await import('./runtime-asks');
+  await parkRuntimeAsks(sessionId);
+}
+
 export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
   reconcileTurn: reconcileInboxTurn,
+  parkAsks: parkWaitingAsks,
   // Dynamic: `turn-stop-authority.ts` imports this module.
   turnPrompter: async (sessionId, messageId) =>
     (await import('./turn-stop-authority')).turnPrompterOf(sessionId, messageId),
@@ -537,6 +564,7 @@ export async function admitInboxPrompt(
         (await rowMayEndTurn(row, active.messageId, deps))
           ? { opencodeSessionId: active.runtimeSessionId, messageId: active.messageId }
           : undefined;
+      if (isHead && deps.parkAsks) void deps.parkAsks(row.sessionId).catch(() => {});
       return {
         admit: false,
         reason: 'turn_active',

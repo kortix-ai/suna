@@ -273,6 +273,8 @@ export const qk = {
 
     /** `listSessionsNeedingInput` — which sessions wait on a human decision or answer. */
     needsInput: (id: string) => [...qk.project.scope(id), 'needs-input'] as const,
+    /** `listSessionAsks` — every open ask (question, permission ask, connector approval) the viewer may decide. */
+    asks: (id: string) => [...qk.project.scope(id), 'asks'] as const,
 
     /** `getReviewSummary` — the needs-you counts the always-mounted badges poll. */
     reviewSummary: (id: string) => [...qk.project.scope(id), 'review-summary'] as const,

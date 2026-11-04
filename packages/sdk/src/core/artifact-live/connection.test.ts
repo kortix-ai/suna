@@ -352,6 +352,33 @@ describe('createArtifactLiveConnection', () => {
     expect(events[1]).toEqual({ type: 'changed', what: 'comments', version: null });
   });
 
+  test('changed doc is a doc ping: onDoc gets the seq, no changed event is emitted, and an invalid seq is dropped', async () => {
+    const docs: number[] = [];
+    const { socket, events, connection, goLive } = setup({
+      onDoc: (seq) => {
+        docs.push(seq);
+        if (seq === 7) throw new Error('a host bug');
+      },
+    });
+    await goLive();
+    events.length = 0;
+    for (const version of ['7', null, '-1', '1.5', 'x', '', '07', '9007199254740993', '12']) {
+      socket().receive({ v: 1, t: 'changed', what: 'doc', version });
+    }
+    expect(docs).toEqual([7, 12]);
+    expect(events).toEqual([]);
+    expect(connection.status).toBe('live');
+  });
+
+  test('without onDoc a doc ping is dropped and the other changes still arrive', async () => {
+    const { socket, events, goLive } = setup();
+    await goLive();
+    events.length = 0;
+    socket().receive({ v: 1, t: 'changed', what: 'doc', version: '3' });
+    socket().receive({ v: 1, t: 'changed', what: 'content', version: 'entry-2' });
+    expect(events).toEqual([{ type: 'changed', what: 'content', version: 'entry-2' }]);
+  });
+
   test('a reconnect emits resync once it is live again, and restores this viewer\'s state', async () => {
     const { clock, sockets, events, connection, goLive } = setup();
     await goLive();

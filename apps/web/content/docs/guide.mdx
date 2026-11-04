@@ -484,6 +484,25 @@ A selected passage can have up to 500 characters.
 - **Activity.** The **Activity** tab lists every publish, save, rename, sharing change, restore and thread event, newest first, with who did it: a person, an agent or **System**.
 - **Changed text.** When the text under a thread changes, the highlight follows the edited text. When Kortix cannot find the text, the thread moves to **Outdated** and keeps its quote.
 
+### Work together, live
+
+With **Artifact comments** on, an open Artifact shows who else is on it, and a doc can be edited by several people and agents at once. Public links never show any of it.
+
+- **Who is here.** The header shows an avatar for each person and agent on the Artifact now, with a colored ring. Hover one for the name and status: **Viewing**, **Reading**, **Editing** or **Writing**. More than 4 show as **+N**. The avatars dim and the header says **Reconnecting…** while the connection is down.
+- **Where they are.** In a doc, you see each person's caret and selection in their color, with their name. On a page, you see their pointer.
+- **Typing.** **Name is typing…** shows under the thread someone writes in, and in the new-comment box.
+- **Agents.** An agent shows where it works: in a doc, its label sits at the passage it reads or edits; on a page, it shows in the header and on its thread. **Name is writing…** shows in the thread it answers.
+- **Hide my cursor.** Select the avatars, then **Hide my cursor**. Others still see your avatar, never your caret, selection, pointer or the thread you are in.
+
+#### Edit a doc together
+
+Everyone with write access types in the same doc at once. Each person sees the others' text as it is typed, usually within a tenth of a second. A person with read access sees the text change live.
+
+- **Saving.** The doc saves to Drive 2 seconds after the last change, whoever made it, as one version. **History** and **Activity** show these saves.
+- **Agents.** An agent edits the file in Drive, as before. Its change merges into the doc while people type: a paragraph that only the agent changed takes the agent's text, and edits to different words of one paragraph combine. When a person and the agent changed the same words, both versions of that paragraph stay, the agent's under the person's. **Undo** never takes back an agent's change.
+- **Your Markdown stays yours.** A file that nobody edited is never rewritten. A block the editor cannot show, such as front matter or raw HTML, shows as its Markdown source, and you edit it as text.
+- **When co-editing is off.** A doc over 1 MiB, a doc with mixed line endings, or a doc whose Markdown the editor would rewrite saves as before: a second writer stops autosave and you pick **Reload** or **Keep mine**. A one-line note says why.
+
 ### Send feedback to an agent
 
 - **Mention an agent.** Type `@`, pick an agent and write the request, for example "shorten this". The agent edits the Artifact, replies with the change in one sentence and resolves the thread. When it needs a person, it replies with a question.
