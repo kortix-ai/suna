@@ -160,7 +160,7 @@ function GoalContext({ markdown }: { markdown: string }) {
   return (
     <section className="flex flex-col gap-3" aria-label={t('context')} data-testid="goal-context">
       <SectionTitle>{t('context')}</SectionTitle>
-      <div className={long && !expanded ? 'max-h-48 overflow-hidden [mask-image:linear-gradient(to_bottom,black_55%,transparent)]' : undefined}>
+      <div className={long && !expanded ? 'max-w-prose max-h-48 overflow-hidden [mask-image:linear-gradient(to_bottom,black_55%,transparent)]' : 'max-w-prose'}>
         <UnifiedMarkdown content={markdown} trust="untrusted" variant="document" className="text-sm" />
       </div>
       {long ? (
@@ -276,7 +276,12 @@ function QuestionForYou({ projectId, goal, onChanged }: { projectId: string; goa
         <span className="bg-kortix-orange size-1.5 rounded-full" aria-hidden />
         {t('questionForYou')}
       </SectionTitle>
-      {question ? <p className="text-foreground text-sm whitespace-pre-line text-pretty">{question}</p> : null}
+      {question ? (
+        // Agent text: links in it stay clickable; untrusted, so no HTML.
+        <div className="max-w-prose">
+          <UnifiedMarkdown content={question} trust="untrusted" variant="message" className="text-sm" />
+        </div>
+      ) : null}
       {otherAsks.length > 0 ? (
         <ul className="flex flex-col gap-1 text-sm">
           {otherAsks.map((ask) => (
@@ -301,7 +306,6 @@ function MessageBox({ projectId, goal, onChanged, kind }: { projectId: string; g
   const t = useTranslations('goals');
   const [text, setText] = useState('');
   const [sent, setSent] = useState(false);
-  const chatHref = goal.coordinatorSessionId ? uiRoutes().session(projectId, goal.coordinatorSessionId) : null;
   const send = useMutation({
     mutationFn: () => replyToProjectGoal(projectId, goal, text.trim()),
     onSuccess: () => {
@@ -341,10 +345,6 @@ function MessageBox({ projectId, goal, onChanged, kind }: { projectId: string; g
           <p className="text-muted-foreground text-xs" role="status">
             {kind === 'answer' ? t('answerSent') : t('messageSent')}
           </p>
-        ) : chatHref ? (
-          <Link href={chatHref} className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline">
-            {t('openChat')}
-          </Link>
         ) : (
           <span />
         )}
@@ -384,28 +384,21 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
   const transitions = doc?.transitions ?? [];
   const updatedAt = goalLastWake(goal) ?? transitions.at(-1)?.at ?? null;
 
+  // The verifier's report folds under the move it decided: out of verifying, to done or back to active.
+  const verdict = files?.verification ? transitions.findLastIndex((tr) => tr.from === 'verifying') : -1;
   const items: FeedItem[] = transitions.map((tr, index) => ({
     key: `t:${tr.at}:${index}`,
     at: tr.at,
     order: index,
     icon: <StatusGlyph status={tr.to} />,
     title: tr.from === null ? t('feed.created') : t('feed.moved', { status: t(`status.${tr.to}`) }),
-    // The verifier's own words live in its report: the Done row needs no copy of them.
-    body: tr.reason && tr.to !== 'done' && tr.from !== null ? tr.reason : undefined,
+    body:
+      index === verdict && files?.verification ? (
+        <VerificationReport report={files.verification} />
+      ) : tr.reason && tr.to !== 'done' && tr.from !== null ? (
+        tr.reason
+      ) : undefined,
   }));
-  if (files?.verification) {
-    const done = doc?.status === 'done';
-    // The check's verdict sits right after the move out of verifying.
-    const verdict = transitions.findLastIndex((tr) => tr.from === 'verifying');
-    items.push({
-      key: 'verification',
-      at: null,
-      order: verdict >= 0 ? verdict + 0.5 : transitions.length,
-      icon: done ? <CheckCircleIcon weight="fill" className="text-kortix-green size-4" aria-hidden /> : <CircleIcon className="text-muted-foreground size-4" aria-hidden />,
-      title: done ? t('verifiedPass') : t('verifiedReport'),
-      body: <VerificationReport report={files.verification} />,
-    });
-  }
   if (doc?.summary) {
     items.push({ key: 'summary', at: updatedAt, order: transitions.length + 1, icon: <ChatTextIcon className="text-muted-foreground size-4" aria-hidden />, title: t('feed.update'), body: doc.summary });
   }
@@ -428,7 +421,7 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
                 {item.title}
                 {item.at ? <span className="text-muted-foreground whitespace-nowrap tabular-nums"> · {formatGoalTime(item.at, locale, now)}</span> : null}
               </p>
-              {typeof item.body === 'string' ? <p className="text-muted-foreground line-clamp-3 text-pretty">{item.body}</p> : item.body}
+              {typeof item.body === 'string' ? <p className="text-muted-foreground max-w-prose text-pretty whitespace-pre-line">{item.body}</p> : item.body}
             </div>
           </li>
         ))}
@@ -502,20 +495,18 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
   const heartbeat = goal.heartbeat;
   const today = new Date(now).toISOString().slice(0, 10);
   const scheduled = open && !paused && heartbeat?.state === 'active' && !!heartbeat.next_fire_at;
-  const nextCheck = !open ? t('none') : paused ? t('paused') : scheduled ? formatGoalTime(heartbeat!.next_fire_at, locale, now) : t('noWake');
+  // One empty value, "—", for every property with nothing to show (closed, paused, nothing scheduled).
+  const nextCheck = scheduled ? formatGoalTime(heartbeat!.next_fire_at, locale, now) : '—';
   const driveHref = uiRoutes().drive(projectId);
   const folderHref = driveHref ? `${driveHref}?path=${encodeURIComponent(goal.folder)}` : null;
 
   return (
-    <aside className="flex min-w-0 flex-col gap-8 self-start @4xl/goal:sticky @4xl/goal:top-0" aria-label={t('properties')} data-testid="goal-properties">
+    <aside className="flex min-w-0 flex-col gap-8 self-start @4xl/goal:sticky @4xl/goal:top-6" aria-label={t('properties')} data-testid="goal-properties">
       <div className="flex flex-col gap-3">
         <SectionTitle>{t('properties')}</SectionTitle>
         <dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 text-sm">
           <Property label={t('stateLabel')}>
             <GoalStatusBadge status={doc?.status} paused={paused} />
-          </Property>
-          <Property label={t('progress')}>
-            {doc?.success_criteria?.length ? <GoalCriteriaProgress goal={doc} /> : <span className="text-muted-foreground">{t('none')}</span>}
           </Property>
           <Property label={t('assignedAgent')}>
             {doc?.agent ? (
@@ -524,7 +515,7 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
                 <span className="text-foreground truncate">{doc.agent}</span>
               </span>
             ) : (
-              <span className="text-muted-foreground">{t('none')}</span>
+              <span className="text-muted-foreground">—</span>
             )}
           </Property>
           <Property label={t('assignedUser')}>
@@ -534,7 +525,7 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
             <span className={scheduled ? 'text-foreground tabular-nums' : 'text-muted-foreground'}>{nextCheck}</span>
           </Property>
           <Property label={t('lastCheck')}>
-            <span className="text-foreground tabular-nums">{formatGoalTime(goalLastWake(goal), locale, now)}</span>
+            <span className={goalLastWake(goal) ? 'text-foreground tabular-nums' : 'text-muted-foreground'}>{formatGoalTime(goalLastWake(goal), locale, now)}</span>
           </Property>
           {doc?.format === 'goal.md' ? (
             <>
@@ -542,9 +533,6 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
                 <span className="text-foreground tabular-nums">
                   {t('ofMax', { count: doc.wake_day === today ? (doc.wake_count ?? 0) : 0, max: doc.max_wakes_per_day ?? 12 })}
                 </span>
-              </Property>
-              <Property label={t('sessions')}>
-                <span className="text-foreground tabular-nums">{t('ofMax', { count: doc.sessions.length, max: doc.max_sessions ?? 10 })}</span>
               </Property>
             </>
           ) : null}
@@ -556,7 +544,15 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
 
       {doc?.sessions?.length ? (
         <div className="flex flex-col gap-3">
-          <SectionTitle>{t('sessions')}</SectionTitle>
+          <SectionTitle
+            aside={
+              doc.format === 'goal.md' ? (
+                <span className="text-muted-foreground text-xs tabular-nums">{t('ofMax', { count: doc.sessions.length, max: doc.max_sessions ?? 10 })}</span>
+              ) : null
+            }
+          >
+            {t('sessions')}
+          </SectionTitle>
           <ul className="flex flex-col gap-2 text-sm">
             {doc.sessions.map((s) => (
               <li key={`${s.role}:${s.id}`} className="flex min-w-0 items-baseline gap-2">
@@ -747,6 +743,17 @@ function EvidenceFile({ path, folder, driveHref }: { path: string; folder: strin
   );
 }
 
+/** A URL as its last path segment (or its host) and its host; the full URL stays in the link's title. */
+function urlLabel(link: string): { name: string; host: string } {
+  try {
+    const url = new URL(link);
+    const last = url.pathname.split('/').filter(Boolean).at(-1);
+    return { name: last ? decodeURIComponent(last) : url.host, host: url.host };
+  } catch {
+    return { name: link, host: '' };
+  }
+}
+
 /**
  * A `links:` entry: a URL opens as is. A path in Files shows its name and its
  * folder, plus a folder action that opens that folder in Files (the same row
@@ -756,9 +763,10 @@ function EvidenceFile({ path, folder, driveHref }: { path: string; folder: strin
 function LinkTarget({ link, folder, driveHref }: { link: string; folder: string; driveHref: string | null }) {
   if (/^https?:\/\//.test(link)) {
     return (
-      <a href={link} target="_blank" rel="noreferrer" className="text-foreground flex min-w-0 items-center gap-2 underline-offset-2 hover:underline">
+      <a href={link} target="_blank" rel="noreferrer" title={link} className="flex min-w-0 items-center gap-2 underline-offset-2 hover:underline">
         <LinkIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-        <span className="truncate">{link}</span>
+        <span className="text-foreground shrink-0">{urlLabel(link).name}</span>
+        <span className="text-muted-foreground min-w-0 truncate text-xs">{urlLabel(link).host}</span>
       </a>
     );
   }

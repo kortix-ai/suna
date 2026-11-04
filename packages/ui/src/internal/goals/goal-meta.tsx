@@ -165,7 +165,7 @@ export function GoalPersonChip({ projectId, userId }: { projectId: string; userI
   const t = useTranslations('goals');
   const viewerId = useUiViewerId();
   const members = useAccountMembers(useProjectAccountId(projectId) ?? undefined);
-  if (!userId) return <span className="text-muted-foreground">{t('none')}</span>;
+  if (!userId) return <span className="text-muted-foreground">—</span>;
   const email = (members.data ?? []).find((m) => m.user_id === userId)?.email ?? '';
   const label = userId === viewerId ? t('you') : email || t('anotherMember');
   return (
