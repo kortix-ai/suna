@@ -67,6 +67,15 @@ function mapRow(r: typeof oauthClients.$inferSelect): OAuthClient {
  * must use https.
  */
 /**
+ * localhost/127.0.0.1/[::1]/*.localhost — the hosts an http:// redirect may
+ * target while every deployed app must use https (RFC 8252 §7.3). Shared with
+ * the headless auth redirect guard (auth/headless.ts).
+ */
+export function isLoopbackHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname.endsWith('.localhost');
+}
+
+/**
  * `native` admits a private-use URI scheme (RFC 8252 §7.1), which desktop MCP
  * clients register (Cursor: `cursor://…`). Only self-registered clients pass it;
  * the account registry keeps http(s).
@@ -84,7 +93,7 @@ export function normalizeRedirectUris(input: unknown, opts: { native?: boolean }
       throw new OAuthClientInputError(`redirect_uri is not an absolute URL: ${value}`);
     }
     if (url.hash) throw new OAuthClientInputError(`redirect_uri must not carry a fragment: ${value}`);
-    const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]' || url.hostname.endsWith('.localhost');
+    const loopback = isLoopbackHost(url.hostname);
     if (url.protocol === 'http:' && !loopback) throw new OAuthClientInputError(`redirect_uri must use https (http is allowed on localhost only): ${value}`);
     const web = url.protocol === 'http:' || url.protocol === 'https:';
     const nativeScheme = opts.native && !web && !['javascript:', 'data:', 'vbscript:', 'file:', 'blob:'].includes(url.protocol);
