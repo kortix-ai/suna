@@ -4,6 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import Link from '@/components/site-link';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { useWalkthrough, WalkPanel, WalkTabs } from '@/features/marketing/kit/walkthrough';
 import { cn } from '@kortix/ui';
 import {
   ArrowUpIcon,
@@ -17,7 +18,7 @@ import {
   UsersIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import { useReducedMotion } from 'motion/react';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState } from 'react';
 
 import { localizeMarketingContent as localizeModel } from './model';
 import {
@@ -230,71 +231,24 @@ function Walkthrough() {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
   const { walk } = localizeModel(tMarketing);
 
-  const reduced = Boolean(useReducedMotion());
-  const [selected, setSelected] = useState(0);
-  const [held, setHeld] = useState(false);
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-
-  useEffect(() => {
-    if (reduced || held) return;
-    const timer = setInterval(() => setSelected((n) => (n + 1) % walk.length), STEP_MS);
-    return () => clearInterval(timer);
-  }, [reduced, held]);
-
-  const pick = (i: number) => {
-    setHeld(true);
-    setSelected(i);
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
-    if (!step) return;
-    event.preventDefault();
-    const next = (selected + step + walk.length) % walk.length;
-    pick(next);
-    tabRefs.current[next]?.focus();
-  };
+  const { selected, pick } = useWalkthrough(walk.length, STEP_MS);
 
   const current = walk[selected];
 
   return (
     <div className="flex w-full flex-col items-center gap-8">
-      <div
-        role="tabpanel"
-        id="multiplayer-walk-panel"
-        aria-labelledby={`multiplayer-walk-${current.id}`}
-        className="w-full max-w-304"
-      >
+      <WalkPanel idPrefix="multiplayer-walk" stepId={current.id} className="w-full max-w-304">
         <SessionWindow step={selected} />
-      </div>
+      </WalkPanel>
 
       <div className="flex flex-col items-center gap-5">
-        <div
-          role="tablist"
-          aria-label={tMarketing('textbcf7fc48b931')}
-          onKeyDown={onKeyDown}
-          className="flex flex-wrap justify-center gap-2"
-        >
-          {walk.map((w, i) => (
-            <button
-              key={w.id}
-              ref={(el) => {
-                tabRefs.current[i] = el;
-              }}
-              type="button"
-              role="tab"
-              id={`multiplayer-walk-${w.id}`}
-              aria-controls="multiplayer-walk-panel"
-              aria-selected={i === selected}
-              tabIndex={i === selected ? 0 : -1}
-              onClick={() => pick(i)}
-              className="text-muted-foreground hover:text-foreground aria-selected:bg-background aria-selected:text-foreground outline-ring duration-normal aria-selected:border-border flex items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm transition-colors ease-out focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              <span className="font-mono text-xs tabular-nums">{i + 1}</span>
-              {w.label}
-            </button>
-          ))}
-        </div>
+        <WalkTabs
+          steps={walk}
+          idPrefix="multiplayer-walk"
+          label={tMarketing('textbcf7fc48b931')}
+          selected={selected}
+          pick={pick}
+        />
         <p
           key={current.id}
           className={cn('text-foreground max-w-2xl px-4 text-center text-base text-balance', FADE)}

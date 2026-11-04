@@ -4,6 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import Link from '@/components/site-link';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { useWalkthrough, WalkPanel, WalkTabs } from '@/features/marketing/kit/walkthrough';
 import { cn } from '@kortix/ui';
 import {
   ArrowDownIcon,
@@ -11,8 +12,7 @@ import {
   ShieldCheckIcon,
   UserIcon,
 } from '@phosphor-icons/react/dist/ssr';
-import { useReducedMotion } from 'motion/react';
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 import { localizeMarketingContent as localizeModel } from './model';
 
@@ -72,30 +72,7 @@ function Walkthrough() {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
   const { gates } = localizeModel(tMarketing);
 
-  const reduced = Boolean(useReducedMotion());
-  const [selected, setSelected] = useState(0);
-  const [held, setHeld] = useState(false);
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-
-  useEffect(() => {
-    if (reduced || held) return;
-    const timer = setInterval(() => setSelected((n) => (n + 1) % gates.length), STEP_MS);
-    return () => clearInterval(timer);
-  }, [reduced, held]);
-
-  const pick = (i: number) => {
-    setHeld(true);
-    setSelected(i);
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
-    if (!step) return;
-    event.preventDefault();
-    const next = (selected + step + gates.length) % gates.length;
-    pick(next);
-    tabRefs.current[next]?.focus();
-  };
+  const { selected, pick } = useWalkthrough(gates.length, STEP_MS);
 
   const gate = gates[selected];
   // The changing words fade in when the step changes (opacity only).
@@ -103,10 +80,9 @@ function Walkthrough() {
 
   return (
     <div className="flex w-full flex-col gap-8 lg:gap-10">
-      <div
-        role="tabpanel"
-        id="security-walk-panel"
-        aria-labelledby={`security-walk-${gate.id}`}
+      <WalkPanel
+        idPrefix="security-walk"
+        stepId={gate.id}
         className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.3fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-stretch"
       >
         <Node
@@ -158,35 +134,16 @@ function Walkthrough() {
           }
           note="Reached only after the check."
         />
-      </div>
+      </WalkPanel>
 
       <div className="flex flex-col items-center gap-5">
-        <div
-          role="tablist"
-          aria-label={tMarketing('text8ee1e1c11369')}
-          onKeyDown={onKeyDown}
-          className="flex flex-wrap justify-center gap-2"
-        >
-          {gates.map((g, i) => (
-            <button
-              key={g.id}
-              ref={(el) => {
-                tabRefs.current[i] = el;
-              }}
-              type="button"
-              role="tab"
-              id={`security-walk-${g.id}`}
-              aria-controls="security-walk-panel"
-              aria-selected={i === selected}
-              tabIndex={i === selected ? 0 : -1}
-              onClick={() => pick(i)}
-              className="text-muted-foreground hover:text-foreground aria-selected:bg-background aria-selected:text-foreground outline-ring duration-normal aria-selected:border-border flex items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm transition-colors ease-out focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              <span className="font-mono text-xs tabular-nums">{i + 1}</span>
-              {g.gate}
-            </button>
-          ))}
-        </div>
+        <WalkTabs
+          steps={gates.map((g) => ({ id: g.id, label: g.gate }))}
+          idPrefix="security-walk"
+          label={tMarketing('text8ee1e1c11369')}
+          selected={selected}
+          pick={pick}
+        />
         <p
           key={gate.id}
           className={cn('text-foreground max-w-2xl px-4 text-center text-base text-balance', fade)}
