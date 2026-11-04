@@ -156,6 +156,11 @@ export interface InboundAuditScope {
    */
   recordedActions: Set<string>;
   emitted: boolean;
+  /**
+   * The handler said this request is a heartbeat that changed nothing
+   * (`markInboundAuditHeartbeat`): a success writes no row; a failure does.
+   */
+  heartbeat?: boolean;
 }
 
 export interface InboundAuditScopeInit {
@@ -242,6 +247,16 @@ export function annotateAuditEvent(annotation: AuditAnnotation): void {
     (scope.annotation as Record<string, unknown>)[key] = value;
   }
   if (metadata) scope.annotation.metadata = { ...scope.annotation.metadata, ...metadata };
+}
+
+/**
+ * This request only kept something alive that was already in force (a
+ * co-edited doc's lease renewal, every 5 s per tab): when it succeeds it
+ * writes no audit row. A refused or failed one keeps its row.
+ */
+export function markInboundAuditHeartbeat(): void {
+  const scope = currentInboundAuditScope();
+  if (scope) scope.heartbeat = true;
 }
 
 /** Classify a request the dispatcher routed outside Hono. */

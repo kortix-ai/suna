@@ -23606,8 +23606,16 @@
     "messageError": "Die Notiz konnte nicht gesendet werden. Versuche es erneut.",
     "messageSent": "Notiz gesendet. Der Agent nimmt sie jetzt auf.",
     "sendMessage": "Notiz senden",
-    "showLog": "Vollständiges Log anzeigen",
-    "hideLog": "Vollständiges Log ausblenden",
+    "send": "Senden",
+    "agentLog": "Agent-Log",
+    "shareAccessLabel": "Wer Zugriff hat",
+    "shareOwner": "Eigentümer",
+    "shareAdminsRole": "Kann öffnen",
+    "shareLoadError": "Zugriff konnte nicht geladen werden.",
+    "shareVisibility": "Sichtbar für: {scope}. Ziel teilen",
+    "copyLink": "Link kopieren",
+    "linkCopied": "Link kopiert",
+    "linkCopyError": "Link konnte nicht kopiert werden",
     "properties": "Eigenschaften",
     "stateLabel": "Status",
     "nextCheck": "Nächste Prüfung",
@@ -24291,6 +24299,14 @@
       "typingTwo": "{first} und {second} tippen…",
       "typingMany": "{count, plural, one {# Person tippt…} other {# Personen tippen…}}",
       "writing": "{name} schreibt…"
+    },
+    "coedit": {
+      "offLarge": "Live-Bearbeitung ist aus: Dieses Dokument ist größer als 1 MiB. Änderungen werden beim Tippen gespeichert.",
+      "offLineEndings": "Live-Bearbeitung ist aus: Dieses Dokument mischt CRLF- und LF-Zeilenenden. Änderungen werden beim Tippen gespeichert.",
+      "offShape": "Live-Bearbeitung ist aus: Der Editor würde einen Teil des Markdowns umschreiben. Änderungen werden beim Tippen gespeichert.",
+      "stoppedLarge": "Live-Bearbeitung beendet: Eine Änderung war zu groß zum Teilen. Änderungen werden beim Tippen gespeichert.",
+      "stoppedFailed": "Live-Bearbeitung beendet: Die Verbindung ist fehlgeschlagen. Änderungen werden beim Tippen gespeichert.",
+      "stoppedHistory": "Live-Bearbeitung beendet: Der Bearbeitungsverlauf dieses Dokuments ist zu groß. Änderungen werden beim Tippen gespeichert."
     }
   },
   "emailConnect": {

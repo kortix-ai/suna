@@ -283,7 +283,7 @@ export function QueuedPromptList({
   return (
     <section
       aria-label={t('queueList')}
-      className="bg-background border-border flex w-full flex-col rounded-lg border p-2"
+      className="bg-background border-border flex w-full flex-col rounded-lg border p-1"
     >
       {/* Paused with nothing listed: the pause is the whole card. With rows,
           the header below carries it instead. */}
@@ -299,7 +299,7 @@ export function QueuedPromptList({
       {listed > 0 && (
         <div
           {...(heldCount > 0 ? { 'data-queue-held': true } : {})}
-          className="flex items-center gap-2 px-2 py-1"
+          className="flex items-center gap-2 py-0.5 pr-1 pl-2"
         >
           <span className="text-muted-foreground flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             <span className="text-foreground font-medium">
@@ -326,7 +326,7 @@ export function QueuedPromptList({
         </div>
       )}
       {listed > 0 && !collapsed && (
-        <ul id={listId} className="max-h-60 space-y-1 overflow-y-auto overscroll-contain">
+        <ul id={listId} className="max-h-40 overflow-y-auto overscroll-contain">
           {rows.map((row) => {
             const failed = row.state === 'failed';
             const actions = queuedRowActions(row, {
@@ -343,7 +343,7 @@ export function QueuedPromptList({
                   <li
                     data-queued-prompt-id={row.id}
                     data-queued-state={row.state}
-                    className="group/queued hover:bg-hover flex min-h-10 items-start gap-2 rounded-md px-2 py-2"
+                    className="group/queued hover:bg-hover flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-transparent px-2 py-0.5"
                   >
                     <div className="text-foreground min-w-0 flex-1 text-sm break-words">
                       <QueuedMessageText row={row} />

@@ -155,9 +155,12 @@ export function GoalStatusIcon({
   state,
   progress = 0,
   label,
+  tone,
   className,
 }: {
   state: GoalIconState;
+  /** A color for the glyph instead of the state's own (a CSS color or `var(--…)`). */
+  tone?: string;
   /** Done criteria met, 0..1: the pie of an in-progress goal. */
   progress?: number;
   /** The accessible name. Omitted: the icon is decoration beside a label. */
@@ -165,7 +168,8 @@ export function GoalStatusIcon({
   className?: string;
 }) {
   const color =
-    state === 'done' ? 'var(--kortix-green)' : state === 'waiting' || state === 'attention' ? 'var(--kortix-orange)' : 'var(--muted-foreground)';
+    tone ??
+    (state === 'done' ? 'var(--kortix-green)' : state === 'waiting' || state === 'attention' ? 'var(--kortix-orange)' : 'var(--muted-foreground)');
   const a11y = label ? { role: 'img' as const, 'aria-label': label } : { 'aria-hidden': true as const };
   return (
     <svg

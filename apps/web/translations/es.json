@@ -23606,8 +23606,16 @@
     "messageError": "No se pudo enviar la nota. Inténtalo de nuevo.",
     "messageSent": "Nota enviada. El agente la recoge ahora.",
     "sendMessage": "Enviar nota",
-    "showLog": "Mostrar registro completo",
-    "hideLog": "Ocultar registro completo",
+    "send": "Enviar",
+    "agentLog": "Registro del agente",
+    "shareAccessLabel": "Quién tiene acceso",
+    "shareOwner": "Propietario",
+    "shareAdminsRole": "Puede abrirlo",
+    "shareLoadError": "No se pudo cargar quién tiene acceso.",
+    "shareVisibility": "Visible para: {scope}. Compartir objetivo",
+    "copyLink": "Copiar enlace",
+    "linkCopied": "Enlace copiado",
+    "linkCopyError": "No se pudo copiar el enlace",
     "properties": "Propiedades",
     "stateLabel": "Estado",
     "nextCheck": "Próxima revisión",
@@ -24291,6 +24299,14 @@
       "typingTwo": "{first} y {second} están escribiendo…",
       "typingMany": "{count, plural, one {# persona está escribiendo…} other {# personas están escribiendo…}}",
       "writing": "{name} está redactando…"
+    },
+    "coedit": {
+      "offLarge": "La edición en vivo está desactivada: este documento supera 1 MiB. Los cambios se guardan al escribir.",
+      "offLineEndings": "La edición en vivo está desactivada: este documento mezcla finales de línea CRLF y LF. Los cambios se guardan al escribir.",
+      "offShape": "La edición en vivo está desactivada: el editor reescribiría parte del Markdown. Los cambios se guardan al escribir.",
+      "stoppedLarge": "La edición en vivo se detuvo: un cambio era demasiado grande para compartirlo. Los cambios se guardan al escribir.",
+      "stoppedFailed": "La edición en vivo se detuvo: la conexión falló. Los cambios se guardan al escribir.",
+      "stoppedHistory": "La edición en vivo se detuvo: el historial de ediciones de este documento es demasiado grande. Los cambios se guardan al escribir."
     }
   },
   "emailConnect": {

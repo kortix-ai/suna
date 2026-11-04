@@ -23606,8 +23606,16 @@
     "messageError": "Beleška nije poslata. Pokušaj ponovo.",
     "messageSent": "Beleška je poslata. Agent je sada preuzima.",
     "sendMessage": "Pošalji belešku",
-    "showLog": "Prikaži ceo log",
-    "hideLog": "Sakrij ceo log",
+    "send": "Pošalji",
+    "agentLog": "Log agenta",
+    "shareAccessLabel": "Ko ima pristup",
+    "shareOwner": "Vlasnik",
+    "shareAdminsRole": "Može da otvori",
+    "shareLoadError": "Nije moguće učitati ko ima pristup.",
+    "shareVisibility": "Vidljivo za: {scope}. Podeli cilj",
+    "copyLink": "Kopiraj link",
+    "linkCopied": "Link je kopiran",
+    "linkCopyError": "Link nije kopiran",
     "properties": "Svojstva",
     "stateLabel": "Stanje",
     "nextCheck": "Sledeća provera",
@@ -24291,6 +24299,14 @@
       "typingTwo": "{first} и {second} куцају…",
       "typingMany": "{count, plural, one {# особа куца…} few {# особе куцају…} other {# особа куца…}}",
       "writing": "{name} пише…"
+    },
+    "coedit": {
+      "offLarge": "Заједничко уређивање уживо је искључено: овај документ је већи од 1 MiB. Измене се чувају док куцате.",
+      "offLineEndings": "Заједничко уређивање уживо је искључено: овај документ меша CRLF и LF крајеве редова. Измене се чувају док куцате.",
+      "offShape": "Заједничко уређивање уживо је искључено: уређивач би преписао део Markdown-а. Измене се чувају док куцате.",
+      "stoppedLarge": "Заједничко уређивање уживо је заустављено: једна измена је била превелика за дељење. Измене се чувају док куцате.",
+      "stoppedFailed": "Заједничко уређивање уживо је заустављено: веза није успела. Измене се чувају док куцате.",
+      "stoppedHistory": "Заједничко уређивање уживо је заустављено: историја измена овог документа је превелика. Измене се чувају док куцате."
     }
   },
   "emailConnect": {

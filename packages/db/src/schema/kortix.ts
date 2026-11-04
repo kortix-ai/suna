@@ -9126,6 +9126,125 @@ export const artifactEvents = kortixSchema.table('artifact_events', {
   check('artifact_events_actor_check', sql`${table.actorUserId} is null or ${table.actorSessionId} is null`),
 ]).enableRLS();
 
+/** Raw bytes: postgres-js reads and writes a `bytea` as a Buffer. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
+
+/**
+ * Live co-editing of a doc Artifact (KRTX-3670): one row per Artifact that has
+ * a shared Yjs document. The server keeps the Yjs bytes opaque. The Markdown
+ * file in Files stays the truth; one browser tab (the lease holder) writes it.
+ *   next_seq          the seq the next update gets
+ *   flushed_seq       every update with seq <= it is in the file
+ *   flushed_version   the entry version that flush produced (or the seed's)
+ *   flushed_markdown  the file text the doc was last made equal to
+ *   lease_*           the tab that writes the file: an opaque client id, its
+ *                     person, and when the lease ends (TTL 15 s)
+ *   epoch             new on every seed: a client that sees another epoch
+ *                     rebuilds its doc (a reset or the GC job deleted the state)
+ *   bytes_total       what the doc stores: each update row's bytes plus a
+ *                     fixed row cost, and a fixed cost per root and client
+ *                     index row (apps/api/src/artifacts/doc-rules.ts);
+ *                     capped (413 doc_too_large)
+ *   compaction_failed_at  the last compaction that threw or would pass the
+ *                     page limit; none again for 10 min
+ *   pending_writers   who pushed since the flush that last named them, with
+ *                     the seq of each one's last push
+ */
+export const artifactDocState = kortixSchema.table('artifact_doc_state', {
+  artifactId: uuid('artifact_id').primaryKey(),
+  epoch: uuid('epoch').defaultRandom().notNull(),
+  bytesTotal: bigint('bytes_total', { mode: 'number' }).default(0).notNull(),
+  /** Rows of `artifact_doc_roots` for this doc (capped; each charged to `bytes_total`). */
+  rootRows: integer('root_rows').default(0).notNull(),
+  /** Rows of `artifact_doc_clients` for this doc (capped; each charged to `bytes_total`). */
+  clientRows: integer('client_rows').default(0).notNull(),
+  compactionFailedAt: timestamp('compaction_failed_at', { withTimezone: true }),
+  /** A push found more rows than the compaction threshold: the worker compacts this doc (`doc-compaction.ts`). */
+  compactionRequestedAt: timestamp('compaction_requested_at', { withTimezone: true }),
+  /**
+   * Writers not yet named by a flush: user id → the seq of their LAST push (at
+   * most 200). A flush to S names the writers whose last seq is in (flushed_seq,
+   * S] and removes them (`settleWriters`): one audit row per person, once per push.
+   */
+  pendingWriters: jsonb('pending_writers').$type<Record<string, number>>().default(sql`'{}'::jsonb`).notNull(),
+  nextSeq: bigint('next_seq', { mode: 'number' }).default(1).notNull(),
+  flushedSeq: bigint('flushed_seq', { mode: 'number' }).default(0).notNull(),
+  flushedVersion: text('flushed_version'),
+  flushedMarkdown: text('flushed_markdown').notNull(),
+  leaseHolder: text('lease_holder'),
+  leaseUserId: uuid('lease_user_id'),
+  leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'artifact_doc_state_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
+  check('artifact_doc_state_seq_check', sql`${table.flushedSeq} >= 0 and ${table.flushedSeq} < ${table.nextSeq}`),
+  check('artifact_doc_state_lease_holder_check', sql`${table.leaseHolder} is null or char_length(${table.leaseHolder}) between 1 and 64`),
+  check('artifact_doc_state_pending_writers_check', sql`jsonb_typeof(${table.pendingWriters}) = 'object'`),
+  check('artifact_doc_state_index_rows_check', sql`${table.rootRows} >= 0 and ${table.clientRows} >= 0`),
+  // The target of `artifact_doc_updates`' (artifact_id, epoch) foreign key.
+  unique('artifact_doc_state_artifact_epoch_key').on(table.artifactId, table.epoch),
+]).enableRLS();
+
+/**
+ * The Yjs updates of a co-edited doc, one row per push, in `seq` order.
+ * Compaction merges the oldest rows into one row that keeps the highest of
+ * their seqs, so a client that asks for `seq > k` still gets every update it
+ * lacks. The column is `bytes`, not `update` (a reserved word in SQL).
+ * Every row names the epoch of the state it belongs to: a foreign key on
+ * (artifact_id, epoch) deletes it with that state, and a background write
+ * (compaction) filters on the epoch it planned against, so it can never reach
+ * the rows of a later epoch that reuses the same seqs.
+ */
+export const artifactDocUpdates = kortixSchema.table('artifact_doc_updates', {
+  artifactId: uuid('artifact_id').notNull(),
+  seq: bigint('seq', { mode: 'number' }).notNull(),
+  epoch: uuid('epoch').notNull(),
+  bytes: bytea('bytes').notNull(),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  /** Compaction found that no Yjs reader takes this row: it is kept and served, never merged again. */
+  quarantinedAt: timestamp('quarantined_at', { withTimezone: true }),
+  /** Structs a client integrates when it applies this row (the scan's count): a page and a compaction window count them. */
+  structs: integer('structs').default(0).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.artifactId, table.seq] }),
+  foreignKey({ name: 'artifact_doc_updates_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
+  foreignKey({ name: 'artifact_doc_updates_epoch_fk', columns: [table.artifactId, table.epoch], foreignColumns: [artifactDocState.artifactId, artifactDocState.epoch] }).onDelete('cascade'),
+]).enableRLS();
+
+/**
+ * The root-level items of a co-edited doc: every item whose parent is the
+ * root fragment `default`, named in the item or taken from its origin or
+ * right origin (`apps/api/src/artifacts/doc-roots.ts`). Each is an XML
+ * element, so one ID is one clock. A push names an origin; the service looks
+ * it up here to know whether the new item lands at the root. Written in the
+ * transaction that stores the update; a reset or the GC job deletes the state
+ * row, and these rows with it.
+ */
+export const artifactDocRoots = kortixSchema.table('artifact_doc_roots', {
+  artifactId: uuid('artifact_id').notNull(),
+  client: bigint('client', { mode: 'number' }).notNull(),
+  clock: bigint('clock', { mode: 'number' }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.artifactId, table.client, table.clock] }),
+  foreignKey({ name: 'artifact_doc_roots_state_fk', columns: [table.artifactId], foreignColumns: [artifactDocState.artifactId] }).onDelete('cascade'),
+]).enableRLS();
+
+/**
+ * Per Yjs client of a co-edited doc, the clock after its last stored struct.
+ * An origin at a lower clock is a stored item; a push starts at or before it
+ * (a client's structs stay contiguous). Same lifetime as `artifact_doc_roots`.
+ */
+export const artifactDocClients = kortixSchema.table('artifact_doc_clients', {
+  artifactId: uuid('artifact_id').notNull(),
+  client: bigint('client', { mode: 'number' }).notNull(),
+  nextClock: bigint('next_clock', { mode: 'number' }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.artifactId, table.client] }),
+  foreignKey({ name: 'artifact_doc_clients_state_fk', columns: [table.artifactId], foreignColumns: [artifactDocState.artifactId] }).onDelete('cascade'),
+]).enableRLS();
+
 export const driveCommitAuthors = kortixSchema.table('drive_commit_authors', {
   driveId: uuid('drive_id').notNull(),
   commitId: text('commit_id').notNull(),
