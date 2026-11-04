@@ -68,6 +68,8 @@ export interface ScreenProps {
   height: number;
   /** The Kortix web origin, for screens that print a link the TUI cannot open. */
   webBaseUrl: string;
+  /** What the screen opens on: an artifact id (`artifacts`), a file path (`files`). */
+  target?: string | null;
   onBack(): void;
   onOpenSession(sessionId: string): void;
   onToast(message: string, kind?: ToastKind): void;
@@ -118,6 +120,7 @@ export function Screen(props: ScreenProps) {
         <FilesScreen
           projectId={projectId}
           sessionId={sessionId}
+          reveal={props.target ?? null}
           focused={focused}
           width={width}
           height={height}

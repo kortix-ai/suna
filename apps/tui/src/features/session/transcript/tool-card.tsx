@@ -19,6 +19,7 @@ import { Spinner } from '../../../ui/index.ts';
 import { transcriptSyntaxStyle } from './parts/text-part.tsx';
 import { AgentRow } from './agent-row.tsx';
 import { ResultCard } from './result-card.tsx';
+import { ShowCard, isShowTool } from './show-card.tsx';
 import { WorkflowCard, isWorkflowCall } from './workflow-card.tsx';
 
 /** Shell stdout lines shown on a card. The command's tail is the part that
@@ -262,6 +263,8 @@ export interface ToolCardProps {
 }
 
 export function ToolCard({ tool, width }: ToolCardProps) {
+  // A `show` hands something over: what it shows, its link, the key that reaches it.
+  if (isShowTool(tool.name)) return <ShowCard tool={tool} width={width} />;
   // A workflow call whose metadata is a run draws as the run; any other stays the generic card.
   const run = isWorkflowCall(tool) ? parseWorkflowRun(tool.metadata) : null;
   if (run) return <WorkflowCard tool={tool} run={run} width={width} />;
