@@ -1440,6 +1440,40 @@ test('composioConnectUrl connects with the managed app when the own-app lookup f
   expect(create.config.authConfigs).toBeUndefined();
 });
 
+test('composioConnectUrl connects without the own app when Composio refuses it at session create', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const created = session({ toolkit: { slug: 'youtube', name: 'YouTube', isNoAuth: false } });
+  const runtime: ComposioRuntime = {
+    sessions: {
+      async create(userId, config) {
+        calls.push({ type: 'create', userId, config });
+        if ((config as { authConfigs?: Record<string, string> } | undefined)?.authConfigs?.youtube) {
+          throw new Error('404 {"error":{"message":"Auth config ac_own_youtube not found"}}');
+        }
+        return created;
+      },
+      async use(sessionId) {
+        calls.push({ type: 'use', sessionId });
+        return created;
+      },
+    },
+  };
+  const result = await composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'youtube',
+    app: 'youtube',
+    connectionId: 'connection-yt-gone',
+    stableUserId: 'kortix-connection:connection-yt-gone',
+    runtime,
+    catalogClient: authConfigClient([OWN_YOUTUBE_APP], calls),
+  });
+  expect(result.connectUrl).toBe('https://composio.test/connect');
+  const creates = calls.filter((call) => call.type === 'create') as Array<{ config: Record<string, unknown> }>;
+  expect(creates).toHaveLength(2);
+  expect(creates[0]!.config.authConfigs).toEqual({ youtube: 'ac_own_youtube' });
+  expect(creates[1]!.config.authConfigs).toBeUndefined();
+});
+
 test('executeComposio on a stored session never looks up the own app: an account keeps the app it signed in with', async () => {
   const calls: Array<Record<string, unknown>> = [];
   const resumed = session({

@@ -269,10 +269,20 @@ async function createDirectSession(input: {
   const config = directSessionConfig(input.toolkit, input.connectedAccountId);
   const ownAppId = input.ownApp ? await lookupOwnOAuthApp(input.toolkit, input.catalogClient) : null;
   if (ownAppId) {
-    return createToolkitSession(input.runtime, input.userId, input.toolkit, {
-      ...config,
-      authConfigs: { [input.toolkit]: ownAppId },
-    });
+    try {
+      return await createToolkitSession(input.runtime, input.userId, input.toolkit, {
+        ...config,
+        authConfigs: { [input.toolkit]: ownAppId },
+      });
+    } catch (error) {
+      // An unknown slug is the same refusal on every path: answer its 422.
+      if (error instanceof HTTPException) throw error;
+      // Composio refused the own app (removed or disabled since the lookup):
+      // connect as if it did not exist, and say so in the log.
+      logger.warn(`[composio] own OAuth app ${ownAppId} refused for ${input.toolkit}, connecting without it`, {
+        error: error instanceof Error ? error.message.split('\n')[0] : String(error),
+      });
+    }
   }
   try {
     return await createToolkitSession(input.runtime, input.userId, input.toolkit, config);
