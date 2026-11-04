@@ -32,6 +32,7 @@ import {
 } from './session-open-readiness';
 import { openNotRunningBox, openRemovedBox, syncRecoveredRunningRow } from './session-open-recovery';
 import { enforceAdmission, enforceRuntimeGuarantee } from './session-open-guarantee';
+import { holdBelowRuntimeFloor } from './runtime-floor';
 import {
   keepStoppedRefusesWake,
   liveStopClaimAtMs,
@@ -288,6 +289,14 @@ async function stageRunningOpen(
     readiness.booting,
   );
   if (parked) return parked;
+
+  // A box below the runtime floor is held until it runs the current daemon,
+  // or replaced (runtime-floor-policy.ts). Before every other check: none of
+  // them may read an old daemon's routes.
+  if (!readiness.booting) {
+    const held = await holdBelowRuntimeFloor(args, synced.row, synced.runningExternalId, readiness.capabilities);
+    if (held) return held;
+  }
 
   const guaranteed = await enforceRuntimeGuarantee(
     args,

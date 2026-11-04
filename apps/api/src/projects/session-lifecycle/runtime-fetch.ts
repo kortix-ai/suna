@@ -68,7 +68,9 @@ export const runtimeVerbPaths = {
 const CAPABILITIES_TTL_MS = 5 * 60_000;
 const CAPABILITIES_MEMO_MAX = 5_000;
 // ponytail: per-process memo, cleared when full; a box whose daemon updates in
-// place is read again after the TTL.
+// place is read again after the TTL. A list without `runtime.log.v1` is never
+// kept: that daemon is below the runtime floor and is about to be replaced
+// (session-open/runtime-floor-policy.ts), so the next read must see its successor.
 const capabilitiesMemo = new Map<string, { capabilities: string[]; at: number }>();
 
 /**
@@ -96,6 +98,7 @@ export async function runtimeCapabilities(
     const capabilities = Array.isArray(body?.capabilities)
       ? body.capabilities.filter((value): value is string => typeof value === 'string')
       : [];
+    if (!capabilities.includes(RUNTIME_LOG_CAPABILITY)) return capabilities;
     if (capabilitiesMemo.size >= CAPABILITIES_MEMO_MAX) capabilitiesMemo.clear();
     capabilitiesMemo.set(externalId, { capabilities, at: now });
     return capabilities;
