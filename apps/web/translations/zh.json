@@ -24371,6 +24371,14 @@
       "typingTwo": "{first} 和 {second} 正在输入…",
       "typingMany": "{count, plural, other {# 人正在输入…}}",
       "writing": "{name} 正在撰写…"
+    },
+    "coedit": {
+      "offLarge": "实时协同编辑已关闭：此文档超过 1 MiB。更改会在输入时保存。",
+      "offLineEndings": "实时协同编辑已关闭：此文档混用了 CRLF 和 LF 换行符。更改会在输入时保存。",
+      "offShape": "实时协同编辑已关闭：编辑器会改写此文档的部分 Markdown。更改会在输入时保存。",
+      "stoppedLarge": "实时协同编辑已停止：有一处更改太大，无法共享。更改会在输入时保存。",
+      "stoppedFailed": "实时协同编辑已停止：连接失败。更改会在输入时保存。",
+      "stoppedHistory": "实时协同编辑已停止：此文档的编辑历史过大。更改会在输入时保存。"
     }
   },
   "emailConnect": {

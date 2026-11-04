@@ -815,6 +815,122 @@ names an agent session's place: `reading`, `editing` or `writing` a thread or
 near a quote, or `idle` to leave. Only a session-bound token may call it; a
 person's token answers `403`. The CLI form is `kortix artifacts focus`.
 
+### Co-editing a doc
+
+Several people and agents edit one doc Artifact (`type = 'doc'`) at the same
+time over Yjs. It needs `artifacts` and `artifact_comments`. Updates travel
+over REST, not the live socket: a tab POSTs its updates, the server stores
+each under a per-Artifact `seq` and pings the socket with `changed doc`, and
+every tab GETs the updates after its last seq. One tab holds a 15 s lease and
+writes the Markdown file with the save route; the file stays the truth for
+agents, versions and readers. The Yjs state is disposable: every seed starts a
+new `epoch`, and a reset or the GC of an idle doc deletes it. The next open
+seeds it again from the file.
+
+The SDK has no yjs dependency. `createArtifactDocSync` works on bytes; the host
+owns the `Y.Doc`:
+
+```ts
+import * as Y from 'yjs';
+import { createArtifactDocSync } from '@kortix/sdk';
+
+const remote = Symbol('remote');
+let doc = new Y.Doc();
+let known: string | null = null;                       // the last flushed Markdown this tab knew
+const bind = () => doc.on('update', (update, origin) => { if (origin !== remote) sync.push(update); });
+// The seed is ALWAYS built from the current file, in a scratch Y.Doc.
+const fromFile = async () => {
+  const file = await readFile();
+  return { update: seedFromMarkdown(file.text), markdown: file.text, version: file.entry_version };
+};
+
+const sync = createArtifactDocSync({
+  projectId, artifactId,
+  holder: crypto.randomUUID(),                          // this tab's lease id
+  apply: (update) => Y.applyUpdate(doc, update, remote), // always the current doc
+  merge: (updates) => Y.mergeUpdates(updates),
+  onLeader: (leader) => { /* the leader writes the file 2 s after the last edit */ },
+  onStatus: (status) => { /* 'failed': fall back to single-writer autosave */ },
+  onReset: async ({ reason }) => {
+    const mine = editorMarkdown();                      // the person's text
+    const before = known;                               // the last flushed Markdown this tab knew
+    doc.destroy();
+    doc = new Y.Doc();                                  // never reuse the old doc
+    bind();
+    known = (await sync.start(fromFile)).base?.markdown ?? known;
+    if (canWrite && before !== null && mine !== before) applyOutsideEdit(editor, before, mine);
+  },
+});
+bind();
+const { created, base } = await sync.start(fromFile);
+known = base?.markdown ?? null;                         // update it after each flush and base()
+
+useArtifactLive(projectId, artifactId, { view: 'doc', onDoc: (seq) => sync.notify(seq) });
+
+// The leader serializes the doc, captures covered at that moment, saves the file, then:
+const seq = sync.covered;
+const saved = await save(serialize(doc));
+await sync.flushed({ version: saved.entry_version, markdown: saved.text, seq });
+sync.close(); // on unmount: sends what is unsent, releases the lease
+```
+
+- `start(buildSeed)` reads every stored update (`after=0&base=true`) and applies
+  it. An unseeded doc is seeded with `buildSeed()`: build that update from the
+  current Markdown file, in a scratch `Y.Doc`, never from live state. The
+  engine applies the seed only once the server accepts it: on `409 doc_seeded`
+  another tab won, and its doc is pulled instead. `start` runs once, and again
+  only after `onReset`; `buildSeed` then gets `restart: true`, and the seed
+  still comes from the file.
+- **Reset.** Every push, lease call and flush names the `epoch` the tab
+  loaded. A pull that finds the doc unseeded or under another `epoch`, or a
+  push, lease renewal or flush answered `409 doc_not_seeded` or `409
+  epoch_mismatch`, means the doc this tab loaded is gone. An epoch is adopted
+  only when `start` saw none (a doc seeded before epochs); any other change is
+  a reset. The engine stops, drops its unacknowledged pushes, rejects
+  waiting `flushed` and `base` calls with code `doc_reset`, calls
+  `onLeader(false)`, sets the status `reset`, and calls `onReset({ reason })`
+  once (`'not_seeded'`, `'epoch'` or `'poisoned'`). The host keeps its editor's
+  Markdown (`mine`) and the last flushed Markdown it knew, builds a fresh
+  `Y.Doc`, calls `start` again, and then merges `mine` into the new doc. The
+  person's unsynced edits survive through that text merge, not through Yjs. A
+  read-only viewer rebuilds and merges nothing. The reset ping
+  (`changed doc`, version `'0'`) and any ping below the highest seq here
+  (seqs restart at 1 after a re-seed), except this tab's own echoes, pull at
+  once, so a reset is seen within one round trip.
+- **Poison.** When `apply` throws for a stored update, the engine stops
+  applying, sets `retrying`, and resets the doc on the server
+  (`resetArtifactDoc`). When another tab holds the lease (`409 not_leader`),
+  it checks every 3 s until that tab has reset it. Then it reports
+  `onReset({ reason: 'poisoned' })`.
+- `push(update)` batches for 50 ms, merges the batch with `merge`, and keeps
+  one push in flight, in order. A failed push retries after 1, 2, 4, 8, 16,
+  30 s (plus up to 50 % jitter, at most 30 s) with the later updates merged
+  behind it; no update is dropped while the doc lives. A merged batch over
+  512 KiB is split. A refusal (`400`, `403`, `404`, one update over 512 KiB,
+  `413 doc_too_large` when the doc's stored updates pass their limit) calls
+  `onError` and sets `failed`, a final status: the host falls back to autosave.
+- `notify(seq)` pulls when that seq is not here yet. Pulls are serial. Without
+  a notify for 3 s the engine polls every 3 s.
+- `covered` is the highest seq such that every update up to it is in the local
+  doc. `flushed({ version, markdown, seq? })` waits for the updates pushed
+  before it, then records `seq`: the `covered` the host captured when it
+  serialized that Markdown, else `covered` now. `409 not_leader` rejects and
+  calls `onLeader(false)`. `base()` returns the last flushed Markdown.
+- The lease renews every 5 s. A leader whose renewals fail steps down 13 s
+  after its last renewal was sent. A viewer without write access gets `403`
+  on the lease and never leads; it still pulls.
+
+`getArtifactDoc`, `seedArtifactDoc`, `pushArtifactDocUpdate`,
+`leaseArtifactDoc`, `markArtifactDocFlushed` and `resetArtifactDoc` are the
+REST calls (also `kortix.project(id).artifacts.doc.{get, seed, push, lease,
+flushed, reset}`). They take and return `Uint8Array`; base64 is the wire form
+only. `getArtifactDoc` and `seedArtifactDoc` report the `epoch`. They never
+call the global `onError`. The live connection never emits a `changed` event
+for `doc`, and `ArtifactLiveChange` stays `'comments' | 'activity' |
+'content'`: `createArtifactLiveConnection({ onDoc })` and
+`useArtifactLive(…, { onDoc })` receive the seq, and the hook refetches nothing
+for it.
+
 ## The facade surface
 
 `createKortix(config)` returns one client. The table below is illustrative, not

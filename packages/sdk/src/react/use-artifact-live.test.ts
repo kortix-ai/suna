@@ -82,10 +82,10 @@ afterEach(async () => {
   globalThis.fetch = originalFetch;
 });
 
-async function mount(options: { enabled?: boolean; hidden?: boolean } = {}) {
-  let props = { enabled: true, hidden: false, ...options };
+async function mount(options: { enabled?: boolean; hidden?: boolean; onDoc?: (seq: number) => void } = {}) {
+  let props: { enabled: boolean; hidden: boolean; onDoc?: (seq: number) => void } = { enabled: true, hidden: false, ...options };
   function Probe(current: typeof props) {
-    live = useArtifactLive(P, A, { enabled: current.enabled, view: 'doc', version: 'entry-1', hidden: current.hidden, webSocket: WebSocket });
+    live = useArtifactLive(P, A, { enabled: current.enabled, view: 'doc', version: 'entry-1', hidden: current.hidden, webSocket: WebSocket, onDoc: current.onDoc });
     return null;
   }
   await act(async () => {
@@ -159,6 +159,30 @@ test('changed content invalidates the current Artifact, its versions and the lis
   await welcome();
   await server({ v: 1, t: 'changed', what: 'content', version: 'entry-2' });
   expect(invalidated()).toEqual(['detail', 'list', 'versions']);
+});
+
+test('changed doc calls onDoc with the seq and refetches nothing: co-editing pulls the doc itself', async () => {
+  const docs: number[] = [];
+  await mount({ onDoc: (seq) => docs.push(seq) });
+  await welcome();
+  await server({ v: 1, t: 'changed', what: 'doc', version: '7' });
+  expect(docs).toEqual([7]);
+  expect(invalidated()).toEqual([]);
+});
+
+test('a new onDoc callback takes effect without reconnecting, and without one a doc ping is ignored', async () => {
+  const first: number[] = [];
+  const second: number[] = [];
+  const view = await mount({ onDoc: (seq) => first.push(seq) });
+  await welcome();
+  await view.rerender({ onDoc: (seq) => second.push(seq) });
+  await server({ v: 1, t: 'changed', what: 'doc', version: '8' });
+  expect(sockets).toHaveLength(1);
+  expect({ first, second }).toEqual({ first: [], second: [8] });
+  await view.rerender({ onDoc: undefined });
+  await server({ v: 1, t: 'changed', what: 'doc', version: '9' });
+  expect(second).toEqual([8]);
+  expect(invalidated()).toEqual([]);
 });
 
 test('resync after a reconnect invalidates every read once', async () => {

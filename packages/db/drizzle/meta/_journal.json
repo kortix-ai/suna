@@ -1541,6 +1541,13 @@
       "when": 1793807577127,
       "tag": "20261104155257_self_host_signup_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1793813803361,
+      "tag": "20261104173643_artifact_doc_sync",
+      "breakpoints": true
     }
   ]
 }

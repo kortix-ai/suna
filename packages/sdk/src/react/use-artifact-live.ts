@@ -29,6 +29,12 @@ export interface UseArtifactLiveOptions {
   hidden?: boolean;
   /** The WebSocket constructor, for a host without a global one. */
   webSocket?: ArtifactLiveWebSocket;
+  /**
+   * A co-edited doc has a new update with this seq: pass it to
+   * `ArtifactDocSync.notify`. The hook refetches nothing for it. The newest
+   * callback is used; a change does not reconnect.
+   */
+  onDoc?: (seq: number) => void;
 }
 
 export interface ArtifactLiveState {
@@ -62,7 +68,7 @@ function refetch(client: QueryClient, projectId: string, artifactId: string, cha
       void client.invalidateQueries({ queryKey: scope, predicate: (query) => query.queryKey[scope.length] !== 'screenshot' });
     } else if (what === 'activity') {
       void client.invalidateQueries({ queryKey: qk.project.artifactActivity(projectId, artifactId) });
-    } else {
+    } else if (what === 'content') {
       void client.invalidateQueries({ queryKey: qk.project.artifact(projectId, artifactId, 'current'), exact: true });
       void client.invalidateQueries({ queryKey: qk.project.artifactVersions(projectId, artifactId) });
       void client.invalidateQueries({ queryKey: [...qk.project.artifacts(projectId), 'list'] });
@@ -77,7 +83,8 @@ const ENDED: ArtifactLiveConnectionStatus[] = ['closed', 'access_lost'];
  * typing, and a refetch of the TanStack reads when comments, activity or
  * content change. One connection per mounted hook; it closes on unmount, when
  * `enabled` turns false, or when the project or Artifact changes. After a
- * reconnect every read refetches once (`resync`).
+ * reconnect every read refetches once (`resync`). A co-edited doc's update
+ * (`changed doc`) refetches nothing: it reaches `onDoc`.
  */
 export function useArtifactLive(
   projectId: string | null | undefined,
@@ -95,8 +102,10 @@ export function useArtifactLive(
   const connection = useRef<ArtifactLiveConnection | null>(null);
   // The values a new connection starts from, without reconnecting when they change.
   const initial = useRef({ version: options.version ?? null, hidden });
+  const onDoc = useRef(options.onDoc);
   useEffect(() => {
     initial.current = { version: options.version ?? null, hidden };
+    onDoc.current = options.onDoc;
   });
 
   useEffect(() => {
@@ -113,6 +122,7 @@ export function useArtifactLive(
         version: initial.current.version,
         hidden: initial.current.hidden,
         webSocket: options.webSocket,
+        onDoc: (seq) => onDoc.current?.(seq),
         onEvent: (event) => {
           if (event.type === 'status') {
             setState((current) => ({ ...current, status: event.status, participants: ENDED.includes(event.status) ? [] : current.participants }));
