@@ -24,6 +24,14 @@ describe('resolveHomeLanding', () => {
     });
   });
 
+  test('channels on with a new-session request (`?new=1`): project home, never the default channel', () => {
+    expect(
+      resolveHomeLanding({ ...base, channelsOn: true, newSessionRequested: true, spacesLoaded: true, defaultSlug: 'general' }),
+    ).toEqual({ kind: 'home' });
+    expect(resolveHomeLanding({ ...base, channelsOn: true, newSessionRequested: true })).toEqual({ kind: 'home' });
+    expect(resolveHomeLanding({ ...base, flagLoading: true, newSessionRequested: true })).toEqual({ kind: 'wait' });
+  });
+
   test('channels on but the list failed or has no default: project home stays usable', () => {
     expect(resolveHomeLanding({ ...base, channelsOn: true, spacesFailed: true })).toEqual({ kind: 'home' });
     expect(resolveHomeLanding({ ...base, channelsOn: true, spacesLoaded: true })).toEqual({ kind: 'home' });

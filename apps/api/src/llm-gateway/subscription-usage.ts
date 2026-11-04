@@ -19,6 +19,7 @@ import { db } from '../shared/db';
 import { logger } from '../lib/logger';
 import { readAccountSecret } from '../secrets/account-resource';
 import { CODEX_USER_AGENT, resolveCodexAccountCredential } from './credentials/codex';
+import { parseCodexAuth } from './credentials/codex-core';
 
 export const SUBSCRIPTION_PROVIDERS = new Set(['codex', 'claude-agent']);
 
@@ -33,6 +34,60 @@ export const SubscriptionUsageSchema = z.object({
   observed_at: z.string().datetime(),
   source: z.enum(['response', 'usage_endpoint']),
 });
+
+/** Who a login signs in as. Either field is null when the provider does not say. */
+export const SubscriptionAccountSchema = z.object({
+  email: z.string().nullable(),
+  /** The provider's plan name, lower case: `plus`, `pro`, `team`, `max`, … */
+  plan: z.string().nullable(),
+});
+export type SubscriptionAccount = z.infer<typeof SubscriptionAccountSchema>;
+
+function jwtClaims(jwt: string): Record<string, any> | null {
+  const payload = jwt.split('.')[1];
+  if (!payload) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return claims && typeof claims === 'object' ? claims : null;
+  } catch {
+    return null;
+  }
+}
+
+const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+/** A ChatGPT login's email and plan, from the claims of its stored access token. No network. */
+export function codexAccountFromLogin(value: string | null): SubscriptionAccount | null {
+  const access = value ? parseCodexAuth(value)?.access : undefined;
+  const claims = access ? jwtClaims(access) : null;
+  if (!claims) return null;
+  const email = text(claims['https://api.openai.com/profile']?.email) ?? text(claims.email);
+  const plan = text(claims['https://api.openai.com/auth']?.chatgpt_plan_type)?.toLowerCase() ?? null;
+  return email || plan ? { email, plan } : null;
+}
+
+/** Claude's `GET /api/oauth/profile` body: `account.email` and the plan of the organization. */
+export function claudeAccountFromProfile(body: unknown): SubscriptionAccount | null {
+  const account = (body as { account?: Record<string, unknown> } | null)?.account;
+  if (!account || typeof account !== 'object') return null;
+  const organization = (body as { organization?: Record<string, unknown> }).organization;
+  const type = text(organization?.organization_type)?.toLowerCase().replace(/^claude_/, '') ?? null;
+  const plan = type ?? (account.has_claude_max === true ? 'max' : account.has_claude_pro === true ? 'pro' : null);
+  const email = text(account.email) ?? text(account.email_address);
+  return email || plan ? { email, plan } : null;
+}
+
+/** A stored Claude identity: `{ email, plan, checked_at }`; the profile is asked again a day after a refusal. */
+const StoredClaudeAccountSchema = SubscriptionAccountSchema.extend({ checked_at: z.string() });
+const PROFILE_RETRY_MS = 24 * 60 * 60 * 1000;
+
+/** Who the row's login signs in as: decoded for ChatGPT, stored for Claude. */
+export function subscriptionAccount(row: Pick<UsageRow, 'accountId' | 'secretId' | 'providerId' | 'valueEnc' | 'providerAccount'>): SubscriptionAccount | null {
+  if (row.providerId === 'codex') return codexAccountFromLogin(readAccountSecret(row.accountId, row.secretId, row.valueEnc));
+  if (row.providerId !== 'claude-agent') return null;
+  const stored = StoredClaudeAccountSchema.safeParse(row.providerAccount);
+  return stored.success && (stored.data.email || stored.data.plan) ? { email: stored.data.email, plan: stored.data.plan } : null;
+}
 
 /** The stored snapshot, or null when none was seen or it no longer parses. */
 export function storedSubscriptionUsage(value: unknown): SubscriptionUsage | null {
@@ -120,7 +175,7 @@ export function claudeUsageFromBody(body: unknown, now = Date.now()): Subscripti
 }
 
 type UsageRow = Pick<typeof accountSecretResources.$inferSelect,
-  'secretId' | 'accountId' | 'projectId' | 'providerId' | 'valueEnc' | 'createdBy' | 'updatedAt' | 'usage' | 'usageCheckedAt'>;
+  'secretId' | 'accountId' | 'projectId' | 'providerId' | 'valueEnc' | 'createdBy' | 'updatedAt' | 'usage' | 'usageCheckedAt' | 'providerAccount'>;
 
 async function fetchJson(fetchImpl: FetchImpl, url: string, headers: Record<string, string>): Promise<unknown | null> {
   const response = await fetchImpl(url, { method: 'GET', headers, signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
@@ -136,9 +191,11 @@ async function providerUsage(row: UsageRow, fetchImpl: FetchImpl): Promise<Subsc
   if (row.providerId === 'claude-agent') {
     const token = readAccountSecret(row.accountId, row.secretId, row.valueEnc);
     if (!token) return null;
-    const body = await fetchJson(fetchImpl, 'https://api.anthropic.com/api/oauth/usage', {
-      authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20', accept: 'application/json',
-    });
+    const headers = { authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20', accept: 'application/json' };
+    const [body] = await Promise.all([
+      fetchJson(fetchImpl, 'https://api.anthropic.com/api/oauth/usage', headers),
+      refreshClaudeAccount(row, headers, fetchImpl),
+    ]);
     return claudeUsageFromBody(body);
   }
   // Read-only: the stored access token as is. A usage read never refreshes a
@@ -153,6 +210,20 @@ async function providerUsage(row: UsageRow, fetchImpl: FetchImpl): Promise<Subsc
   const headers: Record<string, string> = { authorization: `Bearer ${credential.access}`, 'user-agent': CODEX_USER_AGENT, accept: 'application/json' };
   if (credential.accountId) headers['chatgpt-account-id'] = credential.accountId;
   return codexUsageFromBody(await fetchJson(fetchImpl, 'https://chatgpt.com/backend-api/wham/usage', headers));
+}
+
+/**
+ * Ask Claude's profile API who the login is, once: again only a day after a
+ * refusal (a `setup-token` login may lack the profile scope). Stores
+ * `{ email, plan, checked_at }`; a reconnect clears it.
+ */
+async function refreshClaudeAccount(row: UsageRow, headers: Record<string, string>, fetchImpl: FetchImpl): Promise<void> {
+  const stored = StoredClaudeAccountSchema.safeParse(row.providerAccount);
+  if (stored.success && (stored.data.email || Date.now() - Date.parse(stored.data.checked_at) < PROFILE_RETRY_MS)) return;
+  const account = claudeAccountFromProfile(await fetchJson(fetchImpl, 'https://api.anthropic.com/api/oauth/profile', headers));
+  await db.update(accountSecretResources)
+    .set({ providerAccount: { email: account?.email ?? null, plan: account?.plan ?? null, checked_at: new Date().toISOString() } })
+    .where(and(eq(accountSecretResources.secretId, row.secretId), eq(accountSecretResources.accountId, row.accountId)));
 }
 
 // replica-local: one provider read per login at a time on this replica.

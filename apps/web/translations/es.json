@@ -1300,10 +1300,6 @@
           "name": "Restauración del registro de sesión",
           "description": "Reconstruye una sesión a partir de su registro de sesión guardado cuando su ordenador perdió la conversación. Kortix lo activa por proyecto."
         },
-        "agent_rooms": {
-          "name": "Salas",
-          "description": "Salas de chat con nombre donde las sesiones de agentes y las personas publican y responden en hilos. Una sesión se reactiva cuando un mensaje va dirigido a ella. Añade la página Salas, `kortix rooms` y `kortix peers`."
-        },
         "goals": {
           "name": "Objetivos",
           "description": "Asigna a un agente un objetivo del que se encarga hasta que una comprobación independiente confirme el resultado. Planifica, trabaja, espera, hace seguimiento con las personas y guarda su estado en una carpeta Goals en Archivos. Requiere Volúmenes y Bucles activados."
@@ -1320,9 +1316,9 @@
           "name": "Canal de correo",
           "description": "Da al agente una bandeja de correo en Resend: el correo entrante inicia y continúa sesiones, y el agente lee, responde y envía desde la bandeja. Usa tu propia clave de API y dominio de Resend."
         },
-        "project_channels": {
-          "name": "Canales",
-          "description": "Organiza el trabajo en canales. Cada mensaje nuevo en un canal o en un mensaje directo con un agente inicia un hilo. Sustituye la lista de sesiones en la barra lateral."
+        "chat": {
+          "name": "Chat",
+          "description": "Chat con Kortix al estilo de Slack: cada mensaje es un hilo, la respuesta más reciente de Kortix aparece debajo, Kortix puede iniciar hilos y los espacios se comparten con otras personas. Sustituye la lista de sesiones en la barra lateral."
         },
         "session_groups": {
           "name": "Grupos de sesiones",
@@ -1347,16 +1343,24 @@
         "shared_drives": {
           "name": "Unidades compartidas",
           "description": "Unidades que todo el equipo puede usar: un admin crea una unidad y le añade agentes. Cada sesión de esos agentes la monta, y quien pueda usar uno de ellos puede abrirla. Desactivado, cada persona solo tiene Mis archivos."
+        },
+        "chat_input": {
+          "name": "Entrada de chat",
+          "description": "Un solo control bajo el editor para quién responde y cómo: elige el agente y todos los demás ajustes quedan en Automático, heredados de ese agente. Abre una fila para sobrescribir el modelo, el esfuerzo de razonamiento, los secretos, las claves de proveedor o el sandbox de esta sesión, y vuelve a Automático con un clic."
+        },
+        "chat_front": {
+          "name": "Hilos solo de conversación",
+          "description": "Con Chat activado, un mensaje nuevo en un espacio inicia un hilo cuyo agente solo conversa. Pasa cada petición a una sesión oculta de My Kortix que hace el trabajo y responde con mensajes breves, solo con lo que importa. Requiere My Kortix activado en kortix.yaml."
         }
       },
       "channelsSwitch": {
-        "onTitle": "¿Activar Canales para {project}?",
-        "onBody": "Todos en este proyecto obtienen Canales y Mensajes directos en lugar de la lista de sesiones. Todas las sesiones existentes pasan a #general. Puedes desactivarlo cuando quieras; no se elimina nada.",
-        "drive": "Activar también Drive, para que los canales tengan Archivos.",
+        "onTitle": "¿Activar Espacios para {project}?",
+        "onBody": "Todos en este proyecto obtienen Espacios y Mensajes directos en lugar de la lista de sesiones. Todas las sesiones existentes pasan a #general. Puedes desactivarlo cuando quieras; no se elimina nada.",
+        "drive": "Activar también Drive, para que los espacios tengan Archivos.",
         "turnOn": "Activar",
         "cancel": "Cancelar",
-        "offTitle": "¿Desactivar Canales?",
-        "offBody": "Los canales, la memoria, los archivos y los enlaces se conservan. La lista de sesiones vuelve para todos.",
+        "offTitle": "¿Desactivar Espacios?",
+        "offBody": "Los espacios, la memoria, los archivos y los enlaces se conservan. La lista de sesiones vuelve para todos.",
         "turnOff": "Desactivar"
       },
       "wip": "Work in progress",
@@ -1557,7 +1561,6 @@
     }
   },
   "sidebar": {
-    "rooms": "Salas",
     "goals": "Objetivos",
     "artifacts": "Artefactos",
     "referAndEarn": "Referir y Ganar",
@@ -1866,10 +1869,10 @@
     "searchApps": "Buscar apps",
     "appsNoMatches": "Sin resultados",
     "spaces": {
-      "channels": "Canales",
+      "channels": "Espacios",
       "directMessages": "Mensajes directos",
-      "addChannel": "Añadir canal",
-      "loadError": "No se pudieron cargar los canales.",
+      "addChannel": "Nuevo espacio",
+      "loadError": "No se pudieron cargar los espacios.",
       "newAgent": "Nuevo agente"
     }
   },
@@ -2269,6 +2272,38 @@
     "thinkingEffort": "Nivel de razonamiento",
     "sessionOverrides": "Ajustes de la sesión",
     "auto": "Automático",
+    "chatInput": "Entrada de chat",
+    "chatInputAgent": "Agente",
+    "chatInputModel": "Modelo",
+    "chatInputEffort": "Esfuerzo",
+    "chatInputMoreSettings": "Más ajustes",
+    "chatInputOverrideCount": "{count, plural, one {# cambio} other {# cambios}}",
+    "chatInputResetToAuto": "Volver a automático",
+    "chatInputAgentDescription": "Quién responde a tu próximo prompt.",
+    "chatInputModelDescription": "El modelo que usa el agente en tu próximo prompt.",
+    "chatInputEffortDescription": "Cuánto piensa el modelo antes de responder.",
+    "chatInputMore": "Más",
+    "chatInputChangedCount": "{count} cambiados",
+    "chatInputAgentDefault": "Predeterminado del agente",
+    "chatInputLoading": "Cargando…",
+    "chatInputSecrets": "Secretos",
+    "chatInputSecretsDescription": "Qué secretos llegan a esta sesión.",
+    "chatInputSecretsAll": "{count, plural, one {El # secreto del agente} other {Los # secretos que el agente puede usar}}",
+    "chatInputSecretsEmpty": "No hay secretos para este agente.",
+    "chatInputSecretsUnavailable": "Los secretos no se pueden leer aquí.",
+    "chatInputSecretCount": "{count, plural, one {# secreto} other {# secretos}}",
+    "chatInputConnectors": "Conectores",
+    "chatInputConnectorsDescription": "Qué cuenta usa cada app en esta sesión.",
+    "chatInputConnectorsAll": "Cada app con su cuenta predeterminada",
+    "chatInputConnectorsUnavailable": "Los conectores no se pueden leer aquí.",
+    "chatInputDefaultAccount": "Predeterminada",
+    "chatInputAppCount": "{count, plural, one {# app cambiada} other {# apps cambiadas}}",
+    "chatInputProviderKeysDescription": "Qué claves de proveedor pagan las llamadas al modelo de esta sesión.",
+    "chatInputProviderKeysAll": "Las claves que el agente usa hoy",
+    "chatInputProviderKeysEmpty": "No hay claves de proveedor para elegir.",
+    "chatInputKeyCount": "{count, plural, one {# clave} other {# claves}}",
+    "chatInputMachine": "Máquina",
+    "chatInputMachineDescription": "La plantilla de máquina con la que arranca esta sesión.",
     "sending": "Enviando",
     "stop": "Detener",
     "startingSession": "Iniciando sesión…",
@@ -2306,7 +2341,8 @@
     "submitEdit": "Enviar",
     "collapseQueue": "Contraer cola",
     "expandQueue": "Expandir cola",
-    "myKortixRoutes": "Envía cada tarea al agente adecuado"
+    "myKortixRoutes": "Envía cada tarea al agente adecuado",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {
@@ -3299,7 +3335,6 @@
       "automation_recovered": "Alerta de recuperación",
       "capture_device_down": "Ordenador de Capture detenido",
       "capture_device_recovered": "Ordenador de Capture graba de nuevo",
-      "message": "Mensaje",
       "artifact_comment": "Comentarios en artefactos"
     },
     "kindDescription": {
@@ -3312,7 +3347,6 @@
       "automation_recovered": "Un trigger o bucle que fallaba vuelve a funcionar.",
       "capture_device_down": "Un ordenador de Kortix Capture no graba. Se envía a quien administra Capture.",
       "capture_device_recovered": "Un ordenador de Kortix Capture que se detuvo vuelve a grabar.",
-      "message": "Alguien te menciona con @, o responde en un hilo en el que escribiste, en una sala.",
       "artifact_comment": "Comentarios, menciones y respuestas en los artefactos que puedes ver."
     },
     "bell": {
@@ -21333,7 +21367,7 @@
     "copyFailed": "No se pudo copiar al portapapeles",
     "threads": "Hilos",
     "recentThreads": "Hilos recientes",
-    "searchChannels": "Buscar canales, hilos, comandos..."
+    "searchChannels": "Buscar espacios, hilos, comandos..."
   },
   "personalWelcome": {
     "dismiss": "Cerrar",
@@ -21554,9 +21588,9 @@
     "perDay": "Por día",
     "noLimit": "Sin límite",
     "postTo": "Publicar en",
-    "postToHint": "Cada ejecución inicia un hilo nuevo allí. Sin canal, las ejecuciones van a #{channel}.",
-    "postToNone": "Ningún canal",
-    "postToUnavailable": "Canal no disponible",
+    "postToHint": "Cada ejecución inicia un hilo nuevo allí. Sin espacio, las ejecuciones van a #{channel}.",
+    "postToNone": "Ningún espacio",
+    "postToUnavailable": "Espacio no disponible",
     "postToPrivate": "Privado: los disparadores no pueden publicar aquí",
     "appLabel": "App",
     "appPlaceholder": "Elige una App",
@@ -23474,103 +23508,6 @@
     "enable": "Activar {name}",
     "enabling": "Activando…"
   },
-  "rooms": {
-    "title": "Salas",
-    "memberCount": "{count, plural, one {# miembro} other {# miembros}}",
-    "members": "Miembros",
-    "agent": "Agente",
-    "agentSender": "Agente {name}",
-    "empty": "Las salas a las que te unas aparecerán aquí",
-    "emptyHint": "Crea una sala y añade personas y agentes.",
-    "loadError": "No se pudieron cargar las salas. Inténtalo de nuevo.",
-    "roomLoadError": "No se pudo cargar esta sala. Inténtalo de nuevo.",
-    "messagesLoadError": "No se pudieron cargar los mensajes. Inténtalo de nuevo.",
-    "retry": "Reintentar",
-    "back": "Volver a las salas",
-    "send": "Enviar mensaje",
-    "sendFailed": "No se pudo enviar el mensaje",
-    "peopleLoadError": "No se pudieron cargar las personas. Inténtalo de nuevo.",
-    "cardRoom": "Sala {name}",
-    "digestCount": "{count, plural, one {# mensaje nuevo} other {# mensajes nuevos}}",
-    "digestMore": "… y {count} más",
-    "cardFrom": "De",
-    "cardMessage": "Mensaje",
-    "cardReplyTo": "Respuesta a",
-    "addRooms": "Añadir salas",
-    "addFailed": "No se pudo añadir al miembro",
-    "addMembers": "Añadir personas y agentes",
-    "addMembersDescription": "Los miembros reciben los mensajes que se publican aquí. Una sesión de agente los lee en su siguiente paso.",
-    "addTopic": "Añadir un tema",
-    "agents": "Agentes",
-    "browseRoomsDescription": "Todas las salas de este proyecto. Abre una para leerla o unirte.",
-    "cancel": "Cancelar",
-    "roomName": "Nombre",
-    "roomNameHint": "Minúsculas, números y . _ / -, hasta 64 caracteres.",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "Cerrar miembros",
-    "copied": "Copiado",
-    "copyText": "Copiar el texto del mensaje",
-    "createRoom": "Crear sala",
-    "createRoomDescription": "Una sala reúne la conversación sobre un tema, para personas y agentes.",
-    "createFailed": "No se pudo crear la sala",
-    "editTopic": "Editar tema",
-    "inThisRoom": "En esta sala",
-    "introRoom": "Este es el comienzo de la sala #{name}.",
-    "joinRoom": "Unirse a la sala",
-    "joinFailed": "No se pudo unir a la sala",
-    "joined": "Unido",
-    "jumpToLatest": "Ir a lo más reciente",
-    "leaveRoom": "Salir de la sala",
-    "memberActions": "Acciones para {name}",
-    "memberAdded": "{name} añadido",
-    "memberRemoved": "Miembro eliminado",
-    "mentionHere": "Todos en #{name}",
-    "mentionSomeone": "Mencionar a alguien",
-    "mentionSuggestions": "Sugerencias de menciones",
-    "messageRoom": "Mensaje a #{name}",
-    "messages": "Mensajes",
-    "new": "Nuevo",
-    "newLineHint": "Mayús + Intro para una línea nueva",
-    "noRooms": "No hay salas que coincidan",
-    "noMatches": "Sin coincidencias",
-    "people": "Personas",
-    "pickRoom": "Abre una sala de la lista",
-    "remove": "Quitar",
-    "removeAgentDescription": "La sesión de agente deja de recibir los mensajes de esta sala. Para restaurarlo, vuelve a añadir el agente.",
-    "removeFailed": "No se pudo quitar al miembro",
-    "removePersonDescription": "Este miembro deja de recibir los mensajes de esta sala. Para restaurarlo, vuelve a añadirlo.",
-    "removeTitle": "¿Quitar a {name} de esta sala?",
-    "searchRooms": "Buscar salas",
-    "searchPeopleAndAgents": "Buscar personas y agentes",
-    "today": "Hoy",
-    "topic": "Tema",
-    "topicFailed": "No se pudo guardar el tema",
-    "topicOptional": "Tema (opcional)",
-    "topicPlaceholder": "De qué trata esta sala",
-    "viewMembers": "Ver miembros",
-    "viewMembersCount": "Ver {count, plural, one {# miembro} other {# miembros}}",
-    "viewingRoom": "Estás viendo #{name}",
-    "yesterday": "Ayer",
-    "you": "{name} (tú)",
-    "status": {
-      "running": "En ejecución",
-      "starting": "Iniciando",
-      "stopped": "Detenida",
-      "failed": "Fallida"
-    },
-    "replyInThread": "Responder en el hilo",
-    "thread": "Hilo",
-    "closeThread": "Cerrar hilo",
-    "backToRoom": "Volver a la sala",
-    "replyPlaceholder": "Responder…",
-    "replyCount": "{count, plural, one {# respuesta} other {# respuestas}}",
-    "lastReply": "Última respuesta {time}",
-    "threadLoadError": "No se pudo cargar este hilo. Inténtalo de nuevo.",
-    "join": "Unirse",
-    "openRoom": "Abrir",
-    "gateDescription": "Activa Salas para que las sesiones de agentes y las personas de este proyecto hablen en salas de chat con nombre.",
-    "archivedNotice": "Esta sala está archivada. Conserva sus mensajes y no admite nuevos."
-  },
   "goals": {
     "title": "Objetivos",
     "gateDescription": "Los agentes se hacen cargo de un objetivo hasta que se cumple de forma verificable: el objetivo vive en Archivos, un latido diario lo despierta, el agente persigue a las personas por lo que necesita y una comprobación independiente lo cierra.",
@@ -24206,7 +24143,6 @@
       "activity": "Actividad",
       "open": "Abiertos",
       "resolved": "Resueltos",
-      "all": "Todos",
       "outdated": "Desactualizados",
       "outdatedHint": "No se puede localizar este fragmento en el documento actual.",
       "newComment": "Nuevo comentario",
@@ -24253,7 +24189,6 @@
       "noCommentsHint": "Selecciona un fragmento para comentarlo o empieza un comentario nuevo.",
       "noResolved": "No hay comentarios resueltos",
       "noResolvedHint": "Los hilos resueltos aparecen aquí.",
-      "noAllComments": "Todavía no hay comentarios",
       "noActivity": "Todavía no hay actividad",
       "noActivityHint": "Las versiones guardadas y los comentarios aparecen aquí.",
       "loadMore": "Cargar más",
@@ -24326,7 +24261,6 @@
       "sentToAgent": "Comentarios enviados a {agent}",
       "newCommentFrom": "Nuevo comentario de {name}",
       "newComments": "{count, plural, one {# comentario nuevo} other {# comentarios nuevos}}",
-      "filterLabel": "Estado del hilo",
       "pagePinLabel": "Comentario {number}",
       "showPanelCount": "Mostrar comentarios, {count} abiertos",
       "hidePanelCount": "Ocultar comentarios, {count} abiertos",
@@ -24643,7 +24577,7 @@
       },
       "company": {
         "subtitle": "Lo que sabe cada agente de este proyecto.",
-        "gateDescription": "La memoria de la empresa viene con Canales: cada agente de este proyecto empieza cada hilo con lo que el equipo guardó aquí.",
+        "gateDescription": "La memoria de la empresa viene con Espacios: cada agente de este proyecto empieza cada hilo con lo que el equipo guardó aquí.",
         "title": "Memoria",
         "place": "Empresa"
       },
@@ -24674,29 +24608,29 @@
       }
     },
     "create": {
-      "title": "Crear un canal",
-      "description": "Todos en este proyecto pueden ver y usar el canal.",
+      "title": "Crear un espacio",
+      "description": "Todos en este proyecto pueden ver y usar el espacio.",
       "nameLabel": "Nombre",
       "namePlaceholder": "marketing",
-      "slugPlaceholder": "nombre-del-canal",
+      "slugPlaceholder": "nombre-del-espacio",
       "descriptionLabel": "Descripción (opcional)",
-      "descriptionPlaceholder": "Para qué sirve este canal",
-      "submit": "Crear canal",
-      "created": "Canal creado",
+      "descriptionPlaceholder": "Para qué sirve este espacio",
+      "submit": "Crear espacio",
+      "created": "Espacio creado",
       "nameRequired": "Añade un nombre.",
       "invalidName": "Usa al menos una letra o un número en el nombre.",
       "slugTaken": "<link>#{slug}</link> ya existe.",
-      "failed": "No se pudo crear el canal. Inténtalo de nuevo.",
-      "renameTitle": "Renombrar canal",
-      "renameDescription": "El enlace del canal cambia con su nombre.",
+      "failed": "No se pudo crear el espacio. Inténtalo de nuevo.",
+      "renameTitle": "Renombrar espacio",
+      "renameDescription": "El enlace del espacio cambia con su nombre.",
       "save": "Guardar",
-      "renamed": "Canal renombrado",
-      "renameFailed": "No se pudo renombrar el canal. Inténtalo de nuevo.",
-      "descriptionPrivate": "Solo las personas que añadas pueden ver y usar el canal.",
+      "renamed": "Espacio renombrado",
+      "renameFailed": "No se pudo renombrar el espacio. Inténtalo de nuevo.",
+      "descriptionPrivate": "Solo las personas que añadas pueden ver y usar el espacio.",
       "privateLabel": "Privado",
       "privateHint": "Solo los miembros invitados pueden verlo.",
-      "privateUnavailable": "Los canales privados aún no están disponibles en este espacio de trabajo.",
-      "privateLimits": "Privado oculta el canal a otras personas. Los cambios de código (ramas de git) y las herramientas propias de los agentes no son privados.",
+      "privateUnavailable": "Los espacios privados aún no están disponibles en este espacio de trabajo.",
+      "privateLimits": "Privado oculta el espacio a otras personas. Los cambios de código (ramas de git) y las herramientas propias de los agentes no son privados.",
       "name": "Nombre",
       "taken": "Ya existe un espacio #{slug}.",
       "about": "Descripción",
@@ -24722,24 +24656,24 @@
       "messageAgent": "Mensaje a {agent}",
       "threadsEmptyTitle": "Aún no hay hilos",
       "threadsEmpty": "Los hilos que empieces aparecerán aquí.",
-      "loadError": "No se pudo cargar este canal.",
+      "loadError": "No se pudo cargar este espacio.",
       "threadsLoadError": "No se pudieron cargar los hilos.",
       "retry": "Intentar de nuevo",
-      "notFound": "Este canal no existe.",
-      "notFoundHint": "Puede que el enlace esté mal o que alguien haya renombrado el canal.",
+      "notFound": "Este espacio no existe.",
+      "notFoundHint": "Puede que el enlace esté mal o que alguien haya renombrado el espacio.",
       "openDefault": "Abrir #{name}",
       "archivedTitle": "#{name} está archivado.",
       "archivedHint": "Desarchívalo para volver a leer y empezar hilos aquí.",
       "archivedLocked": "Solo su creador o un administrador del proyecto puede desarchivarlo.",
-      "unarchive": "Desarchivar canal",
-      "unarchived": "Canal desarchivado",
-      "unarchiveFailed": "No se pudo desarchivar el canal. Inténtalo de nuevo.",
+      "unarchive": "Desarchivar espacio",
+      "unarchived": "Espacio desarchivado",
+      "unarchiveFailed": "No se pudo desarchivar el espacio. Inténtalo de nuevo.",
       "dmFailed": "No se pudo abrir esta conversación.",
-      "archive": "Archivar canal",
+      "archive": "Archivar espacio",
       "archiveTitle": "¿Archivar #{name}?",
-      "archiveDescription": "El canal sale de la barra lateral de todos los miembros. Sus hilos se conservan, y su creador o un administrador del proyecto puede desarchivarlo.",
-      "archived": "Canal archivado",
-      "archiveFailed": "No se pudo archivar el canal. Inténtalo de nuevo.",
+      "archiveDescription": "El espacio sale de la barra lateral de todos los miembros. Sus hilos se conservan, y su creador o un administrador del proyecto puede desarchivarlo.",
+      "archived": "Espacio archivado",
+      "archiveFailed": "No se pudo archivar el espacio. Inténtalo de nuevo.",
       "threadTitle": "Hilo",
       "closeThread": "Cerrar hilo",
       "sendFailed": "No se pudo empezar el hilo. Inténtalo de nuevo.",
@@ -24771,7 +24705,7 @@
         },
         "links": {
           "title": "Aún no hay enlaces",
-          "description": "Los enlaces que se comparten en los hilos de {place} aparecen aquí. Fija uno para dárselo a todos los agentes del canal."
+          "description": "Los enlaces que se comparten en los hilos de {place} aparecen aquí. Fija uno para dárselo a todos los agentes del espacio."
         },
         "triggers": {
           "title": "Aún no hay activadores",
@@ -24804,8 +24738,8 @@
         "titlePlaceholder": "Qué es",
         "invalidUrl": "Escribe un enlace válido, como example.com.",
         "addFailed": "No se pudo añadir el enlace. Inténtalo de nuevo.",
-        "limit": "Este canal ya tiene 200 enlaces fijados. Desfija uno primero.",
-        "addLimit": "Este canal ya tiene 200 enlaces añadidos. Quita uno primero.",
+        "limit": "Este espacio ya tiene 200 enlaces fijados. Desfija uno primero.",
+        "addLimit": "Este espacio ya tiene 200 enlaces añadidos. Quita uno primero.",
         "added": "Añadido",
         "remove": "Quitar enlace",
         "removeTitle": "¿Quitar este enlace?",
@@ -24825,7 +24759,7 @@
         "all": "Todos",
         "sharedBy": "Compartido por",
         "earlier": "Antes",
-        "pinHint": "Fíjalo. Todos los agentes del canal leen los enlaces fijados.",
+        "pinHint": "Fíjalo. Todos los agentes del espacio leen los enlaces fijados.",
         "unpinHint": "Desfíjalo. Los agentes dejan de leerlo.",
         "copyLink": "Copiar enlace",
         "linkCopied": "Enlace copiado",
@@ -24835,7 +24769,7 @@
       "appsLoadError": "No se pudieron cargar las apps.",
       "triggers": {
         "loadError": "No se pudieron cargar los activadores.",
-        "privateNote": "Los disparadores no pueden publicar en un canal privado. Pide a un agente en un hilo que configure un bucle."
+        "privateNote": "Los disparadores no pueden publicar en un espacio privado. Pide a un agente en un hilo que configure un bucle."
       },
       "reply": "Responder",
       "rosterTitlePeople": "Personas",
@@ -24881,19 +24815,68 @@
         "rememberHint": "Notas que lee cada agente"
       },
       "allAgents": "Todos los agentes",
-      "join": "Unirse al canal",
+      "join": "Unirse al espacio",
       "joined": "Te uniste a #{name}.",
-      "joinFailed": "No se pudo unir al canal. Inténtalo de nuevo."
+      "joinFailed": "No se pudo unir al espacio. Inténtalo de nuevo.",
+      "openFullSession": "Open full session",
+      "tabEdit": {
+        "kind": {
+          "file": "Archivo",
+          "artifact": "Artifact",
+          "app": "App",
+          "folder": "Folder",
+          "link": "Link"
+        },
+        "add": "Add tab",
+        "full": "A space holds at most {max} tabs. Remove one first.",
+        "noArtifacts": "No artifacts yet",
+        "noApps": "No Apps in this project",
+        "spaceFiles": "This space’s files",
+        "otherFolder": "Another folder…",
+        "fileItem": "Archivo…",
+        "linkItem": "Link…",
+        "linkTitle": "Add a link",
+        "linkHint": "An https page, shown inside the tab.",
+        "folderTitle": "Add a folder",
+        "folderHint": "A Drive folder, by its path.",
+        "fileTitle": "Añadir un archivo",
+        "fileHint": "Cualquier archivo de Drive, por su ruta. Un archivo .html se muestra como página.",
+        "url": "URL",
+        "path": "Folder path",
+        "filePath": "Ruta del archivo",
+        "submit": "Add tab",
+        "cancel": "Cancel",
+        "options": "Options for {name}",
+        "rename": "Rename",
+        "renameTitle": "Rename tab",
+        "name": "Tab name",
+        "save": "Save",
+        "moveLeft": "Move left",
+        "moveRight": "Move right",
+        "remove": "Remove tab",
+        "removed": "Removed {name}",
+        "undo": "Undo",
+        "saveError": "The tabs could not be saved",
+        "openLink": "Open in new tab",
+        "linkCard": {
+          "description": "{host} no permite que otros sitios lo muestren dentro de una pestaña.",
+          "open": "Abrir"
+        },
+        "missing": {
+          "title": "This tab’s content is gone",
+          "description": "It was deleted or renamed, or it is not shared with you."
+        }
+      }
     },
     "details": {
       "about": "Información",
       "members": "Miembros",
-      "name": "Nombre del canal",
+      "name": "Nombre del espacio",
       "description": "Descripción",
       "noDescription": "Añadir una descripción",
       "created": "Creado",
       "editField": "Editar {field}",
-      "archiveTitle": "Archivar este canal",
+      "archiveTitle": "Archivar este espacio",
       "archiveHint": "Sale de la barra lateral de todos los miembros. Sus hilos se conservan.",
       "archive": "Archivar",
       "find": "Buscar personas o agentes",
@@ -24917,9 +24900,9 @@
       "peopleFailed": "No se pudieron actualizar los miembros. Inténtalo de nuevo.",
       "personMenu": "Opciones de {person}",
       "removePerson": "Quitar de #{name}",
-      "leave": "Salir del canal",
+      "leave": "Salir del espacio",
       "left": "Saliste de #{name}.",
-      "leaveTitle": "Salir de este canal",
+      "leaveTitle": "Salir de este espacio",
       "leaveHint": "Podrás seguir leyéndolo y volver a unirte cuando quieras.",
       "visibilityPrivate": "Solo sus miembros",
       "privateNote": "Solo los miembros pueden ver #{name}.",
@@ -24933,7 +24916,7 @@
       "leaveHintPrivate": "Pierdes el acceso a sus hilos, archivos y memoria, incluidos tus propios hilos. Un miembro tendrá que volver a añadirte.",
       "leavePrivateTitle": "¿Salir de #{name}?",
       "addMembers": "Añadir miembros",
-      "privateLimits": "Privado oculta el canal a otras personas. Los cambios de código (ramas de git) y las herramientas propias de los agentes no son privados."
+      "privateLimits": "Privado oculta el espacio a otras personas. Los cambios de código (ramas de git) y las herramientas propias de los agentes no son privados."
     },
     "folder": {
       "memory": "Memoria",
@@ -24946,17 +24929,18 @@
       }
     },
     "onboarding": {
-      "reenabled": "Aquí están las sesiones iniciadas mientras Canales estaba desactivado.",
+      "reenabled": "Aquí están las sesiones iniciadas mientras Espacios estaba desactivado.",
       "intro": {
-        "title": "Te damos la bienvenida a los canales",
-        "channels": "Los canales agrupan el trabajo por equipo.",
+        "title": "Te damos la bienvenida a los espacios",
+        "channels": "Los espacios agrupan el trabajo por equipo.",
         "threads": "Cada mensaje nuevo inicia un hilo.",
-        "memory": "Los agentes recuerdan lo que acuerda cada canal.",
-        "gotIt": "Entendido"
+        "memory": "Los agentes recuerdan lo que acuerda cada espacio.",
+        "gotIt": "Entendido",
+        "tabs": "Every space has its own tabs. Add, rename and reorder them, or ask Kortix to."
       },
       "getStarted": {
         "dismiss": "Descartar",
-        "channel": "Crea un canal para un equipo",
+        "channel": "Crea un espacio para un equipo",
         "done": "Hecho"
       }
     },
@@ -24985,9 +24969,9 @@
       "noMatches": "Nada coincide con «{query}»."
     },
     "privateNotIn": {
-      "row": "Canales privados en los que no estás",
-      "title": "Canales privados en los que no estás",
-      "description": "Puedes renombrar, archivar y añadir personas. Solo los miembros leen lo que hay en un canal, así que no puedes añadirte a ti mismo.",
+      "row": "Espacios privados en los que no estás",
+      "title": "Espacios privados en los que no estás",
+      "description": "Puedes renombrar, archivar y añadir personas. Solo los miembros leen lo que hay en un espacio, así que no puedes añadirte a ti mismo.",
       "meta": "{count, plural, =0 {Sin miembros} one {# miembro} other {# miembros}} · creado por {name}",
       "metaNoCreator": "{count, plural, =0 {Sin miembros} one {# miembro} other {# miembros}}",
       "archived": "Archivado",
@@ -25011,20 +24995,15 @@
       "board": {
         "brief": "Resumen",
         "text": "Para qué sirve este espacio y cómo ayudar.",
-        "label": "Sala y tablero",
+        "label": "Tablero y objetivos",
         "description": "Un tablero para el resumen y los enlaces, seguido de los objetivos."
       },
       "standard": {
-        "label": "Sala, objetivos, aplicaciones y artefactos",
-        "description": "La sala y, después, el contenido vinculado al espacio."
-      },
-      "room": {
-        "label": "Solo sala",
-        "description": "Una conversación. Añade pestañas más adelante."
+        "label": "Objetivos, aplicaciones y artefactos",
+        "description": "El contenido vinculado al espacio."
       }
     },
     "tabs": {
-      "room": "Sala",
       "goals": "Objetivos",
       "apps": "Aplicaciones",
       "artifacts": "Artefactos",
@@ -25049,7 +25028,7 @@
       "artifacts": "Los artefactos vinculados a este espacio aparecerán aquí",
       "folder": "Esta carpeta está vacía",
       "board": "Los bloques de este tablero aparecerán aquí",
-      "boardHint": "Pide a My Kortix que añada un bloque: una nota, una App, un archivo, una página incrustada u otra sala."
+      "boardHint": "Pide a My Kortix que añada un bloque: una nota, una App, un archivo o una página incrustada."
     },
     "doc": "Documento",
     "page": "Página",
@@ -25087,8 +25066,8 @@
     "cancel": "Cancelar",
     "edit": {
       "title": "Editar pestañas",
-      "description": "La sala sigue primero. Al guardar se confirman las pestañas en kortix.yaml en la rama predeterminada.",
-      "empty": "Solo la sala. Añade una pestaña con +.",
+      "description": "Al guardar se confirman las pestañas en kortix.yaml en la rama predeterminada.",
+      "empty": "Aún no hay pestañas. Añade una pestaña con +.",
       "save": "Guardar pestañas",
       "rename": "Cambiar el nombre de {name}",
       "moveUp": "Subir {name}",
@@ -25101,24 +25080,18 @@
       "unread": "{count, plural, one {# mensaje sin leer} other {# mensajes sin leer}}"
     },
     "leave": "Salir de {name}",
-    "openRooms": "Abrir salas",
-    "roomHint": "Los agentes y las personas publican novedades aquí.",
-    "noRoom": "Aún no hay sala.",
     "agents": "Agentes en este espacio",
     "openAgent": "Abrir {name}",
-    "members": "{count, plural, one {# persona} other {# personas}}",
     "needsYou": "te necesitan",
     "newSession": "Nueva sesión",
     "askMyKortix": "Preguntar a My Kortix",
     "askPrompt": "Quiero cambiar el espacio {name} (`spaces.{slug}` en kortix.yaml): sus pestañas, su encabezado o sus agentes. Pregúntame qué cambiar.",
-    "roomsOff": "Las salas están desactivadas en este proyecto",
-    "roomsOffHint": "Activa las salas en los ajustes del proyecto para hablar aquí con personas y agentes.",
-    "room": {
-      "introTitle": "Este es el inicio de #{name}",
-      "introBody": "La sala para quienes trabajan en este espacio.",
-      "introAgents": "{count, plural, one {{names} publica novedades aquí.} other {{names} publican novedades aquí.}}",
-      "introNoAgents": "Los agentes que añadas a este espacio publicarán sus novedades aquí.",
-      "introMention": "Escribe @ para mencionar a una persona o un agente."
+    "intro": {
+      "title": "Este es el inicio de #{name}",
+      "body": "El lugar para quienes trabajan en este espacio.",
+      "agents": "{count, plural, one {{names} publica novedades aquí.} other {{names} publican novedades aquí.}}",
+      "noAgents": "Los agentes que añadas a este espacio publicarán sus novedades aquí.",
+      "addTab": "Añade una pestaña con + para fijar aquí objetivos, aplicaciones, archivos o un tablero."
     },
     "filter": "Filtrar por espacio",
     "all": "Todos",

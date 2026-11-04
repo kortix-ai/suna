@@ -120,7 +120,9 @@ const patchFeatureFlagHandler = async (c: any) => {
   if (!isPlainObject(body)) {
     return c.json({ error: 'Request body must be a JSON object' }, 400);
   }
-  const feature = body.feature;
+  // `project_channels` merged into `chat` (2026-11): released TUI, mobile and
+  // CLI builds still toggle Channels by the old key, so it writes `chat`.
+  const feature = body.feature === 'project_channels' ? 'chat' : body.feature;
   const enabled = body.enabled;
   // Floor 'read' (membership); project.settings.write is the gate below.
   const loaded = await loadProjectForUser(c, projectId, 'read');

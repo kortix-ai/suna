@@ -99,8 +99,7 @@ const QUIT_ARM_MS = 2000;
 const COMMAND_FLAGS = [
   'drives',
   'artifacts',
-  'project_channels',
-  'agent_rooms',
+  'chat',
   'reminders',
   'goals',
   'agent_teams',
@@ -177,8 +176,7 @@ export function nextFocus(current: Focus, order: Focus[], step: 1 | -1): Focus {
 function useCommandFlags(projectId: string | null): Record<string, boolean> {
   const drives = useFeatureFlag(projectId, 'drives');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
-  const channels = useFeatureFlag(projectId, 'project_channels');
-  const rooms = useFeatureFlag(projectId, 'agent_rooms');
+  const channels = useFeatureFlag(projectId, 'chat');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const goals = useFeatureFlag(projectId, 'goals');
   const teams = useFeatureFlag(projectId, 'agent_teams');
@@ -186,8 +184,7 @@ function useCommandFlags(projectId: string | null): Record<string, boolean> {
     const states = {
       drives,
       artifacts,
-      project_channels: channels,
-      agent_rooms: rooms,
+      chat: channels,
       reminders,
       goals,
       agent_teams: teams,
@@ -195,7 +192,7 @@ function useCommandFlags(projectId: string | null): Record<string, boolean> {
     const known: Record<string, boolean> = {};
     for (const key of COMMAND_FLAGS) if (!states[key].isLoading) known[key] = states[key].enabled;
     return known;
-  }, [drives, artifacts, channels, rooms, reminders, goals, teams]);
+  }, [drives, artifacts, channels, reminders, goals, teams]);
 }
 
 export interface AppProps {
@@ -749,7 +746,6 @@ export function App({
         case 'goals':
         case 'memory':
         case 'spaces':
-        case 'rooms':
         case 'loops':
         case 'audit':
         case 'review':

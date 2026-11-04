@@ -166,14 +166,27 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     }
   });
 
-  test('project_channels is an experimental, explicit opt-in flag offered everywhere', () => {
-    expect(findCatalogFlag('project_channels')).toMatchObject({
+  test('chat is an experimental, explicit opt-in flag offered everywhere', () => {
+    expect(findCatalogFlag('chat')).toMatchObject({
       stability: 'experimental',
       enabled: false,
       operator_only: false,
     });
-    expect(resolveFeatureFlag({}, 'project_channels')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { project_channels: true } }, 'project_channels')).toBe(true);
+    expect(resolveFeatureFlag({}, 'chat')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { chat: true } }, 'chat')).toBe(true);
+  });
+
+  test('chat reads the legacy Channels and One chat overrides: chat, else project_channels, else infinichat', () => {
+    expect(resolveFeatureFlag({ experimental: { project_channels: true } }, 'chat')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: { infinichat: true } }, 'chat')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: { project_channels: false, infinichat: true } }, 'chat')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { chat: false, project_channels: true } }, 'chat')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { chat: 'yes', project_channels: true } }, 'chat')).toBe(true);
+    expect(buildFeatureFlagCatalog({ experimental: { project_channels: true } }).find((f) => f.key === 'chat')).toMatchObject({ enabled: true, overridden: true });
+    for (const key of ['project_channels', 'infinichat']) {
+      expect(isFeatureFlagKey(key)).toBe(false);
+      expect(buildFeatureFlagCatalog({}).map((flag) => flag.key as string)).not.toContain(key);
+    }
   });
 
   test('session_transcript_history graduated: saved history has no off switch and a stored override is inert', () => {

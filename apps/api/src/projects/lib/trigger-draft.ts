@@ -98,7 +98,7 @@ export async function loadTriggersForResponse(
     [...subscriptionBySlug.values()].flatMap((r) => (r.provider === MCP_SOURCE_ID && r.externalId ? [r.externalId] : [])),
   );
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
-  const channels = resolveFeatureFlag(project.metadata, 'project_channels');
+  const channels = resolveFeatureFlag(project.metadata, 'chat');
   // A channel, or the caller's own DM: a DM's existence is never disclosed to anyone else.
   const spaceIds = [...new Set(runtimeRows.flatMap((row) => (row.spaceId ? [row.spaceId] : [])))];
   const hidden = channels && spaceIds.length && viewer ? await hiddenSpaceIds(projectId, viewer.userId, viewer.bound) : null;
@@ -180,7 +180,7 @@ export async function loadTriggersForResponse(
       // Overlap (KRTX-1721); null = unset (`skip` for cron, `allow` otherwise).
       overlap: spec.overlap ?? null,
       session_access: sessionAccessBySlug.get(spec.slug) ?? PRIVATE_TRIGGER_SESSION_ACCESS,
-      // The channel or DM its runs post to; omitted while `project_channels` is off.
+      // The channel or DM its runs post to; omitted while `chat` is off.
       ...(channels ? { space_id: listedSpaceId(spec.slug) } : {}),
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,

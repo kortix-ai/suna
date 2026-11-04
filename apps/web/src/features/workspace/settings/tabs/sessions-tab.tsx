@@ -536,9 +536,7 @@ export function SessionsTab({ projectId }: { projectId?: string }) {
       notificationInbox={notificationInbox}
       notificationKinds={kindPreferences.data?.kinds}
       emailAvailable={kindPreferences.data?.email_available ?? true}
-      // Room messages exist only with a project's `agent_rooms` flag on: an API
-      // that does not say so hides the row rather than show a dead switch.
-      hiddenKinds={kindPreferences.data?.hidden_kinds ?? ['message']}
+      hiddenKinds={kindPreferences.data?.hidden_kinds ?? []}
       notificationKindsState={
         kindPreferences.data ? 'ready' : kindPreferences.isError ? 'error' : 'loading'
       }

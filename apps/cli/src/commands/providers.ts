@@ -315,6 +315,17 @@ export interface PlanUsage {
   observed_at: string;
 }
 
+/** Who a subscription login signs in as (`provider_account` on a listed secret resource). */
+export interface PlanAccount { email: string | null; plan: string | null }
+
+/** `person@example.test · Pro`, leaving out an email the label already shows; null when the provider says nothing. */
+export function planAccountText(account: PlanAccount | null | undefined, label: string): string | null {
+  if (!account) return null;
+  const email = account.email && !label.toLowerCase().includes(account.email.toLowerCase()) ? account.email : null;
+  const plan = account.plan ? `${account.plan[0]!.toUpperCase()}${account.plan.slice(1)}` : null;
+  return [email, plan].filter(Boolean).join(' · ') || null;
+}
+
 const USAGE_PROVIDERS: Record<string, string> = {
   openai: 'codex', chatgpt: 'codex', codex: 'codex', claude: 'claude-agent', 'claude-agent': 'claude-agent',
 };
@@ -355,18 +366,22 @@ async function providersUsage(provider: string | undefined, accountArg: string |
   if (!ctx) return 1;
   const base = `/accounts/${encodeURIComponent(ctx.accountId)}/secret-resources`;
   const projectId = resolveProjectId(opts.projectArg, { hostArg: opts.hostArg });
-  let rows: Array<StoredAccount & { usage?: PlanUsage | null }>;
+  let rows: Array<StoredAccount & { usage?: PlanUsage | null; provider_account?: PlanAccount | null }>;
   try {
-    rows = (await ctx.client.get<{ secrets: Array<StoredAccount & { usage?: PlanUsage | null }> }>(`${base}${query({ project_id: projectId ?? undefined })}`)).secrets;
+    rows = (await ctx.client.get<{ secrets: Array<StoredAccount & { usage?: PlanUsage | null; provider_account?: PlanAccount | null }> }>(`${base}${query({ project_id: projectId ?? undefined })}`)).secrets;
   } catch (err) {
     return surfaceApiError(err);
   }
   const logins = rows.filter((row) => row.provider_id && SUBSCRIPTION_PROVIDER_IDS.has(row.provider_id) && (!want || row.provider_id === want));
   const accounts = await Promise.all(logins.map(async (row) => {
     // A refresh the server cannot make keeps the snapshot the list carried.
-    const fresh = await ctx.client.post<{ usage: PlanUsage | null }>(`${base}/${encodeURIComponent(row.secret_id)}/usage`, {})
-      .then((body) => body.usage).catch(() => null);
-    return { secret_id: row.secret_id, label: row.label, provider_id: row.provider_id, usage: fresh ?? row.usage ?? null };
+    const fresh = await ctx.client.post<{ usage: PlanUsage | null; provider_account?: PlanAccount | null }>(`${base}/${encodeURIComponent(row.secret_id)}/usage`, {})
+      .catch(() => null);
+    return {
+      secret_id: row.secret_id, label: row.label, provider_id: row.provider_id,
+      provider_account: fresh?.provider_account ?? row.provider_account ?? null,
+      usage: fresh?.usage ?? row.usage ?? null,
+    };
   }));
   if (json) {
     emitJson({ accounts });
@@ -377,7 +392,8 @@ async function providersUsage(provider: string | undefined, accountArg: string |
     return 0;
   }
   for (const account of accounts) {
-    process.stdout.write(`${C.bold}${account.label}${C.reset} ${C.dim}(${account.provider_id === 'codex' ? 'ChatGPT' : 'Claude'})${C.reset}\n`);
+    const who = planAccountText(account.provider_account, account.label);
+    process.stdout.write(`${C.bold}${account.label}${C.reset} ${C.dim}(${[account.provider_id === 'codex' ? 'ChatGPT' : 'Claude', who].filter(Boolean).join(' · ')})${C.reset}\n`);
     process.stdout.write(`${planUsageLines(account.usage).join('\n')}\n`);
   }
   return 0;

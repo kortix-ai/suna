@@ -515,7 +515,7 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
             warnings: 0,
             issues: [{ path: 'agents.worker.promt', message: 'unknown agent key "promt". Did you mean "prompt"?', severity: 'error', line: 3, column: 5 }],
           },
-          experimental_features: [{ key: 'agent_rooms', enabled: true, description: 'KORTIX_FEATURE_FLAGS lists it in kortixd' }],
+          experimental_features: [{ key: 'voice_call', enabled: true, description: 'KORTIX_FEATURE_FLAGS lists it in kortixd' }],
         },
       ],
       [S, session],

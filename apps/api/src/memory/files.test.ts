@@ -66,7 +66,7 @@ describe('a file as a page', () => {
     expect(page.excerpt).toBe('Ships on 2026-11-12. New pricing page with Team. Copy done code Quote a b');
     expect(parsePage(`# T\n\n${'x'.repeat(400)}`, 'x.md', null).excerpt).toHaveLength(280);
     expect(parsePage('# Only a title', 'x.md', null).excerpt).toBe('');
-    expect(parsePage('# T\n\n`project_channels` is _off_ by default.', 'x.md', null).excerpt).toBe('project_channels is off by default.');
+    expect(parsePage('# T\n\n`chat` is _off_ by default.', 'x.md', null).excerpt).toBe('chat is off by default.');
   });
 
   test('sources, author and related come from front-matter', () => {

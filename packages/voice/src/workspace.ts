@@ -3,7 +3,7 @@
 // file's header comment, a markdown section). Measured on the real harness (16 workspace questions, research notes
 // 2026-10-28): with the map and the best chunks injected, 0/16 turns ran tools and the first text came at 1.22 s p50,
 // against 10/16 and 2.83 s with grep lines; answers as good or better. Built in ~60 ms, queried in <1 ms.
-import { readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 
 type Chunk = { file: string; line: number; text: string; toks: string[]; syms: Set<string>; evaluation: boolean }
 const STOP = new Set('the and you can what whats does did how who when where which that this there are was were for with about tell please could would right now just know want ask like okay hey yeah well into from out get got your our its his her their them they then than also some any much many more most very really sure think going have should only been will here show explain need actually thing things work works working handle handled handles codebase project inside exactly part kind mean able each other same make made code file files repo system real done use used using we'.split(' '))
@@ -40,6 +40,32 @@ export function identity(root: string): string {
     (read('go.mod').split('\n').find((l) => l.startsWith('module ')) ?? '').slice(7).trim()
   const title = (read('README.md').split('\n').find((l) => l.startsWith('# ')) ?? '').slice(2).trim().slice(0, 80)
   return title && name && title.toLowerCase() !== name.toLowerCase() ? `${title} (${name})` : title || name
+}
+
+/** What the project says it is (kortix.yaml's project description, else package.json's) and the folders at its root
+ * (a Kortix project's agents, skills and memory notes among them): the router's picture of what a workspace question
+ * can be about, and the names of its memory notes (memory/*.md). '' for each when none. */
+export function outline(root: string): { about: string; folders: string; notes: string } {
+  const read = (f: string) => { try { return readFileSync(`${root}/${f}`, 'utf8').slice(0, 50_000) } catch { return '' } }
+  let about = ''
+  try { const d = (JSON.parse(read('package.json') || '{}') as { description?: unknown }).description; if (typeof d === 'string') about = d } catch {}
+  if (!about) {
+    let inside = false
+    for (const l of read('kortix.yaml').split('\n')) {
+      if (l.trim() === 'project:') { inside = true; continue }
+      if (inside && l && !/^\s/.test(l)) break
+      const t = l.trim()
+      if (inside && t.startsWith('description:')) { about = t.slice(12).trim().replace(/^["']|["']$/g, ''); break }
+    }
+  }
+  let folders = ''
+  try {
+    folders = readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.') && d.name !== 'node_modules').map((d) => d.name).sort().slice(0, 16).join(', ')
+  } catch {}
+  // A Kortix project's memory is notes in memory/ (team, infra, product, ...): their names tell a question on them.
+  let notes = ''
+  try { notes = readdirSync(`${root}/memory`).filter((f) => f.endsWith('.md') && f !== 'MEMORY.md').map((f) => f.slice(0, -3)).sort().slice(0, 24).join(', ') } catch {}
+  return { about: about.slice(0, 160), folders, notes }
 }
 
 function build(root: string) {

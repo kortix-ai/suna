@@ -1440,7 +1440,7 @@ export async function sessionDriveNotes(sessionId: string): Promise<{ mounts: Se
   return { mounts, text: renderDriveNotes(mounts, conflicts, skippedMessage, space ? spaceNotesLines(space, mounts) : [], { privateChannel }) };
 }
 
-/** The channel or DM a session is a thread of (a channel with its newest pinned links), with `project_channels` on; else null. */
+/** The channel or DM a session is a thread of (a channel with its newest pinned links), with `chat` on; else null. */
 async function sessionNotesSpace(
   sessionId: string,
 ): Promise<{ kind: 'channel' | 'dm'; name: string; links: SpaceNotesLink[]; visibility: 'public' | 'private'; spaceId: string } | null> {
@@ -1458,7 +1458,7 @@ async function sessionNotesSpace(
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   const name = row?.kind === 'channel' ? row.slug : row?.agent;
-  if (!row || !name || !(await projectFeatureFlagEnabled(row.projectId, 'project_channels'))) return null;
+  if (!row || !name || !(await projectFeatureFlagEnabled(row.projectId, 'chat'))) return null;
   const links =
     row.kind === 'channel'
       ? await db

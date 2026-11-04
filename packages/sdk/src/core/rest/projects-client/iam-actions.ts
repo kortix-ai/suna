@@ -72,9 +72,17 @@ export const PROJECT_ACTIONS = {
   /** A verdict on a review item: approve, reject, request changes, answer. */
   PROJECT_REVIEW_ACT: 'project.review.act',
 
-  /** List rooms and read their messages (`agent_rooms` flag). */
+  /**
+   * List rooms and read their messages (`agent_rooms` flag).
+   *
+   * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+   */
   PROJECT_ROOM_READ: 'project.room.read',
-  /** Create a room, post, put a session in or take it out, set the topic. */
+  /**
+   * Create a room, post, put a session in or take it out, set the topic.
+   *
+   * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+   */
   PROJECT_ROOM_WRITE: 'project.room.write',
   PROJECT_ARTIFACT_READ: 'project.artifact.read',
   PROJECT_ARTIFACT_COMMENT: 'project.artifact.comment',
