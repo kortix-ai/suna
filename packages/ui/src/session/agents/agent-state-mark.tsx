@@ -3,6 +3,7 @@
 import type { SessionDisplayStatus } from '../actions/session-label';
 import { SessionStatusMark } from '../../workspace/sidebar/session-status-mark';
 import { useTranslations } from '../../i18n';
+import { cn } from '../../lib/utils';
 import type { WorkflowAgentStatus, WorkflowPhaseStatus } from '../tool/tools/workflow-run';
 import type { AgentRowState } from './agent-model';
 
@@ -35,21 +36,24 @@ export function runGlyphStatus(status: WorkflowPhaseStatus | WorkflowAgentStatus
   return RUN_GLYPH[status];
 }
 
-/** The glyph at 14px in a 14px slot: agent rows set 12px text, the session list 14px. */
-function GlyphSlot({ status }: { status: SessionDisplayStatus }) {
+/** The glyph at 14px in a 14px slot (agent rows set 12px text), or `md`: a dialog title's 18px. */
+function GlyphSlot({ status, size = 'sm' }: { status: SessionDisplayStatus; size?: 'sm' | 'md' }) {
   return (
-    <span aria-hidden className="flex size-3.5 shrink-0 items-center justify-center [&>svg]:size-3.5">
+    <span
+      aria-hidden
+      className={cn('flex shrink-0 items-center justify-center', size === 'md' ? 'size-5 [&>svg]:size-5' : 'size-3.5 [&>svg]:size-3.5')}
+    >
       <SessionStatusMark status={status} waitingOn="answer" />
     </span>
   );
 }
 
 /** The state mark of an agent row (the agents line, the agent pane, the multi-agent tool cards). */
-export function AgentStateMark({ state }: { state: AgentRowState }) {
+export function AgentStateMark({ state, size }: { state: AgentRowState; size?: 'sm' | 'md' }) {
   const t = useTranslations('multiAgent.strip');
   return (
     <>
-      <GlyphSlot status={ROW_GLYPH[state]} />
+      <GlyphSlot status={ROW_GLYPH[state]} size={size} />
       <span className="sr-only">{t(`state.${state}`)}</span>
     </>
   );

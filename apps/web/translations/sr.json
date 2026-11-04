@@ -25300,7 +25300,11 @@
       "runsLabel": "Покретања workflow-а",
       "previousAgent": "Претходни агент",
       "nextAgent": "Следећи агент",
-      "moreActions": "Још радњи"
+      "moreActions": "Још радњи",
+      "attachments": "Priložene slike",
+      "removeAttachment": "Ukloni {name}",
+      "attachImages": "Priloži slike",
+      "attachFailed": "Slika nije mogla da se priloži"
     },
     "tasks": {
       "label": "Задаци тима",

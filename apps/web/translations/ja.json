@@ -25300,7 +25300,11 @@
       "runsLabel": "ワークフローの実行",
       "previousAgent": "前のエージェント",
       "nextAgent": "次のエージェント",
-      "moreActions": "その他の操作"
+      "moreActions": "その他の操作",
+      "attachments": "添付した画像",
+      "removeAttachment": "{name} を削除",
+      "attachImages": "画像を添付",
+      "attachFailed": "画像を添付できませんでした"
     },
     "tasks": {
       "label": "チームのタスク",

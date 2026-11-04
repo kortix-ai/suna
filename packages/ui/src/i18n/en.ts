@@ -9605,7 +9605,11 @@ const catalog = {
       "runsLabel": "Workflow runs",
       "previousAgent": "Previous agent",
       "nextAgent": "Next agent",
-      "moreActions": "More actions"
+      "moreActions": "More actions",
+      "attachments": "Attached images",
+      "removeAttachment": "Remove {name}",
+      "attachImages": "Attach images",
+      "attachFailed": "Could not attach the image"
     },
     "tasks": {
       "label": "Team tasks",

@@ -25300,7 +25300,11 @@
       "runsLabel": "Workflow-Läufe",
       "previousAgent": "Vorheriger Agent",
       "nextAgent": "Nächster Agent",
-      "moreActions": "Weitere Aktionen"
+      "moreActions": "Weitere Aktionen",
+      "attachments": "Angehängte Bilder",
+      "removeAttachment": "{name} entfernen",
+      "attachImages": "Bilder anhängen",
+      "attachFailed": "Das Bild konnte nicht angehängt werden"
     },
     "tasks": {
       "label": "Aufgaben des Teams",
