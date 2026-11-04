@@ -50,6 +50,7 @@ import { SessionsEmptyState } from '../sessions/sessions-empty-state';
 import { RenameSessionModal } from './modal/rename-session-modal';
 import { SessionDeleteModal } from '../../session/actions/session-delete-modal';
 import { subagentTitle } from '../../session/agents/agent-model';
+import { AgentMarkGlyph } from '../../internal/components/agent-mark';
 import { SessionLabelsModal } from './modal/session-labels-modal';
 import { ShareSessionModal } from './modal/share-session-modal';
 import {
@@ -130,7 +131,6 @@ import {
 } from '@kortix/sdk/react';
 import {
   ArchiveIcon,
-  ArrowsSplitIcon,
   CaretRightIcon,
   CheckIcon,
   DotsThreeIcon,
@@ -139,7 +139,6 @@ import {
   FolderSimplePlusIcon,
   PushPinIcon,
   PushPinSlashIcon,
-  RobotIcon,
   FolderSimpleIcon as MetaFolder,
   GitForkIcon,
   PencilSimpleIcon,
@@ -149,7 +148,6 @@ import {
   SquareIcon as Square,
   TagIcon,
   TrashIcon,
-  TreeViewIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -1110,7 +1108,7 @@ function ChildRunsToggle({
         if (event.key === 'Enter' || event.key === ' ') toggle(event);
       }}
       className={cn(
-        'flex shrink-0 items-center rounded-sm',
+        'flex shrink-0 items-center gap-0.5 rounded-sm',
         open ? 'text-sidebar-foreground' : 'text-muted-foreground hover:text-sidebar-foreground',
         'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
         // Reserve the `⋯` slot at rest. A toggle that slid out of the way on
@@ -1118,10 +1116,12 @@ function ChildRunsToggle({
         clearOfMenu && 'mr-6',
       )}
     >
-      <CountBadge
-        count={count}
-        icon={<TreeViewIcon aria-hidden className="size-3.5" />}
-        className={cn(open && 'bg-foreground/12')}
+      {/* The count says how many; the caret says it opens. One mark each,
+          and the caret turns as the tree opens below the row. */}
+      <CountBadge count={count} className={cn(open && 'bg-foreground/12')} />
+      <CaretRightIcon
+        aria-hidden
+        className={cn('duration-normal size-3 shrink-0 transition-transform ease-out', open && 'rotate-90')}
       />
     </span>
   );
@@ -1435,17 +1435,15 @@ function ProjectSessionRow({
       className="focus-visible:ring-kortix-base flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md py-1 focus-visible:ring-[0.6px] focus-visible:outline-none"
     >
       <div className="size-4 shrink-0">
-        {/* A spawned child shows what it is; its status is in its hover card. */}
-        {spawned ? (
-          <ArrowsSplitIcon aria-hidden className="text-muted-foreground size-4" />
-        ) : (
-          <SessionStatusDot
-            session={session}
-            reviewCount={reviewCount}
-            waitingOn={waitingOn}
-            changeRequests={changeRequests}
-          />
-        )}
+        {/* Every session row leads with its status, a spawned child too: the
+            connector line already says it is a child, a second glyph saying
+            the same only crowded the row. */}
+        <SessionStatusDot
+          session={session}
+          reviewCount={reviewCount}
+          waitingOn={waitingOn}
+          changeRequests={changeRequests}
+        />
       </div>
 
       <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
@@ -1810,6 +1808,11 @@ function SubAgentConnector() {
   );
 }
 
+/** The agent a sub-agent title names (`Explore files (@explore subagent)` → `explore`). */
+function subagentSlug(title: string): string {
+  return /\(@([\w-]+)/.exec(title)?.[1] ?? 'general';
+}
+
 function ProjectSubsessionRow({
   id,
   title,
@@ -1840,7 +1843,14 @@ function ProjectSubsessionRow({
             isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
           )}
         >
-          <RobotIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
+          {/* The agent's own pixel figure, in the row's muted ink: which agent
+              ran, without a tinted tile competing with the status marks. */}
+          <span
+            aria-hidden
+            className="text-muted-foreground flex size-4 shrink-0 items-center justify-center [--mark-ink:currentColor]"
+          >
+            <AgentMarkGlyph slug={subagentSlug(title)} size={14} />
+          </span>
           <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{title}</span>
           {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
         </div>

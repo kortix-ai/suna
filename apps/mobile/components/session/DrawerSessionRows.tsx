@@ -135,10 +135,13 @@ function ProjectSessionListItem({
           {title}
         </Text>
       )}
-      <SubsessionCountBadge count={subsessionCount} />
+      {/* One count per row: the expand control carries its own, so the
+          sub-session badge steps aside rather than stack a second number. */}
       {childCount > 0 && onToggleChildren ? (
         <ExpandControl count={childCount} expanded={expanded} onToggle={onToggleChildren} title={title} />
-      ) : null}
+      ) : (
+        <SubsessionCountBadge count={subsessionCount} />
+      )}
     </Pressable>
   );
 }
