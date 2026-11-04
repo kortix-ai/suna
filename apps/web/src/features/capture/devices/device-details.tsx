@@ -53,7 +53,7 @@ function Row({ label, children, mono }: { label: string; children: ReactNode; mo
   return (
     <>
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className={mono ? 'text-foreground min-w-0 font-mono text-xs leading-5 break-all' : 'text-foreground min-w-0 break-words'}>
+      <dd className={mono ? 'text-foreground min-w-0 font-mono text-xs leading-5 break-words' : 'text-foreground min-w-0 break-words'}>
         {children}
       </dd>
     </>
@@ -219,7 +219,7 @@ export function DeviceDetailsModal({
 
             <Section title={t('policy')}>
               <Row label={t('policySource')}>
-                {d?.policy?.source ? <span className="font-mono text-xs break-all">{d.policy.source}</span> : t('noPolicy')}
+                {d?.policy?.source ? <span className="font-mono text-xs break-words">{d.policy.source}</span> : t('noPolicy')}
               </Row>
               {d?.policy ? <Row label={t('policyRead')}>{when(d.policy.fetched_at)}</Row> : null}
               <Row label={t('enrolled')}>{d?.managed || device.enrollment_token_id ? t('managed') : t('personal')}</Row>

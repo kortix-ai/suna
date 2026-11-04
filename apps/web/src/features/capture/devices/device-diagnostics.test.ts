@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { CaptureDevice, CaptureDeviceDiagnostics } from '@kortix/sdk';
 
+import { deviceOs } from '@kortix/ui/internal/capture/use-capture-area';
+
 import { diagnosticsText, formatBytes, versionView } from './device-diagnostics';
 import { deviceStatus } from './device-status';
 
@@ -105,5 +107,17 @@ describe('diagnosticsText', () => {
     expect(formatBytes(1536)).toBe('1.5 KB');
     expect(formatBytes(null)).toBeNull();
     expect(formatBytes(-1)).toBeNull();
+  });
+});
+
+describe('deviceOs', () => {
+  test('Windows reads as 10 or 11 by build, also from the raw ver line an older app sent', () => {
+    expect(deviceOs({ os: 'windows', os_version: '10.0.26200.9448' })).toBe('Windows 11');
+    expect(deviceOs({ os: 'windows', os_version: 'Microsoft Windows [Version 10.0.26200.9448]' })).toBe('Windows 11');
+    expect(deviceOs({ os: 'windows', os_version: '10.0.19045.5011' })).toBe('Windows 10');
+    expect(deviceOs({ os: 'windows', os_version: null })).toBe('Windows');
+    expect(deviceOs({ os: 'macos', os_version: '26.0' })).toBe('macOS 26.0');
+    expect(deviceOs({ os: 'linux', os_version: 'Ubuntu 24.04.1 LTS' })).toBe('Ubuntu 24.04.1 LTS');
+    expect(deviceOs({ os: 'linux', os_version: null })).toBe('Linux');
   });
 });
