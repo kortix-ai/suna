@@ -24,7 +24,6 @@ import { ProjectManifestIssuesAlert } from './footer/project-manifest-issues-ale
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
 import { NewAgentModalProvider } from './new-agent-modal-provider';
-import { ProjectMemoryNavItem } from './footer/project-memory-nav';
 import { ProjectNavItems } from './project-nav-items';
 import { ProjectSessionList } from './project-session-list';
 import { ProjectSpacesNav } from './project-spaces-nav';
@@ -313,8 +312,6 @@ export function ProjectSidebar({
               {/* Customize, Apps, Files: order and
                   visibility come from "Customize sidebar". They moved up here
                   from the footer (Jay, 2026-10-12) to keep the footer short. */}
-              {/* Chat on: the Company memory, the first row of the nav items. */}
-              {chat ? <ProjectMemoryNavItem projectId={projectId} /> : null}
               <ProjectNavItems projectId={projectId} />
             </SidebarMenu>
           </SidebarGroup>
