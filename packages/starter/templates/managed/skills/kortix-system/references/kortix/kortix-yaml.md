@@ -207,12 +207,17 @@ triggers:
   project. `filter.base` is the branch it must merge into (any when absent);
   other `filter` keys match the payload as on any trigger.
 - Webhook auth: `X-Kortix-Signature: sha256=<hex>` or GitHub's
-  `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the secret), or the
-  secret as `X-Kortix-Token` or `Authorization: Bearer`. Add
-  `X-Kortix-Timestamp` (epoch seconds, within 5 minutes) and sign
-  `<timestamp>.<body>` to stop replay. Answers: `202` queued, `200` skipped
+  `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the secret) **with**
+  `X-Kortix-Timestamp` (epoch seconds, within 5 minutes): the signature covers
+  `<timestamp>.<body>`, so a captured delivery stops verifying 5 minutes after
+  it was sent instead of replaying. A signature sent without the header, or a
+  body-only HMAC, is refused `401` — add the header and sign
+  `<timestamp>.<body>`, or switch to the static token. The static token is the
+  secret as `X-Kortix-Token` or `Authorization: Bearer`, needs no timestamp and
+  has no body binding to replay. Answers: `202` queued, `200` skipped
   (paused or capped), `401` for every miss before authentication (no such
-  enabled webhook trigger, bad signature), `402` no usable model.
+  enabled webhook trigger, bad signature, missing or stale timestamp), `402` no
+  usable model.
 - `kortix triggers pause` stops every trigger of the project; `resume`
   starts them again. `enabled: false` stops one.
 
