@@ -3014,9 +3014,12 @@ export const cascade: Provider = (o, h) => {
       const version = eotVersion
       let once = false
       finished(text, last?.spoken.slice(-300) ?? '', (v) => {
-        if (once || version !== eotVersion) return
+        if (once) return
         once = true
-        if (v && v !== 'done' && v !== 'more') return void act(v, text)
+        // A turn that ended meanwhile (its reply finished playing) moves the version: the words still stand, only not as an
+        // acknowledgment or goodbye judged on the reply before. Dropped, "Remind me in ten seconds..." typed while a
+        // rename's reply played got no turn at all (a Kortix dev call, and on a box relay 1 run in 2).
+        if (version === eotVersion && v && v !== 'done' && v !== 'more') return void act(v, text)
         said.push(text)
         verdicts.set(said.join(' '), 'done')
         decide(true)
