@@ -37,7 +37,7 @@ function threadLabel(thread: ProjectSession): string {
 
 function ThreadStatus({ thread }: { thread: ProjectSession }) {
   if (thread.board_state === 'needs_input') return <WarningCircleIcon weight="fill" className="text-foreground size-3.5 shrink-0" />;
-  if (thread.board_state === 'working' || thread.working?.state === 'working') return <Loading className="size-3.5 shrink-0" />;
+  if (thread.board_state === 'working' || thread.working?.state === 'working') return <Loading className="in-[button]:text-muted-foreground size-3.5 shrink-0" />;
   if (thread.board_state === 'failed') return <XIcon className="text-muted-foreground size-3.5 shrink-0" />;
   return <CheckIcon className="text-muted-foreground size-3.5 shrink-0" />;
 }
@@ -74,7 +74,7 @@ function ThreadLines({
             aria-pressed={openId === id}
             className="group/thread hover:bg-hover aria-pressed:bg-hover focus-visible:ring-ring -mx-1 flex w-full max-w-xl items-start gap-2 rounded-md px-1 py-1 text-left text-xs outline-none focus-visible:ring-2"
           >
-            <span className="mt-0.5">{thread ? <ThreadStatus thread={thread} /> : <Loading className="size-3.5 shrink-0" />}</span>
+            <span className="mt-0.5">{thread ? <ThreadStatus thread={thread} /> : <Loading className="in-[button]:text-muted-foreground size-3.5 shrink-0" />}</span>
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="flex min-w-0 items-center gap-2">
                 <span className="text-foreground truncate font-semibold">{thread ? threadLabel(thread) : 'Starting a thread…'}</span>

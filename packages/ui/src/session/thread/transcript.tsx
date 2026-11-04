@@ -2483,10 +2483,14 @@ function SessionTurnImpl(props: SessionTurnProps) {
             time={rowTime(userAt, locale)}
           >
             <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
+            {/* The front chat: the answer lives in threads under the message, never as a row of its own. */}
+            {rows.messagesOnly ? (
+              <MessageThreads segments={segments} render={rows.renderThreads} working={model.working} response={model.response} />
+            ) : null}
           </MessageRow>
         ) : null}
         {props.isFirstTurn ? afterFirstPrompt : null}
-        {showAnswer ? (
+        {showAnswer && !rows.messagesOnly ? (
           <MessageRow
             className="group/turn"
             avatar={<AgentMark slug={rows.agentSlug ?? DEFAULT_AGENT_SLUG} size={28} tile={36} label={rows.agent} />}
@@ -2526,7 +2530,6 @@ function SessionTurnImpl(props: SessionTurnProps) {
                 <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
               </GenuiTelemetryContext.Provider>
               <TurnFooter {...props} hideActionBar model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
-              {rows.messagesOnly && rows.renderThreads ? <AnswerThreads segments={segments} render={rows.renderThreads} /> : null}
             </div>
           </MessageRow>
         ) : null}
@@ -2601,15 +2604,21 @@ interface TranscriptTurnRowProps extends SessionTurnProps {
  * reference that holds while another turn streams.
  */
 /**
- * The threads an answer started (`TranscriptRows.renderThreads`): each
- * delegating call's child session, once, drawn by the host under the answer.
+ * The front chat (`TranscriptRows.messagesOnly`): what a message got, under
+ * it. The threads its answer started (each delegating call's child session,
+ * once, drawn by the host); with none, the agent's own short reply as one quiet
+ * line; while it decides, "Thinking…".
  */
-function AnswerThreads({
+function MessageThreads({
   segments,
   render,
+  working,
+  response,
 }: {
   segments: readonly { kind: string; blocks?: readonly unknown[]; block?: unknown }[];
-  render: (childSessionIds: readonly string[]) => ReactNode;
+  render?: (childSessionIds: readonly string[]) => ReactNode;
+  working: boolean;
+  response: string;
 }) {
   const ids = useMemo(() => {
     const blocks = segments.flatMap((s) => (s.blocks ? [...s.blocks] : [s.block]));
@@ -2620,7 +2629,11 @@ function AnswerThreads({
     });
     return [...new Set(found)];
   }, [segments]);
-  return ids.length > 0 ? <>{render(ids)}</> : null;
+  if (ids.length > 0 && render) return <>{render(ids)}</>;
+  const reply = response.trim();
+  if (reply && !working) return <p className="text-muted-foreground mt-1 text-sm">{reply}</p>;
+  if (working) return <p className="text-muted-foreground mt-1 text-xs">Thinking…</p>;
+  return null;
 }
 
 /** The fallback waiting row: a channel thread's agent row, or the bare line under a bubble. */
