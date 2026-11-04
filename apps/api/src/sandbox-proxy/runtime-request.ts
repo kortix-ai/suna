@@ -3,8 +3,7 @@
  *
  * The one place the API recognizes a runtime's turn routes. Two spellings reach
  * it: the daemon's Kortix routes (`/kortix/runtime/sessions/:id/prompt|command|
- * compact|abort` and `/kortix/runtime/questions/:id/reply|reject`; the session
- * routes are also mounted at the pre-W3 `/kortix/opencode`) and OpenCode's REST
+ * compact|abort` and `/kortix/runtime/questions/:id/reply|reject`) and OpenCode's REST
  * routes (`/session/:id/prompt_async|message|command|summarize|abort`), which
  * web and older API instances still send. Every proxy guard (turn ledger, dedupe,
  * env sync, deadline, client stop, retry budget) asks this function instead of
@@ -35,7 +34,7 @@ export type RuntimeRequest =
 
 const OTHER: RuntimeRequest = { kind: 'other' };
 const PREFIX = /^\/proxy\/\d+(?=\/)/;
-const KORTIX = /^\/kortix\/(?:runtime|opencode)\/sessions\/([^/?#]+)\/(prompt|command|compact|abort)\/?$/;
+const KORTIX = /^\/kortix\/runtime\/sessions\/([^/?#]+)\/(prompt|command|compact|abort)\/?$/;
 const KORTIX_QUESTION = /^\/kortix\/runtime\/questions\/([^/?#]+)\/(?:reply|reject)\/?$/;
 const NATIVE = /^\/session\/([^/?#]+)\/(prompt_async|message|command|summarize|abort)(?=$|[/?#])(.*)$/;
 const REVERT = /^\/session\/([^/?#]+)\/revert\/?(?:$|[?#])/;

@@ -6,7 +6,7 @@
  */
 import type { KortixMessageInfo, KortixPart } from '../transcript';
 import type { SessionLogMessage } from './types';
-import { fromV1, type FromV1Options, type V1Transcript } from './v1';
+import { fromV1, type FromV1Options } from './v1';
 
 /** The v1 runtime frames that carry the transcript. */
 export const V1_TRANSCRIPT_EVENTS = [
@@ -18,20 +18,6 @@ export const V1_TRANSCRIPT_EVENTS = [
 ] as const;
 const TRANSCRIPT = new Set<string>(V1_TRANSCRIPT_EVENTS);
 export const isV1TranscriptEvent = (type: string): boolean => TRANSCRIPT.has(type);
-
-/**
- * The `seq` of every message `fromV1` builds from `v1`, by message id. The seq rule: `fromV1`
- * numbers the messages of each thread from 1 in the mirror's order (`info.time.created`, then
- * message id), the superseded rows of an old root first, and a compaction summary row folded into
- * its marker's message takes no number (it has no message of its own, so it has no entry here).
- * A live message gets the seq `fromV1` gives it over the stored rows plus the in-flight rows of the
- * running turn: the seq its stored record gets once the capture writes its row.
- */
-export function v1Seqs(v1: V1Transcript, options: FromV1Options = {}): Map<string, number> {
-  const seqs = new Map<string, number>();
-  for (const thread of fromV1(v1, options).threads) for (const m of thread.messages) seqs.set(m.message_id, m.seq);
-  return seqs;
-}
 
 /**
  * `fromV1` of one message of the running turn (`live: true`): the message is `streaming` while

@@ -44,10 +44,6 @@ export interface HarnessTurnService {
    */
   steer(runtimeSessionId: string, input: RuntimePromptInput): Promise<HarnessTurnResponse>
   abort(runtimeSessionId: string): Promise<HarnessTurnResponse>
-  /** 200 `{ info, parts }` or 404. */
-  readMessage(runtimeSessionId: string, messageId: string): Promise<HarnessTurnResponse>
-  /** 2xx on removal, 404 when already gone, 409 while the message runs. */
-  removeMessage(runtimeSessionId: string, messageId: string): Promise<HarnessTurnResponse>
   /**
    * Take back a user message no model call has read: an unread steered
    * message, a prompt queued behind the running work, a `no_reply` message no

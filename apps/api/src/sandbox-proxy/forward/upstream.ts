@@ -8,7 +8,6 @@ import {
   previewGrantMs,
 } from '../../projects/sandbox-deadline';
 import { markSandboxUsed } from '../backend';
-import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { jsonProxyError } from '../pre-prompt-env-sync';
 import { appCookieHeader } from '../preview-session';
 import { STRIP_FORWARD_HEADERS, clientResponseHeaders } from '../preview-response';
@@ -36,7 +35,7 @@ import type { ForwardRequest, ForwardState } from './context';
  * produces garbage. Forcing identity is what makes that safe without every
  * future rewrite having to remember to decompress.
  *
- * The daemon's Runtime API (`/kortix/runtime/*`, `/kortix/opencode/*` before W3) is the exception, and it earns it:
+ * The daemon's Runtime API (`/kortix/runtime/*`) is the exception, and it earns it:
  *   • nothing on this proxy rewrites those bodies — the projection is already
  *     the trimmed shape, so there is nothing left to strip;
  *   • the whole point of the namespace is byte reduction across THIS hop.
@@ -49,9 +48,8 @@ import type { ForwardRequest, ForwardState } from './context';
  */
 export function forwardsClientEncoding(port: number, remainingPath: string): boolean {
   if (port !== 8000) return false;
-  // `/kortix/runtime` since W3; `/kortix/opencode` on a daemon built before it.
-  if (!/^\/kortix\/(?:runtime|opencode)(?:$|\/)/.test(remainingPath)) return false;
-  return !/^\/kortix\/(?:runtime|opencode)\/events(?:$|[/?#])/.test(remainingPath);
+  if (!/^\/kortix\/runtime(?:$|\/)/.test(remainingPath)) return false;
+  return !/^\/kortix\/runtime\/events(?:$|[/?#])/.test(remainingPath);
 }
 
 // One deadline write per minute per box for HUMAN preview traffic. Mirrors
@@ -342,50 +340,6 @@ export async function respondFromUpstream(
     // unchanged (the stream itself is consumed, so this can't fall
     // through to the generic `upstream.body` passthrough below).
     return new Response(bodyText, {
-      status: upstream.status,
-      statusText: upstream.statusText,
-      headers: respHeaders,
-    });
-  }
-
-  // The transcript list leaves the API WITHOUT its attachment bytes.
-  //
-  // The daemon strips these too (kortix-sandbox-agent-server/src/app/server.ts)
-  // and that is the right home. This second pass exists for every sandbox
-  // still running an older daemon image — a self-host does not rebuild
-  // its templates on our schedule, and the read that motivated this
-  // (20 messages = 7-19 MB, dying on a 30s browser deadline, retried
-  // forever) was on exactly such a box. Idempotent by construction: a
-  // reference is not a `data:` url, so a list the daemon already stripped
-  // passes through with zero work.
-  const listRequest = upstream.ok ? classifyRuntimeRequest(method, remainingPath) : null;
-  if (
-    listRequest?.kind === 'message-list' &&
-    (upstream.headers.get('content-type') ?? '').includes('application/json')
-  ) {
-    const sessionID = listRequest.runtimeSessionId;
-    const text = await upstream.text();
-    let body = text;
-    try {
-      const stripped = stripInlineAttachmentBytes(
-        JSON.parse(text),
-        (messageID, partID) =>
-          `/kortix/part/${encodeURIComponent(sessionID)}/${encodeURIComponent(messageID)}/${encodeURIComponent(partID)}`,
-      );
-      if (stripped.stripped > 0) {
-        body = JSON.stringify(stripped.value);
-        console.info(
-          `[PREVIEW] stripped ${stripped.stripped} inline attachment part(s), ${stripped.savedBytes} bytes, from ${sandboxId} ${remainingPath}`,
-        );
-      }
-    } catch {
-      // Not the JSON we expected — pass it through untouched. This path
-      // must never be the reason a transcript read fails.
-    }
-    respHeaders.delete('content-length');
-    respHeaders.delete('content-encoding');
-    respHeaders.set('content-type', 'application/json; charset=utf-8');
-    return new Response(body, {
       status: upstream.status,
       statusText: upstream.statusText,
       headers: respHeaders,
