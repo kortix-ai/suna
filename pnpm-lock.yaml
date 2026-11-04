@@ -351,6 +351,9 @@ importers:
       yaml:
         specifier: ^2.8.2
         version: 2.9.1
+      yjs:
+        specifier: 13.6.33
+        version: 13.6.33
       zod:
         specifier: ^3.25.0
         version: 3.25.76
@@ -1167,6 +1170,9 @@ importers:
       '@tiptap/extension-code-block':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@tiptap/extension-collaboration':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)(@tiptap/y-tiptap@3.0.12)(yjs@13.6.33)
       '@tiptap/extension-document':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/core@3.30.5)
@@ -1212,6 +1218,9 @@ importers:
       '@tiptap/suggestion':
         specifier: 3.30.5
         version: 3.30.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@tiptap/y-tiptap':
+        specifier: 3.0.12
+        version: 3.0.12(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(y-protocols@1.0.7)(yjs@13.6.33)
       '@types/jszip':
         specifier: ^3.4.0
         version: 3.4.1
@@ -1443,9 +1452,15 @@ importers:
       vaul:
         specifier: ^1.1.2
         version: 1.1.2(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
+      y-protocols:
+        specifier: 1.0.7
+        version: 1.0.7(yjs@13.6.33)
       yaml:
         specifier: ^2.8.2
         version: 2.9.1
+      yjs:
+        specifier: 13.6.33
+        version: 13.6.33
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -15463,6 +15478,20 @@ packages:
       '@tiptap/core': 3.30.5(@tiptap/pm@3.30.5)
     dev: false
 
+  /@tiptap/extension-collaboration@3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)(@tiptap/y-tiptap@3.0.12)(yjs@13.6.33):
+    resolution: {integrity: sha512-LIw2JCPhAI7mWEfaPzct2WYAmSMuv4QPRQqX6AGtg6EcqLUj2N39ds6kBg5jgC7g8vGUNs8/lj5C/9SW0YrDyw==}
+    peerDependencies:
+      '@tiptap/core': 3.30.5
+      '@tiptap/pm': 3.30.5
+      '@tiptap/y-tiptap': ^3.0.7
+      yjs: ^13
+    dependencies:
+      '@tiptap/core': 3.30.5(@tiptap/pm@3.30.5)
+      '@tiptap/pm': 3.30.5
+      '@tiptap/y-tiptap': 3.0.12(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(y-protocols@1.0.7)(yjs@13.6.33)
+      yjs: 13.6.33
+    dev: false
+
   /@tiptap/extension-document@3.30.5(@tiptap/core@3.30.5):
     resolution: {integrity: sha512-4mKoD3bBr5W2AQ2Y/7amOqcVw0eqJbUwRtwvxypeo5Hi0PB9O5Ev8P05c3EUTo10bllqdKYXGeCU5AcgdQsHWQ==}
     peerDependencies:
@@ -15737,6 +15766,24 @@ packages:
       '@floating-ui/dom': 1.8.0
       '@tiptap/core': 3.30.5(@tiptap/pm@3.30.5)
       '@tiptap/pm': 3.30.5
+    dev: false
+
+  /@tiptap/y-tiptap@3.0.12(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(y-protocols@1.0.7)(yjs@13.6.33):
+    resolution: {integrity: sha512-MlmBpmm4xiRDZmk4hiwnjScOrUtiEBYwqeJBvrDil30Eq1GqrZEox1mciBpOnnpfN731fH07OPeGS7uHryPX0g==}
+    peerDependencies:
+      prosemirror-model: ^1.7.1
+      prosemirror-state: ^1.2.3
+      prosemirror-view: ^1.9.10
+      y-protocols: ^1.0.1
+      yjs: ^13.6.13
+    dependencies:
+      lib0: 0.2.117
+      prosemirror-model: 1.25.11
+      prosemirror-state: 1.4.4
+      prosemirror-transform: 1.12.1
+      prosemirror-view: 1.42.3
+      y-protocols: 1.0.7(yjs@13.6.33)
+      yjs: 13.6.33
     dev: false
 
   /@tsconfig/bun@1.0.11:
@@ -24288,7 +24335,6 @@ packages:
     resolution: {integrity: sha512-PIeMbHqMt4DnUP3MA/Flc0HElYjMXArsw1qwJZcm9sqR8mq3l8NYizFMty0pWwE/tzIGH3EKK5+jes5mAr85yw==}
     requiresBuild: true
     dev: false
-    optional: true
 
   /iterator.prototype@1.1.5:
     resolution: {integrity: sha512-H0dkQoCa3b2VEeKQBOxFph+JAbcrQdE7KC0UkqwpLmv2EC4P41QXP+rqo9wYodACiG5/WM5s9oDApTU8utwj9g==}
@@ -24717,7 +24763,6 @@ packages:
     dependencies:
       isomorphic.js: 0.2.5
     dev: false
-    optional: true
 
   /libphonenumber-js@1.13.13:
     resolution: {integrity: sha512-hV6SmWnyQ8U1QXhhqbqYBHIStNnscG7A5XbGodgdHhf/8N5PwhYpJA5U/yHDjYwPYTd8uNGXqq416XctuvK2PA==}
@@ -33561,7 +33606,6 @@ packages:
       lib0: 0.2.117
       yjs: 13.6.33
     dev: false
-    optional: true
 
   /y-webrtc@10.3.0(yjs@13.6.33):
     resolution: {integrity: sha512-KalJr7dCgUgyVFxoG3CQYbpS0O2qybegD0vI4bYnYHI0MOwoVbucED3RZ5f2o1a5HZb1qEssUKS0H/Upc6p1lA==}
@@ -33687,7 +33731,6 @@ packages:
     dependencies:
       lib0: 0.2.117
     dev: false
-    optional: true
 
   /yocto-queue@0.1.0:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
