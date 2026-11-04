@@ -129,17 +129,16 @@ export function workflowGroups(run: WorkflowRun, live: boolean, now: number): Wo
       });
       return;
     }
-    if (agents.length === 0) return;
     const tally = countAgents(agents);
     groups.push({
       kind: 'phase',
       title: phase.title,
-      progress: progressLine(tally.done, tally.total),
+      progress: tally.total > 0 ? progressLine(tally.done, tally.total) : null,
       ring: {
         done: tally.done,
         failed: tally.failed,
         total: tally.total,
-        ended: phase.status === 'done' && tally.failed === 0 ? 'done' : phase.status === 'stopped' ? 'stopped' : null,
+        ended: phase.status === 'done' && tally.total > 0 && tally.done === tally.total ? 'done' : phase.status === 'stopped' ? 'stopped' : null,
       },
       failed: tally.failed > 0 ? `${tally.failed} failed` : null,
       rows: sortRows(agents).map((a) => agentRow(a, live, now)),

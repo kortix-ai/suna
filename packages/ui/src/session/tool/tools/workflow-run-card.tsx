@@ -236,7 +236,7 @@ function PhaseRow({
         done={tally.done}
         failed={tally.failed}
         total={tally.total}
-        ended={phase.status === 'done' && tally.failed === 0 && tally.total > 0 ? 'done' : phase.status === 'stopped' ? 'stopped' : undefined}
+        ended={phase.status === 'done' && tally.total > 0 && tally.done === tally.total ? 'done' : phase.status === 'stopped' ? 'stopped' : undefined}
       />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span className={cn('min-w-0 truncate text-sm', pending ? 'text-muted-foreground' : 'text-foreground')}>{phase.title}</span>
@@ -316,6 +316,7 @@ function CappedAgentList({
         <li className={cn(nested && 'pl-3.5')}>
           <button
             type="button"
+            data-workflow-row
             onClick={() => setAll(true)}
             className="text-muted-foreground hover:text-foreground flex h-9 w-full cursor-pointer items-center rounded-md px-2.5 text-left"
           >

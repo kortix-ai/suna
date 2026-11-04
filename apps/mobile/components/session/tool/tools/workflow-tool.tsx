@@ -256,7 +256,8 @@ function PhaseView({
         ring={group.ring}
         meta={group.failed}
         expanded={expanded}
-        onPress={() => setExpanded((value) => !value)}
+        // A phase with no agent yet (it just started) is a plain row: nothing to open.
+        onPress={group.rows.length > 0 ? () => setExpanded((value) => !value) : undefined}
       />
       {expanded ? (
         <View style={{ marginLeft: PHASE_PAD + RING / 2 - 1 }}>

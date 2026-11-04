@@ -81,3 +81,29 @@ describe('runnerOutcome', () => {
     expect(runnerOutcome(null)).toBeNull();
   });
 });
+
+test('a running phase with no agent yet keeps its row, with no progress to show', () => {
+  const groups = workflowGroups(
+    { runId: 'r', title: 'Run', status: 'running', phases: [{ title: 'Plan', status: 'running' }], agents: [] } as never,
+    true,
+    0,
+  );
+  expect(groups).toEqual([
+    { kind: 'phase', title: 'Plan', progress: null, ring: { done: 0, failed: 0, total: 0, ended: null }, failed: null, rows: [] },
+  ]);
+});
+
+test('a done phase whose agent was stopped does not draw the done check', () => {
+  const [group] = workflowGroups(
+    {
+      runId: 'r',
+      title: 'Run',
+      status: 'done',
+      phases: [{ title: 'Plan', status: 'done' }],
+      agents: [{ id: 'a', label: 'Draft', phase: 'Plan', status: 'stopped' }],
+    } as never,
+    false,
+    0,
+  );
+  expect(group?.kind === 'phase' && group.ring.ended).toBeNull();
+});
