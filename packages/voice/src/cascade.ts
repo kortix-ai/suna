@@ -127,7 +127,9 @@ const comment = (t: string) =>
 const FINISHES = /^\W*(to|of|for|with|about|from|than)\b/i // not "that" ("That sounds beautiful." starts anew)
 const PRECLOSE = /\b(that'?s (all|it)|that covers it|all i needed|to je sve|das war'?s|eso es todo|c'?est tout)\b/i
 const GREETING = /^\W*(cao|ciao|hola|hallo|zdravo|hi|hey|hello)\b\W*/i // "Ćao, reci mi…" opens a call too
-const CLOSING = /^(\W*(ok(ay)?|great|perfect|cool|awesome|nice|sweet|alright|all right|got it|makes sense|ah|oh|that'?s (all|it)( i needed)?|that'?s all i needed|that covers it|thanks?( (a lot|so much|anyway|again|for (that|the help|checking)))?|thank you( (so much|very much|again))?|cheers|bye(-?bye)?|goodbye|see you|talk (to you )?(later|soon)|have a (good|nice|great) (one|day|night)|you too|that was (helpful|great|handy|super handy)|hvala( ti| vam)?( puno)?|vazi|super|dobro|cao|vidimo se|prijatno|danke( schon)?|tschuss|gracias|adios|merci|au revoir|ciao)\W*)+$/i
+// One \W* run between words, and no phrase that is two others back to back ("that's all i needed" was listed
+// twice, "bye-bye" is bye + bye): either let a long closing backtrack exponentially (CodeQL js/redos).
+const CLOSING = /^\W*(?:(?:ok(?:ay)?|great|perfect|cool|awesome|nice|sweet|alright|all right|got it|makes sense|ah|oh|that'?s (?:all|it)(?: i needed)?|that covers it|thanks?(?: (?:a lot|so much|anyway|again|for (?:that|the help|checking)))?|thank you(?: (?:so much|very much|again))?|cheers|bye|goodbye|see you|talk (?:to you )?(?:later|soon)|have a (?:good|nice|great) (?:one|day|night)|you too|that was (?:helpful|great|handy|super handy)|hvala(?: ti| vam)?(?: puno)?|vazi|super|dobro|cao|vidimo se|prijatno|danke(?: schon)?|tschuss|gracias|adios|merci|au revoir|ciao)\W*)+$/i
 // A continuer, not a turn: "mhm", "yeah", "exactly". With a question mark only the core continuers stay one
 // ("Yeah?"); "Exactly?" asks something (it was taken as agreement and the question it finished was lost).
 const CONTINUER = /^((m+[- ]?h+m+|mhm|uh[- ]?huh|yeah|yes|yep|okay|ok|right|aha|da)[.!?,]*\s*){1,2}$/i
@@ -365,12 +367,14 @@ const bare = (s: string) =>
 
 // Machine output the model sometimes writes into its reply (a tool result it imagined: `data: {"stdout": …}`,
 // measured in a simulated call): never read aloud.
-const MACHINE = /^\s*(data:\s*)?[{[]\s*["{[]|"(stdout|stderr|exit_?code|output)"\s*:/
+const MACHINE_JSON = /^\s*(?:data:\s*)?[{[]\s*["{[]/ // a line that opens a JSON object or array
+const MACHINE_FIELD = /"(?:stdout|stderr|exit_?code|output)"\s*:/ // a tool-result field anywhere in the line
+const machine = (line: string) => MACHINE_JSON.test(line) || MACHINE_FIELD.test(line)
 const clean = (s: string) =>
   s
     .replace(new RegExp(TAG.source, 'gi'), '') // its own actions on the call ([set ...], [later ...]): applied, never shown
     .split('\n')
-    .filter((l) => !MACHINE.test(l))
+    .filter((l) => !machine(l))
     .join('\n')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // markdown link → its text
     .replace(/\$([^$\n]{1,40})\$/g, '$1') // inline math ("$n$") → its text
@@ -704,7 +708,7 @@ export const cascade: Provider = (o, h) => {
     try {
       if (!recording) {
         const path = pathJoin(mediaDir(sid), `call-${new Date(callOpened).toISOString().replace(/[:.]/g, '-')}.wav`)
-        recording = { fd: openSync(path, 'w'), bytes: 0, path }
+        recording = { fd: openSync(path, 'wx', 0o600), bytes: 0, path } // exclusive: never through a planted file or link
         writeSync(recording.fd, wav(new Uint8Array(0), 16000))
       }
       writeSync(recording.fd, pcm)
