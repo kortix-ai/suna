@@ -33,6 +33,7 @@ import {
   useSessionAudit,
   useSessionAuditTimeline,
 } from './session-audit-shared';
+import { ModelSwitchEvent } from './model-switch-event';
 import { credentialVia } from './audit/audit-credential-label';
 import { useTranslations } from '../../i18n';
 import type { AuditEvent, SessionAuditAction } from '@kortix/sdk';
@@ -233,6 +234,7 @@ export function SessionAuditPanel({
                               {event.outcome ?? 'recorded'}
                             </Badge>
                           </div>
+                          {event.action === 'session.model.changed' ? <ModelSwitchEvent summary={event.input_summary} /> : null}
                           <p className="text-muted-foreground mt-0.5 truncate text-xs">
                             {credentialVia(event, (key) => tI18nComplete.raw(key) as string) ??
                               event.authoritative_source ??

@@ -1,5 +1,5 @@
 /**
- * `pending_prompt` → durable inbox row, at session create and warm claim.
+ * `pending_prompt` → durable inbox row, at session create.
  *
  * The first prompt of a new session used to travel client-side: the producer
  * stashed it in sessionStorage, navigated, and the workbench replayed it once

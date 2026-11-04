@@ -172,7 +172,7 @@ const MODEL_NOT_SERVABLE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
 //
 // This is the frontend mirror of the API's request-deadline 503
 // (`apps/api/src/middleware/request-deadline.ts`, de-noised from Sentry by
-// https://github.com/kortix-ai/suna/pull/4524). The API bounds every
+// https://github.com/kortix-ai/CompanyOS/pull/4524). The API bounds every
 // non-streaming request to a 25s server deadline that returns a clean 503 +
 // `Retry-After: 10`, and react-query retries background polls (the session-audit
 // route that produced Better Stack pattern `b1db01e5…` is polled every 5–15s

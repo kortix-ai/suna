@@ -184,7 +184,6 @@ mock.module('../session-turn-ledger', () => ({
 }));
 
 mock.module('../session-lifecycle', () => ({
-  retireWarmProjectSessions: async () => { throw new Error('retireWarmProjectSessions: not used by the turn-stream routes'); },
   continueSession: async () => { throw new Error('continueSession: not used by the turn-stream routes'); },
   startSession: async () => { throw new Error('startSession: not used by the turn-stream routes'); },
   buildContinueSessionCommandValues: async () => { throw new Error('buildContinueSessionCommandValues: not used by the turn-stream routes'); },
@@ -247,8 +246,15 @@ mock.module('../lib/trigger-run-outcome', () => ({
 const notified: Array<Record<string, unknown>> = [];
 // The real notifier resolves the context thunk only for a flag-on project
 // (notifications/session-push.ts); this stand-in always resolves it.
+// The settle decision itself is unit-tested in session-push.test.ts; here the route hands its inputs over.
+const settlementInputs: Array<Record<string, unknown>> = [];
+let settlement: 'done' | 'failed' | 'stopped' | null = null;
 mock.module('../../notifications/session-push', () => ({
   turnEndPushType: () => pushType,
+  chatTurnSettlement: (input: Record<string, unknown>) => {
+    settlementInputs.push(input);
+    return settlement;
+  },
   notifySessionEvent: async (
     event: Record<string, unknown>,
     options: { context?: () => Promise<Record<string, unknown>> } = {},
@@ -298,10 +304,14 @@ function post(body: unknown, ctx: Record<string, unknown> = {}) {
 const channelNotices: unknown[] = [];
 const promptSourceLookups: Array<string | null> = [];
 let promptSource: string | null = 'telegram';
+const chatSettles: Array<{ sessionId: string; outcome: string }> = [];
 mock.module('../../channels/core/session-notice', () => ({
   notifySessionChannel: async (notice: unknown) => {
     order.push('channelNotice');
     channelNotices.push(notice);
+  },
+  settleSessionChat: async (sessionId: string, outcome: string) => {
+    chatSettles.push({ sessionId, outcome });
   },
 }));
 
@@ -330,6 +340,9 @@ beforeEach(() => {
   relayEndResult = true;
   relayEndArgs = [];
   channelNotices.length = 0;
+  chatSettles.length = 0;
+  settlementInputs.length = 0;
+  settlement = null;
   promptSourceLookups.length = 0;
   promptSource = 'telegram';
   stepResult = { ok: true };
@@ -905,6 +918,21 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
       queue_promoted: false,
       promoted_prompt_id: null,
     });
+  });
+
+  // Discord marks a person's message ⏳ while the agent works: the end that left the session idle clears it.
+  test("a turn end hands the chat's settle its outcome, with whether a queued prompt keeps the session running", async () => {
+    settlement = 'done';
+    promotedId = null;
+    await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'idle', turn_message_id: 'msg_turn' }, sandboxCtx);
+    await Bun.sleep(0);
+    expect(settlementInputs.at(-1)).toMatchObject({ outcome: 'closed', status: 'idle', promoted: false });
+    expect(chatSettles).toEqual([{ sessionId: SESSION_ID, outcome: 'done' }]);
+
+    settlement = null;
+    await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'idle', turn_message_id: 'msg_turn' }, sandboxCtx);
+    await Bun.sleep(0);
+    expect(chatSettles).toHaveLength(1);
   });
 
   test('no session-chat notice when a Slack or Teams turn carried the end, the end was no error, or it closed nothing', async () => {

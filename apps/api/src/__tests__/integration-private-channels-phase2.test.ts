@@ -27,6 +27,7 @@ import {
   projectSpaces,
   projectTriggerRuntime,
   projects,
+  serviceAccounts,
   sessionSandboxes,
 } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
@@ -123,9 +124,16 @@ const CONV_SLUG = `conv-${P.slice(0, 6)}`;
 const P_THREAD = crypto.randomUUID();
 const GENERAL_THREAD = crypto.randomUUID();
 const WORD = `zebracorn${P.slice(0, 6)}`;
-const metadata = { experimental: { project_channels: true, drives: true, artifacts: true } };
+const metadata = { experimental: { project_channels: true, drives: true, artifacts: true, shared_drives: true } };
+/** Turn the project's `shared_drives` flag on or off, the other flags unchanged. */
+const setSharedDrives = (on: boolean) =>
+  db.update(projects).set({ metadata: { experimental: { ...metadata.experimental, shared_drives: on } } }).where(eq(projects.projectId, PROJECT));
 /** Alice's own private thread in P: a personal session, so its token passes the Files middleware. */
 const P_PRIVATE_THREAD = crypto.randomUUID();
+/** A shared Drive added to the `kortix` agent every thread here runs (shared_drives on): each of its sessions mounts it, read-write outside a private channel. */
+const AGENT_DRIVE = '/Sales';
+/** The `kortix` agent's service account: the principal of its folder grants. */
+const KORTIX_AGENT = crypto.randomUUID();
 const project = { projectId: PROJECT, accountId: ACCOUNT, metadata };
 const minted: string[] = [];
 const keys: Record<string, string> = {};
@@ -163,9 +171,9 @@ async function req(method: string, path: string, secret: string, body?: unknown)
   return { status: res.status, body: parsed };
 }
 
-const accessAt = async (userId: string, path: string, opts: { admin?: boolean; bound?: string } = {}) => {
+const accessAt = async (userId: string, path: string, opts: { admin?: boolean; bound?: string; usableAgents?: string[] } = {}) => {
   const drive = (await ensureProjectDrive(ACCOUNT, PROJECT))!;
-  const caller = await driveSubjectFor(drive, userId, person(userId, opts.admin).may, opts.bound ?? null);
+  const caller = await driveSubjectFor(drive, userId, person(userId, opts.admin).may, opts.bound ?? null, false, async () => opts.usableAgents ?? []);
   return folderAccess(path, caller.grants, caller.subject);
 };
 
@@ -224,6 +232,22 @@ beforeAll(async () => {
   ]);
   // The drive exists (the #general list made it); P's create path writes its member grants.
   driveId = (await ensureProjectDrive(ACCOUNT, PROJECT)).driveId;
+  await db.insert(serviceAccounts).values({
+    serviceAccountId: KORTIX_AGENT,
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    agentName: 'kortix',
+    name: 'kortix',
+    secretHash: `pc2-${KORTIX_AGENT}`,
+    publicPrefix: 'kortix_sa_pc2',
+  });
+  await setFolderGrant({
+    drive: (await ensureProjectDrive(ACCOUNT, PROJECT))!,
+    path: AGENT_DRIVE,
+    principal: { type: 'agent', id: KORTIX_AGENT },
+    level: 'write',
+    grantedBy: ALICE,
+  });
   await afterPrivateChannelChange(PROJECT, { enforce: false });
   await db.insert(projectSessions).values({
     accountId: ACCOUNT,
@@ -278,7 +302,7 @@ describe('the Drive path of a private channel', () => {
 
   test('GET files: a non-member and a manager get 404 on the path and no /Channels in the root; a member lists it', async () => {
     listing['/'] = [
-      { path: '/Company', type: 'dir', size: 0, mtime: 0 },
+      { path: '/Agents', type: 'dir', size: 0, mtime: 0 },
       { path: '/Channels', type: 'dir', size: 0, mtime: 0 },
     ];
     listing['/Channels'] = [{ path: FOLDER, type: 'dir', size: 0, mtime: 0 }];
@@ -316,10 +340,22 @@ describe('thread mounts', () => {
     expect(p.mounts.find((m) => m.path === FOLDER)).toMatchObject({ readOnly: false });
     // everything else is read-only in a private channel's thread.
     expect(p.mounts.filter((m) => m.path !== FOLDER).every((m) => m.readOnly)).toBe(true);
-    expect(p.mounts.find((m) => m.path === '/Company')).toMatchObject({ readOnly: true });
+    // The shared Drive added to the agent mounts too, read-only, so the thread cannot copy the channel there.
+    expect(p.mounts.find((m) => m.path === AGENT_DRIVE)).toMatchObject({ readOnly: true });
     const g = await plan(GENERAL_THREAD);
     expect(g.mounts.some((m) => m.path.startsWith('/Channels'))).toBe(false);
-    expect(g.mounts.map((m) => m.path)).toContain('/Company');
+    expect(g.mounts.find((m) => m.path === AGENT_DRIVE)).toMatchObject({ readOnly: false });
+
+    // shared_drives off: the agent's grant mounts in neither thread; P's thread still mounts its folder.
+    await setSharedDrives(false);
+    try {
+      const pOff = await plan(P_THREAD);
+      expect(pOff.mounts.find((m) => m.path === FOLDER)).toMatchObject({ readOnly: false });
+      expect(pOff.mounts.some((m) => m.path === AGENT_DRIVE)).toBe(false);
+      expect((await plan(GENERAL_THREAD)).mounts.some((m) => m.path === AGENT_DRIVE)).toBe(false);
+    } finally {
+      await setSharedDrives(true);
+    }
   });
 });
 
@@ -340,9 +376,9 @@ describe('memory of a private channel', () => {
   });
 
   test('a #general thread’s turn list never names P; P’s own thread lists its memory at its mount', async () => {
-    const company = { driveId, kind: 'project', mountPath: '/drives/company', readOnly: false, subdir: '/Company', role: 'drive' };
-    await setBox(generalBox, 'active', [company]);
-    await setBox(pBox, 'active', [company, { driveId, kind: 'project', mountPath: `/drives/${SLUG}`, readOnly: false, subdir: FOLDER, role: 'drive' }]);
+    const agentDrive = { driveId, kind: 'project', mountPath: '/drives/kortix', readOnly: false, subdir: AGENT_DRIVE, role: 'drive' };
+    await setBox(generalBox, 'active', [agentDrive]);
+    await setBox(pBox, 'active', [{ ...agentDrive, readOnly: true }, { driveId, kind: 'project', mountPath: `/drives/${SLUG}`, readOnly: false, subdir: FOLDER, role: 'drive' }]);
     const own = (await memoryTurnContext(PROJECT, GENERAL_THREAD, ALICE))!.system;
     expect(own).not.toContain(SLUG);
     expect((await memoryTurnContext(PROJECT, P_THREAD, ALICE))!.system).toContain(`### #${SLUG}: /drives/${SLUG}/Memory/\n- plan (plan.md)`);
@@ -350,16 +386,23 @@ describe('memory of a private channel', () => {
 });
 
 describe('a note from a private thread', () => {
-  test('into Company or another channel the label is "a private thread"; into P itself it is the first prompt', async () => {
+  test('into a person’s own memory or another channel the label is "a private thread"; into P itself it is the first prompt', async () => {
     expect(await threadLabelOf(PROJECT, P_THREAD, null)).toBe('a private thread');
     expect(await threadLabelOf(PROJECT, P_THREAD, PUBLIC_C)).toBe('a private thread');
     expect(await threadLabelOf(PROJECT, P_THREAD, P)).toContain(WORD);
   });
 
-  test('POST notes to Company with a P thread as source writes no word of it', async () => {
+  test('the Company memory layer is gone: POST notes to it → 404, nothing written', async () => {
+    const before = volume.files.size;
     const res = await req('POST', '/memory/layers/company/notes', keys.alice!, { text: 'Remember the call', source_session_id: P_THREAD });
+    expect(res.status).toBe(404);
+    expect(volume.files.size).toBe(before);
+  });
+
+  test('POST notes to the member’s own My Kortix memory with a P thread as source writes no word of it', async () => {
+    const res = await req('POST', '/memory/layers/mykortix/notes', keys.alice!, { text: 'Remember the call', source_session_id: P_THREAD });
     expect(res.status).toBe(201);
-    const notes = [...volume.files.entries()].find(([path]) => path.startsWith('/Company/Memory/') && path.endsWith('Notes.md'));
+    const notes = [...volume.files.entries()].find(([path]) => path.startsWith('/Users/') && path.endsWith('Notes.md'));
     expect(notes?.[1].text).toContain('(from a private thread)');
     expect(notes?.[1].text).not.toContain(WORD);
   });
@@ -538,9 +581,9 @@ describe('conversion moves the folder', () => {
 describe('a removed member', () => {
   test('leaving ends the grant and every stale mount of the folder; the channel’s own thread keeps its mount', async () => {
     const stale = { driveId, kind: 'project', mountPath: `/drives/${SLUG}`, readOnly: false, subdir: FOLDER, role: 'drive' };
-    const company = { driveId, kind: 'project', mountPath: '/drives/company', readOnly: false, subdir: '/Company', role: 'drive' };
-    await setBox(generalBox, 'stopped', [company, stale]);
-    await setBox(pBox, 'stopped', [company, stale]);
+    const agentDrive = { driveId, kind: 'project', mountPath: '/drives/kortix', readOnly: false, subdir: AGENT_DRIVE, role: 'drive' };
+    await setBox(generalBox, 'stopped', [agentDrive, stale]);
+    await setBox(pBox, 'stopped', [agentDrive, stale]);
     detached.length = 0;
     // The creator removes carol.
     const res = await req('DELETE', `/spaces/${P}/members/${CAROL}`, keys.alice!);
@@ -550,9 +593,9 @@ describe('a removed member', () => {
     expect(await accessAt(CAROL, `${FOLDER}/Memory/plan.md`)).toBe('none');
     const mountsOf = async (sandboxId: string) =>
       recordedDriveMounts((await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sandboxId)))[0]!.metadata).map((m) => m.subdir);
-    expect(await mountsOf(generalBox.sandboxId)).toEqual(['/Company']);
+    expect(await mountsOf(generalBox.sandboxId)).toEqual([AGENT_DRIVE]);
     expect(detached).toContain(`${generalBox.externalId} /drives/${SLUG}`);
-    // P's own box keeps its folder; its read-write /Company mount ends (read-only there, remounted so on the next boot).
+    // P's own box keeps its folder; its read-write mount of the shared Drive ends (read-only there, remounted so on the next boot).
     expect(await mountsOf(pBox.sandboxId)).toEqual([FOLDER]);
   });
 });
@@ -593,15 +636,25 @@ describe('a private channel thread writes only its channel folder, through every
   test('the Drive rule caps a P thread token at read outside the channel folder', async () => {
     const own = (await listFolderGrants((await ensureProjectDrive(ACCOUNT, PROJECT))!)).find((g) => g.principalId === ALICE && g.path.startsWith('/Users/'))!.path;
     for (const bound of [P_THREAD, P_PRIVATE_THREAD]) {
-      expect(await accessAt(ALICE, '/Company/x.md', { bound })).toBe('read');
+      // The shared Drive added to its agent and the person's own folder: read only, whatever the person may use.
+      expect(await accessAt(ALICE, `${AGENT_DRIVE}/x.md`, { bound, usableAgents: ['kortix'] })).toBe('read');
       expect(await accessAt(ALICE, `${own}/x.md`, { bound })).toBe('read');
       expect(await accessAt(ALICE, `${FOLDER}/x.md`, { bound })).toBe('write');
     }
-    // The same person outside a P thread still writes Company.
-    expect(await accessAt(ALICE, '/Company/x.md')).toBe('write');
+    // The same person outside a P thread still writes the shared Drive (she may use the agent) and her own folder.
+    expect(await accessAt(ALICE, `${AGENT_DRIVE}/x.md`, { usableAgents: ['kortix'] })).toBe('write');
+    expect(await accessAt(ALICE, `${own}/x.md`)).toBe('manage');
+    // shared_drives off: using the agent reaches none of its grants.
+    await setSharedDrives(false);
+    try {
+      expect(await accessAt(ALICE, `${AGENT_DRIVE}/x.md`, { usableAgents: ['kortix'] })).toBe('none');
+      expect(await accessAt(ALICE, `${own}/x.md`)).toBe('manage');
+    } finally {
+      await setSharedDrives(true);
+    }
   });
 
-  test('R1a attack: `kortix drive put /Company/...` from a private-visibility P thread → 403, nothing written', async () => {
+  test('R1a attack: `kortix drive put` into a shared Drive of the agent or into the own folder from a private-visibility P thread → 403, nothing written', async () => {
     const own = (await listFolderGrants((await ensureProjectDrive(ACCOUNT, PROJECT))!)).find((g) => g.principalId === ALICE && g.path.startsWith('/Users/'))!.path;
     written.length = 0;
     const put = (path: string) =>
@@ -610,7 +663,7 @@ describe('a private channel thread writes only its channel folder, through every
         headers: { Authorization: `Bearer ${keys.pPrivate}` },
         body: 'the deal terms',
       });
-    expect((await put('/Company/report.md')).status).toBe(403);
+    expect((await put(`${AGENT_DRIVE}/report.md`)).status).toBe(403);
     expect((await put(`${own}/report.md`)).status).toBe(403);
     expect(written).toEqual([]);
     expect((await put(`${FOLDER}/report.md`)).status).toBe(200);
@@ -631,10 +684,11 @@ describe('a private channel thread writes only its channel folder, through every
     expect(written.every((path) => path.startsWith(`${FOLDER}/`))).toBe(true);
   });
 
-  test('R1b attack: a P thread token overwrites or restores an artifact in /Company → 403, nothing written', async () => {
+  test('R1b attack: a P thread token overwrites an artifact in the member’s own folder → 403, nothing written', async () => {
+    const own = (await listFolderGrants((await ensureProjectDrive(ACCOUNT, PROJECT))!)).find((g) => g.principalId === ALICE && g.path.startsWith('/Users/'))!.path;
     const [row] = await db
       .insert(artifactsTable)
-      .values({ projectId: PROJECT, accountId: ACCOUNT, driveId, root: '/Company/deck', entry: 'index.md', folder: true, title: 'Deck', type: 'doc', visibility: 'project', createdByUserId: ALICE })
+      .values({ projectId: PROJECT, accountId: ACCOUNT, driveId, root: `${own}/deck`, entry: 'index.md', folder: true, title: 'Deck', type: 'doc', visibility: 'project', createdByUserId: ALICE })
       .returning();
     written.length = 0;
     const save = await req('PUT', `/artifacts/${row!.artifactId}`, keys.pPrivate!, { files: { 'index.md': { content: '# leaked' } } });

@@ -38,7 +38,7 @@ Each OS job uploads its evidence as `capture-evidence-<os>` (14 days).
 
 ## Triggers
 
-- Dev: `gh workflow run capture.yml --repo kortix-ai/suna --ref dev`. Dispatch
+- Dev: `gh workflow run capture.yml --repo kortix-ai/CompanyOS --ref dev`. Dispatch
   only: macOS bills at 10x and Windows at 2x. Any other ref builds and
   verifies without publishing. The `dev` ref also publishes `capture-dev-latest`.
 - Release: `deploy-prod.yml` runs `build-capture` with `https://api.kortix.com`.
@@ -70,8 +70,8 @@ Dev builds are not served there; use the `capture-dev-latest` prerelease.
 
 URLs the app polls:
 
-- stable: `https://github.com/kortix-ai/suna/releases/latest/download/capture-update.json`
-- dev: `https://github.com/kortix-ai/suna/releases/download/capture-dev-latest/capture-update.json`
+- stable: `https://github.com/kortix-ai/CompanyOS/releases/latest/download/capture-update.json`
+- dev: `https://github.com/kortix-ai/CompanyOS/releases/download/capture-dev-latest/capture-update.json`
 
 The signature is Ed25519 over the exact bytes of `capture-update.json`, base64,
 in `capture-update.json.sig`. `collect` signs when `CAPTURE_UPDATE_SIGNING_KEY`

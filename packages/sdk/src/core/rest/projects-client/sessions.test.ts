@@ -22,14 +22,12 @@ import type {
 } from './sessions';
 import {
   type UpdateProjectSessionInput,
-  claimWarmProjectSession,
   createProjectSession,
   createSessionPrompt,
   createSessionPublicShare,
   deleteProjectSession,
   deleteSessionPrompt,
   editSessionPrompt,
-  ensureWarmProjectSession,
   interruptSessionPrompt,
   findActiveTranscriptShare,
   getTurnShare,
@@ -543,151 +541,6 @@ test('createProjectSession defaults the body to {} when no input is given', asyn
   nextResponse = { status: 200, body: { session_id: 'NEW-3' } };
   await createProjectSession('P1');
   expect(last().body).toEqual({});
-});
-
-test('ensureWarmProjectSession POSTs the server-owned warm-session request', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      session: { session_id: 'WARM-1' },
-      reused: true,
-      workspace_refresh: { status: 'unchanged' },
-    },
-  };
-  const result = await ensureWarmProjectSession('P1');
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/warm');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({});
-  expect(result.session.session_id).toBe('WARM-1');
-  expect(result.reused).toBe(true);
-});
-
-test('ensureWarmProjectSession does NOT mark a REUSED session fresh — a reused session is by definition not fresh', async () => {
-  clearSessionFresh('WARM-REUSED-1');
-  nextResponse = {
-    status: 200,
-    body: {
-      session: { session_id: 'WARM-REUSED-1' },
-      reused: true,
-      workspace_refresh: { status: 'unchanged' },
-    },
-  };
-  await ensureWarmProjectSession('P1');
-  expect(isSessionFresh('WARM-REUSED-1')).toBe(false);
-});
-
-test('ensureWarmProjectSession marks a freshly-created session fresh (reused: false)', async () => {
-  clearSessionFresh('WARM-NEW-1');
-  nextResponse = {
-    status: 200,
-    body: {
-      session: { session_id: 'WARM-NEW-1' },
-      reused: false,
-      workspace_refresh: { status: 'unchanged' },
-    },
-  };
-  await ensureWarmProjectSession('P1');
-  expect(isSessionFresh('WARM-NEW-1')).toBe(true);
-});
-
-test('ensureWarmProjectSession forwards exclude_session_id in the request body when given', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      session: { session_id: 'WARM-2' },
-      reused: false,
-      workspace_refresh: { status: 'skipped' },
-    },
-  };
-  await ensureWarmProjectSession('P1', { excludeSessionId: 'JUST-TAKEN-1' });
-  expect(last().body).toEqual({ exclude_session_id: 'JUST-TAKEN-1' });
-});
-
-test('ensureWarmProjectSession omits exclude_session_id when not given', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      session: { session_id: 'WARM-3' },
-      reused: false,
-      workspace_refresh: { status: 'skipped' },
-    },
-  };
-  await ensureWarmProjectSession('P1', {});
-  expect(last().body).toEqual({});
-});
-
-test('ensureWarmProjectSession keeps a declined warm session out of the global error sink', async () => {
-  const onError = mock(() => {});
-  configureKortix({
-    backendUrl: 'http://test.local',
-    getToken: async () => 'tok',
-    onError,
-  });
-  nextResponse = {
-    status: 409,
-    body: {
-      error: 'This project cannot prepare a warm session right now.',
-      code: 'WARM_SESSION_UNAVAILABLE',
-    },
-  };
-
-  try {
-    await expect(ensureWarmProjectSession('P1')).rejects.toMatchObject({
-      status: 409,
-      code: 'WARM_SESSION_UNAVAILABLE',
-    });
-    expect(onError).not.toHaveBeenCalled();
-  } finally {
-    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
-  }
-});
-
-test('claimWarmProjectSession POSTs the selected warm session and create options', async () => {
-  nextResponse = { status: 200, body: { session_id: 'WARM-1' } };
-  const result = await claimWarmProjectSession('P1', {
-    session_id: 'WARM-1',
-    agent_name: 'reviewer',
-    sandbox_slug: 'large',
-  });
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/warm/claim');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({
-    session_id: 'WARM-1',
-    agent_name: 'reviewer',
-    sandbox_slug: 'large',
-  });
-  expect(result.session_id).toBe('WARM-1');
-});
-
-test('claimWarmProjectSession keeps recoverable claim conflicts out of the global error sink', async () => {
-  const onError = mock(() => {});
-  configureKortix({
-    backendUrl: 'http://test.local',
-    getToken: async () => 'tok',
-    onError,
-  });
-  nextResponse = {
-    status: 409,
-    body: {
-      message: 'The warm session does not match the selected agent or sandbox',
-      code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
-    },
-  };
-
-  try {
-    await expect(
-      claimWarmProjectSession('P1', {
-        session_id: 'WARM-1',
-        agent_name: 'reviewer',
-      }),
-    ).rejects.toMatchObject({
-      status: 409,
-      code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
-    });
-    expect(onError).not.toHaveBeenCalled();
-  } finally {
-    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
-  }
 });
 
 test('getProjectSession hits GET /projects/:id/sessions/:sid and forwards showErrors', async () => {

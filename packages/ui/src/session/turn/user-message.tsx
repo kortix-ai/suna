@@ -2135,9 +2135,12 @@ export function UserMessage({
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
       {(bodyText || quotedPieces || effectiveCommandInfo) && (
-        <MessageSenderAbove sender={showAuthor && author?.kind === 'member' ? author : null}>
+        <MessageSenderAbove
+          sender={showAuthor && author?.kind === 'member' ? author : null}
+          reserve={showAuthor && !author}
+        >
           <UserMessageBubble
-            tail={showAuthor && author?.kind === 'member'}
+            tail={showAuthor && author?.kind !== 'session'}
             canExpand={canExpand}
             expanded={expanded}
             onToggle={() => setExpanded(!expanded)}

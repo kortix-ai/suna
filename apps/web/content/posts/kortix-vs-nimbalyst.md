@@ -41,7 +41,7 @@ Those are the boundaries of the job Nimbalyst chose, and for a coding team they 
 
 ## The grant line a reviewer reads
 
-Kortix treats the company as the repository. Agents, skills, memory, connector configuration and triggers are files in one git repo. A session is a branch of it. The starter agent file calls a session "an ephemeral branch of this repo" and says "only what you commit + push survives" ([agent file](https://github.com/kortix-ai/suna/blob/dev/packages/starter/templates/base/agents/kortix.md)).
+Kortix treats the company as the repository. Agents, skills, memory, connector configuration and triggers are files in one git repo. A session is a branch of it. The starter agent file calls a session "an ephemeral branch of this repo" and says "only what you commit + push survives" ([agent file](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/agents/kortix.md)).
 
 A project's `kortix.yaml` carries the governance block for each agent:
 
@@ -55,7 +55,7 @@ agents:
     skills: all
 ```
 
-Behavior lives in `agents/kortix.md`: the prompt, the model, the permission mode. The manifest decides what the agent may reach. It is deny-by-default, so an omitted connector, secret, permission or skill grant resolves to none. A scoped specialist starts locked down ([manifest reference](https://github.com/kortix-ai/suna/blob/dev/packages/starter/templates/base/kortix.yaml)). When an agent gains Stripe or a customer database, the change is one line in that block. It arrives on the default branch through a change request a person reads as a diff.
+Behavior lives in `agents/kortix.md`: the prompt, the model, the permission mode. The manifest decides what the agent may reach. It is deny-by-default, so an omitted connector, secret, permission or skill grant resolves to none. A scoped specialist starts locked down ([manifest reference](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/kortix.yaml)). When an agent gains Stripe or a customer database, the change is one line in that block. It arrives on the default branch through a change request a person reads as a diff.
 
 One isolated sandbox per session. Each session has its own isolated machine and branch. Session work reaches `main` through a change request. Merge is default-deny for agents, so an agent cannot land its own work unless an admin grants it the merge capability.
 

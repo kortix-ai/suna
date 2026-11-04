@@ -41,7 +41,7 @@ For an assistant a team shares, that design holds together. It leaves one gap a 
 
 ## One repo that is the system
 
-Kortix runs a company's agents out of that repository, on the same branches your engineers already use. The manifest, the agent prompts, the skills, the memory files, the connector grants and the triggers all live there. [Kortix on GitHub](https://github.com/kortix-ai/suna) is where the platform itself lives. One isolated sandbox per session. Each session has its own isolated machine and branch.
+Kortix runs a company's agents out of that repository, on the same branches your engineers already use. The manifest, the agent prompts, the skills, the memory files, the connector grants and the triggers all live there. [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS) is where the platform itself lives. One isolated sandbox per session. Each session has its own isolated machine and branch.
 
 Picture two engineers on a Friday. One widens a connector grant so an agent can file invoices. The other rewrites that agent's instructions for the same job. Both open change requests, and a reviewer reads them together, sees that the permission change is unrelated to the rewrite, and asks for it to be argued on its own. What matters is what sits in the diff: the company's operating rules as well as the code an agent touched.
 

@@ -62,6 +62,26 @@ describe('simple gateway pipeline', () => {
     expect(calls).toEqual(['account']);
   });
 
+  test('the request log names the session message the call comes from', async () => {
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions({
+      hooks: hooks([], traces),
+      logger: { info() {}, warn() {}, error() {} },
+      fetchImpl: async () => new Response(JSON.stringify({ choices: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    }, {
+      authorization: 'Bearer token',
+      rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }),
+      origin: { messageId: 'msg_reply', turnId: 'msg_prompt' },
+    });
+    expect(response.status).toBe(200);
+    await Bun.sleep(0);
+    expect(traces).toHaveLength(1);
+    expect(traces[0]!.metadata).toMatchObject({ messageId: 'msg_reply', turnId: 'msg_prompt' });
+  });
+
   test('HTTP pool exhaustion returns the earliest bounded cooldown', async () => {
     const keys: string[] = [];
     const upstream = Bun.serve({ port: 0, fetch: (request) => {

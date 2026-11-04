@@ -1497,7 +1497,7 @@
   },
   "src/platform/services/session-sandbox.ts": {
     "kortix-api/projects-surface": {
-      "count": 13
+      "count": 12
     },
     "no-console": {
       "count": 20
@@ -2357,14 +2357,6 @@
       "count": 1
     }
   },
-  "src/projects/routes/warm-sessions.ts": {
-    "no-console": {
-      "count": 2
-    },
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
   "src/projects/runtime-identity.ts": {
     "no-console": {
       "count": 8
@@ -2372,7 +2364,7 @@
   },
   "src/projects/sandbox-deadline.ts": {
     "no-console": {
-      "count": 2
+      "count": 1
     }
   },
   "src/projects/sandbox-turn-lifecycle.ts": {

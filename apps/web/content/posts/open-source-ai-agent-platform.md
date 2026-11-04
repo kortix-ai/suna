@@ -36,7 +36,7 @@ Together, the change request and the gate cover the two ways an agent can change
 
 ## What to switch on after install
 
-A new project starts with a manifest from the starter at `packages/starter/templates/base/kortix.yaml` ([Kortix on GitHub](https://github.com/kortix-ai/suna)):
+A new project starts with a manifest from the starter at `packages/starter/templates/base/kortix.yaml` ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)):
 
 ```yaml
 kortix_version: 2

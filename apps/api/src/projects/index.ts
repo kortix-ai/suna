@@ -58,7 +58,6 @@ import { registerProjectAccessRoutes } from './routes/project-access';
 import { registerAccessRequestsRoutes } from './routes/access-requests';
 import { registerProjectInvitesRoutes } from './routes/project-invites';
 import { registerGroupGrantsRoutes } from './routes/group-grants';
-import { registerWarmSessionsRoutes } from './routes/warm-sessions';
 import { registerProviderSecretPoolsRoutes } from './routes/provider-secret-pools';
 import { registerProjectSessionsRoutes, registerSessionLookupRoutes } from './routes/project-sessions';
 import { registerSessionTranscriptsRoutes } from './routes/session-transcripts';
@@ -163,7 +162,6 @@ export function registerAllProjectRoutes(): void {
   registerAccessRequestsRoutes();
   registerProjectInvitesRoutes();
   registerGroupGrantsRoutes();
-  registerWarmSessionsRoutes();
   registerProviderSecretPoolsRoutes();
   registerProjectSessionsRoutes();
   registerSessionTranscriptsRoutes();

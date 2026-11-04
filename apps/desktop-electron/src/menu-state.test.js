@@ -24,7 +24,7 @@ describe('copyableUrl', () => {
   });
 
   test('a URL outside the app is not copyable', () => {
-    expect(copyableUrl('https://github.com/kortix-ai/suna')).toBe(null);
+    expect(copyableUrl('https://github.com/kortix-ai/CompanyOS')).toBe(null);
     expect(copyableUrl('https://kortix.com/docs')).toBe(null);
   });
 

@@ -8,9 +8,14 @@ project:
   name: "{{projectName}}"
   description: A Kortix project.
 
-# The agent a session or trigger runs when it names none. My Kortix, the agent
-# you talk to, is built in: it routes each task to the right agent below.
-default_agent: worker
+# Built-in agents. My Kortix, the agent you talk to, routes each task to the
+# right agent below. Delete this key or set it to false to leave it out.
+builtin_agents:
+  my_kortix: true
+
+# The agent a session or trigger runs when it names none. My Kortix starts
+# `worker` when it names no agent.
+default_agent: mykortix
 
 # Project skills: folders under skills/, registered by name. Each agent then
 # enables them with its own `skills:` grant.

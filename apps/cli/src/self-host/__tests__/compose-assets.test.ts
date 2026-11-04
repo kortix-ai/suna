@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
@@ -86,6 +87,42 @@ describe('Kortix Capture store', () => {
     // The surrounding site blocks survive byte-adjacent.
     expect(caddyfile).toContain('@llm path /v1/llm*');
     expect(caddyfile).toContain('header Strict-Transport-Security "max-age=2592000"');
+  });
+});
+
+describe('project snapshots in the bundled store', () => {
+  type Rendered = { services: Record<string, { environment?: Record<string, string> }> };
+  const apiEnv = (options = {}) => (parse(renderFullDockerCompose('kortix-test', options)) as Rendered).services['kortix-api']!.environment!;
+
+  test('the API keeps snapshots in their own bucket of the bundled MinIO, creates it, and prefers them over Git', () => {
+    expect(apiEnv()).toMatchObject({
+      // An operator rolls back with KORTIX_PROJECT_SNAPSHOT_MODE=git in .env.
+      KORTIX_PROJECT_SNAPSHOT_MODE: '${KORTIX_PROJECT_SNAPSHOT_MODE:-prefer-s3}',
+      KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: 'kortix-project-snapshots',
+      KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: 'http://capture-store:9000',
+      // A sandbox downloads its presigned URL on the origin it calls the API on.
+      KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: '${KORTIX_URL}',
+      KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: 'true',
+      KORTIX_PROJECT_SNAPSHOT_S3_CREATE_BUCKET: 'true',
+      KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: '${CAPTURE_STORE_ROOT_USER}',
+      KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: '${CAPTURE_STORE_ROOT_PASSWORD}',
+    });
+    expect(apiEnv().KORTIX_PROJECT_SNAPSHOT_S3_BUCKET).not.toBe(apiEnv().KORTIX_CAPTURE_S3_BUCKET);
+  });
+
+  test('without a domain the API forwards the snapshot prefix; with a domain Caddy does, and the API does not', () => {
+    expect(apiEnv().KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET).toBe('http://capture-store:9000');
+    expect(apiEnv({ tunnelConfigured: true }).KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET).toBe('http://capture-store:9000');
+    expect(apiEnv({ domainConfigured: true })).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET');
+    expect(renderCaddyfile()).toContain('@snapshots path /kortix-project-snapshots /kortix-project-snapshots/*');
+  });
+
+  test('an external capture store leaves no bundled MinIO, so .env alone decides the snapshot store', () => {
+    const env = apiEnv({ captureStoreExternal: true });
+    expect(Object.keys(env).filter((key) => key.startsWith('KORTIX_PROJECT_SNAPSHOT_'))).toEqual([]);
+    const caddyfile = renderCaddyfile({ captureStoreExternal: true });
+    expect(caddyfile).not.toContain('@snapshots');
+    expect(caddyfile).not.toContain('kortix-project-snapshots');
   });
 });
 
@@ -804,6 +841,29 @@ describe('full self-host Docker distribution', () => {
     expect(fn).toContain('wait_healthy');
     expect(fn).toContain('(go)');
     expect(fn).toContain('(no-go)');
+  });
+
+  test('updater.sh: a stateful recreate that comes back healthy reports success, and one that does not reports failure', () => {
+    // Runs the real functions in sh with Docker stubbed. POSIX sh has no
+    // locals: wait_healthy's own all_ok once leaked into this function's result
+    // and turned every healthy recreate into a "degraded" run.
+    const script = kortixRuntimeAssets['updater.sh'];
+    const pick = (name: string, next: string) => script.slice(script.indexOf(`${name}()`), script.indexOf(`${next}()`));
+    const functions = `${pick('wait_healthy', 'remove_containers')}\n${pick('reconcile_stateful_services', 'check_drift').replace(/\n# [^\n]*$/gm, '')}`;
+    const run = (health: string) =>
+      spawnSync('sh', ['-c', `
+        ROLLOUT_TIMEOUT=5; HEALTH_POLL_S=0
+        COMPOSE=compose_stub
+        compose_stub() { [ "$1" = config ] && printf 'caddy\\nsupabase-db\\n'; return 0; }
+        log() { :; }
+        service_up_to_date() { [ "$1" != caddy ]; }
+        running_container_ids() { echo "id-$1"; }
+        container_health() { echo ${health}; }
+        ${functions}
+        reconcile_stateful_services
+      `]).status;
+    expect(run('healthy')).toBe(0);
+    expect(run('unhealthy')).toBe(1);
   });
 
   test('updater.sh: a post-swap crash-loop is watched for and stamped, with a one-line rollback hint', () => {

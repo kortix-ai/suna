@@ -365,6 +365,7 @@ pub fn windows(fg: &Foreground) -> Vec<WinInfo> {
                 title: window_title(k, w),
                 rect,
                 focused: w as u64 == fg.id,
+                overlay: false,
             });
         }
         Ok(out)

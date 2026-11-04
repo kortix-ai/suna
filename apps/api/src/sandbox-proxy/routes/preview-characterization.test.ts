@@ -130,12 +130,15 @@ mock.module('../../projects/surface', () => ({
 // A wake claimed by `/start` or another request leaves the row `stopped` until
 // the provider confirms the box; tests flip this to model that window.
 let wakePending = false;
+const resumedProviderIds: string[] = [];
+const headerSandboxIds: string[] = [];
 mock.module('../../projects/session-open', () => ({
   // Spread the real module: a hand-listed stub deletes every other export —
   // the lifecycle graph imports `openSession` from it.
   ...realSessionOpen,
   resumeStoppedSandboxByExternalId: async (externalId: string) => {
     counts.resumeStopped += 1;
+    resumedProviderIds.push(externalId);
     return Boolean(externalId);
   },
   stoppedSandboxWakePending: async () => wakePending,
@@ -161,7 +164,10 @@ mock.module('../backend', () => ({
     effectivePort: request.port,
   }),
   resolveSandboxIngress: async () => ({ ...ingress }),
-  buildSandboxUpstreamHeaders: async () => ({ ...upstreamAuthHeaders }),
+  buildSandboxUpstreamHeaders: async (input: { sandboxId: string }) => {
+    headerSandboxIds.push(input.sandboxId);
+    return { ...upstreamAuthHeaders };
+  },
   invalidatePreviewLink: () => {
     counts.invalidatePreviewLink += 1;
   },
@@ -930,6 +936,19 @@ const wsArgs = (overrides?: Partial<Parameters<typeof resolvePreviewWsUpstream>[
 });
 
 describe('resolvePreviewWsUpstream', () => {
+  test('an internal UUID alias uses the canonical provider ID for wake and signed headers', async () => {
+    resumedProviderIds.length = 0;
+    headerSandboxIds.length = 0;
+    const sandboxId = '550e8400-e29b-41d4-a716-446655440000';
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    const parked = await resolvePreviewWsUpstream(wsArgs({ sandboxId, wakeRequested: true }));
+    expect(parked).toEqual({ ok: false, status: 503, message: 'sandbox not ready (status: stopped)' });
+    expect(resumedProviderIds).toEqual([ACTIVE_RECORD.externalId]);
+    currentRecord = { ...ACTIVE_RECORD };
+    expect((await resolvePreviewWsUpstream(wsArgs({ sandboxId }))).ok).toBe(true);
+    expect(headerSandboxIds).toEqual([ACTIVE_RECORD.externalId]);
+  });
+
   test('an unknown sandbox is a 404', async () => {
     currentRecord = null as unknown as Record<string, unknown>;
     expect(await resolvePreviewWsUpstream(wsArgs())).toEqual({

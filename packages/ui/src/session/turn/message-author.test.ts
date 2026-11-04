@@ -5,10 +5,11 @@ import {
   authorForTurn,
   missingAuthorKey,
   awaitsAgent,
+  participantAuthor,
   resolveTranscriptAuthors,
   rewindableMessageIds,
-  showAuthorName,
   stoppedByName,
+  viewerAuthor,
 } from './message-author';
 
 const avery: SessionMessageAuthor = { kind: 'member', user_id: 'u1', name: 'Avery', email: 'avery@example.com' };
@@ -16,35 +17,6 @@ const blair: SessionMessageAuthor = { kind: 'member', user_id: 'u2', name: 'Blai
 const parent: SessionMessageAuthor = { kind: 'session', session_id: 's1', name: 'Deploy pipeline' };
 
 describe('resolveTranscriptAuthors', () => {
-  test('one author across the transcript is not a group chat', () => {
-    const r = resolveTranscriptAuthors(['a', 'b'], { authors: { a: avery, b: avery }, initial_author: null });
-    expect(r.multiAuthor).toBe(false);
-    expect(showAuthorName(r.byMessage.get('a'), r.multiAuthor, 'u1')).toBe(false);
-  });
-
-  test('two members make a group chat and every author is named', () => {
-    const r = resolveTranscriptAuthors(['a', 'b'], { authors: { a: avery, b: blair }, initial_author: null });
-    expect(r.multiAuthor).toBe(true);
-    expect(showAuthorName(r.byMessage.get('a'), r.multiAuthor, 'u1')).toBe(true);
-    expect(showAuthorName(r.byMessage.get('b'), r.multiAuthor, 'u1')).toBe(true);
-  });
-
-  test('a member and a session are two authors', () => {
-    const r = resolveTranscriptAuthors(['a', 'b'], { authors: { a: parent, b: avery }, initial_author: null });
-    expect(r.multiAuthor).toBe(true);
-  });
-
-  test('a session someone else wrote in names its author, but not the viewer themselves', () => {
-    expect(showAuthorName(avery, false, 'u2')).toBe(true);
-    expect(showAuthorName(avery, false, 'u1')).toBe(false);
-    expect(showAuthorName(undefined, true, 'u1')).toBe(false);
-  });
-
-  test('with no viewer id a one-person session names nobody; a group chat still names everyone', () => {
-    expect(showAuthorName(avery, false, undefined)).toBe(false);
-    expect(showAuthorName(avery, true, undefined)).toBe(true);
-  });
-
   test('initial_author goes to the first user message that has no author', () => {
     const r = resolveTranscriptAuthors(['a', 'b', 'c'], { authors: { b: avery }, initial_author: parent });
     expect(r.byMessage.get('a')).toEqual(parent);
@@ -53,7 +25,44 @@ describe('resolveTranscriptAuthors', () => {
   });
 
   test('no data means no authors', () => {
-    expect(resolveTranscriptAuthors(['a'], undefined)).toEqual({ byMessage: new Map(), multiAuthor: false });
+    expect(resolveTranscriptAuthors(['a'], undefined)).toEqual({ byMessage: new Map() });
+  });
+});
+
+describe('viewerAuthor', () => {
+  test('builds the member author from the viewer profile', () => {
+    expect(
+      viewerAuthor({ id: 'u1', email: 'avery@example.com', metadata: { full_name: 'Avery', avatar_url: 'https://a.test/p.png' } }),
+    ).toEqual({ kind: 'member', user_id: 'u1', name: 'Avery', email: 'avery@example.com', avatar_url: 'https://a.test/p.png' });
+  });
+
+  test('non-string profile fields read as absent; no viewer is no author', () => {
+    expect(viewerAuthor({ id: 'u1', metadata: { name: 42, avatar_url: {} } })).toEqual({
+      kind: 'member',
+      user_id: 'u1',
+      name: '',
+      email: null,
+      avatar_url: null,
+    });
+    expect(viewerAuthor(undefined)).toBeUndefined();
+  });
+});
+
+describe('participantAuthor', () => {
+  const people = {
+    participants: [{ user_id: 'u2', name: 'Blair', email: 'blair@example.com', avatar_url: null, is_viewer: false }],
+    total: 2,
+    multi_user: true,
+  };
+
+  test("names a queued prompt's sender from the session's people", () => {
+    expect(participantAuthor(people, 'u2')).toEqual({ ...blair, avatar_url: null });
+  });
+
+  test('an unlisted person, no id, or no list is no author', () => {
+    expect(participantAuthor(people, 'u9')).toBeUndefined();
+    expect(participantAuthor(people, null)).toBeUndefined();
+    expect(participantAuthor(undefined, 'u2')).toBeUndefined();
   });
 });
 

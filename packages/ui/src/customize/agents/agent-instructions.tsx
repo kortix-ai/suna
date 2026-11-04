@@ -8,6 +8,12 @@
  * document editor, and a file opened and saved unchanged stays byte for byte
  * the same (`doc-round-trip.test.ts`).
  *
+ * An agent file may open with a YAML frontmatter block (`---` … `---`: an
+ * OpenCode-style `description`, `mode`, `permission`). The editor never sees
+ * it: Markdown would read its `#` comments as headings. The block shows as a
+ * read-only metadata card above the document, and every edit writes it back
+ * in front of the body byte for byte (`splitFrontmatter`).
+ *
  * Edits go to the page's draft on every change; the save bar, ⌘S and the
  * leave guard save them. A long document opens folded under a fade that runs
  * to the block's bottom edge; Show more or a click into it unfolds it, for
@@ -28,6 +34,19 @@ import { Button } from '../../primitives/button';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import Hint from '../../primitives/hint';
 import { Skeleton } from '../../primitives/skeleton';
+import { MarkdownFrontmatterCard, parseFrontmatter } from '../../markdown/markdown-frontmatter';
+
+/** A leading `---` … `---` block, with the line break that closes it. */
+const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/;
+
+/**
+ * Splits an agent file into its frontmatter (`head`, exact bytes, '' when
+ * there is none) and the Markdown body. `head + body` is always the input.
+ */
+export function splitFrontmatter(text: string): { head: string; body: string } {
+  const match = text.match(FRONTMATTER);
+  return match ? { head: match[0], body: text.slice(match[0].length) } : { head: '', body: text };
+}
 
 export function wordCount(text: string): number {
   const trimmed = text.trim();
@@ -53,16 +72,25 @@ export function AgentInstructions({
   const tTabs = useI18nTranslations('agentEditor.tabs');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const editable = onChange !== undefined;
+  // The editor holds the body only; the frontmatter rides along unchanged.
+  const split = value === null ? null : splitFrontmatter(value);
+  const body = split?.body ?? null;
+  const headText = split?.head ?? '';
+  const head = useRef(headText);
+  useEffect(() => {
+    head.current = headText;
+  }, [headText]);
+  const meta = split?.head ? parseFrontmatter(split.head).frontmatter : null;
   const [unfolded, setUnfolded] = useState(autoFocus);
   // Taller than the fold: measured while folded, kept once unfolded.
   const [long, setLong] = useState(false);
   const frame = useRef<HTMLDivElement>(null);
   // The Markdown the editor last wrote. A value that differs came from
   // outside (Discard, a save's read-back) and reloads the document.
-  const written = useRef(value);
+  const written = useRef(body);
   // The document as loaded: its source, and what the editor saves it as.
   // Saving the loaded document gives back the source, byte for byte.
-  const loaded = useRef<{ source: string; saved: string | null }>({ source: value ?? '', saved: null });
+  const loaded = useRef<{ source: string; saved: string | null }>({ source: body ?? '', saved: null });
   const latest = useRef(onChange);
   useEffect(() => {
     latest.current = onChange;
@@ -74,7 +102,7 @@ export function AgentInstructions({
       editable,
       autofocus: autoFocus ? 'start' : false,
       extensions: docExtensions({ editable, placeholder: () => tTabs('instructionsPlaceholder') }),
-      content: value === null ? '' : markdownToHtml(value),
+      content: body === null ? '' : markdownToHtml(body),
       editorProps: {
         attributes: { 'aria-label': t('instructions') },
         handleKeyDown: (view, event) => {
@@ -84,7 +112,7 @@ export function AgentInstructions({
         },
       },
       onCreate: ({ editor: e }) => {
-        loaded.current = { source: value ?? '', saved: htmlToMarkdown(e.getHTML()) };
+        loaded.current = { source: body ?? '', saved: htmlToMarkdown(e.getHTML()) };
       },
       onFocus: () => setUnfolded(true),
       onUpdate: ({ editor: e }) => {
@@ -94,18 +122,18 @@ export function AgentInstructions({
         const saved = htmlToMarkdown(e.getHTML());
         const next = saved === loaded.current.saved ? loaded.current.source : saved;
         written.current = next;
-        latest.current?.(next);
+        latest.current?.(head.current + next);
       },
     },
     [editable, value === null],
   );
 
   useEffect(() => {
-    if (!editor || value === null || value === written.current) return;
-    written.current = value;
-    editor.commands.setContent(markdownToHtml(value), { emitUpdate: false });
-    loaded.current = { source: value, saved: htmlToMarkdown(editor.getHTML()) };
-  }, [editor, value]);
+    if (!editor || body === null || body === written.current) return;
+    written.current = body;
+    editor.commands.setContent(markdownToHtml(body), { emitUpdate: false });
+    loaded.current = { source: body, saved: htmlToMarkdown(editor.getHTML()) };
+  }, [editor, body]);
 
   // Fold only a document taller than the fold.
   useLayoutEffect(() => {
@@ -119,7 +147,7 @@ export function AgentInstructions({
   }, [editor, unfolded]);
 
   const [confirmEdit, setConfirmEdit] = useState(false);
-  const words = wordCount(value ?? '');
+  const words = wordCount(body ?? '');
   const folded = long && !unfolded;
 
   return (
@@ -159,6 +187,7 @@ export function AgentInstructions({
             </Button>
           </Hint>
         ) : null}
+        {meta ? <MarkdownFrontmatterCard data={meta} className="mb-4" /> : null}
         <div
           ref={frame}
           className={cn('kx-doc kx-doc-inline', !unfolded && 'max-h-80 overflow-hidden')}

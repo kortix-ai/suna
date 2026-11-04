@@ -15,8 +15,10 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { validateManifest } from '@kortix/manifest-schema';
+import { isMyKortixAgentName } from '@kortix/shared';
 import { buildProjectSeedFiles } from '../projects/seed-files';
 import { extractAgents, resolveGovernedAgentGrant } from '../projects/agents';
+import { projectBuiltinAgents } from '../projects/lib/my-kortix-agent';
 import { parseManifestString } from '../projects/triggers';
 
 describe('buildProjectSeedFiles — the seeded manifest satisfies its own require_declared_agents stamp', () => {
@@ -49,7 +51,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
     expect(result.issues.filter((i) => i.severity === 'error')).toEqual([]);
   });
 
-  test('a first session with no explicit agent (the "default" sentinel) RESOLVES on a project stamped require_declared_agents:true — matches projects.ts /projects/provision + sessions.ts exactly', async () => {
+  test('a first session with no explicit agent runs My Kortix, and the worker it starts RESOLVES on a project stamped require_declared_agents:true — matches projects.ts /projects/provision + sessions.ts exactly', async () => {
     const seed = await buildProjectSeedFiles({
       projectName: 'Acme Co',
       repoFullName: 'kortix/acme-co',
@@ -61,10 +63,15 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
     const manifest = parseManifestString(manifestFile.content, 'kortix.yaml');
     const loaded = extractAgents(manifest);
 
+    // The default is My Kortix: built in, turned on by the starter, and run by
+    // session create with the platform grant, past the declared-agent check.
+    expect(isMyKortixAgentName(loaded.defaultAgent ?? '')).toBe(true);
+    expect(projectBuiltinAgents(manifest.raw).my_kortix).toBe(true);
+
     // projects.ts stamps require_declared_agents:true and never sets
     // metadata.default_agent — sessions.ts's projectDefaultAgent is therefore
     // null on a brand-new project's very first session.
-    const governed = resolveGovernedAgentGrant('default', loaded, {
+    const governed = resolveGovernedAgentGrant('worker', loaded, {
       subject: true,
       projectDefaultAgent: null,
     });

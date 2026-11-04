@@ -2,40 +2,24 @@
 
 import type { PeerMessageKind, PeerMessagePromptInfo } from '@kortix/shared';
 import { peerHandleLabel } from '@kortix/shared';
-import {
-  ArrowBendDownLeftIcon,
-  ChatTeardropTextIcon,
-  CheckCircleIcon,
-  PowerIcon,
-  type Icon,
-} from '@phosphor-icons/react';
 import { useTranslations } from '../../i18n';
-import { FinishLine } from '../agents/agent-surface';
+import { UnifiedMarkdown } from '../../markdown/unified-markdown';
+import { AgentFace, AgentRowBody, AgentRowScope, AgentStatus, AgentTrigger } from '../agents/agent-surface';
 import { BasicTool } from '../tool/shared/infrastructure';
-import { AgentAvatarIcon } from '../tool/tools/multi-agent-tool-bodies';
 
 /**
- * A message another Kortix session sent this one (`send_message`), as Claude
- * Code draws it: one dim line, "Message from @reviewer · Schema migration
- * finished", that opens in place to the full text. The header and the footer
- * the API wrapped around it (`peerMessagePromptText`) are for the agent, not
- * the reader, so neither renders. An idle notice, a shutdown request and a
- * shutdown answer get their own words.
+ * A message another Kortix session sent this one (`send_message`). Nobody here
+ * typed it, so it is never a bubble: it is an agent row, the sender's face and
+ * handle, then the message on the rail, open, because a message is there to be
+ * read. The header and the footer the API wrapped around it
+ * (`peerMessagePromptText`) are for the agent, not the reader.
+ *
+ *   [face] reviewer  Review done, 2 comments
+ *          │ Rebased and reviewed. Two comments: …
+ *
+ * An idle notice says only that a teammate finished: one row like an agent's
+ * finish, that opens to the rest. A shutdown request and its answer say so on the right.
  */
-
-const KIND_ICON: Record<PeerMessageKind, Icon> = {
-  message: ChatTeardropTextIcon,
-  idle_notice: CheckCircleIcon,
-  shutdown_request: PowerIcon,
-  shutdown_response: ArrowBendDownLeftIcon,
-};
-
-const KIND_KEY = new Map<PeerMessageKind, string>([
-  ['message', 'message'],
-  ['idle_notice', 'idleNotice'],
-  ['shutdown_request', 'shutdownRequest'],
-  ['shutdown_response', 'shutdownResponse'],
-]);
 
 /**
  * The preview after the sender: the summary, else the first line of the text. CSS cuts it with `…`.
@@ -54,63 +38,52 @@ export function peerMessagePreview(info: Pick<PeerMessagePromptInfo, 'summary' |
   return lines[0] ?? '';
 }
 
+/** An idle notice's text without the line that repeats the state, and its answer without the "Its last answer:" label. */
+export function idleNoticeBody(text: string): string {
+  // Only the platform's two lines change; the answer itself keeps its Markdown (indents, blank lines).
+  return text
+    .split('\n')
+    .filter((line) => !/finished its turn and is idle\.?\s*$/.test(line))
+    .map((line) => line.replace(/^(\s*)Its last answer:\s?/, '$1'))
+    .join('\n')
+    .trim();
+}
 
-/**
- * A message one agent sent another, delivered into this session as a prompt.
- * Nobody here typed it, so it is never a user bubble.
- *
- *   message, shutdown request/answer  a message card: the sender's face, who sent it,
- *                                     the first line; the whole text unfolds in the card
- *   idle notice                       an event, not a message: the finish line
- */
 export function PeerMessageRow({ info, actions }: { info: PeerMessagePromptInfo; actions?: React.ReactNode }) {
   const t = useTranslations('multiAgent.peer');
-  const KindIcon = KIND_ICON[info.kind];
+  const from = info.from;
+  const name = peerHandleLabel(from).replace(/^@/, '');
+  const idle = info.kind === 'idle_notice';
   const preview = peerMessagePreview(info);
-  const from = peerHandleLabel(info.from);
-  const headline = t(KIND_KEY.get(info.kind) ?? 'message', { from });
-  const expandable = info.text.trim().length > 0 && info.text.trim() !== preview;
-
-  if (info.kind === 'idle_notice') {
-    return (
-      <div data-testid="peer-message-turn" data-peer-kind={info.kind} data-peer-message-id={info.messageId} className="flex min-w-0 flex-col gap-1.5">
-        <FinishLine status="done">
-          <span className="text-foreground min-w-0 truncate">{headline}</span>
-          {preview && (
-            <>
-              <span aria-hidden>·</span>
-              <span className="min-w-0 truncate" title={preview}>
-                {preview}
-              </span>
-            </>
-          )}
-        </FinishLine>
-        {actions}
-      </div>
-    );
-  }
-
-  // One plain tool row, the sender's face as its icon; the whole text unfolds under it.
+  const text = info.text.trim();
+  // An idle notice's first line repeats the state word: its body is the answer, without its label.
+  const body = idle ? idleNoticeBody(text) : text;
+  const kindWord =
+    info.kind === 'shutdown_request'
+      ? t('kind.shutdownRequest')
+      : info.kind === 'shutdown_response'
+        ? t('kind.shutdownResponse')
+        : idle
+          ? t('kind.finished')
+          : t('kind.message');
   return (
-    <div data-testid="peer-message-turn" data-peer-kind={info.kind} data-peer-message-id={info.messageId} className="flex min-w-0 flex-col gap-1.5">
-      <BasicTool
-        icon={<AgentAvatarIcon handle={info.from} />}
-        trigger={
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-sm">
-            <span className="text-foreground shrink-0">{headline}</span>
-            {info.kind !== 'message' && <KindIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />}
-            {preview && (
-              <span className="text-muted-foreground min-w-0 flex-1 truncate" title={preview}>
-                {preview}
-              </span>
-            )}
-          </div>
-        }
-      >
-        {expandable ? (
-          <div className="text-foreground border-border ml-1.5 border-l pl-3 text-sm whitespace-pre-wrap wrap-break-word">{info.text}</div>
-        ) : undefined}
-      </BasicTool>
+    <div data-testid="peer-message-turn" data-peer-kind={info.kind} data-peer-message-id={info.messageId} className="flex min-w-0 flex-col gap-1">
+      <AgentRowScope>
+        <BasicTool
+          icon={<AgentFace handle={from} />}
+          trigger={<AgentTrigger title={name} subtitle={idle ? preview : info.summary?.trim()} />}
+          triggerAction={<AgentStatus status={idle ? 'done' : undefined} label={kindWord} opens={!!body} />}
+          defaultOpen={!idle}
+        >
+          {body ? (
+            <AgentRowBody>
+              <div data-slot="peer-message-body" className="min-w-0">
+                <UnifiedMarkdown content={body} trust="agent" isStreaming={false} />
+              </div>
+            </AgentRowBody>
+          ) : undefined}
+        </BasicTool>
+      </AgentRowScope>
       {actions}
     </div>
   );

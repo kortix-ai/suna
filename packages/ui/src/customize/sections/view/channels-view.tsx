@@ -132,7 +132,6 @@ import {
   useDisconnectSlack,
   useSlackInstall,
   useSlackMode,
-  useDiscordMode,
 } from '../../../internal/hooks/channels/use-channels-installations';
 import {
   type TeamsInstallation,
@@ -190,8 +189,6 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   // no surface, and its inboxes are never read (EmailHero is not mounted).
   const emailFlag = useFeatureFlag(projectId, 'email_channel');
   const emailEnabled = emailFlag.enabled;
-  // Discord needs the deployment's Kortix Discord application: without it, Discord shows on its own page only.
-  const discordAvailable = useDiscordMode(projectId).data?.available === true;
   const loading = loadingInstall || loadingMode || emailFlag.isLoading;
   const tPages = useTranslations('connectorPages');
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
@@ -212,7 +209,7 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   // platform, the Channels tab every platform, one under the other.
   const platforms: ChannelPlatform[] = platform
     ? [platform]
-    : CHANNEL_PLATFORM_IDS.filter((pf) => (pf !== 'email' || emailEnabled) && (pf !== 'discord' || discordAvailable));
+    : CHANNEL_PLATFORM_IDS.filter((pf) => pf !== 'email' || emailEnabled);
   // The Kortix tab also holds the computer, where this deployment can pair one
   // (the machine list answers 503 where computers are off).
   const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;
@@ -256,8 +253,16 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
         return <EmailHero projectId={projectId} canWrite={canWrite} />;
       case 'telegram':
         return <TelegramChannelRow projectId={projectId} canWrite={canWrite} />;
-      case 'discord':
-        return <DiscordChannelRow projectId={projectId} canWrite={canWrite} />;
+      case 'discord': {
+        const count = channelCounts.get('discord') ?? 0;
+        return (
+          <DiscordChannelRow
+            projectId={projectId}
+            canWrite={canWrite}
+            channelsAction={count > 0 ? <ChannelsButton count={count} onOpen={() => openChannels('discord')} /> : null}
+          />
+        );
+      }
       default: {
         // A new channel id fails here until it has a hero.
         const _exhaustive: never = pf;
@@ -794,28 +799,32 @@ function ChannelSettingsModalContent({
               </FieldDescription>
             </Field>
 
-            <Field data-disabled={!canWrite}>
-              <FieldTitle>{tI18nComplete.raw('textb1ca871c6696')}</FieldTitle>
-              <Select
-                value={policy}
-                onValueChange={(v) => setPolicyDraft(v as ChannelBinding['conversationPolicy'])}
-                disabled={!canWrite}
-              >
-                <SelectTrigger className="h-9 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {conversationPolicies.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FieldDescription className="text-xs">
-                {policyDescription(policy, tI18nComplete)}
-              </FieldDescription>
-            </Field>
+            {/* Who may join a session is Slack's and Teams' (linked members). Discord and
+                Telegram admit the project's allowed users only: no policy to pick. */}
+            {binding.platform === 'slack' || binding.platform === 'teams' ? (
+              <Field data-disabled={!canWrite}>
+                <FieldTitle>{tI18nComplete.raw('textb1ca871c6696')}</FieldTitle>
+                <Select
+                  value={policy}
+                  onValueChange={(v) => setPolicyDraft(v as ChannelBinding['conversationPolicy'])}
+                  disabled={!canWrite}
+                >
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {conversationPolicies.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldDescription className="text-xs">
+                  {policyDescription(policy, tI18nComplete)}
+                </FieldDescription>
+              </Field>
+            ) : null}
           </FieldGroup>
         </ModalBody>
         <ModalFooter className="pt-2 pb-5 sm:justify-between">
@@ -852,6 +861,15 @@ function bindingScope(binding: ChannelBinding, tI18nComplete: UiTranslator): str
     return bindingScopeLabel(binding.channelType, tI18nComplete);
   }
   if (binding.platform === 'slack') return slackScopeLabel(binding, tI18nComplete);
+  // Discord and Telegram: the conversation's kind, not the server or bot id every row shares.
+  if (binding.platform === 'discord') {
+    return tI18nComplete.raw(binding.channelType === 'dm' ? 'textcd3e16057d09' : 'textce4683e7013a');
+  }
+  if (binding.platform === 'telegram') {
+    if (binding.channelType === 'private') return tI18nComplete.raw('textcd3e16057d09');
+    if (binding.channelType === 'group' || binding.channelType === 'supergroup') return tI18nComplete.raw('text28c7d3f8b75d');
+    if (binding.channelType === 'channel') return tI18nComplete.raw('textce4683e7013a');
+  }
   return binding.workspaceId;
 }
 

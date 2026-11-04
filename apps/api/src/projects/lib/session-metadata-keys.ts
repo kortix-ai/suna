@@ -14,7 +14,6 @@
  * the same change that adds the server reader.
  */
 import { SUBAGENT_NOTIFY_PARENT_KEY } from '@kortix/api-contract/runtime-relay';
-import { WARM_SESSION_LOCATION_KEY } from './warm-sessions';
 
 export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Soft delete (`deleteSession`).
@@ -25,6 +24,7 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // is stamped only by session-model-repoint.ts, when a retired managed id gets
   // moved to a servable one at boot — a client value here would forge history.
   'opencode_model',
+  'model_switches',
   'opencode_model_source',
   'opencode_model_repointed_from',
   // The gateway fallback record (`llm-gateway/resolution/session-model-fallback.ts`).
@@ -84,9 +84,6 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'email',
   'telegram',
   'discord',
-  // Warm-session marker and trusted provisioning intent (`lib/warm-sessions.ts`).
-  'warm',
-  WARM_SESSION_LOCATION_KEY,
   // Activity-ordered session list (`session-list.ts` `orderByActivity`). The
   // server stamps conversation activity; a client value would let it fake a
   // sidebar position.

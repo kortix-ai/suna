@@ -159,6 +159,11 @@ pub struct WinInfo {
     pub title: String,
     pub rect: Rect,
     pub focused: bool,
+    /// A click-through layered window (Windows: a game or GPU overlay, a screen
+    /// dimmer). It may be opaque, so a hidden one is still painted out. It never
+    /// names a frame or covers a window under it: a mostly transparent overlay
+    /// would hide what is really on screen and leave a hidden window unpainted.
+    pub overlay: bool,
 }
 
 pub struct Display {
@@ -265,7 +270,9 @@ pub fn plan_displays<'a>(
                 }
                 continue;
             }
-            top.entry(d.id).or_insert(w);
+            if !w.overlay {
+                top.entry(d.id).or_insert(w);
+            }
         }
         if include.on && !top.contains_key(&d.id) {
             covered.insert(d.id);
@@ -866,7 +873,7 @@ pub fn redact(
             continue;
         };
         let mut visible = vec![r];
-        for above in &windows[..i] {
+        for above in windows[..i].iter().filter(|a| !a.overlay) {
             visible = visible
                 .into_iter()
                 .flat_map(|v| subtract(v, &above.rect))
@@ -1277,6 +1284,7 @@ mod tests {
             title: String::new(),
             rect: Rect { x, y, w, h },
             focused: false,
+            overlay: false,
         }
     }
 
@@ -1556,6 +1564,60 @@ mod tests {
         );
         assert_eq!(img.get_pixel(10, 10).0, [0, 0, 0]);
         assert_eq!(img.get_pixel(90, 90).0, [255, 255, 255]);
+    }
+
+    #[test]
+    fn a_click_through_overlay_is_painted_out_when_hidden_and_covers_nothing() {
+        let display = Rect {
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 100,
+        };
+        let overlay = |id, bundle: &str, x, w| WinInfo {
+            overlay: true,
+            ..win(id, bundle, x, 0, w, 100)
+        };
+        // A visible overlay over a hidden window: the hidden window is painted in full.
+        let mut img = RgbImage::from_pixel(100, 100, image::Rgb([255, 255, 255]));
+        let windows = vec![
+            overlay(1, "hud.exe", 0, 100),
+            win(2, "secret.exe", 0, 0, 100, 100),
+        ];
+        redact(&mut img, &display, &windows, &|w| w.bundle_id == "secret.exe");
+        assert!(img.pixels().all(|p| p.0 == [0, 0, 0]));
+        // A hidden overlay is painted out itself; the window under it stays.
+        let mut img = RgbImage::from_pixel(100, 100, image::Rgb([255, 255, 255]));
+        let windows = vec![
+            overlay(1, "secret.exe", 0, 50),
+            win(2, "app.exe", 0, 0, 100, 100),
+        ];
+        redact(&mut img, &display, &windows, &|w| w.bundle_id == "secret.exe");
+        assert_eq!(img.get_pixel(10, 10).0, [0, 0, 0]);
+        assert_eq!(img.get_pixel(90, 90).0, [255, 255, 255]);
+        // An overlay never names the frame: the window under it does.
+        let displays = vec![DisplayInfo {
+            id: 1,
+            rect: display,
+            name: "d".into(),
+            main: true,
+            scale: 1.0,
+        }];
+        let windows = vec![
+            overlay(1, "hud.exe", 0, 100),
+            win(2, "app.exe", 0, 0, 100, 100),
+        ];
+        let plan = plan_displays(
+            &windows,
+            &displays,
+            &|_| None,
+            &|_, _| false,
+            &[],
+            true,
+            false,
+            &Include::default(),
+        );
+        assert_eq!(plan.top[&1].bundle_id, "app.exe");
     }
 
     #[test]

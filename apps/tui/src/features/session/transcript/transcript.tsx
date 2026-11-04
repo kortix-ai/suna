@@ -9,10 +9,11 @@
  * so one session is one hook (SPEC §1.3) no matter how many components render
  * it.
  *
- * Scroll model: one `<scrollbox stickyScroll stickyStart="bottom">`. Sticky
- * stays on until the reader moves the viewport themselves; `G` turns it back
- * on and jumps to the newest turn. `PgUp` at the very top is the "load older"
- * gesture, not a scroll.
+ * Scroll model: one `<scrollbox stickyScroll stickyStart="bottom">`, and the
+ * scrollbox owns "follow the newest turn". Any scroll away from the bottom
+ * (wheel, keys, scrollbar drag) stops the follow; scrolling back to the bottom
+ * or `G` resumes it. Nothing here pins the viewport while the reader is up in
+ * the thread. `PgUp` at the very top is the "load older" gesture, not a scroll.
  */
 
 import { classifySessionLogMessage, sessionLogTurns } from '@kortix/sdk';
@@ -62,6 +63,12 @@ export interface TranscriptProps {
   inbox?: Pick<UseSessionPromptsResult, 'prompts' | 'sent'>;
 }
 
+/** The viewport shows the last row. One row of slack absorbs a fractional
+ *  scroll position left by wheel acceleration. */
+export function isAtBottom(box: Pick<ScrollBoxRenderable, 'scrollTop' | 'scrollHeight' | 'viewport'>): boolean {
+  return box.scrollTop >= box.scrollHeight - box.viewport.height - 1;
+}
+
 /** Rows the header clock re-renders on. One second is the finest unit any
  *  header prints, so anything faster is wasted work. */
 const CLOCK_INTERVAL_MS = 1000;
@@ -77,7 +84,6 @@ export function Transcript({
   inbox,
 }: TranscriptProps) {
   const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const [sticky, setSticky] = useState(true);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [cursorIndex, setCursorIndex] = useState(-1);
   const [now, setNow] = useState(() => Date.now());
@@ -117,7 +123,6 @@ export function Transcript({
   }, []);
 
   const scrollBy = useCallback((delta: number) => {
-    setSticky(false);
     scrollRef.current?.scrollBy(delta);
   }, []);
 
@@ -144,13 +149,11 @@ export function Transcript({
     }
 
     if (matchesTranscriptBinding(key, 'transcript.bottom')) {
-      setSticky(true);
       const box = scrollRef.current;
       if (box) box.scrollTo(box.scrollHeight);
       return;
     }
     if (matchesTranscriptBinding(key, 'transcript.top')) {
-      setSticky(false);
       scrollRef.current?.scrollTo(0);
       return;
     }
@@ -194,7 +197,7 @@ export function Transcript({
   const lastMessageId = ordered.at(-1)?.message_id;
   const startFailed = session.phase === 'error';
 
-  // Re-pin to the bottom after EVERY commit while sticky is on.
+  // Re-pin to the bottom after a commit, only while the reader is at the bottom.
   //
   // `stickyScroll` alone does not survive a content-height jump: expanding a
   // steps group adds ~30 rows in one commit, and the viewport stayed where it
@@ -203,10 +206,14 @@ export function Transcript({
   // native setter, and a commit only happens when something actually changed,
   // so running it unconditioned is cheaper than tracking a content signature
   // that has to include every streaming part.
+  //
+  // The bottom check reads the layout from BEFORE this commit (OpenTUI lays
+  // out on its next frame), so it asks "was the reader following?". A reader
+  // who scrolled up stays where they are: the old effect pinned on every
+  // commit, and the 1 s clock plus each streamed delta yanked them back down.
   useEffect(() => {
-    if (!sticky) return;
     const box = scrollRef.current;
-    if (box) box.scrollTo(box.scrollHeight);
+    if (box && isAtBottom(box)) box.scrollTo(box.scrollHeight);
   });
 
   return (
@@ -218,7 +225,7 @@ export function Transcript({
       <scrollbox
         ref={scrollRef}
         focused={focused}
-        stickyScroll={sticky}
+        stickyScroll
         stickyStart="bottom"
         flexGrow={1}
         // NOT `scrollbarOptions={{ visible: true }}` — forcing both bars on

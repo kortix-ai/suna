@@ -146,7 +146,10 @@ module "api" {
     module.network.public_subnet_ids[0],
     module.network.public_subnet_ids[1],
   ]
-  private_subnet_ids = module.network.private_subnet_ids
+  # Egress subnets: the internet without NAT processing, GitHub still from
+  # the NAT EIPs that the GitHub App publishes (modules/network).
+  private_subnet_ids = module.network.egress_subnet_ids
+  assign_public_ip   = true
 
   image             = var.api_image
   container_port    = var.container_port

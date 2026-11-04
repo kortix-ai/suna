@@ -12,12 +12,16 @@ import {
   responsesToChat,
 } from './ingress/openai-responses';
 import {
+  type AudioRequest,
   type ChatCompletionRequest,
   type GatewayDeps,
   type HandlerRuntime,
   type ImageRequest,
+  type VoicesRequest,
+  handleAudioRequest,
   handleChatCompletions,
   handleImageRequest,
+  handleVoicesRequest,
 } from './pipeline';
 import { parseUpstreamErrorBody } from './http/parse-upstream-error';
 import { gatewayErrorResponse } from './pipeline/error-response';
@@ -190,6 +194,7 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       rawBody: '',
       parsedBody: chatBody as Record<string, unknown>,
       signal: req.signal,
+      origin: req.origin,
     });
 
     if (!upstream.ok) {
@@ -249,6 +254,7 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       rawBody: '',
       parsedBody: chatBody as Record<string, unknown>,
       signal: req.signal,
+      origin: req.origin,
     });
 
     if (!upstream.ok) {
@@ -296,5 +302,7 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
     responses,
     listModels,
     images: (req: ImageRequest): Promise<Response> => handleImageRequest(runtime, req),
+    audio: (req: AudioRequest): Promise<Response> => handleAudioRequest(runtime, req),
+    voices: (req: VoicesRequest): Promise<Response> => handleVoicesRequest(runtime, req),
   };
 }

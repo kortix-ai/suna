@@ -10,11 +10,31 @@ let calls: { url: string; method: string; body?: any }[] = [];
 beforeEach(() => {
   calls = [];
   globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
+    const body = typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body;
     calls.push({
       url: String(url),
       method: opts.method ?? 'GET',
-      body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
+      body,
     });
+    // The coalesced probe (KRTX-4005) POSTs `effective:batch`; answer one
+    // allowed verdict per requested probe so the caller's promise settles.
+    if (String(url).includes('/effective:batch')) {
+      const probes = Array.isArray(body?.probes) ? body.probes : [];
+      return new Response(
+        JSON.stringify({
+          results: probes.map(
+            (probe: { action: string; resourceType?: string; resourceId?: string }) => ({
+              action: probe.action,
+              resource_type: probe.resourceType ?? 'account',
+              resource_id: probe.resourceId ?? null,
+              allowed: true,
+              reason: null,
+            }),
+          ),
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
     return new Response(
       JSON.stringify({
         ok: true,
@@ -278,35 +298,17 @@ test('project(id).sessions.list forwards manager inventory scope', async () => {
   expect(last().url).toContain('/projects/PID123/sessions?scope=project');
 });
 
-test('project(id).sessions exposes server-owned warm-session ensure and claim', async () => {
-  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
-    const requestUrl = String(url);
-    calls.push({
-      url: requestUrl,
-      method: opts.method ?? 'GET',
-      body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
-    });
-    const body = requestUrl.endsWith('/warm/claim')
-      ? { session_id: 'SID456' }
-      : {
-          session: { session_id: 'SID456' },
-          reused: true,
-          workspace_refresh: { status: 'unchanged' },
-        };
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  }) as unknown as typeof fetch;
-
-  await kortix.project('PID123').sessions.ensureWarm();
-  expect(last().url).toContain('/projects/PID123/sessions/warm');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').sessions.claimWarm({ session_id: 'SID456' });
-  expect(last().url).toContain('/projects/PID123/sessions/warm/claim');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ session_id: 'SID456' });
+// Warm sessions were removed on 2026-11-03: both verbs stay for semver and
+// reject as retired, with no request.
+test('project(id).sessions.ensureWarm and claimWarm reject with ENDPOINT_RETIRED and send no request', async () => {
+  const before = calls.length;
+  await expect(kortix.project('PID123').sessions.ensureWarm()).rejects.toMatchObject({
+    code: 'ENDPOINT_RETIRED',
+  });
+  await expect(
+    kortix.project('PID123').sessions.claimWarm({ session_id: 'SID456' }),
+  ).rejects.toMatchObject({ code: 'ENDPOINT_RETIRED' });
+  expect(calls.length).toBe(before);
 });
 
 test('top-level projects.list hits /projects', async () => {
@@ -615,6 +617,12 @@ test('project(id).secrets covers provider OAuth list, start, poll, and removal',
   await kortix.project('PID123').secrets.removeProviderOAuth('chatgpt');
   expect(last().url).toContain('/projects/PID123/oauth/chatgpt');
   expect(last().method).toBe('DELETE');
+});
+
+test('project(id).llmCatalogProviders reads the live provider catalogue', async () => {
+  await kortix.project('PID123').llmCatalogProviders();
+  expect(last().url.endsWith('/projects/PID123/llm-catalog/providers')).toBe(true);
+  expect(last().method).toBe('GET');
 });
 
 test('project(id).claudeSubscription covers status, sign-in, token and disconnect', async () => {
@@ -2011,13 +2019,18 @@ test('kortix.iam.roles and kortix.iam.groups reach their collections', async () 
 });
 
 test('kortix.iam.can probes one leaf for one principal', async () => {
+  // One leaf, one principal — carried by the coalesced batch POST since
+  // KRTX-4005, so concurrent gates share the request.
   await kortix.iam.can('ACC1', 'U1', {
     action: 'project.write',
     resourceType: 'project',
     resourceId: 'PID1',
   });
-  expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective?');
-  expect(last().url).toContain('action=project.write');
+  expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective:batch');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    probes: [{ action: 'project.write', resourceType: 'project', resourceId: 'PID1' }],
+  });
 });
 
 test('session attachments upload before runtime initialization', async () => {

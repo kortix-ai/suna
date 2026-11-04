@@ -39,6 +39,7 @@ import { startProjectMaintenance, stopProjectMaintenance } from './project-maint
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './project-snapshot';
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './provider-transition';
 import { startResidentialProxyBillingWorker, stopResidentialProxyBillingWorker } from './residential-proxy-billing';
+import { startRetentionErasureWorker, stopRetentionErasureWorker } from './retention-erasure';
 import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './session-log-purge';
 import { startStorageBillingWorker, stopStorageBillingWorker } from './storage-billing';
 import { startSessionModelFallbackWorker, stopSessionModelFallbackWorker } from './session-model-fallback';
@@ -48,6 +49,8 @@ import { startProjectTriggerScheduler, stopProjectTriggerScheduler, triggerSweep
 import { startTunnelCleanup, stopTunnelCleanup } from './tunnel-cleanup';
 import { startTunnelForwardExpiry, stopTunnelForwardExpiry } from './tunnel-forward-expiry';
 
+import { startSalesOutbox, stopSalesOutbox } from './sales-outbox';
+
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 
@@ -55,6 +58,7 @@ const HOUR = 60 * MIN;
 // successful tick the heartbeat reports it stale (the longest wait between two
 // ticks, plus the longest legitimate tick, with margin; at least 10 min).
 export const JOBS: readonly Job[] = [
+  { ticks: { 'sales-outbox': 10 * MIN }, start: startSalesOutbox, stop: stopSalesOutbox },
   { ticks: { 'active-turn-renewal': 10 * MIN }, start: () => startActiveTurnRenewal(), stop: stopActiveTurnRenewal },
   { ticks: { 'project-maintenance': 20 * MIN }, start: startProjectMaintenance, stop: stopProjectMaintenance },
   {
@@ -114,6 +118,8 @@ export const JOBS: readonly Job[] = [
   { ticks: { 'notification-digest': 10 * MIN }, start: startNotificationWorker, stop: stopNotificationWorker },
   // Retention purge of session content.
   { ticks: { 'session-log-purge': 3 * HOUR }, start: startSessionLogPurgeWorker, stop: stopSessionLogPurgeWorker },
+  // The 90-day retention backstop: closures still open 80 days after their date. Daily; a minute apart while a backlog lasts.
+  { ticks: { 'retention-erasure': 26 * HOUR }, start: startRetentionErasureWorker, stop: stopRetentionErasureWorker },
   // Idle sessions off a fallback model once their own model serves again.
   { ticks: { 'session-model-fallback': 10 * MIN }, start: startSessionModelFallbackWorker, stop: stopSessionModelFallbackWorker },
   // Closed pending days of the gateway spend running total.

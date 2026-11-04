@@ -135,6 +135,8 @@ export interface SandboxReaperDependencies {
     idempotencyKey: string;
     coalesce?: boolean;
   }) => Promise<unknown>;
+  /** The session's chat clears what it showed while the agent worked (channels/core/session-notice.ts). Never throws. */
+  settleSessionChat?: (sessionId: string, outcome: 'failed') => Promise<void>;
 }
 
 const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
@@ -153,6 +155,10 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
   drainSessionLifecycleQueue: async (input) => {
     const { drainSessionLifecycleQueue } = await import('../session-lifecycle/drain');
     return drainSessionLifecycleQueue(input);
+  },
+  settleSessionChat: async (sessionId, outcome) => {
+    const { settleSessionChat } = await import('../../channels/core/session-notice');
+    await settleSessionChat(sessionId, outcome);
   },
 };
 
@@ -230,6 +236,12 @@ async function releaseQueuedPromptAfterTerminalTurn(
       queuePromoted: promotedPromptId !== null,
       promotedPromptId,
     });
+    if (!promotedPromptId) {
+      // The session is idle, and its turn never reported its own end: the
+      // chat's working mark (Discord's ⏳) goes. `failed`, never `done`: no
+      // relay proved the reply reached the chat.
+      void dependencies.settleSessionChat?.(row.sessionId, 'failed').catch(() => undefined);
+    }
     if (promotedPromptId) {
       void dependencies
         .drainSessionLifecycleQueue({ idempotencyKey: promotedPromptId, coalesce: false })

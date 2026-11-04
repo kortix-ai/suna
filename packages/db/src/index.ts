@@ -7,6 +7,7 @@ export * as schema from './schema';
 export {
   // Schema namespace
   kortixSchema,
+  salesEventOutbox,
   usedRefreshTokens,
   cliDeviceGrants,
   // Enums
@@ -50,6 +51,7 @@ export {
   configReleases,
   configReleaseFailures,
   configReleaseHeads,
+  projectConfigSummaries,
   baseTipChecks,
   projectMembers,
   projectAccessRequests,
@@ -143,6 +145,7 @@ export {
   creditLedger,
   creditUsage,
   accountDeletionRequests,
+  retentionErasures,
   creditPurchases,
   // Mobile push notification device tokens
   pushDeviceTokens,

@@ -114,7 +114,7 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'drive-boot-refused',
     repoUrl: 'https://example.test/drive-boot-refused.git',
-    metadata: { experimental: { volumes: true } },
+    metadata: { experimental: { volumes: true, shared_drives: true } },
   });
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
   await db.insert(serviceAccounts).values({

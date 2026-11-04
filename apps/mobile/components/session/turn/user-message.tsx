@@ -387,9 +387,28 @@ function UserMessageImpl({
   // Room traffic batched into one turn: `[room dev · #a–#b · N new messages]`.
   const roomDigestInfo = useMemo(() => parseRoomDigest(rawText), [rawText]);
   // A background sub-agent's or a workflow run's end, delivered as a prompt: nobody typed it.
-  const agentNotice = useMemo(() => agentNoticeOf(rawText), [rawText]);
-  // A message another agent sent this one (web `PeerMessageRow`): a message card, never a bubble.
-  const peerInfo = useMemo(() => (agentNotice ? null : parsePeerMessagePrompt(rawText)), [agentNotice, rawText]);
+  // The API delivers it as harness context (`synthetic`), which `rawText` leaves out, so it is
+  // read from every text block, as `peerInfo` below and web `useTurnUserContent` do.
+  const agentNotice = useMemo(() => {
+    for (const block of message.blocks) {
+      if (block.type !== 'text') continue;
+      const notice = agentNoticeOf(block.text);
+      if (notice) return notice;
+    }
+    return agentNoticeOf(rawText);
+  }, [message.blocks, rawText]);
+  // A message from another Kortix session (`send_message`): `[message from reviewer · session 3f2a1b9c · #m_1]`.
+  // The API delivers it as harness context (`synthetic`), which `rawText` leaves out, so it is read from
+  // every text block (web `useTurnUserContent`).
+  const peerInfo = useMemo(() => {
+    if (agentNotice) return undefined;
+    for (const block of message.blocks) {
+      if (block.type !== 'text') continue;
+      const info = parsePeerMessagePrompt(block.text);
+      if (info) return info;
+    }
+    return undefined;
+  }, [agentNotice, message.blocks]);
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
   const dim = useSharedValue(queueState ? 0.5 : 1);

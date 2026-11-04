@@ -61,7 +61,7 @@ beforeAll(async () => {
     on conflict do nothing`);
   await db.execute(sql`
     insert into kortix.projects (project_id, account_id, name, repo_url)
-    values (${PROJECT}, ${ACCOUNT}, 'poll-memo-attribution', 'https://github.com/kortix-ai/suna')
+    values (${PROJECT}, ${ACCOUNT}, 'poll-memo-attribution', 'https://github.com/kortix-ai/CompanyOS')
     on conflict (project_id) do nothing`);
   await db.execute(sql`
     insert into kortix.project_sessions (session_id, account_id, project_id, branch_name, created_by, visibility, created_at, updated_at)

@@ -256,6 +256,16 @@ const envSchema = z.object({
   // Kill switch for the scheduled account-deletion sweep. True skips every
   // scheduled run; immediate deletion is unaffected. Default off (sweep runs).
   ACCOUNT_DELETION_SWEEP_PAUSED: optBoolFalse,
+  // The retention backstop (billing/services/retention-erasure.ts): erases an
+  // account whose closure (account_deletion_requests) is still open
+  // RETENTION_ERASURE_AFTER_DAYS after its date, inside the 90-day promise.
+  // `dry_run` (default) records the decision in kortix.retention_erasures and
+  // deletes nothing; `execute` runs the deletion routine; `off` stops the tick.
+  // ACCOUNT_DELETION_SWEEP_PAUSED forces dry_run.
+  RETENTION_ERASURE_MODE: z.enum(['off', 'dry_run', 'execute']).optional().default('dry_run'),
+  RETENTION_ERASURE_AFTER_DAYS: optInt(80).refine((days) => days >= 0, {
+    message: 'Must be 0 or more days: the retention backstop never erases an account before its date',
+  }),
   /**
    * Enforce the sandbox egress pin on the secret-broker route (default ON).
    *
@@ -679,6 +689,18 @@ const envSchema = z.object({
    */
   KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: optUrl(''),
   KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: optBoolFalse,
+  /**
+   * Self-host's bundled store (MinIO) starts empty, so the API creates the
+   * bucket and its expiry rule (`ensureProjectSnapshotBucket`). AWS:
+   * Terraform owns both (infra/terraform/modules/project-snapshots-bucket).
+   */
+  KORTIX_PROJECT_SNAPSHOT_S3_CREATE_BUCKET: optBoolFalse,
+  /**
+   * The store's in-network origin for the `/<bucket>/*` passthrough on the API
+   * origin (self-host without a domain; object-store/bucket-proxy.ts). Domain
+   * mode leaves it unset: Caddy serves the prefix.
+   */
+  KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET: optUrl(''),
   // S3 Transfer Acceleration for the SANDBOX downloads only: presigned URLs
   // target <bucket>.s3-accelerate.amazonaws.com, so a box's connection ends at
   // the nearest AWS edge and the distance to the bucket rides AWS's backbone.
@@ -780,7 +802,7 @@ const envSchema = z.object({
   KORTIX_CAPTURE_ALERT_AFTER_MINUTES: optInt(30),
   /** The update manifest that names the newest published Capture version. Empty: no version check. */
   KORTIX_CAPTURE_UPDATE_MANIFEST_URL: optUrl(
-    'https://github.com/kortix-ai/suna/releases/latest/download/capture-update.json',
+    'https://github.com/kortix-ai/CompanyOS/releases/latest/download/capture-update.json',
   ),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
@@ -1036,7 +1058,8 @@ const envSchema = z.object({
   // ── Signup webhook (signup → sales factory) ─────────────────────────────
   // Every genuinely new account POSTs one `account.signup` event here, signed
   // `X-Kortix-Signature: sha256=<HMAC-SHA256 of the raw body>` with the secret.
-  // Inert unless both are set (accounts/signup-webhook.ts).
+  // Inert unless both are set (accounts/sales-outbox.ts).
+  SALES_RECONCILIATION_TOKEN: optStr,
   SIGNUP_WEBHOOK_URL: optStr,
   SIGNUP_WEBHOOK_SECRET: optStr,
 
@@ -1377,6 +1400,8 @@ export const config = {
   HEALTH_MAX_EVENT_LOOP_LAG_MS: env.HEALTH_MAX_EVENT_LOOP_LAG_MS,
   KORTIX_JOB_WORKER_ENABLED: env.KORTIX_JOB_WORKER_ENABLED,
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
+  RETENTION_ERASURE_MODE: env.RETENTION_ERASURE_MODE,
+  RETENTION_ERASURE_AFTER_DAYS: env.RETENTION_ERASURE_AFTER_DAYS,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS.split(',')
     .map((host) => host.trim())
@@ -1534,6 +1559,8 @@ export const config = {
   KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT,
   KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT,
   KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: env.KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE,
+  KORTIX_PROJECT_SNAPSHOT_S3_CREATE_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_CREATE_BUCKET,
+  KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET: env.KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET,
   KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE,
   KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: env.KORTIX_PROJECT_SNAPSHOT_S3_PREFIX,
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
@@ -1717,6 +1744,7 @@ export const config = {
   MAILTRAP_BUSINESS_SIGNUPS_LIST_ID: env.MAILTRAP_BUSINESS_SIGNUPS_LIST_ID,
 
   // ─── Signup webhook (signup → sales factory) ──────────────────────────────
+  SALES_RECONCILIATION_TOKEN: env.SALES_RECONCILIATION_TOKEN,
   SIGNUP_WEBHOOK_URL: env.SIGNUP_WEBHOOK_URL,
   SIGNUP_WEBHOOK_SECRET: env.SIGNUP_WEBHOOK_SECRET,
 

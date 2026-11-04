@@ -109,11 +109,10 @@ export interface RecoveryPrompt extends PendingSessionPrompt {
  * The recovery copy, from the server when it has one and from this tab's start
  * stash otherwise. Never consumes either.
  *
- * `metadata.pending_prompt` is written by the session CREATE, so it exists only
- * when the send created the session. A send that reused a WARM session created
- * nothing, so its prompt lives only in the start stash the composer wrote before
- * navigating. Reading both is what keeps the failure card's "copy your prompt"
- * and Retry working identically on either path.
+ * `metadata.pending_prompt` is written by the session CREATE. The start stash
+ * the composer wrote before navigating is the fallback while that row is not
+ * read yet. Reading both keeps the failure card's "copy your prompt" and Retry
+ * working before and after the session row loads.
  *
  * A session that an agent, a trigger, a channel, MCP or a marketplace install
  * created has neither: its first prompt is `metadata.initial_prompt`. That

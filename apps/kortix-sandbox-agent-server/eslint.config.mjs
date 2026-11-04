@@ -64,6 +64,8 @@ const SDK_WIRE_MESSAGE_ID = [resolve(import.meta.dirname, '../..', SDK_WIRE_MESS
 // The import-free prompt envelopes of a cross-session and a room message (pi reads a turn's origin from them).
 const PROMPT_ENVELOPE_FILES = ['packages/shared/src/peer-message-prompt.ts', 'packages/shared/src/room-prompt.ts']
 const PROMPT_ENVELOPES = PROMPT_ENVELOPE_FILES.flatMap((file) => [resolve(import.meta.dirname, '../..', file).split(sep).join('/'), at(`../../${file}`)])
+// The voice (packages/voice): imported by the kortix-voice extension only while the project's voice_call flag is on.
+const VOICE = [`${resolve(import.meta.dirname, '../../packages/voice/src').split(sep).join('/')}/**`, at('../../packages/voice/src/**')]
 /** @type {Record<string, string[]>} */
 const SERVICE_EXTERNALS = {
   // How the compiled agent config is carried in env (`@kortix/api-contract/compiled-agent-config-env`).
@@ -93,6 +95,7 @@ export const ADAPTERS = {
     at('node_modules/@earendil-works/pi-coding-agent/dist/extensions/codemode/tool.*'),
     ...SDK_WIRE_MESSAGE_ID,
     ...PROMPT_ENVELOPES,
+    ...VOICE,
   ],
 }
 
@@ -134,6 +137,7 @@ const independentModules = createIndependentModules({
       '@kortix/sdk/wire-message-id': [at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)],
       '@kortix/shared/peer-message-prompt': [at('../../packages/shared/src/peer-message-prompt.ts')],
       '@kortix/shared/room-prompt': [at('../../packages/shared/src/room-prompt.ts')],
+      '@kortix/voice/*': [at('../../packages/voice/src/*')],
     },
   },
   reusableImportPatterns: { sharedLayer: [lib, types] },

@@ -9,6 +9,7 @@
 import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
 import { and, eq, inArray, ne } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { isUuid } from '../../shared/validate';
 import { readChannelAccess } from '../core/channel-access';
 import { clip } from './render';
 import { discordGuildProjects } from './installs';
@@ -16,13 +17,12 @@ import { projectNames, projectsAllowing } from './routing';
 import type { DiscordConversation } from './types';
 
 /** `kd:<project id>`: 39 bytes. The press binds the channel it is in; the token names no channel. */
-const PROJECT_PRESS = /^kd:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
-
 export const isProjectPress = (data: string) => data.startsWith('kd:');
 
 /** The project a `kd:` token names; '' when it is not one. */
 export function parseProjectPress(data: string): string {
-  return PROJECT_PRESS.exec(data)?.[1] ?? '';
+  const projectId = isProjectPress(data) ? data.slice('kd:'.length) : '';
+  return isUuid(projectId) ? projectId : '';
 }
 
 export const projectPressData = (projectId: string) => `kd:${projectId}`;
@@ -95,9 +95,10 @@ export async function bindDiscordChannel(conversation: DiscordConversation, proj
  * The first project a conversation runs, kept: when a second project installs
  * the server (or allows the person of a DM), the channels already in use stay
  * with the first. Never takes a channel another project holds, except a DM
- * whose project removed its one person (`senderId`) from its list.
+ * whose project removed its one person (`senderId`) from its list. A DM is
+ * named after its person (`senderName`), as the Channels page lists it.
  */
-export async function claimDiscordChannel(conversation: DiscordConversation, projectId: string, senderId: string): Promise<void> {
+export async function claimDiscordChannel(conversation: DiscordConversation, projectId: string, senderId: string, senderName?: string): Promise<void> {
   if (conversation.direct) {
     // A DM's row may sit under any guild: one row at most.
     const rows = await db
@@ -116,7 +117,7 @@ export async function claimDiscordChannel(conversation: DiscordConversation, pro
       workspaceId: conversation.guildId,
       channelId: conversation.settingsId,
       projectId,
-      channelName: conversation.direct ? 'direct message' : conversation.channelName ? `#${conversation.channelName}` : null,
+      channelName: conversation.direct ? clip(senderName || 'direct message', 100) : conversation.channelName ? `#${conversation.channelName}` : null,
       channelType: conversation.direct ? 'dm' : 'channel',
     })
     .onConflictDoNothing({ target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId] });

@@ -23,8 +23,8 @@ import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
 // server-side, which is one of two moments:
 //   - create-with-prompt: `body.initial_prompt` (or `body.title_source`) is
 //     baked into the sandbox and runs in-guest, so create is its only chance;
-//   - first HTTP prompt: sessions created empty (the whole web UI, warm claim,
-//     CLI/SDK) carry their first prompt as an OpenCode REST request body.
+//   - first HTTP prompt: sessions created empty (the whole web UI, CLI/SDK)
+//     carry their first prompt as an OpenCode REST request body.
 // At most two bounded calls to the internal LLM gateway use only that text. A
 // deterministic prompt excerpt guarantees a title when both calls fail. That
 // excerpt is a fallback (`title_fallback_attempts`): the next prompt or turn end

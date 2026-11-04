@@ -61,7 +61,7 @@ agents:
     kortix_permissions: all
 ```
 
-Source: `packages/starter/templates/base/kortix.yaml` in [Kortix on GitHub](https://github.com/kortix-ai/suna/blob/dev/packages/starter/templates/base/kortix.yaml), the manifest every new project starts from. An agent's reach is six lines of YAML and a markdown file, versioned with the rest of the company. Widen a grant and it is a diff a person reads. Run the same manifest on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free.
+Source: `packages/starter/templates/base/kortix.yaml` in [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/kortix.yaml), the manifest every new project starts from. An agent's reach is six lines of YAML and a markdown file, versioned with the rest of the company. Widen a grant and it is a diff a person reads. Run the same manifest on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free.
 
 ## What to read next
 

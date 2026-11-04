@@ -148,7 +148,16 @@ export interface ChannelPort {
    * Null or absent: no model is sent. A throw is logged, and no model is sent.
    */
   turnModel?(target: ChannelTarget, thread: { sessionId: string; projectId: string }): Promise<string | null>;
+  /**
+   * The session went idle: its run finished, failed or was stopped, and no
+   * queued prompt keeps it running (session-notice.ts `settleSessionChat`).
+   * The platform clears what it showed while the agent worked. Absent: nothing to clear.
+   */
+  turnSettled?(target: ChannelTarget, outcome: TurnSettlement, sessionId: string): Promise<void>;
 }
+
+/** How a session's run ended, for what the chat showed while it worked. */
+export type TurnSettlement = 'done' | 'failed' | 'stopped';
 
 /** One verified, deduped, sender-gated inbound message. */
 export interface ChannelMessage {

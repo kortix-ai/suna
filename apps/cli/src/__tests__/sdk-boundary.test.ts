@@ -35,7 +35,7 @@ describe('scanSource raw-kortix-fetch', () => {
   });
 
   test('allows the GitHub releases API', () => {
-    const source = "await fetch('https://api.github.com/repos/kortix-ai/suna/releases/latest')";
+    const source = "await fetch('https://api.github.com/repos/kortix-ai/CompanyOS/releases/latest')";
 
     expect(scanSource(source)).toEqual([]);
   });
@@ -44,6 +44,12 @@ describe('scanSource raw-kortix-fetch', () => {
     const source = "await fetch('https://hub.docker.com/v2/repositories/x/tags')";
 
     expect(scanSource(source)).toEqual([]);
+  });
+
+  test("allows a self-host's own acme-dns API on its one loopback port, and no other loopback port", () => {
+    expect(scanSource("await fetch('http://127.0.0.1:13750/register', { method: 'POST' })")).toEqual([]);
+    expect(scanSource("await fetch('http://127.0.0.1:8008/v1/projects')").map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
+    expect(scanSource("await fetch('http://127.0.0.1:137500/x')").map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
   });
 
   test('allows a template whose static prefix is an allowed origin', () => {
@@ -261,7 +267,7 @@ describe('scanCliBoundary', () => {
       [
         "import { createKortix } from '@kortix/sdk';",
         'export async function latest() {',
-        "  return fetch('https://api.github.com/repos/kortix-ai/suna/releases/latest');",
+        "  return fetch('https://api.github.com/repos/kortix-ai/CompanyOS/releases/latest');",
         '}',
         'export { createKortix };',
         '',

@@ -659,6 +659,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const [queueExpanded, setQueueExpanded] = useState(false);
   const [savedInputText, setSavedInputText] = useState('');
   const inputTextRef = useRef('');
+  // Wire ids this device sent: their author is the viewer before the server records it.
+  const sentHereIds = useRef(new Set<string>());
 
   // The first pending question for this session (if any)
   const activeQuestion: QuestionRequest | undefined = pendingQuestions[0];
@@ -735,6 +737,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       // file with its device URI: the bubble shows the local thumbnail until
       // the server echo replaces the message.
       const sentAtMs = Date.now();
+      sentHereIds.current.add(messageId);
       addOptimisticMessage(sessionId, {
         info: { id: messageId, role: 'user', sessionID: sessionId, time: { created: sentAtMs } },
         parts: optimisticUserParts(finalText, attachments?.files ?? [], sentAtMs),
@@ -1171,7 +1174,20 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId, wantedAuthorIds, isBusy).data;
   const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
   // The signed-in user: the participants list holds at most 20 people.
-  const signedInUserId = useAuthContext().user?.id;
+  const authUser = useAuthContext().user;
+  const signedInUserId = authUser?.id;
+  // The viewer's own avatar: it stands in above a message this device sent
+  // until the server records its author, so the bubble does not move.
+  const viewerPerson = useMemo((): AvatarPerson | null => {
+    if (!authUser) return null;
+    const meta = authUser.user_metadata ?? {};
+    const name = meta.full_name ?? meta.name;
+    return {
+      name: typeof name === 'string' ? name : '',
+      email: authUser.email ?? null,
+      avatar_url: typeof meta.avatar_url === 'string' ? meta.avatar_url : null,
+    };
+  }, [authUser]);
   // The sender of a message, built once per message while the authors and the
   // participants stay the same: the same object each render keeps the memoized
   // rows from rendering again.
@@ -1179,11 +1195,12 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     const cache = new Map<string, AvatarPerson | null>();
     return (messageId: string) => {
       if (!cache.has(messageId)) {
-        cache.set(messageId, messageAvatarPerson(messageAuthors, participants, viewerId, messageId));
+        const recorded = messageAvatarPerson(messageAuthors, messageId);
+        cache.set(messageId, recorded ?? (sentHereIds.current.has(messageId) ? viewerPerson : null));
       }
       return cache.get(messageId) ?? null;
     };
-  }, [messageAuthors, participants, viewerId]);
+  }, [messageAuthors, viewerPerson]);
   // The Kortix session that sent a message (a coordinator, a spawn), same
   // memo rule as `senderOf`.
   // Keyed by the ids, not by `turns`: a stream delta makes a new `turns` array
@@ -1209,8 +1226,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // re-minted under; either finds its author.
   const queuedSender = useCallback(
     (prompt: SessionPrompt) =>
-      senderOf(prompt.message_id) ?? (prompt.wire_message_id ? senderOf(prompt.wire_message_id) : null),
-    [senderOf],
+      senderOf(prompt.message_id) ??
+      (prompt.wire_message_id ? senderOf(prompt.wire_message_id) : null) ??
+      (signedInUserId && prompt.author_user_id === signedInUserId ? viewerPerson : null),
+    [senderOf, signedInUserId, viewerPerson],
   );
   // A queued prompt runs as its author: only they send it now, and they or a
   // session manager remove it. The API answers 403 to anyone else. The

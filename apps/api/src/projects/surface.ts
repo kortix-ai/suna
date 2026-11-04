@@ -44,7 +44,6 @@ export {
   deliverThroughQueue,
   drainSessionLifecycleQueue,
   resolveProjectAutomationActor,
-  retireWarmProjectSessions,
 } from './session-lifecycle';
 export type { CreateSessionCommand } from './session-lifecycle';
 export type { PromptPartWire } from './session-lifecycle/prompt-payload';
@@ -157,11 +156,15 @@ export { abortRuntimeTurn } from './session-lifecycle/abort-runtime-turn';
 
 // The retention purge of session content (consumed by worker/jobs/session-log-purge.ts).
 export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
+// The liveness rule of a closed account, shared with billing/services/retention-erasure.ts.
+export { LIVE as liveClosedAccountSql } from './session-log-purge';
 
 // Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
 export { resolveCommitSha, resolveCommitShaAt } from './git/commits';
-export { refreshIntervalMs, refreshMirror, useSharedTipProof } from './git/mirror';
+export { publishTipProofsTo, refreshIntervalMs, refreshMirror, useSharedTipProof } from './git/mirror';
 export type { GitBackedProject } from './git/types';
+// Saved config summaries, rebuilt when a base ref moves (consumed by ../config-releases/publish).
+export { savedProjectConfig, scheduleConfigSummary } from './config-summary/service';
 
 // Who may stop a running turn (consumed by channels/core/turn-stop.ts and
 // sandbox-proxy/forward/abort-authority.ts).
@@ -172,6 +175,8 @@ export { turnPromptSource } from './lib/notification-recipients';
 export { mayRewindSession } from './session-lifecycle/rewind-authority';
 // Wakes the first prompts waiting on a box that went active on any replica (consumed by bootstrap.ts).
 export { signalSessionRuntimeActive } from './session-lifecycle/runtime-active-signal';
+// The session-open admission read, handed to the turn-start gates (consumed by runtime-convergence).
+export { noteSandboxHealthBody } from './lib/turn-start-convergence';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
 
@@ -187,3 +192,12 @@ export { readPublicResponse } from './lib/public-response';
 export { drainClaudeLogins } from './claude-subscription/flows';
 // The turn gate for Claude subscription models (sandbox-proxy/forward/turn-start.ts).
 export { missingClaudeSubscription, sessionModelPin } from './claude-subscription/gate';
+
+// The push gate's manifest check (consumed by the git proxy).
+export {
+  MAX_CHECKED_PUSH_BYTES,
+  pushedManifestRefusal,
+  pushedManifestSyntaxError,
+} from './git/push-manifest-check';
+// A manifest write refused while the default branch's kortix.yaml is not YAML (consumed by the HTTP error handler).
+export { ManifestWriteRefusedError } from './manifest-io';

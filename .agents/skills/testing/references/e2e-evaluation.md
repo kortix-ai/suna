@@ -33,8 +33,7 @@ The risk is that an agent finds a different path while the intended control is b
 Keep exact assertions for the control, request payload, status, persisted result, and reload behavior.
 Do not let a model redefine the expected result to make a test pass.
 
-The pilot uses one live session prompt with the project's real `warm_sessions` flag explicitly disabled.
-Background warm-pool provisioning is excluded from this journey; the existing warm-session contracts retain that coverage.
+The pilot uses one live session prompt.
 It observes the real request, checks one submission, waits for an assistant reply, verifies both messages in the durable transcript, and reloads the page.
 It creates only synthetic data and removes its session, managed repository, account, and auth user.
 Cleanup runs in `afterEach` with a separate five-minute budget, including after a test timeout.
@@ -276,7 +275,7 @@ No general engine defect is established. The fixture selects the existing `.kort
 Unsupported response predicates prevent an exact POST-status assertion; durable transcript read-back proves acceptance.
 
 A late warm-session allocation exposed an incomplete cleanup check of missing provider IDs.
-The fixture disables background warming through the real feature API and requires confirmed removal for every recorded cloud session.
+The fixture requires confirmed removal for every recorded cloud session. Warm sessions were removed on 2026-11-03.
 Cleanup failures preserve recovery records. Private recovery removed all known repositories, cloud sessions, accounts, and auth users.
 Interrupting a diagnostic also left a synthetic repository without a cloud session; private recovery removed it and its identity.
 After an interruption, audit fixtures and external resources. Ordinary Node HTTP setup does not have the engine's cancellation guarantees.

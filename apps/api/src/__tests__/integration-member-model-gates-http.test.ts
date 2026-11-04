@@ -211,6 +211,21 @@ describe('project member — model selection', () => {
     }
   });
 
+  test('a switch refuses an unknown model before enqueueing its continuation', async () => {
+    const res = await req('PUT', `${base}/sessions/${SESSION}/model`, memberKey, {
+      model: 'kortix/nonexistent-synthetic-model', prompt: 'Continue', idempotency_key: 'unknown-model',
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: 'INVALID_SESSION_MODEL' });
+  });
+
+  test('a switch cannot mutate a session the caller cannot see', async () => {
+    const res = await req('PUT', `${base}/sessions/${crypto.randomUUID()}/model`, memberKey, {
+      model: 'kortix/nonexistent-synthetic-model', prompt: 'Continue', idempotency_key: 'hidden-session',
+    });
+    expect(res.status).toBe(404);
+  });
+
   test("session model write is floored 'session', not 'write'", () => {
     // The behavioural test above can only prove the CURRENT floor admits a
     // member. This pins WHICH floor, so a future edit back to 'write' fails

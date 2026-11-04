@@ -69,11 +69,11 @@ import { startComputeSession } from '../../billing/services/compute-metering';
 import { resolveAgentGrant } from '../../projects/agents';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
-import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { instanceStampMetadata } from '../../projects/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { myKortixAgentGrant } from '../../projects/lib/my-kortix-agent';
+import { devTunnelStamp } from '../dev-tunnel-stamp';
 import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
 import { agentPrincipalModeFor } from '../../iam/agent-principal';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
@@ -697,13 +697,6 @@ export async function provisionSessionSandbox(opts: {
   const sessionToken = tokenResult.value;
   const [sandbox] = sandboxRows;
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
-  // A WARM-POOL box is the one box the control plane can never observe again
-  // until somebody claims it: no turns, no LLM calls, no human preview traffic.
-  // Under the bare 20-minute boot floor every warm box was therefore reaped
-  // before it could be handed out, which defeats the whole feature. Grant its
-  // (bounded) lifetime here, at the one moment we know it is warm. No-op for
-  // every other box, and fire-and-forget: the row already carries the floor.
-  void grantWarmPoolLifetime(sandboxId, sandbox.metadata);
   tl.mark('row+tokens');
 
   const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
@@ -741,9 +734,8 @@ export async function provisionSessionSandbox(opts: {
     serverType,
     location: placement.location,
     // A box that mounts the project's Files never leaves their region: the
-    // home region could not mount them. Nor does a warm (speculative) box:
-    // the warm marker of projects/sandbox-deadline-policy.ts isWarmPoolBox.
-    locationRequired: placement.required || sandbox.metadata?.warm === true,
+    // home region could not mount them.
+    locationRequired: placement.required,
     envVars: {
       ...extraEnvVars,
       // One sandbox, one session-scoped Kortix credential. Provider, connector,
@@ -1300,7 +1292,8 @@ async function activateProvisionedSandbox(
     columns: {
       externalId: result.externalId,
       baseUrl: result.baseUrl || null,
-      config: { serviceKey: sessionToken },
+      // On a quick-tunnel dev stack, the tunnel this box calls back to (platform/dev-tunnel-stamp.ts).
+      config: { serviceKey: sessionToken, ...devTunnelStamp() },
       lastUsedAt: new Date(),
     },
     metadata: sandboxInitMetadataPatch(snapshot, finishMetadata),

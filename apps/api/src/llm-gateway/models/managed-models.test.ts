@@ -5,14 +5,19 @@ import {
   canonicalManagedModelId,
   getRuntimeManagedModel,
   isKnownManagedModelId,
+  isManagedAudioModelId,
   isRetiredManagedModelId,
+  isRuntimeManagedModelId,
   loadManagedLineup,
+  managedAudioModelIdsFromPlatinum,
   managedLineup,
+  managedLineupRevision,
   managedModelsFromPlatinum,
   type ManagedModel,
   resolvePlatformDefaultModelId,
   __setManagedLineupForTest,
 } from './managed-models';
+import { servedManagedModels } from './served-managed-models';
 
 const answer = (body: unknown, status = 200) => async () => new Response(JSON.stringify(body), { status });
 
@@ -56,6 +61,56 @@ describe('the managed lineup is what Platinum Inference lists', () => {
     });
     expect(seen!.url.endsWith('/models')).toBe(true);
     expect(seen!.auth).toMatch(/^Bearer \S+/);
+  });
+});
+
+// Platinum's `/models` with the entries an org granted private models sees
+// (shapes from the Platinum change that added them), private chat model first.
+const PRIVATE_CHAT = { ...PLATINUM_MODELS_RESPONSE.data[1]!, id: 'small-private', name: 'Small Private', private: true };
+const AUDIO = [
+  {
+    id: 'stt-private', object: 'model', owned_by: 'platinum', name: 'STT', private: true,
+    modalities: { input: ['audio'], output: ['text'] }, pricing: { audio_hour: 0.04, min_seconds: 10 },
+  },
+  {
+    id: 'tts-private', object: 'model', owned_by: 'platinum', name: 'TTS', private: true,
+    modalities: { input: ['text'], output: ['audio'] }, pricing: { characters_million: 15 },
+  },
+];
+const WITH_PRIVATE = { object: 'list', data: [PRIVATE_CHAT, ...PLATINUM_MODELS_RESPONSE.data, ...AUDIO] };
+
+describe('private models answer by id and are listed nowhere', () => {
+  test('a private chat model resolves by its bare id but is outside the lineup, the served set and the default', async () => {
+    expect(await loadManagedLineup(answer(WITH_PRIVATE))).toBe(true);
+    expect(getRuntimeManagedModel('small-private')).toMatchObject({ id: 'small-private', private: true });
+    expect(managedLineup().map((m) => m.id)).toEqual(['deepseek-v4.1-flash', 'glm-5.3-flash']);
+    expect(servedManagedModels().map((m) => m.id)).toEqual(['deepseek-v4.1-flash', 'glm-5.3-flash']);
+    // Platinum lists it first; the default and a retired id's successor still take the first public model.
+    expect(resolvePlatformDefaultModelId('', servedManagedModels())).toBe('deepseek-v4.1-flash');
+    expect(canonicalManagedModelId('kimi-k3')).toBe('deepseek-v4.1-flash');
+    expect(isRuntimeManagedModelId('small-private')).toBe(false);
+    expect(isRuntimeManagedModelId('glm-5.3-flash')).toBe(true);
+  });
+
+  test('an audio model is no chat model: it resolves only as a managed audio id', async () => {
+    expect(managedModelsFromPlatinum({ data: AUDIO })).toEqual([]);
+    expect(managedAudioModelIdsFromPlatinum(WITH_PRIVATE)).toEqual(['stt-private', 'tts-private']);
+    expect(await loadManagedLineup(answer(WITH_PRIVATE))).toBe(true);
+    expect(isManagedAudioModelId('stt-private')).toBe(true);
+    expect(isManagedAudioModelId('tts-private')).toBe(true);
+    expect(isManagedAudioModelId('glm-5.3-flash')).toBe(false);
+    expect(getRuntimeManagedModel('stt-private')).toBeUndefined();
+    expect(managedLineup().some((m) => m.id.endsWith('-private'))).toBe(false);
+  });
+
+  test('reloading the same list changes nothing, so derived catalogs do not rebuild', async () => {
+    await loadManagedLineup(answer(WITH_PRIVATE));
+    const revision = managedLineupRevision();
+    await loadManagedLineup(answer(WITH_PRIVATE));
+    expect(managedLineupRevision()).toBe(revision);
+    await loadManagedLineup(answer({ ...WITH_PRIVATE, data: WITH_PRIVATE.data.slice(0, -1) }));
+    expect(managedLineupRevision()).toBe(revision + 1);
+    expect(isManagedAudioModelId('tts-private')).toBe(false);
   });
 });
 

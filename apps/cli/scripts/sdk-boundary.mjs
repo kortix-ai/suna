@@ -26,6 +26,10 @@ const ALLOWED_FETCH_ORIGINS = [
   'https://objects.githubusercontent.com',
   'https://hub.docker.com',
   'https://registry.npmjs.org',
+  // A self-host's bundled acme-dns API on the box's own loopback
+  // (ACME_DNS_LOOPBACK_URL, apps/cli/src/self-host/wildcard-tls.ts). One fixed
+  // port, never loopback in general: a local Kortix API still needs the SDK.
+  'http://127.0.0.1:13750',
 ];
 
 /**

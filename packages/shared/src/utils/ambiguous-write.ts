@@ -1,7 +1,7 @@
 /**
- * Did an ambiguous write commit? Shared by apps/web (session create, warm
- * claim) and apps/mobile (warm claim), so both treat a timed-out write the
- * same way: ask the server before falling back to a second write.
+ * Did an ambiguous write commit? Shared by apps/web and apps/mobile (session
+ * create), so both treat a timed-out write the same way: ask the server before
+ * falling back to a second write.
  */
 
 /**

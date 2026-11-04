@@ -154,6 +154,22 @@ describe('a fresh cron trigger (overlap: skip by default)', () => {
     expect(creates).toEqual(['finished']);
   });
 
+  test('a create left running for more than 24 hours does not hold it for good', async () => {
+    // A create claimed before inline claims carried a lock stays `running` with
+    // no lock; no worker ever settles it.
+    await db.insert(sessionLifecycleCommands).values({
+      commandType: 'create_session',
+      source: 'trigger:cron',
+      status: 'running',
+      projectId: project.project_id,
+      accountId: project.account_id,
+      payload: { metadata: { trigger_slug: 'wedged-create', trigger_kind: 'git' } },
+      createdAt: new Date(Date.now() - 25 * 60 * 60_000),
+    } as never);
+    expect((await fire(spec('wedged-create'))).status).not.toBe('skipped');
+    expect(creates).toEqual(['wedged-create']);
+  });
+
   test("another trigger's active session does not hold it", async () => {
     await seedTriggerSession('neighbour', { status: 'provisioning' });
     expect((await fire(spec('alone'))).status).not.toBe('skipped');
@@ -183,7 +199,7 @@ describe('other types (overlap: allow by default)', () => {
 
 describe('a cron trigger that re-prompts one session (reuse, pinned, keyed)', () => {
   /** A prompt of `slug` in the queue of a session of that trigger, keyed when `key` is given. */
-  async function seedWaitingPrompt(slug: string, input: { status: string; key?: string }) {
+  async function seedWaitingPrompt(slug: string, input: { status: string; key?: string; createdAt?: Date }) {
     const sessionId = crypto.randomUUID();
     await db.insert(projectSessions).values({
       sessionId,
@@ -204,6 +220,7 @@ describe('a cron trigger that re-prompts one session (reuse, pinned, keyed)', ()
         accountId: project.account_id,
         sessionId,
         payload: { text: 'Run it.', triggerSlug: slug },
+        ...(input.createdAt ? { createdAt: input.createdAt } : {}),
       } as never)
       .returning({ commandId: sessionLifecycleCommands.commandId });
     return command!.commandId;
@@ -228,9 +245,11 @@ describe('a cron trigger that re-prompts one session (reuse, pinned, keyed)', ()
     expect((await fire(keyed('other'))).status).not.toBe('skipped');
   });
 
-  test('a delivered prompt, overlap: allow, and a person firing by hand are not held', async () => {
+  test('a delivered prompt, a prompt older than 24 hours, overlap: allow, and a person firing by hand are not held', async () => {
     await seedWaitingPrompt('reuse-done', { status: 'succeeded' });
     expect((await fire(spec('reuse-done', { sessionMode: 'reuse' }))).status).not.toBe('skipped');
+    await seedWaitingPrompt('reuse-wedged', { status: 'running', createdAt: new Date(Date.now() - 25 * 60 * 60_000) });
+    expect((await fire(spec('reuse-wedged', { sessionMode: 'reuse' }))).status).not.toBe('skipped');
     await seedWaitingPrompt('reuse-allowed', { status: 'queued' });
     expect((await fire(spec('reuse-allowed', { sessionMode: 'reuse', overlap: 'allow' }))).status).not.toBe('skipped');
     expect((await fire(spec('reuse-allowed', { sessionMode: 'reuse' }), true)).status).not.toBe('skipped');

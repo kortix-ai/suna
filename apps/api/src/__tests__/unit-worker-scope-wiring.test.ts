@@ -35,6 +35,7 @@ const read = (file: string) => readFileSync(join(SRC, file), 'utf8');
 
 /** Worker name → the file whose tick is wrapped in `runWorkerTick('<name>'`. */
 const WORKERS: Record<string, string> = {
+  'sales-outbox': 'worker/jobs/sales-outbox.ts',
   'active-turn-renewal': 'worker/jobs/active-turn-renewal.ts',
   'project-maintenance': 'worker/jobs/project-maintenance.ts',
   'trigger-scheduler': 'worker/jobs/trigger-scheduler.ts',
@@ -78,6 +79,7 @@ const WORKERS: Record<string, string> = {
   'drive-index': 'worker/jobs/drive.ts',
   'notification-digest': 'worker/jobs/notification.ts',
   'session-log-purge': 'worker/jobs/session-log-purge.ts',
+  'retention-erasure': 'worker/jobs/retention-erasure.ts',
   'gateway-spend-backfill': 'worker/jobs/gateway-spend-backfill.ts',
   'residential-proxy-billing': 'worker/jobs/residential-proxy-billing.ts',
   'storage-billing': 'worker/jobs/storage-billing.ts',

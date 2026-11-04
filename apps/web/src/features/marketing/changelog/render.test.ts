@@ -31,7 +31,7 @@ describe('renderReleaseMarkdown', () => {
       'Fixed the queue. (#10786) See [#12](https://example.com) and `#99`.',
     );
     expect(html).toContain(
-      '<a href="https://github.com/kortix-ai/suna/pull/10786" target="_blank" rel="noopener noreferrer" data-pr="">#10786</a>)',
+      '<a href="https://github.com/kortix-ai/CompanyOS/pull/10786" target="_blank" rel="noopener noreferrer" data-pr="">#10786</a>)',
     );
     expect(html).toContain('<a href="https://example.com" target="_blank" rel="noopener noreferrer">#12</a>');
     expect(html).toContain('<code>#99</code>');

@@ -86,6 +86,8 @@ for (const [name, experimental] of [
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     client = queryClient;
     queryClient.setQueryData(qk.project.detail(projectId), { project: { project_id: projectId, experimental } });
+    // Flags come from the bare project row (`useFeatureFlag`).
+    queryClient.setQueryData(qk.project.summary(projectId), { project_id: projectId, experimental });
     queryClient.setQueryData(qk.project.apps(projectId), []);
     const host = win.document.createElement('div');
     win.document.body.append(host);
@@ -105,7 +107,7 @@ for (const [name, experimental] of [
     expect(host.querySelector('h1')?.textContent).toBe('Apps');
     expect(host.textContent).toContain('Apps you publish will show up here');
     expect(host.textContent).toContain('Ask an agent to build one.');
-    expect(host.querySelector('a[href="/docs/apps"]')).not.toBeNull();
+    expect(host.querySelector('a[href="/docs/developers#apps-reference"]')).not.toBeNull();
     expect(host.querySelector('[role="switch"], input[type="checkbox"]')).toBeNull();
     expect(host.textContent).not.toMatch(/Enable Apps|Feature flags|Experimental/);
     expect(host.querySelector('a[href*="settings"]')).toBeNull();

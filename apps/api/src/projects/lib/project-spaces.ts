@@ -113,7 +113,7 @@ async function ensureDefaultSpaceCreated(projectId: string, accountId: string): 
  * The project's `#general`, created on first call. Idempotent under
  * concurrency. The call that creates it also files every session that is in
  * no space into it, so every path that needs `#general` (the toggle effect, a
- * channel list, a session create, a warm claim) converges a project whose
+ * channel list, a session create) converges a project whose
  * toggle effect failed before `#general` existed. No later call checks again.
  * It also makes `#general`'s Files folder, best effort and off the
  * caller's path (the Files tab makes it on open when this fails).
@@ -137,29 +137,6 @@ export async function turnOnChannels(projectId: string, accountId: string): Prom
   if (general.created) void spaceFolders().then((m) => m.makeChannelFolders(accountId, projectId, DEFAULT_SLUG));
   const filed = await assignUnassignedSessions(projectId, general.space.spaceId);
   return { generalCreatedAt: general.space.createdAt, filed };
-}
-
-/**
- * A warm session claimed while `project_channels` is on is a new `#general`
- * thread, as a create without `space_id` is (a warm session is created outside
- * any space). Returns the `#general` id (null while the flag is off), the
- * columns the claim sets (a space the row already has wins) and the metadata
- * that carries the first prompt.
- */
-export async function warmClaimFiling(
-  project: { projectId: string; accountId: string; metadata: unknown },
-  promptText: unknown,
-): Promise<{ defaultSpaceId: string | null; columns: { spaceId?: SQL }; metadata: { first_prompt?: string } }> {
-  if (!resolveFeatureFlag(project.metadata, 'project_channels')) {
-    return { defaultSpaceId: null, columns: {}, metadata: {} };
-  }
-  const { spaceId } = await ensureDefaultSpace(project.projectId, project.accountId);
-  const firstPrompt = normalizeString(promptText);
-  return {
-    defaultSpaceId: spaceId,
-    columns: { spaceId: sql`coalesce(${projectSessions.spaceId}, ${spaceId}::uuid)` },
-    metadata: firstPrompt ? { first_prompt: firstPrompt.slice(0, FIRST_PROMPT_MAX_CHARS) } : {},
-  };
 }
 
 /** Live channels the caller may see (default first, then oldest first), then the caller's DMs. */

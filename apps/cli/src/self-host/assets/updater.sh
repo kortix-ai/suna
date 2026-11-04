@@ -426,7 +426,10 @@ downtime_swap() {
 # considered "reconciled" without a post-start go/no-go check, logged
 # explicitly either way.
 reconcile_stateful_services() {
-  all_ok=0
+  # Not `all_ok`: POSIX sh has no locals, and wait_healthy sets all_ok=1 when
+  # every container is healthy, which this function's caller read as "failed"
+  # (every successful stateful recreate reported the run degraded).
+  stateful_rc=0
   for svc in $($COMPOSE config --services 2>/dev/null); do
     case "$svc" in
       kortix-api | llm-gateway | frontend | kortix-migrate | kortix-updater) continue ;;
@@ -440,10 +443,10 @@ reconcile_stateful_services() {
       log "$svc: healthy after recreate (go)"
     else
       log "ERROR: $svc did not become healthy after recreate (no-go) — investigate before the next scheduled run retries it"
-      all_ok=1
+      stateful_rc=1
     fi
   done
-  return "$all_ok"
+  return "$stateful_rc"
 }
 
 # Logs one line per service whose running container image doesn't match what
@@ -857,6 +860,33 @@ if [ "${1:-}" = "once" ]; then
   rc=0
   run_locked manual || rc=$?
   exit "$rc"
+fi
+
+# `updater.sh roll <service>...` re-rolls the named app services onto their
+# CURRENT config with the same start-first swap a version update uses: no pull,
+# no migration. `kortix self-host env set` / `domain move` call it after a
+# config change, so a new environment value reaches the API, gateway and
+# frontend with zero downtime instead of a recreate of every replica at once.
+if [ "${1:-}" = "roll" ]; then
+  shift
+  log "config roll: $*"
+  (
+    if ! flock -n 9; then
+      log "another update run is already in progress; config roll skipped"
+      exit 75
+    fi
+    printf 'kind=roll pid=%s since=%s\n' "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$HOLDER_FILE"
+    rc=0
+    for svc in "$@"; do
+      case " $ROLL_SERVICES " in
+        *" $svc "*) roll_or_recreate_with_retry "$svc" || rc=1 ;;
+        *) log "ERROR: $svc is not a rolling service"; rc=1 ;;
+      esac
+    done
+    rm -f "$HOLDER_FILE" 2>/dev/null || true
+    exit "$rc"
+  ) 9>"$LOCK_FILE"
+  exit $?
 fi
 
 # `updater.sh status` / `updater.sh report`: read-only, no lock needed — used

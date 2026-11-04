@@ -13,7 +13,7 @@
 set -euo pipefail
 
 # ─── Config ───────────────────────────────────────────────────────────────────
-REPO="${KORTIX_REPO:-kortix-ai/suna}"
+REPO="${KORTIX_REPO:-kortix-ai/CompanyOS}"
 INSTALL_HOME="${KORTIX_HOME:-$HOME/.kortix}"
 BINARY_NAME="kortix"
 CHANNEL="${KORTIX_CHANNEL:-prod}"

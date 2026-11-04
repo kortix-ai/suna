@@ -1,6 +1,6 @@
 /**
  * Session lifecycle verbs the dashboard has and the CLI did not: pause a
- * session, wake one back up, pre-warm one, change its model mid-flight,
+ * session, wake one back up, change its model mid-flight,
  * compact its conversation, restore a deleted one, and continue a lost one.
  *
  * `restart` (re-provision) already lives in sessions.ts and is a different
@@ -8,6 +8,7 @@
  * Stop button and the session page's open call drive, disk kept.
  */
 
+import { sessionModelTarget } from './session-model-input';
 import { ApiError, runtimeSupports } from '@kortix/sdk';
 
 import {
@@ -20,7 +21,6 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { withKortixScope } from '../api/sdk.ts';
-import type { ProjectSession } from '../api/types.ts';
 import {
   type SessionStartPayload,
   describeStartProgress,
@@ -115,37 +115,23 @@ Options:
 Needs project.session.start.
 `;
 
-const WARM_HELP = help`Usage: kortix sessions warm [options]
-
-Pre-create the session you are about to use, so the sandbox is already up when
-the first prompt lands. Speculative by contract: it reuses an existing unused
-warm session when there is one, and every failure is recoverable — fall back to
-\`kortix sessions new\`. A warm session stays hidden from \`sessions ls\` until
-its first prompt.
-
-Options:
-  --exclude <session-id>   Never hand back this session — pass the warm one you
-                           just took, so a replenish creates a fresh box.
-  --project <id>           Operate on this project id (default: linked).
-  --host <name>            Operate against a non-default Kortix host.
-  --json                   Machine-readable output.
-  -h, --help               Show this help.
-
-Needs project.session.start.
-`;
-
 const MODEL_HELP = help`Usage: kortix sessions model <session-id> <model-id> [options]
 
 Change the model a session runs, mid-session. A live sandbox is re-pointed and
-its runtime restarts, which ENDS the turn running right now; a stopped session
-stores the value for its next start. The reply says which happened:
+pi reconfigures without restarting. The running turn finishes on its model;
+the next turn uses the saved model. The reply says which happened:
 
   applied_live true    the running box answers from the new model now
   applied_live false   stored; it takes effect at the next start
   push_failed  true    stored, but the live push FAILED — the running harness
                        still answers from the OLD model
 
+New verbs: get [session-id], set [session-id] <model>, switch [session-id] <model>.
+The new verbs default to KORTIX_SESSION_ID.
+
 Options:
+  --prompt <text>  Queue a continuation after the running turn.
+  --idempotency-key <key>  Required with --prompt; reuse for retries.
   --project <id>   Operate on this project id (default: linked).
   --host <name>    Operate against a non-default Kortix host.
   --json           Machine-readable output.
@@ -380,66 +366,22 @@ export async function runSessionsStart(argv: string[]): Promise<number> {
   return 0;
 }
 
-export async function runSessionsWarm(argv: string[]): Promise<number> {
-  const rest = [...argv];
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(WARM_HELP);
-    return 0;
-  }
-  let opts: CtxOpts;
-  let exclude: string | undefined;
-  let json = false;
-  try {
-    opts = { projectArg: takeFlagValue(rest, ['--project']), hostArg: takeFlagValue(rest, ['--host']) };
-    exclude = takeFlagValue(rest, ['--exclude']);
-    json = takeFlagBool(rest, ['--json']);
-  } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
-  }
-
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return 1;
-
-  let result: { session: ProjectSession; reused: boolean; workspace_refresh?: { status: string } };
-  try {
-    result = await ctx.client.post(
-      `/projects/${ctx.projectId}/sessions/warm`,
-      exclude ? { exclude_session_id: exclude } : {},
-    );
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-
-  if (json) {
-    emitJson(result);
-    return 0;
-  }
-  process.stdout.write(
-    `\n${status.ok(`${result.reused ? 'Reusing' : 'Warmed'} ${C.bold}${short(result.session.session_id)}${C.reset}`)}\n`,
-  );
-  process.stdout.write(`  ${C.dim}session_id ${C.reset}${result.session.session_id}\n`);
-  process.stdout.write(`  ${C.dim}status     ${C.reset}${result.session.status}\n`);
-  if (result.workspace_refresh) {
-    process.stdout.write(`  ${C.dim}workspace  ${C.reset}${result.workspace_refresh.status}\n`);
-  }
-  process.stdout.write('\n');
-  return 0;
-}
-
 export async function runSessionsModel(argv: string[]): Promise<number> {
   const parsed = parseCommon(argv, MODEL_HELP);
   if (typeof parsed === 'number') return parsed;
   const { rest, opts, json } = parsed;
 
+  const explicitSession = takeFlagValue(rest, ['--session']);
+  const prompt = takeFlagValue(rest, ['--prompt']);
+  const retryKey = takeFlagValue(rest, ['--idempotency-key']);
   const positional = rest.filter((a) => !a.startsWith('-'));
-  const [sessionId, model] = positional;
-  if (!sessionId) {
-    process.stderr.write(`${status.err('Pass a session id.')}\n\n${MODEL_HELP}`);
+  const { action, sessionId, model } = sessionModelTarget(positional, explicitSession ?? process.env.KORTIX_SESSION_ID);
+  if (!sessionId || (action !== 'get' && !model)) {
+    process.stderr.write(`${status.err('Pass a model id and session id, or use get/set/switch inside a session.')}\n`);
     return 2;
   }
-  if (!model) {
-    process.stderr.write(`${status.err('Pass a model id (e.g. `kortix/deepseek-v4.1-flash`).')}\n`);
+  if ((action === 'switch' || prompt !== undefined || retryKey !== undefined) && (!prompt || !retryKey)) {
+    process.stderr.write(`${status.err('A switch requires --prompt and --idempotency-key.')}\n`);
     return 2;
   }
 
@@ -450,6 +392,14 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   );
   if (!located) return 1;
   const { client, projectId, session } = located.located;
+
+  if (action === 'get') {
+    const metadata = session.metadata ?? {};
+    const model = typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null;
+    if (json) emitJson({ model });
+    else process.stdout.write(`${model ?? 'default'}\n`);
+    return 0;
+  }
 
   let result: {
     /** `model` since W4; an older API answers only `opencode_model`. */
@@ -463,6 +413,7 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
     result = await client.put(`/projects/${projectId}/sessions/${session.session_id}/model`, {
       model,
       opencode_model: model,
+      ...(prompt && retryKey ? { prompt, idempotency_key: retryKey } : {}),
     });
   } catch (err) {
     return surfaceApiError(err);
@@ -484,7 +435,7 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   process.stdout.write(
     `${status.ok(
       result.applied_live
-        ? `Now running ${C.bold}${result.model ?? result.opencode_model}${C.reset}${C.dim} — the runtime restarted, so any turn in flight ended${C.reset}`
+        ? `Now running ${C.bold}${result.model ?? result.opencode_model}${C.reset}${C.dim} — applies to the next turn without restarting${C.reset}`
         : `Stored ${C.bold}${result.model ?? result.opencode_model}${C.reset}${C.dim} — it applies when this session next starts${C.reset}`,
     )}\n`,
   );

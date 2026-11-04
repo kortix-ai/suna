@@ -47,16 +47,19 @@ const FLAGGED_ACTION_PREFIXES = {
   pooled_provider_secrets: ['secret.account_resource.', 'session.provider_secret_pool.'],
   project_channels: ['project.space.', 'space.'],
   session_groups: ['project.session_group.', 'session.group.'],
-  warm_sessions: ['session.warm.'],
 };
 
 // Actions of the legacy sandbox provider: its code still serves old boxes, and the docs name Platinum only.
 const LEGACY_ACTION_PREFIXES = ['webhook.daytona.'];
 
+// Actions of a removed feature: old audit rows still carry them, and the API answers 410 (routes/retired.ts).
+const REMOVED_ACTION_PREFIXES = ['session.warm.'];
+
 function hiddenActionFilter(actions) {
   const prefixes = [
     ...Object.entries(FLAGGED_ACTION_PREFIXES).flatMap(([flag, list]) => (onByDefault(flag) ? [] : list)),
     ...LEGACY_ACTION_PREFIXES,
+    ...REMOVED_ACTION_PREFIXES,
   ];
   for (const prefix of [...Object.values(FLAGGED_ACTION_PREFIXES).flat(), ...LEGACY_ACTION_PREFIXES]) {
     if (!actions.some((action) => action.startsWith(prefix))) throw new Error(`no audit action starts with ${prefix}: update FLAGGED_ACTION_PREFIXES`);

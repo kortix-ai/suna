@@ -24,6 +24,20 @@ import {
 
 export const kortixSchema = pgSchema('kortix');
 
+// Immutable payload, mutable delivery receipt. Producers enqueue in their own transaction.
+export const salesEventOutbox = kortixSchema.table('sales_event_outbox', {
+  eventId: text('event_id').primaryKey(),
+  payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  attempts: integer('attempts').default(0).notNull(),
+  availableAt: timestamp('available_at', { withTimezone: true }).defaultNow().notNull(),
+  leaseToken: uuid('lease_token'),
+  deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  deadLetterAt: timestamp('dead_letter_at', { withTimezone: true }),
+  lastError: text('last_error'),
+}, (table) => [index('sales_event_outbox_due_idx').on(table.availableAt)
+  .where(sql`${table.deliveredAt} IS NULL AND ${table.deadLetterAt} IS NULL`)]);
+
 export const usedRefreshTokens = kortixSchema.table('used_refresh_tokens', {
   tokenHash: text('token_hash').primaryKey(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -700,6 +714,40 @@ export const configReleaseHeads = kortixSchema.table(
   },
   (table) => [primaryKey({ columns: [table.projectId, table.ref] })],
 );
+
+/**
+ * The project config summary of one ref at one commit: what `GET
+ * /projects/:id/detail` serves (agents, skills, commands, manifest health,
+ * the file paths). Built once when the ref moves, so a page view runs no git.
+ * Per-user filtering and the Kortix managed skills are applied at read time,
+ * never stored. A row whose `format` is not the API's current one is ignored
+ * and rebuilt. One row per `(project, ref)`.
+ */
+export const projectConfigSummaries = kortixSchema.table(
+  'project_config_summaries',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    ref: varchar('ref', { length: 255 }).notNull(),
+    /** The commit every file of the summary was read at. */
+    sourceCommit: varchar('source_commit', { length: 64 }).notNull(),
+    /** `CONFIG_SUMMARY_FORMAT` of the API that built it. */
+    format: integer('format').notNull(),
+    /** The project's `manifest_path` the summary was built with. A row of another path is not served. */
+    manifestPath: text('manifest_path').notNull().default(''),
+    /** The repository-derived `ProjectConfigSummary`, before the Kortix managed skills. */
+    config: jsonb('config').$type<Record<string, unknown>>().notNull(),
+    /** File paths at `source_commit`; the first 50,000 when `files_complete` is false. */
+    files: jsonb('files').$type<string[]>().notNull(),
+    fileCount: integer('file_count').notNull(),
+    filesComplete: boolean('files_complete').notNull(),
+    /** When the build read the ref's tip. An older build never overwrites a newer one. */
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }).notNull(),
+    builtAt: timestamp('built_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.ref] })],
+).enableRLS();
 
 /**
  * The last time any API process asked a base ref's upstream for its tip, and
@@ -1486,8 +1534,8 @@ export const projectSessions = kortixSchema.table(
     ),
     // NOTE: `idx_project_sessions_one_available_warm` (one `available` warm
     // session per project+creator) USED to be declared here. It arbitrated a
-    // create race that no longer exists: a warm session is now an ordinary
-    // session and a duplicate costs one extra box. Dropped by
+    // create race that no longer exists (warm sessions were removed on
+    // 2026-11-03). Dropped by
     // migrations/20260813203000000_drop_one_available_warm_index.concurrent.ts.
     // NOTE: three more indexes exist, built CONCURRENTLY and listed in
     // scripts/schema-contract-sql-only.ts:
@@ -5529,7 +5577,41 @@ export const accountDeletionRequests = kortixSchema.table(
   ],
 );
 
-export const creditPurchases = kortixSchema.table('credit_purchases', {
+/**
+ * The retention backstop's evidence: one row per closed account, UTC day and
+ * mode the backstop decided about it (`billing/services/retention-erasure.ts`).
+ * Ids, dates and an outcome only, no personal data. No foreign key: the row
+ * outlives the account it proves erased.
+ */
+export const retentionErasures = kortixSchema.table(
+  'retention_erasures',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    requestId: uuid('request_id').notNull(),
+    /** When the customer asked to close the account. */
+    requestedAt: timestamp('requested_at', { withTimezone: true }),
+    /** The termination date: the request's `scheduled_for` (end of the 14-day grace). */
+    closedAt: timestamp('closed_at', { withTimezone: true }).notNull(),
+    runOn: date('run_on', { mode: 'string' }).notNull(),
+    mode: text('mode').notNull(),
+    outcome: text('outcome').notNull(),
+    /** The failed step's message, truncated; null unless `outcome = 'failed'`. */
+    error: text('error'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('retention_erasures_account_day_mode_key').on(table.accountId, table.runOn, table.mode),
+    index('retention_erasures_run_on_idx').on(table.runOn),
+    check('retention_erasures_mode_check', sql`${table.mode} IN ('dry_run', 'execute')`),
+    check(
+      'retention_erasures_outcome_check',
+      sql`${table.outcome} IN ('would_erase', 'erased', 'failed', 'skipped_live')`,
+    ),
+  ],
+);
+
+export const creditPurchases =kortixSchema.table('credit_purchases', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   accountId: uuid('account_id').notNull(),
   amountDollars: numeric('amount_dollars', { precision: 10, scale: 2 }).notNull(),

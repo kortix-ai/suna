@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1034,
+  "count": 1037,
   "routes": [
     {
       "method": "GET",
@@ -169,6 +169,10 @@
     {
       "method": "GET",
       "path": "/sitemap.xml"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/access/branding"
     },
     {
       "method": "POST",
@@ -2760,6 +2764,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/logs/facets"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/gateway/overview"
     },
     {
@@ -3969,6 +3977,10 @@
     {
       "method": "GET",
       "path": "/v1/skills/:name/file"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/system/confirmed-signups"
     },
     {
       "method": "POST",

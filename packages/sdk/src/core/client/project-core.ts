@@ -26,6 +26,8 @@ export function bindProjectCore(projectId: string) {
     update: (input: Parameters<typeof P.updateProject>[1]) => P.updateProject(projectId, input),
     archive: () => P.archiveProject(projectId),
     llmCatalog: () => P.getProjectLlmCatalog(projectId),
+    /** The live provider catalogue (models.dev, refreshed hourly): what `buildLlmProviderCatalog` turns into rows. */
+    llmCatalogProviders: () => P.getProjectLlmCatalogProviders(projectId),
     modelPicker: () => P.getProjectModelPicker(projectId),
     modelAccess: () => P.getProjectModelAccess(projectId),
     setModelAccess: (change: P.ProjectModelAccessChange) =>

@@ -131,7 +131,7 @@
     "default_agent": {
       "type": "string",
       "pattern": "\\S",
-      "description": "The agent that runs when nothing names one and My Kortix is off, and the agent My Kortix starts when it names none. A session or trigger that names no agent runs My Kortix while it is on. A declared agent that is enabled and whose `mode` is `primary` or `all`."
+      "description": "The agent a session or trigger runs when it names none, and the agent My Kortix starts when it names none. A declared agent that is enabled and whose `mode` is `primary` or `all`, or `mykortix` when `builtin_agents.my_kortix` is true. Omitted: My Kortix when it is on."
     },
     "runtime": {
       "type": "string",
@@ -3036,12 +3036,12 @@
     },
     "builtin_agents": {
       "type": "object",
-      "description": "Built-in agents the platform adds to this project. Absent = on.",
+      "description": "Built-in agents the platform adds to this project. Each is off unless set to true.",
       "properties": {
         "my_kortix": {
           "type": "boolean",
-          "default": true,
-          "description": "My Kortix, the built-in agent you talk to. false removes it from this project."
+          "default": false,
+          "description": "My Kortix, the built-in agent you talk to (slug `mykortix`). true adds it to this project; absent, false or a file Kortix cannot read leaves it out."
         }
       },
       "additionalProperties": false

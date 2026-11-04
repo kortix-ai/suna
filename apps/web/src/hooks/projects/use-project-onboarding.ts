@@ -12,8 +12,9 @@
  *   status === 'pending'   → first-time, wizard auto-opens
  *   status === 'completed' → user finished or skipped, wizard stays closed
  *
- * Reads ride on the same `qk.project.detail(id)` query the rest of the project
- * uses so there's no extra round-trip — completion just reflects whatever the
+ * Reads ride on the bare project row (`qk.project.summary(id)`, one database
+ * read) the project shell already holds, so there's no extra round-trip and no
+ * wait on the git-backed detail — completion just reflects whatever the
  * already-cached metadata says. `complete()` mutates the server AND
  * optimistically updates the cache so the wizard fades out instantly.
  */
@@ -21,13 +22,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
-import { getProjectDetail, setProjectOnboardingComplete } from '@kortix/sdk';
+import { getProject, setProjectOnboardingComplete } from '@kortix/sdk';
 import { contract, invalidateProject, qk } from '@kortix/sdk/react';
 
 export type ProjectOnboardingStatus = 'pending' | 'completed';
 
-/** Shape of the cached `project-detail` query data. */
-type ProjectDetailData = Awaited<ReturnType<typeof getProjectDetail>>;
+/** Shape of the cached project-row query data. */
+type ProjectRowData = Awaited<ReturnType<typeof getProject>>;
 
 interface ProjectMetadataMaybe {
   onboarding_completed_at?: string | null;
@@ -36,7 +37,7 @@ interface ProjectMetadataMaybe {
 
 export interface ProjectOnboardingState {
   status: ProjectOnboardingStatus;
-  /** False until the project-detail query has resolved at least once. */
+  /** False until the project-row query has resolved at least once. */
   hydrated: boolean;
   /** Mark complete (server) + optimistically update local cache. */
   complete: () => Promise<unknown>;
@@ -48,35 +49,32 @@ export function useProjectOnboarding(projectId: string): ProjectOnboardingState 
   const enabled = !!projectId;
   const queryClient = useQueryClient();
 
-  const detail = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+  const row = useQuery({
+    queryKey: qk.project.summary(projectId),
+    queryFn: () => getProject(projectId),
     enabled,
     ...contract('config'),
   });
 
   const status: ProjectOnboardingStatus = useMemo(() => {
-    const meta = (detail.data?.project?.metadata ?? {}) as ProjectMetadataMaybe;
+    const meta = (row.data?.metadata ?? {}) as ProjectMetadataMaybe;
     return meta.onboarding_completed_at ? 'completed' : 'pending';
-  }, [detail.data]);
+  }, [row.data]);
 
   // Optimistic cache update mirrors what the server will return, so the
   // wizard fades out immediately and we don't refetch before the UI reacts.
   const applyOptimistic = useCallback(
     (completed: boolean) => {
-      const key = qk.project.detail(projectId);
-      queryClient.setQueryData(key, (prev: ProjectDetailData | undefined) => {
-        if (!prev?.project) return prev;
-        const meta = { ...(prev.project.metadata ?? {}) } as ProjectMetadataMaybe;
+      const key = qk.project.summary(projectId);
+      queryClient.setQueryData(key, (prev: ProjectRowData | undefined) => {
+        if (!prev) return prev;
+        const meta = { ...(prev.metadata ?? {}) } as ProjectMetadataMaybe;
         if (completed) {
           meta.onboarding_completed_at = new Date().toISOString();
         } else {
           delete meta.onboarding_completed_at;
         }
-        return {
-          ...prev,
-          project: { ...prev.project, metadata: meta },
-        };
+        return { ...prev, metadata: meta };
       });
     },
     [projectId, queryClient],
@@ -87,9 +85,9 @@ export function useProjectOnboarding(projectId: string): ProjectOnboardingState 
   // a pre-existing onboarding_completed_at (e.g. an already-completed project).
   const snapshotThenApply = useCallback(
     async (completed: boolean) => {
-      const key = qk.project.detail(projectId);
+      const key = qk.project.summary(projectId);
       await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<ProjectDetailData>(key);
+      const previous = queryClient.getQueryData<ProjectRowData>(key);
       applyOptimistic(completed);
       return { previous };
     },
@@ -97,9 +95,9 @@ export function useProjectOnboarding(projectId: string): ProjectOnboardingState 
   );
 
   const restorePrevious = useCallback(
-    (context: { previous: ProjectDetailData | undefined } | undefined) => {
+    (context: { previous: ProjectRowData | undefined } | undefined) => {
       if (context && context.previous !== undefined) {
-        queryClient.setQueryData(qk.project.detail(projectId), context.previous);
+        queryClient.setQueryData(qk.project.summary(projectId), context.previous);
       }
     },
     [projectId, queryClient],
@@ -125,7 +123,7 @@ export function useProjectOnboarding(projectId: string): ProjectOnboardingState 
 
   return {
     status,
-    hydrated: enabled && !detail.isLoading,
+    hydrated: enabled && !row.isLoading,
     complete: () => completeMutation.mutateAsync(),
     reset: () => resetMutation.mutateAsync(),
   };

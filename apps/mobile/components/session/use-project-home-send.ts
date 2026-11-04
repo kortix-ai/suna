@@ -1,7 +1,6 @@
 import { useToast } from '@/components/kortix/toast-provider';
 import type { ProjectHomeSubmit } from '@/components/session/ProjectHome';
 import type { SessionConnectError } from '@/components/session/SessionConnecting';
-import { appIsActive } from '@/hooks/useWarmProjectSession';
 import { log } from '@/lib/logger';
 import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { listCreatedSession, useCreateProjectSession } from '@/lib/projects/hooks';
@@ -9,7 +8,6 @@ import type { AttachedFile } from '@/lib/session/attachments';
 import { draftKey } from '@/lib/session/composer-draft';
 import { createSessionCommitted } from '@/lib/session/create-session';
 import { newSessionCreateInput } from '@/lib/session/new-session-input';
-import { warmSessionPool } from '@/lib/session/warm-session-pool';
 import { clearComposerDraftIfSent } from '@/stores/composer-draft-store';
 import { getProjectSession } from '@kortix/sdk';
 import { newConfigPrompt, splitPastedContent } from '@kortix/shared';
@@ -79,61 +77,34 @@ export function useProjectHomeSend(
         // so a send with a level uses `pending_prompt` too
         // (`lib/session/new-session-input.ts`).
         const hasFiles = files.length > 0;
-        // Warm path (web parity, `lib/session/warm-session.ts`): the project
-        // keeps one session booted while this screen is open. A send on the
-        // project defaults claims it with its first prompt, so the sandbox
-        // boot is already done. A send with files never fits it
-        // (`warmFitsSend`). Anything it does not fit, or a refused claim,
-        // runs the ordinary create below with the same prompt.
-        const warm = warmSessionPool.take(
-          projectId,
-          { agentName: agent, model, hasFiles },
-          { replenish: appIsActive() },
-        );
-        const claimedWarm =
-          warm &&
-          (await warmSessionPool.prime(
-            projectId,
-            warm,
-            { text, agent, model: picks?.model ?? null, variant: picks?.variant ?? null },
-            agent,
-          ))
-            ? warm.sessionId
-            : null;
-        if (claimedWarm) {
-          log.log('🔥 [Project] Home send took the warm session');
-        }
-        // Ordinary create (web parity, COR-185): the client mints the id, so a
-        // timed-out create that committed is read back and used instead of
-        // letting a re-send create a second session. Created FIRST, then the
-        // connecting state below: a failed create never shows a live-looking
-        // session. The composer's send slot shows the spinner meanwhile.
-        const createNew = async (): Promise<string> => {
-          const sessionId = Crypto.randomUUID();
-          const input = newSessionCreateInput({
-            sessionId,
-            text,
-            fileParts,
-            fileNames: files.map((f) => f.name),
-            model,
-            picks,
-            agent,
-          });
-          return createSessionCommitted(
-            {
-              create: (body) => createProjectSession.mutateAsync(body),
-              read: async (id) => {
-                const row = await getProjectSession(projectId, id, { showErrors: false });
-                // A create that timed out but committed: listed now, like
-                // one that answered (`useCreateProjectSession`).
-                listCreatedSession(queryClient, projectId, row);
-                return row;
-              },
+        // The client mints the id (web parity, COR-185), so a timed-out create
+        // that committed is read back and used instead of letting a re-send
+        // create a second session. Created FIRST, then the connecting state
+        // below: a failed create never shows a live-looking session. The
+        // composer's send slot shows the spinner meanwhile.
+        const mintedId = Crypto.randomUUID();
+        const input = newSessionCreateInput({
+          sessionId: mintedId,
+          text,
+          fileParts,
+          fileNames: files.map((f) => f.name),
+          model,
+          picks,
+          agent,
+        });
+        const sessionId = await createSessionCommitted(
+          {
+            create: (body) => createProjectSession.mutateAsync(body),
+            read: async (id) => {
+              const row = await getProjectSession(projectId, id, { showErrors: false });
+              // A create that timed out but committed: listed now, like
+              // one that answered (`useCreateProjectSession`).
+              listCreatedSession(queryClient, projectId, row);
+              return row;
             },
-            { ...input, session_id: sessionId },
-          );
-        };
-        const session = { session_id: claimedWarm ?? (await createNew()) };
+          },
+          { ...input, session_id: mintedId },
+        );
         // The lists learn of the new session now, not at their next poll —
         // also after a timed-out create that committed (`createSessionCommitted`).
         refreshSessionLists();
@@ -141,15 +112,15 @@ export function useProjectHomeSend(
         // project"'s draft restore, all key off this. An image-only send
         // sets it too, so the loading page shows the photo.
         if (text.trim() || hasFiles) {
-          firstPromptRef.current[session.session_id] = { text: text.trim(), files };
+          firstPromptRef.current[sessionId] = { text: text.trim(), files };
         }
         // Enter the connecting state — the effect drives provisioning and opens
         // the server-created session once ready.
         navigateToSession(null);
         setConnectError(null);
         erroredSessionRef.current = null;
-        freshSessionIdRef.current = session.session_id;
-        setConnectingProjectSessionId(session.session_id);
+        freshSessionIdRef.current = sessionId;
+        setConnectingProjectSessionId(sessionId);
         // The session holds the prompt now: drop the home's saved draft
         // (COR-143). Cancel hands the text back through `takeInitialDraft`.
         // The saved draft is the typed text only: compare it without the paste tiles.

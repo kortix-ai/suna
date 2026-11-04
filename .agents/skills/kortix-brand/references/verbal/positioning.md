@@ -55,7 +55,7 @@ Kortix is the open-source CompanyOS: your agents, their skills, your company mem
 | PWA manifest `name` | "Kortix" | `description` = Short. |
 | README, GitHub About | Tagline (README) and Short (About) | Already correct. |
 | CLI banner and `--help` | Tagline | Already correct. |
-| Auth screen subtitle | None | The heading "Welcome to Kortix CompanyOS" stands alone (D30). |
+| Auth screen subtitle | None | The heading "Welcome to Kortix CompanyOS" stands alone (D30). A branded self-host instance shows its own product name there. |
 | Transactional email footer | "Kortix CompanyOS – the open-source operating system for your company" | Shipped since 2026-10-01 (`BRAND_FOOTER`). |
 | Slack and Teams app description | Standard, then one sentence on the channel | "Start a session from any Slack thread." |
 | Package descriptions (root, CLI, SDK) | Short (root, CLI); "the Kortix API" (SDK) | Not "agent platform". |
@@ -102,7 +102,7 @@ Source: README comparison table (README.md, "How it compares"), publicly documen
 
 **Rule.** Keep every comparison consistent with the README table. Change the README first. — *Why:* One canonical comparison. — *Where:* marketing | social | deck. — *When silent:* link to the README table instead of retyping it.
 
-**Rule.** Use "the leading open-source alternative" and no other superlative. — *Why:* Decided 2026-07-31 and used in the hero. It rests on the star count (20,239 on 2026-10-01, `gh api repos/kortix-ai/suna`). "The best", "#1" and "the go-to" are not allowed. — *Where:* marketing | social | README. — *When silent:* cite the star count, not the adjective. Round down: "20,000+ GitHub stars".
+**Rule.** Use "the leading open-source alternative" and no other superlative. — *Why:* Decided 2026-07-31 and used in the hero. It rests on the star count (20,239 on 2026-10-01, `gh api repos/kortix-ai/CompanyOS`). "The best", "#1" and "the go-to" are not allowed. — *Where:* marketing | social | README. — *When silent:* cite the star count, not the adjective. Round down: "20,000+ GitHub stars".
 
 ## 5. Audiences and pitches
 

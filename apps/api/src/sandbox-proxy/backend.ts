@@ -33,6 +33,7 @@ import {
 import { recoverTurnsAfterRuntimeRestart } from '../projects/session-lifecycle/runtime-restart-recovery';
 import { setBounded } from '../shared/bounded-cache';
 import { db } from '../shared/db';
+import { isUuid } from '../shared/validate';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import {
   encodeKortixUserContext,
@@ -210,10 +211,12 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
   // subdomains need the fallback because browsers lowercase hostnames while
   // Platinum external ids contain uppercase ULIDs.
   const row =
-    (await selectOne(eq(sessionSandboxes.externalId, externalId))) ??
+    (await selectOne(isUuid(externalId)
+      ? sql`(${sessionSandboxes.externalId} = ${externalId} or ${sessionSandboxes.sandboxId} = ${externalId})`
+      : eq(sessionSandboxes.externalId, externalId))) ??
     (await selectOne(sql`lower(${sessionSandboxes.externalId}) = lower(${externalId})`));
 
-  if (!row) return null;
+  if (!row?.externalId) return null;
 
   const config = (row.config || {}) as Record<string, unknown>;
   const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
@@ -221,7 +224,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
 
   return {
     sandboxId: row.sandboxId,
-    externalId: row.externalId ?? externalId,
+    externalId: row.externalId,
     sessionId: row.sessionId,
     agentName: row.agentName ?? null,
     projectId: row.projectId,

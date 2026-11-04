@@ -30,6 +30,8 @@ mock.module('../shared/db', () => ({
 // mirrors the config summary's wire field: a registered agent may be disabled.
 let projectConfig: { agents: Array<{ name: string; description?: string | null; mode?: string | null; enabled?: boolean }>; agent_discovery?: string } = { agents: [] };
 mock.module('../projects/lib/git', () => ({ withProjectGitAuth: async (p: unknown) => p }));
+// No saved config summary: the governance below reads the live config.
+mock.module('../projects/surface', () => ({ savedProjectConfig: async () => null }));
 mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => projectConfig,

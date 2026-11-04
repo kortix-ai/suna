@@ -58,27 +58,37 @@ export function reachableImageModels({ secretNames, access, managedModels }: Ima
 
 /**
  * The route of an `/images/*` request. An explicit model must be an image
- * model, or a model of one of the project's custom providers
- * (`customProviderIds`: the catalog knows nothing of their models, so a named
- * one is tried and the endpoint's answer decides, R34). It gets no fallback.
- * `auto` (or none) plans every reachable image model, in order; it never
- * plans a custom model. `reachable` and `customProviderIds` are read only
- * when the plan needs them.
+ * model the project's model-access policy allows, or a model of one of the
+ * project's custom providers (`customProviderIds`: the catalog knows nothing
+ * of their models, so a named one is tried and the endpoint's answer decides,
+ * R34). A disallowed explicit model is never planned: it falls through to the
+ * access-filtered reachable models, which is what `auto` plans too; it never
+ * plans a custom model. `access`, `reachable` and `customProviderIds` are read
+ * only when the plan needs them.
  */
 export async function planImageRoute(
   requestedModel: string,
   reachable: () => Promise<string[]>,
+  access: () => Promise<ProjectModelAccess> = async () => ({ disabledProviders: [], disabledModels: [] }),
   customProviderIds: () => Promise<string[]> = async () => [],
 ): Promise<ModelRoutePlan> {
   const wire = toWireModel(requestedModel);
   if (wire && wire !== 'auto') {
     const provider = wire.includes('/') ? wire.split('/')[0]! : null;
-    if (generatesImages(wire) || (provider !== null && (await customProviderIds()).includes(provider))) {
+    if (generatesImages(wire)) {
+      // The project's own access policy disallows it: fall through to the reachable models
+      // it allows, never plan a model the admission step would then refuse (KRTX-4035).
+      if (modelAccessAllows(await access(), wire)) {
+        return { policyId: 'image', primaryModel: wire, fallbackModels: [], fallbackOn: 'any-error' };
+      }
+    } else if (provider !== null && (await customProviderIds()).includes(provider)) {
+      // A custom provider's model is outside the catalog and the policy's naming: try it (R34).
       return { policyId: 'image', primaryModel: wire, fallbackModels: [], fallbackOn: 'any-error' };
+    } else {
+      const models = (await reachable()).slice(0, 5);
+      throw new GatewayResolutionError('not_an_image_model', `"${wire}" cannot generate images.`,
+        models.length ? `Use an image model: ${models.join(', ')}.` : CONNECT_IMAGE_MODEL);
     }
-    const models = (await reachable()).slice(0, 5);
-    throw new GatewayResolutionError('not_an_image_model', `"${wire}" cannot generate images.`,
-      models.length ? `Use an image model: ${models.join(', ')}.` : CONNECT_IMAGE_MODEL);
   }
   const [primaryModel, ...fallbackModels] = await reachable();
   if (!primaryModel) {

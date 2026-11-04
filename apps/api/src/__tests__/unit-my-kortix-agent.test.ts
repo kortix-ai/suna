@@ -8,6 +8,7 @@ import {
   buildMyKortixConfig,
   builtinAgentConfigView,
   declaredBuiltinAgents,
+  disabledMyKortixAgentGrant,
   enabledBuiltinAgentKey,
   MY_KORTIX_DESCRIPTION,
   MY_KORTIX_PROMPT,
@@ -138,16 +139,31 @@ describe('My Kortix agent', () => {
     });
   });
 
-  test('builtin_agents: the manifest boolean wins, else on', () => {
+  test('builtin_agents: on only when the manifest sets true, else off', () => {
     expect(declaredBuiltinAgents({})).toEqual({});
     expect(declaredBuiltinAgents({ builtin_agents: { my_kortix: false } })).toEqual({ my_kortix: false });
     expect(declaredBuiltinAgents({ builtin_agents: { my_kortix: 'no' } })).toEqual({});
     expect(declaredBuiltinAgents({ builtin_agents: ['my_kortix'] })).toEqual({});
-    expect(resolveBuiltinAgents({})).toEqual({ my_kortix: true });
+    expect(resolveBuiltinAgents({})).toEqual({ my_kortix: false });
     expect(resolveBuiltinAgents({ my_kortix: false })).toEqual({ my_kortix: false });
     expect(resolveBuiltinAgents({ my_kortix: true })).toEqual({ my_kortix: true });
-    expect(projectBuiltinAgents(null)).toEqual({ my_kortix: true });
-    expect(projectBuiltinAgents({ builtin_agents: { my_kortix: false } })).toEqual({ my_kortix: false });
+    const valid = { project: { name: 'p' }, default_agent: 'worker', agents: { worker: { mode: 'primary', tools: 'all' } } };
+    expect(projectBuiltinAgents(valid)).toEqual({ my_kortix: false });
+    expect(projectBuiltinAgents({ ...valid, builtin_agents: { my_kortix: true } })).toEqual({ my_kortix: true });
+    expect(projectBuiltinAgents({ ...valid, builtin_agents: { my_kortix: false } })).toEqual({ my_kortix: false });
+    expect(projectBuiltinAgents({ ...valid, builtin_agents: { my_kortix: 'yes' } })).toEqual({ my_kortix: false });
+    // No exception for a missing, empty or broken file: only the file's own `true` turns it on.
+    expect(projectBuiltinAgents(null)).toEqual({ my_kortix: false });
+    expect(projectBuiltinAgents({})).toEqual({ my_kortix: false });
+    expect(projectBuiltinAgents({ ...valid, sandbox: 42 })).toEqual({ my_kortix: false });
+    expect(projectBuiltinAgents({ ...valid, sandbox: 42, builtin_agents: { my_kortix: true } })).toEqual({ my_kortix: true });
+  });
+
+  test('a project that runs My Kortix keeps its own default agent', () => {
+    const config = { default_agent: 'worker', open_code_default_agent: 'worker', agents: [] } as unknown as Parameters<typeof addMyKortixAgent>[0];
+    expect(addMyKortixAgent(config).default_agent).toBe('worker');
+    expect(addMyKortixAgent({ ...config, default_agent: null }).default_agent).toBe('mykortix');
+    expect(addMyKortixAgent(config).agents[0]?.name).toBe('mykortix');
   });
 
   test('`meta` is a built-in only while My Kortix is on', () => {
@@ -164,9 +180,9 @@ describe('My Kortix agent', () => {
     });
   });
 
-  test('a kortix.yaml that turns My Kortix off strips a meta session to no project action', () => {
+  test('a kortix.yaml that does not turn My Kortix on strips a meta session to no project action', () => {
     const governed = { specs: [], errors: [], defaultAgent: 'kortix' };
-    expect(grantFromLoadedAgents('mykortix', governed)).toEqual(myKortixAgentGrant());
+    expect(grantFromLoadedAgents('mykortix', governed)).toEqual(disabledMyKortixAgentGrant());
     expect(grantFromLoadedAgents('mykortix', { ...governed, builtinAgents: { my_kortix: true } })).toEqual(
       myKortixAgentGrant(),
     );

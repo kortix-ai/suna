@@ -42,12 +42,13 @@ mock.module('../shared/pg-broadcast', () => ({
   startConfigBaseMoveBroadcast: async () => false,
   onSessionChanged: record('onSessionChanged'),
 }));
-mock.module('../config-releases/base-tip', () => ({ storedBaseTipProof: async () => null }));
+mock.module('../config-releases/base-tip', () => ({ storedBaseTipProof: async () => null, publishBaseTipProof: async () => {} }));
 mock.module('../projects/surface', () => ({
   ...projects,
   handBackClaims: async () => 0,
   signalSessionRuntimeActive() {},
   useSharedTipProof() {},
+  publishTipProofsTo() {},
 }));
 
 // Every per-process loop bootstrap.ts imports from replica/, and every job the

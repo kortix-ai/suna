@@ -50,9 +50,8 @@ const DEFAULT_CONFIG: MaintenanceConfig = {
  * dev, staging and prod share ONE Vercel Edge Config store (the same
  * `EDGE_CONFIG` / `EDGE_CONFIG_ID` sit in `apps/web/.env.dev`, `.env.staging`
  * and `.env.prod`). A single constant key therefore made the three
- * environments overwrite each other's state, and the prod api-router Worker
- * read whatever environment wrote last — a `blocking` set on staging could
- * lock production writes. Each environment now owns `maintenance_config_<env>`.
+ * environments overwrite each other's state: a `blocking` set on staging could
+ * lock production. Each environment now owns `maintenance_config_<env>`.
  */
 export type MaintenanceEnvironment = 'prod' | 'staging' | 'dev';
 
@@ -260,16 +259,16 @@ export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
 }
 
 /**
- * Return only the independent Edge Config state for the Cloudflare write gate
- * (`infra/cloudflare/workers/api-router`, `MAINTENANCE_STATE_URL`).
+ * Read this environment's Edge Config maintenance state, the value the web
+ * middleware's `blocking` redirect acts on (through `getMaintenanceConfig`).
  *
  * FAILS OPEN. This function used to return a synthetic `blocking` config
- * whenever the Edge Config read returned nothing or threw. The api-router
- * worker reads this route, sees `level: 'blocking'`, and answers EVERY
- * non-read-only request to `api.kortix.com` with a 503 carrying that config's
- * `message`. So a missing key — or one failed network call from a Vercel
- * instance to Edge Config — locked production writes (Better Stack, Kortix
- * Frontend prod: 1,000+ occurrences). Nothing an admin did produced it.
+ * whenever the Edge Config read returned nothing or threw. Until 2026-11 the
+ * prod api-router worker also read it (`/api/maintenance/edge`) and refused
+ * every write to `api.kortix.com` on `blocking`, so a missing key — or one
+ * failed network call from a Vercel instance to Edge Config — locked
+ * production writes (Better Stack, Kortix Frontend prod: 1,000+ occurrences).
+ * Nothing an admin did produced it.
  *
  * - No environment (unknown API host): this deployment owns no key -> `none`.
  *   It never falls back to another environment's key or the legacy shared one.
@@ -279,10 +278,10 @@ export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
  *   actually read for this key, so a genuine admin `blocking` survives a blip;
  *   with no such value (cold instance), fall back to normal operation.
  *
- * A lockdown that must hold even while Vercel is unreachable does not depend on
- * this path: an operator sets `MAINTENANCE_LEVEL_OVERRIDE=blocking` directly
- * on the api-router worker (`infra/cloudflare/workers/api-router`), which is
- * evaluated before the state URL is ever fetched.
+ * The admin `blocking` level locks the web app only. To refuse API and
+ * gateway writes, an operator sets `MAINTENANCE_LEVEL_OVERRIDE=blocking` on
+ * the api-router worker (`infra/cloudflare/workers/api-router`) and redeploys
+ * it; the worker reads no maintenance state over the network.
  */
 export async function getEdgeMaintenanceConfig(): Promise<MaintenanceConfig> {
   if (!process.env.EDGE_CONFIG) return { ...memoryStore };

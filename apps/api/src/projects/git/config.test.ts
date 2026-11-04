@@ -429,7 +429,7 @@ describe('a legacy format still works', () => {
     expect(writes.deletes).toEqual(expect.arrayContaining(['kortix.toml']));
   });
 
-  test('kortix.toml with a syntax error: one error, the project runs My Kortix only', async () => {
+  test('kortix.toml with a syntax error: one error, and no agent runs', async () => {
     await replaceWith({ 'kortix.toml': 'kortix_version = 1\n[project\n' });
     const config = await loadProjectConfig(project);
     expect(config.manifest_health.errors).toBe(1);

@@ -65,7 +65,7 @@ kortix self-host doctor      # fix whatever it flags
 
 ## Where Kortix fits
 
-Kortix is the leading open-source alternative to Claude Cowork and ChatGPT Work, and the checklist above reads like its design document. Open source is what makes each item verifiable: the file that defines an agent, the skills it can load, the memory it draws on, and the rules governing each connector sit in the repo, open to anyone. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free. Reading the source comes before running it: [Kortix on GitHub](https://github.com/kortix-ai/suna).
+Kortix is the leading open-source alternative to Claude Cowork and ChatGPT Work, and the checklist above reads like its design document. Open source is what makes each item verifiable: the file that defines an agent, the skills it can load, the memory it draws on, and the rules governing each connector sit in the repo, open to anyone. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free. Reading the source comes before running it: [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS).
 
 ## Managed first, or self-host now
 

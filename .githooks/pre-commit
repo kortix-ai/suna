@@ -121,6 +121,27 @@ if [ -z "$I18N_REORDER" ] && git rev-parse --verify --quiet HEAD >/dev/null \
   fi
 fi
 
+# @kortix/ui commits two generated files: src/i18n/en.ts (the messages its
+# sources read from apps/web/translations/en.json) and dist/styles.css (every
+# utility class under packages/ui/src). A UI change that adds a string or a
+# class without them fails the release suite's packages lane, after the merge
+# (2026-11-03: the Discord channel, twice). Both checks write nothing, in ~0.5 s.
+if git diff --cached --name-only | grep -qE '^(packages/ui/src/.+\.(ts|tsx|css)|apps/web/translations/en\.json)$'; then
+  if [ -d packages/ui/node_modules ]; then
+    ui_stale=''
+    node packages/ui/scripts/gen-i18n-catalog.mjs --check >/dev/null 2>&1 || ui_stale="$ui_stale
+  pnpm --filter @kortix/ui gen-i18n-catalog"
+    node packages/ui/scripts/build-styles.mjs --check >/dev/null 2>&1 || ui_stale="$ui_stale
+  pnpm --filter @kortix/ui build:styles"
+    if [ -n "$ui_stale" ]; then
+      echo "pre-commit: @kortix/ui's generated files are stale. Run, then stage the result:$ui_stale" >&2
+      exit 1
+    fi
+  else
+    echo "pre-commit: packages/ui has no node_modules; skipped the en.ts and styles.css check (run pnpm install)." >&2
+  fi
+fi
+
 # A `pnpm worktree` checkout commits only on its own branch (AGENTS.md).
 sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-worktree-branch.sh"
 

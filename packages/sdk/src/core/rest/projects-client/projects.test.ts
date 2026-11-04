@@ -1035,12 +1035,12 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'pooled_provider_secrets',
     'us_region',
     'event_triggers',
-    'warm_sessions',
     'notification_center',
     'session_log_restore',
     'workspace_volume',
     'project_channels',
     'agent_rooms',
+    'shared_drives',
     'goals',
     'artifacts',
     'artifact_comments',
@@ -1048,6 +1048,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'session_groups',
     'chrome',
     'agent_teams',
+    'voice_call',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
   expect(new Set(FEATURE_FLAG_KEYS).size).toBe(FEATURE_FLAG_KEYS.length);

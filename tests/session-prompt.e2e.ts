@@ -164,17 +164,6 @@ test(
       201,
     );
     projectId = project.project_id;
-    // This journey sends into an existing session; background warm-pool provisioning is separate coverage.
-    const configured = await api<{ experimental: { warm_sessions: boolean } }>(
-      token,
-      'PATCH',
-      `/projects/${projectId}/features`,
-      {
-        feature: 'warm_sessions',
-        enabled: false,
-      },
-    );
-    expect(configured.experimental.warm_sessions).toBe(false);
     await api(token, 'PATCH', `/projects/${projectId}/onboarding`, { completed: true });
     const created = await api<{ session_id: string }>(
       token,

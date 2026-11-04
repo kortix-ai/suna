@@ -15,9 +15,12 @@
  * that table has no reliable end for a run (a turn closed by the reaper, a box
  * stop or a deletion never closes it, and a queued create looks finished).
  * A run is active when a session this trigger created in the last 24 hours is
- * still being set up or its box holds a live turn, or when its create is still
- * queued. The reaper ends every turn within 24 hours, so a lost run holds the
- * trigger for at most that long.
+ * still being set up or its box holds a live turn, or when a create or prompt
+ * it enqueued in the last 24 hours is still queued or running. The reaper ends
+ * every turn within 24 hours, so a lost run holds the trigger for at most that
+ * long. The window bounds the command rows too: a `running` row that no worker
+ * will ever settle held its trigger for good (prod 2026-11-03: create commands
+ * stuck since July and September skipped 9 cron triggers on every fire).
  */
 import { projectSessions, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
@@ -47,9 +50,10 @@ export async function triggerOverlapReason(input: {
   sessionKey?: string | null;
 }): Promise<string | null> {
   const { projectId, slug } = input;
-  if (input.sessionMode === 'reuse' || input.sessionMode === 'pinned') return waitingPromptReason({ projectId, slug });
+  const since = new Date(input.now.getTime() - ACTIVE_WINDOW_MS);
+  if (input.sessionMode === 'reuse' || input.sessionMode === 'pinned') return waitingPromptReason({ projectId, slug, since });
   if (input.sessionMode === 'keyed') {
-    return input.sessionKey ? waitingPromptReason({ projectId, slug, sessionKey: input.sessionKey }) : null;
+    return input.sessionKey ? waitingPromptReason({ projectId, slug, since, sessionKey: input.sessionKey }) : null;
   }
   const recent = await db
     .select({
@@ -64,7 +68,7 @@ export async function triggerOverlapReason(input: {
       and(
         eq(projectSessions.projectId, input.projectId),
         ne(projectSessions.status, 'failed'),
-        gt(projectSessions.createdAt, new Date(input.now.getTime() - ACTIVE_WINDOW_MS)),
+        gt(projectSessions.createdAt, since),
         sql`${projectSessions.metadata} ->> 'trigger_slug' = ${input.slug}`,
         sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
         sql`${projectSessions.metadata} ->> 'deletedAt' IS NULL`,
@@ -87,6 +91,7 @@ export async function triggerOverlapReason(input: {
         eq(sessionLifecycleCommands.projectId, input.projectId),
         eq(sessionLifecycleCommands.commandType, 'create_session'),
         inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+        gt(sessionLifecycleCommands.createdAt, since),
         sql`${sessionLifecycleCommands.source} LIKE 'trigger:%'`,
         sql`${sessionLifecycleCommands.payload} -> 'metadata' ->> 'trigger_slug' = ${input.slug}`,
         sql`${sessionLifecycleCommands.payload} -> 'metadata' ->> 'trigger_kind' = 'git'`,
@@ -100,7 +105,12 @@ export async function triggerOverlapReason(input: {
  * A reuse, pinned or keyed trigger's previous prompt that is still waiting to
  * be delivered. A keyed fire looks only in the sessions of its own key.
  */
-async function waitingPromptReason(input: { projectId: string; slug: string; sessionKey?: string }): Promise<string | null> {
+async function waitingPromptReason(input: {
+  projectId: string;
+  slug: string;
+  since: Date;
+  sessionKey?: string;
+}): Promise<string | null> {
   const [waiting] = await db
     .select({ commandId: sessionLifecycleCommands.commandId })
     .from(sessionLifecycleCommands)
@@ -109,6 +119,7 @@ async function waitingPromptReason(input: { projectId: string; slug: string; ses
         eq(sessionLifecycleCommands.projectId, input.projectId),
         eq(sessionLifecycleCommands.commandType, 'continue_session'),
         inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+        gt(sessionLifecycleCommands.createdAt, input.since),
         sql`${sessionLifecycleCommands.source} LIKE 'trigger:%'`,
         sql`${sessionLifecycleCommands.payload} ->> 'triggerSlug' = ${input.slug}`,
         input.sessionKey === undefined

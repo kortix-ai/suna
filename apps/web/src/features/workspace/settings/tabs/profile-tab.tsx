@@ -142,7 +142,7 @@ export interface ProfileTabCopy {
   threadsDeleted: string;
   credentialsDeleted: string;
   subscriptionCancelled: string;
-  billingHistoryRemoved: string;
+  billingRecordsKept: string;
   chooseWhen: string;
   gracePeriodLabel: string;
   gracePeriodDescription: string;
@@ -201,7 +201,7 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   threadsDeleted: 'Every thread and message is deleted',
   credentialsDeleted: 'Every credential and secret is removed',
   subscriptionCancelled: 'Your subscription is cancelled',
-  billingHistoryRemoved: 'Your billing history is removed',
+  billingRecordsKept: 'Your billing records are kept as long as the law requires',
   chooseWhen: 'Choose when',
   gracePeriodLabel: 'Grace period',
   gracePeriodDescription: 'Deletion happens on the scheduled date. Cancel any time before then.',
@@ -509,7 +509,7 @@ export function ProfileTabView({
                       <li>{copy.threadsDeleted}</li>
                       <li>{copy.credentialsDeleted}</li>
                       <li>{copy.subscriptionCancelled}</li>
-                      <li>{copy.billingHistoryRemoved}</li>
+                      <li>{copy.billingRecordsKept}</li>
                     </ul>
                   </div>
                   <div className="space-y-3">

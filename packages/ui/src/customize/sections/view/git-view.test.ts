@@ -108,8 +108,8 @@ test('does not name internal mechanisms in user-facing copy', () => {
 });
 
 test('every technical setting carries a docs link', () => {
-  expect(code).toContain("const DOCS_CLI = '/docs/cli'");
-  expect(code).toContain("const DOCS_MANIFEST = '/docs/project/manifest'");
+  expect(code).toContain("const DOCS_CLI = '/docs/developers#cli'");
+  expect(code).toContain("const DOCS_MANIFEST = '/docs/developers#kortixyaml-reference'");
   expect(code).toContain('<DocsLink href={DOCS_MANIFEST} />');
   expect(code).toContain('action={<DocsLink href={DOCS_CLI} />}');
 });

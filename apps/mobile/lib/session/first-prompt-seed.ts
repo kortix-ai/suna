@@ -8,8 +8,8 @@
  * only when the server echo lands. With it, the thread's first frame already
  * holds the prompt and a busy row.
  *
- * The server already holds this prompt (`initial_prompt`, `pending_prompt`,
- * or the warm claim), so the seed never gets "Try again": a client re-send
+ * The server already holds this prompt (`initial_prompt` or
+ * `pending_prompt`), so the seed never gets "Try again": a client re-send
  * would send it twice. The echo replaces the seed through the SDK store's
  * ordinary optimistic swap. Pure, so `bun test` runs it.
  */
