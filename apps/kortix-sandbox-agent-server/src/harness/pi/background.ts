@@ -19,6 +19,8 @@ export function startPiBackground(runtime: () => PiRuntime | null, cfg: Config):
   return startResourceMonitor({
     runtimePid: () => process.pid,
     runtimeState: () => runtime()?.getState() ?? 'down',
+    // A Claude Code turn runs in a `claude` child of the daemon: part of the runtime, never shed.
+    runtimeProcessNames: ['claude'],
     diskPaths: [cfg.workspace, '/opt/kortix', '/tmp'],
     diskCleanup: { workspaceRoot: cfg.workspace },
     guard: {

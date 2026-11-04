@@ -529,8 +529,17 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
     // non-runtime process instead of ending the turn, as long as this
     // elevated episode has not already spent its budget. `topProcesses` is
     // only populated at/above 80% (readResourceSnapshot), which is exactly
-    // where this branch runs.
-    const protectedPids = new Set<number>([process.pid, s.daemon?.pid ?? -1, s.runtime?.pid ?? -1, ...(guard.protectedPids?.() ?? [])])
+    // where this branch runs. The harness's own binaries (`runtimeProcessNames`,
+    // e.g. the `claude` process a Claude Code turn runs in) are the runtime too:
+    // shedding one ends the turn with a bare SIGKILL instead of a reason.
+    const runtimeNames = opts.runtimeProcessNames ?? []
+    const protectedPids = new Set<number>([
+      process.pid,
+      s.daemon?.pid ?? -1,
+      s.runtime?.pid ?? -1,
+      ...(s.topProcesses ?? []).filter((p) => runtimeNames.includes(p.name)).map((p) => p.pid),
+      ...(guard.protectedPids?.() ?? []),
+    ])
     const candidate = guard.disableProcessShedding
       ? null
       : shedAttempts < maxShedAttempts
