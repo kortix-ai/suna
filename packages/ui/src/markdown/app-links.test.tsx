@@ -125,3 +125,12 @@ test('keeps an inline-code custom label as one chip next to the mark', () => {
   expect(html.match(/<code[\s>]/g)?.length).toBe(1);
   expect(html).toMatch(/<span class="whitespace-nowrap">.*<span class="whitespace-normal"><code[^>]*>config\.ts<\/code><\/span><\/span>/);
 });
+
+test('an identifier too long to stay on one line falls back to a plain link', () => {
+  // Identifier labels never wrap, so their length is capped: 9 digits, 10-character Linear keys.
+  expect(appLink('https://github.com/example/project/pull/123456789')).not.toBeNull();
+  expect(appLink(`https://github.com/example/project/pull/1${'0'.repeat(9)}`)).toBeNull();
+  expect(appLink('https://linear.app/example/issue/ENGINEERIN-123456789')).not.toBeNull();
+  expect(appLink(`https://linear.app/example/issue/ENG-1${'0'.repeat(9)}`)).toBeNull();
+  expect(appLink('https://linear.app/example/issue/ENGINEERING-1')).toBeNull();
+});

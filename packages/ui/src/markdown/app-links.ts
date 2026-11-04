@@ -32,7 +32,7 @@ export function appLink(href: string): AppLink | null {
   const path = url.pathname;
   if (url.hostname === 'github.com') {
     const resource =
-      /^\/[^/]+\/[^/]+\/(pull|issues)\/([1-9]\d*)(?:\/(?:files|commits|checks))?\/?$/.exec(
+      /^\/[^/]+\/[^/]+\/(pull|issues)\/([1-9]\d{0,8})(?:\/(?:files|commits|checks))?\/?$/.exec(
         path,
       );
     if (resource)
@@ -47,7 +47,7 @@ export function appLink(href: string): AppLink | null {
   }
   if (url.hostname === 'linear.app') {
     const issue =
-      /^\/[^/]+\/issue\/([a-zA-Z][a-zA-Z0-9]*-\d+)(?:\/[^/]+)?\/?$/.exec(path);
+      /^\/[^/]+\/issue\/([a-zA-Z][a-zA-Z0-9]{0,9}-[1-9]\d{0,8})(?:\/[^/]+)?\/?$/.exec(path);
     if (issue)
       return {
         app: 'linear',
