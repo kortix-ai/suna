@@ -147,6 +147,10 @@ async function firecrawl(q: string, signal: AbortSignal): Promise<string> {
   return web.map((r) => `${r.title} (${r.url}): ${(r.description ?? '').slice(0, 300)}`).join('\n')
 }
 
+// A search to make: a provider's key here, or the Kortix router in a box (it holds the keys). Keys alone left a box with
+// no web lookup at all: the router's search went unused and each web question waited on the agent's own tools.
+const searchOn = () => !!(router() || process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY || process.env.FIRECRAWL_API_KEY)
+
 const HOSTS = () => [...((r = router()) => (r ? [`${r.base}/health`] : ['https://api.tavily.com/', 'https://google.serper.dev/', 'https://api.firecrawl.dev/']))(), ...CARD_HOSTS]
 let warmed = 0
 /** Opens (or keeps open) the connections to the search providers: a new one costs ~0.4 s (measured). Cheap to call often. */
@@ -221,7 +225,7 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
   const remaining = () => Math.max(0, deadline - performance.now())
   // The words themselves are searched at once, beside the router: a web turn no longer waits for routing, then search
   // (and a turn routed to no lookup has it ready if the agent reaches for the web itself).
-  const searching = !!(process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY || process.env.FIRECRAWL_API_KEY)
+  const searching = searchOn()
   // ahead: a question looked up before it is asked (src/anticipate.ts) waits for its route; no extra search on its words.
   const raw = searching && !ahead && content(q).size >= 2 ? search(q) : undefined
   // words: a search on the words themselves, no routing (the agent is about to search on its own; ours is faster).
@@ -237,9 +241,8 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
     const of = basename(repo ?? '')
     return [state && `<data source="git of ${of}, read just now">\n${state}\n</data>`, data && `<data source="workspace: ${of}">\n${data}\n</data>`].filter(Boolean).join('\n')
   }
-  const hasSearch = !!(process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY || process.env.FIRECRAWL_API_KEY)
   let fallback: Promise<string> | undefined
-  const searchNow = () => fallback ??= hasSearch ? (raw ? firstUseful([words ? raw : reuse(r.query) ?? search(r.query), raw]) : reuse(r.query) ?? search(r.query)) : Promise.resolve('')
+  const searchNow = () => fallback ??= searching ? (raw ? firstUseful([words ? raw : reuse(r.query) ?? search(r.query), raw]) : reuse(r.query) ?? search(r.query)) : Promise.resolve('')
   const web = async () => {
     const data = await searchNow()
     const found = data ? `<data source="web search" query="${r.query.replace(/"/g, "'")}">\n${data.replace(/<\/?data\b[^>]*>/gi, '')}\n</data>` : '' // untrusted: cannot close its envelope
@@ -249,7 +252,7 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
     if (r.card) {
       // Prefer exact primary facts briefly, but keep a late primary eligible while search is pending.
       const primary = primaryOf(r.card)
-      const hedge = hasSearch ? setTimeout(searchNow, 250) : undefined
+      const hedge = searching ? setTimeout(searchNow, 250) : undefined
       let got: string | undefined
       try { got = await within(primary, Math.min(800, remaining())) }
       finally { clearTimeout(hedge) }
