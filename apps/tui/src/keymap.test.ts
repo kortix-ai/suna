@@ -9,6 +9,7 @@ import { ARTIFACTS_KEYS } from './features/artifacts/keys.ts';
 import { AUDIT_KEYS } from './features/audit/keys.ts';
 import { AGENTS_KEYS } from './features/agents/keys.ts';
 import { CUSTOMIZE_KEYS } from './features/customize/keys.ts';
+import { PROVIDERS_KEYS } from './features/providers/keys.ts';
 import { DRIVE_KEYS } from './features/drive/keys.ts';
 import { FILES_KEYS } from './features/files/keys.ts';
 import { GOALS_KEYS } from './features/goals/keys.ts';
@@ -135,6 +136,7 @@ describe('allBindings', () => {
     ['loops', LOOPS_KEYS],
     ['audit', AUDIT_KEYS],
     ['agents', AGENTS_KEYS],
+    ['providers', PROVIDERS_KEYS],
   ];
 
   test('every feature table is included, whole', () => {

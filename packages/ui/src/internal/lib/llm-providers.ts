@@ -39,232 +39,27 @@
  * with a friendlier flow.
  */
 
+import { CATALOG as catalog } from '@kortix/llm-catalog';
 import {
-  type CatalogCost,
-  type CatalogModalities,
-  type CatalogReasoningOption,
-  type ProviderAuthRequirement,
-  CATALOG as catalog,
-  primaryAuthEnvVars,
-  providerAuthRequirement,
-} from '@kortix/llm-catalog';
+  type LlmProviderCatalogSource,
+  type LlmProviderEntry,
+  type LlmProviderModel,
+  type LlmProviderSource,
+  buildLlmProviderCatalog,
+} from '@kortix/sdk';
 
-export interface LlmProviderModel {
-  id: string;
-  name: string;
-  /**
-   * release_date when known (YYYY-MM-DD). Used to drive newest-first ordering.
-   * The catalog generator already pre-sorts each provider's models by this
-   * field; the field is exposed so the UI can render a "released X ago" hint.
-   * Optional to stay assignable from `@kortix/llm-catalog`'s `CatalogModel`
-   * (the live /llm-catalog/providers wire shape) — absent means unknown,
-   * exactly like null.
-   */
-  released?: string | null;
-  /**
-   * Capability + limit flags mirrored verbatim from models.dev — present on
-   * both the baked seed (`catalog.generated.json`) and the live
-   * `/llm-catalog/providers` fetch (see `@kortix/llm-catalog`'s
-   * `CatalogModel`, the shape both ultimately originate from). Optional
-   * because the synthetic `codex`/`kortix` provider entries built in this
-   * section (`utils.ts`'s `buildCodexProvider`, `use-connected-providers.ts`'s
-   * `kortixProvider`) only set what the opencode provider snapshot exposes.
-   */
-  description?: string;
-  attachment?: boolean;
-  reasoning?: boolean;
-  /** Present iff the model exposes a tunable reasoning-effort knob — see
-   *  `@kortix/llm-catalog`'s `generationControlCapabilities`, the single
-   *  source of truth the generation-controls panel derives its
-   *  show/hide + valid-values from. Never hardcode a per-model list. */
-  reasoning_options?: CatalogReasoningOption[];
-  tool_call?: boolean;
-  /** false means FIXED temperature (e.g. gpt-5.6-sol) — the generation-
-   *  controls panel must hide the temperature (and top_p) slider entirely. */
-  temperature?: boolean;
-  structured_output?: boolean;
-  // Two real models.dev shapes: a plain boolean, or an object naming the
-  // response field the interleaved content arrives on (e.g.
-  // {field:'reasoning_content'}) — the large majority. Mirrors
-  // `@kortix/llm-catalog`'s `CatalogModel.interleaved`.
-  interleaved?: boolean | { field?: string };
-  open_weights?: boolean;
-  knowledge?: string;
-  last_updated?: string;
-  family?: string;
-  modalities?: CatalogModalities;
-  limit?: { context?: number; input?: number; output?: number };
-  cost?: CatalogCost;
-}
-
-export interface LlmProviderEntry {
-  /** Stable id (matches provider-branding logo lookup). */
-  id: string;
-  /** Display name. */
-  label: string;
-  /**
-   * Env vars the connect form collects and writes to project_secrets — the
-   * PRIMARY auth method's fields (see `authRequirement`), not necessarily
-   * the raw models.dev `env` list. Most providers have exactly one; some
-   * (Azure, Bedrock) need multiple.
-   */
-  envVars: string[];
-  /**
-   * The full Kortix-owned auth requirement (possibly multiple independent
-   * methods — see `@kortix/llm-catalog`'s `providerAuthRequirement`).
-   * "Connected" detection must check this (any method fully satisfied), not
-   * just `envVars` — a provider can have alias methods (e.g. Google) or,
-   * in future, alternate methods (e.g. Bedrock SigV4) beyond the primary one
-   * the connect form shows.
-   */
-  authRequirement: ProviderAuthRequirement;
-  /** Where the user gets their credentials — opens in a new tab. */
-  helpUrl: string | null;
-  /**
-   * Hostname of the provider's API base URL, lowercased — `api.openai.com`
-   * from `https://api.openai.com/v1`. Null when models.dev declares no `api`
-   * for the provider (24 of 167 today, Anthropic and OpenAI among them), and
-   * null for a malformed URL. Never guessed: the Secrets page prefills this as
-   * an approved host for a recognized model key, and a wrong host would send
-   * the credential nowhere or, worse, somewhere else.
-   */
-  apiHost: string | null;
-  /** Short one-line tag shown in the catalog row. */
-  hint: string;
-  /** Catalog of models for this provider. */
-  models: LlmProviderModel[];
-  /** True for the curated popular set — pinned to the top of the catalog. */
-  featured: boolean;
-  /**
-   * Platform-managed provider (the Kortix gateway). Injected into every sandbox
-   * automatically — no API key, no connect/disconnect flow. Rendered as an
-   * always-connected "Managed" row rather than a BYO credential entry.
-   */
-  managed?: boolean;
-}
-
-export interface RawProvider {
-  id: string;
-  name: string;
-  env?: string[];
-  doc?: string | null;
-  /** Base URL of the provider's API, verbatim from models.dev. Absent for the
-   *  providers whose SDK hardcodes it (Anthropic, OpenAI, Google, …). */
-  api?: string | null;
-  models: LlmProviderModel[];
-}
-
-export interface RawCatalog {
+// The row shape and the builder live in `@kortix/sdk` (core/models/provider-connections)
+// so the TUI reads the same catalogue rows. This module keeps the live binding.
+export { buildLlmProviderCatalog, type LlmProviderEntry, type LlmProviderModel };
+export type RawProvider = LlmProviderSource;
+export interface RawCatalog extends LlmProviderCatalogSource {
   source: string;
   fetched_at: string;
   provider_count: number;
   model_count: number;
-  providers: RawProvider[];
 }
 
 const BAKED_SEED = catalog as RawCatalog;
-
-/**
- * Curated featured set — these surface first in the modal. Anything not in
- * this list is still browsable below, sorted A-Z.
- */
-const FEATURED_IDS = new Set([
-  'anthropic',
-  'openai',
-  'google',
-  'openrouter',
-  'vercel',
-  'github-copilot',
-  'groq',
-  'xai',
-  'deepseek',
-  'mistral',
-  'cerebras',
-  'togetherai',
-  'fireworks-ai',
-  'perplexity',
-  'amazon-bedrock',
-  'azure',
-  'google-vertex',
-  'huggingface',
-  'cohere',
-  'cohere-platform',
-  'nvidia',
-  'kortix',
-]);
-
-/**
- * The one-line tag shown in the catalog row — DERIVED from models.dev's own
- * model list (already newest-first per the catalog generator), never a
- * hand-maintained per-provider description. A hand-written map here rots
- * silently (it drifts from what a provider actually serves — the old
- * `amazon-bedrock: 'AWS Bedrock — Claude, Llama, Titan'` entry was already
- * wrong: Kortix's Bedrock transport only ever serves the Claude lineup) and
- * has to be hand-edited for every new provider models.dev adds. This reads
- * straight off `raw.models`, so it's automatically correct and automatically
- * covers new providers with zero code changes.
- */
-function deriveHint(raw: RawProvider): string {
-  if (raw.models.length === 0) return 'No models';
-  const names = raw.models.slice(0, 2).map((m) => m.name);
-  const remaining = raw.models.length - names.length;
-  return remaining > 0 ? `${names.join(', ')} +${remaining} more` : names.join(', ');
-}
-
-/** The hostname of `raw.api`, or null when it is absent or unparseable. */
-function deriveApiHost(raw: RawProvider): string | null {
-  if (!raw.api) return null;
-  try {
-    return new URL(raw.api).hostname.toLowerCase() || null;
-  } catch {
-    return null;
-  }
-}
-
-function toEntry(raw: RawProvider): LlmProviderEntry {
-  const featured = FEATURED_IDS.has(raw.id);
-  const hint = deriveHint(raw);
-  return {
-    id: raw.id,
-    label: raw.name,
-    // NOT raw.env directly — models.dev's env list can include auth methods
-    // Kortix's own transport doesn't implement (see providerAuthRequirement's
-    // doc comment, e.g. Bedrock's SigV4 pair) or aliases for the same
-    // credential (e.g. Google's 3 interchangeable key env vars). This is the
-    // PRIMARY method's fields — what the connect form actually asks for.
-    envVars: primaryAuthEnvVars(raw),
-    authRequirement: providerAuthRequirement(raw),
-    helpUrl: raw.doc ?? null,
-    apiHost: deriveApiHost(raw),
-    hint,
-    models: raw.models,
-    featured,
-  };
-}
-
-/**
- * Featured first (in the FEATURED_IDS order), then everything else A-Z by id.
- * The featured order matters: we want Anthropic + OpenAI at the very top.
- */
-function order(entries: LlmProviderEntry[]): LlmProviderEntry[] {
-  const featuredOrder = Array.from(FEATURED_IDS);
-  const featuredIndex = new Map(featuredOrder.map((id, index) => [id, index]));
-  return [...entries].sort((a, b) => {
-    if (a.featured && !b.featured) return -1;
-    if (!a.featured && b.featured) return 1;
-    if (a.featured && b.featured) {
-      const ai = featuredIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER;
-      const bi = featuredIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER;
-      return ai - bi;
-    }
-    return a.label.localeCompare(b.label);
-  });
-}
-
-/** Pure: raw catalog (baked seed OR a live `/llm-catalog/providers` fetch) → the modal's provider list, sorted. */
-export function buildLlmProviderCatalog(raw: RawCatalog): LlmProviderEntry[] {
-  return order(raw.providers.map(toEntry));
-}
 
 // ES module bindings are LIVE — every `import { LLM_PROVIDERS } from
 // '@/lib/llm-providers'` call site reads whatever these are reassigned to,

@@ -427,6 +427,14 @@ export const COMMANDS = [
     binding: 'screen.customize',
   },
   {
+    name: 'providers',
+    aliases: ['provider'],
+    args: '[provider]',
+    description: 'Connect model providers: ChatGPT, Claude, API keys, and who can use them.',
+    group: 'screen',
+    needs: 'project',
+  },
+  {
     name: 'account',
     aliases: ['members', 'billing', 'usage'],
     description: 'Members, invites, roles, credits.',
