@@ -25174,7 +25174,11 @@
       "expand": "Mostrar el resultado completo",
       "collapse": "Ocultar el resultado",
       "batchTitle": "{count, plural, one {# agente ha terminado} other {# agentes han terminado}}",
-      "ownsTasks": "Aún tiene {tasks}"
+      "ownsTasks": "Aún tiene {tasks}",
+      "source": "Actualización del agente",
+      "statusFailedShort": "No terminó",
+      "statusStoppedShort": "Detenido",
+      "updateCount": "{count, plural, one {# actualización del agente} other {# actualizaciones de agentes}}"
     },
     "tools": {
       "running": {

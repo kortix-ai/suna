@@ -36,7 +36,7 @@ import { burstSummaryLabel } from '@kortix/sdk';
 import { BurstSummaryTrigger } from './burst-summary-trigger';
 import { samePartsList } from './same-parts';
 import { ThoughtChainStep } from './thought-chain-step';
-import { WorkFoldContext } from './turn-work-accordion';
+import { WorkFoldContext, WorkTouchContext } from './turn-work-accordion';
 export { ActivityGroupStep, sameActivityGroupStepProps } from './activity-group-step';
 
 /**
@@ -112,12 +112,15 @@ function ActivityBurstImpl({
   const [open, setOpen] = useState(autoExpand && running);
   const userToggled = useRef(false);
 
-  // Open live work automatically, but never hide details on completion.
-  // A reader’s explicit choice always wins; minimal density never auto-opens.
+  // Open while the burst runs, close when the next text closes it: a long
+  // turn streams as a list of one-line bursts, not a wall of open chains. A
+  // burst the reader touched (its own line, or any row inside it) keeps the
+  // reader's state. Minimal density never auto-opens.
   useEffect(() => {
-    if (userToggled.current || !autoExpand || !running) return;
-    setOpen(true);
+    if (userToggled.current) return;
+    setOpen(autoExpand && running);
   }, [running, autoExpand]);
+  const markTouched = useContext(WorkTouchContext);
 
   const steps = useMemo(() => sessionLogBurstSteps(blocks), [blocks]);
   const summary = useMemo(() => sessionLogBurstSummary(blocks), [blocks]);
@@ -141,6 +144,7 @@ function ActivityBurstImpl({
       open={bare || open}
       onOpenChange={(next) => {
         userToggled.current = true;
+        markTouched?.();
         setOpen(next);
       }}
       className="group/burst flex-row"
@@ -160,8 +164,14 @@ function ActivityBurstImpl({
 				*/}
         <ToolActivateContext.Provider value={null}>
           {/* `mt-3` is the gap under the summary line. Bare has no summary
-					    line, so it has no gap to open. */}
-          <div className={bare ? undefined : 'mt-3'}>
+					    line, so it has no gap to open. A click on a row inside counts
+					    as the reader's choice: the burst then stays as they left it. */}
+          <div
+            className={bare ? undefined : 'mt-3'}
+            onClickCapture={(event) => {
+              if ((event.target as Element | null)?.closest?.('[aria-expanded]')) userToggled.current = true;
+            }}
+          >
             <ChainOfThought>
               {/* A thought row IS a `ChainOfThoughtStep` — it owns the step's
 							    open state so it can open itself while the model thinks. */}
