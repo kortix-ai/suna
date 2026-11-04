@@ -52,6 +52,7 @@ import {
 } from '../drives/volumes';
 import { ARTIFACT_TYPE_KEYS, docTitle, htmlTitle, typeOfEntry, type ArtifactType } from './formats';
 import { recordArtifactEvent, recordDriveCommitAuthor } from './events-store';
+import { publishArtifactLiveChange, requestArtifactLiveRecheck } from './live-publish';
 import type { VolumeWriteCommit } from '../drives/volumes';
 
 export const ARTIFACTS_FLAG = 'artifacts' as const;
@@ -398,6 +399,7 @@ export async function publishChanges(
   // A save overwrites: it gets credit for the files it replaces.
   await assertDriveFilesFit(drive, files.map((f) => ({ path: join(row.root, f.rel), bytes: f.bytes.byteLength })), { overwrite: true });
   const commits: VolumeWriteCommit[] = [];
+  let savedVersion: string | null = null;
   try {
     await writeDriveVolume(drive, async (volume) => {
       // A conditional save writes its entry alone (If-Match), after the assets
@@ -408,6 +410,7 @@ export async function publishChanges(
       if (conditional) {
         const written = await writeVolumeFile(volume, join(row.root, conditional.rel), conditional.bytes, { overwrite: true, ifMatch: input.base_version });
         if (written.commit) commits.push(written.commit);
+        savedVersion = written.version ?? null;
       }
     });
   } catch (err) {
@@ -422,7 +425,7 @@ export async function publishChanges(
   // ponytail: a fixed list of starter names; a `named` flag if more creation paths appear.
   const entry = files.find((f) => f.rel === row.entry);
   const derived = entry ? titleOf(row.type as ArtifactType, new TextDecoder().decode(entry.bytes)) : null;
-  return db.transaction(async (tx) => {
+  const saved = await db.transaction(async (tx) => {
     const [current] = await tx.select().from(artifacts).where(eq(artifacts.artifactId, row.artifactId)).for('update');
     if (!current) throw new ArtifactError(404, 'Artifact not found', 'not_found');
     const title = input.title?.trim() || (UNNAMED.has(current.title) ? derived : null);
@@ -436,6 +439,22 @@ export async function publishChanges(
     if (restoredFrom) await recordArtifactEvent(tx, current, author, 'restored', { version: restoredFrom });
     return updated!;
   });
+  announceSave(saved, savedVersion);
+  return saved;
+}
+
+/**
+ * After a committed save: the Artifact's viewers reload its content, at the
+ * new entry version, and its activity. An unconditional save (a restore, a
+ * save without base_version) reads the version once, off the request path.
+ */
+function announceSave(row: ArtifactRow, version: string | null): void {
+  publishArtifactLiveChange(row.artifactId, 'activity');
+  if (version) return publishArtifactLiveChange(row.artifactId, 'content', version);
+  void entryVersion(row).then(
+    (current) => publishArtifactLiveChange(row.artifactId, 'content', current),
+    () => publishArtifactLiveChange(row.artifactId, 'content', null),
+  );
 }
 
 export interface ArtifactVersion {
@@ -590,7 +609,9 @@ export async function updateArtifactMeta(
   // it "updated" (the gallery sorts by updated_at). An empty patch still
   // writes updatedAt, so the statement always sets a column.
   const touched = Object.keys(meta).length > 0 || Object.keys(binding).length === 0;
-  return db.transaction(async (tx) => {
+  let recorded = false;
+  let sharing = false;
+  const updated = await db.transaction(async (tx) => {
     const [current] = await tx.select().from(artifacts).where(eq(artifacts.artifactId, row.artifactId)).for('update');
     if (!current) throw new ArtifactError(404, 'Artifact not found', 'not_found');
     const [updated] = await tx.update(artifacts).set({
@@ -603,8 +624,14 @@ export async function updateArtifactMeta(
     if ([...updated!.sharedWithUserIds].sort().join() !== [...current.sharedWithUserIds].sort().join()) {
       await recordArtifactEvent(tx, current, author, 'shared_with_changed', { from: current.sharedWithUserIds, to: updated!.sharedWithUserIds });
     }
+    sharing = updated!.visibility !== current.visibility || [...updated!.sharedWithUserIds].sort().join() !== [...current.sharedWithUserIds].sort().join();
+    recorded = sharing || updated!.title !== current.title;
     return updated!;
   });
+  if (recorded) publishArtifactLiveChange(row.artifactId, 'activity');
+  // A narrower sharing closes the live sockets of the people it removed (4403).
+  if (sharing) requestArtifactLiveRecheck(row.artifactId);
+  return updated;
 }
 
 export async function setPinned(row: ArtifactRow, userId: string, pinned: boolean): Promise<ArtifactRow> {
@@ -628,6 +655,8 @@ export async function unshare(row: ArtifactRow): Promise<void> {
     await tx.delete(artifacts).where(eq(artifacts.artifactId, row.artifactId));
     return screenshots.flatMap(image => image.key ? [image.key] : []);
   });
+  // The Artifact is gone: its live sockets re-check and close (4403).
+  requestArtifactLiveRecheck(row.artifactId);
   if (keys.length) {
     const { cleanupArtifactCommentScreenshotKeys } = await import('./comment-screenshot-objects');
     await cleanupArtifactCommentScreenshotKeys(keys);

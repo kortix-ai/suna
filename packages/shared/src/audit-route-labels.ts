@@ -550,6 +550,9 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'PATCH /v1/projects/:projectId/artifacts/:artifactId/comments/:threadId': { action: 'project.artifact.comment.status', title: 'Resolved or reopened artifact comment thread' },
   'PATCH /v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId': { action: 'project.artifact.comment.edit', title: 'Edited artifact comment' },
   'DELETE /v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId': { action: 'project.artifact.comment.delete', title: 'Deleted artifact comment' },
+  'GET /v1/projects/:projectId/artifacts/:artifactId/live': { action: 'project.artifact.live.read', title: 'Requested artifact live presence without a WebSocket' },
+  'POST /v1/projects/:projectId/artifacts/:artifactId/live/ticket': { action: 'project.artifact.live.ticket', title: 'Requested artifact live presence ticket' },
+  'POST /v1/projects/:projectId/artifacts/:artifactId/live/agent': { action: 'project.artifact.live.agent', title: 'Set agent presence on artifact' },
   'POST /v1/projects/:projectId/attachments': { action: 'session.prompt_attachment.create', title: 'Started attachment upload' },
   'DELETE /v1/projects/:projectId/attachments/:attachmentId': { action: 'session.prompt_attachment.delete', title: 'Removed attachment upload' },
   'PUT /v1/projects/:projectId/attachments/:attachmentId/chunks/:index': { action: 'session.prompt_attachment.chunk.upload', title: 'Uploaded attachment chunk' },
@@ -1078,5 +1081,6 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'ENTRY preview_origin:websocket': { action: 'sandbox.preview.websocket.connect', title: 'Opened sandbox preview WebSocket' },
   'ENTRY ws:/v1/p/:sandboxId/:port/*': { action: 'sandbox.port.websocket.connect', title: 'Opened sandbox port WebSocket' },
   'ENTRY ws:/v1/chrome/ws': { action: 'chrome.extension.connect', title: 'Connected a browser extension' },
+  'ENTRY ws:/v1/projects/:projectId/artifacts/:artifactId/live': { action: 'project.artifact.live.connect', title: 'Opened artifact live presence' },
   'ENTRY ws:/v1/tunnel/ws': { action: 'tunnel.agent.connect', title: 'Connected computer tunnel agent' },
 };

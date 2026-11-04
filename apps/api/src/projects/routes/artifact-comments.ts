@@ -61,7 +61,8 @@ const ThreadSchema = z.object({
 const body = <T extends z.ZodTypeAny>(schema: T) => ({ required: true, content: { 'application/json': { schema } } });
 const responses = errors(400, 401, 403, 404, 409, 413, 429, 503);
 
-async function authorizeComments(c: Context, projectId: string, target: string | { threadId: string }, write: boolean) {
+/** The comment routes' gate. `POST …/live/ticket` and `POST …/live/agent` (`artifact-live.ts`) use it too. */
+export async function authorizeComments(c: Context, projectId: string, target: string | { threadId: string }, write: boolean) {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return { ok: false as const, response: c.json({ error: 'Artifact not found' }, 404) };
   for (const key of ['artifacts', 'artifact_comments'] as const) {

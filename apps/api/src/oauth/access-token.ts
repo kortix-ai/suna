@@ -78,6 +78,23 @@ export interface OAuthAccessTokenValidation {
   error?: string;
 }
 
+/**
+ * One OAuth access token's state by its row id, for a holder that kept the id
+ * but not the secret: an Artifact live socket re-checks it every 60 s. Null
+ * when the row is gone. Throws when the read fails.
+ */
+export async function readOAuthAccessTokenState(
+  tokenId: string,
+): Promise<{ revokedAt: Date | null; expiresAt: Date; clientActive: boolean } | null> {
+  const [row] = await db
+    .select({ revokedAt: oauthAccessTokens.revokedAt, expiresAt: oauthAccessTokens.expiresAt, clientActive: oauthClients.active })
+    .from(oauthAccessTokens)
+    .innerJoin(oauthClients, eq(oauthClients.clientId, oauthAccessTokens.clientId))
+    .where(eq(oauthAccessTokens.id, tokenId))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function validateOAuthAccessToken(token: string): Promise<OAuthAccessTokenValidation> {
   if (!isOAuthAccessToken(token)) return { isValid: false, error: 'Invalid OAuth access token' };
   const tokenHash = await hashSecretKeyAsync(token);

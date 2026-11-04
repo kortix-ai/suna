@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1037,
+  "count": 1040,
   "routes": [
     {
       "method": "GET",
@@ -2201,6 +2201,18 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/artifacts/:artifactId/content"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/live"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/live/agent"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/live/ticket"
     },
     {
       "method": "DELETE",

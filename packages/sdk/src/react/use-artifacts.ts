@@ -43,6 +43,9 @@ import {
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
+/** The mutation key of every comment write on one Artifact. `useArtifactLive` reads it to defer a refetch. */
+export const artifactCommentWriteKey = (projectId: string, artifactId: string) => ['artifact-comment-write', projectId, artifactId];
+
 function commentScope(projectId: string | null | undefined, artifactId: string | null | undefined): [string, string] {
   if (!projectId || !artifactId) throw new Error('An Artifact comment needs a project and Artifact id');
   return [projectId, artifactId];
@@ -206,7 +209,7 @@ export function useArtifactComments(
     predicate: (entry: { queryKey: readonly unknown[] }) =>
       entry.queryKey.length === scopeKey.length + 1 && THREAD_LIST_FILTERS.has(String(entry.queryKey[scopeKey.length])),
   };
-  const writeKey = ['artifact-comment-write', projectId ?? '', artifactId ?? ''];
+  const writeKey = artifactCommentWriteKey(projectId ?? '', artifactId ?? '');
   const optimisticWrites = !options.version && !!projectId && !!artifactId;
   const patchLists = (update: (threads: ThreadEntry[], filter: string) => ThreadEntry[]) => {
     for (const [key, threads] of client.getQueriesData<ThreadEntry[]>(lists)) {

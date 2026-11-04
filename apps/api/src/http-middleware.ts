@@ -1,6 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
+import { redactUrlSecrets } from './lib/redact-url-secrets';
 import { prettyJSON } from 'hono/pretty-json';
 import { config } from './config';
 import { logger as appLogger } from './lib/logger';
@@ -183,7 +184,9 @@ app.use('*', upstreamTiming);
 installFetchTiming(config.SUPABASE_URL);
 
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
-app.use('*', logger());
+// The access line prints the path WITH its query: a credential in it (an
+// Artifact live socket's `?ticket=`) is redacted before it is written.
+app.use('*', logger((message, ...rest) => void process.stdout.write(`${[redactUrlSecrets(message), ...rest].join(' ')}\n`)));
 
 /**
  * `X-Kortix-Upstream-Status` as a number, or null when the header is absent,

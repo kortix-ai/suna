@@ -1,10 +1,18 @@
 import * as P from '../rest/projects-client';
+import { createArtifactLiveConnection, type ArtifactLiveConnectionOptions } from '../artifact-live/connection';
 import type { DropFirst } from './binding-types';
 
 export function bindProjectArtifacts(projectId: string) {
   return {
     artifacts: {
       activity: (...args: DropFirst<Parameters<typeof P.listArtifactActivity>>) => P.listArtifactActivity(projectId, ...args),
+      /** Live presence: `connect` opens the WebSocket, `ticket` mints one, `signal` names an agent session's place. */
+      live: {
+        connect: (artifactId: string, options: Omit<ArtifactLiveConnectionOptions, 'projectId' | 'artifactId'>) =>
+          createArtifactLiveConnection({ ...options, projectId, artifactId }),
+        ticket: (...args: DropFirst<Parameters<typeof P.createArtifactLiveTicket>>) => P.createArtifactLiveTicket(projectId, ...args),
+        signal: (...args: DropFirst<Parameters<typeof P.signalArtifactLiveAgent>>) => P.signalArtifactLiveAgent(projectId, ...args),
+      },
       comments: {
         readScreenshot: (...args: DropFirst<Parameters<typeof P.readArtifactCommentScreenshot>>) => P.readArtifactCommentScreenshot(projectId, ...args),
         list: (...args: DropFirst<Parameters<typeof P.listArtifactComments>>) => P.listArtifactComments(projectId, ...args),
