@@ -1,6 +1,7 @@
 'use client';
 
 
+import { ModelSwitchHistory } from '../panel/model-switch-event';
 import { uiRoutes } from '../../lib/routes';
 import { isQuestionTool } from '@kortix/sdk';
 import { SessionApprovalPrompt } from '../prompts/session-approval-prompt';
@@ -4330,6 +4331,8 @@ export function SessionChat({
             parent={parentCrumb}
           />
         )}
+
+        <ModelSwitchHistory history={projectSessionRow?.metadata?.model_switches} current={projectSessionRow?.metadata?.opencode_model} />
 
         {/* Context modal — triple-click the session title area to open */}
         <SessionContextModal

@@ -37,6 +37,13 @@ import {
   resolvePostWriteBindings,
   scopeResponseBody,
 } from './session-scope-decide';
+import { resolveAndAuthorizeAgent } from '../lib/agent-access';
+import { missingClaudeSubscription, claudeSubscriptionRequiredBody } from '../claude-subscription/gate';
+import { parseModelSwitchInput } from '../lib/session-model-switch-input';
+import { storeSessionModelSwitch } from '../lib/session-model-switch-store';
+import { drainSessionLifecycleQueue } from '../session-lifecycle';
+import { checkBillingAdmission } from '../../billing/services/billing-gate';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 
 export function registerSessionScopeRoutes(): void {
@@ -335,6 +342,8 @@ export function registerSessionScopeRoutes(): void {
               // `model` wins; `opencode_model` is its pre-W4 name.
               schema: z.object({
                 model: z.string().min(1).max(128).optional(),
+                prompt: z.string().min(1).max(32000).optional(),
+                idempotency_key: z.string().min(1).max(128).optional(),
                 opencode_model: z.string().min(1).max(128).optional(),
               }),
             },
@@ -356,6 +365,8 @@ export function registerSessionScopeRoutes(): void {
              * benign cold-session answer), so a client must read THIS to tell a
              * half-applied change from a stored one.
              */
+            prompt_id: z.string().optional(),
+            deduped: z.boolean().optional(),
             push_failed: z.literal(true).optional(),
             detail: z.string().optional(),
           }),
@@ -389,6 +400,8 @@ export function registerSessionScopeRoutes(): void {
       }
 
       const body = await readJsonObject(c);
+      const switchInput = parseModelSwitchInput(body);
+      if (switchInput.kind === 'invalid') return c.json({ error: switchInput.error }, 400);
       const named = body.model ?? body.opencode_model;
       const requested = typeof named === 'string' ? named : '';
       const shapeError = validateModelChangeShape(requested);
@@ -454,6 +467,30 @@ export function registerSessionScopeRoutes(): void {
         next: nextModel,
         status: visible.row.status,
       });
+
+      if (switchInput.kind === 'switch') {
+        assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+        await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_START);
+        await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
+        if (!isProjectSessionPrincipal(c)) {
+          const missing = await missingClaudeSubscription({ accountId: loaded.row.accountId,
+            projectId, sessionId, userId: loaded.userId, model: nextModel });
+          if (missing) return c.json(claudeSubscriptionRequiredBody(missing), 409);
+        }
+        const billing = await checkBillingAdmission(loaded.row.accountId);
+        if (!billing.ok) return c.json({ error: billing.message, code: billing.reason }, 402);
+        const stored = await storeSessionModelSwitch({
+          projectId, accountId: loaded.row.accountId, sessionId, actorUserId: loaded.userId,
+          actorSessionId: isProjectSessionPrincipal(c) ? callerKortixSessionId(c) : null,
+          model: nextModel, prompt: switchInput.prompt, key: switchInput.key,
+        });
+        if (stored.kind === 'conflict') return c.json({ error: 'Retry key belongs to a different model switch' }, 409);
+        if (stored.kind === 'limited') return c.json({ error: 'At most three self model switches per hour' }, 409);
+        const push = needsPush && !stored.deduped ? await pushSessionModelToSandbox({ projectId, sessionId, model: nextModel }) : undefined;
+        void drainSessionLifecycleQueue({ idempotencyKey: `model-switch:${sessionId}:${switchInput.key}` }).catch(() => undefined);
+        return c.json({ ...modelChangeResult({ model: nextModel, needsPush, push, current: currentModel }),
+          prompt_id: stored.promptId, deduped: stored.deduped });
+      }
 
       await db
         .update(projectSessions)
