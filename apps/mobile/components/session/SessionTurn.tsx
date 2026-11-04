@@ -34,7 +34,7 @@
  * `sessionLogTurnSegments`. The rows live beside this file: turn/* and tool/*.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { LoopMotionContext } from '@/components/kortix/text-shimmer';
 import { useColorScheme } from 'nativewind';
@@ -100,11 +100,13 @@ import { TurnStoppedBy } from './turn/turn-stopped-by';
 import { SessionChangeRequests } from './SessionChangeRequests';
 import { UserMessage, type SessionSourceAuthor, type UserMessageUploadStatus } from './turn/user-message';
 import { WorkRow } from './turn/work-row';
+import { useWorkFoldOpen } from '@/lib/session/work-fold-open';
 
 /** Web turn root `space-y-2.5`. */
 const TURN_STACK_GAP = webSpace(2.5);
 /** Web segment / inline stacks `space-y-3`. */
 const SEGMENT_STACK_GAP = webSpace(3);
+const HIDDEN = { display: 'none' as const };
 /** Web busy slot / answered-question list `space-y-2`. */
 const SMALL_STACK_GAP = webSpace(2);
 
@@ -264,9 +266,12 @@ function SessionTurnImpl({
   // KRTX-2113: settled, the work folds behind one "Worked for" row; `null` while working.
   const workSplit = useMemo(() => turnWorkSplit(segments, working), [segments, working]);
   const durationMs = useMemo(() => (workSplit ? turnDurationMs(turn) : null), [workSplit, turn]);
-  // The opened "Worked for" row. Closed on every mount: a history turn paints folded.
-  const [workOpen, setWorkOpen] = useState(false);
-  const toggleWork = useCallback(() => setWorkOpen((open) => !open), []);
+  // The opened "Worked for" row, kept outside the turn so a FlatList remount does not close it.
+  const [workOpen, toggleWork] = useWorkFoldOpen(turn.id);
+  const workSegments = useMemo(() => new Set<TurnSegment>(workSplit?.work ?? []), [workSplit]);
+  // A turn that mounted settled renders its work on the first open; a turn seen live keeps it mounted.
+  const [workMounted, setWorkMounted] = useState(working || workOpen);
+  if (!workMounted && (working || workOpen)) setWorkMounted(true);
 
   // ── Errors, retry, status ──
   const turnError = useMemo(() => turnErrorText(turn), [turn]);
@@ -443,11 +448,11 @@ function SessionTurnImpl({
         />
       );
     };
-    // Settled with work (KRTX-2113): the row, the work while the row is open,
-    // then the hoisted deliverables, then the final text. They stay keyed
-    // siblings in this one list, so the final text and the cards keep their
-    // instances at settle and on every toggle. The inline and command layouts
-    // keep today's render.
+    // Settled with work (KRTX-2113): the row joins the list at the top and the
+    // work is hidden in place. Every segment keeps its wrapper and position in
+    // both states, so nothing remounts at settle or on a toggle, and an opened
+    // row reads in call order: the work between the cards and the text it led
+    // to. The inline and command layouts keep today's render.
     const split = layout.text === 'segments' ? workSplit : null;
     body.push(
       <TurnLiveContext.Provider key="segments" value={working}>
@@ -455,14 +460,19 @@ function SessionTurnImpl({
        <ImageGenDigestsContext.Provider value={imageGenDigests}>
        <ImageGenRunsContext.Provider value={imageGenRuns}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
-          {split
-            ? [
-                <WorkRow key="work" durationMs={durationMs} open={workOpen} onToggle={toggleWork} />,
-                ...(workOpen ? split.work.map((segment) => renderSegment(segment, true)) : []),
-                ...split.hoisted.map((segment) => renderSegment(segment)),
-                ...split.final.map((segment) => renderSegment(segment)),
-              ]
-            : segments.map((segment) => renderSegment(segment))}
+          {split && <WorkRow key="work" durationMs={durationMs} open={workOpen} onToggle={toggleWork} />}
+          {segments.map((segment) => {
+            const isWork = split !== null && workSegments.has(segment);
+            if (isWork && !workMounted) return null;
+            const node = renderSegment(segment, isWork);
+            if (!React.isValidElement(node)) return null;
+            // `display: none` takes no `gap`, so a folded turn has no blank rows.
+            return (
+              <View key={node.key} style={isWork && !workOpen ? HIDDEN : undefined}>
+                {node}
+              </View>
+            );
+          })}
         </View>
        </ImageGenRunsContext.Provider>
        </ImageGenDigestsContext.Provider>
