@@ -1054,7 +1054,7 @@ export const cascade: Provider = (o, h) => {
     let rest = false // a lead-in was dropped before its sentence ended: the rest of that sentence goes too
     let opened = false // the turn's first spoken utterance went out (and was closed)
     let settle: ReturnType<typeof setTimeout> | undefined // a sentence the text stopped on, spoken if nothing follows
-    let items: string[] = [] // a list being read, summarized when it ends
+    let items: { raw: string; text: string }[] = [] // a list being read, summarized when it ends
     let tail = '', last_ = false // a short fragment waiting for the next sentence (Gemini); the turn's text is all in
     // After the answer of a caller's turn, each sentence is checked for a read-only offer while the answer plays
     // (src/offer.ts); the rest of the reply keeps its order behind it.
@@ -1101,7 +1101,16 @@ export const cascade: Provider = (o, h) => {
     // more" (localhost, 2026-11-02: "wtf is this shit reading", "slop"). Longer lists: the first three and how many more.
     const flush = () => {
       if (!items.length) return
-      const heads = items.filter((i) => !i.startsWith('.')).map((i) => i.split(/\s*(?::|—|–|\s-\s)\s*/)[0]!.trim()).filter(Boolean) // dotfiles are noise to the ear
+      // One numbered line alone is no list: a number that answers, then more ("132. What's next?"). Said as said; the
+      // number on its own, which clean() keeps.
+      const lone = items.length === 1 ? items[0]!.raw.match(/^\s*(\d+)[.)]\s+([\s\S]*)$/) : null
+      if (lone) {
+        items = []
+        sentence(`${lone[1]}.`)
+        if (lone[2]!.trim()) sentence(lone[2]!)
+        return
+      }
+      const heads = items.map((i) => i.text).filter((i) => !i.startsWith('.')).map((i) => i.split(/\s*(?::|—|–|\s-\s)\s*/)[0]!.trim()).filter(Boolean) // dotfiles are noise to the ear
       const named = heads.length <= 6 ? heads : heads.slice(0, 3)
       const more = items.length - named.length
       sentence(more ? `${named.join(', ')}${named.length ? ', and' : ''} ${more} more.` : named.length > 1 ? `${named.slice(0, -1).join(', ')} and ${named.at(-1)}.` : `${named[0] ?? ''}.`)
@@ -1109,7 +1118,7 @@ export const cascade: Provider = (o, h) => {
     }
     const unit = (raw: string) => {
       if (!raw.trim()) return
-      if (LISTY.test(raw)) return void items.push(clean(raw).replace(/[.:;,]$/, ''))
+      if (LISTY.test(raw)) return void items.push({ raw, text: clean(raw).replace(/[.:;,]$/, '') })
       flush()
       sentence(raw)
     }
@@ -1243,7 +1252,7 @@ export const cascade: Provider = (o, h) => {
           // "Label: what it is" lines under a header ("Five categories:") or after another are a list's items.
           const labeled = LABELED.test(line) && (items.length > 0 || headed)
           headed = /:\s*$/.test(line.trim())
-          if (labeled) { items.push(clean(line).replace(/[.:;,]$/, '')); continue }
+          if (labeled) { items.push({ raw: line, text: clean(line).replace(/[.:;,]$/, '') }); continue }
           if (LISTY.test(line)) unit(line)
           else for (const s of line.split(/(?<=[.!?])\s+/)) unit(s)
           if (!items.length) close() // a paragraph ends the utterance (a list is still being summarized)
@@ -1279,7 +1288,7 @@ export const cascade: Provider = (o, h) => {
       },
       end() {
         clearTimeout(settle)
-        if ((items.length > 0 || headed) && LABELED.test(pending)) items.push(clean(pending).replace(/[.:;,]$/, '')), (pending = '') // a list's last item
+        if ((items.length > 0 || headed) && LABELED.test(pending)) items.push({ raw: pending, text: clean(pending).replace(/[.:;,]$/, '') }), (pending = '') // a list's last item
         if (!fenced && !FENCE.test(pending)) unit(pending.replace(/\[(?:set|later|watch|cancel|capture)\b[\s\S]*$/i, '')) // a tag the reply never closed is not read aloud; nor code
         flush()
         if (tail) {
