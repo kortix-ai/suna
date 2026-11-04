@@ -2151,7 +2151,12 @@
       "autoRetried": "Kortix automatically retried the model {count, plural, one {once} other {# times}} before this failure.",
       "typing": "{name} is typing…",
       "showWork": "Show work",
-      "hideWork": "Hide work"
+      "hideWork": "Hide work",
+      "starting": "Starting…",
+      "workingFor": "Working · {time}",
+      "agentWorking": "is working",
+      "agentWorkingFor": "is working · {time}",
+      "stopped": "Stopped"
     }
   },
   "agents": {

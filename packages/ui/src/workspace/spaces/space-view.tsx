@@ -275,7 +275,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
   );
   const closeProfile = useCallback(() => setParams((params) => params.delete(PROFILE_PARAM)), [setParams]);
   const openDetails = useCallback(
-    (mode: '1' | 'add' = '1') => {
+    (mode: '1' | 'add' | 'people' = '1') => {
       ownThreadEntry.current = false;
       setParams((params) => {
         params.delete(THREAD_PARAM);
@@ -314,6 +314,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
       onToggleDetails={() => (detailsOpen ? closeDetails() : openDetails())}
       renameOpen={renameOpen}
       setRenameOpen={setRenameOpen}
+      onViewAllMembers={() => openDetails('people')}
     />
   );
 
@@ -435,7 +436,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
               key={threadId}
               projectId={projectId}
               sessionId={threadId}
-              context={place}
+              context={title}
               thread={threads.sessions.find((session) => session.session_id === threadId)}
               agentFallback={space.dm_agent_name}
               onClose={closeThread}
@@ -466,6 +467,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
               onRename={space.kind === 'channel' ? () => setRenameOpen(true) : undefined}
               onOpenSettings={space.kind === 'channel' ? () => setDetails('about') : undefined}
               addOnOpen={detailsParam === 'add'}
+              focusPeople={detailsParam === 'people'}
             />
           </ResizablePanel>
         </>
@@ -565,6 +567,7 @@ function SpaceHeader({
   onToggleDetails,
   renameOpen,
   setRenameOpen,
+  onViewAllMembers,
 }: {
   projectId: string;
   target: SpaceTarget;
@@ -578,6 +581,8 @@ function SpaceHeader({
   onToggleDetails: () => void;
   renameOpen: boolean;
   setRenameOpen: (open: boolean) => void;
+  /** "View all members": the Details panel, at People. */
+  onViewAllMembers: () => void;
 }) {
   const t = useTranslations('spaces.view');
   const sidebar = useOptionalSidebar();
@@ -651,7 +656,7 @@ function SpaceHeader({
       </div>
       {channel && channel.is_member === false && channel.visibility !== 'private' ? <JoinChannelButton projectId={projectId} space={channel} /> : null}
       {channel && (roster.people.length > 0 || roster.agents.length > 0) ? (
-        <SpaceRosterButton roster={roster} onViewAll={() => setDetails('members')} />
+        <SpaceRosterButton projectId={projectId} roster={roster} onViewAll={onViewAllMembers} />
       ) : null}
       {channel ? (
         <>
@@ -851,7 +856,10 @@ function SpaceComposer({
 function RepliesDivider({ count, className }: { count: number; className?: string }) {
   const t = useTranslations('spaces.view');
   return (
-    <div className={cn('flex items-center gap-3 px-5', className)}>
+    // The message rows' grid (`px-5`, the `w-10` avatar column, `gap-2`): the count starts where the text does.
+    <div className={cn('flex gap-2 px-5', className)}>
+      <span aria-hidden className="w-10 shrink-0" />
+      <div className="flex min-w-0 flex-1 items-center gap-3">
       {/* At 0 the text holds "1 reply"'s width, invisible, so the line starts where it will stay. */}
       <span
         aria-hidden={count === 0 || undefined}
@@ -863,6 +871,7 @@ function RepliesDivider({ count, className }: { count: number; className?: strin
         {t('replies', { count: Math.max(count, 1) })}
       </span>
       <div className="bg-border h-px flex-1" />
+      </div>
     </div>
   );
 }
@@ -960,7 +969,14 @@ function ThreadPanel({
         <div className="kx-titlebar-tabs flex h-12 min-w-0 flex-1 items-center px-3">
           <div className="flex min-w-0 items-baseline gap-2">
             <h2 className="text-base font-semibold">{t('threadTitle')}</h2>
-            <span className="text-muted-foreground truncate text-xs">{context}</span>
+            {/* The space, quietly: it closes the thread back to the space's chat. */}
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-muted-foreground hover:text-foreground focus-visible:ring-ring min-w-0 truncate rounded-sm text-xs outline-none hover:underline focus-visible:ring-2"
+            >
+              {context}
+            </button>
           </div>
         </div>
         {fullHref ? (

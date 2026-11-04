@@ -4,7 +4,7 @@ import type { ProjectSpace, ProjectSpaceMember } from '@kortix/sdk';
 import { qk, useProjectConfig, useProjectSpaceMembers, useProjectTriggers } from '@kortix/sdk/react';
 import { LightningIcon, LockSimpleIcon, PencilSimpleIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { describeWhen, triggerName } from '../../customize/triggers/schedule/schedule-copy';
 import { TriggerComposer } from '../../customize/triggers/schedule/trigger-composer';
@@ -19,7 +19,7 @@ import Hint from '../../primitives/hint';
 import { Label } from '../../primitives/label';
 import { UserAvatar } from '../../primitives/user-avatar';
 import { UiLink as Link, useUiViewer } from '../../providers/ui-provider';
-import { type Principal, PrincipalHover } from './principal-card';
+import { type Principal, PrincipalRow } from './principal-card';
 import { SpaceAvatar } from './space-avatar';
 import { isPersonalSpace, isPrivateSpace, viewerDisplayName } from './space-identity';
 import { AddChannelMembersDialog, MemberAvatar } from './space-members';
@@ -43,6 +43,7 @@ export function SpaceDetailsPanel({
   onRename,
   onOpenSettings,
   addOnOpen = false,
+  focusPeople = false,
 }: {
   projectId: string;
   space: ProjectSpace;
@@ -57,7 +58,13 @@ export function SpaceDetailsPanel({
   onOpenSettings?: () => void;
   /** Open "Add members" at once: a space just created. */
   addOnOpen?: boolean;
+  /** Opened from "View all members": People scrolls into view. */
+  focusPeople?: boolean;
 }) {
+  const peopleRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focusPeople) peopleRef.current?.scrollIntoView({ block: 'start' });
+  }, [focusPeople]);
   const t = useTranslations('spaces.panel');
   const channel = space.kind === 'channel' ? space : null;
   const editable = space.can_edit !== false;
@@ -106,7 +113,9 @@ export function SpaceDetailsPanel({
 
         <div className="space-y-6 px-4 pb-6">
           <AgentsSection projectId={projectId} space={space} onAdd={canAdd && editable ? () => setAdding(true) : undefined} />
+          <div ref={peopleRef} className="scroll-mt-2">
           <PeopleSection projectId={projectId} space={space} members={members.data?.members} onAdd={canAdd ? () => setAdding(true) : undefined} />
+          </div>
           <TabsSection projectId={projectId} space={space} onOpenTab={onOpenTab} />
           <RoutinesSection projectId={projectId} space={space} />
           {onOpenSettings ? (
@@ -157,15 +166,8 @@ function Row({
       {tag ? <span className="text-muted-foreground shrink-0 text-xs">{tag}</span> : null}
     </>
   );
-  if (card) {
-    return (
-      <li>
-        <PrincipalHover projectId={card.projectId} principal={card.principal} className="hover:bg-hover flex min-h-9 w-full items-center gap-2.5 px-2">
-          {body}
-        </PrincipalHover>
-      </li>
-    );
-  }
+  // A person or an agent: THE principal row (card on hover, Profile on click).
+  if (card) return <PrincipalRow projectId={card.projectId} principal={card.principal} avatar={avatar} name={name} tag={tag} />;
   return (
     <li>
       {href ? (

@@ -53,7 +53,7 @@ import { AnimatePresence, m } from 'motion/react';
 import { memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { AfterFirstPromptContext } from './after-first-prompt';
 import { type TranscriptAuthor, TranscriptRowsContext } from './transcript-rows';
-import { messageWorkerIds, ShowWork, WorkerTranscripts } from './show-work';
+import { messageWorkerIds, ShowWork, WorkerStatusRows, WorkerTranscripts } from './show-work';
 import { TypingIndicator } from './typing-indicator';
 import { AgentBusyRow } from './thread-boot-rows';
 import { MESSAGE_TEXT_CLASS, MessageRow } from '../turn/message-row';
@@ -1938,8 +1938,14 @@ export function TurnMessageWork(
         : [],
     [front, turn, sessionReport, subagentNotice, noticeBatch, isLast],
   );
+  // The live status follows only the workers this turn started: a worker whose report this turn relays is done.
+  // Any turn: a follow-up sent while a worker runs must not hide it. A row shows only while its worker works.
+  const started = useMemo(() => (front ? messageWorkerIds(turnBlocks(turn), []) : []), [front, turn]);
   if (front ? workers.length === 0 : work.length === 0) return null;
   return (
+    <>
+    {/* While a hidden worker runs: who, and for how long. It leaves when the worker is done. */}
+    {started.length > 0 ? <WorkerStatusRows sessionIds={started} /> : null}
     <ShowWork defaultOpen={props.defaultOpen}>
       {front ? (
         <WorkerTranscripts sessionIds={workers} />
@@ -1959,6 +1965,7 @@ export function TurnMessageWork(
         />
       )}
     </ShowWork>
+    </>
   );
 }
 
@@ -2354,6 +2361,7 @@ function TurnBusyRow(
   const { retryInfo, retryMessage, retrySecondsLeft } = retry;
   const { statusPhrase, statusElapsedLabel } = status;
   const rows = useContext(TranscriptRowsContext);
+  const tTurn = useTranslations('sessionUi.turn');
   return (
     <>
     {showTurnBusyIndicator({
@@ -2372,7 +2380,11 @@ function TurnBusyRow(
           />
         )}
         {quietBusy && rows && !retryInfo ? (
-          <TypingIndicator name={rows.agent} />
+          // Dots, then "Working · 0:42" once the wait passes the stall mark: a long turn never reads as frozen.
+          <TypingIndicator
+            name={rows.agent}
+            detail={status.statusElapsedLabel ? tTurn('workingFor', { time: status.statusElapsedLabel }) : null}
+          />
         ) : (
           <SessionBusyIndicator
             sessionId={sessionId}
@@ -2516,6 +2528,7 @@ function SessionTurnImpl(props: SessionTurnProps) {
     providers, commandMessages, commands,
   } = props;
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tTurnRows = useTranslations('sessionUi.turn');
   const locale = useLocale();
   const afterFirstPrompt = useContext(AfterFirstPromptContext);
   const rows = useContext(TranscriptRowsContext);
@@ -2722,6 +2735,10 @@ function SessionTurnImpl(props: SessionTurnProps) {
                 />
                 <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
               </GenuiTelemetryContext.Provider>
+              {/* Stopped before it said anything: one quiet line, never an empty row. */}
+              {messagesOnly && !model.working && errors.turnErrorIsAbort && model.response.trim() === '' && shownSegments.length === 0 ? (
+                <p className="text-muted-foreground text-sm">{tTurnRows('stopped')}</p>
+              ) : null}
               <TurnFooter {...props} hideActionBar quietBusy={messagesOnly} model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
               {messagesOnly && !model.working ? (
                 <TurnMessageWork

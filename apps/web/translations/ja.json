@@ -2151,7 +2151,12 @@
       "autoRetried": "Kortix はこの失敗の前にモデルを自動で {count, plural, other {# 回}}再試行しました。",
       "typing": "{name} が入力中…",
       "showWork": "作業を表示",
-      "hideWork": "作業を隠す"
+      "hideWork": "作業を隠す",
+      "starting": "起動中…",
+      "workingFor": "作業中 · {time}",
+      "agentWorking": "が作業中",
+      "agentWorkingFor": "が作業中 · {time}",
+      "stopped": "停止しました"
     }
   },
   "agents": {

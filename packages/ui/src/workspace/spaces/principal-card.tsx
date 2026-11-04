@@ -177,6 +177,7 @@ export function PrincipalHover({
   children,
   className,
   focusable = true,
+  onOpened,
 }: {
   projectId: string;
   principal: Principal;
@@ -184,6 +185,8 @@ export function PrincipalHover({
   className?: string;
   /** False for an avatar beside its name: the name is the one keyboard stop. */
   focusable?: boolean;
+  /** After the click opened the Profile: the popover the row sits in closes. */
+  onOpened?: () => void;
 }) {
   const openProfile = useContext(ProfileContext);
   const t = useTranslations('spaces.profile');
@@ -195,7 +198,14 @@ export function PrincipalHover({
           type="button"
           tabIndex={focusable ? undefined : -1}
           aria-label={t('viewProfile', { name: principal.kind === 'agent' ? agentLabel(principal.name) : principal.name })}
-          onClick={canOpen ? () => openProfile!(principal) : undefined}
+          onClick={
+            canOpen
+              ? () => {
+                  openProfile!(principal);
+                  onOpened?.();
+                }
+              : undefined
+          }
           className={cn(
             'focus-visible:ring-ring inline-flex max-w-full min-w-0 items-center rounded-sm text-left outline-none focus-visible:ring-2',
             canOpen ? 'cursor-pointer' : 'cursor-default',
@@ -209,6 +219,51 @@ export function PrincipalHover({
         <PrincipalSummary projectId={projectId} principal={principal} onOpenProfile={canOpen ? () => openProfile!(principal) : undefined} />
       </HoverCardContent>
     </HoverCard>
+  );
+}
+
+/**
+ * THE row of a person or an agent in a list (the header's members card, the
+ * Details panel): a real button, a hover fill, the card on hover or focus,
+ * the Profile on click (Enter too), and `onOpened` to close the popover it
+ * sits in. Every list of principals in Spaces renders through it.
+ */
+export function PrincipalRow({
+  projectId,
+  principal,
+  avatar,
+  name,
+  secondary,
+  tag,
+  onOpened,
+}: {
+  projectId: string;
+  principal: Principal;
+  /** One 28px slot, so every name starts on one edge. */
+  avatar: ReactNode;
+  name: string;
+  /** A quiet second line ("2 threads"). */
+  secondary?: string | null;
+  /** A muted tag at the row's end ("You", "Default"). */
+  tag?: string | null;
+  onOpened?: () => void;
+}) {
+  return (
+    <li>
+      <PrincipalHover
+        projectId={projectId}
+        principal={principal}
+        onOpened={onOpened}
+        className="hover:bg-hover flex min-h-9 w-full items-center gap-2.5 rounded-md px-2 py-1"
+      >
+        <span className="flex size-7 shrink-0 items-center justify-center">{avatar}</span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-sm leading-tight">{name}</span>
+          {secondary ? <span className="text-muted-foreground truncate text-xs leading-tight tabular-nums">{secondary}</span> : null}
+        </span>
+        {tag ? <span className="text-muted-foreground shrink-0 text-xs">{tag}</span> : null}
+      </PrincipalHover>
+    </li>
   );
 }
 

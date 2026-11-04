@@ -2151,7 +2151,12 @@
       "autoRetried": "Kortix је аутоматски поново покушао са моделом {count, plural, one {једном} other {# пута}} пре ове грешке.",
       "typing": "{name} kuca…",
       "showWork": "Prikaži rad",
-      "hideWork": "Sakrij rad"
+      "hideWork": "Sakrij rad",
+      "starting": "Покреће се…",
+      "workingFor": "Ради · {time}",
+      "agentWorking": "ради",
+      "agentWorkingFor": "ради · {time}",
+      "stopped": "Заустављено"
     }
   },
   "agents": {

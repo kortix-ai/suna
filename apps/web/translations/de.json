@@ -2151,7 +2151,12 @@
       "autoRetried": "Kortix hat das Modell vor diesem Fehler {count, plural, one {einmal} other {#-mal}} automatisch wiederholt.",
       "typing": "{name} schreibt…",
       "showWork": "Arbeit anzeigen",
-      "hideWork": "Arbeit ausblenden"
+      "hideWork": "Arbeit ausblenden",
+      "starting": "Startet…",
+      "workingFor": "Arbeitet · {time}",
+      "agentWorking": "arbeitet",
+      "agentWorkingFor": "arbeitet · {time}",
+      "stopped": "Gestoppt"
     }
   },
   "agents": {

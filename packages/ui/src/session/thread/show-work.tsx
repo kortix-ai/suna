@@ -12,6 +12,8 @@ import { Skeleton } from '../../primitives/skeleton';
 import { useSessionIds } from '../../providers/session-ids';
 import { AfterFirstPromptContext } from './after-first-prompt';
 import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
+import { formatDuration } from '../../internal/session-types';
+import { useElapsedLabel } from './typing-indicator';
 import { type TranscriptRows, TranscriptRowsContext } from './transcript-rows';
 
 // Lazy: `SessionPeek` renders `SessionTurn`, which renders this file.
@@ -136,6 +138,51 @@ function WorkerTranscript({
         </div>
       ) : null}
       <SessionPeek projectId={projectId} sessionId={sessionId} working={working} density="compact" />
+    </div>
+  );
+}
+
+/**
+ * A router thread's live status while its hidden workers run: one row per
+ * busy worker, its mark and "<Agent> is working · 0:42", under the message
+ * that started it. A row leaves when its worker goes idle (its report then
+ * reaches the router, which replies). Reads the same worker ids as "Show work"
+ * and the same busy state as `WorkerTranscript`.
+ */
+export function WorkerStatusRows({ sessionIds }: { sessionIds: readonly string[] }) {
+  const ids = useSessionIds();
+  const author = useContext(TranscriptRowsContext)?.author;
+  if (!ids.projectId || sessionIds.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1">
+      {sessionIds.map((sessionId) => (
+        <WorkerStatusRow key={sessionId} projectId={ids.projectId!} sessionId={sessionId} author={author} />
+      ))}
+    </div>
+  );
+}
+
+function WorkerStatusRow({ projectId, sessionId, author }: { projectId: string; sessionId: string; author?: TranscriptRows['author'] }) {
+  const t = useTranslations('sessionUi.turn');
+  const row = useProjectSession(projectId, sessionId).data;
+  const busy = useSessionStateStore((s) => {
+    const type = s.sessionStatus[sessionId]?.type;
+    return type === 'busy' || type === 'retry';
+  });
+  const working = busy || row?.working?.state === 'working';
+  const elapsed = useElapsedLabel(working ? (row?.working?.since ?? row?.created_at ?? null) : null, formatDuration);
+  if (!working || !row?.agent_name) return null;
+  const agent = row.agent_name;
+  const face = (
+    <span className="inline-flex items-center gap-1.5">
+      <AgentMark slug={agent} size={14} />
+      <span className="text-foreground font-medium">{agentDisplayName(agent)}</span>
+    </span>
+  );
+  return (
+    <div role="status" aria-live="polite" className="text-muted-foreground flex items-center gap-1.5 text-xs tabular-nums">
+      {author ? author({ kind: 'agent', name: agent }, face, 'name') : face}
+      <span>{elapsed ? t('agentWorkingFor', { time: elapsed }) : t('agentWorking')}</span>
     </div>
   );
 }

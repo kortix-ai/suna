@@ -2151,7 +2151,12 @@
       "autoRetried": "Kortix a automatiquement réessayé le modèle {count, plural, one {une fois} other {# fois}} avant cet échec.",
       "typing": "{name} écrit…",
       "showWork": "Voir le travail",
-      "hideWork": "Masquer le travail"
+      "hideWork": "Masquer le travail",
+      "starting": "Démarrage…",
+      "workingFor": "En cours · {time}",
+      "agentWorking": "travaille",
+      "agentWorkingFor": "travaille · {time}",
+      "stopped": "Arrêté"
     }
   },
   "agents": {

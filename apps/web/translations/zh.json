@@ -2151,7 +2151,12 @@
       "autoRetried": "Kortix 在此失败前已自动重试该模型 {count, plural, other {# 次}}。",
       "typing": "{name} 正在输入…",
       "showWork": "查看过程",
-      "hideWork": "隐藏过程"
+      "hideWork": "隐藏过程",
+      "starting": "启动中…",
+      "workingFor": "处理中 · {time}",
+      "agentWorking": "正在处理",
+      "agentWorkingFor": "正在处理 · {time}",
+      "stopped": "已停止"
     }
   },
   "agents": {

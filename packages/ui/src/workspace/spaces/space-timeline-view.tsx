@@ -30,7 +30,8 @@ import { UserAvatar } from '../../primitives/user-avatar';
 import { sessionDisplayLabel, sessionDisplayStatus } from '../../session/actions/session-label';
 import { participantLabel } from '../../session/participants/session-participants';
 import { MentionChip } from '../../session/thread/mention-chip';
-import { TypingIndicator } from '../../session/thread/typing-indicator';
+import { TypingIndicator, useElapsedLabel } from '../../session/thread/typing-indicator';
+import { formatDuration } from '../../internal/session-types';
 import { MESSAGE_TEXT_CLASS, MessageRow } from '../../session/turn/message-row';
 import { SolidCheckIcon } from '../../internal/icons/solid-check-icon';
 import { RememberThisButton } from '../memory/remember-this';
@@ -421,6 +422,11 @@ function ThreadReplyLine({
   const working = threadIsWorking(session);
   const replies = session.reply_count ?? 0;
   const names = useMentionNames(projectId);
+  const tTurn = useTranslations('sessionUi.turn');
+  // The wait, said: "Starting…" while the thread's computer comes up, else "Working · 0:42".
+  const booting = session.status === 'provisioning' || session.status === 'queued' || session.status === 'branching';
+  const elapsed = useElapsedLabel(working ? (session.working?.since ?? session.updated_at) : null, formatDuration);
+  const waitDetail = booting ? tTurn('starting') : elapsed ? tTurn('workingFor', { time: elapsed }) : null;
   // An agent's own post: its reply line starts with the first reply. Mentions read as names; no address shows.
   const reply = showReply || replies > 0 ? oneLineWithoutEmails(names(session.result_excerpt ?? '')) || null : null;
   // Nothing to say yet (no reply, no work, nothing waiting): no line, as in Slack.
@@ -457,7 +463,7 @@ function ThreadReplyLine({
             {tf('statusValue.needsYou')}
           </span>
         ) : working ? (
-          <TypingIndicator name={agent} className="h-5" />
+          <TypingIndicator name={agent} className="h-5" detail={waitDetail} detailDelayMs={2000} />
         ) : reply ? (
           <span className="text-foreground min-w-0 truncate text-sm" title={reply}>
             {reply}

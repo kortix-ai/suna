@@ -2151,7 +2151,12 @@
       "autoRetried": "A Kortix repetiu o modelo automaticamente {count, plural, one {uma vez} other {# vezes}} antes desta falha.",
       "typing": "{name} está digitando…",
       "showWork": "Ver trabalho",
-      "hideWork": "Ocultar trabalho"
+      "hideWork": "Ocultar trabalho",
+      "starting": "Iniciando…",
+      "workingFor": "Trabalhando · {time}",
+      "agentWorking": "está trabalhando",
+      "agentWorkingFor": "está trabalhando · {time}",
+      "stopped": "Interrompido"
     }
   },
   "agents": {
