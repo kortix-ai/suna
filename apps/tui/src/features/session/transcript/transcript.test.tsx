@@ -461,7 +461,7 @@ describe('<Transcript/> inbox prompts', () => {
     const frame = captureCharFrame();
     expect(frame).not.toContain('No messages yet');
     expect(frame).toContain('yo');
-    expect(frame).toContain('you · queued');
+    expect(frame).toContain('you · waiting');
     expect(frame).toContain('and then this');
   });
 });

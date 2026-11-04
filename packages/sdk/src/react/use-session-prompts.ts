@@ -204,9 +204,8 @@ export function withEditedPromptText(
   );
 }
 
-/** The rows with ONE row turned into Quick Queue — "Stop and send"'s
- *  optimistic write, so the row leaves the list and paints in the transcript
- *  on the click. */
+/** The rows with ONE row sent now — "Send now"'s optimistic write, so the
+ *  row leaves the list and paints in the transcript on the click. */
 export function withInterruptedPrompt(
   prompts: readonly SessionPrompt[],
   promptId: string,

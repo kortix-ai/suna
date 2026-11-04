@@ -141,7 +141,7 @@ export async function recoverChangeRequest(
         clientMessageId: mintWireMessageId(),
         messageId: mintWireMessageId(),
         remintOnDelivery: true,
-        delivery: 'queue',
+        delivery: 'steer',
         parts: [{ type: 'text', text: buildChangeRequestRecoveryPrompt(target, blocker, 'origin') }],
       });
       return origin.session_id;

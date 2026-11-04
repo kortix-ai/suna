@@ -48,7 +48,6 @@ import {
   NOT_TURN_PROMPTER_MESSAGE,
   mayStopRunningTurn,
 } from '../session-lifecycle/turn-stop-authority';
-import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/runtime-client';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
   flattenPromptText,
@@ -259,7 +258,9 @@ export function registerSessionPromptsRoutes(): void {
       const deliveryInput = SessionPromptDeliverySchema.optional().safeParse(body.delivery);
       if (!deliveryInput.success) return c.json({ error: 'delivery must be steer, queue or interrupt' }, 400);
       const delivery = deliveryInput.data;
-      // `delivery` decides the placement; a request with only `placement` keeps its old meaning.
+      // `delivery` no longer changes how a prompt is delivered (always steer).
+      // It still picks where an older client draws the row: `interrupt` was a
+      // transcript bubble, `steer`/`queue` a row above the composer.
       const placement = delivery ? (delivery === 'interrupt' ? 'transcript' : 'composer') : body.placement;
       const rawParts = Array.isArray(body.parts) ? body.parts : [];
       if (!clientMessageId || clientMessageId.length > 128) {
@@ -300,17 +301,6 @@ export function registerSessionPromptsRoutes(): void {
       // agent and every one after it as any other agent in the manifest. Falls
       // back to the session's own agent when the prompt names none.
       await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName, undefined, visible.row.spaceId);
-
-      // "Stop and send" ends the running turn, so it asks what Stop asks
-      // (`turn-stop-authority.ts`). With no running turn it is a plain send.
-      if (delivery === 'interrupt') {
-        const verdict = await mayStopRunningTurn({
-          sessionId,
-          callerUserId: isProjectSessionPrincipal(c) ? null : loaded.userId,
-          canManageLifecycle: visible.canManageLifecycle,
-        });
-        if (!verdict.allowed) return c.json(NOT_TURN_PROMPTER_BODY, 403);
-      }
 
       // NO connector pre-flight here. A prompt used to be refused 409
       // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
@@ -380,7 +370,9 @@ export function registerSessionPromptsRoutes(): void {
         clientMessageId,
         wireMessageId: messageId,
         ...(placement ? { placement } : {}),
-        ...(delivery ? { delivery } : {}),
+        // One mode (2026-11-04): every prompt steers a running turn or starts
+        // the next one. `delivery` from an older client only picks `placement`.
+        delivery: 'steer' as const,
         // OPT-IN, and only one producer sets it: the localStorage migration,
         // whose id is minted at page load — against a transcript this tab has
         // not read yet — for a message the user typed before their last reload.
@@ -405,10 +397,6 @@ export function registerSessionPromptsRoutes(): void {
         parts,
         overrides,
         authorSessionId,
-        // The sender may stop ANY running turn of this session (owner or
-        // manager when they sent it). Admission reads it before a Quick Queue
-        // row ends a turn another member prompted.
-        ...(visible.canManageLifecycle ? { mayStopAnyTurn: true } : {}),
       };
       const enqueued = await enqueueReleasingHold(
         sessionId,
@@ -595,7 +583,6 @@ export function registerSessionPromptsRoutes(): void {
           resourceId: effectivePromptId,
           metadata: { prompt_author_user_id: row.actorUserId ?? null },
         });
-        await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
         return c.json({ removed: serializeRemovedPrompt(row) }, 200);
       };
       const outcome = await deleteInboxPrompt(sessionId, effectivePromptId, actor);
@@ -644,7 +631,7 @@ export function registerSessionPromptsRoutes(): void {
       tags: ['sessions'],
       summary: 'Edit a queued prompt',
       description:
-        'Replace the text of a prompt still waiting in the queue. The prompt keeps its place, its files and any hold, and is not sent. `delivery: interrupt` turns it into a Quick Queue prompt that ends the running turn after its current tool ("Stop and send"). While a turn runs, only the member who prompted it, the session owner or a project manager may do that; anyone else gets `403` with `code: "not_turn_prompter"`.',
+        'Replace the text of a prompt still waiting to be delivered. The prompt keeps its place, its files and any hold, and is not sent. `delivery: interrupt` sends it next, ahead of older waiting prompts: it steers the running turn, which reads it after its current tool call, or starts a turn when none runs. The running turn is not stopped.',
       ...auth,
       request: {
         params: z.object({
@@ -654,7 +641,7 @@ export function registerSessionPromptsRoutes(): void {
         }),
         body: { content: { 'application/json': { schema: lenientBody({
             text: z.string().optional().openapi({ description: 'The new text of the prompt.' }),
-            delivery: z.literal('interrupt').optional().openapi({ description: 'interrupt: send it next, ending the running turn after its current tool. Only for a prompt that is not sent yet.' }),
+            delivery: z.literal('interrupt').optional().openapi({ description: 'interrupt: send it next, ahead of older waiting prompts. It steers the running turn; the turn is not stopped. Only for a prompt that is not sent yet.' }),
           }) } }, required: true },
       },
       responses: {
@@ -691,16 +678,6 @@ export function registerSessionPromptsRoutes(): void {
       if (body.text === undefined && body.delivery === undefined) {
         return c.json({ error: 'text or delivery is required' }, 400);
       }
-      // "Stop and send" ends the running turn: refused before any write, edit
-      // included, for a member who may not stop it (`turn-stop-authority.ts`).
-      if (body.delivery === 'interrupt') {
-        const verdict = await mayStopRunningTurn({
-          sessionId,
-          callerUserId: isProjectSessionPrincipal(c) ? null : loaded.userId,
-          canManageLifecycle: visible.canManageLifecycle,
-        });
-        if (!verdict.allowed) return c.json(NOT_TURN_PROMPTER_BODY, 403);
-      }
       let outcome: Awaited<ReturnType<typeof editInboxPrompt>> | null = null;
       if (body.text !== undefined) {
         // The same limits a sent text part meets.
@@ -714,7 +691,7 @@ export function registerSessionPromptsRoutes(): void {
       }
       if (body.delivery === 'interrupt' && (!outcome || outcome.outcome === 'edited')) {
         outcome = await interruptInboxPrompt(sessionId, promptId, { userId: loaded.userId });
-        // "Stop and send" sends: the row is due now and the drain arms the interrupt.
+        // "Send now": the row is due now and the drain steers it.
         if (outcome.outcome === 'edited' && outcome.row.idempotencyKey) {
           void drainSessionLifecycleQueue({ idempotencyKey: outcome.row.idempotencyKey }).catch(() => undefined);
         }
@@ -793,7 +770,7 @@ export function registerSessionPromptsRoutes(): void {
       tags: ['sessions'],
       summary: 'Hold or release the prompt queue of a session',
       description:
-        'A hold is the Stop button: it also stops the running turn. Only the member who prompted that turn, the session owner or a project manager may hold while a turn runs; anyone else gets `403` with `code: "not_turn_prompter"`. With no running turn, anyone who may send may hold. Releasing is always open.',
+        'A hold is the Stop button: it also stops the running turn. Only the member who prompted that turn, the session owner or a project manager may hold while a turn runs; anyone else gets `403` with `code: "not_turn_prompter"`. The hold lasts until the stop settles: then the API releases it, and the prompts that waited go out together as the next turn. Releasing is always open.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -811,13 +788,11 @@ export function registerSessionPromptsRoutes(): void {
     }),
     // STOP HAS TO REACH THE QUEUE.
     //
-    // "Stopping means stop doing things, and that includes the queue" was a
-    // browser-local pause while the queue was browser-local. The queue is in
-    // Postgres now, so the pause has to be too: pausing a client drain leaves the
-    // admission gate free to deliver, roughly one scheduler tick after the abort
-    // clears turn authority — exactly the message the user pressed Stop to get
-    // ahead of. A hold is released by an action (any new send, or "send now" on a
-    // row), never by a timer.
+    // The hold keeps every waiting prompt out of the turn the Stop is ending:
+    // without it the admission gate steers them into that turn, one scheduler
+    // tick before the abort lands. Once the settle has retracted what the
+    // stopped turn never read, the hold is released and those prompts go out
+    // together as the next turn (2026-11-04).
     async (c) => {
       const projectId = c.req.param('projectId');
       const sessionId = c.req.param('sessionId');
@@ -875,7 +850,6 @@ export function registerSessionPromptsRoutes(): void {
         );
       }
       await holdInboxPrompts(sessionId, body.held);
-      if (body.held) await disarmAllQuickQueueInterrupt(sessionId, loaded.userId);
       // After the write, before the read-back — either instant orders this
       // snapshot correctly against the hold it just applied (JAY-728).
       const observedAt = new Date().toISOString();
@@ -883,8 +857,12 @@ export function registerSessionPromptsRoutes(): void {
       if (body.held) {
         // The instant marking above is what the client waits for; what a Stop
         // means for prompts already on the wire needs the box and happens behind
-        // this response — see inbox-hold-settle.ts.
-        settleInboxHoldAfterStopInBackground(sessionId);
+        // this response — see inbox-hold-settle.ts. Then the hold is released:
+        // a Stop ends the turn, and what waited goes out as the next turn.
+        settleInboxHoldAfterStopInBackground(sessionId, async () => {
+          await holdInboxPrompts(sessionId, false);
+          await drainSessionLifecycleQueue({ limit: 1 });
+        });
       } else {
         void drainSessionLifecycleQueue({ limit: 1 }).catch(() => undefined);
       }

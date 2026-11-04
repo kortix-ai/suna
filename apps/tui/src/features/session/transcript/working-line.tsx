@@ -108,6 +108,6 @@ export function WorkingLine({
   if (!active) return <text fg={theme.faint}>idle</text>;
 
   const elapsed = working.since > 0 ? formatElapsed(now() - working.since) : '0s';
-  const what = working.pendingDelivery ? 'queued' : 'working';
+  const what = working.pendingDelivery ? 'sending' : 'working';
   return <Spinner label={`${what} · ${elapsed}`} />;
 }

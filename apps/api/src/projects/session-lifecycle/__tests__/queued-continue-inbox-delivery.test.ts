@@ -70,9 +70,6 @@ let healthCapabilities: string[] | null = [];
 let deliveredFloor: bigint | null = null;
 let transcript: Array<Record<string, unknown>> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
-let quickQueueControlRequests: Array<{ url: string; method: string; body: Record<string, unknown> }> = [];
-/** When set, the daemon never answers the interrupt arm — the wedged-box case. */
-let quickQueueArmFails = false;
 let capturedKeys: string[] = [];
 /** The source each prompt POST asked the proxy to record on its turn. */
 let capturedSources: Array<string | undefined> = [];
@@ -530,8 +527,6 @@ beforeEach(() => {
   deliveredFloor = null;
   transcript = [];
   capturedBodies = [];
-  quickQueueControlRequests = [];
-  quickQueueArmFails = false;
   capturedKeys = [];
   capturedSources = [];
   seenKeys.clear();
@@ -565,15 +560,6 @@ beforeEach(() => {
   simulatedInFlightCommands.clear();
   globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
     const href = String(url);
-    if (href.endsWith('/kortix/abort/after-tool')) {
-      quickQueueControlRequests.push({
-        url: href,
-        method: init?.method ?? 'GET',
-        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
-      });
-      if (quickQueueArmFails) return new Response(null, { status: 503 });
-      return Response.json({ armed: true }, { status: 202 });
-    }
     // The delivery's LANDING PROOF reads back the id it just posted
     // (`prompt-landing-proof.ts`). A real runtime holds any message it
     // accepted, so the harness answers for every id this session actually
@@ -690,65 +676,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
 
   // Every Quick Queue row below is an owner's send (`mayStopAnyTurn`): only a
   // sender who may stop the running turn arms its interrupt (inbox-admission.test.ts).
-  test('Quick Queue arms the active turn boundary after its head is durably queued', async () => {
-    boxRow = {
-      status: 'active',
-      metadata: { activeTurns: {
-        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
-          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
-      } },
-    };
-    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript', mayStopAnyTurn: true } });
-    expect(await executeQueuedContinue(row)).toBe('queued');
-    expect(requeues).toHaveLength(1);
-    expect(quickQueueControlRequests).toEqual([{
-      url: 'https://sandbox.test/kortix/abort/after-tool',
-      method: 'POST',
-      // W3 name and the pre-W3 name, for a daemon built before W3.
-      body: { prompt_id: 'cmd-1', runtime_session_id: OC_SESSION_ID, opencode_session_id: OC_SESSION_ID,
-        turn_message_id: 'msg_other' },
-    }]);
-    expect(capturedBodies).toHaveLength(0);
-  });
-
-  test('a runtime that will not serve the interrupt parks the row on the unreachable ladder, not the 2 s order backoff', async () => {
-    boxRow = {
-      status: 'active',
-      metadata: { activeTurns: {
-        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
-          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
-      } },
-    };
-    quickQueueArmFails = true;
-    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript', mayStopAnyTurn: true } });
-    expect(await executeQueuedContinue(row)).toBe('queued');
-    expect(quickQueueControlRequests).toHaveLength(1);
-    expect(parkedCalls).toEqual([{ commandId: 'cmd-1', reason: "the session's machine could not be reached" }]);
-    expect(requeues).toHaveLength(0);
-    expect(failedCalls).toHaveLength(0);
-    expect(capturedBodies).toHaveLength(0);
-  });
-
-  test('after the unreachable budget the interrupted row fails honestly instead of waiting for ever', async () => {
-    boxRow = {
-      status: 'active',
-      metadata: { activeTurns: {
-        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
-          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
-      } },
-    };
-    quickQueueArmFails = true;
-    parkBudgetLeft = false;
-    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript', mayStopAnyTurn: true } });
-    expect(await executeQueuedContinue(row)).toBe('failed');
-    expect(parkedCalls).toHaveLength(1);
-    expect(failedCalls.at(-1)).toMatchObject({
-      message: "the session's machine could not be reached after 3 attempts",
-      options: { retryable: false },
-    });
-    expect(requeues).toHaveLength(0);
-  });
-
   test('Stop during a transient delivery failure prevents another POST', async () => {
     promptResponsePlan = ['failed'];
     pauseAfterPosts = 1;

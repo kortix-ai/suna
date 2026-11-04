@@ -1,6 +1,6 @@
 /**
  * The open session's composer: the one input, its three selection pickers,
- * the server-side prompt queue, and the tray row under it.
+ * the server-side prompt inbox, and the tray row under it.
  *
  * It takes the whole `useSession` result as a prop (SPEC §5.3) and owns no
  * session state of its own. Every write goes back through the SDK — `send`,
@@ -15,12 +15,14 @@
  * goes up to the app through `onCommand`, which switches on `CommandName`.
  *
  * ── How a prompt reaches the server ──
- * `useSession.send` does NOT queue: it posts straight to the runtime and is
- * refused when the runtime is not ready. The queue is the SERVER-SIDE prompt
- * inbox (`useSessionPrompts`), which is the durable, cross-client one. So: an
- * idle session with an empty inbox sends directly, and anything else
- * enqueues, which keeps SEND ORDER — a direct send would otherwise jump the
- * rows already waiting. The tray reads the count straight off the inbox.
+ * Every prompt is a row in the session's durable prompt inbox, and the server
+ * decides delivery. There is one mode: a prompt sent while a turn runs STEERS
+ * it (the agent reads it after its current tool call, inside the same turn);
+ * a prompt sent while idle starts a turn. `useSession.send` posts to the
+ * inbox too, but it refuses while the runtime is not ready and pins no picks,
+ * so a busy session or a non-empty inbox goes through `inbox.enqueue`, which
+ * pins the picks of the moment the user pressed Enter. The tray reads the
+ * count straight off the inbox.
  */
 
 import { type SessionPromptOverrides, type SessionPromptPart, runtimeSupports } from '@kortix/sdk';
@@ -134,7 +136,15 @@ export function Composer({
   const inbox = useSessionPrompts(projectId, sessionId);
   // What this session started (agents, workflow runs) and held messages; `/agents` lists them.
   const agentsSummary = useAgentsSummary(projectId, sessionId);
-  const selection = useComposerSelection(session, projectId);
+  // The model the session's newest message ran on: the server pins every
+  // prompt without a pick to the session's own model, so this is what the
+  // next prompt uses. Computed before the selection, which labels it.
+  const answeredBy = contextModel({ messages: messages as SessionLogMessage[] });
+  const selection = useComposerSelection(
+    session,
+    projectId,
+    answeredBy ? { providerID: answeredBy.provider, modelID: answeredBy.model } : null,
+  );
 
   const covered = picker !== null || panel !== null;
 
@@ -200,7 +210,7 @@ export function Composer({
         const message = error instanceof Error ? error.message : String(error);
         setQueueError(message);
         setRestore((current) => ({ text, seq: (current?.seq ?? 0) + 1 }));
-        onToast?.(`Could not queue: ${message}`, 'error');
+        onToast?.(`Could not send: ${message}`, 'error');
       });
     },
     [session, inbox.prompts.length, enqueue, onToast],
@@ -282,16 +292,16 @@ export function Composer({
   const errorLine = sendError
     ? `${sendError.kind}: ${sendError.message}`
     : queueError
-      ? `queue: ${queueError}`
+      ? `send: ${queueError}`
       : null;
 
   const status: string[] = [];
-  if (queuedCount > 0) status.push(`${queuedCount} queued`);
+  // A busy session reads these at its next step; an idle one is starting them.
+  if (queuedCount > 0) status.push(`${queuedCount} ${session.isBusy ? 'steering' : 'sending'}`);
   if (session.isSending) status.push('sending');
 
   // Context in use, against the window of the model that answered last (or
   // the picked one): the one reading the tray adds to model and agent.
-  const answeredBy = contextModel({ messages: messages as SessionLogMessage[] });
   const windowModel = (session.models ?? []).find((entry) =>
     session.picks.model
       ? entry.providerID === session.picks.model.providerID &&
@@ -410,7 +420,7 @@ export function Composer({
         width={width}
         placeholder={
           session.isBusy
-            ? 'Type to queue the next prompt · / for commands'
+            ? 'Type to steer · the agent reads it after its current step · / for commands'
             : 'Type a prompt · / for commands'
         }
         context={context}

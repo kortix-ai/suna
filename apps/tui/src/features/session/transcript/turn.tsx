@@ -135,7 +135,7 @@ function Header({
   const delivery = sessionLogMessageDelivery(message)?.delivery;
   const age =
     delivery === 'queued'
-      ? 'queued'
+      ? 'waiting'
       : delivery === 'delivering'
         ? 'sending'
         : Number.isFinite(created)

@@ -29,21 +29,24 @@
  *
  * THE CONTRACT A STOP HAS WITH A QUEUED PROMPT
  *
- * Stop pauses the queue; it never throws a prompt away and never runs one
- * behind the user's back. Every prompt the Stop caught ends up in exactly one
- * of three states, and each of them delivers AT MOST ONCE more:
+ * Stop ends the running turn; it never throws a prompt away and never sends
+ * one twice. Every prompt the Stop caught ends up in exactly one of three
+ * states, and each of them delivers AT MOST ONCE more:
  *
- *  - HELD (`queued`, `result.held`) — the ordinary outcome. The prompt is on
- *    screen as "Held — stopped" with Send now / Remove.
+ *  - HELD (`queued`, `result.held`) — while this settle runs. The turn Stop
+ *    (`POST .../prompts/hold`) releases the hold once it finishes, so the
+ *    held prompts go out together as the next turn (2026-11-04: Stop sends
+ *    what waited as the next turn instead of holding it for a user action).
  *  - DELIVERED — the aborted step had already read it, so it belongs to the
  *    interrupted turn and no release may send it again.
  *  - REMOVED — the user deleted the row.
  *
- * A hold is lifted by an ACTION, never by a timer: sending anything new
- * (`POST .../prompts` → `enqueueReleasingHold`), "send now" on one row
- * (`retryInboxPrompt`), or Resume (`POST .../prompts/hold {held:false}`).
- * The drain never claims a held inbox prompt, so `INBOX_HOLD_MS` (24 h) does
- * not lift the hold either (see `INBOX_HOLD_MS`).
+ * After a turn Stop, the hold route lifts the hold when this settle ends. A
+ * computer Stop (`stop.ts`) keeps it: the box is going down. Any hold is also
+ * lifted by an ACTION: sending anything new (`POST .../prompts` →
+ * `enqueueReleasingHold`), "send now" on one row (`retryInboxPrompt`), or
+ * Resume (`POST .../prompts/hold {held:false}`). The drain never claims a held
+ * inbox prompt, so `INBOX_HOLD_MS` (24 h) does not lift the hold either.
  *
  * "Delivers at most once more" is what step 3 below buys. Without it a held
  * forwarded row is released straight back onto the queue while OpenCode still
@@ -302,16 +305,26 @@ export async function settleInboxHoldAfterStop(
   return out;
 }
 
-/** Fire-and-forget entry for the hold route. */
-export function settleInboxHoldAfterStopInBackground(sessionId: string): void {
+/**
+ * Fire-and-forget entry for the hold route. `afterSettle` runs once the rows
+ * are settled, also when the settle failed: the turn Stop releases the hold
+ * there, so what waited goes out as the next turn.
+ */
+export function settleInboxHoldAfterStopInBackground(sessionId: string, afterSettle?: () => Promise<void>): void {
   void settleInboxHoldAfterStop(sessionId)
     .then((result) => {
       if (result.reAborted || result.heldBack || result.closedAsInterrupted || result.claimedLeft) {
         logger.info('[inbox-hold] settled after stop', { session_id: sessionId, ...result });
       }
-    })
-    .catch((err) =>
+    }, (err) => {
       logger.warn('[inbox-hold] settle after stop failed', {
+        session_id: sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    })
+    .then(() => afterSettle?.())
+    .catch((err) =>
+      logger.warn('[inbox-hold] release after stop failed', {
         session_id: sessionId,
         error: err instanceof Error ? err.message : String(err),
       }),

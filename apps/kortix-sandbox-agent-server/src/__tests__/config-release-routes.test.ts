@@ -44,8 +44,6 @@ function fakeControl(over: Partial<HarnessControlOperations> = {}) {
     abort: async () => {
       throw new Error('unexpected abort')
     },
-    armAbortAfterTool: async () => undefined,
-    disarmAbortAfterTool: () => undefined,
     convergeConfig: async (...args: unknown[]) => {
       calls.converge.push(args)
       return converged

@@ -21,7 +21,7 @@ const blocker = { kind: 'merge_conflict' as const, conflicts: ['README.md'] };
 test('queues recovery on the existing origin without creating a session', async () => {
   expect(await recovery.recoverChangeRequest('project', target, blocker)).toBe('origin');
   expect(calls.map(c => c.url)).toEqual(['https://recovery.test/v1/projects/project/sessions/origin', 'https://recovery.test/v1/projects/project/sessions/origin/prompts']);
-  expect(calls[1].body).toMatchObject({ delivery: 'queue', remint_on_delivery: true });
+  expect(calls[1].body).toMatchObject({ delivery: 'steer', remint_on_delivery: true });
   expect(JSON.stringify(calls[1].body)).toContain('Do not open a replacement change request');
 });
 test('creates a linked child for an archived visible origin', async () => {

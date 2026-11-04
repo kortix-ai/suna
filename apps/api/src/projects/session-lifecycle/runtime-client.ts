@@ -36,8 +36,6 @@ import {
   type ResolvedSessionRuntime,
 } from './runtime-fetch';
 import type { SessionLogMessage } from '@kortix/api-contract/session-log';
-import { sendQuickQueueControl } from './quick-queue-control';
-import { clearTurnStopRequest, markTurnStopRequested } from '../session-turn-ledger';
 import { db } from '../../shared/db';
 import type { SessionLifecycleCommandRow, PromptOverridesWire, PromptPartWire } from './store';
 import { type PlacementTipMessage, parsePlacementTip } from './forwarded-placement';
@@ -198,67 +196,6 @@ function externalIdFromSandboxUrlField(url: string | null): string | null {
   if (!url) return null;
   const match = url.match(/\/p\/([^/]+)\//);
   return match?.[1] ?? null;
-}
-
-/** Cancel a pending boundary interrupt when its inbox prompt is removed. */
-export async function disarmQuickQueueInterrupt(
-  sessionId: string,
-  actorUserId: string,
-  promptId: string,
-): Promise<void> {
-  const resolved = await resolveSessionOpencodeEndpoint(sessionId, actorUserId).catch(() => null);
-  if (!resolved) return;
-  await sendQuickQueueControl(resolved.endpoint, { kind: 'disarm', promptId });
-  // Only the head prompt arms an interrupt, so there is one mark to withdraw.
-  await clearTurnStopRequest(sessionId, 'QueueInterrupt');
-}
-
-/** Stop holds all inbox rows, so no automatic boundary interrupt may remain. */
-export async function disarmAllQuickQueueInterrupt(
-  sessionId: string,
-  actorUserId: string,
-): Promise<void> {
-  const resolved = await resolveSessionOpencodeEndpoint(sessionId, actorUserId).catch(() => null);
-  if (!resolved) return;
-  await sendQuickQueueControl(resolved.endpoint, { kind: 'disarm-all' });
-  await clearTurnStopRequest(sessionId, 'QueueInterrupt');
-}
-
-/**
- * Arm the daemon's abort-after-tool for this prompt's turn. `false` ONLY when
- * the runtime was asked and did not serve the interrupt (status, shape,
- * timeout, transport) — the caller then requeues the row on the
- * runtime-unreachable ladder instead of the 2 s order backoff. A skipped arm
- * (no endpoint, session mismatch) arms nothing and is not a failure: `true`.
- */
-export async function armQuickQueueInterrupt(
-  row: SessionLifecycleCommandRow,
-  identity: { opencodeSessionId: string; messageId: string },
-): Promise<boolean> {
-  const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId).catch(() => null);
-  if (!resolved || resolved.opencodeSessionId !== identity.opencodeSessionId) return true;
-  const outcome = await sendQuickQueueControl(resolved.endpoint, {
-    kind: 'arm',
-    promptId: row.commandId,
-    opencodeSessionId: identity.opencodeSessionId,
-    messageId: identity.messageId,
-  });
-  if (!outcome.ok) {
-    logger.warn('[session-lifecycle] Quick Queue boundary interrupt unavailable', {
-      sessionId: row.sessionId,
-      commandId: row.commandId,
-      reason: outcome.reason,
-    });
-    return false;
-  }
-  // The daemon now aborts this turn at its next tool boundary because the user
-  // sent a prompt into it. That abort is asked for, not a failure.
-  if (!row.sessionId) return true;
-  await markTurnStopRequested(row.sessionId, 'QueueInterrupt', {
-    opencodeSessionId: identity.opencodeSessionId,
-    messageId: identity.messageId,
-  });
-  return true;
 }
 
 /** What one read of the root transcript tells the drain about this prompt. */

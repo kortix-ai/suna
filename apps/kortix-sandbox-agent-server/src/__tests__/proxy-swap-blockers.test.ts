@@ -88,7 +88,6 @@ function fakeHarness(convergenceInFlight: () => boolean): HarnessService {
       convergenceInFlight,
       bind: () => ({
         applyEnvironment: unexpected, refresh: unexpected, abort: unexpected,
-        armAbortAfterTool: unexpected, disarmAbortAfterTool: unexpected,
       }),
     },
     diagnostics: { capabilities: async () => [], health: unexpected, report: unexpected, logSources: () => [], readLog: unexpected },

@@ -283,11 +283,11 @@ async function editInboxPromptOnce(
 }
 
 /**
- * "Stop and send" on a waiting row (R10): it becomes a Quick Queue row —
- * `delivery: 'interrupt'`, `placement: 'transcript'` — promoted and due now,
- * so admission arms the interrupt of the running turn. Only a `queued` row:
- * a claimed or forwarded row is already on its way (`delivering`, a 409). A
- * Stop hold stays on the row; the next send releases it.
+ * "Send now" on a waiting row (`PATCH delivery: interrupt`): promoted and due
+ * now, so it goes ahead of older waiting rows and steers the running turn, or
+ * starts one. The turn is not stopped. Only a `queued` row: a claimed or
+ * forwarded row is already on its way (`delivering`, a 409). A Stop hold stays
+ * on the row; the next send releases it.
  */
 async function interruptInboxPromptOnce(
   sessionId: string,
@@ -297,7 +297,7 @@ async function interruptInboxPromptOnce(
   const [row] = await db
     .update(sessionLifecycleCommands)
     .set({
-      payload: sql`${sessionLifecycleCommands.payload} || '{"delivery": "interrupt", "placement": "transcript", "remintOnDelivery": true}'::jsonb`,
+      payload: sql`${sessionLifecycleCommands.payload} || '{"delivery": "steer", "remintOnDelivery": true}'::jsonb`,
       result: sql`(COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'admission_reason' - 'admission_refusals') || '{"promoted": true}'::jsonb`,
       availableAt: new Date(),
       updatedAt: new Date(),

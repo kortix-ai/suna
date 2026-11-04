@@ -1586,39 +1586,27 @@ subscription messages. This also corrects historical runtime costs. Token
 counts remain available. Mixed sessions retain paid API costs; OpenAI API
 models remain billable. Subscription coverage does not include sandbox compute.
 
-### Durable prompt placement
+### Prompt delivery: one mode, steer
 
-`createSessionPrompt` and `useSessionPrompts().enqueue` accept an optional
-`placement: 'transcript' | 'composer'`. `transcript` (Quick Queue) runs before
-every `composer` (Queue List) entry and ends the active response after its
-current tool call. `composer` waits for the active response to finish. Each
-placement keeps submission order. A row without placement keeps its submission
-order ahead of `composer` entries and is presented as `composer`.
+A prompt sent while a turn runs steers that turn: the running turn reads it at
+its next step, after its current tool call, and does not stop. A prompt sent
+while no turn runs starts one. The server decides this for every row;
+`createSessionPrompt`, `enqueue` and `send` deliver the same way.
 
-### Prompt delivery: steer, queue, interrupt
+`delivery: 'steer' | 'queue' | 'interrupt'` and `placement: 'transcript' |
+'composer'` are still accepted. `delivery` changes nothing and every row reads
+`delivery: 'steer'`. `placement` only says where a host draws a waiting row:
+`transcript` as a bubble, `composer` in the list above the composer.
 
-`createSessionPrompt` and `enqueue` also accept `delivery: 'steer' | 'queue' |
-'interrupt'`. It decides how a prompt reaches a running turn:
-
-- `steer`: the running turn reads the prompt at its next step boundary. The
-  turn does not stop.
-- `queue` (Queue List): the prompt waits for the turn to end.
-- `interrupt` (Quick Queue): the turn ends after its running tool, then the
-  prompt runs.
-
-With no turn running, every mode starts a turn. When only `delivery` is given,
-the SDK also sends the placement it implies (`interrupt` → `transcript`, the
-others → `composer`), so an API built before steering treats a steer prompt as
-a Queue List entry.
-
-A steer prompt falls back to `queue` when the runtime cannot take messages
-mid-turn, when another member's turn is running, or when the turn ended first.
-The row then reads `delivery: 'queue'` and `steer_fallback: 'unsupported' |
-'not_prompter' | 'turn_ended'`.
+Anyone who may send to the session steers its running turn. Rows reach the
+agent one at a time, in send order. A row that cannot reach the running turn
+starts the next turn and carries `steer_fallback: 'unsupported' | 'turn_ended'`.
+(`not_prompter` is no longer written; old rows may carry it.)
 
 `interruptSessionPrompt` (`session.prompts.interrupt`,
-`useSessionPrompts().interrupt`) is "Stop and send": it turns a row still
-waiting in the queue into Quick Queue. A row already on the wire answers `409`.
+`useSessionPrompts().interrupt`) is "Send now": a row still waiting goes next,
+ahead of older waiting rows. It does not stop the turn. A row already on the
+wire answers `409`.
 
 `SessionPrompt.full_text` preserves complete text for rendering after reload;
 `text` remains the bounded preview. List responses expose attachment names and
@@ -1636,10 +1624,10 @@ after admission succeeds. A confirmed active turn clears the pending presentatio
 even if the previous inbox snapshot still lists that prompt. Runtime activity
 preserves the active turn's message ID during this handoff.
 
-Web sends Enter while a turn runs as **steer**, Command/Ctrl+Enter as **Queue
-List**, and "Stop and send" on a queued row as **Quick Queue**. Enter on an idle
-session starts a turn. Queued entries advance automatically; Quick Queue entries run first. Queue List entries stay editable
-until delivery begins. Stop pauses pending entries; Resume releases that hold.
+Web sends Enter and Command/Ctrl+Enter the same way: a steer while a turn
+runs, a new turn while idle. Waiting entries stay editable until delivery
+begins. Stop ends the turn; the entries that waited go out together as the
+next turn.
 
 Pass the inbox IDs, in queue order, as `pendingMessageIds` to
 `groupMessagesIntoTurns(messages, { pendingMessageIds })`. Client-minted wire

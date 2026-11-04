@@ -15,44 +15,40 @@ import { wireMessageIdMatches } from './wire-id-match';
 /**
  * The inbox's admission gate.
  *
- * ONE QUEUED MESSAGE RUNS AT A TIME, IN ORDER, AND EACH GETS ITS OWN ANSWER.
- * A prompt sits in `session_lifecycle_commands` until the session's turn is
- * over AND every older prompt has left the delivery path. The first Quick
- * Queue prompt may end that turn after its current tool call finishes, when
- * its sender may stop that turn (`rowMayEndTurn`). Queue List prompts wait for
- * natural turn completion.
+ * ONE DELIVERY MODE: STEER (2026-11-04). A prompt sent while a turn runs goes
+ * to that turn (`POST .../steer`), and the runtime reads it at the turn's next
+ * step, after the running tool call returns. A prompt sent while no turn runs
+ * starts the next turn. No client, placement or `delivery` value changes this:
+ * `queue` and `interrupt` from an older client are read as steer.
+ *
+ * What was removed, and why it is not coming back without the product owner:
+ * - "Queue List" held a prompt until the whole turn ended. A long autonomous
+ *   turn then never received what the user typed (prod, 2026-11-04: "go on"
+ *   waited out a 30-step turn). The same hold was reverted on 2026-08-21
+ *   (learnings: "a comment saying this was tried and reverted ...").
+ * - The prompter rule (`not_prompter`) turned a steer from anyone but the
+ *   turn's prompter into a queue row. It also caught the agent's own subagent
+ *   results, which then waited behind the turn that was waiting for them.
+ * - "Quick Queue" ended the turn after its running tool. Steer reaches the
+ *   same step boundary without ending the turn.
+ *
+ * Rows still go out one at a time, in send order (`inbox-order.ts`), and a row
+ * waits while an older one is in flight. A steer the runtime refuses because
+ * its turn just ended (`turn_ended`) waits for that one turn's end and then
+ * starts the next turn. A runtime without `session.steer` (`unsupported`)
+ * gets the prompt as the next turn.
  *
  * ONE EXCEPTION (KRTX-683): prompts released from a Stop hold. The release
  * stamps them with one `releasedBatchId`, and they share ONE answer. They are
  * still admitted one at a time, in order, as separate user messages, but every
  * row with a later row of its batch pending (`hasLaterReleasedSibling`) goes
- * out `noReply` — OpenCode persists it and starts no loop, and the row closes
- * `delivered` with `no_reply: true` — and the batch's last row starts the one
- * turn that answers them all.
+ * out `noReply` and the batch's last row starts the one turn that answers
+ * them all.
  *
- * The turn half is not belt-and-braces on the order half — it is the whole
- * feature. OpenCode picks up new user messages at STEP boundaries INSIDE a
- * running turn, and it "parents each step on the newest user message and
- * answers everything before it in that step" (`forwarded-placement.ts`). So
- * every prompt forwarded into a live turn is merged into whatever step reaches
- * it: two queued messages share one answer, and the earlier one is simply
- * never spoken. Measured 2026-09-04 — a 13-step research turn with "tell me
- * HI" and "tell me bye" queued behind it produced exactly one reply, "bye".
- *
- * Forwarding mid-turn was tried (`4ee30a9c3b`) to remove the gap between
- * queued messages. It bought that merge. The gap it was removing is gone by
- * other means: `promoteNextInboxRow` is AWAITED on the daemon's own
- * `session.idle` relay (`routes/turn-stream.ts`, "THE TURN ENDED — the session's next
- * queued prompt is admissible NOW"), and the backoff below is now a 2s-capped
- * fallback rather than the 30s ceiling that produced the measured dead air.
- * A queued message therefore goes out on the turn-end event, not on a clock.
- *
- * WAITING IS NOT POLLING. A refused row does not sit out a backoff clock: the
- * instant the turn ends, `promoteNextInboxRow` makes the session's next row due
- * and drains it. The reaper is a recovery wake. The backoff below only covers
- * the gap a lost kick would leave, so it stays cheap and capped — 30s here
- * compounded to 27s / 45s / 75s of dead air behind ~1s deliveries (dev,
- * 2026-08-18).
+ * WAITING IS NOT POLLING. The instant a turn ends, `promoteNextInboxRow` makes
+ * the session's next row due and drains it (`routes/turn-stream.ts`). The
+ * backoff below only covers the gap a lost kick would leave, so it stays cheap
+ * and capped.
  *
  * A refusal is NOT a failure: see `requeueForAdmission`, which gives the claim's
  * attempt increment back so waiting cannot burn the 5-attempt dead-letter budget.
@@ -120,8 +116,6 @@ export type InboxAdmission =
       admit: false;
       reason: InboxAdmissionReason;
       retryAfterMs: number;
-      /** Only the first Quick Queue row may end the active turn at a tool boundary. */
-      interruptAtBoundary?: { opencodeSessionId: string; messageId: string };
     };
 
 /**
@@ -174,89 +168,16 @@ export interface InboxAdmissionDeps {
   /** Is another prompt of this session ALREADY CLAIMED and mid-delivery?
    *  Separate from the ordering read because it binds even a promoted row. */
   hasInFlightPrompt: (sessionId: string, exceptCommandId: string) => Promise<boolean>;
-  /** The person who prompted the turn behind `messageId` (`turnPrompterOf`).
-   *  Read only for a head Quick Queue row while a turn runs. Absent: no row is
-   *  its prompter, so only a `mayStopAnyTurn` row arms the interrupt. */
-  turnPrompter?: (sessionId: string, messageId: string) => Promise<string | null>;
-  /** The reads a `steer` row needs. Absent: a steer row is admitted as a queue row. */
+  /** The reads a steer needs. Absent (tests only): no row steers. */
   steer?: SteerAdmissionDeps;
 }
 
 /**
- * How long a queued head row may wait behind ONE live turn for the daemon's
- * boundary interrupt to end it, before the control plane ends that turn
- * itself and lets the relay promote the row.
+ * The live turn a steer goes to: the NEWEST stored turn.
  *
- * The interrupt is the fast path — a turn normally ends at its next tool
- * boundary, seconds after the arm. This window only bounds the interrupt's
- * silent failure modes (an entry the relay never closed, an arm the daemon
- * answers and never fires, a skipped arm): a healthy interrupt or a natural
- * turn end reaches the boundary long before it. Prod 2026-10-06: three
- * queued messages waited out a ~30-minute run with no interrupt and no
- * refusal log — the only dispatch left was "after the whole run", which is
- * the regression this bound closes.
- *
- * ponytail: fixed ceiling, not a knob; promote to config.KORTIX_* only when
- * support needs to tune it per environment.
- */
-export const QUEUE_BOUNDARY_FALLBACK_MS = 10 * 60_000;
-
-/** The turn an interrupt may end, as the admission refusal carried it. */
-export interface BoundaryTurnIdentity {
-  opencodeSessionId: string;
-  messageId: string;
-}
-
-/** The row's own record of how long it has waited behind this turn. */
-export interface BoundaryWait extends BoundaryTurnIdentity {
-  sinceMs: number;
-}
-
-/**
- * Decide the boundary-wait step for one `turn_active` refusal.
- *
- * Pure over the row's result, the live turn's identity and the clock, so the
- * window is testable without a database. A first refusal starts the window;
- * the same turn still live past `QUEUE_BOUNDARY_FALLBACK_MS` aborts ONCE and
- * restarts the window (a lost terminal relay gets a bounded retry, a healthy
- * interrupt never reaches this); a DIFFERENT live turn means the boundary
- * already moved and the window restarts from now.
- */
-export function boundaryWaitDecision(
-  result: unknown,
-  turn: BoundaryTurnIdentity,
-  nowMs: number,
-): { wait: BoundaryWait; abort: boolean } {
-  const stored = (result as { boundary_wait?: unknown } | null | undefined)?.boundary_wait as
-    | BoundaryWait
-    | undefined;
-  const sinceMs =
-    stored && typeof stored.sinceMs === 'number' && Number.isFinite(stored.sinceMs)
-      ? stored.sinceMs
-      : null;
-  const sameTurn =
-    !!stored &&
-    sinceMs !== null &&
-    stored.opencodeSessionId === turn.opencodeSessionId &&
-    stored.messageId === turn.messageId;
-  if (!sameTurn) {
-    return { wait: { ...turn, sinceMs: nowMs }, abort: false };
-  }
-  const waited = nowMs - sinceMs;
-  return {
-    wait: { ...turn, sinceMs: waited >= QUEUE_BOUNDARY_FALLBACK_MS ? nowMs : sinceMs },
-    abort: waited >= QUEUE_BOUNDARY_FALLBACK_MS,
-  };
-}
-
-/**
- * The live turn a boundary interrupt may end: the NEWEST stored turn.
- *
- * This used to be `turns.length === 1 ? turns[0] : null`, so one entry that
- * outlived its end relay silently DISARMED the interrupt for the whole run —
- * every queued message then waited out the turn in full, which is exactly the
- * "it waits for everything to finish" report. The newest entry is the turn
- * that is running; an older entry is a ledger leftover the reaper owns.
+ * Not `turns.length === 1 ? turns[0] : null`: one entry that outlived its end
+ * relay would then park every prompt behind the whole run. The newest entry is
+ * the turn that is running; an older entry is a ledger leftover the reaper owns.
  */
 export function newestStoredTurn(turns: StoredSandboxTurn[]): StoredSandboxTurn | null {
   let newest: StoredSandboxTurn | null = null;
@@ -269,11 +190,7 @@ export function newestStoredTurn(turns: StoredSandboxTurn[]): StoredSandboxTurn 
 export interface SteerAdmissionDeps {
   /** `/kortix/health` `capabilities` of the box; null when the read failed. */
   capabilities: (externalId: string | null | undefined, actorUserId: string | null) => Promise<string[] | null>;
-  /** The actor of the inbox row the running turn's message id names; null when no row does. */
-  turnPrompter: (sessionId: string, messageId: string) => Promise<string | null>;
-  /** An OLDER steer row of the session is queued or claimed (not held). */
-  hasOlderSteerPrompt: (sessionId: string, row: SessionLifecycleCommandRow) => Promise<boolean>;
-  recordFallback: (row: SessionLifecycleCommandRow, reason: 'unsupported' | 'not_prompter') => Promise<void>;
+  recordFallback: (row: SessionLifecycleCommandRow, reason: 'unsupported') => Promise<void>;
 }
 
 const STEER_CAPABILITY: RuntimeCapability = 'session.steer';
@@ -307,9 +224,6 @@ export async function sessionKeepsMessageIds(sessionId: string | null | undefine
 
 export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
   reconcileTurn: reconcileInboxTurn,
-  // Dynamic: `turn-stop-authority.ts` imports this module.
-  turnPrompter: async (sessionId, messageId) =>
-    (await import('./turn-stop-authority')).turnPrompterOf(sessionId, messageId),
   async readSandbox(sessionId) {
     const [box] = await db
       .select({
@@ -362,54 +276,21 @@ export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
   },
   steer: {
     capabilities: readRuntimeCapabilities,
-    async turnPrompter(sessionId, messageId) {
-      const [prompt] = await db
-        .select({ actorUserId: sessionLifecycleCommands.actorUserId })
-        .from(sessionLifecycleCommands)
-        .where(
-          and(
-            eq(sessionLifecycleCommands.sessionId, sessionId),
-            eq(sessionLifecycleCommands.commandType, 'continue_session'),
-            wireMessageIdMatches(messageId),
-          ),
-        )
-        .orderBy(desc(sessionLifecycleCommands.createdAt))
-        .limit(1);
-      return prompt?.actorUserId ?? null;
-    },
-    async hasOlderSteerPrompt(sessionId, row) {
-      const [older] = await db
-        .select({ commandId: sessionLifecycleCommands.commandId })
-        .from(sessionLifecycleCommands)
-        .where(
-          and(
-            eq(sessionLifecycleCommands.sessionId, sessionId),
-            eq(sessionLifecycleCommands.commandType, 'continue_session'),
-            inArray(sessionLifecycleCommands.status, ['queued', 'running']),
-            notHeldSql,
-            sql`${sessionLifecycleCommands.payload}->>'delivery' = 'steer'`,
-            inboxPrecedesRow(row),
-            ne(sessionLifecycleCommands.commandId, row.commandId),
-          ),
-        )
-        .limit(1);
-      return !!older;
-    },
     recordFallback: (row, reason) => recordSteerFallback(row, reason),
   },
 };
 
 /**
- * A `steer` row and a running turn (R10). Admitted as a steer when the turn
- * is one active turn with a message id, the runtime lists `session.steer`,
- * the row's actor is the turn's prompter (D9.3), and no OLDER steer row is
- * pending or in flight. Older Queue List rows do not block a steer.
+ * Any row and a running turn. Admitted as a steer into the newest active turn
+ * when the runtime lists `session.steer`.
  *
- * - A failed capability or prompter check falls back to `queue` for good
- *   (`recordFallback`) and returns `fallback`: the caller continues with the
- *   queue gate.
- * - A turn still being delivered, an unreadable capability list, or an older
- *   steer row: the row waits and stays `steer`.
+ * - A runtime without `session.steer` records `unsupported` once and returns
+ *   `fallback`: the caller holds the row for the turn's end.
+ * - A steer the runtime refused into THIS turn (`steerRefusedTurn`, written by
+ *   `deliverSteer` on 409 `no_active_turn`) returns `fallback` too, so the row
+ *   is not re-posted into a turn that is ending. A newer turn steers again.
+ * - A turn still being delivered (no message id yet) or an unreadable
+ *   capability list: the row waits on the short clock and steers next time.
  */
 async function admitSteer(
   row: SessionLifecycleCommandRow,
@@ -417,55 +298,19 @@ async function admitSteer(
   steer: SteerAdmissionDeps,
   retryAfterMs: number,
 ): Promise<InboxAdmission | 'fallback'> {
-  const turns = storedSandboxTurns(sandbox?.metadata);
-  // Same fragile pattern the queue interrupt had: one entry that outlived its
-  // end relay would make exactly-one fail and silently park the steer behind
-  // the whole run. The newest entry is the turn that is running.
-  const active = newestStoredTurn(turns);
+  const active = newestStoredTurn(storedSandboxTurns(sandbox?.metadata));
   if (active?.state !== 'active' || !active.messageId) {
     return { admit: false, reason: 'turn_active', retryAfterMs };
   }
-  const sessionId = row.sessionId!;
-  const [capabilities, prompter, olderSteer] = await Promise.all([
-    steer.capabilities(sandbox?.externalId, row.actorUserId),
-    steer.turnPrompter(sessionId, active.messageId),
-    steer.hasOlderSteerPrompt(sessionId, row),
-  ]);
+  const refusedTurn = (row.payload as { steerRefusedTurn?: unknown } | null)?.steerRefusedTurn;
+  if (refusedTurn === active.messageId) return 'fallback';
+  const capabilities = await steer.capabilities(sandbox?.externalId, row.actorUserId);
   if (capabilities === null) return { admit: false, reason: 'turn_active', retryAfterMs };
-  const fallback = !capabilities.includes(STEER_CAPABILITY)
-    ? 'unsupported'
-    : !row.actorUserId || prompter !== row.actorUserId
-      ? 'not_prompter'
-      : null;
-  if (fallback) {
-    await steer.recordFallback(row, fallback);
+  if (!capabilities.includes(STEER_CAPABILITY)) {
+    await steer.recordFallback(row, 'unsupported');
     return 'fallback';
   }
-  if (olderSteer) return { admit: false, reason: 'older_prompt_pending', retryAfterMs };
   return { admit: true, steerInto: active.messageId };
-}
-
-/**
- * May this Quick Queue row end the running turn behind `messageId`? Only when
- * its sender may stop that turn (`turn-stop-authority.ts`): they prompted it,
- * or they were the session owner or a project manager when they sent the row
- * (`mayStopAnyTurn`). An agent session's row is never the prompter. Any other
- * row waits for the turn to end, like a Queue List row.
- */
-async function rowMayEndTurn(
-  row: SessionLifecycleCommandRow,
-  messageId: string,
-  deps: InboxAdmissionDeps,
-): Promise<boolean> {
-  const payload = (row.payload ?? {}) as {
-    mayStopAnyTurn?: unknown;
-    bindTurnIdentity?: unknown;
-    authorSessionId?: unknown;
-  };
-  if (payload.mayStopAnyTurn === true) return true;
-  const sentByPerson = payload.bindTurnIdentity === true && payload.authorSessionId == null;
-  if (!row.actorUserId || !sentByPerson || !deps.turnPrompter) return false;
-  return (await deps.turnPrompter(row.sessionId!, messageId)) === row.actorUserId;
 }
 
 export async function admitInboxPrompt(
@@ -500,52 +345,36 @@ export async function admitInboxPrompt(
   const inFlightRead = started(deps.hasInFlightPrompt(row.sessionId, row.commandId));
   const olderRead = started(deps.hasOlderPendingPrompt(row.sessionId, row));
 
-  // A live turn holds delivery for both placements. Quick Queue may request
-  // an interrupt at the next tool boundary, but it is still never forwarded
-  // into that turn: the terminal relay admits it as its own turn afterward.
+  // A live turn: the session's head row steers it. Rows still go out one at a
+  // time and in send order, so a row behind an older one (queued, or claimed
+  // and mid-delivery) waits for it; a steer the runtime holds is `forwarded`,
+  // not pending, so the next row follows it within one drain.
   let sandbox = await sandboxRead;
-  const payload = row.payload as { delivery?: unknown; wireMessageId?: unknown } | null;
-  if (
-    deps.steer &&
-    payload?.delivery === 'steer' &&
-    typeof payload.wireMessageId === 'string' &&
-    sessionHoldsTurnAuthority(sandbox)
-  ) {
-    const steered = await admitSteer(row, sandbox, deps.steer, orderBackoffMs);
-    if (steered !== 'fallback') return steered;
-  }
   if (sessionHoldsTurnAuthority(sandbox)) {
-    // Only the head may reconcile or arm an interrupt. Quick Queue sorts ahead
-    // of every Queue List row (`inbox-order.ts`), so its head arms the
-    // interrupt even while older Queue List entries wait. A released Stop
-    // batch row sorts in the Queue List lane whatever its placement.
-    const isHead = !(await inFlightRead) && !(await olderRead);
-    if (deps.reconcileTurn && isHead) {
+    const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
+    const isHead = !(await inFlightRead) && (promoted || !(await olderRead));
+    if (!isHead) {
+      // Woken by the head's own progress (`promoteNextInboxRow` makes the next
+      // row due the moment the head goes out); this clock is the fallback.
+      return {
+        admit: false,
+        reason: 'older_prompt_pending',
+        retryAfterMs: Math.max(orderBackoffMs, INBOX_STALE_ORDER_BACKOFF_MS),
+      };
+    }
+    // `postPrompt` speaks for a user; a row with no actor starts the next turn.
+    if (deps.steer && row.actorUserId) {
+      const steered = await admitSteer(row, sandbox, deps.steer, orderBackoffMs);
+      if (steered !== 'fallback') return steered;
+    }
+    // This row cannot steer this turn: it starts the next one. Recover a
+    // missed terminal relay first, so a turn that already ended does not hold it.
+    if (deps.reconcileTurn) {
       await deps.reconcileTurn(row.sessionId);
       sandbox = await deps.readSandbox(row.sessionId);
     }
     if (sessionHoldsTurnAuthority(sandbox)) {
-      const turns = storedSandboxTurns(sandbox?.metadata);
-      const active = newestStoredTurn(turns);
-      // The sender check reads the database, so it runs last: only for the
-      // head Quick Queue row while a turn is active.
-      const interruptAtBoundary =
-        isHead &&
-        (row.payload as { placement?: unknown } | null)?.placement === 'transcript' &&
-        active?.state === 'active' &&
-        active.messageId &&
-        (await rowMayEndTurn(row, active.messageId, deps))
-          ? { opencodeSessionId: active.runtimeSessionId, messageId: active.messageId }
-          : undefined;
-      return {
-        admit: false,
-        reason: 'turn_active',
-        // Only the head needs the short clock. A row behind it is woken by the
-        // head's own progress (`promoteNextInboxRow` makes the next row due the
-        // moment the head goes out), so it re-polls once a minute as a fallback.
-        retryAfterMs: isHead ? orderBackoffMs : Math.max(orderBackoffMs, INBOX_STALE_ORDER_BACKOFF_MS),
-        ...(interruptAtBoundary ? { interruptAtBoundary } : {}),
-      };
+      return { admit: false, reason: 'turn_active', retryAfterMs: orderBackoffMs };
     }
   }
 
