@@ -5,7 +5,7 @@ import type {
   ArtifactCommentThread,
 } from '@kortix/sdk';
 
-export type CommentFilter = 'open' | 'resolved' | 'all';
+export type CommentFilter = 'open' | 'resolved';
 
 export function threadDeleted(thread: ArtifactCommentThread): boolean {
   return !thread.comments[0] || thread.comments[0].deleted_at !== null;
@@ -157,9 +157,12 @@ export function arrivedComments(
 export function groupCommentThreads(
   threads: readonly ArtifactCommentThread[],
   filter: CommentFilter,
+  /** A deleted thread opened by a link: its tombstone shows in its own status. */
+  shownDeleted?: string | null,
 ) {
   const visible = threads.filter(
-    (thread) => filter === 'all' || (thread.status === filter && !threadDeleted(thread)),
+    (thread) =>
+      thread.status === filter && (!threadDeleted(thread) || thread.thread_id === shownDeleted),
   );
   const stable = (a: ArtifactCommentThread, b: ArtifactCommentThread) =>
     a.created_at.localeCompare(b.created_at) || a.thread_id.localeCompare(b.thread_id);
@@ -167,11 +170,7 @@ export function groupCommentThreads(
     current: visible
       .filter((thread) => !thread.outdated)
       .sort(
-        (a, b) =>
-          // Under All, open threads lead: they are the ones that wait on someone.
-          (filter === 'all' ? Number(a.status !== 'open') - Number(b.status !== 'open') : 0) ||
-          (a.position?.start ?? Infinity) - (b.position?.start ?? Infinity) ||
-          stable(a, b),
+        (a, b) => (a.position?.start ?? Infinity) - (b.position?.start ?? Infinity) || stable(a, b),
       ),
     outdated: visible.filter((thread) => thread.outdated).sort(stable),
   };

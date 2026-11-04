@@ -270,8 +270,6 @@ export function ArtifactCommentThreadView({
   const [replyOpen, setReplyOpen] = useState(() => reply.value !== '');
   const replyControl = useRef<HTMLButtonElement>(null);
   const articleRef = useRef<HTMLElement>(null);
-  // Focus that returns to the collapsed control after Escape must not expand it again.
-  const restoringFocus = useRef(false);
   const wasPending = useRef(reply.pending);
   useEffect(() => {
     const finished = wasPending.current && !reply.pending;
@@ -284,15 +282,10 @@ export function ArtifactCommentThreadView({
   const collapseReply = (focusControl: boolean) => {
     setReplyOpen(false);
     if (!focusControl) return;
-    requestAnimationFrame(() => {
-      restoringFocus.current = true;
-      replyControl.current?.focus({ preventScroll: true });
-      restoringFocus.current = false;
-    });
+    requestAnimationFrame(() => replyControl.current?.focus({ preventScroll: true }));
   };
-  const expandReply = () => {
-    if (!restoringFocus.current) setReplyOpen(true);
-  };
+  // The reply line opens on click (or Enter/Space), never on focus: Tab passes over it.
+  const expandReply = () => setReplyOpen(true);
   const resolver =
     resolverName(thread, context, { person: t('person'), agent: t('agent') }) ??
     // An unconfirmed resolve has no resolver yet: the viewer resolved it.
@@ -471,7 +464,8 @@ export function ArtifactCommentThreadView({
       tabIndex={-1}
       className={cn(
         'group/thread relative mx-2 space-y-2 rounded-md px-2 py-2.5 outline-none',
-        focused ? 'bg-active' : 'hover:bg-hover focus-within:bg-hover',
+        // A thread opened from its passage or a link keeps a ring in the highlight colour.
+        focused ? 'bg-active ring-kortix-yellow ring-1' : 'hover:bg-hover focus-within:bg-hover',
       )}
     >
       {pinNumber !== undefined || quote ? (
@@ -570,7 +564,7 @@ export function ArtifactCommentThreadView({
         // The status closes the thread, aligned with the comment text.
         <div className="text-muted-foreground flex min-w-0 items-center gap-2.5 text-xs">
           <span aria-hidden className="flex size-6 shrink-0 items-center justify-center">
-            <CheckCircleIcon weight="fill" className="text-kortix-green size-3.5" />
+            <CheckCircleIcon weight="fill" className="size-3.5" />
           </span>
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
             <span className="min-w-0 truncate">
@@ -584,15 +578,18 @@ export function ArtifactCommentThreadView({
             ) : null}
           </span>
           {canResolve ? (
-            <button
+            <Button
               type="button"
-              className="text-foreground focus-visible:ring-ring shrink-0 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 disabled:opacity-50"
+              size="xs"
+              variant="ghost"
+              className="-mr-2 shrink-0"
               disabled={statusPending}
               aria-busy={statusPending}
               onClick={onStatus}
             >
+              {statusPending ? <Loading className="size-3.5 shrink-0" /> : null}
               {t('reopen')}
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -629,7 +626,7 @@ export function ArtifactCommentThreadView({
         replyOpen ? (
           <div
             // Aligned with the comment text: the avatar column stays empty.
-            className="pl-8.5"
+            className="flex gap-2.5"
             onBlur={(event) => {
               if (
                 !event.currentTarget.contains(event.relatedTarget as Node | null) &&
@@ -639,42 +636,47 @@ export function ArtifactCommentThreadView({
                 setReplyOpen(false);
             }}
           >
-            <ArtifactCommentComposer
-              value={reply.value}
-              onChange={onReplyChange}
-              onSubmit={onReply}
-              onCancel={() => {
-                onReplyChange('');
-                collapseReply(true);
-              }}
-              onEscape={() => collapseReply(true)}
-              mentions={mentions}
-              agentsUnavailable={agentsUnavailable}
-              label={t('replyLabel')}
-              placeholder={t('replyPlaceholder')}
-              submitLabel={t('postReply')}
-              pending={reply.pending}
-              error={reply.error}
-              compact
-              autoFocus
-              liveTyping={{ thread_id: thread.thread_id }}
-            />
+            <span aria-hidden className="w-6 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <ArtifactCommentComposer
+                value={reply.value}
+                onChange={onReplyChange}
+                onSubmit={onReply}
+                onCancel={() => {
+                  onReplyChange('');
+                  collapseReply(true);
+                }}
+                onEscape={() => collapseReply(true)}
+                mentions={mentions}
+                agentsUnavailable={agentsUnavailable}
+                label={t('replyLabel')}
+                placeholder={t('replyPlaceholder')}
+                submitLabel={t('postReply')}
+                pending={reply.pending}
+                error={reply.error}
+                compact
+                autoFocus
+                liveTyping={{ thread_id: thread.thread_id }}
+              />
+            </div>
           </div>
         ) : (
-          <button
-            ref={replyControl}
-            type="button"
-            aria-label={t('replyLabel')}
-            // A quiet line, not a field: the composer opens on click or focus.
-            className={cn(
-              'focus-visible:ring-ring ml-8.5 flex max-w-full min-w-0 items-center rounded-sm text-left text-sm outline-none focus-visible:ring-2',
-              reply.value ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-            )}
-            onClick={expandReply}
-            onFocus={expandReply}
-          >
-            <span className="truncate">{reply.value || t('replyPlaceholder')}</span>
-          </button>
+          <div className="flex gap-2.5">
+            <span aria-hidden className="w-6 shrink-0" />
+            <button
+              ref={replyControl}
+              type="button"
+              aria-label={t('replyLabel')}
+              // A quiet line, not a field: the composer opens on click.
+              className={cn(
+                'focus-visible:ring-ring flex min-w-0 items-center rounded-sm text-left text-sm outline-none focus-visible:ring-2',
+                reply.value ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              )}
+              onClick={expandReply}
+            >
+              <span className="truncate">{reply.value || t('replyPlaceholder')}</span>
+            </button>
+          </div>
         )
       ) : null}
     </article>

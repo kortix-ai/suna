@@ -384,7 +384,7 @@ test('missing context and historical reads expose no write controls or Send fall
   expect(container.textContent).toContain('Comments on this version are read-only');
 });
 
-test('a deleted root has no open count; Activity focuses its tombstone in All', async () => {
+test('a deleted root has no open count; Activity focuses its tombstone in its own status', async () => {
   const deleted = {
     ...item,
     comments: [{ ...item.comments[0]!, body: '', deleted_at: '2026-10-29T12:01:00Z' }],
@@ -414,9 +414,11 @@ test('a deleted root has no open count; Activity focuses its tombstone in All', 
     >,
   );
   expect(focused).toEqual(['thread']);
+  // The viewer passes the focused thread back down, as it does in the page.
+  await render({ ...value, focusedThreadId: 'thread', focusRevision: 1 });
   expect(container.textContent).toContain('This thread was deleted.');
-  // A tombstone is in neither status: the thread list shows with no status tab selected.
-  expect(container.querySelector('[role="tab"][data-state="active"]')).toBeNull();
+  // The tombstone shows in its own status, so a status tab stays selected.
+  expect(container.querySelector('[role="tab"][data-state="active"]')?.textContent).toBe('Open');
 });
 
 test('the delete menu requires confirmation; Cancel writes nothing', async () => {

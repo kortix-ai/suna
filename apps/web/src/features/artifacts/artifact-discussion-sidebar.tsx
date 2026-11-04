@@ -25,7 +25,7 @@ import { ErrorState } from '@kortix/ui/error-state';
 import Hint from '@kortix/ui/hint';
 import Loading from '@kortix/ui/loading';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
+import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
 import { errorToast, successToast } from '@kortix/ui/toast';
 import { CaretDownIcon, ChatCircleIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
@@ -217,7 +217,7 @@ export function ArtifactDiscussionSidebar({
   const setDraft = (kind: string, value: string, id = '') =>
     setDrafts((current) => ({ ...current, [draftKey(kind, id)]: value }));
   const threads = displayThreads ?? comments.data ?? EMPTY_THREADS;
-  const grouped = groupCommentThreads(threads, filter);
+  const grouped = groupCommentThreads(threads, filter, focusedThreadId);
   // The viewer header counts `comments.data`; the tab and the filter count the same list.
   const counts = threadCounts(comments.data ?? threads);
   const readableVersion = context?.version.commit_id ?? context?.version.entry_version;
@@ -298,13 +298,7 @@ export function ArtifactDiscussionSidebar({
     const thread = threads.find((thread) => thread.thread_id === focusedThreadId);
     if (!thread) return;
     setTab('comments');
-    setFilter((current) =>
-      threadDeleted(thread)
-        ? 'all'
-        : current === 'all' || current === thread.status
-          ? current
-          : thread.status,
-    );
+    setFilter(thread.status);
     const frame = requestAnimationFrame(() => {
       focusedRef.current = signature;
       const article = document.getElementById(`artifact-thread-${focusedThreadId}`);
@@ -342,14 +336,7 @@ export function ArtifactDiscussionSidebar({
   const focusThread = (threadId: string) => {
     const thread = threads.find((thread) => thread.thread_id === threadId);
     setTab('comments');
-    if (thread)
-      setFilter((current) =>
-        threadDeleted(thread)
-          ? 'all'
-          : current === 'all' || current === thread.status
-            ? current
-            : thread.status,
-      );
+    if (thread) setFilter(thread.status);
     onFocusThread(threadId);
   };
   const perform = async <T,>(
@@ -657,7 +644,11 @@ export function ArtifactDiscussionSidebar({
               className="h-full gap-5 border-b-0"
             >
               {(['open', 'resolved'] as const).map((value) => (
-                <TabsTriggerCompact key={value} value={value} className="w-fit flex-none gap-1.5 px-0">
+                <TabsTriggerCompact
+                  key={value}
+                  value={value}
+                  className="w-fit flex-none gap-1.5 px-0"
+                >
                   {t(value)}
                   {counts[value] > 0 ? <CountBadge count={counts[value]} /> : null}
                 </TabsTriggerCompact>
@@ -697,8 +688,7 @@ export function ArtifactDiscussionSidebar({
             </div>
           </div>
         </div>
-        {tab === 'comments' ? (
-        <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto py-1">
+        <TabsContent value={filter} className="m-0 min-h-0 flex-1 overflow-y-auto py-1">
           {readOnly || contextError || (!context && !contextLoading) ? (
             <div className="space-y-3 px-4 py-3">
               {readOnly ? (
@@ -817,13 +807,7 @@ export function ArtifactDiscussionSidebar({
             <EmptyState
               size="sm"
               media={<EmptyArt icon={ChatCircleIcon} />}
-              title={t(
-                filter === 'resolved'
-                  ? 'noResolved'
-                  : filter === 'all'
-                    ? 'noAllComments'
-                    : 'noComments',
-              )}
+              title={t(filter === 'resolved' ? 'noResolved' : 'noComments')}
               description={t(filter === 'resolved' ? 'noResolvedHint' : 'noCommentsHint')}
             />
           ) : null}
@@ -842,9 +826,8 @@ export function ArtifactDiscussionSidebar({
               <Loading />
             </div>
           ) : null}
-        </div>
-        ) : (
-        <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto">
+        </TabsContent>
+        <TabsContent value="activity" className="m-0 min-h-0 flex-1 overflow-y-auto">
           <ArtifactActivityTimeline
             projectId={projectId}
             activity={activity}
@@ -853,8 +836,7 @@ export function ArtifactDiscussionSidebar({
             onFocusThread={focusThread}
             onOpenVersion={onOpenVersion}
           />
-        </div>
-        )}
+        </TabsContent>
       </Tabs>
       {showSend ? (
         <div className="border-border shrink-0 space-y-2 border-t px-4 py-3">
