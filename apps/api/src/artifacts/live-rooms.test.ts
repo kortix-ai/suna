@@ -156,29 +156,32 @@ describe('presence and relays', () => {
     expect(cursorUps.at(-1)!.p.cursor).toEqual({ kind: 'page', selector: '#cta', x: 19 / 20, y: 0 });
   });
 
-  test('a hidden participant keeps its avatar and never relays a cursor, selection or typing', () => {
+  test('a hidden participant keeps its avatar and never relays a cursor, selection, typing or focus', () => {
     const a = new FakeSocket();
     join(a, 1);
     rooms.receive(A, 'c1', frame({ t: 'hello', view: 'doc', version: null, hidden: true }));
     rooms.receive(A, 'c1', frame({ t: 'cursor', at: { kind: 'doc', quote: 'Churn fell', prefix: '', offset: 2 } }));
     rooms.receive(A, 'c1', frame({ t: 'selection', range: { kind: 'doc', quote: 'Churn fell', prefix: '', suffix: '' } }));
     rooms.receive(A, 'c1', frame({ t: 'typing', where: 'doc', active: true }));
+    rooms.receive(A, 'c1', frame({ t: 'focus', thread_id: THREAD }));
     clock.advance(1_000);
     const me = a.lastPresence().find((p) => p.id === 'c1')!;
-    expect(me).toMatchObject({ hidden: true, view: 'doc', cursor: null, selection: null, typing: null });
-    expect(ups().every((up) => up.p.cursor === null && up.p.selection === null && up.p.typing === null)).toBe(true);
+    expect(me).toMatchObject({ hidden: true, view: 'doc', cursor: null, selection: null, typing: null, focus: null });
+    expect(ups().every((up) => up.p.cursor === null && up.p.selection === null && up.p.typing === null && up.p.focus === null)).toBe(true);
     // Showing again, then hiding, clears what was drawn.
     rooms.receive(A, 'c1', frame({ t: 'hide', hidden: false }));
     rooms.receive(A, 'c1', frame({ t: 'cursor', at: { kind: 'doc', quote: 'Churn fell', prefix: '', offset: 2 } }));
+    rooms.receive(A, 'c1', frame({ t: 'focus', thread_id: THREAD }));
     clock.advance(1_000);
+    expect(a.lastPresence()[0]).toMatchObject({ focus: THREAD });
     expect(a.lastPresence()[0]!.cursor).not.toBeNull();
     rooms.receive(A, 'c1', frame({ t: 'hide', hidden: true }));
     clock.advance(1_000);
-    expect(a.lastPresence()[0]).toMatchObject({ hidden: true, cursor: null });
+    expect(a.lastPresence()[0]).toMatchObject({ hidden: true, cursor: null, focus: null });
     // A hidden participant from another replica is stripped here too.
-    rooms.remote('pod-b', { k: 'up', a: A, p: { ...a.lastPresence()[0]!, id: 'r1', hidden: true, cursor: { kind: 'doc', quote: 'x', prefix: '', offset: 0 } } });
+    rooms.remote('pod-b', { k: 'up', a: A, p: { ...a.lastPresence()[0]!, id: 'r1', hidden: true, cursor: { kind: 'doc', quote: 'x', prefix: '', offset: 0 }, focus: THREAD } });
     clock.advance(1_000);
-    expect(a.lastPresence().find((p) => p.id === 'r1')?.cursor).toBeNull();
+    expect(a.lastPresence().find((p) => p.id === 'r1')).toMatchObject({ cursor: null, focus: null });
   });
 
   test('a content change pings every socket; a hello with an older version gets one at once', () => {
