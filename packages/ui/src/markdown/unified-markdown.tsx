@@ -68,10 +68,12 @@ const LINK_CLASS = cn(
   '[overflow-wrap:anywhere]',
 );
 
-// No underline: the app mark is the link affordance. Hover tints the mark
-// with the link color, so the label keeps its full contrast.
+// No underline at rest: the app mark is the link affordance. Hover underlines
+// the label only. The mark is inline-block, so the underline skips it, and its
+// color stays fixed.
 const APP_LINK_CLASS = cn(
-  'group font-medium text-kortix-blue no-underline',
+  'font-medium text-kortix-blue no-underline',
+  'decoration-kortix-blue decoration-[1px] underline-offset-[3px] hover:underline',
   '[overflow-wrap:anywhere]',
 );
 
@@ -250,16 +252,18 @@ export function MarkdownLink({
   // glued to the mark by its first character only, so the mark never ends a
   // line alone and the title still wraps inside the column.
   const label = plainText === href ? compactLabel : children;
-  // Only Figma and Notion labels are titles; every other compact label is an
+  // Figma, Notion and GitHub account labels are titles; every other compact label is an
   // identifier, even when `appLink` stores it as `name` (ENG-42, a commit).
-  const isTitle = presentation?.app === 'figma' || presentation?.app === 'notion';
+  // GitHub account and repo names (up to 39 and 140 characters) wrap like titles.
+  const isTitle = presentation?.app === 'figma' || presentation?.app === 'notion' ||
+    presentation?.kind === 'githubUser' || presentation?.kind === 'githubRepo';
   const split = plainText === href && !isTitle
     ? [label, null] as const
     : splitLeadingChar(label);
   const linkContent = presentation && Mark ? (
     <>
       <span className="whitespace-nowrap">
-        <span aria-hidden="true" className="pointer-events-none mr-1 inline-block size-[1em] align-[-0.15em] text-muted-foreground transition-colors group-hover:text-kortix-blue">
+        <span aria-hidden="true" className="pointer-events-none mr-1 inline-block size-[1em] align-[-0.15em] text-muted-foreground">
           <Mark className="block size-full" />
         </span>
         {!labelNamesApp && <span className="sr-only">{appName}: </span>}
