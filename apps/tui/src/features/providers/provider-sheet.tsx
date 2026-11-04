@@ -36,7 +36,7 @@ import { useKeyboard, usePaste } from '@opentui/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { planUsageLines } from '@kortix/cli/src/commands/providers.ts';
+import { planAccountText, planUsageLines } from '@kortix/cli/src/commands/providers.ts';
 import { kortix } from '../../kortix.ts';
 import { copyToClipboard } from '../../lib/clipboard.ts';
 import { openUrl } from '../../lib/open-url.ts';
@@ -207,7 +207,7 @@ export function ProviderSheet({
     queryKey: ['tui', 'subscription-usage', data.accountId, accounts.map((secret) => secret.secret_id).join(',')],
     queryFn: async () => new Map(await Promise.all(accounts.map(async (secret) => [
       secret.secret_id,
-      (await refreshAccountSecretUsage(data.accountId!, secret.secret_id).catch(() => null))?.usage ?? null,
+      await refreshAccountSecretUsage(data.accountId!, secret.secret_id).catch(() => null),
     ] as const))),
     enabled: oauthMode === 'oauth' && Boolean(data.accountId) && accounts.length > 0,
     refetchInterval: 60_000,
@@ -717,7 +717,7 @@ export function ProviderSheet({
         anthropicKeys.includes(secret) ? 'API key' : null,
         !anthropicKeys.includes(secret) && sheet !== 'pooled-key' && connectionNeedsReconnection(secret) ? 'Needs reconnection' : null,
         // A login with plan usage says "limit reached" and its reset on its own lines.
-        !(oauthMode === 'oauth' && (usage.data?.get(secret.secret_id) ?? secret.usage)) &&
+        !(oauthMode === 'oauth' && (usage.data?.get(secret.secret_id)?.usage ?? secret.usage)) &&
         secret.cooldown_until && Date.parse(secret.cooldown_until) > data.accountsReadAt ? 'Cooling down' : null,
         secret.status === 'undecryptable' ? 'Unreadable: reconnect or re-enter' : null,
       ].filter(Boolean);
@@ -727,7 +727,10 @@ export function ProviderSheet({
       );
       if (flags.length) push(`    ${flags.join(' · ')}`, theme.busy);
       if (oauthMode === 'oauth' && accounts.includes(secret)) {
-        for (const line of planUsageLines(usage.data?.get(secret.secret_id) ?? secret.usage)) push(`  ${line}`, theme.faint);
+        const live = usage.data?.get(secret.secret_id);
+        const who = planAccountText(live?.provider_account ?? secret.provider_account, secret.label);
+        if (who) push(`    ${who}`, theme.faint);
+        for (const line of planUsageLines(live?.usage ?? secret.usage)) push(`  ${line}`, theme.faint);
       }
     });
     const actions = [

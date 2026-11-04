@@ -24,6 +24,13 @@ export interface SubscriptionUsage {
   source: 'response' | 'usage_endpoint';
 }
 
+/** Who a ChatGPT or Claude login signs in as. Either field is null when the provider does not say. */
+export interface SubscriptionAccount {
+  email: string | null;
+  /** The provider's plan name, lower case: `plus`, `pro`, `team`, `max`, … */
+  plan: string | null;
+}
+
 export interface AccountSecretResource {
   secret_id: string;
   account_id: string;
@@ -49,6 +56,12 @@ export interface AccountSecretResource {
    * again. Absent from APIs older than this field.
    */
   usage?: SubscriptionUsage | null;
+  /**
+   * Who a ChatGPT or Claude login signs in as. ChatGPT always says; Claude only
+   * when its login may read the profile. `null` for an API key. Absent from
+   * APIs older than this field.
+   */
+  provider_account?: SubscriptionAccount | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -105,7 +118,7 @@ export async function retryAccountSecretResource(accountId: string, secretId: st
  * the stored snapshot; `usage` is null when the provider reports none.
  */
 export async function refreshAccountSecretUsage(accountId: string, secretId: string) {
-  return unwrap(await backendApi.post<{ usage: SubscriptionUsage | null }>(`${secretPath(accountId, secretId)}/usage`));
+  return unwrap(await backendApi.post<{ usage: SubscriptionUsage | null; provider_account?: SubscriptionAccount | null }>(`${secretPath(accountId, secretId)}/usage`));
 }
 export async function deleteAccountSecretResource(accountId: string, secretId: string) {
   return unwrap(await backendApi.delete<{ ok: boolean }>(secretPath(accountId, secretId)));

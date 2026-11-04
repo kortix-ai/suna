@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { claudeUsageFromBody, codexUsageFromBody } from './subscription-usage';
+import { claudeAccountFromProfile, claudeUsageFromBody, codexAccountFromLogin, codexUsageFromBody } from './subscription-usage';
 
 const NOW = Date.parse('2026-11-04T14:00:00Z');
 
@@ -45,5 +45,34 @@ describe('provider usage endpoint bodies', () => {
     expect(codexUsageFromBody({ detail: 'Unauthorized' }, NOW)).toBeNull();
     expect(claudeUsageFromBody({ error: { type: 'permission_error' } }, NOW)).toBeNull();
     expect(claudeUsageFromBody(null, NOW)).toBeNull();
+  });
+});
+
+const jwt = (claims: Record<string, unknown>) =>
+  ['e30', Buffer.from(JSON.stringify(claims)).toString('base64url'), 'sig'].join('.');
+
+describe('who a subscription login signs in as', () => {
+  test('ChatGPT: email and plan from the stored access token, no network', () => {
+    const value = JSON.stringify({ openai: { access: jwt({
+      'https://api.openai.com/profile': { email: 'person@example.test', email_verified: true },
+      'https://api.openai.com/auth': { chatgpt_plan_type: 'pro', chatgpt_account_id: 'acct' },
+    }) } });
+    expect(codexAccountFromLogin(value)).toEqual({ email: 'person@example.test', plan: 'pro' });
+  });
+
+  test('ChatGPT: a token without claims, or an unreadable login, names nobody', () => {
+    expect(codexAccountFromLogin(JSON.stringify({ openai: { access: 'opaque' } }))).toBeNull();
+    expect(codexAccountFromLogin(null)).toBeNull();
+    expect(codexAccountFromLogin('not json')).toBeNull();
+  });
+
+  test('Claude: the oauth profile names the email and the plan', () => {
+    expect(claudeAccountFromProfile({
+      account: { uuid: 'u', email: 'person@example.test', has_claude_max: true },
+      organization: { uuid: 'o', organization_type: 'claude_max' },
+    })).toEqual({ email: 'person@example.test', plan: 'max' });
+    expect(claudeAccountFromProfile({ account: { email_address: 'p@example.test', has_claude_pro: true } }))
+      .toEqual({ email: 'p@example.test', plan: 'pro' });
+    expect(claudeAccountFromProfile({ error: { type: 'permission_error' } })).toBeNull();
   });
 });

@@ -260,6 +260,8 @@ export async function claudeCredentialsForGateway(principal: {
     return { error: {
       status: err.code === 'provider_pool_rate_limited' ? 429 : 400,
       code: err.code, message: err.message, suggestion: err.suggestion, retryAfterSeconds: err.retryAfterSeconds,
+      // The gateway answers a rest over a minute as a usage limit, which Claude Code shows as one.
+      ...(err.restSeconds !== undefined ? { restSeconds: err.restSeconds } : {}),
     } };
   }
 }

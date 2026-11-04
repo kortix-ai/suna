@@ -1,5 +1,5 @@
 {
-  "id": "27840cdf-e91f-410c-ae21-3c8403b9cc45",
+  "id": "9fa9d509-9967-49ea-b606-7e7e73fec713",
   "prevId": "8aca98d6-2e13-4a62-8205-c8849fdd7081",
   "version": "7",
   "dialect": "postgresql",
@@ -1624,6 +1624,12 @@
         "usage_checked_at": {
           "name": "usage_checked_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_account": {
+          "name": "provider_account",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -21926,13 +21932,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'public'"
-        },
-        "tabs": {
-          "name": "tabs",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
         },
         "created_by": {
           "name": "created_by",
