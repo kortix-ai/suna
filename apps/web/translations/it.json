@@ -25469,5 +25469,18 @@
     "dialogTitle": "Avviare un nuovo contesto?",
     "dialogDescription": "L’agente continua in un nuovo contesto e cerca nella cronologia completa quando gli serve un dettaglio. Non viene riassunto nulla e la conversazione resta qui com’è.",
     "dialogAction": "Avvia un nuovo contesto"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Messaggio Slack",
+    "slackConversation": "Conversazione Slack",
+    "notionPage": "Pagina Notion",
+    "figmaDesign": "Design Figma",
+    "figjamBoard": "Lavagna FigJam",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Documento Google",
+    "googleSheet": "Foglio Google",
+    "googleSlides": "Google Slides",
+    "pullRequest": "PR #{number}",
+    "issue": "Problema #{number}"
   }
 }

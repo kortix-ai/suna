@@ -9774,6 +9774,19 @@ const catalog = {
     "dialogTitle": "Start a fresh context?",
     "dialogDescription": "The agent continues in a fresh context and searches the full history when it needs a detail. Nothing is summarized, and the conversation stays here as it is.",
     "dialogAction": "Start a fresh context"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Slack message",
+    "slackConversation": "Slack conversation",
+    "notionPage": "Notion page",
+    "figmaDesign": "Figma design",
+    "figjamBoard": "FigJam board",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Google Doc",
+    "googleSheet": "Google Sheet",
+    "googleSlides": "Google Slides",
+    "pullRequest": "PR #{number}",
+    "issue": "Issue #{number}"
   }
 };
 

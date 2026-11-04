@@ -25469,5 +25469,18 @@
     "dialogTitle": "新しいコンテキストを開始しますか？",
     "dialogDescription": "エージェントは新しいコンテキストで続行し、必要な詳細があると完全な履歴を検索します。要約はせず、会話はここにそのまま残ります。",
     "dialogAction": "新しいコンテキストを開始"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Slack メッセージ",
+    "slackConversation": "Slack 会話",
+    "notionPage": "Notion ページ",
+    "figmaDesign": "Figma デザイン",
+    "figjamBoard": "FigJam ボード",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Google ドキュメント",
+    "googleSheet": "Google スプレッドシート",
+    "googleSlides": "Google スライド",
+    "pullRequest": "PR #{number}",
+    "issue": "課題 #{number}"
   }
 }
