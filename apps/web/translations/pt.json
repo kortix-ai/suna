@@ -23600,7 +23600,7 @@
     "openFolderOf": "Abrir a pasta de {file} em Arquivos",
     "hideReport": "Ocultar relatório",
     "questionForYou": "Pergunta para você",
-    "messagePlaceholder": "Envie uma nota ao agente que trabalha nesta meta",
+    "messagePlaceholder": "Deixe uma nota para o agente…",
     "messageLabel": "Nota ao agente",
     "messageSentToast": "Nota enviada",
     "messageError": "Não foi possível enviar a nota. Tente de novo.",
@@ -23616,10 +23616,18 @@
       "created": "Meta criada",
       "moved": "Movida para {status}",
       "update": "Última atualização",
-      "paused": "Pausada"
+      "paused": "Pausada",
+      "movedPrefix": "Movida para"
     },
     "showMore": "Mostrar mais",
-    "showLess": "Mostrar menos"
+    "showLess": "Mostrar menos",
+    "noAgent": "Sem agente",
+    "nextCheckAt": "Próxima verificação {time}",
+    "noCheck": "Nenhuma verificação agendada",
+    "lastCheckAt": "Última verificação {time}",
+    "neverChecked": "Ainda não verificada",
+    "wakesTodayCount": "{count} de {max} ativações hoje",
+    "filesLabel": "Arquivos"
   },
   "agentEditor": {
     "manage": "Gerenciar",

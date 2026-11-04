@@ -23600,7 +23600,7 @@
     "openFolderOf": "在文件中打开 {file} 所在文件夹",
     "hideReport": "隐藏报告",
     "questionForYou": "需要你回答",
-    "messagePlaceholder": "给负责此目标的智能体发一条备注",
+    "messagePlaceholder": "给智能体留一条备注…",
     "messageLabel": "给智能体的备注",
     "messageSentToast": "备注已发送",
     "messageError": "无法发送备注。请重试。",
@@ -23616,10 +23616,18 @@
       "created": "已创建目标",
       "moved": "已移至{status}",
       "update": "最新进展",
-      "paused": "已暂停"
+      "paused": "已暂停",
+      "movedPrefix": "已移至"
     },
     "showMore": "显示更多",
-    "showLess": "收起"
+    "showLess": "收起",
+    "noAgent": "无智能体",
+    "nextCheckAt": "下次检查 {time}",
+    "noCheck": "未安排检查",
+    "lastCheckAt": "上次检查 {time}",
+    "neverChecked": "尚未检查",
+    "wakesTodayCount": "今日唤醒 {count}/{max}",
+    "filesLabel": "文件"
   },
   "agentEditor": {
     "manage": "管理",

@@ -23600,7 +23600,7 @@
     "openFolderOf": "Apri la cartella di {file} in File",
     "hideReport": "Nascondi report",
     "questionForYou": "Domanda per te",
-    "messagePlaceholder": "Invia una nota all’agente che lavora a questo obiettivo",
+    "messagePlaceholder": "Lascia una nota all’agente…",
     "messageLabel": "Nota per l’agente",
     "messageSentToast": "Nota inviata",
     "messageError": "Impossibile inviare la nota. Riprova.",
@@ -23616,10 +23616,18 @@
       "created": "Obiettivo creato",
       "moved": "Spostato in {status}",
       "update": "Ultimo aggiornamento",
-      "paused": "In pausa"
+      "paused": "In pausa",
+      "movedPrefix": "Spostato in"
     },
     "showMore": "Mostra di più",
-    "showLess": "Mostra meno"
+    "showLess": "Mostra meno",
+    "noAgent": "Nessun agente",
+    "nextCheckAt": "Prossimo controllo {time}",
+    "noCheck": "Nessun controllo programmato",
+    "lastCheckAt": "Ultimo controllo {time}",
+    "neverChecked": "Non ancora controllato",
+    "wakesTodayCount": "{count} di {max} risvegli oggi",
+    "filesLabel": "File"
   },
   "agentEditor": {
     "manage": "Gestisci",

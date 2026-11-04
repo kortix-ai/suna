@@ -23600,7 +23600,7 @@
     "openFolderOf": "Ouvrir le dossier de {file} dans Fichiers",
     "hideReport": "Masquer le rapport",
     "questionForYou": "Question pour toi",
-    "messagePlaceholder": "Envoie une note à l’agent qui travaille sur cet objectif",
+    "messagePlaceholder": "Laisse une note à l’agent…",
     "messageLabel": "Note à l’agent",
     "messageSentToast": "Note envoyée",
     "messageError": "Impossible d’envoyer la note. Réessaie.",
@@ -23616,10 +23616,18 @@
       "created": "Objectif créé",
       "moved": "Passé à {status}",
       "update": "Dernière mise à jour",
-      "paused": "En pause"
+      "paused": "En pause",
+      "movedPrefix": "Passé à"
     },
     "showMore": "Afficher plus",
-    "showLess": "Afficher moins"
+    "showLess": "Afficher moins",
+    "noAgent": "Aucun agent",
+    "nextCheckAt": "Prochain point {time}",
+    "noCheck": "Aucun point prévu",
+    "lastCheckAt": "Dernier point {time}",
+    "neverChecked": "Pas encore vérifié",
+    "wakesTodayCount": "{count} réveils sur {max} aujourd’hui",
+    "filesLabel": "Fichiers"
   },
   "agentEditor": {
     "manage": "Gérer",

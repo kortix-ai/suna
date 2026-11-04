@@ -23600,7 +23600,7 @@
     "openFolderOf": "Otvori fasciklu fajla {file} u Fajlovima",
     "hideReport": "Sakrij izveštaj",
     "questionForYou": "Pitanje za tebe",
-    "messagePlaceholder": "Pošalji belešku agentu koji radi na ovom cilju",
+    "messagePlaceholder": "Ostavi belešku agentu…",
     "messageLabel": "Beleška agentu",
     "messageSentToast": "Beleška je poslata",
     "messageError": "Beleška nije poslata. Pokušaj ponovo.",
@@ -23616,10 +23616,18 @@
       "created": "Cilj je napravljen",
       "moved": "Prebačeno u {status}",
       "update": "Najnovije stanje",
-      "paused": "Pauzirano"
+      "paused": "Pauzirano",
+      "movedPrefix": "Prebačeno u"
     },
     "showMore": "Prikaži više",
-    "showLess": "Prikaži manje"
+    "showLess": "Prikaži manje",
+    "noAgent": "Nema agenta",
+    "nextCheckAt": "Sledeća provera {time}",
+    "noCheck": "Nema zakazane provere",
+    "lastCheckAt": "Poslednja provera {time}",
+    "neverChecked": "Još nije provereno",
+    "wakesTodayCount": "{count} od {max} buđenja danas",
+    "filesLabel": "Fajlovi"
   },
   "agentEditor": {
     "manage": "Upravljaj",

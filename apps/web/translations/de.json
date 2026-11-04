@@ -23600,7 +23600,7 @@
     "openFolderOf": "Ordner von {file} in Dateien öffnen",
     "hideReport": "Bericht ausblenden",
     "questionForYou": "Frage an dich",
-    "messagePlaceholder": "Schick dem Agenten, der an diesem Ziel arbeitet, eine Notiz",
+    "messagePlaceholder": "Notiz für den Agenten hinterlassen…",
     "messageLabel": "Notiz an den Agenten",
     "messageSentToast": "Notiz gesendet",
     "messageError": "Die Notiz konnte nicht gesendet werden. Versuche es erneut.",
@@ -23616,10 +23616,18 @@
       "created": "Ziel erstellt",
       "moved": "Verschoben nach {status}",
       "update": "Letzter Stand",
-      "paused": "Pausiert"
+      "paused": "Pausiert",
+      "movedPrefix": "Verschoben nach"
     },
     "showMore": "Mehr anzeigen",
-    "showLess": "Weniger anzeigen"
+    "showLess": "Weniger anzeigen",
+    "noAgent": "Kein Agent",
+    "nextCheckAt": "Nächste Prüfung {time}",
+    "noCheck": "Keine Prüfung geplant",
+    "lastCheckAt": "Zuletzt geprüft {time}",
+    "neverChecked": "Noch nicht geprüft",
+    "wakesTodayCount": "{count} von {max} Weckungen heute",
+    "filesLabel": "Dateien"
   },
   "agentEditor": {
     "manage": "Verwalten",

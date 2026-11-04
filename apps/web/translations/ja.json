@@ -23600,7 +23600,7 @@
     "openFolderOf": "{file} のフォルダをファイルで開く",
     "hideReport": "レポートを隠す",
     "questionForYou": "あなたへの質問",
-    "messagePlaceholder": "このゴールに取り組むエージェントにメモを送る",
+    "messagePlaceholder": "エージェントへのメモを残す…",
     "messageLabel": "エージェントへのメモ",
     "messageSentToast": "メモを送信しました",
     "messageError": "メモを送信できませんでした。もう一度お試しください。",
@@ -23616,10 +23616,18 @@
       "created": "ゴールを作成",
       "moved": "{status}に移動",
       "update": "最新の状況",
-      "paused": "一時停止"
+      "paused": "一時停止",
+      "movedPrefix": "移動先:"
     },
     "showMore": "もっと見る",
-    "showLess": "閉じる"
+    "showLess": "閉じる",
+    "noAgent": "エージェントなし",
+    "nextCheckAt": "次の確認 {time}",
+    "noCheck": "確認の予定なし",
+    "lastCheckAt": "前回の確認 {time}",
+    "neverChecked": "まだ確認していません",
+    "wakesTodayCount": "今日の起動 {count}/{max}",
+    "filesLabel": "ファイル"
   },
   "agentEditor": {
     "manage": "管理",

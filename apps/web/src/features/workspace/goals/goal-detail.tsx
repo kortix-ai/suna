@@ -8,27 +8,26 @@ import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
 import { Hint } from '@kortix/ui/hint';
 import { InfoBanner } from '@kortix/ui/info-banner';
+import { InputGroup, InputGroupAddon, InputGroupButton } from '@kortix/ui/input-group';
 import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { UnifiedMarkdown } from '@kortix/ui/markdown';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@kortix/ui/modal';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { Textarea } from '@kortix/ui/textarea';
 import { errorToast, successToast } from '@kortix/ui/toast';
 import { uiRoutes } from '@kortix/ui';
 import {
   formatGoalTime,
-  GoalCriteriaProgress,
+  goalIconState,
   goalLastWake,
   goalOpenAsks,
   goalPaused,
+  goalProgress,
   GoalPersonChip,
-  GoalStatusBadge,
   GoalStatusIcon,
   goalStatusIconState,
   ProjectPageHeader,
   useGoalClock,
   useGoalIssueText,
-  useGoalStateText,
 } from '@kortix/ui/workspace';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
@@ -42,21 +41,26 @@ import {
 import { useProjectGoalFiles, useProjectGoals, useProjectSession } from '@kortix/sdk/react';
 import { useMutation } from '@tanstack/react-query';
 import {
-  ArrowLeftIcon,
   ArrowUpIcon,
   CaretRightIcon,
   ChatCircleIcon,
   ChatTextIcon,
+  CircleDashedIcon,
+  ClockCounterClockwiseIcon,
+  ClockIcon,
   CheckCircleIcon,
   CircleIcon,
   DotsThreeIcon,
   FileIcon,
   FolderOpenIcon,
+  LightningIcon,
   LinkIcon,
+  LockSimpleIcon,
   PauseIcon,
   PlayIcon,
   ShareNetworkIcon,
   StopIcon,
+  UsersIcon,
   WarningIcon,
 } from '@phosphor-icons/react';
 import { FolderAccessPanel } from '@/features/drives/folder-access-panel';
@@ -89,13 +93,23 @@ export function GoalDetail({ projectId, scope, slug }: { projectId: string; scop
 
   return (
     <div className="flex h-svh flex-col overflow-hidden">
-      <ProjectPageHeader title={t('title')}>{goal ? <GoalControls projectId={projectId} goal={goal} onChanged={refetch} /> : null}</ProjectPageHeader>
+      <ProjectPageHeader
+        title={goal?.goal?.objective ?? t('title')}
+        breadcrumb={
+          goal ? (
+            <>
+              <Link href={listHref} className="text-muted-foreground hover:text-foreground shrink-0 text-sm">
+                {t('title')}
+              </Link>
+              <CaretRightIcon className="text-muted-foreground size-3 shrink-0" aria-hidden />
+            </>
+          ) : null
+        }
+      >
+        {goal ? <GoalControls projectId={projectId} goal={goal} onChanged={refetch} /> : null}
+      </ProjectPageHeader>
       <div className="@container/goal min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-6xl px-4 py-6 pb-20 md:px-8">
-          <Link href={listHref} className="text-muted-foreground hover:text-foreground mb-6 flex w-fit items-center gap-1 text-xs">
-            <ArrowLeftIcon className="size-3" aria-hidden />
-            {t('back')}
-          </Link>
+        <div className="mx-auto w-full max-w-6xl px-4 py-10 pb-24 md:px-10">
           {goals.isError ? (
             <ErrorState
               size="sm"
@@ -108,14 +122,14 @@ export function GoalDetail({ projectId, scope, slug }: { projectId: string; scop
             />
           ) : goals.isLoading ? (
             <div className="flex max-w-2xl flex-col gap-3">
-              <Skeleton className="h-7 w-2/3 rounded-md" />
+              <Skeleton className="h-8 w-2/3 rounded-md" />
               <Skeleton className="h-4 w-1/2 rounded-md" />
               <Skeleton className="h-24 w-full rounded-md" />
             </div>
           ) : !goal ? (
             <EmptyState title={t('notFound')} />
           ) : (
-            <div className="grid grid-cols-1 gap-10 @4xl/goal:grid-cols-[minmax(0,1fr)_17rem] @4xl/goal:gap-12">
+            <div className="grid grid-cols-1 gap-12 @4xl/goal:grid-cols-[minmax(0,1fr)_15rem] @4xl/goal:gap-16">
               <GoalMain projectId={projectId} goal={goal} files={files.data ?? null} onChanged={refetch} />
               <GoalRail projectId={projectId} goal={goal} />
             </div>
@@ -128,8 +142,8 @@ export function GoalDetail({ projectId, scope, slug }: { projectId: string; scop
 
 function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <h2 className="text-muted-foreground flex items-center gap-2 text-xs font-medium">{children}</h2>
+    <div className="flex items-center gap-2">
+      <h2 className="text-muted-foreground flex items-center gap-2 text-sm font-medium">{children}</h2>
       {aside}
     </div>
   );
@@ -140,9 +154,8 @@ type GoalFilesData = { log: string | null; notes: string | null; verification: s
 /** The text `kortix goals new` and `createProjectGoal` seed under `## Context`: it says nothing until someone writes there. */
 const CONTEXT_PLACEHOLDER = "The request in the person's words, constraints, and what was learned.";
 
-/** GOAL.md's body as the goal's description: without its `# title` (the page shows it), the empty seed, or a heading left with nothing under it. */
+/** GOAL.md's body as the goal's description: without its `# title` (the page shows it), the empty seed, or its `## Context` heading. */
 function goalDescription(body: string | undefined): string {
-  // The section heading already says "Context": drop the file's own.
   return (body ?? '')
     .replace(/^\s*# [^\n]*\n+/, '')
     .replace(CONTEXT_PLACEHOLDER, '')
@@ -151,24 +164,23 @@ function goalDescription(body: string | undefined): string {
     .trim();
 }
 
-/** Characters past which the context starts folded: an agent's working notes can run to pages. */
+/** Characters past which the description starts folded: an agent's working notes can run to pages. */
 const LONG_CONTEXT = 700;
 
-/** The goal's context from GOAL.md, folded to its first lines when it is long. */
-function GoalContext({ markdown }: { markdown: string }) {
+/** The goal's description from GOAL.md, right under the title, folded to its first lines when it is long. */
+function GoalDescription({ markdown }: { markdown: string }) {
   const t = useTranslations('goals');
   const long = markdown.length > LONG_CONTEXT;
   const [expanded, setExpanded] = useState(false);
   return (
-    <section className="flex flex-col gap-3" aria-label={t('context')} data-testid="goal-context">
-      <SectionTitle>{t('context')}</SectionTitle>
-      <div className={long && !expanded ? 'max-w-prose max-h-48 overflow-hidden [mask-image:linear-gradient(to_bottom,black_55%,transparent)]' : 'max-w-prose'}>
-        <UnifiedMarkdown content={markdown} trust="untrusted" variant="document" className="text-sm" />
+    <div className="flex flex-col gap-2" data-testid="goal-context">
+      <div className={long && !expanded ? 'max-w-prose max-h-56 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]' : 'max-w-prose'}>
+        <UnifiedMarkdown content={markdown} trust="untrusted" variant="document" className="text-base" />
       </div>
       {long ? (
         <button
           type="button"
-          className="text-muted-foreground hover:text-foreground w-fit text-xs"
+          className="text-muted-foreground hover:text-foreground w-fit text-sm"
           aria-expanded={expanded}
           onClick={() => setExpanded((v) => !v)}
           data-testid="goal-context-toggle"
@@ -176,15 +188,12 @@ function GoalContext({ markdown }: { markdown: string }) {
           {expanded ? t('showLess') : t('showMore')}
         </button>
       ) : null}
-    </section>
+    </div>
   );
 }
 
 function GoalMain({ projectId, goal, files, onChanged }: { projectId: string; goal: ProjectGoal; files: GoalFilesData | null; onChanged: () => Promise<unknown> }) {
   const t = useTranslations('goals');
-  const locale = useLocale();
-  const now = useGoalClock();
-  const stateText = useGoalStateText();
   const issueText = useGoalIssueText();
   const doc = goal.goal;
   const paused = goalPaused(goal);
@@ -192,24 +201,19 @@ function GoalMain({ projectId, goal, files, onChanged }: { projectId: string; go
   const waiting = open && !paused && (doc?.status === 'waiting_on_user' || goalOpenAsks(doc).length > 0);
   const issues = open && !paused ? goal.health.issues : [];
   const description = goalDescription(doc?.body);
+  const progress = goalProgress(doc);
   // Results: what the goal produced, minus the evidence files Done when already cites.
   const cited = new Set((doc?.success_criteria ?? []).map((c) => c.evidence).filter(Boolean));
   const results = (doc?.links ?? []).filter((link) => !cited.has(link));
 
   return (
     <div className="flex min-w-0 flex-col gap-10">
-      <header className="flex flex-col gap-3" data-testid="goal-overview">
-        <h1 className="text-foreground text-xl font-medium tracking-tight text-balance">{doc?.objective ?? goal.slug}</h1>
-        {waiting ? null : (
-          <p className="text-muted-foreground text-sm text-pretty" data-testid="goal-state">
-            {stateText(goal, locale, now)}
-          </p>
-        )}
+      <header className="flex flex-col gap-5" data-testid="goal-overview">
+        <h2 className="text-foreground text-2xl font-semibold tracking-tight text-balance">{doc?.objective ?? goal.slug}</h2>
+        {description ? <GoalDescription markdown={description} /> : null}
       </header>
 
       {waiting ? <QuestionForYou projectId={projectId} goal={goal} onChanged={onChanged} /> : null}
-
-      {description ? <GoalContext markdown={description} /> : null}
 
       {issues.map((issue) => (
         <InfoBanner key={issue} tone="warning" icon={WarningIcon} title={t('attentionTitle')}>
@@ -218,7 +222,9 @@ function GoalMain({ projectId, goal, files, onChanged }: { projectId: string; go
       ))}
 
       <section className="flex flex-col gap-3" aria-label={t('doneWhen')} data-testid="goal-criteria">
-        <SectionTitle aside={<GoalCriteriaProgress goal={doc} />}>{t('doneWhen')}</SectionTitle>
+        <SectionTitle aside={progress.total ? <span className="text-muted-foreground text-sm tabular-nums">{progress.met}/{progress.total}</span> : null}>
+          {t('doneWhen')}
+        </SectionTitle>
         {doc?.success_criteria?.length ? <CriteriaList projectId={projectId} goal={goal} /> : <p className="text-muted-foreground text-sm">{t('noCriteria')}</p>}
       </section>
 
@@ -277,7 +283,7 @@ function QuestionForYou({ projectId, goal, onChanged }: { projectId: string; goa
   return (
     <section className="flex flex-col gap-3" aria-label={t('questionForYou')} data-testid="goal-needs-you">
       <SectionTitle>
-        <span className="bg-kortix-orange size-1.5 rounded-full" aria-hidden />
+        <GoalStatusIcon state="waiting" />
         {t('questionForYou')}
       </SectionTitle>
       {question ? (
@@ -304,16 +310,17 @@ function QuestionForYou({ projectId, goal, onChanged }: { projectId: string; goa
 /**
  * One box, two jobs: the answer to the goal's question, or a note to the owner
  * agent while it works. Either way the text goes to the owner session, which
- * wakes on it. ⌘/Ctrl+Enter sends.
+ * wakes on it. The prompt-input shape: the text on top, a round send inside the
+ * box at its bottom right. ⌘/Ctrl+Enter sends.
  */
 function MessageBox({ projectId, goal, onChanged, kind }: { projectId: string; goal: ProjectGoal; onChanged: () => Promise<unknown>; kind: 'answer' | 'message' }) {
   const t = useTranslations('goals');
-  const [text, setText] = useState('');
+  const [draft, setDraft] = useState('');
   const [sent, setSent] = useState(false);
   const send = useMutation({
-    mutationFn: () => replyToProjectGoal(projectId, goal, text.trim()),
+    mutationFn: () => replyToProjectGoal(projectId, goal, draft.trim()),
     onSuccess: () => {
-      setText('');
+      setDraft('');
       setSent(true);
       successToast(kind === 'answer' ? t('answerSentToast') : t('messageSentToast'));
       void onChanged();
@@ -324,47 +331,49 @@ function MessageBox({ projectId, goal, onChanged, kind }: { projectId: string; g
   const sendLabel = kind === 'answer' ? t('sendAnswer') : t('sendMessage');
   return (
     <form
-      className="flex flex-col gap-2"
       onSubmit={(event) => {
         event.preventDefault();
-        if (text.trim() && !send.isPending) send.mutate();
+        if (draft.trim() && !send.isPending) send.mutate();
       }}
     >
-      <Textarea
-        rows={kind === 'answer' ? 3 : 2}
-        value={text}
-        onChange={(event) => {
-          setText(event.target.value);
-          if (sent) setSent(false);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) event.currentTarget.form?.requestSubmit();
-        }}
-        placeholder={kind === 'answer' ? t('answerPlaceholder') : t('messagePlaceholder')}
-        aria-label={kind === 'answer' ? t('answerLabel') : t('messageLabel')}
-        data-testid={kind === 'answer' ? 'goal-answer' : 'goal-message'}
-      />
-      <div className="flex items-center justify-between gap-2">
-        {sent ? (
-          <p className="text-muted-foreground text-xs" role="status">
-            {kind === 'answer' ? t('answerSent') : t('messageSent')}
-          </p>
-        ) : (
-          <span />
-        )}
-        <Button
-          type="submit"
-          size="sm"
-          variant={kind === 'answer' ? 'default' : 'outline'}
-          className="gap-1.5"
-          disabled={!text.trim() || send.isPending}
-          aria-busy={send.isPending}
-          data-testid={kind === 'answer' ? 'goal-answer-send' : 'goal-message-send'}
-        >
-          <ArrowUpIcon className="size-3.5 shrink-0" aria-hidden />
-          {sendLabel}
-        </Button>
-      </div>
+      <InputGroup className="items-stretch">
+        <textarea
+          rows={kind === 'answer' ? 3 : 2}
+          value={draft}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            if (sent) setSent(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) event.currentTarget.form?.requestSubmit();
+          }}
+          placeholder={kind === 'answer' ? t('answerPlaceholder') : t('messagePlaceholder')}
+          aria-label={kind === 'answer' ? t('answerLabel') : t('messageLabel')}
+          className="text-foreground placeholder:text-muted-foreground w-full min-w-0 resize-none bg-transparent px-3 pt-3 text-sm outline-none"
+          data-testid={kind === 'answer' ? 'goal-answer' : 'goal-message'}
+        />
+        <InputGroupAddon align="block-end" className="justify-between gap-1 px-3 pt-0 pb-2">
+          {sent ? (
+            <span className="text-muted-foreground text-xs" role="status">
+              {kind === 'answer' ? t('answerSent') : t('messageSent')}
+            </span>
+          ) : (
+            <span />
+          )}
+          <InputGroupButton
+            type="submit"
+            size="icon-xs"
+            variant="default"
+            className="rounded-full"
+            aria-label={sendLabel}
+            disabled={!draft.trim() || send.isPending}
+            aria-busy={send.isPending}
+            data-testid={kind === 'answer' ? 'goal-answer-send' : 'goal-message-send'}
+          >
+            <ArrowUpIcon weight="bold" className="size-3.5" aria-hidden />
+          </InputGroupButton>
+        </InputGroupAddon>
+      </InputGroup>
     </form>
   );
 }
@@ -372,9 +381,10 @@ function MessageBox({ projectId, goal, onChanged, kind }: { projectId: string; g
 type FeedItem = { key: string; at: string | null; order: number; icon: ReactNode; title: ReactNode; body?: ReactNode };
 
 /**
- * What happened, oldest first: every state move, a pause, the independent
- * check, and the agent's latest update. While the goal runs it ends with the
- * message box; the full log folds underneath.
+ * What happened, oldest first, under a rule: every state move, a pause, the
+ * independent check, and the agent's latest update. Each entry is one quiet line
+ * (glyph, what happened, when); a reason sits under it. While the goal runs the
+ * feed ends with the note box. The full log opens from the heading's right.
  */
 function Activity({ projectId, goal, files, onChanged }: { projectId: string; goal: ProjectGoal; files: GoalFilesData | null; onChanged: () => Promise<unknown> }) {
   const t = useTranslations('goals');
@@ -387,6 +397,7 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
   const [logOpen, setLogOpen] = useState(false);
   const transitions = doc?.transitions ?? [];
   const updatedAt = goalLastWake(goal) ?? transitions.at(-1)?.at ?? null;
+  const hasLog = !!(files?.log || files?.notes);
 
   // The verifier's report folds under the move it decided: out of verifying, to done or back to active.
   const verdict = files?.verification ? transitions.findLastIndex((tr) => tr.from === 'verifying') : -1;
@@ -395,7 +406,14 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
     at: tr.at,
     order: index,
     icon: <StatusGlyph status={tr.to} />,
-    title: tr.from === null ? t('feed.created') : t('feed.moved', { status: t(`status.${tr.to}`) }),
+    title:
+      tr.from === null ? (
+        t('feed.created')
+      ) : (
+        <>
+          {t('feed.movedPrefix')} <span className="text-foreground">{t(`status.${tr.to}`)}</span>
+        </>
+      ),
     body:
       index === verdict && files?.verification ? (
         <VerificationReport report={files.verification} />
@@ -412,50 +430,53 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
   items.sort((a, b) => a.order - b.order);
 
   return (
-    <section className="flex flex-col gap-4" aria-label={t('activity')} data-testid="goal-activity">
-      <SectionTitle>{t('activity')}</SectionTitle>
+    <section className="border-border flex flex-col gap-5 border-t pt-8" aria-label={t('activity')} data-testid="goal-activity">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-foreground text-base font-semibold">{t('activity')}</h2>
+        {hasLog ? (
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground text-sm"
+            aria-expanded={logOpen}
+            onClick={() => setLogOpen((v) => !v)}
+            data-testid="goal-log-toggle"
+          >
+            {logOpen ? t('hideLog') : t('showLog')}
+          </button>
+        ) : null}
+      </div>
       <ol className="relative flex flex-col gap-4 text-sm">
         {/* The thread: one hairline behind the glyphs, from the first entry to the last. */}
         <span className="bg-border absolute top-2 bottom-2 left-2 w-px" aria-hidden />
         {items.map((item) => (
           <li key={item.key} className="relative flex gap-3">
-            <span className="bg-background relative mt-0.5 flex size-4 shrink-0 items-center justify-center">{item.icon}</span>
+            <span className="bg-background relative flex size-4 shrink-0 items-center justify-center">{item.icon}</span>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <p className="text-foreground">
+              <p className="text-muted-foreground leading-4">
                 {item.title}
-                {item.at ? <span className="text-muted-foreground whitespace-nowrap tabular-nums"> · {formatGoalTime(item.at, locale, now)}</span> : null}
+                {item.at ? <span className="whitespace-nowrap tabular-nums"> · {formatGoalTime(item.at, locale, now)}</span> : null}
               </p>
               {typeof item.body === 'string' ? <p className="text-muted-foreground max-w-prose text-pretty whitespace-pre-line">{item.body}</p> : item.body}
             </div>
           </li>
         ))}
       </ol>
-      {open && !paused && !waiting ? <MessageBox projectId={projectId} goal={goal} onChanged={onChanged} kind="message" /> : null}
-      {files?.log || files?.notes ? (
-        <Disclosure open={logOpen} onOpenChange={setLogOpen}>
-          <DisclosureTrigger>
-            <button type="button" className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-xs" data-testid="goal-log-toggle">
-              <CaretRightIcon className="size-3 transition-transform data-[open=true]:rotate-90" data-open={logOpen} aria-hidden />
-              {logOpen ? t('hideLog') : t('showLog')}
-            </button>
-          </DisclosureTrigger>
-          <DisclosureContent>
-            <div className="flex flex-col gap-6 pt-3">
-              {files?.log ? (
-                <div className="max-w-prose">
-                  <UnifiedMarkdown content={withoutTitle(files.log)} trust="untrusted" variant="document" className="text-sm" />
-                </div>
-              ) : null}
-              {files?.notes ? (
-                <div className="flex flex-col gap-2">
-                  <SectionTitle>{t('notes')}</SectionTitle>
-                  <UnifiedMarkdown content={withoutTitle(files.notes)} trust="untrusted" variant="document" className="text-sm" />
-                </div>
-              ) : null}
+      {logOpen && hasLog ? (
+        <div className="flex flex-col gap-6" data-testid="goal-log">
+          {files?.log ? (
+            <div className="max-w-prose">
+              <UnifiedMarkdown content={withoutTitle(files.log)} trust="untrusted" variant="document" className="text-sm" />
             </div>
-          </DisclosureContent>
-        </Disclosure>
+          ) : null}
+          {files?.notes ? (
+            <div className="flex max-w-prose flex-col gap-2">
+              <SectionTitle>{t('notes')}</SectionTitle>
+              <UnifiedMarkdown content={withoutTitle(files.notes)} trust="untrusted" variant="document" className="text-sm" />
+            </div>
+          ) : null}
+        </div>
       ) : null}
+      {open && !paused && !waiting ? <MessageBox projectId={projectId} goal={goal} onChanged={onChanged} kind="message" /> : null}
     </section>
   );
 }
@@ -478,7 +499,7 @@ function VerificationReport({ report }: { report: string }) {
         </button>
       </DisclosureTrigger>
       <DisclosureContent>
-        <div className="pt-2">
+        <div className="max-w-prose pt-2">
           <UnifiedMarkdown content={withoutTitle(report)} trust="untrusted" variant="message" className="text-sm" />
         </div>
       </DisclosureContent>
@@ -487,9 +508,10 @@ function VerificationReport({ report }: { report: string }) {
 }
 
 /**
- * The properties rail: state, progress, agent, the person it is for, when it
- * checks next and last, its limits, and its sessions. Sticky beside the main
- * column; under it on a narrow container.
+ * The properties rail: one quiet row per property, its glyph and its value,
+ * no labels (the glyph says what it is): state, agent, the person it is for,
+ * the next and last check, wakes today, who can see it. Then its sessions and
+ * its folder. Sticky beside the main column; under it on a narrow container.
  */
 function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal }) {
   const t = useTranslations('goals');
@@ -501,71 +523,66 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
   const heartbeat = goal.heartbeat;
   const today = new Date(now).toISOString().slice(0, 10);
   const scheduled = open && !paused && heartbeat?.state === 'active' && !!heartbeat.next_fire_at;
-  // One empty value, "—", for every property with nothing to show (closed, paused, nothing scheduled).
-  const nextCheck = scheduled ? formatGoalTime(heartbeat!.next_fire_at, locale, now) : '—';
+  const lastWake = goalLastWake(goal);
+  const progress = goalProgress(doc);
   const driveHref = uiRoutes().drive(projectId);
   const folderHref = driveHref ? `${driveHref}?path=${encodeURIComponent(goal.folder)}` : null;
+  const agent = text(doc?.agent);
+  const stateLabel = !doc ? t('health.attention') : paused ? t('paused') : t(`status.${doc.status}`);
 
   return (
-    <aside className="flex min-w-0 flex-col gap-8 self-start @4xl/goal:sticky @4xl/goal:top-6" aria-label={t('properties')} data-testid="goal-properties">
-      <div className="flex flex-col gap-3">
+    <aside className="flex min-w-0 flex-col gap-7 self-start @4xl/goal:sticky @4xl/goal:top-0" aria-label={t('properties')} data-testid="goal-properties">
+      <div className="flex flex-col gap-1">
         <SectionTitle>{t('properties')}</SectionTitle>
-        <dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 text-sm">
-          <Property label={t('stateLabel')}>
-            {doc?.status ? <GoalStatusBadge status={doc.status} paused={paused} /> : <span className="text-muted-foreground">—</span>}
+        <ul className="flex flex-col text-sm">
+          <Property icon={<GoalStatusIcon state={goalIconState(goal)} progress={progress.total ? progress.met / progress.total : 0} />}>{stateLabel}</Property>
+          <Property icon={agent ? <AgentMark slug={agent} size={14} tile={16} /> : <RobotlessIcon />} muted={!agent}>
+            {agent ?? t('noAgent')}
           </Property>
-          <Property label={t('assignedAgent')}>
-            {text(doc?.agent) ? (
-              <span className="flex min-w-0 items-center gap-2">
-                <AgentMark slug={text(doc?.agent)!} size={14} />
-                <span className="text-foreground truncate">{text(doc?.agent)}</span>
-              </span>
-            ) : (
-              <span className="text-muted-foreground">—</span>
-            )}
-          </Property>
-          <Property label={t('assignedUser')}>
+          <Property icon={null} bare>
             <GoalPersonChip projectId={projectId} userId={doc?.assigned_user} />
           </Property>
-          <Property label={t('nextCheck')}>
-            <span className={scheduled ? 'text-foreground tabular-nums' : 'text-muted-foreground'}>{nextCheck}</span>
+          <Property icon={<ClockIcon className="size-4" aria-hidden />} muted={!scheduled}>
+            {scheduled ? t('nextCheckAt', { time: formatGoalTime(heartbeat!.next_fire_at, locale, now) }) : t('noCheck')}
           </Property>
-          <Property label={t('lastCheck')}>
-            <span className={goalLastWake(goal) ? 'text-foreground tabular-nums' : 'text-muted-foreground'}>{formatGoalTime(goalLastWake(goal), locale, now)}</span>
+          <Property icon={<ClockCounterClockwiseIcon className="size-4" aria-hidden />} muted={!lastWake}>
+            {lastWake ? t('lastCheckAt', { time: formatGoalTime(lastWake, locale, now) }) : t('neverChecked')}
           </Property>
           {doc?.format === 'goal.md' ? (
-            <>
-              <Property label={t('wakesToday')}>
-                <span className="text-foreground tabular-nums">
-                  {t('ofMax', { count: doc.wake_day === today ? (doc.wake_count ?? 0) : 0, max: doc.max_wakes_per_day ?? 12 })}
-                </span>
-              </Property>
-            </>
+            <Property icon={<LightningIcon className="size-4" aria-hidden />}>
+              {t('wakesTodayCount', { count: doc.wake_day === today ? (doc.wake_count ?? 0) : 0, max: doc.max_wakes_per_day ?? 12 })}
+            </Property>
           ) : null}
-          <Property label={t('scopeLabel')}>
-            <span className="text-foreground">{t(`scope.${goal.scope}`)}</span>
+          <Property icon={goal.scope === 'personal' ? <LockSimpleIcon className="size-4" aria-hidden /> : <UsersIcon className="size-4" aria-hidden />}>
+            {t(`scope.${goal.scope}`)}
           </Property>
-        </dl>
+        </ul>
       </div>
 
       {doc?.sessions?.length ? (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
           <SectionTitle
             aside={
               doc.format === 'goal.md' ? (
-                <span className="text-muted-foreground text-xs tabular-nums">{t('ofMax', { count: doc.sessions.length, max: doc.max_sessions ?? 10 })}</span>
+                <span className="text-muted-foreground text-sm tabular-nums">{t('ofMax', { count: doc.sessions.length, max: doc.max_sessions ?? 10 })}</span>
               ) : null
             }
           >
             {t('sessions')}
           </SectionTitle>
-          <ul className="flex flex-col gap-2 text-sm">
+          <ul className="flex flex-col text-sm">
             {doc.sessions.filter((s) => text(s.id)).map((s) => (
-              <li key={`${s.role}:${s.id}`} className="flex min-w-0 items-baseline gap-2">
-                <Link href={uiRoutes().session(projectId, s.id)} className="text-foreground min-w-0 truncate hover:underline">
-                  <SessionName projectId={projectId} sessionId={s.id} />
+              <li key={`${s.role}:${s.id}`}>
+                <Link
+                  href={uiRoutes().session(projectId, s.id)}
+                  className="hover:bg-hover -mx-2 flex h-8 min-w-0 items-center gap-2 rounded-md px-2"
+                >
+                  <ChatCircleIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                  <span className="text-foreground min-w-0 truncate">
+                    <SessionName projectId={projectId} sessionId={s.id} />
+                  </span>
+                  <span className="text-muted-foreground ml-auto shrink-0 text-xs">{t(`role.${s.role}`)}</span>
                 </Link>
-                <span className="text-muted-foreground shrink-0 text-xs">{t(`role.${s.role}`)}</span>
               </li>
             ))}
           </ul>
@@ -573,24 +590,31 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
       ) : null}
 
       {folderHref ? (
-        <Button asChild variant="outline" size="sm" className="w-fit gap-1.5">
-          <Link href={folderHref}>
-            <FolderOpenIcon className="size-3.5 shrink-0" aria-hidden />
+        <div className="flex flex-col gap-1">
+          <SectionTitle>{t('filesLabel')}</SectionTitle>
+          <Link href={folderHref} className="hover:bg-hover text-foreground -mx-2 flex h-8 items-center gap-2 rounded-md px-2 text-sm">
+            <FolderOpenIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
             {t('openFolder')}
           </Link>
-        </Button>
+        </div>
       ) : null}
     </aside>
   );
 }
 
-function Property({ label, children }: { label: string; children: ReactNode }) {
+/** A glyph-first property row: the glyph in a fixed 16 px slot, then the value. */
+function Property({ icon, children, muted, bare }: { icon: ReactNode; children: ReactNode; muted?: boolean; bare?: boolean }) {
   return (
-    <>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="flex min-h-6 min-w-0 items-center">{children}</dd>
-    </>
+    <li className="flex h-8 min-w-0 items-center gap-2">
+      {bare ? null : <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">{icon}</span>}
+      <span className={muted ? 'text-muted-foreground min-w-0 truncate' : 'text-foreground min-w-0 truncate'}>{children}</span>
+    </li>
   );
+}
+
+/** No agent assigned: an empty circle in the agent slot. */
+function RobotlessIcon() {
+  return <CircleDashedIcon className="size-4" aria-hidden />;
 }
 
 function useResume(projectId: string, goal: ProjectGoal, onChanged: () => Promise<unknown>) {

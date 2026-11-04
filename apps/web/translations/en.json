@@ -23600,7 +23600,7 @@
     "openFolderOf": "Open the folder of {file} in Files",
     "hideReport": "Hide report",
     "questionForYou": "Question for you",
-    "messagePlaceholder": "Send a note to the agent working this goal",
+    "messagePlaceholder": "Leave a note for the agent…",
     "messageLabel": "Note to the agent",
     "messageSentToast": "Note sent",
     "messageError": "Could not send the note. Try again.",
@@ -23616,10 +23616,18 @@
       "created": "Goal created",
       "moved": "Moved to {status}",
       "update": "Latest update",
-      "paused": "Paused"
+      "paused": "Paused",
+      "movedPrefix": "Moved to"
     },
     "showMore": "Show more",
-    "showLess": "Show less"
+    "showLess": "Show less",
+    "noAgent": "No agent",
+    "nextCheckAt": "Next check {time}",
+    "noCheck": "No check scheduled",
+    "lastCheckAt": "Last checked {time}",
+    "neverChecked": "Not checked yet",
+    "wakesTodayCount": "{count} of {max} wakes today",
+    "filesLabel": "Files"
   },
   "agentEditor": {
     "manage": "Manage",
