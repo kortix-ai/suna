@@ -39,7 +39,7 @@ import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import { SUBAGENT_SPEC_REQUIRED, TASK_STOP_TOOL, type KortixHost, type SpawnSessionInput, type SpawnSessionResult } from './extensions/subagents'
-import { FRONT_PROMPT, FRONT_TOOLS, FRONT_WORKER_AGENT, FRONT_WORKER_NAME, FRONT_WORKER_NOTE } from './front'
+import { FRONT_AGENTS_TTL_MS, FRONT_PROMPT, FRONT_TOOLS, FRONT_WORKER_NOTE, fetchFrontAgents, frontAgentsSection, frontThreadFilesFrom, type FrontAgent, type FrontThreadFiles } from './front'
 import { cloudChildReport, cloudChildToolDetails, cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import type { ControlPlane } from './extensions/control-plane'
 import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
@@ -164,6 +164,8 @@ export interface PromptInput {
   model?: { providerID: string; modelID: string }
   variant?: string
   system?: string
+  /** The thread's files in this box (`thread_files`, set only by the API): a router's worker prompts name them (front.ts). */
+  threadFiles?: FrontThreadFiles
   /** `noReply`: the message joins the conversation, no turn runs. */
   noReply?: boolean
   /**
@@ -228,6 +230,8 @@ export function parsePromptBody(raw: unknown): PromptInput {
     throw new PromptRejected(`prompt part type "${typeof part.type === 'string' ? part.type : 'unknown'}" is not supported`)
   }
   if (text.join('').trim().length === 0 && files.length === 0) throw new PromptRejected('prompt has no content')
+  // Malformed thread files are dropped, never a refusal: they only add paths to a router's hand-offs.
+  const threadFiles = frontThreadFilesFrom(body.thread_files)
   return {
     ...(typeof body.messageID === 'string' ? { messageID: body.messageID } : {}),
     text: text.join(''),
@@ -237,6 +241,7 @@ export function parsePromptBody(raw: unknown): PromptInput {
     ...(body.model ? { model: body.model as PromptInput['model'] } : {}),
     ...(typeof body.variant === 'string' ? { variant: body.variant } : {}),
     ...(typeof body.system === 'string' ? { system: body.system } : {}),
+    ...(threadFiles ? { threadFiles } : {}),
     ...(body.noReply === true ? { noReply: true } : {}),
   }
 }
@@ -459,6 +464,14 @@ export class PiRuntime {
   private readonly runner: RunnerRef = {}
   /** The running turn's `system` addition, applied through `before_agent_start`. */
   private turnSystem: string | null = null
+  /** A router's roster (front.ts): the project agents it may route to. Null until a read succeeds. */
+  private frontAgents: FrontAgent[] | null = null
+  /** The thread's files, from the newest prompt that carried them: a notice turn keeps the last. */
+  private threadFiles: FrontThreadFiles | null = null
+  /** When the roster was last read (ms, `now()`); 0 = never. */
+  private frontAgentsReadAt = 0
+  /** The roster read in flight, if any. */
+  private frontAgentsRead: Promise<void> | null = null
   /** Message conversion + extension provider/context hooks a child agent shares with the root. */
   private childAgentOptions: Partial<AgentOptions> = {}
   /** The project package bundle; fetched from construction so the download overlaps the repo clone. */
@@ -797,6 +810,8 @@ export class PiRuntime {
       agent.subscribe((event) => this.onAgentEvent(event))
       this.pi.session.subscribe((event) => this.onSessionEvent(event))
       this.state = 'ok'
+      // A router warms its roster at boot, so its first turn rarely waits on the read.
+      if (this.subagentContext.front) void this.refreshFrontAgents()
       logger.info('[pi] runtime ready', {
         rootId: this.rootId,
         model: `${this.selected.providerID}/${this.selected.modelID}`,
@@ -1334,6 +1349,11 @@ export class PiRuntime {
       agent.state.model = this.selected!.model
       agent.state.thinkingLevel = this.thinkingLevel(turn.input.variant ?? this.compiledAgent()?.variant)
       this.turnSystem = turn.input.system ?? null
+      if (turn.input.threadFiles) {
+        // A turn with no message of the person (a worker's notice) keeps the folder and the newest message file.
+        this.threadFiles = { ...turn.input.threadFiles, ...(turn.input.threadFiles.message ? {} : this.threadFiles?.message ? { message: this.threadFiles.message } : {}) }
+      }
+      if (this.subagentContext.front) await this.refreshFrontAgents()
       // pi's prompt path: `input` and `before_agent_start` handlers, extension commands, `/skill:` and templates.
       const images = await this.images(turn.input)
       // A transient model error continues the turn at the settle boundary (`turnExtension`).
@@ -1713,7 +1733,14 @@ export class PiRuntime {
       hidden: true,
       factory: (pi) => {
         pi.on('before_agent_start', (event) => ({
-          systemPrompt: [event.systemPrompt, todayLine(this.now()), this.turnSystem, this.ultracodeLine()].filter(Boolean).join('\n\n'),
+          systemPrompt: [
+            event.systemPrompt,
+            todayLine(this.now()),
+            // A router reads its roster each turn: agents change without a reboot.
+            this.subagentContext.front ? frontAgentsSection(this.frontAgents) : null,
+            this.turnSystem,
+            this.ultracodeLine(),
+          ].filter(Boolean).join('\n\n'),
         }))
         // A transient model error retries inside pi's loop, so every step after the retry runs
         // pi's own post-run checks: a context threshold, an overflow or a cut answer then still
@@ -1870,8 +1897,8 @@ export class PiRuntime {
       codemodeOnly: () => this.codemodeMode === 'only',
       // My Kortix's box (the coordinator): its config declares only itself, and every hand-off names a project agent.
       anyProjectAgent: () => this.env.KORTIX_META_AGENT === '1',
-      // A talk-only front (front.ts): every `agent` call reaches its one worker.
-      frontWorker: () => (this.subagentContext.front ? { agent: FRONT_WORKER_AGENT, name: FRONT_WORKER_NAME } : null),
+      // The router (front.ts): every `agent` call reaches one named worker, as an agent of its roster.
+      frontRouter: () => (this.subagentContext.front ? { agents: this.frontAgents?.map((agent) => agent.name) ?? null, files: this.threadFiles } : null),
       currentAgentName: () => this.agentName,
       toolNames: () => this.ownToolNames(),
       spawnSession: (input) => this.resolveSpawn(input),
@@ -2004,7 +2031,7 @@ export class PiRuntime {
    * (`kortix.subagent.tools` in KORTIX_SESSION_CONTEXT). Only ever narrows.
    */
   private rootToolAllowed(name: string): boolean {
-    // A talk-only front has only its three messaging tools (front.ts).
+    // A router has only its three messaging tools (front.ts).
     if (this.subagentContext.front) return FRONT_TOOLS.includes(name)
     // A workflow runs `agent` calls, and the multi-agent tools talk to the sessions it starts: they follow the
     // agent tool's grant, unless the agent's `tools` names them.
@@ -2481,6 +2508,31 @@ export class PiRuntime {
     parts.push(ACT_BEFORE_YOU_ASK)
     if (!child && this.subagentContext.frontThread) parts.push(FRONT_WORKER_NOTE)
     return parts.join('\n\n')
+  }
+
+  /**
+   * Read a router's roster when it is older than FRONT_AGENTS_TTL_MS. The
+   * read is bounded (FRONT_AGENTS_TIMEOUT_MS); a failed read keeps the last
+   * roster and tries again next turn.
+   */
+  private refreshFrontAgents(): Promise<void> {
+    if (this.frontAgentsReadAt && this.now() - this.frontAgentsReadAt < FRONT_AGENTS_TTL_MS) return Promise.resolve()
+    const cloud = this.cloudTarget()
+    if (!cloud) return Promise.resolve()
+    // One read at a time: the boot warm-up and the first turn share it.
+    this.frontAgentsRead ??= fetchFrontAgents({ apiUrl: cloud.apiUrl, projectId: cloud.projectId, token: cloud.token })
+      .then((agents) => {
+        if (agents === null) {
+          logger.warn('[pi] router roster read failed; keeping the last roster')
+          return
+        }
+        this.frontAgents = agents
+        this.frontAgentsReadAt = this.now()
+      })
+      .finally(() => {
+        this.frontAgentsRead = null
+      })
+    return this.frontAgentsRead
   }
 
   /** A front's prompt: no project instructions or skills, since it has no tool that uses them. */

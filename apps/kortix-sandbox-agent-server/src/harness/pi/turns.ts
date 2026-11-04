@@ -66,6 +66,7 @@ function toPrompt(input: RuntimePromptInput): PromptInput | HarnessTurnResponse 
       ...(input.variant ? { variant: input.variant } : {}),
       ...(input.noReply ? { noReply: true } : {}),
       ...(input.system ? { system: input.system } : {}),
+      ...(input.threadFiles ? { thread_files: input.threadFiles } : {}),
     })
   } catch (err) {
     return answer(400, { error: err instanceof Error ? err.message : String(err) })

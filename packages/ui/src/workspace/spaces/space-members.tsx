@@ -83,7 +83,7 @@ export function useInviteToProject(projectId: string) {
 
 /** A person's face and display name, never an email. */
 export function MemberAvatar({ member, size = 'md' }: { member: ProjectSpaceMember; size?: 'xs' | 'sm' | 'md' }) {
-  return <UserAvatar email="" name={member.name} avatarUrl={member.avatar_url} size={size} />;
+  return <UserAvatar email="" name={member.name} avatarUrl={member.avatar_url} colorKey={member.user_id} size={size} />;
 }
 
 /** A row of the "Add members" picker: a project member or a project agent not yet in the channel. */

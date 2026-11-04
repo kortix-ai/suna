@@ -50,11 +50,13 @@ import {
   StopCircleIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { AfterFirstPromptContext } from './after-first-prompt';
-import { TranscriptRowsContext } from './transcript-rows';
+import { type TranscriptAuthor, TranscriptRowsContext } from './transcript-rows';
+import { messageWorkerIds, ShowWork, WorkerStatusRows, WorkerTranscripts } from './show-work';
+import { TypingIndicator } from './typing-indicator';
 import { AgentBusyRow } from './thread-boot-rows';
-import { MessageRow } from '../turn/message-row';
+import { MESSAGE_TEXT_CLASS, MessageRow } from '../turn/message-row';
 import { agentDisplayLabel } from '../composer/agent-selector';
 import { participantLabel } from '../participants/session-participants';
 import { AgentMark } from '../../internal/components/agent-mark';
@@ -111,7 +113,7 @@ import { parseNoticeBatch, parseSubagentNotice, type NoticeBatchItem, type Subag
 import { SubagentNoticeRow } from '../turn/subagent-notice-row';
 import { NoticeBatchGroup } from '../turn/notice-batch-group';
 import { PeerMessageRow } from '../turn/peer-message-row';
-import { parsePeerMessagePrompt, type PeerMessagePromptInfo } from '@kortix/shared';
+import { parsePeerMessagePrompt, SPACE_POST_SUMMARY, type PeerMessagePromptInfo } from '@kortix/shared';
 import { ToolPartRenderer, TurnLiveContext } from '../tool/tool-renderers';
 import {
   ImageGenDigestsContext,
@@ -151,7 +153,7 @@ import {
   type TurnEndNotice,
 } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
-import { isOptimisticSessionPrompt, useSessionWorking } from '@kortix/sdk/react';
+import { isOptimisticSessionPrompt, useRuntimeReady, useSessionPrompts, useSessionWorking } from '@kortix/sdk/react';
 import { CodeBlockEndpoints, SandboxUrlDetector } from '../media/sandbox-url-detector';
 import { resolveLastTurnWorking } from '../composer/session-composer-readiness';
 import { HarnessSwitchMarker, RestoreNoteMarker, TurnFullText, type FullTextState } from './session-history';
@@ -1889,11 +1891,85 @@ export function messageOnlySegments(
   const visible = segments.filter(segmentRendersSomething);
   const kept = (segment: SessionLogSegment) => {
     if (segment.kind === 'burst') return false;
-    if (segment.kind === 'text' || segment.kind === 'show-group') return true;
+    // A blank text segment (the router's empty text before a hand-off) renders an empty
+    // element, and the words after it took the column's gap: a blank line above short answers.
+    if (segment.kind === 'text') return segment.block.text.trim() !== '';
+    if (segment.kind === 'show-group') return true;
     return isNoGroupActivityTool(segment.block.name) || !!getPermissionForTool(options.permissions, segment.block.call_id);
   };
   const split = options.working ? null : splitSessionLogTurnWork(visible, { working: false });
   return (split ? [...split.hoisted, ...split.final] : visible).filter(kept);
+}
+
+/**
+ * "Show work" under a messages-only thread's agent message, and the work it
+ * opens. A thread: the turn's segments the message does not show (its tools,
+ * thinking, sub-agent rows and interim sentences), the "Worked for" fold's
+ * content. A talk-only thread (`TranscriptRows.front`): the worker sessions
+ * the turn started (`agent` calls) or whose report it answers, each as a
+ * read-only transcript. Nothing to open: no control. Exported for its test.
+ */
+export function TurnMessageWork(
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'permissions' | 'onPermissionReply' | 'disableToolNavigation' | 'isLast'> & {
+    model: TurnModelState;
+    segments: TurnSegments;
+    /** The segments the message itself draws (`messageOnlySegments`). */
+    shown: TurnSegments;
+    userContent: Pick<TurnUserContentState, 'sessionReport' | 'noticeBatch' | 'subagentNotice'>;
+    conversationDensity: ConversationDensity;
+    front: boolean;
+    defaultOpen?: boolean;
+  },
+) {
+  const { turn, segments, shown, userContent, front } = props;
+  const work = useMemo(() => {
+    const kept = new Set(shown);
+    return segments.filter((segment) => segmentRendersSomething(segment) && !kept.has(segment));
+  }, [segments, shown]);
+  const { sessionReport, noticeBatch, subagentNotice } = userContent;
+  // A router thread shows each worker's work once: under the message that relays its report. The
+  // message that only started a worker ("On it.") shows it while it is the newest turn, as live progress.
+  const isLast = props.isLast;
+  const workers = useMemo(
+    () =>
+      front
+        ? messageWorkerIds(isLast ? turnBlocks(turn) : [], [
+            sessionReport?.sessionId,
+            subagentNotice?.sessionId,
+            ...(noticeBatch ?? []).map((item) => (item.kind === 'peer_idle' ? null : item.notice.sessionId)),
+          ])
+        : [],
+    [front, turn, sessionReport, subagentNotice, noticeBatch, isLast],
+  );
+  // The live status follows only the workers this turn started: a worker whose report this turn relays is done.
+  // Any turn: a follow-up sent while a worker runs must not hide it. A row shows only while its worker works.
+  const started = useMemo(() => (front ? messageWorkerIds(turnBlocks(turn), []) : []), [front, turn]);
+  if (front ? workers.length === 0 : work.length === 0) return null;
+  return (
+    <>
+    {/* While a hidden worker runs: who, and for how long. It leaves when the worker is done. */}
+    {started.length > 0 ? <WorkerStatusRows sessionIds={started} /> : null}
+    <ShowWork defaultOpen={props.defaultOpen}>
+      {front ? (
+        <WorkerTranscripts sessionIds={workers} />
+      ) : (
+        <TurnToolBlocks
+          turn={turn}
+          sessionId={props.sessionId}
+          permissions={props.permissions}
+          onPermissionReply={props.onPermissionReply}
+          disableToolNavigation={props.disableToolNavigation}
+          model={props.model}
+          segments={work}
+          conversationDensity={props.conversationDensity}
+          // The work is already the fold's content: nothing is left to fold.
+          fold={false}
+          durationMs={null}
+        />
+      )}
+    </ShowWork>
+    </>
+  );
 }
 
 function TurnSegment({
@@ -1993,13 +2069,6 @@ export function TurnAssistantBlock(
   const { shouldUseInlineContent, inlineContentParts } = answered;
   return (
     <>
-    {/* ── Screen reader ──
-        Announce COMPLETION only. Mirroring the full response here duplicated
-        every turn in the DOM, so select-all across the transcript copied each
-        answer twice. The visible markdown is already in the a11y tree. */}
-    <div className="sr-only" aria-live="polite">
-      {!working && response && !stopped ? tHardcodedUi.raw('i18nComplete.text7889d06f7235') : ''}
-    </div>
     {/* Inline content: text and answered questions rendered in natural order.
 			    Works both during streaming and after completion. */}
       {shouldUseInlineContent ? (
@@ -2015,6 +2084,16 @@ export function TurnAssistantBlock(
           answeredQuestionCalls={answered.answeredQuestionCalls}
         />
       )}
+    {/* ── Screen reader ──
+        Announce COMPLETION only. Mirroring the full response here duplicated
+        every turn in the DOM, so select-all across the transcript copied each
+        answer twice. The visible markdown is already in the a11y tree.
+        Last, not first: in its parent's `space-y-*` column a first child that
+        takes no space still pushed the text below it down by the gap (a blank
+        line above every short answer). */}
+    <div className="sr-only" aria-live="polite">
+      {!working && response && !stopped ? tHardcodedUi.raw('i18nComplete.text7889d06f7235') : ''}
+    </div>
     </>
   );
 }
@@ -2197,6 +2276,7 @@ function TurnFooter(
         working={working}
         turnError={turnError}
         tHardcodedUi={tHardcodedUi}
+        hasText={model.response.trim() !== ''}
       />
     {/* ── Error (abort / failure banner) ──
         An automatic provider-error recovery chain (KRTX-2597) renders ONE
@@ -2205,13 +2285,20 @@ function TurnFooter(
         outcome, and the chain's end annotates how many automatic retries
         already ran. */}
     {turnErrorRow.text && !turn.autoRetry?.continued && (
-      <TurnErrorDisplay
-        errorText={turnErrorRow.text}
-        errorDetails={turnErrorRowDetails}
-        errorRaw={turnErrorRaw}
-        isAbort={turnErrorRow.isAbort}
-        modelOptions={modelOptions}
-      />
+      // A space's thread (messages only): one calm line with Retry; a stop has its own "Stopped" line.
+      props.quietBusy ? (
+        turnErrorRow.isAbort ? null : (
+          <TurnFailedLine projectId={projectId} projectSessionId={projectSessionId} turn={turn} errorText={turnErrorRow.text} />
+        )
+      ) : (
+        <TurnErrorDisplay
+          errorText={turnErrorRow.text}
+          errorDetails={turnErrorRowDetails}
+          errorRaw={turnErrorRaw}
+          isAbort={turnErrorRow.isAbort}
+          modelOptions={modelOptions}
+        />
+      )
     )}
     {turnErrorRow.text && !turnErrorRow.isAbort && !turn.autoRetry?.continued && !!turn.autoRetry?.retries && (
       <TurnAutoRetryNote count={turn.autoRetry.retries} />
@@ -2272,6 +2359,52 @@ function TurnFooter(
   );
 }
 
+/**
+ * A failed turn in a messages-only thread: "Something went wrong · Retry".
+ * Retry runs the turn's own prompt again through the inbox's one retry
+ * primitive (the queue's source of truth). The error text is the hover title;
+ * no Retry when the prompt is not in the inbox (an older turn).
+ */
+function TurnFailedLine({
+  projectId,
+  projectSessionId,
+  turn,
+  errorText,
+}: {
+  projectId: string | undefined;
+  projectSessionId: string | undefined;
+  turn: SessionLogTurn;
+  errorText: string;
+}) {
+  const t = useTranslations('sessionUi.turn');
+  const inbox = useSessionPrompts(projectId, projectSessionId);
+  const userId = turn.user.message_id;
+  const prompt = inbox.prompts.find((row) => row.message_id === userId || row.wire_message_id === userId);
+  const [pending, setPending] = useState(false);
+  return (
+    <p role="status" className="text-muted-foreground flex items-center gap-1.5 text-xs" title={errorText}>
+      <span>{t('somethingWrong')}</span>
+      {prompt ? (
+        <>
+          <span aria-hidden>·</span>
+          <button
+            type="button"
+            disabled={pending}
+            aria-busy={pending || undefined}
+            onClick={() => {
+              setPending(true);
+              void inbox.retry(prompt.prompt_id).finally(() => setPending(false));
+            }}
+            className="text-foreground focus-visible:ring-ring rounded-sm font-medium underline-offset-2 outline-none hover:underline focus-visible:ring-2 disabled:opacity-50"
+          >
+            {t('retry')}
+          </button>
+        </>
+      ) : null}
+    </p>
+  );
+}
+
 /** The working turn's waiting row: the retry banner and the busy indicator. */
 function TurnBusyRow(
   props: Pick<SessionTurnProps, 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser'> & {
@@ -2280,13 +2413,19 @@ function TurnBusyRow(
     retry: TurnRetryState;
     status: TurnStatusState;
     tHardcodedUi: ReturnType<typeof useTranslations>;
-    /** No tool phrase or elapsed time (`messagesOnly`). */
+    /** "Kortix is typing…", no tool phrase or elapsed time (`messagesOnly`). */
     quietBusy?: boolean;
+    /** The answer already streams text: the dots are gone (the words are the signal). */
+    hasText?: boolean;
   },
 ) {
   const { working, turnError, suppressBusyIndicator, awaitingUser, sessionId, retry, status, tHardcodedUi, quietBusy } = props;
   const { retryInfo, retryMessage, retrySecondsLeft } = retry;
   const { statusPhrase, statusElapsedLabel } = status;
+  const rows = useContext(TranscriptRowsContext);
+  const tTurn = useTranslations('sessionUi.turn');
+  // The thread's computer is not up yet: the wait is a start, not work.
+  const runtimeReady = useRuntimeReady();
   return (
     <>
     {showTurnBusyIndicator({
@@ -2304,18 +2443,40 @@ function TurnBusyRow(
             details={retryInfo.details}
           />
         )}
-        <SessionBusyIndicator
-          sessionId={sessionId}
-          statusText={quietBusy ? undefined : statusPhrase || undefined}
-          elapsedLabel={quietBusy ? undefined : statusElapsedLabel}
-          retryLabel={
-            retryInfo
-              ? String(
-                  tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry'),
-                )
-              : undefined
-          }
-        />
+        {quietBusy && rows && !retryInfo ? (
+          props.hasText ? (
+            // Words already stream: no dots. A long turn keeps only its clock, in the dots' place.
+            status.statusElapsedLabel ? (
+              <p className="text-muted-foreground text-xs tabular-nums">{tTurn('workingFor', { time: status.statusElapsedLabel })}</p>
+            ) : null
+          ) : (
+            // Dots, then "Working · 0:42" once the wait passes the stall mark: a long turn never reads as frozen.
+            <TypingIndicator
+              name={rows.agent}
+              detail={
+                !runtimeReady
+                  ? tTurn('starting')
+                  : status.statusElapsedLabel
+                    ? tTurn('workingFor', { time: status.statusElapsedLabel })
+                    : null
+              }
+              detailDelayMs={runtimeReady ? 0 : 2000}
+            />
+          )
+        ) : (
+          <SessionBusyIndicator
+            sessionId={sessionId}
+            statusText={quietBusy ? undefined : statusPhrase || undefined}
+            elapsedLabel={quietBusy ? undefined : statusElapsedLabel}
+            retryLabel={
+              retryInfo
+                ? String(
+                    tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry'),
+                  )
+                : undefined
+            }
+          />
+        )}
       </div>
     )}
     </>
@@ -2445,6 +2606,7 @@ function SessionTurnImpl(props: SessionTurnProps) {
     providers, commandMessages, commands,
   } = props;
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tTurnRows = useTranslations('sessionUi.turn');
   const locale = useLocale();
   const afterFirstPrompt = useContext(AfterFirstPromptContext);
   const rows = useContext(TranscriptRowsContext);
@@ -2540,37 +2702,70 @@ function SessionTurnImpl(props: SessionTurnProps) {
         shownSegments.length > 0
       : turn.assistant.length > 0 || model.working || !!errors.turnErrorRow.text;
     // Messages only: a person's prompt, never a notice, a report, a peer message or a restore note.
+    // An agent's post into this space thread (`SPACE_POST_SUMMARY`) is a message; other peer messages are work.
+    const spacePost = userContent.peerMessage?.summary === SPACE_POST_SUMMARY;
     const showUser = messagesOnly
-      ? userContent.hasVisibleUserContent &&
-        !userContent.sessionReport &&
-        !userContent.noticeBatch &&
-        !userContent.subagentNotice &&
-        !userContent.peerMessage &&
-        !isSessionLogRestoreNote(turn.user)
+      ? spacePost ||
+        (userContent.hasVisibleUserContent &&
+          !userContent.sessionReport &&
+          !userContent.noticeBatch &&
+          !userContent.subagentNotice &&
+          !userContent.peerMessage &&
+          !isSessionLogRestoreNote(turn.user))
       : userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.peerMessage || userContent.systemMessages.length > 0;
+    // The host's person or agent card around the row's avatar and name (`TranscriptRows.author`).
+    const userAuthor: TranscriptAuthor | null =
+      sender || (messagesOnly && spacePost)
+        ? author?.kind === 'session' && author.agent
+          ? { kind: 'agent', name: author.agent }
+          : null
+        : person
+          ? {
+              kind: 'person',
+              userId: author?.kind === 'member' ? author.user_id : (rows.owner?.id ?? null),
+              name: personName || rows.unknownAuthor,
+              email: person.email ?? null,
+              avatarUrl: person.avatarUrl ?? null,
+            }
+          : null;
+    const wrap = (who: TranscriptAuthor | null, node: ReactNode, part: 'avatar' | 'name' = 'name') =>
+      who && rows.author ? rows.author(who, node, part) : node;
+    const agentAuthor: TranscriptAuthor = { kind: 'agent', name: rows.agentSlug ?? DEFAULT_AGENT_SLUG };
     return (
       <div className="text-factor-[2]">
         {showUser ? (
           <MessageRow
             // The first message's turn clips its toolbar's overhang: it sits inside the row.
             className={cn('group/turn', props.isFirstTurn && '[&_[data-slot=row-toolbar]]:top-0.5')}
-            avatar={
-              sender ? (
+            avatar={wrap(
+              userAuthor,
+              sender || (messagesOnly && spacePost) ? (
                 // 36px, the `lg` avatar column (`w-10`).
                 <AgentMark
                   slug={author?.kind === 'session' && author.agent ? author.agent : DEFAULT_AGENT_SLUG}
                   size={28}
                   tile={36}
-                  label={sender}
+                  label={sender ?? userContent.peerMessage?.from ?? ''}
                 />
               ) : (
-                <UserAvatar email={person?.email ?? ''} name={personName} avatarUrl={person?.avatarUrl} size="lg" />
-              )
-            }
-            name={sender ?? (personName || rows.unknownAuthor)}
+                <UserAvatar
+                  email={person?.email ?? ''}
+                  name={personName}
+                  avatarUrl={person?.avatarUrl}
+                  // A space's thread keys the colour on the user id, as the space's timeline does.
+                  colorKey={userAuthor?.kind === 'person' ? userAuthor.userId : null}
+                  size="lg"
+                />
+              ),
+              'avatar',
+            )}
+            name={wrap(userAuthor, sender ?? (spacePost ? userContent.peerMessage!.from : personName || rows.unknownAuthor))}
             time={rowTime(userAt, locale)}
           >
-            {messagesOnly ? (
+            {messagesOnly && spacePost ? (
+              // The agent's post as its own words, without the "Message from" frame.
+              <p className={cn(MESSAGE_TEXT_CLASS, 'text-pretty whitespace-pre-wrap wrap-anywhere')}>{userContent.peerMessage!.text}</p>
+            ) : messagesOnly ? (
               <TurnUserBubble {...props} queueTone={queueTone} userContent={userContent} />
             ) : (
               <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
@@ -2581,8 +2776,8 @@ function SessionTurnImpl(props: SessionTurnProps) {
         {showAnswer ? (
           <MessageRow
             className="group/turn"
-            avatar={<AgentMark slug={rows.agentSlug ?? DEFAULT_AGENT_SLUG} size={28} tile={36} label={rows.agent} />}
-            name={rows.agent}
+            avatar={wrap(agentAuthor, <AgentMark slug={rows.agentSlug ?? DEFAULT_AGENT_SLUG} size={28} tile={36} label={rows.agent} />, 'avatar')}
+            name={wrap(agentAuthor, rows.agent)}
             time={rowTime(answerAt, locale)}
             toolbar={
               model.working ? null : (
@@ -2607,18 +2802,38 @@ function SessionTurnImpl(props: SessionTurnProps) {
             <div className="mt-0.5 space-y-2.5">
               {messagesOnly ? null : <TurnFallbackRows working={model.working} events={props.servedModel?.fallbacks} />}
               <GenuiTelemetryContext.Provider value={genuiTelemetry}>
-                <TurnToolBlocks
-                  {...props}
-                  model={model}
-                  segments={shownSegments}
-                  conversationDensity={conversationDensity}
-                  // The segments are already the message's: nothing is left to fold.
-                  fold={!messagesOnly && !answered.shouldUseInlineContent}
-                  durationMs={meta.turnDurationMs}
-                />
+                {/* Messages only, no steps: the response block draws the words, and the
+                    text segments would only leave an empty element first in the column
+                    (the column's gap then read as a blank line above the answer). */}
+                {messagesOnly && !model.hasSteps && shownSegments.every((segment) => segment.kind === 'text') ? null : (
+                  <TurnToolBlocks
+                    {...props}
+                    model={model}
+                    segments={shownSegments}
+                    conversationDensity={conversationDensity}
+                    // The segments are already the message's: nothing is left to fold.
+                    fold={!messagesOnly && !answered.shouldUseInlineContent}
+                    durationMs={meta.turnDurationMs}
+                  />
+                )}
                 <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
               </GenuiTelemetryContext.Provider>
+              {/* Stopped before it said anything: one quiet line, never an empty row. */}
+              {messagesOnly && !model.working && errors.turnErrorIsAbort && model.response.trim() === '' && shownSegments.length === 0 ? (
+                <p className="text-muted-foreground text-sm">{tTurnRows('stopped')}</p>
+              ) : null}
               <TurnFooter {...props} hideActionBar quietBusy={messagesOnly} model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
+              {messagesOnly && !model.working ? (
+                <TurnMessageWork
+                  {...props}
+                  model={model}
+                  segments={segments}
+                  shown={shownSegments}
+                  userContent={userContent}
+                  conversationDensity={conversationDensity}
+                  front={rows.front === true}
+                />
+              ) : null}
             </div>
           </MessageRow>
         ) : null}

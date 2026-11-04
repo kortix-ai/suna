@@ -75,6 +75,7 @@ import { readSessionsWorking } from '../lib/session-working-read';
 import { HIDDEN_SESSION_BOARD, readSessionBoards } from '../lib/session-board';
 import { teamCreateMetadataError } from '../team-tasks/service';
 import { readSessionReplyCounts } from '../lib/session-reply-counts';
+import { readActiveChildAgents } from '../lib/session-active-child';
 import { turnPublishVerdict } from '../lib/http-session-access';
 
 const NO_USER_STATE = { pinnedAt: null, archivedAt: null };
@@ -628,9 +629,11 @@ export function registerProjectSessionsRoutes(): void {
     );
     const accessibleIds = inventory.items.filter((item) => item.canAccess).map((item) => item.row.sessionId);
     // A space list draws "N replies" under each thread; no other list pays for the count.
-    const [working, replyCounts] = await Promise.all([
+    // A space list also says which thread has a hidden worker running (`active_child_agent`).
+    const [working, replyCounts, activeChildren] = await Promise.all([
       readSessionsWorking(accessibleIds),
       spaceId ? readSessionReplyCounts(accessibleIds) : Promise.resolve(null),
+      spaceId ? readActiveChildAgents(accessibleIds) : Promise.resolve(null),
     ]);
     const boards = await readSessionBoards(inventory.items.filter((item) => item.canAccess).map((item) => item.row), working);
     const body = inventory.items.map((item) => {
@@ -658,6 +661,7 @@ export function registerProjectSessionsRoutes(): void {
         trimListMetadata: true,
         conversationModel: conversationModels.get(row.sessionId),
         replyCount: replyCounts?.get(row.sessionId) ?? null,
+        ...(activeChildren ? { activeChildAgent: activeChildren.get(row.sessionId) ?? null } : {}),
       }), working: working.get(row.sessionId), ...(boards.get(row.sessionId) ?? HIDDEN_SESSION_BOARD) };
       if (query.parent !== 'root') return serialized;
       return {

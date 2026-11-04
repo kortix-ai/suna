@@ -215,3 +215,46 @@ test('mention controller navigates, selects with Tab and releases rows on exit',
   expect(owns.at(-1)).toBe(false);
   expect(onKeyDown!(fakeKeyDown('Tab'))).toBe(false);
 });
+
+describe('createMentionSuggestion — a restored draft ending in "@word"', () => {
+  // A draft set into an editor without focus (from a React effect) must not
+  // build the menu inside that React lifecycle: `ReactRenderer` renders with
+  // `flushSync`, which React refuses there. The menu mounts one microtask later.
+  test('mounts after the current task when the editor has no focus; never when the menu closed first', async () => {
+    const make = () =>
+      createMentionSuggestion({ getAgents: () => [], getSessions: () => [], getCurrentSessionId: () => undefined }).render!();
+    const props = (onCapture: () => void) =>
+      ({
+        query: 'zzq',
+        command: () => {},
+        editor: {
+          isEditorContentInitialized: true,
+          view: { hasFocus: () => false },
+          contentComponent: { setRenderer: onCapture, removeRenderer: () => {} },
+        },
+        mount: () => () => {},
+      }) as unknown as SuggestionProps<never, MenuRow>;
+
+    const previous = (globalThis as { document?: unknown }).document;
+    (globalThis as { document?: unknown }).document = {
+      createElement: () => ({ classList: { add: () => {} }, style: {}, setAttribute: () => {}, remove: () => {} }),
+    };
+    try {
+      let built = 0;
+      const open = make();
+      open.onStart!(props(() => (built += 1)));
+      expect(built).toBe(0);
+      await Promise.resolve();
+      expect(built).toBe(1);
+
+      let closedBuilt = 0;
+      const closed = make();
+      closed.onStart!(props(() => (closedBuilt += 1)));
+      closed.onExit!({} as SuggestionProps<never, MenuRow>);
+      await Promise.resolve();
+      expect(closedBuilt).toBe(0);
+    } finally {
+      (globalThis as { document?: unknown }).document = previous;
+    }
+  });
+});

@@ -75,6 +75,7 @@ import {
 } from '../turn/message-author';
 import { stopRefusalMessage } from '../status/stop-refusal';
 import { QueuedPromptList } from '../composer/queued-prompt-list';
+import { ChatQueueLines } from '../composer/chat-queue-lines';
 import { runtimePermissionLocksComposer } from '../composer/send-blockers';
 import { SessionPrintHeader } from '../print/session-print-header';
 import { useSessionPrint } from '../print/use-session-print';
@@ -4021,11 +4022,51 @@ export function SessionChat({
     [projectId, projectSessionId, agentsLineCompact],
   );
 
+  // A space's thread lists only the queue's live messages in its card: failed
+  // ones and a Stop hold read as calm lines (`ChatQueueLines`), reports wait behind Resume.
+  const calmRest = useMemo(
+    () => [...queueRows.rows, ...heldCommandRows(heldCommands)].filter((row) => row.state !== 'failed' && !row.synthetic),
+    [queueRows.rows, heldCommands],
+  );
   // The queued messages and the one Resume while a Stop holds the queue: their
   // own full-width card above the composer stack, not inside the strip.
   const chatAboveSlot = useMemo(
     () => (
       <>
+        {rowsContext?.messagesOnly ? (
+          // A space's thread: calm lines ("Not sent · Retry", "Stopped · Resume"), the card only for queued messages.
+          <ChatQueueLines
+            rows={queueRows.rows}
+            heldCount={queueRows.heldCount}
+            resumePending={resumePending}
+            onResume={() => void handleResumeQueue()}
+            onRetry={handleRetryQueuedMessage}
+          >
+            {calmRest.length > 0 ? (
+          <QueuedPromptList
+            rows={calmRest}
+            heldCount={0}
+            resumePending={resumePending}
+            onResume={() => void handleResumeQueue()}
+            onEdit={(id) => {
+              queueEdit.takeBack(id);
+            }}
+            onRemove={(id) => {
+              if (id.startsWith(HELD_COMMAND_ROW_PREFIX)) {
+                const heldId = id.slice(HELD_COMMAND_ROW_PREFIX.length);
+                setHeldCommands((held) => held.filter((entry) => entry.id !== heldId));
+                return;
+              }
+              void handleRemoveQueuedMessage(id);
+            }}
+            onRetry={handleRetryQueuedMessage}
+            onStopAndSend={effectiveBusy && canStop ? handleStopAndSendQueuedMessage : undefined}
+            editing={queueEdit.editing}
+            onCancelEdit={queueEdit.cancel}
+          />
+            ) : null}
+          </ChatQueueLines>
+        ) : (
         <QueuedPromptList
           rows={heldCommands.length > 0 ? [...queueRows.rows, ...heldCommandRows(heldCommands)] : queueRows.rows}
           heldCount={queueRows.heldCount}
@@ -4047,9 +4088,12 @@ export function SessionChat({
           editing={queueEdit.editing}
           onCancelEdit={queueEdit.cancel}
         />
+        )}
       </>
     ),
     [
+      rowsContext?.messagesOnly,
+      calmRest,
       heldCommands,
       queueEdit.editing,
       queueEdit.cancel,
