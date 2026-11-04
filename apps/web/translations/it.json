@@ -25148,6 +25148,7 @@
     "unavailable": "La sandbox di questa sessione è stata avviata prima che le chiamate vocali fossero attivate. Le chiamate funzionano dal suo prossimo avvio.",
     "callAgain": "Richiama",
     "openChat": "Apri la chat",
+    "turnNote": "Detto in una chiamata vocale e risposto dalla voce.",
     "close": "Chiudi"
   },
   "agentMounts": {

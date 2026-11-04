@@ -25148,6 +25148,7 @@
     "unavailable": "Die Sandbox dieser Sitzung wurde gestartet, bevor Sprachanrufe aktiviert wurden. Anrufe funktionieren ab ihrem nächsten Start.",
     "callAgain": "Erneut anrufen",
     "openChat": "Chat öffnen",
+    "turnNote": "In einem Sprachanruf gesagt und von der Stimme beantwortet.",
     "close": "Schließen"
   },
   "agentMounts": {

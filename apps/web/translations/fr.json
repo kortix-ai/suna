@@ -25148,6 +25148,7 @@
     "unavailable": "Le bac à sable de cette session a démarré avant l’activation des appels vocaux. Les appels fonctionnent à partir de son prochain démarrage.",
     "callAgain": "Rappeler",
     "openChat": "Ouvrir le chat",
+    "turnNote": "Dit pendant un appel vocal, et la voix a répondu.",
     "close": "Fermer"
   },
   "agentMounts": {

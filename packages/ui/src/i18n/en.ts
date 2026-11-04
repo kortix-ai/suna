@@ -9409,6 +9409,7 @@ const catalog = {
     "unavailable": "This session's sandbox started before voice calls were turned on. Calls work from its next start.",
     "callAgain": "Call again",
     "openChat": "Open the chat",
+    "turnNote": "Said in a voice call and answered by the voice.",
     "close": "Close"
   },
   "agentCapabilities": {
