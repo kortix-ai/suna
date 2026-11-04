@@ -80,6 +80,9 @@ export interface ComposerCardDerived {
   animatePlaceholder: boolean;
   handleSubmit: (placement?: 'transcript' | 'composer') => Promise<void>;
   handleArrowUpAtStart: () => boolean;
+  handleArrowDownAtEnd: () => boolean;
+  /** The recalled prompt on screen, 1-based, oldest first; `null` for the draft. */
+  historyPosition: { index: number; total: number } | null;
   setIsEmpty: Dispatch<SetStateAction<boolean>>;
   handleDocChange: (doc: JSONContent, isEmpty: boolean) => void;
   allSessions: ReturnType<typeof useRuntimeSessions>['data'];
@@ -133,6 +136,8 @@ export function ComposerCard({
   animatePlaceholder,
   handleSubmit,
   handleArrowUpAtStart,
+  handleArrowDownAtEnd,
+  historyPosition,
   setIsEmpty,
   handleDocChange,
   allSessions,
@@ -205,7 +210,6 @@ export function ComposerCard({
   agentPickerCompact = false,
   slashMenuPlacement = 'above',
   cardClassName,
-  onArrowUpAtStart,
 }: ComposerCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const { attachAccept, modelPickerEnabled } = useUiHostConfig();
@@ -326,6 +330,15 @@ export function ComposerCard({
       >
         {/* Inline chips: thread context, todos, queue — unified spacing */}
 
+        {historyPosition && (
+          <div
+            aria-live="polite"
+            className="text-muted-foreground px-4 pb-1 text-xs tabular-nums select-none"
+          >
+            {tHardcodedUi('promptHistory', historyPosition)}
+          </div>
+        )}
+
         <AttachmentTiles
           files={attachedFiles}
           uploads={promptAttachmentItems}
@@ -409,7 +422,8 @@ export function ComposerCard({
                 placeholder={animatePlaceholder ? '' : editorPlaceholder}
                 disabled={editorDisabled}
                 onSubmit={handleSubmit}
-                onArrowUpAtStart={onArrowUpAtStart ? handleArrowUpAtStart : undefined}
+                onArrowUpAtStart={handleArrowUpAtStart}
+                onArrowDownAtEnd={handleArrowDownAtEnd}
                 onEmptyChange={setIsEmpty}
                 onDocChange={handleDocChange}
                 agents={agents}

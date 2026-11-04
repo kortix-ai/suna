@@ -99,6 +99,19 @@ function harness(reply: (sent: Sent, index: number) => Response | Error, overrid
 }
 
 describe('dispatch: one attempt plan', () => {
+  test('a pooled account reports the plan usage of every answer, refused or served', async () => {
+    const usage: Array<[string, number | undefined]> = [];
+    const key = (name: string) => upstream('openai-compat-pool', { apiKey: name, poolSecretId: name, billingMode: 'none', markup: 0 });
+    const { run } = harness(({ key: apiKey }) => apiKey === 'a'
+      ? json({ error: 'limit' }, 429, { 'x-codex-primary-used-percent': '100', 'x-codex-primary-window-minutes': '300' })
+      : json({ choices: [] }, 200, { 'x-codex-primary-used-percent': '7', 'x-codex-primary-window-minutes': '300' }), {
+      notePoolUsage: async (secretId, snapshot) => { usage.push([secretId, snapshot.windows[0]?.used_percent]); },
+    });
+    const outcome = await run({ model: 'm', candidates: [key('a'), key('b'), upstream('no-pool')] });
+    expect(outcome.response?.status).toBe(200);
+    expect(usage).toEqual([['a', 100], ['b', 7]]);
+  });
+
   test('a pool key and its Bedrock inference profile compose', async () => {
     const key = (name: string) => bedrock('xai.grok-4.6', { apiKey: name, poolSecretId: name, billingMode: 'none', markup: 0 });
     const { run, sent, cooldowns } = harness(({ key: apiKey, model }) => {

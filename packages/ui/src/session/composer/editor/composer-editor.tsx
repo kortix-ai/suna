@@ -18,7 +18,7 @@ import { createSlashSuggestion } from '../menus/slash-controller';
 import type { SlashFile } from '../menus/slash-files';
 import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
-import { isCursorOnFirstVisualLine } from './first-visual-line';
+import { isCursorOnFirstVisualLine, isCursorOnLastVisualLine } from './first-visual-line';
 import { MentionNode } from './mention-node';
 import { serializeDocument } from './serialize';
 import { createSuggestionExtension } from './suggestion';
@@ -52,7 +52,8 @@ export interface ComposerEditorHandle {
    * `composer-logic.ts` and written back with a plain replace, so this
    * never needed a second mode of its own. Removed as dead code.
    */
-  setContent(text: string): void;
+  /** `caret` defaults to `'end'`. Prompt history puts it at the start on Up, so the next Up steps again. */
+  setContent(text: string, caret?: 'start' | 'end'): void;
   /**
    * The JSON-content-aware counterpart to `getContent`/`setContent` — Task
    * 13. `getContent().mentions` is a ONE-WAY projection: it's derived by
@@ -122,6 +123,8 @@ export interface ComposerEditorProps {
   onSubmit: (placement: 'transcript' | 'composer') => void;
   /** Up with the caret on the first visual row — see `createSubmitOnEnterHandler`. */
   onArrowUpAtStart?: () => boolean;
+  /** Down with the caret on the last visual row. Returns whether it acted. */
+  onArrowDownAtEnd?: () => boolean;
   /**
    * Fires ONLY on the empty↔non-empty boundary — once when the first character
    * is typed, once when the last is deleted, never in between. This is the
@@ -279,6 +282,8 @@ export function createSubmitOnEnterHandler(
    * to take back.
    */
   onArrowUpAtStart?: () => boolean,
+  /** Down from the last visual row, under the same rules as Up. */
+  onArrowDownAtEnd?: () => boolean,
 ): (view: EditorView, event: KeyboardEvent) => boolean {
   return (view, event) => {
     if (isDisabled() || event.isComposing || event.keyCode === 229) return false;
@@ -299,6 +304,19 @@ export function createSubmitOnEnterHandler(
       !event.isComposing &&
       isCursorOnFirstVisualLine(view) &&
       onArrowUpAtStart()
+    ) {
+      event.preventDefault();
+      return true;
+    }
+    if (
+      event.key === 'ArrowDown' &&
+      onArrowDownAtEnd &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      isCursorOnLastVisualLine(view) &&
+      onArrowDownAtEnd()
     ) {
       event.preventDefault();
       return true;
@@ -375,6 +393,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       autoFocus = false,
       onSubmit,
       onArrowUpAtStart,
+      onArrowDownAtEnd,
       onEmptyChange,
       onDocChange,
       agents,
@@ -406,6 +425,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     const onDocChangeRef = useLatestRef(onDocChange);
     const onSubmitRef = useLatestRef(onSubmit);
     const onArrowUpAtStartRef = useLatestRef(onArrowUpAtStart);
+    const onArrowDownAtEndRef = useLatestRef(onArrowDownAtEnd);
     const disabledRef = useLatestRef(disabled ?? false);
     const placeholderRef = useLatestRef(placeholder);
 
@@ -522,8 +542,9 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           // An open `@`/`/` menu claims arrow keys through `mentionOwnsEnterRef`
           // / `slashOwnsEnterRef` above, so Up never reaches this while one is open.
           () => onArrowUpAtStartRef.current?.() ?? false,
+          () => onArrowDownAtEndRef.current?.() ?? false,
         ),
-      [disabledRef, onArrowUpAtStartRef, onSubmitRef],
+      [disabledRef, onArrowDownAtEndRef, onArrowUpAtStartRef, onSubmitRef],
     );
 
     const editor = useEditor({
@@ -656,7 +677,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       (): ComposerEditorHandle => ({
         getContent: () =>
           editor ? serializeDocument(editor.state.doc) : { text: '', mentions: [] },
-        setContent: (text) => {
+        setContent: (text, caret = 'end') => {
           if (!editor) return;
           const paragraphs = textToParagraphs(text);
           editor.commands.setContent({ type: 'doc', content: paragraphs });
@@ -685,7 +706,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
            * fire while the composer is genuinely scrolled out of view in a long
            * session — there the scroll is the point.
            */
-          editor.commands.focus('end', { scrollIntoView: false });
+          editor.commands.focus(caret, { scrollIntoView: false });
         },
         getDocument: () => getEditorDocument(editor),
         setDocument: (doc) => setEditorDocument(editor, doc),

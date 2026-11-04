@@ -15,6 +15,33 @@ const EVALUATION_PATH = /(?:^|\/)(?:bench|tests?|__tests__|fixtures)(?:\/|$)|\.(
 const EVALUATION_QUERY = /\b(?:bench\w*|tests?|testing|eval\w*|fixtures?|personas?|specs?)\b/i
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
+// What the project calls itself: its README's title and its root manifest's name (package.json, kortix.yaml's project,
+// pyproject.toml, Cargo.toml, go.mod). Its folder's name is not that: a Kortix box's workspace is /workspace, a project
+// there is agents, skills and memory, and "What is this project called?" was answered "security-tools", a sub-project
+// named in a chunk. Line by line, no pattern over a whole file. '' when none says.
+export function identity(root: string): string {
+  const read = (f: string) => { try { return readFileSync(`${root}/${f}`, 'utf8').slice(0, 50_000) } catch { return '' } }
+  const unquote = (v: string) => v.split(' #')[0]!.trim().replace(/^["']|["']$/g, '').trim()
+  // The first `name` under a top-level key ("project:" in YAML, "[package]" in TOML).
+  const under = (text: string, section: string, sep: string) => {
+    let inside = false
+    for (const l of text.split('\n')) {
+      if (l.trim() === section) { inside = true; continue }
+      if (inside && l && !/^\s/.test(l) && sep === ':') break
+      if (inside && l.startsWith('[') && sep === '=') break
+      const t = l.trim()
+      if (inside && t.startsWith('name') && t.slice(4).trimStart().startsWith(sep)) return unquote(t.slice(4).trimStart().slice(1))
+    }
+    return ''
+  }
+  let name = ''
+  try { const n = (JSON.parse(read('package.json') || '{}') as { name?: unknown }).name; if (typeof n === 'string') name = n } catch {}
+  name ||= under(read('kortix.yaml'), 'project:', ':') || under(read('pyproject.toml'), '[project]', '=') || under(read('Cargo.toml'), '[package]', '=') ||
+    (read('go.mod').split('\n').find((l) => l.startsWith('module ')) ?? '').slice(7).trim()
+  const title = (read('README.md').split('\n').find((l) => l.startsWith('# ')) ?? '').slice(2).trim().slice(0, 80)
+  return title && name && title.toLowerCase() !== name.toLowerCase() ? `${title} (${name})` : title || name
+}
+
 function build(root: string) {
   const list = Bun.spawnSync(['rg', '--files', root]).stdout.toString().split('\n').filter(Boolean).map((f) => f.slice(root.length + 1)).sort().slice(0, MAX_FILES)
   const chunks: Chunk[] = []
@@ -79,7 +106,8 @@ function build(root: string) {
       .slice(0, k)
       .map((x) => x.c)
   }
-  const map = list
+  const named = identity(root)
+  const map = (named ? `Project: ${named}\n` : '') + list
     .slice(0, 300)
     .map((f) => {
       const t = lines.get(f)?.join('\n') ?? ''

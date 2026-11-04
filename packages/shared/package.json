@@ -12,6 +12,7 @@
     "./artifact-doc": "./src/artifact-doc.ts",
     "./artifact-comments": "./src/artifact-comments.ts",
     "./artifact-annotations": "./src/artifact-annotations.ts",
+    "./artifact-live": "./src/artifact-live.ts",
     "./brand-css": "./src/brand-css.generated.ts",
     "./wordmark": "./src/wordmark.ts",
     "./pixel-mark": "./src/pixel-mark.ts",

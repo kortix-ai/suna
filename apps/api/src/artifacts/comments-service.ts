@@ -12,6 +12,7 @@ import { hydrateArtifactCommentMentions } from './comment-tokens';
 import { dispatchArtifactCommentJobs, enqueueArtifactCommentRouting } from './comment-delivery';
 import { randomUUID } from 'node:crypto';
 import { prepareArtifactCommentScreenshot, attachArtifactCommentScreenshot, abandonArtifactCommentScreenshot, cleanupArtifactCommentScreenshotKeys } from './comment-screenshot-objects';
+import { announceArtifactLiveAgentWrote, publishArtifactLiveChange } from './live-publish';
 
 export class ArtifactCommentError extends Error {
   constructor(readonly status: 400 | 403 | 404 | 409 | 429, message: string, readonly code: string, readonly retryAfterSeconds = 60) {
@@ -44,6 +45,12 @@ function author(actor: Actor, access: ArtifactCommentAccess) {
 
 function own(actor: Actor, access: ArtifactCommentAccess, userId: string | null, sessionId: string | null): boolean {
   return access.sessionId ? sessionId === access.sessionId : userId === actor.userId && sessionId === null;
+}
+
+/** After a committed write: the Artifact's viewers refetch threads (and activity when an event was recorded). */
+function announce(access: ArtifactCommentAccess, activity: boolean): void {
+  publishArtifactLiveChange(access.artifact.artifactId, 'comments');
+  if (activity) publishArtifactLiveChange(access.artifact.artifactId, 'activity');
 }
 
 function bodyText(body: string): string {
@@ -254,6 +261,8 @@ export async function createArtifactCommentThread(actor: Actor, access: Artifact
       return threadView(thread!, [comment!], access);
     }, !screenshot);
   } catch (error) { if (screenshot) await abandonArtifactCommentScreenshot(screenshot); throw error; }
+  announce(access, true);
+  announceArtifactLiveAgentWrote(access.artifact.artifactId, access.sessionId);
   await dispatchArtifactCommentJobs(`artifact-comments:${thread.thread_id}:${thread.comments[0]!.comment_id}`);
   return (await hydrateThreads(access, [thread]))[0]!;
 }
@@ -283,17 +292,21 @@ export async function replyArtifactCommentThread(actor: Actor, access: ArtifactC
       return commentView(comment!, access);
     }, !screenshot);
   } catch (error) { if (screenshot) await abandonArtifactCommentScreenshot(screenshot); throw error; }
+  announce(access, true);
+  announceArtifactLiveAgentWrote(access.artifact.artifactId, access.sessionId);
   await dispatchArtifactCommentJobs(`artifact-comments:${threadId}:${comment.comment_id}`);
   return (await hydrateCommentAuthors(access.artifact, [comment]))[0]!;
 }
 
 export async function setArtifactCommentThreadStatus(actor: Actor, access: ArtifactCommentAccess, threadId: string, status: CommentStatus) {
+  let changed = false;
   const thread = await write(actor, access, async (tx) => {
     const thread = await loadThread(tx, access, threadId);
     if (!own(actor, access, thread.createdByUserId, thread.createdBySessionId)
       && !access.viewer.manageAny && !(access.sessionId && thread.sentSessionId === access.sessionId)
       && !access.canEdit) throw forbidden();
     if (thread.status !== status) {
+      changed = true;
       const who = author(actor, access);
       const [updated] = await tx.update(artifactCommentThreads).set({
         status,
@@ -309,6 +322,7 @@ export async function setArtifactCommentThreadStatus(actor: Actor, access: Artif
       .orderBy(asc(artifactComments.createdAt), asc(artifactComments.commentId));
     return threadView(thread, comments, access);
   });
+  if (changed) announce(access, true);
   return (await hydrateThreads(access, [thread]))[0]!;
 }
 
@@ -332,6 +346,7 @@ export async function changeArtifactComment(actor: Actor, access: ArtifactCommen
     if (text === null) await recordArtifactEvent(tx, access.artifact, author(actor, access), 'comment_deleted', { thread_id: threadId, comment_id: commentId });
     return commentView(updated!, access);
   });
+  announce(access, text === null);
   if (removedScreenshot) await cleanupArtifactCommentScreenshotKeys([removedScreenshot]);
   return (await hydrateCommentAuthors(access.artifact, [comment]))[0]!;
 }

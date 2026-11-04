@@ -10,6 +10,7 @@
  *   graphql, postman, http: nothing to read before install.
  */
 import { composioRestClient } from './composio-catalog-search';
+import { withKortixComposioTools } from './composio-youtube-upload';
 import type { ConnectorSurfaceVariant } from './connector-catalog';
 import { createConnectorEgressFetch } from './egress';
 import mcpTools from './mcp-tools.json';
@@ -64,9 +65,13 @@ async function composioCatalogTools(toolkit: string): Promise<CatalogTools> {
     };
   };
   const page = await client.tools.list({ toolkit_slug: toolkit, limit: MAX_TOOLS });
-  const tools = page.items.map((tool) => ({
-    name: tool.slug ?? tool.name,
-    description: (tool.description ?? tool.name ?? '').replace(/\s+/g, ' ').trim(),
+  // A tool Kortix runs itself (`youtube.upload_video`) replaces Composio's own.
+  const tools = withKortixComposioTools(
+    page.items.map((tool) => ({ function: { name: tool.slug ?? tool.name, description: tool.description ?? tool.name } })),
+    toolkit,
+  ).map((tool) => ({
+    name: tool.function.name,
+    description: (tool.function.description ?? tool.function.name).replace(/\s+/g, ' ').trim(),
   }));
   return { ...capped(tools, 'composio'), total: Math.max(page.total_items ?? 0, tools.length) };
 }

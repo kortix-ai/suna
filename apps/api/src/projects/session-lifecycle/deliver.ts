@@ -14,6 +14,7 @@ import { deliveryCountsAsActivity } from './delivery-activity';
 import { DAEMON_PORT, PromptNeverLandedError } from './runtime-client';
 import { armSessionRuntimeActive } from './runtime-active-signal';
 import { transitionSession } from './status-transitions';
+import { boxServesRuntimeFloor } from '../session-open/runtime-floor-policy';
 
 // After a session's runtime reports `ready` we still have to hand the prompt to
 // the opencode daemon — and a just-woken sandbox is flaky for a beat: the
@@ -402,6 +403,7 @@ export async function awakeDeliveryTarget(sessionId: string): Promise<DeliveryTa
         provider: sessionSandboxes.provider,
         baseUrl: sessionSandboxes.baseUrl,
         config: sessionSandboxes.config,
+        metadata: sessionSandboxes.metadata,
       })
       .from(sessionSandboxes)
       .where(eq(sessionSandboxes.sessionId, sessionId))
@@ -409,6 +411,10 @@ export async function awakeDeliveryTarget(sessionId: string): Promise<DeliveryTa
   ]);
   if (!session || session.status !== 'running' || !session.opencodeSessionId) return null;
   if (!box || box.status !== 'active' || !box.externalId) return null;
+  // Only a box an open proved at the runtime floor. An old box being updated
+  // is `active` too, and a message must wait for its open, not reach its old
+  // daemon (session-open/runtime-floor.ts).
+  if (!boxServesRuntimeFloor(box.metadata as Record<string, unknown> | null, box.externalId)) return null;
   const serviceKey = (box.config as { serviceKey?: unknown } | null)?.serviceKey;
   return {
     stage: 'ready',

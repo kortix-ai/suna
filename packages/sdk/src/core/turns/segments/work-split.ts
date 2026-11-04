@@ -11,25 +11,61 @@
  * it is work. Deliverables anywhere are hoisted, in order. A turn that ends on
  * a tool (abort, error) has no final text: everything else is work.
  *
+ * Interim text that renders a card is a deliverable too: a generative-UI
+ * (`openui`) fence, or a setup link (`/secret-intake/<token>`,
+ * `/connect/<token>`) that renders a form the user must act on. Folded, the
+ * reader never learns it exists, because the row is closed after the turn.
+ *
  * Accepts `segmentTurn` output or its `groupShowSegments` post-pass, so a host
  * that never groups show calls uses the same rule.
  */
 import { formatDuration } from '../state';
-import { isNoGroupActivityTool } from './session-activity-groups';
+import { isNoGroupActivityTool, normalizeActivityToolName } from './session-activity-groups';
 import type { ShowGroupedSegment } from './show-group';
 
 export interface TurnWorkSplit<S extends ShowGroupedSegment = ShowGroupedSegment> {
   /** Folded behind the "Worked for" row. Never empty. */
   work: S[];
-  /** Deliverable cards (`show`, `show_user`, `image_gen`), in call order, rendered above the final text. */
+  /** Deliverable cards (`show`, `show_user`, `image_gen`, and interim text that renders a generative-UI block or a setup link) and the calls that started an agent or a workflow, in call order, rendered above the final text. */
   hoisted: S[];
   /** The final text segment, or empty when the turn did not end on text. */
   final: S[];
 }
 
+/**
+ * Calls that started work the person tracks after the turn ends: a sub-agent
+ * (`agent`, OpenCode's `task`, a teammate's `agent_spawn`) or a workflow run.
+ * Folded behind "Worked for", the turn would say "I asked a researcher" with
+ * no researcher in sight. Reading the roster (`list_agents`) stays work.
+ */
+const STARTED_WORK_TOOLS: ReadonlySet<string> = new Set(['agent', 'task', 'agent_spawn', 'workflow']);
+
 function isDeliverableSegment(segment: ShowGroupedSegment): boolean {
   if (segment.kind === 'show-group') return true;
-  return segment.kind === 'standalone' && isNoGroupActivityTool(segment.part.tool);
+  if (segment.kind !== 'standalone') return false;
+  return isNoGroupActivityTool(segment.part.tool) || STARTED_WORK_TOOLS.has(normalizeActivityToolName(segment.part.tool));
+}
+
+/**
+ * A fence line that opens a generative-UI block (```openui, ~~~openui-v2, …) at
+ * any container depth: top level, in a blockquote, or in a list item. The
+ * renderer opens a block at all three (`genui/fence.ts`, `FENCE_START` and
+ * `LIST_FENCE`).
+ */
+const GENUI_FENCE = /^[ \t>]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?(?:`{3,}|~{3,})[ \t]*openui/im;
+/**
+ * A setup route the renderer turns into a card: as a link target, inline code,
+ * or a bare URL (an autolink). A relative path is always ours. An absolute URL
+ * counts only with the `ksl_` token prefix, the rule the web renderer applies
+ * to a cross-origin link (`parseSetupLinkHref`).
+ */
+const SETUP_LINK =
+  /(?:^|[\s(<`])(?:\/(?:secret-intake|connect)\/[^\s)>`]|https?:\/\/[^\s)>`/]+\/(?:secret-intake|connect)\/ksl_)/i;
+
+function isCardText(segment: ShowGroupedSegment): boolean {
+  if (segment.kind !== 'text') return false;
+  const body = segment.part.text ?? '';
+  return GENUI_FENCE.test(body) || SETUP_LINK.test(body);
 }
 
 function isBlankText(segment: ShowGroupedSegment): boolean {
@@ -54,7 +90,7 @@ export function splitTurnWork<S extends ShowGroupedSegment = ShowGroupedSegment>
   const split: TurnWorkSplit<S> = { work: [], hoisted: [], final: [] };
   segments.forEach((segment, i) => {
     if (i === finalIndex) split.final.push(segment);
-    else if (isDeliverableSegment(segment)) split.hoisted.push(segment);
+    else if (isDeliverableSegment(segment) || isCardText(segment)) split.hoisted.push(segment);
     else split.work.push(segment);
   });
   return split.work.length > 0 ? split : null;

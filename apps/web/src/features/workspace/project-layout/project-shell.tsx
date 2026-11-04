@@ -2,6 +2,7 @@
 
 import { CommandPaletteBoundary } from '@/features/workspace/command-palette-boundary';
 import { DriveUploadTray } from '@kortix/ui/files';
+import { VoiceCallCard } from '@kortix/ui/session/voice/voice-call-card';
 import { AppPreviewPoolLoader } from '@/features/apps/app-preview-pool-loader';
 import { ArtifactFramePreloader } from '@/features/artifacts/artifact-frame-preloader';
 import { useTranslations } from '@/i18n/use-translations';
@@ -268,6 +269,10 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
             started in one folder still shows its progress after the user moves
             on. Empty, it renders nothing. */}
         <DriveUploadTray />
+
+        {/* A voice call placed from an agent's page (flag `voice_call`): it goes on wherever the person goes in the
+            project. Without a call, nothing. */}
+        <VoiceCallCard />
 
         {/* App previews load here in the background and stay loaded while
             the project is open, so the Apps page shows them at once. */}

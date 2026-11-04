@@ -1,78 +1,82 @@
 'use client';
 
 import { useProjectSession } from '@kortix/sdk/react';
-import { CheckIcon, StopCircleIcon, WarningIcon } from '@phosphor-icons/react';
-import { useState, type ReactNode } from 'react';
+import { workflowResultMarkdown } from '../tool/tools/workflow-result-text';
+import { useState } from 'react';
 import { useTranslations } from '../../i18n';
-import { UnifiedMarkdown } from '../../markdown/unified-markdown';
+import { agentDisplayName } from '../../internal/components/agent-mark';
 import { useSessionIds } from '../../providers/session-ids';
 import { SubagentDialog } from '../agents/subagent-view';
-import { FullViewAction } from '../tool/shared/full-view-action';
+import { AgentFace, AgentRowScope, AgentStatus, AgentTrigger } from '../agents/agent-surface';
 import { BasicTool } from '../tool/shared/infrastructure';
-import { ToolResultCard } from '../tool/shared/result-card';
-import type { SubagentNotice } from './subagent-notice';
+import { firstLine, type SubagentNotice } from './subagent-notice';
 
-/**
- * A background subagent (or a background workflow run) this session started
- * has ended, or a teammate of its agent team went idle, and the API delivered
- * its notice as a prompt. It is not something the person typed, and its report
- * is often long, so it draws as one tool row, the same row as the "Agent ·
- * general" card that started it: "✓ post writer finished · <first line of the
- * result>   View". The row opens in place to the whole result; "View" opens the
- * child's own session.
- *
- * The state is a glyph, as on every tool row, never an emoji: emoji status
- * labels are the agent's own words (brand D31, D32), and the reply right under
- * this row often starts with one.
- */
-// `data-tone` keeps the hue: the tool row header paints any other leading glyph muted.
-const MARK: Record<SubagentNotice['status'], ReactNode> = {
-  completed: <CheckIcon data-notice-mark="completed" data-tone="success" aria-hidden weight="bold" className="text-kortix-green size-3.5 shrink-0" />,
-  failed: <WarningIcon data-notice-mark="failed" data-tone="destructive" aria-hidden weight="fill" className="text-kortix-red size-3.5 shrink-0" />,
-  stopped: <StopCircleIcon data-notice-mark="stopped" aria-hidden className="size-3.5 shrink-0" />,
+/** A workflow's report arrives wrapped in `<workflow_result>`: the person reads what is inside. */
+const RESULT_TAG = /<\/?workflow_?result>/gi;
+
+export function readableReport(text: string): string {
+  // A JSON result reads as its document (a JSON object of prose), never as the JSON source.
+  return workflowResultMarkdown(text).replace(RESULT_TAG, '').trim();
+}
+
+/** A run's own name carries " (workflow)"; the line names the run, the glyph says what it is. */
+export const WORKFLOW_SUFFIX = /\s*\(workflow\)\s*$/i;
+
+export const NOTICE_GLYPH: Record<SubagentNotice['status'], 'done' | 'failed' | 'stopped'> = {
+  completed: 'done',
+  failed: 'failed',
+  stopped: 'stopped',
 };
 
-/** A first line that only says the work is done repeats "finished". */
-const FILLER_EXCERPT = /^(done|finished|completed?|all done|ok(ay)?)[.!]*$/i;
+/** A first line that only says it is done repeats the state word. */
+const ONLY_DONE = /^(done|finished|completed?|all done|ok(ay)?)[.!]*$/i;
 
-export function SubagentNoticeRow({ notice }: { notice: SubagentNotice }) {
+/** Who the notice is from: the handle its parent gave it, else the kind of agent, else the task. */
+function useNoticeName(notice: SubagentNotice): { name: string; face: string } {
   const t = useTranslations('multiAgent.notice');
   const ids = useSessionIds();
-  const [viewing, setViewing] = useState(false);
-  // The name its parent gave it (`agent({ name })`) reads best: "writer finished".
   const child = useProjectSession(ids.projectId, notice.sessionId, { enabled: !!ids.projectId });
-  const name = child.data?.agent_handle || notice.handle || notice.title || notice.agent || t('fallbackName');
-  const excerpt = notice.excerpt && !FILLER_EXCERPT.test(notice.excerpt.trim()) ? notice.excerpt : undefined;
-  const expandable = notice.result.trim().length > 0 && notice.result.trim() !== notice.excerpt;
-  const openSession = () => setViewing(true);
+  const handle = child.data?.agent_handle?.trim() || notice.handle;
+  const name = (handle || (notice.agent ? agentDisplayName(notice.agent) : '') || notice.title || t('fallbackName')).replace(WORKFLOW_SUFFIX, '');
+  return { name, face: handle || notice.agent || 'general' };
+}
+
+/**
+ * A background sub-agent or workflow run this session started has ended, and
+ * the API delivered its notice as a prompt. Nobody typed it, so it is never a
+ * bubble: it is one agent row, the same row as the call that started it.
+ *
+ *   [face] pricing-scout  Three of five competitors raised prices…   ✓ Finished  >
+ *
+ * A click opens the agent's session beside the chat, in the side panel, where its
+ * report is the last reply; without a panel, in the agent dialog.
+ */
+export function SubagentNoticeRow({ notice }: { notice: SubagentNotice; defaultOpen?: boolean }) {
+  const t = useTranslations('multiAgent.notice');
+  const { name, face } = useNoticeName(notice);
+  const [viewing, setViewing] = useState(false);
+  const failed = notice.status === 'failed';
+  const result = readableReport(notice.result);
+  const first = firstLine(result);
+  const subtitle = notice.ownedTasks
+    ? t('ownsTasks', { tasks: notice.ownedTasks })
+    : failed
+      ? (notice.title ?? undefined)
+      : first && !ONLY_DONE.test(first)
+        ? first
+        : (notice.title ?? undefined);
+
   return (
-    <div
-      data-testid="subagent-notice"
-      data-notice-status={notice.status}
-      data-child-session={notice.sessionId}
-      className="flex min-w-0 flex-col"
-    >
-      <BasicTool
-        icon={MARK[notice.status]}
-        trigger={{ title: t(notice.status, { name }), subtitle: excerpt }}
-        triggerAction={<FullViewAction onOpen={openSession} />}
-        // Nothing to unfold: the row is a plain way into the child's session.
-        onClick={expandable ? undefined : openSession}
-      >
-        {expandable ? (
-          // The report is the child's output, framed like every tool result, so
-          // it never reads as a second reply from this session's agent.
-          <ToolResultCard bodyClassName="max-h-96 overflow-y-auto px-3 py-2 text-sm">
-            <UnifiedMarkdown content={notice.result} trust="agent" isStreaming={false} />
-          </ToolResultCard>
-        ) : undefined}
-      </BasicTool>
-      {notice.ownedTasks && (
-        <p className="text-muted-foreground ml-6 min-w-0 truncate text-xs" title={notice.ownedTasks}>
-          {t('ownsTasks', { tasks: notice.ownedTasks })}
-        </p>
-      )}
-      <SubagentDialog open={viewing} onOpenChange={setViewing} sessionId={notice.sessionId} title={name} />
+    <div data-testid="subagent-notice" data-notice-status={notice.status} data-child-session={notice.sessionId} className="min-w-0">
+      <AgentRowScope>
+        <BasicTool
+          icon={<AgentFace handle={face} />}
+          trigger={<AgentTrigger title={name} subtitle={subtitle} />}
+          triggerAction={<AgentStatus status={NOTICE_GLYPH[notice.status]} label={t(`state.${notice.status}`)} opens />}
+          onClick={() => setViewing(true)}
+        />
+      </AgentRowScope>
+      <SubagentDialog open={viewing} onOpenChange={setViewing} sessionId={notice.sessionId} title={name} handle={face} task={subtitle} failure={failed ? result || t('failedSentence') : undefined} />
     </div>
   );
 }

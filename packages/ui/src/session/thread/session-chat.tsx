@@ -126,7 +126,6 @@ import {
 } from './first-prompt-handover';
 import { CompactModal } from '../header/compact-modal';
 import { SessionSiteHeader } from '../header/session-site-header';
-import { VoiceCallSlot } from '../voice/voice-call';
 import { claimFirstTurnRow } from '../composer/inbox-row-claims';
 import { type ModelDefaultControls } from '../models/model-selector';
 import { OptimisticTurn } from './optimistic-turn';
@@ -177,6 +176,7 @@ import type { DraftScope } from '../composer/draft/composer-draft';
 import { usePlanInChat } from './plan-surface';
 import { SessionStartingLoader } from '../status/session-starting-loader';
 import { ToolActivateContext } from '../tool/tool-renderers';
+import { AgentActivateContext } from '../tool/shared/infrastructure-contexts';
 import { ReadOnlySessionContext } from '../tool/shared/infrastructure-contexts';
 import {
   firstPromptAttachments,
@@ -538,6 +538,20 @@ export function SessionChat({
     [sessionId, setSidePanelView, focusToolCall],
   );
   const toolActivate = readOnly || disableToolNavigation ? null : handleToolActivate;
+
+  // Clicking an agent (a sub-agent row, its finish notice, a workflow agent, the
+  // agents line) opens that agent's session in the side panel, beside the chat.
+  const focusAgent = useKortixComputerStore((s) => s.focusAgent);
+  const handleAgentActivate = useCallback(
+    (agent: { sessionId: string; title: string; handle: string; task?: string; failure?: string }) => {
+      const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;
+      setSidePanelView(sessionId, 'actions');
+      focusAgent(agent);
+      if (!wasOpen) track('panel_opened', { source: 'chat_agent' });
+    },
+    [sessionId, setSidePanelView, focusAgent],
+  );
+  const agentActivate = readOnly || disableToolNavigation ? null : handleAgentActivate;
 
   // ---- Context modal ----
   const [contextModalOpen, setContextModalOpen] = useState(false);
@@ -3950,12 +3964,10 @@ export function SessionChat({
   );
 
   // The queued messages and the one Resume while a Stop holds the queue: their
-  // own full-width card above the composer stack, not inside the strip. A live
-  // voice call is the card above them (nothing unless a call is open).
+  // own full-width card above the composer stack, not inside the strip.
   const chatAboveSlot = useMemo(
     () => (
       <>
-        <VoiceCallSlot sessionId={projectSessionId} />
         <QueuedPromptList
           rows={heldCommands.length > 0 ? [...queueRows.rows, ...heldCommandRows(heldCommands)] : queueRows.rows}
           heldCount={queueRows.heldCount}
@@ -3980,7 +3992,6 @@ export function SessionChat({
       </>
     ),
     [
-      projectSessionId,
       heldCommands,
       queueEdit.editing,
       queueEdit.cancel,
@@ -4340,6 +4351,7 @@ export function SessionChat({
   return (
     // A read-only view (the sub-session modal) offers no fix inside a tool card.
     <ReadOnlySessionContext.Provider value={!!readOnly}>
+    <AgentActivateContext.Provider value={agentActivate}>
     <SessionPromptContext.Provider value={readOnly ? null : sendSessionPrompt}>
     {/* Outcomes' cache coherence and the shareable `?cr=` link both hinge on
         ONE `ProjectFilesProvider`: `useChangeRequests` inside
@@ -5145,6 +5157,7 @@ export function SessionChat({
       </ComposerDropZone>
     </ProjectFilesProvider>
     </SessionPromptContext.Provider>
+    </AgentActivateContext.Provider>
     </ReadOnlySessionContext.Provider>
   );
 }

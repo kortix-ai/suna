@@ -3,7 +3,6 @@
 import { getAuthToken, getSandboxUrlForExternalId, probePreviewPort } from '@kortix/sdk';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { useSandboxProxy } from '../../internal/hooks/use-sandbox-proxy';
 import { CallAudio } from './call-audio';
 import { canShareScreen, sampleScreen, SCREEN_MEDIA, type ScreenSampler } from './screen-share';
 import {
@@ -40,13 +39,11 @@ interface LiveCall {
 }
 
 /**
- * One voice call with the session `sessionId` (the Kortix session id), for as long as the caller is mounted.
- * It dials the box's relay, plays the voice, sends the microphone and a shared screen, redials a live call
- * that drops, and releases everything on unmount and when the tab closes.
+ * One voice call with the session `sessionId` (the Kortix session id) on its box `sandboxId` (the sandbox's external
+ * id), for as long as the caller is mounted. It dials the box's relay, plays the voice, sends the microphone and a
+ * shared screen, redials a live call that drops, and releases everything on unmount and when the tab closes.
  */
-export function useVoiceCall(sessionId: string) {
-  const { subdomainOpts, isReady } = useSandboxProxy();
-  const sandboxId = isReady ? subdomainOpts.sandboxId : '';
+export function useVoiceCall(sessionId: string, sandboxId: string) {
   const [state, setState] = useState<CallState>(INITIAL_CALL);
   const [muted, setMuted] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -100,7 +97,7 @@ export function useVoiceCall(sessionId: string) {
     };
 
     const onReady = (message: RelayMessage) => {
-      step({ type: 'ready' });
+      step({ type: 'ready', at: Date.now() });
       // A redialed call is a new call on the relay: it sees the shared screen again.
       shareRef.current?.sampler.snap();
       const started = (audio = new CallAudio());
@@ -187,7 +184,7 @@ export function useVoiceCall(sessionId: string) {
     // Closing the tab (or leaving it for the back-forward cache) ends the call and its bar.
     const onPageHide = () => {
       teardown();
-      useVoiceCallStore.getState().close(sessionId);
+      useVoiceCallStore.getState().end(sessionId);
     };
     window.addEventListener('pagehide', onPageHide);
     void dial(false);

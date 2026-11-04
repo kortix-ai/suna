@@ -106,6 +106,16 @@
     "access": "Acceso",
     "actions": "Acciones",
     "coolingDown": "En espera tras el límite",
+    "usageFiveHour": "5 horas",
+    "usageWeekly": "Semanal",
+    "usageWeeklyModel": "Semanal · {model}",
+    "usagePercent": "{percent} % usado",
+    "usagePercentResets": "{percent} % · se restablece {time}",
+    "usageLimitReached": "Límite alcanzado",
+    "usageLimitResets": "Límite alcanzado · se restablece {time}",
+    "usageNotSeen": "El uso aparece tras la primera solicitud",
+    "usageObserved": "Actualizado {time}",
+    "usageAriaLabel": "{window}: {percent} % usado",
     "member": "miembro",
     "members": "miembros",
     "actionsFor": "Acciones para {label}",
@@ -1328,7 +1338,7 @@
         },
         "voice_call": {
           "name": "Llamadas de voz",
-          "description": "Llama al agente de la sesión desde la página de la sesión y habla con él. Te escucha, responde con voz, ve la pantalla que compartes y trabaja en la misma sesión, así la conversación queda en el chat."
+          "description": "Llama a un agente desde su página (Personalizar → Agentes) y habla con él. Una llamada es una sesión propia de ese agente: te escucha, responde con voz y ve la pantalla que compartes, y la conversación es el chat de esa sesión."
         },
         "shared_drives": {
           "name": "Unidades compartidas",
@@ -3203,6 +3213,13 @@
       "large": "Ejecución grande",
       "largeHint": "Esta ejecución inicia más de 25 agentes. Puedes detener cualquier agente desde su fila.",
       "openRun": "Abrir ejecución",
+      "viewingAgent": "Viendo",
+      "startsAfter": "Empieza después de {phase}",
+      "didntFinish": "No terminó",
+      "retryNow": "Reintentar",
+      "retryAgent": "Reintentar {label}",
+      "waitsFor": "Espera a {count} más",
+      "phaseProgress": "{phase}: {done} de {total} hechos",
       "openRunLabel": "Abrir la sesión de la ejecución",
       "backgroundIdle": "En su propia sesión",
       "savedName": "Flujo de trabajo guardado {name}",
@@ -3230,11 +3247,23 @@
       "stopFailed": "No se pudo detener {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # clave} other {JSON · # claves}}",
-      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementos}}"
+      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementos}}",
+      "failedSentence": "El flujo de trabajo se detuvo antes de terminar.",
+      "runningCount": "{count} en curso"
     },
     "agent": {
       "backgroundWorking": "Trabajando en segundo plano",
-      "backgroundSession": "En su propia sesión"
+      "backgroundSession": "En su propia sesión",
+      "open": "Abrir",
+      "openAgent": "Abrir {name}",
+      "state": {
+        "working": "Trabajando",
+        "needs_input": "Te necesita",
+        "idle": "Hecho",
+        "completed": "Hecho",
+        "failed": "No terminó",
+        "stopped": "Detenido"
+      }
     }
   },
   "agentRunLimit": {
@@ -21319,7 +21348,8 @@
       "aboutDescription": "Acerca de esta descripción",
       "senderUnavailable": "No se pudo cargar la cuenta de envío. Revisa la fila De.",
       "quoted": "«{text}»"
-    }
+    },
+    "promptHistory": "Historial {index}/{total}"
   },
   "commandPalette": {
     "title": "Paleta de comandos",
@@ -23908,6 +23938,7 @@
     "emptyFiltered": "Ningún artefacto coincide",
     "updated": "Actualizado {time}",
     "pinned": "Fijado",
+    "openComments": "{count, plural, one {# comentario abierto} other {# comentarios abiertos}}",
     "visibility": {
       "private": "Privado",
       "project": "Proyecto",
@@ -24164,7 +24195,27 @@
     "moved": "Artefacto movido",
     "moveFailed": "No se pudo mover el artefacto",
     "spaceEmpty": "Aún no hay artefactos en {space}",
-    "showAll": "Mostrar todos"
+    "showAll": "Mostrar todos",
+    "live": {
+      "here": "Aquí ahora",
+      "hereLabel": "En este artefacto ahora: {names}",
+      "reconnecting": "Reconectando…",
+      "you": "Tú",
+      "agents": "Agentes",
+      "agentsHere": "Agentes en este hilo",
+      "status": {
+        "viewing": "Viendo",
+        "reading": "Leyendo",
+        "editing": "Editando",
+        "writing": "Escribiendo"
+      },
+      "hideCursor": "Ocultar mi cursor",
+      "hideCursorHint": "Los demás siguen viendo tu avatar.",
+      "typingOne": "{name} está escribiendo…",
+      "typingTwo": "{first} y {second} están escribiendo…",
+      "typingMany": "{count, plural, one {# persona está escribiendo…} other {# personas están escribiendo…}}",
+      "writing": "{name} está redactando…"
+    }
   },
   "emailConnect": {
     "homeTitle": "Dónde vive el buzón",
@@ -25054,6 +25105,7 @@
   "voiceCall": {
     "title": "Llamada de voz",
     "call": "Llamar",
+    "calling": "Llamando…",
     "start": "Iniciar una llamada de voz",
     "end": "Finalizar llamada",
     "connecting": "Conectando…",
@@ -25071,6 +25123,8 @@
     "lost": "No se pudo reconectar la llamada",
     "unavailable": "El sandbox de esta sesión se inició antes de que se activaran las llamadas de voz. Las llamadas funcionan a partir de su próximo inicio.",
     "callAgain": "Volver a llamar",
+    "openChat": "Abrir el chat",
+    "turnNote": "Dicho en una llamada de voz y respondido por la voz.",
     "close": "Cerrar"
   },
   "agentMounts": {
@@ -25118,18 +25172,38 @@
       "shutdownRequest": "Solicitud de cierre de {from}",
       "shutdownResponse": "Respuesta a la solicitud de cierre de {from}",
       "expand": "Mostrar el mensaje completo",
-      "collapse": "Ocultar el mensaje"
+      "collapse": "Ocultar el mensaje",
+      "kind": {
+        "message": "Mensaje",
+        "finished": "Terminado",
+        "shutdownRequest": "Pide detenerse",
+        "shutdownResponse": "Respuesta de parada"
+      }
     },
     "notice": {
       "completed": "{name} ha terminado",
       "failed": "{name} no terminó",
       "stopped": "{name} se detuvo",
+      "viewRun": "Ver ejecución",
+      "peerFinished": "{name} ha terminado",
+      "result": "Resultado",
       "fallbackName": "Tu agente",
       "openSession": "Abrir sesión",
       "expand": "Mostrar el resultado completo",
       "collapse": "Ocultar el resultado",
       "batchTitle": "{count, plural, one {# agente ha terminado} other {# agentes han terminado}}",
-      "ownsTasks": "Aún tiene {tasks}"
+      "ownsTasks": "Aún tiene {tasks}",
+      "source": "Actualización del agente",
+      "statusFailedShort": "No terminó",
+      "statusStoppedShort": "Detenido",
+      "updateCount": "{count, plural, one {# actualización del agente} other {# actualizaciones de agentes}}",
+      "details": "Detalles",
+      "failedSentence": "El agente se detuvo antes de terminar.",
+      "state": {
+        "completed": "Terminado",
+        "failed": "No terminó",
+        "stopped": "Detenido"
+      }
     },
     "tools": {
       "running": {
@@ -25140,6 +25214,8 @@
         "stopping": "Deteniendo un agente…"
       },
       "to": "Para",
+      "messageTo": "Mensaje para @{to}",
+      "messageSent": "Mensaje enviado",
       "peerStatus": {
         "delivered": "Entregado",
         "held": "Esperando aprobación",
@@ -25172,7 +25248,8 @@
       "blockedBy": "bloqueada por {tasks}",
       "stopped": "Detenido",
       "alreadyEnded": "Ya terminó",
-      "openSession": "Abrir sesión"
+      "openSession": "Abrir sesión",
+      "messageToName": "Para {to}"
     },
     "strip": {
       "label": "Agentes",
@@ -25229,7 +25306,15 @@
       "retry": "Reintentar",
       "emptyTitle": "Nada todavía",
       "emptyDescription": "Sus mensajes aparecen aquí mientras trabaja.",
-      "loadOlder": "Mostrar mensajes anteriores"
+      "loadOlder": "Mostrar mensajes anteriores",
+      "runsLabel": "Ejecuciones de workflow",
+      "previousAgent": "Agente anterior",
+      "nextAgent": "Agente siguiente",
+      "moreActions": "Más acciones",
+      "attachments": "Imágenes adjuntas",
+      "removeAttachment": "Quitar {name}",
+      "attachImages": "Adjuntar imágenes",
+      "attachFailed": "No se pudo adjuntar la imagen"
     },
     "tasks": {
       "label": "Tareas del equipo",
@@ -25247,10 +25332,15 @@
       "title": "Mensaje de {from}",
       "titleShutdown": "{from} pide detener esta sesión",
       "waiting": "Espera tu aprobación. Caduca a los 5 minutos.",
+      "waitingShort": "Espera tu aprobación",
+      "expires": "Caduca a los 5 minutos",
       "deny": "Denegar",
       "approve": "Aprobar",
       "approveFailed": "No se pudo entregar el mensaje",
-      "denyFailed": "No se pudo denegar el mensaje"
+      "denyFailed": "No se pudo denegar el mensaje",
+      "wantsToSend": "quiere enviar un mensaje a este agente",
+      "asksStop": "pide a este agente que se detenga",
+      "needsApproval": "Necesita tu aprobación"
     },
     "workflow": {
       "large": "Flujo de trabajo grande",
@@ -25258,6 +25348,9 @@
       "paused": "En pausa",
       "pause": "Pausar la ejecución",
       "resume": "Reanudar la ejecución",
+      "pauseShort": "Pausar",
+      "resumeShort": "Reanudar",
+      "stopShort": "Detener",
       "pauseHint": "Pausar: no se inicia ningún agente nuevo; los agentes en curso terminan (p)",
       "resumeHint": "Reanudar la ejecución (p)",
       "stop": "Detener la ejecución",
@@ -25267,6 +25360,7 @@
       "savePrompt": "Guarda la ejecución del flujo de trabajo «{title}» (ejecución {runId}) como flujo de trabajo guardado: escribe su script en {file} y abre una solicitud de cambio para él.",
       "saveSent": "Se pidió guardar el flujo de trabajo",
       "saveFailed": "No se pudo pedir que se guardara el flujo de trabajo",
+      "viewing": "Viendo",
       "restartHint": "Reiniciar este agente con el mismo prompt (r)",
       "restartAgent": "Reiniciar {label}",
       "failed": {
@@ -25365,5 +25459,18 @@
     "dialogTitle": "¿Iniciar un contexto nuevo?",
     "dialogDescription": "El agente continúa en un contexto nuevo y busca en el historial completo cuando necesita un detalle. No se resume nada y la conversación queda aquí tal como está.",
     "dialogAction": "Iniciar un contexto nuevo"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Mensaje de Slack",
+    "slackConversation": "Conversación de Slack",
+    "notionPage": "Página de Notion",
+    "figmaDesign": "Diseño de Figma",
+    "figjamBoard": "Tablero de FigJam",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Documento de Google",
+    "googleSheet": "Hoja de Google",
+    "googleSlides": "Google Slides",
+    "pullRequest": "PR #{number}",
+    "issue": "Incidencia #{number}"
   }
 }

@@ -11,6 +11,7 @@ import { clearAccountSecretCooldown, encryptAccountSecret, memberMayReadProject,
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { ACCOUNT_ACTIONS, actorOf, authorize, PROJECT_ACTIONS } from '../iam';
 import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry';
+import { SUBSCRIPTION_PROVIDERS, SubscriptionUsageSchema, refreshSubscriptionUsage, storedSubscriptionUsage } from '../llm-gateway/subscription-usage';
 import { AccountIdParam, accountsRouter, getMembership } from './core/app';
 import { readJsonObject } from '../shared/http-body';
 
@@ -23,6 +24,8 @@ const View = z.object({
   cooldown_until: z.string().nullable(),
   /** When the stored login first stopped working; null while it works. */
   needs_reauth_at: z.string().nullable(),
+  /** A subscription login's last seen plan usage (5-hour and weekly windows); null for keys and before first use. */
+  usage: SubscriptionUsageSchema.nullable(),
   created_by: z.string(), created_at: z.string(), updated_at: z.string(),
   granted_user_ids: z.array(z.string()), can_use: z.boolean(),
   /** Can the server decrypt the stored value? Never carries the value. */
@@ -63,6 +66,7 @@ async function view(row: typeof accountSecretResources.$inferSelect, actorId: st
     name: row.name, consumer: row.consumer, strategy: row.strategy, active: row.active,
     cooldown_until: row.cooldownUntil?.toISOString() ?? null,
     needs_reauth_at: row.needsReauthAt?.toISOString() ?? null,
+    usage: storedSubscriptionUsage(row.usage),
     created_by: row.createdBy, created_at: row.createdAt.toISOString(), updated_at: row.updatedAt.toISOString(),
     granted_user_ids: grants.map((grant) => grant.userId),
     status: probeAccountSecret(row.accountId, row.valueEnc),
@@ -234,6 +238,25 @@ export function registerSecretResourceRoutes() {
     if (!(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
     await clearAccountSecretCooldown(row.secretId, accountId);
     return c.json(await view({ ...row, cooldownUntil: null, cooldownProbeAt: null }, userId));
+  });
+
+  // The account list shows each login's plan usage. Opening it asks the
+  // provider again when the last read is over a minute old (no plan quota).
+  accountsRouter.openapi(createRoute({
+    method: 'post', path: '/{accountId}/secret-resources/{secretId}/usage', tags: ['secrets'],
+    summary: 'Refresh the plan usage of one subscription login (ChatGPT, Claude)', ...auth,
+    request: { params: SecretIdParam },
+    responses: { 200: json(z.object({ usage: SubscriptionUsageSchema.nullable() }), 'Current plan usage, or null when the provider reports none'), ...errors(400, 403, 404) },
+  }), async (c) => {
+    const { accountId, secretId } = c.req.valid('param');
+    const userId = c.get('userId') as string;
+    if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
+    const row = await loadSecret(accountId, secretId);
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    // The same rule as the list: a manager sees every login, a member the ones they may use.
+    if (!(await mayWriteAccount(c, accountId)) && !(await view(row, userId)).can_use) return c.json({ error: 'Forbidden' }, 403);
+    if (!row.providerId || !SUBSCRIPTION_PROVIDERS.has(row.providerId)) return c.json({ error: 'Not a subscription login' }, 400);
+    return c.json({ usage: await refreshSubscriptionUsage(row) }, 200);
   });
 
   accountsRouter.openapi(createRoute({

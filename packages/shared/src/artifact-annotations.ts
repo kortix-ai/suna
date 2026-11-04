@@ -60,6 +60,7 @@ const viewportSchema = z
 export type ArtifactAnnotationRect = z.infer<typeof rectSchema>;
 export type ArtifactAnnotationViewport = z.infer<typeof viewportSchema>;
 const request = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const fraction = z.number().finite().min(0).max(1);
 export const artifactAnnotationCaptureFailureSchema = z.enum([
   "stale",
   "unavailable",
@@ -175,6 +176,20 @@ export const artifactAnnotationFrameMessageSchema = z.discriminatedUnion(
       })
       .strict(),
     z.object({ ...envelope, type: z.literal("focus"), n: pinNumber }).strict(),
+    // Live presence: where the person's pointer is, as element `n` of layout `revision` and
+    // fractions of its box, or null when it left the page. Geometry only, and only while the
+    // parent asks for it (`track`).
+    z
+      .object({
+        ...envelope,
+        type: z.literal("pointer"),
+        revision,
+        at: z
+          .object({ n: nodeNumber, x: fraction, y: fraction })
+          .strict()
+          .nullable(),
+      })
+      .strict(),
     z
       .object({
         ...envelope,
@@ -253,6 +268,11 @@ export const artifactAnnotationHostMessageSchema = z.discriminatedUnion(
       })
       .strict(),
     z.object({ ...envelope, type: z.literal("request_layout") }).strict(),
+    // Live presence: report the pointer (`pointer` messages) or stop. The page never hears
+    // where anyone else is: the parent draws other people's cursors above the frame.
+    z
+      .object({ ...envelope, type: z.literal("track"), pointer: z.boolean() })
+      .strict(),
     z
       .object({
         ...envelope,

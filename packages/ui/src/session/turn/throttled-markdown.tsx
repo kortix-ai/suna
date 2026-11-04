@@ -9,6 +9,7 @@ import { UnifiedMarkdown } from '../../markdown/unified-markdown';
 import { stripKortixSystemTags } from '../../internal/lib/utils/kortix-system-tags';
 
 import { useStreamingCadence } from './streaming-cadence';
+import { unwrapWorkflowResultBlocks } from '../tool/tools/workflow-result-text';
 
 function trimIncompleteTableRow(text: string): string {
   // Fast path: no pipe at all → nothing to trim
@@ -116,7 +117,9 @@ function ThrottledMarkdownImpl({
   // appends closing backticks) and hold back a table header until its
   // separator lands. Do NOT trim table rows — that strips real content
   // mid-stream and causes garbled text until completion.
-  const { text: pacedContent, streaming } = useStreamingCadence(content, isStreaming, revealKey);
+  const { text: pacedText, streaming } = useStreamingCadence(content, isStreaming, revealKey);
+  // A workflow runner's reply wraps its result in `<workflow_result>`: show the result, not the tag and its JSON.
+  const pacedContent = useMemo(() => unwrapWorkflowResultBlocks(pacedText), [pacedText]);
   const displayContent = useMemo(
     () =>
       streaming

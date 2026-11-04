@@ -8,6 +8,9 @@ import { ISO, family, serbianLatin } from './lang'
 import { b64 } from './model'
 import { modelsHeaders, sttFetch, speechUrl, viaModels, voicesUrl } from './models'
 
+// Vendor error text reaches stderr verbatim: drop line breaks so it cannot forge log lines (CodeQL js/log-injection).
+const oneline = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+
 export type Stt = { feed(pcm: Uint8Array, loud: boolean): void; commit(): void; peek?(): Promise<string>; speculate?(): void; close(): void }
 export type SttEvents = { ready(): void; text(t: string, lang?: string, conf?: number): void; close(why: string): void; keep?(t: string): boolean; lang?: string; guess?(t: string): void; names?(): string[]; model?: string; engine?: 'groq' | 'gemini' } // names: said in this call, for the prompt // guess: a speculative transcript // keep: a short result too precious to drop (the wake name); lang: the call's starting language
 // Voiced speech crosses zero far less often than noise: median zero-crossing rate 0.05-0.14 per sample for
@@ -157,7 +160,7 @@ export const stts: Record<string, (e: SttEvents) => Stt> = {
       const d = JSON.parse(String(m.data))
       if (d.message_type === 'session_started') e.ready()
       else if (d.message_type === 'committed_transcript') e.text(d.text ?? '')
-      else if (d.message_type?.endsWith('error')) console.error('[cascade stt]', d.message_type, d.error)
+      else if (d.message_type?.endsWith('error')) console.error('[cascade stt]', oneline(d.message_type), oneline(d.error))
     }
     ws.onclose = (m) => e.close(`scribe ${m.code} ${m.reason}`)
     return {
@@ -326,7 +329,7 @@ export const ttss: Record<string, (lang?: string, model?: string) => Tts> = {
         const j = jobs[0]
         if (m.type === 'audio.delta' && j && !j.signal.aborted) j.out.enqueue(new Uint8Array(Buffer.from(m.delta, 'base64')))
         else if (m.type === 'audio.done' || m.type === 'audio.clear') jobs.shift()?.out.close(), next()
-        else if (m.type === 'error') console.error('[tts xai-ws]', m.message)
+        else if (m.type === 'error') console.error('[tts xai-ws]', oneline(m.message))
       }
       ws.onclose = () => {
         for (const j of jobs.splice(0)) j.out.close()
@@ -431,7 +434,7 @@ export const ttss: Record<string, (lang?: string, model?: string) => Tts> = {
           buf += dec.decode(value, { stream: true })
         }
       },
-      cancel: () => void reader.cancel(),
+      cancel: () => void reader.cancel().catch(() => {}), // an aborted stream rejects its cancel (Bun 1.4): never an unhandled rejection
     }))
   } }),
   // A voice for conversation-flow tests: no provider, no characters spent. First audio after VOICE_MOCK_TTS_MS (180,
@@ -514,12 +517,12 @@ export function inworldId(v: string): string {
 }
 
 const cache = new Map<string, Promise<Uint8Array | undefined>>()
-export function cached(text: string, voice?: string, lang = 'en', via: 'xai' | 'gemini' | 'inworld' | 'mock' = xaiSpeaks(lang) ? 'xai' : 'gemini'): Promise<Uint8Array | undefined> {
+export function cached(text: string, voice?: string, lang = 'en', via: 'xai' | 'gemini' | 'inworld' | 'mock' | 'models' = xaiSpeaks(lang) ? 'xai' : 'gemini'): Promise<Uint8Array | undefined> {
   const key = `${via}|${lang}|${voice ?? ''}|${text}`
   if (!cache.has(key))
     cache.set(
       key,
-      (via === 'xai' ? ttss.xai!(lang) : via === 'inworld' ? ttss.inworld!(lang) : via === 'mock' ? ttss.mock!() : ttss.gemini!())
+      (via === 'xai' ? ttss.xai!(lang) : via === 'inworld' ? ttss.inworld!(lang) : via === 'models' ? ttss.models!(lang) : via === 'mock' ? ttss.mock!() : ttss.gemini!())
         .speak(text, voice, new AbortController().signal)
         .then(async (r) => (r.ok ? trim(new Uint8Array(await r.arrayBuffer())) : undefined))
         .catch(() => undefined),

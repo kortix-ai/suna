@@ -38,6 +38,7 @@ import {
   PencilSimpleIcon,
   AlarmIcon,
   LightningIcon,
+  PhoneIcon,
 } from '@phosphor-icons/react';
 
 import { CopyButton } from '../../markdown/copy-button';
@@ -83,6 +84,7 @@ import {
 } from '../thread/mention-segments';
 import { parseChannelMessage, slackConversationName, type ChannelMessageInfo } from './channel-message';
 import { SourceCard, SourcePill } from './source-pill';
+import { parseVoiceTurn, type VoiceTurnInfo } from './voice-turn';
 import { PeerMessageRow } from './peer-message-row';
 import { NoticeBatchGroup } from './notice-batch-group';
 import { parseNoticeBatch } from './subagent-notice';
@@ -267,6 +269,38 @@ function PlatformPromptMessage({
  * Loop and whether it repeats; its card carries the id and a link to the
  * project's Loops page, filtered to this session.
  */
+/**
+ * A voice call's turn the voice answered itself (voice-turn.ts): the caller's words as their own bubble under a Call
+ * pill, and the voice's answer below it, as the agent's line, not the note the session keeps for the agent.
+ */
+function VoiceTurnMessage({ info, actions }: { info: VoiceTurnInfo; actions?: React.ReactNode }) {
+  const t = useTranslations('voiceCall');
+  return (
+    <div className="flex w-full flex-col gap-1.5" data-testid="voice-turn">
+      {info.user ? (
+        <PlatformPromptMessage
+          text={info.user}
+          actions={actions}
+          pill={
+            <SourcePill
+              mark={<PhoneIcon weight="fill" className="size-3 shrink-0" aria-hidden />}
+              source={t('call')}
+              sender={t('you')}
+              card={<SourceCard mark={<PhoneIcon weight="fill" className="size-3.5 shrink-0" aria-hidden />} title={t('title')} footer={<span className="text-muted-foreground">{t('turnNote')}</span>} />}
+            />
+          }
+        />
+      ) : null}
+      {info.said ? (
+        <p className="text-foreground max-w-[80%] self-start text-sm leading-relaxed text-pretty">
+          {info.user ? null : <PhoneIcon weight="fill" className="text-muted-foreground mr-1.5 inline size-3 align-[-1px]" aria-label={t('call')} />}
+          {info.said}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function ReminderMessage({ info, actions }: { info: ReminderPromptInfo; actions?: React.ReactNode }) {
   const t = useTranslations('reminders');
   const ids = useSessionIds();
@@ -1702,6 +1736,8 @@ export function UserMessage({
   // A reminder fire: platform-written `[REMINDER …]` header + the reminder text.
   const reminderInfo = useMemo(() => parseReminderPrompt(rawText), [rawText]);
 
+  // A voice call's turn the voice answered itself (its note in the session: voice-turn.ts).
+  const voiceTurnInfo = useMemo(() => (message.origin === 'automation' || message.origin === 'steer' || message.origin === 'prompt' || !message.origin ? parseVoiceTurn(rawText) : null), [message.origin, rawText]);
   // A message from another Kortix session (`send_message`): `[message from reviewer · session 3f2a1b9c · #m_1]`.
   const peerInfo = useMemo(() => parsePeerMessagePrompt(rawText), [rawText]);
   // Several notices in one prompt (`session-notice-batch.ts`), whatever the first one is: a peer
@@ -1940,6 +1976,10 @@ export function UserMessage({
   // Channel messages (Slack / Microsoft Teams / Telegram): a branded card with the sender
   if (channelMessageInfo) {
     return <ChannelMessage info={channelMessageInfo} attachments={channelAttachments} actions={actions} />;
+  }
+
+  if (voiceTurnInfo) {
+    return <VoiceTurnMessage info={voiceTurnInfo} actions={actions} />;
   }
 
   if (reminderInfo) {

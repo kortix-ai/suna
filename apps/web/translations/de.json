@@ -106,6 +106,16 @@
     "access": "Zugriff",
     "actions": "Aktionen",
     "coolingDown": "Abklingzeit aktiv",
+    "usageFiveHour": "5 Stunden",
+    "usageWeekly": "Wöchentlich",
+    "usageWeeklyModel": "Wöchentlich · {model}",
+    "usagePercent": "{percent} % genutzt",
+    "usagePercentResets": "{percent} % · zurückgesetzt {time}",
+    "usageLimitReached": "Limit erreicht",
+    "usageLimitResets": "Limit erreicht · zurückgesetzt {time}",
+    "usageNotSeen": "Die Nutzung erscheint nach der ersten Anfrage",
+    "usageObserved": "Aktualisiert {time}",
+    "usageAriaLabel": "{window}: {percent} % genutzt",
     "member": "Mitglied",
     "members": "Mitglieder",
     "actionsFor": "Aktionen für {label}",
@@ -1328,7 +1338,7 @@
         },
         "voice_call": {
           "name": "Sprachanrufe",
-          "description": "Ruf den Agenten der Session von der Session-Seite aus an und sprich mit ihm. Er hört dich, antwortet mit Stimme, sieht einen geteilten Bildschirm und arbeitet in derselben Session, sodass das Gespräch im Chat bleibt."
+          "description": "Ruf einen Agenten von seiner Seite aus an (Anpassen → Agenten) und sprich mit ihm. Ein Anruf ist eine eigene Session dieses Agenten: Er hört dich, antwortet mit Stimme und sieht einen geteilten Bildschirm, und das Gespräch ist der Chat dieser Session."
         },
         "shared_drives": {
           "name": "Geteilte Drives",
@@ -3203,6 +3213,13 @@
       "large": "Großer Lauf",
       "largeHint": "Dieser Lauf startet mehr als 25 Agenten. Du kannst jeden Agenten in seiner Zeile stoppen.",
       "openRun": "Lauf öffnen",
+      "viewingAgent": "Wird angezeigt",
+      "startsAfter": "Beginnt nach {phase}",
+      "didntFinish": "Nicht abgeschlossen",
+      "retryNow": "Erneut versuchen",
+      "retryAgent": "{label} erneut versuchen",
+      "waitsFor": "Wartet auf {count} weitere",
+      "phaseProgress": "{phase} {done} von {total} erledigt",
       "openRunLabel": "Sitzung des Laufs öffnen",
       "backgroundIdle": "In einer eigenen Sitzung",
       "savedName": "Gespeicherter Workflow {name}",
@@ -3230,11 +3247,23 @@
       "stopFailed": "{label} konnte nicht gestoppt werden",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # Schlüssel} other {JSON · # Schlüssel}}",
-      "jsonItems": "{count, plural, one {JSON · # Eintrag} other {JSON · # Einträge}}"
+      "jsonItems": "{count, plural, one {JSON · # Eintrag} other {JSON · # Einträge}}",
+      "failedSentence": "Der Workflow hat aufgehört, bevor er fertig war.",
+      "runningCount": "{count} laufen"
     },
     "agent": {
       "backgroundWorking": "Arbeitet im Hintergrund",
-      "backgroundSession": "In einer eigenen Sitzung"
+      "backgroundSession": "In einer eigenen Sitzung",
+      "open": "Öffnen",
+      "openAgent": "{name} öffnen",
+      "state": {
+        "working": "Arbeitet",
+        "needs_input": "Braucht dich",
+        "idle": "Erledigt",
+        "completed": "Erledigt",
+        "failed": "Nicht abgeschlossen",
+        "stopped": "Gestoppt"
+      }
     }
   },
   "agentRunLimit": {
@@ -21319,7 +21348,8 @@
       "aboutDescription": "Über diese Beschreibung",
       "senderUnavailable": "Das sendende Konto konnte nicht geladen werden. Prüfe die Zeile „Von“.",
       "quoted": "„{text}“"
-    }
+    },
+    "promptHistory": "Verlauf {index}/{total}"
   },
   "commandPalette": {
     "title": "Befehlspalette",
@@ -23908,6 +23938,7 @@
     "emptyFiltered": "Keine passenden Artefakte",
     "updated": "Aktualisiert {time}",
     "pinned": "Angeheftet",
+    "openComments": "{count, plural, one {# offener Kommentar} other {# offene Kommentare}}",
     "visibility": {
       "private": "Privat",
       "project": "Projekt",
@@ -24164,7 +24195,27 @@
     "moved": "Artefakt verschoben",
     "moveFailed": "Artefakt konnte nicht verschoben werden",
     "spaceEmpty": "Noch keine Artefakte in {space}",
-    "showAll": "Alle anzeigen"
+    "showAll": "Alle anzeigen",
+    "live": {
+      "here": "Gerade hier",
+      "hereLabel": "Gerade auf diesem Artefakt: {names}",
+      "reconnecting": "Verbindung wird wiederhergestellt…",
+      "you": "Du",
+      "agents": "Agenten",
+      "agentsHere": "Agenten in diesem Thread",
+      "status": {
+        "viewing": "Ansicht",
+        "reading": "Liest",
+        "editing": "Bearbeitet",
+        "writing": "Schreibt"
+      },
+      "hideCursor": "Meinen Cursor ausblenden",
+      "hideCursorHint": "Andere sehen weiterhin deinen Avatar.",
+      "typingOne": "{name} tippt…",
+      "typingTwo": "{first} und {second} tippen…",
+      "typingMany": "{count, plural, one {# Person tippt…} other {# Personen tippen…}}",
+      "writing": "{name} schreibt…"
+    }
   },
   "emailConnect": {
     "homeTitle": "Wo das Postfach liegt",
@@ -25054,6 +25105,7 @@
   "voiceCall": {
     "title": "Sprachanruf",
     "call": "Anrufen",
+    "calling": "Ruft an…",
     "start": "Sprachanruf starten",
     "end": "Anruf beenden",
     "connecting": "Verbinden…",
@@ -25071,6 +25123,8 @@
     "lost": "Der Anruf konnte nicht wiederhergestellt werden",
     "unavailable": "Die Sandbox dieser Sitzung wurde gestartet, bevor Sprachanrufe aktiviert wurden. Anrufe funktionieren ab ihrem nächsten Start.",
     "callAgain": "Erneut anrufen",
+    "openChat": "Chat öffnen",
+    "turnNote": "In einem Sprachanruf gesagt und von der Stimme beantwortet.",
     "close": "Schließen"
   },
   "agentMounts": {
@@ -25118,18 +25172,38 @@
       "shutdownRequest": "Beenden-Anfrage von {from}",
       "shutdownResponse": "Antwort auf die Beenden-Anfrage von {from}",
       "expand": "Ganze Nachricht anzeigen",
-      "collapse": "Nachricht ausblenden"
+      "collapse": "Nachricht ausblenden",
+      "kind": {
+        "message": "Nachricht",
+        "finished": "Fertig",
+        "shutdownRequest": "Bittet um Stopp",
+        "shutdownResponse": "Antwort auf Stopp"
+      }
     },
     "notice": {
       "completed": "{name} ist fertig",
       "failed": "{name} wurde nicht abgeschlossen",
       "stopped": "{name} wurde gestoppt",
+      "viewRun": "Lauf ansehen",
+      "peerFinished": "{name} ist fertig",
+      "result": "Ergebnis",
       "fallbackName": "Dein Agent",
       "openSession": "Sitzung öffnen",
       "expand": "Ganzes Ergebnis anzeigen",
       "collapse": "Ergebnis ausblenden",
       "batchTitle": "{count, plural, one {# Agent ist fertig} other {# Agenten sind fertig}}",
-      "ownsTasks": "Hat noch {tasks}"
+      "ownsTasks": "Hat noch {tasks}",
+      "source": "Agentenmeldung",
+      "statusFailedShort": "Nicht abgeschlossen",
+      "statusStoppedShort": "Gestoppt",
+      "updateCount": "{count, plural, one {# Agentenmeldung} other {# Agentenmeldungen}}",
+      "details": "Details",
+      "failedSentence": "Der Agent hat aufgehört, bevor er fertig war.",
+      "state": {
+        "completed": "Fertig",
+        "failed": "Nicht fertig",
+        "stopped": "Gestoppt"
+      }
     },
     "tools": {
       "running": {
@@ -25140,6 +25214,8 @@
         "stopping": "Agent wird gestoppt…"
       },
       "to": "An",
+      "messageTo": "Nachricht an @{to}",
+      "messageSent": "Nachricht gesendet",
       "peerStatus": {
         "delivered": "Zugestellt",
         "held": "Wartet auf Freigabe",
@@ -25172,7 +25248,8 @@
       "blockedBy": "blockiert durch {tasks}",
       "stopped": "Gestoppt",
       "alreadyEnded": "Bereits beendet",
-      "openSession": "Sitzung öffnen"
+      "openSession": "Sitzung öffnen",
+      "messageToName": "An {to}"
     },
     "strip": {
       "label": "Agenten",
@@ -25229,7 +25306,15 @@
       "retry": "Erneut versuchen",
       "emptyTitle": "Noch nichts",
       "emptyDescription": "Seine Nachrichten erscheinen hier, während er arbeitet.",
-      "loadOlder": "Frühere Nachrichten anzeigen"
+      "loadOlder": "Frühere Nachrichten anzeigen",
+      "runsLabel": "Workflow-Läufe",
+      "previousAgent": "Vorheriger Agent",
+      "nextAgent": "Nächster Agent",
+      "moreActions": "Weitere Aktionen",
+      "attachments": "Angehängte Bilder",
+      "removeAttachment": "{name} entfernen",
+      "attachImages": "Bilder anhängen",
+      "attachFailed": "Das Bild konnte nicht angehängt werden"
     },
     "tasks": {
       "label": "Aufgaben des Teams",
@@ -25247,10 +25332,15 @@
       "title": "Nachricht von {from}",
       "titleShutdown": "{from} bittet darum, diese Sitzung zu stoppen",
       "waiting": "Wartet auf deine Freigabe. Sie läuft nach 5 Minuten ab.",
+      "waitingShort": "Wartet auf deine Freigabe",
+      "expires": "Läuft nach 5 Minuten ab",
       "deny": "Ablehnen",
       "approve": "Genehmigen",
       "approveFailed": "Die Nachricht konnte nicht zugestellt werden",
-      "denyFailed": "Die Nachricht konnte nicht abgelehnt werden"
+      "denyFailed": "Die Nachricht konnte nicht abgelehnt werden",
+      "wantsToSend": "möchte diesem Agenten eine Nachricht senden",
+      "asksStop": "bittet diesen Agenten zu stoppen",
+      "needsApproval": "Braucht deine Freigabe"
     },
     "workflow": {
       "large": "Großer Workflow",
@@ -25258,6 +25348,9 @@
       "paused": "Pausiert",
       "pause": "Lauf pausieren",
       "resume": "Lauf fortsetzen",
+      "pauseShort": "Pausieren",
+      "resumeShort": "Fortsetzen",
+      "stopShort": "Stoppen",
       "pauseHint": "Pausieren: Kein neuer Agent startet, laufende Agenten werden fertig (p)",
       "resumeHint": "Lauf fortsetzen (p)",
       "stop": "Lauf stoppen",
@@ -25267,6 +25360,7 @@
       "savePrompt": "Speichere den Workflow-Lauf „{title}“ (Lauf {runId}) als gespeicherten Workflow: Schreibe sein Skript nach {file} und eröffne dafür eine Änderungsanfrage.",
       "saveSent": "Speichern des Workflows angefragt",
       "saveFailed": "Das Speichern des Workflows konnte nicht angefragt werden",
+      "viewing": "Wird angezeigt",
       "restartHint": "Diesen Agenten mit demselben Prompt neu starten (r)",
       "restartAgent": "{label} neu starten",
       "failed": {
@@ -25365,5 +25459,18 @@
     "dialogTitle": "Neuen Kontext starten?",
     "dialogDescription": "Der Agent arbeitet in einem neuen Kontext weiter und durchsucht den vollen Verlauf, wenn er ein Detail braucht. Nichts wird zusammengefasst, und die Unterhaltung bleibt hier, wie sie ist.",
     "dialogAction": "Neuen Kontext starten"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Slack-Nachricht",
+    "slackConversation": "Slack-Unterhaltung",
+    "notionPage": "Notion-Seite",
+    "figmaDesign": "Figma-Design",
+    "figjamBoard": "FigJam-Board",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Google-Dokument",
+    "googleSheet": "Google-Tabelle",
+    "googleSlides": "Google Slides",
+    "pullRequest": "PR #{number}",
+    "issue": "Issue #{number}"
   }
 }

@@ -3,6 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import { sessionLogOfV1Rows, type ToolPart } from '@kortix/sdk';
 
 import {
+  agentCallState,
+  agentSessionDisplay,
   childLastActivity,
   describeChildStep,
   taskRowModel,
@@ -139,3 +141,41 @@ describe('taskRowModel — the row expands in place', () => {
     expect(taskRowModel({ status: 'completed', input: {}, childCalls: [] }).sessionTitle).toBe('Agent · general');
   });
 });
+
+describe('agentCallState (the sub-agent call card)', () => {
+  const base = { status: 'completed', hasError: false, background: false, childReplied: false };
+  test('the child session’s own status wins', () => {
+    expect(agentCallState({ ...base, childDisplay: 'needs-you' })).toBe('needs_input');
+    expect(agentCallState({ ...base, childDisplay: 'failed' })).toBe('failed');
+    expect(agentCallState({ ...base, childDisplay: 'stopped' })).toBe('stopped');
+    expect(agentCallState({ ...base, childDisplay: 'running' })).toBe('working');
+    expect(agentCallState({ ...base, childDisplay: 'done' })).toBe('done');
+  });
+  test('a failed dispatch is failed; a running call is working', () => {
+    expect(agentCallState({ ...base, hasError: true, childDisplay: 'running' })).toBe('failed');
+    expect(agentCallState({ ...base, status: 'running' })).toBe('working');
+  });
+  test('a background hand-off works until its child replied', () => {
+    expect(agentCallState({ ...base, background: true })).toBe('working');
+    expect(agentCallState({ ...base, background: true, childReplied: true })).toBe('done');
+    expect(agentCallState({ ...base, background: true, childLiveType: 'busy', childReplied: true })).toBe('working');
+  });
+});
+
+describe('agentSessionDisplay (a child that never started)', () => {
+  test('a failed session reads failed even while the API still calls it working', () => {
+    const row = {
+      session_id: 's1',
+      status: 'failed',
+      board_state: 'working',
+      working: { state: 'working', since: null, turn_token: null, pending_delivery: true },
+      error: 'The sandbox provider could not start this session. Try again.',
+      metadata: {},
+    } as never;
+    expect(agentSessionDisplay(row)).toBe('failed');
+    expect(
+      agentCallState({ status: 'completed', hasError: false, background: true, childReplied: false, childDisplay: agentSessionDisplay(row) }),
+    ).toBe('failed');
+  });
+});
+

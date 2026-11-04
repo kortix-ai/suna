@@ -716,7 +716,13 @@ change every loaded thread list at once, and a failed write undoes only its own
 change. A thread or comment that the server has not confirmed yet carries
 `optimistic: true`; a new one also has an `optimistic-` id, an empty author
 (`user_id: ''`) and every `can_*` action false. Hosts render it as pending.
-Mounted Comments and Activity queries refetch after the last concurrent write.
+Mounted Comments and Activity queries, the `useArtifacts` list and the current
+`useArtifact` read refetch after the last concurrent write.
+
+`listArtifacts` and `getArtifact` return `open_thread_count` while the project
+has `artifact_comments` on: the threads with status `open` whose first comment
+is not deleted. The field is absent while the flag is off, and from older APIs.
+Hosts show it on an Artifact card before the person opens it.
 `useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? })`
 returns one activity page. Both hooks poll every 10 seconds while mounted and
 visible. A missing project or Artifact id disables reads. Comment reads never
@@ -751,6 +757,63 @@ owns cursor pages and exposes ordered, deduplicated `items`, `olderVersions`,
 `fetchNextPage`, and the query status. Hosts render those items without keeping
 a second copy of activity pages. Its mounted polling and write invalidation
 match the one-page hook.
+
+### Live presence
+
+An open Artifact has one WebSocket per viewer. It carries who is here, their
+cursor, selection, typing and open thread, and a ping when comments, activity
+or content change. It carries no comment text and no Artifact content: those
+stay on REST. It needs `artifacts` and `artifact_comments`.
+
+```ts
+// React: one hook per open Artifact.
+const live = useArtifactLive(projectId, artifactId, {
+  enabled: artifactCommentsOn, // never connects while false
+  view: 'doc',                 // or 'page'
+  version: artifact.entry_version,
+  hidden: document.hidden,
+});
+live.status;        // 'connecting' | 'live' | 'reconnecting' | 'closed' | 'access_lost'
+live.participants;  // ArtifactLiveParticipant[], this tab included (id === live.you)
+live.setCursor({ kind: 'doc', quote: 'Churn fell', prefix: 'quarter. ', offset: 5 });
+live.setTyping({ thread_id: threadId }, true);
+
+// Without React (any runtime with a WebSocket, or pass `webSocket`).
+const connection = kortix.project(projectId).artifacts.live.connect(artifactId, {
+  view: 'page',
+  onEvent: (event) => { /* status, welcome, presence, changed, resync */ },
+});
+connection.setFocus(threadId);
+connection.close();
+```
+
+`useArtifactLive` refetches on a `changed` ping: `comments` refetches the
+Artifact's comment reads (not screenshots; deferred while a comment write is
+in flight), `activity` the activity reads, and `content` the current
+Artifact, its versions and the `useArtifacts` list. After a reconnect it
+refetches all of them once (`resync`). It closes on unmount, when `enabled`
+turns false, or when the project or Artifact changes. A `version` change does
+not reconnect; a `hidden` change sends one frame.
+
+`createArtifactLiveConnection({ projectId, artifactId, view, version?, hidden?,
+getTicket?, webSocket?, backendUrl?, onEvent? })` is the framework-free
+client. Each attempt mints a one-use ticket (`createArtifactLiveTicket`, a
+60 s ticket from `POST …/live/ticket`) and opens `GET …/live?ticket=` on the
+`ws(s)://` form of `backendUrl`. It sends `hello`, pings every 25 s, and
+replaces a socket that missed a pong or got no welcome in 20 s. It sends at
+most 8 frames a second: each field coalesces to its newest value, so a fast
+pointer never builds a backlog. A setter returns `false` and sends nothing for
+a value the protocol refuses (a doc cursor quote over 64 characters, a frame
+over 1024 UTF-8 bytes, an id that is not a UUID). Reconnects back off 1, 2,
+4, 8, 16, 30 s (plus up to 50 % jitter, at most 30 s), with a new ticket each
+time. Close code `4403`, or a ticket refused with `403` or `404`, ends the
+connection with `access_lost`. Every server frame is validated; an invalid
+frame is dropped.
+
+`signalArtifactLiveAgent(projectId, artifactId, { status, thread_id?, quote? })`
+names an agent session's place: `reading`, `editing` or `writing` a thread or
+near a quote, or `idle` to leave. Only a session-bound token may call it; a
+person's token answers `403`. The CLI form is `kortix artifacts focus`.
 
 ## The facade surface
 

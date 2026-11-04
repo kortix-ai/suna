@@ -106,6 +106,16 @@
     "access": "Приступ",
     "actions": "Радње",
     "coolingDown": "Период хлађења",
+    "usageFiveHour": "5 sati",
+    "usageWeekly": "Nedeljno",
+    "usageWeeklyModel": "Nedeljno · {model}",
+    "usagePercent": "{percent}% iskorišćeno",
+    "usagePercentResets": "{percent}% · resetuje se {time}",
+    "usageLimitReached": "Limit dostignut",
+    "usageLimitResets": "Limit dostignut · resetuje se {time}",
+    "usageNotSeen": "Potrošnja se prikazuje posle prvog zahteva",
+    "usageObserved": "Ažurirano {time}",
+    "usageAriaLabel": "{window}: {percent}% iskorišćeno",
     "member": "члан",
     "members": "чланова",
     "actionsFor": "Радње за {label}",
@@ -1328,7 +1338,7 @@
         },
         "voice_call": {
           "name": "Гласовни позиви",
-          "description": "Позови агента сесије са странице сесије и разговарај с њим. Чује те, одговара гласом, види екран који делиш и ради у истој сесији, па разговор остаје у ћаскању."
+          "description": "Позови агента са његове странице (Прилагоди → Агенти) и разговарај с њим. Позив је засебна сесија тог агента: чује те, одговара гласом и види екран који делиш, а разговор је чет те сесије."
         },
         "shared_drives": {
           "name": "Deljeni drajvovi",
@@ -3203,6 +3213,13 @@
       "large": "Велико покретање",
       "largeHint": "Ово покретање покреће више од 25 агената. Сваког агента можеш да зауставиш из његовог реда.",
       "openRun": "Отвори покретање",
+      "viewingAgent": "Приказано",
+      "startsAfter": "Почиње после фазе {phase}",
+      "didntFinish": "Није завршио",
+      "retryNow": "Покушај поново",
+      "retryAgent": "Покушај поново {label}",
+      "waitsFor": "Чека још {count}",
+      "phaseProgress": "{phase}: {done} од {total} готово",
       "openRunLabel": "Отвори сесију покретања",
       "backgroundIdle": "У сопственој сесији",
       "savedName": "Сачувани ток рада {name}",
@@ -3230,11 +3247,23 @@
       "stopFailed": "Није могуће зауставити {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # кључ} few {JSON · # кључа} other {JSON · # кључева}}",
-      "jsonItems": "{count, plural, one {JSON · # ставка} few {JSON · # ставке} other {JSON · # ставки}}"
+      "jsonItems": "{count, plural, one {JSON · # ставка} few {JSON · # ставке} other {JSON · # ставки}}",
+      "failedSentence": "Tok rada je stao pre nego što je završio.",
+      "runningCount": "{count} radi"
     },
     "agent": {
       "backgroundWorking": "Ради у позадини",
-      "backgroundSession": "У сопственој сесији"
+      "backgroundSession": "У сопственој сесији",
+      "open": "Отвори",
+      "openAgent": "Отвори {name}",
+      "state": {
+        "working": "Ради",
+        "needs_input": "Потребан си",
+        "idle": "Готово",
+        "completed": "Готово",
+        "failed": "Није завршио",
+        "stopped": "Заустављено"
+      }
     }
   },
   "agentRunLimit": {
@@ -21319,7 +21348,8 @@
       "aboutDescription": "О овом опису",
       "senderUnavailable": "Налог пошиљаоца није могуће учитати. Проверите ред Од.",
       "quoted": "„{text}“"
-    }
+    },
+    "promptHistory": "Историја {index}/{total}"
   },
   "commandPalette": {
     "title": "Палета команди",
@@ -23908,6 +23938,7 @@
     "emptyFiltered": "Ниједан артефакт не одговара",
     "updated": "Ажурирано {time}",
     "pinned": "Закачено",
+    "openComments": "{count, plural, one {# отворен коментар} few {# отворена коментара} other {# отворених коментара}}",
     "visibility": {
       "private": "Приватни",
       "project": "Пројектни",
@@ -24021,7 +24052,7 @@
     "askAgentNoFiles": "Pošaljite prvu poruku kao tekst. Fajlove dodajte u ćaskanju kada agent odgovori.",
     "askAgentHistory": "Istorija",
     "askAgentHistoryEmpty": "Još nema ćaskanja o ovom artefaktu.",
-    "peopleWithAccess": "Osobe sa pristupom: {names}",
+    "peopleWithAccess": "Особе са приступом: {names}",
     "docCreated": "Dokument je napravljen",
     "open": "Otvori",
     "embedOpen": "Otvori link",
@@ -24164,7 +24195,27 @@
     "moved": "Артефакт је премештен",
     "moveFailed": "Није могуће преместити артефакт",
     "spaceEmpty": "Још нема артефаката у {space}",
-    "showAll": "Прикажи све"
+    "showAll": "Прикажи све",
+    "live": {
+      "here": "Сада овде",
+      "hereLabel": "Сада на овом артефакту: {names}",
+      "reconnecting": "Поновно повезивање…",
+      "you": "Ви",
+      "agents": "Агенти",
+      "agentsHere": "Агенти у овој нити",
+      "status": {
+        "viewing": "Прегледа",
+        "reading": "Чита",
+        "editing": "Уређује",
+        "writing": "Пише"
+      },
+      "hideCursor": "Сакриј мој курсор",
+      "hideCursorHint": "Остали и даље виде ваш аватар.",
+      "typingOne": "{name} куца…",
+      "typingTwo": "{first} и {second} куцају…",
+      "typingMany": "{count, plural, one {# особа куца…} few {# особе куцају…} other {# особа куца…}}",
+      "writing": "{name} пише…"
+    }
   },
   "emailConnect": {
     "homeTitle": "Gde je sanduče",
@@ -25054,6 +25105,7 @@
   "voiceCall": {
     "title": "Гласовни позив",
     "call": "Позови",
+    "calling": "Позивање…",
     "start": "Започни гласовни позив",
     "end": "Заврши позив",
     "connecting": "Повезивање…",
@@ -25071,6 +25123,8 @@
     "lost": "Позив није могао поново да се повеже",
     "unavailable": "Песковник ове сесије покренут је пре него што су гласовни позиви укључени. Позиви раде од његовог следећег покретања.",
     "callAgain": "Позови поново",
+    "openChat": "Отвори чет",
+    "turnNote": "Речено у гласовном позиву, а глас је одговорио.",
     "close": "Затвори"
   },
   "agentMounts": {
@@ -25118,18 +25172,38 @@
       "shutdownRequest": "Захтев за гашење од {from}",
       "shutdownResponse": "Одговор на захтев за гашење од {from}",
       "expand": "Прикажи целу поруку",
-      "collapse": "Сакриј поруку"
+      "collapse": "Сакриј поруку",
+      "kind": {
+        "message": "Poruka",
+        "finished": "Završeno",
+        "shutdownRequest": "Traži zaustavljanje",
+        "shutdownResponse": "Odgovor na zaustavljanje"
+      }
     },
     "notice": {
       "completed": "{name} је завршио",
       "failed": "{name} није завршио",
       "stopped": "{name} је заустављен",
+      "viewRun": "Погледај покретање",
+      "peerFinished": "{name} је завршио",
+      "result": "Резултат",
       "fallbackName": "Твој агент",
       "openSession": "Отвори сесију",
       "expand": "Прикажи цео резултат",
       "collapse": "Сакриј резултат",
       "batchTitle": "{count, plural, one {# агент је завршио} few {# агента су завршила} other {# агената је завршило}}",
-      "ownsTasks": "Још има {tasks}"
+      "ownsTasks": "Још има {tasks}",
+      "source": "Ажурирање агента",
+      "statusFailedShort": "Није завршено",
+      "statusStoppedShort": "Заустављено",
+      "updateCount": "{count, plural, one {# ажурирање агента} few {# ажурирања агента} other {# ажурирања агента}}",
+      "details": "Detalji",
+      "failedSentence": "Agent je stao pre nego što je završio.",
+      "state": {
+        "completed": "Završeno",
+        "failed": "Nije završeno",
+        "stopped": "Zaustavljeno"
+      }
     },
     "tools": {
       "running": {
@@ -25140,6 +25214,8 @@
         "stopping": "Зауставља се агент…"
       },
       "to": "За",
+      "messageTo": "Порука за @{to}",
+      "messageSent": "Порука је послата",
       "peerStatus": {
         "delivered": "Испоручено",
         "held": "Чека одобрење",
@@ -25172,7 +25248,8 @@
       "blockedBy": "чека на {tasks}",
       "stopped": "Заустављено",
       "alreadyEnded": "Већ је завршено",
-      "openSession": "Отвори сесију"
+      "openSession": "Отвори сесију",
+      "messageToName": "Za {to}"
     },
     "strip": {
       "label": "Агенти",
@@ -25229,7 +25306,15 @@
       "retry": "Покушај поново",
       "emptyTitle": "Још ништа",
       "emptyDescription": "Његове поруке се појављују овде док ради.",
-      "loadOlder": "Прикажи раније поруке"
+      "loadOlder": "Прикажи раније поруке",
+      "runsLabel": "Покретања workflow-а",
+      "previousAgent": "Претходни агент",
+      "nextAgent": "Следећи агент",
+      "moreActions": "Још радњи",
+      "attachments": "Priložene slike",
+      "removeAttachment": "Ukloni {name}",
+      "attachImages": "Priloži slike",
+      "attachFailed": "Slika nije mogla da se priloži"
     },
     "tasks": {
       "label": "Задаци тима",
@@ -25247,10 +25332,15 @@
       "title": "Порука од {from}",
       "titleShutdown": "{from} тражи да се ова сесија заустави",
       "waiting": "Чека твоје одобрење. Истиче за 5 минута.",
+      "waitingShort": "Чека твоје одобрење",
+      "expires": "Истиче за 5 минута",
       "deny": "Одбиј",
       "approve": "Одобри",
       "approveFailed": "Није могуће испоручити поруку",
-      "denyFailed": "Није могуће одбити поруку"
+      "denyFailed": "Није могуће одбити поруку",
+      "wantsToSend": "želi da pošalje poruku ovom agentu",
+      "asksStop": "traži da se ovaj agent zaustavi",
+      "needsApproval": "Potrebno je tvoje odobrenje"
     },
     "workflow": {
       "large": "Велики ток рада",
@@ -25258,6 +25348,9 @@
       "paused": "Паузирано",
       "pause": "Паузирај покретање",
       "resume": "Настави покретање",
+      "pauseShort": "Паузирај",
+      "resumeShort": "Настави",
+      "stopShort": "Заустави",
       "pauseHint": "Паузирај: ниједан нови агент се не покреће, а агенти који раде завршавају (p)",
       "resumeHint": "Настави покретање (p)",
       "stop": "Заустави покретање",
@@ -25267,6 +25360,7 @@
       "savePrompt": "Сачувај покретање тока рада „{title}“ (покретање {runId}) као сачувани ток рада: упиши његову скрипту у {file} и отвори захтев за измену за њега.",
       "saveSent": "Затражено је чување тока рада",
       "saveFailed": "Није могуће затражити чување тока рада",
+      "viewing": "Приказано",
       "restartHint": "Поново покрени овог агента истим упитом (r)",
       "restartAgent": "Поново покрени {label}",
       "failed": {
@@ -25365,5 +25459,18 @@
     "dialogTitle": "Покренути нови контекст?",
     "dialogDescription": "Агент наставља у новом контексту и претражује целу историју када му треба неки детаљ. Ништа се не сажима, а разговор остаје овде какав јесте.",
     "dialogAction": "Покрени нови контекст"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Slack порука",
+    "slackConversation": "Slack разговор",
+    "notionPage": "Notion страница",
+    "figmaDesign": "Figma дизајн",
+    "figjamBoard": "FigJam табла",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Google документ",
+    "googleSheet": "Google табела",
+    "googleSlides": "Google слајдови",
+    "pullRequest": "PR #{number}",
+    "issue": "Проблем #{number}"
   }
 }

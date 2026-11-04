@@ -36,6 +36,8 @@ export interface AuthVariables {
   oauthClientId?: string;
   /** Sign in with Kortix: scopes granted to the token (`profile`, `email`, `kortix`). */
   oauthScopes?: string[];
+  /** Sign in with Kortix: the `oauth_access_tokens` row id of the token. */
+  oauthTokenId?: string;
   keyId?: string;
   sandboxId?: string;
   /** Set for project-scoped CLI PATs — enforced against the URL :projectId. */

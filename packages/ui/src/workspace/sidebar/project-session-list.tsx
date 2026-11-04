@@ -9,6 +9,7 @@ import {
   matchesStatusFilters,
   sessionCanBeStopped,
   sessionDisplayStatus,
+  type SessionDisplayStatus,
   sessionIsShared,
   sessionSource,
 } from '../../session/actions/session-label';
@@ -150,7 +151,6 @@ import {
   SquareIcon as Square,
   TagIcon,
   TrashIcon,
-  TreeViewIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -599,7 +599,7 @@ export function ProjectSessionList({ projectId, secondary = false }: ProjectSess
             renderSubagent={(child) => (
               <ProjectSubsessionRow
                 id={child.id}
-                title={child.title || 'Sub-session'}
+                title={subagentTitle(child.title || '') || 'Sub-session'}
                 href={childSessionHref(href, child.id)}
                 isActive={!!isActive && activeRuntimeSessionId === child.id}
                 createdAt={child.created_at}
@@ -1136,7 +1136,7 @@ function SessionSectionMenu({
   );
 }
 
-/** Tree icon + count of everything this session started: its sub-agents and
+/** Count + caret for everything this session started: its sub-agents and
  *  the sessions it spawned. A `span`, not a button: it lives inside the row's
  *  link, so it stops the click before it navigates. Without an indicator strip
  *  beside it, it keeps the `⋯` slot free at rest, so hovering the row never
@@ -1170,7 +1170,7 @@ function ChildRunsToggle({
         if (event.key === 'Enter' || event.key === ' ') toggle(event);
       }}
       className={cn(
-        'flex shrink-0 items-center rounded-sm',
+        'flex shrink-0 items-center gap-0.5 rounded-sm',
         open ? 'text-sidebar-foreground' : 'text-muted-foreground hover:text-sidebar-foreground',
         'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
         // Reserve the `⋯` slot at rest. A toggle that slid out of the way on
@@ -1178,10 +1178,12 @@ function ChildRunsToggle({
         clearOfMenu && 'mr-6',
       )}
     >
-      <CountBadge
-        count={count}
-        icon={<TreeViewIcon aria-hidden className="size-3.5" />}
-        className={cn(open && 'bg-foreground/12')}
+      {/* The count says how many; the caret says it opens. One mark each,
+          and the caret turns as the tree opens below the row. */}
+      <CountBadge count={count} className={cn(open && 'bg-foreground/12')} />
+      <CaretRightIcon
+        aria-hidden
+        className={cn('duration-normal size-3 shrink-0 transition-transform ease-out motion-reduce:transition-none', open && 'rotate-90')}
       />
     </span>
   );
@@ -1495,9 +1497,11 @@ function ProjectSessionRow({
       className="focus-visible:ring-kortix-base flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md py-1 focus-visible:ring-[0.6px] focus-visible:outline-none"
     >
       <div className="size-4 shrink-0">
-        {/* A spawned child shows what it is; its status is in its hover card. */}
-        {spawned ? (
-          <ArrowsSplitIcon aria-hidden className="text-muted-foreground size-4" />
+        {/* A spawned child leads with what it is (a goal session or a
+            spawned session) and trades that mark for its status only while
+            it is live. A top-level row always leads with its status. */}
+        {spawned && !isLiveStatus(displayStatus) ? (
+          <ChildSessionMark projectId={session.project_id} sessionId={session.session_id} />
         ) : (
           <SessionStatusDot
             session={session}
@@ -1508,7 +1512,10 @@ function ProjectSessionRow({
         )}
       </div>
 
-      <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
+      {/* A resting spawned child already leads with its goal mark. */}
+      {!(spawned && !isLiveStatus(displayStatus)) && (
+        <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
+      )}
 
       <span className="min-w-0 flex-1">
         <SessionTitle title={displayTitle} className={cn('min-w-0', isActive && 'font-medium')} />
@@ -1900,6 +1907,9 @@ function ProjectSubsessionRow({
             isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
           )}
         >
+          {/* The sub-agent mark, the same glyph its hover card names. A
+              runtime sub-session carries no status and no agent identity, so
+              the mark never changes. */}
           <RobotIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
           <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{title}</span>
           {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
@@ -1922,6 +1932,19 @@ function SessionGoalMark({ projectId, sessionId }: { projectId: string; sessionI
       </span>
     </Hint>
   );
+}
+
+/** A child's status shows in place of its type mark only while it runs or waits on someone. */
+function isLiveStatus(status: SessionDisplayStatus): boolean {
+  return status === 'running' || status === 'starting' || status === 'needs-you';
+}
+
+/** What a spawned child is: a target for a goal's worker or verifier, else the spawned-session mark. */
+function ChildSessionMark({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const flag = useFeatureFlag(projectId, 'goals');
+  const { role } = useSessionGoal(flag.enabled ? projectId : null, sessionId);
+  const Icon = role ? TargetIcon : ArrowsSplitIcon;
+  return <Icon aria-hidden className="text-muted-foreground size-4 shrink-0" />;
 }
 
 function SessionStatusDot({

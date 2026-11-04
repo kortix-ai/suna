@@ -138,7 +138,7 @@ export {
   type UseProjectsOptions,
 } from './use-accounts';
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
-export { useAccountSecretResources, useSessionProviderSecretPools } from './use-provider-secrets';
+export { useAccountSecretResources, useSessionProviderSecretPools, useSubscriptionUsage } from './use-provider-secrets';
 export {
   useProjectTriggers,
   projectTriggersKey,
@@ -157,6 +157,7 @@ export { useUnifiedTriggers } from './use-unified-triggers';
 export { useProjectGoalFiles, useProjectGoals, useSessionGoal } from './use-goals';
 export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms, useSpaceRoom } from './use-rooms';
 export { usePeerMessages, useReachableAgents, useSessionWorkflows, useTeamTasks, useTeammates } from './use-multi-agent';
+export { useArtifactLive, type ArtifactLiveState, type UseArtifactLiveOptions } from './use-artifact-live';
 export { prefetchArtifact, useArtifact, useArtifactActivity, useArtifactCommentContext, useArtifactComments, useArtifactCommentScreenshot, useInfiniteArtifactActivity, useArtifactMutations, useArtifactText, useArtifactTypes, useArtifactVersions, useArtifacts } from './use-artifacts';
 export {
   useApproveCaptureDevice,

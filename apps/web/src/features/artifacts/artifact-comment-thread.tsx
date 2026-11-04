@@ -44,6 +44,7 @@ import {
   threadDeleted,
   threadQuote,
 } from './artifact-discussion-logic';
+import { ArtifactThreadPresence } from './artifact-live-presence';
 import { relativeTime } from './artifact-meta';
 
 interface ComposerState {
@@ -421,6 +422,7 @@ export function ArtifactCommentThreadView({
                 error={editing.error}
                 compact
                 autoFocus
+                liveTyping={{ thread_id: thread.thread_id }}
               />
             </div>
           ) : (
@@ -584,6 +586,8 @@ export function ArtifactCommentThreadView({
         ) : null}
         {tail.map(renderComment)}
       </ol>
+      {/* Live: agents working here, "is writing…", "is typing…". */}
+      <ArtifactThreadPresence threadId={thread.thread_id} />
       {thread.agent_error ? (
         <InfoBanner
           tone="destructive"
@@ -641,6 +645,7 @@ export function ArtifactCommentThreadView({
               error={reply.error}
               compact
               autoFocus
+              liveTyping={{ thread_id: thread.thread_id }}
             />
           </div>
         ) : (
