@@ -44,7 +44,10 @@ test('preserves formatted custom labels and plain URLs outside recognised resour
       />
     </IntlTestProvider>,
   );
-  expect(html).toMatch(/<strong[^>]*>Review this<\/strong>/);
+  // The label stays bold; the mark is glued to its first character, which
+  // splits the <strong> into two halves.
+  const bold = [...html.matchAll(/<strong[^>]*>([^<]*)<\/strong>/g)].map((m) => m[1]).join('');
+  expect(bold).toBe('Review this');
   expect(html).not.toContain('PR #123');
   expect(html).toContain('https://example.com/page');
 });
@@ -74,4 +77,24 @@ test('compacts streaming word wrappers and preserves formatted custom labels', (
   expect(text(streaming)).toContain('PR #123');
   expect(streaming).toContain(`href="${href}"`);
   expect(text(render(<strong><span className="kx-stream-word">{href}</span></strong>))).not.toContain('PR #123');
+});
+
+test('glues the mark to the first character of a streaming or formatted label', () => {
+  const href = 'https://github.com/example/project/pull/123';
+  const render = (children: React.ReactNode) => renderToStaticMarkup(
+    <IntlTestProvider locale="en" onError={() => {}}>
+      <MarkdownLink href={href}>{children}</MarkdownLink>
+    </IntlTestProvider>,
+  );
+  const glued = (html: string) =>
+    /<span class="whitespace-nowrap">.*?<\/svg><\/span>(?:<span class="sr-only">[^<]*<\/span>)?(.*?)<\/span>/.exec(html)?.[1]
+      ?.replace(/<[^>]+>/g, '');
+  const streamed = render([
+    <span key="a" className="kx-stream-word">Review</span>, ' ',
+    <span key="b" className="kx-stream-word">the</span>,
+  ]);
+  expect(glued(streamed)).toBe('R');
+  expect(streamed.replace(/<[^>]+>/g, '')).toContain('Review the');
+  expect(glued(render(<strong>Review</strong>))).toBe('R');
+  expect(glued(render('変更を確認'))).toBe('変');
 });

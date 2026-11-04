@@ -75,10 +75,32 @@ const APP_LINK_CLASS = cn(
   '[overflow-wrap:anywhere]',
 );
 
-/** `"PR #123 follow-up"` → `["PR", " #123 follow-up"]`. */
-function splitFirstWord(text: string): [string, string] {
-  const i = text.indexOf(' ');
-  return i < 0 ? [text, ''] : [text.slice(0, i), text.slice(i)];
+/**
+ * Splits a link label after its first character: `"PR #123"` → `["P", "R #123"]`.
+ * An element (a stream-word span, `**bold**`) is copied around each half, so
+ * the label renders the same while it streams and after. There is no break
+ * opportunity between the halves: whole words still wrap together, and the
+ * rest still breaks anywhere. Returns null when the label opens with no text.
+ */
+function splitLeadingChar(label: React.ReactNode): [React.ReactNode, React.ReactNode] | null {
+  const [first, ...others] = React.Children.toArray(label);
+  let lead: React.ReactNode;
+  let tail: React.ReactNode;
+  if (typeof first === 'string' || typeof first === 'number') {
+    const text = String(first);
+    const char = Array.from(text)[0];
+    if (!char) return null;
+    lead = char;
+    tail = text.slice(char.length);
+  } else if (React.isValidElement<{ children?: React.ReactNode }>(first)) {
+    const inner = splitLeadingChar(first.props.children);
+    if (!inner) return null;
+    lead = React.cloneElement(first, { key: 'lead' }, inner[0]);
+    tail = React.cloneElement(first, { key: 'tail' }, inner[1]);
+  } else {
+    return null;
+  }
+  return [lead, <>{tail}{others}</>];
 }
 
 function handleHashClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
@@ -204,13 +226,15 @@ export function MarkdownLink({
   const labelNamesApp = plainText === href && !presentation?.name && presentation && ['slack', 'notion', 'figma', 'google'].includes(presentation.app);
   // A compact app link is the app mark plus a short label, never underlined.
   // The mark is 1em and sits at -0.15em: Roobert cap height is 0.7em, so the
-  // mark centers on the cap height at every text size. Only the mark and the
-  // first word are kept together; a long label (a Notion or Figma title of up
-  // to 48 characters, a custom label) wraps after them like plain text.
+  // mark centers on the cap height at every text size. A label built from an
+  // identifier ("PR #123", "ENG-42") is short and never breaks. A title or
+  // custom label (Notion and Figma allow 48 characters, CJK has no spaces) is
+  // glued to the mark by its first character only, so the mark never ends a
+  // line alone and the title still wraps inside the column.
   const label = plainText === href ? compactLabel : children;
-  const labelText = typeof label === 'string' ? label
-    : Array.isArray(label) && label.length === 1 && typeof label[0] === 'string' ? label[0] : null;
-  const [firstWord, rest] = labelText === null ? [null, null] : splitFirstWord(labelText);
+  const split = plainText === href && !presentation?.name
+    ? [label, null] as const
+    : splitLeadingChar(label);
   const linkContent = presentation && Mark ? (
     <>
       <span className="whitespace-nowrap">
@@ -218,9 +242,9 @@ export function MarkdownLink({
           <Mark className="block size-full" />
         </span>
         {!labelNamesApp && <span className="sr-only">{appName}: </span>}
-        {firstWord}
+        {split ? split[0] : null}
       </span>
-      {firstWord === null ? label : rest}
+      {split ? split[1] : label}
     </>
   ) : children;
   const anchorClass = presentation && Mark ? APP_LINK_CLASS : LINK_CLASS;

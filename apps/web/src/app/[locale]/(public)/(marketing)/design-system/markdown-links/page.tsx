@@ -12,6 +12,8 @@ Notes: https://www.notion.so/Example-0123456789abcdef0123456789abcdef and https:
 
 Long titles wrap: https://www.notion.so/Engineering-Onboarding-Guide-for-New-Hires-2026-0123456789abcdef0123456789abcdef
 
+Titles without spaces wrap too: [エンジニアリングの新入社員向けオンボーディングガイドと変更の確認](https://github.com/example/project/pull/123)
+
 Custom labels stay intact: [Review the changes](https://github.com/example/project/pull/123).
 
 Other links stay readable: https://example.com/reference
