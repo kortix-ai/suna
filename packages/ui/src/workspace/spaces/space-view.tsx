@@ -9,6 +9,7 @@ import {
   useProjectConfig,
   useProjectSpaces,
   useSession,
+  useSessionChildren,
   useSessionPrompts,
   useProjectSpaceMembers,
   useUpdateProjectSpace,
@@ -142,6 +143,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
   const pathname = useUiPathname();
   const searchParams = useUiSearchParams();
   const spaces = useProjectSpaces(projectId);
+  const chatOn = useFeatureFlag(projectId, 'chat').enabled;
   // Kortix edits a space's tabs from a thread (PUT …/tabs with its session token): read them again while the page is open.
   const queryClient = useQueryClient();
   useEffect(() => {
@@ -359,8 +361,9 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
               thread={threads.sessions.find((session) => session.session_id === threadId)}
               agentFallback={space.dm_agent_name}
               onClose={closeThread}
-              fullSessionHref={chat ? uiRoutes().session(projectId, threadId) : undefined}
-              messagesOnly={chat}
+              // The `chat` flag, not the /chat page: every space's thread shows only messages, and links its full session.
+              fullSessionHref={chatOn ? uiRoutes().session(projectId, threadId) : undefined}
+              messagesOnly={chatOn}
             />
           </ResizablePanel>
         </>
@@ -788,7 +791,7 @@ function ThreadPanel({
   thread: ProjectSession | undefined;
   agentFallback: string | null;
   onClose: () => void;
-  /** One chat: the thread's full session, for a person who wants every step. */
+  /** One chat: the thread's full session, for a person who wants every step. A talk-only thread's worker replaces it. */
   fullSessionHref?: string;
   /** Chat (`chat`): the thread shows only messages; its work stays in the full session. */
   messagesOnly?: boolean;
@@ -796,6 +799,7 @@ function ThreadPanel({
   const t = useTranslations('spaces.view');
   const session = useSession(projectId, sessionId);
   useLiveThreadRow(projectId, sessionId, session);
+  const fullHref = useFullSessionHref(projectId, sessionId, thread, fullSessionHref);
   // Null from an older API that does not count replies.
   const replyCount = thread?.reply_count ?? null;
   const dividerOnTop = Boolean(replyCount) && session.hasOlder;
@@ -853,8 +857,8 @@ function ThreadPanel({
             <span className="text-muted-foreground truncate text-xs">{context}</span>
           </div>
         </div>
-        {fullSessionHref ? (
-          <Link href={fullSessionHref} className="text-muted-foreground hover:text-foreground shrink-0 px-2 text-xs">
+        {fullHref ? (
+          <Link href={fullHref} className="text-muted-foreground hover:text-foreground shrink-0 px-2 text-xs">
             {t('openFullSession')}
           </Link>
         ) : null}
@@ -882,6 +886,32 @@ function ThreadPanel({
       </TranscriptRowsContext.Provider>
     </aside>
   );
+}
+
+/**
+ * Where "Open full session" goes. A talk-only thread (`chat_front`, server
+ * metadata `kortix_front`) only talks: its work runs in its one child, the
+ * worker, so the link opens the worker once it exists. Every other thread
+ * opens itself.
+ */
+function useFullSessionHref(
+  projectId: string,
+  sessionId: string,
+  thread: ProjectSession | undefined,
+  fallback: string | undefined,
+): string | undefined {
+  const front = !!fallback && thread?.metadata?.kortix_front === true;
+  // Polls every 5 s until the front starts its worker, then stops.
+  const [polling, setPolling] = useState(true);
+  const children = useSessionChildren(projectId, sessionId, {
+    enabled: front,
+    limit: 1,
+    refetchInterval: polling ? 5_000 : undefined,
+  });
+  const workerId = children.sessions[0]?.session_id ?? null;
+  if (polling && workerId) setPolling(false);
+  if (!front || !workerId) return fallback;
+  return uiRoutes().session(projectId, workerId);
 }
 
 /**
