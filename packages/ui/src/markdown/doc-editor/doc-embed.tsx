@@ -8,7 +8,7 @@ import { Hint } from '../../primitives/hint';
 import { faviconUrlForUrl } from '../../lib/favicon';
 import { successToast } from '../../primitives/toast';
 import { ArrowSquareOutIcon, LinkSimpleIcon, TextTIcon, TrashIcon } from '@phosphor-icons/react';
-import { Node } from '@tiptap/core';
+import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
 import { useState } from 'react';
 
@@ -195,7 +195,7 @@ export const LinkEmbed = Node.create({
   parseHTML() {
     return [{ tag: 'div.kx-embed', priority: 60 }];
   },
-  renderHTML({ node }) {
+  renderHTML({ node, HTMLAttributes }) {
     const { href, title, summary, image } = node.attrs as EmbedMeta;
     const textParts: unknown[] = [['span', { class: 'kx-embed-title' }, title]];
     if (summary) textParts.push(['span', { class: 'kx-embed-summary' }, summary]);
@@ -208,7 +208,8 @@ export const LinkEmbed = Node.create({
     ]);
     const body: unknown[] = [['span', { class: 'kx-embed-text' }, ...textParts]];
     if (image) body.push(['img', { class: 'kx-embed-image', src: image, alt: '', referrerpolicy: 'no-referrer' }]);
-    return ['div', { class: 'kx-embed' }, ['a', { href, target: '_blank', rel: 'noopener noreferrer' }, ...body]] as never;
+    // HTMLAttributes holds only the block's `md` (doc-fidelity.ts): the card's own attributes are not rendered.
+    return ['div', mergeAttributes(HTMLAttributes, { class: 'kx-embed' }), ['a', { href, target: '_blank', rel: 'noopener noreferrer' }, ...body]] as never;
   },
   addNodeView() {
     // The editor leaves the action buttons to themselves (see DocCodeBlock).

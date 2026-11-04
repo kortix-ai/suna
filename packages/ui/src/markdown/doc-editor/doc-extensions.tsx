@@ -5,7 +5,9 @@
  * a person edits it in place. Doc artifacts and an agent's instructions use
  * the same set, so a doc reads and edits the same everywhere. The look is
  * `ARTIFACT_DOC_CSS` (`.kx-doc`); Markdown goes in and out through
- * `markdown.ts`.
+ * `markdown.ts`, which keeps a file's own spelling on each block
+ * (`MarkdownSource`) and holds what the editor cannot show as a raw block
+ * (`RawMarkdown`), so an unedited file saves byte for byte.
  */
 
 import { Code } from '@tiptap/extension-code';
@@ -28,6 +30,7 @@ import { MermaidRenderer } from '../../primitives/mermaid-renderer';
 import { TextShimmer } from '../../primitives/text-shimmer';
 import { CopyButton } from '../copy-button';
 import { LinkEmbed } from './doc-embed';
+import { MarkdownSource, PastedMarkdownSource, RAW_ATTRIBUTE } from './doc-fidelity';
 
 /**
  * `uploading`: a pasted or dropped file shown from a local URL while it
@@ -176,6 +179,54 @@ export const DocCodeBlock = CodeBlock.extend({
   },
 });
 
+/** A raw block's caption: the name of the format it holds, a Markdown token like a code block's language, not UI copy. */
+const RAW_LABEL = 'markdown';
+
+/** A raw block: the file's own Markdown as monospace text, in the code figure's look. */
+function RawMarkdownView({ node }: ReactNodeViewProps) {
+  return (
+    <NodeViewWrapper as="div">
+      <figure className="kx-code">
+        <figcaption contentEditable={false}>
+          <span>{RAW_LABEL}</span>
+          {node.textContent ? <CopyButton code={node.textContent} /> : null}
+        </figcaption>
+        <pre>
+          <NodeViewContent<'code'> as="code" />
+        </pre>
+      </figure>
+    </NodeViewWrapper>
+  );
+}
+
+/**
+ * A block the editor cannot show without rewriting it (front matter, a link
+ * reference definition, an HTML block; `markdown.ts` decides): its Markdown
+ * source as plain text. A person edits it as text, and it saves exactly as it
+ * reads. Input rules and marks do not apply inside it (`code`).
+ */
+export const RawMarkdown = Node.create({
+  name: 'rawMarkdown',
+  group: 'block',
+  content: 'text*',
+  marks: '',
+  code: true,
+  defining: true,
+  whitespace: 'pre',
+  parseHTML() {
+    // Before the code block's `pre` rule.
+    return [{ tag: `pre[${RAW_ATTRIBUTE}]`, preserveWhitespace: 'full', priority: 60 }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['pre', mergeAttributes(HTMLAttributes, { [RAW_ATTRIBUTE]: '' }), 0];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(RawMarkdownView, {
+      stopEvent: ({ event }) => !!(event.target as Element | null)?.closest?.('.kx-code > figcaption'),
+    });
+  },
+});
+
 /**
  * A line break in the Markdown source inside a paragraph. It reads as a space
  * and saves as the newline it was (`markdown.ts`), so a hard-wrapped file
@@ -227,6 +278,9 @@ export function docExtensions({
     TaskList,
     TaskItem.configure({ nested: true }),
     LinkEmbed,
+    RawMarkdown,
+    MarkdownSource,
+    PastedMarkdownSource,
     Placeholder.configure({ placeholder: ({ node }) => placeholder(node) }),
   ];
 }
