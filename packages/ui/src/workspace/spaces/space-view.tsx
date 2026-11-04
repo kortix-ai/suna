@@ -4,6 +4,7 @@ import { ApiError, type ProjectSession, type ProjectSpace } from '@kortix/sdk';
 import {
   updateCachedProjectSessions,
   useOpenProjectDm,
+  qk,
   useFeatureFlag,
   useProjectConfig,
   useProjectSpaces,
@@ -109,6 +110,9 @@ const ARCHIVED_LOCKED_PARAM = 'locked';
  * the space's own tabs, which people and Kortix arrange), and the open thread
  * in a panel on the right. Every message starts a new thread.
  */
+/** How often an open space re-reads its tabs, which Kortix may change from a thread. */
+const SPACE_TABS_POLL_MS = 10_000;
+
 export function SpaceView(props: SpaceViewProps) {
   return (
     <ProjectScope projectId={props.projectId}>
@@ -132,6 +136,12 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, chat = fal
   const pathname = useUiPathname();
   const searchParams = useUiSearchParams();
   const spaces = useProjectSpaces(projectId);
+  // Kortix edits a space's tabs from a thread (PUT …/tabs with its session token): read them again while the page is open.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const timer = setInterval(() => void queryClient.invalidateQueries({ queryKey: qk.project.spaces(projectId) }), SPACE_TABS_POLL_MS);
+    return () => clearInterval(timer);
+  }, [projectId, queryClient]);
   const openDm = useOpenProjectDm(projectId);
 
   const channel =

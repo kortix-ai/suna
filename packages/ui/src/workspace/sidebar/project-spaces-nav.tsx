@@ -1,6 +1,7 @@
 'use client';
 
 import { useProjectSpaces, useVisibleAgents } from '@kortix/sdk/react';
+import { isMyKortixAgentName } from '@kortix/shared';
 import { CaretRightIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMemo, useState, type ReactNode } from 'react';
 
@@ -43,7 +44,8 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
   const pathname = useUiPathname();
   const router = useUiRouter();
   const spaces = useProjectSpaces(projectId);
-  const agents = useVisibleAgents({ projectId });
+  // My Kortix's DM is the person's Chat (the row above this list): it is not listed again here.
+  const agents = useVisibleAgents({ projectId }).filter((agent) => !isMyKortixAgentName(agent.name));
   const [createOpen, setCreateOpen] = useState(false);
   const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId));
   const collapsed = useMemo(() => new Set(collapsedSections), [collapsedSections]);
