@@ -20,8 +20,9 @@
  *   - `permission_missing`: `attention`. `paused` by the person: `attention`.
  *   - locked or inactive: healthy, `idle`. Excluded app or site: healthy.
  *  Then, on any reporting device, `attention` is added for a sync error, an
- *  upload backlog (items pending, nothing uploaded for 30 min of awake time) and
- *  an app older than the newest published version.
+ *  upload backlog (items pending, nothing uploaded for 30 min of awake time), a
+ *  failed self-update (`update.status` `failed`: the newest release did not
+ *  install or was rolled back) and an app older than the newest published version.
  */
 import { OFFLINE_AFTER_MS, statusReportedAt } from './format';
 
@@ -36,6 +37,7 @@ export type HealthReason =
   | 'paused'
   | 'sync_error'
   | 'backlog'
+  | 'update_failed'
   | 'behind_version';
 
 export interface DeviceHealth {
@@ -94,7 +96,7 @@ export function isOlderVersion(version: string | null | undefined, latest: strin
   return false;
 }
 
-const ORDER: HealthReason[] = ['offline', 'stalled', 'error', 'never_reported', 'unseen', 'permission_missing', 'paused', 'sync_error', 'backlog', 'behind_version'];
+const ORDER: HealthReason[] = ['offline', 'stalled', 'error', 'never_reported', 'unseen', 'permission_missing', 'paused', 'sync_error', 'backlog', 'update_failed', 'behind_version'];
 const NOT_RECORDING = new Set<HealthReason>(['offline', 'stalled', 'error']);
 
 function result(reasons: HealthReason[], idle: boolean, since: number | null, latest: string | null): DeviceHealth {
@@ -160,6 +162,8 @@ export function classifyDevice(input: HealthInput, options: HealthOptions): Devi
   if (pending !== null && sync.state !== 'off' && uploadRef !== null && now - Math.max(uploadRef, awakeSince ?? 0) > BACKLOG_AFTER_MS) {
     reasons.push('backlog');
   }
+  // The machine service tried the newest release and it did not install (status.json `update`).
+  if (record(status.update).status === 'failed') reasons.push('update_failed');
   if (isOlderVersion(text(status.appVersion) || input.appVersion, latest)) reasons.push('behind_version');
 
   return result(reasons, resting, since, latest);

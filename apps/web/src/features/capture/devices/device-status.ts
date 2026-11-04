@@ -94,6 +94,10 @@ export function deviceStatus(device: CaptureDevice): DeviceStatusView {
     if (code === 'stalled' || code === 'error') return { code, timeMs: lastFrameMs ?? undefined };
     if (code === 'backlog') return { code, count: num(sync.pending) ?? undefined };
     if (code === 'behind_version') return { code, version: health.latest_version ?? undefined, current: device.app_version ?? undefined };
+    if (code === 'update_failed') {
+      const update = device.diagnostics?.update;
+      return { code, version: update?.last_result?.to ?? update?.latest ?? health.latest_version ?? undefined };
+    }
     return { code };
   });
   if (health?.idle && key === 'offline') lines.push({ code: 'asleep', timeMs: reportedAtMs ?? undefined });
