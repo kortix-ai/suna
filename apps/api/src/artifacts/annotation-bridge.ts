@@ -47,9 +47,21 @@ function install() {
   let pointerSent = '';
   let pointerFrame = 0;
   let pendingPointer: PointerEvent | null = null;
+  // The origin of the page that loaded this one, from its referrer. Any site can frame an artifact
+  // URL, and its window is then `window.parent`: only this origin may turn the pointer on, and
+  // only it receives the pointer. Null without a usable referrer (a host with `no-referrer`): the
+  // pointer stays off, and every other message works as before.
+  const host = (() => {
+    try {
+      const origin = document.referrer ? new URL(document.referrer).origin : null;
+      return origin && origin !== 'null' ? origin : null;
+    } catch {
+      return null;
+    }
+  })();
   const scroll = () => ({ x: Math.max(0, window.scrollX), y: Math.max(0, window.scrollY) });
-  const send = (message: ArtifactAnnotationFrameMessage) => {
-    if (parseArtifactAnnotationFrameMessage(message)) window.parent.postMessage(message, '*');
+  const send = (message: ArtifactAnnotationFrameMessage, targetOrigin = '*') => {
+    if (parseArtifactAnnotationFrameMessage(message)) window.parent.postMessage(message, targetOrigin);
   };
   const geometry = (element: HTMLElement, rect: { x: number; y: number; width: number; height: number }) => {
     element.style.left = `${rect.x - window.scrollX}px`; element.style.top = `${rect.y - window.scrollY}px`;
@@ -145,9 +157,9 @@ function install() {
   const fraction = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 1000) / 1000;
   const pointer = (at: { n: number; x: number; y: number } | null) => {
     const key = at ? `${revision}:${at.n}:${at.x}:${at.y}` : '';
-    if (key === pointerSent) return;
+    if (!host || key === pointerSent) return;
     pointerSent = key;
-    send({ kortix: 'annotate', v: 1, type: 'pointer', revision, at });
+    send({ kortix: 'annotate', v: 1, type: 'pointer', revision, at }, host);
   };
   const reportPointer = () => {
     pointerFrame = 0;
@@ -202,6 +214,7 @@ function install() {
     }
     else if (message.type === 'request_layout') schedule();
     else if (message.type === 'track') {
+      if (!host || event.origin !== host) return;
       tracking = message.pointer;
       if (!tracking) { pendingPointer = null; pointer(null); }
     }

@@ -48,7 +48,14 @@ function frame(
   windows.push(window);
   window.document.body.innerHTML = html;
   const sent: unknown[] = [];
-  const parent = { postMessage: (message: unknown) => sent.push(message) };
+  // The `targetOrigin` each message was posted with.
+  const targets = new WeakMap<object, string>();
+  const parent = {
+    postMessage: (message: object, targetOrigin: string) => {
+      sent.push(message);
+      targets.set(message, targetOrigin);
+    },
+  };
   const delays: number[] = [];
   Object.defineProperty(window, "parent", {
     configurable: true,
@@ -77,11 +84,12 @@ function frame(
       return window.setTimeout(callback, 1);
     },
   );
-  const send = (message: object, source: unknown = parent) =>
+  const send = (message: object, source: unknown = parent, origin = "") =>
     window.dispatchEvent(
       new window.MessageEvent("message", {
         data: { ...envelope, ...message },
         source: source as never,
+        origin,
       }),
     );
   const flush = async () => {
@@ -89,8 +97,17 @@ function frame(
   };
   const messages = (type: string) =>
     sent.filter((value: any) => value.type === type) as any[];
-  return { window, sent, send, flush, messages, delays };
+  const targetOf = (message: object) => targets.get(message);
+  return { window, sent, send, flush, messages, delays, targetOf };
 }
+
+/** The page was loaded by `referrer`: `document.referrer` as the browser sets it. */
+const loadedBy = (referrer: string) => (window: Window) =>
+  Object.defineProperty(window.document, "referrer", {
+    configurable: true,
+    get: () => referrer,
+  });
+const HOST = "https://kortix.example.test";
 
 test("compiled bridge emits only validated page-owned inventory and excludes hidden or form values", async () => {
   const page = frame(
@@ -790,12 +807,11 @@ test("page inventory includes bounded document geometry for a whole-area drawing
   });
 });
 
-test("live pointer: reported only while the parent tracks it, as an element number and fractions", async () => {
-  const page = frame('<p id="forecast">Forecast</p>');
-  await page.flush();
-  const paragraph = page.window.document.querySelector("p")!;
+/** A page with one tracked paragraph, and a pointer move over it at client (x, y). */
+function pointerPage(configure?: (window: Window) => void) {
+  const page = frame('<p id="forecast">Forecast</p>', configure);
   const move = (clientX: number, clientY: number) =>
-    paragraph.dispatchEvent(
+    page.window.document.querySelector("p")!.dispatchEvent(
       new page.window.PointerEvent("pointermove", {
         bubbles: true,
         clientX,
@@ -803,11 +819,17 @@ test("live pointer: reported only while the parent tracks it, as an element numb
         pointerType: "mouse",
       }),
     );
-  move(110, 55);
+  return { ...page, move };
+}
+
+test("live pointer: reported only while the parent tracks it, as an element number and fractions", async () => {
+  const page = pointerPage(loadedBy(`${HOST}/projects/p/sessions/s`));
+  await page.flush();
+  page.move(110, 55);
   await page.flush();
   expect(page.messages("pointer")).toHaveLength(0);
-  page.send({ type: "track", pointer: true });
-  move(110, 55);
+  page.send({ type: "track", pointer: true }, undefined, HOST);
+  page.move(110, 55);
   await page.flush();
   const layout = page.messages("layout").at(-1);
   const n = layout.elements.find(
@@ -821,14 +843,56 @@ test("live pointer: reported only while the parent tracks it, as an element numb
     at: { n, x: 0.25, y: 0.25 },
   });
   // The same place twice is one message.
-  move(110, 55);
+  page.move(110, 55);
   await page.flush();
   expect(page.messages("pointer")).toHaveLength(1);
-  page.send({ type: "track", pointer: false });
+  page.send({ type: "track", pointer: false }, undefined, HOST);
   expect(page.messages("pointer").at(-1).at).toBeNull();
-  move(300, 100);
+  page.move(300, 100);
   await page.flush();
   expect(page.messages("pointer")).toHaveLength(2);
+  // The pointer goes only to the page that loaded this one; the other messages stay as they were.
+  for (const message of page.messages("pointer"))
+    expect(page.targetOf(message)).toBe(HOST);
+  expect(page.targetOf(layout)).toBe("*");
   for (const message of page.sent)
     expect(parseArtifactAnnotationFrameMessage(message)).not.toBeNull();
+});
+
+test("live pointer: `track` from any origin but the referrer's is ignored", async () => {
+  const page = pointerPage(loadedBy(`${HOST}/projects/p/sessions/s`));
+  await page.flush();
+  // Another site that frames this page is `window.parent` too: only its origin differs.
+  page.send({ type: "track", pointer: true }, undefined, "https://other.example.test");
+  page.send({ type: "track", pointer: true }, undefined, "");
+  page.send({ type: "track", pointer: true }, undefined, "null");
+  page.move(110, 55);
+  await page.flush();
+  expect(page.messages("pointer")).toHaveLength(0);
+  page.send({ type: "track", pointer: true }, undefined, HOST);
+  page.move(110, 55);
+  await page.flush();
+  expect(page.messages("pointer")).toHaveLength(1);
+  // A foreign `track: false` does not stop the host's tracking either.
+  page.send({ type: "track", pointer: false }, undefined, "https://other.example.test");
+  page.move(300, 100);
+  await page.flush();
+  expect(page.messages("pointer")).toHaveLength(2);
+  expect(page.messages("pointer").at(-1).at).not.toBeNull();
+});
+
+test("live pointer: no referrer, or one that is not a URL, keeps it off; comments keep working", async () => {
+  for (const configure of [undefined, loadedBy("not a url")]) {
+    const page = pointerPage(configure);
+    await page.flush();
+    for (const origin of [HOST, "", "null", "not a url"])
+      page.send({ type: "track", pointer: true }, undefined, origin);
+    page.move(110, 55);
+    await page.flush();
+    expect(page.messages("pointer")).toHaveLength(0);
+    // The other host messages carry no origin check: a host that sends no referrer still annotates.
+    page.send({ type: "request_layout" });
+    await page.flush();
+    expect(page.messages("layout").at(-1).revision).toBe(2);
+  }
 });

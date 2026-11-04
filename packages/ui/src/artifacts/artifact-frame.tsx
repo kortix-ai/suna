@@ -111,6 +111,7 @@ export function ensureArtifactFrame(key: string, src: string, title: string): vo
     sandbox: ARTIFACT_IFRAME_SANDBOX,
     allow: ARTIFACT_FRAME_ALLOW,
     testid: 'artifact-frame',
-    referrerPolicy: 'no-referrer',
+    // The page sees this app's origin, never the path: the bridge gates the live pointer on it.
+    referrerPolicy: 'strict-origin',
   });
 }
