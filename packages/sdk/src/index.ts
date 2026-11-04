@@ -543,6 +543,8 @@ export { loadPreviewUrlTemplate } from './core/session/preview-config';
 export * from './core/stream/event-stream';
 /** Live presence on an Artifact: who is here, their cursors, and change pings. */
 export * from './core/artifact-live';
+/** Live co-editing of an Artifact doc: the byte-based sync engine over the doc REST calls. */
+export * from './core/artifact-doc';
 export * from './core/stream/fetch-sse';
 export * from './core/turns';
 export * from './transcript';

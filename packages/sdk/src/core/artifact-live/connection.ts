@@ -47,7 +47,8 @@ export type ArtifactLiveConnectionStatus = 'connecting' | 'live' | 'reconnecting
  *   `sends: false` means the Artifact already has the maximum number of
  *   participants who send presence: this one sees presence and sends none;
  * - `presence`: the full participant list, this connection included;
- * - `changed`: refetch `what` through REST;
+ * - `changed`: refetch `what` through REST. A `doc` change is never an event:
+ *   it goes to `onDoc`;
  * - `resync`: a connection is live again after a drop or a failed attempt.
  *   Changes may have been missed: refetch everything once.
  */
@@ -85,6 +86,12 @@ export interface ArtifactLiveConnectionOptions {
   backendUrl?: string;
   /** Called once per event; a throw here is caught. */
   onEvent?: (event: ArtifactLiveEvent) => void;
+  /**
+   * A co-edited doc has a new update with this seq (`changed doc`). Pass it
+   * to `ArtifactDocSync.notify`. A ping without a valid seq is dropped; a
+   * throw here is caught.
+   */
+  onDoc?: (seq: number) => void;
   /** Test-only clock/timer override. Defaults to the real `Date.now`/`setTimeout`. */
   timers?: EventStreamTimers;
 }
@@ -133,6 +140,13 @@ const realTimers: EventStreamTimers = {
 
 type FieldKind = 'cursor' | 'selection' | 'typing' | 'focus' | 'hide';
 type Kind = FieldKind | 'ping';
+
+/** The seq of a `changed doc` ping: `String(seq)`, a safe integer ≥ 0. */
+function docSeq(version: string | null): number | null {
+  if (version === null || !/^(0|[1-9]\d*)$/.test(version)) return null;
+  const seq = Number(version);
+  return Number.isSafeInteger(seq) ? seq : null;
+}
 
 function globalWebSocket(): ArtifactLiveWebSocket | undefined {
   const candidate = (globalThis as { WebSocket?: unknown }).WebSocket;
@@ -348,9 +362,17 @@ export function createArtifactLiveConnection(options: ArtifactLiveConnectionOpti
         participants = frame.participants;
         emit({ type: 'presence', participants });
         return;
-      case 'changed':
-        emit({ type: 'changed', what: frame.what, version: frame.version });
+      case 'changed': {
+        if (frame.what !== 'doc') return emit({ type: 'changed', what: frame.what, version: frame.version });
+        const seq = docSeq(frame.version);
+        if (seq === null) return;
+        try {
+          options.onDoc?.(seq);
+        } catch {
+          // One bad handler never breaks the connection.
+        }
         return;
+      }
       case 'pong':
         return;
     }
