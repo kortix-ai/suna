@@ -49,7 +49,7 @@ import {
   StopCircleIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AfterFirstPromptContext } from './after-first-prompt';
 import { TranscriptRowsContext } from './transcript-rows';
 import { AgentBusyRow } from './thread-boot-rows';
@@ -119,7 +119,7 @@ import {
   InTranscriptTurnContext,
   RecoveredCallsContext,
 } from '../tool/shared/infrastructure';
-import { imageDigestsShownByImageGen, imagePathsShownByImageGen, sessionLogImageGenRuns, showDrawnByImageGen } from '@kortix/sdk';
+import { getChildSessionId, imageDigestsShownByImageGen, imagePathsShownByImageGen, sessionLogImageGenRuns, showDrawnByImageGen } from '@kortix/sdk';
 import { recoveredShellFailures } from '../turn/recovered-failures';
 import { type SentAttachment } from '../composer/sent-attachment-previews';
 import { cn } from '../../lib/utils';
@@ -2526,6 +2526,7 @@ function SessionTurnImpl(props: SessionTurnProps) {
                 <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
               </GenuiTelemetryContext.Provider>
               <TurnFooter {...props} hideActionBar model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
+              {rows.messagesOnly && rows.renderThreads ? <AnswerThreads segments={segments} render={rows.renderThreads} /> : null}
             </div>
           </MessageRow>
         ) : null}
@@ -2599,6 +2600,29 @@ interface TranscriptTurnRowProps extends SessionTurnProps {
  * settled `SessionTurn` bailed out. Every prop here is a primitive or a
  * reference that holds while another turn streams.
  */
+/**
+ * The threads an answer started (`TranscriptRows.renderThreads`): each
+ * delegating call's child session, once, drawn by the host under the answer.
+ */
+function AnswerThreads({
+  segments,
+  render,
+}: {
+  segments: readonly { kind: string; blocks?: readonly unknown[]; block?: unknown }[];
+  render: (childSessionIds: readonly string[]) => ReactNode;
+}) {
+  const ids = useMemo(() => {
+    const blocks = segments.flatMap((s) => (s.blocks ? [...s.blocks] : [s.block]));
+    const found = blocks.flatMap((block) => {
+      if ((block as { type?: unknown } | undefined)?.type !== 'tool_call') return [];
+      const id = getChildSessionId(block as Parameters<typeof getChildSessionId>[0]);
+      return id ? [id] : [];
+    });
+    return [...new Set(found)];
+  }, [segments]);
+  return ids.length > 0 ? <>{render(ids)}</> : null;
+}
+
 /** The fallback waiting row: a channel thread's agent row, or the bare line under a bubble. */
 function TurnFallbackBusyRow({ sessionId }: { sessionId: string }) {
   const rows = useContext(TranscriptRowsContext);

@@ -14,10 +14,9 @@ import { TranscriptRowsContext } from '@kortix/ui/session/thread/transcript-rows
 import { CheckIcon, WarningCircleIcon, XIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import '@kortix/ui/session/tool/tools/register';
 
-const CHAT_ROWS = { agent: 'Kortix', agentSlug: 'mykortix', owner: null, unknownAuthor: 'You', messagesOnly: true };
 const THREAD_ROWS = { agent: 'Kortix', agentSlug: 'mykortix', owner: null, unknownAuthor: 'Kortix' };
 
 export function FrontChatView({ projectId }: { projectId: string }) {
@@ -43,51 +42,96 @@ function ThreadStatus({ thread }: { thread: ProjectSession }) {
   return <CheckIcon className="text-muted-foreground size-3.5 shrink-0" />;
 }
 
+function threadStateText(thread: ProjectSession): string {
+  if (thread.board_state === 'needs_input') return 'Needs you';
+  if (thread.board_state === 'working' || thread.working?.state === 'working') return 'Working…';
+  if (thread.board_state === 'failed') return 'Failed';
+  const replies = thread.reply_count ?? 0;
+  return replies > 0 ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'Done';
+}
+
+/** The threads one answer started, Slack-style, under its words. A click opens the thread on the right. */
+function ThreadLines({
+  ids,
+  byId,
+  openId,
+  onOpen,
+}: {
+  ids: readonly string[];
+  byId: ReadonlyMap<string, ProjectSession>;
+  openId: string | null;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <div className="mt-1 flex flex-col gap-1">
+      {ids.map((id) => {
+        const thread = byId.get(id);
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onOpen(id)}
+            aria-pressed={openId === id}
+            className="group/thread hover:bg-hover aria-pressed:bg-hover focus-visible:ring-ring -mx-1 flex w-full max-w-xl items-start gap-2 rounded-md px-1 py-1 text-left text-xs outline-none focus-visible:ring-2"
+          >
+            <span className="mt-0.5">{thread ? <ThreadStatus thread={thread} /> : <Loading className="size-3.5 shrink-0" />}</span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="text-foreground truncate font-semibold">{thread ? threadLabel(thread) : 'Starting a thread…'}</span>
+                {thread ? <span className="text-muted-foreground shrink-0">{threadStateText(thread)}</span> : null}
+                <span className="text-muted-foreground ml-auto hidden shrink-0 group-hover/thread:inline">View thread ›</span>
+              </span>
+              {thread?.result_excerpt && thread.board_state !== 'working' ? (
+                <span className="text-muted-foreground line-clamp-1">{thread.result_excerpt}</span>
+              ) : null}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function FrontChat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const session = useSession(projectId, sessionId);
   const [open, setOpen] = useState<string | null>(null);
   const threads = useQuery({
     queryKey: ['front-chat-threads', projectId, sessionId],
-    queryFn: async () =>
-      (await listProjectSessions(projectId, { parent: sessionId }))
-        .filter((row) => row.agent_name === 'mykortix')
-        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)),
-    refetchInterval: 4_000,
+    queryFn: async () => (await listProjectSessions(projectId, { parent: sessionId })).filter((row) => row.agent_name === 'mykortix'),
+    refetchInterval: 3_000,
   });
-  const list = threads.data ?? [];
-  const running = list.filter((t) => t.board_state === 'working' || t.board_state === 'needs_input').length;
+  const byId = useMemo(() => new Map((threads.data ?? []).map((row) => [row.session_id, row])), [threads.data]);
+  const running = (threads.data ?? []).filter((t) => t.board_state === 'working' || t.board_state === 'needs_input').length;
+  const rows = useMemo(
+    () => ({
+      agent: 'Kortix',
+      agentSlug: 'mykortix',
+      owner: null,
+      unknownAuthor: 'You',
+      messagesOnly: true,
+      renderThreads: (ids: readonly string[]) => <ThreadLines ids={ids} byId={byId} openId={open} onOpen={setOpen} />,
+    }),
+    [byId, open],
+  );
   return (
     <div className="bg-background flex h-full min-h-0">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="kx-titlebar-row flex h-12 shrink-0 items-center gap-3 border-b px-5">
           <h1 className="text-base font-semibold">Kortix</h1>
-          <span className="text-muted-foreground text-xs">
-            {running > 0 ? `${running} running` : 'One chat. Tell it anything.'}
-          </span>
+          <span className="text-muted-foreground text-xs">{running > 0 ? `${running} running` : 'One chat. Tell it anything.'}</span>
         </header>
-        {list.length > 0 ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-5 py-2" aria-label="Threads">
-            <span className="text-muted-foreground mr-1 text-xs font-medium">Threads</span>
-            {list.map((thread) => (
-              <button
-                key={thread.session_id}
-                type="button"
-                onClick={() => setOpen(thread.session_id)}
-                aria-pressed={open === thread.session_id}
-                title={thread.result_excerpt ?? undefined}
-                className="hover:bg-hover aria-pressed:bg-hover focus-visible:ring-ring flex max-w-60 items-center gap-1.5 rounded-md border px-2 py-1 text-xs outline-none focus-visible:ring-2"
-              >
-                <ThreadStatus thread={thread} />
-                <span className="truncate">{threadLabel(thread)}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-        <TranscriptRowsContext.Provider value={CHAT_ROWS}>
+        <TranscriptRowsContext.Provider value={rows}>
           <SessionThread session={session} hideHeader composerPlaceholder="Tell Kortix anything" className="min-h-0 flex-1" />
         </TranscriptRowsContext.Provider>
       </div>
-      {open ? <ThreadPanel projectId={projectId} sessionId={open} title={threadLabel(list.find((t) => t.session_id === open) ?? ({} as ProjectSession))} onClose={() => setOpen(null)} /> : null}
+      {open ? (
+        <ThreadPanel
+          projectId={projectId}
+          sessionId={open}
+          title={byId.get(open) ? threadLabel(byId.get(open)!) : 'Thread'}
+          onClose={() => setOpen(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -98,7 +142,7 @@ function ThreadPanel({ projectId, sessionId, title, onClose }: { projectId: stri
   return (
     <aside aria-label="Thread" className="flex min-h-0 w-[440px] shrink-0 flex-col border-l">
       <div className="kx-titlebar-row flex h-12 shrink-0 items-center gap-2 border-b pr-2 pl-4">
-        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
+        <h2 className="min-w-0 flex-1 truncate text-sm"><span className="font-semibold">Thread</span> <span className="text-muted-foreground">{title}</span></h2>
         <Link href={`/projects/${projectId}/sessions/${sessionId}`} className="text-muted-foreground hover:text-foreground shrink-0 text-xs">
           Open full session
         </Link>
@@ -107,7 +151,7 @@ function ThreadPanel({ projectId, sessionId, title, onClose }: { projectId: stri
         </Button>
       </div>
       <TranscriptRowsContext.Provider value={THREAD_ROWS}>
-        <SessionThread key={sessionId} session={session} hideHeader density="compact" composerPlaceholder="Reply in this thread" className="min-h-0 flex-1" />
+        <SessionThread key={sessionId} session={session} hideHeader density="compact" composerPlaceholder="Reply…" className="min-h-0 flex-1" />
       </TranscriptRowsContext.Provider>
     </aside>
   );
