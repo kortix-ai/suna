@@ -24247,7 +24247,27 @@
     "moved": "Artefact déplacé",
     "moveFailed": "Impossible de déplacer l’artefact",
     "spaceEmpty": "Aucun artefact dans {space}",
-    "showAll": "Tout afficher"
+    "showAll": "Tout afficher",
+    "live": {
+      "here": "Présents",
+      "hereLabel": "Sur cet artefact en ce moment : {names}",
+      "reconnecting": "Reconnexion…",
+      "you": "Vous",
+      "agents": "Agents",
+      "agentsHere": "Agents dans ce fil",
+      "status": {
+        "viewing": "Consulte",
+        "reading": "Lit",
+        "editing": "Modifie",
+        "writing": "Rédige"
+      },
+      "hideCursor": "Masquer mon curseur",
+      "hideCursorHint": "Les autres voient toujours votre avatar.",
+      "typingOne": "{name} est en train d’écrire…",
+      "typingTwo": "{first} et {second} sont en train d’écrire…",
+      "typingMany": "{count, plural, one {# personne est en train d’écrire…} other {# personnes sont en train d’écrire…}}",
+      "writing": "{name} rédige…"
+    }
   },
   "emailConnect": {
     "homeTitle": "Où se trouve la boîte",

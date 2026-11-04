@@ -76,7 +76,7 @@ export type ArtifactLiveStatus = 'viewing' | 'reading' | 'editing' | 'writing';
 /**
  * One connection (a browser tab) or one agent session. `who` names the person or
  * session, so a host shows one avatar per person while drawing one cursor per tab.
- * A `hidden` participant shows its avatar but never its cursor, selection or typing.
+ * A `hidden` participant shows its avatar but never its cursor, selection, typing or focus.
  */
 export interface ArtifactLiveParticipant {
   id: string;

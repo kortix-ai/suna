@@ -24247,7 +24247,27 @@
     "moved": "成果物を移動しました",
     "moveFailed": "成果物を移動できませんでした",
     "spaceEmpty": "{space} に成果物はまだありません",
-    "showAll": "すべて表示"
+    "showAll": "すべて表示",
+    "live": {
+      "here": "現在の参加者",
+      "hereLabel": "このアーティファクトを表示中: {names}",
+      "reconnecting": "再接続中…",
+      "you": "あなた",
+      "agents": "エージェント",
+      "agentsHere": "このスレッドのエージェント",
+      "status": {
+        "viewing": "表示中",
+        "reading": "読んでいます",
+        "editing": "編集中",
+        "writing": "書いています"
+      },
+      "hideCursor": "自分のカーソルを隠す",
+      "hideCursorHint": "ほかのユーザーには引き続きアバターが表示されます。",
+      "typingOne": "{name} が入力中…",
+      "typingTwo": "{first} と {second} が入力中…",
+      "typingMany": "{count, plural, other {# 人が入力中…}}",
+      "writing": "{name} が書いています…"
+    }
   },
   "emailConnect": {
     "homeTitle": "受信箱の場所",
