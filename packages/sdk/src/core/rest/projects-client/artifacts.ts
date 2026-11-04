@@ -56,6 +56,12 @@ export interface Artifact {
   space?: string | null;
   /** The agent that owns it: by default the agent of the session that published it. Older servers omit it. */
   agent?: string | null;
+  /**
+   * Open comment threads: status `open` and a root comment that is not deleted.
+   * Only the list and the read of one artifact carry it, and only while the
+   * project has `artifact_comments` on. Absent from older APIs.
+   */
+  open_thread_count?: number;
   created_at: string;
   updated_at: string;
 }

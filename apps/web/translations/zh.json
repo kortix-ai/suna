@@ -23971,6 +23971,7 @@
     "emptyFiltered": "没有匹配的工件",
     "updated": "更新于 {time}",
     "pinned": "已置顶",
+    "openComments": "{count, plural, other {# 条未解决的评论}}",
     "visibility": {
       "private": "私有",
       "project": "项目",

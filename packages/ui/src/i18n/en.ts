@@ -8284,6 +8284,7 @@ const catalog = {
     "moveFailed": "Could not move the artifact",
     "updated": "Updated {time}",
     "pinned": "Pinned",
+    "openComments": "{count, plural, one {# open comment} other {# open comments}}",
     "visibility": {
       "private": "Private",
       "project": "Project",

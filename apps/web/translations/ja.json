@@ -23971,6 +23971,7 @@
     "emptyFiltered": "一致するアーティファクトはありません",
     "updated": "{time}に更新",
     "pinned": "ピン留め済み",
+    "openComments": "{count, plural, other {未解決のコメント # 件}}",
     "visibility": {
       "private": "プライベート",
       "project": "プロジェクト",

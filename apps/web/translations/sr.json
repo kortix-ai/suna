@@ -23971,6 +23971,7 @@
     "emptyFiltered": "Ниједан артефакт не одговара",
     "updated": "Ажурирано {time}",
     "pinned": "Закачено",
+    "openComments": "{count, plural, one {# отворен коментар} few {# отворена коментара} other {# отворених коментара}}",
     "visibility": {
       "private": "Приватни",
       "project": "Пројектни",

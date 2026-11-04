@@ -716,7 +716,13 @@ change every loaded thread list at once, and a failed write undoes only its own
 change. A thread or comment that the server has not confirmed yet carries
 `optimistic: true`; a new one also has an `optimistic-` id, an empty author
 (`user_id: ''`) and every `can_*` action false. Hosts render it as pending.
-Mounted Comments and Activity queries refetch after the last concurrent write.
+Mounted Comments and Activity queries, the `useArtifacts` list and the current
+`useArtifact` read refetch after the last concurrent write.
+
+`listArtifacts` and `getArtifact` return `open_thread_count` while the project
+has `artifact_comments` on: the threads with status `open` whose first comment
+is not deleted. The field is absent while the flag is off, and from older APIs.
+Hosts show it on an Artifact card before the person opens it.
 `useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? })`
 returns one activity page. Both hooks poll every 10 seconds while mounted and
 visible. A missing project or Artifact id disables reads. Comment reads never
