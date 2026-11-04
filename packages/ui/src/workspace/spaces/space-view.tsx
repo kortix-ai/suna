@@ -360,6 +360,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
               agentFallback={space.dm_agent_name}
               onClose={closeThread}
               fullSessionHref={chat ? uiRoutes().session(projectId, threadId) : undefined}
+              messagesOnly={chat}
             />
           </ResizablePanel>
         </>
@@ -778,6 +779,7 @@ function ThreadPanel({
   agentFallback,
   onClose,
   fullSessionHref,
+  messagesOnly = false,
 }: {
   projectId: string;
   sessionId: string;
@@ -788,6 +790,8 @@ function ThreadPanel({
   onClose: () => void;
   /** One chat: the thread's full session, for a person who wants every step. */
   fullSessionHref?: string;
+  /** Chat (`chat`): the thread shows only messages; its work stays in the full session. */
+  messagesOnly?: boolean;
 }) {
   const t = useTranslations('spaces.view');
   const session = useSession(projectId, sessionId);
@@ -808,10 +812,12 @@ function ThreadPanel({
       dividerOnTop ? null : (
         <>
           {replyCount || answerPending ? <RepliesDivider count={replyCount ?? 0} className="py-2" /> : null}
-          <UsedMemoryChip projectId={projectId} sessionId={sessionId} ready={turnDone} className="px-5" />
+          {messagesOnly ? null : (
+            <UsedMemoryChip projectId={projectId} sessionId={sessionId} ready={turnDone} className="px-5" />
+          )}
         </>
       ),
-    [replyCount, answerPending, dividerOnTop, projectId, sessionId, turnDone],
+    [replyCount, answerPending, dividerOnTop, projectId, sessionId, turnDone, messagesOnly],
   );
   const agentName = session.agentName ?? thread?.agent_name ?? agentFallback;
   const rows = useMemo(
@@ -834,8 +840,9 @@ function ThreadPanel({
       labels: {
         restart: t('boot.restart'),
       },
+      messagesOnly,
     }),
-    [agentName, thread, t],
+    [agentName, thread, t, messagesOnly],
   );
   return (
     <aside aria-label={t('threadTitle')} className="bg-background flex min-h-0 w-full flex-1 flex-col">
@@ -863,7 +870,9 @@ function ThreadPanel({
       {replyCount && dividerOnTop ? (
         <div className="shrink-0 pt-3">
           <RepliesDivider count={replyCount} />
-          <UsedMemoryChip projectId={projectId} sessionId={sessionId} ready={turnDone} className="px-5" />
+          {messagesOnly ? null : (
+            <UsedMemoryChip projectId={projectId} sessionId={sessionId} ready={turnDone} className="px-5" />
+          )}
         </div>
       ) : null}
       <TranscriptRowsContext.Provider value={rows}>
