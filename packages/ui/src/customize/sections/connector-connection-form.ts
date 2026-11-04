@@ -1,4 +1,9 @@
-import type { AdminConnector, ConnectorDraftInput, ConnectorSyncResult, DiscoverConnectorTemplate } from '@kortix/sdk';
+import {
+  type AdminConnector,
+  type ConnectorDraftInput,
+  type ConnectorSyncResult,
+  type DiscoverConnectorTemplate,
+} from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 
 const MAX_CONNECTOR_SLUG_LENGTH = 128;
@@ -20,13 +25,12 @@ export interface EasyConnectConnectionInput {
   slug: string;
 }
 
-export type ConnectorSetupStatus =
-  | 'connected'
-  | 'error'
-  /** An MCP server asked for sign-in (401/403) and nobody has signed in yet. */
-  | 'pending'
-  | 'needs_setup'
-  | 'no_auth';
+/** A connector's setup status. The rules live in `@kortix/sdk`. */
+export {
+  connectorSetupStatus,
+  isConnectorAuthChallenge as isAuthChallenge,
+  type ConnectorSetupStatus,
+} from '@kortix/sdk';
 
 export function connectorConnectionQueryKeys(projectId: string) {
   return [
@@ -46,42 +50,6 @@ export function connectorSyncErrorForSlug(
   slug: string,
 ): string | null {
   return result.sync?.errors.find((error) => error.slug === slug)?.error ?? null;
-}
-
-/** A sync error that is the server asking for sign-in: HTTP 401 or 403. */
-export function isAuthChallenge(error: string): boolean {
-  return /\bHTTP 40[13]\b|\bunauthori[sz]ed\b/i.test(error);
-}
-
-export function connectorSetupStatus(
-  connector: Pick<AdminConnector, 'authorizationStrategy' | 'authSecret' | 'secretSet' | 'status'> &
-    Partial<Pick<AdminConnector, 'provider' | 'lastError'>>,
-): ConnectorSetupStatus {
-  // An MCP server that signs in with OAuth answers 401 until someone signs in.
-  // That is setup still in progress, not a failure.
-  if (
-    connector.status === 'error' &&
-    connector.provider === 'mcp' &&
-    !connector.secretSet &&
-    isAuthChallenge(connector.lastError ?? '')
-  )
-    return 'pending';
-  if (connector.status === 'error') return 'error';
-  // An authorization that never completed is setup that never finished. This
-  // used to fall through to the `authSecret`/`secretSet` branches, so an
-  // unauthorized connector still rendered `connected` — a checkmark on the
-  // connector grid (`connectors-page.tsx`), a green dot, and a place in the
-  // "ready" partition, while the gateway refused every tool call against it
-  // with `needs_auth`. Prod 2026-08-28: 6 of 6 GitHub connections had no
-  // connected account and no GitHub tool call had ever run.
-  if (connector.status === 'needs_auth') return 'needs_setup';
-  if (!connector.authSecret) return 'no_auth';
-  // A per-person connector (`authorizationStrategy: 'user'`) has no project
-  // credential to check. Its `status` is computed for the caller: `active`
-  // means the caller's own account holds one, `needs_auth` (above) that it
-  // does not. So it is connected here.
-  if (connector.authorizationStrategy === 'user') return 'connected';
-  return connector.secretSet ? 'connected' : 'needs_setup';
 }
 
 export function normalizeConnectorConnectionSlug(input: string): string {

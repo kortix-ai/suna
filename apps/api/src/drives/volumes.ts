@@ -168,8 +168,10 @@ export function driveStorageAvailable(): boolean {
 }
 
 const FILE_TIMEOUT_MS = 5 * 60_000;
-/** Re-sends of a write Platinum refused with 429 transfer_limit_exceeded. */
-const TRANSFER_RETRIES = 3;
+/** Resends of a write Platinum refused for 429 before running anything: its
+ *  bytes-in-flight cap (transfer_limit_exceeded) and the org's per-second
+ *  write budget (rate_limited). */
+const RESENDS = 3;
 
 export const FILE_CHANGED_MESSAGE = 'This file changed since you opened it. Reload it to see the latest version, then save again.';
 
@@ -247,13 +249,17 @@ async function call(volume: DriveVolume | null, path: string, init: RequestInit 
       init.signal?.throwIfAborted();
       res = await platinumFetch(path, init, origin);
     }
-    // A write Platinum refused for its bytes in flight (429, #2422) never ran:
-    // it is sent again after Retry-After, up to 3 times (at most 5 s apart).
-    for (let attempt = 0; attempt < TRANSFER_RETRIES; attempt++) {
+    // A write or exec Platinum refused with 429 never ran: the bytes-in-flight
+    // cap (#2422) and the org's per-second write budget both answer before the
+    // work starts, so the request is sent again after Retry-After, up to 3
+    // times (at most 5 s apart). Without the resend one saturated sweep leaves
+    // every session's notes old until the next pass (KRTX-4020).
+    for (let attempt = 0; attempt < RESENDS; attempt++) {
       if (res.status !== 429 || init.signal?.aborted) break;
       const wait = Math.min(5, retryAfterSeconds(res.headers.get('retry-after'))) * 1_000;
       const head = await res.clone().json().catch(() => ({}) as { code?: string });
-      if ((head as { code?: string }).code !== 'transfer_limit_exceeded') break;
+      const code = (head as { code?: string }).code;
+      if (code !== 'transfer_limit_exceeded' && code !== 'rate_limited') break;
       await res.body?.cancel();
       await Bun.sleep(wait);
       init.signal?.throwIfAborted();

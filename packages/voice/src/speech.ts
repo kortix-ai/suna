@@ -8,6 +8,9 @@ import { ISO, family, serbianLatin } from './lang'
 import { b64 } from './model'
 import { modelsHeaders, sttFetch, speechUrl, viaModels, voicesUrl } from './models'
 
+// Vendor error text reaches stderr verbatim: drop line breaks so it cannot forge log lines (CodeQL js/log-injection).
+const oneline = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+
 export type Stt = { feed(pcm: Uint8Array, loud: boolean): void; commit(): void; peek?(): Promise<string>; speculate?(): void; close(): void }
 export type SttEvents = { ready(): void; text(t: string, lang?: string, conf?: number): void; close(why: string): void; keep?(t: string): boolean; lang?: string; guess?(t: string): void; names?(): string[]; model?: string; engine?: 'groq' | 'gemini' } // names: said in this call, for the prompt // guess: a speculative transcript // keep: a short result too precious to drop (the wake name); lang: the call's starting language
 // Voiced speech crosses zero far less often than noise: median zero-crossing rate 0.05-0.14 per sample for
@@ -157,7 +160,7 @@ export const stts: Record<string, (e: SttEvents) => Stt> = {
       const d = JSON.parse(String(m.data))
       if (d.message_type === 'session_started') e.ready()
       else if (d.message_type === 'committed_transcript') e.text(d.text ?? '')
-      else if (d.message_type?.endsWith('error')) console.error('[cascade stt]', d.message_type, d.error)
+      else if (d.message_type?.endsWith('error')) console.error('[cascade stt]', oneline(d.message_type), oneline(d.error))
     }
     ws.onclose = (m) => e.close(`scribe ${m.code} ${m.reason}`)
     return {
@@ -258,7 +261,11 @@ const PROMPT = new Set(VOCAB.join(' ').toLowerCase().match(/[a-z0-9']+/g))
 // Whisper's stock words for noise ("and so on.", "and more." from a noisy room, a live call), not things people said.
 // A text of nothing but them, once or repeated ("Thank you for watching! Thank you for watching!", a noisy room).
 // Punctuation and space between the words are one run, so a long "..." or a repeated phrase cannot backtrack (CodeQL js/redos).
-const HALLUCINATION = /^[\s.!]*(?:(?:thank you(?: (?:so much|very much))?(?: for watching)?|thanks for watching|so|the|you|oh|bye|uh|um|and so on|and more|and so forth|subtitles by(?: +[^.!\s]+)*)[\s.!]*)*$/i
+// A subtitle credit ("Subtitles by the Amara.org community") is cut out first: its open-ended words inside the
+// pattern could each be read as one of the words above, and that backtracked exponentially.
+const CREDIT = /subtitles by[^.!]*/gi
+const HALLUCINATION_WORDS = /^[\s.!]*(?:(?:thank you(?: (?:so much|very much))?(?: for watching)?|thanks for watching|so|the|you|oh|bye|uh|um|and so on|and more|and so forth)[\s.!]*)*$/i
+const HALLUCINATION = { test: (text: string) => HALLUCINATION_WORDS.test(text.replace(CREDIT, ' ')) }
 // The ones from video subtitles: never what a caller says to an assistant, however sure Whisper is of them.
 const SUBTITLE = /\b(for watching|subtitles|subscribe)\b/i
 const REPEATED = /^(.{4,}?[.!?])\s*\1/i // the same sentence again at once: Whisper's loop on noise
@@ -322,7 +329,7 @@ export const ttss: Record<string, (lang?: string, model?: string) => Tts> = {
         const j = jobs[0]
         if (m.type === 'audio.delta' && j && !j.signal.aborted) j.out.enqueue(new Uint8Array(Buffer.from(m.delta, 'base64')))
         else if (m.type === 'audio.done' || m.type === 'audio.clear') jobs.shift()?.out.close(), next()
-        else if (m.type === 'error') console.error('[tts xai-ws]', m.message)
+        else if (m.type === 'error') console.error('[tts xai-ws]', oneline(m.message))
       }
       ws.onclose = () => {
         for (const j of jobs.splice(0)) j.out.close()

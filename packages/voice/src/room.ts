@@ -152,6 +152,7 @@ export async function confirm(name: string, lines: Line[], say: string, data = '
       method: 'POST',
       signal: AbortSignal.timeout(ms),
       headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'content-type': 'application/json' },
+      //codeql[js/file-access-to-http] Non-exploit, by design: the meeting transcript and the speaker's persona go to the configured model at the fixed https://openrouter.ai host; no prompt content chooses the request target.
       body: JSON.stringify({
         model,
         temperature: 0,
@@ -197,6 +198,7 @@ export async function ponder(name: string, lines: Line[], notes = '', screen = '
       method: 'POST',
       signal: AbortSignal.timeout(ms),
       headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'content-type': 'application/json' },
+      //codeql[js/file-access-to-http] Non-exploit, by design: the meeting transcript and screen notes go to the configured model at the fixed https://openrouter.ai host; no prompt content chooses the request target.
       body: JSON.stringify({
         model,
         temperature: 0,

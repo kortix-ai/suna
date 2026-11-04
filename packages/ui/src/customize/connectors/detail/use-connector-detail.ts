@@ -1,6 +1,11 @@
 'use client';
 
-import { type AdminConnector, type Connection, listConnections } from '@kortix/sdk';
+import {
+  type AdminConnector,
+  type Connection,
+  listConnections,
+  listedConnectorAccounts as connectorAccounts,
+} from '@kortix/sdk';
 import { useProjectAccountId } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -8,8 +13,6 @@ import { useState } from 'react';
 import { connectorDisplayName } from '../connector-filter';
 import { isManagedConnectorProvider } from '../provider-label';
 import { connectorSetupStatus } from '../../sections/connector-connection-form';
-import { connectorConnectionRows } from '../../sections/view/connector-connections';
-import { emptyProjectSlot } from '../../../internal/hooks/connectors/use-add-account';
 import { usePipedreamConnectMember } from '../../../internal/hooks/connectors/use-pipedream-connect-member';
 import { usePipedreamConnectProject } from '../../../internal/hooks/connectors/use-pipedream-connect-project';
 import { useNewProjectSession } from '../../../internal/hooks/projects/use-new-project-session';
@@ -156,16 +159,5 @@ export function useConnectorDetail({
   };
 }
 
-/**
- * A connector's accounts in a project's connection list: its rows minus
- * revoked ones and the server's empty shared slot. The Accounts tab, the
- * header and the Connectors list all count these, so they agree.
- */
-export function connectorAccounts(
-  connections: readonly Connection[] | undefined,
-  connector: AdminConnector,
-): Connection[] {
-  const rows = connectorConnectionRows(connections, connector.slug);
-  const slot = emptyProjectSlot(connector, rows);
-  return rows.filter((connection) => connection !== slot && connection.status !== 'revoked');
-}
+/** A connector's accounts as a person sees them. The rule lives in `@kortix/sdk`. */
+export { listedConnectorAccounts as connectorAccounts } from '@kortix/sdk';
