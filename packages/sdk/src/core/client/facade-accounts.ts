@@ -9,6 +9,7 @@ export function bindAccounts() {
       create: P.createAccountSecretResource,
       rotate: P.rotateAccountSecretResource,
       retry: P.retryAccountSecretResource,
+      usage: P.refreshAccountSecretUsage,
       remove: P.deleteAccountSecretResource,
       grant: P.grantAccountSecretResource,
       revoke: P.revokeAccountSecretResourceGrant,

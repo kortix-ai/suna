@@ -128,6 +128,15 @@ Then it's yours. Add a remote, push, open in your coding agent of choice —
 or run `kortix ship` to push to the linked project or saved host default. With neither,
 ship creates the cloud project and pushes in one step.
 
+## Minimum version
+
+An API can refuse an old CLI. When the API sets `CLI_MIN_VERSION`
+(`major.minor.patch`), every `/v1` request from an older CLI answers `426`, and the
+CLI prints `This Kortix CLI (<version>) is older than this server supports
+(minimum <version>). Update it: kortix update`. A self-host operator sets it with
+`self-host env set CLI_MIN_VERSION=<version>`. Unset: no gate. Development builds
+(`cli/dev`) always pass.
+
 ## Self-host
 
 One command surface manages two deployment targets. `docker` ("this machine")

@@ -15,13 +15,15 @@
  *   4. relays the response (status, type, stream) unchanged.
  *
  * A 429 rests that account and the request moves to the next one; a 401 marks
- * the account for reconnection and moves on. Nothing here translates the
+ * the account for reconnection and moves on. Every response's plan usage
+ * headers go to `notePoolUsage`. Nothing here translates the
  * request, reads the reply, logs a body or logs a token. The account token
  * never leaves the gateway and the API.
  */
 import { createHash } from 'node:crypto';
 import type { AuthedPrincipal } from '../domain/principal';
 import { upstreamFetch } from '../upstream-fetch';
+import { type SubscriptionUsage, subscriptionUsageFromHeaders } from '../usage/subscription-usage';
 
 export interface ClaudeCodeCredential {
   secretId: string;
@@ -40,6 +42,8 @@ export interface ClaudeCodeHooks {
   /** Anthropic refused this account's token (401): the host marks it for reconnection. */
   claudeRefused?: (principal: AuthedPrincipal, secretId: string, failedKeySha256: string) => Promise<void>;
   notePoolRateLimit?: (principal: AuthedPrincipal, secretId: string, seconds: number) => Promise<void>;
+  /** The plan usage this account's response reported (`anthropic-ratelimit-unified-*`). */
+  notePoolUsage?: (principal: AuthedPrincipal, secretId: string, usage: SubscriptionUsage) => Promise<void>;
 }
 
 export interface ClaudeCodeRequest {
@@ -144,6 +148,8 @@ export function createClaudeCodePassthrough(hooks: ClaudeCodeHooks, deps: Claude
       headers.set('authorization', `Bearer ${credential.apiKey}`);
       const response = await fetchImpl(target, { method: 'POST', headers, body: req.body as BodyInit | null, signal: req.signal });
       const more = index < found.credentials.length - 1;
+      const usage = subscriptionUsageFromHeaders(response.headers);
+      if (usage && hooks.notePoolUsage) void hooks.notePoolUsage(principal, credential.secretId, usage).catch(() => undefined);
       if (response.status === 429) {
         await hooks.notePoolRateLimit?.(principal, credential.secretId, restSeconds(response)).catch((err) => {
           logger.warn('[claude-code] could not record a Claude account rest', { secretId: credential.secretId, error: String(err) });

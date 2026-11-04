@@ -2001,9 +2001,12 @@ export const cascade: Provider = (o, h) => {
     log('done', JSON.stringify(t.text.slice(0, 60)), t.tools, t.direct ? 'fast lane' : 'agent')
     const heardBack = clean(t.sp.spoken)
     if (heardBack) talk.push({ role: 'assistant', content: heardBack })
+    // What the turn wrote, its tags taken out, and a tag it never closed too: a reply cut after "[" left that bracket as
+    // the line the caller saw and as "You said: [" in the session (Kortix dev, 2026-11-04).
+    const wrote = clean(t.text).replace(/\[[^\]]*$/, '').trim()
     // The agent never saw a turn the fast lane answered: it goes into the agent's session, so a later turn that needs
     // the tools ("run it in that repo") has the conversation.
-    if (t.direct && user) void brain.remember(sid, `[Voice turn answered by the voice directly; part of this conversation]\nUser: ${user}\nYou said: ${heardBack || clean(t.text)}`).catch(() => {})
+    if (t.direct && user && (heardBack || words(wrote).length)) void brain.remember(sid, `[Voice turn answered by the voice directly; part of this conversation]\nUser: ${user}\nYou said: ${heardBack || wrote}`).catch(() => {})
     if (t.heard?.length) {
       last = { pcm: t.heard, text: clean(t.text), spoken: clean(t.sp.spoken) }
       eotVersion++
@@ -2011,7 +2014,7 @@ export const cascade: Provider = (o, h) => {
       waiting.clear()
     }
     if (SILENT.test(untag(clean(t.text)))) t.text = '' // the agent chose to say nothing
-    if (t.text.trim()) h.text('agent', clean(t.text).replace(BRACKETS, ' ').replace(/\s{2,}/g, ' ').trim())
+    if (t.text.trim() && words(wrote).length) h.text('agent', wrote.replace(BRACKETS, ' ').replace(/\s{2,}/g, ' ').trim())
     if (user && t.answered) answeredAt = performance.now()
     if (t.hidden && t.answered) moves++, (movedAt = performance.now())
     current = undefined
