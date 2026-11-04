@@ -10,6 +10,7 @@ import type * as C from '@kortix/api-contract';
 import { db } from '../shared/db';
 import { config } from '../config';
 import { classifyDevice, summarizeHealth } from './health';
+import { deviceDiagnostics } from './diagnostics';
 import { accountPrefix, isEncrypted, liveState, objectKey, parseDisplay, type CaptureDisplay, type Manifest } from './format';
 import { captureStoreForAccount } from './account-store';
 
@@ -113,6 +114,8 @@ export function deviceView(device: Device, now = Date.now(), latestVersion: stri
     /** The enrollment token the device enrolled with (an IT rollout); null when a person signed it in. */
     enrollment_token_id: device.enrollmentTokenId,
     created_at: device.createdAt.toISOString(),
+    /** Everything support needs in one typed object: OS, update state and reason, sync, policy, hardware. */
+    diagnostics: deviceDiagnostics(device),
   };
 }
 
