@@ -676,10 +676,10 @@ export const cascade: Provider = (o, h) => {
   // The agent (tools, seconds to minutes of work) holds the call too, while it works: the relay's /call shows the call
   // (who, what is shared, what was said, what runs and is set) and takes the same actions as the voice's own tags (say,
   // later, watch, capture, look). Agnostic: any agent that can make a request; a pi host gets them as tools instead
-  // (pi/, VOICE_CALL_HINT=0).
+  // (pi/, VOICE_CALL_HINT=0; a host that gives its agent the voice's tools, o.agentTools).
   const RELAY = process.env.VOICE_SELF_URL ?? `http://127.0.0.1:${process.env.PORT ?? 7860}`
   const seeHint = () => {
-    if (process.env.VOICE_CALL_HINT === '0') return ''
+    if (process.env.VOICE_CALL_HINT === '0' || o.agentTools) return ''
     const live = liveShared()
     const auth = process.env.VOICE_TOKEN ? `&token=${encodeURIComponent(process.env.VOICE_TOKEN)}` : ''
     const at = `${RELAY}/call?session=${encodeURIComponent(sid)}${auth}`
@@ -2834,7 +2834,9 @@ export const cascade: Provider = (o, h) => {
     // Still quiet OPEN_AFTER ms after the greeting, before saying anything: the agent may open with something timely
     // (a finished background task, where they left off per its memory) or nothing. Speaking first costs nothing.
     // A micro-pause after speech is still the caller's floor until the transcript commits.
-    if (OPENER && !inRoom() && greetedAt && !opened && !lastUser && !talking && !spoke && !current && !said.length && !awaiting && now - Math.max(greetedAt, playing) > OPEN_AFTER)
+    // Not for an agent the host gave the voice's tools (a Kortix call): its call is a session of its own, started for
+    // the call, with nothing of theirs running to report, and the opener's prompt would only sit in its chat.
+    if (OPENER && !o.agentTools && !inRoom() && greetedAt && !opened && !lastUser && !talking && !spoke && !current && !said.length && !awaiting && now - Math.max(greetedAt, playing) > OPEN_AFTER)
       (opened = true), log('quiet after the greeting: opener'), ask(undefined, OPENER)
     if (mayMove() && !talking && !current && !paused && !awaiting && !said.length && now - Math.max(answeredAt, playing, endAt) > IDLE && nudgedAt < answeredAt)
       (nudgedAt = now), log('quiet: check-in'), move()
