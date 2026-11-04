@@ -467,6 +467,7 @@ export class PiRuntime {
   private policy: PermissionPolicy = {}
   private adapter: PiTurnEvents | null = null
   private queue: Promise<unknown> = Promise.resolve()
+  private reconfigurePending = false
   private active: Turn | null = null
   private runningTools = 0
   /** Steered messages the running turn has not read, in send order (kortixd's queue in front of pi's). */
@@ -822,6 +823,11 @@ export class PiRuntime {
    * runs on the new settings, a running turn finishes on the old ones.
    */
   async reconfigure(): Promise<{ changed: boolean }> {
+    if (this.active) {
+      this.reconfigurePending = true
+      return { changed: false }
+    }
+    this.reconfigurePending = false
     if (!this.agent || !this.models) return { changed: false }
     const { createPiModels } = await import('./model')
     const before = `${this.selected?.modelID}|${this.agentName}|${this.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG ?? ''}`
@@ -1263,6 +1269,7 @@ export class PiRuntime {
       turn.resolve('aborted')
       return
     }
+    if (this.reconfigurePending) await this.reconfigure()
     // The turn's first model call reads every `noReply` message before it.
     this.unreadNoReply.clear()
     this.applyAgent(turn.agent)

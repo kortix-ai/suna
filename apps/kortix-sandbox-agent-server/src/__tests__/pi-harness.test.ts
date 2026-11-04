@@ -84,6 +84,7 @@ function startFakeGateway() {
   let calls = 0
   const requests: Array<{ path: string; auth: string | null }> = []
   /** The chat messages of each request, so a test reads what the model was sent. */
+  const requestedModels: string[] = []
   const sent: Array<Array<{ role: string; content: unknown }>> = []
   /** The sampling fields of each request body. */
   const sampling: Array<{ temperature?: number; top_p?: number; tool_choice?: unknown; tools: number; toolNames: string[]; reasoning_effort?: string }> = []
@@ -107,7 +108,8 @@ function startFakeGateway() {
         return catalog ? Response.json({ models: catalog }) : new Response('down', { status: 503 })
       }
       if (req.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
-      const json = (await req.json()) as { messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: Array<{ function?: { name?: string } }>; reasoning_effort?: string }
+      const json = (await req.json()) as { model: string; messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: Array<{ function?: { name?: string } }>; reasoning_effort?: string }
+      requestedModels.push(json.model)
       sent.push(json.messages)
       sampling.push({ temperature: json.temperature, top_p: json.top_p, tool_choice: json.tool_choice, tools: json.tools?.length ?? 0, toolNames: (json.tools ?? []).map((t) => String(t.function?.name)), reasoning_effort: json.reasoning_effort })
       requests.push({ path: url.pathname, auth: req.headers.get('authorization') })
@@ -154,6 +156,7 @@ function startFakeGateway() {
   return {
     baseUrl: `http://127.0.0.1:${server.port}/v1/llm`,
     requests,
+    requestedModels,
     sent,
     sampling,
     script: (steps: Step[]) => {
@@ -5884,3 +5887,26 @@ describe('session-log actions (runtime.actions.v1)', () => {
     expect((await call(r, '/sessions/ses_other/compact')).status).toBe(404)
   })
 })
+
+ test('live reconfigure preserves the model for every step of the current prompt', async () => {
+  const nextModel = 'next-test-model'
+  const before = gateway.requestedModels.length
+  const r = await boot({
+    catalog: { ...TEST_CATALOG, [nextModel]: TEST_CATALOG[MODEL_ID] },
+    script: [
+      { tool: 'bash', args: { command: 'touch tool-started; while [ ! -f release-tool ]; do sleep 0.02; done' } },
+      { text: 'current prompt finished' },
+      { text: 'continuation finished' },
+    ],
+  })
+  const root = r.service.runtime()!.rootId
+  expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'do work' }] }) })).status).toBe(204)
+  await waitFor(() => existsSync(join(r.workspace, 'tool-started')))
+  r.env.KORTIX_MODEL = `kortix/${nextModel}`
+  await r.service.runtime()!.reconfigure()
+  writeFileSync(join(r.workspace, 'release-tool'), '')
+  await waitFor(() => !r.service.runtime()!.busy())
+  await promptAndSettle(r, 'continue')
+  await waitFor(() => gateway.requestedModels.length >= before + 3 && !r.service.runtime()!.busy())
+  expect(gateway.requestedModels.slice(before)).toEqual([MODEL_ID, MODEL_ID, nextModel])
+ })
