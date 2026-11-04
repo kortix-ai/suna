@@ -315,18 +315,26 @@ export function renderAnswerPrompt(questions: unknown, answers: unknown): string
   const asked = Array.isArray(questions) ? questions.map(questionText) : [];
   const given = Array.isArray(answers) ? answers.map(answerText) : [];
   if (asked.length > 1) {
-    return `You asked:\n${asked.map((q, i) => [...(q ? [`> ${q}`] : []), given[i] ?? '(no answer given)'].join('\n')).join('\n\n')}`;
+    return `You asked:\n${asked.map((q, i) => [...(q ? [quote(q)] : []), given[i] ?? '(no answer given)'].join('\n')).join('\n\n')}`;
   }
 
   const lines: string[] = [];
   if (asked[0]) {
     lines.push('You asked:');
-    lines.push(`> ${asked[0]}`);
+    lines.push(quote(asked[0]));
     lines.push('');
   }
   const said = given.filter((t): t is string => t !== null);
   lines.push(said.length > 0 ? said.join('\n') : '(no answer given)');
   return lines.join('\n');
+}
+
+/** Every line of a question quoted, so a reader (the agent, the transcript) sees where it ends. */
+function quote(question: string): string {
+  return question
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
 }
 
 function questionText(q: unknown): string | null {
