@@ -11,7 +11,7 @@ import { Textarea } from '@kortix/ui/textarea';
 import { ArrowLeftIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { useTranslations } from '@/i18n/use-translations';
-import { GoalStarter } from './goal-starter';
+import { EMPTY_GOAL_DRAFT, GoalStarter, useDraftTemplate, type GoalDraft } from './goal-starter';
 import { useStartGoal } from './use-start-goal';
 
 const MAX_CRITERIA = 8;
@@ -21,62 +21,90 @@ export type NewGoalView = 'templates' | 'form';
 /**
  * "New goal". `templates` (the default): the composer and the template
  * gallery, the same as the empty Goals page. "Start fresh" swaps in `form`:
- * the outcome and the done criteria written out. Opened on `form` (the empty
- * page's Start fresh), the form has no way back to the templates, which are
- * already on the page.
+ * the outcome and the done criteria written out, prefilled from the draft
+ * (a template's prompt and its criterion). Opened on `form` (the empty
+ * page's Start fresh, with that page's draft), the form has no way back to
+ * the templates, which are already on the page.
  */
 export function NewGoalModal({
   projectId,
   open,
   onOpenChange,
   initialView = 'templates',
+  initialDraft = EMPTY_GOAL_DRAFT,
 }: {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialView?: NewGoalView;
+  initialDraft?: GoalDraft;
 }) {
   const t = useTranslations('goals');
   const [view, setView] = useState<NewGoalView>(initialView);
+  const [draft, setDraft] = useState<GoalDraft>(initialDraft);
   const [pending, setPending] = useState(false);
-  // Each open starts on the view the caller asked for, not on the one left open.
+  // Each open starts on the view and the draft the caller passed, not on what was left open.
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (open) setView(initialView);
+    if (open) {
+      setView(initialView);
+      setDraft(initialDraft);
+      setPending(false);
+    }
   }
-  const change = (next: boolean) => {
+  // A person's close waits for a start in flight; a started goal closes the modal itself.
+  const dismiss = (next: boolean) => {
     if (!pending) onOpenChange(next);
+  };
+  const started = () => {
+    setPending(false);
+    onOpenChange(false);
   };
 
   return (
-    <Modal open={open} onOpenChange={change}>
+    <Modal open={open} onOpenChange={dismiss}>
       <ModalContent
         variant={view === 'form' ? 'default' : 'base'}
-        className={view === 'form' ? 'lg:max-w-lg' : 'flex max-h-[min(88svh,56rem)] flex-col lg:max-w-3xl'}
-        closeButtonChildren={
-          view === 'templates' ? (
-            <Button type="button" size="sm" variant="outline" onClick={() => setView('form')} data-testid="goals-start-fresh">
-              {t('startFresh')}
-            </Button>
-          ) : null
-        }
+        className={view === 'form' ? 'lg:max-w-lg' : 'flex max-h-[min(88svh,56rem)] flex-col lg:max-w-4xl'}
       >
         {view === 'form' ? (
           <NewGoalForm
             projectId={projectId}
+            draft={draft}
             onBack={initialView === 'templates' ? () => setView('templates') : undefined}
-            onClose={() => change(false)}
+            onCancel={() => dismiss(false)}
+            onStarted={started}
             onPendingChange={setPending}
           />
         ) : (
           <>
-            <ModalHeader className="gap-1 pr-40">
-              <ModalTitle>{t('galleryTitle')}</ModalTitle>
-              <ModalDescription>{t('galleryDescription')}</ModalDescription>
+            <ModalHeader className="flex-row items-start justify-between gap-4 pr-14">
+              <div className="flex min-w-0 flex-col gap-1">
+                <ModalTitle>{t('galleryTitle')}</ModalTitle>
+                <ModalDescription className="text-pretty">{t('galleryDescription')}</ModalDescription>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                disabled={pending}
+                onClick={() => setView('form')}
+                data-testid="goals-start-fresh"
+              >
+                {t('startFresh')}
+              </Button>
             </ModalHeader>
             <ModalBody className="min-h-0 overflow-y-auto pt-5">
-              <GoalStarter projectId={projectId} autoFocus onPendingChange={setPending} onStarted={() => change(false)} />
+              <GoalStarter
+                projectId={projectId}
+                draft={draft}
+                onDraftChange={setDraft}
+                autoFocus
+                onPendingChange={setPending}
+                onStarted={started}
+              />
             </ModalBody>
           </>
         )}
@@ -88,22 +116,25 @@ export function NewGoalModal({
 /** The outcome and, optionally, the done criteria, written out. A failed start keeps everything typed. */
 function NewGoalForm({
   projectId,
+  draft,
   onBack,
-  onClose,
+  onCancel,
+  onStarted,
   onPendingChange,
 }: {
   projectId: string;
+  /** The composer's text, and its template's criterion as the first one. */
+  draft: GoalDraft;
   onBack?: () => void;
-  onClose: () => void;
+  onCancel: () => void;
+  onStarted: () => void;
   onPendingChange: (pending: boolean) => void;
 }) {
   const t = useTranslations('goals');
-  const [outcome, setOutcome] = useState('');
-  const [criteria, setCriteria] = useState<string[]>(['']);
-  const { start: create } = useStartGoal(projectId, () => {
-    onPendingChange(false);
-    onClose();
-  });
+  const template = useDraftTemplate(draft);
+  const [outcome, setOutcome] = useState(draft.outcome);
+  const [criteria, setCriteria] = useState<string[]>(template ? [template.criterion] : ['']);
+  const { start: create } = useStartGoal(projectId, onStarted);
   const submit = () => {
     onPendingChange(true);
     create.mutate({ outcome, criteria }, { onError: () => onPendingChange(false) });
@@ -214,7 +245,7 @@ function NewGoalForm({
                 {t('backToTemplates')}
               </Button>
             ) : (
-              <Button type="button" variant="outline-ghost" disabled={create.isPending} onClick={onClose}>
+              <Button type="button" variant="outline-ghost" disabled={create.isPending} onClick={onCancel}>
                 {t('cancel')}
               </Button>
             )}

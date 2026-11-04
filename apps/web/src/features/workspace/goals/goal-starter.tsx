@@ -27,61 +27,93 @@ const ACCENT: Record<GoalTemplateAccent, string> = {
 };
 
 /**
+ * What the person has written so far, and the template it came from. The
+ * owner keeps it, so "Start fresh" opens the form with the same text.
+ */
+export interface GoalDraft {
+  outcome: string;
+  templateId: string | null;
+}
+
+export const EMPTY_GOAL_DRAFT: GoalDraft = { outcome: '', templateId: null };
+
+/**
+ * The template behind a draft, while the draft still opens with its prompt:
+ * the prompt, and the done criterion it sends. Rewrite the opening and the
+ * draft is the person's own, with no criterion.
+ */
+export function useDraftTemplate(draft: GoalDraft) {
+  const t = useTranslations('goals');
+  if (!draft.templateId) return null;
+  const prompt = t(`templates.${draft.templateId}.prompt`);
+  // Matched without the trailing space: deleting it keeps the template.
+  const opening = prompt.trimEnd();
+  if (!draft.outcome.startsWith(opening)) return null;
+  return { opening, criterion: t(`templates.${draft.templateId}.criterion`) };
+}
+
+/**
  * The goal composer and the template gallery under it: the empty Goals page
- * and the New goal modal show the same thing. Picking a template writes its
- * outcome into the composer and focuses it at the end, so the person finishes
- * the sentence; Enter (or ↑) starts the goal with no criteria, and the agent
- * writes them before it starts.
+ * and the New goal modal show the same thing. A template writes its prompt
+ * ("Fix this bug: ") into the composer with the caret at the end, so the
+ * person names the subject; the goal is named from those first words. Its
+ * done criterion goes with the start, so the agent does not write one.
+ * Enter (or ↑) starts the goal; the prompt alone does not.
  */
 export function GoalStarter({
   projectId,
+  draft,
+  onDraftChange,
   onStarted,
   onPendingChange,
   autoFocus = false,
   className,
 }: {
   projectId: string;
+  draft: GoalDraft;
+  onDraftChange: (draft: GoalDraft) => void;
   /** After the goal is created, before its page opens. */
   onStarted?: () => void;
-  /** While a start is in flight: a modal holds itself open. */
+  /** While a start is in flight: a modal holds itself open and locks Start fresh. */
   onPendingChange?: (pending: boolean) => void;
   autoFocus?: boolean;
   className?: string;
 }) {
   const t = useTranslations('goals');
-  const [outcome, setOutcome] = useState('');
-  const [picked, setPicked] = useState<string | null>(null);
   const [category, setCategory] = useState<GoalTemplateCategory>('featured');
   const composer = useRef<HTMLTextAreaElement>(null);
   const hintId = useId();
-  const panelId = useId();
-  const { start } = useStartGoal(projectId, () => {
-    setOutcome('');
-    setPicked(null);
+  const template = useDraftTemplate(draft);
+  const { start, reset } = useStartGoal(projectId, () => {
+    onDraftChange(EMPTY_GOAL_DRAFT);
     onPendingChange?.(false);
     onStarted?.();
   });
-  const ready = outcome.trim() !== '' && !start.isPending;
+  const specifics = template ? draft.outcome.slice(template.opening.length) : draft.outcome;
+  const ready = specifics.trim() !== '' && !start.isPending;
   const submit = () => {
     if (!ready) return;
     onPendingChange?.(true);
-    start.mutate({ outcome }, { onError: () => onPendingChange?.(false) });
+    start.mutate(
+      { outcome: draft.outcome, criteria: template ? [template.criterion] : [] },
+      { onError: () => onPendingChange?.(false) },
+    );
   };
-  const pick = (template: GoalTemplate) => {
-    const text = t(`templates.${template.id}.outcome`);
-    setOutcome(text);
-    setPicked(template.id);
-    if (start.isError) start.reset();
+  const pick = (next: GoalTemplate) => {
+    const prompt = t(`templates.${next.id}.prompt`);
+    // Switching templates keeps what the person wrote after the old prompt.
+    const text = prompt + specifics.trimStart();
+    onDraftChange({ outcome: text, templateId: next.id });
+    // A new outcome is a new goal: a retry must not reuse the failed start's session.
+    reset();
     const field = composer.current;
     if (!field) return;
-    // After React writes the value: caret at the end, where the template asks for the specifics.
     requestAnimationFrame(() => {
       field.focus({ preventScroll: true });
       field.setSelectionRange(text.length, text.length);
       field.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
   };
-  const templates = goalTemplatesIn(category);
 
   return (
     <div className={cn('flex flex-col gap-6', className)}>
@@ -90,7 +122,7 @@ export function GoalStarter({
           event.preventDefault();
           submit();
         }}
-        className="flex flex-col gap-3"
+        className="flex flex-col gap-2"
       >
         {/* The prompt-input shape: the text, then the round send inside the same box. */}
         <InputGroup className="items-stretch rounded-xl shadow-xs has-[[data-slot=input-group-control]:focus]:ring-0">
@@ -99,11 +131,8 @@ export function GoalStarter({
             data-slot="input-group-control"
             autoFocus={autoFocus}
             rows={3}
-            value={outcome}
-            onChange={(event) => {
-              setOutcome(event.target.value);
-              if (!event.target.value.trim()) setPicked(null);
-            }}
+            value={draft.outcome}
+            onChange={(event) => onDraftChange({ ...draft, outcome: event.target.value })}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
               event.preventDefault();
@@ -113,7 +142,7 @@ export function GoalStarter({
             aria-label={t('composerLabel')}
             aria-describedby={hintId}
             disabled={start.isPending}
-            className="text-foreground placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-20 w-full resize-none bg-transparent px-4 pt-3.5 text-sm outline-none disabled:opacity-60"
+            className="text-foreground placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-28 w-full resize-none bg-transparent px-4 pt-4 text-base outline-none disabled:opacity-60"
             data-testid="goal-composer"
           />
           <span id={hintId} className="sr-only">
@@ -140,6 +169,11 @@ export function GoalStarter({
             </InputGroupButton>
           </InputGroupAddon>
         </InputGroup>
+        {template ? (
+          <p className="text-muted-foreground px-1 text-xs text-pretty" data-testid="goal-composer-criterion">
+            {t('templateCriterion', { criterion: template.criterion })}
+          </p>
+        ) : null}
         {start.isError ? (
           <InfoBanner tone="destructive" title={t('startError')} role="alert">
             {start.error instanceof Error ? start.error.message : null}
@@ -147,37 +181,34 @@ export function GoalStarter({
         ) : null}
       </form>
 
-      <section className="flex flex-col gap-3" aria-label={t('templatesLabel')}>
-        <CategoryTabs value={category} onValueChange={setCategory} panelId={panelId} />
-        <ul id={panelId} role="tabpanel" className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="goal-templates">
-          {templates.map((template) => (
-            <li key={template.id} className="flex">
-              <TemplateCard template={template} picked={picked === template.id} onPick={() => pick(template)} />
-            </li>
-          ))}
-        </ul>
-      </section>
+      <TemplateGallery category={category} onCategoryChange={setCategory} pickedId={template ? draft.templateId : null} onPick={pick} />
     </div>
   );
 }
 
 /**
- * The category row: text tabs, the active one on a soft fill. Arrow keys,
- * Home and End move between them (WAI-ARIA tabs, automatic activation).
+ * The category row and the cards of the active category. The row is a
+ * WAI-ARIA tablist (automatic activation): arrow keys, Home and End move
+ * between categories; the active one sits on a soft fill.
  */
-function CategoryTabs({
-  value,
-  onValueChange,
-  panelId,
+function TemplateGallery({
+  category,
+  onCategoryChange,
+  pickedId,
+  onPick,
 }: {
-  value: GoalTemplateCategory;
-  onValueChange: (value: GoalTemplateCategory) => void;
-  panelId: string;
+  category: GoalTemplateCategory;
+  onCategoryChange: (category: GoalTemplateCategory) => void;
+  pickedId: string | null;
+  onPick: (template: GoalTemplate) => void;
 }) {
   const t = useTranslations('goals');
+  const baseId = useId();
+  const tabId = (value: GoalTemplateCategory) => `${baseId}-tab-${value}`;
+  const panelId = `${baseId}-panel`;
   const list = useRef<HTMLDivElement>(null);
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
-    const index = GOAL_TEMPLATE_CATEGORIES.indexOf(value);
+    const index = GOAL_TEMPLATE_CATEGORIES.indexOf(category);
     const last = GOAL_TEMPLATE_CATEGORIES.length - 1;
     const next =
       event.key === 'ArrowRight' ? (index === last ? 0 : index + 1)
@@ -187,40 +218,53 @@ function CategoryTabs({
       : null;
     if (next === null) return;
     event.preventDefault();
-    onValueChange(GOAL_TEMPLATE_CATEGORIES[next]);
+    onCategoryChange(GOAL_TEMPLATE_CATEGORIES[next]);
     list.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   };
+
   return (
-    <div
-      ref={list}
-      role="tablist"
-      aria-label={t('templatesLabel')}
-      onKeyDown={move}
-      className="-mx-1 flex items-center gap-1 overflow-x-auto px-1 [scrollbar-width:none]"
-    >
-      {GOAL_TEMPLATE_CATEGORIES.map((category) => {
-        const active = category === value;
-        return (
-          <button
-            key={category}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            aria-controls={panelId}
-            tabIndex={active ? 0 : -1}
-            onClick={() => onValueChange(category)}
-            className={cn(
-              'focus-visible:ring-ring/15 h-8 shrink-0 rounded-full px-3 text-sm whitespace-nowrap outline-none focus-visible:ring-3',
-              'transition-[color,background-color] duration-(--duration-normal) ease-out',
-              active ? 'bg-foreground/6 text-foreground' : 'text-muted-foreground hover:text-foreground',
-            )}
-            data-testid={`goal-templates-tab-${category}`}
-          >
-            {t(`category.${category}`)}
-          </button>
-        );
-      })}
-    </div>
+    <section className="flex flex-col gap-3" aria-label={t('templatesLabel')}>
+      <div
+        ref={list}
+        role="tablist"
+        aria-label={t('categoriesLabel')}
+        onKeyDown={move}
+        className="-mx-1 flex items-center gap-1 overflow-x-auto px-1 [scrollbar-width:none]"
+      >
+        {GOAL_TEMPLATE_CATEGORIES.map((value) => {
+          const active = value === category;
+          return (
+            <button
+              key={value}
+              id={tabId(value)}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              aria-controls={panelId}
+              tabIndex={active ? 0 : -1}
+              onClick={() => onCategoryChange(value)}
+              className={cn(
+                'focus-visible:ring-ring/15 h-8 shrink-0 rounded-full px-3 text-sm whitespace-nowrap outline-none focus-visible:ring-3',
+                'transition-[color,background-color] duration-(--duration-normal) ease-out',
+                active ? 'bg-foreground/6 text-foreground' : 'text-muted-foreground hover:text-foreground',
+              )}
+              data-testid={`goal-templates-tab-${value}`}
+            >
+              {t(`category.${value}`)}
+            </button>
+          );
+        })}
+      </div>
+      <div id={panelId} role="tabpanel" aria-labelledby={tabId(category)}>
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="goal-templates">
+          {goalTemplatesIn(category).map((template) => (
+            <li key={template.id} className="flex">
+              <TemplateCard template={template} picked={pickedId === template.id} onPick={() => onPick(template)} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }
 
@@ -235,10 +279,10 @@ function TemplateCard({ template, picked, onPick }: { template: GoalTemplate; pi
     <button
       type="button"
       onClick={onPick}
-      aria-pressed={picked}
+      aria-current={picked ? 'true' : undefined}
       className={cn(
         'bg-popover border-border flex w-full flex-col items-start gap-1 rounded-xl border p-4 text-left shadow-xs outline-none',
-        'transition-[background-color,border-color,scale] duration-(--duration-normal) ease-out active:scale-[0.99]',
+        'transition-[background-color,border-color,scale] duration-(--duration-normal) ease-out active:scale-[0.99] motion-reduce:active:scale-100',
         'hover:bg-hover focus-visible:border-ring focus-visible:ring-ring/15 focus-visible:ring-3',
         picked && 'border-ring',
       )}
@@ -247,13 +291,13 @@ function TemplateCard({ template, picked, onPick }: { template: GoalTemplate; pi
     >
       <Glyph weight="duotone" className={cn('mb-2.5 size-5 shrink-0', ACCENT[template.accent])} aria-hidden />
       <span className="text-foreground text-sm font-medium">{t(`templates.${template.id}.title`)}</span>
-      <span className="text-muted-foreground line-clamp-2 text-sm text-pretty">{t(`templates.${template.id}.description`)}</span>
+      <span className="text-muted-foreground text-sm text-pretty">{t(`templates.${template.id}.description`)}</span>
       <span className="sr-only">{t('templateSteps', { start, done })}</span>
-      <span className="text-muted-foreground mt-auto flex items-center gap-1.5 pt-2 text-xs" aria-hidden>
-        <StartGlyph className="size-3.5 shrink-0" aria-hidden />
+      <span className="text-muted-foreground mt-auto flex flex-wrap items-center gap-x-1.5 gap-y-1 pt-2 text-sm" aria-hidden>
+        <StartGlyph className="size-3.5 shrink-0" />
         <span>{start}</span>
-        <ArrowRightIcon className="size-3 shrink-0" aria-hidden />
-        <DoneGlyph className="size-3.5 shrink-0" aria-hidden />
+        <ArrowRightIcon className="size-3 shrink-0" />
+        <DoneGlyph className="size-3.5 shrink-0" />
         <span>{done}</span>
       </span>
     </button>
