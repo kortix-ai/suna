@@ -6,7 +6,7 @@ set statement_timeout = '30s';
 
 -- KRTX-4023, final step of the replace dance. The two replacement indexes
 -- built by 20261104060001000 and 20261104060002000 (old dominated indexes
--- dropped by 20261104060003000 and 20261104060005000) now take back the
+-- dropped by 20261104060003000 and 20261104060004000) now take back the
 -- canonical names the drizzle schema contract declares
 -- (packages/db/src/schema/kortix.ts declares both by relation only; INCLUDE
 -- lists are inexpressible there).

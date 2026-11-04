@@ -24,8 +24,8 @@ export const shorthands = undefined;
 // 20261104060000000); this replacement adds it and the three token/model
 // columns to the INCLUDE list over the same (project_id, session_id,
 // created_at) keys and the same `session_id is not null` predicate. Built
-// under a temp name; 20261104060005000 drops the old index and
-// 20261104060006000 restores the canonical name the drizzle schema contract
+// under a temp name; 20261104060004000 drops the old index and
+// 20261104060005000 restores the canonical name the drizzle schema contract
 // declares.
 
 /** @param {import('node-pg-migrate').MigrationBuilder} pgm */
