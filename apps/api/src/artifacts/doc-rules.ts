@@ -90,19 +90,27 @@ export function decideReset(current: DocLease, request: { holder: string; userId
   return ours(current, request.holder, request.userId) || !leaseLive(current, now);
 }
 
+/** Writers one flush names at most, and the pending list holds at most. */
+export const DOC_MAX_CONTRIBUTORS = 200;
+
 /**
  * `POST …/doc/flushed`. Only the lease holder records a flush; a lease that
  * expired but nobody took over is still its holder's (no one else wrote the
  * file). A seq past the newest update is refused: those updates do not exist.
- * An older seq is accepted and sets nothing (`apply: false`).
+ * The version must be the file's entry version now (read server-side from
+ * Files): a replay of an old flush, an invented version, or a doc without a
+ * file is refused. An older seq is accepted and sets nothing (`apply: false`).
+ * `advanced`: the flush moved past the previous one, so the file holds new
+ * writers' text; a replay or an equal seq names nobody.
  */
 export function decideFlush(
-  state: { flushedSeq: number; latestSeq: number; lease: DocLease },
-  input: { holder: string; userId: string; seq: number },
-):{ ok: true; apply: boolean } | { ok: false; code: 'not_leader' | 'invalid_seq' } {
+  state: { flushedSeq: number; latestSeq: number; lease: DocLease; currentVersion: string | null },
+  input: { holder: string; userId: string; seq: number; version: string },
+): { ok: true; apply: boolean; advanced: boolean } | { ok: false; code: 'not_leader' | 'invalid_seq' | 'version_mismatch' } {
   if (!ours(state.lease, input.holder, input.userId)) return { ok: false, code: 'not_leader' };
   if (input.seq > state.latestSeq) return { ok: false, code: 'invalid_seq' };
-  return { ok: true, apply: input.seq >= state.flushedSeq };
+  if (state.currentVersion === null || input.version !== state.currentVersion) return { ok: false, code: 'version_mismatch' };
+  return { ok: true, apply: input.seq >= state.flushedSeq, advanced: input.seq > state.flushedSeq };
 }
 
 /**

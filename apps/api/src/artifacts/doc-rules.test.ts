@@ -70,36 +70,43 @@ describe('decideLease', () => {
 
 describe('decideFlush', () => {
   const lease = held('tab-a', 'u1', later(10_000));
-  const state = { flushedSeq: 4, latestSeq: 9, lease };
+  // The file's entry version now, read server-side from Files.
+  const state = { flushedSeq: 4, latestSeq: 9, lease, currentVersion: 'v7' };
+  const flush = (seq: number, extra: Partial<{ holder: string; userId: string; version: string }> = {}) =>
+    ({ holder: 'tab-a', userId: 'u1', seq, version: 'v7', ...extra });
 
-  test('the lease holder flushes a newer seq', () => {
-    expect(decideFlush(state, { holder: 'tab-a', userId: 'u1', seq: 7 })).toEqual({ ok: true, apply: true });
+  test('the lease holder flushes a newer seq at the file\u2019s current version: applied, and it advanced (its writers are named)', () => {
+    expect(decideFlush(state, flush(7))).toEqual({ ok: true, apply: true, advanced: true });
   });
 
-  test('the same seq again is applied (a newer version of the same updates)', () => {
-    expect(decideFlush(state, { holder: 'tab-a', userId: 'u1', seq: 4 })).toEqual({ ok: true, apply: true });
+  test('the same seq again is applied (a newer version of the same updates) but did not advance: nobody is named again', () => {
+    expect(decideFlush(state, flush(4))).toEqual({ ok: true, apply: true, advanced: false });
   });
 
-  test('an older seq is accepted but sets nothing', () => {
-    expect(decideFlush(state, { holder: 'tab-a', userId: 'u1', seq: 3 })).toEqual({ ok: true, apply: false });
+  test('an older seq is accepted but sets nothing and names nobody', () => {
+    expect(decideFlush(state, flush(3))).toEqual({ ok: true, apply: false, advanced: false });
+  });
+
+  test('a version that is not the file\u2019s current one (a replay, or an invented one) → version_mismatch', () => {
+    expect(decideFlush(state, flush(7, { version: 'v6' }))).toEqual({ ok: false, code: 'version_mismatch' });
+    expect(decideFlush({ ...state, currentVersion: null }, flush(7))).toEqual({ ok: false, code: 'version_mismatch' });
   });
 
   test('a seq beyond the latest update is refused', () => {
-    expect(decideFlush(state, { holder: 'tab-a', userId: 'u1', seq: 10 })).toEqual({ ok: false, code: 'invalid_seq' });
+    expect(decideFlush(state, flush(10))).toEqual({ ok: false, code: 'invalid_seq' });
   });
 
-  test('another tab, or the same holder id from another person, is not the leader', () => {
-    expect(decideFlush(state, { holder: 'tab-b', userId: 'u1', seq: 7 })).toEqual({ ok: false, code: 'not_leader' });
-    expect(decideFlush(state, { holder: 'tab-a', userId: 'u2', seq: 7 })).toEqual({ ok: false, code: 'not_leader' });
+  test('another tab, or the same holder id from another person, is not the leader (checked first)', () => {
+    expect(decideFlush(state, flush(7, { holder: 'tab-b', version: 'v6' }))).toEqual({ ok: false, code: 'not_leader' });
+    expect(decideFlush(state, flush(7, { userId: 'u2' }))).toEqual({ ok: false, code: 'not_leader' });
   });
 
   test('no lease at all → not the leader', () => {
-    expect(decideFlush({ ...state, lease: free }, { holder: 'tab-a', userId: 'u1', seq: 7 })).toEqual({ ok: false, code: 'not_leader' });
+    expect(decideFlush({ ...state, lease: free }, flush(7))).toEqual({ ok: false, code: 'not_leader' });
   });
 
   test('an expired lease that nobody took over is still ours', () => {
-    expect(decideFlush({ ...state, lease: held('tab-a', 'u1', later(-5_000)) }, { holder: 'tab-a', userId: 'u1', seq: 7 }))
-      .toEqual({ ok: true, apply: true });
+    expect(decideFlush({ ...state, lease: held('tab-a', 'u1', later(-5_000)) }, flush(7))).toEqual({ ok: true, apply: true, advanced: true });
   });
 });
 

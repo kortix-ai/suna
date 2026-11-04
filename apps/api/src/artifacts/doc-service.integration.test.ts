@@ -13,6 +13,7 @@ import {
   leaseArtifactDoc,
   markArtifactDocFlushed,
   readArtifactDoc,
+  recordArtifactDocEdits,
   resetArtifactDoc,
   seedArtifactDoc,
 } from './doc-service';
@@ -197,10 +198,10 @@ describe('lease and flush', () => {
     expect(renewed.leader).toBe(true);
     expect(renewed.expiresAt!.getTime()).toBeGreaterThanOrEqual(a.expiresAt!.getTime());
 
-    await rejects(markArtifactDocFlushed(artifactId, { holder: 'tab-b', userId: otherUserId, seq: 3, version: 'v2', markdown: 'two' }), 409, 'not_leader');
-    await rejects(markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 4, version: 'v2', markdown: 'two' }), 400, 'invalid_seq');
-    expect(await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v2', markdown: 'two' })).toMatchObject({ flushedSeq: 3 });
-    expect(await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 2, version: 'v-old', markdown: 'old' })).toMatchObject({ flushedSeq: 3 });
+    await rejects(markArtifactDocFlushed(artifactId, { holder: 'tab-b', userId: otherUserId, seq: 3, version: 'v2', currentVersion: 'v2', markdown: 'two' }), 409, 'not_leader');
+    await rejects(markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 4, version: 'v2', currentVersion: 'v2', markdown: 'two' }), 400, 'invalid_seq');
+    expect(await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v2', currentVersion: 'v2', markdown: 'two' })).toMatchObject({ flushedSeq: 3 });
+    expect(await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 2, version: 'v-old', currentVersion: 'v-old', markdown: 'old' })).toMatchObject({ flushedSeq: 3 });
     expect((await readArtifactDoc(artifactId, { after: 3, base: true })).flushed).toEqual({ seq: 3, version: 'v2', markdown: 'two' });
 
     expect(await leaseArtifactDoc(artifactId, { holder: 'tab-b', userId: otherUserId, release: true })).toEqual({ kind: 'contested', leader: false, holder: 'tab-a', expiresAt: renewed.expiresAt });
@@ -216,9 +217,9 @@ describe('lease and flush', () => {
     await db.update(artifactDocState).set({ leaseExpiresAt: sql`now() - interval '1 second'` }).where(eq(artifactDocState.artifactId, artifactId));
     expect((await readArtifactDoc(artifactId, { after: 0, base: false })).lease).toBeNull();
     // Nobody took it yet: the old holder may still record its flush.
-    expect(await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 1, version: 'v1b', markdown: 'one' })).toMatchObject({ flushedSeq: 1 });
+    expect(await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 1, version: 'v1b', currentVersion: 'v1b', markdown: 'one' })).toMatchObject({ flushedSeq: 1 });
     expect((await leaseArtifactDoc(artifactId, { holder: 'tab-b', userId: otherUserId, release: false })).leader).toBe(true);
-    await rejects(markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 1, version: 'v1c', markdown: 'one' }), 409, 'not_leader');
+    await rejects(markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 1, version: 'v1c', currentVersion: 'v1c', markdown: 'one' }), 409, 'not_leader');
   });
 });
 
@@ -327,7 +328,7 @@ describe('an Artifact deleted while a write waits (FOR KEY SHARE)', () => {
       ['seed', false, (id) => seedArtifactDoc(id, { update: Buffer.from([0, 0]), markdown: '', version: 'v1', userId })],
       ['append', true, (id) => appendArtifactDocUpdate(id, { update: Buffer.from([0, 0]), userId })],
       ['lease', true, (id) => leaseArtifactDoc(id, { holder: 'tab-a', userId, release: false })],
-      ['flushed', true, (id) => markArtifactDocFlushed(id, { holder: 'tab-a', userId, seq: 1, version: 'v2', markdown: '' })],
+      ['flushed', true, (id) => markArtifactDocFlushed(id, { holder: 'tab-a', userId, seq: 1, version: 'v2', currentVersion: 'v2', markdown: '' })],
       ['reset', true, (id) => resetArtifactDoc(id, { holder: 'tab-a', userId })],
     ];
     for (const [name, seeded, write] of writes) {
@@ -365,8 +366,8 @@ describe('epoch on every write', () => {
     expect((await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId, epoch })).seq).toBe(2);
     expect((await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId })).seq).toBe(3);
     expect((await leaseArtifactDoc(artifactId, { holder: 'tab-a', userId, release: false, epoch })).leader).toBe(true);
-    await mismatch(markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v2', markdown: 'two', epoch: stale }));
-    expect(await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v2', markdown: 'two', epoch })).toMatchObject({ flushedSeq: 3 });
+    await mismatch(markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v2', currentVersion: 'v2', markdown: 'two', epoch: stale }));
+    expect(await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v2', currentVersion: 'v2', markdown: 'two', epoch })).toMatchObject({ flushedSeq: 3 });
   });
 });
 
@@ -379,13 +380,13 @@ describe('who wrote (pending contributors)', () => {
     await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId: otherUserId });
     await leaseArtifactDoc(artifactId, { holder: 'tab-a', userId, release: false });
 
-    const first = await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 4, version: 'v2', markdown: 'two' });
+    const first = await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 4, version: 'v2', currentVersion: 'v2', markdown: 'two' });
     expect({ ...first, contributors: [...first.contributors].sort() }).toEqual({ flushedSeq: 4, contributors: [userId, otherUserId].sort(), fromSeq: 2, toSeq: 4 });
     // Nothing pushed since: the next flush names nobody.
-    expect(await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 4, version: 'v3', markdown: 'two' }))
+    expect(await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 4, version: 'v3', currentVersion: 'v3', markdown: 'two' }))
       .toEqual({ flushedSeq: 4, contributors: [], fromSeq: 5, toSeq: 4 });
     // An older seq sets nothing and names nobody.
-    expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v0', markdown: 'old' })).contributors).toEqual([]);
+    expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v0', currentVersion: 'v0', markdown: 'old' })).contributors).toEqual([]);
   });
 
   test('a flush that does not reach the newest push keeps the pending writers for the next flush (a writer is never dropped)', async () => {
@@ -394,9 +395,9 @@ describe('who wrote (pending contributors)', () => {
     await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId: otherUserId });
     await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId: otherUserId });
     await leaseArtifactDoc(artifactId, { holder: 'tab-a', userId, release: false });
-    expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 2, version: 'v2', markdown: 'two' })).contributors).toEqual([otherUserId]);
-    expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v3', markdown: 'three' })).contributors).toEqual([otherUserId]);
-    expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v4', markdown: 'three' })).contributors).toEqual([]);
+    expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 2, version: 'v2', currentVersion: 'v2', markdown: 'two' })).contributors).toEqual([otherUserId]);
+    expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v3', currentVersion: 'v3', markdown: 'three' })).contributors).toEqual([otherUserId]);
+    expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v4', currentVersion: 'v4', markdown: 'three' })).contributors).toEqual([]);
   });
 
   test('a merged (compacted) row names no single author', async () => {
@@ -408,5 +409,53 @@ describe('who wrote (pending contributors)', () => {
     expect((await compactArtifactDoc(artifactId)).done).toBe(true);
     const rows = await db.select({ createdBy: artifactDocUpdates.createdBy }).from(artifactDocUpdates).where(eq(artifactDocUpdates.artifactId, artifactId));
     expect(rows).toEqual([{ createdBy: null }]);
+  }, 30_000);
+});
+
+describe('a flush is only what the file holds now (replays name nobody)', () => {
+  const editRows = async (artifactId: string) => Number((await db.execute(sql`select count(*)::int as n from kortix.audit_events
+    where resource_id = ${artifactId} and action = 'project.artifact.doc.edit'`) as unknown as Array<{ n: number }>)[0]!.n);
+
+  test('two writers, one flush at the file’s current version → two project.artifact.doc.edit rows; a replay or an equal seq → none; another version → 409 version_mismatch', async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: 'one', version: 'v1', userId });
+    await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId: otherUserId });
+    await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId });
+    await leaseArtifactDoc(artifactId, { holder: 'tab-a', userId, release: false });
+    const flush = (seq: number, version: string, currentVersion: string | null) =>
+      markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq, version, markdown: 'two', currentVersion });
+    const record = async (result: Awaited<ReturnType<typeof flush>>, version: string) =>
+      recordArtifactDocEdits({ accountId, projectId, artifactId, flushedBy: userId, version, flush: result });
+
+    const first = await flush(3, 'v2', 'v2');
+    expect([...first.contributors].sort()).toEqual([userId, otherUserId].sort());
+    await record(first, 'v2');
+    expect(await editRows(artifactId)).toBe(2);
+
+    // The same call again, and a save of the same seq under a newer version: the file holds no new writer's text.
+    const replay = await flush(3, 'v2', 'v2');
+    expect(replay.contributors).toEqual([]);
+    await record(replay, 'v2');
+    const resaved = await flush(3, 'v3', 'v3');
+    expect(resaved.contributors).toEqual([]);
+    await record(resaved, 'v3');
+    expect(await editRows(artifactId)).toBe(2);
+
+    // A version the file does not have now (a replay of an old flush, or an invented one), or a doc without a file.
+    const refused = await flush(3, 'v2', 'v3').then(() => null, (e: unknown) => e as ArtifactDocError);
+    expect({ status: refused?.status, code: refused?.code, detail: refused?.detail }).toEqual({ status: 409, code: 'version_mismatch', detail: { current_version: 'v3' } });
+    await rejects(flush(3, 'v3', null), 409, 'version_mismatch');
+    expect((await readArtifactDoc(artifactId, { after: 3, base: true })).flushed).toEqual({ seq: 3, version: 'v3', markdown: 'two' });
+  });
+
+  test('pending contributors are capped at 200, and so is one flush’s list', async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: '', version: 'v1', userId });
+    for (let i = 0; i < 205; i++) await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId: crypto.randomUUID() });
+    const [state] = await db.select({ pending: artifactDocState.pendingContributors }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId));
+    expect(state!.pending).toHaveLength(200);
+    await leaseArtifactDoc(artifactId, { holder: 'tab-a', userId, release: false });
+    const flushed = await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 206, version: 'v2', markdown: '', currentVersion: 'v2' });
+    expect(flushed.contributors).toHaveLength(200);
   }, 30_000);
 });

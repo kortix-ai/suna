@@ -27,7 +27,7 @@ async function flushedDoc(idleMinutes: number): Promise<string> {
   await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId });
   await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId });
   await leaseArtifactDoc(artifactId, { holder: 'tab-a', userId, release: false });
-  await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v2', markdown: 'two' });
+  await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v2', currentVersion: 'v2', markdown: 'two' });
   await leaseArtifactDoc(artifactId, { holder: 'tab-a', userId, release: true });
   await idle(artifactId, idleMinutes);
   return artifactId;

@@ -23,6 +23,7 @@ import { db } from '../shared/db';
 import {
   DOC_COMPACTION_BACKOFF_MS,
   DOC_COMPACT_ROWS,
+  DOC_MAX_CONTRIBUTORS,
   DOC_MAX_BYTES_TOTAL,
   DOC_PAGE_MAX_BYTES,
   DOC_PAGE_MAX_ROWS,
@@ -203,6 +204,7 @@ export async function appendArtifactDocUpdate(
         bytesTotal: sql`${artifactDocState.bytesTotal} + ${input.update.length}`,
         // Who wrote: named by the next flush (`markArtifactDocFlushed`), one audit row each.
         pendingContributors: sql`case when ${input.userId}::uuid = any(${artifactDocState.pendingContributors})
+            or cardinality(${artifactDocState.pendingContributors}) >= ${DOC_MAX_CONTRIBUTORS}
           then ${artifactDocState.pendingContributors}
           else array_append(${artifactDocState.pendingContributors}, ${input.userId}::uuid) end`,
         updatedAt: sql`now()`,
@@ -350,15 +352,20 @@ export interface ArtifactDocFlushResult {
  * updates up to `seq`. 409 `not_leader` for anyone else; 400 `invalid_seq`
  * past the newest update. The flushed fields move only forward.
  *
- * Returns who wrote (`contributors`): the people who pushed since the last
- * flush, for one audit row each (`recordArtifactDocEdits`). The list clears
- * when this flush reaches the newest push; otherwise it is kept, so a writer
- * whose push came after `seq` is named by the next flush too. A writer may be
- * named twice; a writer is never dropped.
+ * `currentVersion`: the file's entry version now, which the caller reads
+ * from Files; `version` must equal it (409 `version_mismatch` otherwise).
+ *
+ * Returns who wrote (`contributors`, at most `DOC_MAX_CONTRIBUTORS`): the
+ * people who pushed since the last flush, for one audit row each
+ * (`recordArtifactDocEdits`), only when this flush advanced past the previous
+ * one: a replay or an equal seq names nobody. The list clears when this flush
+ * reaches the newest push; otherwise it is kept, so a writer whose push came
+ * after `seq` is named by the next flush too. A writer may be named twice; a
+ * writer is never dropped.
  */
 export async function markArtifactDocFlushed(
   artifactId: string,
-  input: { holder: string; userId: string; seq: number; version: string; markdown: string; epoch?: string },
+  input: { holder: string; userId: string; seq: number; version: string; markdown: string; currentVersion: string | null; epoch?: string },
 ): Promise<ArtifactDocFlushResult> {
   return db.transaction(async (tx) => {
     await lockArtifact(tx, artifactId);
@@ -374,24 +381,32 @@ export async function markArtifactDocFlushed(
     if (!state) throw notSeeded();
     assertEpoch(state.epoch, input.epoch);
     const decision = decideFlush(
-      { flushedSeq: state.flushedSeq, latestSeq: state.nextSeq - 1, lease: { holder: state.holder, userId: state.userId, expiresAt: state.expiresAt } },
+      {
+        flushedSeq: state.flushedSeq,
+        latestSeq: state.nextSeq - 1,
+        lease: { holder: state.holder, userId: state.userId, expiresAt: state.expiresAt },
+        currentVersion: input.currentVersion,
+      },
       input,
     );
     if (!decision.ok) {
-      throw decision.code === 'not_leader'
-        ? new ArtifactDocError(409, 'Only the tab that holds the lease records a flush', 'not_leader')
-        : new ArtifactDocError(400, `seq ${input.seq} is past the newest update (${state.nextSeq - 1})`, 'invalid_seq');
+      if (decision.code === 'not_leader') throw new ArtifactDocError(409, 'Only the tab that holds the lease records a flush', 'not_leader');
+      if (decision.code === 'version_mismatch') {
+        throw new ArtifactDocError(409, 'The file is not at that version now: record only the save you just made', 'version_mismatch', { current_version: input.currentVersion });
+      }
+      throw new ArtifactDocError(400, `seq ${input.seq} is past the newest update (${state.nextSeq - 1})`, 'invalid_seq');
     }
     if (!decision.apply) return { flushedSeq: state.flushedSeq, contributors: [], fromSeq: state.flushedSeq + 1, toSeq: state.flushedSeq };
-    const reachesNewest = input.seq >= state.nextSeq - 1;
+    const clear = decision.advanced && input.seq >= state.nextSeq - 1;
     await tx.update(artifactDocState).set({
       flushedSeq: input.seq,
       flushedVersion: input.version,
       flushedMarkdown: input.markdown,
-      ...(reachesNewest ? { pendingContributors: sql`'{}'::uuid[]` } : {}),
+      ...(clear ? { pendingContributors: sql`'{}'::uuid[]` } : {}),
       updatedAt: sql`now()`,
     }).where(eq(artifactDocState.artifactId, artifactId));
-    return { flushedSeq: input.seq, contributors: state.pendingContributors, fromSeq: state.flushedSeq + 1, toSeq: input.seq };
+    const contributors = decision.advanced ? state.pendingContributors.slice(0, DOC_MAX_CONTRIBUTORS) : [];
+    return { flushedSeq: input.seq, contributors, fromSeq: state.flushedSeq + 1, toSeq: input.seq };
   });
 }
 

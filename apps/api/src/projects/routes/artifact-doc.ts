@@ -46,6 +46,7 @@ import {
   resetArtifactDoc,
   seedArtifactDoc,
 } from '../../artifacts/doc-service';
+import { entryVersion } from '../../artifacts/service';
 import { loadArtifactForCaller } from '../lib/artifact-access';
 import { projectsApp } from '../lib/app';
 
@@ -266,7 +267,7 @@ export function registerArtifactDocRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'post', path: '/{projectId}/artifacts/{artifactId}/doc/flushed', tags: ['artifacts'],
     summary: 'Record that the lease holder wrote the file',
-    description: 'After a save of the file (`PUT …/artifacts/{artifactId}`), the lease holder records which updates the file now holds (`seq`), its new `version` and its text. The flush moves only forward: an older `seq` sets nothing. Each person who pushed since the last flush gets one `project.artifact.doc.edit` audit row with the seq range: the file is saved by the leader, the text is theirs. 409 `not_leader` from a tab that does not hold the lease; 400 `invalid_seq` past the newest update; 413 `markdown_too_large` past 1 MiB; 409 `epoch_mismatch` (with the current `epoch`) when `epoch` names another epoch.',
+    description: 'After a save of the file (`PUT …/artifacts/{artifactId}`), the lease holder records which updates the file now holds (`seq`), its new `version` and its text. The flush moves only forward: an older `seq` sets nothing. Each person who pushed since the last flush gets one `project.artifact.doc.edit` audit row with the seq range: the file is saved by the leader, the text is theirs. 409 `not_leader` from a tab that does not hold the lease; 400 `invalid_seq` past the newest update; 409 `version_mismatch` (with `current_version`) unless `version` is the entry version of the file now, read from Files: a replay of an older flush is refused, and a repeat of the same seq names no writer; 413 `markdown_too_large` past 1 MiB; 409 `epoch_mismatch` (with the current `epoch`) when `epoch` names another epoch.',
     ...auth,
     request: {
       params: ArtifactParams,
@@ -280,7 +281,9 @@ export function registerArtifactDocRoutes(): void {
     const tooLarge = markdownTooLarge(c, input.markdown);
     if (tooLarge) return tooLarge;
     try {
-      const flushed = await markArtifactDocFlushed(access.row.artifactId, { ...input, userId: access.viewer.userId });
+      // The file's version now, read from Files: a flush records only the save that made it.
+      const currentVersion = await entryVersion(access.row);
+      const flushed = await markArtifactDocFlushed(access.row.artifactId, { ...input, userId: access.viewer.userId, currentVersion });
       // The leader saved the file; the text is its writers': one audit row each.
       await recordArtifactDocEdits({
         accountId: access.loaded.row.accountId,
