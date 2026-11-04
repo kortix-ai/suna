@@ -19,5 +19,31 @@
   "reportedAtMs": 1790845320000,
   "sync": {
     "state": "off"
+  },
+  "update": {
+    "status": "failed",
+    "installed": "0.1.0",
+    "channel": "stable",
+    "latest": "0.1.1",
+    "lastCheckMs": 1790845300000,
+    "lastCheck": "no update: 0.1.1 is marked bad on this computer",
+    "updatingTo": null,
+    "lastResult": {
+      "at_ms": 1790845000000,
+      "from": "0.1.0",
+      "to": "0.1.1",
+      "outcome": "rolled_back",
+      "detail": "0.1.1 did not report healthy in 900 s: session 2: no_new_frame (state recording, last frame 41 s before the install)"
+    },
+    "badVersions": [
+      "0.1.1"
+    ],
+    "skipped": [
+      {
+        "version": "0.1.1",
+        "failedAtMs": 1790845000000,
+        "retryAtMs": 1791449800000
+      }
+    ]
   }
 }
