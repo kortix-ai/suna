@@ -1176,3 +1176,20 @@ describe('Free plan recovery guidance', () => {
       });
   });
 });
+
+describe('Claude subscription models require session execution', () => {
+  for (const model of ['opus', 'sonnet', 'haiku', 'fable']) {
+    for (const sessionId of [undefined, 'synthetic-session']) {
+      test(`${model}, session ${sessionId ?? 'absent'}: gateway reports the execution boundary`, async () => {
+        const ref = `claude-agent/${model}`;
+        const result = resolveCandidates(principal({ sessionId }), ref);
+        await expect(result).rejects.toBeInstanceOf(GatewayResolutionError);
+        await expect(result).rejects.toMatchObject({
+          code: 'model_not_found',
+          message: `"${ref}" runs through Claude Code inside sessions only. Test it by starting a session with this model; the gateway playground and chat completions cannot execute it.`,
+          suggestion: 'Start a session with this model, or choose a gateway-compatible model for this request.',
+        });
+      });
+    }
+  }
+});

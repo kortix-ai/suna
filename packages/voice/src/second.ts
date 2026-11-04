@@ -29,6 +29,7 @@ export async function second(history: Msg[], question: string, answer: string, d
       method: 'POST',
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(ms)]) : AbortSignal.timeout(ms),
       headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'content-type': 'application/json' },
+      //codeql[js/file-access-to-http] Non-exploit, by design: the call's own transcript context goes to the call's configured model at the fixed https://openrouter.ai host; no prompt content chooses the request target.
       body: JSON.stringify({
         model: process.env.VOICE_SECOND,
         temperature: 0,
