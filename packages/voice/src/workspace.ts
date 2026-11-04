@@ -133,7 +133,7 @@ function build(root: string) {
       .map((x) => x.c)
   }
   // Escaped for the data envelope the map goes in: a README title cannot close it.
-  const named = identity(root).replace(/"/g, "'").replace(/<\/?data\b[^>]*>/gi, '')
+  const named = identity(root).replace(/"/g, "'").replace(/[<>]/g, '')
   const map = (named ? `Project: ${named}\n` : '') + list
     .slice(0, 300)
     .map((f) => {
