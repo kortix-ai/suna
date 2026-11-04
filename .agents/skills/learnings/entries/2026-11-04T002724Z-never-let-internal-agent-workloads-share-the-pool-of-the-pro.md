@@ -1,5 +1,5 @@
 ---
-recorded: 
+recorded: 2026-11-04T00:27:24Z
 incident_date: 2026-11-04
 ---
 # Never let internal agent workloads share the pool of the provider org that serves customers
