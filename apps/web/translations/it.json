@@ -25311,7 +25311,8 @@
       "attachments": "Immagini allegate",
       "removeAttachment": "Rimuovi {name}",
       "attachImages": "Allega immagini",
-      "attachFailed": "Impossibile allegare l’immagine"
+      "attachFailed": "Impossibile allegare l’immagine",
+      "scrollToBottom": "Vai al messaggio più recente"
     },
     "tasks": {
       "label": "Attività del team",
