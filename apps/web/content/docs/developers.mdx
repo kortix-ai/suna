@@ -5947,19 +5947,22 @@ Connect YouTube with one click: Install YouTube from the catalogue, then sign in
 
 | Field | Value |
 | --- | --- |
-| `upload_url` | The upload session URL. It serves this one video only and expires after about a week. |
-| `upload_command` | A `curl` command that sends the file to `upload_url`. It prints the video resource: `id` is the video, `https://youtu.be/<id>`. |
-| `resume_status_command` | Asks how many bytes YouTube has. HTTP `308` with `Range: bytes=0-N` means: send the rest from byte `N+1`. |
+| `caller_only.upload_url` | The upload session URL. It serves this one video only and expires after about a week. |
+| `caller_only.upload_command` | A `curl` command that sends the file to the upload URL. It prints the video resource: `id` is the video, `https://youtu.be/<id>`. |
+| `caller_only.resume_status_command` | Asks how many bytes YouTube has. HTTP `308` with `Range: bytes=0-N` means: send the rest from byte `N+1`. |
 | `video` | The title, privacy status and schedule YouTube received. |
 
-The file goes from the session straight to Google. The Google token stays with the sign-in provider and never enters the session.
+The file goes from the session straight to Google. The Google token stays with the sign-in provider and never enters the session. The upload URL is a credential for one video. When a policy holds the call for approval, the stored outcome reviewers read leaves out `caller_only`; only the resume prompt to the calling session carries it.
+
+Build the arguments with `jq --arg`. A file path pasted into a JSON string lets a quote in the file name add fields.
 
 ```bash
 F=/workspace/output/video.mp4
-kortix connectors call youtube upload_video \
-  "{\"title\":\"Launch demo\",\"privacy_status\":\"private\",\"file_path\":\"$F\",\"file_size\":$(stat -c %s "$F"),\"mime_type\":\"video/mp4\"}" \
-  --out /tmp/yt-upload.json
-bash -c "$(jq -r '.data.result.upload_command' /tmp/yt-upload.json)"
+jq -n --arg file "$F" --argjson size "$(stat -c %s "$F")" \
+  '{title:"Launch demo", privacy_status:"private", file_path:$file, file_size:$size, mime_type:"video/mp4"}' \
+  > /tmp/yt-args.json
+kortix connectors call youtube upload_video @/tmp/yt-args.json --out /tmp/yt-upload.json
+bash -c "$(jq -r '.data.result.caller_only.upload_command' /tmp/yt-upload.json)"
 ```
 
 Arguments: `title` (required, at most 100 characters), `description`, `tags`, `category_id`, `privacy_status` (`private` by default, `unlisted`, `public`), `publish_at` (an ISO 8601 time; needs `private`), `made_for_kids`, `contains_synthetic_media`, `notify_subscribers` (default `true`), `default_language`, `file_path` and `file_size` (written into `upload_command`), `mime_type` (default `video/*`).

@@ -18,6 +18,7 @@
  * The upload URL is a credential for this one video: whoever holds it can
  * write this video's bytes, nothing else. It expires after about a week.
  */
+import { CALLER_ONLY_KEY } from './args-preview';
 import type { ExecResult } from './call';
 import type { ComposioToolLike } from './types';
 
@@ -58,8 +59,8 @@ export const youtubeUploadTool: ComposioToolLike = {
     name: YOUTUBE_UPLOAD_TOOL,
     description: [
       'Upload a video file from this session to the signed-in YouTube channel. Any size; no public URL needed.',
-      'Step 1: call this with the metadata (and file_path, file_size). It answers upload_url and upload_command.',
-      'Step 2: run upload_command in the shell. curl sends the file straight to YouTube and prints the video JSON:',
+      'Step 1: call this with the metadata (and file_path, file_size). It answers caller_only.upload_command.',
+      'Step 2: run that command in the shell. curl sends the file straight to YouTube and prints the video JSON:',
       'its id is the video (https://youtu.be/<id>).',
       'The video is private unless privacy_status says otherwise. The upload URL serves this one video only.',
     ].join(' '),
@@ -369,18 +370,22 @@ export async function startYoutubeUpload(
       provider: 'composio',
       sessionId: session.sessionId,
       result: {
-        upload_url: uploadUrl,
-        upload_command: `curl -sS -X PUT -H ${shellQuote(`Content-Type: ${request.mimeType}`)} -T ${file} ${url}`,
-        resume_status_command: `curl -sS -i -X PUT -H 'Content-Length: 0' -H ${shellQuote(`Content-Range: bytes */${size}`)} ${url}`,
+        // The upload URL is a credential: an approved held call's stored
+        // outcome leaves `caller_only` out (`CALLER_ONLY_KEY`).
+        [CALLER_ONLY_KEY]: {
+          upload_url: uploadUrl,
+          upload_command: `curl -sS -X PUT -H ${shellQuote(`Content-Type: ${request.mimeType}`)} -T ${file} ${url}`,
+          resume_status_command: `curl -sS -i -X PUT -H 'Content-Length: 0' -H ${shellQuote(`Content-Range: bytes */${size}`)} ${url}`,
+        },
         video: {
           title: request.snippet.title,
           privacy_status: request.status.privacyStatus,
           ...(request.status.publishAt ? { publish_at: request.status.publishAt } : {}),
         },
         next: [
-          `Run upload_command${request.filePath ? '' : ' with <FILE> replaced by the video path'}.`,
+          `Run caller_only.upload_command${request.filePath ? '' : ' with <FILE> replaced by the video path'}.`,
           'It prints the video JSON: its id is the video, https://youtu.be/<id>. YouTube keeps processing it after the upload.',
-          'If the upload breaks, run resume_status_command: HTTP 308 with "Range: bytes=0-N" means resend the rest',
+          'If the upload breaks, run caller_only.resume_status_command: HTTP 308 with "Range: bytes=0-N" means resend the rest',
           'with -H "Content-Range: bytes N+1-<SIZE-1>/<SIZE>". Use this URL for this one video only.',
         ].join(' '),
       },

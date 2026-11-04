@@ -55,16 +55,21 @@ stops at 100 MB.
 
 ```sh
 F=/workspace/output/video.mp4
-kortix connectors call youtube upload_video \
-  "{\"title\":\"Launch demo\",\"privacy_status\":\"private\",\"file_path\":\"$F\",\"file_size\":$(stat -c %s "$F"),\"mime_type\":\"video/mp4\"}" \
-  --out /tmp/yt-upload.json
-bash -c "$(jq -r '.data.result.upload_command' /tmp/yt-upload.json)"
+jq -n --arg file "$F" --argjson size "$(stat -c %s "$F")" \
+  '{title:"Launch demo", privacy_status:"private", file_path:$file, file_size:$size, mime_type:"video/mp4"}' \
+  > /tmp/yt-args.json
+kortix connectors call youtube upload_video @/tmp/yt-args.json --out /tmp/yt-upload.json
+bash -c "$(jq -r '.data.result.caller_only.upload_command' /tmp/yt-upload.json)"
 ```
 
-The `curl` prints the video JSON: `id` is the video, `https://youtu.be/<id>`.
-Upload as `private` unless the human chose otherwise. YouTube processes the
-video after the upload. If `curl` breaks, run `resume_status_command`: HTTP
-308 with `Range: bytes=0-N` means send the rest from byte N+1.
+Build the args with `jq --arg`, never by pasting a path into a JSON string: a
+quote in a file name would add fields. The `curl` prints the video JSON:
+`id` is the video, `https://youtu.be/<id>`. Upload as `private` unless the
+human chose otherwise. YouTube processes the video after the upload. If
+`curl` breaks, run `caller_only.resume_status_command`: HTTP 308 with
+`Range: bytes=0-N` means send the rest from byte N+1. The upload URL is a
+credential for this one video: never paste it into chat, a file or a commit.
+After an approval, the resume prompt carries `caller_only`.
 
 ## GraphQL field selection
 

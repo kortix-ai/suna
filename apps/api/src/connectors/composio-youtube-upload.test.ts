@@ -9,6 +9,7 @@ import {
   shellQuote,
   youtubeUploadRequest,
 } from './composio-youtube-upload';
+import { callerOnlyText, heldRunResumeText, withoutCallerOnly } from './held-call-run';
 import { normalizeComposio } from './normalize';
 
 const SESSION_URI =
@@ -146,13 +147,11 @@ describe('youtube.upload_video starts a resumable upload on the connection', () 
     expect(result.ok).toBe(true);
     const data = result.data as { provider: string; result: Record<string, unknown> };
     expect(data.provider).toBe('composio');
-    expect(data.result.upload_url).toBe(SESSION_URI);
-    expect(data.result.upload_command).toBe(
-      `curl -sS -X PUT -H 'Content-Type: video/mp4' -T '/workspace/output/it'"'"'s here.mp4' '${SESSION_URI}'`,
-    );
-    expect(data.result.resume_status_command).toBe(
-      `curl -sS -i -X PUT -H 'Content-Length: 0' -H 'Content-Range: bytes */52428800' '${SESSION_URI}'`,
-    );
+    expect(data.result.caller_only).toEqual({
+      upload_url: SESSION_URI,
+      upload_command: `curl -sS -X PUT -H 'Content-Type: video/mp4' -T '/workspace/output/it'"'"'s here.mp4' '${SESSION_URI}'`,
+      resume_status_command: `curl -sS -i -X PUT -H 'Content-Length: 0' -H 'Content-Range: bytes */52428800' '${SESSION_URI}'`,
+    });
     expect(data.result.video).toEqual({ title: 'Launch demo', privacy_status: 'unlisted' });
   });
 
@@ -161,7 +160,7 @@ describe('youtube.upload_video starts a resumable upload on the connection', () 
     const result = await upload(youtubeSession({ proxied }), { title: 'Draft' });
     expect(proxied[0]!.body).toEqual({ snippet: { title: 'Draft' }, status: { privacyStatus: 'private' } });
     expect(proxied[0]!.parameters!.map((p) => p.name)).toEqual(['uploadType', 'part', 'Content-Type', 'X-Upload-Content-Type']);
-    const command = (result.data as { result: { upload_command: string } }).result.upload_command;
+    const command = (result.data as { result: { caller_only: { upload_command: string } } }).result.caller_only.upload_command;
     expect(command).toBe(`curl -sS -X PUT -H 'Content-Type: video/*' -T <FILE> '${SESSION_URI}'`);
   });
 
@@ -170,16 +169,22 @@ describe('youtube.upload_video starts a resumable upload on the connection', () 
       youtubeSession({ proxy: async () => ({ status: 200, data: '', headers: { Location: SESSION_URI } }) }),
       { title: 'Draft' },
     );
-    expect((result.data as { result: { upload_url: string } }).result.upload_url).toBe(SESSION_URI);
+    expect((result.data as { result: { caller_only: { upload_url: string } } }).result.caller_only.upload_url).toBe(SESSION_URI);
   });
 
-  test('the command survives the redacted preview an approved call resumes with', async () => {
+  test('an approved held upload: reviewers see the video, only the calling session gets the URL', async () => {
     const result = await upload(youtubeSession({}), { title: 'Held', file_path: '/workspace/v.mp4' });
     const output = (result.data as { result: unknown }).result;
-    const preview = JSON.stringify(buildArgsPreviewDetails({ output }).preview);
-    // The bare URL is an opaque blob to the preview; the command keeps it.
-    expect(preview).toContain(`-T '/workspace/v.mp4' '${SESSION_URI}'`);
-    expect(preview.length).toBeLessThan(4_000);
+    // What the held call stores for reviewers: no caller_only, no URL.
+    const stored = JSON.stringify(buildArgsPreviewDetails({ output: withoutCallerOnly(output) }).preview);
+    expect(stored).toContain('"title":"Held"');
+    expect(stored).not.toContain('upload_id');
+    expect(stored).not.toContain('"caller_only":');
+    expect(stored).not.toContain('curl ');
+    // What the resume prompt gives the calling session: the ready command.
+    const resume = heldRunResumeText('youtube.upload_video', { status: 'ok', output_preview: stored }, callerOnlyText(output));
+    expect(resume).toContain(`-T '/workspace/v.mp4' '${SESSION_URI}'`);
+    expect(resume).toContain('caller_only (for you only, not shown to reviewers)');
   });
 });
 
