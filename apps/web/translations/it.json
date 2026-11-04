@@ -24248,6 +24248,14 @@
       "typingTwo": "{first} e {second} stanno scrivendo…",
       "typingMany": "{count, plural, one {# persona sta scrivendo…} other {# persone stanno scrivendo…}}",
       "writing": "{name} sta redigendo…"
+    },
+    "coedit": {
+      "offLarge": "La modifica dal vivo è disattivata: questo documento supera 1 MiB. Le modifiche si salvano mentre scrivi.",
+      "offLineEndings": "La modifica dal vivo è disattivata: questo documento mescola fine riga CRLF e LF. Le modifiche si salvano mentre scrivi.",
+      "offShape": "La modifica dal vivo è disattivata: l'editor riscriverebbe parte del Markdown. Le modifiche si salvano mentre scrivi.",
+      "stoppedLarge": "La modifica dal vivo si è interrotta: una modifica era troppo grande da condividere. Le modifiche si salvano mentre scrivi.",
+      "stoppedFailed": "La modifica dal vivo si è interrotta: la connessione non è riuscita. Le modifiche si salvano mentre scrivi.",
+      "stoppedHistory": "La modifica dal vivo si è interrotta: la cronologia delle modifiche di questo documento è troppo grande. Le modifiche si salvano mentre scrivi."
     }
   },
   "emailConnect": {

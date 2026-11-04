@@ -126,6 +126,7 @@ import {
   selectionOfferKey,
 } from './artifact-selection-chip';
 import { AskAgentSheet } from './ask-agent-sheet';
+import { createDocPings } from './doc-coedit';
 import { DocEditor, type DocLiveBinding, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
 import {
@@ -299,8 +300,16 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const viewingOld = !!artifact?.version.id;
   const canEdit = !!artifact?.can_edit && !viewingOld;
   const isDoc = artifact?.type === 'doc';
+  const commentsFlag = useFeatureFlag(projectId, 'artifact_comments').enabled;
+  const artifactsFlag = useFeatureFlag(projectId, 'artifacts').enabled;
+  const discussionEnabled = commentsFlag && artifactsFlag;
+  // Live co-editing (KRTX-3670) of the current version: `changed doc` pings reach the editor.
+  const [docPings] = useState(createDocPings);
+  const coedit = discussionEnabled && !version ? docPings : undefined;
+  // A read-only doc opens a new editor per file version, unless it may be co-edited: that editor
+  // shows new text in place.
   const docKey = artifact
-    ? `${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}${canEdit || viewingOld ? '' : `:${artifact.entry_version}`}`
+    ? `${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}${canEdit || viewingOld || coedit ? '' : `:${artifact.entry_version}`}`
     : '';
   // A new editor (a read-only doc's new version, a Reload) opens where the person was reading.
   // The scroll position is kept only while an editor shows its text: the empty editor's collapse
@@ -316,9 +325,6 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     docScroll.current.ready = true;
   }, []);
   const sidebar = useOptionalSidebar();
-  const commentsFlag = useFeatureFlag(projectId, 'artifact_comments').enabled;
-  const artifactsFlag = useFeatureFlag(projectId, 'artifacts').enabled;
-  const discussionEnabled = commentsFlag && artifactsFlag;
   const comments = useArtifactComments(projectId, artifactId, {
     status: 'all',
     version,
@@ -442,6 +448,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     view: isDoc ? 'doc' : 'page',
     version: artifact?.entry_version ?? null,
     hidden: liveHidden,
+    onDoc: docPings.emit,
   });
   const liveOn = liveEnabled && live.status !== 'closed' && live.status !== 'access_lost';
   const { setTyping: liveSetTyping, setCursor: liveSetCursor, setSelection: liveSetSelection, setFocus: liveSetFocus } = live;
@@ -1285,6 +1292,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   readCommentSnapshot={discussionEnabled ? readCommentSnapshot : undefined}
                   live={docLive}
                   onReady={restoreDocScroll}
+                  coedit={coedit}
                 />
               </div>
             ) : (

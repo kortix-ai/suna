@@ -24248,6 +24248,14 @@
       "typingTwo": "{first} et {second} sont en train d’écrire…",
       "typingMany": "{count, plural, one {# personne est en train d’écrire…} other {# personnes sont en train d’écrire…}}",
       "writing": "{name} rédige…"
+    },
+    "coedit": {
+      "offLarge": "L'édition en direct est désactivée : ce document dépasse 1 Mio. Les modifications s'enregistrent à la saisie.",
+      "offLineEndings": "L'édition en direct est désactivée : ce document mélange des fins de ligne CRLF et LF. Les modifications s'enregistrent à la saisie.",
+      "offShape": "L'édition en direct est désactivée : l'éditeur réécrirait une partie du Markdown. Les modifications s'enregistrent à la saisie.",
+      "stoppedLarge": "L'édition en direct s'est arrêtée : une modification était trop volumineuse pour être partagée. Les modifications s'enregistrent à la saisie.",
+      "stoppedFailed": "L'édition en direct s'est arrêtée : la connexion a échoué. Les modifications s'enregistrent à la saisie.",
+      "stoppedHistory": "L'édition en direct s'est arrêtée : l'historique des modifications de ce document est trop volumineux. Les modifications s'enregistrent à la saisie."
     }
   },
   "emailConnect": {
