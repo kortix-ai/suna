@@ -23,6 +23,8 @@ import { db } from '../shared/db';
 import { setContextField } from '../lib/request-context';
 import { logger } from '../lib/logger';
 import { trackDetached } from '../shared/drain';
+import { formatStageEntries, stageSnapshot } from '../lib/server-timing';
+import { dbPoolWaitSuspected } from '../lib/request-log-level';
 
 /** Slack drops a webhook that has not answered after 3 s; stay well under it. */
 export const ACK_WAIT_MS = 2_000;
@@ -51,14 +53,29 @@ export async function runWebhookWork(
   options: { ackWaitMs?: number; releaseOnFailure?: boolean } = {},
 ): Promise<WebhookOutcome> {
   const claims = new Set<string>();
+  const startedAt = performance.now();
   let outcome: WebhookOutcome = 'pending';
+  // True once the response went out with the work still running: only then does
+  // the request line not carry the work's duration, so only then is it logged.
+  let answeredEarly = false;
+  const logDetached = (): void => {
+    if (!answeredEarly) return;
+    const serverTiming = formatStageEntries(stageSnapshot()).join(', ');
+    logger.info(`[${label}] detached work ${outcome}`, {
+      duration_ms: Math.round(performance.now() - startedAt),
+      ...(serverTiming ? { server_timing: serverTiming } : {}),
+      ...(dbPoolWaitSuspected(serverTiming) ? { db_pool_wait_suspected: true } : {}),
+    });
+  };
   const running = claimScope.run(claims, work).then(
     () => {
       outcome = 'done';
+      logDetached();
     },
     async (error) => {
       outcome = 'failed';
       logger.error(`[${label}] handler failed`, { error: error instanceof Error ? error.message : String(error) });
+      logDetached();
       if (options.releaseOnFailure !== false) await releaseClaims(claims);
     },
   );
@@ -81,5 +98,6 @@ export async function runWebhookWork(
       setContextField('webhook_ack', 'deadline');
     }
   }
+  answeredEarly = outcome === 'pending';
   return outcome;
 }
