@@ -92,6 +92,12 @@ export const COMPOSER_KEYMAP: readonly Binding[] = [
     chords: [chord('g', { alt: true })],
     description: 'Pick the agent.',
   },
+  {
+    id: 'composer.outputs',
+    scope: 'composer',
+    chords: [chord('o', { alt: true })],
+    description: 'List what this session made: artifacts, pages, files.',
+  },
 ] as const;
 
 /** True when the event carries Alt/Option, under either terminal convention. */

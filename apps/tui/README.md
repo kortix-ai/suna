@@ -167,6 +167,30 @@ is left out of the sidebar.
 | `/ports` | Sandbox ports noticed in the transcript/terminal, and every local forward. See [Ports](#ports). | a session |
 | `/links` | Every URL in the transcript or on the terminal screen, wrapped ones rejoined. See [Links](#links). | a session |
 
+## What the session showed you
+
+When the agent hands something over with `show` (an artifact, a running page,
+a file it made) or publishes an artifact with `kortix artifacts publish`, the
+TUI shows it three ways:
+
+- The transcript draws a card where it was shown: `▣ Q3 churn report  Doc`,
+  its link or path, and `Alt+O open · reference · copy`. It is never folded
+  into "Completed N steps".
+- The tray names the newest one and counts the rest: `▣ 3 outputs · Q3 churn report`.
+- `Alt+O` (or `/shown`) lists them above the input, newest first:
+
+| Key | Action |
+| --- | --- |
+| `Enter` | Open it: an artifact or a page in the browser, a file in `/files` on that file. |
+| `Tab` | Reference it in the prompt: `"Q3 churn report" (<artifact link>)`. The agent resolves an artifact link with its `kortix-artifacts` skill. |
+| `Ctrl+Y` | Copy its link, or its path. |
+| `Ctrl+O` | Open an artifact in `/artifacts`, on its details. |
+
+The list joins what the thread shows with the project's artifacts this
+session published (flag `artifacts`). One artifact shown twice is one row.
+`/artifacts <id>` and `/files <path>` open those screens on one artifact or
+one file.
+
 ## Agents and workflows
 
 An agent call, a workflow run or a teammate starts its own session. The open
@@ -280,7 +304,7 @@ Every region around the chat is a module, off until you turn it on:
 | Module | Command | Sides | What it shows |
 | --- | --- | --- | --- |
 | Header | `/header` | — | The session title, and its state while it is not ready. On by default. |
-| Tray | `/tray` | — | One row under the input: host · project, then model · agent · context used. On by default. |
+| Tray | `/tray` | — | One row under the input: host · project, then what the session showed you (`▣ 2 outputs · Q3 report`), its agents, model · agent · context used. On by default. |
 | Terminal title | `/title` | — | The terminal window's title follows the open session. On by default. |
 | Sidebar | `/sidebar`, `Alt+B` | left, right | Projects, every screen, the session list. Rows are clickable. |
 | Session tabs (experimental) | `/tabs` | top, bottom | The sessions opened in this run. Click a tab, or `Alt+[` / `Alt+]` (`Ctrl+PageUp/PageDown`); `/close` closes. |
@@ -344,6 +368,7 @@ is `/feedback`.
 | `/reload` |  | Session: Reload kortix.yaml, agents and skills into this session. |
 | `/copy` |  | Session: Copy the last reply to the clipboard. |
 | `/link` | `/id` | Session: Copy the session web link. |
+| `/shown` | `Alt+o` | Session: What this session showed you: open, reference or copy an artifact, page or file. |
 | `/export [file]` |  | Session: Save the conversation as Markdown in the current folder. |
 | `/delete` |  | Session: Delete this session. Asks first. |
 | `/projects [filter]` | `/project` | Switch: Pick another project. |
@@ -363,10 +388,10 @@ is `/feedback`.
 | `/terminal` | `/shell` `Alt+t / Ctrl+t` | Panels: Open or close a shell in this session's sandbox. |
 | `/ports` | `Alt+p` | Panels: Forward sandbox ports to this machine. |
 | `/links` | `Alt+l` | Panels: Open a URL from the transcript or the terminal. |
-| `/files` | `Alt+f` | Screens: Browse this session's files. |
+| `/files [path]` | `Alt+f` | Screens: Browse this session's files. |
 | `/drive` | `/volumes` | Screens: Project files on Drive: yours, shared, team folders. |
 | `/repo` | `/git` `/code` | Screens: Browse the project's repository: files, branches, history. |
-| `/artifacts` | `/docs` | Screens: Docs and pages the agents published. |
+| `/artifacts [id]` | `/docs` | Screens: Docs and pages the agents published. |
 | `/inbox` | `/notifications` | Screens: Notifications: what needs you, newest first. |
 | `/approvals` | `/permissions` `/decisions` `/outputs` | Screens: Approvals, outputs and decisions waiting on a person. |
 | `/goals` |  | Screens: Outcomes the agents work toward, and their progress. |
@@ -385,7 +410,7 @@ is `/feedback`.
 | `/help` | `/keys` `/?` `?` | App: Show every command and key. |
 | `/quit` | `/exit` `/q` `Ctrl+c / Ctrl+q` | App: Leave the TUI. |
 
-_58 commands._
+_59 commands._
 
 ### Anywhere
 
@@ -472,6 +497,7 @@ _58 commands._
 | `Alt+m` | Pick the model. |
 | `Alt+e` | Pick the thinking effort. |
 | `Alt+g` | Pick the agent. |
+| `Alt+o` | List what this session made: artifacts, pages, files. |
 
 ### Terminal panel
 
@@ -847,7 +873,7 @@ _58 commands._
 | `PgUp` | Page up. |
 | `Enter` | Open the row. |
 
-_319 bindings._
+_331 bindings._
 
 ## Tests
 

@@ -5,6 +5,7 @@ import type { MessageWithParts } from '@kortix/sdk';
 import { useSessionStateStore } from '@kortix/sdk/react';
 import { type Renderable, ScrollBoxRenderable } from '@opentui/core';
 import { testRender } from '@opentui/react/test-utils';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import {
   fakeSession,
@@ -41,7 +42,14 @@ async function settle(flush: () => Promise<unknown>): Promise<void> {
 
 function render(session: SessionState) {
   seedSessionStore(session);
-  return testRender(<Transcript session={session} focused width={70} height={22} />, SIZE);
+  // The app always has a query client: a `show` card reads its artifact record through one.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  return testRender(
+    <QueryClientProvider client={queryClient}>
+      <Transcript session={session} focused width={70} height={22} />
+    </QueryClientProvider>,
+    SIZE,
+  );
 }
 
 describe('<Transcript/> turns', () => {
@@ -601,4 +609,29 @@ describe('<Transcript/> scroll follow', () => {
     expect(isAtBottom(box())).toBe(true);
     renderer.destroy();
   }, 15_000);
+});
+
+describe('<Transcript/> show card', () => {
+  test('a show after other tools is its own card with its title and link, never folded into the steps', async () => {
+    const url = 'https://kortix.test/projects/11111111-2222-4333-8444-555555555555/artifacts/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const session = fakeSession({
+      messages: [
+        message('m1', 'user', [textPart('p1', 'make the report')]),
+        message('m2', 'assistant', [
+          toolPart('t1', 'bash', 'completed', { command: 'kortix artifacts publish report.md' }, shellOutput('ok')),
+          toolPart('t2', 'bash', 'completed', { command: 'ls' }, shellOutput('report.md')),
+          toolPart('t3', 'show', 'completed', { url, title: 'Q3 churn report' }),
+        ], { parentID: 'm1' }),
+      ],
+    });
+    const { captureCharFrame, flush, renderer } = await render(session);
+    await settle(flush);
+    const frame = captureCharFrame();
+    expect(frame).toContain('Completed 2 steps');
+    expect(frame).toContain('▣ Q3 churn report');
+    expect(frame).toContain('Artifact');
+    expect(frame).toContain('https://kortix.test/projects/');
+    expect(frame).toContain('Alt+O open');
+    renderer.destroy();
+  });
 });
