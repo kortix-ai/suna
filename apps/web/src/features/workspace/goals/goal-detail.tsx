@@ -370,9 +370,11 @@ function EvidenceFile({ path, folder, driveHref }: { path: string; folder: strin
       <span className="min-w-0 truncate">{path}</span>
       {driveHref ? (
         <Hint label={t('openInFiles')}>
-          <Link href={`${driveHref}?path=${encodeURIComponent(parent)}`} className="hover:text-foreground shrink-0" aria-label={t('openFolderOf', { file: path })}>
-            <FolderOpenIcon className="size-3.5" aria-hidden />
-          </Link>
+          <Button asChild variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground shrink-0">
+            <Link href={`${driveHref}?path=${encodeURIComponent(parent)}`} aria-label={t('openFolderOf', { file: path })}>
+              <FolderOpenIcon className="size-3.5" aria-hidden />
+            </Link>
+          </Button>
         </Hint>
       ) : null}
     </span>
@@ -669,13 +671,11 @@ function LinkTarget({ link, folder, driveHref }: { link: string; folder: string;
       <span className="text-muted-foreground min-w-0 truncate text-xs">{link.startsWith('/') ? parent : link.split('/').slice(0, -1).join('/')}</span>
       {inFiles ? (
         <Hint label={t('openInFiles')}>
-          <Link
-            href={`${driveHref}?path=${encodeURIComponent(parent)}`}
-            className="text-muted-foreground hover:text-foreground shrink-0"
-            aria-label={t('openFolderOf', { file: name })}
-          >
-            <FolderOpenIcon className="size-3.5" aria-hidden />
-          </Link>
+          <Button asChild variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground shrink-0">
+            <Link href={`${driveHref}?path=${encodeURIComponent(parent)}`} aria-label={t('openFolderOf', { file: name })}>
+              <FolderOpenIcon className="size-3.5" aria-hidden />
+            </Link>
+          </Button>
         </Hint>
       ) : null}
     </span>

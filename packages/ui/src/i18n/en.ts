@@ -7969,7 +7969,7 @@ const catalog = {
     "details": "Details",
     "scopeLabel": "Visible to",
     "folder": "Folder",
-    "verifiedPass": "Passed. An independent check confirmed it and did none of the work.",
+    "verifiedPass": "Passed. The check did none of the work.",
     "verifiedReport": "The verifier session wrote this report.",
     "showReport": "Show report",
     "openInFiles": "Open folder in Files",

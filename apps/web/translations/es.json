@@ -23660,7 +23660,7 @@
     "details": "Detalles",
     "scopeLabel": "Visible para",
     "folder": "Carpeta",
-    "verifiedPass": "Aprobado. Una revisión independiente lo confirmó y no hizo nada del trabajo.",
+    "verifiedPass": "Aprobado. La revisión no hizo nada del trabajo.",
     "verifiedReport": "La sesión de verificación escribió este informe.",
     "showReport": "Mostrar informe",
     "openInFiles": "Abrir carpeta en Archivos",

@@ -23660,7 +23660,7 @@
     "details": "詳細",
     "scopeLabel": "表示できる人",
     "folder": "フォルダ",
-    "verifiedPass": "合格。独立した確認が確かめました。この確認は作業に関わっていません。",
+    "verifiedPass": "合格。この確認は作業に関わっていません。",
     "verifiedReport": "検証セッションがこのレポートを書きました。",
     "showReport": "レポートを表示",
     "openInFiles": "ファイルでフォルダを開く",

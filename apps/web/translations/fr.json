@@ -23660,7 +23660,7 @@
     "details": "Détails",
     "scopeLabel": "Visible par",
     "folder": "Dossier",
-    "verifiedPass": "Validé. Une vérification indépendante l’a confirmé et n’a fait aucune partie du travail.",
+    "verifiedPass": "Validé. La vérification n’a fait aucune partie du travail.",
     "verifiedReport": "La session de vérification a écrit ce rapport.",
     "showReport": "Afficher le rapport",
     "openInFiles": "Ouvrir le dossier dans Fichiers",

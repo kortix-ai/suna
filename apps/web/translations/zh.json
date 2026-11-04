@@ -23660,7 +23660,7 @@
     "details": "详情",
     "scopeLabel": "可见范围",
     "folder": "文件夹",
-    "verifiedPass": "已通过。独立检查确认了结果，且没有参与任何工作。",
+    "verifiedPass": "已通过。该检查没有参与任何工作。",
     "verifiedReport": "验证会话写下了这份报告。",
     "showReport": "显示报告",
     "openInFiles": "在文件中打开文件夹",

@@ -23660,7 +23660,7 @@
     "details": "Detalhes",
     "scopeLabel": "Visível para",
     "folder": "Pasta",
-    "verifiedPass": "Aprovada. Uma verificação independente confirmou e não fez nada do trabalho.",
+    "verifiedPass": "Aprovada. A verificação não fez nada do trabalho.",
     "verifiedReport": "A sessão de verificação escreveu este relatório.",
     "showReport": "Mostrar relatório",
     "openInFiles": "Abrir pasta em Arquivos",
