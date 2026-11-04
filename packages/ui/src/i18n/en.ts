@@ -9459,7 +9459,11 @@ const catalog = {
       "expand": "Show the whole result",
       "collapse": "Hide the result",
       "batchTitle": "{count, plural, one {# agent finished} other {# agents finished}}",
-      "ownsTasks": "Still owns {tasks}"
+      "ownsTasks": "Still owns {tasks}",
+      "source": "Agent update",
+      "statusFailedShort": "Didn’t finish",
+      "statusStoppedShort": "Stopped",
+      "updateCount": "{count, plural, one {# agent update} other {# agent updates}}"
     },
     "tools": {
       "running": {
