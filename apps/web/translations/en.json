@@ -24247,7 +24247,27 @@
     "embedCopy": "Copy link",
     "embedDelete": "Delete",
     "spaceEmpty": "No artifacts in {space} yet",
-    "showAll": "Show all"
+    "showAll": "Show all",
+    "live": {
+      "here": "Here now",
+      "hereLabel": "On this Artifact now: {names}",
+      "reconnecting": "Reconnecting…",
+      "you": "You",
+      "agents": "Agents",
+      "agentsHere": "Agents in this thread",
+      "status": {
+        "viewing": "Viewing",
+        "reading": "Reading",
+        "editing": "Editing",
+        "writing": "Writing"
+      },
+      "hideCursor": "Hide my cursor",
+      "hideCursorHint": "Others still see your avatar.",
+      "typingOne": "{name} is typing…",
+      "typingTwo": "{first} and {second} are typing…",
+      "typingMany": "{count, plural, one {# person is typing…} other {# people are typing…}}",
+      "writing": "{name} is writing…"
+    }
   },
   "emailConnect": {
     "homeTitle": "Where the inbox lives",

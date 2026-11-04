@@ -98,7 +98,7 @@ export type ArtifactLiveStatus = z.infer<typeof artifactLiveStatusSchema>;
 /**
  * One connection (a browser tab) or one agent session. `who` names the person or
  * session, so a client can show one avatar per person while drawing one cursor per tab.
- * A `hidden` participant shows its avatar but never its cursor, selection or typing.
+ * A `hidden` participant shows its avatar but never its cursor, selection, typing or focus.
  */
 export const artifactLiveParticipantSchema = z.object({
   id: text(128).min(1),

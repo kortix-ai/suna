@@ -12,7 +12,14 @@ let failBuild = false;
 let injections = 0;
 const reads: Array<{ path: string; at: string | null; range: string | undefined }> = [];
 const flagReads: string[] = [];
-const config = { ARTIFACT_CONTENT_URL: '' };
+const config = {
+  ARTIFACT_CONTENT_URL: '',
+  INTERNAL_KORTIX_ENV: 'prod',
+  FRONTEND_URL: 'https://selfhost.example.test',
+  CORS_ALLOWED_ORIGINS: 'http://localhost:19700',
+  KORTIX_URL: '',
+  KORTIX_DOMAIN_ALIASES: '',
+};
 const files = new Map<string, string>();
 class StorageError extends Error { constructor(readonly status: number) { super('File unavailable'); } }
 const mime = (path: string) => path.endsWith('.html') ? 'text/html; charset=utf-8' : path.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/octet-stream';
@@ -51,6 +58,7 @@ beforeEach(() => {
   row = { artifactId, projectId, entry: 'index.html', type: 'html', visibility: 'public', title: 'Page', description: null, updatedAt: new Date('2026-10-29T00:00:00Z') };
   flags = { artifacts: true, artifact_comments: true };
   failBuild = false; injections = 0; reads.length = 0; flagReads.length = 0; config.ARTIFACT_CONTENT_URL = '';
+  config.INTERNAL_KORTIX_ENV = 'prod'; config.CORS_ALLOWED_ORIGINS = 'http://localhost:19700';
   files.clear(); files.set('index.html', '<!doctype html><p>Page-owned content</p>'); files.set('style.css', 'body{color:red}'); files.set('clip.mp4', 'media'); files.set('nested/index.html', '<p>Nested page</p>');
 });
 
@@ -62,13 +70,21 @@ test('the signed trailing-slash redirect retains the annotation opt-in', async (
   expect(response.headers.get('Location')).toBe('/s/valid/?annotate=1');
 });
 
-test('only signed HTML opt-in is annotated with identical CSP and invalidated source validators', async () => {
+/** The `frame-ancestors` sources of a response's CSP, or null without the directive. */
+function frameAncestors(response: Response): string[] | null {
+  const directive = response.headers.get('Content-Security-Policy')!.split(';').map((part) => part.trim())
+    .find((part) => part.startsWith('frame-ancestors '));
+  return directive ? directive.split(/\s+/).slice(1) : null;
+}
+
+test('only signed HTML opt-in is annotated with the sandbox CSP kept and invalidated source validators', async () => {
   const normal = await signed('index.html', '', 'commit');
   const annotated = await signed('index.html', '?annotate=1', 'commit', { Range: 'bytes=0-3' });
   expect(await normal.text()).not.toContain('kortix-annotate.js');
   expect(await annotated.text()).toContain(`<script id="kortix-annotate.js">${source}</script>`);
   expect(annotated.status).toBe(200);
-  expect(annotated.headers.get('Content-Security-Policy')).toBe(normal.headers.get('Content-Security-Policy'));
+  expect(normal.headers.get('Content-Security-Policy')).toBe(csp);
+  expect(annotated.headers.get('Content-Security-Policy')!.startsWith(`${csp}; frame-ancestors `)).toBe(true);
   expect(annotated.headers.get('Cache-Control')).toBe('private, no-store');
   expect(normal.headers.get('ETag')).toBe('"original"');
   expect(normal.headers.get('Cache-Control')).toBe('private, max-age=3600');
@@ -121,16 +137,38 @@ test('invalid signed tokens, unavailable artifacts, and disabled Artifacts never
 test('build failure returns annotation-only 503 without changing normal or public views', async () => {
   failBuild = true;
   const response = await signed();
-  expect(response.status).toBe(503); expect(response.headers.get('Content-Security-Policy')).toBe(csp);
+  expect(response.status).toBe(503);
+  expect(response.headers.get('Content-Security-Policy')!.startsWith(`${csp}; frame-ancestors `)).toBe(true);
   expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   expect(await response.text()).toBe('Artifact annotations are unavailable');
   expect((await signed('index.html', '')).status).toBe(200);
   expect((await artifactContentApp.request(`http://api.example.test/p/${artifactId}/index.html?annotate=1`)).status).toBe(200);
 });
 
-test('dedicated content-origin CSP is byte-identical with and without annotation', async () => {
+test('dedicated content-origin CSP keeps its sandbox directive with and without annotation', async () => {
   config.ARTIFACT_CONTENT_URL = 'http://api.example.test';
   const normal = await signed('index.html', ''); const annotated = await signed();
   expect(normal.headers.get('Content-Security-Policy')).toBe(`${csp} allow-same-origin`);
-  expect(annotated.headers.get('Content-Security-Policy')).toBe(normal.headers.get('Content-Security-Policy'));
+  expect(annotated.headers.get('Content-Security-Policy')!.startsWith(`${csp} allow-same-origin; frame-ancestors `)).toBe(true);
+});
+
+test('an annotated page may be framed only by the web app origins the API trusts', async () => {
+  config.CORS_ALLOWED_ORIGINS = 'http://localhost:19700, *, not a url, https://extra.example.test/path';
+  const sources = frameAncestors(await signed())!;
+  // The CORS allowlist (built-in, local, configured), FRONTEND_URL and the Kortix in Chrome side panel.
+  for (const origin of ['https://kortix.com', 'https://dev.kortix.com', 'http://localhost:3000', 'http://localhost:19700',
+    'https://extra.example.test', 'https://selfhost.example.test', 'chrome-extension://gefbbnjgoiljpbnalgafbhbfdhikgjek'])
+    expect(sources).toContain(origin);
+  // Never a wildcard that user apps (`*.apps.kortix.com`) or sandbox previews (`*.p.kortix.com`) match.
+  for (const source of sources) expect(source).not.toContain('*');
+  expect(sources).not.toContain('not');
+  // A preview environment adds the preview hosts its CORS allowlist admits.
+  config.INTERNAL_KORTIX_ENV = 'preview';
+  expect(frameAncestors(await signed())).toEqual(expect.arrayContaining(['https://*.vercel.app', 'https://*.preview.kortix.com']));
+});
+
+test('a response without the annotation opt-in has no frame-ancestors', async () => {
+  for (const query of ['', '?annotate=0']) expect(frameAncestors(await signed('index.html', query))).toBeNull();
+  expect(frameAncestors(await signed('style.css', ''))).toBeNull();
+  expect(frameAncestors(await artifactContentApp.request(`http://api.example.test/p/${artifactId}/index.html?annotate=1`))).toBeNull();
 });

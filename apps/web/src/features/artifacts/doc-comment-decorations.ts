@@ -4,7 +4,8 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { threadAuthor, threadDeleted } from './artifact-discussion-logic';
-import { docMarkdownPositions, docRangesForSource } from './doc-comment-positions';
+import { docRangesForSource } from './doc-comment-positions';
+import { cachedDocMarkdownPositions } from './doc-live-positions';
 
 export const docCommentPluginKey = new PluginKey<DecorationSet>('artifactDocComments');
 
@@ -69,7 +70,7 @@ export function createDocCommentPlugin(onFocus: (threadId: string) => void): Plu
         const input = transaction.getMeta(docCommentPluginKey) as DocCommentHighlights | undefined;
         if (!input) return decorations.map(transaction.mapping, transaction.doc);
         focusedThreadId = input.focusedThreadId ?? null;
-        const map = docMarkdownPositions(input.markdown, transaction.doc);
+        const map = cachedDocMarkdownPositions(input.markdown, transaction.doc);
         const boundaries = new Map<number, Map<string, number>>();
         // One re-anchoring budget per pass, split per thread author: crafted quotes cannot freeze the tab
         // or leave other people's highlights out.

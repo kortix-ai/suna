@@ -24247,7 +24247,27 @@
     "moved": "Artefacto movido",
     "moveFailed": "No se pudo mover el artefacto",
     "spaceEmpty": "Aún no hay artefactos en {space}",
-    "showAll": "Mostrar todos"
+    "showAll": "Mostrar todos",
+    "live": {
+      "here": "Aquí ahora",
+      "hereLabel": "En este artefacto ahora: {names}",
+      "reconnecting": "Reconectando…",
+      "you": "Tú",
+      "agents": "Agentes",
+      "agentsHere": "Agentes en este hilo",
+      "status": {
+        "viewing": "Viendo",
+        "reading": "Leyendo",
+        "editing": "Editando",
+        "writing": "Escribiendo"
+      },
+      "hideCursor": "Ocultar mi cursor",
+      "hideCursorHint": "Los demás siguen viendo tu avatar.",
+      "typingOne": "{name} está escribiendo…",
+      "typingTwo": "{first} y {second} están escribiendo…",
+      "typingMany": "{count, plural, one {# persona está escribiendo…} other {# personas están escribiendo…}}",
+      "writing": "{name} está redactando…"
+    }
   },
   "emailConnect": {
     "homeTitle": "Dónde vive el buzón",

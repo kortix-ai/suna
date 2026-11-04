@@ -24247,7 +24247,27 @@
     "moved": "产物已移动",
     "moveFailed": "无法移动产物",
     "spaceEmpty": "{space} 中还没有产物",
-    "showAll": "显示全部"
+    "showAll": "显示全部",
+    "live": {
+      "here": "当前在线",
+      "hereLabel": "当前正在查看此工件：{names}",
+      "reconnecting": "正在重新连接…",
+      "you": "你",
+      "agents": "智能体",
+      "agentsHere": "此讨论中的智能体",
+      "status": {
+        "viewing": "查看中",
+        "reading": "阅读中",
+        "editing": "编辑中",
+        "writing": "撰写中"
+      },
+      "hideCursor": "隐藏我的光标",
+      "hideCursorHint": "其他人仍会看到你的头像。",
+      "typingOne": "{name} 正在输入…",
+      "typingTwo": "{first} 和 {second} 正在输入…",
+      "typingMany": "{count, plural, other {# 人正在输入…}}",
+      "writing": "{name} 正在撰写…"
+    }
   },
   "emailConnect": {
     "homeTitle": "收件箱所在位置",

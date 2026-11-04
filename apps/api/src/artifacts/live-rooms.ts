@@ -26,8 +26,8 @@
  *   - a socket silent for 45 s is closed; another process's participant that
  *     is not refreshed for 45 s is dropped; an agent with no signal for 2 min
  *     leaves;
- *   - a hidden participant shows its avatar and never a cursor, a selection or
- *     typing, here or on another process.
+ *   - a hidden participant shows its avatar and never a cursor, a selection,
+ *     typing or the thread it is in (`focus`), here or on another process.
  */
 import { randomBytes } from 'node:crypto';
 import {
@@ -198,7 +198,7 @@ export function artifactLiveQuoteCursor(quote: string): ArtifactLivePosition | n
 /** A copy with what a hidden participant never shows removed. */
 function visible(participant: ArtifactLiveParticipant): ArtifactLiveParticipant {
   return participant.hidden
-    ? { ...participant, cursor: null, selection: null, typing: null }
+    ? { ...participant, cursor: null, selection: null, typing: null, focus: null }
     : { ...participant };
 }
 
@@ -512,7 +512,7 @@ export class ArtifactLiveRooms<M = unknown> {
         next.hidden = frame.hidden;
         break;
       case 'focus':
-        next.focus = frame.thread_id;
+        if (!next.hidden) next.focus = frame.thread_id;
         break;
       case 'cursor':
         if (!next.hidden) next.cursor = frame.at;

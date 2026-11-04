@@ -24247,7 +24247,27 @@
     "moved": "Artefato movido",
     "moveFailed": "Não foi possível mover o artefato",
     "spaceEmpty": "Ainda não há artefatos em {space}",
-    "showAll": "Mostrar todos"
+    "showAll": "Mostrar todos",
+    "live": {
+      "here": "Aqui agora",
+      "hereLabel": "Neste artefato agora: {names}",
+      "reconnecting": "Reconectando…",
+      "you": "Você",
+      "agents": "Agentes",
+      "agentsHere": "Agentes nesta conversa",
+      "status": {
+        "viewing": "Visualizando",
+        "reading": "Lendo",
+        "editing": "Editando",
+        "writing": "Escrevendo"
+      },
+      "hideCursor": "Ocultar meu cursor",
+      "hideCursorHint": "Os outros continuam vendo seu avatar.",
+      "typingOne": "{name} está digitando…",
+      "typingTwo": "{first} e {second} estão digitando…",
+      "typingMany": "{count, plural, one {# pessoa está digitando…} other {# pessoas estão digitando…}}",
+      "writing": "{name} está escrevendo…"
+    }
   },
   "emailConnect": {
     "homeTitle": "Onde a caixa fica",
