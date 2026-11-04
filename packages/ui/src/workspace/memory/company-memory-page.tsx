@@ -8,7 +8,7 @@ import { MemoryView } from './memory-view';
 /**
  * The project's Memory page: the Company layer, what every agent in the
  * project knows. The titlebar row of a channel, then the same `MemoryView` a
- * channel's Memory tab draws. The host gates it on `project_channels`.
+ * channel's Memory tab draws. The host gates it on `chat`.
  */
 export function CompanyMemoryPage({ projectId }: { projectId: string }) {
   const t = useTranslations('spaces.memory.company');

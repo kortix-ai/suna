@@ -51,7 +51,7 @@ export function GoalsPage({ projectId }: { projectId: string }) {
   const goals = useProjectGoals(projectId);
   const config = useProjectConfig(projectId);
   // A goal sits in its bound space, else its agent's space, else Project-wide.
-  // Spaces are Work in progress: with `project_channels` off every goal is project-wide.
+  // Spaces are Work in progress: with `chat` off every goal is project-wide.
   const spacesOn = useSpacesEnabled(projectId);
   const { spaces, groups, spaceOf } = spaceScope(goals.data ?? [], config, spacesOn, (goal: ProjectGoal) => goal.goal);
   const labels = new Map(groups.map((group) => [group.name, group.label]));

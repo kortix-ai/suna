@@ -10,6 +10,7 @@ import { PaperclipIcon as Paperclip } from '@phosphor-icons/react';
 import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
 import { AgentSelector } from './agent-selector';
+import { ChatInputControl, type ChatInputControlProps } from './chat-input/chat-input-control';
 import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 import { TokenProgress } from './token-progress';
 
@@ -53,6 +54,8 @@ export interface ComposerUnderbarProps {
    * normal composer right up to the server's 403.
    */
   noAccessibleAgents?: boolean;
+  /** The agent is fixed (a DM): the picker names `selectedAgent` and offers no other. */
+  agentLocked?: boolean;
 
   messages: SessionLogMessage[] | undefined;
   models: FlatModel[];
@@ -74,6 +77,12 @@ export interface ComposerUnderbarProps {
   toolbarSlot?: React.ReactNode;
   /** Right of the agent picker: the session's agents line. Same row, no added height. */
   agentsSlot?: React.ReactNode;
+  /**
+   * The `chat_input` flag is on: one control for the agent, model, effort and
+   * session overrides takes the agent picker's place. The card then renders
+   * no model or effort picker and no overrides gear. Unset: the agent picker.
+   */
+  chatInput?: Omit<ChatInputControlProps, 'agents' | 'selectedAgent' | 'onAgentChange' | 'unavailableHint' | 'agentLocked'>;
 }
 
 export function ComposerUnderbar({
@@ -84,6 +93,7 @@ export function ComposerUnderbar({
   onAgentMenuOpenChange,
   onAgentChange,
   noAccessibleAgents = false,
+  agentLocked = false,
   messages,
   models,
   selectedModel,
@@ -92,6 +102,7 @@ export function ComposerUnderbar({
   agentPickerCompact = false,
   toolbarSlot,
   agentsSlot,
+  chatInput,
 }: ComposerUnderbarProps) {
   const t = useTranslations('threads');
   const { contextMeterEnabled } = useUiHostConfig();
@@ -154,16 +165,28 @@ export function ComposerUnderbar({
           </Button>
         </Hint>
 
-        <AgentSelector
-          compact={agentPickerCompact}
-          agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
-          selectedAgent={selectedAgent}
-          open={agentMenuOpen}
-          onOpenChange={onAgentMenuOpenChange}
-          onSelect={onAgentChange ?? NO_AGENT_SELECT}
-          triggerLabelClassName="max-w-[7rem]"
-          unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
-        />
+        {chatInput ? (
+          <ChatInputControl
+            {...chatInput}
+            agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
+            selectedAgent={selectedAgent}
+            onAgentChange={agentLocked ? undefined : onAgentChange}
+            agentLocked={agentLocked}
+            unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
+          />
+        ) : (
+          <AgentSelector
+            compact={agentPickerCompact}
+            // A fixed agent (a DM): the picker lists only it.
+            agents={noAccessibleAgents ? EMPTY_AGENTS : agentLocked ? fixedAgentRoster(agents, selectedAgent) : agents}
+            selectedAgent={selectedAgent}
+            open={agentMenuOpen}
+            onOpenChange={onAgentMenuOpenChange}
+            onSelect={onAgentChange ?? NO_AGENT_SELECT}
+            triggerLabelClassName="max-w-[7rem]"
+            unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
+          />
+        )}
 
         {agentsSlot}
       </div>
@@ -182,4 +205,10 @@ export function ComposerUnderbar({
       </div>
     </div>
   );
+}
+
+/** A fixed agent's picker roster: only that agent, even when the caller's roster does not list it (a DM's agent without a grant). */
+function fixedAgentRoster(agents: Agent[], selected: string | null): Agent[] {
+  const own = agents.filter((agent) => agent.name === selected);
+  return own.length > 0 || !selected ? own : [{ name: selected, mode: 'primary' } as unknown as Agent];
 }

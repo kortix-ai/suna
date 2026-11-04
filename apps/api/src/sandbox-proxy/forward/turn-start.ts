@@ -41,11 +41,11 @@ import {
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
 import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
-import { isMemoryTurnRoute, memoryChannelsOn, withMemoryTurn, withoutClientSystem } from '../../memory/turn-body';
+import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText, withMemoryTurn, withoutClientSystem } from '../../memory/turn-body';
 import { isMyKortixAgentName } from '@kortix/shared';
 import { logger } from '../../lib/logger';
 import { isPlatinumConfigured } from '../../shared/platinum';
-import { missingClaudeSubscription, sessionModelPin } from '../../projects/surface';
+import { chatThreadBoardTurn, missingClaudeSubscription, sessionModelPin, sessionWhereTurn } from '../../projects/surface';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -360,12 +360,18 @@ export async function syncEnvBeforeTurnStart(
 }
 
 /**
- * `system` on a Kortix prompt body (`project_channels`): the list of the
- * memory files the thread reads, at its mount paths, for the turn's system
- * prompt. The first turn records the list ("Used memory"). A `system` the
- * client sent is always dropped: only the API sets it. Flag off, no space, or
- * any failure: the body goes on without memory. `/steer` never passes here
- * (the API posts it to the box directly and never sets `system`).
+ * `system` on a Kortix prompt body: first "## Where you are" (every session,
+ * any agent: its space, the surface it started from, who started it, its
+ * parent session; `sessionWhereTurn`, one read), then the memory the turn
+ * lists. My Kortix in the person's DM with it, or in no space: the person's
+ * own index (`myKortixMemoryTurn`) and, under `chat`, the board of the chat's
+ * other threads. Any other thread filed in a space, My Kortix in a channel
+ * included: that space's memory layers (`memoryTurnContext`); a My Kortix
+ * channel thread also gets the board. The first turn records the list
+ * ("Used memory"). A `system` the client sent is always dropped: only the API
+ * sets it. The total stays under MEMORY_TURN_SYSTEM_MAX_CHARS, cut from the
+ * memory list. Any failure: the body goes on with what was built.
+ * `/steer` never passes here (the API posts it to the box directly).
  */
 async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Promise<void> {
   // Once per request: a retry attempt keeps the body the first attempt built.
@@ -373,22 +379,38 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   state.memoryLayersChecked = true;
   state.requestBody = withoutClientSystem(state.requestBody);
   const sessionId = req.record.sessionId;
+  const where = await sessionWhereTurn(req.record.projectId, sessionId).catch((error: unknown) => {
+    logger.warn('[turn] turn start forwarded without its origin block', {
+      session_id: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  });
+  const put = (parts: readonly (string | null | undefined)[]) => {
+    const system = turnSystemText(where?.system ?? null, parts);
+    if (system) state.requestBody = withMemoryTurn(state.requestBody, { system });
+  };
   try {
-    // My Kortix: the prompter's own memory index (kortix_memory), every turn, with Files on.
-    if (isMyKortixAgentName(req.record.agentName)) {
-      if (!isPlatinumConfigured()) return;
-      const { myKortixMemoryTurn } = await import('../../memory/my-memory');
-      const turn = await myKortixMemoryTurn(req.record.projectId, sessionId, req.userId);
-      if (turn) state.requestBody = withMemoryTurn(state.requestBody, turn);
+    const myKortix = isMyKortixAgentName(req.record.agentName);
+    if (myKortix && myKortixTurnMemory(where?.space ?? null, isMyKortixAgentName) === 'personal') {
+      const [memory, board] = await Promise.all([
+        isPlatinumConfigured()
+          ? import('../../memory/my-memory').then(({ myKortixMemoryTurn }) => myKortixMemoryTurn(req.record.projectId, sessionId, req.userId))
+          : null,
+        chatThreadBoardTurn(req.record.projectId, sessionId, req.userId),
+      ]);
+      // The board before the memory list: the end is what gets cut.
+      put([board, memory?.system]);
       return;
     }
+    const board = myKortix ? await chatThreadBoardTurn(req.record.projectId, sessionId, req.userId) : null;
     // Flag off: the memory and drives services are never loaded on this path.
-    if (!(await memoryChannelsOn(req.record.projectId))) return;
+    if (!(await memoryChannelsOn(req.record.projectId))) return put([board]);
     const { memoryTurnContext } = await import('../../memory/turn-context');
     // The prompter decides whether the thread's personal layer is listed (its owner only).
     const turn = await memoryTurnContext(req.record.projectId, sessionId, req.userId);
+    put([board, turn?.system]);
     if (!turn) return;
-    state.requestBody = withMemoryTurn(state.requestBody, turn);
     // "Used memory" is the first turn's list, recorded only when the list went out.
     // ponytail: recorded before delivery; a refused prompt or a daemon older than the `system` field still records it.
     if (!turn.firstTurn || turn.system.length > MEMORY_TURN_SYSTEM_MAX_CHARS) return;
@@ -400,6 +422,7 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
       }),
     );
   } catch (error) {
+    put([]);
     logger.warn('[memory] turn start forwarded without memory', {
       session_id: sessionId,
       error: error instanceof Error ? error.message : String(error),

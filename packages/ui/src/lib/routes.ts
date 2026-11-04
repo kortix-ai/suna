@@ -8,7 +8,7 @@
  * it is hidden and no navigation goes there. `project` and `session` are the
  * two pages every session host serves, so they cannot be null. `channel` and
  * `dm` cannot be null either: the sidebar links them only while the project's
- * `project_channels` flag is on.
+ * `chat` flag is on.
  *
  * Defaults: apps/web's paths.
  */
@@ -22,13 +22,13 @@ export interface UiRoutes {
   files: (projectId: string, panel?: 'proposed-changes') => string | null;
   drive: (projectId: string) => string | null;
   apps: (projectId: string) => string | null;
-  /** The project's chat rooms (flag `agent_rooms`). */
-  rooms: (projectId: string) => string | null;
+  /** @deprecated Rooms were removed (2026-11); ignored. Removed in the next major. */
+  rooms?: (projectId: string) => string | null;
   /** The project's goals (flag `goals`); a goal is `<goals>/<scope>/<slug>`. */
   goals: (projectId: string) => string | null;
   /** The project's artifacts (flag `artifacts`); one is `<artifacts>/<artifact_id>`. */
   artifacts: (projectId: string) => string | null;
-  /** One space: a channel, its room and its tabs (`?tab=` opens one). */
+  /** One space: a channel and its tabs (`?tab=` opens one). */
   space: (projectId: string, slug: string) => string | null;
   members: (projectId: string) => string | null;
   /** The project settings page, on its sandbox section. */
@@ -45,11 +45,11 @@ export interface UiRoutes {
    * `path` is the section and anything below it (`connectors/<app>`).
    */
   admin: (projectId: string, path?: string) => string | null;
-  /** A channel of the project, by slug (`project_channels` flag). */
+  /** A channel of the project, by slug (`chat` flag). */
   channel: (projectId: string, slug: string) => string;
-  /** The caller's direct messages with one agent, by agent name (`project_channels` flag). */
+  /** The caller's direct messages with one agent, by agent name (`chat` flag). */
   dm: (projectId: string, agentName: string) => string;
-  /** The project's Company memory (`project_channels` flag); a page is `?page=<page_id>`. */
+  /** The project's Company memory (`chat` flag); a page is `?page=<page_id>`. */
   memory: (projectId: string) => string | null;
 }
 
@@ -60,7 +60,6 @@ const DEFAULT_ROUTES = {
   files: (p: string, panel?: 'proposed-changes') => `/projects/${p}/files${panel ? `?panel=${panel}` : ''}`,
   drive: (p: string) => `/projects/${p}/drive`,
   apps: (p: string) => `/projects/${p}/apps`,
-  rooms: (p: string) => `/projects/${p}/rooms`,
   goals: (p: string) => `/projects/${p}/goals`,
   artifacts: (p: string) => `/projects/${p}/artifacts`,
   space: (p: string, slug: string) => `/projects/${p}/spaces/${encodeURIComponent(slug)}`,
@@ -90,6 +89,23 @@ export function setUiRoutes(overrides: Partial<UiRoutes>): void {
 
 export function uiRoutes(): UiRoutes {
   return routes;
+}
+
+/**
+ * The query that asks the project home for its new-session composer. With the
+ * `chat` flag on, the bare project home opens the default channel instead.
+ */
+const NEW_SESSION_PARAM = 'new';
+
+/** The project home's new-session composer (sidebar Sessions `+`, Cmd+J, "New session"), not the default channel. */
+export function newSessionHref(projectId: string): string {
+  const home = routes.project(projectId);
+  return `${home}${home.includes('?') ? '&' : '?'}${NEW_SESSION_PARAM}=1`;
+}
+
+/** True when the project home was opened with `newSessionHref`. */
+export function isNewSessionRequested(params: Pick<URLSearchParams, 'get'> | null | undefined): boolean {
+  return params?.get(NEW_SESSION_PARAM) === '1';
 }
 
 /** A channel slug or DM agent name from its URL segment; null when a hand-typed escape is malformed. */

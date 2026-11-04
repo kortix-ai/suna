@@ -94,6 +94,7 @@ import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext, reservedRuntimeContextRefusal } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { FRONT_THREAD_CONTEXT_KEY, FRONT_THREAD_METADATA_KEY, sessionIsFrontThread, startsFrontThread } from './front-thread';
 import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
 import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, forkSourceVisibility, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
@@ -278,12 +279,13 @@ type SessionCreateMetadata = ReturnType<typeof buildSessionCreateMetadata>['meta
 
 
 /**
- * `project_channels` on: the space the body names, checked, and the sharing it
+ * `chat` on: the space the body names, checked, and the sharing it
  * implies (`spaceSessionVisibility`: a channel thread is project-visible
  * unless the caller chose otherwise, a DM thread is private, a fork keeps its
- * source's sharing). Flag off: `space_id` is ignored.
+ * source's sharing). Flag off: `space_id` is ignored. `space_id: null` on a
+ * person's own create: no space (`filed: false`), as with the flag off.
  */
-async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): Promise<
+export async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): Promise<
   SessionCreateStep<{ filed: boolean; spaceId: string | null; visibility?: 'project' | 'private' | 'restricted' }>
 > {
   const { project, body, userId } = input;
@@ -307,7 +309,7 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
         await access(),
       );
   if (inherited) return 'error' in inherited ? inherited : { filed: true, spaceId: inherited.spaceId };
-  if (!resolveFeatureFlag(project.metadata, 'project_channels')) return { filed: false, spaceId: null };
+  if (!resolveFeatureFlag(project.metadata, 'chat')) return { filed: false, spaceId: null };
   // A run of a repo trigger lands in the trigger's live space, read when the
   // create executes (a queued run sees the space as it is then). The space
   // was checked when it was set on the trigger: a DM was the setter's own,
@@ -322,7 +324,11 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
     );
     return space ? { filed: true, spaceId: space.spaceId, visibility: spaceSessionVisibility(space.kind) } : { filed: true, spaceId: null };
   }
-  if (body.space_id === undefined) {
+  // A person's own create from the regular new-session composer: `space_id:
+  // null` files it in no space, as with the flag off. A fork or child keeps
+  // the rules below (null there reads as absent).
+  if (body.space_id === null && !sourced) return { filed: false, spaceId: null };
+  if (body.space_id === undefined || body.space_id === null) {
     // A fork lands in its source's space while the caller may still post there,
     // with its source's sharing (never wider); else in `#general`.
     const fork = typeof body.fork_from_session_id === 'string'
@@ -616,7 +622,14 @@ async function resolveSessionAgent(params: {
     callerIsMeta &&
     isWorkflowRunnerContext(body.runtime_context) &&
     !(await sessionIsWorkflowRunner(input.callerSessionId!));
-  if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner) {
+  // A talk-only front (flag `chat_front`, front-thread.ts) only talks: its one worker is a My Kortix session.
+  const frontWorker =
+    platformMetaAgent &&
+    callerIsMeta &&
+    !myKortixWorkflowRunner &&
+    resolveFeatureFlag(input.project.metadata, 'chat_front') &&
+    (await sessionIsFrontThread(input.callerSessionId!));
+  if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner && !frontWorker) {
     return {
       error: {
         status: 400,
@@ -1901,6 +1914,21 @@ export async function createProjectSession(input: {
     workspaceVolume: providerName === 'platinum' && !isMyKortixSandboxSlug(sandboxSlug) ? workspaceVolume : null,
   });
 
+  // Talk-only threads (`chat_front`): server-side state alone makes this session a front, never the body.
+  const front = startsFrontThread({
+    projectMetadata: project.metadata,
+    spaceId,
+    platformMetaAgent,
+    callerSessionId: input.callerSessionId,
+    parentSessionId: body.parent_session_id,
+    forkFromSessionId: body.fork_from_session_id,
+    source: (input.metadata as Record<string, unknown> | undefined)?.source,
+  });
+  const sessionMetadata = front ? { ...metadata, [FRONT_THREAD_METADATA_KEY]: true } : metadata;
+  const runtimeContext = front
+    ? { ...parsedRuntimeContext.context, [FRONT_THREAD_CONTEXT_KEY]: true }
+    : parsedRuntimeContext.context;
+
   let sessionRow: ProjectSessionRow | null = null;
   try {
     const insert = () => insertSessionAndBindings(
@@ -1919,13 +1947,13 @@ export async function createProjectSession(input: {
         secretsAllowlist,
         connectorBindingsConfigured,
         inheritUnbound,
-        metadata,
+        metadata: sessionMetadata,
         providerSecretPools,
         pendingPromptConversion,
         inheritedGrants,
         spaceId,
       },
-      parsedRuntimeContext.context,
+      runtimeContext,
       validatedConnectorBindings.bindings,
     );
     sessionRow = typeof body.fork_from_session_id === 'string'

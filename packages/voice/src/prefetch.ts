@@ -9,7 +9,7 @@ import { CARD_HOSTS, card } from './cards'
 import * as source from './cards' // filled() read off it: a stand-in card source (the proofs') has only card()
 import { type Card, decided, route } from './route'
 import { asking, heard, judge, provide, routing } from './judge'
-import { lookup as chunks, identity, namedFiles, repoMap } from './workspace'
+import { lookup as chunks, identity, namedFiles, outline, repoMap } from './workspace'
 import { content, firstUseful, pageBlocks, readPages } from './pages'
 import { router, routed } from './models'
 
@@ -189,10 +189,13 @@ async function git(root: string): Promise<string> {
 /** The repo map for a call's first workspace question ('' without a workspace). */
 export const workspaceMap = () => (repo ? repoMap(repo) : '')
 
-// What the router is told the workspace is: what the project calls itself (else its folder's name) and the package's
-// description.
+// What the router is told the workspace is: what the project calls itself (else its folder's name), what it says it is,
+// and its root folders (a Kortix project's memory notes are files there: a question on them is a workspace question,
+// answered from the files in a second, not handed to the agent).
 const named = repo ? identity(repo) || basename(repo) : ''
-const project = repo ? [named, (() => { try { return JSON.parse(require('node:fs').readFileSync(`${repo}/package.json`, 'utf8')).description ?? '' } catch { return '' } })()].filter(Boolean).join(': ') : ''
+const project = repo ? ((o = outline(repo)) => `${named}${o.about ? `: ${o.about}` : ''}${o.folders ? `; its folders: ${o.folders}` : ''}${o.notes ? `; its memory notes (memory/): ${o.notes}` : ''}`)() : ''
+/** The workspace as the router is told it (for evals). */
+export const workspaceProject = () => project
 
 // And the files of it the words name: "What does the cascade file do?" was routed none (the router had only the name and
 // description, and "cascade" read as a general idea), and the agent's opener made up what it does (bench/namedfile-proof.ts).

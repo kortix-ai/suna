@@ -147,6 +147,15 @@ describe('agents', () => {
     expect(errorPaths(swap('exclude: [lookup_order]', 'exclude: [nope]'))).toContain('agents.researcher.tools');
   });
 
+  test('a grant of a retired Rooms skill or permission validates with a warning', () => {
+    const skill = check(swap('skills: [triage-rules, kortix-system]', 'skills: [triage-rules, kortix-rooms]'));
+    expect(skill.errors).toEqual([]);
+    expect(skill.warnings.map((issue) => issue.path)).toContain('agents.researcher.skills');
+    const permission = check(swap('kortix_permissions: [project.session.start]', 'kortix_permissions: [project.session.start, project.room.read]'));
+    expect(permission.errors).toEqual([]);
+    expect(permission.warnings.some((issue) => issue.message.includes('project.room.read'))).toBe(true);
+  });
+
   test('subagents name other declared subagents', () => {
     expect(errorPaths(swap('subagents: [researcher]', 'subagents: [nobody]'))).toContain('agents.assistant.subagents');
     expect(errorPaths(swap('subagents: [researcher]', 'subagents: [assistant]'))).toContain('agents.assistant.subagents');
@@ -246,7 +255,7 @@ describe('agents.<name>.workspace.project_repository default', () => {
   });
 });
 
-describe('spaces (a channel: a room plus configurable tabs)', () => {
+describe('spaces (a channel with configurable tabs)', () => {
   test('golden has no space and stays valid', () => {
     expect(check(GOLDEN).errors).toEqual([]);
   });
@@ -350,7 +359,7 @@ describe('spaces (a channel: a room plus configurable tabs)', () => {
     expect(errorPaths(yaml)).toContain('spaces.eng.tabs[0].blocks[0].type');
   });
 
-  test('a space slug is also a room name: at most 63 characters', () => {
+  test('a space slug is at most 63 characters', () => {
     const long = 'a'.repeat(64);
     expect(errorPaths(swap('agents:', `spaces:\n  ${long}:\n    label: Long\nagents:`))).toContain(`spaces.${long}`);
     expect(check(swap('agents:', `spaces:\n  ${'a'.repeat(63)}:\n    label: Ok\nagents:`)).errors).toEqual([]);

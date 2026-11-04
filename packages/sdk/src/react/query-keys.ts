@@ -568,19 +568,45 @@ export const qk = {
 
     /** Every conversation read of a project (flag `agent_rooms`): the prefix of
      *  the keys below, so a post or a read refreshes the list, the unread
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
      *  counts and the thread together. */
     rooms: (id: string) => [...qk.project.scope(id), 'rooms'] as const,
-    /** `listRooms` — the named rooms. */
+    /**
+     * `listRooms` — the named rooms.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     roomList: (id: string) => [...qk.project.rooms(id), 'list'] as const,
-    /** `listRooms({ mine: true })` — the caller's conversations with unread counts. */
+    /**
+     * `listRooms({ mine: true })` — the caller's conversations with unread counts.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     roomConversations: (id: string) => [...qk.project.rooms(id), 'mine'] as const,
-    /** `findRoomByName` — the room of a space (named like its slug), or null. */
+    /**
+     * `findRoomByName` — the room of a space (named like its slug), or null.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     spaceRoom: (id: string, name: string) => [...qk.project.rooms(id), 'name', name] as const,
-    /** `getRoom` — one conversation and its members. */
+    /**
+     * `getRoom` — one conversation and its members.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     room: (id: string, roomId: string) => [...qk.project.rooms(id), 'room', roomId] as const,
-    /** `listRoomMessages` — the newest messages of one conversation. */
+    /**
+     * `listRoomMessages` — the newest messages of one conversation.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     roomMessages: (id: string, roomId: string, view: 'all' | 'top' = 'all') => [...qk.project.rooms(id), 'messages', roomId, view] as const,
-    /** `listRoomMessages(…, { thread })` — one thread. */
+    /**
+     * `listRoomMessages(…, { thread })` — one thread.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     roomThread: (id: string, roomId: string, root: number) => [...qk.project.rooms(id), 'thread', roomId, root] as const,
 
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix

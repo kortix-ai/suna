@@ -44,8 +44,8 @@ import { revertSessionModelFallback } from '../lib/session-model-fallback-revert
 import {
   recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
+  turnEndWorkDue,
 } from '../session-turn-ledger';
-import { fireIdleWatches } from '../rooms/service';
 import { onPeerTurnEnded } from '../peer-messages/service';
 import { notifyParentOfSubagentTurn } from '../subagent-notice';
 
@@ -556,11 +556,6 @@ export async function settleTurnEnd(
       }),
     );
   }
-  // THE TURN ENDED, SO "TELL ME WHEN IT IS IDLE" IS DUE (flag agent_rooms).
-  // Fire-and-forget: a notice never holds the daemon's relay, and it never throws.
-  if (settled.turnCompletion.outcome === 'closed' && !ctx.childSession) {
-    void fireIdleWatches(ctx.sessionId, settled.status, settled.errorInfo?.name ?? null);
-  }
   // Started beside the promotion, awaited before the acknowledgement.
   const sessionList = refreshSessionListAtTurnEnd(ctx);
   const promotedPromptId = await promoteAfterTurnEnd(ctx, body, settled);
@@ -587,7 +582,13 @@ export async function settleTurnEnd(
   // THE TURN ENDED, SO ITS RESULT EXCERPT AND ITS "TELL ME WHEN IT IS IDLE"
   // MESSAGES ARE DUE (projects/peer-messages). Every session, child or not.
   // Tracked, never awaited, never throws.
-  if (settled.turnCompletion.outcome === 'closed') {
+  // Also for `already_closed` while no turn runs: another writer closed this
+  // turn first and stamped nothing. The session-list read closes a turn it
+  // observes over in the box (`settleCompletedInboxTurns`), often ~20 ms
+  // before this frame; an API restart drops the detached work and the daemon
+  // re-sends the end. Both writes are idempotent: the excerpt is rewritten
+  // from the same transcript, and the idle watches clear in one UPDATE.
+  if (turnEndWorkDue(settled.turnCompletion)) {
     trackDetached(onPeerTurnEnded(ctx.sessionId, settled.status, settled.errorInfo?.name ?? null));
   }
   return response;

@@ -3,7 +3,6 @@
 import { ProjectAppsNavItem } from './footer/project-apps-nav';
 import { ProjectGoalsNavItem } from './footer/project-goals-nav';
 import { ProjectArtifactsNavItem } from './footer/project-artifacts-nav';
-import { ProjectRoomsNavItem } from './footer/project-rooms-nav';
 import { ProjectFilesNavItem } from './footer/project-files-nav';
 import {
   CustomizeGlyph,
@@ -27,10 +26,10 @@ import { useEffect, useState } from 'react';
 /**
  * The nav rows under New session, in one fixed order. Each row applies its
  * own flag and permission gate and renders nothing when the project does not
- * offer it. Spaces are the channel sidebar under the `project_channels` flag
+ * offer it. Spaces are the channel sidebar under the `chat` flag
  * (project-spaces-nav.tsx).
  */
-const NAV_ROWS = ['customize', 'files', 'apps', 'rooms', 'goals', 'artifacts'] as const;
+const NAV_ROWS = ['customize', 'files', 'apps', 'goals', 'artifacts'] as const;
 type NavRowId = (typeof NAV_ROWS)[number];
 
 export function ProjectNavItems({ projectId }: { projectId: string }) {
@@ -136,8 +135,6 @@ function NavItem({ id, projectId }: { id: NavRowId; projectId: string }) {
       return <ProjectAppsNavItem projectId={projectId} />;
     case 'files':
       return <ProjectFilesNavItem projectId={projectId} />;
-    case 'rooms':
-      return <ProjectRoomsNavItem projectId={projectId} />;
     case 'goals':
       return <ProjectGoalsNavItem projectId={projectId} />;
     case 'artifacts':

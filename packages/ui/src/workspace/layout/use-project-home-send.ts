@@ -144,7 +144,8 @@ export function useProjectHomeSend(projectId: string, { beforeSend, space }: Use
             : undefined,
           create: {
             ...buildNewSessionCreateInput(options),
-            ...(space ? { space_id: space.spaceId } : {}),
+            // No space: a regular session, filed in no space under `chat` too.
+            space_id: space ? space.spaceId : null,
             ...(heldAttachments
               ? {}
               : {

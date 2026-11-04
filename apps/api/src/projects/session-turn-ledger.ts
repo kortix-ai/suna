@@ -266,6 +266,18 @@ export function turnCompletionAllowsQueuePromotion(
 }
 
 /**
+ * The turn-end work (result excerpt, idle notices) is due for an end that
+ * closed its turn, and for an end of a turn another writer closed first while
+ * no other turn runs: that writer stamps nothing. A live turn makes the late
+ * frame stale, because the transcript tail belongs to that turn.
+ */
+export function turnEndWorkDue(
+  result: Pick<SandboxTurnCompletionResult, 'outcome' | 'activeTurnCount'>,
+): boolean {
+  return result.outcome === 'closed' || (result.outcome === 'already_closed' && result.activeTurnCount === 0);
+}
+
+/**
  * HOW a turn ended, and the only field that separates "the model finished" from
  * "the runtime disappeared mid-turn". Every value has a real writer:
  *

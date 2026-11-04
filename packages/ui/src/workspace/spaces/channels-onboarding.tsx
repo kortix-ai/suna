@@ -1,7 +1,7 @@
 'use client';
 
 import { useChannelsOnboarding, useMarkChannelsOnboarding, useProjectSpaceGeneralNotice } from '@kortix/sdk/react';
-import { ChatCircleIcon, HashIcon, SunDimIcon } from '@phosphor-icons/react';
+import { ChatCircleIcon, HashIcon, SquaresFourIcon, SunDimIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { useTranslations } from '../../i18n';
@@ -9,8 +9,8 @@ import { Button } from '../../primitives/button';
 import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '../../primitives/modal';
 
 /**
- * The member intro, once per member and project: the first channel or DM page
- * after Channels was turned on. Any close ("Got it", Escape, outside) records
+ * The member intro ("Welcome to Spaces"), once per member and project: the
+ * first space or DM page after `chat` was turned on. Any close ("Got it", Escape, outside) records
  * `channels_intro`, so it never comes back. Turning Channels on again records
  * it for every member, so a second switch shows nothing.
  */
@@ -28,6 +28,7 @@ export function ChannelsIntro({ projectId }: { projectId: string }) {
     { icon: HashIcon, text: t('channels') },
     { icon: ChatCircleIcon, text: t('threads') },
     { icon: SunDimIcon, text: t('memory') },
+    { icon: SquaresFourIcon, text: t('tabs') },
   ];
   return (
     <Modal open={open} onOpenChange={(next) => !next && close()}>

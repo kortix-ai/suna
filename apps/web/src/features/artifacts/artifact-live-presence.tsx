@@ -2,8 +2,7 @@
 
 import type { ArtifactLiveParticipant, ArtifactLiveStatus, ArtifactLiveTyping } from '@kortix/sdk';
 import { cn } from '@kortix/ui';
-import { EntityAvatar } from '@kortix/ui/entity-avatar';
-import { RobotIcon } from '@phosphor-icons/react';
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
@@ -142,10 +141,9 @@ export function ArtifactThreadPresence({ threadId }: { threadId: string }) {
               data-live-agent={agent.key}
               className="text-foreground flex min-w-0 items-center gap-1.5 text-xs"
             >
-              <EntityAvatar
-                icon={RobotIcon}
-                label={agent.name}
-                size="xs"
+              <AgentMark
+                slug={agent.name}
+                tile={18}
                 className={cn('ring-offset-background ring-2 ring-offset-1', LIVE_RING[agent.color])}
               />
               <span className="min-w-0 truncate font-medium">{agent.name}</span>

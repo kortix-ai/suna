@@ -28,7 +28,6 @@ import { LoopsScreen } from './features/loops/index.ts';
 import { MemoryScreen } from './features/memory/index.ts';
 import { RepoScreen } from './features/repo/index.ts';
 import { ReviewScreen } from './features/review/index.ts';
-import { RoomsScreen } from './features/rooms/index.ts';
 import { SpacesScreen } from './features/spaces/index.ts';
 import { copyToClipboard } from './lib/clipboard.ts';
 import { theme } from './theme.ts';
@@ -54,7 +53,6 @@ export const SCREEN_TITLE: Record<ScreenRoute, string> = {
   goals: 'Goals',
   memory: 'Company memory',
   spaces: 'Channels and DMs',
-  rooms: 'Rooms',
   loops: 'Loops',
   audit: 'Session audit',
 };
@@ -98,7 +96,6 @@ const CONTRACT_SCREENS = {
   goals: GoalsScreen,
   memory: MemoryScreen,
   spaces: SpacesScreen,
-  rooms: RoomsScreen,
   loops: LoopsScreen,
   audit: AuditScreen,
 } satisfies Record<string, ComponentType<ContractScreenProps>>;

@@ -24,7 +24,7 @@ import { qk } from './query-keys';
 // Memory: the Markdown files of the project's Drive. People and agents both
 // write them, so every read is the `inventory` tier. Pass `enabled: false`
 // while the project's Files (`drives`) are off: every route answers 403 then.
-// The Memory UI is a Channels surface: hosts also gate it on `project_channels`.
+// The Memory UI is a Channels surface: hosts also gate it on `chat`.
 
 type Id = string | null | undefined;
 type ReadOptions = { enabled?: boolean };

@@ -150,6 +150,22 @@ describe('PATCH /v1/projects/:projectId/features', () => {
     );
   });
 
+  test('the withdrawn project_channels key reads and writes chat, for released clients', async () => {
+    const on = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'project_channels', enabled: true }));
+    expect(on.status).toBe(200);
+    const body = await on.json();
+    expect([body.experimental.chat, body.experimental.project_channels]).toEqual([true, true]);
+    expect(await storedOverrides(PROJECT)).toEqual({ chat: true });
+
+    const off = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'chat', enabled: false }));
+    expect(off.status).toBe(200);
+    const offBody = await off.json();
+    expect([offBody.experimental.chat, offBody.experimental.project_channels]).toEqual([false, false]);
+
+    await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'project_channels', enabled: null }));
+    expect(await storedOverrides(PROJECT)).toBeUndefined();
+  });
+
   test('an unknown flag is a 400', async () => {
     const res = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'nope', enabled: true }));
     expect(res.status).toBe(400);

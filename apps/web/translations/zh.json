@@ -1300,10 +1300,6 @@
           "name": "会话日志恢复",
           "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按项目启用。"
         },
-        "agent_rooms": {
-          "name": "聊天室",
-          "description": "命名的聊天室，代理会话和用户可以在其中发帖并在话题中回复。当消息发给某个会话时，该会话会被唤醒。新增聊天室页面、`kortix rooms` 和 `kortix peers`。"
-        },
         "goals": {
           "name": "目标",
           "description": "给代理一个目标，它会一直负责，直到独立检查确认结果。它会规划、执行、等待、跟进相关人员，并把状态保存在“文件”中的 Goals 文件夹里。需要开启卷和循环。"
@@ -1320,9 +1316,9 @@
           "name": "电子邮件渠道",
           "description": "为智能体提供一个 Resend 邮箱：收到的邮件会启动并延续会话，智能体从该邮箱阅读、回复和发送邮件。使用你自己的 Resend API 密钥和域名。"
         },
-        "project_channels": {
-          "name": "频道",
-          "description": "在频道中组织工作。频道中的每条新消息或与智能体的私信都会开启一个话题。取代侧边栏中的会话列表。"
+        "chat": {
+          "name": "聊天",
+          "description": "像 Slack 一样与 Kortix 聊天：每条消息都是一个话题，Kortix 的最新回复显示在其下方，Kortix 也可以发起话题，空间可与他人共享。取代侧边栏中的会话列表。"
         },
         "session_groups": {
           "name": "会话分组",
@@ -1347,16 +1343,24 @@
         "shared_drives": {
           "name": "共享云盘",
           "description": "整个团队都能使用的云盘：管理员创建云盘并为其添加智能体。这些智能体的每个会话都会挂载它，任何可以使用其中某个智能体的人都能打开它。关闭时，每个人只有“我的文件”。"
+        },
+        "chat_input": {
+          "name": "聊天输入",
+          "description": "输入框下方的一个控件，决定由谁回答以及如何回答：选择智能体后，其他所有设置都保持自动，继承自该智能体。打开某一行即可为本会话覆盖模型、思考强度、密钥、提供商密钥或沙盒，并一键恢复为自动。"
+        },
+        "chat_front": {
+          "name": "仅对话线程",
+          "description": "开启聊天后，空间中的新消息会启动一个线程，其智能体只负责对话。它把每个请求交给一个隐藏的 My Kortix 会话去完成，并只用简短消息回复重要内容。需要在 kortix.yaml 中开启 My Kortix。"
         }
       },
       "channelsSwitch": {
-        "onTitle": "为 {project} 开启频道？",
-        "onBody": "此项目中的所有人将看到频道和私信，而不是会话列表。所有现有会话都会移入 #general。你可以随时关闭；不会删除任何内容。",
-        "drive": "同时开启云盘，让频道拥有文件。",
+        "onTitle": "为 {project} 开启空间？",
+        "onBody": "此项目中的所有人将看到空间和私信，而不是会话列表。所有现有会话都会移入 #general。你可以随时关闭；不会删除任何内容。",
+        "drive": "同时开启云盘，让空间拥有文件。",
         "turnOn": "开启",
         "cancel": "取消",
-        "offTitle": "关闭频道？",
-        "offBody": "频道、记忆、文件和链接都会保留。所有人都会重新看到会话列表。",
+        "offTitle": "关闭空间？",
+        "offBody": "空间、记忆、文件和链接都会保留。所有人都会重新看到会话列表。",
         "turnOff": "关闭"
       },
       "wip": "Work in progress",
@@ -1557,7 +1561,6 @@
     }
   },
   "sidebar": {
-    "rooms": "聊天室",
     "goals": "目标",
     "artifacts": "工件",
     "referAndEarn": "推荐赚取",
@@ -1866,10 +1869,10 @@
     "searchApps": "搜索应用",
     "appsNoMatches": "无匹配项",
     "spaces": {
-      "channels": "频道",
+      "channels": "空间",
       "directMessages": "私信",
-      "addChannel": "添加频道",
-      "loadError": "无法加载频道。",
+      "addChannel": "新建空间",
+      "loadError": "无法加载空间。",
       "newAgent": "新建智能体"
     }
   },
@@ -2269,6 +2272,38 @@
     "thinkingEffort": "思考强度",
     "sessionOverrides": "会话覆盖",
     "auto": "自动",
+    "chatInput": "聊天输入",
+    "chatInputAgent": "智能体",
+    "chatInputModel": "模型",
+    "chatInputEffort": "强度",
+    "chatInputMoreSettings": "更多设置",
+    "chatInputOverrideCount": "{count, plural, other {# 项覆盖}}",
+    "chatInputResetToAuto": "恢复为自动",
+    "chatInputAgentDescription": "谁来回答你的下一条提示。",
+    "chatInputModelDescription": "智能体在下一条提示中使用的模型。",
+    "chatInputEffortDescription": "模型在回答前思考多久。",
+    "chatInputMore": "更多",
+    "chatInputChangedCount": "已更改 {count} 项",
+    "chatInputAgentDefault": "智能体默认",
+    "chatInputLoading": "加载中…",
+    "chatInputSecrets": "密钥",
+    "chatInputSecretsDescription": "哪些密钥会传给此会话。",
+    "chatInputSecretsAll": "{count, plural, other {智能体可使用的全部 # 个密钥}}",
+    "chatInputSecretsEmpty": "此智能体没有密钥。",
+    "chatInputSecretsUnavailable": "此处无法读取密钥。",
+    "chatInputSecretCount": "{count, plural, other {# 个密钥}}",
+    "chatInputConnectors": "连接器",
+    "chatInputConnectorsDescription": "此会话中每个应用使用哪个账户。",
+    "chatInputConnectorsAll": "每个应用都使用其默认账户",
+    "chatInputConnectorsUnavailable": "此处无法读取连接器。",
+    "chatInputDefaultAccount": "默认",
+    "chatInputAppCount": "{count, plural, other {已更改 # 个应用}}",
+    "chatInputProviderKeysDescription": "哪些提供商密钥为此会话的模型调用付费。",
+    "chatInputProviderKeysAll": "智能体当前使用的密钥",
+    "chatInputProviderKeysEmpty": "没有可选的提供商密钥。",
+    "chatInputKeyCount": "{count, plural, other {# 个密钥}}",
+    "chatInputMachine": "机器",
+    "chatInputMachineDescription": "此会话启动时使用的机器模板。",
     "sending": "正在发送",
     "stop": "停止",
     "startingSession": "正在启动会话…",
@@ -2306,7 +2341,8 @@
     "submitEdit": "提交",
     "collapseQueue": "收起队列",
     "expandQueue": "展开队列",
-    "myKortixRoutes": "把每个任务交给合适的智能体"
+    "myKortixRoutes": "把每个任务交给合适的智能体",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {
@@ -3299,7 +3335,6 @@
       "automation_recovered": "恢复提醒",
       "capture_device_down": "Capture 电脑已停止",
       "capture_device_recovered": "Capture 电脑恢复录制",
-      "message": "消息",
       "artifact_comment": "工件评论"
     },
     "kindDescription": {
@@ -3312,7 +3347,6 @@
       "automation_recovered": "失败的触发器或循环恢复正常。",
       "capture_device_down": "有一台 Kortix Capture 电脑未在录制。发送给管理 Capture 的人员。",
       "capture_device_recovered": "停止的 Kortix Capture 电脑已重新录制。",
-      "message": "有人在聊天室中 @ 提及你，或在你发过言的话题中回复。",
       "artifact_comment": "可查看工件的反馈、提及和回复。"
     },
     "bell": {
@@ -21333,7 +21367,7 @@
     "copyFailed": "无法复制到剪贴板",
     "threads": "话题",
     "recentThreads": "最近的话题",
-    "searchChannels": "搜索频道、话题、命令..."
+    "searchChannels": "搜索空间、话题、命令..."
   },
   "personalWelcome": {
     "dismiss": "关闭",
@@ -21554,9 +21588,9 @@
     "perDay": "每天",
     "noLimit": "不限",
     "postTo": "发布到",
-    "postToHint": "每次运行都会在那里开始一个新话题。未选择频道时，运行会进入 #{channel}。",
-    "postToNone": "无频道",
-    "postToUnavailable": "不可用的频道",
+    "postToHint": "每次运行都会在那里开始一个新话题。未选择空间时，运行会进入 #{channel}。",
+    "postToNone": "无空间",
+    "postToUnavailable": "不可用的空间",
     "postToPrivate": "私有：触发器无法发布到这里",
     "appLabel": "应用",
     "appPlaceholder": "选择应用",
@@ -23395,103 +23429,6 @@
     "enable": "启用{name}",
     "enabling": "正在启用…"
   },
-  "rooms": {
-    "title": "聊天室",
-    "memberCount": "{count, plural, other {# 位成员}}",
-    "members": "成员",
-    "agent": "智能体",
-    "agentSender": "智能体 {name}",
-    "empty": "你加入的聊天室会显示在这里",
-    "emptyHint": "创建一个聊天室,然后添加成员和智能体。",
-    "loadError": "无法加载聊天室。请重试。",
-    "roomLoadError": "无法加载此聊天室。请重试。",
-    "messagesLoadError": "无法加载消息。请重试。",
-    "retry": "重试",
-    "back": "返回聊天室",
-    "send": "发送消息",
-    "sendFailed": "无法发送消息",
-    "peopleLoadError": "无法加载成员。请重试。",
-    "cardRoom": "聊天室 {name}",
-    "digestCount": "{count, plural, other {# 条新消息}}",
-    "digestMore": "… 另有 {count} 条",
-    "cardFrom": "发送者",
-    "cardMessage": "消息",
-    "cardReplyTo": "回复",
-    "addRooms": "添加聊天室",
-    "addFailed": "无法添加成员",
-    "addMembers": "添加成员和智能体",
-    "addMembersDescription": "成员会收到在这里发布的消息。智能体会话会在下一步读取这些消息。",
-    "addTopic": "添加话题",
-    "agents": "智能体",
-    "browseRoomsDescription": "此项目中的所有聊天室。打开一个即可阅读或加入。",
-    "cancel": "取消",
-    "roomName": "名称",
-    "roomNameHint": "小写字母、数字和 . _ / -,最多 64 个字符。",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "关闭成员",
-    "copied": "已复制",
-    "copyText": "复制消息文本",
-    "createRoom": "创建聊天室",
-    "createRoomDescription": "聊天室汇集一个话题的对话,供成员和智能体使用。",
-    "createFailed": "无法创建聊天室",
-    "editTopic": "编辑话题",
-    "inThisRoom": "在此聊天室中",
-    "introRoom": "这是 #{name} 聊天室的开始。",
-    "joinRoom": "加入聊天室",
-    "joinFailed": "无法加入聊天室",
-    "joined": "已加入",
-    "jumpToLatest": "跳到最新",
-    "leaveRoom": "退出聊天室",
-    "memberActions": "{name} 的操作",
-    "memberAdded": "已添加 {name}",
-    "memberRemoved": "成员已移除",
-    "mentionHere": "#{name} 中的所有人",
-    "mentionSomeone": "提及某人",
-    "mentionSuggestions": "提及建议",
-    "messageRoom": "发送消息到 #{name}",
-    "messages": "消息",
-    "new": "新",
-    "newLineHint": "Shift + Enter 换行",
-    "noRooms": "没有匹配的聊天室",
-    "noMatches": "没有匹配项",
-    "people": "成员",
-    "pickRoom": "从列表中打开一个聊天室",
-    "remove": "移除",
-    "removeAgentDescription": "该智能体会话将不再接收此聊天室的消息。如需恢复,请重新添加该智能体。",
-    "removeFailed": "无法移除成员",
-    "removePersonDescription": "该成员将不再接收此聊天室的消息。如需恢复,请重新添加。",
-    "removeTitle": "要将 {name} 从此聊天室移除吗?",
-    "searchRooms": "搜索聊天室",
-    "searchPeopleAndAgents": "搜索成员和智能体",
-    "today": "今天",
-    "topic": "话题",
-    "topicFailed": "无法保存话题",
-    "topicOptional": "话题(可选)",
-    "topicPlaceholder": "此聊天室的主题",
-    "viewMembers": "查看成员",
-    "viewMembersCount": "查看 {count, plural, other {# 位成员}}",
-    "viewingRoom": "你正在查看 #{name}",
-    "yesterday": "昨天",
-    "you": "{name}(你)",
-    "status": {
-      "running": "运行中",
-      "starting": "启动中",
-      "stopped": "已停止",
-      "failed": "失败"
-    },
-    "replyInThread": "在话题中回复",
-    "thread": "话题",
-    "closeThread": "关闭话题",
-    "backToRoom": "返回聊天室",
-    "replyPlaceholder": "回复…",
-    "replyCount": "{count, plural, other {# 条回复}}",
-    "lastReply": "最后回复 {time}",
-    "threadLoadError": "无法加载此话题。请重试。",
-    "join": "加入",
-    "openRoom": "打开",
-    "gateDescription": "开启聊天室，让此项目的智能体会话和成员在命名的聊天室中交流。",
-    "archivedNotice": "此聊天室已归档。现有消息会保留，但不再接收新消息。"
-  },
   "goals": {
     "title": "目标",
     "gateDescription": "智能体负责一个目标，直到它被可验证地完成：目标保存在文件中，每日心跳唤醒它，智能体向相关人员催要所需内容，并由独立检查来关闭它。",
@@ -24198,7 +24135,6 @@
       "activity": "动态",
       "open": "未解决",
       "resolved": "已解决",
-      "all": "全部",
       "outdated": "已过时",
       "outdatedHint": "无法在当前文档中定位此段内容。",
       "newComment": "新建评论",
@@ -24245,7 +24181,6 @@
       "noCommentsHint": "选择一段内容进行评论，或新建一条评论。",
       "noResolved": "没有已解决的评论",
       "noResolvedHint": "已解决的讨论串会显示在这里。",
-      "noAllComments": "暂无评论",
       "noActivity": "暂无动态",
       "noActivityHint": "保存的版本和评论会显示在这里。",
       "loadMore": "加载更多",
@@ -24318,7 +24253,6 @@
       "sentToAgent": "评论已发送给 {agent}",
       "newCommentFrom": "来自 {name} 的新评论",
       "newComments": "{count, plural, other {# 条新评论}}",
-      "filterLabel": "讨论串状态",
       "pagePinLabel": "评论 {number}",
       "showPanelCount": "显示评论，{count} 条未解决",
       "hidePanelCount": "隐藏评论，{count} 条未解决",
@@ -24635,7 +24569,7 @@
       },
       "company": {
         "subtitle": "此项目中每个智能体都知道的内容。",
-        "gateDescription": "公司记忆随频道功能提供：此项目中的每个智能体在每个线程开始时都会读取团队保存在这里的内容。",
+        "gateDescription": "公司记忆随空间功能提供：此项目中的每个智能体在每个线程开始时都会读取团队保存在这里的内容。",
         "title": "记忆",
         "place": "公司"
       },
@@ -24666,29 +24600,29 @@
       }
     },
     "create": {
-      "title": "创建频道",
-      "description": "此项目中的所有人都可以查看和使用该频道。",
+      "title": "创建空间",
+      "description": "此项目中的所有人都可以查看和使用该空间。",
       "nameLabel": "名称",
       "namePlaceholder": "marketing",
-      "slugPlaceholder": "channel-name",
+      "slugPlaceholder": "space-name",
       "descriptionLabel": "描述（可选）",
-      "descriptionPlaceholder": "这个频道的用途",
-      "submit": "创建频道",
-      "created": "频道已创建",
+      "descriptionPlaceholder": "这个空间的用途",
+      "submit": "创建空间",
+      "created": "空间已创建",
       "nameRequired": "请添加名称。",
       "invalidName": "名称中至少要有一个字母或数字。",
       "slugTaken": "<link>#{slug}</link> 已存在。",
-      "failed": "无法创建频道。请重试。",
-      "renameTitle": "重命名频道",
-      "renameDescription": "频道链接会随名称一起改变。",
+      "failed": "无法创建空间。请重试。",
+      "renameTitle": "重命名空间",
+      "renameDescription": "空间链接会随名称一起改变。",
       "save": "保存",
-      "renamed": "频道已重命名",
-      "renameFailed": "无法重命名频道。请重试。",
-      "descriptionPrivate": "只有你添加的人可以查看和使用该频道。",
+      "renamed": "空间已重命名",
+      "renameFailed": "无法重命名空间。请重试。",
+      "descriptionPrivate": "只有你添加的人可以查看和使用该空间。",
       "privateLabel": "私密",
       "privateHint": "只有受邀成员可以看到它。",
-      "privateUnavailable": "此工作区尚未开放私密频道。",
-      "privateLimits": "私密会对其他人隐藏该频道。代码更改（git 分支）和代理自身的工具不是私密的。",
+      "privateUnavailable": "此工作区尚未开放私密空间。",
+      "privateLimits": "私密会对其他人隐藏该空间。代码更改（git 分支）和代理自身的工具不是私密的。",
       "name": "名称",
       "taken": "空间 #{slug} 已存在。",
       "about": "描述",
@@ -24714,24 +24648,24 @@
       "messageAgent": "发消息给 {agent}",
       "threadsEmptyTitle": "还没有话题",
       "threadsEmpty": "你开始的话题会显示在这里。",
-      "loadError": "无法加载此频道。",
+      "loadError": "无法加载此空间。",
       "threadsLoadError": "无法加载话题。",
       "retry": "重试",
-      "notFound": "此频道不存在。",
-      "notFoundHint": "链接可能有误，或者有人重命名了该频道。",
+      "notFound": "此空间不存在。",
+      "notFoundHint": "链接可能有误，或者有人重命名了该空间。",
       "openDefault": "打开 #{name}",
       "archivedTitle": "#{name} 已归档。",
       "archivedHint": "取消归档后，可以再次在这里阅读和开始话题。",
       "archivedLocked": "只有频道创建者或项目管理员可以取消归档。",
-      "unarchive": "取消归档频道",
-      "unarchived": "频道已取消归档",
-      "unarchiveFailed": "无法取消归档频道。请重试。",
+      "unarchive": "取消归档空间",
+      "unarchived": "空间已取消归档",
+      "unarchiveFailed": "无法取消归档空间。请重试。",
       "dmFailed": "无法打开此对话。",
-      "archive": "归档频道",
+      "archive": "归档空间",
       "archiveTitle": "归档 #{name}？",
-      "archiveDescription": "该频道会从所有成员的侧边栏中消失。它的话题会保留，频道创建者或项目管理员可以取消归档。",
-      "archived": "频道已归档",
-      "archiveFailed": "无法归档频道。请重试。",
+      "archiveDescription": "该空间会从所有成员的侧边栏中消失。它的话题会保留，空间创建者或项目管理员可以取消归档。",
+      "archived": "空间已归档",
+      "archiveFailed": "无法归档空间。请重试。",
       "threadTitle": "话题",
       "closeThread": "关闭话题",
       "sendFailed": "无法开始话题。请重试。",
@@ -24763,7 +24697,7 @@
         },
         "links": {
           "title": "还没有链接",
-          "description": "在 {place} 的线程中分享的链接会显示在这里。固定一个链接即可将其提供给频道中的每个智能体。"
+          "description": "在 {place} 的线程中分享的链接会显示在这里。固定一个链接即可将其提供给空间中的每个智能体。"
         },
         "triggers": {
           "title": "还没有触发器",
@@ -24796,8 +24730,8 @@
         "titlePlaceholder": "它是什么",
         "invalidUrl": "请输入有效的链接，例如 example.com。",
         "addFailed": "无法添加链接，请重试。",
-        "limit": "此频道已固定 200 个链接。请先取消固定一个。",
-        "addLimit": "此频道已添加 200 个链接。请先移除一个。",
+        "limit": "此空间已固定 200 个链接。请先取消固定一个。",
+        "addLimit": "此空间已添加 200 个链接。请先移除一个。",
         "added": "添加时间",
         "remove": "移除链接",
         "removeTitle": "移除此链接？",
@@ -24817,7 +24751,7 @@
         "all": "全部",
         "sharedBy": "分享者",
         "earlier": "更早",
-        "pinHint": "固定它。频道中的每个智能体都会读取已固定的链接。",
+        "pinHint": "固定它。空间中的每个智能体都会读取已固定的链接。",
         "unpinHint": "取消固定。智能体将不再读取它。",
         "copyLink": "复制链接",
         "linkCopied": "已复制链接",
@@ -24827,7 +24761,7 @@
       "appsLoadError": "无法加载应用。",
       "triggers": {
         "loadError": "无法加载触发器。",
-        "privateNote": "触发器无法发布到私有频道。请改为在线程中设置循环。"
+        "privateNote": "触发器无法发布到私有空间。请改为在线程中设置循环。"
       },
       "reply": "回复",
       "rosterTitlePeople": "成员",
@@ -24873,19 +24807,68 @@
         "rememberHint": "每个智能体都会读的笔记"
       },
       "allAgents": "所有智能体",
-      "join": "加入频道",
+      "join": "加入空间",
       "joined": "你已加入 #{name}。",
-      "joinFailed": "无法加入频道，请重试。"
+      "joinFailed": "无法加入空间，请重试。",
+      "openFullSession": "Open full session",
+      "tabEdit": {
+        "kind": {
+          "file": "文件",
+          "artifact": "Artifact",
+          "app": "App",
+          "folder": "Folder",
+          "link": "Link"
+        },
+        "add": "Add tab",
+        "full": "A space holds at most {max} tabs. Remove one first.",
+        "noArtifacts": "No artifacts yet",
+        "noApps": "No Apps in this project",
+        "spaceFiles": "This space’s files",
+        "otherFolder": "Another folder…",
+        "fileItem": "文件…",
+        "linkItem": "Link…",
+        "linkTitle": "Add a link",
+        "linkHint": "An https page, shown inside the tab.",
+        "folderTitle": "Add a folder",
+        "folderHint": "A Drive folder, by its path.",
+        "fileTitle": "添加文件",
+        "fileHint": "Drive 中的任意文件，按路径指定。.html 文件以页面显示。",
+        "url": "URL",
+        "path": "Folder path",
+        "filePath": "文件路径",
+        "submit": "Add tab",
+        "cancel": "Cancel",
+        "options": "Options for {name}",
+        "rename": "Rename",
+        "renameTitle": "Rename tab",
+        "name": "Tab name",
+        "save": "Save",
+        "moveLeft": "Move left",
+        "moveRight": "Move right",
+        "remove": "Remove tab",
+        "removed": "Removed {name}",
+        "undo": "Undo",
+        "saveError": "The tabs could not be saved",
+        "openLink": "Open in new tab",
+        "linkCard": {
+          "description": "{host} 不允许其他网站在标签页中显示它。",
+          "open": "打开"
+        },
+        "missing": {
+          "title": "This tab’s content is gone",
+          "description": "It was deleted or renamed, or it is not shared with you."
+        }
+      }
     },
     "details": {
       "about": "关于",
       "members": "成员",
-      "name": "频道名称",
+      "name": "空间名称",
       "description": "描述",
       "noDescription": "添加描述",
       "created": "创建于",
       "editField": "编辑{field}",
-      "archiveTitle": "归档此频道",
+      "archiveTitle": "归档此空间",
       "archiveHint": "它会从所有成员的侧边栏中移除。其中的话题会保留。",
       "archive": "归档",
       "find": "查找成员或智能体",
@@ -24909,9 +24892,9 @@
       "peopleFailed": "无法更新成员，请重试。",
       "personMenu": "{person} 选项",
       "removePerson": "从 #{name} 移除",
-      "leave": "退出频道",
+      "leave": "退出空间",
       "left": "你已退出 #{name}。",
-      "leaveTitle": "退出此频道",
+      "leaveTitle": "退出此空间",
       "leaveHint": "退出后仍可阅读，并可随时重新加入。",
       "visibilityPrivate": "仅限成员",
       "privateNote": "只有成员可以看到 #{name}。",
@@ -24925,7 +24908,7 @@
       "leaveHintPrivate": "你将失去对其线程、文件和记忆的访问权限，包括你自己的线程。需要成员重新添加你。",
       "leavePrivateTitle": "退出 #{name}？",
       "addMembers": "添加成员",
-      "privateLimits": "私密会对其他人隐藏该频道。代码更改（git 分支）和代理自身的工具不是私密的。"
+      "privateLimits": "私密会对其他人隐藏该空间。代码更改（git 分支）和代理自身的工具不是私密的。"
     },
     "folder": {
       "memory": "记忆",
@@ -24938,17 +24921,18 @@
       }
     },
     "onboarding": {
-      "reenabled": "频道关闭期间开始的会话都在这里。",
+      "reenabled": "空间关闭期间开始的会话都在这里。",
       "intro": {
-        "title": "欢迎使用频道",
-        "channels": "频道按团队组织工作。",
+        "title": "欢迎使用空间",
+        "channels": "空间按团队组织工作。",
         "threads": "每条新消息都会开始一个话题。",
-        "memory": "智能体会记住每个频道达成的共识。",
-        "gotIt": "知道了"
+        "memory": "智能体会记住每个空间达成的共识。",
+        "gotIt": "知道了",
+        "tabs": "Every space has its own tabs. Add, rename and reorder them, or ask Kortix to."
       },
       "getStarted": {
         "dismiss": "关闭",
-        "channel": "为团队创建一个频道",
+        "channel": "为团队创建一个空间",
         "done": "已完成"
       }
     },
@@ -24977,9 +24961,9 @@
       "noMatches": "没有与“{query}”匹配的项。"
     },
     "privateNotIn": {
-      "row": "你未加入的私有频道",
-      "title": "你未加入的私有频道",
-      "description": "你可以重命名、归档和添加成员。只有成员能阅读频道内容，因此你无法将自己加入。",
+      "row": "你未加入的私有空间",
+      "title": "你未加入的私有空间",
+      "description": "你可以重命名、归档和添加成员。只有成员能阅读空间内容，因此你无法将自己加入。",
       "meta": "{count, plural, =0 {没有成员} other {# 名成员}} · 由 {name} 创建",
       "metaNoCreator": "{count, plural, =0 {没有成员} other {# 名成员}}",
       "archived": "已归档",
@@ -25003,20 +24987,15 @@
       "board": {
         "brief": "概述",
         "text": "此空间的用途以及如何提供帮助。",
-        "label": "聊天室和看板",
+        "label": "看板和目标",
         "description": "用于简介和链接的看板，然后是目标。"
       },
       "standard": {
-        "label": "聊天室、目标、应用和产物",
-        "description": "先显示聊天室，再显示关联到此空间的内容。"
-      },
-      "room": {
-        "label": "仅聊天室",
-        "description": "一个对话。稍后可添加标签页。"
+        "label": "目标、应用和产物",
+        "description": "关联到此空间的内容。"
       }
     },
     "tabs": {
-      "room": "聊天室",
       "goals": "目标",
       "apps": "应用",
       "artifacts": "工件",
@@ -25041,7 +25020,7 @@
       "artifacts": "关联到此空间的产物会显示在这里",
       "folder": "此文件夹为空",
       "board": "此看板上的区块会显示在这里",
-      "boardHint": "让 My Kortix 添加区块：笔记、应用、文件、嵌入页面或其他聊天室。"
+      "boardHint": "让 My Kortix 添加区块：笔记、应用、文件或嵌入页面。"
     },
     "doc": "文档",
     "page": "页面",
@@ -25079,8 +25058,8 @@
     "cancel": "取消",
     "edit": {
       "title": "编辑标签页",
-      "description": "聊天室始终排在第一位。保存会将标签页提交到默认分支的 kortix.yaml 中。",
-      "empty": "只有聊天室。点击 + 添加标签页。",
+      "description": "保存会将标签页提交到默认分支的 kortix.yaml 中。",
+      "empty": "还没有标签页。点击 + 添加标签页。",
       "save": "保存标签页",
       "rename": "重命名 {name}",
       "moveUp": "上移 {name}",
@@ -25093,24 +25072,18 @@
       "unread": "{count, plural, other {# 条未读消息}}"
     },
     "leave": "离开 {name}",
-    "openRooms": "打开聊天室",
-    "roomHint": "智能体和成员在这里发布更新。",
-    "noRoom": "还没有聊天室。",
     "agents": "此空间中的智能体",
     "openAgent": "打开 {name}",
-    "members": "{count, plural, other {# 人}}",
     "needsYou": "需要你处理",
     "newSession": "新会议",
     "askMyKortix": "询问 My Kortix",
     "askPrompt": "我想修改 {name} 空间（kortix.yaml 中的 `spaces.{slug}`）：它的标签页、标题或其中的智能体。请问我想修改什么。",
-    "roomsOff": "此项目已关闭聊天室",
-    "roomsOffHint": "在项目设置中开启聊天室，即可在这里与成员和智能体交流。",
-    "room": {
-      "introTitle": "这里是 #{name} 的起点",
-      "introBody": "供所有在此空间工作的人使用的聊天室。",
-      "introAgents": "{count, plural, other {{names} 在这里发布更新。}}",
-      "introNoAgents": "添加到此空间的智能体会在这里发布更新。",
-      "introMention": "输入 @ 以提及成员或智能体。"
+    "intro": {
+      "title": "这里是 #{name} 的起点",
+      "body": "供所有在此空间工作的人使用的地方。",
+      "agents": "{count, plural, other {{names} 在这里发布更新。}}",
+      "noAgents": "添加到此空间的智能体会在这里发布更新。",
+      "addTab": "使用 + 添加标签页，即可在此固定目标、应用、文件或看板。"
     },
     "filter": "按空间筛选",
     "all": "全部",

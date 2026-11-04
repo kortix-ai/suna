@@ -1069,7 +1069,7 @@ describe('pi harness', () => {
     const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
     process.env.KORTIX_MANAGED_SKILLS_DIR = managed
     try {
-      const envs: Array<Record<string, string>> = [{}, { KORTIX_GENUI: '0', KORTIX_FEATURE_FLAGS: 'agent_rooms' }]
+      const envs: Array<Record<string, string>> = [{}, { KORTIX_GENUI: '0', KORTIX_FEATURE_FLAGS: 'chat' }]
       for (const env of envs) {
         const r = await boot({ script: [{ text: 'ok' }], env })
         const skills = skillList(r)
@@ -2137,6 +2137,53 @@ describe('pi subagents extension', () => {
       expect(part.state.output).toContain('<task_started>\nThe subagent runs in the background in its own session.')
       expect(part.state.output).toContain('task_stop({ task_id: "bg-child-1" })')
       expect(JSON.stringify(page)).toContain('parent keeps working')
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('a talk-only front (kortix.front) has only agent, send_message and task_stop; every agent call starts its one My Kortix worker, not narrowed', async () => {
+    const creates: Array<Record<string, any>> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url)
+        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+          creates.push((await req.json()) as Record<string, any>)
+          return Response.json({ session_id: 'front-worker-1' }, { status: 201 })
+        }
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([])
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const r = await boot({
+        // The model asks for another agent, in the same session, in the foreground: the front overrides all of it.
+        script: [
+          { tool: 'agent', args: { description: 'Check the logs', prompt: 'check the logs', subagent_type: 'general', session: 'same', run_in_background: false } },
+          { text: 'On it.' },
+        ],
+        env: {
+          KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1`,
+          KORTIX_SESSION_CONTEXT: JSON.stringify({ 'kortix.front': true }),
+          // A front runs on My Kortix's box: any project agent, My Kortix included, is a name the API resolves.
+          KORTIX_META_AGENT: '1',
+        },
+      })
+      expect((await toolIds(r)).sort()).toEqual(['agent', 'send_message', 'task_stop'])
+      const sentBefore = gateway.sent.length
+      await promptAndSettle(r, 'check the logs')
+      expect(creates).toHaveLength(1)
+      const create = creates[0]!
+      expect(create.agent_name).toBe('mykortix')
+      expect(create.initial_prompt).toBe('check the logs')
+      expect(create.metadata).toMatchObject({ notify_parent: true, agent_handle: 'kortix' })
+      expect(create.runtime_context['kortix.front.thread']).toBe(true)
+      expect(create.runtime_context['kortix.agent.handle']).toBe('kortix')
+      // The worker is not narrowed to the front's three tools.
+      expect(create.runtime_context['kortix.subagent.tools']).toBeUndefined()
+      // The front's own prompt replaces the agent's: it only talks.
+      expect(gateway.sent.slice(sentBefore).map(systemSent).every((system) => system.startsWith('You are Kortix in a chat thread.'))).toBe(true)
     } finally {
       server.stop(true)
     }
