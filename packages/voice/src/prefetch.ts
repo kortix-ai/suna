@@ -82,6 +82,8 @@ function search(q: string, pages = true): Promise<string> {
  * (Serper, $0.001 through the Kortix router, against Tavily's $0.005 and Firecrawl's $0.01), and no page read. The full
  * race of all three ran on every turn of two content words, "12 times 11" and "change your name" too: about two thirds
  * of a call's model cost. A web turn still races them all once the router says so. */
+// A lookup ahead (src/anticipate.ts: the likely next questions, "Who is the CEO of Meta?" after Microsoft's) is a glance
+// too: it runs before anyone asks, so one provider's tail costs nothing, and four of them raced 3 providers each.
 function glance(q: string): Promise<string> {
   const key = norm(q).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim()
   const hit = searches.get(key)
@@ -284,7 +286,7 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
   // A web turn: the glance when it is in and useful; else the full race on the router's query beside it (the glance is one
   // provider, its p90 2-3 s; raced, 1.5 s), never the glance taken for the search (a query inside its words reused it).
   const searchNow = () => fallback ??= searching
-    ? (raw ? (words ? raw : glanced ? raw : firstUseful([raw, search(r.query)])) : reuse(r.query) ?? search(r.query, !ahead))
+    ? (raw ? (words ? raw : glanced ? raw : firstUseful([raw, search(r.query)])) : reuse(r.query) ?? (ahead ? glance(r.query) : search(r.query)))
     : Promise.resolve('')
   const web = async () => {
     const data = await searchNow()
