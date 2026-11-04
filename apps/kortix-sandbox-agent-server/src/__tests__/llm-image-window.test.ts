@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { applyInlineImageWindow, imageWindowFromEnv, isChatRequestPath } from '@/services/llm-proxy/llm-image-window';
+import { applyInlineImageWindow, applyInlineImageWindowToText, imageWindowFromEnv, isChatRequestPath } from '@/services/llm-proxy/llm-image-window';
 
 const img = (n: number) => ({
   type: 'image_url',
@@ -87,5 +87,58 @@ describe('applyInlineImageWindow (in-sandbox)', () => {
     expect(isChatRequestPath('/v1/llm/messages')).toBe(true);
     expect(isChatRequestPath('/v1/llm/responses')).toBe(true);
     expect(isChatRequestPath('/v1/llm/models')).toBe(false);
+  });
+});
+
+describe('applyInlineImageWindowToText: the same window on the raw JSON, without parsing it', () => {
+  const window = { maxImages: 20, keepOnOverflow: 12 };
+  const anthropicImage = (n: number) => ({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: `iVBOR${'A'.repeat(50)}${n}==` }, ...(n % 3 ? {} : { cache_control: { type: 'ephemeral' } }) });
+  // Shapes Claude Code and pi send: images at the message level and inside tool results,
+  // text with quotes and escapes, tool schemas, nested arrays.
+  const body = (images: number) => ({
+    model: 'claude-opus-4',
+    stream: true,
+    system: [{ type: 'text', text: 'You are "Claude".\nUse \\ and é freely: {"type":"image"}' }],
+    tools: [{ name: 'read', input_schema: { type: 'object', properties: { path: { type: 'string' }, list: { type: 'array', items: [1, 2.5e3, true, null] } } } }],
+    messages: Array.from({ length: images }, (_, n) => [
+      { role: 'user', content: [{ type: 'text', text: `shot ${n} "quoted" \\ {"type":"image"}` }, anthropicImage(n)] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: `t${n}`, name: 'read', input: { path: `s${n}.png` } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: `t${n}`, content: [anthropicImage(1000 + n)] }] },
+    ]).flat(),
+  });
+
+  test('equals the parse-based window on every count, for pretty and compact JSON', () => {
+    for (let images = 0; images <= 45; images++) {
+      for (const space of [undefined, 2]) {
+        const raw = JSON.stringify(body(images), null, space);
+        const expected = JSON.parse(raw);
+        const counted = applyInlineImageWindow(expected, window);
+        const result = applyInlineImageWindowToText(raw, window);
+        expect(result).not.toBeNull();
+        expect({ total: result!.total, dropped: result!.dropped }).toEqual(counted);
+        expect(JSON.parse(result!.text)).toEqual(expected);
+        if (counted.dropped === 0) expect(result!.text).toBe(raw);
+      }
+    }
+  });
+
+  test('the Responses API shape, and a body it cannot read falls back (null)', () => {
+    const responses = JSON.stringify({ input: Array.from({ length: 25 }, (_, n) => ({ role: 'user', content: [{ type: 'input_image', image_url: `data:${n}` }] })) });
+    const expected = JSON.parse(responses);
+    expect(applyInlineImageWindowToText(responses, window)!.dropped).toBe(applyInlineImageWindow(expected, window).dropped);
+    expect(JSON.parse(applyInlineImageWindowToText(responses, window)!.text)).toEqual(expected);
+    expect(applyInlineImageWindowToText('{"messages":[],"messages":[]}', window)).toBeNull();
+    expect(applyInlineImageWindowToText('{"mess\\u0061ges":[]}', window)).toBeNull();
+    expect(applyInlineImageWindowToText('[1,2]', window)).toBeNull();
+    expect(applyInlineImageWindowToText('{"messages":[{"content":[{"type":"image"', window)).toBeNull();
+  });
+
+  test('a 15 MB request with 36 screenshots windows fast', () => {
+    const shot = 'A'.repeat(400_000);
+    const raw = JSON.stringify({ model: 'x', messages: Array.from({ length: 36 }, () => ({ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot } }] })) });
+    const started = performance.now();
+    const result = applyInlineImageWindowToText(raw, window)!;
+    expect(result.dropped).toBe(16);
+    expect(performance.now() - started).toBeLessThan(150);
   });
 });
