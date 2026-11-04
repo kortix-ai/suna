@@ -7,7 +7,16 @@ import { localTestDatabaseUrl } from '../__tests__/helpers/integration-fixtures'
 import { interleave } from '../__tests__/helpers/interleave';
 import { EDITOR_BLOCK_PUSHES, EDITOR_BLOCK_SEED } from './doc-editor-updates.fixture';
 import { gcArtifactDocs } from './doc-gc';
-import { DOC_COMPACT_ROWS, DOC_MAX_BYTES_TOTAL, DOC_PAGE_MAX_BYTES, DOC_PAGE_MAX_STRUCTS } from './doc-rules';
+import {
+  DOC_COMPACT_ROWS,
+  DOC_INDEX_ROW_BYTES,
+  DOC_MAX_BYTES_TOTAL,
+  DOC_MAX_CLIENTS,
+  DOC_MAX_ROOTS,
+  DOC_PAGE_MAX_BYTES,
+  DOC_PAGE_MAX_STRUCTS,
+  DOC_UPDATE_ROW_BYTES,
+} from './doc-rules';
 import { placeDocUpdate } from './doc-scan';
 import {
   ArtifactDocError,
@@ -157,7 +166,8 @@ describe('compaction', () => {
     expect(after.latestSeq).toBe(latest);
     expect(after.updates.map((u) => u.seq)).toEqual([latest]);
     const [total] = await db.select({ bytesTotal: artifactDocState.bytesTotal }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId));
-    expect(total!.bytesTotal).toBe(after.updates[0]!.bytes.length);
+    // One row left: its bytes and one row charge.
+    expect(total!.bytesTotal).toBe(after.updates[0]!.bytes.length + DOC_UPDATE_ROW_BYTES);
     const fresh = new Y.Doc();
     Y.applyUpdate(fresh, after.updates[0]!.bytes);
     expect(state(fresh)).toEqual(state(source));
@@ -227,14 +237,14 @@ describe('lease and flush', () => {
 });
 
 describe('size', () => {
-  test(`bytes_total counts the stored bytes; a push past ${DOC_MAX_BYTES_TOTAL / 1048576} MiB → 413 doc_too_large and stores nothing`, async () => {
+  test(`bytes_total counts the stored bytes and a fixed cost per row; a push past ${DOC_MAX_BYTES_TOTAL / 1048576} MiB → 413 doc_too_large and stores nothing`, async () => {
     const artifactId = await newDoc();
     await seedArtifactDoc(artifactId, { update: Buffer.from([1, 2, 3]), markdown: '', version: 'v1', userId });
     await appendArtifactDocUpdate(artifactId, { update: Buffer.alloc(10, 7), userId });
     const total = async () => (await db.select({ b: artifactDocState.bytesTotal }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId)))[0]!.b;
-    expect(await total()).toBe(13);
-    // Fill to 4 bytes under the cap without writing 16 MiB.
-    await db.update(artifactDocState).set({ bytesTotal: DOC_MAX_BYTES_TOTAL - 4 }).where(eq(artifactDocState.artifactId, artifactId));
+    expect(await total()).toBe(13 + 2 * DOC_UPDATE_ROW_BYTES);
+    // Fill to one 4-byte row under the cap without writing 16 MiB.
+    await db.update(artifactDocState).set({ bytesTotal: DOC_MAX_BYTES_TOTAL - 4 - DOC_UPDATE_ROW_BYTES }).where(eq(artifactDocState.artifactId, artifactId));
     await rejects(appendArtifactDocUpdate(artifactId, { update: Buffer.alloc(5, 1), userId }), 413, 'doc_too_large');
     expect((await readArtifactDoc(artifactId, { after: 0, base: false })).latestSeq).toBe(2);
     expect((await appendArtifactDocUpdate(artifactId, { update: Buffer.alloc(4, 1), userId })).seq).toBe(3);
@@ -254,7 +264,7 @@ describe('compaction failure', () => {
     }
     await db.update(artifactDocState).set({
       nextSeq: DOC_COMPACT_ROWS + 2,
-      bytesTotal: sql`(select sum(octet_length(bytes))::bigint from kortix.artifact_doc_updates where artifact_id = ${artifactId}::uuid)`,
+      bytesTotal: sql`(select sum(octet_length(bytes) + ${DOC_UPDATE_ROW_BYTES})::bigint from kortix.artifact_doc_updates where artifact_id = ${artifactId}::uuid)`,
     }).where(eq(artifactDocState.artifactId, artifactId));
     return artifactId;
   }
@@ -274,7 +284,7 @@ describe('compaction failure', () => {
     expect(state!.at).toBeNull();
     // A quarantined row stays where it was (it is still served; a client that cannot apply it resets the doc).
     expect((await readArtifactDoc(artifactId, { after: 0, base: false })).updates.map((u) => u.seq)).toEqual([250, 300, 450, DOC_COMPACT_ROWS + 1]);
-    const [stored] = await db.select({ total: sql<number>`sum(octet_length(${artifactDocUpdates.bytes}))::int` }).from(artifactDocUpdates).where(eq(artifactDocUpdates.artifactId, artifactId));
+    const [stored] = await db.select({ total: sql<number>`sum(octet_length(${artifactDocUpdates.bytes}) + ${DOC_UPDATE_ROW_BYTES})::int` }).from(artifactDocUpdates).where(eq(artifactDocUpdates.artifactId, artifactId));
     expect(state!.bytes).toBe(Number(stored!.total));
     // Quarantined rows do not count toward the next compaction.
     expect(await compactArtifactDoc(artifactId)).toEqual({ done: false, reason: 'below_threshold' });
@@ -636,4 +646,99 @@ describe('the root index: an item placed by its origin at the root must be an XM
     expect(await reason(appendArtifactDocUpdate(artifactId, { ...placed(EDITOR_BLOCK_PUSHES[1]!.update, 'push'), userId })))
       .toEqual({ status: 400, code: 'invalid_update', reason: 'clock_gap' });
   });
+});
+
+describe('the per-doc budget charges every row a writer makes the server store', () => {
+  /** An update as the route passes it. */
+  const placed = (update: Uint8Array | string, kind: 'push' | 'seed') => {
+    const bytes = typeof update === 'string' ? new Uint8Array(Buffer.from(update, 'base64')) : update;
+    const scanned = placeDocUpdate(bytes, kind);
+    if (!scanned.ok) throw new Error(`scan refused: ${scanned.reason}`);
+    return { update: Buffer.from(bytes), structs: scanned.structs, placement: scanned.placement };
+  };
+  const varuint = (n: number) => {
+    const out: number[] = [];
+    while (n > 0x7f) {
+      out.push(0x80 | (n & 0x7f));
+      n = Math.floor(n / 128);
+    }
+    out.push(n);
+    return out;
+  };
+  const SEED_CLIENT = 9;
+  /** Client 9: a paragraph at the root (9:0) and an XML text inside it (9:1). */
+  const seed = new Uint8Array([1, 2, SEED_CLIENT, 0, 7, 1, 7, ...Buffer.from('default'), 3, 9, ...Buffer.from('paragraph'), 7, 0, SEED_CLIENT, 0, 6, 0]);
+  /** `count` empty root elements `<p>` by `client` from `clock`, each placed after the previous one (the first after `after`). */
+  const rootRun = (client: number, clock: number, count: number, after: [number, number]) => {
+    const out = [1, ...varuint(count), ...varuint(client), ...varuint(clock)];
+    for (let i = 0; i < count; i++) {
+      const [c, k] = i === 0 ? after : [client, clock + i - 1];
+      out.push(0x87, ...varuint(c), ...varuint(k), 3, 1, 0x70);
+    }
+    out.push(0);
+    return new Uint8Array(out);
+  };
+  /** One character inside 9:1 (the parent named by ID: not at the root), by `client` at `clock`. */
+  const textBy = (client: number, clock = 0) => new Uint8Array([1, 1, ...varuint(client), clock, 4, 0, SEED_CLIENT, 1, 1, 0x78, 0]);
+
+  /** bytes_total, and what the stored rows cost at the documented per-row prices. */
+  const accounted = async (artifactId: string) => {
+    const [row] = await db.execute(sql`select s.bytes_total::bigint as total,
+        (select coalesce(sum(octet_length(u.bytes) + ${DOC_UPDATE_ROW_BYTES}), 0) from kortix.artifact_doc_updates u where u.artifact_id = s.artifact_id)
+        + (select count(*) from kortix.artifact_doc_roots r where r.artifact_id = s.artifact_id) * ${DOC_INDEX_ROW_BYTES}
+        + (select count(*) from kortix.artifact_doc_clients c where c.artifact_id = s.artifact_id) * ${DOC_INDEX_ROW_BYTES} as stored
+      from kortix.artifact_doc_state s where s.artifact_id = ${artifactId}::uuid`) as unknown as Array<{ total: string; stored: string }>;
+    return row ? { total: Number(row.total), stored: Number(row.stored) } : null;
+  };
+  const reason = async (run: Promise<unknown>) => {
+    const error = (await run.then(() => null, (e: unknown) => e)) as ArtifactDocError | null;
+    return error && { status: error.status, code: error.code };
+  };
+
+  test(`a writer that fills the root index past ${DOC_MAX_ROOTS} items → 413 doc_too_large, and nothing of that push is stored`, async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { ...placed(seed, 'seed'), markdown: '', version: 'v1', userId });
+    const run = 30_000;
+    // ~8 bytes per root element: one push of 30,000 is ~240 KB, under the 512 KiB push cap.
+    expect((await appendArtifactDocUpdate(artifactId, { ...placed(rootRun(5, 0, run, [SEED_CLIENT, 0]), 'push'), userId })).seq).toBe(2);
+    const before = await accounted(artifactId);
+    expect(await reason(appendArtifactDocUpdate(artifactId, { ...placed(rootRun(5, run, run, [5, run - 1]), 'push'), userId })))
+      .toEqual({ status: 413, code: 'doc_too_large' });
+    expect((await readArtifactDoc(artifactId, { after: 0, base: false })).latestSeq).toBe(2);
+    expect(await accounted(artifactId)).toEqual(before);
+    const [roots] = await db.execute(sql`select count(*)::int as n from kortix.artifact_doc_roots where artifact_id = ${artifactId}::uuid`) as unknown as Array<{ n: number }>;
+    expect(roots!.n).toBe(run + 1);
+  }, 60_000);
+
+  test(`past ${DOC_MAX_CLIENTS} writing clients a new client’s push → 413 doc_too_large; a client already indexed still pushes`, async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { ...placed(seed, 'seed'), markdown: '', version: 'v1', userId });
+    // The seed's client is one; 999 more fill the index.
+    for (let client = 100; client < 100 + DOC_MAX_CLIENTS - 1; client++) {
+      await appendArtifactDocUpdate(artifactId, { ...placed(textBy(client), 'push'), userId });
+    }
+    expect(await reason(appendArtifactDocUpdate(artifactId, { ...placed(textBy(5_000), 'push'), userId }))).toEqual({ status: 413, code: 'doc_too_large' });
+    expect((await appendArtifactDocUpdate(artifactId, { ...placed(textBy(100, 1), 'push'), userId })).seq).toBe(DOC_MAX_CLIENTS + 1);
+    const accounting = await accounted(artifactId);
+    expect(accounting!.total).toBe(accounting!.stored);
+  }, 120_000);
+
+  test('bytes_total equals the stored update rows plus index rows at their per-row cost: after a seed, real editor pushes, compaction, and a reset and re-seed', async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { ...placed(EDITOR_BLOCK_SEED, 'seed'), markdown: '', version: 'v1', userId });
+    let accounting = await accounted(artifactId);
+    expect(accounting!.total).toBe(accounting!.stored);
+    for (const push of EDITOR_BLOCK_PUSHES) await appendArtifactDocUpdate(artifactId, { ...placed(push.update, 'push'), userId });
+    for (let i = 0; i < DOC_COMPACT_ROWS; i++) await appendArtifactDocUpdate(artifactId, { ...placed(new Uint8Array([0, 0]), 'push'), userId });
+    accounting = await accounted(artifactId);
+    expect(accounting!.total).toBe(accounting!.stored);
+    expect((await compactArtifactDoc(artifactId)).done).toBe(true);
+    accounting = await accounted(artifactId);
+    expect(accounting!.total).toBe(accounting!.stored);
+    await resetArtifactDoc(artifactId, { holder: 'tab-a', userId });
+    expect(await accounted(artifactId)).toBeNull();
+    await seedArtifactDoc(artifactId, { ...placed(EDITOR_BLOCK_SEED, 'seed'), markdown: '', version: 'v1', userId });
+    accounting = await accounted(artifactId);
+    expect(accounting!.total).toBe(accounting!.stored);
+  }, 60_000);
 });

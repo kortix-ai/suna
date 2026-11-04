@@ -1,5 +1,5 @@
 {
-  "id": "135c91a6-1179-4551-82ab-5aaa0f4e2b36",
+  "id": "219287e1-d58d-4083-95c2-fc93a98294a0",
   "prevId": "5f42472b-5a72-45db-942f-7eb1a1259102",
   "version": "7",
   "dialect": "postgresql",
@@ -5314,6 +5314,20 @@
           "notNull": true,
           "default": 0
         },
+        "root_rows": {
+          "name": "root_rows",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "client_rows": {
+          "name": "client_rows",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "compaction_failed_at": {
           "name": "compaction_failed_at",
           "type": "timestamp with time zone",
@@ -5433,6 +5447,10 @@
         "artifact_doc_state_pending_writers_check": {
           "name": "artifact_doc_state_pending_writers_check",
           "value": "jsonb_typeof(\"kortix\".\"artifact_doc_state\".\"pending_writers\") = 'object'"
+        },
+        "artifact_doc_state_index_rows_check": {
+          "name": "artifact_doc_state_index_rows_check",
+          "value": "\"kortix\".\"artifact_doc_state\".\"root_rows\" >= 0 and \"kortix\".\"artifact_doc_state\".\"client_rows\" >= 0"
         }
       },
       "isRLSEnabled": true

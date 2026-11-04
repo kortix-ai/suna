@@ -34,8 +34,36 @@ export const DOC_COMPACT_WINDOW_BYTES = 256 * 1024;
 export const DOC_COMPACT_WINDOW_STRUCTS = 50_000;
 /** After a compaction that threw (or would pass the page limit), none for this long. */
 export const DOC_COMPACTION_BACKOFF_MS = 10 * 60_000;
-/** Stored update bytes per Artifact; past it a push answers 413 `doc_too_large` and clients fall back to autosave. */
+/**
+ * What one live doc may store, in bytes (`bytes_total`); past it a push or a
+ * seed answers 413 `doc_too_large` and clients fall back to autosave. Charged:
+ * each update row's bytes plus `DOC_UPDATE_ROW_BYTES`, and
+ * `DOC_INDEX_ROW_BYTES` per row of the root and clients indexes.
+ */
 export const DOC_MAX_BYTES_TOTAL = 16 * 1024 * 1024;
+/**
+ * Bytes charged per stored update row beyond its update bytes: the Postgres
+ * footprint of the row and its primary-key entry. Measured 2026-11-04 with
+ * `pg_total_relation_size` over 100,000 rows of a 2-byte update: 150.4 bytes
+ * per row, so ~148 beyond the bytes. Rounded up.
+ */
+export const DOC_UPDATE_ROW_BYTES = 160;
+/**
+ * Bytes charged per row of `artifact_doc_roots` and of `artifact_doc_clients`.
+ * Measured the same way: 110.5 and 101.3 bytes per row with the primary key.
+ * Rounded up.
+ */
+export const DOC_INDEX_ROW_BYTES = 128;
+/**
+ * Root-level items one live doc indexes at most (every block ever placed at
+ * the root in this epoch, deleted ones included); past it → 413
+ * `doc_too_large`. A 1 MiB Markdown file (the flush limit) holds this many
+ * blocks only at ~21 bytes per block. The recorded editor fixtures index
+ * 19 and 16 root items.
+ */
+export const DOC_MAX_ROOTS = 50_000;
+/** Yjs clients (tab sessions that wrote) one live doc indexes at most; past it → 413 `doc_too_large`. */
+export const DOC_MAX_CLIENTS = 1_000;
 /** Pushed bytes per person per API process. */
 export const DOC_BYTE_RATE = { bytesPerSecond: 2 * 1024 * 1024, burstBytes: 4 * 1024 * 1024 } as const;
 /** The GC job deletes a doc state idle this long, with its lease free or expired this long, and everything flushed. */

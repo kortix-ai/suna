@@ -9141,7 +9141,10 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () =>
  *                     person, and when the lease ends (TTL 15 s)
  *   epoch             new on every seed: a client that sees another epoch
  *                     rebuilds its doc (a reset or the GC job deleted the state)
- *   bytes_total       the stored update bytes; capped (413 doc_too_large)
+ *   bytes_total       what the doc stores: each update row's bytes plus a
+ *                     fixed row cost, and a fixed cost per root and client
+ *                     index row (apps/api/src/artifacts/doc-rules.ts);
+ *                     capped (413 doc_too_large)
  *   compaction_failed_at  the last compaction that threw or would pass the
  *                     page limit; none again for 10 min
  *   pending_writers   who pushed since the flush that last named them, with
@@ -9151,6 +9154,10 @@ export const artifactDocState = kortixSchema.table('artifact_doc_state', {
   artifactId: uuid('artifact_id').primaryKey(),
   epoch: uuid('epoch').defaultRandom().notNull(),
   bytesTotal: bigint('bytes_total', { mode: 'number' }).default(0).notNull(),
+  /** Rows of `artifact_doc_roots` for this doc (capped; each charged to `bytes_total`). */
+  rootRows: integer('root_rows').default(0).notNull(),
+  /** Rows of `artifact_doc_clients` for this doc (capped; each charged to `bytes_total`). */
+  clientRows: integer('client_rows').default(0).notNull(),
   compactionFailedAt: timestamp('compaction_failed_at', { withTimezone: true }),
   /** A push found more rows than the compaction threshold: the worker compacts this doc (`doc-compaction.ts`). */
   compactionRequestedAt: timestamp('compaction_requested_at', { withTimezone: true }),
@@ -9174,6 +9181,7 @@ export const artifactDocState = kortixSchema.table('artifact_doc_state', {
   check('artifact_doc_state_seq_check', sql`${table.flushedSeq} >= 0 and ${table.flushedSeq} < ${table.nextSeq}`),
   check('artifact_doc_state_lease_holder_check', sql`${table.leaseHolder} is null or char_length(${table.leaseHolder}) between 1 and 64`),
   check('artifact_doc_state_pending_writers_check', sql`jsonb_typeof(${table.pendingWriters}) = 'object'`),
+  check('artifact_doc_state_index_rows_check', sql`${table.rootRows} >= 0 and ${table.clientRows} >= 0`),
   // The target of `artifact_doc_updates`' (artifact_id, epoch) foreign key.
   unique('artifact_doc_state_artifact_epoch_key').on(table.artifactId, table.epoch),
 ]).enableRLS();

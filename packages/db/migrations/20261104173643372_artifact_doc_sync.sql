@@ -41,6 +41,8 @@ CREATE TABLE "kortix"."artifact_doc_state" (
 	"artifact_id" uuid PRIMARY KEY NOT NULL,
 	"epoch" uuid DEFAULT gen_random_uuid() NOT NULL,
 	"bytes_total" bigint DEFAULT 0 NOT NULL,
+	"root_rows" integer DEFAULT 0 NOT NULL,
+	"client_rows" integer DEFAULT 0 NOT NULL,
 	"compaction_failed_at" timestamp with time zone,
 	"compaction_requested_at" timestamp with time zone,
 	"pending_writers" jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -56,7 +58,8 @@ CREATE TABLE "kortix"."artifact_doc_state" (
 	CONSTRAINT "artifact_doc_state_artifact_epoch_key" UNIQUE("artifact_id","epoch"),
 	CONSTRAINT "artifact_doc_state_seq_check" CHECK ("kortix"."artifact_doc_state"."flushed_seq" >= 0 and "kortix"."artifact_doc_state"."flushed_seq" < "kortix"."artifact_doc_state"."next_seq"),
 	CONSTRAINT "artifact_doc_state_lease_holder_check" CHECK ("kortix"."artifact_doc_state"."lease_holder" is null or char_length("kortix"."artifact_doc_state"."lease_holder") between 1 and 64),
-	CONSTRAINT "artifact_doc_state_pending_writers_check" CHECK (jsonb_typeof("kortix"."artifact_doc_state"."pending_writers") = 'object')
+	CONSTRAINT "artifact_doc_state_pending_writers_check" CHECK (jsonb_typeof("kortix"."artifact_doc_state"."pending_writers") = 'object'),
+	CONSTRAINT "artifact_doc_state_index_rows_check" CHECK ("kortix"."artifact_doc_state"."root_rows" >= 0 and "kortix"."artifact_doc_state"."client_rows" >= 0)
 );
 --> statement-breakpoint
 ALTER TABLE "kortix"."artifact_doc_state" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint

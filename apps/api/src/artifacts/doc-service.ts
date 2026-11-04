@@ -23,12 +23,16 @@ import { db } from '../shared/db';
 import {
   DOC_COMPACTION_BACKOFF_MS,
   DOC_COMPACT_ROWS,
-  DOC_MAX_CONTRIBUTORS,
+  DOC_INDEX_ROW_BYTES,
   DOC_MAX_BYTES_TOTAL,
+  DOC_MAX_CLIENTS,
+  DOC_MAX_CONTRIBUTORS,
+  DOC_MAX_ROOTS,
   DOC_PAGE_MAX_BYTES,
   DOC_PAGE_MAX_ROWS,
   DOC_PAGE_MAX_STRUCTS,
   DOC_UPDATE_MAX_BYTES,
+  DOC_UPDATE_ROW_BYTES,
   compactionWindow,
   decideFlush,
   decideLease,
@@ -97,9 +101,21 @@ const bigints = (values: readonly number[]) => `{${values.join(',')}}`;
  * root-level IDs and its client's clock. 400 `invalid_update` with the
  * `reason` otherwise. Without `placement` (a caller that did not scan the
  * bytes) nothing is checked or indexed.
+ *
+ * The index rows are the doc's storage too: each new row costs
+ * `DOC_INDEX_ROW_BYTES` of `budget.bytesTotal` (the doc's total with this
+ * update's row already charged), the roots stay within `DOC_MAX_ROOTS` and the
+ * clients within `DOC_MAX_CLIENTS`; otherwise 413 `doc_too_large` and nothing
+ * is written. Returns the rows added and their cost, for the state row.
  */
-async function placeRoots(tx: Tx, artifactId: string, placement: DocPlacement | undefined): Promise<void> {
-  if (!placement || placement.client === null) return;
+async function placeRoots(
+  tx: Tx,
+  artifactId: string,
+  placement: DocPlacement | undefined,
+  budget: { bytesTotal: number; rootRows: number; clientRows: number },
+): Promise<{ roots: number; clients: number; bytes: number }> {
+  const none = { roots: 0, clients: 0, bytes: 0 };
+  if (!placement || placement.client === null) return none;
   const own = placement.client;
   const [current] = await tx.select({ nextClock: artifactDocClients.nextClock }).from(artifactDocClients)
     .where(and(eq(artifactDocClients.artifactId, artifactId), eq(artifactDocClients.client, own)));
@@ -139,18 +155,39 @@ async function placeRoots(tx: Tx, artifactId: string, placement: DocPlacement | 
     storedRoots,
   });
   if (!decision.ok) throw new ArtifactDocError(400, ROOT_REFUSALS[decision.reason], 'invalid_update', { reason: decision.reason });
-  if (decision.roots.length > 0) {
-    await tx.execute(sql`insert into kortix.artifact_doc_roots (artifact_id, client, clock)
-      select ${artifactId}::uuid, ${String(own)}::bigint, unnest(${bigints(decision.roots)}::bigint[])
-      on conflict do nothing`);
+  const newClient = !current && decision.nextClock > nextClock ? 1 : 0;
+  if (budget.rootRows + decision.roots.length > DOC_MAX_ROOTS) {
+    throw new ArtifactDocError(413, `This doc's live state holds at most ${DOC_MAX_ROOTS} blocks at its root: save the file instead`, 'doc_too_large');
   }
+  if (budget.clientRows + newClient > DOC_MAX_CLIENTS) {
+    throw new ArtifactDocError(413, `This doc's live state holds the edits of at most ${DOC_MAX_CLIENTS} tabs: save the file instead`, 'doc_too_large');
+  }
+  if (budget.bytesTotal + (decision.roots.length + newClient) * DOC_INDEX_ROW_BYTES > DOC_MAX_BYTES_TOTAL) {
+    throw new ArtifactDocError(413, `This doc's live state holds at most ${DOC_MAX_BYTES_TOTAL / 1048576} MiB`, 'doc_too_large');
+  }
+  let addedRoots = 0;
+  if (decision.roots.length > 0) {
+    // Counted from what was inserted: the accounting matches the rows exactly.
+    const inserted = await tx.execute(sql`with added as (
+        insert into kortix.artifact_doc_roots (artifact_id, client, clock)
+        select ${artifactId}::uuid, ${String(own)}::bigint, unnest(${bigints(decision.roots)}::bigint[])
+        on conflict do nothing
+        returning 1)
+      select count(*)::int as n from added`);
+    addedRoots = (inserted as unknown as Array<{ n: number }>)[0]?.n ?? 0;
+  }
+  let addedClients = 0;
   if (decision.nextClock > nextClock) {
-    await tx.insert(artifactDocClients).values({ artifactId, client: own, nextClock: decision.nextClock })
+    const [upserted] = await tx.insert(artifactDocClients).values({ artifactId, client: own, nextClock: decision.nextClock })
       .onConflictDoUpdate({
         target: [artifactDocClients.artifactId, artifactDocClients.client],
         set: { nextClock: sql`greatest(${artifactDocClients.nextClock}, excluded.next_clock)` },
-      });
+      })
+      // xmax = 0: this statement inserted the row (an update of an existing row sets it).
+      .returning({ inserted: sql<boolean>`(xmax = 0)` });
+    addedClients = upserted?.inserted ? 1 : 0;
   }
+  return { roots: addedRoots, clients: addedClients, bytes: (addedRoots + addedClients) * DOC_INDEX_ROW_BYTES };
 }
 
 export interface ArtifactDocRead {
@@ -251,16 +288,24 @@ export async function seedArtifactDoc(
 ): Promise<{ seq: number; epoch: string }> {
   return db.transaction(async (tx) => {
     await lockArtifact(tx, artifactId);
+    // The seed's row is charged like any update row (`DOC_UPDATE_ROW_BYTES`); its index rows are added below.
     const [created] = await tx.insert(artifactDocState).values({
       artifactId,
-      bytesTotal: input.update.length,
+      bytesTotal: input.update.length + DOC_UPDATE_ROW_BYTES,
       nextSeq: 2,
       flushedSeq: 1,
       flushedVersion: input.version,
       flushedMarkdown: input.markdown,
     }).onConflictDoNothing({ target: artifactDocState.artifactId }).returning({ epoch: artifactDocState.epoch });
     if (!created) throw new ArtifactDocError(409, 'This doc already has a live state: read it instead', 'doc_seeded');
-    await placeRoots(tx, artifactId, input.placement);
+    const index = await placeRoots(tx, artifactId, input.placement, { bytesTotal: input.update.length + DOC_UPDATE_ROW_BYTES, rootRows: 0, clientRows: 0 });
+    if (index.bytes > 0) {
+      await tx.update(artifactDocState).set({
+        bytesTotal: sql`${artifactDocState.bytesTotal} + ${index.bytes}`,
+        rootRows: index.roots,
+        clientRows: index.clients,
+      }).where(eq(artifactDocState.artifactId, artifactId));
+    }
     await tx.insert(artifactDocUpdates).values({ artifactId, seq: 1, epoch: created.epoch, bytes: input.update, createdBy: input.userId, structs: input.structs ?? 0 });
     return { seq: 1, epoch: created.epoch };
   });
@@ -278,18 +323,26 @@ export async function appendArtifactDocUpdate(
 ): Promise<{ seq: number; rows: number }> {
   return db.transaction(async (tx) => {
     await lockArtifact(tx, artifactId);
-    const [state] = await tx.select({ epoch: artifactDocState.epoch, bytesTotal: artifactDocState.bytesTotal })
-      .from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId)).for('update');
+    const [state] = await tx.select({
+      epoch: artifactDocState.epoch,
+      bytesTotal: artifactDocState.bytesTotal,
+      rootRows: artifactDocState.rootRows,
+      clientRows: artifactDocState.clientRows,
+    }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId)).for('update');
     if (!state) throw notSeeded();
     assertEpoch(state.epoch, input.epoch);
-    if (state.bytesTotal + input.update.length > DOC_MAX_BYTES_TOTAL) {
-      throw new ArtifactDocError(413, `This doc's live state holds at most ${DOC_MAX_BYTES_TOTAL / 1048576} MiB of updates`, 'doc_too_large');
+    // The update's bytes and its row (`DOC_UPDATE_ROW_BYTES`): a stream of tiny pushes is charged what it stores.
+    const charge = input.update.length + DOC_UPDATE_ROW_BYTES;
+    if (state.bytesTotal + charge > DOC_MAX_BYTES_TOTAL) {
+      throw new ArtifactDocError(413, `This doc's live state holds at most ${DOC_MAX_BYTES_TOTAL / 1048576} MiB`, 'doc_too_large');
     }
-    await placeRoots(tx, artifactId, input.placement);
+    const index = await placeRoots(tx, artifactId, input.placement, { bytesTotal: state.bytesTotal + charge, rootRows: state.rootRows, clientRows: state.clientRows });
     const [next] = await tx.update(artifactDocState)
       .set({
         nextSeq: sql`${artifactDocState.nextSeq} + 1`,
-        bytesTotal: sql`${artifactDocState.bytesTotal} + ${input.update.length}`,
+        bytesTotal: sql`${artifactDocState.bytesTotal} + ${charge + index.bytes}`,
+        rootRows: sql`${artifactDocState.rootRows} + ${index.roots}`,
+        clientRows: sql`${artifactDocState.clientRows} + ${index.clients}`,
         // Who wrote, with this push's seq (the old next_seq): named once, by the flush that covers it (`settleWriters`).
         pendingWriters: sql`case when (${artifactDocState.pendingWriters} -> ${input.userId}::text) is not null
             or (select count(*) from jsonb_object_keys(${artifactDocState.pendingWriters})) < ${DOC_MAX_CONTRIBUTORS}
@@ -438,7 +491,8 @@ export async function compactArtifactDoc(artifactId: string): Promise<ArtifactDo
     await tx.delete(artifactDocUpdates)
       .where(and(live, gte(artifactDocUpdates.seq, fromSeq), lt(artifactDocUpdates.seq, toSeq)));
     await tx.update(artifactDocState)
-      .set({ bytesTotal: sql`greatest(0, ${artifactDocState.bytesTotal} - ${removed} + ${merged.length})` })
+      // `rows.length` rows (their bytes and row charges) become one row; the index is unchanged.
+      .set({ bytesTotal: sql`greatest(0, ${artifactDocState.bytesTotal} - ${removed + (rows.length - 1) * DOC_UPDATE_ROW_BYTES} + ${merged.length})` })
       .where(and(eq(artifactDocState.artifactId, artifactId), eq(artifactDocState.epoch, epoch)));
     return { done: true, fromSeq, toSeq, rows: rows.length, ...(quarantined.length > 0 ? { quarantined } : {}) };
   });

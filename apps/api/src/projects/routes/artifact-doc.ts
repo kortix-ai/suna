@@ -24,10 +24,14 @@ import { publishArtifactLiveChange } from '../../artifacts/live-publish';
 import {
   DOC_BYTE_RATE,
   DOC_MARKDOWN_MAX_BYTES,
+  DOC_INDEX_ROW_BYTES,
   DOC_MAX_BYTES_TOTAL,
+  DOC_MAX_CLIENTS,
+  DOC_MAX_ROOTS,
   DOC_PAGE_MAX_BYTES,
   DOC_SEED_UPDATE_MAX_BYTES,
   DOC_UPDATE_MAX_BYTES,
+  DOC_UPDATE_ROW_BYTES,
   DocByteBudget,
   DocReadAuditThrottle,
   isIncrementalDocPull,
@@ -218,7 +222,7 @@ export function registerArtifactDocRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'post', path: '/{projectId}/artifacts/{artifactId}/doc/updates', tags: ['artifacts'],
     summary: 'Push one Yjs update to the live document',
-    description: `Appends the update with the next seq and pings every live socket on the Artifact with \`changed {what: "doc", version: "<seq>"}\`. A push carries the structs of one client at most (a tab pushes only its own changes). ${CHECKS} One update is at most ${DOC_UPDATE_MAX_BYTES / 1024} KiB decoded (413 \`update_too_large\`); past ${DOC_MAX_BYTES_TOTAL / MiB} MiB stored for the doc → 413 \`doc_too_large\` (fall back to saving the file); 409 \`doc_not_seeded\` before the seed or after a reset; 409 \`epoch_mismatch\` (with the current \`epoch\`) when \`epoch\` names another epoch; 429 \`rate_limited\` past ${PUSH_POLICY.limit / (PUSH_POLICY.windowMs / 1000)} pushes or ${DOC_BYTE_RATE.bytesPerSecond / MiB} MiB a second per person.`,
+    description: `Appends the update with the next seq and pings every live socket on the Artifact with \`changed {what: "doc", version: "<seq>"}\`. A push carries the structs of one client at most (a tab pushes only its own changes). ${CHECKS} One update is at most ${DOC_UPDATE_MAX_BYTES / 1024} KiB decoded (413 \`update_too_large\`); past ${DOC_MAX_BYTES_TOTAL / MiB} MiB stored for the doc (each update's bytes plus ${DOC_UPDATE_ROW_BYTES} per stored row, and ${DOC_INDEX_ROW_BYTES} per row of its root and clients indexes), past ${DOC_MAX_ROOTS} blocks placed at the root, or past ${DOC_MAX_CLIENTS} writing tabs (Yjs clients) → 413 \`doc_too_large\` (fall back to saving the file); the same caps apply to a seed; 409 \`doc_not_seeded\` before the seed or after a reset; 409 \`epoch_mismatch\` (with the current \`epoch\`) when \`epoch\` names another epoch; 429 \`rate_limited\` past ${PUSH_POLICY.limit / (PUSH_POLICY.windowMs / 1000)} pushes or ${DOC_BYTE_RATE.bytesPerSecond / MiB} MiB a second per person.`,
     ...auth,
     request: { params: ArtifactParams, body: body(z.object({ update: Base64, epoch: Epoch })) },
     responses: { 200: json(z.object({ seq: z.number().int() }), 'Appended'), ...responses },
