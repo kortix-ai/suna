@@ -21303,7 +21303,8 @@
       "aboutDescription": "Acerca de esta descripción",
       "senderUnavailable": "No se pudo cargar la cuenta de envío. Revisa la fila De.",
       "quoted": "«{text}»"
-    }
+    },
+    "promptHistory": "Historial {index}/{total}"
   },
   "commandPalette": {
     "title": "Paleta de comandos",

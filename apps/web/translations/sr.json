@@ -21303,7 +21303,8 @@
       "aboutDescription": "О овом опису",
       "senderUnavailable": "Налог пошиљаоца није могуће учитати. Проверите ред Од.",
       "quoted": "„{text}“"
-    }
+    },
+    "promptHistory": "Историја {index}/{total}"
   },
   "commandPalette": {
     "title": "Палета команди",
