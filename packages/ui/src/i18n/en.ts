@@ -1995,7 +1995,8 @@ const catalog = {
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # key} other {JSON · # keys}}",
       "jsonItems": "{count, plural, one {JSON · # item} other {JSON · # items}}",
-      "failedSentence": "The workflow stopped before it finished."
+      "failedSentence": "The workflow stopped before it finished.",
+      "runningCount": "{count} running"
     },
     "agent": {
       "backgroundWorking": "Working in the background",

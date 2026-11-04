@@ -3202,7 +3202,8 @@
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # clé} other {JSON · # clés}}",
       "jsonItems": "{count, plural, one {JSON · # élément} other {JSON · # éléments}}",
-      "failedSentence": "Le workflow s’est arrêté avant d’avoir fini."
+      "failedSentence": "Le workflow s’est arrêté avant d’avoir fini.",
+      "runningCount": "{count} en cours"
     },
     "agent": {
       "backgroundWorking": "Travaille en arrière-plan",

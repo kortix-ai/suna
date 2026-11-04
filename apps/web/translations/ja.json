@@ -3202,7 +3202,8 @@
       "json": "JSON",
       "jsonKeys": "{count, plural, other {JSON · # 個のキー}}",
       "jsonItems": "{count, plural, other {JSON · # 個の項目}}",
-      "failedSentence": "ワークフローは完了前に停止しました。"
+      "failedSentence": "ワークフローは完了前に停止しました。",
+      "runningCount": "{count} 件実行中"
     },
     "agent": {
       "backgroundWorking": "バックグラウンドで作業中",

@@ -3202,7 +3202,8 @@
       "json": "JSON",
       "jsonKeys": "{count, plural, other {JSON · # 个键}}",
       "jsonItems": "{count, plural, other {JSON · # 项}}",
-      "failedSentence": "该工作流在完成前停止了。"
+      "failedSentence": "该工作流在完成前停止了。",
+      "runningCount": "{count} 个运行中"
     },
     "agent": {
       "backgroundWorking": "正在后台工作",

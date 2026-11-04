@@ -229,7 +229,14 @@ function PhaseRow({
   const tally = countAgents(agents);
   const opens = agents.length > 0;
   const pending = !opens && phase.status === 'pending';
-  const meta = waits ?? (tally.failed > 0 ? t('failedSuffix', { count: tally.failed }) : null);
+  // A closed phase still says it is at work: "4 running · 1 failed".
+  const running = agents.filter((agent) => agent.status === 'running' || agent.status === 'starting').length;
+  const meta =
+    waits ??
+    ([running > 0 ? t('runningCount', { count: running }) : null, tally.failed > 0 ? t('failedSuffix', { count: tally.failed }) : null]
+      .filter(Boolean)
+      .join(' · ') ||
+      null);
   const row = (
     <>
       <RunProgressRing
@@ -242,15 +249,18 @@ function PhaseRow({
         <span className={cn('min-w-0 truncate text-sm', pending ? 'text-muted-foreground' : 'text-foreground')}>{phase.title}</span>
         {opens && <span className="text-muted-foreground shrink-0 tabular-nums">{t('progress', { done: tally.done, total: tally.total })}</span>}
       </span>
-      {meta && <span className="text-muted-foreground shrink-0">{meta}</span>}
-      <CaretRightIcon
-        aria-hidden
-        className={cn(
-          'text-muted-foreground size-3 shrink-0 transition-transform duration-(--duration-fast) motion-reduce:transition-none',
-          !opens && 'invisible',
-          open && 'rotate-90',
-        )}
-      />
+      {/* The caret's column (size-3 + gap-2 = pr-5) is reserved, so this text ends where the agent rows' does. */}
+      <span className="flex shrink-0 items-center gap-2">
+        {meta && <span className="text-muted-foreground">{meta}</span>}
+        <CaretRightIcon
+          aria-hidden
+          className={cn(
+            'text-muted-foreground size-3 shrink-0 transition-transform duration-(--duration-fast) motion-reduce:transition-none',
+            !opens && 'invisible',
+            open && 'rotate-90',
+          )}
+        />
+      </span>
     </>
   );
   // px-2.5 puts the ring on the header's and the agent rows' left edge; the trunk hangs from its
@@ -273,7 +283,7 @@ function PhaseRow({
         <div className={rowClass}>{row}</div>
       )}
       {opens && open && (
-        <div id={bodyId} className="ml-4 pl-0.5">
+        <div id={bodyId} className="ml-4 pr-5 pl-0.5">
           <CappedAgentList agents={agents} live={live} now={now} onOpen={onOpen} stop={stop} nested />
         </div>
       )}
@@ -303,15 +313,18 @@ function CappedAgentList({
   const rows = capped ? agents.slice(0, CAP) : agents;
   return (
     <ul role="list" className="flex flex-col">
-      {rows.map((agent, index) => {
-        const item = <AgentRow key={agent.id} agent={agent} live={live} now={now} onOpen={onOpen} stop={stop} />;
-        if (!nested) return item;
-        return (
-          <TrunkBranch key={agent.id} continues={index < rows.length - 1 || capped}>
-            {item}
-          </TrunkBranch>
-        );
-      })}
+      {rows.map((agent, index) => (
+        <AgentRow
+          key={agent.id}
+          agent={agent}
+          live={live}
+          now={now}
+          onOpen={onOpen}
+          stop={stop}
+          // The trunk ends at the last agent row; "Show all" hangs under it, not on it.
+          trunk={nested ? { continues: index < rows.length - 1 } : undefined}
+        />
+      ))}
       {capped && (
         <li className={cn(nested && 'pl-3.5')}>
           <button
@@ -329,20 +342,17 @@ function CappedAgentList({
 }
 
 /**
- * One child on the trunk (the session list's `ChildRunBranch`): a row with
- * siblings below carries the trunk through its height; the last one ends at
- * its own rounded elbow, which meets the row at the middle of its first line.
+ * The trunk beside one nested row (the session list's `ChildRunBranch`): a row
+ * with siblings below carries the trunk through its height; the last one ends
+ * at its own rounded elbow, which meets the row's first line.
  */
-function TrunkBranch({ continues, children }: { continues: boolean; children: ReactNode }) {
+function TrunkLines({ continues }: { continues: boolean }) {
   return (
-    <li className="relative list-none">
+    <>
       {continues && <span aria-hidden className="border-border pointer-events-none absolute top-0 -bottom-px left-0 border-l-2" />}
       {/* Whole-pixel geometry: the elbow meets the row's first line at py-2 (7.36px) + half its 20px line = 17px. */}
       <span aria-hidden className="border-border pointer-events-none absolute top-0 left-0 h-[17px] w-3.5 rounded-bl-md border-b-2 border-l-2" />
-      <ul role="list" className="pl-3.5">
-        {children}
-      </ul>
-    </li>
+    </>
   );
 }
 
@@ -380,12 +390,15 @@ function AgentRow({
   now,
   onOpen,
   stop,
+  trunk,
 }: {
   agent: WorkflowRunAgent;
   live: boolean;
   now: number;
   onOpen: (agent: WorkflowRunAgent) => void;
   stop: AgentStopState;
+  /** Nested under a phase: the row hangs off the trunk; `continues` carries it on to the next row. */
+  trunk?: { continues: boolean };
 }) {
   const t = useTranslations('tools.workflow');
   const working = agent.status === 'running' || agent.status === 'starting';
@@ -407,7 +420,8 @@ function AgentRow({
 
   const body = (
     <>
-      <span className="flex h-4.5 shrink-0 items-center">
+      {/* On the title's line (h-5 = its 18.4px), so a failure's reason below never pulls the glyph off the trunk's elbow. */}
+      <span className="flex h-5 shrink-0 items-center">
         <SessionStatusMark status={runGlyphStatus(agent.status)} />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
@@ -430,12 +444,13 @@ function AgentRow({
   );
 
   const rowClass = cn(
-    'flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 py-2',
+    'flex min-h-9 min-w-0 flex-1 items-start gap-2.5 rounded-md px-2.5 py-2',
     agent.sessionId && 'hover:bg-muted/40',
   );
 
   return (
-    <li className="flex min-w-0 items-start">
+    <li className={cn('relative flex min-w-0 items-start', trunk && 'pl-3.5')}>
+      {trunk && <TrunkLines continues={trunk.continues} />}
       {agent.sessionId ? (
         <button
           type="button"

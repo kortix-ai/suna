@@ -2,7 +2,7 @@
 
 import { stopProjectSession, type ProjectSession, type SessionPromptPart } from '@kortix/sdk';
 import { qk, useProjectSession, usePromptAttachments } from '@kortix/sdk/react';
-import { ArrowElbowDownLeftIcon, ArrowSquareOutIcon, ImageIcon, PlusIcon, SquareIcon, XIcon } from '@phosphor-icons/react';
+import { ArrowElbowDownLeftIcon, ArrowSquareOutIcon, ImageIcon, PlusIcon, SquareIcon, WarningCircleIcon, XIcon } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 
@@ -25,6 +25,11 @@ import { LegacySubagentChat } from './legacy-subagent-chat';
 import { SessionPeek } from './session-peek';
 import { useSteerSession } from './steer-session';
 import { useNow } from './workflow-run-controls';
+
+/** A mouse or trackpad: focusing a text field there opens no on-screen keyboard. */
+function finePointer(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: fine)').matches;
+}
 
 export interface SubagentDialogProps {
   open: boolean;
@@ -107,7 +112,9 @@ function SubagentActions({
   const tStrip = useTranslations('multiAgent.strip');
   return (
     // One group, secondary buttons: Open page, Stop while it works, Close. On a phone Open page is its icon.
+    // Two groups a gap apart (the primitive spaces nested groups with gap-2): a missed tap on Close never stops the agent.
     <ButtonGroup className="shrink-0">
+      <ButtonGroup>
       {projectId && sub.kind === 'peek' && (
         <Button asChild variant="secondary" size="xs">
           <UiLink href={uiRoutes().session(projectId, sessionId)} onClick={onLeave} aria-label={t('openPage')}>
@@ -131,7 +138,8 @@ function SubagentActions({
           </Button>
         </Hint>
       )}
-      {children}
+      </ButtonGroup>
+      <ButtonGroup>{children}</ButtonGroup>
     </ButtonGroup>
   );
 }
@@ -176,10 +184,13 @@ export function SubagentDialogContent({ open, onOpenChange, sessionId, title, pr
         data-body={sub.kind}
         // Open, the message box takes the focus (type at once), never Stop: a focused Stop shows its tooltip.
         onOpenAutoFocus={(event) => {
-          const box = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLInputElement>('[data-testid="subagent-dialog-message"]');
-          // Never Stop: until the box mounts (it takes the focus itself), the dialog keeps it.
+          // Never Stop (its tooltip would pop). With a mouse the box takes the focus; on a touch screen the
+          // dialog does, so no keyboard covers the transcript the person opened it to read.
+          const content = event.currentTarget as HTMLElement | null;
+          const box = content?.querySelector<HTMLInputElement>('[data-testid="subagent-dialog-message"]');
           event.preventDefault();
-          box?.focus();
+          if (box && finePointer()) box.focus();
+          else content?.focus();
         }}
         className={cn(
           'flex flex-col gap-0 space-y-0 overflow-hidden p-0',
@@ -276,7 +287,13 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
       }
     }
     // Delivered, the uploads are released; refused, they go back to the box for a retry.
-    send.mutate({ sessionId, text: message, files }, { onSuccess: () => uploads.forget(ids), onError: () => uploads.reclaim(ids) });
+    // Settled in this function, not in per-call callbacks (those skip once the dialog unmounts).
+    try {
+      await send.mutateAsync({ sessionId, text: message, files });
+      uploads.forget(ids);
+    } catch {
+      uploads.reclaim(ids);
+    }
   };
   const canSend = (!!text.trim() || images.length > 0) && !busy;
   return (
@@ -287,13 +304,31 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
         void submit();
       }}
     >
-      <div className="border-border bg-muted focus-within:border-ring/60 flex min-w-0 flex-col rounded-xl border transition-colors">
+      <div className="border-border bg-muted focus-within:border-ring focus-within:ring-ring/15 flex min-w-0 flex-col rounded-xl border transition-[border-color,box-shadow] focus-within:ring-3">
         {images.length > 0 && (
           <ul aria-label={t('attachments')} className="flex min-w-0 flex-wrap gap-1.5 px-3 pt-2.5">
             {images.map((image) => (
-              <li key={image.id} className="bg-background text-muted-foreground flex h-7 max-w-48 min-w-0 items-center gap-1.5 rounded-md pr-1 pl-2 text-xs">
-                <ImageIcon className="size-3.5 shrink-0" />
-                <span className="min-w-0 truncate">{image.filename}</span>
+              <li key={image.id} className="bg-background text-muted-foreground flex h-7 max-w-64 min-w-0 items-center gap-1.5 rounded-md pr-1 pl-2 text-xs">
+                {image.status === 'error' ? (
+                  <WarningCircleIcon weight="fill" aria-hidden className="text-kortix-red size-3.5 shrink-0" />
+                ) : (
+                  <ImageIcon className="size-3.5 shrink-0" />
+                )}
+                <span className="min-w-0 truncate" title={image.error?.message}>
+                  {image.filename}
+                </span>
+                {image.status === 'error' && (
+                  <>
+                    <span className="sr-only">{t('attachFailed')}</span>
+                    <button
+                      type="button"
+                      onClick={() => uploads.retry(image.id)}
+                      className="text-foreground hover:bg-muted shrink-0 cursor-pointer rounded-sm px-1"
+                    >
+                      {t('retry')}
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   aria-label={t('removeAttachment', { name: image.filename })}
@@ -339,13 +374,15 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
           />
           <input
             data-testid="subagent-dialog-message"
-            // The box mounts once the agent's row loads: it takes the focus then (onOpenAutoFocus covers a cached row).
-            autoFocus
+            // The box mounts once the agent's row loads: with a mouse it takes the focus then (onOpenAutoFocus covers a cached row).
+            autoFocus={finePointer()}
             value={text}
             onChange={(event) => setText(event.target.value)}
             placeholder={t('messagePlaceholder', { name })}
             aria-label={t('messageLabel', { name })}
-            disabled={busy}
+            // Read-only, not disabled, while a send runs: the field keeps the focus for the next message.
+            readOnly={busy}
+            aria-disabled={busy}
             className="text-foreground placeholder:text-muted-foreground h-8 min-w-0 flex-1 bg-transparent px-1.5 text-sm outline-none"
           />
           <Hint label={t('send')} side="top">
@@ -356,7 +393,8 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
               aria-label={t('send')}
               disabled={!canSend}
               aria-busy={busy}
-              className="text-muted-foreground hover:text-foreground rounded-full"
+              // Ink when there is something to send; muted when there is not.
+              className={cn('rounded-full', canSend ? 'text-foreground' : 'text-muted-foreground')}
             >
               <ArrowElbowDownLeftIcon className="size-4" />
             </Button>

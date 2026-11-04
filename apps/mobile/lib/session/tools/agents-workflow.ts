@@ -58,7 +58,7 @@ export type WorkflowGroupModel =
       progress: string | null;
       /** The phase's ring: its agents done and failed, and whether the phase ended. */
       ring: { done: number; failed: number; total: number; ended: 'done' | 'stopped' | null };
-      /** "1 failed" when an agent of the phase failed. */
+      /** "4 running · 1 failed": what the closed phase is doing; null when nothing runs or failed. */
       failed: string | null;
       rows: WorkflowAgentRowModel[];
     }
@@ -140,7 +140,15 @@ export function workflowGroups(run: WorkflowRun, live: boolean, now: number): Wo
         total: tally.total,
         ended: phase.status === 'done' && tally.total > 0 && tally.done === tally.total ? 'done' : phase.status === 'stopped' ? 'stopped' : null,
       },
-      failed: tally.failed > 0 ? `${tally.failed} failed` : null,
+      // A closed phase still says it is at work (web `PhaseRow`): "4 running · 1 failed".
+      failed:
+        [
+          agents.filter((agent) => agent.status === 'running' || agent.status === 'starting').length || null,
+          tally.failed > 0 ? `${tally.failed} failed` : null,
+        ]
+          .map((part, i) => (i === 0 && part ? `${part} running` : part))
+          .filter(Boolean)
+          .join(' · ') || null,
       rows: sortRows(agents).map((a) => agentRow(a, live, now)),
     });
   });
