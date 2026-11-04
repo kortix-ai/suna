@@ -1332,7 +1332,7 @@
         },
         "voice_call": {
           "name": "Llamadas de voz",
-          "description": "Llama al agente de la sesión desde la página de la sesión y habla con él. Te escucha, responde con voz, ve la pantalla que compartes y trabaja en la misma sesión, así la conversación queda en el chat."
+          "description": "Llama a un agente desde su página (Personalizar → Agentes) y habla con él. Una llamada es una sesión propia de ese agente: te escucha, responde con voz y ve la pantalla que compartes, y la conversación es el chat de esa sesión."
         },
         "shared_drives": {
           "name": "Unidades compartidas",
@@ -25119,6 +25119,7 @@
   "voiceCall": {
     "title": "Llamada de voz",
     "call": "Llamar",
+    "calling": "Llamando…",
     "start": "Iniciar una llamada de voz",
     "end": "Finalizar llamada",
     "connecting": "Conectando…",
@@ -25136,6 +25137,7 @@
     "lost": "No se pudo reconectar la llamada",
     "unavailable": "El sandbox de esta sesión se inició antes de que se activaran las llamadas de voz. Las llamadas funcionan a partir de su próximo inicio.",
     "callAgain": "Volver a llamar",
+    "openChat": "Abrir el chat",
     "close": "Cerrar"
   },
   "agentMounts": {

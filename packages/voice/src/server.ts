@@ -105,6 +105,7 @@ async function open(ws: WS) {
       lang,
       manual: (q.get('turns') ?? process.env.TURNS) === 'client',
       session: call.sid,
+      agentTools: brain.tools(call.sid),
       instructions: INSTRUCTIONS + (past.text && `\n\nRecent session history, oldest first:\n${past.text}`),
       thread: past.thread,
       tools,

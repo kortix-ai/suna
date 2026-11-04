@@ -517,12 +517,12 @@ export function inworldId(v: string): string {
 }
 
 const cache = new Map<string, Promise<Uint8Array | undefined>>()
-export function cached(text: string, voice?: string, lang = 'en', via: 'xai' | 'gemini' | 'inworld' | 'mock' = xaiSpeaks(lang) ? 'xai' : 'gemini'): Promise<Uint8Array | undefined> {
+export function cached(text: string, voice?: string, lang = 'en', via: 'xai' | 'gemini' | 'inworld' | 'mock' | 'models' = xaiSpeaks(lang) ? 'xai' : 'gemini'): Promise<Uint8Array | undefined> {
   const key = `${via}|${lang}|${voice ?? ''}|${text}`
   if (!cache.has(key))
     cache.set(
       key,
-      (via === 'xai' ? ttss.xai!(lang) : via === 'inworld' ? ttss.inworld!(lang) : via === 'mock' ? ttss.mock!() : ttss.gemini!())
+      (via === 'xai' ? ttss.xai!(lang) : via === 'inworld' ? ttss.inworld!(lang) : via === 'models' ? ttss.models!(lang) : via === 'mock' ? ttss.mock!() : ttss.gemini!())
         .speak(text, voice, new AbortController().signal)
         .then(async (r) => (r.ok ? trim(new Uint8Array(await r.arrayBuffer())) : undefined))
         .catch(() => undefined),

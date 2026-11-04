@@ -13,6 +13,8 @@ let bound: Agent | undefined
 // A host with several sessions in one process (a Kortix box: one relay, a call per session) binds each by the id a
 // call names it with (`/stream?session=<id>`); a call's every agent call carries that id, so it reaches its own.
 const sessions = new Map<string, Agent>()
+// The sessions whose host gave the agent the voice's tools (src/voice-tools.ts): it acts on its call with them.
+const withTools = new Set<string>()
 const backends: Record<string, () => Agent> = { wire: () => wire, pi: () => (standalone ??= pi.standalone()) }
 
 /** The agent every call uses: the one bound with `use`, else VOICE_AGENT's. */
@@ -29,11 +31,17 @@ export function use(next: Agent | undefined) {
   bound = next
 }
 
-/** Binds one session of a many-session host under `id`; undefined unbinds it (the session shut down). */
-export function bind(id: string, next: Agent | undefined) {
+/** Binds one session of a many-session host under `id`; undefined unbinds it (the session shut down). `tools`: the
+ * host gave that session's agent the voice's tools. */
+export function bind(id: string, next: Agent | undefined, o: { tools?: boolean } = {}) {
   if (next) sessions.set(id, next)
   else sessions.delete(id)
+  if (next && o.tools) withTools.add(id)
+  else withTools.delete(id)
 }
+
+/** The session's agent has the voice's tools: its turns name them in place of the tag list. */
+export const tools = (sid: string | null | undefined) => !!sid && withTools.has(sid)
 
 const of = (sid: string | null | undefined) => (sid && sessions.get(sid)) || agent()
 /** A bound session's own id stands; any other goes to the agent, which makes or finds one. */

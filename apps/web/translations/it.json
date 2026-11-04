@@ -1332,7 +1332,7 @@
         },
         "voice_call": {
           "name": "Chiamate vocali",
-          "description": "Chiama l'agente della sessione dalla pagina della sessione e parlagli. Ti sente, risponde a voce, vede lo schermo che condividi e lavora nella stessa sessione, così la conversazione resta nella chat."
+          "description": "Chiama un agente dalla sua pagina (Personalizza → Agenti) e parlagli. Una chiamata è una sessione a sé di quell'agente: ti sente, risponde a voce e vede lo schermo che condividi, e la conversazione è la chat di quella sessione."
         },
         "shared_drives": {
           "name": "Drive condivisi",
@@ -25119,6 +25119,7 @@
   "voiceCall": {
     "title": "Chiamata vocale",
     "call": "Chiama",
+    "calling": "Chiamata in corso…",
     "start": "Avvia una chiamata vocale",
     "end": "Termina chiamata",
     "connecting": "Connessione…",
@@ -25136,6 +25137,7 @@
     "lost": "Impossibile riconnettere la chiamata",
     "unavailable": "La sandbox di questa sessione è stata avviata prima che le chiamate vocali fossero attivate. Le chiamate funzionano dal suo prossimo avvio.",
     "callAgain": "Richiama",
+    "openChat": "Apri la chat",
     "close": "Chiudi"
   },
   "agentMounts": {

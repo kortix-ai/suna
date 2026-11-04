@@ -473,6 +473,7 @@
     "./session/turn/channel-message": "./src/session/turn/channel-message.ts",
     "./session/turn/queued-prompt-bubbles": "./src/session/turn/queued-prompt-bubbles.tsx",
     "./session/turn/user-message": "./src/session/turn/user-message.tsx",
+    "./session/voice/voice-call-card": "./src/session/voice/voice-call-card.tsx",
     "./settings-row": "./src/primitives/settings-row.tsx",
     "./settings-section-header": "./src/primitives/settings-section-header.tsx",
     "./settings-subsection-header": "./src/primitives/settings-subsection-header.tsx",
@@ -2349,6 +2350,10 @@
       "./session/turn/user-message": {
         "types": "./dist/session/turn/user-message.d.ts",
         "import": "./dist/session/turn/user-message.js"
+      },
+      "./session/voice/voice-call-card": {
+        "types": "./dist/session/voice/voice-call-card.d.ts",
+        "import": "./dist/session/voice/voice-call-card.js"
       },
       "./settings-row": {
         "types": "./dist/primitives/settings-row.d.ts",

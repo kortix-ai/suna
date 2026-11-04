@@ -212,6 +212,15 @@ describe('pi session-log export', () => {
     expect(context).toMatchObject({ role: 'system', created_at: at(50), completed_at: at(50) })
   })
 
+  test('an extension\'s custom message is dated when pi appended it, not 1970', () => {
+    const s = fixture()
+    const note = entry({ type: 'custom_message', customType: 'voice', content: 'Voice turn answered by the voice directly.', display: false })
+    s.entries = [...s.entries, note] as never
+    s.leafId = note.id
+    const m = root(s).find((x) => x.origin === 'automation')!
+    expect(m).toMatchObject({ role: 'user', created_at: note.timestamp, completed_at: note.timestamp })
+  })
+
   test('a compaction keeps pi shape: summary, first kept message, trigger', () => {
     const c = byId(root(fixture()), 'msg_i')
     expect(c).toMatchObject({ role: 'user', kind: 'compaction', in_context: true })

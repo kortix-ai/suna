@@ -7,7 +7,7 @@
 // Off with VOICE_BRIDGE=0.
 import type { Msg } from './lane'
 import { chargeReply } from './cost'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
 
 const MODEL = process.env.VOICE_BRIDGE_MODEL ?? 'qwen/qwen3.8-27b'
 const SYSTEM =
@@ -37,7 +37,7 @@ const SYSTEM =
 
 /** The sentence, or undefined (off, no model, or no answer within `ms`). */
 export async function bridge(user: string, history: Msg[], signal: AbortSignal, ms = 700): Promise<string | undefined> {
-  if (process.env.VOICE_BRIDGE === '0' || !process.env.GROQ_API_KEY || signal.aborted) return undefined
+  if (process.env.VOICE_BRIDGE === '0' || !fastOn() || signal.aborted) return undefined
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), ms)
   const stop = () => ac.abort()

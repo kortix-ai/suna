@@ -2,6 +2,7 @@
 // and the fixed phrases (disclosure, acknowledgments, progress) come from a phrasebook in that language:
 // English and Serbo-Croatian are written here; any other language is translated once, on first use.
 import { chargeReply } from './cost'
+import { fastFetch, viaModels } from './models'
 
 export type Book = {
   acks: string[] // to a question
@@ -134,7 +135,7 @@ export async function bookSoon(lang: string, ms = 1500): Promise<Book | undefine
 async function translate(lang: string): Promise<Book | undefined> {
   const base = process.env.VOICE_LLM_URL ?? process.env.KORTIX_LLM_BASE_URL ?? 'https://openrouter.ai/api/v1'
   const key = process.env.VOICE_LLM_KEY ?? process.env.OPENROUTER_API_KEY ?? process.env.KORTIX_TOKEN
-  const res = await fetch(`${base}/chat/completions`, {
+  const init: RequestInit = {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -142,7 +143,9 @@ async function translate(lang: string): Promise<Book | undefined> {
       response_format: { type: 'json_object' },
       messages: [{ role: 'user', content: `Translate every string value of this JSON into the language with code "${lang}", as a person would say it on a phone call; keep keys and the {n} placeholder; reply with JSON only.\n${JSON.stringify(en)}` }],
     }),
-  }).catch(() => undefined)
+  }
+  // In a Kortix box the models base serves the model (its id without the org prefix); elsewhere the agent's gateway.
+  const res = await (viaModels() ? fastFetch(init) : fetch(`${base}/chat/completions`, init)).catch(() => undefined)
   try {
     const j = (await res!.json()) as { choices: { message: { content: string } }[] }
     chargeReply('lang', process.env.VOICE_LLM_MODEL ?? 'google/gemini-3.5-flash-lite', j)
