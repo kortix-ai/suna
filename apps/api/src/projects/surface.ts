@@ -25,6 +25,9 @@ export {
 // Idle sessions off a fallback model (consumed by worker/jobs/session-model-fallback).
 export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert';
 
+// One chat (`infinichat`): a thread's board of the chat's other threads (consumed by the turn-start path).
+export { chatThreadBoardTurn } from './lib/chat-threads';
+
 // A person's pins and archive (consumed by account erasure and offboarding).
 export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';
 

@@ -592,23 +592,6 @@ export async function setSessionWatch(projectId: string, sessionId: string, watc
   );
 }
 
-/** The caller's front chat (`openFrontChat`). */
-export interface FrontChat {
-  session_id: string;
-  /** `true` when this call started it, `false` when it already existed. */
-  created: boolean;
-}
-
-/**
- * Open the caller's one front chat in a project: an endless My Kortix chat in
- * which the agent only talks and a worker session does the work. Returns the
- * existing chat, or starts one. Needs the project's `infinichat` flag (403
- * `feature_disabled` while it is off) and My Kortix on in kortix.yaml.
- */
-export async function openFrontChat(projectId: string) {
-  return unwrap(await backendApi.post<FrontChat>(`/projects/${projectId}/front-chat`, {}));
-}
-
 /** The caller's own pin and archive of one session. */
 export interface SessionListState {
   pinned_at: string | null;

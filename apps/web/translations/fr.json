@@ -1861,7 +1861,8 @@
       "addChannel": "Ajouter un canal",
       "loadError": "Impossible de charger les canaux.",
       "newAgent": "Nouvel agent"
-    }
+    },
+    "oneChat": "Chat"
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -24727,7 +24728,8 @@
       "allAgents": "Tous les agents",
       "join": "Rejoindre le canal",
       "joined": "Vous avez rejoint #{name}.",
-      "joinFailed": "Impossible de rejoindre le canal. Réessayez."
+      "joinFailed": "Impossible de rejoindre le canal. Réessayez.",
+      "openFullSession": "Open full session"
     },
     "details": {
       "about": "À propos",

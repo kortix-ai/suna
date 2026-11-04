@@ -560,16 +560,17 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'infinichat',
     name: 'One chat',
     description:
-      'One endless chat with Kortix. You only talk: it passes everything to a My Kortix session that does the work in the background, and answers with only what matters. Needs My Kortix on in kortix.yaml.',
+      'Talk to Kortix in one chat that reads like Slack: every message is a thread, Kortix\'s newest reply shows under it, and Kortix can start a thread itself. Sessions leave the sidebar. Needs My Kortix on in kortix.yaml.',
     stability: 'experimental',
     wip: true,
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
-      'Off ⇒ POST /projects/:id/front-chat answers 403 `feature_disabled` (projects/routes/front-chat.ts), so no front ' +
-      'session exists. BOX: on, KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 (projects/lib/feature-flag-env.ts), so the ' +
-      'worker under a front chat can still run workflows. WEB: no One chat entry and the /chat page renders FeatureGateScreen.',
+      'Off ⇒ POST /projects/:id/chat/threads answers 403 `feature_disabled` (projects/routes/chat-threads.ts), and the ' +
+      'spaces routes follow `project_channels` alone (spacesEnabled). On: the person\'s DM with My Kortix is their chat; ' +
+      'each My Kortix thread in it gets the board of the other threads at turn start (projects/lib/chat-threads.ts). WEB: ' +
+      'a Chat row replaces New session and the session list; /projects/:id/chat renders FeatureGateScreen while off.',
   },
 ];
 
@@ -630,6 +631,15 @@ export function hiddenIamActions(projectMetadatas: readonly unknown[]): Set<stri
 }
 
 /** Effective enablement for every flag, keyed by flag id. */
+/**
+ * Spaces (channels, DMs and their threads) exist in a project: with Channels
+ * (`project_channels`), or with One chat (`infinichat`), whose chat is the
+ * person's DM with My Kortix.
+ */
+export function spacesEnabled(metadata: unknown): boolean {
+  return resolveFeatureFlag(metadata, 'project_channels') || resolveFeatureFlag(metadata, 'infinichat');
+}
+
 export function resolveFeatureFlags(metadata: unknown): Record<FeatureFlagKey, boolean> {
   return Object.fromEntries(
     FLAGS.map((f) => [f.key, resolveFeatureFlag(metadata, f.key)]),

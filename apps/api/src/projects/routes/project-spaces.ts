@@ -32,6 +32,7 @@ import { AppObject, appsJson } from '../../apps/serialize';
 import { spaceApps } from '../../apps/space-apps';
 import { afterPrivateChannelChange, makeChannelFolders, makeDmFolders, moveChannelFolder, refreshRunningThreadNotes } from '../../drives/space-folders';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { spacesEnabled } from '../../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../../iam';
 import type { AppEnv } from '../../types';
 import { auth, errors, json } from '../../openapi';
@@ -101,6 +102,8 @@ type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>
 async function loadSpacesProject(c: Context<AppEnv>) {
   const loaded = await loadProjectForUser(c, c.req.param('projectId')!, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // One chat (`infinichat`) is a DM with My Kortix: its spaces routes answer with Channels off too.
+  if (spacesEnabled(loaded.row.metadata)) return loaded;
   const gate = requireFeatureFlag(c, loaded.row.metadata, 'project_channels');
   if (gate) return gate;
   return loaded;

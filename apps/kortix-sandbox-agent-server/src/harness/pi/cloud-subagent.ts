@@ -125,10 +125,6 @@ export const SUBAGENT_TOOLS_KEY = 'kortix.subagent.tools'
 export const AGENT_HANDLE_CONTEXT_KEY = 'kortix.agent.handle'
 /** `runtime_context` key: the lead session of this teammate (agent teams). */
 export const TEAM_LEAD_CONTEXT_KEY = 'kortix.team.lead'
-/** `runtime_context` key: this session is a front chat (flag `infinichat`): it only talks, a worker session does the work. */
-export const FRONT_CONTEXT_KEY = 'kortix.front'
-/** `runtime_context` key: this session is one of a front chat's threads. */
-export const FRONT_THREAD_CONTEXT_KEY = 'kortix.front.thread'
 /** A name `agent({ name })` takes: what `send_message` addresses. */
 export const AGENT_HANDLE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/
 
@@ -172,10 +168,6 @@ export interface SubagentContext {
   handle?: string
   /** The lead session of this teammate. */
   teamLead?: string
-  /** A front chat: messaging tools only, and its children are not narrowed to them. */
-  front?: boolean
-  /** One of a front chat's threads: its answer reaches the chat as its run's report. */
-  frontThread?: boolean
 }
 
 /** Parse `KORTIX_SESSION_CONTEXT` (the API's JSON envelope of `runtime_context`). Malformed = a root session. */
@@ -193,7 +185,7 @@ export function subagentContextFrom(raw: string | undefined): SubagentContext {
   const depth = typeof rawDepth === 'number' && Number.isInteger(rawDepth) && rawDepth > 0 ? rawDepth : 0
   const handle = typeof record[AGENT_HANDLE_CONTEXT_KEY] === 'string' && AGENT_HANDLE.test(record[AGENT_HANDLE_CONTEXT_KEY] as string) ? (record[AGENT_HANDLE_CONTEXT_KEY] as string) : undefined
   const lead = typeof record[TEAM_LEAD_CONTEXT_KEY] === 'string' && (record[TEAM_LEAD_CONTEXT_KEY] as string).trim() ? (record[TEAM_LEAD_CONTEXT_KEY] as string).trim() : undefined
-  const named = { depth, ...(handle ? { handle } : {}), ...(lead ? { teamLead: lead } : {}), ...(record[FRONT_CONTEXT_KEY] === true ? { front: true } : {}), ...(record[FRONT_THREAD_CONTEXT_KEY] === true ? { frontThread: true } : {}) }
+  const named = { depth, ...(handle ? { handle } : {}), ...(lead ? { teamLead: lead } : {}) }
   const rawTools = record[SUBAGENT_TOOLS_KEY]
   if (typeof rawTools !== 'string') return named
   // A present key always narrows: an empty or all-invalid list means no tools, never all tools.

@@ -2,17 +2,32 @@
 
 import { useParams } from 'next/navigation';
 
-import { FrontChatView } from '@/features/front-chat/front-chat-view';
+import { SpaceFolderView } from '@/features/drives/space-folder-view';
+import { useProjectSendGate } from '@/hooks/projects/use-project-send-gate';
 import { useFeatureFlag } from '@kortix/sdk/react';
+import { MY_KORTIX_AGENT_NAME } from '@kortix/shared';
 import { FeatureGateScreen } from '@kortix/ui/customize/shared/feature-gate-screen';
+import { SpaceView } from '@kortix/ui/workspace';
 
-/** /projects/[id]/chat — the caller's one front chat with Kortix (flag `infinichat`). */
-export default function FrontChatPage() {
+/**
+ * /projects/[id]/chat — One chat (flag `infinichat`): the person's chat with
+ * Kortix. Every message is a thread; Kortix's newest reply shows under it.
+ */
+export default function OneChatPage() {
   const { id } = useParams<{ id: string }>();
   const flag = useFeatureFlag(id, 'infinichat');
+  const beforeSend = useProjectSendGate(id);
   if (flag.isLoading) return null;
   if (!flag.enabled) {
-    return <FeatureGateScreen featureKey="infinichat" featureName="One chat" description="One endless chat with Kortix: you only talk, and the work runs in the background." />;
+    return <FeatureGateScreen featureKey="infinichat" featureName="One chat" description="Talk to Kortix in one chat: every message is a thread, and Kortix's reply shows under it." />;
   }
-  return <FrontChatView projectId={id} />;
+  return (
+    <SpaceView
+      projectId={id}
+      target={{ kind: 'dm', agentName: MY_KORTIX_AGENT_NAME }}
+      beforeSend={beforeSend}
+      renderFolder={(folder) => <SpaceFolderView projectId={id} {...folder} />}
+      chat
+    />
+  );
 }

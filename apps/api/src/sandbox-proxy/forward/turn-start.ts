@@ -45,7 +45,7 @@ import { isMemoryTurnRoute, memoryChannelsOn, withMemoryTurn, withoutClientSyste
 import { isMyKortixAgentName } from '@kortix/shared';
 import { logger } from '../../lib/logger';
 import { isPlatinumConfigured } from '../../shared/platinum';
-import { missingClaudeSubscription, sessionModelPin } from '../../projects/surface';
+import { chatThreadBoardTurn, missingClaudeSubscription, sessionModelPin } from '../../projects/surface';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -374,12 +374,18 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   state.requestBody = withoutClientSystem(state.requestBody);
   const sessionId = req.record.sessionId;
   try {
-    // My Kortix: the prompter's own memory index (kortix_memory), every turn, with Files on.
+    // My Kortix: the prompter's own memory index (kortix_memory), every turn, with Files on,
+    // and in the person's chat (`infinichat`), the board of the chat's other threads.
     if (isMyKortixAgentName(req.record.agentName)) {
-      if (!isPlatinumConfigured()) return;
-      const { myKortixMemoryTurn } = await import('../../memory/my-memory');
-      const turn = await myKortixMemoryTurn(req.record.projectId, sessionId, req.userId);
-      if (turn) state.requestBody = withMemoryTurn(state.requestBody, turn);
+      const [memory, board] = await Promise.all([
+        isPlatinumConfigured()
+          ? import('../../memory/my-memory').then(({ myKortixMemoryTurn }) => myKortixMemoryTurn(req.record.projectId, sessionId, req.userId))
+          : null,
+        chatThreadBoardTurn(req.record.projectId, sessionId),
+      ]);
+      // The board first: a `system` over the cap is dropped whole, so the memory list is what gets cut.
+      const system = [board, memory?.system].filter(Boolean).join('\n\n').slice(0, MEMORY_TURN_SYSTEM_MAX_CHARS);
+      if (system) state.requestBody = withMemoryTurn(state.requestBody, { system });
       return;
     }
     // Flag off: the memory and drives services are never loaded on this path.

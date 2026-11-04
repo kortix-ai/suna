@@ -1861,7 +1861,8 @@
       "addChannel": "チャンネルを追加",
       "loadError": "チャンネルを読み込めませんでした。",
       "newAgent": "新しいエージェント"
-    }
+    },
+    "oneChat": "Chat"
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -24727,7 +24728,8 @@
       "allAgents": "すべてのエージェント",
       "join": "チャンネルに参加",
       "joined": "#{name} に参加しました。",
-      "joinFailed": "チャンネルに参加できませんでした。もう一度お試しください。"
+      "joinFailed": "チャンネルに参加できませんでした。もう一度お試しください。",
+      "openFullSession": "Open full session"
     },
     "details": {
       "about": "概要",

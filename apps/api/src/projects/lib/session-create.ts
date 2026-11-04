@@ -93,9 +93,7 @@ import {
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext, reservedRuntimeContextRefusal } from './session-runtime-context';
-import { FRONT_CHAT_CONTEXT_KEY, FRONT_CHAT_METADATA_KEY } from './front-chat-keys';
-import { sessionIsFrontChat } from './front-chat';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { resolveFeatureFlag, spacesEnabled } from '../../feature-flags/registry';
 import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
 import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, forkSourceVisibility, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
@@ -300,7 +298,7 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
         await access(),
       );
   if (inherited) return 'error' in inherited ? inherited : { filed: true, spaceId: inherited.spaceId };
-  if (!resolveFeatureFlag(project.metadata, 'project_channels')) return { filed: false, spaceId: null };
+  if (!spacesEnabled(project.metadata)) return { filed: false, spaceId: null };
   // A run of a repo trigger lands in the trigger's live space, read when the
   // create executes (a queued run sees the space as it is then). The space
   // was checked when it was set on the trigger: a DM was the setter's own,
@@ -609,9 +607,7 @@ async function resolveSessionAgent(params: {
     callerIsMeta &&
     isWorkflowRunnerContext(body.runtime_context) &&
     !(await sessionIsWorkflowRunner(input.callerSessionId!));
-  // A front chat (flag `infinichat`) only talks: its one worker is a My Kortix session.
-  const frontChatWorker = platformMetaAgent && callerIsMeta && (await sessionIsFrontChat(input.callerSessionId!));
-  if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner && !frontChatWorker) {
+  if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner) {
     return {
       error: {
         status: 400,
@@ -1920,10 +1916,7 @@ export async function createProjectSession(input: {
         inheritedGrants,
         spaceId,
       },
-      // A front chat (front-chat.ts): only the platform's own create sets this metadata, never a request body.
-      input.metadata?.[FRONT_CHAT_METADATA_KEY] === true
-        ? { ...parsedRuntimeContext.context, [FRONT_CHAT_CONTEXT_KEY]: true }
-        : parsedRuntimeContext.context,
+      parsedRuntimeContext.context,
       validatedConnectorBindings.bindings,
     );
     sessionRow = typeof body.fork_from_session_id === 'string'

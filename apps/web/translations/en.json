@@ -1861,7 +1861,8 @@
       "addChannel": "Add channel",
       "loadError": "Could not load channels.",
       "newAgent": "New agent"
-    }
+    },
+    "oneChat": "Chat"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -24760,7 +24761,8 @@
       "allAgents": "All agents",
       "join": "Join channel",
       "joined": "You joined #{name}.",
-      "joinFailed": "Could not join the channel. Try again."
+      "joinFailed": "Could not join the channel. Try again.",
+      "openFullSession": "Open full session"
     },
     "details": {
       "about": "About",

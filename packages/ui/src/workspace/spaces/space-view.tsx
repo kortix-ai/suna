@@ -4,6 +4,7 @@ import { ApiError, type ProjectSession, type ProjectSpace } from '@kortix/sdk';
 import {
   updateCachedProjectSessions,
   useOpenProjectDm,
+  useFeatureFlag,
   useProjectConfig,
   useProjectSpaces,
   useSession,
@@ -89,6 +90,12 @@ export interface SpaceViewProps {
   renderFolder?: (folder: SpaceFolder) => ReactNode;
   /** A channel's Apps tab: the host's App gallery for the channel. Absent: its empty state. */
   renderApps?: (space: ProjectSpace) => ReactNode;
+  /**
+   * One chat (flag `infinichat`): the DM as the person's only chat with
+   * Kortix. A plain header, no tabs and no Channels intro; a thread links its
+   * full session.
+   */
+  chat?: boolean;
 }
 
 /** What a host's folder view draws: one space's Files tab. `place` is "#general" or the DM's agent. */
@@ -140,13 +147,13 @@ export function SpaceView(props: SpaceViewProps) {
         <div className="absolute inset-0 flex flex-col">
           <SpaceViewBody {...props} />
         </div>
-        <ChannelsIntro projectId={props.projectId} />
+        {props.chat ? null : <ChannelsIntro projectId={props.projectId} />}
       </div>
     </ProjectScope>
   );
 }
 
-function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps }: SpaceViewProps) {
+function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps, chat = false }: SpaceViewProps) {
   const t = useTranslations('spaces.view');
   const router = useUiRouter();
   const pathname = useUiPathname();
@@ -180,7 +187,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
   const threadId = searchParams.get(THREAD_PARAM);
   const tabs = useReadableSpaceTabs(projectId, target.kind);
   const requestedTab = spaceTabFromParam(searchParams.get(TAB_PARAM), target.kind);
-  const tab = tabs.includes(requestedTab) ? requestedTab : 'chat';
+  const tab = chat ? 'chat' : tabs.includes(requestedTab) ? requestedTab : 'chat';
   // `push` adds a history entry, so the browser's Back walks it: a tab, and
   // opening the thread panel. Filters and switching threads replace the entry.
   const setParams = useCallback(
@@ -230,7 +237,11 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
   const title = target.kind === 'channel' ? target.slug : agentLabel(target.agentName);
   // The channel details dialog: the header opens it, and so does the setup block for a viewer who may add no one.
   const [details, setDetails] = useState<SpaceDetailsTab | null>(null);
-  const header = (
+  const header = chat ? (
+    <div className="kx-titlebar-row flex h-12 shrink-0 items-center border-b px-5">
+      <h1 className="text-base font-semibold">{title}</h1>
+    </div>
+  ) : (
     <SpaceHeader
       projectId={projectId}
       target={target}
@@ -332,13 +343,15 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
         <ComposerDropZone className="flex min-h-0 min-w-0 flex-1 flex-col">
           {header}
           <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
-            <TabsList type="underline" size="sm" className="w-full shrink-0 justify-start gap-4 overflow-x-auto px-5">
-              {tabs.map((value) => (
-                <TabsTrigger key={value} value={value} className="w-fit flex-none">
-                  {t(`tab.${value}`)}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+            {chat ? null : (
+              <TabsList type="underline" size="sm" className="w-full shrink-0 justify-start gap-4 overflow-x-auto px-5">
+                {tabs.map((value) => (
+                  <TabsTrigger key={value} value={value} className="w-fit flex-none">
+                    {t(`tab.${value}`)}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            )}
             <SpaceTabs
               projectId={projectId}
               space={space}
@@ -350,7 +363,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
               beforeSend={beforeSend}
               renderFolder={renderFolder}
               renderApps={renderApps}
-              tabs={tabs}
+              tabs={chat ? ['chat'] : tabs}
               params={searchParams}
               setParams={setParams}
             />
@@ -371,6 +384,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
               thread={threads.sessions.find((session) => session.session_id === threadId)}
               agentFallback={space.dm_agent_name}
               onClose={closeThread}
+              fullSessionHref={chat ? uiRoutes().session(projectId, threadId) : undefined}
             />
           </ResizablePanel>
         </>
@@ -708,7 +722,12 @@ function SpaceComposer({
 }) {
   const t = useTranslations('spaces.view');
   const isPhone = useIsPhone();
-  const spaceSend = useMemo(() => ({ spaceId: space.space_id, onOpen: onOpenThread }), [space.space_id, onOpenThread]);
+  // One chat (`infinichat`): a new message stays in the chat, so several threads start side by side.
+  const oneChat = useFeatureFlag(projectId, 'infinichat').enabled;
+  const spaceSend = useMemo(
+    () => ({ spaceId: space.space_id, onOpen: oneChat ? () => undefined : onOpenThread }),
+    [space.space_id, onOpenThread, oneChat],
+  );
   const { send, sending } = useProjectHomeSend(projectId, { beforeSend, space: spaceSend });
   const draftScope = useMemo<DraftScope>(() => ({ kind: 'space', spaceId: space.space_id }), [space.space_id]);
 
@@ -825,6 +844,7 @@ function ThreadPanel({
   thread,
   agentFallback,
   onClose,
+  fullSessionHref,
 }: {
   projectId: string;
   sessionId: string;
@@ -833,6 +853,8 @@ function ThreadPanel({
   thread: ProjectSession | undefined;
   agentFallback: string | null;
   onClose: () => void;
+  /** One chat: the thread's full session, for a person who wants every step. */
+  fullSessionHref?: string;
 }) {
   const t = useTranslations('spaces.view');
   const session = useSession(projectId, sessionId);
@@ -891,6 +913,11 @@ function ThreadPanel({
             <span className="text-muted-foreground truncate text-xs">{context}</span>
           </div>
         </div>
+        {fullSessionHref ? (
+          <Link href={fullSessionHref} className="text-muted-foreground hover:text-foreground shrink-0 px-2 text-xs">
+            {t('openFullSession')}
+          </Link>
+        ) : null}
         <Hint label={t('closeThread')} side="bottom">
           <Button variant="ghost" size="icon-md" aria-label={t('closeThread')} onClick={onClose}>
             <Close />

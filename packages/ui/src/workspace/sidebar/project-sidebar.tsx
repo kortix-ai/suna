@@ -41,6 +41,7 @@ import { ProjectChromeNavItem } from './footer/project-chrome-nav';
 import { CHROME_UI_ENABLED } from '../../internal/chrome/use-chrome-offered';
 import {
   MagnifyingGlassIcon,
+  ChatCircleIcon,
   NavigationArrowIcon,
 } from '@phosphor-icons/react';
 import { UiLink as Link } from '../../providers/ui-provider';
@@ -85,6 +86,8 @@ export function ProjectSidebar({
   const accountId = useBillingAccountId();
   // Channels replace New session and the session list (fail-closed: off until the project answers).
   const channels = useFeatureFlag(projectId, 'project_channels').enabled;
+  // One chat (`infinichat`, Channels off): one Chat row replaces New session, and sessions stay out of sight.
+  const oneChat = useFeatureFlag(projectId, 'infinichat').enabled && !channels;
   // The project flag and the web app's master switch (`CHROME_UI_ENABLED`) must both be on.
   const chrome = useFeatureFlag(projectId, 'chrome').enabled && CHROME_UI_ENABLED;
 
@@ -285,7 +288,18 @@ export function ProjectSidebar({
         <div className="flex h-full min-h-0 flex-col space-y-2">
           <SidebarGroup className="py-0">
             <SidebarMenu>
-              {channels ? null : (
+              {oneChat ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild className="text-sidebar-foreground">
+                    <Link href={`${uiRoutes().project(projectId)}/chat`} prefetch onClick={handleNewSessionClick}>
+                      <span className="shrink-0">
+                        <ChatCircleIcon />
+                      </span>
+                      <span>{t('oneChat')}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : channels ? null : (
                 <SidebarMenuItem>
                   {creatingSession ? (
                     <SidebarMenuButton
@@ -320,7 +334,7 @@ export function ProjectSidebar({
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
             {channels ? (
               <ProjectSpacesNav projectId={projectId} />
-            ) : (
+            ) : oneChat ? null : (
               <ProjectSessionList projectId={projectId} />
             )}
           </SidebarGroup>

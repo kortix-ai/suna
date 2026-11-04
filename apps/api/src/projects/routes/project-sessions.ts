@@ -48,7 +48,7 @@ import { sessionRestoreUntil } from '../session-log-purge';
 import { readSessionConversationModels } from '../session-log-read';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { resolveFeatureFlag, spacesEnabled } from '../../feature-flags/registry';
 import { spaceAccessFor } from '../../shared/space-access';
 import { findForkSourceSpace, findSessionSpace } from '../lib/project-spaces';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
@@ -271,7 +271,7 @@ export function registerProjectSessionsRoutes(): void {
     // any `agent_name` (a create with none already falls back to a default
     // agent), so the gate below authorizes the agent that will actually run.
     let channelSpaceId: string | null = null;
-    if (resolveFeatureFlag(loaded.row.metadata, 'project_channels')) {
+    if (spacesEnabled(loaded.row.metadata)) {
       const access = await spaceAccessFor(projectId, loaded.userId, callerKortixSessionId(c));
       const space =
         typeof body.space_id === 'string' && isUuid(body.space_id)
@@ -579,7 +579,7 @@ export function registerProjectSessionsRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
     const personId = personUserId(c, loaded);
 
-    const spaceId = resolveFeatureFlag(loaded.row.metadata, 'project_channels') ? (query.space_id ?? null) : null;
+    const spaceId = spacesEnabled(loaded.row.metadata) ? (query.space_id ?? null) : null;
     if (spaceId !== null && !isUuid(spaceId)) return c.json({ error: 'space_id must be a UUID' }, 400);
     const group = resolveFeatureFlag(loaded.row.metadata, 'session_groups') ? (query.group ?? null) : null;
     if (group !== null && group !== 'none' && !isUuid(group)) {

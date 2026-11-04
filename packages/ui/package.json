@@ -463,7 +463,6 @@
     "./session/thread/session-body": "./src/session/thread/session-body.tsx",
     "./session/thread/session-chat": "./src/session/thread/session-chat.tsx",
     "./session/thread/transcript": "./src/session/thread/transcript.tsx",
-    "./session/thread/transcript-rows": "./src/session/thread/transcript-rows.ts",
     "./session/tool/foreign-tool-calls": "./src/session/tool/foreign-tool-calls.ts",
     "./session/tool/shared/file-list": "./src/session/tool/shared/file-list.tsx",
     "./session/tool/shared/patch-helpers": "./src/session/tool/shared/patch-helpers.tsx",
@@ -2298,10 +2297,6 @@
       "./session/thread/pinned-root-session": {
         "types": "./dist/session/thread/pinned-root-session.d.ts",
         "import": "./dist/session/thread/pinned-root-session.js"
-      },
-      "./session/thread/transcript-rows": {
-        "types": "./dist/session/thread/transcript-rows.d.ts",
-        "import": "./dist/session/thread/transcript-rows.js"
       },
       "./session/thread/session-body": {
         "types": "./dist/session/thread/session-body.d.ts",

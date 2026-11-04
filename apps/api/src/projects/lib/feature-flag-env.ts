@@ -12,10 +12,6 @@ import { isPlatinumConfigured } from '../../shared/platinum';
  */
 export const FEATURE_FLAGS_ENV_NAME = 'KORTIX_FEATURE_FLAGS';
 
-/** kortixd's cap on nested separate sessions (harness/pi/config.ts); its default is 2. */
-const SUBAGENT_MAX_DEPTH_ENV_NAME = 'KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH';
-const FRONT_CHAT_MAX_DEPTH = 3;
-
 /**
  * Graduated keys still listed for sandbox images built before they graduated: such an image
  * withholds the kortix-genui skill unless `genui` is listed. Delete once every served image
@@ -45,7 +41,5 @@ export async function buildFeatureFlagSandboxEnv(projectId: string): Promise<Rec
     .limit(1);
   return {
     [FEATURE_FLAGS_ENV_NAME]: featureFlagsEnvValue(row?.metadata),
-    // A front chat (flag `infinichat`) is one level above its worker: one more level keeps the worker's workflows.
-    ...(resolveFeatureFlags(row?.metadata).infinichat ? { [SUBAGENT_MAX_DEPTH_ENV_NAME]: String(FRONT_CHAT_MAX_DEPTH) } : {}),
   };
 }

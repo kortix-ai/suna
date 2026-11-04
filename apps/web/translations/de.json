@@ -1861,7 +1861,8 @@
       "addChannel": "Kanal hinzufügen",
       "loadError": "Kanäle konnten nicht geladen werden.",
       "newAgent": "Neuer Agent"
-    }
+    },
+    "oneChat": "Chat"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -24727,7 +24728,8 @@
       "allAgents": "Alle Agenten",
       "join": "Kanal beitreten",
       "joined": "Du bist #{name} beigetreten.",
-      "joinFailed": "Beitritt zum Kanal fehlgeschlagen. Versuche es erneut."
+      "joinFailed": "Beitritt zum Kanal fehlgeschlagen. Versuche es erneut.",
+      "openFullSession": "Open full session"
     },
     "details": {
       "about": "Info",

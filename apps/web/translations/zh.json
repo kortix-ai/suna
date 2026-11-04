@@ -1861,7 +1861,8 @@
       "addChannel": "添加频道",
       "loadError": "无法加载频道。",
       "newAgent": "新建智能体"
-    }
+    },
+    "oneChat": "Chat"
   },
   "dashboard": {
     "title": "仪表板",
@@ -24727,7 +24728,8 @@
       "allAgents": "所有智能体",
       "join": "加入频道",
       "joined": "你已加入 #{name}。",
-      "joinFailed": "无法加入频道，请重试。"
+      "joinFailed": "无法加入频道，请重试。",
+      "openFullSession": "Open full session"
     },
     "details": {
       "about": "关于",

@@ -63,7 +63,7 @@ import { sessionChannelEnvFromMetadata, sessionSpaceEnv } from './session-channe
 
 import { buildSessionRuntimeContextEnv } from './session-runtime-context';
 import { buildFeatureFlagSandboxEnv } from './feature-flag-env';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { resolveFeatureFlag, spacesEnabled } from '../../feature-flags/registry';
 import { recordedWorkspaceVolume } from '../../platform/services/workspace-volume';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import { buildMyKortixConfig } from './my-kortix-agent';
@@ -92,7 +92,7 @@ async function buildSessionChannelEnv(sessionId: string): Promise<Record<string,
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     const space =
-      row?.spaceId && row.kind && resolveFeatureFlag(row.projectMetadata, 'project_channels')
+      row?.spaceId && row.kind && spacesEnabled(row.projectMetadata)
         ? { spaceId: row.spaceId, kind: row.kind, slug: row.slug, dmAgentName: row.dmAgentName }
         : null;
     return { ...sessionChannelEnvFromMetadata(row?.metadata), ...sessionSpaceEnv(space) };
