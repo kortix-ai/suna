@@ -1,10 +1,9 @@
 'use client';
 
-import { Badge } from '../../primitives/badge';
 import { CountBadge } from '../../primitives/count-badge';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
-import { CheckIcon, CircleDashedIcon, CircleHalfIcon, LockSimpleIcon } from '@phosphor-icons/react';
+import { AgentHandle, SmallGlyph, taskGlyphStatus } from './agent-surface';
 import type { SessionTask, SessionTaskStatus } from '@kortix/sdk';
 
 /**
@@ -23,19 +22,12 @@ export function groupTasks(tasks: readonly SessionTask[]): Record<SessionTaskSta
   return groups;
 }
 
-function TaskGlyph({ task }: { task: SessionTask }) {
-  if (task.status === 'completed') return <CheckIcon aria-hidden className="text-kortix-green size-3 shrink-0" />;
-  if (task.status === 'in_progress') return <CircleHalfIcon aria-hidden className="text-foreground size-3 shrink-0" />;
-  if (task.blocked) return <LockSimpleIcon aria-hidden className="text-muted-foreground size-3 shrink-0" />;
-  return <CircleDashedIcon aria-hidden className="text-muted-foreground size-3 shrink-0" />;
-}
-
 function TaskRow({ task }: { task: SessionTask }) {
   const t = useTranslations('multiAgent.tasks');
   const done = task.status === 'completed';
   return (
     <li data-task-seq={task.seq} className="flex min-w-0 items-center gap-2 rounded-sm px-2 py-1 text-xs">
-      <TaskGlyph task={task} />
+      <SmallGlyph status={task.blocked && !done ? 'stopped' : taskGlyphStatus(task.status)} label={t(`group.${task.status}`)} />
       <span className="text-muted-foreground shrink-0 tabular-nums">#{task.seq}</span>
       <span
         className={cn('min-w-0 flex-1 truncate', done ? 'text-muted-foreground line-through' : 'text-foreground')}
@@ -49,15 +41,9 @@ function TaskRow({ task }: { task: SessionTask }) {
         </span>
       )}
       {task.owner_handle ? (
-        <Badge variant="outline" size="sm" className="max-w-32 shrink-0 truncate">
-          @{task.owner_handle}
-        </Badge>
+        <AgentHandle handle={task.owner_handle} />
       ) : (
-        !done && (
-          <Badge variant="muted" size="sm" className="shrink-0">
-            {t('unowned')}
-          </Badge>
-        )
+        !done && <span className="text-muted-foreground shrink-0">{t('unowned')}</span>
       )}
     </li>
   );

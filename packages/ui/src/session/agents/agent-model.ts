@@ -53,6 +53,9 @@ const STATE_ORDER: Record<AgentRowState, number> = {
 
 /** Board state of a session row: the API's `board_state`, else derived from the older fields. */
 export function boardStateOf(session: ProjectSession): AgentRowState {
+  // A session whose computer could not start is failed, even while its first prompt still
+  // waits to be delivered (the API then reports `board_state: working`).
+  if (session.status === 'failed' && session.board_state === 'working') return 'failed';
   if (session.board_state) return session.board_state;
   if (session.attention) return 'needs_input';
   switch (session.status) {

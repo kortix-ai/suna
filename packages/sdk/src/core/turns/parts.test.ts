@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isAttachment, isStepPart, splitUserParts } from './parts';
+import { isAttachment, isStepPart, shouldShowToolPart, splitUserParts } from './parts';
 
 const text = { id: 'part_text', type: 'text', text: 'Inspect this.' } as const;
 const zip = {
@@ -33,5 +33,24 @@ describe('isStepPart', () => {
     expect(isStepPart({ id: 'p2', type: 'step-finish' })).toBe(true);
     expect(isStepPart(text)).toBe(false);
     expect(isStepPart({ id: 'p3', type: 'tool' })).toBe(false);
+  });
+});
+
+describe('shouldShowToolPart', () => {
+  const block = (name: string, input: Record<string, unknown>) =>
+    ({ type: 'tool_call', id: 'b1', call_id: 'c1', name, kind: 'other', input, status: 'complete' }) as never;
+  const part = (tool: string, input: Record<string, unknown>) => ({ tool, state: { input } });
+
+  test('reading the agent roster is not a step the person reads: it stays out of the transcript', () => {
+    expect(shouldShowToolPart(block('kortix_agents', { action: 'list' }))).toBe(false);
+    expect(shouldShowToolPart(part('kortix_agents', { action: 'list' }))).toBe(false);
+    expect(shouldShowToolPart(part('oc-kortix-agents', { action: 'get' }))).toBe(false);
+  });
+
+  test('a change to an agent, and every other tool, still shows', () => {
+    expect(shouldShowToolPart(block('kortix_agents', { action: 'update' }))).toBe(true);
+    expect(shouldShowToolPart(part('kortix_sessions', { action: 'list' }))).toBe(true);
+    expect(shouldShowToolPart(part('read', {}))).toBe(true);
+    expect(shouldShowToolPart({ tool: 'todoread' })).toBe(false);
   });
 });

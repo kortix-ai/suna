@@ -11,6 +11,7 @@
  * thread sends to that sub-agent's own runtime session.
  */
 
+import { HeldMessages } from './HeldMessages';
 import React, { useMemo, useCallback, useRef, useEffect, useLayoutEffect, useState } from 'react';
 import {
   View,
@@ -2316,6 +2317,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
                     style={turns.length > 0 ? { marginTop: webSpace(6) } : undefined}
                   />
                 ) : null}
+                {/* Web `HeldMessageList` above the composer: messages another agent sent that wait on the person. */}
+                {projectId && projectSessionId ? <HeldMessages projectId={projectId} sessionId={projectSessionId} /> : null}
               </View>
               {/* The room (FACT 1): lets the newest turn pin near the top. */}
               <View onLayout={handleSpacerLayout} style={{ height: room }} />

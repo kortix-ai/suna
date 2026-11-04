@@ -18,9 +18,9 @@ import { buildFileRefsBlock } from '@kortix/ui/internal/lib/project-preamble';
 import { markSessionOnScreen } from '@kortix/ui/internal/lib/web-notifications';
 import { ComposerChatInput } from '@kortix/ui/session/composer/composer-chat-input';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { SplitSheetBody, SplitSheetContent, SplitSheetHeader, SplitSheetTitle } from '@kortix/ui/split-sheet';
+import { SplitSheetBody, SplitSheetClose, SplitSheetContent, SplitSheetHeader, SplitSheetTitle } from '@kortix/ui/split-sheet';
 import { errorToast } from '@kortix/ui/toast';
-import { ArrowSquareOutIcon, ClockCounterClockwiseIcon, NotePencilIcon, SparkleIcon } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, ClockCounterClockwiseIcon, NotePencilIcon, SparkleIcon, XIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
@@ -97,7 +97,7 @@ export function AskAgentSheet({
   return (
     // The page background, not the sheet's `bg-surface`: the column reads as part of the artifact page.
     <SplitSheetContent aria-label={t('askAgent')} className="bg-background">
-      <SplitSheetHeader closeLabel={t('close')} className="items-center py-2">
+      <SplitSheetHeader showCloseButton={false} className="items-center py-2">
         <div className="flex min-w-0 items-center gap-1">
           <SplitSheetTitle className="min-w-0 flex-1 truncate">{t('askAgent')}</SplitSheetTitle>
           {/* One group, one weight, as the page header's actions. */}
@@ -119,6 +119,14 @@ export function AskAgentSheet({
                 </Hint>
               </>
             ) : null}
+            {/* Close joins the group, as in every panel toolbar: one radius, one weight. */}
+            <Hint label={t('close')} side="bottom">
+              <SplitSheetClose asChild>
+                <Button size="icon-sm" variant="secondary" aria-label={t('close')}>
+                  <XIcon className="size-3.5" />
+                </Button>
+              </SplitSheetClose>
+            </Hint>
           </ButtonGroup>
         </div>
       </SplitSheetHeader>
