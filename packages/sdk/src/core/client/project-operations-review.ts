@@ -26,6 +26,8 @@ export function bindProjectOperationsReview(projectId: string) {
       list: () => P.listProjectSpaces(projectId),
       create: (input: Parameters<typeof P.createProjectSpace>[1]) => P.createProjectSpace(projectId, input),
       update: (...a: DropFirst<Parameters<typeof P.updateProjectSpace>>) => P.updateProjectSpace(projectId, ...a),
+      /** `setTabs(spaceId, tabs)`: replace the space's tabs after Chat, in order. */
+      setTabs: (...a: DropFirst<Parameters<typeof P.setProjectSpaceTabs>>) => P.setProjectSpaceTabs(projectId, ...a),
       /** The caller's DM with an agent, created on the first call. */
       dm: (agentName: string) => P.getOrCreateProjectDm(projectId, agentName),
       /** The channel's Apps: deployed from one of its threads, only those the caller may open. */

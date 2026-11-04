@@ -36,6 +36,7 @@ const {
   useProjectSpaceLinks,
   useProjectSpaces,
   useRemoveProjectSpaceLink,
+  useSetProjectSpaceTabs,
   useUpdateProjectSpace,
 } = await import('./use-project-spaces');
 const { qk } = await import('./query-keys');
@@ -92,6 +93,20 @@ describe('space mutations', () => {
     // Creating a channel or opening a DM completes a "Get started" row.
     const onboarding = [...qk.project.channelsOnboarding('P1')];
     expect(invalidated).toEqual([key, onboarding, key, key, onboarding]);
+  });
+});
+
+describe('useSetProjectSpaceTabs', () => {
+  test('PUTs the whole tab list and waits for the spaces list to refetch', async () => {
+    const setTabs = useSetProjectSpaceTabs('P1') as any;
+    const tabs = [{ id: 'mem', title: 'Memory', kind: 'memory' }];
+    await setTabs.mutationFn({ spaceId: 'S1', tabs });
+    expect(calls).toEqual([{ url: 'http://test.local/projects/P1/spaces/S1/tabs', method: 'PUT', body: { tabs } }]);
+    const pending = setTabs.onSuccess();
+    expect(pending).toBeInstanceOf(Promise);
+    expect(refetched).toEqual([]);
+    await pending;
+    expect(refetched).toEqual([[...qk.project.spaces('P1')]]);
   });
 });
 

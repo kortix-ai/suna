@@ -20,9 +20,11 @@ import {
   listProjectSpaces,
   listPrivateChannelsNotIn,
   removeProjectSpaceLink,
+  setProjectSpaceTabs,
   updateProjectSpace,
   type AddProjectSpaceLinkInput,
   type ChannelsOnboardingMark,
+  type ProjectSpaceTab,
   type UpdateProjectSpaceInput,
 } from '../core/rest/projects-client/spaces';
 import { contract } from './query-contracts';
@@ -109,6 +111,19 @@ export function useUpdateProjectSpace(projectId: string) {
   return useMutation({
     mutationFn: (args: { spaceId: string; input: UpdateProjectSpaceInput }) =>
       updateProjectSpace(projectId, args.spaceId, args.input),
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * Replace a space's tabs after Chat (`setProjectSpaceTabs`): a channel's
+ * editor or a DM's owner, else 403 `forbidden`. Resolves after the spaces
+ * list refetched, so the tab row shows the new list.
+ */
+export function useSetProjectSpaceTabs(projectId: string) {
+  const invalidate = useInvalidateSpaces(projectId);
+  return useMutation({
+    mutationFn: (args: { spaceId: string; tabs: ProjectSpaceTab[] }) => setProjectSpaceTabs(projectId, args.spaceId, args.tabs),
     onSuccess: invalidate,
   });
 }

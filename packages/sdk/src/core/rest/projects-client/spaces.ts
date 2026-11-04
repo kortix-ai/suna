@@ -43,6 +43,28 @@ export interface ProjectSpace {
    * `public`. Absent on older APIs (read it as `public`).
    */
   visibility?: 'public' | 'private';
+  /**
+   * The space's tabs after Chat, in order. Chat is always the first tab and
+   * is never listed. Absent on older APIs (read it as `[]`).
+   */
+  tabs?: ProjectSpaceTab[];
+}
+
+/** What a space tab shows. Same values as the API's `SPACE_TAB_KINDS`. */
+export type ProjectSpaceTabKind = 'threads' | 'artifact' | 'app' | 'folder' | 'link' | 'memory';
+
+/**
+ * One tab of a space after Chat. `ref`: an artifact id (`artifact`), an App
+ * slug (`app`), a Drive folder path (`folder`) or an https URL (`link`);
+ * required for those kinds, absent for `threads` and `memory`.
+ */
+export interface ProjectSpaceTab {
+  /** Stable; 1–64 of `A-Za-z0-9_-`. */
+  id: string;
+  /** 1–60 characters. */
+  title: string;
+  kind: ProjectSpaceTabKind;
+  ref?: string;
 }
 
 export interface CreateProjectSpaceInput {
@@ -148,6 +170,20 @@ export async function createProjectSpace(projectId: string, input: CreateProject
 export async function updateProjectSpace(projectId: string, spaceId: string, input: UpdateProjectSpaceInput) {
   return unwrap(
     await backendApi.patch<ProjectSpace>(`/projects/${projectId}/spaces/${spaceId}`, input, { showErrors: false }),
+  );
+}
+
+/**
+ * Replace a space's tabs after Chat with `tabs`, in order: add, remove,
+ * rename and reorder in one call. At most 20; `artifact`, `app`, `folder` and
+ * `link` need a `ref` (else 400). A channel's editor (`can_edit`), a DM's
+ * owner, or a session token of a thread in the space may; anyone else rejects
+ * with 403 `forbidden`. The caller shows the error, so it never reaches the
+ * host error handler. Resolves the space with its new tabs.
+ */
+export async function setProjectSpaceTabs(projectId: string, spaceId: string, tabs: ProjectSpaceTab[]) {
+  return unwrap(
+    await backendApi.put<ProjectSpace>(`/projects/${projectId}/spaces/${spaceId}/tabs`, { tabs }, { showErrors: false }),
   );
 }
 

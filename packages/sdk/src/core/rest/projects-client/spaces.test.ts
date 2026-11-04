@@ -20,6 +20,7 @@ import {
   listPrivateChannelsNotIn,
   pinProjectSpaceLink,
   removeProjectSpaceLink,
+  setProjectSpaceTabs,
   updateProjectSpace,
   type ChannelsOnboarding,
   type ProjectSpace,
@@ -363,4 +364,28 @@ test('adding someone outside the project rejects with ApiError 400 not_project_m
   expect(error).toBeInstanceOf(ApiError);
   expect(error.status).toBe(400);
   expect(error.code).toBe('not_project_member');
+});
+
+test('setProjectSpaceTabs PUTs the whole ordered list and returns the space with its tabs', async () => {
+  const tabs = [
+    { id: 'threads', title: 'Threads', kind: 'threads' as const },
+    { id: 'docs', title: 'Docs', kind: 'link' as const, ref: 'https://example.test/docs' },
+  ];
+  nextResponse = { status: 200, body: { ...general, tabs } };
+  const space = await setProjectSpaceTabs('P1', general.space_id, tabs);
+  expect(calls).toEqual([
+    { url: `http://test.local/v1/projects/P1/spaces/${general.space_id}/tabs`, method: 'PUT', body: { tabs } },
+  ]);
+  expect(space.tabs).toEqual(tabs);
+});
+
+test('setProjectSpaceTabs rejects a refusal with ApiError and never reaches the host error handler', async () => {
+  const errors: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok', onError: (e: unknown) => errors.push(e) });
+  nextResponse = { status: 403, body: { error: 'no', code: 'forbidden' } };
+  const error = await setProjectSpaceTabs('P1', 'S2', []).catch((e: unknown) => e);
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({ status: 403, code: 'forbidden' });
+  expect(errors).toEqual([]);
 });
