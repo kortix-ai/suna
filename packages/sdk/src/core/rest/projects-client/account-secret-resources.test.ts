@@ -2,7 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   createAccountSecretResource, deleteAccountSecretResource, grantAccountSecretResource,
-  listAccountSecretResources, retryAccountSecretResource, revokeAccountSecretResourceGrant, rotateAccountSecretResource,
+  listAccountSecretResources, refreshAccountSecretUsage, retryAccountSecretResource, revokeAccountSecretResourceGrant, rotateAccountSecretResource,
   setAccountSecretResourceAccess,
   getSessionProviderSecretPool, setSessionProviderSecretPool,
   listSessionProviderSecretPools,
@@ -42,6 +42,23 @@ test('retry ends a cooldown with a body-less POST on the secret', async () => {
   await retryAccountSecretResource('account', 'secret');
   expect(calls.map((call) => [call.method, call.url])).toEqual([
     ['POST', 'http://test.local/accounts/account/secret-resources/secret/retry'],
+  ]);
+});
+
+test('usage refresh is a body-less POST on the secret and returns the snapshot', async () => {
+  const usage = {
+    windows: [{ id: 'five_hour', window_minutes: 300, used_percent: 42, resets_at: '2026-11-04T16:00:00.000Z' }],
+    limited: false, observed_at: '2026-11-04T14:00:00.000Z', source: 'usage_endpoint' as const,
+  };
+  globalThis.fetch = mock(async (url: unknown, init: RequestInit = {}) => {
+    calls.push({ url: String(url), method: init.method ?? 'GET', body: init.body ? JSON.parse(String(init.body)) : null });
+    return new Response(JSON.stringify({ usage, provider_account: { email: 'person@example.test', plan: 'pro' } }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as unknown as typeof fetch;
+  const result = await refreshAccountSecretUsage('account', 'secret');
+  expect(result).toEqual({ usage, provider_account: { email: 'person@example.test', plan: 'pro' } });
+  expect(result.provider_account?.email).toBe('person@example.test');
+  expect(calls.map((call) => [call.method, call.url, call.body])).toEqual([
+    ['POST', 'http://test.local/accounts/account/secret-resources/secret/usage', null],
   ]);
 });
 

@@ -143,8 +143,10 @@ function ToolPartRendererImpl({
   // place, failed or not: never in the side panel. Its row and the agent dialog say it all.
   const opensInPlace = isAgentTool(call.name);
   const boundActivate = useMemo(
-    () => (onActivate && !opensInPlace ? () => onActivate(call.call_id) : null),
-    [onActivate, opensInPlace, call.call_id],
+    // `disableNavigation`: a call that is not this session's (a sub-agent's step) has no
+    // view in this session's panel; opening the panel on it showed an empty panel.
+    () => (onActivate && !opensInPlace && !disableNavigation ? () => onActivate(call.call_id) : null),
+    [onActivate, opensInPlace, disableNavigation, call.call_id],
   );
 
   const surface = useContext(ToolSurfaceContext);

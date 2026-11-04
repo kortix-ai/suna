@@ -28,6 +28,7 @@ import { gatewayErrorResponse } from './pipeline/error-response';
 import { requestFieldError } from './pipeline/request-fields';
 import { createRouteMemory } from './pipeline/route-memory';
 import { createClaudeCodePassthrough, type ClaudeCodeRequest } from './claude-code/passthrough';
+import { createUsageReporter } from './usage/subscription-usage';
 
 // Anthropic Messages API error `type` values by HTTP status — used only to
 // shape the JSON envelope for clients speaking the Anthropic wire format; the
@@ -83,8 +84,13 @@ function responsesErrorResponse(status: number, message: string): Response {
   );
 }
 
-export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
+export function createGateway(rawHooks: GatewayHooks, deps: GatewayDeps = {}) {
   const logger = deps.logger ?? console;
+  // Every subscription response reports usage; the host hears a change, not every call.
+  const reportUsage = rawHooks.notePoolUsage ? createUsageReporter(rawHooks.notePoolUsage, { logger }) : null;
+  const hooks: GatewayHooks = reportUsage
+    ? { ...rawHooks, notePoolUsage: async (principal, secretId, usage) => reportUsage(principal, secretId, usage) }
+    : rawHooks;
   const runtime: HandlerRuntime = {
     hooks,
     logger,
@@ -289,6 +295,7 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       claudeCredentials,
       claudeRefused: hooks.claudeRefused,
       notePoolRateLimit: hooks.notePoolRateLimit,
+      notePoolUsage: hooks.notePoolUsage,
     }, { upstream: deps.claudeCodeUpstream, logger })
     : null;
   const claudeCode = (req: ClaudeCodeRequest): Promise<Response> =>

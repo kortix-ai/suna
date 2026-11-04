@@ -434,7 +434,7 @@ export const ttss: Record<string, (lang?: string, model?: string) => Tts> = {
           buf += dec.decode(value, { stream: true })
         }
       },
-      cancel: () => void reader.cancel(),
+      cancel: () => void reader.cancel().catch(() => {}), // an aborted stream rejects its cancel (Bun 1.4): never an unhandled rejection
     }))
   } }),
   // A voice for conversation-flow tests: no provider, no characters spent. First audio after VOICE_MOCK_TTS_MS (180,

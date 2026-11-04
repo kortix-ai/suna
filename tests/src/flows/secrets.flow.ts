@@ -43,6 +43,7 @@ flow(
       "GET /v1/accounts/:accountId/secret-resources",
       "PUT /v1/accounts/:accountId/secret-resources/:secretId/value",
       "POST /v1/accounts/:accountId/secret-resources/:secretId/retry",
+      "POST /v1/accounts/:accountId/secret-resources/:secretId/usage",
       "DELETE /v1/accounts/:accountId/secret-resources/:secretId",
     ],
   },
@@ -82,6 +83,13 @@ flow(
       response.status(200).body().has("$.secret_id", ids[1]!).has("$.cooldown_until", null);
       if ("value" in response.json<any>()) throw new Error("secret value leaked in retry response");
       (await ctx.client.as(ctx.P.NONMEMBER).post(`${path}/:secretId/retry`, {}, { params: { ...params, secretId: ids[1]! } })).status([403, 404]);
+    });
+    await ctx.step("an API key has no plan usage: listed as null, the usage route answers 400; a nonmember is denied", async () => {
+      const keys = (await ctx.client.as(ctx.P.OWNER).get(path, { params })).json<any>().secrets as any[];
+      if (keys.find((key) => key.secret_id === ids[1])?.usage !== null) throw new Error("an API key listed plan usage");
+      (await ctx.client.as(ctx.P.OWNER).post(`${path}/:secretId/usage`, {}, { params: { ...params, secretId: ids[1]! } }))
+        .status(400).body().has("$.error", "Not a subscription login");
+      (await ctx.client.as(ctx.P.NONMEMBER).post(`${path}/:secretId/usage`, {}, { params: { ...params, secretId: ids[1]! } })).status([403, 404]);
     });
     await ctx.step("delete primary; backup remains", async () => {
       (await ctx.client.as(ctx.P.OWNER).del(`${path}/:secretId`, { params: { ...params, secretId: ids[0]! } })).status(200);

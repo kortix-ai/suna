@@ -9,8 +9,7 @@ import { cn } from '../../lib/utils';
 import { SessionStatusMark } from '../../workspace/sidebar/session-status-mark';
 import type { SessionDisplayStatus } from '../actions/session-label';
 import { TextShimmer } from '../../primitives/text-shimmer';
-import { BoundActivateContext, ToolOutcomeContext, ToolRunningContext } from '../tool/shared/infrastructure';
-import { useToolOpen } from '../tool/shared/infrastructure-contexts';
+import { BoundActivateContext, ToolOutcomeContext, ToolRunningContext, useToolOpen } from '../tool/shared/infrastructure-contexts';
 
 /**
  * The parts every MyKortix agent surface in the chat is drawn from. An agent

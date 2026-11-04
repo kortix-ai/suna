@@ -5,7 +5,7 @@ import type {
   ArtifactCommentThread,
 } from '@kortix/sdk';
 
-export type CommentFilter = 'open' | 'resolved' | 'all';
+export type CommentFilter = 'open' | 'resolved';
 
 export function threadDeleted(thread: ArtifactCommentThread): boolean {
   return !thread.comments[0] || thread.comments[0].deleted_at !== null;
@@ -157,9 +157,12 @@ export function arrivedComments(
 export function groupCommentThreads(
   threads: readonly ArtifactCommentThread[],
   filter: CommentFilter,
+  /** A deleted thread opened by a link: its tombstone shows in its own status. */
+  shownDeleted?: string | null,
 ) {
   const visible = threads.filter(
-    (thread) => filter === 'all' || (thread.status === filter && !threadDeleted(thread)),
+    (thread) =>
+      thread.status === filter && (!threadDeleted(thread) || thread.thread_id === shownDeleted),
   );
   const stable = (a: ArtifactCommentThread, b: ArtifactCommentThread) =>
     a.created_at.localeCompare(b.created_at) || a.thread_id.localeCompare(b.thread_id);
