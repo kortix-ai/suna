@@ -98,6 +98,7 @@ export function diagnosticsText(device: CaptureDevice, name: string): string {
   }
   const rec = d?.recording;
   lines.push(['recording', `${or(rec?.state ?? device.live.state, 'unknown')} (reason ${or(rec?.reason)})`]);
+  if (rec?.last_error) lines.push(['recording_error', rec.last_error]);
   lines.push(['missing_permissions', rec?.missing_permissions.length ? rec.missing_permissions.join(', ') : 'none']);
   lines.push(['last_frame', or(rec?.last_frame_at, 'never')]);
   if (rec?.interval_ms && rec.max_height) lines.push(['capture', `every ${rec.interval_ms} ms, ${rec.max_height}p, ${rec.displays} display(s)`]);

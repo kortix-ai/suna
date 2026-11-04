@@ -92,7 +92,8 @@ Rules, in order:
 1. Policy: IT turns updates off (`auto_update`) or pins the channel (`update_channel`).
 2. No release version baked in (a local build), or no public key compiled in:
    no update; `update.json` says which.
-3. Check at start (60 s to 5 min after, random) and every 6 h, jittered 10 %. A failed
+3. Check at start (60 s to 5 min after, random) and every 6 h, jittered 10 %. A check
+   that came due during sleep waits 10 min after the wake (a tick gap over 120 s). A failed
    check retries after 30 min, doubling, up to 6 h.
 4. GET the manifest and `.sig` over https (redirects stay on https; manifest at most
    1 MiB). The signature must verify against a compiled-in key.

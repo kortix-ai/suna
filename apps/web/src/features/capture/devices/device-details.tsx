@@ -195,6 +195,11 @@ export function DeviceDetailsModal({
               <Row label={t('status')}>
                 <StatusLabel view={deviceStatus(device)} />
               </Row>
+              {d?.recording.last_error ? (
+                <Row label={t('recordingError')} mono>
+                  {d.recording.last_error}
+                </Row>
+              ) : null}
               <Row label={t('lastFrame')}>{when(d?.recording.last_frame_at)}</Row>
               {d?.recording.missing_permissions.length ? (
                 <Row label={t('permissions')}>

@@ -23145,6 +23145,7 @@
         "permissions": "不足している権限",
         "sync": "同期",
         "syncError": "同期エラー",
+        "recordingError": "録画エラー",
         "lastUpload": "最後のアップロード",
         "reported": "最後のレポート",
         "policy": "ポリシー",

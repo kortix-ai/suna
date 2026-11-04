@@ -23145,6 +23145,7 @@
         "permissions": "Autorisations manquantes",
         "sync": "Synchronisation",
         "syncError": "Erreur de synchronisation",
+        "recordingError": "Erreur d'enregistrement",
         "lastUpload": "Dernier envoi",
         "reported": "Dernier rapport",
         "policy": "Politique",

@@ -298,6 +298,8 @@ export interface CaptureDeviceDiagnostics {
   recording: {
     state: string | null;
     reason: string | null;
+    /** While `reason` is `error`: the recorder's last capture error (app 0.14.20 and later). */
+    last_error: string | null;
     missing_permissions: string[];
     last_frame_at: string | null;
     paused_until: string | null;

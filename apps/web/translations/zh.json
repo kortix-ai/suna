@@ -23145,6 +23145,7 @@
         "permissions": "缺少的权限",
         "sync": "同步",
         "syncError": "同步错误",
+        "recordingError": "录制错误",
         "lastUpload": "上次上传",
         "reported": "上次报告",
         "policy": "策略",

@@ -31,6 +31,13 @@
         "null"
       ]
     },
+    "lastError": {
+      "description": "While reason is `error`: the recorder's last capture error, at most 300 characters. Absent or null otherwise and from app versions before 0.14.20.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "missingPermissions": {
       "type": "array",
       "items": {

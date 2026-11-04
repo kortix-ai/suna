@@ -1,6 +1,7 @@
 //! Self-update of Kortix Capture, run by the machine service (root / SYSTEM).
 //!
-//! The service checks a signed manifest at start and every 6 hours (jittered).
+//! The service checks a signed manifest at start and every 6 hours (jittered), never
+//! within 10 minutes of a wake from sleep.
 //! A newer, verified installer for this OS is downloaded to a directory only
 //! root can write, installed silently, and then proved healthy. If the new
 //! version does not become healthy, the previous installer goes back and the
@@ -810,9 +811,22 @@ fn os_key() -> Option<&'static str> {
 
 // ─── The service side ───────────────────────────────────────────────────────
 
+/// A gap this long between two ticks (every 10 s) means the computer slept.
+const SLEEP_GAP_MS: i64 = 120_000;
+/// No check this soon after a wake: a computer that just woke is often still
+/// locked, or has its display off, and its recorder fails until the person is
+/// back. An update installed then would be judged on that state.
+const WAKE_SETTLE: Duration = Duration::from_secs(600);
+
+/// Whether the computer slept between the tick at `last_ms` and now.
+pub fn woke(last_ms: i64, now_ms: i64) -> bool {
+    last_ms > 0 && now_ms - last_ms > SLEEP_GAP_MS
+}
+
 /// Owned by the machine service loop; `tick` costs nothing between checks.
 pub struct Updater {
     next_check: Instant,
+    last_tick_ms: i64,
     failures: u32,
     worker: Option<std::thread::JoinHandle<bool>>,
     ok_probes: u32,
@@ -833,6 +847,7 @@ impl Updater {
         };
         Updater {
             next_check: Instant::now() + delay,
+            last_tick_ms: 0,
             failures: 0,
             worker: None,
             ok_probes: 0,
@@ -872,6 +887,12 @@ impl Updater {
     /// whose recorder runs now (see [`baseline`]), so the update can keep them recording.
     pub fn tick(&mut self, baseline: impl FnOnce() -> Vec<String>) {
         self.ingest_result();
+        let now = now_ms();
+        if woke(self.last_tick_ms, now) && !test_hooks() {
+            // A check that came due during the sleep waits until the computer settles.
+            self.next_check = self.next_check.max(Instant::now() + WAKE_SETTLE);
+        }
+        self.last_tick_ms = now;
         let current = installed_version();
         // A freshly installed version proves itself before anything else.
         self.verifying_job = None;
@@ -1805,6 +1826,14 @@ mod tests {
             st(true, "recording", 70_000).unwrap()
         );
         assert!(person_health(&Ok(noisy), 61_000).is_ok());
+    }
+
+    #[test]
+    fn a_tick_gap_over_two_minutes_is_a_wake() {
+        assert!(!woke(0, 1_000_000), "the first tick is no wake");
+        assert!(!woke(1_000_000, 1_010_000), "the next tick 10 s later");
+        assert!(!woke(1_000_000, 1_120_000), "a slow tick of exactly the limit");
+        assert!(woke(1_000_000, 1_120_001));
     }
 
     fn probe(who: &str, active: bool, s: std::result::Result<String, String>) -> Probe {

@@ -23145,6 +23145,7 @@
         "permissions": "Missing permissions",
         "sync": "Sync",
         "syncError": "Sync error",
+        "recordingError": "Recording error",
         "lastUpload": "Last upload",
         "reported": "Last report",
         "policy": "Policy",

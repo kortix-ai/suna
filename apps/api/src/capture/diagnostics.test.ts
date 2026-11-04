@@ -66,7 +66,7 @@ describe('deviceDiagnostics', () => {
     const d = deviceDiagnostics(
       row({
         deviceInfo: { hostname: null, computer_name: null, encryption: { alg: 'aes-256-gcm', key_id: 'k1' }, machine: { cpu: 42, gpus: ['GPU A', 7, ''], cpu_cores: '8' } },
-        status: { update: { status: 'exploded', badVersions: ['0.1.1'] }, missingPermissions: ['screen_recording', 3] },
+        status: { update: { status: 'exploded', badVersions: ['0.1.1'] }, missingPermissions: ['screen_recording', 3], reason: 'error', lastError: 'capture_failed: AcquireNextFrame' },
       }),
     );
     expect(d.hostname).toBeNull();
@@ -74,6 +74,7 @@ describe('deviceDiagnostics', () => {
     expect(d.machine).toMatchObject({ cpu: null, cpu_cores: null, gpus: ['GPU A'] });
     expect(d.update).toMatchObject({ status: 'unknown', skipped: [{ version: '0.1.1', failed_at: null, retry_at: null }] });
     expect(d.recording.missing_permissions).toEqual(['screen_recording']);
+    expect(d.recording).toMatchObject({ reason: 'error', last_error: 'capture_failed: AcquireNextFrame' });
   });
 });
 

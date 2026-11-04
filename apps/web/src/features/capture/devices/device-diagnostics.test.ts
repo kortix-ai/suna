@@ -24,7 +24,7 @@ const diagnostics = (over: Partial<CaptureDeviceDiagnostics> = {}): CaptureDevic
     skipped: [{ version: '0.1.1', failed_at: '2026-11-04T09:00:00.000Z', retry_at: '2026-11-11T09:00:00.000Z' }],
   },
   recording: {
-    state: 'recording', reason: null, missing_permissions: [], last_frame_at: '2026-11-04T10:00:00.000Z', paused_until: null,
+    state: 'recording', reason: null, last_error: null, missing_permissions: [], last_frame_at: '2026-11-04T10:00:00.000Z', paused_until: null,
     awake_since: null, interval_ms: 1000, max_height: 1080, audio_enabled: false, actions_recording: true, displays: 2,
   },
   sync: { state: 'ok', pending: 0, error_class: null, last_upload_at: '2026-11-04T10:00:00.000Z' },

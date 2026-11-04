@@ -840,8 +840,9 @@ audio, actions and policy state, the action spool summary, device info) as
 ## Updates
 
 The machine service updates the app by itself (`src/memory/managed/update.rs`).
-It checks at start and every 6 hours (jittered), on the channel the build came
-from: `stable` for `X.Y.Z`, `dev` for `X.Y.Z-dev.N`. Every Kortix release
+It checks at start and every 6 hours (jittered), never within 10 minutes of a
+wake from sleep (a just-woken computer is often locked, and its recorder fails
+until the person is back), on the channel the build came from: `stable` for `X.Y.Z`, `dev` for `X.Y.Z-dev.N`. Every Kortix release
 carries `capture-update.json` (version, channel and per-OS installer URL,
 SHA-256 and size) and its Ed25519 signature `capture-update.json.sig`. The
 service installs only a newer version whose signature verifies and whose

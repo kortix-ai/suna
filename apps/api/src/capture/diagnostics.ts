@@ -50,6 +50,8 @@ export interface DeviceDiagnostics {
   recording: {
     state: string | null;
     reason: string | null;
+    /** While `reason` is `error`: the recorder's last capture error (app 0.14.20 and later). */
+    last_error: string | null;
     missing_permissions: string[];
     last_frame_at: string | null;
     paused_until: string | null;
@@ -193,6 +195,7 @@ export function deviceDiagnostics(device: DiagnosticsInput): DeviceDiagnostics {
     recording: {
       state: text(status.recording),
       reason: text(status.reason),
+      last_error: text(status.lastError, 300),
       missing_permissions: strings(status.missingPermissions),
       last_frame_at: iso(status.lastFrameMs),
       paused_until: iso(status.pausedUntilMs),
