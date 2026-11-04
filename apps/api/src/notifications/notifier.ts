@@ -36,10 +36,6 @@ export interface DeliverInput {
   projectId?: string | null;
   sessionId?: string | null;
   triggerSlug?: string | null;
-  /** A room message: the room it was posted in. */
-  roomId?: string | null;
-  /** A thread reply: the thread's root seq, so the link opens the thread. */
-  roomThreadSeq?: number | null;
   artifactId?: string | null;
   artifactThreadId?: string | null;
   /** Subject: the session title or the trigger name. */
@@ -115,8 +111,6 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         projectId: input.projectId ?? null,
         sessionId: input.sessionId ?? null,
         triggerSlug: input.triggerSlug ?? null,
-        roomId: input.roomId ?? null,
-        roomThreadSeq: input.roomThreadSeq ?? null,
         artifactId: input.artifactId ?? null,
         artifactThreadId: input.artifactThreadId ?? null,
         kind: input.kind,
@@ -145,8 +139,6 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         projectId: input.projectId ?? null,
         sessionId: input.sessionId ?? null,
         triggerSlug: input.triggerSlug ?? null,
-        roomId: input.roomId ?? null,
-        roomThreadSeq: input.roomThreadSeq ?? null,
         artifactId: input.artifactId ?? null,
         artifactThreadId: input.artifactThreadId ?? null,
         accountId: input.accountId,

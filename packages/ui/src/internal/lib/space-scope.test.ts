@@ -15,8 +15,8 @@ const items = [
 ];
 
 describe('spaceScope', () => {
-  test('spaces are gated by the project_channels flag', () => {
-    expect(SPACES_FLAG).toBe('project_channels');
+  test('spaces are gated by the chat flag', () => {
+    expect(SPACES_FLAG).toBe('chat');
   });
 
   test('flag off: no spaces to offer, every item is project-wide', () => {

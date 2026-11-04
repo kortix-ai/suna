@@ -866,7 +866,7 @@ One table per domain. The route column shows the method and route template. `any
 | `secret.account_resource.retry` | Retried pooled provider key after rate limit | `POST /v1/accounts/:accountId/secret-resources/:secretId/retry` |
 | `secret.account_resource.revoke` | Revoked pooled provider key grant | `DELETE /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId` |
 | `secret.account_resource.rotate` | Rotated pooled provider key | `PUT /v1/accounts/:accountId/secret-resources/:secretId/value` |
-| `secret.account_resource.usage.refresh` | Refreshed subscription plan usage | `POST /v1/accounts/:accountId/secret-resources/:secretId/usage` |
+| `secret.account_resource.usage.refresh` | Refreshed subscription login plan usage | `POST /v1/accounts/:accountId/secret-resources/:secretId/usage` |
 | `secret.agent.grant` | Granted secret to an agent | `POST /v1/projects/:projectId/secrets/:identifier/grant` |
 | `secret.broker.proxy` | Sent request via secret broker | `POST /v1/projects/:projectId/secrets/:identifier/broker` |
 | `secret.claude_subscription.complete` or `secret.claude_subscription.connected` | Finished Claude subscription sign-in | `POST /v1/projects/:projectId/claude-subscription/login/complete` |
@@ -1256,7 +1256,7 @@ Platform admins and Kortix services record these: the platform admin console (`a
 | `gateway.internal.login.refresh` | Refreshed a refused ChatGPT login | `POST /internal/gateway/refresh-credential` |
 | `gateway.internal.model.list` | Resolved LLM gateway model catalog | `POST /internal/gateway/models` |
 | `gateway.internal.pool_key.cool_down` | Cooled down pooled provider key | `POST /internal/gateway/pool-rate-limit` |
-| `gateway.internal.pool_usage.record` | Recorded pooled subscription plan usage | `POST /internal/gateway/pool-usage` |
+| `gateway.internal.pool_key.usage.record` | Recorded subscription login plan usage | `POST /internal/gateway/pool-usage` |
 | `gateway.internal.request.admit` | Admitted LLM gateway request | `POST /internal/gateway/admit` |
 | `gateway.internal.request.authorize` | Authorized LLM gateway request | `POST /internal/gateway/authorize` |
 | `gateway.internal.route.resolve` | Resolved LLM model routing | `POST /internal/gateway/resolve-route` |

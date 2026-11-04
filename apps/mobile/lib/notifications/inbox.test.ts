@@ -54,7 +54,8 @@ describe('KIND_LABEL', () => {
       expect(label[0]).toBe(label[0].toUpperCase());
       expect(label.slice(1)).toBe(label.slice(1).toLowerCase());
     }
-    expect(new Set(Object.values(KIND_LABEL)).size).toBe(INBOX_NOTIFICATION_KINDS.length);
+    // + the retired `message` kind (Rooms, removed 2026-11), still in the SDK type.
+    expect(new Set(Object.values(KIND_LABEL)).size).toBe(INBOX_NOTIFICATION_KINDS.length + 1);
   });
 });
 

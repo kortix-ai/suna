@@ -1050,11 +1050,11 @@ export function CommandPalette() {
   // per-project feature flags this gates on.
   const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
 
-  // Memory pages (`project_channels`): the server's search, at 2 characters
+  // Memory pages (`chat`): the server's search, at 2 characters
   // or more. Hits of an older query stay in the hook while the next loads, so
   // a query cut below 2 characters shows none.
   const tMemory = useTranslations('spaces.memory');
-  const memoryOn = open && !!projectId && projectFlags.project_channels === true && page === 'root';
+  const memoryOn = open && !!projectId && projectFlags.chat === true && page === 'root';
   const memorySearch = useProjectMemorySearch(
     projectId ?? '',
     { q: serverSessionQuery, limit: 5 },
@@ -1267,7 +1267,7 @@ export function CommandPalette() {
       if (item.requiresProject && !projectId) continue;
       if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
       // Channels replace New session: a thread starts from a channel's composer.
-      if (item.id === 'new-session' && projectFlags.project_channels) continue;
+      if (item.id === 'new-session' && projectFlags.chat) continue;
       // Token substitution. An href that still holds an UNRESOLVED token after
       // this is dropped, not offered: navigating to a literal
       // `/accounts/{accountId}?tab=billing` is a 404, and offering a row that
@@ -1623,9 +1623,9 @@ export function CommandPalette() {
     return filteredProjectSessionsList.slice(0, 8);
   }, [hasQuery, projectId, filteredProjectSessionsList]);
 
-  // Channels (`project_channels`): sessions are threads, and channels and DMs
+  // Channels (`chat`): sessions are threads, and channels and DMs
   // are found by name, as the sidebar lists them (its DMs are the visible agents).
-  const channelsOn = projectFlags.project_channels === true;
+  const channelsOn = projectFlags.chat === true;
   const tSidebar = useTranslations('sidebar');
   const projectSpaces = useProjectSpaces(projectId, { enabled: open && channelsOn });
   const rootSpaceResults = useMemo(() => {

@@ -199,6 +199,8 @@ export interface SessionChatInputProps {
    * `composer-agent-access.ts`.
    */
   noAccessibleAgents?: boolean;
+  /** The agent is fixed (a DM): the picker names it and offers no other. Pass no `onAgentChange` with it. */
+  agentLocked?: boolean;
   commands?: Command[];
   /**
    * Whether the live command list has EVER resolved — the hook's `data`
@@ -245,6 +247,13 @@ export interface SessionChatInputProps {
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
   modelDefaultControls?: ModelDefaultControls;
+  /**
+   * The model the selected agent runs on when nothing overrides it
+   * (`inheritedModelFor` in `chat-input/chat-input-summary.ts`). Read only by
+   * the `chat_input` control: its model row says "Auto (from <agent>)" while
+   * `selectedModel` is this one, and "Reset to auto" picks it.
+   */
+  inheritedModel?: { providerID: string; modelID: string } | null;
   variants?: string[];
   selectedVariant?: string | null;
   onVariantChange?: (variant: string | null | undefined) => void;

@@ -1300,10 +1300,6 @@
           "name": "Vraćanje iz loga sesije",
           "description": "Ponovo gradi sesiju iz njenog sačuvanog loga sesije kada je njen računar izgubio razgovor. Kortix ga uključuje po projektu."
         },
-        "agent_rooms": {
-          "name": "Собе",
-          "description": "Именоване собе за ћаскање у којима сесије агената и особе објављују поруке и одговарају у нитима. Сесија се буди када јој је порука упућена. Додаје страницу Собе, `kortix rooms` и `kortix peers`."
-        },
         "goals": {
           "name": "Циљеви",
           "description": "Дајте агенту циљ за који је одговоран док независна провера не потврди исход. Планира, ради, чека, подсећа људе и чува своје стање у фасцикли Goals у Фајловима. Захтева укључене Volumene и Петље."
@@ -1320,9 +1316,9 @@
           "name": "Kanal e-pošte",
           "description": "Dajte agentu poštansko sanduče na Resend-u: dolazna pošta pokreće i nastavlja sesije, a agent čita, odgovara i šalje iz sandučeta. Koristite sopstveni Resend API ključ i domen."
         },
-        "project_channels": {
-          "name": "Kanali",
-          "description": "Organizujte rad u kanalima. Svaka nova poruka u kanalu ili u direktnoj poruci sa agentom započinje nit. Zamenjuje listu sesija u bočnoj traci."
+        "chat": {
+          "name": "Čet",
+          "description": "Čet sa Kortixom kao u Slacku: svaka poruka je nit, najnoviji odgovor Kortixa prikazuje se ispod nje, Kortix može da započne niti, a prostore delite sa drugim ljudima. Zamenjuje listu sesija u bočnoj traci."
         },
         "session_groups": {
           "name": "Групе сесија",
@@ -1347,16 +1343,24 @@
         "shared_drives": {
           "name": "Deljeni drajvovi",
           "description": "Drajvovi koje ceo tim može da koristi: administrator pravi drajv i dodaje mu agente. Svaka sesija tih agenata ga montira, a svako ko sme da koristi nekog od njih može da ga otvori. Isključeno, svaka osoba ima samo Moje fajlove."
+        },
+        "chat_input": {
+          "name": "Unos u četu",
+          "description": "Jedna kontrola ispod polja za unos za to ko odgovara i kako: izaberi agenta, a sva ostala podešavanja ostaju na Automatski, nasleđena od tog agenta. Otvori red da zameniš model, nivo razmišljanja, tajne, ključeve provajdera ili sandbox za ovu sesiju, i vrati na Automatski jednim klikom."
+        },
+        "chat_front": {
+          "name": "Niti samo za razgovor",
+          "description": "Kada je Čet uključen, nova poruka u prostoru pokreće nit čiji agent samo razgovara. Svaki zahtev prosleđuje jednoj skrivenoj My Kortix sesiji koja obavlja posao, i odgovara kratkim porukama samo sa onim što je važno. Zahteva uključen My Kortix u kortix.yaml."
         }
       },
       "channelsSwitch": {
-        "onTitle": "Укључити канале за {project}?",
-        "onBody": "Сви у овом пројекту добијају канале и директне поруке уместо листе сесија. Све постојеће сесије прелазе у #general. Можете их искључити било када; ништа се не брише.",
-        "drive": "Укључи и Drive, да канали добију датотеке.",
+        "onTitle": "Укључити просторе за {project}?",
+        "onBody": "Сви у овом пројекту добијају просторе и директне поруке уместо листе сесија. Све постојеће сесије прелазе у #general. Можете их искључити било када; ништа се не брише.",
+        "drive": "Укључи и Drive, да простори добију датотеке.",
         "turnOn": "Укључи",
         "cancel": "Откажи",
-        "offTitle": "Искључити канале?",
-        "offBody": "Канали, меморија, датотеке и линкови остају сачувани. Листа сесија се враћа свима.",
+        "offTitle": "Искључити просторе?",
+        "offBody": "Простори, меморија, датотеке и линкови остају сачувани. Листа сесија се враћа свима.",
         "turnOff": "Искључи"
       },
       "wip": "Work in progress",
@@ -1557,7 +1561,6 @@
     }
   },
   "sidebar": {
-    "rooms": "Sobe",
     "goals": "Ciljevi",
     "artifacts": "Артефакти",
     "referAndEarn": "Препоручи и заради",
@@ -1866,10 +1869,10 @@
     "searchApps": "Pretraži aplikacije",
     "appsNoMatches": "Nema rezultata",
     "spaces": {
-      "channels": "Канали",
+      "channels": "Простори",
       "directMessages": "Директне поруке",
-      "addChannel": "Додај канал",
-      "loadError": "Учитавање канала није успело.",
+      "addChannel": "Нови простор",
+      "loadError": "Учитавање простора није успело.",
       "newAgent": "Нови агент"
     }
   },
@@ -2269,6 +2272,38 @@
     "thinkingEffort": "Ниво размишљања",
     "sessionOverrides": "Измене сесије",
     "auto": "Аутоматски",
+    "chatInput": "Unos u četu",
+    "chatInputAgent": "Agent",
+    "chatInputModel": "Model",
+    "chatInputEffort": "Nivo",
+    "chatInputMoreSettings": "Još podešavanja",
+    "chatInputOverrideCount": "{count, plural, one {# izmena} few {# izmene} other {# izmena}}",
+    "chatInputResetToAuto": "Vrati na automatski",
+    "chatInputAgentDescription": "Ko odgovara na tvoj sledeći prompt.",
+    "chatInputModelDescription": "Model koji agent koristi za tvoj sledeći prompt.",
+    "chatInputEffortDescription": "Koliko dugo model razmišlja pre nego što odgovori.",
+    "chatInputMore": "Još",
+    "chatInputChangedCount": "{count} promenjeno",
+    "chatInputAgentDefault": "Podrazumevano za agenta",
+    "chatInputLoading": "Učitava se…",
+    "chatInputSecrets": "Tajne",
+    "chatInputSecretsDescription": "Koje tajne stižu do ove sesije.",
+    "chatInputSecretsAll": "{count, plural, one {# tajna agenta} few {Sve # tajne koje agent sme da koristi} other {Svih # tajni koje agent sme da koristi}}",
+    "chatInputSecretsEmpty": "Nema tajni za ovog agenta.",
+    "chatInputSecretsUnavailable": "Tajne se ovde ne mogu pročitati.",
+    "chatInputSecretCount": "{count, plural, one {# tajna} few {# tajne} other {# tajni}}",
+    "chatInputConnectors": "Konektori",
+    "chatInputConnectorsDescription": "Koji nalog svaka aplikacija koristi u ovoj sesiji.",
+    "chatInputConnectorsAll": "Svaka aplikacija na svom podrazumevanom nalogu",
+    "chatInputConnectorsUnavailable": "Konektori se ovde ne mogu pročitati.",
+    "chatInputDefaultAccount": "Podrazumevano",
+    "chatInputAppCount": "{count, plural, one {# aplikacija promenjena} few {# aplikacije promenjene} other {# aplikacija promenjeno}}",
+    "chatInputProviderKeysDescription": "Koji ključevi provajdera plaćaju pozive modela u ovoj sesiji.",
+    "chatInputProviderKeysAll": "Ključevi koje agent danas koristi",
+    "chatInputProviderKeysEmpty": "Nema ključeva provajdera za izbor.",
+    "chatInputKeyCount": "{count, plural, one {# ključ} few {# ključa} other {# ključeva}}",
+    "chatInputMachine": "Mašina",
+    "chatInputMachineDescription": "Šablon mašine na kojoj ova sesija počinje.",
     "sending": "Слање",
     "stop": "Заустави",
     "startingSession": "Покретање сесије…",
@@ -2306,7 +2341,8 @@
     "submitEdit": "Pošalji",
     "collapseQueue": "Skupi red",
     "expandQueue": "Proširi red",
-    "myKortixRoutes": "Сваки задатак шаље правом агенту"
+    "myKortixRoutes": "Сваки задатак шаље правом агенту",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {
@@ -3299,7 +3335,6 @@
       "automation_recovered": "Обавештење о опоравку",
       "capture_device_down": "Capture рачунар је стао",
       "capture_device_recovered": "Capture рачунар поново снима",
-      "message": "Poruka",
       "artifact_comment": "Komentari na artefakte"
     },
     "kindDescription": {
@@ -3312,7 +3347,6 @@
       "automation_recovered": "Окидач или петља који нису успевали поново раде.",
       "capture_device_down": "Kortix Capture рачунар не снима. Шаље се људима који управљају Capture-ом.",
       "capture_device_recovered": "Kortix Capture рачунар који је стао поново снима.",
-      "message": "Neko vas pomene sa @ ili odgovori u niti u kojoj ste pisali, u sobi.",
       "artifact_comment": "Povratne informacije, pominjanja i odgovori na artefakte koje možete da vidite."
     },
     "bell": {
@@ -21333,7 +21367,7 @@
     "copyFailed": "Копирање у оставу није успело",
     "threads": "Теме",
     "recentThreads": "Недавне теме",
-    "searchChannels": "Претражи канале, теме, команде..."
+    "searchChannels": "Претражи просторе, теме, команде..."
   },
   "personalWelcome": {
     "dismiss": "Затвори",
@@ -21554,9 +21588,9 @@
     "perDay": "Po danu",
     "noLimit": "Bez ograničenja",
     "postTo": "Објави у",
-    "postToHint": "Свако покретање тамо започиње нову тему. Без канала, покретања иду у #{channel}.",
-    "postToNone": "Без канала",
-    "postToUnavailable": "Недоступан канал",
+    "postToHint": "Свако покретање тамо започиње нову тему. Без простора, покретања иду у #{channel}.",
+    "postToNone": "Без простора",
+    "postToUnavailable": "Недоступан простор",
     "postToPrivate": "Приватно: окидачи не могу да објављују овде",
     "appLabel": "Апликација",
     "appPlaceholder": "Изаберите апликацију",
@@ -23395,103 +23429,6 @@
     "enable": "Омогући {name}",
     "enabling": "Омогућавање…"
   },
-  "rooms": {
-    "title": "Sobe",
-    "memberCount": "{count, plural, one {# član} few {# člana} other {# članova}}",
-    "members": "Članovi",
-    "agent": "Agent",
-    "agentSender": "Agent {name}",
-    "empty": "Sobe kojima se pridružiš pojaviće se ovde",
-    "emptyHint": "Napravi sobu, pa u nju dodaj ljude i agente.",
-    "loadError": "Nije moguće učitati sobe. Pokušaj ponovo.",
-    "roomLoadError": "Nije moguće učitati ovu sobu. Pokušaj ponovo.",
-    "messagesLoadError": "Nije moguće učitati poruke. Pokušaj ponovo.",
-    "retry": "Pokušaj ponovo",
-    "back": "Nazad na sobe",
-    "send": "Pošalji poruku",
-    "sendFailed": "Nije moguće poslati poruku",
-    "peopleLoadError": "Nije moguće učitati ljude. Pokušaj ponovo.",
-    "cardRoom": "Soba {name}",
-    "digestCount": "{count, plural, one {# nova poruka} few {# nove poruke} other {# novih poruka}}",
-    "digestMore": "… i još {count}",
-    "cardFrom": "Od",
-    "cardMessage": "Poruka",
-    "cardReplyTo": "Odgovor na",
-    "addRooms": "Dodaj sobe",
-    "addFailed": "Nije moguće dodati člana",
-    "addMembers": "Dodaj ljude i agente",
-    "addMembersDescription": "Članovi primaju poruke objavljene ovde. Sesija agenta ih čita u sledećem koraku.",
-    "addTopic": "Dodaj temu",
-    "agents": "Agenti",
-    "browseRoomsDescription": "Sve sobe u ovom projektu. Otvori jednu da je čitaš ili joj se pridružiš.",
-    "cancel": "Otkaži",
-    "roomName": "Naziv",
-    "roomNameHint": "Mala slova, brojevi i . _ / -, do 64 znaka.",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "Zatvori članove",
-    "copied": "Kopirano",
-    "copyText": "Kopiraj tekst poruke",
-    "createRoom": "Napravi sobu",
-    "createRoomDescription": "Soba okuplja razgovor o jednoj temi, za ljude i agente.",
-    "createFailed": "Nije moguće napraviti sobu",
-    "editTopic": "Izmeni temu",
-    "inThisRoom": "U ovoj sobi",
-    "introRoom": "Ovo je početak sobe #{name}.",
-    "joinRoom": "Pridruži se sobi",
-    "joinFailed": "Nije moguće pridružiti se sobi",
-    "joined": "Pridružen",
-    "jumpToLatest": "Idi na najnovije",
-    "leaveRoom": "Napusti sobu",
-    "memberActions": "Radnje za {name}",
-    "memberAdded": "{name} je dodat",
-    "memberRemoved": "Član je uklonjen",
-    "mentionHere": "Svi u #{name}",
-    "mentionSomeone": "Pomeni nekoga",
-    "mentionSuggestions": "Predlozi za pominjanje",
-    "messageRoom": "Poruka za #{name}",
-    "messages": "Poruke",
-    "new": "Novo",
-    "newLineHint": "Shift + Enter za novi red",
-    "noRooms": "Nema odgovarajućih soba",
-    "noMatches": "Nema rezultata",
-    "people": "Ljudi",
-    "pickRoom": "Otvori sobu sa liste",
-    "remove": "Ukloni",
-    "removeAgentDescription": "Sesija agenta više ne prima poruke ove sobe. Da to vratiš, ponovo dodaj agenta.",
-    "removeFailed": "Nije moguće ukloniti člana",
-    "removePersonDescription": "Ovaj član više ne prima poruke ove sobe. Da to vratiš, ponovo ga dodaj.",
-    "removeTitle": "Ukloniti {name} iz ove sobe?",
-    "searchRooms": "Pretraži sobe",
-    "searchPeopleAndAgents": "Pretraži ljude i agente",
-    "today": "Danas",
-    "topic": "Tema",
-    "topicFailed": "Nije moguće sačuvati temu",
-    "topicOptional": "Tema (opciono)",
-    "topicPlaceholder": "O čemu je ova soba",
-    "viewMembers": "Prikaži članove",
-    "viewMembersCount": "Prikaži {count, plural, one {# člana} few {# člana} other {# članova}}",
-    "viewingRoom": "Pregledaš #{name}",
-    "yesterday": "Juče",
-    "you": "{name} (ti)",
-    "status": {
-      "running": "Radi",
-      "starting": "Pokreće se",
-      "stopped": "Zaustavljena",
-      "failed": "Neuspešno"
-    },
-    "replyInThread": "Odgovori u niti",
-    "thread": "Nit",
-    "closeThread": "Zatvori nit",
-    "backToRoom": "Nazad na sobu",
-    "replyPlaceholder": "Odgovori…",
-    "replyCount": "{count, plural, one {# odgovor} few {# odgovora} other {# odgovora}}",
-    "lastReply": "Poslednji odgovor {time}",
-    "threadLoadError": "Nije moguće učitati ovu nit. Pokušaj ponovo.",
-    "join": "Pridruži se",
-    "openRoom": "Otvori",
-    "gateDescription": "Uključite Sobe da bi sesije agenata i ljudi ovog projekta razgovarali u imenovanim sobama za ćaskanje.",
-    "archivedNotice": "Ова соба је архивирана. Чува поруке и не прима нове."
-  },
   "goals": {
     "title": "Ciljevi",
     "gateDescription": "Agenti preuzimaju cilj dok ne bude proverljivo ostvaren: cilj živi u Fajlovima, dnevni otkucaj ga budi, agent traži od ljudi ono što mu treba, a nezavisna provera ga zatvara.",
@@ -24569,7 +24506,7 @@
       },
       "company": {
         "subtitle": "Оно што зна сваки агент у овом пројекту.",
-        "gateDescription": "Меморија компаније долази уз канале: сваки агент у овом пројекту почиње сваку тему са оним што је тим овде сачувао.",
+        "gateDescription": "Меморија компаније долази уз просторе: сваки агент у овом пројекту почиње сваку тему са оним што је тим овде сачувао.",
         "title": "Меморија",
         "place": "Компанија"
       },
@@ -24600,29 +24537,29 @@
       }
     },
     "create": {
-      "title": "Направи канал",
-      "description": "Сви у овом пројекту могу да виде и користе канал.",
+      "title": "Направи простор",
+      "description": "Сви у овом пројекту могу да виде и користе простор.",
       "nameLabel": "Назив",
       "namePlaceholder": "marketing",
-      "slugPlaceholder": "naziv-kanala",
+      "slugPlaceholder": "naziv-prostora",
       "descriptionLabel": "Опис (опционо)",
-      "descriptionPlaceholder": "За шта служи овај канал",
-      "submit": "Направи канал",
-      "created": "Канал је направљен",
+      "descriptionPlaceholder": "За шта служи овај простор",
+      "submit": "Направи простор",
+      "created": "Простор је направљен",
       "nameRequired": "Додај назив.",
       "invalidName": "Користи бар једно слово или цифру у називу.",
       "slugTaken": "<link>#{slug}</link> већ постоји.",
-      "failed": "Прављење канала није успело. Покушај поново.",
-      "renameTitle": "Преименуј канал",
-      "renameDescription": "Линк канала се мења са његовим називом.",
+      "failed": "Прављење простора није успело. Покушај поново.",
+      "renameTitle": "Преименуј простор",
+      "renameDescription": "Линк простора се мења са његовим називом.",
       "save": "Сачувај",
-      "renamed": "Канал је преименован",
-      "renameFailed": "Преименовање канала није успело. Покушај поново.",
-      "descriptionPrivate": "Само особе које додаш могу да виде и користе канал.",
+      "renamed": "Простор је преименован",
+      "renameFailed": "Преименовање простора није успело. Покушај поново.",
+      "descriptionPrivate": "Само особе које додаш могу да виде и користе простор.",
       "privateLabel": "Приватно",
       "privateHint": "Само позвани чланови могу да га виде.",
-      "privateUnavailable": "Приватни канали још нису доступни у овом радном простору.",
-      "privateLimits": "Приватно сакрива канал од других људи. Измене кода (git гране) и сопствени алати агената нису приватни.",
+      "privateUnavailable": "Приватни простори још нису доступни у овом радном простору.",
+      "privateLimits": "Приватно сакрива простор од других људи. Измене кода (git гране) и сопствени алати агената нису приватни.",
       "name": "Име",
       "taken": "Простор #{slug} већ постоји.",
       "about": "Опис",
@@ -24648,24 +24585,24 @@
       "messageAgent": "Порука за {agent}",
       "threadsEmptyTitle": "Још нема тема",
       "threadsEmpty": "Теме које започнеш појавиће се овде.",
-      "loadError": "Учитавање овог канала није успело.",
+      "loadError": "Учитавање овог простора није успело.",
       "threadsLoadError": "Учитавање тема није успело.",
       "retry": "Покушај поново",
-      "notFound": "Овај канал не постоји.",
-      "notFoundHint": "Линк је можда погрешан, или је неко преименовао канал.",
+      "notFound": "Овај простор не постоји.",
+      "notFoundHint": "Линк је можда погрешан, или је неко преименовао простор.",
       "openDefault": "Отвори #{name}",
       "archivedTitle": "#{name} је архивиран.",
       "archivedHint": "Врати га из архиве да би овде поново читао и започињао теме.",
       "archivedLocked": "Само његов творац или менаџер пројекта може да га врати из архиве.",
-      "unarchive": "Врати канал из архиве",
-      "unarchived": "Канал је враћен из архиве",
-      "unarchiveFailed": "Враћање канала из архиве није успело. Покушај поново.",
+      "unarchive": "Врати простор из архиве",
+      "unarchived": "Простор је враћен из архиве",
+      "unarchiveFailed": "Враћање простора из архиве није успело. Покушај поново.",
       "dmFailed": "Отварање овог разговора није успело.",
-      "archive": "Архивирај канал",
+      "archive": "Архивирај простор",
       "archiveTitle": "Архивирати #{name}?",
-      "archiveDescription": "Канал нестаје из бочне траке свих чланова. Његове теме остају, а његов творац или менаџер пројекта може да га врати из архиве.",
-      "archived": "Канал је архивиран",
-      "archiveFailed": "Архивирање канала није успело. Покушај поново.",
+      "archiveDescription": "Простор нестаје из бочне траке свих чланова. Његове теме остају, а његов творац или менаџер пројекта може да га врати из архиве.",
+      "archived": "Простор је архивиран",
+      "archiveFailed": "Архивирање простора није успело. Покушај поново.",
       "threadTitle": "Тема",
       "closeThread": "Затвори тему",
       "sendFailed": "Покретање теме није успело. Покушај поново.",
@@ -24697,7 +24634,7 @@
         },
         "links": {
           "title": "Још нема линкова",
-          "description": "Линкови подељени у нитима канала {place} појављују се овде. Закачи један да би га добио сваки агент у каналу."
+          "description": "Линкови подељени у нитима простора {place} појављују се овде. Закачи један да би га добио сваки агент у простору."
         },
         "triggers": {
           "title": "Још нема окидача",
@@ -24730,8 +24667,8 @@
         "titlePlaceholder": "О чему се ради",
         "invalidUrl": "Unesite ispravan link, na primer example.com.",
         "addFailed": "Линк није додат. Покушај поново.",
-        "limit": "Овај канал већ има 200 закачених линкова. Прво откачи један.",
-        "addLimit": "Овај канал већ има 200 додатих линкова. Прво уклони један.",
+        "limit": "Овај простор већ има 200 закачених линкова. Прво откачи један.",
+        "addLimit": "Овај простор већ има 200 додатих линкова. Прво уклони један.",
         "added": "Додато",
         "remove": "Уклони линк",
         "removeTitle": "Уклонити овај линк?",
@@ -24751,7 +24688,7 @@
         "all": "Сви",
         "sharedBy": "Поделио",
         "earlier": "Раније",
-        "pinHint": "Закачи га. Сваки агент у каналу чита закачене линкове.",
+        "pinHint": "Закачи га. Сваки агент у простору чита закачене линкове.",
         "unpinHint": "Откачи га. Агенти престају да га читају.",
         "copyLink": "Копирај линк",
         "linkCopied": "Линк је копиран",
@@ -24761,7 +24698,7 @@
       "appsLoadError": "Апликације нису учитане.",
       "triggers": {
         "loadError": "Окидачи нису могли да се учитају.",
-        "privateNote": "Окидачи не могу да објављују у приватни канал. Уместо тога затражи од агента у теми да постави петљу."
+        "privateNote": "Окидачи не могу да објављују у приватни простор. Уместо тога затражи од агента у теми да постави петљу."
       },
       "reply": "Одговори",
       "rosterTitlePeople": "Особе",
@@ -24807,19 +24744,68 @@
         "rememberHint": "Beleške koje čita svaki agent"
       },
       "allAgents": "Сви агенти",
-      "join": "Придружи се каналу",
+      "join": "Придружи се простору",
       "joined": "Придружио си се #{name}.",
-      "joinFailed": "Придруживање каналу није успело. Покушај поново."
+      "joinFailed": "Придруживање простору није успело. Покушај поново.",
+      "openFullSession": "Open full session",
+      "tabEdit": {
+        "kind": {
+          "file": "Fajl",
+          "artifact": "Artifact",
+          "app": "App",
+          "folder": "Folder",
+          "link": "Link"
+        },
+        "add": "Add tab",
+        "full": "A space holds at most {max} tabs. Remove one first.",
+        "noArtifacts": "No artifacts yet",
+        "noApps": "No Apps in this project",
+        "spaceFiles": "This space’s files",
+        "otherFolder": "Another folder…",
+        "fileItem": "Fajl…",
+        "linkItem": "Link…",
+        "linkTitle": "Add a link",
+        "linkHint": "An https page, shown inside the tab.",
+        "folderTitle": "Add a folder",
+        "folderHint": "A Drive folder, by its path.",
+        "fileTitle": "Dodaj fajl",
+        "fileHint": "Bilo koji fajl u Drive-u, po putanji. Fajl .html se prikazuje kao stranica.",
+        "url": "URL",
+        "path": "Folder path",
+        "filePath": "Putanja fajla",
+        "submit": "Add tab",
+        "cancel": "Cancel",
+        "options": "Options for {name}",
+        "rename": "Rename",
+        "renameTitle": "Rename tab",
+        "name": "Tab name",
+        "save": "Save",
+        "moveLeft": "Move left",
+        "moveRight": "Move right",
+        "remove": "Remove tab",
+        "removed": "Removed {name}",
+        "undo": "Undo",
+        "saveError": "The tabs could not be saved",
+        "openLink": "Open in new tab",
+        "linkCard": {
+          "description": "{host} ne dozvoljava drugim sajtovima da ga prikažu u kartici.",
+          "open": "Otvori"
+        },
+        "missing": {
+          "title": "This tab’s content is gone",
+          "description": "It was deleted or renamed, or it is not shared with you."
+        }
+      }
     },
     "details": {
       "about": "О каналу",
       "members": "Чланови",
-      "name": "Назив канала",
+      "name": "Назив простора",
       "description": "Опис",
       "noDescription": "Додај опис",
       "created": "Направљен",
       "editField": "Измени: {field}",
-      "archiveTitle": "Архивирај овај канал",
+      "archiveTitle": "Архивирај овај простор",
       "archiveHint": "Нестаје из бочне траке свих чланова. Његове теме остају.",
       "archive": "Архивирај",
       "find": "Пронађи особе или агенте",
@@ -24843,9 +24829,9 @@
       "peopleFailed": "Измена чланова није успела. Покушај поново.",
       "personMenu": "Опције за {person}",
       "removePerson": "Уклони из #{name}",
-      "leave": "Напусти канал",
+      "leave": "Напусти простор",
       "left": "Напустио си #{name}.",
-      "leaveTitle": "Напусти овај канал",
+      "leaveTitle": "Напусти овај простор",
       "leaveHint": "И даље можеш да га читаш и да се поново придружиш кад год желиш.",
       "visibilityPrivate": "Само његови чланови",
       "privateNote": "Само чланови могу да виде #{name}.",
@@ -24859,7 +24845,7 @@
       "leaveHintPrivate": "Губиш приступ његовим нитима, фајловима и меморији, укључујући и своје нити. Члан мора поново да те дода.",
       "leavePrivateTitle": "Напустити #{name}?",
       "addMembers": "Додај чланове",
-      "privateLimits": "Приватно сакрива канал од других људи. Измене кода (git гране) и сопствени алати агената нису приватни."
+      "privateLimits": "Приватно сакрива простор од других људи. Измене кода (git гране) и сопствени алати агената нису приватни."
     },
     "folder": {
       "memory": "Меморија",
@@ -24872,17 +24858,18 @@
       }
     },
     "onboarding": {
-      "reenabled": "Сесије започете док су канали били искључени налазе се овде.",
+      "reenabled": "Сесије започете док су простори били искључени налазе се овде.",
       "intro": {
-        "title": "Добро дошли у канале",
-        "channels": "Канали групишу рад по тиму.",
+        "title": "Добро дошли у просторе",
+        "channels": "Простори групишу рад по тиму.",
         "threads": "Свака нова порука започиње тему.",
-        "memory": "Агенти памте шта се у сваком каналу договори.",
-        "gotIt": "Разумем"
+        "memory": "Агенти памте шта се у сваком простору договори.",
+        "gotIt": "Разумем",
+        "tabs": "Every space has its own tabs. Add, rename and reorder them, or ask Kortix to."
       },
       "getStarted": {
         "dismiss": "Одбаци",
-        "channel": "Направите канал за тим",
+        "channel": "Направите простор за тим",
         "done": "Готово"
       }
     },
@@ -24911,9 +24898,9 @@
       "noMatches": "Ништа не одговара „{query}“."
     },
     "privateNotIn": {
-      "row": "Приватни канали у којима ниси",
-      "title": "Приватни канали у којима ниси",
-      "description": "Можеш да преименујеш, архивираш и додаш људе. Само чланови читају садржај канала, па не можеш да додаш себе.",
+      "row": "Приватни простори у којима ниси",
+      "title": "Приватни простори у којима ниси",
+      "description": "Можеш да преименујеш, архивираш и додаш људе. Само чланови читају садржај простора, па не можеш да додаш себе.",
       "meta": "{count, plural, =0 {Нема чланова} one {# члан} few {# члана} other {# чланова}} · аутор: {name}",
       "metaNoCreator": "{count, plural, =0 {Нема чланова} one {# члан} few {# члана} other {# чланова}}",
       "archived": "Архивиран",
@@ -24937,20 +24924,15 @@
       "board": {
         "brief": "Преглед",
         "text": "Чему служи овај простор и како помоћи.",
-        "label": "Soba i tabla",
+        "label": "Tabla i ciljevi",
         "description": "Tabla za sažetak i veze, a zatim ciljevi."
       },
       "standard": {
-        "label": "Soba, ciljevi, aplikacije i artefakti",
-        "description": "Soba, a zatim sadržaj vezan za prostor."
-      },
-      "room": {
-        "label": "Samo soba",
-        "description": "Jedan razgovor. Dodajte kartice kasnije."
+        "label": "Ciljevi, aplikacije i artefakti",
+        "description": "Sadržaj vezan za prostor."
       }
     },
     "tabs": {
-      "room": "Соба",
       "goals": "Циљеви",
       "apps": "Апликације",
       "artifacts": "Артефакти",
@@ -24975,7 +24957,7 @@
       "artifacts": "Артефакти везани за овај простор приказују се овде",
       "folder": "Овај фолдер је празан",
       "board": "Блокови на овој табли приказују се овде",
-      "boardHint": "Замолите My Kortix да дода блок: белешку, апликацију, датотеку, уграђену страницу или другу собу."
+      "boardHint": "Замолите My Kortix да дода блок: белешку, апликацију, датотеку или уграђену страницу."
     },
     "doc": "Документ",
     "page": "Страница",
@@ -25013,8 +24995,8 @@
     "cancel": "Откажи",
     "edit": {
       "title": "Уреди картице",
-      "description": "Соба остаје прва. Чување уписује картице у kortix.yaml на подразумеваној грани.",
-      "empty": "Само соба. Додајте картицу помоћу +.",
+      "description": "Чување уписује картице у kortix.yaml на подразумеваној грани.",
+      "empty": "Још нема картица. Додајте картицу помоћу +.",
       "save": "Сачувај картице",
       "rename": "Преименуј {name}",
       "moveUp": "Помери {name} нагоре",
@@ -25027,24 +25009,18 @@
       "unread": "{count, plural, one {# непрочитана порука} few {# непрочитане поруке} other {# непрочитаних порука}}"
     },
     "leave": "Напусти {name}",
-    "openRooms": "Отвори собе",
-    "roomHint": "Агенти и људи објављују новости овде.",
-    "noRoom": "Још нема собе.",
     "agents": "Агенти у овом простору",
     "openAgent": "Отвори {name}",
-    "members": "{count, plural, one {# особа} few {# особе} other {# особа}}",
     "needsYou": "потребни сте",
     "newSession": "Нова сесија",
     "askMyKortix": "Питај My Kortix",
     "askPrompt": "Желим да променим простор {name} (`spaces.{slug}` у kortix.yaml): картице, заглавље или агенте у њему. Питај ме шта да променим.",
-    "roomsOff": "Собе су искључене за овај пројекат",
-    "roomsOffHint": "Укључите собе у подешавањима пројекта да овде разговарате са људима и агентима.",
-    "room": {
-      "introTitle": "Овде почиње #{name}",
-      "introBody": "Соба за све који раде у овом простору.",
-      "introAgents": "{count, plural, one {{names} објављује новости овде.} few {{names} објављују новости овде.} other {{names} објављују новости овде.}}",
-      "introNoAgents": "Агенти које додате у овај простор објављују новости овде.",
-      "introMention": "Унесите @ да поменете особу или агента."
+    "intro": {
+      "title": "Овде почиње #{name}",
+      "body": "Место за све који раде у овом простору.",
+      "agents": "{count, plural, one {{names} објављује новости овде.} few {{names} објављују новости овде.} other {{names} објављују новости овде.}}",
+      "noAgents": "Агенти које додате у овај простор објављују новости овде.",
+      "addTab": "Додајте картицу са + да овде закачите циљеве, апликације, датотеке или таблу."
     },
     "filter": "Филтрирај по простору",
     "all": "Све",

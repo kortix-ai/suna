@@ -809,7 +809,7 @@ and answers `400 { error }` for a malformed one.
 
 | Field | What the turn does with it |
 | --- | --- |
-| `system` | A string of 16,000 characters at most (`MAX_TURN_SYSTEM_CHARS`), trimmed; blank is none. Added to this turn's system prompt only: pi sets it through the hidden `kortix-turn` extension (`before_agent_start`). apps/api sends the thread's memory file list here (`project_channels`): titles and paths of the Drive Memory folders the thread mounts; the agent reads and writes those files with its file tools. For a My Kortix session it sends the session owner's `kortix_memory` index instead, with Files on and `project_channels` on or off. A prompt without it runs without it; a daemon that predates the field ignores it. `/steer` drops it ("Steering"). |
+| `system` | A string of 16,000 characters at most (`MAX_TURN_SYSTEM_CHARS`), trimmed; blank is none. Added to this turn's system prompt only: pi sets it through the hidden `kortix-turn` extension (`before_agent_start`). apps/api sends the thread's memory file list here (`chat`): titles and paths of the Drive Memory folders the thread mounts; the agent reads and writes those files with its file tools. For a My Kortix session it sends the session owner's `kortix_memory` index instead, with Files on and `chat` on or off. A prompt without it runs without it; a daemon that predates the field ignores it. `/steer` drops it ("Steering"). |
 
 ## Steering
 
@@ -1512,7 +1512,7 @@ message during the turn is steered in at the next step as always.
 | `task_create`, `task_list`, `task_get`, `task_update` | flag `agent_teams`, a lead (depth 0) or a teammate (`kortix.team.lead` in `runtime_context`) (`session.team_tasks`) | the lead's list, `…/sessions/:lead/tasks`; `claim: true` is atomic in the API (`409 task_taken`/`task_blocked`). |
 | `task_stop` | a box with a control plane | stop one child of this session by `task_id` or name (`cloudStopChild`). |
 | `agent` | every session | `name` (metadata `agent_handle`), `fork` (`fork_from_session_id` = this session), `run_in_background` default true for a separate session at depth 0. Reuse first: the `name` of a finished child of this session (idle, completed, stopped) is a follow-up to that child, as its `task_id` is, and the result says it continued the same session (`continued: true`); the name of a child that still works is refused. `team: true` (with a name, flag `agent_teams`, depth 0, no fork) starts a teammate: metadata `team_lead`, always background, teammate instructions in `initial_context`; without the flag or deeper it fails with the reason. A name without `team` is never a teammate. |
-| `workflow` | every session | always in a background runner where one can start, inline only in a runner or a session that cannot start one; refused in a turn whose prompt is a peer message, a room message or a trigger (`pi/prompt-origin.ts`); `ultracode` in the person's prompt adds a per-turn line asking for a workflow; a plan above 25 agents says "Large workflow" in the approval. |
+| `workflow` | every session | always in a background runner where one can start, inline only in a runner or a session that cannot start one; refused in a turn whose prompt is a peer message or a trigger (`pi/prompt-origin.ts`); `ultracode` in the person's prompt adds a per-turn line asking for a workflow; a plan above 25 agents says "Large workflow" in the approval. |
 
 Each result is a `KortixToolResult`-shaped document (`{ ok, tool, action, card,
 data?, error? }`) as the tool's JSON output and its part `details`; the tools

@@ -1,6 +1,6 @@
 'use client';
 
-import { uiRoutes } from '../../../lib/routes';
+import { newSessionHref, uiRoutes } from '../../../lib/routes';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '../../../i18n';
 import { useUiPathname, useUiRouter, type UiRouter } from '../../../providers/ui-provider';
@@ -70,7 +70,7 @@ import { randomUUID } from '../../lib/utils/random-uuid';
  */
 /**
  * Options for a new-session start.
- * `create.space_id` files the session in a channel or DM (`project_channels`).
+ * `create.space_id` files the session in a channel or DM (`chat`).
  * It shows no toast and does not navigate: the
  * space view stays and `onNavigate(sessionId)` opens the thread beside it.
  * `agent_name` chooses the session's boot agent. Later prompts can name another
@@ -95,7 +95,8 @@ export type NewProjectSessionOpts = {
   create?: {
     sandbox_slug?: string;
     agent_name?: string;
-    space_id?: string;
+    /** A space to file the thread in; null: no space (the regular new-session composer). */
+    space_id?: string | null;
     pending_prompt?: PendingSessionPrompt;
     connector_bindings?: SessionConnectorBindingsInput;
     inherit_unbound?: boolean;
@@ -191,7 +192,7 @@ export function useNewProjectSession(projectId: string | undefined) {
   // that cannot be anchors (the Cmd+J shortcut, the command palette row).
   useEffect(() => {
     if (!projectId) return;
-    router.prefetch(uiRoutes().project(projectId));
+    router.prefetch(newSessionHref(projectId));
   }, [projectId, router]);
 
   const startSession = useCallback(
@@ -205,7 +206,8 @@ export function useNewProjectSession(projectId: string | undefined) {
         // nav-contract: prefetch-only — this branch serves the keyboard
         // shortcut and the command palette row, neither of which is an anchor.
         // The effect above holds the composer payload in the segment cache.
-        router.push(uiRoutes().project(projectId));
+        // `newSessionHref`: under `chat` the bare project home opens the default channel.
+        router.push(newSessionHref(projectId));
         return;
       }
 

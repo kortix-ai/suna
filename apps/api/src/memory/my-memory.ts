@@ -267,7 +267,7 @@ export async function myKortixTurnIndex(projectId: string, userId: string): Prom
 
 /**
  * The `system` of a My Kortix turn (`sandbox-proxy/forward/turn-start.ts`):
- * the prompter's memory index, every turn, with or without `project_channels`.
+ * the prompter's memory index, every turn, with or without `chat`.
  * Only the session's owner gets theirs: another member who prompts it gets
  * none, so nobody reads someone else's memory. Null: no index to send.
  */

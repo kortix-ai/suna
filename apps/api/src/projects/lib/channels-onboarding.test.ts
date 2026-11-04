@@ -4,7 +4,7 @@ import { generalNotice } from './channels-onboarding';
 const AT = '2026-10-20T10:00:00.000Z';
 const at = Date.parse(AT);
 const DAY = 24 * 60 * 60 * 1000;
-const meta = (channels: unknown) => ({ experimental: { project_channels: true }, channels });
+const meta = (channels: unknown) => ({ experimental: { chat: true }, channels });
 
 describe('generalNotice', () => {
   test('present for 7 days after a turn-on again that filed sessions', () => {

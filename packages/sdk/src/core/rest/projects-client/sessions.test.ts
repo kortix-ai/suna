@@ -512,6 +512,13 @@ test('createProjectSession files the session into a space and reads space_id and
   expect(session.first_prompt).toBe('Draft the launch post');
 });
 
+test('createProjectSession sends space_id null to file the session in no space', async () => {
+  nextResponse = { status: 201, body: { session_id: 'NEW-NS', space_id: null, first_prompt: null } };
+  const session = await createProjectSession('P1', { space_id: null, initial_prompt: 'hi' });
+  expect(last().body).toEqual({ space_id: null, initial_prompt: 'hi' });
+  expect(session.space_id).toBeNull();
+});
+
 test('listProjectSessions sends spaceId as the space_id query parameter', async () => {
   nextResponse = { status: 200, body: [] };
   await listProjectSessions('P1', { spaceId: 'SPACE-1', parent: 'root' });

@@ -126,6 +126,8 @@ mock.module('../../projects/surface', () => ({
   // module LINK error, not a null.
   missingClaudeSubscription: async () => null,
   sessionModelPin: async () => null,
+  // The turn's origin block ("## Where you are") reads the session row here; inert in this suite.
+  sessionWhereTurn: async () => null,
 }));
 // A wake claimed by `/start` or another request leaves the row `stopped` until
 // the provider confirms the box; tests flip this to model that window.

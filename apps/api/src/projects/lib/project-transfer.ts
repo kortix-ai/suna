@@ -100,6 +100,8 @@ export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
   projectMonitorBoxes,
   projectSessionGroups,
   projectSpaces,
+  // Retired with Rooms (2026-11): no code reads them; they move until
+  // packages/db/migrations-pending/*_drop_rooms.sql.pending drops them.
   rooms,
   sessionIdleWatches,
   sessionLifecycleCommands,
