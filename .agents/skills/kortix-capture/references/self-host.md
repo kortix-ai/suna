@@ -118,6 +118,30 @@ If `KORTIX_CAPTURE_STS_ROLE_ARN` or the bucket is missing, the API cannot issue
 credentials and a device gets `503 capture_credentials_unavailable`, the same
 signal as a store that is not configured.
 
+### Project snapshots with an external store
+
+External mode also drops the `KORTIX_PROJECT_SNAPSHOT_*` wiring, because it
+pointed at the on-box MinIO. New sessions then clone over Git, and a repository
+over the 32 MiB config archive limit clones twice. Give snapshots their own
+bucket:
+
+- A private bucket in the box's region, with a 30-day expiry rule and abort of
+  incomplete multipart uploads after 1 day. The API does not create it in
+  external mode.
+- The box identity gets `s3:PutObject` + `s3:GetObject` on `<bucket>/*` and
+  `s3:ListBucket` on `<bucket>`, the same grant as the prod task role
+  (`infra/terraform/modules/ecs-api/main.tf`, `SnapshotObjects`). No delete.
+- `kortix self-host env set KORTIX_PROJECT_SNAPSHOT_MODE=prefer-s3
+  KORTIX_PROJECT_SNAPSHOT_S3_BUCKET=<bucket> KORTIX_PROJECT_SNAPSHOT_S3_REGION=<region>`.
+  Leave `_ENDPOINT`, `_PUBLIC_ENDPOINT` and the key pair empty on AWS.
+  Sandboxes download presigned regional S3 URLs directly.
+
+Verified 2026-11-04 on an AWS self-host box in external mode, on v0.14.18:
+the first archive (40.6 MB, 1,882 files) was built in 29 s, and a new session
+took 5.2 s from daemon start to `runtime-ready`, against 12.1–18.6 s over Git.
+Its daemon log showed `"provider":"s3"`, `"fallback":null` and
+`"transport":"snapshot"`.
+
 ## Upgrade an existing install
 
 The nightly updater never re-renders Compose. On the box:
