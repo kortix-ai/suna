@@ -20,6 +20,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { inArray } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
 import { db } from '../shared/db';
+import { setContextField } from '../lib/request-context';
 import { logger } from '../lib/logger';
 import { trackDetached } from '../shared/drain';
 
@@ -71,6 +72,14 @@ export async function runWebhookWork(
       }),
     ]);
     if (timer) clearTimeout(timer);
+    if (outcome === 'pending') {
+      // The deadline, not the work, decided the response. Name it on the
+      // request line (a CloudWatch-safe diagnostic, see getDiagnosticFields):
+      // a slow-request investigation on an ack-first webhook route then tells
+      // a designed ACK_WAIT_MS ack from a genuinely slow handler with one
+      // grep instead of an inference over timestamps.
+      setContextField('webhook_ack', 'deadline');
+    }
   }
   return outcome;
 }

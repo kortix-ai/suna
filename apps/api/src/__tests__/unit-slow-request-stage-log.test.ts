@@ -134,6 +134,49 @@ describe('the completion log line of a slow request', () => {
     expect(fanned?.db_pool_wait_suspected).toBeUndefined();
   });
 
+  test('an ack-first webhook that answered at its deadline names it on the line (KRTX-4015)', async () => {
+    const { installHttpMiddleware } = await import('../http-middleware');
+    const { runWithContext } = await import('../lib/request-context');
+    const { runWebhookWork } = await import('../channels/webhook-work');
+
+    const lines: string[] = [];
+    const original = { log: console.log, info: console.info, warn: console.warn };
+    console.log = (...args: unknown[]) => lines.push(args.map(String).join(' '));
+    console.info = (...args: unknown[]) => lines.push(args.map(String).join(' '));
+    console.warn = (...args: unknown[]) => lines.push(args.map(String).join(' '));
+    try {
+      const app = new OpenAPIHono();
+      installHttpMiddleware(app);
+      // The deadline path: the work never resolves, so the answer is set by
+      // the ack deadline and the completion line must say so. Without the
+      // allowlisted field this is indistinguishable from a slow handler,
+      // which is what kept re-filing the route's p95 alerts.
+      app.post('/v1/webhooks/slack', async (c) => {
+        const outcome = await runWebhookWork(
+          'slack-event',
+          () => new Promise<void>(() => {}),
+          { ackWaitMs: 30 },
+        );
+        return c.json({ outcome });
+      });
+      await runWithContext('POST', '/v1/webhooks/slack', () =>
+        app.fetch(new Request('http://local/v1/webhooks/slack', { method: 'POST' })),
+      );
+    } finally {
+      console.log = original.log;
+      console.info = original.info;
+      console.warn = original.warn;
+    }
+
+    const completed = lines
+      .filter((line) => line.includes('Request completed'))
+      .map((line) => JSON.parse(line.slice(line.indexOf('{'))) as Record<string, unknown>);
+    const line = completed.find((fields) => fields.status === 200);
+    expect(line).toBeDefined();
+    expect(line?.['webhook_ack']).toBe('deadline');
+    expect(Number(line?.duration)).toBeGreaterThanOrEqual(30);
+  });
+
   test('a failed proxy request logs its hop but never its response body', async () => {
     const { installHttpMiddleware } = await import('../http-middleware');
     const { runWithContext } = await import('../lib/request-context');

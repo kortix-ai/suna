@@ -254,6 +254,13 @@ const CLOUDWATCH_SAFE_FIELDS = [
   // makes the herd shape (many concurrent reads to one box, KRTX-471) one
   // query instead of a hand rebuild from completion timestamps.
   'sandbox_inflight',
+  // Present only when an ack-first webhook answered the provider at its
+  // ACK_WAIT_MS deadline with work still running in the background
+  // (channels/webhook-work.ts). The value is 'deadline'. Aggregate-only.
+  // Without it, the designed 2 s ack is indistinguishable in this log from a
+  // slow handler, which is what kept re-filing the /v1/webhooks/slack p95
+  // alerts (KRTX-4015).
+  'webhook_ack',
   'config_pending_stages',
   'config_project_access_ms',
   'config_session_access_ms',

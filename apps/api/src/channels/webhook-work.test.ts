@@ -14,6 +14,7 @@ mock.module('../shared/db', () => ({
 
 const { runWebhookWork, recordClaim } = await import('./webhook-work');
 const { inflightCount, resetDrainForTests } = await import('../shared/drain');
+const { getDiagnosticFields, runWithContext } = await import('../lib/request-context');
 
 beforeEach(() => {
   deleted.length = 0;
@@ -66,5 +67,33 @@ describe('runWebhookWork', () => {
   test('ackWaitMs 0 returns at once', async () => {
     const outcome = await runWebhookWork('t', () => new Promise<void>(() => {}), { ackWaitMs: 0 });
     expect(outcome).toBe('pending');
+  });
+
+  test('the ack deadline names itself on the request line', async () => {
+    let diagnostic: Record<string, string> = {};
+    await runWithContext('POST', '/v1/webhooks/slack', async () => {
+      await runWebhookWork('t', () => new Promise<void>(() => {}), { ackWaitMs: 20 });
+      diagnostic = getDiagnosticFields();
+    });
+    expect(diagnostic["webhook_ack"]).toBe('deadline');
+  });
+
+  test('work that finishes first does not name a deadline', async () => {
+    let diagnostic: Record<string, string> = {};
+    await runWithContext('POST', '/v1/webhooks/slack', async () => {
+      const outcome = await runWebhookWork('t', async () => {}, { ackWaitMs: 10_000 });
+      expect(outcome).toBe('done');
+      diagnostic = getDiagnosticFields();
+    });
+    expect(diagnostic["webhook_ack"]).toBeUndefined();
+  });
+
+  test('returning without waiting names no deadline either', async () => {
+    let diagnostic: Record<string, string> = {};
+    await runWithContext('POST', '/v1/webhooks/slack', async () => {
+      await runWebhookWork('t', () => new Promise<void>(() => {}), { ackWaitMs: 0 });
+      diagnostic = getDiagnosticFields();
+    });
+    expect(diagnostic["webhook_ack"]).toBeUndefined();
   });
 });
