@@ -25154,7 +25154,11 @@
       "expand": "Afficher tout le résultat",
       "collapse": "Masquer le résultat",
       "batchTitle": "{count, plural, one {# agent a terminé} other {# agents ont terminé}}",
-      "ownsTasks": "A encore {tasks}"
+      "ownsTasks": "A encore {tasks}",
+      "source": "Message de l’agent",
+      "statusFailedShort": "Non terminé",
+      "statusStoppedShort": "Arrêté",
+      "updateCount": "{count, plural, one {# message d’agent} other {# messages d’agents}}"
     },
     "tools": {
       "running": {

@@ -25154,7 +25154,11 @@
       "expand": "显示完整结果",
       "collapse": "收起结果",
       "batchTitle": "{count, plural, other {# 个智能体已完成}}",
-      "ownsTasks": "仍负责 {tasks}"
+      "ownsTasks": "仍负责 {tasks}",
+      "source": "智能体更新",
+      "statusFailedShort": "未完成",
+      "statusStoppedShort": "已停止",
+      "updateCount": "{count} 条智能体更新"
     },
     "tools": {
       "running": {

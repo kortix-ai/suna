@@ -25154,7 +25154,11 @@
       "expand": "結果全体を表示",
       "collapse": "結果を隠す",
       "batchTitle": "{count, plural, other {# 個のエージェントが完了しました}}",
-      "ownsTasks": "未完了のタスク: {tasks}"
+      "ownsTasks": "未完了のタスク: {tasks}",
+      "source": "エージェントの更新",
+      "statusFailedShort": "未完了",
+      "statusStoppedShort": "停止済み",
+      "updateCount": "{count} 件のエージェント更新"
     },
     "tools": {
       "running": {
