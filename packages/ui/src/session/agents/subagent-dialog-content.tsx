@@ -323,7 +323,7 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
                     <button
                       type="button"
                       onClick={() => uploads.retry(image.id)}
-                      className="text-foreground hover:bg-muted shrink-0 cursor-pointer rounded-sm px-1"
+                      className="text-foreground hover:bg-muted shrink-0 cursor-pointer rounded-sm px-1 outline-none focus-visible:ring-kortix-base focus-visible:ring-[0.6px]"
                     >
                       {t('retry')}
                     </button>
@@ -333,7 +333,7 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
                   type="button"
                   aria-label={t('removeAttachment', { name: image.filename })}
                   onClick={() => void uploads.remove(image.id)}
-                  className="hover:text-foreground flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm"
+                  className="hover:text-foreground flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none focus-visible:ring-kortix-base focus-visible:ring-[0.6px]"
                 >
                   <XIcon className="size-3" />
                 </button>
