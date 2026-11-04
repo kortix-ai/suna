@@ -1,7 +1,7 @@
 /**
  * The session-open hold for a box below the runtime floor (`runtime-floor-policy.ts`):
  * read the box's own health, then serve it, hold it while it installs the
- * current daemon, stop its old daemon, or give the session a fresh box.
+ * current daemon, stop its old daemon, or refuse it with the reason.
  *
  * Runs on every open of a provider-running box whose daemon answered. On a box
  * at the floor it costs nothing: the readiness phase already read its
@@ -22,6 +22,7 @@ import { sessionRuntimeFetch } from '../session-lifecycle/runtime-fetch';
 import {
   currentBelowSpell,
   decideRuntimeFloor,
+  decideRuntimeFloorWhileBooting,
   healthServesRuntimeFloor,
   readRuntimeFloorRecord,
   RUNTIME_FLOOR_CAPABILITY,
@@ -29,26 +30,35 @@ import {
   runtimeFloorRestartCommand,
   type RuntimeFloorBelow,
   type RuntimeFloorRecord,
+  type RuntimeFloorRefusal,
 } from './runtime-floor-policy';
 import type { OpenSessionArgs, OpenSessionRow } from './session-open-context';
-import { replaceRefusedRuntimeOnOpen } from './session-open-provision';
 import { serializeSandboxRow, sessionRuntimeUrlPath } from './stopped-wake-result';
 
 const HEALTH_TIMEOUT_MS = 8_000;
 const RESTART_EXEC_TIMEOUT_MS = 20_000;
 
 /**
- * Answers `null` when the open continues: the box serves the floor, or its
- * health could not be read (the readiness probe answered moments earlier, and a
- * flaky second probe must not hold a session). Otherwise the answer to return.
+ * Answers `null` when the open continues: the box serves the floor, its health
+ * could not be read (the readiness probe answered moments earlier, and a flaky
+ * second probe must not hold a session), or it boots outside a spell below the
+ * floor. Otherwise the answer to return.
  */
 export async function holdBelowRuntimeFloor(
   args: OpenSessionArgs,
   row: OpenSessionRow,
   externalId: string,
   capabilities: string[] | null,
+  booting: boolean,
 ): Promise<SessionStartResult | null> {
   const record = readRuntimeFloorRecord(row.metadata as Record<string, unknown> | null);
+  if (booting) {
+    const whileBooting = decideRuntimeFloorWhileBooting(record, externalId, Date.now());
+    if (whileBooting.action === 'none') return null;
+    if (whileBooting.action === 'refuse') return refuse(args, row, externalId, whileBooting.why);
+    await writeRecord(row.sandboxId, { below: whileBooting.spell });
+    return holdingAnswer(args, row, externalId);
+  }
   if (capabilities?.includes(RUNTIME_FLOOR_CAPABILITY)) {
     await stampServing(row, record, externalId);
     return null;
@@ -76,7 +86,8 @@ export async function holdBelowRuntimeFloor(
     canExec: providerCanExec(row.provider),
     nowMs,
   });
-  logger.info('[runtime-floor] box below the runtime floor', {
+  // One line per spell while it waits, one per action: an open polls every second.
+  if (decision.action !== 'wait' || spell.since === spell.seenAt) logger.info('[runtime-floor] box below the runtime floor', {
     session_id: row.sessionId,
     sandbox_id: row.sandboxId,
     external_id: externalId,
@@ -97,22 +108,51 @@ export async function holdBelowRuntimeFloor(
         await stopOldDaemon(row, externalId);
       }
       return holdingAnswer(args, row, externalId);
-    case 'replace':
-      logger.warn('[runtime-floor] replacing a box that cannot reach the runtime floor', {
-        session_id: row.sessionId,
-        sandbox_id: row.sandboxId,
-        external_id: externalId,
-        why: decision.why,
-      });
-      return replaceRefusedRuntimeOnOpen(
-        args.loaded,
-        args.visible,
-        args.projectId,
-        args.sessionId,
-        row,
-        `runtime_below_floor:${decision.why}`,
-      );
+    case 'refuse':
+      return refuse(args, row, externalId, decision.why);
   }
+}
+
+const REFUSAL_EVIDENCE: Record<RuntimeFloorRefusal, string> = {
+  pinned: 'the box rolled a runtime update back and turned updates off',
+  no_exec: 'the box provider cannot run the update command',
+  not_staged: 'the box did not download the current runtime',
+  restart_did_not_land: 'the box did not start the current runtime after a restart',
+};
+
+/**
+ * The box cannot reach the floor. Refuse the open with the reason. The box is
+ * left as it is: its identity is immutable and it may hold uncommitted work.
+ */
+function refuse(args: OpenSessionArgs, row: OpenSessionRow, externalId: string, why: RuntimeFloorRefusal): SessionStartResult {
+  logger.warn('[runtime-floor] refusing a box that cannot reach the runtime floor', {
+    session_id: row.sessionId,
+    sandbox_id: row.sandboxId,
+    external_id: externalId,
+    why,
+  });
+  return {
+    stage: 'failed',
+    agent_name: args.visible.row.agentName ?? 'default',
+    retriable: false,
+    sandbox: serializeSandboxRow(row),
+    opencode_session_id: null,
+    runtime_url: sessionRuntimeUrlPath(externalId),
+    reason: 'runtime_below_floor',
+    failure: {
+      category: 'sandbox-provider',
+      message:
+        "This session's computer runs an old version of the Kortix runtime and cannot update to the current one. The conversation stays readable. Start a new session to continue the work.",
+      retryable: false,
+      evidence: {
+        check: `runtime_below_floor:${why}: ${REFUSAL_EVIDENCE[why]}`,
+        observed_at: new Date().toISOString(),
+        error: null,
+        attempts: 0,
+        next_retry_at: null,
+      },
+    },
+  };
 }
 
 function holdingAnswer(args: OpenSessionArgs, row: OpenSessionRow, externalId: string): SessionStartResult {
@@ -211,8 +251,8 @@ async function stopOldDaemon(row: OpenSessionRow, externalId: string): Promise<v
       stdout: result.stdout.trim().slice(0, 200),
     });
   } catch (err) {
-    // The spell keeps its stop: the restart budget then gives the session a
-    // fresh box instead of stopping this one again.
+    // The spell keeps its stop: the restart budget then refuses the box
+    // instead of stopping it again.
     logger.warn('[runtime-floor] could not stop the old daemon', {
       session_id: row.sessionId,
       sandbox_id: row.sandboxId,

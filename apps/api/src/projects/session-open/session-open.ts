@@ -292,11 +292,16 @@ async function stageRunningOpen(
 
   // A box below the runtime floor is held until it runs the current daemon,
   // or replaced (runtime-floor-policy.ts). Before every other check: none of
-  // them may read an old daemon's routes.
-  if (!readiness.booting) {
-    const held = await holdBelowRuntimeFloor(args, synced.row, synced.runningExternalId, readiness.capabilities);
-    if (held) return held;
-  }
+  // them may read an old daemon's routes, and the serving answer below must not
+  // hand over a box that restarts onto its new daemon.
+  const held = await holdBelowRuntimeFloor(
+    args,
+    synced.row,
+    synced.runningExternalId,
+    readiness.capabilities,
+    readiness.booting,
+  );
+  if (held) return held;
 
   const guaranteed = await enforceRuntimeGuarantee(
     args,

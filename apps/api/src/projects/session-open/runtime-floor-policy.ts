@@ -4,9 +4,12 @@
  * A box keeps the daemon it last ran until it updates itself. A box last used
  * before the floor shipped wakes on that old daemon, which serves the old
  * OpenCode routes, and only installs the current daemon minutes later. So a
- * session open holds such a box until it runs the current daemon, or gives the
- * session a fresh box. No client, and no API path, ever talks to a daemon below
- * the floor. The floor is a capability, never a version or a harness name.
+ * session open holds such a box until it runs the current daemon. A box that
+ * cannot update is refused with a plain reason: its identity is immutable (it
+ * may hold uncommitted work, migration 20260711210000000), so it is never
+ * swapped for an empty box here. Its session log stays readable. No client,
+ * and no API path, ever talks to a daemon below the floor. The floor is a
+ * capability, never a version or a harness name.
  *
  * This file is the policy, with no I/O. `runtime-floor.ts` wires it to the box,
  * the provider and the database.
@@ -55,7 +58,10 @@ export type RuntimeFloorDecision =
   | { action: 'serve' }
   | { action: 'wait'; why: 'staging' | 'restarting' | 'turn_running' }
   | { action: 'restart' }
-  | { action: 'replace'; why: 'pinned' | 'no_exec' | 'not_staged' | 'restart_did_not_land' };
+  | { action: 'refuse'; why: RuntimeFloorRefusal };
+
+/** Why a box below the floor cannot reach it. */
+export type RuntimeFloorRefusal = 'pinned' | 'no_exec' | 'not_staged' | 'restart_did_not_land';
 
 export function readRuntimeFloorRecord(metadata: Record<string, unknown> | null | undefined): RuntimeFloorRecord {
   const raw = metadata?.[RUNTIME_FLOOR_METADATA_KEY];
@@ -118,15 +124,16 @@ function stagedCurrentDaemon(health: Record<string, unknown>): boolean {
  *
  * - The floor is listed: serve.
  * - The supervisor rolled an update back and pinned updates off: the box will
- *   never update, so the session gets a fresh box.
+ *   never update. Refuse.
  * - The current daemon is staged: stop the old daemon. The box's supervisor
  *   installs the staged daemon before it starts the next one. Never under a
  *   running turn: the old daemon installs it itself at the turn end.
  * - Nothing staged yet: wait for the old daemon's own update pass, at most
- *   `RUNTIME_FLOOR_STAGE_BUDGET_MS`, then a fresh box.
+ *   `RUNTIME_FLOOR_STAGE_BUDGET_MS`, then refuse.
  * - Stopped once and still below the floor after `RUNTIME_FLOOR_RESTART_BUDGET_MS`:
- *   a fresh box. The old daemon is stopped at most once per spell, because two
- *   fast exits make the supervisor roll back and pin updates off.
+ *   refuse. The old daemon is stopped at most once per spell, because two fast
+ *   exits make the supervisor roll back and pin updates off. A later open after
+ *   `RUNTIME_FLOOR_SPELL_GAP_MS` starts a new spell and tries again.
  */
 export function decideRuntimeFloor(input: {
   health: Record<string, unknown>;
@@ -137,24 +144,46 @@ export function decideRuntimeFloor(input: {
 }): RuntimeFloorDecision {
   const { health, spell, turnHeld, canExec, nowMs } = input;
   if (healthServesRuntimeFloor(health)) return { action: 'serve' };
-  if (isRecord(health.runtime) && health.runtime.pinned === true) return { action: 'replace', why: 'pinned' };
+  if (isRecord(health.runtime) && health.runtime.pinned === true) return { action: 'refuse', why: 'pinned' };
   if (spell.restartedAt) {
     const restartedMs = Date.parse(spell.restartedAt);
     if (Number.isFinite(restartedMs) && nowMs - restartedMs < RUNTIME_FLOOR_RESTART_BUDGET_MS) {
       return { action: 'wait', why: 'restarting' };
     }
-    return { action: 'replace', why: 'restart_did_not_land' };
+    return { action: 'refuse', why: 'restart_did_not_land' };
   }
   const turnRunning = turnHeld || health.turn_in_flight === true;
   if (stagedCurrentDaemon(health)) {
     if (turnRunning) return { action: 'wait', why: 'turn_running' };
-    if (!canExec) return { action: 'replace', why: 'no_exec' };
+    if (!canExec) return { action: 'refuse', why: 'no_exec' };
     return { action: 'restart' };
   }
   const sinceMs = Date.parse(spell.since);
   if (Number.isFinite(sinceMs) && nowMs - sinceMs < RUNTIME_FLOOR_STAGE_BUDGET_MS) return { action: 'wait', why: 'staging' };
   if (turnRunning) return { action: 'wait', why: 'turn_running' };
-  return { action: 'replace', why: 'not_staged' };
+  return { action: 'refuse', why: 'not_staged' };
+}
+
+/**
+ * A box whose daemon does not answer yet. Inside a spell below the floor this
+ * is the restart: hold the session, so no "it answered before" shortcut hands
+ * the box over before the new daemon proves the floor. Past the restart budget,
+ * refuse. Outside a spell the ordinary boot rules apply.
+ */
+export function decideRuntimeFloorWhileBooting(
+  record: RuntimeFloorRecord,
+  externalId: string,
+  nowMs: number,
+): { action: 'none' } | { action: 'hold'; spell: RuntimeFloorBelow } | { action: 'refuse'; why: 'restart_did_not_land' } {
+  const stored = record.below;
+  if (!stored || stored.externalId !== externalId) return { action: 'none' };
+  const spell = currentBelowSpell(record, externalId, nowMs);
+  if (spell.since !== stored.since) return { action: 'none' };
+  const restartedMs = spell.restartedAt ? Date.parse(spell.restartedAt) : NaN;
+  if (Number.isFinite(restartedMs) && nowMs - restartedMs >= RUNTIME_FLOOR_RESTART_BUDGET_MS) {
+    return { action: 'refuse', why: 'restart_did_not_land' };
+  }
+  return { action: 'hold', spell };
 }
 
 /**
