@@ -12,9 +12,12 @@
  *     under 8 KB; a full presence list never crosses. Without the LISTEN
  *     (`isPgBroadcastListening()` false: a transaction pooler) presence stays
  *     inside one process, and clients keep their 10 s poll;
- *   - access: every socket re-checks its view access every 60 s, at once on an
- *     IAM cache bust for its user or project, and at once when its Artifact is
- *     unshared or its sharing changes. Access lost closes it with 4403;
+ *   - access: every socket re-checks its credential and its view access every
+ *     60 s, at once on an IAM cache bust for its user or project, and at once
+ *     when its Artifact is unshared or its sharing changes. Access lost closes
+ *     it with 4403. A credential that expired (the JWT's `exp`, at most an hour
+ *     per ticket), a signed-out browser session or a revoked token closes it
+ *     with 4401: the client mints a new ticket through REST;
  *   - agent presence: `POST …/live/agent`, a delivered comment hand-off, and
  *     the session's turn ending (`kortix_session_changed`).
  */
@@ -32,23 +35,26 @@ import type { Actor } from '../iam/actor';
 import { registerPrincipalScopedMemo, registerProjectScopedMemo } from '../iam/cache-invalidation';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
-import { onArtifactLive, onSessionChanged } from '../shared/pg-broadcast';
+import { onArtifactLive, onSessionChanged, publishArtifactLive } from '../shared/pg-broadcast';
 import { isUuid } from '../shared/validate';
-import { artifactLiveActor, artifactLiveIdentity, artifactLiveSessionAgent, checkArtifactLiveAccess } from './live-access';
+import { artifactLiveActor, artifactLiveIdentity, artifactLiveSessionAgent, checkArtifactLiveAccess, type ArtifactLiveCredential } from './live-access';
 import { ARTIFACT_LIVE_NOTIFY_MAX_BYTES, ARTIFACT_LIVE_ORIGIN, sendArtifactLiveDelta, setArtifactLiveSink } from './live-publish';
-import { ArtifactLiveRooms, type LiveClock, type LiveIdentity, type LiveRelay } from './live-rooms';
-import { artifactLiveTicketDigest, consumeArtifactLiveTicket, markArtifactLiveTicketUsed, verifyArtifactLiveTicket } from './live-ticket';
+import { ArtifactLiveRooms, PRESENCE_MAX, packLiveRelay, type LiveClock, type LiveIdentity, type LiveRelay } from './live-rooms';
+import { consumeArtifactLiveTicket, markArtifactLiveTicketUsed, verifyArtifactLiveTicket } from './live-ticket';
 
 const L = ARTIFACT_LIVE_LIMITS;
 /** An IAM bust or an unshare re-checks this soon: after the write that caused it commits. */
 const RECHECK_SOON_MS = 250;
 /** A re-check that could not read the database runs again this soon. */
 const RECHECK_RETRY_MS = 15_000;
+/** One ticket opens a socket for at most this long: then it re-authenticates through REST (4401). */
+export const CREDENTIAL_MAX_MS = 60 * 60_000;
 
 /** What a socket's re-checks need. */
 interface Binding {
   actor: Actor;
   sessionId: string | null;
+  credential: ArtifactLiveCredential;
   nextCheckAt: number;
   checking: boolean;
   again: boolean;
@@ -74,16 +80,15 @@ const clock: LiveClock = {
   },
 };
 
-/** An `up` delta that does not fit pg_notify drops, in order, the avatar, the selection and the cursor. */
+/**
+ * One relay as NOTIFY payloads (`packLiveRelay`): a room batch splits under the
+ * pg_notify limit; a participant too large alone loses its avatar, selection,
+ * then cursor. Without the LISTEN `publishArtifactLive` is a no-op.
+ */
 function relay(message: LiveRelay): void {
-  if (sendArtifactLiveDelta(message)) return;
-  if (message.k !== 'up') return;
-  let participant = message.p;
-  for (const strip of [{ avatar_url: null }, { selection: null }, { cursor: null }] as const) {
-    participant = { ...participant, ...strip };
-    if (sendArtifactLiveDelta({ ...message, p: participant })) return;
-  }
-  logger.warn('[artifact-live] a participant delta exceeds pg_notify', { bytes: ARTIFACT_LIVE_NOTIFY_MAX_BYTES });
+  const payloads = packLiveRelay({ o: ARTIFACT_LIVE_ORIGIN }, message, ARTIFACT_LIVE_NOTIFY_MAX_BYTES);
+  if (!payloads.length) logger.warn('[artifact-live] a delta exceeds pg_notify', { kind: message.k, bytes: ARTIFACT_LIVE_NOTIFY_MAX_BYTES });
+  for (const payload of payloads) publishArtifactLive(payload);
 }
 
 // replica-local: the rooms of the sockets this process holds; other processes
@@ -98,7 +103,7 @@ export function artifactLiveRoomCount(): number {
 
 export type ArtifactLiveUpgrade =
   | { ok: true; data: ArtifactLiveWsData }
-  | { ok: false; status: 401 | 403 | 404 | 503; body: { error: string; code: string } };
+  | { ok: false; status: 401 | 403 | 404 | 429 | 503; body: { error: string; code: string } };
 
 /**
  * Check the ticket (401: none, forged, expired, used, or for another
@@ -114,16 +119,22 @@ export async function prepareArtifactLiveUpgrade(input: {
   const { projectId, artifactId, ticket } = input;
   if (!isUuid(projectId) || !isUuid(artifactId)) return { ok: false, status: 404, body: { error: 'Artifact not found', code: 'not_found' } };
   const verified = verifyArtifactLiveTicket(ticket, { projectId, artifactId });
-  if (!verified || !ticket || !consumeArtifactLiveTicket(ticket, verified.expiresAt)) {
+  if (!verified || !consumeArtifactLiveTicket(verified.digest, verified.expiresAt)) {
     return { ok: false, status: 401, body: { error: 'A valid, unused live ticket is required', code: 'artifact_live_ticket_invalid' } };
   }
-  sendArtifactLiveDelta({ k: 'used', h: artifactLiveTicketDigest(ticket), x: verified.expiresAt });
+  sendArtifactLiveDelta({ k: 'used', h: verified.digest, x: verified.expiresAt });
   const { claims } = verified;
+  const now = Date.now();
+  const credential: ArtifactLiveCredential = { authSessionId: claims.g, expiresAt: Math.min(claims.x ?? Infinity, now + CREDENTIAL_MAX_MS) };
   try {
-    const access = await checkArtifactLiveAccess({ actor: await artifactLiveActor(claims, input.ip), sessionId: claims.s, projectId, artifactId });
+    const access = await checkArtifactLiveAccess({ actor: await artifactLiveActor(claims, input.ip), sessionId: claims.s, projectId, artifactId, credential });
     if (!access.ok) return { ok: false, status: access.status, body: { error: access.error, code: access.code } };
     const identity = await artifactLiveIdentity(access.actor, claims.s, projectId);
-    const binding: Binding = { actor: access.actor, sessionId: claims.s, nextCheckAt: Date.now() + L.accessRecheckMs, checking: false, again: false };
+    // Every socket receives every presence frame: bound what one person, and one room, may hold.
+    if (!rooms.canJoin(artifactId, identity.who)) {
+      return { ok: false, status: 429, body: { error: 'Too many live sockets on this Artifact', code: 'artifact_live_too_many_sockets' } };
+    }
+    const binding: Binding = { actor: access.actor, sessionId: claims.s, credential, nextCheckAt: now + L.accessRecheckMs, checking: false, again: false };
     return { ok: true, data: { type: 'artifact-live', projectId, artifactId, identity, binding } };
   } catch (error) {
     logger.warn('[artifact-live] upgrade check failed', { error: error instanceof Error ? error.message : String(error) });
@@ -172,7 +183,7 @@ function requestRecheck(match: (binding: Binding, artifactId: string, projectId:
 function actorKey(binding: Binding): string {
   const { actor } = binding;
   const token = 'tokenId' in actor.credential ? actor.credential.tokenId : '';
-  return `${actor.userId}|${actor.credential.kind}|${token}|${binding.sessionId ?? ''}|${actor.ctx.ip ?? ''}`;
+  return `${actor.userId}|${actor.credential.kind}|${token}|${binding.sessionId ?? ''}|${binding.credential.authSessionId ?? ''}|${actor.ctx.ip ?? ''}`;
 }
 
 type DueConn = { artifactId: string; projectId: string; id: string; meta: Binding };
@@ -184,11 +195,14 @@ async function recheckGroup(group: DueConn[]): Promise<void> {
     conn.meta.checking = true;
     conn.meta.again = false;
   }
-  let verdict: 'ok' | 'lost' | 'retry' = 'retry';
+  let verdict: 'ok' | 'lost' | 'unauthorized' | 'retry' = 'retry';
   let actor: Actor | null = null;
   try {
-    const access = await checkArtifactLiveAccess({ actor: first.meta.actor, sessionId: first.meta.sessionId, projectId: first.projectId, artifactId: first.artifactId });
-    verdict = access.ok ? 'ok' : 'lost';
+    const access = await checkArtifactLiveAccess({
+      actor: first.meta.actor, sessionId: first.meta.sessionId, projectId: first.projectId, artifactId: first.artifactId,
+      credential: { authSessionId: first.meta.credential.authSessionId, expiresAt: Math.min(...group.map((conn) => conn.meta.credential.expiresAt)) },
+    });
+    verdict = access.ok ? 'ok' : access.status === 401 ? 'unauthorized' : 'lost';
     if (access.ok) actor = access.actor;
   } catch (error) {
     // A failed read keeps the socket: only a definite "no" closes it.
@@ -198,6 +212,10 @@ async function recheckGroup(group: DueConn[]): Promise<void> {
   let again = false;
   for (const conn of group) {
     conn.meta.checking = false;
+    if (verdict === 'unauthorized') {
+      rooms.close(conn.artifactId, conn.id, ARTIFACT_LIVE_CLOSE.unauthorized, 'credential ended');
+      continue;
+    }
     if (verdict === 'lost') {
       rooms.close(conn.artifactId, conn.id, ARTIFACT_LIVE_CLOSE.accessLost, 'access lost');
       continue;
@@ -223,6 +241,11 @@ async function runDueRechecks(): Promise<void> {
 /** Expiry, keepalive and the due access re-checks. `replica/artifact-live.ts` runs it every few seconds. */
 export async function sweepArtifactLive(): Promise<void> {
   rooms.sweep();
+  // A credential that expired ends its socket now, with no database read.
+  const now = Date.now();
+  for (const conn of [...rooms.connections()]) {
+    if (conn.meta.credential.expiresAt <= now) rooms.close(conn.artifactId, conn.id, ARTIFACT_LIVE_CLOSE.unauthorized, 'credential expired');
+  }
   await runDueRechecks();
 }
 
@@ -302,6 +325,16 @@ function onNotify(payload: string): void {
     case 'up': {
       const participant = artifactLiveParticipantSchema.safeParse(m.p);
       if (participant.success) rooms.remote(origin, { k: 'up', a, p: participant.data, ...optionalAt(m.at) });
+      return;
+    }
+    case 'ups': {
+      // A room's batch: each valid entry applies as one `up`; a malformed entry is dropped alone.
+      if (!Array.isArray(m.ps) || m.ps.length > PRESENCE_MAX) return;
+      const ps = m.ps.flatMap((entry: { p?: unknown; at?: unknown } | null) => {
+        const participant = artifactLiveParticipantSchema.safeParse(entry?.p);
+        return participant.success ? [{ p: participant.data, ...optionalAt(entry?.at) }] : [];
+      });
+      if (ps.length) rooms.remote(origin, { k: 'ups', a, ps });
       return;
     }
     case 'rm':

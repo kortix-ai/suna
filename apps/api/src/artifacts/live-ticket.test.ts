@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, setSystemTime, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { ARTIFACT_LIVE_LIMITS } from '@kortix/shared/artifact-live';
 import {
-  artifactLiveTicketDigest,
   consumeArtifactLiveTicket,
   markArtifactLiveTicketUsed,
   mintArtifactLiveTicket,
@@ -14,7 +14,7 @@ const ARTIFACT = '40000000-0000-4000-8000-000000000002';
 const OTHER = '40000000-0000-4000-8000-000000000003';
 const claims: ArtifactLiveTicketClaims = {
   p: PROJECT, a: ARTIFACT, u: '40000000-0000-4000-8000-000000000004', c: '40000000-0000-4000-8000-000000000005',
-  k: 'jwt', t: null, s: null, m: 'aal1',
+  k: 'jwt', t: null, s: null, m: 'aal1', g: '40000000-0000-4000-8000-000000000008', x: Date.parse('2026-11-04T11:00:00.000Z'),
 };
 const T0 = new Date('2026-11-04T10:00:00.000Z');
 
@@ -38,15 +38,16 @@ describe('artifact live tickets', () => {
     setSystemTime(T0);
     const { ticket } = mintArtifactLiveTicket(claims);
     const verified = verifyArtifactLiveTicket(ticket, { projectId: PROJECT, artifactId: ARTIFACT })!;
-    expect(consumeArtifactLiveTicket(ticket, verified.expiresAt)).toBe(true);
-    expect(consumeArtifactLiveTicket(ticket, verified.expiresAt)).toBe(false);
+    expect(consumeArtifactLiveTicket(verified.digest, verified.expiresAt)).toBe(true);
+    expect(consumeArtifactLiveTicket(verified.digest, verified.expiresAt)).toBe(false);
   });
 
   test('a ticket another replica used is refused here', () => {
     setSystemTime(T0);
     const { ticket, expiresAt } = mintArtifactLiveTicket(claims);
-    markArtifactLiveTicketUsed(artifactLiveTicketDigest(ticket), expiresAt);
-    expect(consumeArtifactLiveTicket(ticket, expiresAt)).toBe(false);
+    const verified = verifyArtifactLiveTicket(ticket, { projectId: PROJECT, artifactId: ARTIFACT })!;
+    markArtifactLiveTicketUsed(verified.digest, expiresAt);
+    expect(consumeArtifactLiveTicket(verified.digest, expiresAt)).toBe(false);
   });
 
   test(`a ticket expires after ${ARTIFACT_LIVE_LIMITS.ticketMs} ms`, () => {
@@ -95,6 +96,54 @@ describe('artifact live tickets', () => {
   test('a ticket with an unknown credential kind is refused', () => {
     setSystemTime(T0);
     const { ticket } = mintArtifactLiveTicket({ ...claims, k: 'sandbox' as never });
+    expect(verifyArtifactLiveTicket(ticket, { projectId: PROJECT, artifactId: ARTIFACT })).toBeNull();
+  });
+});
+
+describe('one ticket, one spelling (Strix: non-canonical base64url spellings)', () => {
+  const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  /** A ticket whose last character carries unused bits, and one alias of it. */
+  function aliased(): { ticket: string; alias: string } {
+    for (let pad = 0; pad < 3; pad++) {
+      const { ticket } = mintArtifactLiveTicket({ ...claims, m: `aal${'1'.repeat(pad + 1)}` });
+      if (ticket.length % 4 === 0) continue;
+      const last = ALPHABET.indexOf(ticket.at(-1)!);
+      const alias = ticket.slice(0, -1) + ALPHABET[last ^ 1];
+      // The alias decodes to the same bytes: only the unused low bit changed.
+      expect(Buffer.from(alias, 'base64url').equals(Buffer.from(ticket, 'base64url'))).toBe(true);
+      return { ticket, alias };
+    }
+    throw new Error('no ticket length with unused bits');
+  }
+
+  test('a non-canonical spelling of a ticket is refused outright', () => {
+    setSystemTime(T0);
+    const { ticket, alias } = aliased();
+    expect(verifyArtifactLiveTicket(ticket, { projectId: PROJECT, artifactId: ARTIFACT })).not.toBeNull();
+    expect(verifyArtifactLiveTicket(alias, { projectId: PROJECT, artifactId: ARTIFACT })).toBeNull();
+  });
+
+  test('single use is keyed on the sealed nonce, not on the text', () => {
+    setSystemTime(T0);
+    const { ticket } = mintArtifactLiveTicket(claims);
+    const verified = verifyArtifactLiveTicket(ticket, { projectId: PROJECT, artifactId: ARTIFACT })!;
+    expect(verified.digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(verified.digest).not.toBe(createHash('sha256').update(ticket).digest('hex'));
+  });
+});
+
+describe('the credential behind the ticket (Strix: revoked or expired sessions)', () => {
+  test('a ticket carries the auth session id and the credential expiry', () => {
+    setSystemTime(T0);
+    const { ticket } = mintArtifactLiveTicket(claims);
+    const verified = verifyArtifactLiveTicket(ticket, { projectId: PROJECT, artifactId: ARTIFACT })!;
+    expect(verified.claims.g).toBe(claims.g);
+    expect(verified.claims.x).toBe(claims.x);
+  });
+
+  test('a ticket whose credential already expired is refused', () => {
+    setSystemTime(T0);
+    const { ticket } = mintArtifactLiveTicket({ ...claims, x: T0.getTime() - 1 });
     expect(verifyArtifactLiveTicket(ticket, { projectId: PROJECT, artifactId: ARTIFACT })).toBeNull();
   });
 });

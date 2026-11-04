@@ -15,7 +15,12 @@
  * and so every proxy and access log, holds no readable id, and a changed byte
  * fails the GCM tag.
  *
- * SINGLE USE. The first pod that accepts a ticket records its SHA-256 digest in
+ * ONE SPELLING. A ticket is accepted only in its canonical base64url form:
+ * a decoder ignores the unused low bits of the last character, so one ticket
+ * would otherwise have up to 16 spellings, each a "new" ticket.
+ *
+ * SINGLE USE. The first pod that accepts a ticket records the SHA-256 digest
+ * of its sealed nonce in
  * this replica-local map and sends the digest on `kortix_artifact_live`; every
  * other pod records it on receipt. A digest leaves the map when the ticket
  * would have expired anyway. The residual window: the same ticket presented to
@@ -51,6 +56,10 @@ export interface ArtifactLiveTicketClaims {
   s: string | null;
   /** The JWT's `aal` claim, or null. */
   m: string | null;
+  /** The browser session behind a JWT (`session_id`, a row of `auth.sessions`), or null. Re-checked while the socket is open. */
+  g: string | null;
+  /** When the credential that minted the ticket expires (epoch ms), or null. The socket closes with 4401 then. */
+  x: number | null;
 }
 
 const IV_BYTES = 12;
@@ -82,6 +91,8 @@ function seal(payload: Record<string, unknown>): string {
 function open(ticket: string | null | undefined): Record<string, unknown> | null {
   if (!ticket || ticket.length > MAX_TICKET_CHARS || !/^[A-Za-z0-9_-]+$/.test(ticket)) return null;
   const bytes = Buffer.from(ticket, 'base64url');
+  // Only the canonical spelling: `…AA` and `…AP` may decode to the same bytes.
+  if (bytes.toString('base64url') !== ticket) return null;
   // Pin the nonce and tag lengths: a short tag would weaken the GCM check.
   if (bytes.length <= IV_BYTES + TAG_BYTES) return null;
   try {
@@ -95,12 +106,13 @@ function open(ticket: string | null | undefined): Record<string, unknown> | null
   }
 }
 
-// replica-local: digests of tickets used here or announced by another replica
-// on `kortix_artifact_live`; each one leaves when its ticket would expire.
+// replica-local: nonce digests of tickets used here or announced by another
+// replica on `kortix_artifact_live`; each one leaves when its ticket would expire.
 const used = new Map<string, number>();
 
-export function artifactLiveTicketDigest(ticket: string): string {
-  return createHash('sha256').update(ticket).digest('hex');
+/** A ticket's identity: its sealed nonce, whatever the text it arrived as. */
+function nonceDigest(nonce: string): string {
+  return createHash('sha256').update(`kortix-artifact-live-ticket:${nonce}`).digest('hex');
 }
 
 /** The claims for the actor that passed the REST view check, or null for a sandbox token. */
@@ -108,13 +120,16 @@ export function artifactLiveTicketClaims(
   actor: Actor,
   sessionId: string | null,
   scope: { projectId: string; artifactId: string },
+  credential: { authSessionId: string | null; expiresAt: number | null } = { authSessionId: null, expiresAt: null },
 ): ArtifactLiveTicketClaims | null {
-  const { credential } = actor;
-  if (credential.kind === 'sandbox') return null;
-  const token = credential.kind === 'pat' || credential.kind === 'agent_session' ? credential.tokenId : null;
+  const kind = actor.credential;
+  if (kind.kind === 'sandbox') return null;
+  const token = kind.kind === 'pat' || kind.kind === 'agent_session' ? kind.tokenId : null;
   return {
     p: scope.projectId, a: scope.artifactId, u: actor.userId, c: actor.accountId,
-    k: credential.kind, t: token, s: sessionId, m: actor.ctx.mfaAal ?? null,
+    k: kind.kind, t: token, s: sessionId, m: actor.ctx.mfaAal ?? null,
+    g: kind.kind === 'jwt' && isUuid(credential.authSessionId) ? credential.authSessionId : null,
+    x: typeof credential.expiresAt === 'number' && Number.isFinite(credential.expiresAt) ? credential.expiresAt : null,
   };
 }
 
@@ -133,17 +148,22 @@ const nullableUuid = (value: unknown): value is string | null => value === null 
 export function verifyArtifactLiveTicket(
   ticket: string | null | undefined,
   scope: { projectId: string; artifactId: string },
-): { claims: ArtifactLiveTicketClaims; expiresAt: number } | null {
+): { claims: ArtifactLiveTicketClaims; expiresAt: number; digest: string } | null {
   const payload = open(ticket);
   if (!payload) return null;
-  const { p, a, u, c, k, t, s, m, n, exp } = payload;
+  const { p, a, u, c, k, t, s, m, g, x, n, exp } = payload;
   if (typeof exp !== 'number' || !Number.isFinite(exp) || exp < Date.now()) return null;
+  if (!nullableUuid(g) || (x !== null && (typeof x !== 'number' || !Number.isFinite(x) || x <= Date.now()))) return null;
   if (p !== scope.projectId || a !== scope.artifactId || !isUuid(p) || !isUuid(a)) return null;
   if (!isUuid(u) || !isUuid(c) || typeof n !== 'string' || n.length < 16) return null;
   if (!ARTIFACT_LIVE_TICKET_KINDS.includes(k as ArtifactLiveTicketKind)) return null;
   if (!nullableUuid(t) || !nullableUuid(s) || (m !== null && typeof m !== 'string')) return null;
   if ((k === 'pat' || k === 'agent_session') !== (t !== null)) return null;
-  return { claims: { p, a, u, c, k: k as ArtifactLiveTicketKind, t, s, m: m as string | null }, expiresAt: exp };
+  return {
+    claims: { p, a, u, c, k: k as ArtifactLiveTicketKind, t, s, m: m as string | null, g, x: x as number | null },
+    expiresAt: exp,
+    digest: nonceDigest(n),
+  };
 }
 
 function prune(now: number): void {
@@ -153,11 +173,10 @@ function prune(now: number): void {
   while (used.size > MAX_USED) used.delete(used.keys().next().value!);
 }
 
-/** True the first time this replica sees the ticket; false when it was used here or announced as used. */
-export function consumeArtifactLiveTicket(ticket: string, expiresAt: number): boolean {
+/** True the first time this replica sees the ticket (by its nonce digest); false when it was used here or announced as used. */
+export function consumeArtifactLiveTicket(digest: string, expiresAt: number): boolean {
   const now = Date.now();
   prune(now);
-  const digest = artifactLiveTicketDigest(ticket);
   const known = used.get(digest);
   if (known !== undefined && known > now) return false;
   used.set(digest, expiresAt);

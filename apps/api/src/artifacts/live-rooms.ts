@@ -11,10 +11,18 @@
  *   - a client sends at most 10 frames per second; the rest are dropped, and
  *     50 dropped frames within 5 s close the socket (4429);
  *   - presence to a room's sockets is coalesced to one frame per 100 ms;
- *   - a participant's delta reaches other processes at most 5 times per
- *     second, the newest state last;
+ *   - other processes hear a room's moves (cursor, selection, typing, focus,
+ *     status, keepalives) in one batch per room per 200 ms, which names each
+ *     participant that changed once, with its newest state. A participant
+ *     goes out at most 5 times per second. Joins and leaves go out at once;
  *   - at most 50 participants are listed; a socket beyond that sees presence
- *     and sends none (`welcome.sends=false`) until a place frees;
+ *     and sends none (`welcome.sends=false`) until a place frees, and gets
+ *     presence at most once a second;
+ *   - one person holds at most 8 sockets on an Artifact, and a room at most
+ *     200 sockets in one process: every socket receives every presence frame,
+ *     so these bound a room's fan-out. A socket over a cap closes with 4429;
+ *   - a socket that stops reading (more than 1 MiB buffered) is skipped, and
+ *     closed with 4429 past 8 MiB;
  *   - a socket silent for 45 s is closed; another process's participant that
  *     is not refreshed for 45 s is dropped; an agent with no signal for 2 min
  *     leaves;
@@ -43,7 +51,10 @@ const V = ARTIFACT_LIVE_VERSION;
 
 /** One presence frame per room per this many ms. */
 export const PRESENCE_COALESCE_MS = 100;
-/** Two relays of one participant are at least this far apart: `relayFramesPerSecond`. */
+/**
+ * Two batches of one room, and two relays of one participant, are at least
+ * this far apart: `relayFramesPerSecond`.
+ */
 export const RELAY_SPACING_MS = Math.ceil(1000 / L.relayFramesPerSecond);
 /** A local participant is re-sent this often, so other processes do not expire it. */
 export const KEEPALIVE_MS = 20_000;
@@ -56,9 +67,20 @@ export const ABUSE_DROPS = 5 * L.clientFramesPerSecond;
 export const PRESENCE_MAX = 200;
 /** A socket closed for silence gets this code: a normal close, so the client reconnects. */
 export const EXPIRED_CLOSE = 1000;
+/** Sockets one person (a user or an agent session) may hold on one Artifact, per process. */
+export const SOCKETS_PER_ACTOR = 8;
+/** Sockets one Artifact's room holds per process. Each receives every presence frame. */
+export const SOCKETS_PER_ROOM = 200;
+/** A socket over the participant cap gets presence at most this often. */
+export const WAITING_PRESENCE_MS = 1_000;
+/** Buffered bytes above which a socket is skipped (it gets the newest state later), and closed. */
+export const BUFFERED_SKIP_BYTES = 1024 * 1024;
+export const BUFFERED_CLOSE_BYTES = 8 * 1024 * 1024;
 
 export interface LiveSocket {
   send(data: string): unknown;
+  /** Bytes queued for a slow reader (Bun's `ServerWebSocket#getBufferedAmount`). */
+  getBufferedAmount?(): number;
   close(code?: number, reason?: string): void;
 }
 
@@ -77,16 +99,25 @@ export interface LiveIdentity {
   avatar_url: string | null;
 }
 
-/** A delta to the other processes. `at` orders agent signals across processes. */
+/** One participant's state for other processes. `at` orders agent signals across processes. */
+export interface LiveRelayEntry {
+  p: ArtifactLiveParticipant;
+  at?: number;
+}
+
+/**
+ * A delta to the other processes: `up` a join, `ups` a room's batch of moves,
+ * `rm` a leave. A receiver applies each `ups` entry as an `up`.
+ */
 export type LiveRelay =
   | { k: 'up'; a: string; p: ArtifactLiveParticipant; at?: number }
+  | { k: 'ups'; a: string; ps: LiveRelayEntry[] }
   | { k: 'rm'; a: string; id: string; at?: number }
   | { k: 'sync'; a: string }
   | { k: 'aw'; a: string; s: string };
 
 interface Relayed {
   lastAt: number;
-  cancel: (() => void) | null;
 }
 
 interface Conn<M> {
@@ -105,6 +136,9 @@ interface Conn<M> {
   dropWindowAt: number;
   drops: number;
   relay: Relayed;
+  /** When it last got presence, and whether it is owed the newest state. */
+  presenceAt: number;
+  presenceOwed: boolean;
 }
 
 interface Agent {
@@ -130,8 +164,14 @@ interface Room<M> {
   conns: Map<string, Conn<M>>;
   agents: Map<string, Agent>;
   remote: Map<string, Remote>;
+  /** Local participants whose state waits for the room's next batch. */
+  pending: Set<Conn<M> | Agent>;
+  relayCancel: (() => void) | null;
+  lastBatchAt: number;
   flushCancel: (() => void) | null;
   lastFlushAt: number;
+  /** A presence frame owed to a waiting or slow socket. */
+  owedCancel: (() => void) | null;
   contentVersion: string | null;
   syncRepliedAt: number;
 }
@@ -204,18 +244,37 @@ export class ArtifactLiveRooms<M = unknown> {
     }
   }
 
-  /** A new socket: `welcome`, then the presence list, then the room hears of it. */
+  /** May one more socket of `who` join the Artifact here? Under SOCKETS_PER_ROOM and SOCKETS_PER_ACTOR. */
+  canJoin(artifactId: string, who: LiveWho): boolean {
+    const room = this.rooms.get(artifactId);
+    if (!room) return true;
+    if (room.conns.size >= SOCKETS_PER_ROOM) return false;
+    const actor = whoId(who);
+    let held = 0;
+    for (const conn of room.conns.values()) if (whoId(conn.identity.who) === actor && ++held >= SOCKETS_PER_ACTOR) return false;
+    return true;
+  }
+
+  /** A new socket: `welcome`, then the presence list, then the room hears of it. Over a cap it closes with 4429 and never joins. */
   join(input: { artifactId: string; projectId: string; socket: LiveSocket; identity: LiveIdentity; meta: M }): { id: string; sends: boolean } {
     const now = this.clock.now();
+    const id = this.newId();
+    if (!this.canJoin(input.artifactId, input.identity.who)) {
+      try {
+        input.socket.close(ARTIFACT_LIVE_CLOSE.rateLimited, 'too many sockets on this Artifact');
+      } catch {
+        // Already closed.
+      }
+      return { id, sends: false };
+    }
     const room = this.ensure(input.artifactId, input.projectId);
     const firstViewer = room.conns.size === 0;
-    const id = this.newId();
     const sends = this.listed(room) < L.participants;
     const conn: Conn<M> = {
       id, socket: input.socket, meta: input.meta, identity: input.identity, joinedAt: now, lastFrameAt: now,
       participant: this.person(id, input.identity), sends,
       tokens: L.clientFramesPerSecond, refilledAt: now, dropWindowAt: now, drops: 0,
-      relay: { lastAt: -Infinity, cancel: null },
+      relay: { lastAt: -Infinity }, presenceAt: now, presenceOwed: false,
     };
     room.conns.set(id, conn);
     // Another process may hold viewers of this Artifact already: ask for them.
@@ -223,7 +282,8 @@ export class ArtifactLiveRooms<M = unknown> {
     this.sendFrame(conn.socket, { v: V, t: 'welcome', you: id, sends });
     this.sendFrame(conn.socket, this.presence(room));
     if (sends) {
-      this.queueRelay(room, conn);
+      // A join goes out at once; moves wait for the room's batch.
+      this.relayNow(room, conn);
       this.dirty(room);
     }
     return { id, sends };
@@ -251,7 +311,7 @@ export class ArtifactLiveRooms<M = unknown> {
     const conn = room?.conns.get(connId);
     if (!room || !conn) return;
     room.conns.delete(connId);
-    conn.relay.cancel?.();
+    room.pending.delete(conn);
     if (conn.sends) {
       this.relay({ k: 'rm', a: artifactId, id: connId });
       this.promote(room);
@@ -339,6 +399,12 @@ export class ArtifactLiveRooms<M = unknown> {
     switch (message.k) {
       case 'up':
         return this.remoteUp(room, origin, message);
+      case 'ups':
+        for (const entry of message.ps) {
+          if (this.rooms.get(room.artifactId) !== room) return;
+          this.remoteUp(room, origin, { k: 'up', a: message.a, p: entry.p, ...(entry.at !== undefined ? { at: entry.at } : {}) });
+        }
+        return;
       case 'rm':
         return this.remoteRm(room, origin, message);
       case 'sync':
@@ -366,10 +432,10 @@ export class ArtifactLiveRooms<M = unknown> {
       }
       if (this.rooms.get(room.artifactId) !== room) continue;
       for (const conn of room.conns.values()) {
-        if (conn.sends && !conn.relay.cancel && now - conn.relay.lastAt >= KEEPALIVE_MS) this.relayNow(room, conn);
+        if (conn.sends && now - conn.relay.lastAt >= KEEPALIVE_MS) this.queueRelay(room, conn);
       }
       for (const agent of room.agents.values()) {
-        if (!agent.relay.cancel && now - agent.relay.lastAt >= KEEPALIVE_MS) this.relayNow(room, agent);
+        if (now - agent.relay.lastAt >= KEEPALIVE_MS) this.queueRelay(room, agent);
       }
       this.dropIfEmpty(room);
     }
@@ -382,7 +448,8 @@ export class ArtifactLiveRooms<M = unknown> {
     if (!room) {
       room = {
         artifactId, projectId, conns: new Map(), agents: new Map(), remote: new Map(),
-        flushCancel: null, lastFlushAt: -Infinity, contentVersion: null, syncRepliedAt: -Infinity,
+        pending: new Set(), relayCancel: null, lastBatchAt: -Infinity,
+        flushCancel: null, lastFlushAt: -Infinity, owedCancel: null, contentVersion: null, syncRepliedAt: -Infinity,
       };
       this.rooms.set(artifactId, room);
     }
@@ -392,6 +459,8 @@ export class ArtifactLiveRooms<M = unknown> {
   private dropIfEmpty(room: Room<M>): void {
     if (room.conns.size || room.agents.size || this.rooms.get(room.artifactId) !== room) return;
     room.flushCancel?.();
+    room.relayCancel?.();
+    room.owedCancel?.();
     this.rooms.delete(room.artifactId);
   }
 
@@ -479,12 +548,15 @@ export class ArtifactLiveRooms<M = unknown> {
       color: artifactLiveColor(input.sessionId), status: input.status, view: null, hidden: false,
       cursor: input.cursor, selection: null, typing: input.typing, focus: input.focus,
     };
-    const agent = room.agents.get(id) ?? { participant, joinedAt: now, signalAt: now, sawLiveTurn: false, relay: { lastAt: -Infinity, cancel: null } };
+    const held = room.agents.get(id);
+    const agent = held ?? { participant, joinedAt: now, signalAt: now, sawLiveTurn: false, relay: { lastAt: -Infinity } };
     agent.participant = participant;
     agent.signalAt = now;
     agent.sawLiveTurn = input.sawLiveTurn;
     room.agents.set(id, agent);
-    this.queueRelay(room, agent);
+    // An agent that appears goes out at once; its moves wait for the batch.
+    if (held) this.queueRelay(room, agent);
+    else this.relayNow(room, agent);
     this.dirty(room);
   }
 
@@ -493,7 +565,7 @@ export class ArtifactLiveRooms<M = unknown> {
     if (room) {
       const agent = room.agents.get(id);
       if (agent) {
-        agent.relay.cancel?.();
+        room.pending.delete(agent);
         room.agents.delete(id);
         this.promote(room);
         this.dirty(room);
@@ -516,7 +588,7 @@ export class ArtifactLiveRooms<M = unknown> {
       // One process holds an agent: the one with the newest signal (ties: the higher origin).
       const theirs = message.at ?? 0;
       if (theirs < local.signalAt || (theirs === local.signalAt && origin < this.origin)) return;
-      local.relay.cancel?.();
+      room.pending.delete(local);
       room.agents.delete(participant.id);
       this.dirty(room);
     }
@@ -537,7 +609,7 @@ export class ArtifactLiveRooms<M = unknown> {
     }
     const local = room.agents.get(message.id);
     if (local && message.at !== undefined && local.signalAt <= message.at) {
-      local.relay.cancel?.();
+      room.pending.delete(local);
       room.agents.delete(message.id);
       this.dirty(room);
     }
@@ -548,8 +620,8 @@ export class ArtifactLiveRooms<M = unknown> {
     const now = this.clock.now();
     if (now - room.syncRepliedAt < SYNC_REPLY_SPACING_MS) return;
     room.syncRepliedAt = now;
-    for (const conn of room.conns.values()) if (conn.sends) this.relayNow(room, conn);
-    for (const agent of room.agents.values()) this.relayNow(room, agent);
+    for (const conn of room.conns.values()) if (conn.sends) this.queueRelay(room, conn, true);
+    for (const agent of room.agents.values()) this.queueRelay(room, agent, true);
   }
 
   /** Over the cap no more: the oldest waiting sockets start sending. */
@@ -559,31 +631,73 @@ export class ArtifactLiveRooms<M = unknown> {
       if (this.listed(room) >= L.participants) return;
       conn.sends = true;
       this.sendFrame(conn.socket, { v: V, t: 'welcome', you: conn.id, sends: true });
-      this.queueRelay(room, conn);
+      this.relayNow(room, conn);
       this.dirty(room);
     }
   }
 
-  /** Relay now when the last one is RELAY_SPACING_MS old; else once, at that time, with the state then. */
-  private queueRelay(room: Room<M>, holder: Conn<M> | Agent): void {
-    if (holder.relay.cancel) return;
-    const wait = holder.relay.lastAt + RELAY_SPACING_MS - this.clock.now();
-    if (wait <= 0) return this.relayNow(room, holder);
-    holder.relay.cancel = this.clock.later(() => {
-      holder.relay.cancel = null;
-      this.relayNow(room, holder);
+  /** The holder is still this room's participant, and a listed one. */
+  private holds(room: Room<M>, holder: Conn<M> | Agent): boolean {
+    if (this.rooms.get(room.artifactId) !== room) return false;
+    const id = holder.participant.id;
+    return 'signalAt' in holder ? room.agents.get(id) === holder : room.conns.get(id) === holder && holder.sends;
+  }
+
+  private entry(holder: Conn<M> | Agent): LiveRelayEntry {
+    return { p: visible(holder.participant), ...('signalAt' in holder ? { at: holder.signalAt } : {}) };
+  }
+
+  /** A join: out at once, outside the batch. */
+  private relayNow(room: Room<M>, holder: Conn<M> | Agent): void {
+    if (!this.holds(room, holder)) return;
+    room.pending.delete(holder);
+    holder.relay.lastAt = this.clock.now();
+    this.relay({ k: 'up', a: room.artifactId, ...this.entry(holder) });
+  }
+
+  /**
+   * A move: into the room's next batch, with whatever state it has then.
+   * `soon`: a sync reply, due at the next batch whatever its own spacing.
+   */
+  private queueRelay(room: Room<M>, holder: Conn<M> | Agent, soon = false): void {
+    if (soon) holder.relay.lastAt = Math.min(holder.relay.lastAt, this.clock.now() - RELAY_SPACING_MS);
+    room.pending.add(holder);
+    this.scheduleBatch(room);
+  }
+
+  /** The next batch: RELAY_SPACING_MS after the last one, and not before its earliest holder may go again. */
+  private scheduleBatch(room: Room<M>): void {
+    if (room.relayCancel || !room.pending.size) return;
+    const now = this.clock.now();
+    let earliest = Infinity;
+    for (const holder of room.pending) earliest = Math.min(earliest, holder.relay.lastAt + RELAY_SPACING_MS);
+    const wait = Math.max(0, room.lastBatchAt + RELAY_SPACING_MS - now, earliest - now);
+    room.relayCancel = this.clock.later(() => {
+      room.relayCancel = null;
+      this.sendBatch(room);
     }, wait);
   }
 
-  private relayNow(room: Room<M>, holder: Conn<M> | Agent): void {
-    holder.relay.cancel?.();
-    holder.relay.cancel = null;
-    const participant = holder.participant;
+  /** One `ups` for the room: each waiting participant once, newest state. One relayed within RELAY_SPACING_MS waits. */
+  private sendBatch(room: Room<M>): void {
     if (this.rooms.get(room.artifactId) !== room) return;
-    const agent = 'signalAt' in holder;
-    if (agent ? room.agents.get(participant.id) !== holder : room.conns.get(participant.id) !== holder || !(holder as Conn<M>).sends) return;
-    holder.relay.lastAt = this.clock.now();
-    this.relay({ k: 'up', a: room.artifactId, p: visible(participant), ...(agent ? { at: holder.signalAt } : {}) });
+    const now = this.clock.now();
+    const ps: LiveRelayEntry[] = [];
+    for (const holder of [...room.pending]) {
+      if (!this.holds(room, holder)) {
+        room.pending.delete(holder);
+        continue;
+      }
+      if (now - holder.relay.lastAt < RELAY_SPACING_MS) continue;
+      room.pending.delete(holder);
+      holder.relay.lastAt = now;
+      ps.push(this.entry(holder));
+    }
+    if (ps.length) {
+      room.lastBatchAt = now;
+      this.relay({ k: 'ups', a: room.artifactId, ps });
+    }
+    this.scheduleBatch(room);
   }
 
   private dirty(room: Room<M>): void {
@@ -595,12 +709,48 @@ export class ArtifactLiveRooms<M = unknown> {
     }, wait);
   }
 
-  private flush(room: Room<M>): void {
+  /**
+   * One presence frame, serialized once, to every socket that may take it now.
+   * A waiting socket gets it at most every WAITING_PRESENCE_MS; a socket with a
+   * full buffer is skipped (or closed past BUFFERED_CLOSE_BYTES). Each skipped
+   * socket is owed the newest state, sent when it may take it.
+   * `owedOnly`: the owed sockets' turn, not a change of the room.
+   */
+  private flush(room: Room<M>, owedOnly = false): void {
     if (this.rooms.get(room.artifactId) !== room) return;
-    room.lastFlushAt = this.clock.now();
+    const now = this.clock.now();
+    if (!owedOnly) room.lastFlushAt = now;
     if (!room.conns.size) return;
-    const data = JSON.stringify(this.presence(room));
-    for (const conn of room.conns.values()) send(conn.socket, data);
+    let data: string | null = null;
+    let nextOwed = Infinity;
+    for (const conn of [...room.conns.values()]) {
+      if (owedOnly && !conn.presenceOwed) continue;
+      if (!conn.sends && now - conn.presenceAt < WAITING_PRESENCE_MS) {
+        conn.presenceOwed = true;
+        nextOwed = Math.min(nextOwed, conn.presenceAt + WAITING_PRESENCE_MS);
+        continue;
+      }
+      const buffered = conn.socket.getBufferedAmount?.() ?? 0;
+      if (buffered > BUFFERED_CLOSE_BYTES) {
+        this.close(room.artifactId, conn.id, ARTIFACT_LIVE_CLOSE.rateLimited, 'not reading');
+        continue;
+      }
+      if (buffered > BUFFERED_SKIP_BYTES) {
+        conn.presenceOwed = true;
+        nextOwed = Math.min(nextOwed, now + WAITING_PRESENCE_MS);
+        continue;
+      }
+      data ??= JSON.stringify(this.presence(room));
+      send(conn.socket, data);
+      conn.presenceAt = now;
+      conn.presenceOwed = false;
+    }
+    if (nextOwed < Infinity && !room.owedCancel && this.rooms.get(room.artifactId) === room) {
+      room.owedCancel = this.clock.later(() => {
+        room.owedCancel = null;
+        this.flush(room, true);
+      }, Math.max(0, nextOwed - now));
+    }
   }
 
   private presence(room: Room<M>): ArtifactLiveServerFrame {
@@ -613,4 +763,57 @@ export class ArtifactLiveRooms<M = unknown> {
   private sendFrame(socket: LiveSocket, frame: ArtifactLiveServerFrame): void {
     send(socket, JSON.stringify(frame));
   }
+}
+
+/** Trimmed in this order when one participant alone does not fit a NOTIFY. */
+const TRIMS: ReadonlyArray<Partial<ArtifactLiveParticipant>> = [{ avatar_url: null }, { selection: null }, { cursor: null }];
+
+const byteLength = (text: string) => new TextEncoder().encode(text).length;
+
+/**
+ * The NOTIFY payloads for one relay, each at most `maxBytes` (pg_notify takes
+ * under 8000). A batch splits into as many payloads as it needs; a participant
+ * that alone does not fit loses its avatar, then its selection, then its
+ * cursor, and is dropped only if it still does not fit. `envelope` is merged
+ * into each payload (the sender's origin).
+ */
+export function packLiveRelay(envelope: Record<string, unknown>, message: LiveRelay, maxBytes: number): string[] {
+  if (message.k === 'up') {
+    const { k, a, ...entry } = message;
+    const fitted = fitEntry(entry, (e) => byteLength(JSON.stringify({ ...envelope, k, a, ...e })), maxBytes);
+    return fitted ? [JSON.stringify({ ...envelope, k, a, ...fitted })] : [];
+  }
+  if (message.k !== 'ups') {
+    const payload = JSON.stringify({ ...envelope, ...message });
+    return byteLength(payload) <= maxBytes ? [payload] : [];
+  }
+  const empty = byteLength(JSON.stringify({ ...envelope, k: 'ups', a: message.a, ps: [] }));
+  const payloads: string[] = [];
+  let chunk: LiveRelayEntry[] = [];
+  let size = empty;
+  const flush = () => {
+    if (chunk.length) payloads.push(JSON.stringify({ ...envelope, k: 'ups', a: message.a, ps: chunk }));
+    chunk = [];
+    size = empty;
+  };
+  for (const entry of message.ps) {
+    const fitted = fitEntry(entry, (e) => empty + byteLength(JSON.stringify(e)), maxBytes);
+    if (!fitted) continue;
+    const bytes = byteLength(JSON.stringify(fitted));
+    if (chunk.length && size + 1 + bytes > maxBytes) flush();
+    size += (chunk.length ? 1 : 0) + bytes;
+    chunk.push(fitted);
+  }
+  flush();
+  return payloads;
+}
+
+function fitEntry(entry: LiveRelayEntry, measure: (entry: LiveRelayEntry) => number, maxBytes: number): LiveRelayEntry | null {
+  let current = entry;
+  if (measure(current) <= maxBytes) return current;
+  for (const trim of TRIMS) {
+    current = { ...current, p: { ...current.p, ...trim } };
+    if (measure(current) <= maxBytes) return current;
+  }
+  return null;
 }

@@ -15,11 +15,30 @@ import { ARTIFACT_LIVE_LIMITS, artifactLiveAgentSignalSchema } from '@kortix/sha
 import { auth, errors, json } from '../../openapi';
 import { ArtifactLiveAgentError, signalArtifactLiveAgent } from '../../artifacts/live-hub';
 import { artifactLiveTicketClaims, mintArtifactLiveTicket } from '../../artifacts/live-ticket';
+import { bearerToken } from '../../shared/bearer-token';
+import { decodeSupabaseJwtPayload } from '../../shared/jwt-verify';
 import { projectsApp } from '../lib/app';
 import { authorizeComments } from './artifact-comments';
 
 const ArtifactParams = z.object({ projectId: z.string().uuid(), artifactId: z.string().uuid() });
 const notFound = (c: Context) => c.json({ error: 'Artifact not found', code: 'not_found' }, 404);
+
+/**
+ * The browser session behind a Supabase JWT and the JWT's expiry. The ticket
+ * carries both: the socket closes with 4401 at the expiry, and each re-check
+ * asks `auth.sessions` whether the session is still live (sign-out deletes it).
+ * Null for a token credential: its row is re-validated instead.
+ */
+function browserCredential(c: Context): { authSessionId: string | null; expiresAt: number | null } {
+  if (c.get('authType') !== 'supabase') return { authSessionId: null, expiresAt: null };
+  const token = bearerToken(c.req.header('authorization'));
+  const exp = token ? decodeSupabaseJwtPayload(token)?.exp : undefined;
+  const sessionId = c.get('sessionId');
+  return {
+    authSessionId: typeof sessionId === 'string' ? sessionId : null,
+    expiresAt: typeof exp === 'number' && Number.isFinite(exp) ? exp * 1000 : null,
+  };
+}
 
 const TicketSchema = z.object({
   ticket: z.string().openapi({ description: 'Open `GET …/live?ticket=<ticket>` with it. It works once.' }),
@@ -55,7 +74,7 @@ export function registerArtifactLiveRoutes(): void {
     const { projectId, artifactId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, false);
     if (!access.ok) return access.response;
-    const claims = artifactLiveTicketClaims(access.actor, access.scope.sessionId, { projectId, artifactId });
+    const claims = artifactLiveTicketClaims(access.actor, access.scope.sessionId, { projectId, artifactId }, browserCredential(c));
     if (!claims) return c.json({ error: 'This credential cannot open live presence', code: 'artifact_live_forbidden' }, 403);
     const { ticket, expiresAt } = mintArtifactLiveTicket(claims);
     c.header('Cache-Control', 'no-store');

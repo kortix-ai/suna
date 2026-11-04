@@ -9,13 +9,30 @@
  */
 const SECRET_NAMES = ['ticket', 'token', 'access_token', 'refresh_token', 'public_share'] as const;
 const SECRET_PARAMS = new Set<string>(SECRET_NAMES);
-const SECRET_QUERY = new RegExp(`(^|[?&])(${SECRET_NAMES.join('|')})=[^&#\\s"']*`, 'gi');
+/** Any `name=value` pair of a query: the decoded name decides, not its spelling. */
+const QUERY_PAIR = /(^|[?&])([^=&#\s"'?]+)=[^&#\s"']*/g;
 const REDACTED = '<redacted>';
 const MAX_DEPTH = 8;
 
-/** `…?ticket=abc&x=1` → `…?ticket=<redacted>&x=1`. Any other text is unchanged. */
+/**
+ * True when a query parameter name, as the server reads it, is a credential.
+ * The name is decoded the way `URLSearchParams` decodes it (`+` is a space,
+ * then percent escapes) and case-folded, so `%74icket` and `TICKET` count; a
+ * malformed escape is not a credential name.
+ */
+export function isSecretQueryParam(name: string): boolean {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(name.replace(/\+/g, ' '));
+  } catch {
+    return false;
+  }
+  return SECRET_PARAMS.has(decoded.toLowerCase());
+}
+
+/** `…?ticket=abc&x=1` → `…?ticket=<redacted>&x=1`, for every spelling of a credential name. Any other text is unchanged. */
 export function redactUrlSecrets(text: string): string {
-  return text.replace(SECRET_QUERY, (_match, lead: string, name: string) => `${lead}${name}=${REDACTED}`);
+  return text.replace(QUERY_PAIR, (match, lead: string, name: string) => (isSecretQueryParam(name) ? `${lead}${name}=${REDACTED}` : match));
 }
 
 function isPlainObject(value: object): value is Record<string, unknown> {
@@ -28,13 +45,13 @@ function scrub(value: unknown, depth: number): unknown {
   if (value === null || typeof value !== 'object' || depth > MAX_DEPTH) return value;
   if (Array.isArray(value)) {
     // A parsed query string as `[name, value]` pairs.
-    if (value.length === 2 && typeof value[0] === 'string' && SECRET_PARAMS.has(value[0].toLowerCase())) return [value[0], REDACTED];
+    if (value.length === 2 && typeof value[0] === 'string' && isSecretQueryParam(value[0])) return [value[0], REDACTED];
     return value.map((item) => scrub(item, depth + 1));
   }
   if (!isPlainObject(value)) return value;
   const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    out[key] = SECRET_PARAMS.has(key.toLowerCase()) && typeof item === 'string' ? REDACTED : scrub(item, depth + 1);
+    out[key] = isSecretQueryParam(key) && typeof item === 'string' ? REDACTED : scrub(item, depth + 1);
   }
   return out;
 }
