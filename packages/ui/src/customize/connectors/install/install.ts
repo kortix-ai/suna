@@ -83,20 +83,8 @@ export function connectorInstalledFrom(
   return /^[1-9][0-9]*$/.test(ordinal) && Number(ordinal) >= 2;
 }
 
-/**
- * The name a new account gets: the app's name, then `<name> 2`, `<name> 3`.
- * `POST /connections` with a label an account of the same owner already uses
- * updates that account instead of adding one, so the label must be free.
- */
-export function proposeAccountLabel(appName: string, taken: readonly string[]): string {
-  const used = new Set(taken.map((label) => label.trim().toLowerCase()));
-  const name = appName.trim();
-  if (!used.has(name.toLowerCase())) return name;
-  for (let n = 2; ; n += 1) {
-    const candidate = `${name} ${n}`;
-    if (!used.has(candidate.toLowerCase())) return candidate;
-  }
-}
+/** The name a new account gets: `<name>`, `<name> 2`, … The rule lives in `@kortix/sdk`. */
+export { proposeConnectorAccountLabel as proposeAccountLabel } from '@kortix/sdk';
 
 export interface InstallDeps {
   createConnector(
