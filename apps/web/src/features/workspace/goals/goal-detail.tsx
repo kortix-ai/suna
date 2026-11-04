@@ -252,8 +252,8 @@ function CriteriaList({ projectId, goal }: { projectId: string; goal: ProjectGoa
             <CircleIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-label={t('notMet')} />
           )}
           <span className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-foreground">{c.text}</span>
-            {c.evidence ? <EvidenceFile path={c.evidence} folder={goal.folder} driveHref={driveHref} /> : null}
+            <span className="text-foreground">{text(c.text)}</span>
+            {text(c.evidence) ? <EvidenceFile path={text(c.evidence)!} folder={goal.folder} driveHref={driveHref} /> : null}
           </span>
         </li>
       ))}
@@ -395,8 +395,8 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
     body:
       index === verdict && files?.verification ? (
         <VerificationReport report={files.verification} />
-      ) : tr.reason && tr.to !== 'done' && tr.from !== null ? (
-        tr.reason
+      ) : text(tr.reason) && tr.to !== 'done' && tr.from !== null ? (
+        text(tr.reason)!
       ) : undefined,
   }));
   if (doc?.summary) {
@@ -513,10 +513,10 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
             {doc?.status ? <GoalStatusBadge status={doc.status} paused={paused} /> : <span className="text-muted-foreground">—</span>}
           </Property>
           <Property label={t('assignedAgent')}>
-            {doc?.agent ? (
+            {text(doc?.agent) ? (
               <span className="flex min-w-0 items-center gap-2">
-                <AgentMark slug={doc.agent} size={14} />
-                <span className="text-foreground truncate">{doc.agent}</span>
+                <AgentMark slug={text(doc?.agent)!} size={14} />
+                <span className="text-foreground truncate">{text(doc?.agent)}</span>
               </span>
             ) : (
               <span className="text-muted-foreground">—</span>
@@ -558,7 +558,7 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
             {t('sessions')}
           </SectionTitle>
           <ul className="flex flex-col gap-2 text-sm">
-            {doc.sessions.map((s) => (
+            {doc.sessions.filter((s) => text(s.id)).map((s) => (
               <li key={`${s.role}:${s.id}`} className="flex min-w-0 items-baseline gap-2">
                 <Link href={uiRoutes().session(projectId, s.id)} className="text-foreground min-w-0 truncate hover:underline">
                   <SessionName projectId={projectId} sessionId={s.id} />
@@ -709,6 +709,14 @@ function GoalControls({ projectId, goal, onChanged }: { projectId: string; goal:
       </Modal>
     </>
   );
+}
+
+/**
+ * A GOAL.md value as text, or null. The front matter is hand-editable and the parser keeps
+ * values as written: a number, list or map must never reach a React child or a string helper.
+ */
+function text(value: unknown): string | null {
+  return typeof value === 'string' && value ? value : null;
 }
 
 /** A goal file under its own heading: drop the file's leading `# Title`. */

@@ -186,7 +186,7 @@ function GoalRow({ projectId, goal, space }: { projectId: string; goal: ProjectG
       : personOf(doc.assigned_user) && personOf(doc.assigned_user) !== t('anotherMember')
         ? t('forPerson', { person: personOf(doc.assigned_user) ?? '' })
         : t('forMember');
-  const meta = [doc?.agent, forWhom, space, goal.scope === 'company' ? t('scope.company') : null].filter(Boolean);
+  const meta = [typeof doc?.agent === 'string' ? doc.agent : null, forWhom, space, goal.scope === 'company' ? t('scope.company') : null].filter(Boolean);
 
   return (
     <li>
