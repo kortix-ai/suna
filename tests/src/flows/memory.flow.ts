@@ -386,17 +386,27 @@ flow(
     try {
       if (!(await hasStorage(world))) return await noStorage(ctx, world);
       const { driveId } = await driveOf(world.owner, projectId);
-      const layer = { params: { projectId, layerKey: 'company' } };
+      // #11606 removed the project-wide `company` layer: a person's memory is
+      // the My Kortix layer, in their own Drive folder.
+      const layer = { params: { projectId, layerKey: 'mykortix' } };
+      let ROOT = '';
       const pageOf = (pageId: string) => ({ params: { projectId, pageId } });
 
       let before: Record<string, string> = {};
-      await ctx.step('a file already in /Company/Memory (written through Files) is a page in place: listed, read, nothing written', async () => {
+      await ctx.step('the My Kortix layer names its folder: a probe page lands at <root>/root-probe.md and is deleted again', async () => {
+        const probe = read<MemoryPage>((await world.owner.post(PAGES, { type: 'other', title: 'root-probe', body: 'probe' }, layer)).status(201), (b) => b.schema(MemoryPageSchema));
+        if (!probe.path.endsWith('/root-probe.md')) fail('the probe page is not at the layer root', probe.path);
+        ROOT = probe.path.slice(0, -'/root-probe.md'.length);
+        (await world.owner.del(PAGE, pageOf(probe.page_id))).status(200);
+      });
+
+      await ctx.step('a file already in the layer folder (written through Files) is a page in place: listed, read, nothing written', async () => {
         (await world.owner.put('/v1/drives/:driveId/files/content', '# Launch plan\n\nShip on 2026-11-02, pricing at $49.\n', {
-          params: { driveId }, query: { path: '/Company/Memory/launch-plan.md' }, headers: { 'content-type': 'application/octet-stream' }, raw: true,
+          params: { driveId }, query: { path: `${ROOT}/launch-plan.md` }, headers: { 'content-type': 'application/octet-stream' }, raw: true,
         })).status(200);
         before = await checksums(world.owner, driveId);
         const pages = read<{ pages: MemoryPageSummary[] }>((await world.owner.get(PAGES, layer)).status(200), (b) => b.schema(MemoryPageListSchema)).pages;
-        const launch = pages.find((p) => p.path === '/Company/Memory/launch-plan.md');
+        const launch = pages.find((p) => p.path === `${ROOT}/launch-plan.md`);
         if (!launch || launch.title !== 'Launch plan' || launch.type !== 'other') fail('the file is not a page', pages);
         (await world.owner.get(PAGE, pageOf(launch.page_id))).status(200).body().has('$.body', 'Ship on 2026-11-02, pricing at $49.\n');
         if (changed(before, await checksums(world.owner, driveId)).length) fail('a read changed Files', changed(before, await checksums(world.owner, driveId)));
@@ -405,7 +415,7 @@ flow(
       let created: MemoryPage;
       await ctx.step('create → 201: decisions/pricing.md with front-matter and a # title; the same title again → 409 title_taken with page_id', async () => {
         created = read<MemoryPage>((await world.owner.post(PAGES, { type: 'decisions', title: 'Pricing', summary: 'Stays at $49', body: 'We charge $49 per seat.' }, layer)).status(201), (b) =>
-          b.schema(MemoryPageSchema).has('$.path', '/Company/Memory/decisions/pricing.md').has('$.type', 'decisions').has('$.updated_by.kind', 'person'));
+          b.schema(MemoryPageSchema).has('$.path', `${ROOT}/decisions/pricing.md`).has('$.type', 'decisions').has('$.updated_by.kind', 'person'));
         const file = (await world.owner.get('/v1/drives/:driveId/files/content', { params: { driveId }, query: { path: created.path } })).status(200).text();
         if (!file.startsWith('---\nsummary: Stays at $49\nupdated_by: ') || !file.endsWith('---\n# Pricing\n\nWe charge $49 per seat.\n')) fail('the file', file);
         (await world.owner.post(PAGES, { type: 'decisions', title: 'pricing' }, layer)).status(409).body().has('$.code', 'title_taken').has('$.page_id', created.page_id);
@@ -432,7 +442,7 @@ flow(
       });
 
       await ctx.step('a note → 201: one line appended to Notes.md, listed first; search finds the pre-existing file', async () => {
-        (await world.owner.post(NOTES, { text: 'Launch moves to Nov 19' }, layer)).status(201).body().has('$.type', 'note').has('$.path', '/Company/Memory/Notes.md');
+        (await world.owner.post(NOTES, { text: 'Launch moves to Nov 19' }, layer)).status(201).body().has('$.type', 'note').has('$.path', `${ROOT}/Notes.md`);
         read((await world.owner.get(PAGES, layer)).status(200), (b) => b.schema(MemoryPageListSchema).has('$.pages[0].title', 'Notes'));
         const hits = read<{ hits: { title: string }[] }>((await world.owner.get(SEARCH, { params: { projectId }, query: { q: 'ship on' } })).status(200), (b) => b.schema(MemorySearchResultSchema)).hits;
         if (!hits.some((h) => h.title === 'Launch plan')) fail('search', hits);
