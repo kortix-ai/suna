@@ -23971,6 +23971,7 @@
     "emptyFiltered": "Nenhum artefato corresponde",
     "updated": "Atualizado {time}",
     "pinned": "Fixado",
+    "openComments": "{count, plural, one {# comentário em aberto} other {# comentários em aberto}}",
     "visibility": {
       "private": "Privado",
       "project": "Projeto",

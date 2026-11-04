@@ -90,6 +90,15 @@ flow('ART-4', {
     if (!found) throw new Error(`thread ${threadId} missing from comments`);
     return found;
   };
+  // OWNER's Artifact list: each listed Artifact's `open_thread_count`, or 'absent'.
+  const expectOpenCounts = async (expected: Record<string, number | 'absent'>) => {
+    const rows = (await owner.get(ARTIFACTS, { params: { projectId: project.id } }))
+      .status(200).json<{ artifacts: { artifact_id: string; open_thread_count?: number }[] }>().artifacts;
+    const counts = Object.fromEntries(rows.map((row) => [row.artifact_id, row.open_thread_count ?? 'absent']));
+    for (const [id, count] of Object.entries(expected)) {
+      if (counts[id] !== count) throw new Error(`open_thread_count ${JSON.stringify(counts)}, expected ${JSON.stringify(expected)}`);
+    }
+  };
   const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
   const screenshotKeys = new Set<string>();
   const screenshotProjects = new Set([project.id]);
@@ -126,13 +135,15 @@ flow('ART-4', {
       (await owner.patch(FEATURES, { feature: 'artifacts', enabled: true }, { params: { projectId: project.id } })).status(200);
     });
 
-    await ctx.step('ANON reads a public Artifact comments route → 401; artifact_comments off → 403 feature_disabled', async () => {
+    await ctx.step('ANON reads a public Artifact comments route → 401; artifact_comments off → 403 feature_disabled and no open_thread_count in the list', async () => {
       await withDb(ctx, (db) => db.query('UPDATE kortix.artifacts SET visibility = \'public\' WHERE artifact_id = $1', [artifactId]));
       (await ctx.client.as(ctx.P.ANON).get(COMMENTS, { params })).status(401);
       (await owner.get(COMMENTS, { params })).status(403).body().has('$.code', 'feature_disabled');
       (await owner.post(COMMENTS, { anchor, body: 'Review the forecast.' }, { params })).status(403).body().has('$.code', 'feature_disabled');
       await withDb(ctx, (db) => db.query('UPDATE kortix.artifacts SET visibility = \'project\' WHERE artifact_id = $1', [artifactId]));
+      await expectOpenCounts({ [artifactId]: 'absent', [privateId]: 'absent' });
       (await owner.patch(FEATURES, { feature: 'artifact_comments', enabled: true }, { params: { projectId: project.id } })).status(200);
+      await expectOpenCounts({ [artifactId]: 0, [privateId]: 0 });
     });
 
     await ctx.step('a project member cannot read or comment on the private Artifact → 404; malformed anchors → 400 invalid_anchor', async () => {
@@ -163,7 +174,8 @@ flow('ART-4', {
       if (stored.comments[0]!.body !== 'Review the forecast.') throw new Error('the first comment did not persist');
     });
 
-    await ctx.step('a member replies → 201; OWNER resolves and reopens; status filters and read-back agree', async () => {
+    await ctx.step('a member replies → 201; OWNER resolves and reopens; status filters, read-back and open_thread_count agree', async () => {
+      await expectOpenCounts({ [artifactId]: 1, [privateId]: 0 });
       const reply = (await asMember.post(REPLIES, { body: 'The forecast is confirmed.' }, thread()))
         .status(201).json<{ comment: Comment }>().comment;
       memberCommentId = reply.comment_id;
@@ -174,7 +186,9 @@ flow('ART-4', {
       }
       (await owner.get(COMMENTS, { params, query: { status: 'open' } })).status(200).body().has('$.threads.length', 0);
       (await owner.get(COMMENTS, { params, query: { status: 'resolved' } })).status(200).body().has('$.threads[0].thread_id', threadId);
+      await expectOpenCounts({ [artifactId]: 0 });
       (await owner.patch(THREAD, { status: 'open' }, thread())).status(200);
+      await expectOpenCounts({ [artifactId]: 1 });
       const reopened = await find();
       if (reopened.status !== 'open' || reopened.resolved_at !== null || reopened.resolved_by_user_id !== null) {
         throw new Error('reopen retained the resolved state');
@@ -212,13 +226,16 @@ flow('ART-4', {
       (await owner.post(REPLIES, { body: 'Wrong Artifact.' }, { params: { ...params, artifactId: privateId, threadId } })).status(404);
     });
 
-    await ctx.step('deleting a thread root leaves a tombstone and refuses new replies → 409 thread_deleted', async () => {
+    await ctx.step('deleting a thread root leaves a tombstone, refuses new replies → 409 thread_deleted, and leaves open_thread_count', async () => {
       const created = (await owner.post(COMMENTS, { anchor: { type: 'none', version: 'v1' }, body: 'Withdraw this thread.' }, { params }))
         .status(201).json<{ thread: Thread }>().thread;
+      await expectOpenCounts({ [artifactId]: 2 });
       const deadParams = { ...params, threadId: created.thread_id, commentId: created.comments[0]!.comment_id };
       (await owner.del(COMMENT, { params: deadParams })).status(200).body().has('$.comment.body', '');
       (await owner.post(REPLIES, { body: 'Late reply.' }, { params: deadParams }))
         .status(409).body().has('$.code', 'thread_deleted');
+      // Open: the first thread (its deleted reply does not matter). Not counted: this one, its root deleted.
+      await expectOpenCounts({ [artifactId]: 1, [privateId]: 0 });
     });
 
     await ctx.step('a member with only project.read and project.artifact.read can list but cannot comment → 403', async () => {
@@ -243,7 +260,7 @@ flow('ART-4', {
         .status(403).body().has('$.code', 'artifact_comment_forbidden');
     });
 
-    await ctx.step('a governed session with artifact.comment (implies read) comments as the session; a read-only agent → 403', async () => {
+    await ctx.step('a governed session with artifact.comment (implies read) comments as the session and its thread counts until resolved; a read-only agent → 403', async () => {
       await world.writeManifest(AGENTS, 'ke2e: artifact comment agents');
       const commenter = await world.mintAgentSession({ agent: 'commenter', launcher: ctx.P.OWNER, visibility: 'project' });
       const reader = await world.mintAgentSession({ agent: 'reader', launcher: ctx.P.OWNER, visibility: 'project' });
@@ -254,8 +271,11 @@ flow('ART-4', {
         throw new Error('session-bound author was recorded as a person');
       }
       const artifacts = (await commenter.client.get(ARTIFACTS, { params: { projectId: project.id } }))
-        .status(200).json<{ artifacts: { artifact_id: string }[] }>().artifacts;
-      if (!artifacts.some((row) => row.artifact_id === artifactId)) throw new Error('artifact.comment did not imply reading the Artifact list');
+        .status(200).json<{ artifacts: { artifact_id: string; open_thread_count?: number }[] }>().artifacts;
+      const listed = artifacts.find((row) => row.artifact_id === artifactId);
+      if (!listed) throw new Error('artifact.comment did not imply reading the Artifact list');
+      // The session's open thread counts beside OWNER's.
+      if (listed.open_thread_count !== 2) throw new Error(`the session read open_thread_count ${listed.open_thread_count}, expected 2`);
       (await commenter.client.get(COMMENTS, { params })).status(200);
       (await reader.client.get(COMMENTS, { params })).status(200);
       (await reader.client.post(REPLIES, { body: 'Read-only agent.' }, thread())).status(403);
@@ -263,6 +283,7 @@ flow('ART-4', {
         .status(403).body().has('$.code', 'artifact_comment_forbidden');
       (await commenter.client.patch(THREAD, { status: 'resolved' }, { params: { ...params, threadId: created.thread_id } }))
         .status(200).body().has('$.thread.resolved_by_session_id', commenter.sessionId);
+      await expectOpenCounts({ [artifactId]: 1 });
       await withDb(ctx, (db) => db.query(
         `INSERT INTO kortix.artifact_comments (thread_id, author_session_id, body, deleted_at)
          SELECT $1, $2, CASE WHEN n = 1 THEN '' ELSE 'Earlier agent comment' END,

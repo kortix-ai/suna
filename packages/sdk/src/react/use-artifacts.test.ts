@@ -74,6 +74,59 @@ test('each comment write refreshes mounted Comments and Activity before the poll
   }
 });
 
+test('each comment write refreshes the mounted Artifacts list and the current Artifact, so open_thread_count follows', async () => {
+  const counts = { list: 0, detail: 0 };
+  let open = 0;
+  globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    const method = init?.method ?? 'GET';
+    if (method !== 'GET') {
+      open++;
+      return Response.json({ thread: { thread_id: 'thread-a' }, comment: { comment_id: 'comment-a' }, session_id: 'next-session', created: true });
+    }
+    if (path.endsWith('/projects/project-a/artifacts')) {
+      counts.list++;
+      return Response.json({ artifacts: [{ artifact_id: 'artifact-a', open_thread_count: open }] });
+    }
+    if (path.endsWith('/projects/project-a/artifacts/artifact-a')) {
+      counts.detail++;
+      return Response.json({ artifact_id: 'artifact-a', open_thread_count: open, version: { id: null, files: [], view_url: '' } });
+    }
+    if (path.endsWith('/activity')) return Response.json({ items: [], next_cursor: null, older_versions: false });
+    return Response.json({ threads: [] });
+  }) as unknown as typeof fetch;
+  let list: ReturnType<typeof hooks.useArtifacts>;
+  let detail: ReturnType<typeof hooks.useArtifact>;
+  let old: ReturnType<typeof hooks.useArtifact>;
+  function Probe() {
+    list = hooks.useArtifacts('project-a');
+    detail = hooks.useArtifact('project-a', 'artifact-a');
+    old = hooks.useArtifact('project-a', 'artifact-a', 'commit-old');
+    comments = hooks.useArtifactComments('project-a', 'artifact-a', { status: 'all' });
+    return null;
+  }
+  await act(async () => { renderer = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe))); });
+  await settle();
+  // The current detail and one historical version are mounted: two detail reads.
+  expect(counts).toEqual({ list: 1, detail: 2 });
+  const writes = [
+    () => comments.create({ anchor: { type: 'none', version: 'commit-a' }, body: 'Review.' }),
+    () => comments.reply('thread-a', { body: 'Reviewed.' }),
+    () => comments.setStatus('thread-a', 'resolved'),
+    () => comments.edit('thread-a', 'comment-a', { body: 'Final.' }),
+    () => comments.remove('thread-a', 'comment-a'),
+  ];
+  for (let index = 0; index < writes.length; index++) {
+    await act(async () => { await writes[index]!(); });
+    await settle();
+    // The list and the current Artifact are read again; a historical version is not.
+    expect(counts).toEqual({ list: index + 2, detail: index + 3 });
+    expect(list!.data?.[0]?.open_thread_count).toBe(index + 1);
+    expect(detail!.data?.open_thread_count).toBe(index + 1);
+    expect(old!.data?.open_thread_count).toBe(0);
+  }
+});
+
 test('mounted reads use a ten-second fallback, scoped keys, and no background polling', async () => {
   await mount('project-a', 'artifact-a');
   const commentQuery = client.getQueryCache().find({ queryKey: qk.project.artifactComments('project-a', 'artifact-a', 'all') })!;
