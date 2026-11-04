@@ -350,7 +350,7 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
               aria-label={t('attachImages')}
               disabled={busy}
               onClick={() => fileInput.current?.click()}
-              className="text-muted-foreground hover:text-foreground shrink-0 rounded-full"
+              className="text-muted-foreground hover:text-foreground shrink-0"
             >
               <PlusIcon className="size-4" />
             </Button>
@@ -386,14 +386,14 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
             className="text-foreground placeholder:text-muted-foreground h-8 min-w-0 flex-1 bg-transparent px-1.5 text-sm outline-none"
           />
           <Hint label={t('send')} side="top">
-            {/* The composer's own send button (send-stop-control.tsx): filled, round, an up arrow. */}
+            {/* A filled send button with an up arrow, at the Button's default radius. */}
             <Button
               type="submit"
               size="icon-base"
               aria-label={t('send')}
               disabled={!canSend}
               aria-busy={busy}
-              className="shrink-0 rounded-full transition-[color,background-color,opacity,scale] duration-(--duration-slow) ease-out active:scale-[0.96] active:duration-(--duration-normal)"
+              className="shrink-0 transition-[color,background-color,opacity,scale] duration-(--duration-slow) ease-out active:scale-[0.96] active:duration-(--duration-normal)"
             >
               <ArrowUpIcon className="size-4" />
             </Button>
