@@ -41,6 +41,51 @@ export interface GatewayLogRow {
   billing_mode: string | null;
   actor_user_id: string | null;
   key_id: string | null;
+  /** The project session the request came from; null for a gateway key or a personal token. */
+  session_id?: string | null;
+  /** That session's title; null when it has none or was deleted. */
+  session_title?: string | null;
+  /**
+   * The session message the request produced: one assistant reply, one step
+   * of a turn. Null on requests from outside a session, and on requests sent
+   * before the session runtime named it.
+   */
+  message_id?: string | null;
+  /** The user message that started the turn the request belongs to. */
+  turn_id?: string | null;
+  /** The subagent thread (child runtime session) the request came from; null on the main thread. */
+  thread_id?: string | null;
+}
+
+/** Server-side filters of the gateway request log. Blank values are left out. */
+export interface GatewayLogFilters {
+  /** Only successful (`true`) or failed (`false`) requests. */
+  ok?: boolean;
+  sessionId?: string;
+  /** A model id the request asked for or ran on. */
+  model?: string;
+  provider?: string;
+  errorCode?: string;
+  /** A model, provider or error code containing the text, or a request, session or message id equal to it. */
+  q?: string;
+  /** ISO-8601 time; only requests at or after it. */
+  since?: string;
+  /** ISO-8601 time; only requests at or before it. */
+  until?: string;
+}
+
+export interface GatewayLogFacetValue {
+  value: string;
+  count: number;
+}
+
+/** The values the log filters can take in a window, the most-used first. */
+export interface GatewayLogFacets {
+  window_hours: number;
+  models: GatewayLogFacetValue[];
+  providers: GatewayLogFacetValue[];
+  error_codes: GatewayLogFacetValue[];
+  sessions: Array<{ session_id: string; title: string | null; count: number }>;
 }
 
 export interface GatewayLogDetail extends GatewayLogRow {
@@ -362,19 +407,44 @@ export async function previewGatewayRoute(
   );
 }
 
+const LOG_FILTER_PARAMS = {
+  sessionId: 'session_id',
+  model: 'model',
+  provider: 'provider',
+  errorCode: 'error_code',
+  q: 'q',
+  since: 'since',
+  until: 'until',
+} as const satisfies Record<Exclude<keyof GatewayLogFilters, 'ok'>, string>;
+
 export async function listGatewayLogs(
   projectId: string,
-  opts?: { limit?: number; offset?: number; ok?: boolean },
+  opts?: { limit?: number; offset?: number } & GatewayLogFilters,
 ): Promise<GatewayLogsResponse> {
   const q = new URLSearchParams();
   if (opts?.limit) q.set('limit', String(opts.limit));
   if (opts?.offset) q.set('offset', String(opts.offset));
   if (opts?.ok !== undefined) q.set('ok', String(opts.ok));
+  for (const [key, param] of Object.entries(LOG_FILTER_PARAMS) as [keyof typeof LOG_FILTER_PARAMS, string][]) {
+    const value = opts?.[key]?.trim();
+    if (value) q.set(param, value);
+  }
   const qs = q.toString();
   return unwrap(
     await backendApi.get<GatewayLogsResponse>(
       `/projects/${projectId}/gateway/logs${qs ? `?${qs}` : ''}`,
     ),
+    'Gateway request failed',
+  );
+}
+
+export async function getGatewayLogFacets(
+  projectId: string,
+  opts?: { hours?: number },
+): Promise<GatewayLogFacets> {
+  const qs = opts?.hours ? `?hours=${opts.hours}` : '';
+  return unwrap(
+    await backendApi.get<GatewayLogFacets>(`/projects/${projectId}/gateway/logs/facets${qs}`),
     'Gateway request failed',
   );
 }
