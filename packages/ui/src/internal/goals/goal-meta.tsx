@@ -51,9 +51,12 @@ export function GoalStatusBadge({ status, paused }: { status: ProjectGoalStatus 
 
 const CLOSED = new Set<ProjectGoalStatus>(['done', 'stopped', 'abandoned']);
 
-/** A person paused the goal (GOAL.md `paused_at`) and it is still open. */
-export function goalPaused(goal: Pick<ProjectGoal, 'goal' | 'health'>): boolean {
-  return goal.health.state !== 'closed' && !!goal.goal?.paused_at;
+/**
+ * A person paused the goal and nothing wakes it: GOAL.md has `paused_at` AND its heartbeat
+ * is not running. `paused_at` alone is a claim any session with the folder can write.
+ */
+export function goalPaused(goal: Pick<ProjectGoal, 'goal' | 'health' | 'heartbeat'>): boolean {
+  return goal.health.state !== 'closed' && !!goal.goal?.paused_at && goal.heartbeat?.state !== 'active';
 }
 
 /**
@@ -69,9 +72,11 @@ export function useGoalStateText() {
     if (!doc) return issueText('unreadable', goal);
     if (doc.status === 'done') return t('state.done');
     if (CLOSED.has(doc.status)) return t(`state.${doc.status === 'stopped' ? 'stopped' : 'abandoned'}`);
-    if (doc.paused_at) return t('state.paused', { time: formatGoalTime(doc.paused_at, locale, now) });
-    // Waiting on a person: the question itself is the sentence.
-    const question = (doc.status === 'waiting_on_user' ? doc.waiting_on : null) ?? goalOpenAsks(doc)[0]?.title;
+    if (goalPaused(goal) && doc.paused_at) return t('state.paused', { time: formatGoalTime(doc.paused_at, locale, now) });
+    // Waiting on a person: the question itself is the sentence. GOAL.md is hand-editable: only text counts.
+    const asked = doc.status === 'waiting_on_user' && typeof doc.waiting_on === 'string' ? doc.waiting_on : null;
+    const ask = goalOpenAsks(doc)[0]?.title;
+    const question = asked || (typeof ask === 'string' ? ask : null);
     if (question) return question;
     if (doc.status === 'waiting_on_user') return t('state.waitingOn');
     if (goal.health.issues[0]) return issueText(goal.health.issues[0], goal);
@@ -83,9 +88,9 @@ export function useGoalStateText() {
 }
 
 /** Orange: a person must act (a question or a problem). Grey otherwise: green is kept for done (the ring). */
-export function GoalHealthDot({ goal }: { goal: Pick<ProjectGoal, 'health'> & Partial<Pick<ProjectGoal, 'goal'>> }) {
+export function GoalHealthDot({ goal }: { goal: Pick<ProjectGoal, 'health'> & Partial<Pick<ProjectGoal, 'goal' | 'heartbeat'>> }) {
   const open = goal.health.state !== 'closed';
-  const paused = open && !!goal.goal?.paused_at;
+  const paused = open && !!goal.goal?.paused_at && goal.heartbeat?.state !== 'active';
   const waiting = open && !paused && (goal.goal?.status === 'waiting_on_user' || goalOpenAsks(goal.goal ?? null).length > 0);
   const tone: StatusTone =
     open && !paused && (waiting || goal.health.state === 'attention') ? 'warning' : 'neutral';

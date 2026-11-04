@@ -310,6 +310,22 @@ test('check --enforce leaves a paused goal alone: no heartbeat, no wake counted,
   }
 });
 
+test('check --enforce does not trust paused_at alone: with an active heartbeat the wake is still counted', async () => {
+  const fake = fakeApi();
+  const root = mkdtempSync(join(tmpdir(), 'goals-fake-pause-'));
+  const folder = join(root, 'drives', 'me', 'Goals', 'eu-billing');
+  mkdirSync(join(folder, 'evidence'), { recursive: true });
+  fake.reminders.push({ id: 'reminder.000000000099', prompt: `Goal wake: ${folder}. Load the kortix-goals skill and run one wake.`, state: 'active', next_fire_at: '2099-01-01T00:00:00.000Z' });
+  writeFileSync(join(folder, 'GOAL.md'), formatGoalFile({ ...base, reminder_id: 'reminder.000000000099', paused_at: '2026-11-04T10:00:00Z', paused_by: 'person' }));
+  writeFileSync(join(folder, 'log.md'), '# Log\n');
+  try {
+    await cli(fake, root, 'owner', ['check', '--enforce', '--quiet']);
+    expect(parseGoalFile(readFileSync(join(folder, 'GOAL.md'), 'utf8'))!.wake_count).toBe(1);
+  } finally {
+    fake.stop();
+  }
+});
+
 test('handover starts a fresh owner with the note, records it, and drops the old heartbeat', async () => {
   const fake = fakeApi();
   const root = mkdtempSync(join(tmpdir(), 'goals-handover-'));

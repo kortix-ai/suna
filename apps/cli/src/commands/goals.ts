@@ -563,7 +563,9 @@ async function checkGoals(ctx: Ctx, folderArg: string | undefined, flags: Flags)
   for (const folder of folders) {
     const g = readGoal(folder);
     // A person paused it: nothing wakes it, counts a wake or asks for a fix until they resume it.
-    if (flags.enforce && g?.paused_at) continue;
+    // `paused_at` alone is not a pause (the owner session can write GOAL.md): only a goal with
+    // no active heartbeat is skipped; one that still wakes is counted, capped and checked.
+    if (flags.enforce && g?.paused_at && (await heartbeatsOf(ctx, folder, g)).length === 0) continue;
     const repaired = flags.enforce && g?.format === 'goal.md' && ownerOf(g) === ctx.sessionId ? await repair(ctx, folder, g) : [];
     results.push({ folder, violations: goalViolations(readGoal(folder), { verification: readReport(folder) }), repaired });
   }

@@ -165,7 +165,12 @@ export function resolveSessionInsertFailure(error: unknown): SessionCreateError 
   // error, which carries `code` and `constraint`, on `cause`.
   const outer = (error ?? {}) as PostgresErrorFields & { cause?: unknown };
   const cause = (outer.cause ?? null) as PostgresErrorFields | null;
-  const pg: PostgresErrorFields = outer.code || !cause || typeof cause !== 'object' ? outer : { ...cause, message: outer.message ?? cause.message };
+  // DETAIL carries the violated key or the whole failing row (`Key (session_id)=(…)`,
+  // `Failing row contains (…)`): it is dropped. Code, constraint and statement identify the insert.
+  const pg: PostgresErrorFields = {
+    ...(outer.code || !cause || typeof cause !== 'object' ? outer : { ...cause, message: outer.message ?? cause.message }),
+    detail: undefined,
+  };
   // postgres.js appends the bound parameter values after "\nparams:" in the
   // message. Keep the statement (column names only) and drop the values, so the
   // server log identifies the failing insert without duplicating customer data.

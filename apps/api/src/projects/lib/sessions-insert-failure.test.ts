@@ -86,6 +86,7 @@ describe('resolveSessionInsertFailure', () => {
       cause: Object.assign(new Error('duplicate key value violates unique constraint "project_sessions_pkey"'), {
         code: '23505',
         constraint: 'project_sessions_pkey',
+        detail: 'Key (session_id)=(private-session-value) already exists.',
       }),
     });
 
@@ -93,7 +94,9 @@ describe('resolveSessionInsertFailure', () => {
 
     expect(mapped.status).toBe(409);
     expect(mapped.body).toEqual({ error: 'A session with this id already exists', code: 'session_already_exists' });
-    expect(errorSpy.mock.calls[0]?.[1]).toMatchObject({ pgCode: '23505', constraint: 'project_sessions_pkey' });
+    expect(errorSpy.mock.calls[0]?.[1]).toMatchObject({ pgCode: '23505', constraint: 'project_sessions_pkey', detail: null });
+    // DETAIL carries row values: it never reaches the log.
+    expect(JSON.stringify(errorSpy.mock.calls[0])).not.toContain('private-session-value');
   });
 
   test('a non-Error value still yields the stable body and is logged', () => {

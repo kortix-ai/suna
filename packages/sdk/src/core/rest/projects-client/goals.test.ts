@@ -685,6 +685,11 @@ describe('person controls: create, pause, resume', () => {
     expect(goalHealth(paused, null, NOW)).toEqual({ state: 'healthy', issues: [] });
   });
 
+  test('paused_at alone is not a pause: a goal whose heartbeat still runs is judged like any other', () => {
+    const claimed = { ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z' };
+    expect(goalHealth(claimed, { ...HEARTBEAT, last_status: 'failed', last_error: 'x' }, NOW).issues).toEqual(['heartbeat_failed']);
+  });
+
   test('stopping a paused goal clears the pause', async () => {
     goalRoutes({ ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
     routes[`DELETE /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ok: true } };

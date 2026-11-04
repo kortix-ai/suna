@@ -181,8 +181,9 @@ export function goalHealth(
 ): ProjectGoalHealth {
   if (!goal) return { state: 'attention', issues: ['unreadable'] };
   if (CLOSED.has(goal.status)) return { state: 'closed', issues: [] };
-  // A person paused it: the disabled heartbeat is the pause, and nothing is due.
-  if (goal.paused_at) return { state: 'healthy', issues: [] };
+  // A person paused it: the disabled heartbeat is the pause, and nothing is due. A heartbeat
+  // that still runs means GOAL.md alone claims the pause (any session can write it): judge it as any other.
+  if (goal.paused_at && heartbeat?.state !== 'active') return { state: 'healthy', issues: [] };
   const issues: ProjectGoalIssue[] = [];
   if (!heartbeat || heartbeat.state === 'done') issues.push('no_heartbeat');
   else if (heartbeat.state === 'paused') issues.push('heartbeat_paused');
