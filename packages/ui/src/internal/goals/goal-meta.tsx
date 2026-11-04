@@ -97,6 +97,116 @@ export function GoalHealthDot({ goal }: { goal: Pick<ProjectGoal, 'health'> & Pa
   return <StatusDot tone={tone} />;
 }
 
+/** What a goal's icon draws: its state, or a problem a person must look at. */
+export type GoalIconState =
+  | 'draft'
+  | 'active'
+  | 'verifying'
+  | 'waiting'
+  | 'attention'
+  | 'paused'
+  | 'done'
+  | 'stopped';
+
+/** The icon state of a goal in a list: paused and attention win over the state in GOAL.md. */
+export function goalIconState(goal: ProjectGoal): GoalIconState {
+  const doc = goal.goal;
+  if (!doc) return 'attention';
+  if (doc.status === 'done') return 'done';
+  if (CLOSED.has(doc.status)) return 'stopped';
+  if (goalPaused(goal)) return 'paused';
+  if (doc.status === 'waiting_on_user' || goalOpenAsks(doc).length > 0) return 'waiting';
+  if (goal.health.state === 'attention') return 'attention';
+  if (doc.status === 'verifying') return 'verifying';
+  if (doc.status === 'draft') return 'draft';
+  return 'active';
+}
+
+/** The icon state of a state move in the activity feed. */
+export function goalStatusIconState(status: ProjectGoalStatus): GoalIconState {
+  if (status === 'done') return 'done';
+  if (CLOSED.has(status)) return 'stopped';
+  if (status === 'waiting_on_user') return 'waiting';
+  if (status === 'verifying') return 'verifying';
+  if (status === 'draft') return 'draft';
+  return 'active';
+}
+
+const R = 6.25;
+/** A pie wedge from 12 o'clock, clockwise, `fraction` of the inner disc (radius 3.5). */
+function wedge(fraction: number): string {
+  const f = Math.max(0, Math.min(1, fraction));
+  if (f >= 1) return 'M8 4.5 A3.5 3.5 0 1 1 7.999 4.5 Z';
+  const a = f * 2 * Math.PI;
+  const x = 8 + 3.5 * Math.sin(a);
+  const y = 8 - 3.5 * Math.cos(a);
+  return `M8 8 L8 4.5 A3.5 3.5 0 ${f > 0.5 ? 1 : 0} 1 ${x.toFixed(3)} ${y.toFixed(3)} Z`;
+}
+
+/**
+ * A goal's status icon: the ring is the outcome, what sits inside it says where the goal
+ * stands. Draft: a dashed ring (nothing committed yet). In progress: a pie that fills as
+ * done criteria are met. Verifying: a full pie (every criterion claimed, the check is on
+ * it). Waiting on you: an orange core. Attention: an orange "!". Paused: two bars.
+ * Done: a green disc with a check. Stopped: a slash. Color only where a person acts
+ * (orange) or the outcome is reached (green); still glyphs, nothing animates.
+ */
+export function GoalStatusIcon({
+  state,
+  progress = 0,
+  label,
+  className,
+}: {
+  state: GoalIconState;
+  /** Done criteria met, 0..1: the pie of an in-progress goal. */
+  progress?: number;
+  /** The accessible name. Omitted: the icon is decoration beside a label. */
+  label?: string;
+  className?: string;
+}) {
+  const color =
+    state === 'done' ? 'var(--kortix-green)' : state === 'waiting' || state === 'attention' ? 'var(--kortix-orange)' : 'var(--muted-foreground)';
+  const a11y = label ? { role: 'img' as const, 'aria-label': label } : { 'aria-hidden': true as const };
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ color }}
+      className={className ? `shrink-0 ${className}` : 'shrink-0'}
+      data-goal-icon={state}
+      {...a11y}
+    >
+      {state === 'done' ? (
+        <>
+          <circle cx="8" cy="8" r="7" fill="currentColor" stroke="none" />
+          <path d="M5.2 8.2 L7.1 10 L10.8 6.2" stroke="var(--background)" />
+        </>
+      ) : (
+        <>
+          <circle cx="8" cy="8" r={R} strokeDasharray={state === 'draft' ? '2.4 2.5' : undefined} />
+          {state === 'active' && progress > 0 ? <path d={wedge(progress)} fill="currentColor" stroke="none" /> : null}
+          {state === 'verifying' ? <path d={wedge(1)} fill="currentColor" stroke="none" opacity="0.55" /> : null}
+          {state === 'waiting' ? <circle cx="8" cy="8" r="2.75" fill="currentColor" stroke="none" /> : null}
+          {state === 'attention' ? (
+            <>
+              <path d="M8 5 L8 8.6" />
+              <circle cx="8" cy="11" r="0.4" fill="currentColor" />
+            </>
+          ) : null}
+          {state === 'paused' ? <path d="M6.6 5.6 L6.6 10.4 M9.4 5.6 L9.4 10.4" /> : null}
+          {state === 'stopped' ? <path d="M5.4 10.6 L10.6 5.4" /> : null}
+        </>
+      )}
+    </svg>
+  );
+}
+
 /** One sentence per issue, for the health line and its tooltip. */
 export function useGoalIssueText() {
   const t = useTranslations('goals');
@@ -107,13 +217,13 @@ export function useGoalIssueText() {
 }
 
 /** Done criteria met, as a ring and "met/total". Nothing while the goal has no criteria. */
-export function GoalCriteriaProgress({ goal }: { goal: ProjectGoalDocument | null }) {
+export function GoalCriteriaProgress({ goal, ring = true }: { goal: ProjectGoalDocument | null; ring?: boolean }) {
   const t = useTranslations('goals');
   const { met, total } = goalProgress(goal);
   if (total === 0) return null;
   return (
     <span className="text-muted-foreground inline-flex items-center gap-1.5 text-xs tabular-nums" aria-label={t('criteriaMet', { met, total })}>
-      <ProgressRing value={(met / total) * 100} className="size-3.5" progressClassName={met === total ? 'text-kortix-green' : 'text-muted-foreground'} />
+      {ring ? <ProgressRing value={(met / total) * 100} className="size-3.5" progressClassName={met === total ? 'text-kortix-green' : 'text-muted-foreground'} /> : null}
       <span aria-hidden>
         {met}/{total}
       </span>

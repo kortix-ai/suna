@@ -23,6 +23,8 @@ import {
   goalPaused,
   GoalPersonChip,
   GoalStatusBadge,
+  GoalStatusIcon,
+  goalStatusIconState,
   ProjectPageHeader,
   useGoalClock,
   useGoalIssueText,
@@ -405,7 +407,7 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
     items.push({ key: 'summary', at: updatedAt, order: transitions.length + 1, icon: <ChatTextIcon className="text-muted-foreground size-4" aria-hidden />, title: t('feed.update'), body: doc.summary });
   }
   if (paused && doc?.paused_at) {
-    items.push({ key: 'paused', at: doc.paused_at, order: transitions.length + 2, icon: <PauseIcon className="text-muted-foreground size-4" aria-hidden />, title: t('feed.paused') });
+    items.push({ key: 'paused', at: doc.paused_at, order: transitions.length + 2, icon: <GoalStatusIcon state="paused" />, title: t('feed.paused') });
   }
   items.sort((a, b) => a.order - b.order);
 
@@ -458,11 +460,9 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
   );
 }
 
-/** A state move's glyph: green check for done, orange dot for waiting on a person, a stop square for stopped, grey otherwise. */
+/** A state move's glyph: the goal status icon of the state it moved to. */
 function StatusGlyph({ status }: { status: ProjectGoalStatus }) {
-  if (status === 'done') return <CheckCircleIcon weight="fill" className="text-kortix-green size-4" aria-hidden />;
-  if (status === 'stopped' || status === 'abandoned') return <StopIcon className="text-muted-foreground size-3.5" aria-hidden />;
-  return <span className={status === 'waiting_on_user' ? 'bg-kortix-orange size-2 rounded-full' : 'bg-muted-foreground size-2 rounded-full'} aria-hidden />;
+  return <GoalStatusIcon state={goalStatusIconState(status)} progress={0} />;
 }
 
 /** The verifier's report, folded behind "Show report". */

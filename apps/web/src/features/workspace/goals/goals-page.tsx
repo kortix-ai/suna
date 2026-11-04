@@ -11,7 +11,9 @@ import { useUiViewerId } from '@kortix/ui';
 import {
   ALL_SPACES,
   GoalCriteriaProgress,
-  GoalHealthDot,
+  goalIconState,
+  goalProgress,
+  GoalStatusIcon,
   goalAssignedTo,
   goalHref,
   goalNeedsAttention,
@@ -186,16 +188,17 @@ function GoalRow({ projectId, goal, space }: { projectId: string; goal: ProjectG
       : personOf(doc.assigned_user) && personOf(doc.assigned_user) !== t('anotherMember')
         ? t('forPerson', { person: personOf(doc.assigned_user) ?? '' })
         : t('forMember');
+  const progress = goalProgress(doc);
   const meta = [typeof doc?.agent === 'string' ? doc.agent : null, forWhom, space, goal.scope === 'company' ? t('scope.company') : null].filter(Boolean);
 
   return (
     <li>
       <Link
         href={goalHref(projectId, goal) ?? '#'}
-        className="hover:bg-hover flex items-center gap-3 rounded-md px-3 py-2.5"
+        className="hover:bg-hover flex items-start gap-3 rounded-md px-3 py-2.5"
         data-testid="goal-row"
       >
-        <GoalHealthDot goal={goal} />
+        <GoalStatusIcon state={goalIconState(goal)} progress={progress.total ? progress.met / progress.total : 0} className="mt-0.5" />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-foreground truncate text-sm">{doc?.objective ?? goal.slug}</span>
           {/* The sentence gives way first: who it is for stays readable beside a long question. */}
@@ -204,8 +207,9 @@ function GoalRow({ projectId, goal, space }: { projectId: string; goal: ProjectG
             {meta.length ? <span className="shrink-0 whitespace-nowrap">&nbsp;· {meta.join(' · ')}</span> : null}
           </span>
         </span>
-        <span className="hidden shrink-0 sm:inline-flex">
-          <GoalCriteriaProgress goal={doc} />
+        <span className="hidden shrink-0 self-center sm:inline-flex">
+          {/* The icon's pie draws the progress; the row keeps the number. */}
+          <GoalCriteriaProgress goal={doc} ring={false} />
         </span>
       </Link>
     </li>
