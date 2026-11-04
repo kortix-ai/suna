@@ -66,6 +66,17 @@ const textOf = (html: string) =>
   html.replace(/<[^>]*>/g, '').replaceAll('&#x27;', "'").replaceAll('&quot;', '"').replaceAll('&amp;', '&');
 
 describe('SubagentNoticeRow', () => {
+  test('a workflow result returned as JSON reads as its document: no braces, no escapes, a real first line', () => {
+    const doc = '# Growth plan\n\nOne pack. Ten pilots.\n\n## Priorities\n\n1. **Prove it.**';
+    const html = render(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('completed', JSON.stringify({ strategy: doc })))!} defaultOpen />);
+    const text = textOf(html);
+    expect(text).toContain('Growth plan');
+    expect(text).toContain('Prove it.');
+    expect(text).not.toContain('"strategy"');
+    expect(text).not.toContain('\\n');
+    expect(html).toContain('title="Growth plan"');
+  });
+
   // The row is product chrome: it draws its state with the glyph every tool row
   // uses, never an emoji. Emoji status labels belong to the agent's own words
   // (brand D31), and the reply under the row often starts with one.

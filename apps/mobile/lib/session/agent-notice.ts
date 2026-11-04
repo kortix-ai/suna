@@ -44,7 +44,11 @@ const WORKFLOW_SUFFIX = /\s*\(workflow\)\s*$/i;
 const FILLER = /^(done|finished|completed?|all done|ok(ay)?)[.!]*$/i;
 
 export function noticeReport(text: string): string {
-  return (parseWorkflowResult(text)?.text ?? text).replace(RESULT_TAG, '').trim();
+  // A JSON result reads as its document (web `workflowResultMarkdown`), never as the JSON source;
+  // a finish notice carries the body without the tag.
+  const parsed = parseWorkflowResult(text.includes('<workflow_result>') ? text : `<workflow_result>${text}</workflow_result>`);
+  const readable = !parsed ? text : parsed.kind === 'json' ? `\`\`\`json\n${parsed.text}\n\`\`\`` : parsed.text;
+  return readable.replace(RESULT_TAG, '').trim();
 }
 
 export function noticeName(notice: SubagentNotice): string {
