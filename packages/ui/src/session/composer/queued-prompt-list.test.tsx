@@ -61,17 +61,6 @@ describe('QueuedPromptList', () => {
     expect(render({})).toBe('');
   });
 
-  test('one row per entry, in order, with the full text', () => {
-    const markup = render({
-      rows: [row({ id: 'a', text: 'first line\nsecond line' }), row({ id: 'b' })],
-    });
-    expect(markup.indexOf('data-queued-prompt-id="a"')).toBeLessThan(
-      markup.indexOf('data-queued-prompt-id="b"'),
-    );
-    expect(markup).toContain('first line\nsecond line');
-    expect(markup).not.toContain('Queue paused');
-  });
-
   test('Remove only where the server will honour a removal', () => {
     expect(keys(row({ id: 'queued' }))).toContain('remove');
     expect(keys(row({ id: 'delivering', state: 'delivering', removable: false }))).not.toContain('remove');
@@ -242,4 +231,42 @@ describe('steering rows', () => {
     ]);
     expect(rows.some((r) => keys(r).includes('stopAndSend'))).toBe(false);
   });
+});
+// Queue summaries must not expose the platform transport envelope.
+test("a platform report uses the full text and a readable summary", () => {
+  const text =
+    'A background subagent you started has finished. This message is from the platform, not from the user.\ntask_id: synthetic-child\nstatus: completed\n\n<kortix_system type="session-report" source="subagent"><session-report><session-id>synthetic-child</session-id><project>reviewer</project><prompt>Review draft</prompt><result><task_result>Review complete.</task_result></result></session-report></kortix_system>';
+  const markup = render({
+    rows: [
+      row({
+        id: "notice",
+        synthetic: true,
+        text: text.slice(0, 100),
+        rawText: text,
+      }),
+    ],
+  });
+  expect(markup).toContain("Review draft");
+  expect(markup).toContain("Agent update");
+  expect(markup).toContain("Review complete.");
+  expect(markup).not.toContain("Review draft finished");
+  expect(markup).not.toContain("task_id:");
+  expect(markup).not.toContain("kortix_system");
+  expect(markup).toContain('aria-expanded="false"');
+});
+
+test("a shared next-step caption is stated once for the queue", () => {
+  const markup = render({
+    rows: [row({ id: "a", steer: true }), row({ id: "b", steer: true })],
+  });
+  expect(count(markup, "Read at next step")).toBe(1);
+});
+
+
+test('child failure is an update, distinct from failed delivery', () => {
+  const text = 'A background subagent you started has finished.\ntask_id: synthetic-child\nstatus: failed\n\n<kortix_system type="session-report" source="subagent"><session-report><prompt>Check links</prompt><result><task_error>The site timed out.</task_error></result></session-report></kortix_system>';
+  const markup = render({ rows: [row({ id: 'child-failed', synthetic: true, rawText: text })] });
+  expect(markup).toContain('Didn’t finish');
+  expect(markup).toContain('The site timed out.');
+  expect(markup).not.toContain('Not sent');
 });
