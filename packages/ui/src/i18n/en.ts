@@ -1535,7 +1535,14 @@ const catalog = {
       "workingFor": "Working · {time}",
       "agentWorking": "is working",
       "agentWorkingFor": "is working · {time}",
-      "stopped": "Stopped"
+      "stopped": "Stopped",
+      "agentWorkingOn": "is working on {task}",
+      "agentWorkingOnFor": "is working on {task} · {time}",
+      "somethingWrong": "Something went wrong",
+      "notSent": "Not sent",
+      "retry": "Retry",
+      "resume": "Resume",
+      "agentIsWorking": "{agent} is working"
     }
   },
   "agents": {

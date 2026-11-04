@@ -2156,7 +2156,14 @@
       "workingFor": "处理中 · {time}",
       "agentWorking": "正在处理",
       "agentWorkingFor": "正在处理 · {time}",
-      "stopped": "已停止"
+      "stopped": "已停止",
+      "agentWorkingOn": "正在处理 {task}",
+      "agentWorkingOnFor": "正在处理 {task} · {time}",
+      "somethingWrong": "出了点问题",
+      "notSent": "未发送",
+      "retry": "重试",
+      "resume": "继续",
+      "agentIsWorking": "{agent} 正在处理"
     }
   },
   "agents": {

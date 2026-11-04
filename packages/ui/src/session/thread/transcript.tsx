@@ -153,7 +153,7 @@ import {
   type TurnEndNotice,
 } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
-import { isOptimisticSessionPrompt, useSessionWorking } from '@kortix/sdk/react';
+import { isOptimisticSessionPrompt, useRuntimeReady, useSessionPrompts, useSessionWorking } from '@kortix/sdk/react';
 import { CodeBlockEndpoints, SandboxUrlDetector } from '../media/sandbox-url-detector';
 import { resolveLastTurnWorking } from '../composer/session-composer-readiness';
 import { HarnessSwitchMarker, RestoreNoteMarker, TurnFullText, type FullTextState } from './session-history';
@@ -2066,13 +2066,6 @@ export function TurnAssistantBlock(
   const { shouldUseInlineContent, inlineContentParts } = answered;
   return (
     <>
-    {/* ── Screen reader ──
-        Announce COMPLETION only. Mirroring the full response here duplicated
-        every turn in the DOM, so select-all across the transcript copied each
-        answer twice. The visible markdown is already in the a11y tree. */}
-    <div className="sr-only" aria-live="polite">
-      {!working && response && !stopped ? tHardcodedUi.raw('i18nComplete.text7889d06f7235') : ''}
-    </div>
     {/* Inline content: text and answered questions rendered in natural order.
 			    Works both during streaming and after completion. */}
       {shouldUseInlineContent ? (
@@ -2088,6 +2081,16 @@ export function TurnAssistantBlock(
           answeredQuestionCalls={answered.answeredQuestionCalls}
         />
       )}
+    {/* ── Screen reader ──
+        Announce COMPLETION only. Mirroring the full response here duplicated
+        every turn in the DOM, so select-all across the transcript copied each
+        answer twice. The visible markdown is already in the a11y tree.
+        Last, not first: in its parent's `space-y-*` column a first child that
+        takes no space still pushed the text below it down by the gap (a blank
+        line above every short answer). */}
+    <div className="sr-only" aria-live="polite">
+      {!working && response && !stopped ? tHardcodedUi.raw('i18nComplete.text7889d06f7235') : ''}
+    </div>
     </>
   );
 }
@@ -2270,6 +2273,7 @@ function TurnFooter(
         working={working}
         turnError={turnError}
         tHardcodedUi={tHardcodedUi}
+        hasText={model.response.trim() !== ''}
       />
     {/* ── Error (abort / failure banner) ──
         An automatic provider-error recovery chain (KRTX-2597) renders ONE
@@ -2278,13 +2282,20 @@ function TurnFooter(
         outcome, and the chain's end annotates how many automatic retries
         already ran. */}
     {turnErrorRow.text && !turn.autoRetry?.continued && (
-      <TurnErrorDisplay
-        errorText={turnErrorRow.text}
-        errorDetails={turnErrorRowDetails}
-        errorRaw={turnErrorRaw}
-        isAbort={turnErrorRow.isAbort}
-        modelOptions={modelOptions}
-      />
+      // A space's thread (messages only): one calm line with Retry; a stop has its own "Stopped" line.
+      props.quietBusy ? (
+        turnErrorRow.isAbort ? null : (
+          <TurnFailedLine projectId={projectId} projectSessionId={projectSessionId} turn={turn} errorText={turnErrorRow.text} />
+        )
+      ) : (
+        <TurnErrorDisplay
+          errorText={turnErrorRow.text}
+          errorDetails={turnErrorRowDetails}
+          errorRaw={turnErrorRaw}
+          isAbort={turnErrorRow.isAbort}
+          modelOptions={modelOptions}
+        />
+      )
     )}
     {turnErrorRow.text && !turnErrorRow.isAbort && !turn.autoRetry?.continued && !!turn.autoRetry?.retries && (
       <TurnAutoRetryNote count={turn.autoRetry.retries} />
@@ -2345,6 +2356,52 @@ function TurnFooter(
   );
 }
 
+/**
+ * A failed turn in a messages-only thread: "Something went wrong · Retry".
+ * Retry runs the turn's own prompt again through the inbox's one retry
+ * primitive (the queue's source of truth). The error text is the hover title;
+ * no Retry when the prompt is not in the inbox (an older turn).
+ */
+function TurnFailedLine({
+  projectId,
+  projectSessionId,
+  turn,
+  errorText,
+}: {
+  projectId: string | undefined;
+  projectSessionId: string | undefined;
+  turn: SessionLogTurn;
+  errorText: string;
+}) {
+  const t = useTranslations('sessionUi.turn');
+  const inbox = useSessionPrompts(projectId, projectSessionId);
+  const userId = turn.user.message_id;
+  const prompt = inbox.prompts.find((row) => row.message_id === userId || row.wire_message_id === userId);
+  const [pending, setPending] = useState(false);
+  return (
+    <p role="status" className="text-muted-foreground flex items-center gap-1.5 text-xs" title={errorText}>
+      <span>{t('somethingWrong')}</span>
+      {prompt ? (
+        <>
+          <span aria-hidden>·</span>
+          <button
+            type="button"
+            disabled={pending}
+            aria-busy={pending || undefined}
+            onClick={() => {
+              setPending(true);
+              void inbox.retry(prompt.prompt_id).finally(() => setPending(false));
+            }}
+            className="text-foreground focus-visible:ring-ring rounded-sm font-medium underline-offset-2 outline-none hover:underline focus-visible:ring-2 disabled:opacity-50"
+          >
+            {t('retry')}
+          </button>
+        </>
+      ) : null}
+    </p>
+  );
+}
+
 /** The working turn's waiting row: the retry banner and the busy indicator. */
 function TurnBusyRow(
   props: Pick<SessionTurnProps, 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser'> & {
@@ -2355,6 +2412,8 @@ function TurnBusyRow(
     tHardcodedUi: ReturnType<typeof useTranslations>;
     /** "Kortix is typing…", no tool phrase or elapsed time (`messagesOnly`). */
     quietBusy?: boolean;
+    /** The answer already streams text: the dots are gone (the words are the signal). */
+    hasText?: boolean;
   },
 ) {
   const { working, turnError, suppressBusyIndicator, awaitingUser, sessionId, retry, status, tHardcodedUi, quietBusy } = props;
@@ -2362,6 +2421,8 @@ function TurnBusyRow(
   const { statusPhrase, statusElapsedLabel } = status;
   const rows = useContext(TranscriptRowsContext);
   const tTurn = useTranslations('sessionUi.turn');
+  // The thread's computer is not up yet: the wait is a start, not work.
+  const runtimeReady = useRuntimeReady();
   return (
     <>
     {showTurnBusyIndicator({
@@ -2380,11 +2441,25 @@ function TurnBusyRow(
           />
         )}
         {quietBusy && rows && !retryInfo ? (
-          // Dots, then "Working · 0:42" once the wait passes the stall mark: a long turn never reads as frozen.
-          <TypingIndicator
-            name={rows.agent}
-            detail={status.statusElapsedLabel ? tTurn('workingFor', { time: status.statusElapsedLabel }) : null}
-          />
+          props.hasText ? (
+            // Words already stream: no dots. A long turn keeps only its clock, in the dots' place.
+            status.statusElapsedLabel ? (
+              <p className="text-muted-foreground text-xs tabular-nums">{tTurn('workingFor', { time: status.statusElapsedLabel })}</p>
+            ) : null
+          ) : (
+            // Dots, then "Working · 0:42" once the wait passes the stall mark: a long turn never reads as frozen.
+            <TypingIndicator
+              name={rows.agent}
+              detail={
+                !runtimeReady
+                  ? tTurn('starting')
+                  : status.statusElapsedLabel
+                    ? tTurn('workingFor', { time: status.statusElapsedLabel })
+                    : null
+              }
+              detailDelayMs={runtimeReady ? 0 : 2000}
+            />
+          )
         ) : (
           <SessionBusyIndicator
             sessionId={sessionId}

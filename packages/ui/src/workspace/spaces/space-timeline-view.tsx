@@ -97,7 +97,8 @@ export function useSpaceThreads(
     spaceId,
     parent: 'root',
     enabled: !!spaceId,
-    refetchInterval: (sessions) => (sessions.some(threadIsWorking) ? 5_000 : 15_000),
+    // A thread whose hidden worker runs (`active_child_agent`) polls like a working one.
+    refetchInterval: (sessions) => (sessions.some((session) => threadIsWorking(session) || !!session.active_child_agent) ? 5_000 : 15_000),
     pollFirstPageOnly: true,
   });
 }
@@ -424,14 +425,37 @@ function ThreadReplyLine({
   const names = useMentionNames(projectId);
   const tTurn = useTranslations('sessionUi.turn');
   // The wait, said: "Starting…" while the thread's computer comes up, else "Working · 0:42".
-  const booting = session.status === 'provisioning' || session.status === 'queued' || session.status === 'branching';
+  // A stopped thread that works again is waking its computer: a start too.
+  const booting = session.status === 'provisioning' || session.status === 'queued' || session.status === 'branching' || (working && session.status === 'stopped');
   const elapsed = useElapsedLabel(working ? (session.working?.since ?? session.updated_at) : null, formatDuration);
   const waitDetail = booting ? tTurn('starting') : elapsed ? tTurn('workingFor', { time: elapsed }) : null;
   // An agent's own post: its reply line starts with the first reply. Mentions read as names; no address shows.
   const reply = showReply || replies > 0 ? oneLineWithoutEmails(names(session.result_excerpt ?? '')) || null : null;
+  // The thread's own turn ended ("On it."), its hidden worker still runs: say who works.
+  const childAgent = !working && !needsYou ? (session.active_child_agent ?? null) : null;
   // Nothing to say yet (no reply, no work, nothing waiting): no line, as in Slack.
-  if (!needsYou && !working && !reply && replies === 0) return null;
+  if (!needsYou && !working && !childAgent && !reply && replies === 0) return null;
   const time = <time dateTime={session.updated_at}>{relativeTime(session.updated_at, locale)}</time>;
+  if (childAgent) {
+    return (
+      <div className="-mx-1 mt-1 flex w-full max-w-2xl min-w-0 items-center gap-1 rounded-md pl-1">
+        <PrincipalHover projectId={projectId} principal={{ kind: 'agent', name: childAgent }} className="shrink-0">
+          <AgentMark slug={childAgent} size={14} label={agentLabel(childAgent)} />
+        </PrincipalHover>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="hover:bg-hover focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 pr-1.5 pl-1 text-left outline-none focus-visible:ring-2"
+        >
+          <TypingIndicator name={agentLabel(childAgent)} className="h-5" detail={tTurn('agentIsWorking', { agent: agentLabel(childAgent) })} />
+          <span className="text-muted-foreground ml-auto shrink-0 pl-2 text-xs tabular-nums">
+            {replies > 0 ? `${t('replies', { count: replies })} · ` : ''}
+            {time}
+          </span>
+        </button>
+      </div>
+    );
+  }
   // Replies without a text to show: the count and the time alone, no empty face.
   if (!needsYou && !working && !reply) {
     return (

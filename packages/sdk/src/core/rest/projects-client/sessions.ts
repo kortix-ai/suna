@@ -80,6 +80,8 @@ export interface ProjectSession {
    * messages after the first prompt. Null on every other read. Absent on older APIs.
    */
   reply_count?: number | null;
+  /** A space's thread list: the agent of a child session (a router's hidden worker) working now, else null. Absent from other lists and older APIs. */
+  active_child_agent?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;

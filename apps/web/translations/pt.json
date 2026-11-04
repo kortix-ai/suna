@@ -2156,7 +2156,14 @@
       "workingFor": "Trabalhando · {time}",
       "agentWorking": "está trabalhando",
       "agentWorkingFor": "está trabalhando · {time}",
-      "stopped": "Interrompido"
+      "stopped": "Interrompido",
+      "agentWorkingOn": "está trabalhando em {task}",
+      "agentWorkingOnFor": "está trabalhando em {task} · {time}",
+      "somethingWrong": "Algo deu errado",
+      "notSent": "Não enviado",
+      "retry": "Tentar de novo",
+      "resume": "Retomar",
+      "agentIsWorking": "{agent} está trabalhando"
     }
   },
   "agents": {

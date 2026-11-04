@@ -2156,7 +2156,14 @@
       "workingFor": "作業中 · {time}",
       "agentWorking": "が作業中",
       "agentWorkingFor": "が作業中 · {time}",
-      "stopped": "停止しました"
+      "stopped": "停止しました",
+      "agentWorkingOn": "が {task} に取り組み中",
+      "agentWorkingOnFor": "が {task} に取り組み中 · {time}",
+      "somethingWrong": "問題が発生しました",
+      "notSent": "未送信",
+      "retry": "再試行",
+      "resume": "再開",
+      "agentIsWorking": "{agent} が作業中"
     }
   },
   "agents": {

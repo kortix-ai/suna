@@ -2156,7 +2156,14 @@
       "workingFor": "Ради · {time}",
       "agentWorking": "ради",
       "agentWorkingFor": "ради · {time}",
-      "stopped": "Заустављено"
+      "stopped": "Заустављено",
+      "agentWorkingOn": "ради на: {task}",
+      "agentWorkingOnFor": "ради на: {task} · {time}",
+      "somethingWrong": "Нешто није у реду",
+      "notSent": "Није послато",
+      "retry": "Покушај поново",
+      "resume": "Настави",
+      "agentIsWorking": "{agent} ради"
     }
   },
   "agents": {

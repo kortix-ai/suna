@@ -14,6 +14,7 @@ import { AfterFirstPromptContext } from './after-first-prompt';
 import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
 import { formatDuration } from '../../internal/session-types';
 import { useElapsedLabel } from './typing-indicator';
+import { sessionDisplayLabel } from '../actions/session-label';
 import { type TranscriptRows, TranscriptRowsContext } from './transcript-rows';
 
 // Lazy: `SessionPeek` renders `SessionTurn`, which renders this file.
@@ -173,6 +174,9 @@ function WorkerStatusRow({ projectId, sessionId, author }: { projectId: string; 
   const elapsed = useElapsedLabel(working ? (row?.working?.since ?? row?.created_at ?? null) : null, formatDuration);
   if (!working || !row?.agent_name) return null;
   const agent = row.agent_name;
+  const label = sessionDisplayLabel(row).trim();
+  // An untitled worker falls back to an id or branch: no task to name then.
+  const task = label && !row.session_id.startsWith(label) && label !== row.branch_name?.slice(0, 14) ? label : null;
   const face = (
     <span className="inline-flex items-center gap-1.5">
       <AgentMark slug={agent} size={14} />
@@ -180,9 +184,18 @@ function WorkerStatusRow({ projectId, sessionId, author }: { projectId: string; 
     </span>
   );
   return (
-    <div role="status" aria-live="polite" className="text-muted-foreground flex items-center gap-1.5 text-xs tabular-nums">
+    <div role="status" aria-live="polite" className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs tabular-nums">
       {author ? author({ kind: 'agent', name: agent }, face, 'name') : face}
-      <span>{elapsed ? t('agentWorkingFor', { time: elapsed }) : t('agentWorking')}</span>
+      {/* What it works on (the worker session's title), so two workers read apart. */}
+      <span className="min-w-0 truncate" title={task ?? undefined}>
+        {task
+          ? elapsed
+            ? t('agentWorkingOnFor', { task, time: elapsed })
+            : t('agentWorkingOn', { task })
+          : elapsed
+            ? t('agentWorkingFor', { time: elapsed })
+            : t('agentWorking')}
+      </span>
     </div>
   );
 }
