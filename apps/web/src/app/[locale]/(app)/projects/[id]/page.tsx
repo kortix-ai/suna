@@ -3,7 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import { ProjectHome } from '@kortix/ui/workspace';
-import { uiRoutes } from '@kortix/ui';
+import { isNewSessionRequested, uiRoutes } from '@kortix/ui';
 import { useAccountState } from '@kortix/ui/internal/billing/index';
 import {
   billingDialogArgs,
@@ -45,12 +45,14 @@ export default function ProjectIndexPage() {
   // ProjectHome). This gate runs first and refuses a send the account cannot run.
   const beforeSend = useProjectSendGate(projectId);
 
-  // Channels on: home is the default channel (`resolveHomeLanding`).
+  // Channels on: home is the default channel (`resolveHomeLanding`), unless
+  // the person asked for a new session (`?new=1`, `newSessionHref`).
   const channels = useFeatureFlag(projectId, 'chat');
   const spaces = useProjectSpaces(projectId, { enabled: channels.enabled });
   const landing = resolveHomeLanding({
     flagLoading: channels.isLoading,
     channelsOn: channels.enabled,
+    newSessionRequested: isNewSessionRequested(searchParams),
     spacesLoaded: !!spaces.data,
     spacesFailed: spaces.isError,
     defaultSlug: spaces.data?.find((space) => space.kind === 'channel' && space.is_default)?.slug,

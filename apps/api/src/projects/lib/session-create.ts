@@ -273,9 +273,10 @@ type SessionCreateMetadata = ReturnType<typeof buildSessionCreateMetadata>['meta
  * `chat` on: the space the body names, checked, and the sharing it
  * implies (`spaceSessionVisibility`: a channel thread is project-visible
  * unless the caller chose otherwise, a DM thread is private, a fork keeps its
- * source's sharing). Flag off: `space_id` is ignored.
+ * source's sharing). Flag off: `space_id` is ignored. `space_id: null` on a
+ * person's own create: no space (`filed: false`), as with the flag off.
  */
-async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): Promise<
+export async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): Promise<
   SessionCreateStep<{ filed: boolean; spaceId: string | null; visibility?: 'project' | 'private' | 'restricted' }>
 > {
   const { project, body, userId } = input;
@@ -314,7 +315,11 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
     );
     return space ? { filed: true, spaceId: space.spaceId, visibility: spaceSessionVisibility(space.kind) } : { filed: true, spaceId: null };
   }
-  if (body.space_id === undefined) {
+  // A person's own create from the regular new-session composer: `space_id:
+  // null` files it in no space, as with the flag off. A fork or child keeps
+  // the rules below (null there reads as absent).
+  if (body.space_id === null && !sourced) return { filed: false, spaceId: null };
+  if (body.space_id === undefined || body.space_id === null) {
     // A fork lands in its source's space while the caller may still post there,
     // with its source's sharing (never wider); else in `#general`.
     const fork = typeof body.fork_from_session_id === 'string'

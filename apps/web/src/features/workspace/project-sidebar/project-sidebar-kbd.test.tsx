@@ -201,7 +201,7 @@ test('the mobile sheet renders no keyboard shortcut hint (KRTX-2005)', async () 
   expect(document.body.innerHTML).not.toContain('data-slot="kbd-group"');
 });
 
-test('with chat on, the spaces list replaces New session and Cmd+J, the session list sits below it as the secondary list; My Kortix is the first DM, no Chat row', async () => {
+test('with chat on, the spaces list replaces the New session row (Cmd+J still opens the new-session composer), the session list sits below it as the secondary list; My Kortix is the first DM, no Chat row', async () => {
   channelsOn = true;
   await mountSidebar(1280);
   const html = container!.innerHTML;
@@ -224,7 +224,8 @@ test('with chat on, the spaces list replaces New session and Cmd+J, the session 
   await act(async () => {
     win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'j', metaKey: true }));
   });
-  expect(newSessionCalls).toBe(0);
+  // A regular session starts as with chat off: `newSessionHref`, never the default channel.
+  expect(newSessionCalls).toBe(1);
 });
 
 test('with chat off, the sidebar keeps New session, the session list and Cmd+J', async () => {

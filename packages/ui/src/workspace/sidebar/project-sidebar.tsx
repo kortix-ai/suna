@@ -128,8 +128,8 @@ export function ProjectSidebar({
     onOpenSearch?.();
   }, [isMobile, setOpenMobile, onOpenSearch]);
 
+  // Cmd+J opens the new-session composer with `chat` on too (`newSessionHref`).
   useEffect(() => {
-    if (chat) return;
     const handler = (event: KeyboardEvent) => {
       if (
         (event.metaKey || event.ctrlKey) &&
@@ -143,7 +143,7 @@ export function ProjectSidebar({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [chat, handleNewSession]);
+  }, [handleNewSession]);
 
   return (
     // The New agent modal mounts beside <Sidebar>, outside the mobile sheet.

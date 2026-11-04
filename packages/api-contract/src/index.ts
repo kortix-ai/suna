@@ -1050,8 +1050,10 @@ export const SessionCreateInputSchema = z
      * The space (channel or the caller's own DM) the session belongs to.
      * Read only while the project's `chat` flag is on; ignored
      * otherwise. Absent: the parent session's space, else `#general`.
+     * `null` on a person's own create (no fork or parent): no space, as with
+     * the flag off; a session in no space is not a thread.
      */
-    space_id: z.string().uuid().optional(),
+    space_id: z.string().uuid().nullable().optional(),
     session_id: z
       .string()
       .regex(

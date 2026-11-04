@@ -278,9 +278,10 @@ export interface CreateProjectSessionInput {
   fork_from_session_id?: string;
   /**
    * The space (channel or DM, `listProjectSpaces`) to file the session in. Needs
-   * the project's `chat` flag. Omitted with the flag on: `#general`.
+   * the project's `chat` flag. Omitted with the flag on: `#general`. `null`:
+   * no space, as with the flag off (the regular new-session composer).
    */
-  space_id?: string;
+  space_id?: string | null;
   base_ref?: string;
   agent_name?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */

@@ -91,6 +91,23 @@ export function uiRoutes(): UiRoutes {
   return routes;
 }
 
+/**
+ * The query that asks the project home for its new-session composer. With the
+ * `chat` flag on, the bare project home opens the default channel instead.
+ */
+const NEW_SESSION_PARAM = 'new';
+
+/** The project home's new-session composer (sidebar Sessions `+`, Cmd+J, "New session"), not the default channel. */
+export function newSessionHref(projectId: string): string {
+  const home = routes.project(projectId);
+  return `${home}${home.includes('?') ? '&' : '?'}${NEW_SESSION_PARAM}=1`;
+}
+
+/** True when the project home was opened with `newSessionHref`. */
+export function isNewSessionRequested(params: Pick<URLSearchParams, 'get'> | null | undefined): boolean {
+  return params?.get(NEW_SESSION_PARAM) === '1';
+}
+
 /** A channel slug or DM agent name from its URL segment; null when a hand-typed escape is malformed. */
 export function decodeSpaceSegment(segment: string): string | null {
   try {

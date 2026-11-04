@@ -1,6 +1,6 @@
 'use client';
 
-import { sessionIdFromPath, uiRoutes } from '../../lib/routes';
+import { newSessionHref, sessionIdFromPath, uiRoutes } from '../../lib/routes';
 import { useTranslations } from '../../i18n';
 
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
@@ -896,7 +896,7 @@ function SessionListHeader({
   onMenuOpenChange: (open: boolean) => void;
   /** Open the New group dialog; absent while `session_groups` is off. */
   onNewGroup?: () => void;
-  /** Below the spaces (`chat` on): a smaller label and a `+` to the project composer. */
+  /** Below the spaces (`chat` on): a smaller label and a `+` to the project's new-session composer (`newSessionHref`). */
   secondary?: boolean;
 }) {
   const t = useTranslations('sidebar');
@@ -938,7 +938,7 @@ function SessionListHeader({
             className={controlClass}
           >
             <UiLink
-              href={uiRoutes().project(projectId)}
+              href={newSessionHref(projectId)}
               aria-label={t('newSession')}
               onClick={() => {
                 if (isMobile) setOpenMobile(false);
