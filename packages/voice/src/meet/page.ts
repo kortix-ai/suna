@@ -169,3 +169,58 @@ export const watchScreen = ([every]) => {
     w.__kortixFrame(c.toDataURL('image/jpeg', 0.7).split(',')[1]!)
   }, 1000)
 }
+
+/** The call, as the voice hears it: every remote audio track of the page's WebRTC connections (the other people's
+ * voices), mixed and resampled to the relay's rate (__kortixEarRate), goes out as PCM16 (base64) in 64 ms pieces through
+ * __kortixHear, silence included (the relay finds the end of a turn in it). Any site that calls over WebRTC: nothing of
+ * the site's page is read, only what its connections receive. Chrome gives WebAudio a remote track's sound only while a
+ * media element plays it too: each one also plays in a muted element. */
+export const callEars = () => {
+  const w = window as unknown as Record<string, any>
+  const Native = w.RTCPeerConnection
+  if (!Native) return
+  let ready: Promise<{ ac: AudioContext; mix: GainNode }> | undefined
+  const start = () => (ready ??= (async () => {
+    const rate = (await w.__kortixEarRate?.()) || 16000
+    const ac = new AudioContext({ sampleRate: rate })
+    const mix = ac.createGain()
+    const proc = ac.createScriptProcessor(1024, 1, 1)
+    proc.onaudioprocess = (e: { inputBuffer: AudioBuffer }) => {
+      const f = e.inputBuffer.getChannelData(0)
+      const pcm = new Uint8Array(f.length * 2)
+      for (let i = 0; i < f.length; i++) {
+        const s = Math.round(Math.max(-1, Math.min(1, f[i]!)) * 32767)
+        pcm[2 * i] = s & 255
+        pcm[2 * i + 1] = (s >> 8) & 255
+      }
+      let bin = ''
+      for (let i = 0; i < pcm.length; i += 4096) bin += String.fromCharCode(...pcm.subarray(i, i + 4096))
+      w.__kortixHear?.(btoa(bin))
+    }
+    mix.connect(proc)
+    proc.connect(ac.destination) // a processor runs only while connected; what it writes out is silence
+    void ac.resume()
+    return { ac, mix }
+  })())
+  const heard = new Set<string>()
+  const hear = (track: MediaStreamTrack) => {
+    if (track.kind !== 'audio' || heard.has(track.id)) return
+    heard.add(track.id)
+    const stream = new MediaStream([track])
+    const el = new Audio()
+    el.muted = true
+    el.srcObject = stream
+    void el.play().catch(() => {})
+    void start().then(({ ac, mix }) => ac.createMediaStreamSource(stream).connect(mix))
+  }
+  // Each connection the page makes: its remote tracks are heard as they come.
+  const Wrapped = function (this: unknown, ...args: unknown[]) {
+    const pc = new Native(...args)
+    pc.addEventListener('track', (e: { track: MediaStreamTrack }) => hear(e.track))
+    return pc
+  }
+  Wrapped.prototype = Native.prototype
+  Object.setPrototypeOf(Wrapped, Native) // its statics (generateCertificate)
+  w.RTCPeerConnection = Wrapped
+  if (w.webkitRTCPeerConnection) w.webkitRTCPeerConnection = Wrapped
+}
