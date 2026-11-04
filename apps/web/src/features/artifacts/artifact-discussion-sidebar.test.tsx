@@ -268,7 +268,7 @@ async function type(label: string, text: string) {
   return input;
 }
 
-test('one header row holds the view tabs and the status filter menu', async () => {
+test('one header row holds Open, Resolved and Activity, each status with its count', async () => {
   const resolved = { ...item, thread_id: 'done', status: 'resolved' as const };
   const value = props();
   value.comments.data = [item, resolved];
@@ -276,13 +276,14 @@ test('one header row holds the view tabs and the status filter menu', async () =
   const header = browser.document.querySelector('[data-artifact-discussion-header]');
   expect(header).not.toBeNull();
   expect([...header!.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
-    'Comments1',
+    'Open1',
+    'Resolved1',
     'Activity',
   ]);
-  const filter = () => header!.querySelector('button[aria-label^="Thread status"]');
-  expect(filter()?.getAttribute('aria-label')).toBe('Thread status: Open');
-  await tab('Activity');
-  expect(filter()).toBeNull();
+  expect(header!.querySelector('[role="tab"][data-state="active"]')?.textContent).toBe('Open1');
+  await tab('Resolved');
+  expect(container.querySelector('[data-thread-id="done"]')).not.toBeNull();
+  expect(container.querySelector(`[data-thread-id="${item.thread_id}"]`)).toBeNull();
 });
 
 test('a failed comment retains its draft through tabs', async () => {
@@ -300,7 +301,7 @@ test('a failed comment retains its draft through tabs', async () => {
     anchor: { type: 'none', version: 'version' },
   });
   await tab('Activity');
-  await tab('Comments');
+  await tab('Open');
   expect(
     (
       browser.document.querySelector('textarea[aria-label="Comment"]') as InstanceType<
@@ -403,7 +404,7 @@ test('a deleted root has no open count; Activity focuses its tombstone in All', 
   value.onFocusThread = (id) => focused.push(id);
   await render(value);
   expect(
-    [...container.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent === 'Comments'),
+    [...container.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent === 'Open'),
   ).toBeDefined();
   expect(container.querySelector('[data-thread-id="thread"]')).toBeNull();
   await tab('Activity');
@@ -414,9 +415,8 @@ test('a deleted root has no open count; Activity focuses its tombstone in All', 
   );
   expect(focused).toEqual(['thread']);
   expect(container.textContent).toContain('This thread was deleted.');
-  expect(container.querySelector('[role="tab"][data-state="active"]')?.textContent).toBe(
-    'Comments',
-  );
+  // A tombstone is in neither status: the thread list shows with no status tab selected.
+  expect(container.querySelector('[role="tab"][data-state="active"]')).toBeNull();
 });
 
 test('the delete menu requires confirmation; Cancel writes nothing', async () => {

@@ -25,7 +25,7 @@ import { ErrorState } from '@kortix/ui/error-state';
 import Hint from '@kortix/ui/hint';
 import Loading from '@kortix/ui/loading';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
 import { errorToast, successToast } from '@kortix/ui/toast';
 import { CaretDownIcon, ChatCircleIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
@@ -220,7 +220,6 @@ export function ArtifactDiscussionSidebar({
   const grouped = groupCommentThreads(threads, filter);
   // The viewer header counts `comments.data`; the tab and the filter count the same list.
   const counts = threadCounts(comments.data ?? threads);
-  const other = filter === 'open' ? 'resolved' : filter === 'resolved' ? 'open' : null;
   const readableVersion = context?.version.commit_id ?? context?.version.entry_version;
   const canComment = !readOnly && context?.can_comment === true && !!readableVersion;
   const agentsUnavailable = context?.agents_unavailable === true;
@@ -636,7 +635,16 @@ export function ArtifactDiscussionSidebar({
       <div aria-live="polite" className="sr-only">
         {announcement}
       </div>
-      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-0">
+      {/* One row of views: the two thread statuses, each with its count, and Activity. */}
+      <Tabs
+        value={tab === 'activity' ? 'activity' : filter}
+        onValueChange={(value) => {
+          if (value === 'activity') return setTab('activity');
+          setTab('comments');
+          setFilter(value as CommentFilter);
+        }}
+        className="flex min-h-0 flex-1 flex-col gap-0"
+      >
         <div data-artifact-discussion-header className="shrink-0">
           <div className="border-border flex h-11 items-center gap-2 border-b px-4">
             <h2 ref={heading} tabIndex={-1} className="sr-only outline-none">
@@ -648,48 +656,17 @@ export function ArtifactDiscussionSidebar({
               aria-label={t('panelTitle')}
               className="h-full gap-5 border-b-0"
             >
-              <TabsTriggerCompact value="comments" className="w-fit flex-none gap-1.5 px-0">
-                {t('comments')}
-                {counts.open > 0 ? <CountBadge count={counts.open} /> : null}
-              </TabsTriggerCompact>
+              {(['open', 'resolved'] as const).map((value) => (
+                <TabsTriggerCompact key={value} value={value} className="w-fit flex-none gap-1.5 px-0">
+                  {t(value)}
+                  {counts[value] > 0 ? <CountBadge count={counts[value]} /> : null}
+                </TabsTriggerCompact>
+              ))}
               <TabsTriggerCompact value="activity" className="w-fit flex-none px-0">
                 {t('activity')}
               </TabsTriggerCompact>
             </TabsListCompact>
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
-              {tab === 'comments' ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant="ghost"
-                      aria-label={`${t('filterLabel')}: ${t(filter)}`}
-                      className="text-muted-foreground data-[state=open]:text-foreground gap-1"
-                    >
-                      {t(filter)}
-                      <CaretDownIcon className="size-3" aria-hidden />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-44">
-                    <DropdownMenuRadioGroup
-                      value={filter}
-                      onValueChange={(value) => setFilter(value as CommentFilter)}
-                    >
-                      {(['open', 'resolved', 'all'] as const).map((value) => {
-                        const count =
-                          value === 'all' ? counts.open + counts.resolved : counts[value];
-                        return (
-                          <DropdownMenuRadioItem key={value} value={value}>
-                            <span className="flex-1">{t(value)}</span>
-                            {count > 0 ? <CountBadge count={count} /> : null}
-                          </DropdownMenuRadioItem>
-                        );
-                      })}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null}
               {canComment ? (
                 <Hint label={t('newComment')} side="bottom" sideOffset={4}>
                   <Button
@@ -720,7 +697,8 @@ export function ArtifactDiscussionSidebar({
             </div>
           </div>
         </div>
-        <TabsContent value="comments" className="m-0 min-h-0 flex-1 overflow-y-auto">
+        {tab === 'comments' ? (
+        <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto py-1">
           {readOnly || contextError || (!context && !contextLoading) ? (
             <div className="space-y-3 px-4 py-3">
               {readOnly ? (
@@ -847,25 +825,6 @@ export function ArtifactDiscussionSidebar({
                     : 'noComments',
               )}
               description={t(filter === 'resolved' ? 'noResolvedHint' : 'noCommentsHint')}
-              action={
-                // The other status holds threads: the empty filter points to them.
-                other && counts[other] > 0 ? (
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    className="gap-1.5"
-                    aria-label={`${t('filterLabel')}: ${t(other)}, ${counts[other]}`}
-                    onClick={() => {
-                      setFilter(other);
-                      // The button leaves with the empty state: focus stays in the panel.
-                      requestAnimationFrame(() => heading.current?.focus({ preventScroll: true }));
-                    }}
-                  >
-                    {t(other)}
-                    <CountBadge count={counts[other]} />
-                  </Button>
-                ) : undefined
-              }
             />
           ) : null}
           {grouped.current.map(renderThread)}
@@ -883,8 +842,9 @@ export function ArtifactDiscussionSidebar({
               <Loading />
             </div>
           ) : null}
-        </TabsContent>
-        <TabsContent value="activity" className="m-0 min-h-0 flex-1 overflow-y-auto">
+        </div>
+        ) : (
+        <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto">
           <ArtifactActivityTimeline
             projectId={projectId}
             activity={activity}
@@ -893,7 +853,8 @@ export function ArtifactDiscussionSidebar({
             onFocusThread={focusThread}
             onOpenVersion={onOpenVersion}
           />
-        </TabsContent>
+        </div>
+        )}
       </Tabs>
       {showSend ? (
         <div className="border-border shrink-0 space-y-2 border-t px-4 py-3">
