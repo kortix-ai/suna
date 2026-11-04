@@ -93,7 +93,7 @@ export function GoalStarter({
         className="flex flex-col gap-3"
       >
         {/* The prompt-input shape: the text, then the round send inside the same box. */}
-        <InputGroup className="bg-card items-stretch rounded-xl shadow-xs">
+        <InputGroup className="items-stretch rounded-xl shadow-xs has-[[data-slot=input-group-control]:focus]:ring-0">
           <textarea
             ref={composer}
             data-slot="input-group-control"
@@ -237,7 +237,7 @@ function TemplateCard({ template, picked, onPick }: { template: GoalTemplate; pi
       onClick={onPick}
       aria-pressed={picked}
       className={cn(
-        'bg-card border-border flex w-full flex-col items-start gap-1 rounded-xl border p-4 text-left shadow-xs outline-none',
+        'bg-popover border-border flex w-full flex-col items-start gap-1 rounded-xl border p-4 text-left shadow-xs outline-none',
         'transition-[background-color,border-color,scale] duration-(--duration-normal) ease-out active:scale-[0.99]',
         'hover:bg-hover focus-visible:border-ring focus-visible:ring-ring/15 focus-visible:ring-3',
         picked && 'border-ring',
@@ -245,7 +245,7 @@ function TemplateCard({ template, picked, onPick }: { template: GoalTemplate; pi
       data-testid="goal-template"
       data-template={template.id}
     >
-      <Glyph weight="duotone" className={cn('mb-2 size-4.5 shrink-0', ACCENT[template.accent])} aria-hidden />
+      <Glyph weight="duotone" className={cn('mb-2.5 size-5 shrink-0', ACCENT[template.accent])} aria-hidden />
       <span className="text-foreground text-sm font-medium">{t(`templates.${template.id}.title`)}</span>
       <span className="text-muted-foreground line-clamp-2 text-sm text-pretty">{t(`templates.${template.id}.description`)}</span>
       <span className="sr-only">{t('templateSteps', { start, done })}</span>

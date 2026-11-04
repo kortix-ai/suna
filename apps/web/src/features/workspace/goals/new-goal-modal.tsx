@@ -52,6 +52,7 @@ export function NewGoalModal({
   return (
     <Modal open={open} onOpenChange={change}>
       <ModalContent
+        variant={view === 'form' ? 'default' : 'base'}
         className={view === 'form' ? 'lg:max-w-lg' : 'flex max-h-[min(88svh,56rem)] flex-col lg:max-w-3xl'}
         closeButtonChildren={
           view === 'templates' ? (
