@@ -275,6 +275,12 @@ export const TIERS: readonly CommandTier[] = [
             featureFlag: 'artifacts',
           },
           {
+            name: 'spaces',
+            args: '<subcommand>',
+            blurb: 'Configure a space for its person: rename, describe, tabs, agents, members (ls, get, rename, describe, tabs, agents, members)',
+            featureFlag: 'chat',
+          },
+          {
             name: 'capture',
             args: '<subcommand>',
             blurb: 'Search the Capture timeline of the person you act for (search, timeline, frame)',

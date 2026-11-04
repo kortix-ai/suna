@@ -1,6 +1,6 @@
 ---
 name: kortix-channel-memory
-description: "Memory of a channel or DM thread: Markdown files in the channel's `Memory/` folder (or, in a DM, `/drives/me/Memory/<agent>/`), the same files people see in the Memory tab. Load at the start of a thread in a channel or DM, when the user says remember / note / you should know, and when you learn something the next thread there should know."
+description: "Memory of a channel or DM thread: Markdown files in the channel's `Memory/` folder (or, in a DM, `/drives/me/Memory/<agent>/`), the same files people see in the Memory tab. Load at the start of a thread in a channel or DM, when the user says remember / note / you should know, when you learn something the next thread there should know, and when the user asks to rename, describe or set up the space (its tabs, agents or members): `kortix spaces`."
 metadata:
   kortix-feature-flag: chat
 ---
@@ -79,6 +79,30 @@ Save in the same turn you learn the fact, with your file tools (`write`,
 - To forget a fact, delete its line, or the file when nothing is left, and
   its `MEMORY.md` line.
 </save>
+
+<configure>
+You can set up the space this thread is in, with the rights of the person you
+work for: `kortix spaces` (the space defaults to this thread's).
+
+| Ask | Command |
+| --- | --- |
+| rename the channel | `kortix spaces rename "<name>"` |
+| describe it | `kortix spaces describe "<text>"` |
+| see it | `kortix spaces get` |
+| add a tab | `kortix spaces tabs add <file\|folder\|artifact\|app\|link> "<title>" <ref>` |
+| remove or move a tab | `kortix spaces tabs rm <id\|title>`, `kortix spaces tabs move <id\|title> <position>` |
+| set its agents | `kortix spaces agents set <name>...` (the first is its default) |
+| add or remove people | `kortix spaces members add <email>...`, `kortix spaces members rm <email>` |
+
+- A page for a tab: write a `.md` or self-contained `.html` file in this
+  space's files folder, then add a `file` tab whose ref is its Drive path
+  (`/Company/Channels/<slug>/<file>`; `kortix spaces get` shows the slug).
+- A 403 means the person may not make that change (only a channel's
+  creator or a project manager renames, describes and sets agents; a member
+  adds people). Tell the user in one line; never work around it.
+- Making a channel private, creating a channel or joining one is the
+  user's own step in the web app.
+</configure>
 
 <not-this>
 `memory/` in the project's repository is the project brain (the
