@@ -55,8 +55,11 @@ export async function runWebhookWork(
   const claims = new Set<string>();
   const startedAt = performance.now();
   let outcome: WebhookOutcome = 'pending';
-  // True once the response went out with the work still running: only then does
-  // the request line not carry the work's duration, so only then is it logged.
+  const ackWaitMs = options.ackWaitMs ?? ACK_WAIT_MS;
+  // True once an ack wait ended with the work still running: only then does the
+  // request line not carry the work's duration, so only then is it logged. A
+  // fire-and-forget caller (`ackWaitMs: 0`, Teams) never waited, so its work
+  // always outlives the response and would log a line per event: no line.
   let answeredEarly = false;
   const logDetached = (): void => {
     if (!answeredEarly) return;
@@ -80,12 +83,12 @@ export async function runWebhookWork(
     },
   );
   trackDetached(running);
-  if ((options.ackWaitMs ?? ACK_WAIT_MS) > 0) {
+  if (ackWaitMs > 0) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
       running,
       new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, options.ackWaitMs ?? ACK_WAIT_MS);
+        timer = setTimeout(resolve, ackWaitMs);
       }),
     ]);
     if (timer) clearTimeout(timer);
@@ -96,8 +99,8 @@ export async function runWebhookWork(
       // a designed ACK_WAIT_MS ack from a genuinely slow handler with one
       // grep instead of an inference over timestamps.
       setContextField('webhook_ack', 'deadline');
+      answeredEarly = true;
     }
   }
-  answeredEarly = outcome === 'pending';
   return outcome;
 }

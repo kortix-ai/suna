@@ -145,6 +145,19 @@ describe('runWebhookWork', () => {
     }
   });
 
+  test('fire-and-forget work (ackWaitMs 0, Teams) logs no detached line, finished or not (KRTX-4015)', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => {});
+    try {
+      await runWithContext('POST', '/v1/webhooks/teams', async () => {
+        await runWebhookWork('teams-test', () => Bun.sleep(20), { ackWaitMs: 0 });
+        await Bun.sleep(60);
+      });
+      expect(info).not.toHaveBeenCalled();
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   test('work that finishes inside the ack wait logs no detached line', async () => {
     const info = spyOn(logger, 'info').mockImplementation(() => {});
     try {
