@@ -1852,7 +1852,7 @@
       "moved": "Сесија је премештена",
       "noGroup": "Без групе",
       "moveFailed": "Сесију није могуће преместити",
-      "empty": "Сесије које овде преместиш појавиће се овде.",
+      "empty": "Превуци сесију овде",
       "groupOptions": "Опције групе"
     },
     "recentlyDeleted": {
@@ -25390,7 +25390,8 @@
       "attachments": "Priložene slike",
       "removeAttachment": "Ukloni {name}",
       "attachImages": "Priloži slike",
-      "attachFailed": "Slika nije mogla da se priloži"
+      "attachFailed": "Slika nije mogla da se priloži",
+      "scrollToBottom": "Idi na najnoviju poruku"
     },
     "tasks": {
       "label": "Задаци тима",

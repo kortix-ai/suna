@@ -1852,7 +1852,7 @@
       "moved": "Sessão movida",
       "noGroup": "Sem grupo",
       "moveFailed": "Não foi possível mover a sessão",
-      "empty": "As sessões que você mover para cá aparecerão aqui.",
+      "empty": "Arraste uma sessão para cá",
       "groupOptions": "Opções do grupo"
     },
     "recentlyDeleted": {
@@ -25390,7 +25390,8 @@
       "attachments": "Imagens anexadas",
       "removeAttachment": "Remover {name}",
       "attachImages": "Anexar imagens",
-      "attachFailed": "Não foi possível anexar a imagem"
+      "attachFailed": "Não foi possível anexar a imagem",
+      "scrollToBottom": "Ir para a mensagem mais recente"
     },
     "tasks": {
       "label": "Tarefas da equipe",

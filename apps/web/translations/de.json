@@ -1852,7 +1852,7 @@
       "moved": "Sitzung verschoben",
       "noGroup": "Keine Gruppe",
       "moveFailed": "Die Sitzung konnte nicht verschoben werden",
-      "empty": "Sitzungen, die du hierher verschiebst, erscheinen hier.",
+      "empty": "Zieh eine Sitzung hierher",
       "groupOptions": "Gruppenoptionen"
     },
     "recentlyDeleted": {
@@ -25390,7 +25390,8 @@
       "attachments": "Angehängte Bilder",
       "removeAttachment": "{name} entfernen",
       "attachImages": "Bilder anhängen",
-      "attachFailed": "Das Bild konnte nicht angehängt werden"
+      "attachFailed": "Das Bild konnte nicht angehängt werden",
+      "scrollToBottom": "Zur neuesten Nachricht"
     },
     "tasks": {
       "label": "Aufgaben des Teams",

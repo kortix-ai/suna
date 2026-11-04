@@ -1852,7 +1852,7 @@
       "moved": "Session déplacée",
       "noGroup": "Aucun groupe",
       "moveFailed": "Impossible de déplacer la session",
-      "empty": "Les sessions que vous déplacez ici apparaîtront ici.",
+      "empty": "Faites glisser une session ici",
       "groupOptions": "Options du groupe"
     },
     "recentlyDeleted": {
@@ -25390,7 +25390,8 @@
       "attachments": "Images jointes",
       "removeAttachment": "Retirer {name}",
       "attachImages": "Joindre des images",
-      "attachFailed": "Impossible de joindre l’image"
+      "attachFailed": "Impossible de joindre l’image",
+      "scrollToBottom": "Aller au message le plus récent"
     },
     "tasks": {
       "label": "Tâches de l’équipe",

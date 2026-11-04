@@ -281,7 +281,7 @@ export function SubagentPanel({ sessionId, title, handle, projectId: projectIdPr
   const stateText = sub.agent ? tAgent(`state.${sub.agent.state}`) : null;
   const elapsed = sub.agent?.state === 'working' && sub.agent.workingSinceMs !== null ? shortElapsed(now - sub.agent.workingSinceMs) : null;
   return (
-    <section data-testid="subagent-panel" data-body={sub.kind} aria-label={name} className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <section data-testid="subagent-panel" data-body={sub.kind} aria-label={name} className="flex h-full min-h-0 min-w-0 flex-col">
       <header className="flex shrink-0 items-center gap-2 px-3 py-2.5">
         {leading}
         <AgentFace handle={face} />

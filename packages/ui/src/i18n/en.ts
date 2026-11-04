@@ -1331,7 +1331,7 @@ const catalog = {
       "moved": "Session moved",
       "noGroup": "No group",
       "moveFailed": "Could not move the session",
-      "empty": "Sessions you move here will show up here.",
+      "empty": "Drag a session here",
       "groupOptions": "Group options"
     },
     "recentlyDeleted": {
@@ -9695,7 +9695,8 @@ const catalog = {
       "attachments": "Attached images",
       "removeAttachment": "Remove {name}",
       "attachImages": "Attach images",
-      "attachFailed": "Could not attach the image"
+      "attachFailed": "Could not attach the image",
+      "scrollToBottom": "Go to the newest message"
     },
     "tasks": {
       "label": "Team tasks",

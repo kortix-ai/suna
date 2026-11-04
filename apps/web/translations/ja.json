@@ -1852,7 +1852,7 @@
       "moved": "セッションを移動しました",
       "noGroup": "グループなし",
       "moveFailed": "セッションを移動できませんでした",
-      "empty": "ここに移動したセッションはここに表示されます。",
+      "empty": "ここにセッションをドラッグ",
       "groupOptions": "グループのオプション"
     },
     "recentlyDeleted": {
@@ -25390,7 +25390,8 @@
       "attachments": "添付した画像",
       "removeAttachment": "{name} を削除",
       "attachImages": "画像を添付",
-      "attachFailed": "画像を添付できませんでした"
+      "attachFailed": "画像を添付できませんでした",
+      "scrollToBottom": "最新のメッセージへ"
     },
     "tasks": {
       "label": "チームのタスク",
