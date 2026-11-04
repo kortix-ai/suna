@@ -244,8 +244,8 @@ export function App({
   const renderer = useRenderer();
 
   const [route, setRoute] = useState<Route>('session');
-  /** `/providers <id>`: the sheet the providers screen opens on. */
-  const [providerTarget, setProviderTarget] = useState<string | undefined>(undefined);
+  /** What the open screen starts on: an artifact id, a file path, a provider id. */
+  const [screenTarget, setScreenTarget] = useState<string | null>(null);
   /**
    * The open screen holds Esc (`ScreenProps.onHoldsBack`). The screen clears it
    * when it unmounts. Not reset on route change here: a parent effect runs after
@@ -462,8 +462,9 @@ export function App({
     setFocus('composer');
   }, []);
 
-  const openScreen = useCallback((screen: ScreenRoute) => {
+  const openScreen = useCallback((screen: ScreenRoute, target: string | null = null) => {
     setPanel(null);
+    setScreenTarget(target);
     setRoute(screen);
     setFocus('screen');
   }, []);
@@ -635,6 +636,7 @@ export function App({
           return void act('Reload', () => reloadSession(kortix(), pid, sid));
         case 'copy':
         case 'export':
+        case 'shown':
           // Run inside the composer: they read the thread on screen.
           return;
         case 'link': {
@@ -737,9 +739,11 @@ export function App({
         case 'links':
           return setOverlay('links');
         case 'files':
+        case 'artifacts':
+          // `/artifacts <id>` opens on that artifact, `/files <path>` on that file.
+          return openScreen(command, args.trim() || null);
         case 'drive':
         case 'repo':
-        case 'artifacts':
         case 'inbox':
         case 'approvals':
         case 'goals':
@@ -754,8 +758,7 @@ export function App({
         case 'account':
           return openScreen(command);
         case 'providers':
-          setProviderTarget(args.trim().toLowerCase() || undefined);
-          return openScreen('providers');
+          return openScreen('providers', args.trim().toLowerCase() || null);
         case 'life':
           return setLifeSignal((value) => value + 1);
         case 'help':
@@ -1044,6 +1047,8 @@ export function App({
             minWidth={20}
           >
             <Screen
+              // A new target remounts the screen: it opens on what was asked for.
+              key={`${route}:${screenTarget ?? ''}`}
               route={route}
               projectId={projectId}
               accountId={accountId}
@@ -1052,13 +1057,13 @@ export function App({
               width={mainWidth - 2}
               height={contentHeight - 2}
               webBaseUrl={webDashboardUrl(host.backendUrl)}
+              target={screenTarget}
               onBack={() => {
                 setRoute('session');
                 setFocus('composer');
               }}
               onOpenSession={openSession}
               onToast={pushToast}
-              providerId={providerTarget}
               onHoldsBack={setScreenHoldsBack}
             />
           </Panel>

@@ -109,6 +109,7 @@ export const SCOPE_ORDER: readonly KeyScope[] = [
   'review',
   'apps',
   'customize',
+  'providers',
   'account',
   'login',
   'ports',

@@ -70,11 +70,11 @@ export interface ScreenProps {
   height: number;
   /** The Kortix web origin, for screens that print a link the TUI cannot open. */
   webBaseUrl: string;
+  /** What the screen opens on: an artifact id (`artifacts`), a file path (`files`), a provider id (`providers`). */
+  target?: string | null;
   onBack(): void;
   onOpenSession(sessionId: string): void;
   onToast(message: string, kind?: ToastKind): void;
-  /** `/providers <id>`: the provider whose sheet opens first. */
-  providerId?: string;
   /** The screen holds Esc (a pane to go back from, an input open). The app then leaves Esc to it. */
   onHoldsBack?(holds: boolean): void;
 }
@@ -124,6 +124,7 @@ export function Screen(props: ScreenProps) {
         <FilesScreen
           projectId={projectId}
           sessionId={sessionId}
+          reveal={props.target ?? null}
           focused={focused}
           width={width}
           height={height}
@@ -178,7 +179,7 @@ export function Screen(props: ScreenProps) {
           focused={focused}
           width={width}
           height={height}
-          initialProviderId={props.providerId}
+          initialProviderId={props.target ?? undefined}
           onHoldsBack={props.onHoldsBack}
           onBack={onBack}
           onToast={onToast}
