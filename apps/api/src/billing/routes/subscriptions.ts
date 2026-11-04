@@ -17,6 +17,7 @@ import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import { resolveBillingWriteAccountId } from '../http-require-billing-write';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
 import { readJsonObject } from '../../shared/http-body';
+import { captureProductEvent } from '../../shared/product-analytics';
 
 export const subscriptionsRouter = makeOpenApiApp<AppEnv>();
 
@@ -55,6 +56,14 @@ subscriptionsRouter.openapi(
       cancelUrl: String(body.cancel_url ?? ''),
       locale: typeof body.locale === 'string' ? body.locale : undefined,
     });
+    if (result.status === 'checkout_created') {
+      captureProductEvent({
+        userId: c.get('userId'),
+        accountId,
+        event: 'checkout_started',
+        properties: { kind: 'subscription', amount_usd: result.monthly_usd },
+      });
+    }
     return c.json(result);
   },
 );

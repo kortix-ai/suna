@@ -112,6 +112,7 @@ import { loadVisibleSession, sessionIsTombstoned } from './session-visibility';
 import { HUMAN_SESSION_SURFACES } from './session-surface';
 import { isWorkflowRunnerContext, sessionIsWorkflowRunner } from './workflow-runner';
 import type { SessionInvocationSource } from '../session-lifecycle/types';
+import { captureProductEvent } from '../../shared/product-analytics';
 /** Every status a failed create answers with. Routes that create a session
  *  declare these, so the published spec lists them. */
 export const SESSION_CREATE_ERROR_STATUSES = [400, 402, 403, 404, 409, 429, 500, 503] as const;
@@ -1988,6 +1989,24 @@ export async function createProjectSession(input: {
   }
 
   setContextField('sessionId', sessionId);
+
+  // A person's session only: triggers, channels, API keys and agent spawns run
+  // under a stand-in owner and would count as that owner's activity.
+  if (initiator?.type === 'member' && input.requestingPrincipalType === 'human' && !input.callerSessionId) {
+    const source = (input.metadata as Record<string, unknown> | undefined)?.source;
+    captureProductEvent({
+      userId: input.userId,
+      accountId,
+      event: 'session_created',
+      dedupeKey: sessionId,
+      properties: {
+        project_id: projectId,
+        session_id: sessionId,
+        source: typeof source === 'string' ? source : null,
+        with_prompt: Boolean(body.pending_prompt ?? body.initial_prompt),
+      },
+    });
+  }
 
   // A prompt supplied at create is claimed by the session daemon. This is the
   // earliest title source. No modelHint: the row already carries `opencode_model`.

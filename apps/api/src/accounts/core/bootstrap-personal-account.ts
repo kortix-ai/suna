@@ -9,6 +9,7 @@ import { db } from '../../shared/db';
 import { getSupabase } from '../../shared/supabase';
 import { profileNameFromMetadata } from './account-name';
 import { defaultAccountName } from './app';
+import { captureProductEvent } from '../../shared/product-analytics';
 
 /**
  * The sign-in profile's name (Google/GitHub OAuth fill `full_name` / `name`).
@@ -81,6 +82,13 @@ export async function bootstrapPersonalAccount(
     void syncSignupContactToMailtrap(email).catch((err) =>
       console.warn('[accounts] Mailtrap contact sync failed for %s:', userId, err),
     );
+
+    captureProductEvent({
+      userId,
+      accountId: userId,
+      event: 'account_created',
+      dedupeKey: userId,
+    });
 
     return { accountId: userId, created: true };
   }

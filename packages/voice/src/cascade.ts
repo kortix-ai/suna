@@ -27,7 +27,7 @@ import { ponder as roomPonder, confirm as roomConfirm, history as roomHistory, j
 import { changed as screenChanged, look, ocr, see, VISUAL, visionOn } from './vision'
 import { follows, foresight, toneOf } from './anticipate'
 import { lookup, preconnect, prefetch, warm as warmSearch, workspaceMap } from './prefetch'
-import { type Stt, type Tts, type Utterance, cached, inworldVoice, inworldVoices, stts, ttss, vocab, voiced } from './speech'
+import { type Stt, type Tts, type Utterance, cached, inworldVoice, inworldVoices, stts, ttss, vocab, voiced, voicesKnown } from './speech'
 import { resolved, type Card, type Route } from './route'
 import { cardData, cue, glance, judge as judgeCard, leans, routeAhead, spokenCard, whenHeard } from './judge'
 import { content } from './pages'
@@ -297,6 +297,8 @@ type Speaker = { alive: boolean; readonly spoken: string; add(delta: string): vo
 type Turn = {
   /** Its words are a guest's (o.trusted set, they are not on it): decided once, read by every effect of the turn. */
   guest?: boolean
+  /** It claimed a voice it does not have: none of its words are said, shown or kept. */
+  voiceless?: boolean
   ac: AbortController
   sp: Speaker
   audible: boolean
@@ -642,27 +644,32 @@ export const cascade: Provider = (o, h) => {
   // A voice asked for at join by description ("deep calm British male") is the catalog voice it names, as later.
   if (o.voice && inworldFamily) (o.voice = inworldVoice(o.voice) || undefined), (me.voice = o.voice)
   queueMicrotask(() => note('persona', { ...me, by: 'join' })) // the page learns who it is from the start
-  function setPersona(p: Partial<Persona>, by: 'page' | 'self') {
+  /** Applies a change of who it is; a voice the catalog lacks comes back as `missing` (and nothing of the voice changes). */
+  function setPersona(p: Partial<Persona>, by: 'page' | 'self'): { missing?: string } | undefined {
     // A mode set now (even the one it is in) ends a "back to normal in ten minutes" planned before it: told to talk
     // again, that plan still said "I'm back." minutes later out of nowhere; told to keep quiet for good, it ended the
     // quiet. A plan from this same reply ([set mode="listen"] [later ... mode="normal"], in either order) stays.
     if (p.mode) for (const x of plans.filter((x) => x.kind === 'later' && x.mode && x.since < Date.now() - 3000)) dropPlan(x.id), note('later-dropped', { id: x.id, by, mode: p.mode })
     // What it already is changes nothing (a reply restating its own name is no change).
     p = Object.fromEntries(Object.entries(p).filter(([k, v]) => me[k as keyof Persona] !== v && !(k === 'mode' && v === 'normal' && !me.mode)))
-    if (!Object.keys(p).length) return
+    if (!Object.keys(p).length) return undefined
     // A new name: her own lines in the meeting so far are hers under it (else they read as someone else's).
     if (p.name) { for (const x of roomLog) if (x.who === SELF) x.who = p.name; (me.name = p.name), (SELF = p.name) }
     if (p.mode) (me.mode = p.mode), (roomHushed = false) // a mode of its own (quiet for a while, back) supersedes a room's hush
     // A voice by name or by description, from the voices this call's provider has (Inworld's catalog); others keep theirs.
+    let missing: string | undefined
     if (p.voice !== undefined && inworldFamily) {
       const id = p.voice ? inworldVoice(p.voice) : ''
       if (id || !p.voice) (me.voice = id || undefined), (o.voice = id || undefined)
+      // Asked for one the catalog does not have (it is in, so this is no guess): never claimed as done.
+      else if (voicesKnown()) missing = p.voice
     }
     if (p.look !== undefined) me.look = p.look
     if (p.rate !== undefined) me.rate = p.rate
     if (p.style !== undefined) me.style = p.style
     log('persona', by, JSON.stringify(me))
-    note('persona', { ...me, by })
+    note('persona', { ...me, by, ...(missing && { missing }) })
+    return missing ? { missing } : undefined
   }
   // A meeting's guests (o.trusted: the speakers its owner named; unset, everyone is trusted). Their words are heard,
   // kept and may be answered by the fast lane, which has no tools; they never reach the agent, which acts with the
@@ -847,7 +854,9 @@ export const cascade: Provider = (o, h) => {
   function control(a: Action, by: string): unknown {
     const now = Date.now()
     if (a.kind === 'set') {
-      setPersona(a.set, by === 'self' ? 'self' : 'page')
+      const r = setPersona(a.set, by === 'self' ? 'self' : 'page')
+      // A voice it does not have: the caller (its own reply, or the agent's voice_set) learns which it has.
+      if (r?.missing) return { error: `no voice called "${r.missing}"`, voices: voiceChoices }
       return a.for ? control({ kind: 'later', ms: a.for, say: a.say ?? '', mode: 'normal' }, by) : undefined // quiet for a while
     }
     if (a.kind === 'say') return void speakDelivered(a.text, true)
@@ -1066,6 +1075,7 @@ export const cascade: Provider = (o, h) => {
     // interrupts it, so intonation carries across sentences instead of resetting per clip.
     let utt: Utterance | undefined
     const close = () => (utt?.end(), (utt = undefined))
+    let silenced = false // the reply's own words are dropped from here on (it claimed a voice it does not have)
     let pending = ''
     let fenced = false // inside a code block: shown in the transcript, never read aloud ("python / def fibonacci(n): ...")
     let headed = false // the last line ended with a colon: what follows may be a list's items
@@ -1243,6 +1253,7 @@ export const cascade: Provider = (o, h) => {
         })
       },
       add(delta) {
+        if (silenced) return
         clearTimeout(settle)
         pending = (pending + delta).replace(/([a-z][.!?])([A-Z])/g, '$1 $2') // "Let me check.There are…" (the model can drop the space)
         // Its own actions on the call (src/meta.ts: [set name="..." voice="..."], [later ...], [watch ...], [cancel ...],
@@ -1257,7 +1268,17 @@ export const cascade: Provider = (o, h) => {
           }
           // A guest's turn never captures: a capture writes files and a note into the owner's session.
           const a = ((x) => (x?.kind === 'capture' && t.guest ? undefined : x))(parseTag(tag))
-          if (a) void Promise.resolve(control(a, 'self')).then((r) => {
+          // A voice it does not have: the rest of this reply ("Done, that's Domagoj now.") is never said; they hear which
+          // voices there are instead (a hidden turn of ours), in their words.
+          const done = a ? control(a, 'self') : undefined
+          const unvoiced = a?.kind === 'set' ? (done as { error?: string; voices?: string } | undefined) : undefined
+          if (unvoiced?.error) {
+            note('voice-missing', { want: a!.kind === 'set' ? a!.set.voice : '' })
+            ;(silenced = true), (pending = ''), (tail = ''), (t.voiceless = true), close()
+            void ask(undefined, `[You tried to change your voice: ${unvoiced.error}. The voices you can use: ${unvoiced.voices} (or any by a description, like "deep calm male"). Tell them in a few words that you do not have that one and offer two or three that fit what they asked for; no tag until they pick one.]`)
+            return
+          }
+          if (a) void Promise.resolve(done).then((r) => {
             // A capture it said it took, and could not: they hear why, in their words (a hidden turn of ours).
             const why = (r as { error?: string } | undefined)?.error
             if (a.kind === 'capture' && why) note('capture-failed', { why }), void ask(undefined, `[Your capture did not work: ${why}. Tell them in a few words what they can do, e.g. share it; no tag.]`)
@@ -1309,6 +1330,7 @@ export const cascade: Provider = (o, h) => {
       },
       end() {
         clearTimeout(settle)
+        if (silenced) return (close(), (pending = ''), (tail = ''), gate.then(() => chain))
         if ((items.length > 0 || headed) && LABELED.test(pending)) items.push({ raw: pending, text: clean(pending).replace(/[.:;,]$/, '') }), (pending = '') // a list's last item
         if (!fenced && !FENCE.test(pending)) unit(pending.replace(/\[(?:set|later|watch|cancel|capture)\b[\s\S]*$/i, '')) // a tag the reply never closed is not read aloud; nor code
         flush()
@@ -2018,6 +2040,7 @@ export const cascade: Provider = (o, h) => {
     if (heardBack) talk.push({ role: 'assistant', content: heardBack })
     // What the turn wrote, its tags taken out, and a tag it never closed too: a reply cut after "[" left that bracket as
     // the line the caller saw and as "You said: [" in the session (Kortix dev, 2026-11-04).
+    if (t.voiceless) t.text = '' // a claimed voice it does not have: nothing of it shown or kept
     const wrote = clean(t.text).replace(/\[[^\]]*$/, '').trim()
     // The agent never saw a turn the fast lane answered: it goes into the agent's session, so a later turn that needs
     // the tools ("run it in that repo") has the conversation. Never a guest's: nothing of it may reach the owner's agent.
