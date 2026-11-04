@@ -272,6 +272,7 @@ export {
   type KortixChatEventPartRemoved,
   type KortixChatEventPartUpdated,
   type KortixChatEventPermissionAsked,
+  type KortixChatEventPermissionParked,
   type KortixChatEventPermissionReplied,
   type KortixChatEventQuestionAnswered,
   type KortixChatEventQuestionAsked,

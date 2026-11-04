@@ -81,6 +81,20 @@ describe('narrowChatEvent', () => {
     });
   });
 
+  test('question.parked merges into question.answered as parked; permission.parked passes through', () => {
+    expect(narrowChatEvent(ev('question.parked', { sessionID: 's1', requestID: 'q1' }))).toEqual({
+      type: 'question.answered',
+      sessionID: 's1',
+      requestID: 'q1',
+      outcome: 'parked',
+    });
+    expect(narrowChatEvent(ev('permission.parked', { sessionID: 's1', requestID: 'p1' }))).toEqual({
+      type: 'permission.parked',
+      sessionID: 's1',
+      requestID: 'p1',
+    });
+  });
+
   test('permission.asked reshapes id -> requestID', () => {
     const result = narrowChatEvent(
       ev('permission.asked', {
