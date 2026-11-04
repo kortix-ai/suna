@@ -103,7 +103,7 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'Northwind',
     repoUrl: 'https://example.test/n.git',
-    metadata: { experimental: { project_channels: true } },
+    metadata: { experimental: { chat: true } },
   });
   for (const id of USERS) {
     await db.execute(sql`
@@ -479,7 +479,7 @@ describe('notifications, triggers, removal', () => {
     expect((await maySeeSessions(ALICE, rows)).has(THREAD)).toBe(true);
   });
 
-  test('the oversight owner reads a P thread but may not prompt it through a room', async () => {
+  test('the oversight owner reads a P thread but may not prompt it', async () => {
     const rows = [...(await loadSessionAccessRows([THREAD])).values()];
     expect((await maySeeSessions(OWNER, rows)).has(THREAD)).toBe(true);
     expect((await mayPromptSessions(OWNER, ACCOUNT, [THREAD])).has(THREAD)).toBe(false);

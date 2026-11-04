@@ -77,6 +77,9 @@ export function DashedRule() {
   );
 }
 
+const SOLID_CHECK =
+  'M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10s10-4.5 10-10S17.5 2 12 2zm4.2 8.3l-4.8 4.8c-.4.4-1 .4-1.4 0l-2.2-2.2c-.4-.4-.4-1 0-1.4c.4-.4 1-.4 1.4 0l1.5 1.5l4.1-4.1c.4-.4 1-.4 1.4 0c.4.4.4 1 0 1.4z';
+
 export function RunProgressRing({
   done,
   failed,
@@ -95,6 +98,16 @@ export function RunProgressRing({
   const c = big ? 14 : 8;
   const r = big ? 11 : 6.3;
   const stroke = big ? 2.5 : 1.5;
+  // Every agent finished: the solid check (web `SolidCheckIcon`, the same path), in the done hue.
+  if (ended === 'done' && failed === 0) {
+    return (
+      <View accessible={false} importantForAccessibility="no-hide-descendants">
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d={SOLID_CHECK} fill={palette.kortixGreen} />
+        </Svg>
+      </View>
+    );
+  }
   const length = 2 * Math.PI * r;
   const part = (count: number) => (total > 0 ? (count / total) * length : 0);
   // Room between two arcs and for the round caps.
@@ -103,7 +116,7 @@ export function RunProgressRing({
   return (
     <View accessible={false} importantForAccessibility="no-hide-descendants">
       <Svg width={size} height={size} viewBox={`0 0 ${c * 2} ${c * 2}`}>
-        <Circle cx={c} cy={c} r={r} stroke={palette.border} strokeWidth={stroke} fill="none" />
+        <Circle cx={c} cy={c} r={r} stroke={palette.mutedForeground} strokeOpacity={0.35} strokeWidth={stroke} fill="none" />
         {done > 0 ? (
           <Circle
             cx={c}
@@ -129,16 +142,6 @@ export function RunProgressRing({
             strokeDasharray={`${arc(failed)} ${length}`}
             strokeDashoffset={-part(done)}
             transform={`rotate(-90 ${c} ${c})`}
-          />
-        ) : null}
-        {ended === 'done' && failed === 0 ? (
-          <Path
-            d={big ? 'M9.5 14.3l3 3 6-6.3' : 'M5.3 8.2l1.8 1.8 3.6-3.8'}
-            stroke={palette.kortixGreen}
-            strokeWidth={big ? 2 : 1.4}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
           />
         ) : null}
         {ended === 'stopped' ? (

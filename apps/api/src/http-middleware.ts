@@ -25,6 +25,7 @@ import { compressResponse } from './middleware/compress';
 import { protectResponseCache } from './middleware/cache-control';
 import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline } from './middleware/request-deadline';
+import { rejectOutdatedCli } from './middleware/cli-min-version';
 import { createPublicEdgeRateLimitMiddleware } from './middleware/public-edge-rate-limit';
 import { shouldSuppressRequestLog } from './sandbox-proxy/request-log-suppression';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from './sandbox-proxy/proxy-hop';
@@ -334,6 +335,10 @@ app.use('*', auditApiRequest);
 
 // Before route validation and authentication; inside request logging and audit.
 app.use('/v1/*', createPublicEdgeRateLimitMiddleware());
+
+// A CLI below CLI_MIN_VERSION reads routes this server no longer serves: tell it
+// to update before auth, so a stale token does not hide the reason.
+app.use('/v1/*', rejectOutdatedCli);
 
 // Wall-clock deadline for non-streaming requests — returns 503 before the 30s
 // client abort instead of hanging. Streaming/proxy/WS surfaces are exempted

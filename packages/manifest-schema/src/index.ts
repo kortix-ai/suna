@@ -45,6 +45,7 @@ import {
   GRANTABLE_KORTIX_PERMISSIONS,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
+  RETIRED_KORTIX_PERMISSIONS,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   reservedEnvNameReason,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
@@ -228,6 +229,7 @@ export {
   PI_PACKAGE_PATH_RE,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
+  RETIRED_KORTIX_PERMISSIONS,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   isReservedEnvName,
   NEVER_DELIVERED_ENV_NAMES,
@@ -564,6 +566,13 @@ export function validateGrantList(
         issues.push({
           path: `${where}[${k}]`,
           message: `"${s}" was renamed to "${renamedTo.join('", "')}" — the grant still applies, but update the manifest.`,
+          severity: 'warning',
+        });
+      } else if (RETIRED_KORTIX_PERMISSIONS.includes(s)) {
+        // Its feature is gone: the grant holds nothing, so a warning, never a failed parse.
+        issues.push({
+          path: `${where}[${k}]`,
+          message: `"${s}" belongs to a removed feature and grants nothing. Remove it from the manifest.`,
           severity: 'warning',
         });
       } else if (LEGACY_TOLERATED_KORTIX_PERMISSIONS.includes(s)) {

@@ -26,6 +26,7 @@ import {
   EXTENSION_HARNESSES,
   HARNESS_TOOL_NAMES,
   KORTIX_SKILL_NAMES,
+  RETIRED_KORTIX_SKILL_NAMES,
   KORTIX_SKILL_PREFIX,
   KORTIX_TOOL_NAMES,
   PI_PACKAGE_NPM_RE,
@@ -165,12 +166,13 @@ export interface AgentBlockV3 {
   network_egress?: { version: 1; default: 'deny'; rules: [] };
 }
 
-/** One block of a board tab: a grid card that shows a room, a file, an App,
- *  an embedded page or markdown text. Display only. */
+/** One block of a board tab: a grid card that shows a file, an App, an
+ *  embedded page or markdown text. Display only. `chat` is retired with Rooms
+ *  (2026-11): it still validates, and hosts render nothing for it. */
 export interface SpaceBlockV3 {
   type: 'chat' | 'artifact' | 'app' | 'iframe' | 'text';
   label?: string;
-  /** chat: the name of a project room. */
+  /** @deprecated chat: the name of a removed Room. Ignored. */
   room?: string;
   /** artifact: a project file path. */
   path?: string;
@@ -205,7 +207,7 @@ export interface SpaceTabV3 {
 
 export type SpaceHeaderItem = (typeof SPACE_HEADER_ITEMS)[number];
 
-/** A space is a channel: a room (always the first tab) plus configured tabs.
+/** A space is a channel with configured tabs.
  *  Agents join it with `agents.<name>.space`. Display and config only: no
  *  behavior, no grants. */
 export interface SpaceV3 {
@@ -213,7 +215,7 @@ export interface SpaceV3 {
   description?: string;
   order?: number;
   header?: SpaceHeaderItem[];
-  /** The tabs after the room, in order. Absent = the host's default set. */
+  /** The tabs, in order. Absent = the host's default set. */
   tabs?: SpaceTabV3[];
 }
 
@@ -762,7 +764,13 @@ function validateNamedGrantV3(value: unknown, where: string, label: string, know
     if (issues.length !== before) return;
   }
   if (!Array.isArray(names)) return;
-  const unknown = names.map((item) => String(item).trim()).filter((item) => !known.has(item));
+  const trimmed = names.map((item) => String(item).trim());
+  // A retired Kortix skill (its feature is gone) grants nothing: a warning, never a failed parse.
+  const retired = label === 'skills' ? trimmed.filter((item) => RETIRED_KORTIX_SKILL_NAMES.includes(item)) : [];
+  if (retired.length > 0) {
+    issues.push({ path: where, message: `belongs to a removed feature and grants nothing: ${retired.join(', ')}. Remove it from the manifest.`, severity: 'warning' });
+  }
+  const unknown = trimmed.filter((item) => !known.has(item) && !retired.includes(item));
   if (unknown.length > 0) {
     issues.push({
       path: where,

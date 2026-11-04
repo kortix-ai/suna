@@ -1,5 +1,5 @@
 // The voice in a Kortix box (kortix.ts): one relay per box, each session bound under its Kortix session id. Two fake
-// pi sessions share a box: a message for one reaches only that one, both get the meta tools, the relay answers
+// pi sessions share a box: a message for one reaches only that one, both get the meta tools and the Meet tools, the relay answers
 // /health, the models go through the box's LLM proxy, and a session that shuts down is unbound. No network, no model.
 import { expect, test } from 'bun:test'
 
@@ -33,8 +33,9 @@ test('sessions sharing a box each get their own calls, one relay serves them, a 
   attach(b.pi, 'ses_b')
   await a.emit('session_start')
   await b.emit('session_start')
-  expect(a.tools).toEqual(META_TOOLS.map((t) => t.name))
-  expect(b.tools).toEqual(META_TOOLS.map((t) => t.name))
+  const every = [...META_TOOLS.map((t) => t.name), 'voice_join_meet', 'voice_join_call', 'voice_leave_meet']
+  expect(a.tools).toEqual(every)
+  expect(b.tools).toEqual(every)
   expect(await brain.session('ses_a')).toBe('ses_a')
   expect(await brain.session('ses_b')).toBe('ses_b')
   await brain.send('ses_a', 'What changed today?')

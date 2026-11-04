@@ -35,7 +35,7 @@ const PRIYA_DM = crypto.randomUUID();
 const PRIYA_DM2 = crypto.randomUUID();
 const THREAD = crypto.randomUUID();
 const PRIVATE_THREAD = crypto.randomUUID();
-const project = { projectId: PROJECT, accountId: ACCOUNT, metadata: { experimental: { project_channels: true, drives: true } } };
+const project = { projectId: PROJECT, accountId: ACCOUNT, metadata: { experimental: { chat: true, drives: true } } };
 /** A project member; `admin` may change the project. */
 const person = (userId: string, admin = false, member = true): Viewer => ({ userId, may: async (action) => (action === 'write' ? admin : member) });
 const volume = new FakeVolume();

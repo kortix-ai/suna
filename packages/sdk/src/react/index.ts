@@ -138,7 +138,7 @@ export {
   type UseProjectsOptions,
 } from './use-accounts';
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
-export { useAccountSecretResources, useSessionProviderSecretPools } from './use-provider-secrets';
+export { useAccountSecretResources, useSessionProviderSecretPools, useSubscriptionUsage } from './use-provider-secrets';
 export {
   useProjectTriggers,
   projectTriggersKey,
@@ -279,6 +279,7 @@ export {
   useProjectSpaceLinks,
   useProjectSpaces,
   useRemoveProjectSpaceLink,
+  useSetProjectSpaceTabs,
   useUpdateProjectSpace,
 } from './use-project-spaces';
 // Session groups (`session_groups`): the project's shared folders of sessions.

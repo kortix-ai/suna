@@ -68,7 +68,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "reminders" --glob '!node_modules' . | xargs rg -l "agent_rooms"
+ *   rg -l "reminders" --glob '!node_modules' . | xargs rg -l "voice_call"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -417,18 +417,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // account are the only connectors path. A stored override is inert; the
   // serializer keeps sending `true` for older clients.
   {
-    key: 'project_channels',
-    name: 'Channels',
+    key: 'chat',
+    name: 'Chat',
     description:
-      'Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar.',
+      "Slack-style chat with Kortix: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces you share with people. Replaces the session list in the sidebar.",
     stability: 'experimental',
     wip: true,
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
-      'Every /projects/:id/spaces route returns 403 feature_disabled while off. Session create/list ignore space_id while off. ' +
+      'Off ⇒ every /projects/:id/spaces route and POST /projects/:id/chat/threads answer 403 feature_disabled (projects/routes/project-spaces.ts, projects/routes/chat-threads.ts); ' +
+      'session create/list ignore space_id. On: the person\'s DM with My Kortix is their chat; each My Kortix thread in it gets the board of the other threads at turn start ' +
+      '(projects/lib/chat-threads.ts). Turning it on creates #general and files every session without a space into it (feature-flags/toggle-effects.ts). ' +
+      'STORED OVERRIDE: experimental.chat, else the legacy experimental.project_channels, else experimental.infinichat (explicitOverride). ' +
       'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box. ' +
+      'WEB: a Chat row (/projects/:id/chat) and the spaces list replace New session and the session list; /projects/:id/chat renders FeatureGateScreen while off. ' +
       'PRIVATE CHANNELS (shared/space-access.ts) are enforced whatever this flag says, and created only with KORTIX_PRIVATE_CHANNELS_ENABLED. ' +
       'Revocation windows after a removal or a conversion: REST ≤ 10 s on another replica (access memo; busted at once on the serving one), ' +
       'proxy ≤ 10 s more (verdict cache; cleared on the serving replica), /events SSE, proxied SSE and proxied WebSockets ≤ 60 s (re-check; WebSockets of the serving replica at once). ' +
@@ -451,21 +455,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'planSessionDrives mounts no folder granted to an agent: a session mounts only its person\'s own folder (and a private channel thread its channel folder). ' +
       'Grants made while on stay stored and count again when it is turned on; a change reaches running sessions at their next mount enforcement or boot. ' +
       'WEB: the Drive tree shows only My files while off (no Drives section, no All files, no Share).',
-  },
-  {
-    key: 'agent_rooms',
-    name: 'Rooms',
-    iamActions: ['project.room.read', 'project.room.write'],
-    description:
-      'Named chat rooms per goal or topic where agent sessions and people post (`kortix rooms`, `kortix peers`). Every message is stored in its room. A member session gets a message addressed to it (an @-mention, a reply in its thread) between its steps; other room traffic arrives as one batched notice when its turn ends; a thread reply reaches only the thread participants. A stopped session wakes. A member person gets every message as unread and, with the notification center on, a notification for one addressed to them.',
-    stability: 'experimental',
-    wip: true,
-    available: () => true,
-    // Off by default again (Marko, 2026-10-27): a project turns it on.
-    platformDefault: () => false,
-    enforcement: 'routes',
-    enforcementNote:
-      'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box. CLI outside a box: hidden and refused unless the linked project has the flag on. IAM: project.room.* leave the account permission catalog until a project of the account has it on. NOTIFICATIONS: the `message` kind is in `hidden_kinds` (no settings row) unless the person is in a room of a flag-on project. WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen. DOCS: the reference is the kortix-rooms skill (references/rooms.md), not the public docs.',
   },
   {
     key: 'workspace_volume',
@@ -556,6 +545,40 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'kortixd registers no voice extension and opens no voice port; a change reaches the next new box. WEB: no call ' +
       'button on the agent page. The gateway\'s audio routes are inference like chat: billed per use, not gated here.',
   },
+  {
+    key: 'chat_input',
+    name: 'Chat input',
+    description:
+      'One control under the composer for who answers and how: pick the agent, and every other setting stays on Auto, inherited from that agent. Open a row to override the model, thinking effort, secrets, provider keys or sandbox for this session, and reset it to Auto in one click.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'WEB ONLY, presentation. The composer (packages/ui/src/session/composer/ComposerCard.tsx) reads the flag and, on, ' +
+      'renders one chat-input control in place of the agent, model and effort pickers and the session-overrides gear. ' +
+      'It writes through the same handlers, so every prompt carries the same agent/model/variant/scope fields either way. ' +
+      'No route, box env, skill, CLI command or IAM action changes: the API enforces each override exactly as it does with the flag off.',
+  },
+  {
+    key: 'chat_front',
+    name: 'Talk-only threads',
+    description:
+      'With Chat on, a new message in a space starts a thread whose agent only talks. It hands every request to one hidden My Kortix session that does the work, and answers in short messages with only what matters. Needs My Kortix on in kortix.yaml.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Off ⇒ every thread runs as before. API: on together with `chat`, a top-level My Kortix session created in a space ' +
+      '(no parent, no fork, no session caller) gets the reserved runtime_context key `kortix.front` and the server-managed ' +
+      'metadata `kortix_front` (projects/lib/front-thread.ts); a request body cannot set either. Only such a front may start ' +
+      'a My Kortix session (its worker), an exception to META_AGENT_RECURSION. BOX: kortixd gives a front only `agent`, ' +
+      '`send_message` and `task_stop` (harness/pi/front.ts), and KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 so the worker ' +
+      'keeps its own subagents (projects/lib/feature-flag-env.ts). WEB: a front thread\'s "Open full session" opens its worker.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(
@@ -584,9 +607,10 @@ function overridesOf(metadata: unknown): Record<string, unknown> {
 /** Read a single project's explicit override for a flag. Non-boolean garbage
  *  in the stored map is treated as "no override". */
 function explicitOverride(metadata: unknown, key: FeatureFlagKey): boolean | undefined {
-  const fromMap = overridesOf(metadata)[key];
-  if (typeof fromMap === 'boolean') return fromMap;
-  return undefined;
+  const map = overridesOf(metadata);
+  // `chat` merged Channels (`project_channels`) and One chat (`infinichat`), 2026-11: a project keeps its old choice.
+  const stored = key === 'chat' ? [map.chat, map.project_channels, map.infinichat] : [map[key]];
+  return stored.find((value): value is boolean => typeof value === 'boolean');
 }
 
 /**

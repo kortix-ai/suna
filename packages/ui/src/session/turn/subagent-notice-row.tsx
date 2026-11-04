@@ -1,14 +1,13 @@
 'use client';
 
 import { useProjectSession } from '@kortix/sdk/react';
-import { parseWorkflowResult } from '@kortix/sdk';
+import { workflowResultMarkdown } from '../tool/tools/workflow-result-text';
 import { useState } from 'react';
 import { useTranslations } from '../../i18n';
 import { agentDisplayName } from '../../internal/components/agent-mark';
 import { useSessionIds } from '../../providers/session-ids';
 import { SubagentDialog } from '../agents/subagent-view';
-import { UnifiedMarkdown } from '../../markdown/unified-markdown';
-import { AgentFace, AgentFailure, AgentRowBody, AgentRowScope, AgentStatus, AgentTrigger, OpenAgentButton } from '../agents/agent-surface';
+import { AgentFace, AgentRowScope, AgentStatus, AgentTrigger } from '../agents/agent-surface';
 import { BasicTool } from '../tool/shared/infrastructure';
 import { firstLine, type SubagentNotice } from './subagent-notice';
 
@@ -16,7 +15,8 @@ import { firstLine, type SubagentNotice } from './subagent-notice';
 const RESULT_TAG = /<\/?workflow_?result>/gi;
 
 export function readableReport(text: string): string {
-  return (parseWorkflowResult(text)?.text ?? text).replace(RESULT_TAG, '').trim();
+  // A JSON result reads as its document (a JSON object of prose), never as the JSON source.
+  return workflowResultMarkdown(text).replace(RESULT_TAG, '').trim();
 }
 
 /** A run's own name carries " (workflow)"; the line names the run, the glyph says what it is. */
@@ -46,15 +46,13 @@ function useNoticeName(notice: SubagentNotice): { name: string; face: string } {
  * the API delivered its notice as a prompt. Nobody typed it, so it is never a
  * bubble: it is one agent row, the same row as the call that started it.
  *
- *   [face] pricing-scout  Three of five competitors raised prices…   ✓ Finished
- *          │ the whole report (Markdown)
- *          │ Open ↗
+ *   [face] pricing-scout  Three of five competitors raised prices…   ✓ Finished  >
  *
- * A failure says so in one sentence; the platform's raw text folds behind "Details".
+ * A click opens the agent's session beside the chat, in the side panel, where its
+ * report is the last reply; without a panel, in the agent dialog.
  */
-export function SubagentNoticeRow({ notice, defaultOpen }: { notice: SubagentNotice; defaultOpen?: boolean }) {
+export function SubagentNoticeRow({ notice }: { notice: SubagentNotice; defaultOpen?: boolean }) {
   const t = useTranslations('multiAgent.notice');
-  const tAgent = useTranslations('tools.agent');
   const { name, face } = useNoticeName(notice);
   const [viewing, setViewing] = useState(false);
   const failed = notice.status === 'failed';
@@ -75,23 +73,10 @@ export function SubagentNoticeRow({ notice, defaultOpen }: { notice: SubagentNot
           icon={<AgentFace handle={face} />}
           trigger={<AgentTrigger title={name} subtitle={subtitle} />}
           triggerAction={<AgentStatus status={NOTICE_GLYPH[notice.status]} label={t(`state.${notice.status}`)} opens />}
-          defaultOpen={defaultOpen}
-        >
-          <AgentRowBody>
-            {failed ? (
-              <AgentFailure sentence={t('failedSentence')} raw={result} />
-            ) : (
-              result && (
-                <div data-testid="notice-result" className="max-h-96 min-w-0 overflow-y-auto">
-                  <UnifiedMarkdown content={result} trust="agent" isStreaming={false} />
-                </div>
-              )
-            )}
-            <OpenAgentButton label={tAgent('openAgent', { name })} onClick={() => setViewing(true)} />
-          </AgentRowBody>
-        </BasicTool>
+          onClick={() => setViewing(true)}
+        />
       </AgentRowScope>
-      <SubagentDialog open={viewing} onOpenChange={setViewing} sessionId={notice.sessionId} title={name} />
+      <SubagentDialog open={viewing} onOpenChange={setViewing} sessionId={notice.sessionId} title={name} handle={face} task={subtitle} failure={failed ? result || t('failedSentence') : undefined} />
     </div>
   );
 }

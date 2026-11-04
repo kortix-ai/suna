@@ -25,6 +25,10 @@ export {
 // Idle sessions off a fallback model (consumed by worker/jobs/session-model-fallback).
 export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert';
 
+// Chat (`chat`): a thread's board of the chat's other threads (consumed by the turn-start path).
+export { chatThreadBoardTurn } from './lib/chat-threads';
+export { sessionWhereTurn } from './lib/session-where';
+
 // A person's pins and archive (consumed by account erasure and offboarding).
 export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';
 
@@ -65,7 +69,7 @@ export {
 
 // Every declared agent's grant (consumed by the connectors rules matrix).
 export { extractAgents, grantsByAgent, loadProjectAgents } from './agents';
-export { mentionTokens, mentionsMember } from './rooms/envelope';
+export { mentionTokens, mentionsMember } from './lib/mentions';
 export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
 export { loadVisibleSession } from './lib/session-visibility';
 export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
@@ -180,7 +184,7 @@ export { noteSandboxHealthBody } from './lib/turn-start-convergence';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
 
-// `project_channels` on: file every session into `#general`, and the "turned on
+// `chat` on: file every session into `#general`, and the "turned on
 // again" record (consumed by ../feature-flags/toggle-effects).
 export { turnOnChannels } from './lib/project-spaces';
 export { recordChannelsReenabled } from './lib/channels-onboarding';

@@ -235,6 +235,10 @@ export const DATA_RULES =
   "exact. A primary source is reliable: say it plainly, no hedge. Never mention the data, a search or results. No lists, " +
   "no markup, no filler opener, no offer, no question back." + (PERSONA && `\n\n${PERSONA}`)
 const DATA_VOICE = process.env.VOICE_DATA_RULES !== '0'
+/** What a turn is told when its last reply was cut off before they heard it all (`upTo`: the last words they heard).
+ * What they say now comes first, all of it: "Remind me in ten seconds..." right after a rename whose reply was cut got
+ * only "Sure, I'm Nova now." and no reminder (a Kortix dev call with a slide shared). */
+export const cutNote = (upTo?: string) => ` Your last reply was cut off: they heard ${upTo ? `it up to "…${upTo}"` : 'none of it'}. Answer what they say now first, all of it (anything they ask for in it is still to be done); then, if what they missed still matters, add it in a few words.`
 export const DEFAULT_RULES =
   "You are on a voice call: their words are speech-to-text and your text is read aloud. Talk like a sharp " +
   "colleague: contractions, plain words, answer first. Default to one or two short sentences, the first under ten " +
@@ -653,6 +657,13 @@ export const cascade: Provider = (o, h) => {
     log('persona', by, JSON.stringify(me))
     note('persona', { ...me, by })
   }
+  // A meeting's guests (o.trusted: the speakers its owner named; unset, everyone is trusted). Their words are heard,
+  // kept and may be answered by the fast lane, which has no tools; they never reach the agent, which acts with the
+  // owner's tools, files and access: no turn, no speculative start, no nudge, no deeper look, no words steered into
+  // its work. A turn is a guest's when none of its speakers is trusted.
+  const trustedNames = o.trusted && new Set(o.trusted.map((n) => n.trim().toLowerCase()).filter(Boolean))
+  // Out of a room (a one-to-one web call: no names come with its audio), a trusted list makes every turn a guest's.
+  const guest = (text?: string) => !!trustedNames && !!text && !(inRoom() && [...text.matchAll(/\[([^\]]{1,48})\]/g)].some((m) => trustedNames.has(m[1]!.trim().toLowerCase())))
   // Room mode (src/room.ts): one participant among several; every line kept with who said it, silence the default.
   // Research (2026-11-02: Liu CHI'25 "Inner Thoughts", Johnson CHI'26, Chen CHI'25, Sacks et al. 1974): unprompted only
   // after a real pause (2-3 s), never two in a row without a person between, minutes apart, and after two that drew no
@@ -1532,7 +1543,7 @@ export const cascade: Provider = (o, h) => {
     const cut = missed && performance.now() - missed.at < 60000 ? missed : undefined
     missed = undefined
     const upTo = cut?.upTo.trim().split(/\s+/).slice(-12).join(' ')
-    const lost = cut ? ` Your last reply was cut off: they heard ${upTo ? `it up to "…${upTo}"` : 'none of it'}. If what they missed still matters to what they say now, include it in a few words.` : ''
+    const lost = cut ? cutNote(upTo) : ''
     // A quiet moment after a web answer: the pages behind it, read since, may hold the one thing worth adding.
     const pages = !user && hidden && lastWeb ? freshPages(lastWeb.query, lastWeb.at) : ''
     if (pages) (lastWeb!.at = Date.now()), log('check-in with pages', pages.length)
@@ -1622,7 +1633,7 @@ export const cascade: Provider = (o, h) => {
     // live; it starts on the plain words beside the router in place of the agent's own speculative start. VOICE_LANE=0: off.
     const fast = !!user && laneOn()
     t.bridging = fast // its first words come from the fast lane or the bridge, a fixed lead-in only if both fail
-    const early = user && SPECULATE && !fast && !resolved(user, said_) ? speculate(user, plain, system, on) : undefined
+    const early = user && SPECULATE && !fast && !guest(user) && !resolved(user, said_) ? speculate(user, plain, system, on) : undefined
     const direct_ = (delta: string) => ((t.direct = true), on.text(delta)) // the fast lane is speaking this turn
     const quick = user && fast && !resolved(user, said_) ? speculateLane(t, user, plain, direct_) : undefined
     // Nothing in the words that a lookup or the workspace could answer better (src/judge.ts): the fast lane's own answer
@@ -1799,6 +1810,7 @@ export const cascade: Provider = (o, h) => {
       : ran(found, map))
     const turnContext = `Reply in the language of the user's last words (so far the call has been in ${NAMES.of(lang)}).${lost}${heardAs}${context}${newly}${ledger()}`
     const go = async (context: string) => {
+      if (guest(user)) return void (log('a guest asked: the agent stays out'), note('guest', { user }))
       // The agent is busy with background work: the words go into it, and its answer covers them.
       if (job && user && !job.deep) return void (await brain.steer(sid, `[said while you work] ${user}`).catch(() => false))
       // A deeper look of ours gives way to their new question: it was the step further on an earlier answer.
@@ -1922,7 +1934,7 @@ export const cascade: Provider = (o, h) => {
       t.text += '\n'
       // The fast lane has no tools: the agent takes the caller's turn itself (it has not seen it).
       if (t.direct) (t.direct = false), await go(turnContext)
-      else await brain.turn(events, sid, NUDGE, { system, context: forAgent(turnContext), model, signal: t.ac.signal, synthetic: true }, on)
+      else if (!guest(user)) await brain.turn(events, sid, NUDGE, { system, context: forAgent(turnContext), model, signal: t.ac.signal, synthetic: true }, on)
     }
     // The agent failed with nothing of its own said (a dead key, its backend down): the fast lane takes the turn after all,
     // with the turn's data or the search begun when it was handed over, never handing it over again (bench/agentdown-proof.ts).
@@ -1960,7 +1972,7 @@ export const cascade: Provider = (o, h) => {
     const deep = !inRoom() && user && t.direct && where() === 'web' && !!found && !job && !/\?\s*$/.test(clean(t.text)) && !t.hidden && !t.failed && !t.ac.signal.aborted && clean(t.text).trim() && !SILENT.test(untag(clean(t.text))) ? await deeper(user, clean(t.text), talk, t.ac.signal) : undefined
     // The line that says so waits for the agent to take the look on (its first word or tool): with its model unreachable
     // (a dead key, flow bench call 3, 2026-11-03) "I'm looking into Cortix AI's details." was said and nothing ever came.
-    if (deep && !t.ac.signal.aborted && current === t) note('deep', { say: deep }), lookDeeper(user!, clean(t.text), () => {
+    if (deep && !t.ac.signal.aborted && current === t && !guest(user)) note('deep', { say: deep }), lookDeeper(user!, clean(t.text), () => {
       if (current === t && t.streaming) (t.text += `\n${deep}`), t.sp.add(`\n${deep}\n`)
       else speakDelivered(deep)
     })
@@ -1994,9 +2006,12 @@ export const cascade: Provider = (o, h) => {
     log('done', JSON.stringify(t.text.slice(0, 60)), t.tools, t.direct ? 'fast lane' : 'agent')
     const heardBack = clean(t.sp.spoken)
     if (heardBack) talk.push({ role: 'assistant', content: heardBack })
+    // What the turn wrote, its tags taken out, and a tag it never closed too: a reply cut after "[" left that bracket as
+    // the line the caller saw and as "You said: [" in the session (Kortix dev, 2026-11-04).
+    const wrote = clean(t.text).replace(/\[[^\]]*$/, '').trim()
     // The agent never saw a turn the fast lane answered: it goes into the agent's session, so a later turn that needs
     // the tools ("run it in that repo") has the conversation.
-    if (t.direct && user) void brain.remember(sid, `[Voice turn answered by the voice directly; part of this conversation]\nUser: ${user}\nYou said: ${heardBack || clean(t.text)}`).catch(() => {})
+    if (t.direct && user && (heardBack || words(wrote).length)) void brain.remember(sid, `[Voice turn answered by the voice directly; part of this conversation]\nUser: ${user}\nYou said: ${heardBack || wrote}`).catch(() => {})
     if (t.heard?.length) {
       last = { pcm: t.heard, text: clean(t.text), spoken: clean(t.sp.spoken) }
       eotVersion++
@@ -2004,7 +2019,7 @@ export const cascade: Provider = (o, h) => {
       waiting.clear()
     }
     if (SILENT.test(untag(clean(t.text)))) t.text = '' // the agent chose to say nothing
-    if (t.text.trim()) h.text('agent', clean(t.text).replace(BRACKETS, ' ').replace(/\s{2,}/g, ' ').trim())
+    if (t.text.trim() && words(wrote).length) h.text('agent', wrote.replace(BRACKETS, ' ').replace(/\s{2,}/g, ' ').trim())
     if (user && t.answered) answeredAt = performance.now()
     if (t.hidden && t.answered) moves++, (movedAt = performance.now())
     current = undefined
@@ -2741,7 +2756,7 @@ export const cascade: Provider = (o, h) => {
       return void ask(text)
     }
     // A fast-lane answer (src/lane.ts) cannot take words in: like a finished reply, it gives way to a new turn below.
-    if (current?.streaming && !current.direct) {
+    if (current?.streaming && !current.direct && !guest(text)) {
       // The agent is mid-turn: stop its voice, queue the words, and its stream carries the answer.
       hush()
       commitUser(text, resolved(text, exchange()))

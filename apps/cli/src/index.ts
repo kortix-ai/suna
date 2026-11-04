@@ -53,7 +53,6 @@ import { runTokens } from './commands/tokens.ts';
 import { runTools } from './commands/tools.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runChrome } from './commands/chrome.ts';
-import { runPeers, runRooms } from './commands/rooms.ts';
 import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -287,8 +286,6 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   grants: (rest) => runGrants(rest),
   update: (rest) => runUpdate(rest),
   uninstall: (rest) => runUninstall(rest),
-  rooms: (rest) => runRooms(rest),
-  peers: (rest) => runPeers(rest),
   tasks: (rest) => runTasks(rest),
 };
 

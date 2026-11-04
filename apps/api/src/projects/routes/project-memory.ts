@@ -5,7 +5,7 @@
  * status and `{error, code}` body.
  *
  * Every route needs `session` project access and the `drives` flag (Memory
- * lives in Files), never `project_channels`: with Channels off the files are
+ * lives in Files), never `chat`: with Channels off the files are
  * the same and the routes keep working; only the Channels UI is hidden.
  * Read and write rights are the Drive folder rights. A session token (an
  * agent) gets 403 `use_files` on every route: agents use their `/drives` mounts.

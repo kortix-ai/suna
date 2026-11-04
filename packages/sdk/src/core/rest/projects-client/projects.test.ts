@@ -1038,8 +1038,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'notification_center',
     'session_log_restore',
     'workspace_volume',
-    'project_channels',
-    'agent_rooms',
+    'chat',
     'shared_drives',
     'goals',
     'artifacts',
@@ -1049,6 +1048,8 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'chrome',
     'agent_teams',
     'voice_call',
+    'chat_input',
+    'chat_front',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
   expect(new Set(FEATURE_FLAG_KEYS).size).toBe(FEATURE_FLAG_KEYS.length);

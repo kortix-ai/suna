@@ -149,3 +149,10 @@ export function shouldShowToolPartInActionsPanel(call: ToolCallBlock): boolean {
 export const ToolActivateContext = createContext<((callID: string) => void) | null>(null);
 
 export const BoundActivateContext = createContext<(() => void) | null>(null);
+
+/**
+ * Opens an agent's session in the side panel, where the chat has one. Null in a
+ * read-only transcript, the agent's own panel and the marketing demo: there the
+ * agent row opens the agent dialog instead.
+ */
+export const AgentActivateContext = createContext<((agent: { sessionId: string; title: string; handle: string; task?: string; failure?: string }) => void) | null>(null);

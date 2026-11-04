@@ -208,7 +208,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 
   // Channels on: "New session" (Mod+T, the desktop File menu) opens the
   // default channel and focuses its composer, where a message starts a thread.
-  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
+  const channels = useFeatureFlag(projectId, 'chat').enabled;
   const spaces = useProjectSpaces(projectId, { enabled: channels });
   const defaultChannelSlug = spaces.data?.find((space) => space.kind === 'channel' && space.is_default)?.slug;
   const openDefaultChannel = useCallback(() => {

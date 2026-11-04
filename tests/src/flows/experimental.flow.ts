@@ -94,7 +94,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'agent_rooms', enabled: null },
+          { feature: 'voice_call', enabled: null },
           { params: { projectId: p.id } },
         );
       project.status(200);
@@ -121,7 +121,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'agent_rooms', enabled: null },
+          { feature: 'voice_call', enabled: null },
           { params: { projectId: p.id } },
         );
       project.status(200);
@@ -148,7 +148,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'agent_rooms', enabled: null },
+          { feature: 'voice_call', enabled: null },
           { params: { projectId: p.id } },
         );
       project.status(200);

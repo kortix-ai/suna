@@ -106,6 +106,16 @@
     "access": "Accesso",
     "actions": "Azioni",
     "coolingDown": "In pausa dopo il limite",
+    "usageFiveHour": "5 ore",
+    "usageWeekly": "Settimanale",
+    "usageWeeklyModel": "Settimanale · {model}",
+    "usagePercent": "{percent}% usato",
+    "usagePercentResets": "{percent}% · si azzera {time}",
+    "usageLimitReached": "Limite raggiunto",
+    "usageLimitResets": "Limite raggiunto · si azzera {time}",
+    "usageNotSeen": "L’utilizzo appare dopo la prima richiesta",
+    "usageObserved": "Aggiornato {time}",
+    "usageAriaLabel": "{window}: {percent}% usato",
     "member": "membro",
     "members": "membri",
     "actionsFor": "Azioni per {label}",
@@ -1290,10 +1300,6 @@
           "name": "Ripristino dal log di sessione",
           "description": "Ricostruisce una sessione dal suo log di sessione salvato quando il suo computer ha perso la conversazione. Kortix lo attiva per progetto."
         },
-        "agent_rooms": {
-          "name": "Stanze",
-          "description": "Chat room con nome in cui sessioni degli agenti e persone pubblicano messaggi e rispondono nei thread. Una sessione si riattiva quando un messaggio è indirizzato a lei. Aggiunge la pagina Stanze, `kortix rooms` e `kortix peers`."
-        },
         "goals": {
           "name": "Obiettivi",
           "description": "Assegna a un agente un obiettivo di cui resta responsabile finché un controllo indipendente non conferma il risultato. Pianifica, lavora, attende, sollecita le persone e conserva il suo stato in una cartella Goals in File. Richiede Volumi e Cicli attivi."
@@ -1310,9 +1316,9 @@
           "name": "Canale email",
           "description": "Dai all'agente una casella email su Resend: la posta in arrivo avvia e continua le sessioni, e l'agente legge, risponde e invia dalla casella. Usa la tua chiave API Resend e il tuo dominio."
         },
-        "project_channels": {
-          "name": "Canali",
-          "description": "Organizza il lavoro in canali. Ogni nuovo messaggio in un canale o in un messaggio diretto con un agente avvia un thread. Sostituisce l'elenco delle sessioni nella barra laterale."
+        "chat": {
+          "name": "Chat",
+          "description": "Chat con Kortix in stile Slack: ogni messaggio è un thread, l'ultima risposta di Kortix appare sotto, Kortix può avviare thread e gli spazi si condividono con altre persone. Sostituisce l'elenco delle sessioni nella barra laterale."
         },
         "session_groups": {
           "name": "Gruppi di sessioni",
@@ -1337,16 +1343,24 @@
         "shared_drives": {
           "name": "Drive condivisi",
           "description": "Drive che tutto il team può usare: un admin crea un Drive e vi aggiunge agenti. Ogni sessione di quegli agenti lo monta, e chi può usare uno di loro può aprirlo. Disattivato, ogni persona ha solo I miei file."
+        },
+        "chat_input": {
+          "name": "Input della chat",
+          "description": "Un solo controllo sotto il compositore per chi risponde e come: scegli l’agente e ogni altra impostazione resta su Automatico, ereditata da quell’agente. Apri una riga per sostituire modello, sforzo di ragionamento, segreti, chiavi del provider o sandbox per questa sessione, e torna ad Automatico con un clic."
+        },
+        "chat_front": {
+          "name": "Thread solo conversazione",
+          "description": "Con Chat attivo, un nuovo messaggio in uno spazio avvia un thread il cui agente si limita a parlare. Passa ogni richiesta a una sessione My Kortix nascosta che fa il lavoro e risponde con messaggi brevi, solo con ciò che conta. Richiede My Kortix attivo in kortix.yaml."
         }
       },
       "channelsSwitch": {
-        "onTitle": "Attivare i Canali per {project}?",
-        "onBody": "Tutti in questo progetto ottengono Canali e Messaggi diretti al posto dell’elenco delle sessioni. Tutte le sessioni esistenti passano in #general. Puoi disattivarlo in qualsiasi momento; non viene eliminato nulla.",
-        "drive": "Attiva anche Drive, così i canali hanno i File.",
+        "onTitle": "Attivare gli Spazi per {project}?",
+        "onBody": "Tutti in questo progetto ottengono Spazi e Messaggi diretti al posto dell’elenco delle sessioni. Tutte le sessioni esistenti passano in #general. Puoi disattivarlo in qualsiasi momento; non viene eliminato nulla.",
+        "drive": "Attiva anche Drive, così gli spazi hanno i File.",
         "turnOn": "Attiva",
         "cancel": "Annulla",
-        "offTitle": "Disattivare i Canali?",
-        "offBody": "Canali, memoria, file e link restano salvati. L’elenco delle sessioni torna per tutti.",
+        "offTitle": "Disattivare gli Spazi?",
+        "offBody": "Spazi, memoria, file e link restano salvati. L’elenco delle sessioni torna per tutti.",
         "turnOff": "Disattiva"
       },
       "wip": "Work in progress",
@@ -1547,7 +1561,6 @@
     }
   },
   "sidebar": {
-    "rooms": "Stanze",
     "goals": "Obiettivi",
     "artifacts": "Artefatti",
     "referAndEarn": "Invita e Guadagna",
@@ -1856,10 +1869,10 @@
     "searchApps": "Cerca app",
     "appsNoMatches": "Nessun risultato",
     "spaces": {
-      "channels": "Canali",
+      "channels": "Spazi",
       "directMessages": "Messaggi diretti",
-      "addChannel": "Aggiungi canale",
-      "loadError": "Impossibile caricare i canali.",
+      "addChannel": "Nuovo spazio",
+      "loadError": "Impossibile caricare gli spazi.",
       "newAgent": "Nuovo agente"
     }
   },
@@ -2259,6 +2272,38 @@
     "thinkingEffort": "Livello di ragionamento",
     "sessionOverrides": "Override della sessione",
     "auto": "Automatico",
+    "chatInput": "Input della chat",
+    "chatInputAgent": "Agente",
+    "chatInputModel": "Modello",
+    "chatInputEffort": "Sforzo",
+    "chatInputMoreSettings": "Altre impostazioni",
+    "chatInputOverrideCount": "{count, plural, one {# modifica} other {# modifiche}}",
+    "chatInputResetToAuto": "Torna ad automatico",
+    "chatInputAgentDescription": "Chi risponde al tuo prossimo prompt.",
+    "chatInputModelDescription": "Il modello che l’agente usa per il tuo prossimo prompt.",
+    "chatInputEffortDescription": "Quanto ragiona il modello prima di rispondere.",
+    "chatInputMore": "Altro",
+    "chatInputChangedCount": "{count} modificati",
+    "chatInputAgentDefault": "Predefinito dell’agente",
+    "chatInputLoading": "Caricamento…",
+    "chatInputSecrets": "Segreti",
+    "chatInputSecretsDescription": "Quali segreti raggiungono questa sessione.",
+    "chatInputSecretsAll": "{count, plural, one {Il # segreto dell’agente} other {Tutti i # segreti che l’agente può usare}}",
+    "chatInputSecretsEmpty": "Nessun segreto per questo agente.",
+    "chatInputSecretsUnavailable": "I segreti non possono essere letti qui.",
+    "chatInputSecretCount": "{count, plural, one {# segreto} other {# segreti}}",
+    "chatInputConnectors": "Connettori",
+    "chatInputConnectorsDescription": "Quale account usa ogni app in questa sessione.",
+    "chatInputConnectorsAll": "Ogni app sul suo account predefinito",
+    "chatInputConnectorsUnavailable": "I connettori non possono essere letti qui.",
+    "chatInputDefaultAccount": "Predefinito",
+    "chatInputAppCount": "{count, plural, one {# app modificata} other {# app modificate}}",
+    "chatInputProviderKeysDescription": "Quali chiavi del provider pagano le chiamate al modello di questa sessione.",
+    "chatInputProviderKeysAll": "Le chiavi che l’agente usa oggi",
+    "chatInputProviderKeysEmpty": "Nessuna chiave del provider da scegliere.",
+    "chatInputKeyCount": "{count, plural, one {# chiave} other {# chiavi}}",
+    "chatInputMachine": "Macchina",
+    "chatInputMachineDescription": "Il modello di macchina con cui parte questa sessione.",
     "sending": "Invio in corso",
     "stop": "Interrompi",
     "startingSession": "Avvio della sessione…",
@@ -2296,7 +2341,8 @@
     "submitEdit": "Invia",
     "collapseQueue": "Comprimi coda",
     "expandQueue": "Espandi coda",
-    "myKortixRoutes": "Affida ogni attività all’agente giusto"
+    "myKortixRoutes": "Affida ogni attività all’agente giusto",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {
@@ -3202,7 +3248,8 @@
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # chiave} other {JSON · # chiavi}}",
       "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementi}}",
-      "failedSentence": "Il workflow si è fermato prima di finire."
+      "failedSentence": "Il workflow si è fermato prima di finire.",
+      "runningCount": "{count} in corso"
     },
     "agent": {
       "backgroundWorking": "Al lavoro in background",
@@ -3288,7 +3335,6 @@
       "automation_recovered": "Avviso di ripristino",
       "capture_device_down": "Computer Capture fermo",
       "capture_device_recovered": "Computer Capture di nuovo in registrazione",
-      "message": "Messaggio",
       "artifact_comment": "Commenti agli artefatti"
     },
     "kindDescription": {
@@ -3301,7 +3347,6 @@
       "automation_recovered": "Un trigger o un ciclo che falliva torna a funzionare.",
       "capture_device_down": "Un computer Kortix Capture non registra. Inviato a chi gestisce Capture.",
       "capture_device_recovered": "Un computer Kortix Capture che si era fermato registra di nuovo.",
-      "message": "Qualcuno ti menziona con @, o risponde in un thread in cui hai scritto, in una stanza.",
       "artifact_comment": "Feedback, menzioni e risposte sugli artefatti che puoi visualizzare."
     },
     "bell": {
@@ -21322,7 +21367,7 @@
     "copyFailed": "Impossibile copiare negli appunti",
     "threads": "Thread",
     "recentThreads": "Thread recenti",
-    "searchChannels": "Cerca canali, thread, comandi..."
+    "searchChannels": "Cerca spazi, thread, comandi..."
   },
   "personalWelcome": {
     "dismiss": "Chiudi",
@@ -21543,9 +21588,9 @@
     "perDay": "Per giorno",
     "noLimit": "Nessun limite",
     "postTo": "Pubblica in",
-    "postToHint": "Ogni esecuzione avvia lì un nuovo thread. Senza canale, le esecuzioni vanno in #{channel}.",
-    "postToNone": "Nessun canale",
-    "postToUnavailable": "Canale non disponibile",
+    "postToHint": "Ogni esecuzione avvia lì un nuovo thread. Senza spazio, le esecuzioni vanno in #{channel}.",
+    "postToNone": "Nessuno spazio",
+    "postToUnavailable": "Spazio non disponibile",
     "postToPrivate": "Privato: i trigger non possono pubblicare qui",
     "appLabel": "App",
     "appPlaceholder": "Scegli un'App",
@@ -23384,103 +23429,6 @@
     "enable": "Abilita {name}",
     "enabling": "Attivazione…"
   },
-  "rooms": {
-    "title": "Stanze",
-    "memberCount": "{count, plural, one {# membro} other {# membri}}",
-    "members": "Membri",
-    "agent": "Agente",
-    "agentSender": "Agente {name}",
-    "empty": "Le stanze in cui entri compariranno qui",
-    "emptyHint": "Crea una stanza, poi aggiungi persone e agenti.",
-    "loadError": "Impossibile caricare le stanze. Riprova.",
-    "roomLoadError": "Impossibile caricare questa stanza. Riprova.",
-    "messagesLoadError": "Impossibile caricare i messaggi. Riprova.",
-    "retry": "Riprova",
-    "back": "Torna alle stanze",
-    "send": "Invia messaggio",
-    "sendFailed": "Impossibile inviare il messaggio",
-    "peopleLoadError": "Impossibile caricare le persone. Riprova.",
-    "cardRoom": "Stanza {name}",
-    "digestCount": "{count, plural, one {# nuovo messaggio} other {# nuovi messaggi}}",
-    "digestMore": "… e altri {count}",
-    "cardFrom": "Da",
-    "cardMessage": "Messaggio",
-    "cardReplyTo": "Risposta a",
-    "addRooms": "Aggiungi stanze",
-    "addFailed": "Impossibile aggiungere il membro",
-    "addMembers": "Aggiungi persone e agenti",
-    "addMembersDescription": "I membri ricevono i messaggi pubblicati qui. Una sessione agente li legge al passo successivo.",
-    "addTopic": "Aggiungi un argomento",
-    "agents": "Agenti",
-    "browseRoomsDescription": "Tutte le stanze di questo progetto. Aprine una per leggerla o entrarci.",
-    "cancel": "Annulla",
-    "roomName": "Nome",
-    "roomNameHint": "Lettere minuscole, numeri e . _ / -, fino a 64 caratteri.",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "Chiudi membri",
-    "copied": "Copiato",
-    "copyText": "Copia il testo del messaggio",
-    "createRoom": "Crea stanza",
-    "createRoomDescription": "Una stanza raccoglie la conversazione su un argomento, per persone e agenti.",
-    "createFailed": "Impossibile creare la stanza",
-    "editTopic": "Modifica argomento",
-    "inThisRoom": "In questa stanza",
-    "introRoom": "Questo è l'inizio della stanza #{name}.",
-    "joinRoom": "Entra nella stanza",
-    "joinFailed": "Impossibile entrare nella stanza",
-    "joined": "Iscritto",
-    "jumpToLatest": "Vai al più recente",
-    "leaveRoom": "Lascia la stanza",
-    "memberActions": "Azioni per {name}",
-    "memberAdded": "{name} aggiunto",
-    "memberRemoved": "Membro rimosso",
-    "mentionHere": "Tutti in #{name}",
-    "mentionSomeone": "Menziona qualcuno",
-    "mentionSuggestions": "Suggerimenti di menzione",
-    "messageRoom": "Messaggio a #{name}",
-    "messages": "Messaggi",
-    "new": "Nuovo",
-    "newLineHint": "Maiusc + Invio per andare a capo",
-    "noRooms": "Nessuna stanza corrispondente",
-    "noMatches": "Nessun risultato",
-    "people": "Persone",
-    "pickRoom": "Apri una stanza dall'elenco",
-    "remove": "Rimuovi",
-    "removeAgentDescription": "La sessione agente smette di ricevere i messaggi di questa stanza. Per ripristinarla, aggiungi di nuovo l'agente.",
-    "removeFailed": "Impossibile rimuovere il membro",
-    "removePersonDescription": "Questo membro smette di ricevere i messaggi di questa stanza. Per ripristinarlo, aggiungilo di nuovo.",
-    "removeTitle": "Rimuovere {name} da questa stanza?",
-    "searchRooms": "Cerca stanze",
-    "searchPeopleAndAgents": "Cerca persone e agenti",
-    "today": "Oggi",
-    "topic": "Argomento",
-    "topicFailed": "Impossibile salvare l'argomento",
-    "topicOptional": "Argomento (facoltativo)",
-    "topicPlaceholder": "Di cosa tratta questa stanza",
-    "viewMembers": "Mostra membri",
-    "viewMembersCount": "Mostra {count, plural, one {# membro} other {# membri}}",
-    "viewingRoom": "Stai visualizzando #{name}",
-    "yesterday": "Ieri",
-    "you": "{name} (tu)",
-    "status": {
-      "running": "In esecuzione",
-      "starting": "In avvio",
-      "stopped": "Arrestata",
-      "failed": "Non riuscita"
-    },
-    "replyInThread": "Rispondi nel thread",
-    "thread": "Thread",
-    "closeThread": "Chiudi thread",
-    "backToRoom": "Torna alla stanza",
-    "replyPlaceholder": "Rispondi…",
-    "replyCount": "{count, plural, one {# risposta} other {# risposte}}",
-    "lastReply": "Ultima risposta {time}",
-    "threadLoadError": "Impossibile caricare questo thread. Riprova.",
-    "join": "Entra",
-    "openRoom": "Apri",
-    "gateDescription": "Attiva le Stanze per permettere alle sessioni degli agenti e alle persone di questo progetto di parlare in chat room con nome.",
-    "archivedNotice": "Questa stanza è archiviata. Conserva i messaggi e non ne accetta di nuovi."
-  },
   "goals": {
     "title": "Obiettivi",
     "gateDescription": "Gli agenti seguono un obiettivo finché non è raggiunto in modo verificabile: l'obiettivo vive in File, un battito giornaliero lo risveglia, l'agente sollecita le persone per ciò che gli serve e un controllo indipendente lo chiude.",
@@ -24116,7 +24064,6 @@
       "activity": "Attività",
       "open": "Aperti",
       "resolved": "Risolti",
-      "all": "Tutti",
       "outdated": "Obsoleti",
       "outdatedHint": "Questo passaggio non è individuabile nel documento attuale.",
       "newComment": "Nuovo commento",
@@ -24163,7 +24110,6 @@
       "noCommentsHint": "Seleziona un passaggio per commentarlo o inizia un nuovo commento.",
       "noResolved": "Nessun commento risolto",
       "noResolvedHint": "Le discussioni risolte appaiono qui.",
-      "noAllComments": "Nessun commento per ora",
       "noActivity": "Nessuna attività per ora",
       "noActivityHint": "Le versioni salvate e i commenti appaiono qui.",
       "loadMore": "Carica altro",
@@ -24236,7 +24182,6 @@
       "sentToAgent": "Commenti inviati a {agent}",
       "newCommentFrom": "Nuovo commento da {name}",
       "newComments": "{count, plural, one {# nuovo commento} other {# nuovi commenti}}",
-      "filterLabel": "Stato della discussione",
       "pagePinLabel": "Commento {number}",
       "showPanelCount": "Mostra commenti, {count} aperti",
       "hidePanelCount": "Nascondi commenti, {count} aperti",
@@ -24553,7 +24498,7 @@
       },
       "company": {
         "subtitle": "Ciò che sa ogni agente di questo progetto.",
-        "gateDescription": "La memoria aziendale fa parte dei canali: ogni agente di questo progetto inizia ogni thread con ciò che il team ha salvato qui.",
+        "gateDescription": "La memoria aziendale fa parte degli spazi: ogni agente di questo progetto inizia ogni thread con ciò che il team ha salvato qui.",
         "title": "Memoria",
         "place": "Azienda"
       },
@@ -24584,29 +24529,29 @@
       }
     },
     "create": {
-      "title": "Crea un canale",
-      "description": "Tutti in questo progetto possono vedere e usare il canale.",
+      "title": "Crea uno spazio",
+      "description": "Tutti in questo progetto possono vedere e usare lo spazio.",
       "nameLabel": "Nome",
       "namePlaceholder": "marketing",
-      "slugPlaceholder": "nome-canale",
+      "slugPlaceholder": "nome-spazio",
       "descriptionLabel": "Descrizione (facoltativa)",
-      "descriptionPlaceholder": "A cosa serve questo canale",
-      "submit": "Crea canale",
-      "created": "Canale creato",
+      "descriptionPlaceholder": "A cosa serve questo spazio",
+      "submit": "Crea spazio",
+      "created": "Spazio creato",
       "nameRequired": "Aggiungi un nome.",
       "invalidName": "Usa almeno una lettera o un numero nel nome.",
       "slugTaken": "<link>#{slug}</link> esiste già.",
-      "failed": "Impossibile creare il canale. Riprova.",
-      "renameTitle": "Rinomina canale",
-      "renameDescription": "Il link del canale cambia con il suo nome.",
+      "failed": "Impossibile creare lo spazio. Riprova.",
+      "renameTitle": "Rinomina spazio",
+      "renameDescription": "Il link dello spazio cambia con il suo nome.",
       "save": "Salva",
-      "renamed": "Canale rinominato",
-      "renameFailed": "Impossibile rinominare il canale. Riprova.",
-      "descriptionPrivate": "Solo le persone che aggiungi possono vedere e usare il canale.",
+      "renamed": "Spazio rinominato",
+      "renameFailed": "Impossibile rinominare lo spazio. Riprova.",
+      "descriptionPrivate": "Solo le persone che aggiungi possono vedere e usare lo spazio.",
       "privateLabel": "Privato",
       "privateHint": "Solo i membri invitati possono vederlo.",
-      "privateUnavailable": "I canali privati non sono ancora disponibili in questo workspace.",
-      "privateLimits": "Privato nasconde il canale alle altre persone. Le modifiche al codice (branch git) e gli strumenti degli agenti non sono privati.",
+      "privateUnavailable": "Gli spazi privati non sono ancora disponibili in questo workspace.",
+      "privateLimits": "Privato nasconde lo spazio alle altre persone. Le modifiche al codice (branch git) e gli strumenti degli agenti non sono privati.",
       "name": "Nome",
       "taken": "Esiste già uno spazio #{slug}.",
       "about": "Descrizione",
@@ -24632,24 +24577,24 @@
       "messageAgent": "Messaggio a {agent}",
       "threadsEmptyTitle": "Ancora nessun thread",
       "threadsEmpty": "I thread che avvii compariranno qui.",
-      "loadError": "Impossibile caricare questo canale.",
+      "loadError": "Impossibile caricare questo spazio.",
       "threadsLoadError": "Impossibile caricare i thread.",
       "retry": "Riprova",
-      "notFound": "Questo canale non esiste.",
-      "notFoundHint": "Il link potrebbe essere sbagliato, oppure qualcuno ha rinominato il canale.",
+      "notFound": "Questo spazio non esiste.",
+      "notFoundHint": "Il link potrebbe essere sbagliato, oppure qualcuno ha rinominato lo spazio.",
       "openDefault": "Apri #{name}",
       "archivedTitle": "#{name} è archiviato.",
       "archivedHint": "Ripristinalo per leggere e avviare di nuovo thread qui.",
       "archivedLocked": "Solo il suo creatore o un responsabile del progetto può ripristinarlo.",
-      "unarchive": "Ripristina canale",
-      "unarchived": "Canale ripristinato",
-      "unarchiveFailed": "Impossibile ripristinare il canale. Riprova.",
+      "unarchive": "Ripristina spazio",
+      "unarchived": "Spazio ripristinato",
+      "unarchiveFailed": "Impossibile ripristinare lo spazio. Riprova.",
       "dmFailed": "Impossibile aprire questa conversazione.",
-      "archive": "Archivia canale",
+      "archive": "Archivia spazio",
       "archiveTitle": "Archiviare #{name}?",
-      "archiveDescription": "Il canale esce dalla barra laterale di tutti i membri. I suoi thread restano, e il suo creatore o un responsabile del progetto può ripristinarlo.",
-      "archived": "Canale archiviato",
-      "archiveFailed": "Impossibile archiviare il canale. Riprova.",
+      "archiveDescription": "Lo spazio esce dalla barra laterale di tutti i membri. I suoi thread restano, e il suo creatore o un responsabile del progetto può ripristinarlo.",
+      "archived": "Spazio archiviato",
+      "archiveFailed": "Impossibile archiviare lo spazio. Riprova.",
       "threadTitle": "Thread",
       "closeThread": "Chiudi thread",
       "sendFailed": "Impossibile avviare il thread. Riprova.",
@@ -24681,7 +24626,7 @@
         },
         "links": {
           "title": "Ancora nessun link",
-          "description": "I link condivisi nei thread di {place} compaiono qui. Fissane uno per darlo a ogni agente del canale."
+          "description": "I link condivisi nei thread di {place} compaiono qui. Fissane uno per darlo a ogni agente dello spazio."
         },
         "triggers": {
           "title": "Ancora nessun trigger",
@@ -24714,8 +24659,8 @@
         "titlePlaceholder": "Di cosa si tratta",
         "invalidUrl": "Inserisci un link valido, ad esempio example.com.",
         "addFailed": "Impossibile aggiungere il link. Riprova.",
-        "limit": "Questo canale ha già 200 link fissati. Sbloccane prima uno.",
-        "addLimit": "Questo canale ha già 200 link aggiunti. Rimuovine prima uno.",
+        "limit": "Questo spazio ha già 200 link fissati. Sbloccane prima uno.",
+        "addLimit": "Questo spazio ha già 200 link aggiunti. Rimuovine prima uno.",
         "added": "Aggiunto",
         "remove": "Rimuovi link",
         "removeTitle": "Rimuovere questo link?",
@@ -24735,7 +24680,7 @@
         "all": "Tutti",
         "sharedBy": "Condiviso da",
         "earlier": "Prima",
-        "pinHint": "Fissalo. Ogni agente del canale legge i link fissati.",
+        "pinHint": "Fissalo. Ogni agente dello spazio legge i link fissati.",
         "unpinHint": "Sbloccalo. Gli agenti smettono di leggerlo.",
         "copyLink": "Copia link",
         "linkCopied": "Link copiato",
@@ -24745,7 +24690,7 @@
       "appsLoadError": "Impossibile caricare le app.",
       "triggers": {
         "loadError": "Impossibile caricare i trigger.",
-        "privateNote": "I trigger non possono pubblicare in un canale privato. Chiedi invece a un agente, in un thread, di impostare un ciclo."
+        "privateNote": "I trigger non possono pubblicare in uno spazio privato. Chiedi invece a un agente, in un thread, di impostare un ciclo."
       },
       "reply": "Rispondi",
       "rosterTitlePeople": "Persone",
@@ -24791,19 +24736,68 @@
         "rememberHint": "Note che ogni agente legge"
       },
       "allAgents": "Tutti gli agenti",
-      "join": "Unisciti al canale",
+      "join": "Unisciti allo spazio",
       "joined": "Ti sei unito a #{name}.",
-      "joinFailed": "Impossibile unirsi al canale. Riprova."
+      "joinFailed": "Impossibile unirsi allo spazio. Riprova.",
+      "openFullSession": "Open full session",
+      "tabEdit": {
+        "kind": {
+          "file": "File",
+          "artifact": "Artifact",
+          "app": "App",
+          "folder": "Folder",
+          "link": "Link"
+        },
+        "add": "Add tab",
+        "full": "A space holds at most {max} tabs. Remove one first.",
+        "noArtifacts": "No artifacts yet",
+        "noApps": "No Apps in this project",
+        "spaceFiles": "This space’s files",
+        "otherFolder": "Another folder…",
+        "fileItem": "File…",
+        "linkItem": "Link…",
+        "linkTitle": "Add a link",
+        "linkHint": "An https page, shown inside the tab.",
+        "folderTitle": "Add a folder",
+        "folderHint": "A Drive folder, by its path.",
+        "fileTitle": "Aggiungi un file",
+        "fileHint": "Qualsiasi file nel Drive, tramite il percorso. Un file .html appare come pagina.",
+        "url": "URL",
+        "path": "Folder path",
+        "filePath": "Percorso del file",
+        "submit": "Add tab",
+        "cancel": "Cancel",
+        "options": "Options for {name}",
+        "rename": "Rename",
+        "renameTitle": "Rename tab",
+        "name": "Tab name",
+        "save": "Save",
+        "moveLeft": "Move left",
+        "moveRight": "Move right",
+        "remove": "Remove tab",
+        "removed": "Removed {name}",
+        "undo": "Undo",
+        "saveError": "The tabs could not be saved",
+        "openLink": "Open in new tab",
+        "linkCard": {
+          "description": "{host} non consente ad altri siti di mostrarlo in una scheda.",
+          "open": "Apri"
+        },
+        "missing": {
+          "title": "This tab’s content is gone",
+          "description": "It was deleted or renamed, or it is not shared with you."
+        }
+      }
     },
     "details": {
       "about": "Informazioni",
       "members": "Membri",
-      "name": "Nome del canale",
+      "name": "Nome dello spazio",
       "description": "Descrizione",
       "noDescription": "Aggiungi una descrizione",
       "created": "Creato",
       "editField": "Modifica {field}",
-      "archiveTitle": "Archivia questo canale",
+      "archiveTitle": "Archivia questo spazio",
       "archiveHint": "Esce dalla barra laterale di tutti i membri. I suoi thread restano.",
       "archive": "Archivia",
       "find": "Cerca persone o agenti",
@@ -24827,9 +24821,9 @@
       "peopleFailed": "Impossibile aggiornare i membri. Riprova.",
       "personMenu": "Opzioni di {person}",
       "removePerson": "Rimuovi da #{name}",
-      "leave": "Lascia il canale",
+      "leave": "Lascia lo spazio",
       "left": "Hai lasciato #{name}.",
-      "leaveTitle": "Lascia questo canale",
+      "leaveTitle": "Lascia questo spazio",
       "leaveHint": "Puoi continuare a leggerlo e rientrare quando vuoi.",
       "visibilityPrivate": "Solo i suoi membri",
       "privateNote": "Solo i membri possono vedere #{name}.",
@@ -24843,7 +24837,7 @@
       "leaveHintPrivate": "Perdi l’accesso ai suoi thread, file e memoria, compresi i tuoi thread. Un membro dovrà aggiungerti di nuovo.",
       "leavePrivateTitle": "Uscire da #{name}?",
       "addMembers": "Aggiungi membri",
-      "privateLimits": "Privato nasconde il canale alle altre persone. Le modifiche al codice (branch git) e gli strumenti degli agenti non sono privati."
+      "privateLimits": "Privato nasconde lo spazio alle altre persone. Le modifiche al codice (branch git) e gli strumenti degli agenti non sono privati."
     },
     "folder": {
       "memory": "Memoria",
@@ -24856,17 +24850,18 @@
       }
     },
     "onboarding": {
-      "reenabled": "Qui ci sono le sessioni avviate mentre i Canali erano disattivati.",
+      "reenabled": "Qui ci sono le sessioni avviate mentre gli Spazi erano disattivati.",
       "intro": {
-        "title": "Benvenuto nei canali",
-        "channels": "I canali raggruppano il lavoro per team.",
+        "title": "Benvenuto negli spazi",
+        "channels": "Gli spazi raggruppano il lavoro per team.",
         "threads": "Ogni nuovo messaggio avvia un thread.",
-        "memory": "Gli agenti ricordano ciò che ogni canale decide.",
-        "gotIt": "Ho capito"
+        "memory": "Gli agenti ricordano ciò che ogni spazio decide.",
+        "gotIt": "Ho capito",
+        "tabs": "Every space has its own tabs. Add, rename and reorder them, or ask Kortix to."
       },
       "getStarted": {
         "dismiss": "Chiudi",
-        "channel": "Crea un canale per un team",
+        "channel": "Crea uno spazio per un team",
         "done": "Fatto"
       }
     },
@@ -24895,9 +24890,9 @@
       "noMatches": "Nessun risultato per “{query}”."
     },
     "privateNotIn": {
-      "row": "Canali privati di cui non fai parte",
-      "title": "Canali privati di cui non fai parte",
-      "description": "Puoi rinominare, archiviare e aggiungere persone. Solo i membri leggono il contenuto di un canale, quindi non puoi aggiungerti da solo.",
+      "row": "Spazi privati di cui non fai parte",
+      "title": "Spazi privati di cui non fai parte",
+      "description": "Puoi rinominare, archiviare e aggiungere persone. Solo i membri leggono il contenuto di uno spazio, quindi non puoi aggiungerti da solo.",
       "meta": "{count, plural, =0 {Nessun membro} one {# membro} other {# membri}} · creato da {name}",
       "metaNoCreator": "{count, plural, =0 {Nessun membro} one {# membro} other {# membri}}",
       "archived": "Archiviato",
@@ -24921,20 +24916,15 @@
       "board": {
         "brief": "Sintesi",
         "text": "A cosa serve questo spazio e come contribuire.",
-        "label": "Stanza e bacheca",
+        "label": "Bacheca e obiettivi",
         "description": "Una bacheca per il riepilogo e i collegamenti, poi gli obiettivi."
       },
       "standard": {
-        "label": "Stanza, obiettivi, app e artefatti",
-        "description": "La stanza, poi i contenuti associati allo spazio."
-      },
-      "room": {
-        "label": "Solo stanza",
-        "description": "Una conversazione. Aggiungi le schede in seguito."
+        "label": "Obiettivi, app e artefatti",
+        "description": "I contenuti associati allo spazio."
       }
     },
     "tabs": {
-      "room": "Stanza",
       "goals": "Obiettivi",
       "apps": "App",
       "artifacts": "Artefatti",
@@ -24959,7 +24949,7 @@
       "artifacts": "Gli artefatti associati a questo spazio appariranno qui",
       "folder": "Questa cartella è vuota",
       "board": "I blocchi di questa bacheca appariranno qui",
-      "boardHint": "Chiedi a My Kortix di aggiungere un blocco: una nota, un’App, un file, una pagina incorporata o un’altra stanza."
+      "boardHint": "Chiedi a My Kortix di aggiungere un blocco: una nota, un’App, un file o una pagina incorporata."
     },
     "doc": "Documento",
     "page": "Pagina",
@@ -24997,8 +24987,8 @@
     "cancel": "Annulla",
     "edit": {
       "title": "Modifica schede",
-      "description": "La stanza rimane per prima. Il salvataggio registra le schede in kortix.yaml sul ramo predefinito.",
-      "empty": "Solo la stanza. Aggiungi una scheda con +.",
+      "description": "Il salvataggio registra le schede in kortix.yaml sul ramo predefinito.",
+      "empty": "Ancora nessuna scheda. Aggiungi una scheda con +.",
       "save": "Salva schede",
       "rename": "Rinomina {name}",
       "moveUp": "Sposta {name} in alto",
@@ -25011,24 +25001,18 @@
       "unread": "{count, plural, one {# messaggio non letto} other {# messaggi non letti}}"
     },
     "leave": "Esci da {name}",
-    "openRooms": "Apri stanze",
-    "roomHint": "Agenti e persone pubblicano aggiornamenti qui.",
-    "noRoom": "Nessuna stanza.",
     "agents": "Agenti in questo spazio",
     "openAgent": "Apri {name}",
-    "members": "{count, plural, one {# persona} other {# persone}}",
     "needsYou": "hanno bisogno di te",
     "newSession": "Nuova sessione",
     "askMyKortix": "Chiedi a My Kortix",
     "askPrompt": "Voglio cambiare lo spazio {name} (`spaces.{slug}` in kortix.yaml): le schede, l’intestazione o gli agenti al suo interno. Chiedimi cosa cambiare.",
-    "roomsOff": "Le stanze sono disattivate per questo progetto",
-    "roomsOffHint": "Attiva le stanze nelle impostazioni del progetto per parlare qui con persone e agenti.",
-    "room": {
-      "introTitle": "Questo è l’inizio di #{name}",
-      "introBody": "La stanza per chi lavora in questo spazio.",
-      "introAgents": "{count, plural, one {{names} pubblica aggiornamenti qui.} other {{names} pubblicano aggiornamenti qui.}}",
-      "introNoAgents": "Gli agenti aggiunti a questo spazio pubblicano qui i loro aggiornamenti.",
-      "introMention": "Digita @ per menzionare una persona o un agente."
+    "intro": {
+      "title": "Questo è l’inizio di #{name}",
+      "body": "Il posto per chi lavora in questo spazio.",
+      "agents": "{count, plural, one {{names} pubblica aggiornamenti qui.} other {{names} pubblicano aggiornamenti qui.}}",
+      "noAgents": "Gli agenti aggiunti a questo spazio pubblicano qui i loro aggiornamenti.",
+      "addTab": "Aggiungi una scheda con + per fissare qui obiettivi, app, file o una bacheca."
     },
     "filter": "Filtra per spazio",
     "all": "Tutti",
@@ -25137,6 +25121,7 @@
     "unavailable": "La sandbox di questa sessione è stata avviata prima che le chiamate vocali fossero attivate. Le chiamate funzionano dal suo prossimo avvio.",
     "callAgain": "Richiama",
     "openChat": "Apri la chat",
+    "turnNote": "Detto in una chiamata vocale e risposto dalla voce.",
     "close": "Chiudi"
   },
   "agentMounts": {
@@ -25322,7 +25307,11 @@
       "runsLabel": "Esecuzioni del workflow",
       "previousAgent": "Agente precedente",
       "nextAgent": "Agente successivo",
-      "moreActions": "Altre azioni"
+      "moreActions": "Altre azioni",
+      "attachments": "Immagini allegate",
+      "removeAttachment": "Rimuovi {name}",
+      "attachImages": "Allega immagini",
+      "attachFailed": "Impossibile allegare l’immagine"
     },
     "tasks": {
       "label": "Attività del team",

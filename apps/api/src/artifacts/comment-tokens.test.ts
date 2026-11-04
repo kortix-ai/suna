@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { artifactAgentMentionToken, artifactPersonMentionToken, hydrateArtifactCommentMentions } from './comment-tokens';
-import { mentionTokens } from '../projects/rooms/envelope';
+import { mentionTokens } from '../projects/lib/mentions';
 
 test('agent insertion tokens use a reserved namespace and survive the shared parser', () => {
   for (const name of ['writer', 'a', 'a'.repeat(128), 'Zoë writer', 'agent.writer', 'writer.', 'Writer', 'hash.' + 'a'.repeat(40)]) {

@@ -90,7 +90,7 @@ export interface SessionListFilter {
   q?: string | null;
   /** The session carries every one of these labels (exact match). */
   labels?: string[] | null;
-  /** Only sessions filed into this space (`project_channels`). */
+  /** Only sessions filed into this space (`chat`). */
   spaceId?: string | null;
   /** Only sessions filed into this group, or (`'none'`) in no group (`session_groups`). */
   group?: string | 'none' | null;

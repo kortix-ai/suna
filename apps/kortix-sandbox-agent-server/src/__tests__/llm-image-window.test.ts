@@ -22,12 +22,13 @@ describe('applyInlineImageWindow (in-sandbox)', () => {
   });
   test('over the cap: keeps the newest, replaces older ones with a notice (OpenAI chat)', () => {
     const body = { messages: [user(1, 2), { role: 'assistant', content: 'ok' }, user(3, 4, 5)] };
+    // The cut moves in steps of maxImages - keepOnOverflow (2): 5 images drop 2, keep 3.
     expect(applyInlineImageWindow(body, { maxImages: 4, keepOnOverflow: 2 })).toEqual({
       total: 5,
-      dropped: 3,
+      dropped: 2,
     });
     const last = (body.messages[2]?.content ?? []) as Array<{ type: string }>;
-    expect(last.map((p) => p.type)).toEqual(['text', 'text', 'image_url', 'image_url']);
+    expect(last.map((p) => p.type)).toEqual(['text', 'image_url', 'image_url', 'image_url']);
   });
   test('Anthropic and Responses API shapes are covered', () => {
     const anthropic = {
@@ -60,6 +61,16 @@ describe('applyInlineImageWindow (in-sandbox)', () => {
       total: 2,
       dropped: 1,
     });
+  });
+  test('the full history windowed per request keeps a byte-identical prefix until the next step', () => {
+    const request = (images: number) => {
+      const body = { messages: Array.from({ length: images }, (_, i) => user(i + 1)) };
+      applyInlineImageWindow(body, { maxImages: 20, keepOnOverflow: 12 });
+      return body.messages.map((message) => JSON.stringify(message));
+    };
+    const at21 = request(21);
+    for (let images = 22; images <= 28; images++) expect(request(images).slice(0, 21)).toEqual(at21);
+    expect(request(29).filter((m) => m.includes('image_url')).length).toBe(13);
   });
   test('env: default window, override, and 0 disables', () => {
     expect(imageWindowFromEnv({})).toEqual({ maxImages: 20, keepOnOverflow: 12 });

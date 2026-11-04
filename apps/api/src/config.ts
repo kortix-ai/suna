@@ -379,6 +379,15 @@ const envSchema = z.object({
       message: 'Must be major.minor.patch',
     },
   ),
+  // A Kortix CLI older than CLI_MIN_VERSION (`major.minor.patch`) gets `426`
+  // with the update command on every /v1 request (middleware/cli-min-version.ts).
+  // Unset: no gate. A malformed value is a boot error, as above.
+  CLI_MIN_VERSION: optStr.refine(
+    (v) => v.trim() === '' || /^v?\d+(\.\d+){0,2}$/.test(v.trim()),
+    {
+      message: 'Must be major.minor.patch',
+    },
+  ),
   MOBILE_STORE_URL_IOS: optUrl(''),
   MOBILE_STORE_URL_ANDROID: optUrl(''),
   // Self-host enterprise license: when the operator has purchased/holds a
@@ -389,6 +398,13 @@ const envSchema = z.object({
   // billing/services/entitlements.ts. Off by default; billing is irrelevant
   // for a self-host license check.
   ENTERPRISE_LICENSE_AVAILABLE: optBoolFalse,
+  // Self-host sign-up policy (shared/self-host-signup-policy.ts): who may
+  // create an account by signing up. `open`, `invite` (an address with a
+  // pending account invitation) or `closed`; an SSO sign-in always passes, and
+  // KORTIX_PLATFORM_ADMIN_EMAILS can never be claimed by signing up. The
+  // self-host CLI sets it and points the auth service's before-user-created
+  // hook at kortix.before_user_created_hook. Unset (Kortix cloud): no policy.
+  KORTIX_SIGNUP_MODE: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['open', 'invite', 'closed']).optional()),
   // Self-host account-creation restriction: when true, POST /v1/accounts
   // (creating an ADDITIONAL/org account) is blocked with 403 for everyone
   // except a platform admin (KORTIX_PLATFORM_ADMIN_EMAILS — see
@@ -1423,9 +1439,11 @@ export const config = {
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
+  CLI_MIN_VERSION: env.CLI_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,
   MOBILE_STORE_URL_ANDROID: env.MOBILE_STORE_URL_ANDROID,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
+  KORTIX_SIGNUP_MODE: env.KORTIX_SIGNUP_MODE,
   KORTIX_RESTRICT_ACCOUNT_CREATION: env.KORTIX_RESTRICT_ACCOUNT_CREATION,
 
   // ─── Database ──────────────────────────────────────────────────────────────

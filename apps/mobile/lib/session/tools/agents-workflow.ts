@@ -52,7 +52,16 @@ export interface WorkflowAgentRowModel {
 }
 
 export type WorkflowGroupModel =
-  | { kind: 'phase'; title: string | null; progress: string | null; rows: WorkflowAgentRowModel[] }
+  | {
+      kind: 'phase';
+      title: string | null;
+      progress: string | null;
+      /** The phase's ring: its agents done and failed, and whether the phase ended. */
+      ring: { done: number; failed: number; total: number; ended: 'done' | 'stopped' | null };
+      /** "4 running · 1 failed": what the closed phase is doing; null when nothing runs or failed. */
+      failed: string | null;
+      rows: WorkflowAgentRowModel[];
+    }
   | { kind: 'pending'; title: string; after: string | null; waits: string };
 
 export interface WorkflowCardModel {
@@ -107,7 +116,8 @@ export function workflowGroups(run: WorkflowRun, live: boolean, now: number): Wo
   const known = new Set(run.phases.map((phase) => phase.title));
   const loose = run.agents.filter((agent) => !agent.phase || !known.has(agent.phase));
   const groups: WorkflowGroupModel[] = [];
-  if (loose.length > 0) groups.push({ kind: 'phase', title: null, progress: null, rows: sortRows(loose).map((a) => agentRow(a, live, now)) });
+  if (loose.length > 0)
+    groups.push({ kind: 'phase', title: null, progress: null, ring: { done: 0, failed: 0, total: 0, ended: null }, failed: null, rows: sortRows(loose).map((a) => agentRow(a, live, now)) });
   run.phases.forEach((phase, index) => {
     const agents = run.agents.filter((agent) => agent.phase === phase.title);
     if (phase.status === 'pending' && agents.length === 0) {
@@ -119,12 +129,26 @@ export function workflowGroups(run: WorkflowRun, live: boolean, now: number): Wo
       });
       return;
     }
-    if (agents.length === 0) return;
     const tally = countAgents(agents);
     groups.push({
       kind: 'phase',
       title: phase.title,
-      progress: progressLine(tally.done, tally.total),
+      progress: tally.total > 0 ? progressLine(tally.done, tally.total) : null,
+      ring: {
+        done: tally.done,
+        failed: tally.failed,
+        total: tally.total,
+        ended: phase.status === 'done' && tally.total > 0 && tally.done === tally.total ? 'done' : phase.status === 'stopped' ? 'stopped' : null,
+      },
+      // A closed phase still says it is at work (web `PhaseRow`): "4 running · 1 failed".
+      failed:
+        [
+          agents.filter((agent) => agent.status === 'running' || agent.status === 'starting').length || null,
+          tally.failed > 0 ? `${tally.failed} failed` : null,
+        ]
+          .map((part, i) => (i === 0 && part ? `${part} running` : part))
+          .filter(Boolean)
+          .join(' · ') || null,
       rows: sortRows(agents).map((a) => agentRow(a, live, now)),
     });
   });

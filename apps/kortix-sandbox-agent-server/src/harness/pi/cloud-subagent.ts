@@ -83,6 +83,7 @@ import { AGENT_HANDLE_KEY, TEAM_LEAD_KEY } from '@kortix/api-contract/multi-agen
 import { SUBAGENT_NOTIFY_PARENT_KEY } from '@kortix/api-contract/runtime-relay'
 import { logger } from '@/lib/log/logger'
 import type { SpawnSessionInput, SpawnSessionResult, SubagentSession } from './extensions/subagents'
+import { FRONT_CONTEXT_KEY, FRONT_THREAD_CONTEXT_KEY } from './front'
 
 /** Why a separate call ran in this session instead. The tool result carries it to the model. */
 export const NO_CONTROL_PLANE_NOTICE =
@@ -168,6 +169,10 @@ export interface SubagentContext {
   handle?: string
   /** The lead session of this teammate. */
   teamLead?: string
+  /** A talk-only front (`kortix.front`, front.ts): messaging tools only, and its worker is not narrowed to them. */
+  front?: boolean
+  /** The worker of a talk-only front (`kortix.front.thread`): its answer reaches the thread as its run's report. */
+  frontThread?: boolean
 }
 
 /** Parse `KORTIX_SESSION_CONTEXT` (the API's JSON envelope of `runtime_context`). Malformed = a root session. */
@@ -185,7 +190,14 @@ export function subagentContextFrom(raw: string | undefined): SubagentContext {
   const depth = typeof rawDepth === 'number' && Number.isInteger(rawDepth) && rawDepth > 0 ? rawDepth : 0
   const handle = typeof record[AGENT_HANDLE_CONTEXT_KEY] === 'string' && AGENT_HANDLE.test(record[AGENT_HANDLE_CONTEXT_KEY] as string) ? (record[AGENT_HANDLE_CONTEXT_KEY] as string) : undefined
   const lead = typeof record[TEAM_LEAD_CONTEXT_KEY] === 'string' && (record[TEAM_LEAD_CONTEXT_KEY] as string).trim() ? (record[TEAM_LEAD_CONTEXT_KEY] as string).trim() : undefined
-  const named = { depth, ...(handle ? { handle } : {}), ...(lead ? { teamLead: lead } : {}) }
+  const named = {
+    depth,
+    ...(handle ? { handle } : {}),
+    ...(lead ? { teamLead: lead } : {}),
+    // Only the boolean true marks a front or its worker: the API sets these keys, never a person.
+    ...(record[FRONT_CONTEXT_KEY] === true ? { front: true } : {}),
+    ...(record[FRONT_THREAD_CONTEXT_KEY] === true ? { frontThread: true } : {}),
+  }
   const rawTools = record[SUBAGENT_TOOLS_KEY]
   if (typeof rawTools !== 'string') return named
   // A present key always narrows: an empty or all-invalid list means no tools, never all tools.

@@ -29,16 +29,16 @@ describe('applyImageWindow', () => {
         userWithImages(3, 4, 5),
       ],
     };
+    // The cut moves in steps of maxImages - keepOnOverflow (2): 5 images drop 2, keep 3.
     expect(applyImageWindow(body, { maxImages: 4, keepOnOverflow: 2 })).toEqual({
       total: 5,
-      dropped: 3,
+      dropped: 2,
     });
     const first = body.messages[0].content as Array<{ type: string; text?: string }>;
     const last = body.messages[2].content as Array<{ type: string; image_url?: { url: string } }>;
     expect(first.map((p) => p.type)).toEqual(['text', 'text', 'text']);
-    expect(first[1].text).toContain('3 older images removed');
-    expect(last.map((p) => p.type)).toEqual(['text', 'text', 'image_url', 'image_url']);
-    expect(last[2].image_url?.url).toBe('data:image/png;base64,4');
+    expect(first[1].text).toContain('an older image was removed');
+    expect(last.map((p) => p.type)).toEqual(['text', 'image_url', 'image_url', 'image_url']);
     expect(last[3].image_url?.url).toBe('data:image/png;base64,5');
   });
 
@@ -50,6 +50,28 @@ describe('applyImageWindow', () => {
     body.messages.push(userWithImages(6));
     applyImageWindow(body, { maxImages: 4, keepOnOverflow: 2 });
     expect(JSON.stringify(body.messages.slice(0, 1))).toBe(prefix);
+  });
+
+  test('each request is windowed from the full history, as clients send it: the prefix holds until the next step', () => {
+    // A client re-sends its whole history every request; the window must not slide per image.
+    const request = (images: number) => {
+      const body = { messages: Array.from({ length: images }, (_, i) => userWithImages(i + 1)) };
+      applyImageWindow(body, { maxImages: 20, keepOnOverflow: 12 });
+      return body.messages.map((message) => JSON.stringify(message));
+    };
+    const at21 = request(21);
+    for (let images = 22; images <= 28; images++) {
+      // Every message the 21-image request carried is byte-identical in the later one.
+      expect(request(images).slice(0, 21)).toEqual(at21);
+    }
+    // The 29th image moves the cut by one step (8): the kept count drops back to 13.
+    expect(request(29).filter((m) => m.includes('image_url')).length).toBe(13);
+    // Never more than maxImages survive.
+    for (let images = 21; images <= 60; images++) {
+      const kept = request(images).filter((m) => m.includes('image_url')).length;
+      expect(kept).toBeGreaterThan(12);
+      expect(kept).toBeLessThanOrEqual(20);
+    }
   });
 
   test('maxImages 0 disables the window', () => {

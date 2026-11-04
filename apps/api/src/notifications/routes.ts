@@ -73,7 +73,6 @@ const InboxNotificationSchema = z
     project_name: z.string().nullable(),
     session_id: z.string().nullable(),
     trigger_slug: z.string().nullable(),
-    room_id: z.string().nullable().openapi({ description: 'The conversation, for `message`.' }),
     artifact_id: z.string().nullable().openapi({ description: 'The Artifact, for `artifact_comment`.' }),
     artifact_thread_id: z.string().nullable().openapi({ description: 'The comment thread, for `artifact_comment`.' }),
     actor_user_id: z.string().uuid().nullable().openapi({ description: 'Who caused it: the sharer or the prompter.' }),
@@ -112,6 +111,9 @@ const MarkReadResponseSchema = z
   .object({ updated: z.number().int(), unread_count: z.number().int() })
   .openapi('MarkNotificationsReadResponse');
 
+/** Kinds no code emits any more. A preferences patch may still name one; sanitizePreferencesPatch drops it. */
+const RETIRED_NOTIFICATION_KINDS = ['message'] as const;
+
 const ChannelSchema = z.object({ push: z.boolean(), email: z.boolean() });
 const ChannelPatchSchema = z.object({ push: z.boolean().optional(), email: z.boolean().optional() }).strict();
 
@@ -128,7 +130,11 @@ const NotificationPreferencesSchema = z
 const NotificationPreferencesPatchSchema = z
   .object({
     kinds: z
-      .object(Object.fromEntries(NOTIFICATION_KINDS.map((kind) => [kind, ChannelPatchSchema.optional()])))
+      .object({
+        ...Object.fromEntries(NOTIFICATION_KINDS.map((kind) => [kind, ChannelPatchSchema.optional()])),
+        // Retired with Rooms (2026-11): an older client may still send it; it is accepted and ignored.
+        ...Object.fromEntries(RETIRED_NOTIFICATION_KINDS.map((kind) => [kind, ChannelPatchSchema.optional()])),
+      })
       .strict()
       .openapi({ description: 'Per kind, the channels to change. Omitted kinds and channels keep their value.' }),
   })
