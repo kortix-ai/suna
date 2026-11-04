@@ -24085,7 +24085,7 @@
     "askAgentNoFiles": "Pošaljite prvu poruku kao tekst. Fajlove dodajte u ćaskanju kada agent odgovori.",
     "askAgentHistory": "Istorija",
     "askAgentHistoryEmpty": "Još nema ćaskanja o ovom artefaktu.",
-    "peopleWithAccess": "Osobe sa pristupom: {names}",
+    "peopleWithAccess": "Особе са приступом: {names}",
     "docCreated": "Dokument je napravljen",
     "open": "Otvori",
     "embedOpen": "Otvori link",
@@ -24228,7 +24228,27 @@
     "moved": "Артефакт је премештен",
     "moveFailed": "Није могуће преместити артефакт",
     "spaceEmpty": "Још нема артефаката у {space}",
-    "showAll": "Прикажи све"
+    "showAll": "Прикажи све",
+    "live": {
+      "here": "Сада овде",
+      "hereLabel": "Сада на овом артефакту: {names}",
+      "reconnecting": "Поновно повезивање…",
+      "you": "Ви",
+      "agents": "Агенти",
+      "agentsHere": "Агенти у овој нити",
+      "status": {
+        "viewing": "Прегледа",
+        "reading": "Чита",
+        "editing": "Уређује",
+        "writing": "Пише"
+      },
+      "hideCursor": "Сакриј мој курсор",
+      "hideCursorHint": "Остали и даље виде ваш аватар.",
+      "typingOne": "{name} куца…",
+      "typingTwo": "{first} и {second} куцају…",
+      "typingMany": "{count, plural, one {# особа куца…} few {# особе куцају…} other {# особа куца…}}",
+      "writing": "{name} пише…"
+    }
   },
   "emailConnect": {
     "homeTitle": "Gde je sanduče",

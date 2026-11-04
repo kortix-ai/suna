@@ -24228,7 +24228,27 @@
     "moved": "Artefatto spostato",
     "moveFailed": "Impossibile spostare l’artefatto",
     "spaceEmpty": "Nessun artefatto in {space}",
-    "showAll": "Mostra tutti"
+    "showAll": "Mostra tutti",
+    "live": {
+      "here": "Presenti ora",
+      "hereLabel": "Su questo artefatto ora: {names}",
+      "reconnecting": "Riconnessione…",
+      "you": "Tu",
+      "agents": "Agenti",
+      "agentsHere": "Agenti in questo thread",
+      "status": {
+        "viewing": "Visualizza",
+        "reading": "Legge",
+        "editing": "Modifica",
+        "writing": "Scrive"
+      },
+      "hideCursor": "Nascondi il mio cursore",
+      "hideCursorHint": "Gli altri vedono comunque il tuo avatar.",
+      "typingOne": "{name} sta scrivendo…",
+      "typingTwo": "{first} e {second} stanno scrivendo…",
+      "typingMany": "{count, plural, one {# persona sta scrivendo…} other {# persone stanno scrivendo…}}",
+      "writing": "{name} sta redigendo…"
+    }
   },
   "emailConnect": {
     "homeTitle": "Dove si trova la casella",

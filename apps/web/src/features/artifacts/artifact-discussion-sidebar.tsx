@@ -54,6 +54,7 @@ import {
   type CommentFilter,
 } from './artifact-discussion-logic';
 import type { ArtifactDrawingDraft } from './artifact-drawing-draft';
+import { LiveTypingLine } from './artifact-live-presence';
 
 const EMPTY_THREADS: ArtifactCommentThread[] = [];
 
@@ -723,6 +724,8 @@ export function ArtifactDiscussionSidebar({
               ) : null}
             </div>
           ) : null}
+          {/* Live: someone else writes a new comment. */}
+          <LiveTypingLine where="new" className="px-4 pb-2" />
           {composerOpen ? (
             <section
               aria-label={t('newComment')}
@@ -789,6 +792,7 @@ export function ArtifactDiscussionSidebar({
                 pending={!!pending.new}
                 submitDisabled={selectionCapture !== 'idle'}
                 error={errors.new}
+                liveTyping="new"
                 autoFocus={composerAutoFocus}
                 focusKey={`${focusRevision}:${composerFocus}:${JSON.stringify(pendingAnchor)}`}
               />
