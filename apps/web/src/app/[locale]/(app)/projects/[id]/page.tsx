@@ -46,7 +46,7 @@ export default function ProjectIndexPage() {
   const beforeSend = useProjectSendGate(projectId);
 
   // Channels on: home is the default channel (`resolveHomeLanding`).
-  const channels = useFeatureFlag(projectId, 'project_channels');
+  const channels = useFeatureFlag(projectId, 'chat');
   const spaces = useProjectSpaces(projectId, { enabled: channels.enabled });
   const landing = resolveHomeLanding({
     flagLoading: channels.isLoading,

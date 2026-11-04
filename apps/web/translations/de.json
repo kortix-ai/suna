@@ -1310,9 +1310,9 @@
           "name": "E-Mail-Kanal",
           "description": "Gib dem Agenten ein E-Mail-Postfach bei Resend: eingehende Mails starten und setzen Sessions fort, und der Agent liest, antwortet und sendet aus dem Postfach. Bring deinen eigenen Resend-API-Schlüssel und deine Domain mit."
         },
-        "project_channels": {
-          "name": "Kanäle",
-          "description": "Organisieren Sie die Arbeit in Kanälen. Jede neue Nachricht in einem Kanal oder in einer Direktnachricht mit einem Agenten startet einen Thread. Ersetzt die Sitzungsliste in der Seitenleiste."
+        "chat": {
+          "name": "Chat",
+          "description": "Chat mit Kortix wie in Slack: Jede Nachricht ist ein Thread, die neueste Antwort von Kortix steht darunter, Kortix kann selbst Threads starten, und Spaces teilen Sie mit anderen. Ersetzt die Sitzungsliste in der Seitenleiste."
         },
         "session_groups": {
           "name": "Sitzungsgruppen",

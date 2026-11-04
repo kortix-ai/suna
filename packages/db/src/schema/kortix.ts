@@ -1975,7 +1975,7 @@ export const projectTriggerRuntime = kortixSchema.table(
     autoPausedReason: text('auto_paused_reason'),
     autoPauseResumedAt: timestamp('auto_pause_resumed_at', { withTimezone: true }),
     // The channel or DM (`project_spaces`) this trigger's runs post to as
-    // threads (`project_channels` flag). Account-local like the access policy,
+    // threads (`chat` flag). Account-local like the access policy,
     // so not in the manifest. null = no space: the run lands in `#general`.
     spaceId: uuid('space_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

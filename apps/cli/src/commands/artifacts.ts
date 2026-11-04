@@ -62,7 +62,7 @@ Subcommands:
                              --space <slug>, --agent <name> (where it is grouped;
                              default agent: this session's agent; spaces are
                              Work in progress, shown only with the project flag
-                             \`project_channels\` on)
+                             \`chat\` on)
   add <path>                 Share a folder already in Files (it holds an
                              index.md or index.html; an index file stands for
                              its folder). Same options.
@@ -75,7 +75,7 @@ Subcommands:
                              --mine, --shared (others shared), --pinned,
                              --type doc|html, --search "<text>",
                              --space <slug> (bound to that space; flag
-                             \`project_channels\`)
+                             \`chat\`)
   info <artifact>            Title, type, path in Files, files, links.
   cat <artifact> [<path>]    Print one file (default the entry).
                              --version <id> reads an old version.

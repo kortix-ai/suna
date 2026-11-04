@@ -821,9 +821,9 @@ const catalog = {
           "name": "Email channel",
           "description": "Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain."
         },
-        "project_channels": {
-          "name": "Channels",
-          "description": "Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar."
+        "chat": {
+          "name": "Chat",
+          "description": "Slack-style chat with Kortix: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces you share with people. Replaces the session list in the sidebar."
         },
         "session_groups": {
           "name": "Session groups",
@@ -1340,7 +1340,8 @@ const catalog = {
       "addChannel": "Add channel",
       "loadError": "Could not load channels.",
       "newAgent": "New agent"
-    }
+    },
+    "oneChat": "Chat"
   },
   "sessionPage": {
     "backToProject": "Back to project",
@@ -9069,7 +9070,8 @@ const catalog = {
       "allAgents": "All agents",
       "join": "Join channel",
       "joined": "You joined #{name}.",
-      "joinFailed": "Could not join the channel. Try again."
+      "joinFailed": "Could not join the channel. Try again.",
+      "openFullSession": "Open full session"
     },
     "details": {
       "about": "About",

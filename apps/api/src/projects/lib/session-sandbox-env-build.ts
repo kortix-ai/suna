@@ -63,7 +63,7 @@ import { sessionChannelEnvFromMetadata, sessionSpaceEnv } from './session-channe
 
 import { buildSessionRuntimeContextEnv } from './session-runtime-context';
 import { buildFeatureFlagSandboxEnv } from './feature-flag-env';
-import { resolveFeatureFlag, spacesEnabled } from '../../feature-flags/registry';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { recordedWorkspaceVolume } from '../../platform/services/workspace-volume';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import { buildMyKortixConfig } from './my-kortix-agent';
@@ -73,7 +73,7 @@ import { resolveSessionPersonalOwner } from './personal-resources';
 
 /**
  * Re-derive persisted channel env so every cold reprovision restores it, and
- * the channel or DM the session is a thread of (`project_channels` on).
+ * the channel or DM the session is a thread of (`chat` on).
  */
 async function buildSessionChannelEnv(sessionId: string): Promise<Record<string, string>> {
   try {
@@ -92,7 +92,7 @@ async function buildSessionChannelEnv(sessionId: string): Promise<Record<string,
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     const space =
-      row?.spaceId && row.kind && spacesEnabled(row.projectMetadata)
+      row?.spaceId && row.kind && resolveFeatureFlag(row.projectMetadata, 'chat')
         ? { spaceId: row.spaceId, kind: row.kind, slug: row.slug, dmAgentName: row.dmAgentName }
         : null;
     return { ...sessionChannelEnvFromMetadata(row?.metadata), ...sessionSpaceEnv(space) };

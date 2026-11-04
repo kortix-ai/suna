@@ -8,7 +8,7 @@
  * it is hidden and no navigation goes there. `project` and `session` are the
  * two pages every session host serves, so they cannot be null. `channel` and
  * `dm` cannot be null either: the sidebar links them only while the project's
- * `project_channels` flag is on.
+ * `chat` flag is on.
  *
  * Defaults: apps/web's paths.
  */
@@ -45,11 +45,11 @@ export interface UiRoutes {
    * `path` is the section and anything below it (`connectors/<app>`).
    */
   admin: (projectId: string, path?: string) => string | null;
-  /** A channel of the project, by slug (`project_channels` flag). */
+  /** A channel of the project, by slug (`chat` flag). */
   channel: (projectId: string, slug: string) => string;
-  /** The caller's direct messages with one agent, by agent name (`project_channels` flag). */
+  /** The caller's direct messages with one agent, by agent name (`chat` flag). */
   dm: (projectId: string, agentName: string) => string;
-  /** The project's Company memory (`project_channels` flag); a page is `?page=<page_id>`. */
+  /** The project's Company memory (`chat` flag); a page is `?page=<page_id>`. */
   memory: (projectId: string) => string | null;
 }
 

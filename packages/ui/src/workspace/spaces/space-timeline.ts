@@ -103,7 +103,7 @@ export function threadIsWorking(session: ProjectSession): boolean {
 
 /** The thread's top message: its first prompt as the person wrote it, else its title. */
 export function threadMessageText(session: ProjectSession): string {
-  // A thread Kortix started (One chat): its own message is the top of the thread.
+  // A thread Kortix started (Chat): its own message is the top of the thread.
   const kortixText = kortixRootText(session);
   if (kortixText) return kortixText;
   let text = session.first_prompt ?? '';
@@ -115,7 +115,7 @@ export function threadMessageText(session: ProjectSession): string {
   return text || sessionDisplayLabel(session);
 }
 
-/** One chat (`infinichat`): the message a thread Kortix started opens with, or null for a person's thread. */
+/** Chat (`chat`): the message a thread Kortix started opens with, or null for a person's thread. */
 export function kortixRootText(session: ProjectSession): string | null {
   const value = session.metadata?.chat_root_text;
   return typeof value === 'string' && value.trim() ? value.trim() : null;

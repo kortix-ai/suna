@@ -86,7 +86,7 @@ async function openWorld(ctx: FlowContext, opts: { manifest?: boolean } = {}) {
   const project = await team.project({ managedGit: true });
   const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
   if (opts.manifest) await world.writeManifest(MANIFEST, 'ke2e: private channels agent');
-  await world.setFeature('project_channels', true);
+  await world.setFeature('chat', true);
   const people: Record<'alice' | 'carol' | 'bob' | 'manager', Principal> = {
     alice: await team.addMember('member'),
     carol: await team.addMember('member'),

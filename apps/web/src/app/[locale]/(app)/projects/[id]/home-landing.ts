@@ -1,6 +1,6 @@
 /**
  * Where `/projects/<id>` lands. One answer for both of the page's navigations
- * (the `project_channels` redirect and the `?q=` strip), so they cannot race.
+ * (the `chat` redirect and the `?q=` strip), so they cannot race.
  *
  * - `wait`: draw nothing and navigate nowhere yet (the flag or the channel list is loading).
  * - `channel`: open the default channel; a `?q=` prompt rides in the prefill store.

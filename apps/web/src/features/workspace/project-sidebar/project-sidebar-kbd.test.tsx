@@ -57,13 +57,13 @@ mock.module('@kortix/ui/internal/hooks/projects/use-new-project-session', () => 
     newSessionCalls += 1;
   },
 }));
-// The `project_channels` flag, read by the sidebar through the SDK hook.
+// The `chat` flag, read by the sidebar through the SDK hook.
 let channelsOn = false;
 const realSdkReact = await import('@kortix/sdk/react');
 mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,
   useFeatureFlag: (_projectId: string, key: string) => ({
-    enabled: key === 'project_channels' && channelsOn,
+    enabled: key === 'chat' && channelsOn,
     isLoading: false,
   }),
   useProjectSpaces: () => ({
@@ -200,12 +200,15 @@ test('the mobile sheet renders no keyboard shortcut hint (KRTX-2005)', async () 
   expect(document.body.innerHTML).not.toContain('data-slot="kbd-group"');
 });
 
-test('with project_channels on, Channels replace New session, the session list and Cmd+J', async () => {
+test('with chat on, the Chat row and the spaces list replace New session, the session list and Cmd+J', async () => {
   channelsOn = true;
   await mountSidebar(1280);
   const html = container!.innerHTML;
   expect(html).not.toContain('data-testid="session-list"');
   expect(html).not.toContain('newSession');
+  // The Chat row comes first, above the spaces list.
+  expect(html).toContain('href="/projects/synthetic-project/chat"');
+  expect(html.indexOf('href="/projects/synthetic-project/chat"')).toBeLessThan(html.indexOf('spaces.channels'));
   // Channels: live channels only, then the add row. Direct messages: one row per agent.
   expect(html).toContain('spaces.channels');
   expect(html).toContain('href="/projects/synthetic-project/c/general"');
@@ -221,12 +224,13 @@ test('with project_channels on, Channels replace New session, the session list a
   expect(newSessionCalls).toBe(0);
 });
 
-test('with project_channels off, the sidebar keeps New session, the session list and Cmd+J', async () => {
+test('with chat off, the sidebar keeps New session, the session list and Cmd+J', async () => {
   await mountSidebar(1280);
   const html = container!.innerHTML;
   expect(html).toContain('data-testid="session-list"');
   expect(html).toContain('newSession');
   expect(html).not.toContain('spaces.channels');
+  expect(html).not.toContain('href="/projects/synthetic-project/chat"');
   await act(async () => {
     win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'j', metaKey: true }));
   });

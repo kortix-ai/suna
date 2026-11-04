@@ -1,5 +1,5 @@
 // POST /v1/projects/:projectId/chat/threads — Kortix starts a thread in the
-// person's chat (flag `infinichat`): a top-level message from Kortix. Only a
+// person's chat (flag `chat`): a top-level message from Kortix. Only a
 // session calls it, for the person it works for (lib/chat-threads.ts).
 import { createRoute, z } from '@hono/zod-openapi';
 import { requireFeatureFlag } from '../../feature-flags/gate';
@@ -22,7 +22,7 @@ export function registerChatThreadRoutes(): void {
     path: '/{projectId}/chat/threads',
     tags: ['sessions'],
     summary: 'Start a thread in the person’s chat',
-    description: 'A session posts a top-level message to the person it works for, in their chat with Kortix (their DM with My Kortix). The person’s reply runs in that thread. Flag `infinichat`.',
+    description: 'A session posts a top-level message to the person it works for, in their chat with Kortix (their DM with My Kortix). The person’s reply runs in that thread. Flag `chat`.',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -35,7 +35,7 @@ export function registerChatThreadRoutes(): void {
     if (!caller) return c.json({ error: 'Only a session starts a thread in a person’s chat' }, 403);
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const disabled = requireFeatureFlag(c, loaded.row.metadata, 'infinichat');
+    const disabled = requireFeatureFlag(c, loaded.row.metadata, 'chat');
     if (disabled) return disabled;
     const person = await sessionPerson(projectId, caller);
     if (!person) return c.json({ error: 'This session works for no person', code: 'no_person' }, 409);

@@ -34,7 +34,7 @@ function isAt(pathname: string | null, href: string): boolean {
 }
 
 /**
- * The sidebar under the `project_channels` flag: Channels, then Direct
+ * The sidebar under the `chat` flag: Channels, then Direct
  * messages, in the slot the session list holds with the flag off. A section
  * renders once its data arrives: no skeleton rows for navigation.
  */

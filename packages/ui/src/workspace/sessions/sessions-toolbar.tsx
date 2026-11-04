@@ -47,7 +47,7 @@ export function SessionsToolbar({
   onNewSession?: () => void;
   creatingSession: boolean;
   canSelect: boolean;
-  /** False under `project_channels`: work starts from a channel's composer. */
+  /** False under `chat`: work starts from a channel's composer. */
   showNewSession?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');

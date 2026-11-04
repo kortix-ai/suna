@@ -2,7 +2,7 @@
 name: kortix-channel-memory
 description: "Memory of a channel or DM thread: Markdown files in the channel's `Memory/` folder (or, in a DM, `/drives/me/Memory/<agent>/`), the same files people see in the Memory tab. Load at the start of a thread in a channel or DM, when the user says remember / note / you should know, and when you learn something the next thread there should know."
 metadata:
-  kortix-feature-flag: project_channels
+  kortix-feature-flag: chat
 ---
 
 <skill name="kortix-channel-memory">

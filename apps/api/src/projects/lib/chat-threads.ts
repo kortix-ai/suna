@@ -1,4 +1,4 @@
-// One chat (flag `infinichat`): the person's chat with Kortix is their DM with
+// Chat (flag `chat`): the person's chat with Kortix is their DM with
 // My Kortix, where every message is a thread (a session filed in the DM).
 // This module gives every thread the board of the chat's other threads, and
 // lets Kortix start a thread itself: a top-level message from Kortix.
@@ -48,10 +48,10 @@ function metaString(metadata: unknown, key: string): string | null {
 
 /**
  * The board `system` text for a My Kortix thread in a space, or null: the
- * session is in no space, or the project has `infinichat` off.
+ * session is in no space, or the project has `chat` off.
  */
 export async function chatThreadBoardTurn(projectId: string, sessionId: string): Promise<string | null> {
-  if (!(await projectFeatureFlagEnabled(projectId, 'infinichat'))) return null;
+  if (!(await projectFeatureFlagEnabled(projectId, 'chat'))) return null;
   const [self] = await db
     .select({ spaceId: projectSessions.spaceId, metadata: projectSessions.metadata })
     .from(projectSessions)

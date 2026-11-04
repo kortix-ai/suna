@@ -68,7 +68,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "reminders" --glob '!node_modules' . | xargs rg -l "agent_rooms"
+ *   rg -l "reminders" --glob '!node_modules' . | xargs rg -l "voice_call"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -417,18 +417,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // account are the only connectors path. A stored override is inert; the
   // serializer keeps sending `true` for older clients.
   {
-    key: 'project_channels',
-    name: 'Channels',
+    key: 'chat',
+    name: 'Chat',
     description:
-      'Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar.',
+      "Slack-style chat with Kortix: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces you share with people. Replaces the session list in the sidebar.",
     stability: 'experimental',
     wip: true,
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
-      'Every /projects/:id/spaces route returns 403 feature_disabled while off. Session create/list ignore space_id while off. ' +
+      'Off ⇒ every /projects/:id/spaces route and POST /projects/:id/chat/threads answer 403 feature_disabled (projects/routes/project-spaces.ts, projects/routes/chat-threads.ts); ' +
+      'session create/list ignore space_id. On: the person\'s DM with My Kortix is their chat; each My Kortix thread in it gets the board of the other threads at turn start ' +
+      '(projects/lib/chat-threads.ts). Turning it on creates #general and files every session without a space into it (feature-flags/toggle-effects.ts). ' +
+      'STORED OVERRIDE: experimental.chat, else the legacy experimental.project_channels, else experimental.infinichat (explicitOverride). ' +
       'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box. ' +
+      'WEB: a Chat row (/projects/:id/chat) and the spaces list replace New session and the session list; /projects/:id/chat renders FeatureGateScreen while off. ' +
       'PRIVATE CHANNELS (shared/space-access.ts) are enforced whatever this flag says, and created only with KORTIX_PRIVATE_CHANNELS_ENABLED. ' +
       'Revocation windows after a removal or a conversion: REST ≤ 10 s on another replica (access memo; busted at once on the serving one), ' +
       'proxy ≤ 10 s more (verdict cache; cleared on the serving replica), /events SSE, proxied SSE and proxied WebSockets ≤ 60 s (re-check; WebSockets of the serving replica at once). ' +
@@ -556,22 +560,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'kortixd registers no voice extension and opens no voice port; a change reaches the next new box. WEB: no call ' +
       'button on the session page. The gateway\'s audio routes are inference like chat: billed per use, not gated here.',
   },
-  {
-    key: 'infinichat',
-    name: 'One chat',
-    description:
-      'Talk to Kortix in one chat that reads like Slack: every message is a thread, Kortix\'s newest reply shows under it, and Kortix can start a thread itself. Sessions leave the sidebar. Needs My Kortix on in kortix.yaml.',
-    stability: 'experimental',
-    wip: true,
-    available: () => true,
-    platformDefault: () => false,
-    enforcement: 'routes',
-    enforcementNote:
-      'Off ⇒ POST /projects/:id/chat/threads answers 403 `feature_disabled` (projects/routes/chat-threads.ts), and the ' +
-      'spaces routes follow `project_channels` alone (spacesEnabled). On: the person\'s DM with My Kortix is their chat; ' +
-      'each My Kortix thread in it gets the board of the other threads at turn start (projects/lib/chat-threads.ts). WEB: ' +
-      'a Chat row replaces New session and the session list; /projects/:id/chat renders FeatureGateScreen while off.',
-  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(
@@ -600,9 +588,10 @@ function overridesOf(metadata: unknown): Record<string, unknown> {
 /** Read a single project's explicit override for a flag. Non-boolean garbage
  *  in the stored map is treated as "no override". */
 function explicitOverride(metadata: unknown, key: FeatureFlagKey): boolean | undefined {
-  const fromMap = overridesOf(metadata)[key];
-  if (typeof fromMap === 'boolean') return fromMap;
-  return undefined;
+  const map = overridesOf(metadata);
+  // `chat` merged Channels (`project_channels`) and One chat (`infinichat`), 2026-11: a project keeps its old choice.
+  const stored = key === 'chat' ? [map.chat, map.project_channels, map.infinichat] : [map[key]];
+  return stored.find((value): value is boolean => typeof value === 'boolean');
 }
 
 /**
@@ -631,15 +620,6 @@ export function hiddenIamActions(projectMetadatas: readonly unknown[]): Set<stri
 }
 
 /** Effective enablement for every flag, keyed by flag id. */
-/**
- * Spaces (channels, DMs and their threads) exist in a project: with Channels
- * (`project_channels`), or with One chat (`infinichat`), whose chat is the
- * person's DM with My Kortix.
- */
-export function spacesEnabled(metadata: unknown): boolean {
-  return resolveFeatureFlag(metadata, 'project_channels') || resolveFeatureFlag(metadata, 'infinichat');
-}
-
 export function resolveFeatureFlags(metadata: unknown): Record<FeatureFlagKey, boolean> {
   return Object.fromEntries(
     FLAGS.map((f) => [f.key, resolveFeatureFlag(metadata, f.key)]),

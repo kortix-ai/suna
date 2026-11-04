@@ -1310,9 +1310,9 @@
           "name": "Canal de e-mail",
           "description": "Dê ao agente uma caixa de entrada no Resend: e-mails recebidos iniciam e continuam sessões, e o agente lê, responde e envia a partir da caixa. Use sua própria chave de API e domínio do Resend."
         },
-        "project_channels": {
-          "name": "Canais",
-          "description": "Organize o trabalho em canais. Cada nova mensagem em um canal ou em uma mensagem direta com um agente inicia uma thread. Substitui a lista de sessões na barra lateral."
+        "chat": {
+          "name": "Chat",
+          "description": "Chat com o Kortix no estilo do Slack: cada mensagem é uma thread, a resposta mais recente do Kortix aparece abaixo dela, o Kortix pode iniciar threads e os espaços são compartilhados com outras pessoas. Substitui a lista de sessões na barra lateral."
         },
         "session_groups": {
           "name": "Grupos de sessões",

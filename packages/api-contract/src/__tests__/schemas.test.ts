@@ -150,7 +150,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       volumes: false,
       drives: false,
       session_log_restore: false,
-      project_channels: false,
+      chat: false,
       agent_rooms: false,
       shared_drives: false,
       goals: false,
@@ -162,7 +162,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       chrome: false,
       agent_teams: false,
       voice_call: false,
-      infinichat: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -868,7 +867,7 @@ describe('envelopes', () => {
       'event_triggers',
       'notification_center',
       'session_log_restore',
-      'project_channels',
+      'chat',
       'agent_rooms',
       'shared_drives',
       'goals',
@@ -880,7 +879,6 @@ describe('envelopes', () => {
       'chrome',
       'agent_teams',
       'voice_call',
-      'infinichat',
     ]);
   });
 

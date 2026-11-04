@@ -91,7 +91,7 @@ export interface SpaceViewProps {
   /** A channel's Apps tab: the host's App gallery for the channel. Absent: its empty state. */
   renderApps?: (space: ProjectSpace) => ReactNode;
   /**
-   * One chat (flag `infinichat`): the DM as the person's only chat with
+   * Chat (flag `chat`): the DM as the person's only chat with
    * Kortix. A plain header, no tabs and no Channels intro; a thread links its
    * full session.
    */
@@ -131,7 +131,7 @@ function useReadableSpaceTabs(projectId: string, kind: 'channel' | 'dm'): readon
 }
 
 /**
- * A channel or DM page under `project_channels`: the header, the tab row
+ * A channel or DM page under `chat`: the header, the tab row
  * (Chat, Threads, and the space's files, memory, apps, links and triggers),
  * and the open thread in a panel on the right. Every message starts a new
  * thread.
@@ -722,8 +722,8 @@ function SpaceComposer({
 }) {
   const t = useTranslations('spaces.view');
   const isPhone = useIsPhone();
-  // One chat (`infinichat`): a new message stays in the chat, so several threads start side by side.
-  const oneChat = useFeatureFlag(projectId, 'infinichat').enabled;
+  // Chat (`chat`): a new message stays in the chat, so several threads start side by side.
+  const oneChat = useFeatureFlag(projectId, 'chat').enabled;
   const spaceSend = useMemo(
     () => ({ spaceId: space.space_id, onOpen: oneChat ? () => undefined : onOpenThread }),
     [space.space_id, onOpenThread, oneChat],

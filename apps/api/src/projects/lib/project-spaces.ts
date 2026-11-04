@@ -1,7 +1,7 @@
 /**
  * Project spaces: channels (product word "Channel") and a member's DMs with one
  * agent, one table `kortix.project_spaces`. A thread is a `project_sessions` row
- * whose `space_id` points here. Behind the `project_channels` flag; the routes
+ * whose `space_id` points here. Behind the `chat` flag; the routes
  * live in `routes/project-spaces.ts`.
  *
  * Only `ensureDefaultSpace` ever sets `is_default`. Channel slugs are unique per
@@ -128,7 +128,7 @@ export async function ensureDefaultSpace(projectId: string, accountId: string): 
 }
 
 /**
- * The turn-on step of `project_channels`: `#general` (made if missing) and every
+ * The turn-on step of `chat`: `#general` (made if missing) and every
  * session in no space filed into it. `generalCreatedAt` tells a first turn-on
  * from a turn-on again (the caller compares it with the flag write's time).
  */

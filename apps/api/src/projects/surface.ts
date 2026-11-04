@@ -25,7 +25,7 @@ export {
 // Idle sessions off a fallback model (consumed by worker/jobs/session-model-fallback).
 export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert';
 
-// One chat (`infinichat`): a thread's board of the chat's other threads (consumed by the turn-start path).
+// Chat (`chat`): a thread's board of the chat's other threads (consumed by the turn-start path).
 export { chatThreadBoardTurn } from './lib/chat-threads';
 
 // A person's pins and archive (consumed by account erasure and offboarding).
@@ -181,7 +181,7 @@ export { noteSandboxHealthBody } from './lib/turn-start-convergence';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
 
-// `project_channels` on: file every session into `#general`, and the "turned on
+// `chat` on: file every session into `#general`, and the "turned on
 // again" record (consumed by ../feature-flags/toggle-effects).
 export { turnOnChannels } from './lib/project-spaces';
 export { recordChannelsReenabled } from './lib/channels-onboarding';

@@ -61,7 +61,7 @@ export const FeatureFlagMapSchema = z.object({
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
   session_log_restore: z.boolean(),
-  project_channels: z.boolean(),
+  chat: z.boolean(),
   agent_rooms: z.boolean(),
   shared_drives: z.boolean(),
   goals: z.boolean(),
@@ -73,7 +73,6 @@ export const FeatureFlagMapSchema = z.object({
   chrome: z.boolean(),
   agent_teams: z.boolean(),
   voice_call: z.boolean(),
-  infinichat: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -1048,7 +1047,7 @@ export const SessionCreateInputSchema = z
     labels: SessionLabelsSchema.optional(),
     /**
      * The space (channel or the caller's own DM) the session belongs to.
-     * Read only while the project's `project_channels` flag is on; ignored
+     * Read only while the project's `chat` flag is on; ignored
      * otherwise. Absent: the parent session's space, else `#general`.
      */
     space_id: z.string().uuid().optional(),
@@ -1215,7 +1214,7 @@ export const ProjectSessionSchema = z.object({
   space_id: z.string().uuid().nullable(),
   /** The session group it is filed in (`session_groups`); null for a session in no group. */
   group_id: z.string().uuid().nullable(),
-  /** The first 500 characters of the first prompt; stored for sessions created while `project_channels` is on, else null. */
+  /** The first 500 characters of the first prompt; stored for sessions created while `chat` is on, else null. */
   first_prompt: z.string().nullable(),
   /** Who started the run this session belongs to (a child carries its parent's). Derived, never client-set. */
   initiator: z
@@ -1280,7 +1279,7 @@ export type SessionDeleteResult = z.infer<typeof SessionDeleteResultSchema>;
 
 /**
  * A project space: a channel (product word "Channel") or the caller's DM with
- * one agent. `/projects/:id/spaces`, behind the `project_channels` flag.
+ * one agent. `/projects/:id/spaces`, behind the `chat` flag.
  */
 export const SPACE_KINDS = ['channel', 'dm'] as const;
 /** Who sees a channel: every project member (`public`) or only its members (`private`). */
@@ -1994,7 +1993,7 @@ export const TriggerSchema = z.object({
   session_access: TriggerSessionAccessSchema,
   /**
    * The channel or DM its runs post to as threads; null = none (`#general`).
-   * Present only while the project's `project_channels` flag is on.
+   * Present only while the project's `chat` flag is on.
    */
   space_id: z.string().nullable().optional(),
   last_fired_at: z.string().nullable(),

@@ -360,7 +360,7 @@ export async function syncEnvBeforeTurnStart(
 }
 
 /**
- * `system` on a Kortix prompt body (`project_channels`): the list of the
+ * `system` on a Kortix prompt body (`chat`): the list of the
  * memory files the thread reads, at its mount paths, for the turn's system
  * prompt. The first turn records the list ("Used memory"). A `system` the
  * client sent is always dropped: only the API sets it. Flag off, no space, or
@@ -375,7 +375,7 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   const sessionId = req.record.sessionId;
   try {
     // My Kortix: the prompter's own memory index (kortix_memory), every turn, with Files on,
-    // and in the person's chat (`infinichat`), the board of the chat's other threads.
+    // and in the person's chat (`chat`), the board of the chat's other threads.
     if (isMyKortixAgentName(req.record.agentName)) {
       const [memory, board] = await Promise.all([
         isPlatinumConfigured()

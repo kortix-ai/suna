@@ -84,10 +84,9 @@ export function ProjectSidebar({
   const [connectMcpOpen, setConnectMcpOpen] = useState(false);
 
   const accountId = useBillingAccountId();
-  // Channels replace New session and the session list (fail-closed: off until the project answers).
-  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
-  // One chat (`infinichat`, Channels off): one Chat row replaces New session, and sessions stay out of sight.
-  const oneChat = useFeatureFlag(projectId, 'infinichat').enabled && !channels;
+  // Chat (`chat`): the Chat row and the spaces list replace New session and the session list
+  // (fail-closed: off until the project answers).
+  const chat = useFeatureFlag(projectId, 'chat').enabled;
   // The project flag and the web app's master switch (`CHROME_UI_ENABLED`) must both be on.
   const chrome = useFeatureFlag(projectId, 'chrome').enabled && CHROME_UI_ENABLED;
 
@@ -132,7 +131,7 @@ export function ProjectSidebar({
   }, [isMobile, setOpenMobile, onOpenSearch]);
 
   useEffect(() => {
-    if (channels) return;
+    if (chat) return;
     const handler = (event: KeyboardEvent) => {
       if (
         (event.metaKey || event.ctrlKey) &&
@@ -146,7 +145,7 @@ export function ProjectSidebar({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [channels, handleNewSession]);
+  }, [chat, handleNewSession]);
 
   return (
     // The New agent modal mounts beside <Sidebar>, outside the mobile sheet.
@@ -288,7 +287,7 @@ export function ProjectSidebar({
         <div className="flex h-full min-h-0 flex-col space-y-2">
           <SidebarGroup className="py-0">
             <SidebarMenu>
-              {oneChat ? (
+              {chat ? (
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild className="text-sidebar-foreground">
                     <Link href={`${uiRoutes().project(projectId)}/chat`} prefetch onClick={handleNewSessionClick}>
@@ -299,7 +298,7 @@ export function ProjectSidebar({
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              ) : channels ? null : (
+              ) : (
                 <SidebarMenuItem>
                   {creatingSession ? (
                     <SidebarMenuButton
@@ -325,18 +324,14 @@ export function ProjectSidebar({
               {/* Customize, Apps, Files: order and
                   visibility come from "Customize sidebar". They moved up here
                   from the footer (Jay, 2026-10-12) to keep the footer short. */}
-              {/* Channels on: the Company memory, the first row under the new-thread slot. */}
-              {channels ? <ProjectMemoryNavItem projectId={projectId} /> : null}
+              {/* Chat on: the Company memory, the first row under the Chat row. */}
+              {chat ? <ProjectMemoryNavItem projectId={projectId} /> : null}
               <ProjectNavItems projectId={projectId} />
             </SidebarMenu>
           </SidebarGroup>
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            {channels ? (
-              <ProjectSpacesNav projectId={projectId} />
-            ) : oneChat ? null : (
-              <ProjectSessionList projectId={projectId} />
-            )}
+            {chat ? <ProjectSpacesNav projectId={projectId} /> : <ProjectSessionList projectId={projectId} />}
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto">

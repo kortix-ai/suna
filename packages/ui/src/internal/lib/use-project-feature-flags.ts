@@ -38,7 +38,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const drives = useFeatureFlag(projectId, 'drives');
   const sessionLog = useFeatureFlag(projectId, 'session_log');
   const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
-  const projectChannels = useFeatureFlag(projectId, 'project_channels');
+  const chat = useFeatureFlag(projectId, 'chat');
   const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
   const sharedDrives = useFeatureFlag(projectId, 'shared_drives');
   const goals = useFeatureFlag(projectId, 'goals');
@@ -50,7 +50,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const chrome = useFeatureFlag(projectId, 'chrome');
   const agentTeams = useFeatureFlag(projectId, 'agent_teams');
   const voiceCall = useFeatureFlag(projectId, 'voice_call');
-  const infinichat = useFeatureFlag(projectId, 'infinichat');
 
   return {
     flags: {
@@ -65,7 +64,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       drives: drives.enabled,
       session_log: sessionLog.enabled,
       session_log_restore: sessionLogRestore.enabled,
-      project_channels: projectChannels.enabled,
+      chat: chat.enabled,
       agent_rooms: agentRooms.enabled,
       shared_drives: sharedDrives.enabled,
       goals: goals.enabled,
@@ -77,9 +76,8 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       chrome: chrome.enabled,
       agent_teams: agentTeams.enabled,
       voice_call: voiceCall.enabled,
-      infinichat: infinichat.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: infinichat.isLoading,
+    isLoading: voiceCall.isLoading,
   };
 }

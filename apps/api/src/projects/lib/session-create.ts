@@ -93,7 +93,7 @@ import {
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext, reservedRuntimeContextRefusal } from './session-runtime-context';
-import { resolveFeatureFlag, spacesEnabled } from '../../feature-flags/registry';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
 import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, forkSourceVisibility, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
@@ -269,7 +269,7 @@ type SessionCreateMetadata = ReturnType<typeof buildSessionCreateMetadata>['meta
 
 
 /**
- * `project_channels` on: the space the body names, checked, and the sharing it
+ * `chat` on: the space the body names, checked, and the sharing it
  * implies (`spaceSessionVisibility`: a channel thread is project-visible
  * unless the caller chose otherwise, a DM thread is private, a fork keeps its
  * source's sharing). Flag off: `space_id` is ignored.
@@ -298,7 +298,7 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
         await access(),
       );
   if (inherited) return 'error' in inherited ? inherited : { filed: true, spaceId: inherited.spaceId };
-  if (!spacesEnabled(project.metadata)) return { filed: false, spaceId: null };
+  if (!resolveFeatureFlag(project.metadata, 'chat')) return { filed: false, spaceId: null };
   // A run of a repo trigger lands in the trigger's live space, read when the
   // create executes (a queued run sees the space as it is then). The space
   // was checked when it was set on the trigger: a DM was the setter's own,

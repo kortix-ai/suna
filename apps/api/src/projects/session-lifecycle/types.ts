@@ -37,7 +37,7 @@ export type SessionInvocationSource =
    *  initial prompt, or an unattended session's row that could not be requeued
    *  (`sandbox-state-sync.ts` `enqueueTurnContinuation`). */
   | 'system:auto-recovery'
-  /** Kortix started a thread in the person's chat (`projects/routes/chat-threads.ts`, flag `infinichat`). */
+  /** Kortix started a thread in the person's chat (`projects/routes/chat-threads.ts`, flag `chat`). */
   | 'system:chat-post'
   | 'admin';
 

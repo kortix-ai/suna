@@ -27,7 +27,7 @@ import { useEffect, useState } from 'react';
 /**
  * The nav rows under New session, in one fixed order. Each row applies its
  * own flag and permission gate and renders nothing when the project does not
- * offer it. Spaces are the channel sidebar under the `project_channels` flag
+ * offer it. Spaces are the channel sidebar under the `chat` flag
  * (project-spaces-nav.tsx).
  */
 const NAV_ROWS = ['customize', 'files', 'apps', 'rooms', 'goals', 'artifacts'] as const;

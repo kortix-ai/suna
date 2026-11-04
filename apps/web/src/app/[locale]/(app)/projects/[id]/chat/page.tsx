@@ -10,16 +10,16 @@ import { FeatureGateScreen } from '@kortix/ui/customize/shared/feature-gate-scre
 import { SpaceView } from '@kortix/ui/workspace';
 
 /**
- * /projects/[id]/chat — One chat (flag `infinichat`): the person's chat with
+ * /projects/[id]/chat — Chat (flag `chat`): the person's chat with
  * Kortix. Every message is a thread; Kortix's newest reply shows under it.
  */
 export default function OneChatPage() {
   const { id } = useParams<{ id: string }>();
-  const flag = useFeatureFlag(id, 'infinichat');
+  const flag = useFeatureFlag(id, 'chat');
   const beforeSend = useProjectSendGate(id);
   if (flag.isLoading) return null;
   if (!flag.enabled) {
-    return <FeatureGateScreen featureKey="infinichat" featureName="One chat" description="Talk to Kortix in one chat: every message is a thread, and Kortix's reply shows under it." />;
+    return <FeatureGateScreen featureKey="chat" featureName="Chat" description="Talk to Kortix in one chat: every message is a thread, and Kortix's newest reply shows under it." />;
   }
   return (
     <SpaceView

@@ -21,7 +21,7 @@ export function bindProjectOperationsReview(projectId: string) {
         P.claimWarmProjectSession(projectId, input),
     },
 
-    /** Channels and the caller's DMs (`project_channels` flag). A session joins one with `sessions.create({ space_id })`. */
+    /** Channels and the caller's DMs (`chat` flag). A session joins one with `sessions.create({ space_id })`. */
     spaces: {
       list: () => P.listProjectSpaces(projectId),
       create: (input: Parameters<typeof P.createProjectSpace>[1]) => P.createProjectSpace(projectId, input),

@@ -111,7 +111,7 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
   const list = paged && filtered ? server : all;
   const cards = list.data ?? [];
   // An artifact sits in its bound space, else its agent's space, else Project-wide.
-  // Spaces are Work in progress: with `project_channels` off every artifact is
+  // Spaces are Work in progress: with `chat` off every artifact is
   // project-wide, and the page shows no filter, chip or "Move to space".
   const config = useProjectConfig(projectId);
   const spacesOn = useSpacesEnabled(projectId);

@@ -431,7 +431,7 @@ export function registerSessionPromptsRoutes(): void {
         );
       }
 
-      // A person's links join the Links tab of the thread's channel (`project_channels`).
+      // A person's links join the Links tab of the thread's channel (`chat`).
       if (!enqueued.deduped) {
         collectMessageLinksInBackground({
           projectId,

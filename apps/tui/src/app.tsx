@@ -99,7 +99,7 @@ const QUIT_ARM_MS = 2000;
 const COMMAND_FLAGS = [
   'drives',
   'artifacts',
-  'project_channels',
+  'chat',
   'agent_rooms',
   'reminders',
   'goals',
@@ -177,7 +177,7 @@ export function nextFocus(current: Focus, order: Focus[], step: 1 | -1): Focus {
 function useCommandFlags(projectId: string | null): Record<string, boolean> {
   const drives = useFeatureFlag(projectId, 'drives');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
-  const channels = useFeatureFlag(projectId, 'project_channels');
+  const channels = useFeatureFlag(projectId, 'chat');
   const rooms = useFeatureFlag(projectId, 'agent_rooms');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const goals = useFeatureFlag(projectId, 'goals');
@@ -186,7 +186,7 @@ function useCommandFlags(projectId: string | null): Record<string, boolean> {
     const states = {
       drives,
       artifacts,
-      project_channels: channels,
+      chat: channels,
       agent_rooms: rooms,
       reminders,
       goals,

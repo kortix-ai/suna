@@ -148,8 +148,8 @@ export function SpaceTimeline({
   const days = useMemo(() => buildSpaceTimeline(threads.sessions), [threads.sessions]);
   const loading = threads.isLoading || threads.isScanning;
   const needsYou = useThreadNeedsYou(projectId);
-  // One chat (`infinichat`): Kortix's newest reply shows under each message.
-  const oneChat = useFeatureFlag(projectId, 'infinichat').enabled;
+  // Chat (`chat`): Kortix's newest reply shows under each message.
+  const oneChat = useFeatureFlag(projectId, 'chat').enabled;
   const now = new Date();
 
   const dayLabel = (day: TimelineDay) => {
@@ -282,7 +282,7 @@ function ThreadRow({
   session: ProjectSession;
   space: ProjectSpace;
   needsYou: NeedsYou;
-  /** One chat (`infinichat`): the agent's newest reply shows under the message. */
+  /** Chat (`chat`): the agent's newest reply shows under the message. */
   latestReply?: boolean;
   selected: boolean;
   onOpen: () => void;
@@ -292,7 +292,7 @@ function ThreadRow({
   const created = new Date(session.created_at);
   // A trigger's run reads as the trigger: its name and its type's glyph.
   const trigger = triggerAuthor(session);
-  // A thread Kortix started (One chat) reads as Kortix's own message.
+  // A thread Kortix started (Chat) reads as Kortix's own message.
   const byKortix = kortixRootText(session) !== null;
   // A trigger or an API key starts a thread as a service account: an agent tile, not a person.
   const machine = trigger !== null || byKortix || session.owner_type === 'service_account';
@@ -348,7 +348,7 @@ function ThreadRow({
 }
 
 /**
- * One chat (`infinichat`): the agent's newest reply under the message, at most
+ * Chat (`chat`): the agent's newest reply under the message, at most
  * 2 lines (`result_excerpt`, ≤ 280 characters, stamped at turn end). Hidden
  * while a turn runs, so an old reply never reads as the current one.
  */

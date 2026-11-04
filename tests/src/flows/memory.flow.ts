@@ -105,7 +105,7 @@ async function openWorld(ctx: FlowContext, opts: { channels?: boolean } = {}) {
   const team = await ctx.fixtures.team();
   const project = await team.project({ managedGit: true });
   const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
-  if (opts.channels) await world.setFeature('project_channels', true);
+  if (opts.channels) await world.setFeature('chat', true);
   return { team, project, world };
 }
 
@@ -241,9 +241,9 @@ flow('MEMORY-1', meta([...Object.values(R), FEATURES, TOKEN_MINT]), async (ctx) 
       (await ctx.client.as(ctx.P.NONMEMBER).get(LAYER, { params: { projectId, layerKey: 'mykortix' } })).status([403, 404]);
     });
 
-    await ctx.step('project_channels off: the memory routes are not gated on Channels (never 403 feature_disabled)', async () => {
+    await ctx.step('chat off: the memory routes are not gated on Channels (never 403 feature_disabled)', async () => {
       const r = await world.owner.get(LAYER, { params: { projectId, layerKey: 'mykortix' } });
-      if (r.statusCode === 403) fail('memory is gated on project_channels', r.text());
+      if (r.statusCode === 403) fail('memory is gated on chat', r.text());
       r.status([200, 503]);
     });
 
@@ -461,8 +461,8 @@ flow('MEMORY-5', meta([R.layer, R.pages, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIV
     await put(`${personalFolder}/Memory/preferences.md`, '# Preferences\n\nShort answers.\n');
     let before: Record<string, string> = {};
 
-    await ctx.step('project_channels on: Company and the DM layer list the files already in Drive, in place', async () => {
-      await world.setFeature('project_channels', true);
+    await ctx.step('chat on: Company and the DM layer list the files already in Drive, in place', async () => {
+      await world.setFeature('chat', true);
       const dmId = (await world.owner.post(DM, { agent_name: 'worker' }, { params: { projectId } })).status(200).json<Space>().space_id;
       const company = (await world.owner.get(PAGES, { params: { projectId, layerKey: 'company' } })).status(200).json<{ pages: MemoryPageSummary[] }>().pages;
       const dm = (await world.owner.get(PAGES, { params: { projectId, layerKey: dmId } })).status(200).json<{ pages: MemoryPageSummary[] }>().pages;
@@ -470,8 +470,8 @@ flow('MEMORY-5', meta([R.layer, R.pages, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIV
       before = await checksums(world.owner, driveId);
     });
 
-    await ctx.step('project_channels off: no file is moved, copied, renamed or deleted (sha256 of every file the owner sees), and memory still reads', async () => {
-      await world.setFeature('project_channels', false);
+    await ctx.step('chat off: no file is moved, copied, renamed or deleted (sha256 of every file the owner sees), and memory still reads', async () => {
+      await world.setFeature('chat', false);
       // The toggle effect runs behind the PATCH response: read Files three times over ~4.5 s.
       for (let i = 0; i < 3; i++) {
         await new Promise((resolve) => setTimeout(resolve, 1_500));
@@ -481,8 +481,8 @@ flow('MEMORY-5', meta([R.layer, R.pages, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIV
       (await world.owner.get(PAGES, { params: { projectId, layerKey: 'company' } })).status(200);
     });
 
-    await ctx.step('project_channels on again: still no file changed', async () => {
-      await world.setFeature('project_channels', true);
+    await ctx.step('chat on again: still no file changed', async () => {
+      await world.setFeature('chat', true);
       const diff = changed(before, await checksums(world.owner, driveId));
       if (diff.length) fail('files changed on turn-on', diff);
     });
@@ -572,20 +572,20 @@ flow(
     const introMarks = async () =>
       (await world.db.query<{ user_id: string }>("SELECT user_id FROM kortix.project_user_marks WHERE project_id = $1 AND mark = 'channels_intro'", [projectId])).rows.map((r) => r.user_id);
     try {
-      await ctx.step('with project_channels off, GET /onboarding/channels and POST …/marks → 403 feature_disabled', async () => {
+      await ctx.step('with chat off, GET /onboarding/channels and POST …/marks → 403 feature_disabled', async () => {
         for (const r of [await world.owner.get(ONBOARDING, { params }), await mark(world.owner, 'channels_intro')]) {
-          r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'project_channels');
+          r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'chat');
         }
       });
 
-      await ctx.step('D7: a project member turning project_channels on → 403 and the flag stays off', async () => {
-        (await asMember.patch(FEATURES_PATH, { feature: 'project_channels', enabled: true }, { params })).status(403);
+      await ctx.step('D7: a project member turning chat on → 403 and the flag stays off', async () => {
+        (await asMember.patch(FEATURES_PATH, { feature: 'chat', enabled: true }, { params })).status(403);
         (await world.owner.get(ONBOARDING, { params })).status(403).body().has('$.code', 'feature_disabled');
       });
 
       const firstOff = await offSession();
       await ctx.step('the first turn-on by the owner files the session started while off into #general, records no "turned on again" line and marks no intro', async () => {
-        await world.setFeature('project_channels', true);
+        await world.setFeature('chat', true);
         await filedIntoGeneral(firstOff);
         (await world.owner.get(SPACES, { params })).status(200).body().schema(SpaceListSchema).has('$.general_notice', undefined);
         if ((await channelsMeta()) !== null) fail('a first turn-on recorded metadata.channels', await channelsMeta());
@@ -626,20 +626,20 @@ flow(
         (await world.owner.get(ONBOARDING, { params })).status(200).body().has('$.get_started', { ...closed, visible: false });
       });
 
-      await ctx.step('D7: a project member turning project_channels off → 403 and Channels stays on', async () => {
-        (await asMember.patch(FEATURES_PATH, { feature: 'project_channels', enabled: false }, { params })).status(403);
+      await ctx.step('D7: a project member turning chat off → 403 and Channels stays on', async () => {
+        (await asMember.patch(FEATURES_PATH, { feature: 'chat', enabled: false }, { params })).status(403);
         (await asMember.get(ONBOARDING, { params })).status(200);
       });
 
       let secondOff = '';
       await ctx.step('flag off → both onboarding routes 403 feature_disabled; a session started now has no space', async () => {
-        await world.setFeature('project_channels', false);
+        await world.setFeature('chat', false);
         for (const r of [await asMember.get(ONBOARDING, { params }), await mark(asMember, 'get_started.dm')]) r.status(403).body().has('$.code', 'feature_disabled');
         secondOff = await offSession();
       });
 
       await ctx.step('turned on again: the session moves into #general, GET /spaces carries general_notice {kind: reenabled, count: 1}, and the owner’s intro is marked seen', async () => {
-        await world.setFeature('project_channels', true);
+        await world.setFeature('chat', true);
         await filedIntoGeneral(secondOff);
         const owner = await waitFor(() => stateOf(world.owner), {
           until: (s) => s.intro_seen,

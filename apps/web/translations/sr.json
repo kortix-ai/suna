@@ -1310,9 +1310,9 @@
           "name": "Kanal e-pošte",
           "description": "Dajte agentu poštansko sanduče na Resend-u: dolazna pošta pokreće i nastavlja sesije, a agent čita, odgovara i šalje iz sandučeta. Koristite sopstveni Resend API ključ i domen."
         },
-        "project_channels": {
-          "name": "Kanali",
-          "description": "Organizujte rad u kanalima. Svaka nova poruka u kanalu ili u direktnoj poruci sa agentom započinje nit. Zamenjuje listu sesija u bočnoj traci."
+        "chat": {
+          "name": "Čet",
+          "description": "Čet sa Kortixom kao u Slacku: svaka poruka je nit, najnoviji odgovor Kortixa prikazuje se ispod nje, Kortix može da započne niti, a prostore delite sa drugim ljudima. Zamenjuje listu sesija u bočnoj traci."
         },
         "session_groups": {
           "name": "Групе сесија",

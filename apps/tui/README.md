@@ -154,8 +154,8 @@ is left out of the sidebar.
 | `/inbox` | Notifications, newest first: open, mark read, mark all read. | `notification_center`, or `artifacts` + `artifact_comments` |
 | `/approvals` | Approvals, outputs and decisions waiting on a person: approve, reject, ask for changes, answer. | a project |
 | `/goals` | Goals and their progress: start one, answer its question, stop it. | flag `goals` |
-| `/memory` | Company memory pages: read and search. | flag `project_channels` |
-| `/spaces` | Channels and DMs and their threads; a thread opens as the session. | flag `project_channels` |
+| `/memory` | Company memory pages: read and search. | flag `chat` |
+| `/spaces` | Channels and DMs and their threads; a thread opens as the session. | flag `chat` |
 | `/rooms` | Rooms where agents and people talk (read-only). | flag `agent_rooms` |
 | `/loops` | This session's loops: prompts on a schedule. New, pause, run now, delete. | a session, flag `reminders` |
 | `/audit` | This session's audit events and the approvals waiting. History needs the Enterprise audit entitlement. | a session |

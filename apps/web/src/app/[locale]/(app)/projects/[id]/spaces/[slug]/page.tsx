@@ -9,7 +9,7 @@ import { SpacePage } from '@kortix/ui/workspace/space/space-page';
 /**
  * /projects/[id]/spaces/[slug] — one space: its room first, then its configured
  * tabs (`?tab=`). Spaces are Work in progress: the page exists only with the
- * project's `project_channels` flag on, like a channel page (`c/[slug]`).
+ * project's `chat` flag on, like a channel page (`c/[slug]`).
  */
 export default function ProjectSpacePage() {
   const { id, slug } = useParams<{ id: string; slug: string }>();

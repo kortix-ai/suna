@@ -2,7 +2,7 @@
 // A space is a channel of the project or the caller's DM with one agent. A
 // session filed into a space carries its `space_id` (`createProjectSession`,
 // `listProjectSessions({ spaceId })`). Every route answers 403
-// `feature_disabled` while the project's `project_channels` flag is off.
+// `feature_disabled` while the project's `chat` flag is off.
 
 import { backendApi } from '../../http/api-client';
 import type { App } from './apps';

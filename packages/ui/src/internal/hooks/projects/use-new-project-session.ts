@@ -70,7 +70,7 @@ import { randomUUID } from '../../lib/utils/random-uuid';
  */
 /**
  * Options for a new-session start.
- * `create.space_id` files the session in a channel or DM (`project_channels`).
+ * `create.space_id` files the session in a channel or DM (`chat`).
  * It shows no toast and does not navigate: the
  * space view stays and `onNavigate(sessionId)` opens the thread beside it.
  * `agent_name` chooses the session's boot agent. Later prompts can name another

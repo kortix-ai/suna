@@ -1,7 +1,7 @@
 /**
  * Project spaces: channels and the caller's DMs with an agent
  * (`lib/project-spaces.ts`). Every route needs `session` project access and the
- * `project_channels` flag. A public channel is seen and used by every member
+ * `chat` flag. A public channel is seen and used by every member
  * of the project; membership (`lib/project-space-members.ts`) is its roster. A
  * private channel exists only for its members (`lib/space-access.ts`): to
  * anyone else every route answers 404 `space_not_found`, never 403, so its id
@@ -32,7 +32,6 @@ import { AppObject, appsJson } from '../../apps/serialize';
 import { spaceApps } from '../../apps/space-apps';
 import { afterPrivateChannelChange, makeChannelFolders, makeDmFolders, moveChannelFolder, refreshRunningThreadNotes } from '../../drives/space-folders';
 import { requireFeatureFlag } from '../../feature-flags/gate';
-import { spacesEnabled } from '../../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../../iam';
 import type { AppEnv } from '../../types';
 import { auth, errors, json } from '../../openapi';
@@ -78,7 +77,7 @@ const projectParams = z.object({ projectId: z.string() });
 const spaceParams = projectParams.extend({ spaceId: z.string() });
 
 /**
- * The project (`session` access), the `project_channels` flag, then a live
+ * The project (`session` access), the `chat` flag, then a live
  * channel of the project the caller may see: the gate of every
  * `/spaces/:spaceId/*` tab route. A DM, an archived channel, an unknown id and
  * a private channel the caller is not in answer 404. `managerMay`: a project
@@ -98,13 +97,11 @@ async function loadChannel(c: Context<AppEnv>, opts: { managerMay?: boolean } = 
 
 type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
 
-/** The project (`session` access) and the `project_channels` flag: the gate of every route here. */
+/** The project (`session` access) and the `chat` flag: the gate of every route here. */
 async function loadSpacesProject(c: Context<AppEnv>) {
   const loaded = await loadProjectForUser(c, c.req.param('projectId')!, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // One chat (`infinichat`) is a DM with My Kortix: its spaces routes answer with Channels off too.
-  if (spacesEnabled(loaded.row.metadata)) return loaded;
-  const gate = requireFeatureFlag(c, loaded.row.metadata, 'project_channels');
+  const gate = requireFeatureFlag(c, loaded.row.metadata, 'chat');
   if (gate) return gate;
   return loaded;
 }

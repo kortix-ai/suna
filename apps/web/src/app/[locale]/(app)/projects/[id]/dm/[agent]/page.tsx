@@ -11,11 +11,11 @@ import { SpaceView } from '@kortix/ui/workspace';
 /**
  * /projects/[id]/dm/[agent] — the caller's direct messages with one agent:
  * the same layout as a channel, visible only to the caller. It exists only
- * with the project's `project_channels` flag on.
+ * with the project's `chat` flag on.
  */
 export default function ProjectDmPage() {
   const { id, agent } = useParams<{ id: string; agent: string }>();
-  const channels = useFeatureFlag(id, 'project_channels');
+  const channels = useFeatureFlag(id, 'chat');
   const beforeSend = useProjectSendGate(id);
 
   if (!channels.isLoading && !channels.enabled) notFound();

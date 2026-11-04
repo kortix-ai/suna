@@ -45,7 +45,7 @@ const FLAGGED_ACTION_PREFIXES = {
   event_triggers: ['trigger.event_apps.', 'trigger.event_types.', 'webhook.event.'],
   notification_center: ['notification.inbox.', 'notification.web_push.', 'notification.web_push_key.', 'session.watch.'],
   pooled_provider_secrets: ['secret.account_resource.', 'session.provider_secret_pool.'],
-  project_channels: ['project.space.', 'space.'],
+  chat: ['project.space.', 'space.'],
   session_groups: ['project.session_group.', 'session.group.'],
 };
 
