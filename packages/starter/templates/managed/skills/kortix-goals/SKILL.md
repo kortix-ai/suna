@@ -125,6 +125,7 @@ The request in the person's words. Constraints. What you learned.
 | `assigned_user` | the person the goal is for: they answer its questions and get its updates. Default: the session's creator |
 | `assigned_agent` | the agent whose grants the goal runs with |
 | `heartbeat`, `max_wakes_per_day`, `max_sessions` | limits. The assigned user may change them; you do not raise them yourself |
+| `paused_at`, `paused_by` | **a person only** (the Goals page). Never set or clear them |
 
 Quote a value that contains `: ` or starts with a quote or `#`. Read GOAL.md
 just before you write it.
@@ -143,7 +144,20 @@ When a person gives an outcome (or says "make this a goal"):
 5. Act on the first step in this turn. Append it to `log.md`.
 6. End with four lines: the outcome, the criteria, the first thing you need
    from them (or "nothing for now"), and where to watch it: the Goals page.
+
+**Created from the Goals page.** Your first message is `Goal wake: <folder>.
+… It is new`. The folder, GOAL.md (state `draft`, this session its owner) and
+the heartbeat already exist. Do not run `kortix goals new`. Read GOAL.md, keep
+the person's done criteria (write 1 to 8 when there are none), then steps 3
+to 6 above.
 </start>
+
+<pause>
+A person can pause a goal from the Goals page. GOAL.md then has `paused_at`.
+The heartbeat is off, and `check --enforce` leaves the goal alone. A paused
+goal keeps its state. Do no work on it: end the turn. The person resumes it
+from the Goals page, which clears `paused_at` and wakes the owner.
+</pause>
 
 <wake>
 Every turn on a goal is one wake, whatever started it: the heartbeat
