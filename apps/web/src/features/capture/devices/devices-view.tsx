@@ -49,6 +49,7 @@ import {
   useCaptureDirectory,
 } from '@kortix/ui/internal/capture/use-capture-area';
 import { deviceStatus, type DeviceStatusKey } from './device-status';
+import { VersionBadge } from './device-details';
 import { DeviceActionsMenu, HealthNote, StatusLabel } from './device-status-ui';
 import { RolloutModal, WaitingComputers } from './rollout';
 
@@ -312,13 +313,14 @@ function DeviceTable({
         (userId) => people.personOf(userId).email ?? '',
       )
     : [[people.viewerId ?? '', [...rows]] as const];
-  const columns = 6;
+  const columns = 7;
   return (
     <Table className="min-w-4xl">
       <TableHeader>
         <TableRow>
           <TableHead className="pl-4">{t('col.device')}</TableHead>
           <TableHead>{t('col.os')}</TableHead>
+          <TableHead>{t('col.version')}</TableHead>
           <TableHead>{t('col.status')}</TableHead>
           <TableHead>{t('col.lastFrame')}</TableHead>
           <TableHead>{t('col.layers')}</TableHead>
@@ -405,6 +407,9 @@ function DeviceRow({
         </Link>
       </TableCell>
       <TableCell className="text-muted-foreground">{deviceOs(device)}</TableCell>
+      <TableCell className="text-xs">
+        <VersionBadge device={device} />
+      </TableCell>
       <TableCell className="max-w-64">
         <StatusLabel view={view} />
         <HealthNote lines={view.health} className="mt-0.5 pl-3.5" />
@@ -425,14 +430,13 @@ function DeviceRow({
       </TableCell>
       <TableCell className="pr-4 text-right">
         <span className="relative z-10 inline-flex items-center gap-1">
-          {canAct ? (
-            <DeviceActionsMenu
-              accountId={accountId}
-              device={device}
-              name={name}
-              canLink={canLink}
-            />
-          ) : null}
+          <DeviceActionsMenu
+            accountId={accountId}
+            device={device}
+            name={name}
+            canLink={canLink}
+            canRevoke={canAct}
+          />
         </span>
       </TableCell>
     </TableRow>

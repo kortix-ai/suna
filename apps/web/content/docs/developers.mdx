@@ -8167,7 +8167,7 @@ Capture belongs to the account. `kortix.capture.account(accountId)` binds one ac
 | Method | What it does |
 | --- | --- |
 | `account(id).workspace.get()` · `.workspace.setEnabled(on)` | `{ account_id, enabled, can_read_all, can_manage, updated_at }` · turn Capture on or off. |
-| `account(id).devices.list({ userId?, scope? })` | Devices with live status: `recording`, `paused`, `permission_missing`, `not_recording`, or `offline` after 120 s without a status. `scope: 'account'` lists every member's devices. |
+| `account(id).devices.list({ userId?, scope? })` | Devices with live status: `recording`, `paused`, `permission_missing`, `not_recording`, or `offline` after 120 s without a status. `scope: 'account'` lists every member's devices. Each device carries `health` (reasons include `update_failed` and `behind_version`) and `diagnostics` (`CaptureDeviceDiagnostics`: OS name and build, the update state with `last_result.detail`, sync, policy, hardware). |
 | `account(id).devices.revoke(deviceId)` · `.devices.link(deviceId, userId \| null)` · `.devices.assetUrl(deviceId, name)` | Revoke a device's token · link a device to a member, or unlink it · a 5-minute signed URL of an action screenshot. |
 | `account(id).enrollment.tokens.list()` · `.tokens.create(input)` · `.tokens.revoke(tokenId)` | IT rollout tokens. |
 | `account(id).enrollment.list({ status? })` · `.enrollment.approve(enrollmentId, userId?)` · `.enrollment.deny(enrollmentId)` | Computers that presented a rollout token. |
