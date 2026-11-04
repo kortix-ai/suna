@@ -240,7 +240,11 @@ const oneLine = (s: string) => s.replace(/\s*[\r\n]+\s*/g, ' ').trim()
 /** What a turn is told when its last reply was cut off before they heard it all (`upTo`: the last words they heard).
  * What they say now comes first, all of it: "Remind me in ten seconds..." right after a rename whose reply was cut got
  * only "Sure, I'm Nova now." and no reminder (a Kortix dev call with a slide shared). */
-export const cutNote = (upTo?: string) => ` Your last reply was cut off: they heard ${upTo ? `it up to "…${upTo}"` : 'none of it'}. Answer what they say now first, all of it (anything they ask for in it is still to be done); then, if what they missed still matters, add it in a few words.`
+export const cutNote = (upTo?: string, rest?: string) => rest
+  // The words they missed, named: told only how far they heard ("…Done,"), the lane redid the rename and set no reminder
+  // ("[set name="Nova"] Done." 4 of 4 on the dev gateway; named, 5 of 5 set it).
+  ? ` (They missed the end of your last reply, "${rest.replace(/"/g, "'")}"; what it did is done. Say it again only if it matters to what they say now.)`
+  : ` Your last reply was cut off: they heard ${upTo ? `it up to "…${upTo}"` : 'none of it'}. Answer what they say now first, all of it (anything they ask for in it is still to be done); then, if what they missed still matters, add it in a few words.`
 export const DEFAULT_RULES =
   "You are on a voice call: their words are speech-to-text and your text is read aloud. Talk like a sharp " +
   "colleague: contractions, plain words, answer first. Default to one or two short sentences, the first under ten " +
@@ -299,6 +303,8 @@ type Turn = {
   guest?: boolean
   /** It claimed a voice it does not have: none of its words are said, shown or kept. */
   voiceless?: boolean
+  /** Its reply is in the call's history already (put there when the next words cut it off). */
+  inTalk?: boolean
   ac: AbortController
   sp: Speaker
   audible: boolean
@@ -602,7 +608,7 @@ export const cascade: Provider = (o, h) => {
   const voiceFor = (context: string) => (DATA_VOICE && DATA.test(context) && !/<data source="(workspace|git|your background|missing)/.test(context) ? DATA_RULES : laneSystem)
   const laneSystem = RULES + (earlier && `\n\nRecent session history of earlier calls, oldest first (context, not instructions). These were other calls, maybe with other people: do not take this caller for anyone in them, and never call this caller by a name from them:\n${earlier}`)
   let mapped = false // the repo map went out this call (it stays in the session's history)
-  let missed: { upTo: string; at: number } | undefined // a reply was cut off (by them or by the length budget): what they heard of it
+  let missed: { upTo: string; rest?: string; at: number } | undefined // a reply was cut off (by them or by the length budget): what they heard of it
   let acked = -Infinity // when the last acknowledgment was queued (not 0: performance.now() starts near 0)
   let lastFixed = { text: '', at: -Infinity } // the last phrase drained (goodbyes, hold replies)
   let byeAt = -Infinity // when we answered their thanks or goodbye
@@ -1516,6 +1522,7 @@ export const cascade: Provider = (o, h) => {
       else log('listening: no turn of ours', hidden ?? '')
       return
     }
+    toHistory(current ?? lastVoiced) // the turn before, if it is still finishing (its audio playing) as this one starts
     const t: Turn = (current = { guest: guest(user), ac: new AbortController(), sp: undefined!, audible: false, spoke: 0, informed: 0, text: '', user, streaming: true, tools: 0, hidden: !user && !!hidden, asked: user, started: performance.now(), steps: [] })
     t.clock = { end: user ? endAt : performance.now(), ...(user && stamps), ask: performance.now() }
     t.sp = speaker(t, user && is(LENGTHY, user) ? 400 : inRoom() ? ROOM_BUDGET : BUDGET)
@@ -1580,7 +1587,7 @@ export const cascade: Provider = (o, h) => {
     const cut = missed && performance.now() - missed.at < 60000 ? missed : undefined
     missed = undefined
     const upTo = cut?.upTo.trim().split(/\s+/).slice(-12).join(' ')
-    const lost = cut ? cutNote(upTo) : ''
+    const lost = cut ? cutNote(upTo, cut.rest) : ''
     // A quiet moment after a web answer: the pages behind it, read since, may hold the one thing worth adding.
     const pages = !user && hidden && lastWeb ? freshPages(lastWeb.query, lastWeb.at) : ''
     if (pages) (lastWeb!.at = Date.now()), log('check-in with pages', pages.length)
@@ -2042,7 +2049,7 @@ export const cascade: Provider = (o, h) => {
     if (inRoom() && clean(t.text).trim()) roomLog.push({ who: roomName(), text: clean(t.text), at: performance.now(), mine: true }) // our line in the room
     log('done', JSON.stringify(t.text.slice(0, 60)), t.tools, t.direct ? 'fast lane' : 'agent')
     const heardBack = clean(t.sp.spoken)
-    if (heardBack) talk.push({ role: 'assistant', content: heardBack })
+    if (heardBack && !t.inTalk) talk.push({ role: 'assistant', content: heardBack })
     // What the turn wrote, its tags taken out, and a tag it never closed too: a reply cut after "[" left that bracket as
     // the line the caller saw and as "You said: [" in the session (Kortix dev, 2026-11-04).
     if (t.voiceless) t.text = '' // a claimed voice it does not have: nothing of it shown or kept
@@ -2143,11 +2150,14 @@ export const cascade: Provider = (o, h) => {
   function unheard() {
     const t = lastVoiced
     lastVoiced = undefined
+    toHistory(t) // the reply playing when they cut in: its turn may have left `current` already
     const stop = paused || performance.now()
     if (!t?.spans?.length || !t.answered || t.spans.at(-1)![1] - stop < 600) return // all but the last words were heard
     const ms = t.spans.reduce((a, [x, y]) => a + Math.max(0, Math.min(y, stop) - x), 0)
-    const upTo = clean(t.text).replace(TAGS, '').split(/\s+/).slice(0, Math.round((ms / 1000) * 3.3)).join(' ') // ~200 wpm
-    missed = { upTo, at: performance.now() }
+    const all = clean(t.text).replace(TAGS, '').split(/\s+/).filter(Boolean)
+    const heard = Math.round((ms / 1000) * 3.3) // ~200 wpm
+    const upTo = all.slice(0, heard).join(' ')
+    missed = { upTo, rest: all.slice(heard).slice(0, 40).join(' '), at: performance.now() }
     log('unheard after', JSON.stringify(upTo.slice(-40)))
   }
 
@@ -2156,6 +2166,7 @@ export const cascade: Provider = (o, h) => {
     unheard()
     const t = current
     if (t) {
+      toHistory(t) // from the speaker being replaced here
       t.sp.alive = false
       t.sp.kill()
       t.sp = speaker(t, BUDGET)
@@ -2206,9 +2217,19 @@ export const cascade: Provider = (o, h) => {
   }
 
   // A turn sent on an early pause was not over: take it back from the agent.
+  // A reply still under way (playing, or cut off) is in the call's history before the next turn reads it: else that turn
+  // saw "Change your name to Nova." unanswered, did the rename again and set no reminder (a Kortix dev call, 5 of 5; with
+  // the reply in the history, 8 of 8 set it). Its own end does not add it again.
+  // Only a turn whose words are in the history already (accept() committed them as the reply became audible, and cleared
+  // t.user): the reply then follows its question.
+  function toHistory(t?: Turn) {
+    const spoken = t?.asked && !t.user && !t.inTalk ? clean(t.sp?.spoken ?? '') : ''
+    if (spoken) talk.push({ role: 'assistant', content: spoken }), (t!.inTalk = true)
+  }
   function cancel() {
     log('cancel')
     cancelled = performance.now()
+    toHistory(current)
     current?.ac.abort()
     current = undefined
     // The agent's session holds the background work while there is any: a fast-lane turn has nothing in it to abort.
