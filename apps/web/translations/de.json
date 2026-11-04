@@ -1852,7 +1852,7 @@
       "moved": "Sitzung verschoben",
       "noGroup": "Keine Gruppe",
       "moveFailed": "Die Sitzung konnte nicht verschoben werden",
-      "empty": "Sitzungen, die du hierher verschiebst, erscheinen hier.",
+      "empty": "Zieh eine Sitzung hierher",
       "groupOptions": "Gruppenoptionen"
     },
     "recentlyDeleted": {

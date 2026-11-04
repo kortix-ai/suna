@@ -1331,7 +1331,7 @@ const catalog = {
       "moved": "Session moved",
       "noGroup": "No group",
       "moveFailed": "Could not move the session",
-      "empty": "Sessions you move here will show up here.",
+      "empty": "Drag a session here",
       "groupOptions": "Group options"
     },
     "recentlyDeleted": {

@@ -193,7 +193,9 @@ export const workspaceMap = () => (repo ? repoMap(repo) : '')
 // and its root folders (a Kortix project's memory notes are files there: a question on them is a workspace question,
 // answered from the files in a second, not handed to the agent).
 const named = repo ? identity(repo) || basename(repo) : ''
-const project = repo ? ((o = outline(repo)) => `${named}${o.about ? `: ${o.about}` : ''}${o.folders ? `; its folders: ${o.folders}` : ''}${o.notes ? `; its memory notes (memory/): ${o.notes}` : ''}`)() : ''
+/** Text for inside a data envelope's attribute or body: no quote to close the attribute, no data tag to close it. */
+const envelope = (s: string) => s.replace(/"/g, "'").replace(/<\/?data\b[^>]*>/gi, '')
+const project = repo ? ((o = outline(repo)) => envelope(`${named}${o.about ? `: ${o.about}` : ''}${o.folders ? `; its folders: ${o.folders}` : ''}${o.notes ? `; its memory notes (memory/): ${o.notes}` : ''}`))() : ''
 /** The workspace as the router is told it (for evals). */
 export const workspaceProject = () => project
 
@@ -245,7 +247,8 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
     // voice-agent's own git log answered "categorize what is being pushed" right after the agent had opened another repo.
     // Named inside the data too: "What is the name of this project?" with the name only in the label got "I don't see a
     // project name in those files" (a Kortix dev call, its chunks a sub-project's).
-    const of = named
+    // Escaped as the web-search query is: a README title cannot close the data envelope and speak as instructions.
+    const of = envelope(named)
     return [state && `<data source="git of ${of}, read just now">\n${state}\n</data>`, data && `<data source="workspace: ${of}">\nThis project: ${of}\n${data}\n</data>`].filter(Boolean).join('\n')
   }
   let fallback: Promise<string> | undefined

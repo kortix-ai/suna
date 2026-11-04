@@ -36,6 +36,8 @@ export function parseVoiceTurn(text: string): VoiceTurnInfo | null {
     const u = t.indexOf(USER, ANSWERED.length - 1);
     const s = u < 0 ? -1 : t.indexOf(SAID, u + USER.length);
     if (u < 0 || s < 0) return null;
+    // A note holding a second marker did not come from cleanly written words: drawn as it is, never as a call turn.
+    if (t.indexOf(USER, u + USER.length) >= 0 || t.indexOf(SAID, s + SAID.length) >= 0) return null;
     const said = t.slice(s + SAID.length).trim();
     return said ? { user: t.slice(u + USER.length, s).trim(), said } : null;
   }

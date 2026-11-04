@@ -16,5 +16,5 @@ export function LegacySubagentChat({ sessionId }: { sessionId: string }) {
   // sub-agent's transcript too.
   const ids = useSessionIds();
   const savedHistoryScope = ids.projectId && ids.sessionId ? `${ids.projectId}/${ids.sessionId}` : undefined;
-  return <SessionChat sessionId={sessionId} hideHeader readOnly initialScrollTop savedHistoryScope={savedHistoryScope} />;
+  return <SessionChat sessionId={sessionId} hideHeader readOnly transparent initialScrollTop savedHistoryScope={savedHistoryScope} />;
 }
