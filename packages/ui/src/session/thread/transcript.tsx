@@ -50,9 +50,9 @@ import {
   StopCircleIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { AfterFirstPromptContext } from './after-first-prompt';
-import { TranscriptRowsContext } from './transcript-rows';
+import { type TranscriptAuthor, TranscriptRowsContext } from './transcript-rows';
 import { messageWorkerIds, ShowWork, WorkerTranscripts } from './show-work';
 import { TypingIndicator } from './typing-indicator';
 import { AgentBusyRow } from './thread-boot-rows';
@@ -2622,13 +2622,32 @@ function SessionTurnImpl(props: SessionTurnProps) {
           !userContent.peerMessage &&
           !isSessionLogRestoreNote(turn.user))
       : userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.peerMessage || userContent.systemMessages.length > 0;
+    // The host's person or agent card around the row's avatar and name (`TranscriptRows.author`).
+    const userAuthor: TranscriptAuthor | null =
+      sender || (messagesOnly && spacePost)
+        ? author?.kind === 'session' && author.agent
+          ? { kind: 'agent', name: author.agent }
+          : null
+        : person
+          ? {
+              kind: 'person',
+              userId: author?.kind === 'member' ? author.user_id : (rows.owner?.id ?? null),
+              name: personName || rows.unknownAuthor,
+              email: person.email ?? null,
+              avatarUrl: person.avatarUrl ?? null,
+            }
+          : null;
+    const wrap = (who: TranscriptAuthor | null, node: ReactNode, part: 'avatar' | 'name' = 'name') =>
+      who && rows.author ? rows.author(who, node, part) : node;
+    const agentAuthor: TranscriptAuthor = { kind: 'agent', name: rows.agentSlug ?? DEFAULT_AGENT_SLUG };
     return (
       <div className="text-factor-[2]">
         {showUser ? (
           <MessageRow
             // The first message's turn clips its toolbar's overhang: it sits inside the row.
             className={cn('group/turn', props.isFirstTurn && '[&_[data-slot=row-toolbar]]:top-0.5')}
-            avatar={
+            avatar={wrap(
+              userAuthor,
               sender || (messagesOnly && spacePost) ? (
                 // 36px, the `lg` avatar column (`w-10`).
                 <AgentMark
@@ -2639,9 +2658,10 @@ function SessionTurnImpl(props: SessionTurnProps) {
                 />
               ) : (
                 <UserAvatar email={person?.email ?? ''} name={personName} avatarUrl={person?.avatarUrl} size="lg" />
-              )
-            }
-            name={sender ?? (spacePost ? userContent.peerMessage!.from : personName || rows.unknownAuthor)}
+              ),
+              'avatar',
+            )}
+            name={wrap(userAuthor, sender ?? (spacePost ? userContent.peerMessage!.from : personName || rows.unknownAuthor))}
             time={rowTime(userAt, locale)}
           >
             {messagesOnly && spacePost ? (
@@ -2658,8 +2678,8 @@ function SessionTurnImpl(props: SessionTurnProps) {
         {showAnswer ? (
           <MessageRow
             className="group/turn"
-            avatar={<AgentMark slug={rows.agentSlug ?? DEFAULT_AGENT_SLUG} size={28} tile={36} label={rows.agent} />}
-            name={rows.agent}
+            avatar={wrap(agentAuthor, <AgentMark slug={rows.agentSlug ?? DEFAULT_AGENT_SLUG} size={28} tile={36} label={rows.agent} />, 'avatar')}
+            name={wrap(agentAuthor, rows.agent)}
             time={rowTime(answerAt, locale)}
             toolbar={
               model.working ? null : (

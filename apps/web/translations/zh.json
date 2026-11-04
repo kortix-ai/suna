@@ -1877,7 +1877,8 @@
       "personal": "你的空间",
       "personalNamed": "{name} 的空间",
       "private": "私密",
-      "noMessages": "还没有消息"
+      "noMessages": "还没有消息",
+      "more": "更多"
     }
   },
   "dashboard": {
@@ -25048,6 +25049,32 @@
       "routinesPrivate": "私密空间暂不支持例行任务。",
       "allSettings": "所有设置",
       "askHint": "你也可以在聊天中直接说：“在这里添加一个智能体”、“把发布文档固定为标签页”。"
+    },
+    "profile": {
+      "viewProfile": "查看 {name} 的资料",
+      "viewProfileShort": "查看资料",
+      "agent": "智能体",
+      "openProfile": "打开资料",
+      "you": "(你)",
+      "message": "发消息",
+      "messageFailed": "无法打开私密空间。请重试。",
+      "dmSpaceName": "{a} 和 {b}",
+      "heading": "资料",
+      "close": "关闭资料",
+      "startPrivate": "与 {name} 开启私密空间",
+      "model": "模型",
+      "modelDefault": "项目默认模型",
+      "connectors": "连接器",
+      "connectorsAll": "全部连接器",
+      "connectorsNone": "无连接器",
+      "projectDefault": "项目默认",
+      "projectDefaultYes": "回复未指定智能体的新话题",
+      "defaultIn": "默认于",
+      "defaultInNone": "暂无空间",
+      "email": "邮箱",
+      "sharedSpaces": "共同的空间",
+      "yourSpaces": "你的空间",
+      "openPersonal": "打开你的空间"
     }
   },
   "imageGen": {

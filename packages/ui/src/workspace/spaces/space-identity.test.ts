@@ -67,6 +67,7 @@ describe('space identity', () => {
     const newer = thread({ session_id: 'b', updated_at: '2026-11-02T00:00:00Z', first_prompt: 'Book a flight', result_excerpt: 'Booked:\n seat 14C' });
     expect(spacePreview([older, newer])).toBe('Booked: seat 14C');
     expect(spacePreview([thread({ first_prompt: 'Summarize the week' })])).toBe('Summarize the week');
+    expect(spacePreview([thread({ result_excerpt: 'Done @ada@example.com, see you' })])).toBe('Done @ada, see you');
   });
 
   test('order: the personal space first, archived spaces left out', () => {

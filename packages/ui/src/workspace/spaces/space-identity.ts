@@ -75,7 +75,8 @@ export function spacePreview(sessions: readonly ProjectSession[]): string | null
   if (!newest) return null;
   const reply = newest.result_excerpt?.trim();
   const text = reply || threadMessageText(newest);
-  const line = text.replace(/\s+/g, ' ').trim();
+  // A mention by email reads as its name part: a preview never shows an address.
+  const line = text.replace(/@([\w.+-]+)@[\w-]+(\.[\w-]+)+/g, '@$1').replace(/\s+/g, ' ').trim();
   return line || null;
 }
 

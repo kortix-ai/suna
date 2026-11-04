@@ -1,7 +1,12 @@
 'use client';
 
 import type { SESSION_NOTICE } from '@kortix/sdk';
-import { createContext } from 'react';
+import { createContext, type ReactNode } from 'react';
+
+/** Who wrote a row: an agent by name, or a person (by user id when known). */
+export type TranscriptAuthor =
+  | { kind: 'agent'; name: string }
+  | { kind: 'person'; userId: string | null; name: string; email: string | null; avatarUrl: string | null };
 
 /**
  * Set, the transcript draws every turn as message rows (avatar, name, time,
@@ -15,7 +20,12 @@ export interface TranscriptRows {
   /** The agent's raw name, the slug of its pixel mark. Unset: the default agent (`kortix`). */
   agentSlug?: string;
   /** The thread's starter: the author of a prompt with no recorded author. */
-  owner: { name: string | null; email: string | null; avatarUrl: string | null } | null;
+  owner: { id?: string | null; name: string | null; email: string | null; avatarUrl: string | null } | null;
+  /**
+   * Wraps a row's avatar and its name, once each (the space view's person
+   * and agent card). Unset: they render bare.
+   */
+  author?: (who: TranscriptAuthor, node: ReactNode, part: 'avatar' | 'name') => ReactNode;
   /** The name of a prompt whose author nobody recorded and with no owner ("Someone"). */
   unknownAuthor: string;
   /**

@@ -27,6 +27,7 @@ import { NewAgentModalProvider } from './new-agent-modal-provider';
 import { ProjectNavItems } from './project-nav-items';
 import { ProjectSessionList } from './project-session-list';
 import { ProjectSpacesNav } from './project-spaces-nav';
+import { SidebarMoreGroup } from './sidebar-more-group';
 import { useIsCreatingProjectSession } from '../../internal/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '../../internal/hooks/projects/use-new-project-session';
 import { useIsMobile } from '../../internal/hooks';
@@ -283,9 +284,9 @@ export function ProjectSidebar({
           side only: right padding still clears trailing badges. */}
       <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden [&_[data-sidebar=menu-button]]:pl-2">
         <div className="flex h-full min-h-0 flex-col space-y-2">
+          {chat ? null : (
           <SidebarGroup className="py-0">
             <SidebarMenu>
-              {/* Chat on: no New session row; the person's chat with Kortix is the My Kortix DM row below. */}
               {chat ? null : (
                 <SidebarMenuItem>
                   {creatingSession ? (
@@ -315,6 +316,7 @@ export function ProjectSidebar({
               <ProjectNavItems projectId={projectId} />
             </SidebarMenu>
           </SidebarGroup>
+          )}
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
             {chat ? (
@@ -322,10 +324,13 @@ export function ProjectSidebar({
                 {/* Channels and Direct messages are the core surface. The
                     session list sits below them, closed by default: every
                     session the viewer runs, threads included. */}
+                {/* Spaces on: Review and the Spaces are the only things up
+                    top. Everything else (Customize, Drive, Apps, Artifacts,
+                    the session list) waits in "More" at the bottom. */}
                 <div className="min-h-0 flex-1">
                   <ProjectSpacesNav projectId={projectId} />
                 </div>
-                <ProjectSessionList projectId={projectId} secondary />
+                <SidebarMoreGroup projectId={projectId} />
               </>
             ) : (
               <ProjectSessionList projectId={projectId} />

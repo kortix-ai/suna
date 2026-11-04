@@ -1877,7 +1877,8 @@
       "personal": "Il tuo spazio",
       "personalNamed": "Spazio di {name}",
       "private": "Privato",
-      "noMessages": "Ancora nessun messaggio"
+      "noMessages": "Ancora nessun messaggio",
+      "more": "Altro"
     }
   },
   "dashboard": {
@@ -25048,6 +25049,32 @@
       "routinesPrivate": "Uno spazio privato non accetta ancora routine.",
       "allSettings": "Tutte le impostazioni",
       "askHint": "Puoi anche chiederlo in chat: «aggiungi un agente qui», «fissa il documento del lancio come scheda»."
+    },
+    "profile": {
+      "viewProfile": "Mostra il profilo di {name}",
+      "viewProfileShort": "Vedi profilo",
+      "agent": "Agente",
+      "openProfile": "Apri profilo",
+      "you": "(tu)",
+      "message": "Messaggio",
+      "messageFailed": "Impossibile aprire uno spazio privato. Riprova.",
+      "dmSpaceName": "{a} e {b}",
+      "heading": "Profilo",
+      "close": "Chiudi profilo",
+      "startPrivate": "Avvia uno spazio privato con {name}",
+      "model": "Modello",
+      "modelDefault": "Il modello predefinito del progetto",
+      "connectors": "Connettori",
+      "connectorsAll": "Tutti i connettori",
+      "connectorsNone": "Nessun connettore",
+      "projectDefault": "Predefinito del progetto",
+      "projectDefaultYes": "Risponde ai nuovi thread senza agente impostato",
+      "defaultIn": "Predefinito in",
+      "defaultInNone": "Ancora nessuno spazio",
+      "email": "Email",
+      "sharedSpaces": "Spazi in comune",
+      "yourSpaces": "I tuoi spazi",
+      "openPersonal": "Apri il tuo spazio"
     }
   },
   "imageGen": {

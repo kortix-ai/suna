@@ -1877,7 +1877,8 @@
       "personal": "Votre espace",
       "personalNamed": "Espace de {name}",
       "private": "Privé",
-      "noMessages": "Aucun message pour l’instant"
+      "noMessages": "Aucun message pour l’instant",
+      "more": "Plus"
     }
   },
   "dashboard": {
@@ -25048,6 +25049,32 @@
       "routinesPrivate": "Un espace privé n’accepte pas encore de routines.",
       "allSettings": "Tous les réglages",
       "askHint": "Vous pouvez aussi le demander dans le chat : « ajoute un agent ici », « épingle le document du lancement en onglet »."
+    },
+    "profile": {
+      "viewProfile": "Afficher le profil de {name}",
+      "viewProfileShort": "Voir le profil",
+      "agent": "Agent",
+      "openProfile": "Ouvrir le profil",
+      "you": "(vous)",
+      "message": "Message",
+      "messageFailed": "Impossible d’ouvrir un espace privé. Réessayez.",
+      "dmSpaceName": "{a} et {b}",
+      "heading": "Profil",
+      "close": "Fermer le profil",
+      "startPrivate": "Démarrer un espace privé avec {name}",
+      "model": "Modèle",
+      "modelDefault": "Le modèle par défaut du projet",
+      "connectors": "Connecteurs",
+      "connectorsAll": "Tous les connecteurs",
+      "connectorsNone": "Aucun connecteur",
+      "projectDefault": "Par défaut du projet",
+      "projectDefaultYes": "Répond aux nouveaux fils sans agent défini",
+      "defaultIn": "Par défaut dans",
+      "defaultInNone": "Aucun espace pour l’instant",
+      "email": "E-mail",
+      "sharedSpaces": "Espaces en commun",
+      "yourSpaces": "Vos espaces",
+      "openPersonal": "Ouvrir votre espace"
     }
   },
   "imageGen": {

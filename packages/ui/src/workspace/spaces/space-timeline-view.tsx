@@ -51,6 +51,7 @@ import {
   type TimelineDay,
 } from './space-timeline';
 import { spaceDisplayName } from './space-identity';
+import { type Principal, PrincipalHover } from './principal-card';
 import { usePersonalSpaceName } from './use-personal-space-name';
 
 /** What a thread waits on the viewer for: none, an answer (question or approval), or a review. */
@@ -196,6 +197,7 @@ export function SpaceTimeline({
                 {day.threads.map((session) => (
                   <ThreadRow
                     key={session.session_id}
+                    projectId={projectId}
                     session={session}
                     space={space}
                     needsYou={needsYou(session)}
@@ -280,6 +282,7 @@ function triggerAuthor(session: ProjectSession): { name: string; icon: Icon } | 
  * its author: a new thread is a new top-level message.
  */
 function ThreadRow({
+  projectId,
   session,
   space,
   needsYou,
@@ -287,6 +290,7 @@ function ThreadRow({
   selected,
   onOpen,
 }: {
+  projectId: string;
   session: ProjectSession;
   space: ProjectSpace;
   needsYou: NeedsYou;
@@ -314,10 +318,33 @@ function ThreadRow({
       : participantLabel({ name: session.owner_name ?? null, email: session.owner_email ?? null }) ||
         t('authorFallback');
 
+  // Who the avatar and the name open: the agent of a Kortix post, the person who wrote it; a trigger or an API key has no card.
+  const agentSlug = byKortix ? (rootPostAuthor(session) ?? session.agent_name ?? space.dm_agent_name) : null;
+  const principal: Principal | null = byKortix
+    ? agentSlug
+      ? { kind: 'agent', name: agentSlug }
+      : null
+    : machine
+      ? null
+      : {
+          kind: 'person',
+          userId: session.created_by ?? null,
+          name,
+          email: session.owner_email ?? null,
+          avatarUrl: session.owner_avatar_url ?? null,
+        };
+  const card = (node: ReactNode, focusable = true) =>
+    principal ? (
+      <PrincipalHover projectId={projectId} principal={principal} focusable={focusable}>
+        {node}
+      </PrincipalHover>
+    ) : (
+      node
+    );
   return (
     <MessageRow
       selected={selected}
-      avatar={
+      avatar={card(
         machine ? (
           trigger ? (
             <EntityAvatar icon={trigger.icon} label={name} size="lg" />
@@ -332,9 +359,10 @@ function ThreadRow({
           )
         ) : (
           <UserAvatar email={session.owner_email ?? ''} name={name} avatarUrl={session.owner_avatar_url} size="lg" />
-        )
-      }
-      name={name}
+        ),
+        false,
+      )}
+      name={card(<span className="truncate hover:underline">{name}</span>)}
       time={{
         iso: session.created_at,
         label: created.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' }),
@@ -350,7 +378,7 @@ function ThreadRow({
     >
       <ThreadPrompt session={session} onOpen={onOpen} />
       {latestReply ? (
-        <ThreadReplyLine session={session} space={space} needsYou={needsYou} showReply={!byKortix} onOpen={onOpen} />
+        <ThreadReplyLine projectId={projectId} session={session} space={space} needsYou={needsYou} showReply={!byKortix} onOpen={onOpen} />
       ) : (
         <ThreadSummary session={session} space={space} needsYou={needsYou} onOpen={onOpen} />
       )}
@@ -366,12 +394,14 @@ function ThreadRow({
  * activity at the end. The whole line opens the thread.
  */
 function ThreadReplyLine({
+  projectId,
   session,
   space,
   needsYou,
   showReply,
   onOpen,
 }: {
+  projectId: string;
   session: ProjectSession;
   space: ProjectSpace;
   needsYou: NeedsYou;
@@ -388,30 +418,36 @@ function ThreadReplyLine({
   const replies = session.reply_count ?? 0;
   const reply = showReply ? session.result_excerpt?.replace(/\s+/g, ' ').trim() : null;
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      // `-mx-1` with `pl-1`: the tile lines up with the text above, and the fill extends past it.
-      className="hover:bg-hover focus-visible:ring-ring -mx-1 mt-1 flex w-full max-w-2xl min-w-0 items-center gap-2 rounded-md py-1 pr-1.5 pl-1 text-left outline-none focus-visible:ring-2"
-    >
-      <AgentMark slug={agentName ?? DEFAULT_AGENT_SLUG} size={14} label={agent} />
-      {needsYou ? (
-        <span className="text-foreground flex shrink-0 items-center gap-1 text-xs font-medium">
-          <SessionStatusMark status="needs-you" waitingOn={needsYou} />
-          {tf('statusValue.needsYou')}
+    // The agent's tile opens its card; the rest of the line opens the thread (two controls, never one inside the other).
+    <div className="-mx-1 mt-1 flex w-full max-w-2xl min-w-0 items-center gap-1 rounded-md pl-1">
+      <PrincipalHover projectId={projectId} principal={{ kind: 'agent', name: agentName ?? DEFAULT_AGENT_SLUG }} className="shrink-0">
+        <AgentMark slug={agentName ?? DEFAULT_AGENT_SLUG} size={14} label={agent} />
+      </PrincipalHover>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="hover:bg-hover focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 pr-1.5 pl-1 text-left outline-none focus-visible:ring-2"
+      >
+        {needsYou ? (
+          <span className="text-foreground flex shrink-0 items-center gap-1 text-xs font-medium">
+            <SessionStatusMark status="needs-you" waitingOn={needsYou} />
+            {tf('statusValue.needsYou')}
+          </span>
+        ) : working ? (
+          <TypingIndicator name={agent} className="h-5" />
+        ) : reply ? (
+          <span className="text-foreground min-w-0 truncate text-sm" title={reply}>
+            {reply}
+          </span>
+        ) : (
+          <span className="text-muted-foreground min-w-0 truncate text-xs">{t('openThread')}</span>
+        )}
+        <span className="text-muted-foreground ml-auto shrink-0 pl-2 text-xs tabular-nums">
+          {replies > 0 ? `${t('replies', { count: replies })} · ` : ''}
+          <time dateTime={session.updated_at}>{relativeTime(session.updated_at, locale)}</time>
         </span>
-      ) : working ? (
-        <TypingIndicator name={agent} className="h-5" />
-      ) : reply ? (
-        <span className="text-foreground min-w-0 truncate text-sm">{reply}</span>
-      ) : (
-        <span className="text-muted-foreground min-w-0 truncate text-xs">{t('openThread')}</span>
-      )}
-      <span className="text-muted-foreground ml-auto shrink-0 pl-2 text-xs tabular-nums">
-        {replies > 0 ? `${t('replies', { count: replies })} · ` : ''}
-        <time dateTime={session.updated_at}>{relativeTime(session.updated_at, locale)}</time>
-      </span>
-    </button>
+      </button>
+    </div>
   );
 }
 

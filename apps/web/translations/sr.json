@@ -1877,7 +1877,8 @@
       "personal": "Твој простор",
       "personalNamed": "Простор корисника {name}",
       "private": "Приватно",
-      "noMessages": "Још нема порука"
+      "noMessages": "Још нема порука",
+      "more": "Још"
     }
   },
   "dashboard": {
@@ -25048,6 +25049,32 @@
       "routinesPrivate": "Приватни простор још не прима рутине.",
       "allSettings": "Сва подешавања",
       "askHint": "Можеш и да питаш у ћаскању: „додај агента овде“, „закачи документ за лансирање као картицу“."
+    },
+    "profile": {
+      "viewProfile": "Прикажи профил: {name}",
+      "viewProfileShort": "Погледај профил",
+      "agent": "Агент",
+      "openProfile": "Отвори профил",
+      "you": "(ти)",
+      "message": "Порука",
+      "messageFailed": "Приватни простор није могао да се отвори. Покушај поново.",
+      "dmSpaceName": "{a} и {b}",
+      "heading": "Профил",
+      "close": "Затвори профил",
+      "startPrivate": "Покрени приватни простор са: {name}",
+      "model": "Модел",
+      "modelDefault": "Подразумевани модел пројекта",
+      "connectors": "Конектори",
+      "connectorsAll": "Сви конектори",
+      "connectorsNone": "Нема конектора",
+      "projectDefault": "Подразумевани за пројекат",
+      "projectDefaultYes": "Одговара на нове нити без задатог агента",
+      "defaultIn": "Подразумевани у",
+      "defaultInNone": "Још ниједан простор",
+      "email": "Е-пошта",
+      "sharedSpaces": "Заједнички простори",
+      "yourSpaces": "Твоји простори",
+      "openPersonal": "Отвори свој простор"
     }
   },
   "imageGen": {

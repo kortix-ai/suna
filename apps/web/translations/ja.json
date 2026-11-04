@@ -1877,7 +1877,8 @@
       "personal": "あなたのスペース",
       "personalNamed": "{name} のスペース",
       "private": "非公開",
-      "noMessages": "まだメッセージはありません"
+      "noMessages": "まだメッセージはありません",
+      "more": "その他"
     }
   },
   "dashboard": {
@@ -25048,6 +25049,32 @@
       "routinesPrivate": "非公開スペースではまだルーティンを使えません。",
       "allSettings": "すべての設定",
       "askHint": "チャットで頼むこともできます:「ここにエージェントを追加して」「ローンチ資料をタブに固定して」。"
+    },
+    "profile": {
+      "viewProfile": "{name} のプロフィールを表示",
+      "viewProfileShort": "プロフィールを見る",
+      "agent": "エージェント",
+      "openProfile": "プロフィールを開く",
+      "you": "(あなた)",
+      "message": "メッセージ",
+      "messageFailed": "非公開スペースを開けませんでした。もう一度お試しください。",
+      "dmSpaceName": "{a} と {b}",
+      "heading": "プロフィール",
+      "close": "プロフィールを閉じる",
+      "startPrivate": "{name} と非公開スペースを始める",
+      "model": "モデル",
+      "modelDefault": "プロジェクトのデフォルトモデル",
+      "connectors": "コネクタ",
+      "connectorsAll": "すべてのコネクタ",
+      "connectorsNone": "コネクタなし",
+      "projectDefault": "プロジェクトのデフォルト",
+      "projectDefaultYes": "エージェント未指定の新しいスレッドに応答します",
+      "defaultIn": "デフォルトのスペース",
+      "defaultInNone": "まだありません",
+      "email": "メール",
+      "sharedSpaces": "共通のスペース",
+      "yourSpaces": "あなたのスペース",
+      "openPersonal": "あなたのスペースを開く"
     }
   },
   "imageGen": {

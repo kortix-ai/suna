@@ -46,7 +46,7 @@ import { ComposerDropZone } from '../../session/composer/composer-drop-zone';
 import type { DraftScope } from '../../session/composer/draft/composer-draft';
 import { AfterFirstPromptContext } from '../../session/thread/after-first-prompt';
 import { SessionThread } from '../../session/thread/session-thread';
-import { TranscriptRowsContext } from '../../session/thread/transcript-rows';
+import { type TranscriptAuthor, TranscriptRowsContext } from '../../session/thread/transcript-rows';
 import { useProjectHomeSend } from '../layout/use-project-home-send';
 import { ChannelSetup } from './channel-setup';
 import { ChannelsIntro, GeneralChatHead } from './channels-onboarding';
@@ -54,7 +54,9 @@ import { CreateChannelDialog } from './create-channel-dialog';
 import { channelRunnableAgents, offeredChannelAgents } from './space-agents';
 import { SpaceDetailsDialog, type SpaceDetailsTab } from './space-details-dialog';
 import { SpaceDetailsPanel } from './space-details-panel';
-import { isPersonalSpace, isPrivateSpace, spaceDisplayName, spaceInitials } from './space-identity';
+import { parseProfileParam, type Principal, PrincipalHover, ProfileContext, ProfilePanel, profileParam } from './principal-card';
+import { SpaceAvatar } from './space-avatar';
+import { isPrivateSpace, spaceDisplayName } from './space-identity';
 import { usePersonalSpaceName } from './use-personal-space-name';
 import { JoinChannelButton } from './space-members';
 import { SpaceRosterButton } from './space-roster';
@@ -106,6 +108,8 @@ export interface SpaceFolder {
 
 /** The query key of the open thread: it survives a reload and can be linked. */
 const THREAD_PARAM = 'thread';
+/** The Profile panel of a person (`person:<user id>`) or an agent (`agent:<name>`). */
+const PROFILE_PARAM = 'profile';
 /** The details panel: `1` open, `add` open with "Add members" (a space just created). */
 const DETAILS_PARAM = 'details';
 /** The open tab. Absent on Chat. */
@@ -204,6 +208,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
       ownThreadEntry.current = true;
       setParams((params) => {
         params.delete(DETAILS_PARAM);
+        params.delete(PROFILE_PARAM);
         params.set(THREAD_PARAM, sessionId);
       }, 'push');
     },
@@ -243,18 +248,50 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
   const [renameOpen, setRenameOpen] = useState(false);
   // The details panel, on the right where a thread opens; one of the two at a time.
   const detailsParam = searchParams.get(DETAILS_PARAM);
-  const detailsOpen = !!detailsParam && !threadId;
+  // One right panel at a time: a thread, else a profile, else the details.
+  const profile = threadId ? null : parseProfileParam(searchParams.get(PROFILE_PARAM));
+  const detailsOpen = !!detailsParam && !threadId && !profile;
+  const openProfile = useCallback(
+    (principal: Principal) => {
+      const value = profileParam(principal);
+      if (!value) return;
+      ownThreadEntry.current = false;
+      setParams((params) => {
+        params.delete(THREAD_PARAM);
+        params.delete(DETAILS_PARAM);
+        params.set(PROFILE_PARAM, value);
+      }, 'push');
+    },
+    [setParams],
+  );
+  const closeProfile = useCallback(() => setParams((params) => params.delete(PROFILE_PARAM)), [setParams]);
   const openDetails = useCallback(
     (mode: '1' | 'add' = '1') => {
       ownThreadEntry.current = false;
       setParams((params) => {
         params.delete(THREAD_PARAM);
+        params.delete(PROFILE_PARAM);
         params.set(DETAILS_PARAM, mode);
       }, 'push');
     },
     [setParams],
   );
   const closeDetails = useCallback(() => setParams((params) => params.delete(DETAILS_PARAM)), [setParams]);
+  // Esc closes the open right panel, unless a field, a menu or a dialog takes it
+  // (the composer's own Esc ×3 stops a turn).
+  const closeRightPanel = threadId ? closeThread : profile ? closeProfile : detailsOpen ? closeDetails : null;
+  useEffect(() => {
+    if (!closeRightPanel) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"]')) return;
+      if (document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"]')) return;
+      closeRightPanel();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [closeRightPanel]);
   const header = (
     <SpaceHeader
       projectId={projectId}
@@ -346,6 +383,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
     // the width per browser. Below `xl` the thread takes the whole width: the
     // timeline panel and the divider hide, and the thread panel's flex-grow
     // fills the row.
+    <ProfileContext.Provider value={openProfile}>
     <ResizablePanelGroup
       direction="horizontal"
       autoSaveId="kortix:space-thread-split"
@@ -356,7 +394,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
         order={1}
         minSize={35}
         defaultSize={60}
-        className={cn('flex min-w-0 flex-col', (threadId || detailsOpen) && 'max-xl:hidden')}
+        className={cn('flex min-w-0 flex-col', (threadId || detailsOpen || profile) && 'max-xl:hidden')}
       >
         <ComposerDropZone className="flex min-h-0 min-w-0 flex-1 flex-col">
           {header}
@@ -396,6 +434,13 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
             />
           </ResizablePanel>
         </>
+      ) : profile ? (
+        <>
+          <ResizableHandle className="bg-border w-px after:absolute after:inset-y-0 after:-left-1.5 after:w-3 max-xl:hidden" />
+          <ResizablePanel id="space-profile" order={2} minSize={25} maxSize={50} defaultSize={30} className="flex min-w-0 flex-col">
+            <ProfilePanel key={profileParam(profile)} projectId={projectId} principal={profile} onClose={closeProfile} />
+          </ResizablePanel>
+        </>
       ) : detailsOpen ? (
         <>
           <ResizableHandle className="bg-border w-px after:absolute after:inset-y-0 after:-left-1.5 after:w-3 max-xl:hidden" />
@@ -415,6 +460,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
         </>
       ) : null}
     </ResizablePanelGroup>
+    </ProfileContext.Provider>
   );
 }
 
@@ -578,15 +624,7 @@ function SpaceHeader({
             disabled={!space}
             onClick={onToggleDetails}
           >
-            <span
-              aria-hidden
-              className={cn(
-                'flex size-6 shrink-0 items-center justify-center rounded-sm text-xs font-semibold',
-                space && isPersonalSpace(space) ? 'bg-foreground text-background' : 'bg-muted text-foreground',
-              )}
-            >
-              {spaceInitials(title)}
-            </span>
+            <SpaceAvatar space={space ?? null} personal={target.kind === 'dm' && isMyKortixAgentName(target.agentName)} size="sm" label={title} />
             <span className="truncate text-base font-semibold">{title}</span>
             {space && isPrivateSpace(space) ? <LockSimpleIcon className="text-muted-foreground size-3.5 shrink-0" /> : null}
             <CaretDownIcon weight="bold" className="text-muted-foreground size-3 shrink-0" />
@@ -876,8 +914,14 @@ function ThreadPanel({
       agent: agentName ? agentLabel(agentName) : t('agentFallback'),
       agentSlug: agentName ?? undefined,
       owner: thread
-        ? { name: thread.owner_name ?? null, email: thread.owner_email ?? null, avatarUrl: thread.owner_avatar_url ?? null }
+        ? { id: thread.created_by ?? null, name: thread.owner_name ?? null, email: thread.owner_email ?? null, avatarUrl: thread.owner_avatar_url ?? null }
         : null,
+      // Every avatar and name in the thread opens the person's or agent's card.
+      author: (who: TranscriptAuthor, node: ReactNode, part: 'avatar' | 'name') => (
+        <PrincipalHover projectId={projectId} principal={who} focusable={part === 'name'}>
+          {node}
+        </PrincipalHover>
+      ),
       unknownAuthor: t('authorFallback'),
       // The composer's computer notices say "thread", never "session".
       notices: {
@@ -895,7 +939,7 @@ function ThreadPanel({
       // A talk-only thread: "Show work" opens its worker sessions.
       front: thread?.metadata?.kortix_front === true,
     }),
-    [agentName, thread, t, messagesOnly],
+    [agentName, thread, t, messagesOnly, projectId],
   );
   return (
     <aside aria-label={t('threadTitle')} className="bg-background flex min-h-0 w-full flex-1 flex-col">

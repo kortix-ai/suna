@@ -4,13 +4,12 @@ import type { ProjectSpace } from '@kortix/sdk';
 import { useProjectSessions, useProjectSpaces } from '@kortix/sdk/react';
 import { MY_KORTIX_AGENT_NAME } from '@kortix/shared';
 import { CheckIcon, LockSimpleIcon, PlusIcon } from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import { type KeyboardEvent, useMemo, useState } from 'react';
 
 import { useTranslations } from '../../i18n';
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
 import { useIsMobile } from '../../internal/hooks';
 import { reviewHref } from '../../internal/lib/capability-tab-routes';
-import { cn } from '../../internal/lib/utils';
 import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
 import { CountBadge } from '../../primitives/count-badge';
@@ -24,10 +23,20 @@ import {
   isPrivateSpace,
   orderSpaces,
   spaceDisplayName,
-  spaceInitials,
   spacePreview,
 } from '../spaces/space-identity';
+import { SpaceAvatar } from '../spaces/space-avatar';
 import { usePersonalSpaceName } from '../spaces/use-personal-space-name';
+
+/** ↑/↓ move between the rows (Review, the spaces, New space), as in a list. */
+function moveFocus(event: KeyboardEvent<HTMLUListElement>) {
+  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+  const rows = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-sidebar="menu-button"]'));
+  const index = rows.indexOf(document.activeElement as HTMLElement);
+  if (index === -1) return;
+  event.preventDefault();
+  rows[Math.max(0, Math.min(rows.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus();
+}
 
 /** `href`, or a page under it. */
 function isAt(pathname: string | null, href: string): boolean {
@@ -67,9 +76,10 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
 
   return (
     <FadedScrollArea fadeColor="from-background" className="h-full min-h-0">
-      <SidebarMenu className="gap-px">
+      <SidebarMenu className="gap-px" onKeyDown={moveFocus}>
         {review ? (
-          <SidebarMenuItem>
+          // Spacing, not a rule, sets Review apart from the spaces.
+          <SidebarMenuItem className="mb-2">
             <SidebarMenuButton asChild isActive={isAt(pathname, review)} className="text-sidebar-foreground">
               <HoverPrefetchLink href={review}>
                 <CheckIcon />
@@ -79,7 +89,6 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}
-        <li aria-hidden className="bg-sidebar-border mx-2 my-1.5 h-px" />
         <SpaceRow
           projectId={projectId}
           space={personal}
@@ -164,7 +173,7 @@ function SpaceRow({
         isActive={active}
         tooltip={name}
         // The row's svgs are forced to size-4: the lock beside the name stays at 12px.
-        className="text-sidebar-foreground gap-2.5 px-2 [&_[data-slot=space-lock]]:size-3!"
+        className="text-sidebar-foreground gap-2.5 px-2 [&_[data-slot=space-lock]]:size-3! [&_[data-slot=agent-mark]>svg]:size-auto!"
       >
         <HoverPrefetchLink
           href={href}
@@ -172,15 +181,7 @@ function SpaceRow({
             if (isMobile) setOpenMobile(false);
           }}
         >
-          <span
-            aria-hidden
-            className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
-              personal ? 'bg-foreground text-background' : 'bg-muted text-foreground',
-            )}
-          >
-            {spaceInitials(name)}
-          </span>
+          <SpaceAvatar space={space} personal={personal} label={name} />
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="flex min-w-0 items-center gap-1">
               <span className="truncate">{name}</span>

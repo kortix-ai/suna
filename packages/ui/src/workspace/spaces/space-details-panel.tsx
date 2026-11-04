@@ -19,7 +19,9 @@ import Hint from '../../primitives/hint';
 import { Label } from '../../primitives/label';
 import { UserAvatar } from '../../primitives/user-avatar';
 import { UiLink as Link, useUiViewer } from '../../providers/ui-provider';
-import { isPersonalSpace, isPrivateSpace, spaceInitials } from './space-identity';
+import { type Principal, PrincipalHover } from './principal-card';
+import { SpaceAvatar } from './space-avatar';
+import { isPersonalSpace, isPrivateSpace } from './space-identity';
 import { AddChannelMembersDialog, MemberAvatar } from './space-members';
 import { AddTabMenu, KIND_ICON, useSpaceTabs } from './space-tabs';
 import { agentLabel } from './space-timeline';
@@ -83,15 +85,7 @@ export function SpaceDetailsPanel({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col items-center gap-2 px-6 pt-2 pb-6 text-center">
-          <span
-            aria-hidden
-            className={cn(
-              'flex size-16 items-center justify-center rounded-md text-xl font-semibold',
-              isPersonalSpace(space) ? 'bg-foreground text-background' : 'bg-muted text-foreground',
-            )}
-          >
-            {spaceInitials(name)}
-          </span>
+          <SpaceAvatar space={space} size="xl" label={name} />
           <div className="flex min-w-0 items-center gap-1.5">
             <h3 className="truncate text-lg font-semibold">{name}</h3>
             {isPrivateSpace(space) ? (
@@ -112,7 +106,7 @@ export function SpaceDetailsPanel({
 
         <div className="space-y-6 px-4 pb-6">
           <AgentsSection projectId={projectId} space={space} onAdd={canAdd && editable ? () => setAdding(true) : undefined} />
-          <PeopleSection space={space} members={members.data?.members} onAdd={canAdd ? () => setAdding(true) : undefined} />
+          <PeopleSection projectId={projectId} space={space} members={members.data?.members} onAdd={canAdd ? () => setAdding(true) : undefined} />
           <TabsSection projectId={projectId} space={space} onOpenTab={onOpenTab} />
           <RoutinesSection projectId={projectId} space={space} />
           {onOpenSettings ? (
@@ -142,7 +136,20 @@ function Section({ title, add, children }: { title: string; add?: ReactNode; chi
 }
 
 /** One row: a 28px avatar slot, the name, a muted tag at the end. */
-function Row({ avatar, name, tag, href }: { avatar: ReactNode; name: string; tag?: string | null; href?: string | null }) {
+function Row({
+  avatar,
+  name,
+  tag,
+  href,
+  card,
+}: {
+  avatar: ReactNode;
+  name: string;
+  tag?: string | null;
+  href?: string | null;
+  /** A person or an agent: the row opens their card and profile. */
+  card?: { projectId: string; principal: Principal };
+}) {
   const body = (
     <>
       <span className="flex size-7 shrink-0 items-center justify-center">{avatar}</span>
@@ -150,6 +157,15 @@ function Row({ avatar, name, tag, href }: { avatar: ReactNode; name: string; tag
       {tag ? <span className="text-muted-foreground shrink-0 text-xs">{tag}</span> : null}
     </>
   );
+  if (card) {
+    return (
+      <li>
+        <PrincipalHover projectId={card.projectId} principal={card.principal} className="hover:bg-hover flex min-h-9 w-full items-center gap-2.5 px-2">
+          {body}
+        </PrincipalHover>
+      </li>
+    );
+  }
   return (
     <li>
       {href ? (
@@ -187,6 +203,7 @@ function AgentsSection({ projectId, space, onAdd }: { projectId: string; space: 
           key={agent}
           avatar={<AgentMark slug={agent} size={21} />}
           name={agentLabel(agent)}
+          card={{ projectId, principal: { kind: 'agent', name: agent } }}
           tag={index === 0 ? (agents.length > 0 ? t('default') : t('projectDefault')) : null}
         />
       ))}
@@ -196,10 +213,12 @@ function AgentsSection({ projectId, space, onAdd }: { projectId: string; space: 
 
 /** The space's people: its members, or only the viewer in a private space of one person. */
 function PeopleSection({
+  projectId,
   space,
   members,
   onAdd,
 }: {
+  projectId: string;
   space: ProjectSpace;
   members: readonly ProjectSpaceMember[] | undefined;
   onAdd?: () => void;
@@ -213,6 +232,7 @@ function PeopleSection({
         <Row
           avatar={<UserAvatar email={viewer?.email ?? ''} name={typeof fullName === 'string' ? fullName : undefined} size="sm" />}
           name={t('you')}
+          card={viewer ? { projectId, principal: { kind: 'person', userId: viewer.id, name: typeof fullName === 'string' ? fullName : (viewer.email ?? '') } } : undefined}
         />
       </Section>
     );
@@ -225,6 +245,7 @@ function PeopleSection({
           key={person.user_id}
           avatar={<MemberAvatar member={person} size="sm" />}
           name={person.name}
+          card={{ projectId, principal: { kind: 'person', userId: person.user_id, name: person.name, avatarUrl: person.avatar_url } }}
           tag={person.is_viewer ? t('you') : null}
         />
       ))}

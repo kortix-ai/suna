@@ -1356,7 +1356,8 @@ const catalog = {
       "personal": "Your space",
       "personalNamed": "{name}'s space",
       "private": "Private",
-      "noMessages": "No messages yet"
+      "noMessages": "No messages yet",
+      "more": "More"
     }
   },
   "sessionPage": {
@@ -9313,6 +9314,32 @@ const catalog = {
       "routinesPrivate": "A private space takes no routines yet.",
       "allSettings": "All settings",
       "askHint": "You can also ask in chat: \"add an agent here\", \"pin the launch doc as a tab\"."
+    },
+    "profile": {
+      "viewProfile": "Show the profile of {name}",
+      "viewProfileShort": "View profile",
+      "agent": "Agent",
+      "openProfile": "Open profile",
+      "you": "(you)",
+      "message": "Message",
+      "messageFailed": "Could not open a private space. Try again.",
+      "dmSpaceName": "{a} and {b}",
+      "heading": "Profile",
+      "close": "Close profile",
+      "startPrivate": "Start a private space with {name}",
+      "model": "Model",
+      "modelDefault": "The project's default model",
+      "connectors": "Connectors",
+      "connectorsAll": "All connectors",
+      "connectorsNone": "No connectors",
+      "projectDefault": "Project default",
+      "projectDefaultYes": "Answers new threads where no agent is set",
+      "defaultIn": "Default in",
+      "defaultInNone": "No space yet",
+      "email": "Email",
+      "sharedSpaces": "Spaces you share",
+      "yourSpaces": "Your spaces",
+      "openPersonal": "Open your space"
     }
   },
   "imageGen": {

@@ -1,9 +1,9 @@
 'use client';
 
 import { getChildSessionId, type SessionLogBlock } from '@kortix/sdk';
-import { useSessionStateStore } from '@kortix/sdk/react';
+import { useProjectSession, useSessionStateStore } from '@kortix/sdk/react';
 import { CaretRightIcon } from '@phosphor-icons/react';
-import { useId, useState, type ReactNode } from 'react';
+import { useContext, useId, useState, type ReactNode } from 'react';
 
 import { useTranslations } from '../../i18n';
 import { lazyClient } from '../../lib/lazy-client';
@@ -11,7 +11,8 @@ import { cn } from '../../lib/utils';
 import { Skeleton } from '../../primitives/skeleton';
 import { useSessionIds } from '../../providers/session-ids';
 import { AfterFirstPromptContext } from './after-first-prompt';
-import { TranscriptRowsContext } from './transcript-rows';
+import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
+import { type TranscriptRows, TranscriptRowsContext } from './transcript-rows';
 
 // Lazy: `SessionPeek` renders `SessionTurn`, which renders this file.
 const SessionPeek = lazyClient(() => import('../agents/session-peek').then((mod) => mod.SessionPeek), {
@@ -82,13 +83,15 @@ export function ShowWork({ defaultOpen = false, children }: { defaultOpen?: bool
 export function WorkerTranscripts({ sessionIds }: { sessionIds: readonly string[] }) {
   const ids = useSessionIds();
   const projectId = ids.projectId;
+  // The thread's author card, read before the peeks reset the rows context.
+  const author = useContext(TranscriptRowsContext)?.author;
   if (!projectId) return null;
   return (
     <TranscriptRowsContext.Provider value={null}>
       <AfterFirstPromptContext.Provider value={null}>
         <div className="flex flex-col gap-2">
           {sessionIds.map((sessionId) => (
-            <WorkerTranscript key={sessionId} projectId={projectId} sessionId={sessionId} />
+            <WorkerTranscript key={sessionId} projectId={projectId} sessionId={sessionId} author={author} />
           ))}
         </div>
       </AfterFirstPromptContext.Provider>
@@ -96,13 +99,42 @@ export function WorkerTranscripts({ sessionIds }: { sessionIds: readonly string[
   );
 }
 
-function WorkerTranscript({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+function WorkerTranscript({
+  projectId,
+  sessionId,
+  author,
+}: {
+  projectId: string;
+  sessionId: string;
+  author?: TranscriptRows['author'];
+}) {
+  // The worker's agent heads its work: its mark and name, which open its card.
+  const agentName = useProjectSession(projectId, sessionId).data?.agent_name ?? null;
   const working = useSessionStateStore((s) => {
     const type = s.sessionStatus[sessionId]?.type;
     return type === 'busy' || type === 'retry';
   });
   return (
     <div data-worker-session={sessionId} className="bg-background flex max-h-96 min-h-0 flex-col overflow-hidden rounded-lg border">
+      {agentName ? (
+        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs font-medium">
+          {author ? (
+            author(
+              { kind: 'agent', name: agentName },
+              <span className="inline-flex min-w-0 items-center gap-2">
+                <AgentMark slug={agentName} size={14} />
+                <span className="truncate">{agentDisplayName(agentName)}</span>
+              </span>,
+              'name',
+            )
+          ) : (
+            <>
+              <AgentMark slug={agentName} size={14} />
+              <span className="truncate">{agentDisplayName(agentName)}</span>
+            </>
+          )}
+        </div>
+      ) : null}
       <SessionPeek projectId={projectId} sessionId={sessionId} working={working} density="compact" />
     </div>
   );
