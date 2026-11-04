@@ -93,6 +93,9 @@ work for: `kortix spaces` (the space defaults to this thread's).
 | remove or move a tab | `kortix spaces tabs rm <id\|title>`, `kortix spaces tabs move <id\|title> <position>` |
 | set its agents | `kortix spaces agents set <name>...` (the first is its default) |
 | add or remove people | `kortix spaces members add <email>...`, `kortix spaces members rm <email>` |
+| post news or a question in the space's main chat | `kortix spaces post [<space>] "<text>"` (a new top-level message from you) |
+| post into one of its threads | `kortix spaces post [<space>] "<text>" --thread <thread id>` (add `--ask` when that thread's agent must answer) |
+| tag people or agents | write `@name`, `@email` or `@agent` in the text: a person in the space gets a notification |
 
 - A page for a tab: write a `.md` or self-contained `.html` file in this
   space's files folder, then add a `file` tab whose ref is its Drive path
@@ -100,6 +103,11 @@ work for: `kortix spaces` (the space defaults to this thread's).
 - A 403 means the person may not make that change (only a channel's
   creator or a project manager renames, describes and sets agents; a member
   adds people). Tell the user in one line; never work around it.
+- A space's main chat is its shared feed: post what others there should
+  know, a question for a person, or a request that needs someone; tag them.
+  `<space>` is `#slug` for a channel or `dm:<agent>` for the person's DM.
+  You post only where the person you work for may post; their DM only from
+  a private session of theirs.
 - Making a channel private, creating a channel or joining one is the
   user's own step in the web app.
 </configure>

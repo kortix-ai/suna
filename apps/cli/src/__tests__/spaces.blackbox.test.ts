@@ -60,6 +60,10 @@ beforeAll(() => {
         tabs = (body as { tabs: typeof tabs }).tabs;
         return Response.json(space(GENERAL, 'general'));
       }
+      if (req.method === 'POST' && p.endsWith('/posts')) {
+        const b = body as { thread_id?: string };
+        return Response.json({ session_id: b.thread_id ?? 'new-thread', kind: b.thread_id ? 'reply' : 'thread', notified: [ANA], mentions: [{ token: 'ana', kind: 'person', label: 'Ana' }] }, { status: 201 });
+      }
       if (p.endsWith('/members')) return Response.json({ members: [], implicit: false, can_add: true });
       return Response.json({ error: 'not found' }, { status: 404 });
     },
@@ -143,4 +147,19 @@ test('with Spaces (`chat`) off the command is refused before any space call', as
   expect(result.code).not.toBe(0);
   expect(result.stderr).toContain('`chat` feature flag');
   expect(calls.filter((c) => c.path.includes('/spaces'))).toEqual([]);
+});
+
+test('post: a top-level message into the session’s space, a reply into a thread, --ask only with --thread', async () => {
+  calls.length = 0;
+  const top = await kortix('post', 'Weather check done. @ana');
+  expect(top.code).toBe(0);
+  expect(top.stdout).toContain('Mentioned Ana; 1 notified.');
+  expect((await kortix('post', '#launch', 'Please approve', '--thread', SESSION, '--ask')).code).toBe(0);
+  expect(writes()).toEqual([
+    { method: 'POST', path: `/v1/projects/${PROJECT}/spaces/${GENERAL}/posts`, body: { text: 'Weather check done. @ana' } },
+    { method: 'POST', path: `/v1/projects/${PROJECT}/spaces/${OTHER}/posts`, body: { text: 'Please approve', thread_id: SESSION, ask: true } },
+  ]);
+  const refused = await kortix('post', 'hi', '--ask');
+  expect(refused.code).not.toBe(0);
+  expect(refused.stderr).toContain('--ask needs --thread');
 });

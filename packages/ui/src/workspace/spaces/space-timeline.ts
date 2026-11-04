@@ -140,6 +140,49 @@ export function kortixRootText(session: ProjectSession): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+/** A space post (`chat_root_author`): the agent that wrote the thread's top message, when it is not the thread's agent. */
+export function rootPostAuthor(session: ProjectSession): string | null {
+  const value = session.metadata?.chat_root_author;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/** One run of a post's text: plain, or a mention chip. */
+export interface PostSegment {
+  text: string;
+  mention?: { kind: 'person' | 'agent'; label: string };
+}
+
+/**
+ * A space post's text split at its mentions (`chat_root_mentions`, resolved by
+ * the server): each `@token` it resolved becomes a chip with the person's or
+ * agent's name; every other `@word` stays text. Case-insensitive; `@` opens
+ * a word only at the start or after whitespace.
+ */
+export function postSegments(text: string, raw: unknown): PostSegment[] {
+  const mentions = new Map<string, { kind: 'person' | 'agent'; label: string }>();
+  if (Array.isArray(raw)) {
+    for (const item of raw as Array<Record<string, unknown>>) {
+      if (!item || typeof item.token !== 'string' || typeof item.label !== 'string') continue;
+      if (item.kind !== 'person' && item.kind !== 'agent') continue;
+      mentions.set(item.token.toLowerCase(), { kind: item.kind, label: item.label });
+    }
+  }
+  if (mentions.size === 0) return [{ text }];
+  const out: PostSegment[] = [];
+  let last = 0;
+  for (const match of text.matchAll(/(^|\s)@([^\s]+)/g)) {
+    const word = match[2]!.replace(/[.,;:!?)\]}'"]+$/, '');
+    const hit = mentions.get(word.toLowerCase());
+    if (!hit) continue;
+    const start = match.index! + match[1]!.length;
+    if (start > last) out.push({ text: text.slice(last, start) });
+    out.push({ text: `@${word}`, mention: hit });
+    last = start + 1 + word.length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
+
 /**
  * The server stores a thread's first prompt cut at this length
  * (`FIRST_PROMPT_MAX_CHARS` in `apps/api/src/projects/lib/project-spaces.ts`).

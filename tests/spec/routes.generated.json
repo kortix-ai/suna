@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1027,
+  "count": 1028,
   "routes": [
     {
       "method": "GET",
@@ -3589,6 +3589,10 @@
     {
       "method": "DELETE",
       "path": "/v1/projects/:projectId/spaces/:spaceId/members/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/posts"
     },
     {
       "method": "PUT",

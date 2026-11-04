@@ -28,6 +28,7 @@ import Loading from '../../primitives/loading';
 import { UserAvatar } from '../../primitives/user-avatar';
 import { sessionDisplayLabel, sessionDisplayStatus } from '../../session/actions/session-label';
 import { participantLabel } from '../../session/participants/session-participants';
+import { MentionChip } from '../../session/thread/mention-chip';
 import { MESSAGE_TEXT_CLASS, MessageRow } from '../../session/turn/message-row';
 import { SolidCheckIcon } from '../../internal/icons/solid-check-icon';
 import { RememberThisButton } from '../memory/remember-this';
@@ -41,6 +42,8 @@ import {
   gutterTime,
   lastReplyLabel,
   kortixRootText,
+  postSegments,
+  rootPostAuthor,
   threadIsWorking,
   threadMessageText,
   threadStatus,
@@ -300,7 +303,7 @@ function ThreadRow({
   const name = trigger
     ? trigger.name
     : byKortix
-      ? agentLabel(session.agent_name ?? space.dm_agent_name ?? t('agentFallback'))
+      ? agentLabel(rootPostAuthor(session) ?? session.agent_name ?? space.dm_agent_name ?? t('agentFallback'))
       : machine
       ? agentLabel(session.owner_name || t('agentFallback'))
       : participantLabel({ name: session.owner_name ?? null, email: session.owner_email ?? null }) ||
@@ -315,7 +318,7 @@ function ThreadRow({
             <EntityAvatar icon={trigger.icon} label={name} size="lg" />
           ) : (
             <AgentMark
-              slug={session.agent_name ?? space.dm_agent_name ?? DEFAULT_AGENT_SLUG}
+              slug={(byKortix ? rootPostAuthor(session) : null) ?? session.agent_name ?? space.dm_agent_name ?? DEFAULT_AGENT_SLUG}
               size={28}
               // 36px, the `lg` avatar column (`w-10`): the 40px tile would overflow it.
               tile={36}
@@ -402,7 +405,20 @@ function ThreadPrompt({ session, onOpen }: { session: ProjectSession; onOpen: ()
           !expanded && 'line-clamp-6',
         )}
       >
-        {truncated ? `${text}…` : text}
+        {kortixRootText(session) !== null ? (
+          // A space post: its resolved mentions as chips.
+          postSegments(text, session.metadata?.chat_root_mentions).map((segment, i) =>
+            segment.mention ? (
+              <MentionChip key={i} kind={segment.mention.kind === 'person' ? 'person' : 'agent'} label={segment.mention.label} />
+            ) : (
+              <span key={i}>{segment.text}</span>
+            ),
+          )
+        ) : truncated ? (
+          `${text}…`
+        ) : (
+          text
+        )}
       </p>
       {truncated || overflows || expanded ? (
         <button

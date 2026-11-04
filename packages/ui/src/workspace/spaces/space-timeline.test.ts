@@ -3,6 +3,8 @@ import type { ProjectSession } from '@kortix/sdk';
 
 import {
   buildSpaceTimeline,
+  postSegments,
+  rootPostAuthor,
   dayKind,
   gutterTime,
   lastReplyLabel,
@@ -198,5 +200,32 @@ describe('thread filters', () => {
     expect(threadStatus(thread('f', 'U', at(20, 9), { status: 'failed' }))).toBe('failed');
     expect(threadStatus(thread('d', 'U', at(20, 9), { status: 'stopped' }))).toBe('done');
     expect(threadStatus(thread('i', 'U', at(20, 9), { working: { state: 'idle' } } as Partial<ProjectSession>))).toBe('done');
+  });
+});
+
+describe('a space post’s mentions', () => {
+  const mentions = [
+    { token: 'ana', kind: 'person', label: 'Ana Lima' },
+    { token: 'researcher', kind: 'agent', label: 'researcher' },
+  ];
+
+  test('each resolved @token becomes a chip with the name; others stay text', () => {
+    expect(postSegments('Done. @Ana, @researcher has the notes; mail me@example.test or @bob.', mentions)).toEqual([
+      { text: 'Done. ' },
+      { text: '@Ana', mention: { kind: 'person', label: 'Ana Lima' } },
+      { text: ', ' },
+      { text: '@researcher', mention: { kind: 'agent', label: 'researcher' } },
+      { text: ' has the notes; mail me@example.test or @bob.' },
+    ]);
+  });
+
+  test('no mentions, or a malformed list: one plain run', () => {
+    expect(postSegments('@ana hi', undefined)).toEqual([{ text: '@ana hi' }]);
+    expect(postSegments('@ana hi', [{ token: 1 }])).toEqual([{ text: '@ana hi' }]);
+  });
+
+  test('the post’s author is the agent that wrote it, when one is stored', () => {
+    expect(rootPostAuthor({ metadata: { chat_root_author: 'researcher' } } as never)).toBe('researcher');
+    expect(rootPostAuthor({ metadata: {} } as never)).toBeNull();
   });
 });

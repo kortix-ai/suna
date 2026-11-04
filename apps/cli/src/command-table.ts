@@ -277,7 +277,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'spaces',
             args: '<subcommand>',
-            blurb: 'Configure a space for its person: rename, describe, tabs, agents, members (ls, get, rename, describe, tabs, agents, members)',
+            blurb: 'Post into a space and configure it for its person: post (main chat or a thread, @mentions), rename, describe, tabs, agents, members',
             featureFlag: 'chat',
           },
           {

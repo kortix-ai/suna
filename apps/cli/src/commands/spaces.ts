@@ -41,12 +41,21 @@ Subcommands:
                                      Move a tab (1 = first after Chat).
   tabs [<space>] set <json>          Replace every tab: a JSON array of {id,title,kind,ref}.
   agents [<space>] set <name>...     Set a channel's agents (the first is its default).
+  post [<space>] "<text>" [--thread <thread id>] [--ask]
+                                     Post into the space's main chat as this agent (a new
+                                     top-level message), or into one of its threads with
+                                     --thread. --ask makes that thread's agent answer;
+                                     without it the agent only reads the post. @name or
+                                     @email mentions a person (they get a notification
+                                     when they may see the space); @agent mentions an agent.
   members [<space>]                  List the people in a channel.
   members [<space>] add <email|user id>...
   members [<space>] rm <email|user id>
 
 Options:
   --space <space>   The space (instead of the positional one).
+  --thread <id>     post: the thread to post into.
+  --ask             post: the thread's agent answers the post.
   --project <id>    Project id (default: the linked or session project).
   --host <name>     Operate against a non-default Kortix host.
   --json            Machine-readable output.
@@ -58,6 +67,8 @@ Examples:
   kortix spaces tabs add file "About" /Company/Channels/launch/about.md
   kortix spaces agents '#launch' set researcher writer
   kortix spaces members add ana@example.com
+  kortix spaces post '#launch' "The weather check is done. @ana, the report is in Files."
+  kortix spaces post "Can you approve the draft? @ana" --thread 3f2a1b9c-… --ask
 `;
 
 interface SpaceTab {
@@ -83,7 +94,7 @@ interface Space {
 }
 
 const TAB_KINDS = ['file', 'folder', 'artifact', 'app', 'link'] as const;
-const SUBCOMMANDS = ['ls', 'list', 'get', 'rename', 'describe', 'tabs', 'agents', 'members'] as const;
+const SUBCOMMANDS = ['ls', 'list', 'get', 'rename', 'describe', 'tabs', 'agents', 'members', 'post'] as const;
 const TAB_VERBS = new Set(['add', 'rm', 'remove', 'move', 'set']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -96,6 +107,7 @@ export function splitSpaceArg(sub: string, args: readonly string[]): { space: st
       return all.length >= 1 ? takeFirst() : { space: undefined, rest: all };
     case 'rename':
     case 'describe':
+    case 'post':
       return all.length >= 2 ? takeFirst() : { space: undefined, rest: all };
     case 'tabs':
     case 'members':
@@ -233,11 +245,18 @@ export async function runSpaces(argv: string[]): Promise<number> {
   const helpExit = splitHelp(argv, HELP);
   if (helpExit !== null) return helpExit;
   const rest = [...argv];
-  let flags: { space?: string; project?: string; host?: string };
+  let flags: { space?: string; project?: string; host?: string; thread?: string };
   let json = false;
+  let ask = false;
   try {
-    flags = { space: takeFlagValue(rest, ['--space']), project: takeFlagValue(rest, ['--project']), host: takeFlagValue(rest, ['--host']) };
+    flags = {
+      space: takeFlagValue(rest, ['--space']),
+      project: takeFlagValue(rest, ['--project']),
+      host: takeFlagValue(rest, ['--host']),
+      thread: takeFlagValue(rest, ['--thread']),
+    };
     json = takeFlagBool(rest, ['--json']);
+    ask = takeFlagBool(rest, ['--ask']);
   } catch (err) {
     return fail((err as Error).message);
   }
@@ -268,6 +287,21 @@ export async function runSpaces(argv: string[]): Promise<number> {
     if (sub === 'get') {
       if (json) return (emitJson(space), 0);
       writeSpace(space);
+      return 0;
+    }
+    if (sub === 'post') {
+      const text = args.join(' ').trim();
+      if (!text) return missing('the post text, e.g. kortix spaces post "The weather check is done."');
+      if (ask && !flags.thread) return fail('--ask needs --thread <thread id>: a top-level post starts a new thread.');
+      const posted = await client.post<{ session_id: string; kind: string; notified: string[]; mentions: Array<{ label: string }> }>(`${at}/posts`, {
+        text,
+        ...(flags.thread ? { thread_id: flags.thread } : {}),
+        ...(ask ? { ask: true } : {}),
+      });
+      if (json) return (emitJson(posted), 0);
+      const where = space.kind === 'channel' ? `#${space.slug ?? space.name}` : `the DM with ${space.dm_agent_name ?? space.name}`;
+      process.stdout.write(`${status.ok(posted.kind === 'thread' ? `Posted in ${where} (thread ${posted.session_id})` : `Posted in thread ${posted.session_id}`)}\n`);
+      if (posted.mentions.length) process.stdout.write(`  Mentioned ${posted.mentions.map((m) => m.label).join(', ')}; ${posted.notified.length} notified.\n`);
       return 0;
     }
     if (sub === 'rename' || sub === 'describe') {
