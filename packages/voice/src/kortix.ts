@@ -108,12 +108,13 @@ export function attach(pi: KortixPi, session: string, o: { persisted?: () => voi
       properties: {
         url: { type: 'string', description: 'The call page (https).' },
         trusted: { type: 'boolean', description: 'Everyone in the call may ask you to act (your tools, files, integrations). Only when your owner asked for exactly that in this session; default false.' },
+        group: { type: 'boolean', description: 'false for a call with one other person (a support line, a one-to-one call): you answer what they say. Default true, a group call: you speak when addressed or when it is your turn.' },
       },
       required: ['url'],
       additionalProperties: false,
     },
-    async execute(_id: string, params: { url?: string; trusted?: boolean }) {
-      return text(await hostOpenCall({ session, relayPort: await start(), url: String(params?.url ?? ''), trusted: params?.trusted === true }))
+    async execute(_id: string, params: { url?: string; trusted?: boolean; group?: boolean }) {
+      return text(await hostOpenCall({ session, relayPort: await start(), url: String(params?.url ?? ''), trusted: params?.trusted === true, group: params?.group !== false }))
     },
   })
   pi.registerTool({

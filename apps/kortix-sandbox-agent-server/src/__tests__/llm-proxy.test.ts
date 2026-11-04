@@ -131,7 +131,7 @@ describe('in-sandbox inline image window (SampleCo 2026-08-25: >128 MiB vision b
       })
       expect(res.status).toBe(200)
       const seen = up.seen()!
-      expect(seen.images).toBe(12) // DEFAULT_IMAGE_WINDOW.keepOnOverflow
+      expect(seen.images).toBe(14) // 30 images: the cut moves in steps of 8 (20 - 12), so 16 drop
       expect(seen.auth).toBe('Bearer real-token')
       expect(Number(seen.contentLength)).toBe(seen.bytes)
       expect(seen.bytes).toBeLessThan(15 * 64 * 1024)

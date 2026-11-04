@@ -1,7 +1,7 @@
 'use client';
 
 import type { SessionDisplayStatus } from '../../session/actions/session-label';
-import { ClockCounterClockwiseIcon, GitDiffIcon, QuestionIcon } from '@phosphor-icons/react';
+import { ClockCounterClockwiseIcon, GitDiffIcon, QuestionIcon, TargetIcon } from '@phosphor-icons/react';
 
 /**
  * Color says who acts: gray nobody, green the agent, blue you (yellow once it waits
@@ -151,5 +151,75 @@ export function SessionStatusMark({
       <circle cx="8" cy="8" r="6.3" stroke="currentColor" fill="none" strokeWidth="1.5" />
       {style.fill && <circle cx="8" cy="8" r="4" fill="currentColor" />}
     </svg>
+  );
+}
+
+export type GoalStatusTone = 'green' | 'blue' | 'yellow' | 'red';
+
+/**
+ * The colour a goal session's status gives its target, by the same rule as
+ * `SessionStatusMark`: green the agent acts, blue you (yellow once a review
+ * waits over 24h), red broken. Nobody acting (`stopped`, `starting`,
+ * `legacy`, or no status at all) leaves the target plain.
+ */
+export function goalStatusTone(
+  status: SessionDisplayStatus | null,
+  waitingOn: 'answer' | 'review' = 'review',
+  overdue = false,
+): GoalStatusTone | null {
+  if (status === 'done' || status === 'running') return 'green';
+  if (status === 'needs-you') return waitingOn === 'review' && overdue ? 'yellow' : 'blue';
+  if (status === 'failed') return 'red';
+  return null;
+}
+
+/**
+ * `BELL_REFLECTION_MASK` (`internal/notifications/notification-bell.tsx`): the
+ * colour reaches into the 16px glyph from the corner the badge sits on.
+ * Copied, not imported, so this leaf module does not pull in the inbox.
+ */
+const GOAL_REFLECTION_MASK = 'radial-gradient(circle 12px at 100% 100%, #000 35%, transparent 100%)';
+
+/**
+ * A goal session's one leading mark: the target, tinted from its bottom-right
+ * corner in the status colour with a status dot on that corner. It is the
+ * notification bell's badge-glow (`BellMark`) without a number, so a goal row
+ * carries one mark, not a status glyph beside a target.
+ *
+ * The dot's ring paints `--session-row-surface`, so it reads as cut out of
+ * the row at rest, on hover and while active.
+ */
+export function GoalStatusMark({
+  status,
+  waitingOn = 'review',
+  overdue = false,
+}: {
+  /** `null` draws the plain target (a resting goal child). */
+  status: SessionDisplayStatus | null;
+  waitingOn?: 'answer' | 'review';
+  overdue?: boolean;
+}) {
+  const tone = goalStatusTone(status, waitingOn, overdue);
+  const color = tone ? `var(--kortix-${tone})` : undefined;
+  return (
+    <span
+      className="relative flex size-4 shrink-0"
+      data-glyph="goal"
+      data-goal-tone={tone ?? 'none'}
+      aria-hidden
+    >
+      <TargetIcon className="text-muted-foreground size-4" />
+      {color ? (
+        <>
+          <TargetIcon
+            className="absolute inset-0 size-4"
+            style={{ color, maskImage: GOAL_REFLECTION_MASK, WebkitMaskImage: GOAL_REFLECTION_MASK }}
+          />
+          <span className="absolute -right-0.5 -bottom-0.5 flex rounded-full bg-[var(--session-row-surface,var(--background))] p-px">
+            <span data-slot="goal-status-dot" className="size-2 rounded-full" style={{ backgroundColor: color }} />
+          </span>
+        </>
+      ) : null}
+    </span>
   );
 }

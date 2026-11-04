@@ -17,7 +17,7 @@ import {
   isProviderAuthSatisfied,
   primaryAuthEnvVars,
   providerAuthRequirement,
-} from '@kortix/llm-catalog';
+} from '@kortix/llm-catalog/lite';
 
 import type { AccountSecretResource } from '../rest/projects-client/account-secret-resources';
 import type { ConnectorSharing } from '../rest/projects-client/shared';

@@ -21,6 +21,8 @@ interface AuthConfigRow {
   id: string;
   status: 'ENABLED' | 'DISABLED';
   is_composio_managed?: boolean;
+  /** `OAUTH2`, `API_KEY`, `S2S_OAUTH2`, `DCR_OAUTH`, ... */
+  auth_scheme?: string;
   toolkit: { slug: string };
   created_at?: string;
 }
@@ -130,9 +132,48 @@ export async function customAuthConfigIds(input: {
   catalogClient?: ComposioCatalogClient;
   toolkit?: string;
 } = {}): Promise<Map<string, string>> {
+  return newestPerToolkit(await enabledCustomAuthConfigs(input));
+}
+
+/**
+ * The operator's own OAuth app for one toolkit: the newest enabled custom
+ * `OAUTH2` auth config, or null. New accounts sign in with it even when
+ * Composio holds a managed app for the toolkit (see `composioConnectUrl`).
+ *
+ * Why (2026-11-04): Google counts YouTube uploads per Google app. Composio's
+ * managed YouTube app allows 966 uploads a day for every Composio customer
+ * together, and live uploads failed with `429 rateLimitExceeded` on that
+ * shared quota while Kortix itself had uploaded nothing. An app the operator
+ * owns has its own quota. Only `OAUTH2` counts: an API-key or server-to-server
+ * config next to a managed OAuth app is a different way to connect, not a
+ * replacement for the one-click sign-in.
+ */
+export async function ownOAuthAppId(input: {
+  catalogClient?: ComposioCatalogClient;
+  toolkit: string;
+}): Promise<string | null> {
+  const rows = (await enabledCustomAuthConfigs(input)).filter((row) => row.auth_scheme === 'OAUTH2');
+  return newestPerToolkit(rows).get(input.toolkit.toLowerCase()) ?? null;
+}
+
+function newestPerToolkit(rows: readonly AuthConfigRow[]): Map<string, string> {
+  const newest = new Map<string, AuthConfigRow>();
+  for (const row of rows) {
+    const slug = row.toolkit.slug.toLowerCase();
+    const current = newest.get(slug);
+    if (!current || (row.created_at ?? '') > (current.created_at ?? '')) newest.set(slug, row);
+  }
+  return new Map([...newest].map(([slug, row]) => [slug, row.id]));
+}
+
+/** Every enabled, operator-owned auth config, optionally for one toolkit. */
+async function enabledCustomAuthConfigs(input: {
+  catalogClient?: ComposioCatalogClient;
+  toolkit?: string;
+}): Promise<AuthConfigRow[]> {
   const authConfigs = (input.catalogClient ?? composioRestClient()).authConfigs;
   if (!authConfigs) throw new Error('Composio auth config API is unavailable');
-  const newest = new Map<string, AuthConfigRow>();
+  const rows: AuthConfigRow[] = [];
   const cursors = new Set<string>();
   let cursor: string | undefined;
   do {
@@ -144,16 +185,13 @@ export async function customAuthConfigIds(input: {
       ...(cursor ? { cursor } : {}),
     });
     for (const row of page.items) {
-      if (row.status !== 'ENABLED' || row.is_composio_managed !== false) continue;
-      const slug = row.toolkit.slug.toLowerCase();
-      const current = newest.get(slug);
-      if (!current || (row.created_at ?? '') > (current.created_at ?? '')) newest.set(slug, row);
+      if (row.status === 'ENABLED' && row.is_composio_managed === false) rows.push(row);
     }
     cursor = page.next_cursor?.trim() || undefined;
     if (cursor && cursors.has(cursor)) throw new Error('Composio auth config list repeated a cursor');
     if (cursor) cursors.add(cursor);
   } while (cursor);
-  return new Map([...newest].map(([slug, row]) => [slug, row.id]));
+  return rows;
 }
 
 // Short, so an auth config an operator just created shows its toolkit within a

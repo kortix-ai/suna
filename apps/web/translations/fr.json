@@ -1852,7 +1852,7 @@
       "moved": "Session déplacée",
       "noGroup": "Aucun groupe",
       "moveFailed": "Impossible de déplacer la session",
-      "empty": "Les sessions que vous déplacez ici apparaîtront ici.",
+      "empty": "Faites glisser une session ici",
       "groupOptions": "Options du groupe"
     },
     "recentlyDeleted": {
