@@ -7,6 +7,7 @@ import { getTier, paidMonthlyUsd } from './tiers';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
+import { captureAccountProductEvent } from './billing-analytics';
 
 export function planKeyFromMetadata(
   metadata: Stripe.Metadata | null | undefined,
@@ -101,8 +102,11 @@ export async function activateSubscriptionForAccount(params: {
     { account: existingAccount, reason: 'subscription.activated' },
   );
 
+  // Checkout and the first paid invoice both activate. The keyed grant is the
+  // one place that knows which arrived first.
+  let firstActivation = true;
   if (monthlyUsd > 0) {
-    await wallet.grant({
+    const granted = await wallet.grant({
       accountId,
       amount: monthlyUsd,
       kind: 'tier_grant',
@@ -110,6 +114,7 @@ export async function activateSubscriptionForAccount(params: {
       expiring: true,
       key: { event: `subscription_activation:${subscriptionId}` },
     });
+    firstActivation = !granted.replayed;
   }
 
   if (customerId) {
@@ -127,4 +132,19 @@ export async function activateSubscriptionForAccount(params: {
   }
 
   console.log(`[Webhook] Subscription activated: ${tierKey} $${monthlyUsd}/mo for ${accountId} (sub=${subscriptionId})`);
+
+  if (firstActivation) {
+    captureAccountProductEvent({
+      accountId,
+      event: 'subscription_started',
+      dedupeKey: subscriptionId,
+      properties: {
+        store: 'stripe',
+        plan: tierKey,
+        amount_usd: monthlyUsd,
+        billing_period: isYearly ? 'yearly' : 'monthly',
+        previous_tier: existingAccount?.tier ?? null,
+      },
+    });
+  }
 }

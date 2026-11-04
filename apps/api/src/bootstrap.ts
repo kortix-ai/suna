@@ -402,7 +402,12 @@ async function runShutdown(signal: string): Promise<void> {
   // Flush observability data last, after the drain: audit rows are buffered off
   // the request path, and requests that finished during the drain wrote some.
   await within(
-    Promise.allSettled([shutdownAuditEvents(), appLogger.flush(), flushSentry()]),
+    Promise.allSettled([
+      shutdownAuditEvents(),
+      appLogger.flush(),
+      flushSentry(),
+      import('./shared/product-analytics').then((m) => m.shutdownProductAnalytics()),
+    ]),
     WORKER_STOP_BUDGET_MS,
     'flush',
   );
