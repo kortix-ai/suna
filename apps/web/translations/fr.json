@@ -25118,6 +25118,7 @@
   "voiceCall": {
     "title": "Appel vocal",
     "call": "Appeler",
+    "calling": "Appel en cours…",
     "start": "Démarrer un appel vocal",
     "end": "Terminer l’appel",
     "connecting": "Connexion…",
@@ -25135,6 +25136,7 @@
     "lost": "Impossible de rétablir l’appel",
     "unavailable": "Le bac à sable de cette session a démarré avant l’activation des appels vocaux. Les appels fonctionnent à partir de son prochain démarrage.",
     "callAgain": "Rappeler",
+    "openChat": "Ouvrir le chat",
     "close": "Fermer"
   },
   "agentMounts": {

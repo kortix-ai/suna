@@ -9379,6 +9379,7 @@ const catalog = {
   "voiceCall": {
     "title": "Voice call",
     "call": "Call",
+    "calling": "Calling…",
     "start": "Start a voice call",
     "end": "End call",
     "connecting": "Connecting…",
@@ -9396,6 +9397,7 @@ const catalog = {
     "lost": "Could not reconnect the call",
     "unavailable": "This session's sandbox started before voice calls were turned on. Calls work from its next start.",
     "callAgain": "Call again",
+    "openChat": "Open the chat",
     "close": "Close"
   },
   "agentCapabilities": {

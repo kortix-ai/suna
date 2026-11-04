@@ -25118,6 +25118,7 @@
   "voiceCall": {
     "title": "Chamada de voz",
     "call": "Ligar",
+    "calling": "Chamando…",
     "start": "Iniciar uma chamada de voz",
     "end": "Encerrar chamada",
     "connecting": "Conectando…",
@@ -25135,6 +25136,7 @@
     "lost": "Não foi possível reconectar a chamada",
     "unavailable": "O sandbox desta sessão foi iniciado antes de as chamadas de voz serem ativadas. As chamadas funcionam a partir do próximo início dele.",
     "callAgain": "Ligar de novo",
+    "openChat": "Abrir o chat",
     "close": "Fechar"
   },
   "agentMounts": {

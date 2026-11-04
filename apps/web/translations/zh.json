@@ -25118,6 +25118,7 @@
   "voiceCall": {
     "title": "语音通话",
     "call": "通话",
+    "calling": "正在呼叫…",
     "start": "开始语音通话",
     "end": "结束通话",
     "connecting": "正在连接…",
@@ -25135,6 +25136,7 @@
     "lost": "无法重新连接通话",
     "unavailable": "此会话的沙盒在语音通话开启之前启动。从它下次启动起即可通话。",
     "callAgain": "重新呼叫",
+    "openChat": "打开聊天",
     "close": "关闭"
   },
   "agentMounts": {

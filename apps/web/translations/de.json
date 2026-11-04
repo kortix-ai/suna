@@ -25118,6 +25118,7 @@
   "voiceCall": {
     "title": "Sprachanruf",
     "call": "Anrufen",
+    "calling": "Ruft an…",
     "start": "Sprachanruf starten",
     "end": "Anruf beenden",
     "connecting": "Verbinden…",
@@ -25135,6 +25136,7 @@
     "lost": "Der Anruf konnte nicht wiederhergestellt werden",
     "unavailable": "Die Sandbox dieser Sitzung wurde gestartet, bevor Sprachanrufe aktiviert wurden. Anrufe funktionieren ab ihrem nächsten Start.",
     "callAgain": "Erneut anrufen",
+    "openChat": "Chat öffnen",
     "close": "Schließen"
   },
   "agentMounts": {
