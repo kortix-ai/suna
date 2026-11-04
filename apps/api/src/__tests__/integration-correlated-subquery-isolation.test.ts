@@ -192,3 +192,21 @@ describe('correlated reads stay on their own row', () => {
     expect(record?.status).toBe('active');
   });
 });
+
+describe('public session sandbox identifiers', () => {
+  test('the internal sandbox id resolves the same provider and tenant as its external id', async () => {
+    const project = projectsForTest[0];
+    if (!project) throw new Error('Missing seeded project');
+    const sessionId = await insertSession({ project, agentName: 'default', status: 'running' });
+    const externalId = `sbx_contract_${run}`;
+    await insertSandbox({ project, sessionId, externalId, status: 'active' });
+    const providerRecord = await loadSandbox(externalId);
+    expect(providerRecord).not.toBeNull();
+    if (!providerRecord) throw new Error('Missing seeded sandbox');
+    const sessionRecord = await loadSandbox(providerRecord.sandboxId);
+    expect(sessionRecord).toEqual(providerRecord);
+    expect(sessionRecord?.externalId).toBe(externalId);
+    expect(sessionRecord?.accountId).toBe(project.account_id);
+    expect(await loadSandbox(crypto.randomUUID())).toBeNull();
+  });
+});

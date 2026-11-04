@@ -78,11 +78,16 @@ export async function forwardToSandbox(
   // active state, and yields the service key for upstream auth. (Previously two
   // separate queries for the same row.)
   const ptl = new ProvisionTimeline(sandboxId, 'proxy');
-  let record = opts.record?.externalId === sandboxId ? opts.record : await loadSandbox(sandboxId);
+  let record = opts.record && (opts.record.externalId === sandboxId || opts.record.sandboxId === sandboxId)
+    ? opts.record
+    : await loadSandbox(sandboxId);
   ptl.mark('load-sandbox');
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
+  // Keep redirectPrefix as requested, but all provider and lifecycle calls use
+  // the canonical provider id, including requests using the public sandbox_id.
+  if (sandboxId === record.sandboxId) sandboxId = record.externalId;
   bindSandboxRequestContext(record, sandboxId);
   const userId = principalUserId(access);
   const callerSessionId = access.kind === 'principal' ? access.callerSessionId : null;

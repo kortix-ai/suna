@@ -33,6 +33,7 @@ import {
 import { recoverTurnsAfterRuntimeRestart } from '../projects/session-lifecycle/runtime-restart-recovery';
 import { setBounded } from '../shared/bounded-cache';
 import { db } from '../shared/db';
+import { isUuid } from '../shared/validate';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import {
   encodeKortixUserContext,
@@ -207,10 +208,13 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
   };
 
   // The exact comparison is the indexed path used by REST proxy URLs. Preview
-  // subdomains need the fallback because browsers lowercase hostnames while
-  // Platinum external ids contain uppercase ULIDs.
+  // subdomains need the lowercase fallback. The public session sandbox_id is
+  // the internal UUID; resolve it to the same row without changing the serializer.
   const row =
     (await selectOne(eq(sessionSandboxes.externalId, externalId))) ??
+    (isUuid(externalId)
+      ? await selectOne(sql`${sessionSandboxes.sandboxId} = ${externalId}::uuid and ${sessionSandboxes.externalId} is not null`)
+      : null) ??
     (await selectOne(sql`lower(${sessionSandboxes.externalId}) = lower(${externalId})`));
 
   if (!row) return null;

@@ -680,3 +680,20 @@ describe('forwardToSandbox — POST /kortix/env-rpc', () => {
     expect(Math.max(...timerDelays)).toBeGreaterThan(PROXY_ATTEMPT_TIMEOUT_MS);
   });
 });
+
+test('internal sandbox id forwards under the provider id', async () => {
+  boxKeepsMessageIds = true;
+  queueFetch(new Response('ok'));
+  const record = {
+    ...ACTIVE_RECORD,
+    sandboxId: '11111111-1111-4111-8111-111111111111',
+    baseUrl: 'http://sandbox.local',
+  };
+  const response = await forwardToSandbox(
+    record.sandboxId, 8000, principal, 'POST', '/session/ses_1/prompt_async', '',
+    jsonHeaders(), bodyOf({ messageID: mintWireMessageId({ nowMs: Date.now() }).id, parts: [{ type: 'text', text: 'hi' }] }),
+    'http://app.local', undefined, undefined, { record },
+  );
+  expect(response.status).toBe(200);
+  expect(keepsIdsAsks).toEqual([{ externalId: record.externalId, userId: 'u1' }]);
+});
