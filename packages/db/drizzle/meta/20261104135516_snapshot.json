@@ -1,6 +1,6 @@
 {
-  "id": "20d2898c-4b4a-4ab2-97eb-f9cd00131d94",
-  "prevId": "0cc8b5c5-be95-48e1-8588-ef16390c44b1",
+  "id": "8aca98d6-2e13-4a62-8205-c8849fdd7081",
+  "prevId": "60e0b161-c310-4d0c-baa6-24dd24a561ad",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1611,6 +1611,18 @@
         },
         "needs_reauth_at": {
           "name": "needs_reauth_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usage": {
+          "name": "usage",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usage_checked_at": {
+          "name": "usage_checked_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -5161,194 +5173,6 @@
           "value": "char_length(\"kortix\".\"artifact_comments\".\"body\") <= 10000 and (\"kortix\".\"artifact_comments\".\"deleted_at\" is not null or char_length(\"kortix\".\"artifact_comments\".\"body\") >= 1)"
         }
       },
-      "isRLSEnabled": true
-    },
-    "kortix.artifact_doc_state": {
-      "name": "artifact_doc_state",
-      "schema": "kortix",
-      "columns": {
-        "artifact_id": {
-          "name": "artifact_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "epoch": {
-          "name": "epoch",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "bytes_total": {
-          "name": "bytes_total",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "compaction_failed_at": {
-          "name": "compaction_failed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "next_seq": {
-          "name": "next_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "flushed_seq": {
-          "name": "flushed_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "flushed_version": {
-          "name": "flushed_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "flushed_markdown": {
-          "name": "flushed_markdown",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "lease_holder": {
-          "name": "lease_holder",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_user_id": {
-          "name": "lease_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_expires_at": {
-          "name": "lease_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "artifact_doc_state_artifact_fk": {
-          "name": "artifact_doc_state_artifact_fk",
-          "tableFrom": "artifact_doc_state",
-          "tableTo": "artifacts",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "artifact_id"
-          ],
-          "columnsTo": [
-            "artifact_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "artifact_doc_state_seq_check": {
-          "name": "artifact_doc_state_seq_check",
-          "value": "\"kortix\".\"artifact_doc_state\".\"flushed_seq\" >= 0 and \"kortix\".\"artifact_doc_state\".\"flushed_seq\" < \"kortix\".\"artifact_doc_state\".\"next_seq\""
-        },
-        "artifact_doc_state_lease_holder_check": {
-          "name": "artifact_doc_state_lease_holder_check",
-          "value": "\"kortix\".\"artifact_doc_state\".\"lease_holder\" is null or char_length(\"kortix\".\"artifact_doc_state\".\"lease_holder\") between 1 and 64"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "kortix.artifact_doc_updates": {
-      "name": "artifact_doc_updates",
-      "schema": "kortix",
-      "columns": {
-        "artifact_id": {
-          "name": "artifact_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "seq": {
-          "name": "seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bytes": {
-          "name": "bytes",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "artifact_doc_updates_artifact_fk": {
-          "name": "artifact_doc_updates_artifact_fk",
-          "tableFrom": "artifact_doc_updates",
-          "tableTo": "artifacts",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "artifact_id"
-          ],
-          "columnsTo": [
-            "artifact_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "artifact_doc_updates_artifact_id_seq_pk": {
-          "name": "artifact_doc_updates_artifact_id_seq_pk",
-          "columns": [
-            "artifact_id",
-            "seq"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": true
     },
     "kortix.artifact_events": {

@@ -23,6 +23,10 @@ set statement_timeout = '30s';
 
 CREATE TABLE "kortix"."artifact_doc_state" (
 	"artifact_id" uuid PRIMARY KEY NOT NULL,
+	"epoch" uuid DEFAULT gen_random_uuid() NOT NULL,
+	"bytes_total" bigint DEFAULT 0 NOT NULL,
+	"compaction_failed_at" timestamp with time zone,
+	"pending_contributors" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
 	"next_seq" bigint DEFAULT 1 NOT NULL,
 	"flushed_seq" bigint DEFAULT 0 NOT NULL,
 	"flushed_version" text,
@@ -43,6 +47,7 @@ CREATE TABLE "kortix"."artifact_doc_updates" (
 	"bytes" "bytea" NOT NULL,
 	"created_by" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"quarantined_at" timestamp with time zone,
 	CONSTRAINT "artifact_doc_updates_artifact_id_seq_pk" PRIMARY KEY("artifact_id","seq")
 );
 --> statement-breakpoint

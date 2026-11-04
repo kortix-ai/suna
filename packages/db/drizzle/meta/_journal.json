@@ -1517,36 +1517,15 @@
     {
       "idx": 216,
       "version": "7",
-      "when": 1793789517106,
-      "tag": "20261104105157_artifact_doc_sync",
+      "when": 1793800516626,
+      "tag": "20261104135516_subscription_usage",
       "breakpoints": true
     },
     {
       "idx": 217,
       "version": "7",
-      "when": 1793796222904,
-      "tag": "20261104124342_artifact_doc_epoch",
-      "breakpoints": true
-    },
-    {
-      "idx": 218,
-      "version": "7",
-      "when": 1793798960188,
-      "tag": "20261104132920_artifact_doc_epoch_not_null",
-      "breakpoints": true
-    },
-    {
-      "idx": 219,
-      "version": "7",
-      "when": 1793801601627,
-      "tag": "20261104141321_artifact_doc_contributors",
-      "breakpoints": true
-    },
-    {
-      "idx": 220,
-      "version": "7",
-      "when": 1793802658922,
-      "tag": "20261104143058_artifact_doc_quarantine",
+      "when": 1793803638390,
+      "tag": "20261104144718_artifact_doc_sync",
       "breakpoints": true
     }
   ]

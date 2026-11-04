@@ -1,6 +1,6 @@
 {
-  "id": "da41156f-a96f-4d7a-af13-f84e078429c5",
-  "prevId": "1d15cdd0-6ef0-41c4-abff-5058097ee240",
+  "id": "7ee37633-4336-45b4-8f83-26b8a55fcaa2",
+  "prevId": "8aca98d6-2e13-4a62-8205-c8849fdd7081",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1611,6 +1611,18 @@
         },
         "needs_reauth_at": {
           "name": "needs_reauth_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usage": {
+          "name": "usage",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usage_checked_at": {
+          "name": "usage_checked_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false

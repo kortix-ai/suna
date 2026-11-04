@@ -725,6 +725,9 @@ export async function handleChatCompletions(
       notePoolRateLimit: hooks.notePoolRateLimit
         ? (secretId, seconds) => hooks.notePoolRateLimit!(principal, secretId, seconds)
         : undefined,
+      notePoolUsage: hooks.notePoolUsage
+        ? (secretId, usage) => hooks.notePoolUsage!(principal, secretId, usage)
+        : undefined,
       refreshCredential: hooks.refreshCredential
         ? (descriptor) => hooks.refreshCredential!(principal, descriptor)
         : undefined,

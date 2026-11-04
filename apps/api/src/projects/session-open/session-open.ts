@@ -32,6 +32,7 @@ import {
 } from './session-open-readiness';
 import { openNotRunningBox, openRemovedBox, syncRecoveredRunningRow } from './session-open-recovery';
 import { enforceAdmission, enforceRuntimeGuarantee } from './session-open-guarantee';
+import { holdBelowRuntimeFloor } from './runtime-floor';
 import {
   keepStoppedRefusesWake,
   liveStopClaimAtMs,
@@ -276,6 +277,19 @@ async function stageRunningOpen(
 
   const readiness = await observeOpenCodeReadiness(args, log, synced.row, synced.runningExternalId);
   await stampUnreachableDiagnostics(synced.row, readiness.ensured, synced.runningExternalId);
+
+  // A box below the runtime floor is held until it runs the current daemon, or
+  // refused (runtime-floor-policy.ts). Before every other check: none of them
+  // may read an old daemon's routes, and no serving answer may hand over a box
+  // that restarts onto its new daemon.
+  const held = await holdBelowRuntimeFloor(
+    args,
+    synced.row,
+    synced.runningExternalId,
+    readiness.capabilities,
+    readiness.booting,
+  );
+  if (held) return held;
 
   const parked = await judgeBootBudget(
     args,
