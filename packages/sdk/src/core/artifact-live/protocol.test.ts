@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import * as shared from '../../../../shared/src/artifact-live';
 import {
   ARTIFACT_LIVE_CLOSE,
+  ARTIFACT_LIVE_COLORS,
   ARTIFACT_LIVE_LIMITS,
   ARTIFACT_LIVE_VERSION,
   encodeArtifactLiveClientFrame,
@@ -60,6 +61,8 @@ const SERVER_FRAMES: unknown[] = [
   { v: 1, t: 'changed', what: 'content', version: 'x'.repeat(513) },
   { v: 1, t: 'presence', participants: Array.from({ length: 201 }, () => person) },
   { v: 1, t: 'presence', participants: [{ ...person, color: 'pink' }] },
+  // Yellow is the comment highlight, so no participant is yellow.
+  { v: 1, t: 'presence', participants: [{ ...person, color: 'yellow' }] },
   { v: 1, t: 'presence', participants: [{ ...person, status: 'idle' }] },
   { v: 1, t: 'presence', participants: [{ ...person, view: 'slide' }] },
   { v: 1, t: 'presence', participants: [{ ...person, who: { kind: 'user', user_id: 'not-a-uuid' } }] },
@@ -105,6 +108,7 @@ describe('the SDK live protocol equals @kortix/shared/artifact-live', () => {
     expect(ARTIFACT_LIVE_VERSION).toBe(shared.ARTIFACT_LIVE_VERSION);
     expect({ ...ARTIFACT_LIVE_LIMITS }).toEqual({ ...shared.ARTIFACT_LIVE_LIMITS });
     expect({ ...ARTIFACT_LIVE_CLOSE }).toEqual({ ...shared.ARTIFACT_LIVE_CLOSE });
+    expect([...ARTIFACT_LIVE_COLORS]).toEqual([...shared.ARTIFACT_LIVE_COLORS]);
   });
 
   test('every server frame parses to the same value, or to null, in both parsers', () => {

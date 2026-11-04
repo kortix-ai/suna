@@ -434,6 +434,20 @@ export function createArtifactLiveConnection(options: ArtifactLiveConnectionOpti
     if (hidden !== helloHidden) offer('hide');
   }
 
+  /**
+   * The server drops a hidden participant's cursor, selection and typing. After
+   * un-hiding, send them again as fresh frames, queued after the hide frame.
+   */
+  function resendShown() {
+    for (const kind of ['cursor', 'selection', 'typing'] as const) {
+      lastSent.delete(kind);
+      pending.delete(kind);
+    }
+    if (cursor) offer('cursor');
+    if (selection) offer('selection');
+    if (typing?.active) offer('typing');
+  }
+
   /** Validate, store, and offer one field. */
   function set(frame: ArtifactLiveClientFrame, kind: FieldKind, store: () => void): boolean {
     if (ended() || encodeArtifactLiveClientFrame(frame) === null) return false;
@@ -458,7 +472,12 @@ export function createArtifactLiveConnection(options: ArtifactLiveConnectionOpti
     setSelection: (range) => set({ v: 1, t: 'selection', range }, 'selection', () => { selection = range; }),
     setTyping: (where, active) => set({ v: 1, t: 'typing', where, active }, 'typing', () => { typing = { where, active }; }),
     setFocus: (threadId) => set({ v: 1, t: 'focus', thread_id: threadId }, 'focus', () => { focus = threadId; }),
-    setHidden: (next) => set({ v: 1, t: 'hide', hidden: next }, 'hide', () => { hidden = next; }),
+    setHidden: (next) => {
+      const unhiding = hidden && !next;
+      if (!set({ v: 1, t: 'hide', hidden: next }, 'hide', () => { hidden = next; })) return false;
+      if (unhiding) resendShown();
+      return true;
+    },
     close() {
       if (ended()) return;
       const current = socket;

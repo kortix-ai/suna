@@ -434,6 +434,62 @@ describe('createArtifactLiveConnection', () => {
     expect(sockets[1]!.frames()[0]).toEqual({ v: 1, t: 'hello', view: 'doc', version: 'etag-1', hidden: true });
   });
 
+  test('un-hiding sends the cursor, selection and active typing again, after the hide frame', async () => {
+    const { clock, socket, connection, goLive } = setup();
+    await goLive();
+    const range = { kind: 'doc' as const, quote: 'Churn fell', prefix: '', suffix: '.' };
+    connection.setCursor(cursorAt(5));
+    connection.setSelection(range);
+    connection.setTyping('doc', true);
+    connection.setFocus(THREAD);
+    await clock.advance(1_000);
+    connection.setHidden(true);
+    await clock.advance(1_000);
+    const before = socket().sent.length;
+    connection.setHidden(false);
+    await clock.advance(1_000);
+    // The server dropped what a hidden participant showed; focus it keeps.
+    expect(socket().frames().slice(before)).toEqual([
+      { v: 1, t: 'hide', hidden: false },
+      { v: 1, t: 'cursor', at: cursorAt(5) },
+      { v: 1, t: 'selection', range },
+      { v: 1, t: 'typing', where: 'doc', active: true },
+    ]);
+  });
+
+  test('a cursor set while hidden and still unsent goes out after the un-hide frame, not before it', async () => {
+    const { clock, socket, connection, goLive } = setup();
+    await goLive();
+    connection.setHidden(true);
+    await clock.advance(1_000);
+    const before = socket().sent.length;
+    connection.setFocus(THREAD); // takes the free send slot
+    connection.setCursor(cursorAt(7)); // waits for the next slot
+    connection.setHidden(false);
+    await clock.advance(1_000);
+    expect(socket().frames().slice(before)).toEqual([
+      { v: 1, t: 'focus', thread_id: THREAD },
+      { v: 1, t: 'hide', hidden: false },
+      { v: 1, t: 'cursor', at: cursorAt(7) },
+    ]);
+  });
+
+  test('un-hiding sends nothing for fields this viewer never set or cleared', async () => {
+    const { clock, socket, connection, goLive } = setup();
+    await goLive();
+    connection.setCursor(cursorAt(5));
+    connection.setTyping('doc', true);
+    await clock.advance(1_000);
+    connection.setCursor(null);
+    connection.setTyping('doc', false);
+    connection.setHidden(true);
+    await clock.advance(1_000);
+    const before = socket().sent.length;
+    connection.setHidden(false);
+    await clock.advance(1_000);
+    expect(socket().frames().slice(before)).toEqual([{ v: 1, t: 'hide', hidden: false }]);
+  });
+
   test('setHidden with the value the hello carried sends nothing', async () => {
     const { clock, socket, connection, goLive } = setup({ hidden: true });
     await goLive();

@@ -44,9 +44,10 @@ export const ARTIFACT_LIVE_CLOSE = {
   rateLimited: 4429,
 } as const;
 
-const COLORS = ['blue', 'green', 'orange', 'purple', 'red', 'yellow'] as const;
+/** Label colors, as kortix-* token names. No yellow: it is the comment highlight. Internal: not in the public barrel. */
+export const ARTIFACT_LIVE_COLORS = ['blue', 'green', 'orange', 'purple', 'red'] as const;
 /** A participant's label color, as a kortix-* token name. The server derives it from the participant id. */
-export type ArtifactLiveColor = (typeof COLORS)[number];
+export type ArtifactLiveColor = (typeof ARTIFACT_LIVE_COLORS)[number];
 
 /** How the viewer shows the Artifact: a doc's Markdown, or a rendered page. */
 export type ArtifactLiveView = 'doc' | 'page';
@@ -187,7 +188,7 @@ const participant = strict({
   }),
   name: text(200, 1),
   avatar_url: nullable(text(2048)),
-  color: oneOf(COLORS),
+  color: oneOf(ARTIFACT_LIVE_COLORS),
   status: oneOf(['viewing', 'reading', 'editing', 'writing']),
   view: nullable(oneOf(['doc', 'page'])),
   hidden: bool,

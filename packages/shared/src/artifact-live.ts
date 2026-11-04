@@ -40,8 +40,8 @@ export const ARTIFACT_LIVE_CLOSE = {
   rateLimited: 4429,
 } as const;
 
-/** Label colors, as kortix-* token names. A participant's color comes from its id. */
-export const ARTIFACT_LIVE_COLORS = ['blue', 'green', 'orange', 'purple', 'red', 'yellow'] as const;
+/** Label colors, as kortix-* token names. A participant's color comes from its id. Yellow is left out: it is the comment highlight. */
+export const ARTIFACT_LIVE_COLORS = ['blue', 'green', 'orange', 'purple', 'red'] as const;
 export type ArtifactLiveColor = (typeof ARTIFACT_LIVE_COLORS)[number];
 
 /** The same id always gets the same color, on every client. */
