@@ -1290,10 +1290,6 @@
           "name": "Wiederherstellung aus dem Session-Log",
           "description": "Baut eine Session aus ihrem gespeicherten Session-Log neu auf, wenn ihr Computer die Unterhaltung verloren hat. Kortix aktiviert es pro Projekt."
         },
-        "agent_rooms": {
-          "name": "Räume",
-          "description": "Benannte Chaträume, in denen Agentensitzungen und Personen posten und in Threads antworten. Eine Sitzung wacht auf, wenn eine Nachricht an sie gerichtet ist. Fügt die Seite „Räume“, `kortix rooms` und `kortix peers` hinzu."
-        },
         "goals": {
           "name": "Ziele",
           "description": "Gib einem Agenten ein Ziel, für das er verantwortlich bleibt, bis eine unabhängige Prüfung das Ergebnis bestätigt. Er plant, arbeitet, wartet, fragt bei Personen nach und speichert seinen Stand in einem Ordner „Goals“ unter Dateien. Erfordert aktivierte Volumes und Schleifen."
@@ -1547,7 +1543,6 @@
     }
   },
   "sidebar": {
-    "rooms": "Räume",
     "goals": "Ziele",
     "artifacts": "Artefakte",
     "referAndEarn": "Empfehlen",
@@ -3271,7 +3266,6 @@
       "automation_recovered": "Entwarnung",
       "capture_device_down": "Capture-Computer gestoppt",
       "capture_device_recovered": "Capture-Computer nimmt wieder auf",
-      "message": "Nachricht",
       "artifact_comment": "Artefaktkommentare"
     },
     "kindDescription": {
@@ -3284,7 +3278,6 @@
       "automation_recovered": "Ein fehlschlagender Trigger oder eine Schleife funktioniert wieder.",
       "capture_device_down": "Ein Kortix-Capture-Computer nimmt nicht auf. Geht an Personen, die Capture verwalten.",
       "capture_device_recovered": "Ein gestoppter Kortix-Capture-Computer nimmt wieder auf.",
-      "message": "Jemand erwähnt dich mit @ oder antwortet in einem Thread, in dem du geschrieben hast, in einem Raum.",
       "artifact_comment": "Feedback, Erwähnungen und Antworten zu Artefakten, die du ansehen kannst."
     },
     "bell": {
@@ -23340,103 +23333,6 @@
     "enable": "{name} aktivieren",
     "enabling": "Wird aktiviert…"
   },
-  "rooms": {
-    "title": "Räume",
-    "memberCount": "{count, plural, one {# Mitglied} other {# Mitglieder}}",
-    "members": "Mitglieder",
-    "agent": "Agent",
-    "agentSender": "Agent {name}",
-    "empty": "Räume, denen du beitrittst, erscheinen hier",
-    "emptyHint": "Erstelle einen Raum und füge Personen und Agenten hinzu.",
-    "loadError": "Räume konnten nicht geladen werden. Versuche es erneut.",
-    "roomLoadError": "Dieser Raum konnte nicht geladen werden. Versuche es erneut.",
-    "messagesLoadError": "Nachrichten konnten nicht geladen werden. Versuche es erneut.",
-    "retry": "Erneut versuchen",
-    "back": "Zurück zu den Räumen",
-    "send": "Nachricht senden",
-    "sendFailed": "Die Nachricht konnte nicht gesendet werden",
-    "peopleLoadError": "Personen konnten nicht geladen werden. Versuche es erneut.",
-    "cardRoom": "Raum {name}",
-    "digestCount": "{count, plural, one {# neue Nachricht} other {# neue Nachrichten}}",
-    "digestMore": "… und {count} weitere",
-    "cardFrom": "Von",
-    "cardMessage": "Nachricht",
-    "cardReplyTo": "Antwort auf",
-    "addRooms": "Räume hinzufügen",
-    "addFailed": "Das Mitglied konnte nicht hinzugefügt werden",
-    "addMembers": "Personen und Agenten hinzufügen",
-    "addMembersDescription": "Mitglieder erhalten die Nachrichten, die hier gepostet werden. Eine Agenten-Session liest sie bei ihrem nächsten Schritt.",
-    "addTopic": "Thema hinzufügen",
-    "agents": "Agenten",
-    "browseRoomsDescription": "Alle Räume in diesem Projekt. Öffne einen, um ihn zu lesen oder beizutreten.",
-    "cancel": "Abbrechen",
-    "roomName": "Name",
-    "roomNameHint": "Kleinbuchstaben, Ziffern und . _ / -, bis zu 64 Zeichen.",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "Mitglieder schließen",
-    "copied": "Kopiert",
-    "copyText": "Nachrichtentext kopieren",
-    "createRoom": "Raum erstellen",
-    "createRoomDescription": "Ein Raum bündelt die Unterhaltung zu einem Thema, für Personen und Agenten.",
-    "createFailed": "Der Raum konnte nicht erstellt werden",
-    "editTopic": "Thema bearbeiten",
-    "inThisRoom": "In diesem Raum",
-    "introRoom": "Hier beginnt der Raum #{name}.",
-    "joinRoom": "Raum beitreten",
-    "joinFailed": "Dem Raum konnte nicht beigetreten werden",
-    "joined": "Beigetreten",
-    "jumpToLatest": "Zur neuesten Nachricht",
-    "leaveRoom": "Raum verlassen",
-    "memberActions": "Aktionen für {name}",
-    "memberAdded": "{name} hinzugefügt",
-    "memberRemoved": "Mitglied entfernt",
-    "mentionHere": "Alle in #{name}",
-    "mentionSomeone": "Jemanden erwähnen",
-    "mentionSuggestions": "Vorschläge für Erwähnungen",
-    "messageRoom": "Nachricht an #{name}",
-    "messages": "Nachrichten",
-    "new": "Neu",
-    "newLineHint": "Umschalt + Enter für eine neue Zeile",
-    "noRooms": "Keine passenden Räume",
-    "noMatches": "Keine Treffer",
-    "people": "Personen",
-    "pickRoom": "Öffne einen Raum aus der Liste",
-    "remove": "Entfernen",
-    "removeAgentDescription": "Die Agenten-Session erhält die Nachrichten dieses Raums nicht mehr. Um das rückgängig zu machen, füge den Agenten erneut hinzu.",
-    "removeFailed": "Das Mitglied konnte nicht entfernt werden",
-    "removePersonDescription": "Dieses Mitglied erhält die Nachrichten dieses Raums nicht mehr. Um das rückgängig zu machen, füge es erneut hinzu.",
-    "removeTitle": "{name} aus diesem Raum entfernen?",
-    "searchRooms": "Räume suchen",
-    "searchPeopleAndAgents": "Personen und Agenten suchen",
-    "today": "Heute",
-    "topic": "Thema",
-    "topicFailed": "Das Thema konnte nicht gespeichert werden",
-    "topicOptional": "Thema (optional)",
-    "topicPlaceholder": "Worum es in diesem Raum geht",
-    "viewMembers": "Mitglieder anzeigen",
-    "viewMembersCount": "{count, plural, one {# Mitglied} other {# Mitglieder}} anzeigen",
-    "viewingRoom": "Du siehst #{name}",
-    "yesterday": "Gestern",
-    "you": "{name} (du)",
-    "status": {
-      "running": "Läuft",
-      "starting": "Startet",
-      "stopped": "Gestoppt",
-      "failed": "Fehlgeschlagen"
-    },
-    "replyInThread": "Im Thread antworten",
-    "thread": "Thread",
-    "closeThread": "Thread schließen",
-    "backToRoom": "Zurück zum Raum",
-    "replyPlaceholder": "Antworten …",
-    "replyCount": "{count, plural, one {# Antwort} other {# Antworten}}",
-    "lastReply": "Letzte Antwort {time}",
-    "threadLoadError": "Dieser Thread konnte nicht geladen werden. Versuche es erneut.",
-    "join": "Beitreten",
-    "openRoom": "Öffnen",
-    "gateDescription": "Aktiviere Räume, damit Agentensitzungen und Personen dieses Projekts in benannten Chaträumen schreiben können.",
-    "archivedNotice": "Dieser Raum ist archiviert. Seine Nachrichten bleiben erhalten, neue sind nicht möglich."
-  },
   "goals": {
     "title": "Ziele",
     "gateDescription": "Agenten verfolgen ein Ziel, bis es nachweislich erreicht ist: Das Ziel liegt in Dateien, ein täglicher Heartbeat weckt es, der Agent fragt Personen nach dem, was er braucht, und eine unabhängige Prüfung schließt es ab.",
@@ -24857,20 +24753,15 @@
       "board": {
         "brief": "Überblick",
         "text": "Wofür dieser Bereich da ist und wie man helfen kann.",
-        "label": "Raum und Board",
+        "label": "Board und Ziele",
         "description": "Ein Board für die Übersicht und die Links, dann Ziele."
       },
       "standard": {
-        "label": "Raum, Ziele, Apps und Artefakte",
-        "description": "Der Raum, dann die dem Bereich zugeordneten Inhalte."
-      },
-      "room": {
-        "label": "Nur Raum",
-        "description": "Ein Gespräch. Tabs später hinzufügen."
+        "label": "Ziele, Apps und Artefakte",
+        "description": "Die dem Bereich zugeordneten Inhalte."
       }
     },
     "tabs": {
-      "room": "Raum",
       "goals": "Ziele",
       "apps": "Apps",
       "artifacts": "Artefakte",
@@ -24895,7 +24786,7 @@
       "artifacts": "Artefakte dieses Bereichs erscheinen hier",
       "folder": "Dieser Ordner ist leer",
       "board": "Blöcke dieses Boards erscheinen hier",
-      "boardHint": "Bitte My Kortix, einen Block hinzuzufügen: eine Notiz, eine App, eine Datei, eine eingebettete Seite oder einen weiteren Raum."
+      "boardHint": "Bitte My Kortix, einen Block hinzuzufügen: eine Notiz, eine App, eine Datei oder eine eingebettete Seite."
     },
     "doc": "Dokument",
     "page": "Seite",
@@ -24933,8 +24824,8 @@
     "cancel": "Abbrechen",
     "edit": {
       "title": "Tabs bearbeiten",
-      "description": "Der Raum bleibt zuerst. Beim Speichern werden die Tabs in kortix.yaml auf dem Standardbranch festgeschrieben.",
-      "empty": "Nur der Raum. Füge mit + einen Tab hinzu.",
+      "description": "Beim Speichern werden die Tabs in kortix.yaml auf dem Standardbranch festgeschrieben.",
+      "empty": "Noch keine Tabs. Füge mit + einen Tab hinzu.",
       "save": "Tabs speichern",
       "rename": "{name} umbenennen",
       "moveUp": "{name} nach oben verschieben",
@@ -24947,24 +24838,18 @@
       "unread": "{count, plural, one {# ungelesene Nachricht} other {# ungelesene Nachrichten}}"
     },
     "leave": "{name} verlassen",
-    "openRooms": "Räume öffnen",
-    "roomHint": "Agenten und Personen veröffentlichen hier Neuigkeiten.",
-    "noRoom": "Noch kein Raum.",
     "agents": "Agenten in diesem Bereich",
     "openAgent": "{name} öffnen",
-    "members": "{count, plural, one {# Person} other {# Personen}}",
     "needsYou": "brauchen dich",
     "newSession": "Neue Sitzung",
     "askMyKortix": "My Kortix fragen",
     "askPrompt": "Ich möchte den Bereich {name} (`spaces.{slug}` in kortix.yaml) ändern: seine Tabs, seine Kopfzeile oder seine Agenten. Frage mich, was ich ändern möchte.",
-    "roomsOff": "Räume sind für dieses Projekt deaktiviert",
-    "roomsOffHint": "Aktiviere Räume in den Projekteinstellungen, um hier mit Personen und Agenten zu sprechen.",
-    "room": {
-      "introTitle": "Hier beginnt #{name}",
-      "introBody": "Der Raum für alle, die in diesem Bereich arbeiten.",
-      "introAgents": "{count, plural, one {{names} veröffentlicht hier Neuigkeiten.} other {{names} veröffentlichen hier Neuigkeiten.}}",
-      "introNoAgents": "Agenten, die du diesem Bereich hinzufügst, veröffentlichen hier ihre Neuigkeiten.",
-      "introMention": "Tippe @, um eine Person oder einen Agenten zu erwähnen."
+    "intro": {
+      "title": "Hier beginnt #{name}",
+      "body": "Der Ort für alle, die in diesem Bereich arbeiten.",
+      "agents": "{count, plural, one {{names} veröffentlicht hier Neuigkeiten.} other {{names} veröffentlichen hier Neuigkeiten.}}",
+      "noAgents": "Agenten, die du diesem Bereich hinzufügst, veröffentlichen hier ihre Neuigkeiten.",
+      "addTab": "Füge mit + einen Tab hinzu, um hier Ziele, Apps, Dateien oder ein Board anzuheften."
     },
     "filter": "Nach Bereich filtern",
     "all": "Alle",

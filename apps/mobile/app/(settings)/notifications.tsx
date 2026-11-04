@@ -50,6 +50,7 @@ const KIND_ICON: Record<InboxNotificationKind, AppIcon> = {
   automation_recovered: ArrowCounterClockwiseIcon,
   capture_device_down: XCircleIcon,
   capture_device_recovered: ArrowCounterClockwiseIcon,
+  // Retired with Rooms (2026-11); the SDK type still carries the kind.
   message: ChatCircleIcon,
   artifact_comment: ChatCircleIcon,
 };
@@ -175,9 +176,8 @@ function NotificationCenterPage() {
   );
 
   const kinds = record.data?.kinds;
-  // Room messages exist only with a project's `agent_rooms` flag on: an API
-  // that does not say so hides the row rather than show a dead switch.
-  const hiddenKinds = record.data?.hidden_kinds ?? ['message'];
+  // The kinds that cannot reach this person now: the API lists them, and the row is hidden.
+  const hiddenKinds = record.data?.hidden_kinds ?? [];
 
   return (
     <SettingsPage>

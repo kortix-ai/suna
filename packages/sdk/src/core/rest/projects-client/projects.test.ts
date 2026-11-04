@@ -1039,7 +1039,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'session_log_restore',
     'workspace_volume',
     'chat',
-    'agent_rooms',
     'shared_drives',
     'goals',
     'artifacts',

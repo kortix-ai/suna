@@ -100,7 +100,6 @@ const COMMAND_FLAGS = [
   'drives',
   'artifacts',
   'chat',
-  'agent_rooms',
   'reminders',
   'goals',
   'agent_teams',
@@ -178,7 +177,6 @@ function useCommandFlags(projectId: string | null): Record<string, boolean> {
   const drives = useFeatureFlag(projectId, 'drives');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
   const channels = useFeatureFlag(projectId, 'chat');
-  const rooms = useFeatureFlag(projectId, 'agent_rooms');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const goals = useFeatureFlag(projectId, 'goals');
   const teams = useFeatureFlag(projectId, 'agent_teams');
@@ -187,7 +185,6 @@ function useCommandFlags(projectId: string | null): Record<string, boolean> {
       drives,
       artifacts,
       chat: channels,
-      agent_rooms: rooms,
       reminders,
       goals,
       agent_teams: teams,
@@ -195,7 +192,7 @@ function useCommandFlags(projectId: string | null): Record<string, boolean> {
     const known: Record<string, boolean> = {};
     for (const key of COMMAND_FLAGS) if (!states[key].isLoading) known[key] = states[key].enabled;
     return known;
-  }, [drives, artifacts, channels, rooms, reminders, goals, teams]);
+  }, [drives, artifacts, channels, reminders, goals, teams]);
 }
 
 export interface AppProps {
@@ -737,7 +734,6 @@ export function App({
         case 'goals':
         case 'memory':
         case 'spaces':
-        case 'rooms':
         case 'loops':
         case 'audit':
         case 'review':

@@ -7,6 +7,8 @@ updated: 2026-10-21
 
 # Goals and durable workflows
 
+> 2026-11-04: Rooms were removed (flag `agent_rooms` withdrawn, every `/rooms` route deleted). The rooms references below are history.
+
 **The problem.** A user gives an objective once ("close my old bank account and
 walk away", "secure EUR 2.5M of grant funding", "rank #1 for X", "rewrite the
 service in Rust") and an agent owns it until it is verifiably true: over days

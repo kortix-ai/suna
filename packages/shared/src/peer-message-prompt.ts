@@ -12,7 +12,7 @@
  * The API writes it (`peerMessagePromptText`); web and mobile read it back
  * (`parsePeerMessagePrompt`) to render a one-line "Message from @reviewer"
  * row, not a turn the person typed. One module owns both sides so they cannot
- * drift, as `room-prompt.ts` does for rooms.
+ * drift.
  */
 
 export type PeerMessageKind = 'message' | 'shutdown_request' | 'shutdown_response' | 'idle_notice';

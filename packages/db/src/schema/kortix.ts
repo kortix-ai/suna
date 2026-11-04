@@ -8521,10 +8521,9 @@ export const notifications = kortixSchema.table('notifications', {
   // No FK: a soft-deleted session keeps its row; the read filter hides it.
   sessionId: text('session_id'),
   triggerSlug: text('trigger_slug'),
-  // A conversation message (`kind = 'message'`): the room it was posted in.
-  // No FK, like session_id: the read filter hides a row whose room is gone.
+  // Retired with Rooms (2026-11): no code reads room_id / room_thread_seq. Dropped by
+  // packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
   roomId: uuid('room_id'),
-  // A thread reply: the thread's root seq, so the link opens the thread.
   roomThreadSeq: bigint('room_thread_seq', { mode: 'number' }),
   artifactId: uuid('artifact_id'),
   artifactThreadId: uuid('artifact_thread_id'),
@@ -8554,7 +8553,7 @@ export const notifications = kortixSchema.table('notifications', {
   index('idx_notifications_artifact').on(table.artifactId).where(sql`${table.artifactId} IS NOT NULL`),
   index('idx_notifications_artifact_thread').on(table.artifactThreadId).where(sql`${table.artifactThreadId} IS NOT NULL`),
   index('idx_notifications_created').on(table.createdAt),
-  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message', 'artifact_comment')`),
+  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message', 'artifact_comment')`), // 'message': retired with Rooms; old rows age out
 ]);
 
 /** One record per user: partial overrides of the default notification preferences. */
@@ -8602,6 +8601,9 @@ export const triggerWatchers = kortixSchema.table('trigger_watchers', {
 ]);
 
 /**
+ * Retired with Rooms (2026-11): no code reads it. Dropped by
+ * packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
+ *
  * A room: a named, durable chat room of a project (`dev`, `platinum/dev`) that
  * agent sessions and people post in; anyone with `project.room.read` can find
  * it. `last_seq` numbers the messages; a post takes the next value under the
@@ -8625,7 +8627,12 @@ export const rooms = kortixSchema.table('rooms', {
   check('rooms_name_check', sql`${table.name} ~ '^[a-z0-9][a-z0-9._/-]{0,63}$'`),
 ]);
 
-/** One message. `sender_kind`: `member` (a person) or `session` (an agent). */
+/**
+ * Retired with Rooms (2026-11): no code reads it. Dropped by
+ * packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
+ *
+ * One message. `sender_kind`: `member` (a person) or `session` (an agent).
+ */
 export const roomMessages = kortixSchema.table('room_messages', {
   messageId: uuid('message_id').defaultRandom().primaryKey(),
   roomId: uuid('room_id').notNull(),
@@ -8646,6 +8653,9 @@ export const roomMessages = kortixSchema.table('room_messages', {
 ]);
 
 /**
+ * Retired with Rooms (2026-11): no code reads it. Dropped by
+ * packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
+ *
  * A member of a room: an agent session or a person.
  *   session: a message addressed to it steers its turn; other traffic arrives
  *            as one digest at its turn boundary (a stopped session wakes),
@@ -8683,7 +8693,10 @@ export const roomMembers = kortixSchema.table('room_members', {
 ]);
 
 /**
- * A one-shot "tell me when this session goes idle" (flag `agent_rooms`).
+ * Retired with Rooms (2026-11): no code reads it. Dropped by
+ * packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
+ *
+ * A one-shot "tell me when this session goes idle" (the removed `agent_rooms` flag).
  * When the target session's turn ends, it posts one message in `room_id`
  * @-mentioning the watcher with the outcome, and the row is deleted. A row past
  * `expires_at` is dropped unanswered.

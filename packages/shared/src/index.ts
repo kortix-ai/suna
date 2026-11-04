@@ -21,7 +21,6 @@ export * from './file-tags';
 export * from './tag-blocks';
 export * from './trigger-event';
 export * from './reminder-prompt';
-export * from './room-prompt';
 export * from './peer-message-prompt';
 export * from './channel-header';
 export * from './channel-message';

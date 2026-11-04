@@ -1290,10 +1290,6 @@
           "name": "Restauration du journal de session",
           "description": "Reconstruit une session à partir de son journal de session enregistré quand son ordinateur a perdu la conversation. Kortix l’active par projet."
         },
-        "agent_rooms": {
-          "name": "Salons",
-          "description": "Des salons de discussion nommés où les sessions d’agents et les personnes publient et répondent dans des fils. Une session se réveille quand un message lui est adressé. Ajoute la page Salons, `kortix rooms` et `kortix peers`."
-        },
         "goals": {
           "name": "Objectifs",
           "description": "Confiez à un agent un objectif dont il reste responsable jusqu’à ce qu’une vérification indépendante confirme le résultat. Il planifie, travaille, attend, relance les personnes et conserve son état dans un dossier Goals dans Fichiers. Nécessite Volumes et Boucles activés."
@@ -1547,7 +1543,6 @@
     }
   },
   "sidebar": {
-    "rooms": "Salons",
     "goals": "Objectifs",
     "artifacts": "Artefacts",
     "referAndEarn": "Parrainer et Gagner",
@@ -3271,7 +3266,6 @@
       "automation_recovered": "Alerte de rétablissement",
       "capture_device_down": "Ordinateur Capture arrêté",
       "capture_device_recovered": "Ordinateur Capture à nouveau en marche",
-      "message": "Message",
       "artifact_comment": "Commentaires sur les artefacts"
     },
     "kindDescription": {
@@ -3284,7 +3278,6 @@
       "automation_recovered": "Un déclencheur ou une boucle en échec fonctionne de nouveau.",
       "capture_device_down": "Un ordinateur Kortix Capture n’enregistre pas. Envoyé aux personnes qui gèrent Capture.",
       "capture_device_recovered": "Un ordinateur Kortix Capture arrêté enregistre à nouveau.",
-      "message": "Quelqu’un vous mentionne avec @, ou répond dans un fil où vous avez écrit, dans un salon.",
       "artifact_comment": "Retours, mentions et réponses sur les artefacts que vous pouvez consulter."
     },
     "bell": {
@@ -23340,103 +23333,6 @@
     "enable": "Activer {name}",
     "enabling": "Activation…"
   },
-  "rooms": {
-    "title": "Salons",
-    "memberCount": "{count, plural, one {# membre} other {# membres}}",
-    "members": "Membres",
-    "agent": "Agent",
-    "agentSender": "Agent {name}",
-    "empty": "Les salons que vous rejoignez apparaîtront ici",
-    "emptyHint": "Créez un salon, puis ajoutez-y des personnes et des agents.",
-    "loadError": "Impossible de charger les salons. Réessayez.",
-    "roomLoadError": "Impossible de charger ce salon. Réessayez.",
-    "messagesLoadError": "Impossible de charger les messages. Réessayez.",
-    "retry": "Réessayer",
-    "back": "Retour aux salons",
-    "send": "Envoyer le message",
-    "sendFailed": "Impossible d'envoyer le message",
-    "peopleLoadError": "Impossible de charger les personnes. Réessayez.",
-    "cardRoom": "Salon {name}",
-    "digestCount": "{count, plural, one {# nouveau message} other {# nouveaux messages}}",
-    "digestMore": "… et {count} de plus",
-    "cardFrom": "De",
-    "cardMessage": "Message",
-    "cardReplyTo": "Réponse à",
-    "addRooms": "Ajouter des salons",
-    "addFailed": "Impossible d'ajouter le membre",
-    "addMembers": "Ajouter des personnes et des agents",
-    "addMembersDescription": "Les membres reçoivent les messages publiés ici. Une session d'agent les lit à sa prochaine étape.",
-    "addTopic": "Ajouter un sujet",
-    "agents": "Agents",
-    "browseRoomsDescription": "Tous les salons de ce projet. Ouvrez-en un pour le lire ou le rejoindre.",
-    "cancel": "Annuler",
-    "roomName": "Nom",
-    "roomNameHint": "Minuscules, chiffres et . _ / -, jusqu'à 64 caractères.",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "Fermer les membres",
-    "copied": "Copié",
-    "copyText": "Copier le texte du message",
-    "createRoom": "Créer un salon",
-    "createRoomDescription": "Un salon réunit la conversation sur un sujet, pour les personnes et les agents.",
-    "createFailed": "Impossible de créer le salon",
-    "editTopic": "Modifier le sujet",
-    "inThisRoom": "Dans ce salon",
-    "introRoom": "Voici le début du salon #{name}.",
-    "joinRoom": "Rejoindre le salon",
-    "joinFailed": "Impossible de rejoindre le salon",
-    "joined": "Rejoint",
-    "jumpToLatest": "Aller au plus récent",
-    "leaveRoom": "Quitter le salon",
-    "memberActions": "Actions pour {name}",
-    "memberAdded": "{name} ajouté",
-    "memberRemoved": "Membre retiré",
-    "mentionHere": "Tout le monde dans #{name}",
-    "mentionSomeone": "Mentionner quelqu'un",
-    "mentionSuggestions": "Suggestions de mentions",
-    "messageRoom": "Message à #{name}",
-    "messages": "Messages",
-    "new": "Nouveau",
-    "newLineHint": "Maj + Entrée pour une nouvelle ligne",
-    "noRooms": "Aucun salon correspondant",
-    "noMatches": "Aucun résultat",
-    "people": "Personnes",
-    "pickRoom": "Ouvrez un salon depuis la liste",
-    "remove": "Retirer",
-    "removeAgentDescription": "La session d'agent ne reçoit plus les messages de ce salon. Pour la rétablir, ajoutez de nouveau l'agent.",
-    "removeFailed": "Impossible de retirer le membre",
-    "removePersonDescription": "Ce membre ne reçoit plus les messages de ce salon. Pour le rétablir, ajoutez-le de nouveau.",
-    "removeTitle": "Retirer {name} de ce salon ?",
-    "searchRooms": "Rechercher des salons",
-    "searchPeopleAndAgents": "Rechercher des personnes et des agents",
-    "today": "Aujourd'hui",
-    "topic": "Sujet",
-    "topicFailed": "Impossible d'enregistrer le sujet",
-    "topicOptional": "Sujet (facultatif)",
-    "topicPlaceholder": "L'objet de ce salon",
-    "viewMembers": "Voir les membres",
-    "viewMembersCount": "Voir {count, plural, one {# membre} other {# membres}}",
-    "viewingRoom": "Vous consultez #{name}",
-    "yesterday": "Hier",
-    "you": "{name} (vous)",
-    "status": {
-      "running": "En cours",
-      "starting": "Démarrage",
-      "stopped": "Arrêtée",
-      "failed": "Échec"
-    },
-    "replyInThread": "Répondre dans le fil",
-    "thread": "Fil",
-    "closeThread": "Fermer le fil",
-    "backToRoom": "Retour au salon",
-    "replyPlaceholder": "Répondre…",
-    "replyCount": "{count, plural, one {# réponse} other {# réponses}}",
-    "lastReply": "Dernière réponse {time}",
-    "threadLoadError": "Impossible de charger ce fil. Réessayez.",
-    "join": "Rejoindre",
-    "openRoom": "Ouvrir",
-    "gateDescription": "Activez les Salons pour que les sessions d’agents et les personnes de ce projet échangent dans des salons nommés.",
-    "archivedNotice": "Cette salle est archivée. Elle conserve ses messages et n’en accepte plus."
-  },
   "goals": {
     "title": "Objectifs",
     "gateDescription": "Les agents prennent en charge un objectif jusqu'à ce qu'il soit atteint de façon vérifiable : l'objectif vit dans Fichiers, un battement quotidien le réveille, l'agent relance les personnes pour ce qu'il lui faut, et une vérification indépendante le clôt.",
@@ -24857,20 +24753,15 @@
       "board": {
         "brief": "Présentation",
         "text": "À quoi sert cet espace et comment contribuer.",
-        "label": "Salon et tableau",
+        "label": "Tableau et objectifs",
         "description": "Un tableau pour le résumé et les liens, puis les objectifs."
       },
       "standard": {
-        "label": "Salon, objectifs, applications et artefacts",
-        "description": "Le salon, puis le contenu associé à cet espace."
-      },
-      "room": {
-        "label": "Salon uniquement",
-        "description": "Une conversation. Ajoutez des onglets plus tard."
+        "label": "Objectifs, applications et artefacts",
+        "description": "Le contenu associé à cet espace."
       }
     },
     "tabs": {
-      "room": "Salle",
       "goals": "Objectifs",
       "apps": "Applications",
       "artifacts": "Artefacts",
@@ -24895,7 +24786,7 @@
       "artifacts": "Les artefacts liés à cet espace s’affichent ici",
       "folder": "Ce dossier est vide",
       "board": "Les blocs de ce tableau s’affichent ici",
-      "boardHint": "Demandez à My Kortix d’ajouter un bloc : une note, une App, un fichier, une page intégrée ou une autre salle."
+      "boardHint": "Demandez à My Kortix d’ajouter un bloc : une note, une App, un fichier ou une page intégrée."
     },
     "doc": "Document",
     "page": "Page",
@@ -24933,8 +24824,8 @@
     "cancel": "Annuler",
     "edit": {
       "title": "Modifier les onglets",
-      "description": "La salle reste en premier. L’enregistrement inscrit les onglets dans kortix.yaml sur la branche par défaut.",
-      "empty": "Uniquement la salle. Ajoutez un onglet avec +.",
+      "description": "L’enregistrement inscrit les onglets dans kortix.yaml sur la branche par défaut.",
+      "empty": "Aucun onglet pour l’instant. Ajoutez un onglet avec +.",
       "save": "Enregistrer les onglets",
       "rename": "Renommer {name}",
       "moveUp": "Monter {name}",
@@ -24947,24 +24838,18 @@
       "unread": "{count, plural, one {# message non lu} other {# messages non lus}}"
     },
     "leave": "Quitter {name}",
-    "openRooms": "Ouvrir les salles",
-    "roomHint": "Les agents et les personnes publient des nouvelles ici.",
-    "noRoom": "Pas encore de salle.",
     "agents": "Agents de cet espace",
     "openAgent": "Ouvrir {name}",
-    "members": "{count, plural, one {# personne} other {# personnes}}",
     "needsYou": "ont besoin de vous",
     "newSession": "Nouvelle séance",
     "askMyKortix": "Demander à My Kortix",
     "askPrompt": "Je veux modifier l’espace {name} (`spaces.{slug}` dans kortix.yaml) : ses onglets, son en-tête ou ses agents. Demandez-moi quoi changer.",
-    "roomsOff": "Les salles sont désactivées pour ce projet",
-    "roomsOffHint": "Activez les salles dans les paramètres du projet pour échanger ici avec les personnes et les agents.",
-    "room": {
-      "introTitle": "C’est le début de #{name}",
-      "introBody": "La salle pour toutes les personnes qui travaillent dans cet espace.",
-      "introAgents": "{count, plural, one {{names} publie des nouvelles ici.} other {{names} publient des nouvelles ici.}}",
-      "introNoAgents": "Les agents ajoutés à cet espace publient leurs nouvelles ici.",
-      "introMention": "Tapez @ pour mentionner une personne ou un agent."
+    "intro": {
+      "title": "C’est le début de #{name}",
+      "body": "L’endroit pour toutes les personnes qui travaillent dans cet espace.",
+      "agents": "{count, plural, one {{names} publie des nouvelles ici.} other {{names} publient des nouvelles ici.}}",
+      "noAgents": "Les agents ajoutés à cet espace publient leurs nouvelles ici.",
+      "addTab": "Ajoutez un onglet avec + pour épingler ici des objectifs, des applications, des fichiers ou un tableau."
     },
     "filter": "Filtrer par espace",
     "all": "Tous",

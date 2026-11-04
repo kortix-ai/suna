@@ -1290,10 +1290,6 @@
           "name": "Restauración del registro de sesión",
           "description": "Reconstruye una sesión a partir de su registro de sesión guardado cuando su ordenador perdió la conversación. Kortix lo activa por proyecto."
         },
-        "agent_rooms": {
-          "name": "Salas",
-          "description": "Salas de chat con nombre donde las sesiones de agentes y las personas publican y responden en hilos. Una sesión se reactiva cuando un mensaje va dirigido a ella. Añade la página Salas, `kortix rooms` y `kortix peers`."
-        },
         "goals": {
           "name": "Objetivos",
           "description": "Asigna a un agente un objetivo del que se encarga hasta que una comprobación independiente confirme el resultado. Planifica, trabaja, espera, hace seguimiento con las personas y guarda su estado en una carpeta Goals en Archivos. Requiere Volúmenes y Bucles activados."
@@ -1547,7 +1543,6 @@
     }
   },
   "sidebar": {
-    "rooms": "Salas",
     "goals": "Objetivos",
     "artifacts": "Artefactos",
     "referAndEarn": "Referir y Ganar",
@@ -3271,7 +3266,6 @@
       "automation_recovered": "Alerta de recuperación",
       "capture_device_down": "Ordenador de Capture detenido",
       "capture_device_recovered": "Ordenador de Capture graba de nuevo",
-      "message": "Mensaje",
       "artifact_comment": "Comentarios en artefactos"
     },
     "kindDescription": {
@@ -3284,7 +3278,6 @@
       "automation_recovered": "Un trigger o bucle que fallaba vuelve a funcionar.",
       "capture_device_down": "Un ordenador de Kortix Capture no graba. Se envía a quien administra Capture.",
       "capture_device_recovered": "Un ordenador de Kortix Capture que se detuvo vuelve a grabar.",
-      "message": "Alguien te menciona con @, o responde en un hilo en el que escribiste, en una sala.",
       "artifact_comment": "Comentarios, menciones y respuestas en los artefactos que puedes ver."
     },
     "bell": {
@@ -23340,103 +23333,6 @@
     "enable": "Activar {name}",
     "enabling": "Activando…"
   },
-  "rooms": {
-    "title": "Salas",
-    "memberCount": "{count, plural, one {# miembro} other {# miembros}}",
-    "members": "Miembros",
-    "agent": "Agente",
-    "agentSender": "Agente {name}",
-    "empty": "Las salas a las que te unas aparecerán aquí",
-    "emptyHint": "Crea una sala y añade personas y agentes.",
-    "loadError": "No se pudieron cargar las salas. Inténtalo de nuevo.",
-    "roomLoadError": "No se pudo cargar esta sala. Inténtalo de nuevo.",
-    "messagesLoadError": "No se pudieron cargar los mensajes. Inténtalo de nuevo.",
-    "retry": "Reintentar",
-    "back": "Volver a las salas",
-    "send": "Enviar mensaje",
-    "sendFailed": "No se pudo enviar el mensaje",
-    "peopleLoadError": "No se pudieron cargar las personas. Inténtalo de nuevo.",
-    "cardRoom": "Sala {name}",
-    "digestCount": "{count, plural, one {# mensaje nuevo} other {# mensajes nuevos}}",
-    "digestMore": "… y {count} más",
-    "cardFrom": "De",
-    "cardMessage": "Mensaje",
-    "cardReplyTo": "Respuesta a",
-    "addRooms": "Añadir salas",
-    "addFailed": "No se pudo añadir al miembro",
-    "addMembers": "Añadir personas y agentes",
-    "addMembersDescription": "Los miembros reciben los mensajes que se publican aquí. Una sesión de agente los lee en su siguiente paso.",
-    "addTopic": "Añadir un tema",
-    "agents": "Agentes",
-    "browseRoomsDescription": "Todas las salas de este proyecto. Abre una para leerla o unirte.",
-    "cancel": "Cancelar",
-    "roomName": "Nombre",
-    "roomNameHint": "Minúsculas, números y . _ / -, hasta 64 caracteres.",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "Cerrar miembros",
-    "copied": "Copiado",
-    "copyText": "Copiar el texto del mensaje",
-    "createRoom": "Crear sala",
-    "createRoomDescription": "Una sala reúne la conversación sobre un tema, para personas y agentes.",
-    "createFailed": "No se pudo crear la sala",
-    "editTopic": "Editar tema",
-    "inThisRoom": "En esta sala",
-    "introRoom": "Este es el comienzo de la sala #{name}.",
-    "joinRoom": "Unirse a la sala",
-    "joinFailed": "No se pudo unir a la sala",
-    "joined": "Unido",
-    "jumpToLatest": "Ir a lo más reciente",
-    "leaveRoom": "Salir de la sala",
-    "memberActions": "Acciones para {name}",
-    "memberAdded": "{name} añadido",
-    "memberRemoved": "Miembro eliminado",
-    "mentionHere": "Todos en #{name}",
-    "mentionSomeone": "Mencionar a alguien",
-    "mentionSuggestions": "Sugerencias de menciones",
-    "messageRoom": "Mensaje a #{name}",
-    "messages": "Mensajes",
-    "new": "Nuevo",
-    "newLineHint": "Mayús + Intro para una línea nueva",
-    "noRooms": "No hay salas que coincidan",
-    "noMatches": "Sin coincidencias",
-    "people": "Personas",
-    "pickRoom": "Abre una sala de la lista",
-    "remove": "Quitar",
-    "removeAgentDescription": "La sesión de agente deja de recibir los mensajes de esta sala. Para restaurarlo, vuelve a añadir el agente.",
-    "removeFailed": "No se pudo quitar al miembro",
-    "removePersonDescription": "Este miembro deja de recibir los mensajes de esta sala. Para restaurarlo, vuelve a añadirlo.",
-    "removeTitle": "¿Quitar a {name} de esta sala?",
-    "searchRooms": "Buscar salas",
-    "searchPeopleAndAgents": "Buscar personas y agentes",
-    "today": "Hoy",
-    "topic": "Tema",
-    "topicFailed": "No se pudo guardar el tema",
-    "topicOptional": "Tema (opcional)",
-    "topicPlaceholder": "De qué trata esta sala",
-    "viewMembers": "Ver miembros",
-    "viewMembersCount": "Ver {count, plural, one {# miembro} other {# miembros}}",
-    "viewingRoom": "Estás viendo #{name}",
-    "yesterday": "Ayer",
-    "you": "{name} (tú)",
-    "status": {
-      "running": "En ejecución",
-      "starting": "Iniciando",
-      "stopped": "Detenida",
-      "failed": "Fallida"
-    },
-    "replyInThread": "Responder en el hilo",
-    "thread": "Hilo",
-    "closeThread": "Cerrar hilo",
-    "backToRoom": "Volver a la sala",
-    "replyPlaceholder": "Responder…",
-    "replyCount": "{count, plural, one {# respuesta} other {# respuestas}}",
-    "lastReply": "Última respuesta {time}",
-    "threadLoadError": "No se pudo cargar este hilo. Inténtalo de nuevo.",
-    "join": "Unirse",
-    "openRoom": "Abrir",
-    "gateDescription": "Activa Salas para que las sesiones de agentes y las personas de este proyecto hablen en salas de chat con nombre.",
-    "archivedNotice": "Esta sala está archivada. Conserva sus mensajes y no admite nuevos."
-  },
   "goals": {
     "title": "Objetivos",
     "gateDescription": "Los agentes se hacen cargo de un objetivo hasta que se cumple de forma verificable: el objetivo vive en Archivos, un latido diario lo despierta, el agente persigue a las personas por lo que necesita y una comprobación independiente lo cierra.",
@@ -24857,20 +24753,15 @@
       "board": {
         "brief": "Resumen",
         "text": "Para qué sirve este espacio y cómo ayudar.",
-        "label": "Sala y tablero",
+        "label": "Tablero y objetivos",
         "description": "Un tablero para el resumen y los enlaces, seguido de los objetivos."
       },
       "standard": {
-        "label": "Sala, objetivos, aplicaciones y artefactos",
-        "description": "La sala y, después, el contenido vinculado al espacio."
-      },
-      "room": {
-        "label": "Solo sala",
-        "description": "Una conversación. Añade pestañas más adelante."
+        "label": "Objetivos, aplicaciones y artefactos",
+        "description": "El contenido vinculado al espacio."
       }
     },
     "tabs": {
-      "room": "Sala",
       "goals": "Objetivos",
       "apps": "Aplicaciones",
       "artifacts": "Artefactos",
@@ -24895,7 +24786,7 @@
       "artifacts": "Los artefactos vinculados a este espacio aparecerán aquí",
       "folder": "Esta carpeta está vacía",
       "board": "Los bloques de este tablero aparecerán aquí",
-      "boardHint": "Pide a My Kortix que añada un bloque: una nota, una App, un archivo, una página incrustada u otra sala."
+      "boardHint": "Pide a My Kortix que añada un bloque: una nota, una App, un archivo o una página incrustada."
     },
     "doc": "Documento",
     "page": "Página",
@@ -24933,8 +24824,8 @@
     "cancel": "Cancelar",
     "edit": {
       "title": "Editar pestañas",
-      "description": "La sala sigue primero. Al guardar se confirman las pestañas en kortix.yaml en la rama predeterminada.",
-      "empty": "Solo la sala. Añade una pestaña con +.",
+      "description": "Al guardar se confirman las pestañas en kortix.yaml en la rama predeterminada.",
+      "empty": "Aún no hay pestañas. Añade una pestaña con +.",
       "save": "Guardar pestañas",
       "rename": "Cambiar el nombre de {name}",
       "moveUp": "Subir {name}",
@@ -24947,24 +24838,18 @@
       "unread": "{count, plural, one {# mensaje sin leer} other {# mensajes sin leer}}"
     },
     "leave": "Salir de {name}",
-    "openRooms": "Abrir salas",
-    "roomHint": "Los agentes y las personas publican novedades aquí.",
-    "noRoom": "Aún no hay sala.",
     "agents": "Agentes en este espacio",
     "openAgent": "Abrir {name}",
-    "members": "{count, plural, one {# persona} other {# personas}}",
     "needsYou": "te necesitan",
     "newSession": "Nueva sesión",
     "askMyKortix": "Preguntar a My Kortix",
     "askPrompt": "Quiero cambiar el espacio {name} (`spaces.{slug}` en kortix.yaml): sus pestañas, su encabezado o sus agentes. Pregúntame qué cambiar.",
-    "roomsOff": "Las salas están desactivadas en este proyecto",
-    "roomsOffHint": "Activa las salas en los ajustes del proyecto para hablar aquí con personas y agentes.",
-    "room": {
-      "introTitle": "Este es el inicio de #{name}",
-      "introBody": "La sala para quienes trabajan en este espacio.",
-      "introAgents": "{count, plural, one {{names} publica novedades aquí.} other {{names} publican novedades aquí.}}",
-      "introNoAgents": "Los agentes que añadas a este espacio publicarán sus novedades aquí.",
-      "introMention": "Escribe @ para mencionar a una persona o un agente."
+    "intro": {
+      "title": "Este es el inicio de #{name}",
+      "body": "El lugar para quienes trabajan en este espacio.",
+      "agents": "{count, plural, one {{names} publica novedades aquí.} other {{names} publican novedades aquí.}}",
+      "noAgents": "Los agentes que añadas a este espacio publicarán sus novedades aquí.",
+      "addTab": "Añade una pestaña con + para fijar aquí objetivos, aplicaciones, archivos o un tablero."
     },
     "filter": "Filtrar por espacio",
     "all": "Todos",

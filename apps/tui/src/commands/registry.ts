@@ -375,13 +375,6 @@ export const COMMANDS = [
     flag: 'chat',
   },
   {
-    name: 'rooms',
-    description: 'Rooms where agents and people talk.',
-    group: 'screen',
-    needs: 'project',
-    flag: 'agent_rooms',
-  },
-  {
     name: 'loops',
     aliases: ['reminders', 'schedule'],
     description: "This session's loops: prompts that run on a schedule.",

@@ -62,7 +62,6 @@ export const FeatureFlagMapSchema = z.object({
   notification_center: z.boolean(),
   session_log_restore: z.boolean(),
   chat: z.boolean(),
-  agent_rooms: z.boolean(),
   shared_drives: z.boolean(),
   goals: z.boolean(),
   workspace_volume: z.boolean(),

@@ -1290,10 +1290,6 @@
           "name": "会话日志恢复",
           "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按项目启用。"
         },
-        "agent_rooms": {
-          "name": "聊天室",
-          "description": "命名的聊天室，代理会话和用户可以在其中发帖并在话题中回复。当消息发给某个会话时，该会话会被唤醒。新增聊天室页面、`kortix rooms` 和 `kortix peers`。"
-        },
         "goals": {
           "name": "目标",
           "description": "给代理一个目标，它会一直负责，直到独立检查确认结果。它会规划、执行、等待、跟进相关人员，并把状态保存在“文件”中的 Goals 文件夹里。需要开启卷和循环。"
@@ -1547,7 +1543,6 @@
     }
   },
   "sidebar": {
-    "rooms": "聊天室",
     "goals": "目标",
     "artifacts": "工件",
     "referAndEarn": "推荐赚取",
@@ -3271,7 +3266,6 @@
       "automation_recovered": "恢复提醒",
       "capture_device_down": "Capture 电脑已停止",
       "capture_device_recovered": "Capture 电脑恢复录制",
-      "message": "消息",
       "artifact_comment": "工件评论"
     },
     "kindDescription": {
@@ -3284,7 +3278,6 @@
       "automation_recovered": "失败的触发器或循环恢复正常。",
       "capture_device_down": "有一台 Kortix Capture 电脑未在录制。发送给管理 Capture 的人员。",
       "capture_device_recovered": "停止的 Kortix Capture 电脑已重新录制。",
-      "message": "有人在聊天室中 @ 提及你，或在你发过言的话题中回复。",
       "artifact_comment": "可查看工件的反馈、提及和回复。"
     },
     "bell": {
@@ -23340,103 +23333,6 @@
     "enable": "启用{name}",
     "enabling": "正在启用…"
   },
-  "rooms": {
-    "title": "聊天室",
-    "memberCount": "{count, plural, other {# 位成员}}",
-    "members": "成员",
-    "agent": "智能体",
-    "agentSender": "智能体 {name}",
-    "empty": "你加入的聊天室会显示在这里",
-    "emptyHint": "创建一个聊天室,然后添加成员和智能体。",
-    "loadError": "无法加载聊天室。请重试。",
-    "roomLoadError": "无法加载此聊天室。请重试。",
-    "messagesLoadError": "无法加载消息。请重试。",
-    "retry": "重试",
-    "back": "返回聊天室",
-    "send": "发送消息",
-    "sendFailed": "无法发送消息",
-    "peopleLoadError": "无法加载成员。请重试。",
-    "cardRoom": "聊天室 {name}",
-    "digestCount": "{count, plural, other {# 条新消息}}",
-    "digestMore": "… 另有 {count} 条",
-    "cardFrom": "发送者",
-    "cardMessage": "消息",
-    "cardReplyTo": "回复",
-    "addRooms": "添加聊天室",
-    "addFailed": "无法添加成员",
-    "addMembers": "添加成员和智能体",
-    "addMembersDescription": "成员会收到在这里发布的消息。智能体会话会在下一步读取这些消息。",
-    "addTopic": "添加话题",
-    "agents": "智能体",
-    "browseRoomsDescription": "此项目中的所有聊天室。打开一个即可阅读或加入。",
-    "cancel": "取消",
-    "roomName": "名称",
-    "roomNameHint": "小写字母、数字和 . _ / -,最多 64 个字符。",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "关闭成员",
-    "copied": "已复制",
-    "copyText": "复制消息文本",
-    "createRoom": "创建聊天室",
-    "createRoomDescription": "聊天室汇集一个话题的对话,供成员和智能体使用。",
-    "createFailed": "无法创建聊天室",
-    "editTopic": "编辑话题",
-    "inThisRoom": "在此聊天室中",
-    "introRoom": "这是 #{name} 聊天室的开始。",
-    "joinRoom": "加入聊天室",
-    "joinFailed": "无法加入聊天室",
-    "joined": "已加入",
-    "jumpToLatest": "跳到最新",
-    "leaveRoom": "退出聊天室",
-    "memberActions": "{name} 的操作",
-    "memberAdded": "已添加 {name}",
-    "memberRemoved": "成员已移除",
-    "mentionHere": "#{name} 中的所有人",
-    "mentionSomeone": "提及某人",
-    "mentionSuggestions": "提及建议",
-    "messageRoom": "发送消息到 #{name}",
-    "messages": "消息",
-    "new": "新",
-    "newLineHint": "Shift + Enter 换行",
-    "noRooms": "没有匹配的聊天室",
-    "noMatches": "没有匹配项",
-    "people": "成员",
-    "pickRoom": "从列表中打开一个聊天室",
-    "remove": "移除",
-    "removeAgentDescription": "该智能体会话将不再接收此聊天室的消息。如需恢复,请重新添加该智能体。",
-    "removeFailed": "无法移除成员",
-    "removePersonDescription": "该成员将不再接收此聊天室的消息。如需恢复,请重新添加。",
-    "removeTitle": "要将 {name} 从此聊天室移除吗?",
-    "searchRooms": "搜索聊天室",
-    "searchPeopleAndAgents": "搜索成员和智能体",
-    "today": "今天",
-    "topic": "话题",
-    "topicFailed": "无法保存话题",
-    "topicOptional": "话题(可选)",
-    "topicPlaceholder": "此聊天室的主题",
-    "viewMembers": "查看成员",
-    "viewMembersCount": "查看 {count, plural, other {# 位成员}}",
-    "viewingRoom": "你正在查看 #{name}",
-    "yesterday": "昨天",
-    "you": "{name}(你)",
-    "status": {
-      "running": "运行中",
-      "starting": "启动中",
-      "stopped": "已停止",
-      "failed": "失败"
-    },
-    "replyInThread": "在话题中回复",
-    "thread": "话题",
-    "closeThread": "关闭话题",
-    "backToRoom": "返回聊天室",
-    "replyPlaceholder": "回复…",
-    "replyCount": "{count, plural, other {# 条回复}}",
-    "lastReply": "最后回复 {time}",
-    "threadLoadError": "无法加载此话题。请重试。",
-    "join": "加入",
-    "openRoom": "打开",
-    "gateDescription": "开启聊天室，让此项目的智能体会话和成员在命名的聊天室中交流。",
-    "archivedNotice": "此聊天室已归档。现有消息会保留，但不再接收新消息。"
-  },
   "goals": {
     "title": "目标",
     "gateDescription": "智能体负责一个目标，直到它被可验证地完成：目标保存在文件中，每日心跳唤醒它，智能体向相关人员催要所需内容，并由独立检查来关闭它。",
@@ -24857,20 +24753,15 @@
       "board": {
         "brief": "概述",
         "text": "此空间的用途以及如何提供帮助。",
-        "label": "聊天室和看板",
+        "label": "看板和目标",
         "description": "用于简介和链接的看板，然后是目标。"
       },
       "standard": {
-        "label": "聊天室、目标、应用和产物",
-        "description": "先显示聊天室，再显示关联到此空间的内容。"
-      },
-      "room": {
-        "label": "仅聊天室",
-        "description": "一个对话。稍后可添加标签页。"
+        "label": "目标、应用和产物",
+        "description": "关联到此空间的内容。"
       }
     },
     "tabs": {
-      "room": "聊天室",
       "goals": "目标",
       "apps": "应用",
       "artifacts": "工件",
@@ -24895,7 +24786,7 @@
       "artifacts": "关联到此空间的产物会显示在这里",
       "folder": "此文件夹为空",
       "board": "此看板上的区块会显示在这里",
-      "boardHint": "让 My Kortix 添加区块：笔记、应用、文件、嵌入页面或其他聊天室。"
+      "boardHint": "让 My Kortix 添加区块：笔记、应用、文件或嵌入页面。"
     },
     "doc": "文档",
     "page": "页面",
@@ -24933,8 +24824,8 @@
     "cancel": "取消",
     "edit": {
       "title": "编辑标签页",
-      "description": "聊天室始终排在第一位。保存会将标签页提交到默认分支的 kortix.yaml 中。",
-      "empty": "只有聊天室。点击 + 添加标签页。",
+      "description": "保存会将标签页提交到默认分支的 kortix.yaml 中。",
+      "empty": "还没有标签页。点击 + 添加标签页。",
       "save": "保存标签页",
       "rename": "重命名 {name}",
       "moveUp": "上移 {name}",
@@ -24947,24 +24838,18 @@
       "unread": "{count, plural, other {# 条未读消息}}"
     },
     "leave": "离开 {name}",
-    "openRooms": "打开聊天室",
-    "roomHint": "智能体和成员在这里发布更新。",
-    "noRoom": "还没有聊天室。",
     "agents": "此空间中的智能体",
     "openAgent": "打开 {name}",
-    "members": "{count, plural, other {# 人}}",
     "needsYou": "需要你处理",
     "newSession": "新会议",
     "askMyKortix": "询问 My Kortix",
     "askPrompt": "我想修改 {name} 空间（kortix.yaml 中的 `spaces.{slug}`）：它的标签页、标题或其中的智能体。请问我想修改什么。",
-    "roomsOff": "此项目已关闭聊天室",
-    "roomsOffHint": "在项目设置中开启聊天室，即可在这里与成员和智能体交流。",
-    "room": {
-      "introTitle": "这里是 #{name} 的起点",
-      "introBody": "供所有在此空间工作的人使用的聊天室。",
-      "introAgents": "{count, plural, other {{names} 在这里发布更新。}}",
-      "introNoAgents": "添加到此空间的智能体会在这里发布更新。",
-      "introMention": "输入 @ 以提及成员或智能体。"
+    "intro": {
+      "title": "这里是 #{name} 的起点",
+      "body": "供所有在此空间工作的人使用的地方。",
+      "agents": "{count, plural, other {{names} 在这里发布更新。}}",
+      "noAgents": "添加到此空间的智能体会在这里发布更新。",
+      "addTab": "使用 + 添加标签页，即可在此固定目标、应用、文件或看板。"
     },
     "filter": "按空间筛选",
     "all": "全部",

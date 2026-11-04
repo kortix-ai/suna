@@ -801,10 +801,6 @@ const catalog = {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
         },
-        "agent_rooms": {
-          "name": "Rooms",
-          "description": "Named chat rooms where agent sessions and people post and reply in threads. A session wakes when a message is addressed to it. Adds the Rooms page, `kortix rooms`, and `kortix peers`."
-        },
         "goals": {
           "name": "Goals",
           "description": "Give an agent an objective it owns until an independent check confirms the outcome. It plans, works, waits, follows up with people, and keeps its state in a Goals folder in Files. Needs Volumes and Loops on."
@@ -1026,7 +1022,6 @@ const catalog = {
     }
   },
   "sidebar": {
-    "rooms": "Rooms",
     "goals": "Goals",
     "artifacts": "Artifacts",
     "referAndEarn": "Refer & Earn",
@@ -2057,7 +2052,6 @@ const catalog = {
       "automation_recovered": "Recovery alert",
       "capture_device_down": "Capture computer stopped",
       "capture_device_recovered": "Capture computer recording again",
-      "message": "Message",
       "artifact_comment": "Artifact comments"
     },
     "kindDescription": {
@@ -2070,7 +2064,6 @@ const catalog = {
       "automation_recovered": "A failing trigger or loop works again.",
       "capture_device_down": "A Kortix Capture computer is not recording. Sent to people who manage Capture.",
       "capture_device_recovered": "A Kortix Capture computer that stopped records again.",
-      "message": "Someone @-mentions you, or replies in a thread you posted in, in a room.",
       "artifact_comment": "Feedback, mentions, and replies on Artifacts you can view."
     },
     "bell": {
@@ -7649,103 +7642,6 @@ const catalog = {
     "enable": "Enable {name}",
     "enabling": "Enabling…"
   },
-  "rooms": {
-    "title": "Rooms",
-    "memberCount": "{count, plural, one {# member} other {# members}}",
-    "members": "Members",
-    "agent": "Agent",
-    "agentSender": "Agent {name}",
-    "empty": "Rooms you join will show up here",
-    "emptyHint": "Create a room, then add people and agents to it.",
-    "loadError": "Could not load rooms. Try again.",
-    "roomLoadError": "Could not load this room. Try again.",
-    "messagesLoadError": "Could not load messages. Try again.",
-    "retry": "Try again",
-    "back": "Back to rooms",
-    "send": "Send message",
-    "sendFailed": "Could not send the message",
-    "peopleLoadError": "Could not load people. Try again.",
-    "cardRoom": "Room {name}",
-    "digestCount": "{count, plural, one {# new message} other {# new messages}}",
-    "digestMore": "… and {count} more",
-    "cardFrom": "From",
-    "cardMessage": "Message",
-    "cardReplyTo": "Reply to",
-    "addRooms": "Add rooms",
-    "addFailed": "Could not add the member",
-    "addMembers": "Add people and agents",
-    "addMembersDescription": "Members receive the messages posted here. An agent session reads them at its next step.",
-    "addTopic": "Add a topic",
-    "agents": "Agents",
-    "browseRoomsDescription": "Every room in this project. Open one to read it or join it.",
-    "cancel": "Cancel",
-    "roomName": "Name",
-    "roomNameHint": "Lowercase letters, numbers and . _ / -, up to 64 characters.",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "Close members",
-    "copied": "Copied",
-    "copyText": "Copy message text",
-    "createRoom": "Create room",
-    "createRoomDescription": "A room holds the conversation about one topic, for people and agents.",
-    "createFailed": "Could not create the room",
-    "editTopic": "Edit topic",
-    "inThisRoom": "In this room",
-    "introRoom": "This is the start of the #{name} room.",
-    "joinRoom": "Join room",
-    "joinFailed": "Could not join the room",
-    "joined": "Joined",
-    "jumpToLatest": "Jump to latest",
-    "leaveRoom": "Leave room",
-    "memberActions": "Actions for {name}",
-    "memberAdded": "{name} added",
-    "memberRemoved": "Member removed",
-    "mentionHere": "Everyone in #{name}",
-    "mentionSomeone": "Mention someone",
-    "mentionSuggestions": "Mention suggestions",
-    "messageRoom": "Message #{name}",
-    "messages": "Messages",
-    "new": "New",
-    "newLineHint": "Shift + Enter for a new line",
-    "noRooms": "No matching rooms",
-    "noMatches": "No matches",
-    "people": "People",
-    "pickRoom": "Open a room from the list",
-    "remove": "Remove",
-    "removeAgentDescription": "The agent session stops receiving this room's messages. To restore it, add the agent again.",
-    "removeFailed": "Could not remove the member",
-    "removePersonDescription": "This member stops receiving this room's messages. To restore it, add them again.",
-    "removeTitle": "Remove {name} from this room?",
-    "searchRooms": "Search rooms",
-    "searchPeopleAndAgents": "Search people and agents",
-    "today": "Today",
-    "topic": "Topic",
-    "topicFailed": "Could not save the topic",
-    "topicOptional": "Topic (optional)",
-    "topicPlaceholder": "What this room is about",
-    "viewMembers": "View members",
-    "viewMembersCount": "View {count, plural, one {# member} other {# members}}",
-    "viewingRoom": "You are viewing #{name}",
-    "yesterday": "Yesterday",
-    "you": "{name} (you)",
-    "status": {
-      "running": "Running",
-      "starting": "Starting",
-      "stopped": "Stopped",
-      "failed": "Failed"
-    },
-    "replyInThread": "Reply in thread",
-    "thread": "Thread",
-    "closeThread": "Close thread",
-    "backToRoom": "Back to the room",
-    "replyPlaceholder": "Reply…",
-    "replyCount": "{count, plural, one {# reply} other {# replies}}",
-    "lastReply": "Last reply {time}",
-    "threadLoadError": "Could not load this thread. Try again.",
-    "join": "Join",
-    "openRoom": "Open",
-    "gateDescription": "Turn on Rooms to let agent sessions and people of this project talk in named chat rooms.",
-    "archivedNotice": "This room is archived. It keeps its messages and takes no new ones."
-  },
   "goals": {
     "title": "Goals",
     "gateDescription": "Agents own an objective until it is verifiably done: the goal lives in Files, a daily heartbeat wakes it, the agent chases people for what it needs, and an independent check closes it.",
@@ -8784,7 +8680,6 @@ const catalog = {
       }
     },
     "tabs": {
-      "room": "Room",
       "goals": "Goals",
       "apps": "Apps",
       "artifacts": "Artifacts",
@@ -8809,7 +8704,7 @@ const catalog = {
       "artifacts": "Artifacts bound to this space will show up here",
       "folder": "This folder is empty",
       "board": "Blocks on this board will show up here",
-      "boardHint": "Ask My Kortix to add a block: a note, an App, a file, an embedded page or another room."
+      "boardHint": "Ask My Kortix to add a block: a note, an App, a file or an embedded page."
     },
     "doc": "Doc",
     "page": "Page",
@@ -8847,8 +8742,8 @@ const catalog = {
     "cancel": "Cancel",
     "edit": {
       "title": "Edit tabs",
-      "description": "The room stays first. Saving commits the tabs to kortix.yaml on the default branch.",
-      "empty": "Only the room. Add a tab with +.",
+      "description": "Saving commits the tabs to kortix.yaml on the default branch.",
+      "empty": "No tabs yet. Add a tab with +.",
       "save": "Save tabs",
       "rename": "Rename {name}",
       "moveUp": "Move {name} up",
@@ -9190,39 +9085,29 @@ const catalog = {
     },
     "templates": {
       "standard": {
-        "label": "Room, Goals, Apps and Artifacts",
-        "description": "The room, then what is bound to the space."
-      },
-      "room": {
-        "label": "Room only",
-        "description": "One conversation. Add tabs later."
+        "label": "Goals, Apps and Artifacts",
+        "description": "What is bound to the space."
       },
       "board": {
-        "label": "Room and a board",
+        "label": "A board and Goals",
         "description": "A board for the brief and the links, then Goals.",
         "brief": "Brief",
         "text": "What this space is for, and how to help."
       }
     },
     "leave": "Leave {name}",
-    "openRooms": "Open rooms",
-    "roomHint": "Agents and people post updates here.",
-    "noRoom": "No room yet.",
     "agents": "Agents in this space",
     "openAgent": "Open {name}",
-    "members": "{count, plural, one {# person} other {# people}}",
     "needsYou": "need you",
     "newSession": "New session",
     "askMyKortix": "Ask My Kortix",
     "askPrompt": "I want to change the {name} space (`spaces.{slug}` in kortix.yaml): its tabs, its header or the agents in it. Ask me what to change.",
-    "roomsOff": "Rooms are off for this project",
-    "roomsOffHint": "Turn on Rooms in the project settings to talk with people and agents here.",
-    "room": {
-      "introTitle": "This is the start of #{name}",
-      "introBody": "The room for everyone who works in this space.",
-      "introAgents": "{count, plural, one {{names} posts updates here.} other {{names} post updates here.}}",
-      "introNoAgents": "Agents you add to this space post their updates here.",
-      "introMention": "Type @ to mention a person or an agent."
+    "intro": {
+      "title": "This is the start of #{name}",
+      "body": "The place for everyone who works in this space.",
+      "agents": "{count, plural, one {{names} posts updates here.} other {{names} post updates here.}}",
+      "noAgents": "Agents you add to this space post their updates here.",
+      "addTab": "Add a tab with + to pin goals, apps, files or a board here."
     },
     "filter": "Filter by space",
     "all": "All",

@@ -172,7 +172,7 @@ You are the expert on all of Kortix. Before you advise on or act in an area, loa
 | Trigger | Starts work on a schedule ("every Monday at 9") or when something happens. [kortix-system] | Project admin → Triggers |
 | Loop | A check-in that brings one existing session back later, once or on repeat. [kortix-system] | The clock at the top of the session; Project admin → Triggers |
 | Goal | An outcome Kortix keeps working on, over days if needed, until a separate agent checks it is done. [kortix-goals] | Goals |
-| Space | A room for a team or a topic, with tabs for its goals, apps, files and pinned things. [kortix-rooms] | Spaces in the sidebar |
+| Space | A place for a team or a topic, with tabs for its goals, apps, files and pinned things. | Spaces in the sidebar |
 | App | A website, an internal tool or a backend Kortix builds and keeps running. [kortix-apps] | Apps |
 | Artifact | A document or a page from the project's files, shared with a link. [kortix-artifacts] | Artifacts |
 | Files and Drive | The project's shared files. Each person also has a private folder. [kortix-drives] | Files, Drive |

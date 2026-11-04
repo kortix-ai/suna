@@ -39,7 +39,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const sessionLog = useFeatureFlag(projectId, 'session_log');
   const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
   const chat = useFeatureFlag(projectId, 'chat');
-  const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
   const sharedDrives = useFeatureFlag(projectId, 'shared_drives');
   const goals = useFeatureFlag(projectId, 'goals');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
@@ -65,7 +64,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       session_log: sessionLog.enabled,
       session_log_restore: sessionLogRestore.enabled,
       chat: chat.enabled,
-      agent_rooms: agentRooms.enabled,
       shared_drives: sharedDrives.enabled,
       goals: goals.enabled,
       artifacts: artifacts.enabled,

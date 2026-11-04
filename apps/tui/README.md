@@ -156,7 +156,6 @@ is left out of the sidebar.
 | `/goals` | Goals and their progress: start one, answer its question, stop it. | flag `goals` |
 | `/memory` | Company memory pages: read and search. | flag `chat` |
 | `/spaces` | Channels and DMs and their threads; a thread opens as the session. | flag `chat` |
-| `/rooms` | Rooms where agents and people talk (read-only). | flag `agent_rooms` |
 | `/loops` | This session's loops: prompts on a schedule. New, pause, run now, delete. | a session, flag `reminders` |
 | `/audit` | This session's audit events and the approvals waiting. History needs the Enterprise audit entitlement. | a session |
 | `/review` | Open change requests and their diffs. | a project |
@@ -372,7 +371,6 @@ is `/feedback`.
 | `/goals` |  | Screens: Outcomes the agents work toward, and their progress. |
 | `/memory` | `/knowledge` | Screens: Read and search company memory pages. |
 | `/spaces` | `/channels` `/dm` | Screens: Channels and DMs, and the threads in them. |
-| `/rooms` |  | Screens: Rooms where agents and people talk. |
 | `/loops` | `/reminders` `/schedule` | Screens: This session's loops: prompts that run on a schedule. |
 | `/audit` | `/activity` | Screens: What happened in this session, and approvals waiting. |
 | `/review` | `/changes` `/pr-comments` `Alt+r` | Screens: Review change requests. |
@@ -663,22 +661,6 @@ _58 commands._
 | `o` | Open the space in the browser. |
 | `r` | Reload the list. |
 | `Esc` | Leave the threads, or leave the screen. |
-
-### Rooms
-
-| Keys | Action |
-| --- | --- |
-| `j / ↓` | Move down. In a conversation: scroll down. |
-| `k / ↑` | Move up. In a conversation: scroll up. |
-| `g` | Go to the first row, or the oldest message. |
-| `G` | Go to the last row, or the newest message. |
-| `PgDn / Space` | Scroll a page down. |
-| `PgUp` | Scroll a page up. |
-| `Enter` | Read the conversation, or open the member as a session. |
-| `m` | List the members of the open conversation. |
-| `o` | Open the conversation in the browser. |
-| `r` | Reload the list or the messages. |
-| `Esc` | Close the members, close the conversation, or leave the screen. |
 
 ### Loops
 

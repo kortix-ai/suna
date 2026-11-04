@@ -45,7 +45,6 @@ import {
   recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
 } from '../session-turn-ledger';
-import { fireIdleWatches } from '../rooms/service';
 import { onPeerTurnEnded } from '../peer-messages/service';
 import { notifyParentOfSubagentTurn } from '../subagent-notice';
 
@@ -555,11 +554,6 @@ export async function settleTurnEnd(
         err: err instanceof Error ? err.message : String(err),
       }),
     );
-  }
-  // THE TURN ENDED, SO "TELL ME WHEN IT IS IDLE" IS DUE (flag agent_rooms).
-  // Fire-and-forget: a notice never holds the daemon's relay, and it never throws.
-  if (settled.turnCompletion.outcome === 'closed' && !ctx.childSession) {
-    void fireIdleWatches(ctx.sessionId, settled.status, settled.errorInfo?.name ?? null);
   }
   // Started beside the promotion, awaited before the acknowledgement.
   const sessionList = refreshSessionListAtTurnEnd(ctx);

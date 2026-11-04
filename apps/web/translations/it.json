@@ -1290,10 +1290,6 @@
           "name": "Ripristino dal log di sessione",
           "description": "Ricostruisce una sessione dal suo log di sessione salvato quando il suo computer ha perso la conversazione. Kortix lo attiva per progetto."
         },
-        "agent_rooms": {
-          "name": "Stanze",
-          "description": "Chat room con nome in cui sessioni degli agenti e persone pubblicano messaggi e rispondono nei thread. Una sessione si riattiva quando un messaggio è indirizzato a lei. Aggiunge la pagina Stanze, `kortix rooms` e `kortix peers`."
-        },
         "goals": {
           "name": "Obiettivi",
           "description": "Assegna a un agente un obiettivo di cui resta responsabile finché un controllo indipendente non conferma il risultato. Pianifica, lavora, attende, sollecita le persone e conserva il suo stato in una cartella Goals in File. Richiede Volumi e Cicli attivi."
@@ -1547,7 +1543,6 @@
     }
   },
   "sidebar": {
-    "rooms": "Stanze",
     "goals": "Obiettivi",
     "artifacts": "Artefatti",
     "referAndEarn": "Invita e Guadagna",
@@ -3271,7 +3266,6 @@
       "automation_recovered": "Avviso di ripristino",
       "capture_device_down": "Computer Capture fermo",
       "capture_device_recovered": "Computer Capture di nuovo in registrazione",
-      "message": "Messaggio",
       "artifact_comment": "Commenti agli artefatti"
     },
     "kindDescription": {
@@ -3284,7 +3278,6 @@
       "automation_recovered": "Un trigger o un ciclo che falliva torna a funzionare.",
       "capture_device_down": "Un computer Kortix Capture non registra. Inviato a chi gestisce Capture.",
       "capture_device_recovered": "Un computer Kortix Capture che si era fermato registra di nuovo.",
-      "message": "Qualcuno ti menziona con @, o risponde in un thread in cui hai scritto, in una stanza.",
       "artifact_comment": "Feedback, menzioni e risposte sugli artefatti che puoi visualizzare."
     },
     "bell": {
@@ -23340,103 +23333,6 @@
     "enable": "Abilita {name}",
     "enabling": "Attivazione…"
   },
-  "rooms": {
-    "title": "Stanze",
-    "memberCount": "{count, plural, one {# membro} other {# membri}}",
-    "members": "Membri",
-    "agent": "Agente",
-    "agentSender": "Agente {name}",
-    "empty": "Le stanze in cui entri compariranno qui",
-    "emptyHint": "Crea una stanza, poi aggiungi persone e agenti.",
-    "loadError": "Impossibile caricare le stanze. Riprova.",
-    "roomLoadError": "Impossibile caricare questa stanza. Riprova.",
-    "messagesLoadError": "Impossibile caricare i messaggi. Riprova.",
-    "retry": "Riprova",
-    "back": "Torna alle stanze",
-    "send": "Invia messaggio",
-    "sendFailed": "Impossibile inviare il messaggio",
-    "peopleLoadError": "Impossibile caricare le persone. Riprova.",
-    "cardRoom": "Stanza {name}",
-    "digestCount": "{count, plural, one {# nuovo messaggio} other {# nuovi messaggi}}",
-    "digestMore": "… e altri {count}",
-    "cardFrom": "Da",
-    "cardMessage": "Messaggio",
-    "cardReplyTo": "Risposta a",
-    "addRooms": "Aggiungi stanze",
-    "addFailed": "Impossibile aggiungere il membro",
-    "addMembers": "Aggiungi persone e agenti",
-    "addMembersDescription": "I membri ricevono i messaggi pubblicati qui. Una sessione agente li legge al passo successivo.",
-    "addTopic": "Aggiungi un argomento",
-    "agents": "Agenti",
-    "browseRoomsDescription": "Tutte le stanze di questo progetto. Aprine una per leggerla o entrarci.",
-    "cancel": "Annulla",
-    "roomName": "Nome",
-    "roomNameHint": "Lettere minuscole, numeri e . _ / -, fino a 64 caratteri.",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "Chiudi membri",
-    "copied": "Copiato",
-    "copyText": "Copia il testo del messaggio",
-    "createRoom": "Crea stanza",
-    "createRoomDescription": "Una stanza raccoglie la conversazione su un argomento, per persone e agenti.",
-    "createFailed": "Impossibile creare la stanza",
-    "editTopic": "Modifica argomento",
-    "inThisRoom": "In questa stanza",
-    "introRoom": "Questo è l'inizio della stanza #{name}.",
-    "joinRoom": "Entra nella stanza",
-    "joinFailed": "Impossibile entrare nella stanza",
-    "joined": "Iscritto",
-    "jumpToLatest": "Vai al più recente",
-    "leaveRoom": "Lascia la stanza",
-    "memberActions": "Azioni per {name}",
-    "memberAdded": "{name} aggiunto",
-    "memberRemoved": "Membro rimosso",
-    "mentionHere": "Tutti in #{name}",
-    "mentionSomeone": "Menziona qualcuno",
-    "mentionSuggestions": "Suggerimenti di menzione",
-    "messageRoom": "Messaggio a #{name}",
-    "messages": "Messaggi",
-    "new": "Nuovo",
-    "newLineHint": "Maiusc + Invio per andare a capo",
-    "noRooms": "Nessuna stanza corrispondente",
-    "noMatches": "Nessun risultato",
-    "people": "Persone",
-    "pickRoom": "Apri una stanza dall'elenco",
-    "remove": "Rimuovi",
-    "removeAgentDescription": "La sessione agente smette di ricevere i messaggi di questa stanza. Per ripristinarla, aggiungi di nuovo l'agente.",
-    "removeFailed": "Impossibile rimuovere il membro",
-    "removePersonDescription": "Questo membro smette di ricevere i messaggi di questa stanza. Per ripristinarlo, aggiungilo di nuovo.",
-    "removeTitle": "Rimuovere {name} da questa stanza?",
-    "searchRooms": "Cerca stanze",
-    "searchPeopleAndAgents": "Cerca persone e agenti",
-    "today": "Oggi",
-    "topic": "Argomento",
-    "topicFailed": "Impossibile salvare l'argomento",
-    "topicOptional": "Argomento (facoltativo)",
-    "topicPlaceholder": "Di cosa tratta questa stanza",
-    "viewMembers": "Mostra membri",
-    "viewMembersCount": "Mostra {count, plural, one {# membro} other {# membri}}",
-    "viewingRoom": "Stai visualizzando #{name}",
-    "yesterday": "Ieri",
-    "you": "{name} (tu)",
-    "status": {
-      "running": "In esecuzione",
-      "starting": "In avvio",
-      "stopped": "Arrestata",
-      "failed": "Non riuscita"
-    },
-    "replyInThread": "Rispondi nel thread",
-    "thread": "Thread",
-    "closeThread": "Chiudi thread",
-    "backToRoom": "Torna alla stanza",
-    "replyPlaceholder": "Rispondi…",
-    "replyCount": "{count, plural, one {# risposta} other {# risposte}}",
-    "lastReply": "Ultima risposta {time}",
-    "threadLoadError": "Impossibile caricare questo thread. Riprova.",
-    "join": "Entra",
-    "openRoom": "Apri",
-    "gateDescription": "Attiva le Stanze per permettere alle sessioni degli agenti e alle persone di questo progetto di parlare in chat room con nome.",
-    "archivedNotice": "Questa stanza è archiviata. Conserva i messaggi e non ne accetta di nuovi."
-  },
   "goals": {
     "title": "Obiettivi",
     "gateDescription": "Gli agenti seguono un obiettivo finché non è raggiunto in modo verificabile: l'obiettivo vive in File, un battito giornaliero lo risveglia, l'agente sollecita le persone per ciò che gli serve e un controllo indipendente lo chiude.",
@@ -24857,20 +24753,15 @@
       "board": {
         "brief": "Sintesi",
         "text": "A cosa serve questo spazio e come contribuire.",
-        "label": "Stanza e bacheca",
+        "label": "Bacheca e obiettivi",
         "description": "Una bacheca per il riepilogo e i collegamenti, poi gli obiettivi."
       },
       "standard": {
-        "label": "Stanza, obiettivi, app e artefatti",
-        "description": "La stanza, poi i contenuti associati allo spazio."
-      },
-      "room": {
-        "label": "Solo stanza",
-        "description": "Una conversazione. Aggiungi le schede in seguito."
+        "label": "Obiettivi, app e artefatti",
+        "description": "I contenuti associati allo spazio."
       }
     },
     "tabs": {
-      "room": "Stanza",
       "goals": "Obiettivi",
       "apps": "App",
       "artifacts": "Artefatti",
@@ -24895,7 +24786,7 @@
       "artifacts": "Gli artefatti associati a questo spazio appariranno qui",
       "folder": "Questa cartella è vuota",
       "board": "I blocchi di questa bacheca appariranno qui",
-      "boardHint": "Chiedi a My Kortix di aggiungere un blocco: una nota, un’App, un file, una pagina incorporata o un’altra stanza."
+      "boardHint": "Chiedi a My Kortix di aggiungere un blocco: una nota, un’App, un file o una pagina incorporata."
     },
     "doc": "Documento",
     "page": "Pagina",
@@ -24933,8 +24824,8 @@
     "cancel": "Annulla",
     "edit": {
       "title": "Modifica schede",
-      "description": "La stanza rimane per prima. Il salvataggio registra le schede in kortix.yaml sul ramo predefinito.",
-      "empty": "Solo la stanza. Aggiungi una scheda con +.",
+      "description": "Il salvataggio registra le schede in kortix.yaml sul ramo predefinito.",
+      "empty": "Ancora nessuna scheda. Aggiungi una scheda con +.",
       "save": "Salva schede",
       "rename": "Rinomina {name}",
       "moveUp": "Sposta {name} in alto",
@@ -24947,24 +24838,18 @@
       "unread": "{count, plural, one {# messaggio non letto} other {# messaggi non letti}}"
     },
     "leave": "Esci da {name}",
-    "openRooms": "Apri stanze",
-    "roomHint": "Agenti e persone pubblicano aggiornamenti qui.",
-    "noRoom": "Nessuna stanza.",
     "agents": "Agenti in questo spazio",
     "openAgent": "Apri {name}",
-    "members": "{count, plural, one {# persona} other {# persone}}",
     "needsYou": "hanno bisogno di te",
     "newSession": "Nuova sessione",
     "askMyKortix": "Chiedi a My Kortix",
     "askPrompt": "Voglio cambiare lo spazio {name} (`spaces.{slug}` in kortix.yaml): le schede, l’intestazione o gli agenti al suo interno. Chiedimi cosa cambiare.",
-    "roomsOff": "Le stanze sono disattivate per questo progetto",
-    "roomsOffHint": "Attiva le stanze nelle impostazioni del progetto per parlare qui con persone e agenti.",
-    "room": {
-      "introTitle": "Questo è l’inizio di #{name}",
-      "introBody": "La stanza per chi lavora in questo spazio.",
-      "introAgents": "{count, plural, one {{names} pubblica aggiornamenti qui.} other {{names} pubblicano aggiornamenti qui.}}",
-      "introNoAgents": "Gli agenti aggiunti a questo spazio pubblicano qui i loro aggiornamenti.",
-      "introMention": "Digita @ per menzionare una persona o un agente."
+    "intro": {
+      "title": "Questo è l’inizio di #{name}",
+      "body": "Il posto per chi lavora in questo spazio.",
+      "agents": "{count, plural, one {{names} pubblica aggiornamenti qui.} other {{names} pubblicano aggiornamenti qui.}}",
+      "noAgents": "Gli agenti aggiunti a questo spazio pubblicano qui i loro aggiornamenti.",
+      "addTab": "Aggiungi una scheda con + per fissare qui obiettivi, app, file o una bacheca."
     },
     "filter": "Filtra per spazio",
     "all": "Tutti",

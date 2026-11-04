@@ -1290,10 +1290,6 @@
           "name": "Vraćanje iz loga sesije",
           "description": "Ponovo gradi sesiju iz njenog sačuvanog loga sesije kada je njen računar izgubio razgovor. Kortix ga uključuje po projektu."
         },
-        "agent_rooms": {
-          "name": "Собе",
-          "description": "Именоване собе за ћаскање у којима сесије агената и особе објављују поруке и одговарају у нитима. Сесија се буди када јој је порука упућена. Додаје страницу Собе, `kortix rooms` и `kortix peers`."
-        },
         "goals": {
           "name": "Циљеви",
           "description": "Дајте агенту циљ за који је одговоран док независна провера не потврди исход. Планира, ради, чека, подсећа људе и чува своје стање у фасцикли Goals у Фајловима. Захтева укључене Volumene и Петље."
@@ -1547,7 +1543,6 @@
     }
   },
   "sidebar": {
-    "rooms": "Sobe",
     "goals": "Ciljevi",
     "artifacts": "Артефакти",
     "referAndEarn": "Препоручи и заради",
@@ -3271,7 +3266,6 @@
       "automation_recovered": "Обавештење о опоравку",
       "capture_device_down": "Capture рачунар је стао",
       "capture_device_recovered": "Capture рачунар поново снима",
-      "message": "Poruka",
       "artifact_comment": "Komentari na artefakte"
     },
     "kindDescription": {
@@ -3284,7 +3278,6 @@
       "automation_recovered": "Окидач или петља који нису успевали поново раде.",
       "capture_device_down": "Kortix Capture рачунар не снима. Шаље се људима који управљају Capture-ом.",
       "capture_device_recovered": "Kortix Capture рачунар који је стао поново снима.",
-      "message": "Neko vas pomene sa @ ili odgovori u niti u kojoj ste pisali, u sobi.",
       "artifact_comment": "Povratne informacije, pominjanja i odgovori na artefakte koje možete da vidite."
     },
     "bell": {
@@ -23340,103 +23333,6 @@
     "enable": "Омогући {name}",
     "enabling": "Омогућавање…"
   },
-  "rooms": {
-    "title": "Sobe",
-    "memberCount": "{count, plural, one {# član} few {# člana} other {# članova}}",
-    "members": "Članovi",
-    "agent": "Agent",
-    "agentSender": "Agent {name}",
-    "empty": "Sobe kojima se pridružiš pojaviće se ovde",
-    "emptyHint": "Napravi sobu, pa u nju dodaj ljude i agente.",
-    "loadError": "Nije moguće učitati sobe. Pokušaj ponovo.",
-    "roomLoadError": "Nije moguće učitati ovu sobu. Pokušaj ponovo.",
-    "messagesLoadError": "Nije moguće učitati poruke. Pokušaj ponovo.",
-    "retry": "Pokušaj ponovo",
-    "back": "Nazad na sobe",
-    "send": "Pošalji poruku",
-    "sendFailed": "Nije moguće poslati poruku",
-    "peopleLoadError": "Nije moguće učitati ljude. Pokušaj ponovo.",
-    "cardRoom": "Soba {name}",
-    "digestCount": "{count, plural, one {# nova poruka} few {# nove poruke} other {# novih poruka}}",
-    "digestMore": "… i još {count}",
-    "cardFrom": "Od",
-    "cardMessage": "Poruka",
-    "cardReplyTo": "Odgovor na",
-    "addRooms": "Dodaj sobe",
-    "addFailed": "Nije moguće dodati člana",
-    "addMembers": "Dodaj ljude i agente",
-    "addMembersDescription": "Članovi primaju poruke objavljene ovde. Sesija agenta ih čita u sledećem koraku.",
-    "addTopic": "Dodaj temu",
-    "agents": "Agenti",
-    "browseRoomsDescription": "Sve sobe u ovom projektu. Otvori jednu da je čitaš ili joj se pridružiš.",
-    "cancel": "Otkaži",
-    "roomName": "Naziv",
-    "roomNameHint": "Mala slova, brojevi i . _ / -, do 64 znaka.",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "Zatvori članove",
-    "copied": "Kopirano",
-    "copyText": "Kopiraj tekst poruke",
-    "createRoom": "Napravi sobu",
-    "createRoomDescription": "Soba okuplja razgovor o jednoj temi, za ljude i agente.",
-    "createFailed": "Nije moguće napraviti sobu",
-    "editTopic": "Izmeni temu",
-    "inThisRoom": "U ovoj sobi",
-    "introRoom": "Ovo je početak sobe #{name}.",
-    "joinRoom": "Pridruži se sobi",
-    "joinFailed": "Nije moguće pridružiti se sobi",
-    "joined": "Pridružen",
-    "jumpToLatest": "Idi na najnovije",
-    "leaveRoom": "Napusti sobu",
-    "memberActions": "Radnje za {name}",
-    "memberAdded": "{name} je dodat",
-    "memberRemoved": "Član je uklonjen",
-    "mentionHere": "Svi u #{name}",
-    "mentionSomeone": "Pomeni nekoga",
-    "mentionSuggestions": "Predlozi za pominjanje",
-    "messageRoom": "Poruka za #{name}",
-    "messages": "Poruke",
-    "new": "Novo",
-    "newLineHint": "Shift + Enter za novi red",
-    "noRooms": "Nema odgovarajućih soba",
-    "noMatches": "Nema rezultata",
-    "people": "Ljudi",
-    "pickRoom": "Otvori sobu sa liste",
-    "remove": "Ukloni",
-    "removeAgentDescription": "Sesija agenta više ne prima poruke ove sobe. Da to vratiš, ponovo dodaj agenta.",
-    "removeFailed": "Nije moguće ukloniti člana",
-    "removePersonDescription": "Ovaj član više ne prima poruke ove sobe. Da to vratiš, ponovo ga dodaj.",
-    "removeTitle": "Ukloniti {name} iz ove sobe?",
-    "searchRooms": "Pretraži sobe",
-    "searchPeopleAndAgents": "Pretraži ljude i agente",
-    "today": "Danas",
-    "topic": "Tema",
-    "topicFailed": "Nije moguće sačuvati temu",
-    "topicOptional": "Tema (opciono)",
-    "topicPlaceholder": "O čemu je ova soba",
-    "viewMembers": "Prikaži članove",
-    "viewMembersCount": "Prikaži {count, plural, one {# člana} few {# člana} other {# članova}}",
-    "viewingRoom": "Pregledaš #{name}",
-    "yesterday": "Juče",
-    "you": "{name} (ti)",
-    "status": {
-      "running": "Radi",
-      "starting": "Pokreće se",
-      "stopped": "Zaustavljena",
-      "failed": "Neuspešno"
-    },
-    "replyInThread": "Odgovori u niti",
-    "thread": "Nit",
-    "closeThread": "Zatvori nit",
-    "backToRoom": "Nazad na sobu",
-    "replyPlaceholder": "Odgovori…",
-    "replyCount": "{count, plural, one {# odgovor} few {# odgovora} other {# odgovora}}",
-    "lastReply": "Poslednji odgovor {time}",
-    "threadLoadError": "Nije moguće učitati ovu nit. Pokušaj ponovo.",
-    "join": "Pridruži se",
-    "openRoom": "Otvori",
-    "gateDescription": "Uključite Sobe da bi sesije agenata i ljudi ovog projekta razgovarali u imenovanim sobama za ćaskanje.",
-    "archivedNotice": "Ова соба је архивирана. Чува поруке и не прима нове."
-  },
   "goals": {
     "title": "Ciljevi",
     "gateDescription": "Agenti preuzimaju cilj dok ne bude proverljivo ostvaren: cilj živi u Fajlovima, dnevni otkucaj ga budi, agent traži od ljudi ono što mu treba, a nezavisna provera ga zatvara.",
@@ -24857,20 +24753,15 @@
       "board": {
         "brief": "Преглед",
         "text": "Чему служи овај простор и како помоћи.",
-        "label": "Soba i tabla",
+        "label": "Tabla i ciljevi",
         "description": "Tabla za sažetak i veze, a zatim ciljevi."
       },
       "standard": {
-        "label": "Soba, ciljevi, aplikacije i artefakti",
-        "description": "Soba, a zatim sadržaj vezan za prostor."
-      },
-      "room": {
-        "label": "Samo soba",
-        "description": "Jedan razgovor. Dodajte kartice kasnije."
+        "label": "Ciljevi, aplikacije i artefakti",
+        "description": "Sadržaj vezan za prostor."
       }
     },
     "tabs": {
-      "room": "Соба",
       "goals": "Циљеви",
       "apps": "Апликације",
       "artifacts": "Артефакти",
@@ -24895,7 +24786,7 @@
       "artifacts": "Артефакти везани за овај простор приказују се овде",
       "folder": "Овај фолдер је празан",
       "board": "Блокови на овој табли приказују се овде",
-      "boardHint": "Замолите My Kortix да дода блок: белешку, апликацију, датотеку, уграђену страницу или другу собу."
+      "boardHint": "Замолите My Kortix да дода блок: белешку, апликацију, датотеку или уграђену страницу."
     },
     "doc": "Документ",
     "page": "Страница",
@@ -24933,8 +24824,8 @@
     "cancel": "Откажи",
     "edit": {
       "title": "Уреди картице",
-      "description": "Соба остаје прва. Чување уписује картице у kortix.yaml на подразумеваној грани.",
-      "empty": "Само соба. Додајте картицу помоћу +.",
+      "description": "Чување уписује картице у kortix.yaml на подразумеваној грани.",
+      "empty": "Још нема картица. Додајте картицу помоћу +.",
       "save": "Сачувај картице",
       "rename": "Преименуј {name}",
       "moveUp": "Помери {name} нагоре",
@@ -24947,24 +24838,18 @@
       "unread": "{count, plural, one {# непрочитана порука} few {# непрочитане поруке} other {# непрочитаних порука}}"
     },
     "leave": "Напусти {name}",
-    "openRooms": "Отвори собе",
-    "roomHint": "Агенти и људи објављују новости овде.",
-    "noRoom": "Још нема собе.",
     "agents": "Агенти у овом простору",
     "openAgent": "Отвори {name}",
-    "members": "{count, plural, one {# особа} few {# особе} other {# особа}}",
     "needsYou": "потребни сте",
     "newSession": "Нова сесија",
     "askMyKortix": "Питај My Kortix",
     "askPrompt": "Желим да променим простор {name} (`spaces.{slug}` у kortix.yaml): картице, заглавље или агенте у њему. Питај ме шта да променим.",
-    "roomsOff": "Собе су искључене за овај пројекат",
-    "roomsOffHint": "Укључите собе у подешавањима пројекта да овде разговарате са људима и агентима.",
-    "room": {
-      "introTitle": "Овде почиње #{name}",
-      "introBody": "Соба за све који раде у овом простору.",
-      "introAgents": "{count, plural, one {{names} објављује новости овде.} few {{names} објављују новости овде.} other {{names} објављују новости овде.}}",
-      "introNoAgents": "Агенти које додате у овај простор објављују новости овде.",
-      "introMention": "Унесите @ да поменете особу или агента."
+    "intro": {
+      "title": "Овде почиње #{name}",
+      "body": "Место за све који раде у овом простору.",
+      "agents": "{count, plural, one {{names} објављује новости овде.} few {{names} објављују новости овде.} other {{names} објављују новости овде.}}",
+      "noAgents": "Агенти које додате у овај простор објављују новости овде.",
+      "addTab": "Додајте картицу са + да овде закачите циљеве, апликације, датотеке или таблу."
     },
     "filter": "Филтрирај по простору",
     "all": "Све",

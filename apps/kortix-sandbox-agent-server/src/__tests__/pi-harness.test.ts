@@ -1066,7 +1066,7 @@ describe('pi harness', () => {
     const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
     process.env.KORTIX_MANAGED_SKILLS_DIR = managed
     try {
-      const envs: Array<Record<string, string>> = [{}, { KORTIX_GENUI: '0', KORTIX_FEATURE_FLAGS: 'agent_rooms' }]
+      const envs: Array<Record<string, string>> = [{}, { KORTIX_GENUI: '0', KORTIX_FEATURE_FLAGS: 'chat' }]
       for (const env of envs) {
         const r = await boot({ script: [{ text: 'ok' }], env })
         const skills = skillList(r)

@@ -43,7 +43,7 @@ import type { Command } from '@/lib/session/runtime-data';
 import type { SessionLogTurn } from '@kortix/sdk';
 import { recordTimeMs } from '@/lib/session/turn-meta';
 import { type ChannelPlatform, channelPromptTail, isChannelFileLabel, parseChannelMessage } from '@kortix/shared';
-import { parsePeerMessagePrompt, parseReminderPrompt, parseRoomDigest, parseRoomPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
+import { parsePeerMessagePrompt, parseReminderPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { SourcePill } from './source-pill';
 import { CopyContentButton, KortixBottomSheetModal } from '@/components/kortix/sheet';
@@ -379,10 +379,6 @@ function UserMessageImpl({
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
   // A reminder fire: platform-written `[REMINDER …]` header + the reminder text.
   const reminderInfo = useMemo(() => parseReminderPrompt(rawText), [rawText]);
-  // A message from a room or a direct conversation: `[room dev · #2 · from …]` + the text.
-  const roomInfo = useMemo(() => parseRoomPrompt(rawText), [rawText]);
-  // Room traffic batched into one turn: `[room dev · #a–#b · N new messages]`.
-  const roomDigestInfo = useMemo(() => parseRoomDigest(rawText), [rawText]);
   // A message from another Kortix session (`send_message`): `[message from reviewer · session 3f2a1b9c · #m_1]`.
   // The API delivers it as harness context (`synthetic`), which `rawText` leaves out, so it is read from
   // every text block (web `useTurnUserContent`).
@@ -413,7 +409,7 @@ function UserMessageImpl({
   // under the bubble; only a queued status line (or Select text's Done)
   // stays there. The bubble's own long press opens it through the trigger's
   // ref: the bubble is already a Pressable (tap expands a long message).
-  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo && !reminderInfo && !roomInfo && !roomDigestInfo;
+  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo && !reminderInfo;
   const menuRef = useRef<TriggerRef>(null);
   // Select text: the bubble's text becomes selectable in place until Done.
   const [selecting, setSelecting] = useState(false);
@@ -502,27 +498,6 @@ function UserMessageImpl({
     );
   }
 
-  if (roomInfo) {
-    const source = roomInfo.room;
-    const sender = roomInfo.senderKind === 'session' ? `Agent ${roomInfo.sender}` : roomInfo.sender;
-    return platformMessage(
-      <SourcePill
-        mark={<Icon as={ChatCircleIcon} size={12} className="text-muted-foreground" />}
-        sheetMark={<Icon as={ChatCircleIcon} size={22} className="text-foreground" />}
-        source={source}
-        sender={sender}
-        title={source}
-        subtitle={sender}
-        rows={[
-          { label: 'Message', value: `#${roomInfo.seq}` },
-          ...(roomInfo.replyTo ? [{ label: 'Reply to', value: `#${roomInfo.replyTo}` }] : []),
-        ]}
-      />,
-      roomInfo.text ? <Text style={BUBBLE_TEXT_STYLE}>{roomInfo.text}</Text> : null,
-      roomInfo.text,
-    );
-  }
-
   if (peerInfo) {
     const logoColor = isDark ? 'dark' : 'light';
     return platformMessage(
@@ -541,27 +516,6 @@ function UserMessageImpl({
       />,
       peerInfo.text ? <Text style={BUBBLE_TEXT_STYLE}>{peerInfo.text}</Text> : null,
       peerInfo.text,
-    );
-  }
-
-  if (roomDigestInfo) {
-    const range = roomDigestInfo.fromSeq === roomDigestInfo.toSeq ? `#${roomDigestInfo.toSeq}` : `#${roomDigestInfo.fromSeq}–#${roomDigestInfo.toSeq}`;
-    const count = `${roomDigestInfo.count} new message${roomDigestInfo.count === 1 ? '' : 's'}`;
-    const lines = roomDigestInfo.lines.map((line) => `#${line.seq} ${line.sender}: ${line.text}`);
-    if (roomDigestInfo.more) lines.push(`… and ${roomDigestInfo.more} more`);
-    const body = lines.join('\n');
-    return platformMessage(
-      <SourcePill
-        mark={<Icon as={ChatCircleIcon} size={12} className="text-muted-foreground" />}
-        sheetMark={<Icon as={ChatCircleIcon} size={22} className="text-foreground" />}
-        source={roomDigestInfo.room}
-        sender={count}
-        title={roomDigestInfo.room}
-        subtitle={count}
-        rows={[{ label: 'Messages', value: range }]}
-      />,
-      <Text style={BUBBLE_TEXT_STYLE}>{body}</Text>,
-      body,
     );
   }
 

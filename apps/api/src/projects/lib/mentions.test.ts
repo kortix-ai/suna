@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { AGENT_CHAIN_LIMIT, agentChainReached, mentionTokens, mentionsMember, roomMessagePrompt } from './envelope';
+import { mentionTokens, mentionsMember } from './mentions';
 
 const session = { ids: ['3f2a1b9c-1111-4222-8333-444455556666'], names: ['builder', 'Fix CI'] };
 const person = { ids: ['7c1d2e3f-aaaa-4bbb-8ccc-dddddddddddd'], names: [] };
@@ -25,24 +25,4 @@ describe('mentions', () => {
     expect(mentionsMember(mentionTokens('@reviewer look'), session)).toBe(false);
     expect(mentionsMember(mentionTokens('mail ops@builder.dev'), session)).toBe(false);
   });
-});
-
-describe('agent chain', () => {
-  test('pauses only when the last AGENT_CHAIN_LIMIT messages are all from sessions', () => {
-    expect(agentChainReached(Array(AGENT_CHAIN_LIMIT).fill('session'))).toBe(true);
-    expect(agentChainReached(Array(AGENT_CHAIN_LIMIT - 1).fill('session'))).toBe(false);
-    expect(agentChainReached(['member', ...Array(AGENT_CHAIN_LIMIT).fill('session')])).toBe(false);
-  });
-});
-
-describe('roomMessagePrompt', () => {
-  test('a room message names room, seq and sender and gives the reply command', () => {
-    const text = roomMessagePrompt({
-      room: { name: 'platinum/dev', roomId: 'r-1' },
-      seq: 42, senderKind: 'session', senderLabel: '3f2a1b9c (builder)', text: 'who blocked dev?', replyToSeq: 41,
-    });
-    expect(text.split('\n')[0]).toBe('[room platinum/dev · #42 · from agent session 3f2a1b9c (builder), in thread #41]');
-    expect(text).toContain('Reply: kortix rooms send platinum/dev --reply-to 42 "<your reply>"');
-  });
-
 });

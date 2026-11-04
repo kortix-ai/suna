@@ -349,9 +349,12 @@ describe('kind parity with @kortix/shared/notification-kinds', () => {
     expect(DEFAULT_NOTIFICATION_PREFERENCES).toEqual(shared.DEFAULT_NOTIFICATION_PREFERENCES);
   });
 
-  test('the kind unions are the same type', () => {
-    const toShared = (kind: InboxNotificationKind): shared.NotificationKindName => kind;
+  test('the live kind union is the shared type; the SDK union adds only the deprecated `message`', () => {
+    type LiveKind = (typeof INBOX_NOTIFICATION_KINDS)[number];
+    const toShared = (kind: LiveKind): shared.NotificationKindName => kind;
+    const deprecated: Exclude<InboxNotificationKind, LiveKind> = 'message';
+    expect(deprecated).toBe('message');
     const toSdk = (kind: shared.NotificationKindName): InboxNotificationKind => kind;
-    expect(toShared(toSdk('question'))).toBe('question');
+    expect(toSdk(toShared('question'))).toBe('question');
   });
 });

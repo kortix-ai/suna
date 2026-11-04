@@ -106,6 +106,7 @@ export type FeatureFlagKey =
   | 'chat'
   /** @deprecated Withdrawn — merged into `chat` (2026-11). The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'project_channels'
+  /** @deprecated Withdrawn — Rooms were removed (2026-11). The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'agent_rooms'
   /** Shared Drives: an admin makes a Drive and adds agents to it. Off by default: people have only My files. */
   | 'shared_drives'
@@ -135,6 +136,7 @@ type GraduatedFeatureFlagKey =
   | 'agent_principal'
   | 'human_messaging'
   | 'project_channels'
+  | 'agent_rooms'
   | 'pi_worker'
   | 'config_releases'
   | 'apps'
@@ -170,7 +172,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'notification_center',
   'session_log_restore',
   'chat',
-  'agent_rooms',
   'shared_drives',
   'goals',
   'workspace_volume',

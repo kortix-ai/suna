@@ -55,12 +55,12 @@ defaults keep today's behavior, so a valid file stays valid.
 
 ## spaces (work in progress)
 
-A space is a channel for one area of work: a room, then configured tabs
+A space is a channel for one area of work, with configured tabs
 (`goals`, `apps`, `artifacts`, `files`, `app`, `artifact`, `link`, `board`).
 It grants nothing. Spaces show only while the project flag
 `chat` is on; it is off by default, and while it is off the
-keys are kept but have no effect. A space's room needs `agent_rooms` (off
-by default); a Goals tab needs `goals` (off by default). Do not build a space
+keys are kept but have no effect. A Goals tab needs `goals` (off by
+default). Do not build a space
 unless the user asks and `kortix projects features` lists
 `chat` on.
 

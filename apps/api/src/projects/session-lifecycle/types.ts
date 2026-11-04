@@ -26,8 +26,6 @@ export type SessionInvocationSource =
   | 'system:secret-submitted'
   | 'system:connector-connected'
   | 'system:artifact-comment'
-  /** A message another participant posted in a room the session joined (`projects/rooms`). */
-  | 'system:room-message'
   /** A background subagent finished a turn: its report, delivered into the parent (`projects/subagent-notice.ts`). */
   | 'system:subagent-finished'
   /** A cross-session message (`send_message`) or its idle notice (`projects/peer-messages`). */
