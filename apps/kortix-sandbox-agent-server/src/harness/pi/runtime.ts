@@ -1770,7 +1770,7 @@ export class PiRuntime {
   private voiceExtensions(): InlineExtension[] {
     const session = this.controlPlane()?.sessionId
     if (!session || this.subagentContext.depth !== 0 || !enabledFeatureFlags(this.env).has(VOICE_CALL_FLAG)) return []
-    return [voice(session)]
+    return [voice(session, this.agentName)]
   }
 
   /** The lead whose task list this session uses: itself at depth 0, its lead as a teammate; null without agent teams. */
