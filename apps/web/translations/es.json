@@ -25311,7 +25311,8 @@
       "attachments": "Imágenes adjuntas",
       "removeAttachment": "Quitar {name}",
       "attachImages": "Adjuntar imágenes",
-      "attachFailed": "No se pudo adjuntar la imagen"
+      "attachFailed": "No se pudo adjuntar la imagen",
+      "scrollToBottom": "Ir al mensaje más reciente"
     },
     "tasks": {
       "label": "Tareas del equipo",

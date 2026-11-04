@@ -25311,7 +25311,8 @@
       "attachments": "Angehängte Bilder",
       "removeAttachment": "{name} entfernen",
       "attachImages": "Bilder anhängen",
-      "attachFailed": "Das Bild konnte nicht angehängt werden"
+      "attachFailed": "Das Bild konnte nicht angehängt werden",
+      "scrollToBottom": "Zur neuesten Nachricht"
     },
     "tasks": {
       "label": "Aufgaben des Teams",

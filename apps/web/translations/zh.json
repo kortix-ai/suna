@@ -25311,7 +25311,8 @@
       "attachments": "已附加的图片",
       "removeAttachment": "移除 {name}",
       "attachImages": "附加图片",
-      "attachFailed": "无法附加图片"
+      "attachFailed": "无法附加图片",
+      "scrollToBottom": "转到最新消息"
     },
     "tasks": {
       "label": "团队任务",
