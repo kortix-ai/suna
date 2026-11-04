@@ -1355,7 +1355,7 @@
       },
       "channelsSwitch": {
         "onTitle": "Activer les Espaces pour {project} ?",
-        "onBody": "Tout le monde dans ce projet obtient les Espaces et les Messages directs à la place de la liste des sessions. Toutes les sessions existantes passent dans #general. Vous pouvez désactiver à tout moment ; rien n’est supprimé.",
+        "onBody": "Tout le monde dans ce projet obtient les Espaces à la place de la liste des sessions. Toutes les sessions existantes passent dans #general. Vous pouvez le désactiver à tout moment ; rien n’est supprimé.",
         "drive": "Activer aussi Drive, pour que les espaces aient des Fichiers.",
         "turnOn": "Activer",
         "cancel": "Annuler",
@@ -1870,10 +1870,14 @@
     "appsNoMatches": "Aucun résultat",
     "spaces": {
       "channels": "Espaces",
-      "directMessages": "Messages directs",
       "addChannel": "Nouvel espace",
       "loadError": "Impossible de charger les espaces.",
-      "newAgent": "Nouvel agent"
+      "newAgent": "Nouvel agent",
+      "review": "Vérifier",
+      "personal": "Votre espace",
+      "personalNamed": "Espace de {name}",
+      "private": "Privé",
+      "noMessages": "Aucun message pour l’instant"
     }
   },
   "dashboard": {
@@ -24566,7 +24570,7 @@
       "welcomeTitle": "Bienvenue dans #{name}",
       "welcomeEmpty": "Lancez le premier fil dans #{name}. Chaque message lance un nouveau fil.",
       "welcomeStart": "Voici le début de #{name}.",
-      "dmIntro": "Cette conversation est entre vous et {agent} uniquement.",
+      "dmIntro": "Seuls vous et {agent} voyez cet espace.",
       "today": "Aujourd'hui",
       "yesterday": "Hier",
       "openThread": "Ouvrir le fil",
@@ -24790,7 +24794,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "Détails de {name}"
     },
     "details": {
       "about": "À propos",
@@ -24846,7 +24851,7 @@
       "memory": "Mémoire",
       "loadError": "Impossible de charger ce dossier",
       "memoryNoteChannel": "Ce dont les agents de {place} se souviennent. Ils le lisent au début de chaque fil.",
-      "memoryNoteDm": "Ce dont {agent} se souvient de ce DM. Il le lit au début de chaque fil.",
+      "memoryNoteDm": "Ce que {agent} retient de cet espace. Il le lit au début de chaque fil.",
       "off": {
         "title": "Pas de Drive ici",
         "description": "Les fichiers et la mémoire de {place} sont dans le Drive. Cette instance Kortix ne stocke pas de Drive : il lui faut Platinum."
@@ -25019,7 +25024,31 @@
     },
     "filter": "Filtrer par espace",
     "all": "Tous",
-    "projectWide": "À l’échelle du projet"
+    "projectWide": "À l’échelle du projet",
+    "panel": {
+      "title": "Détails de {name}",
+      "heading": "Détails",
+      "close": "Fermer les détails",
+      "private": "Privé",
+      "rename": "Renommer et décrire",
+      "personalDescription": "Votre espace privé avec My Kortix. Vous seul le voyez.",
+      "privateDescription": "Seules les personnes et les agents qui en font partie voient cet espace.",
+      "noDescription": "Pas encore de description.",
+      "agents": "Agents",
+      "addAgent": "Ajouter un agent",
+      "default": "Par défaut",
+      "projectDefault": "Par défaut du projet",
+      "people": "Personnes",
+      "addPeople": "Ajouter des personnes",
+      "you": "Vous",
+      "tabs": "Onglets",
+      "addTab": "Ajouter un onglet",
+      "routines": "Routines",
+      "addRoutine": "Ajouter une routine",
+      "routinesPrivate": "Un espace privé n’accepte pas encore de routines.",
+      "allSettings": "Tous les réglages",
+      "askHint": "Vous pouvez aussi le demander dans le chat : « ajoute un agent ici », « épingle le document du lancement en onglet »."
+    }
   },
   "imageGen": {
     "generating": "Génération de l’image",

@@ -15,13 +15,13 @@ import {
   useUpdateProjectSpace,
   useVisibleAgents,
 } from '@kortix/sdk/react';
-import { CaretDownIcon } from '@phosphor-icons/react';
+import { isMyKortixAgentName } from '@kortix/shared';
+import { CaretDownIcon, LockSimpleIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useTranslations } from '../../i18n';
 import { Close } from '../../icons/close';
-import { AgentMark } from '../../internal/components/agent-mark';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { MemoryView } from '../memory/memory-view';
 import { UsedMemoryChip } from '../memory/used-memory-chip';
@@ -53,7 +53,9 @@ import { ChannelsIntro, GeneralChatHead } from './channels-onboarding';
 import { CreateChannelDialog } from './create-channel-dialog';
 import { channelRunnableAgents, offeredChannelAgents } from './space-agents';
 import { SpaceDetailsDialog, type SpaceDetailsTab } from './space-details-dialog';
-import { ChannelGlyph } from './channel-glyph';
+import { SpaceDetailsPanel } from './space-details-panel';
+import { isPersonalSpace, isPrivateSpace, spaceDisplayName, spaceInitials } from './space-identity';
+import { usePersonalSpaceName } from './use-personal-space-name';
 import { JoinChannelButton } from './space-members';
 import { SpaceRosterButton } from './space-roster';
 import { agentLabel, liveReplyCount, replyRole, spaceRoster, threadIsWorking } from './space-timeline';
@@ -83,9 +85,8 @@ export interface SpaceViewProps {
    */
   renderFile?: (file: SpaceFile) => ReactNode;
   /**
-   * Chat (flag `chat`): the DM as the person's only chat with
-   * Kortix. A plain header and no intro; a thread links its full session.
-   * Its tab row is the same as any space's: Chat, then its own tabs.
+   * `/chat`: the person's own space (their chat with My Kortix). No
+   * channels intro; the header and tabs are the same as any space's.
    */
   chat?: boolean;
 }
@@ -105,6 +106,8 @@ export interface SpaceFolder {
 
 /** The query key of the open thread: it survives a reload and can be linked. */
 const THREAD_PARAM = 'thread';
+/** The details panel: `1` open, `add` open with "Add members" (a space just created). */
+const DETAILS_PARAM = 'details';
 /** The open tab. Absent on Chat. */
 const TAB_PARAM = 'tab';
 /** Set by the archive action and by the create dialog's "already exists" link: the archived channel's id. */
@@ -137,7 +140,7 @@ export function SpaceView(props: SpaceViewProps) {
   );
 }
 
-function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile, chat = false }: SpaceViewProps) {
+function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile }: SpaceViewProps) {
   const t = useTranslations('spaces.view');
   const router = useUiRouter();
   const pathname = useUiPathname();
@@ -199,7 +202,10 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
     (sessionId: string) => {
       if (threadId) return setParams((params) => params.set(THREAD_PARAM, sessionId));
       ownThreadEntry.current = true;
-      setParams((params) => params.set(THREAD_PARAM, sessionId), 'push');
+      setParams((params) => {
+        params.delete(DETAILS_PARAM);
+        params.set(THREAD_PARAM, sessionId);
+      }, 'push');
     },
     [setParams, threadId],
   );
@@ -223,14 +229,33 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
     [setParams],
   );
 
-  const title = target.kind === 'channel' ? target.slug : agentLabel(target.agentName);
-  // The channel details dialog: the header opens it, and so does the setup block for a viewer who may add no one.
+  // Spaces only: the person's DM with My Kortix is their personal space, another DM a private space named by its agent.
+  const personalName = usePersonalSpaceName();
+  const title = space
+    ? spaceDisplayName(space, personalName)
+    : target.kind === 'channel'
+      ? target.slug
+      : isMyKortixAgentName(target.agentName)
+        ? personalName
+        : agentLabel(target.agentName);
+  // The full settings dialog (make private, leave, archive, member menus): the details panel links it.
   const [details, setDetails] = useState<SpaceDetailsTab | null>(null);
-  const header = chat ? (
-    <div className="kx-titlebar-row flex h-12 shrink-0 items-center border-b px-5">
-      <h1 className="text-base font-semibold">{title}</h1>
-    </div>
-  ) : (
+  const [renameOpen, setRenameOpen] = useState(false);
+  // The details panel, on the right where a thread opens; one of the two at a time.
+  const detailsParam = searchParams.get(DETAILS_PARAM);
+  const detailsOpen = !!detailsParam && !threadId;
+  const openDetails = useCallback(
+    (mode: '1' | 'add' = '1') => {
+      ownThreadEntry.current = false;
+      setParams((params) => {
+        params.delete(THREAD_PARAM);
+        params.set(DETAILS_PARAM, mode);
+      }, 'push');
+    },
+    [setParams],
+  );
+  const closeDetails = useCallback(() => setParams((params) => params.delete(DETAILS_PARAM)), [setParams]);
+  const header = (
     <SpaceHeader
       projectId={projectId}
       target={target}
@@ -239,6 +264,10 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
       sessions={threads.sessions}
       details={details}
       setDetails={setDetails}
+      detailsOpen={detailsOpen}
+      onToggleDetails={() => (detailsOpen ? closeDetails() : openDetails())}
+      renameOpen={renameOpen}
+      setRenameOpen={setRenameOpen}
     />
   );
 
@@ -327,7 +356,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
         order={1}
         minSize={35}
         defaultSize={60}
-        className={cn('flex min-w-0 flex-col', threadId && 'max-xl:hidden')}
+        className={cn('flex min-w-0 flex-col', (threadId || detailsOpen) && 'max-xl:hidden')}
       >
         <ComposerDropZone className="flex min-h-0 min-w-0 flex-1 flex-col">
           {header}
@@ -340,7 +369,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
             threads={threads}
             threadId={threadId}
             onOpenThread={openThread}
-            onOpenMembers={() => setDetails('members')}
+            onOpenMembers={() => openDetails('add')}
             beforeSend={beforeSend}
             renderFolder={renderFolder}
             renderFile={renderFile}
@@ -364,6 +393,23 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
               // The `chat` flag, not the /chat page: every space's thread shows only messages, and links its full session.
               fullSessionHref={chatOn ? uiRoutes().session(projectId, threadId) : undefined}
               messagesOnly={chatOn}
+            />
+          </ResizablePanel>
+        </>
+      ) : detailsOpen ? (
+        <>
+          <ResizableHandle className="bg-border w-px after:absolute after:inset-y-0 after:-left-1.5 after:w-3 max-xl:hidden" />
+          <ResizablePanel id="space-details" order={2} minSize={25} maxSize={50} defaultSize={30} className="flex min-w-0 flex-col">
+            <SpaceDetailsPanel
+              key={space.space_id}
+              projectId={projectId}
+              space={space}
+              name={title}
+              onClose={closeDetails}
+              onOpenTab={setTab}
+              onRename={space.kind === 'channel' ? () => setRenameOpen(true) : undefined}
+              onOpenSettings={space.kind === 'channel' ? () => setDetails('about') : undefined}
+              addOnOpen={detailsParam === 'add'}
             />
           </ResizablePanel>
         </>
@@ -456,6 +502,10 @@ function SpaceHeader({
   sessions,
   details,
   setDetails,
+  detailsOpen,
+  onToggleDetails,
+  renameOpen,
+  setRenameOpen,
 }: {
   projectId: string;
   target: SpaceTarget;
@@ -464,12 +514,16 @@ function SpaceHeader({
   sessions: readonly ProjectSession[];
   details: SpaceDetailsTab | null;
   setDetails: (tab: SpaceDetailsTab | null) => void;
+  /** The details panel is open: the name's button reads as pressed. */
+  detailsOpen: boolean;
+  onToggleDetails: () => void;
+  renameOpen: boolean;
+  setRenameOpen: (open: boolean) => void;
 }) {
   const t = useTranslations('spaces.view');
   const sidebar = useOptionalSidebar();
   const router = useUiRouter();
   const update = useUpdateProjectSpace(projectId);
-  const [renameOpen, setRenameOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const channel = target.kind === 'channel' && space ? space : null;
   // The channel's members and its agent list: the same roster for every
@@ -513,38 +567,31 @@ function SpaceHeader({
     >
       <SidebarToggle />
       <div className="kx-titlebar-tabs flex h-12 min-w-0 flex-1 items-center gap-2">
-        {target.kind === 'channel' ? (
-          <h1 className="flex min-w-0 shrink-0">
-            {channel ? (
-              // `#name` reads as one token, the caret as a separate affordance:
-              // 2px between `#` and the name, 6px before the caret. The `#` is
-              // bold at `size-4.5`, so its strokes match the 600 name and its
-              // height matches the name's cap height. `has-[>svg]:px-1.5`, not
-              // `px-*`: the `sm` size's own `has-[>svg]:px-2.5` would win.
-              <Button
-                variant="ghost"
-                size="sm"
-                className="max-w-60 gap-0 has-[>svg]:px-1.5"
-                aria-label={t('channelDetails', { name: title })}
-                onClick={() => setDetails('about')}
-              >
-                <ChannelGlyph visibility={channel.visibility} weight="bold" className="size-4.5 shrink-0" />
-                <span className="ml-0.5 truncate text-lg font-semibold">{title}</span>
-                <CaretDownIcon weight="bold" className="text-muted-foreground ml-1.5 size-3.5 shrink-0" />
-              </Button>
-            ) : (
-              <span className="flex h-8 items-center px-1.5">
-                <ChannelGlyph weight="bold" className="size-4.5 shrink-0" />
-                <span className="ml-0.5 truncate text-lg font-semibold">{title}</span>
-              </span>
-            )}
-          </h1>
-        ) : (
-          <h1 className="flex min-w-0 shrink-0 items-center gap-2 px-2">
-            <AgentMark slug={target.agentName} size={14} />
-            <span className="truncate text-lg font-semibold">{title}</span>
-          </h1>
-        )}
+        {/* Slack's channel name: the space's tile, its name and a caret; it opens the details panel on the right. */}
+        <h1 className="flex min-w-0 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="max-w-72 gap-2 px-1.5"
+            aria-label={t('spaceDetails', { name: title })}
+            aria-expanded={detailsOpen}
+            disabled={!space}
+            onClick={onToggleDetails}
+          >
+            <span
+              aria-hidden
+              className={cn(
+                'flex size-6 shrink-0 items-center justify-center rounded-sm text-xs font-semibold',
+                space && isPersonalSpace(space) ? 'bg-foreground text-background' : 'bg-muted text-foreground',
+              )}
+            >
+              {spaceInitials(title)}
+            </span>
+            <span className="truncate text-base font-semibold">{title}</span>
+            {space && isPrivateSpace(space) ? <LockSimpleIcon className="text-muted-foreground size-3.5 shrink-0" /> : null}
+            <CaretDownIcon weight="bold" className="text-muted-foreground size-3 shrink-0" />
+          </Button>
+        </h1>
         {channel?.description ? (
           <p className="text-muted-foreground min-w-0 truncate text-xs" title={channel.description}>
             {channel.description}

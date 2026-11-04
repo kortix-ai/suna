@@ -29,6 +29,7 @@ import { UserAvatar } from '../../primitives/user-avatar';
 import { sessionDisplayLabel, sessionDisplayStatus } from '../../session/actions/session-label';
 import { participantLabel } from '../../session/participants/session-participants';
 import { MentionChip } from '../../session/thread/mention-chip';
+import { TypingIndicator } from '../../session/thread/typing-indicator';
 import { MESSAGE_TEXT_CLASS, MessageRow } from '../../session/turn/message-row';
 import { SolidCheckIcon } from '../../internal/icons/solid-check-icon';
 import { RememberThisButton } from '../memory/remember-this';
@@ -49,6 +50,8 @@ import {
   threadStatus,
   type TimelineDay,
 } from './space-timeline';
+import { spaceDisplayName } from './space-identity';
+import { usePersonalSpaceName } from './use-personal-space-name';
 
 /** What a thread waits on the viewer for: none, an answer (question or approval), or a review. */
 type NeedsYou = 'answer' | 'review' | null;
@@ -213,13 +216,15 @@ export function SpaceTimeline({
 /** The top of the history: "Welcome to #name" for a channel, the DM's agent for a DM. */
 function SpaceWelcome({ space, empty }: { space: ProjectSpace; empty: boolean }) {
   const t = useTranslations('spaces.view');
+  const personalName = usePersonalSpaceName();
   if (space.kind === 'dm' && space.dm_agent_name) {
+    // A private space with one agent: the space's name over who sees it.
     const agent = agentLabel(space.dm_agent_name);
     return (
       <div className="space-y-3 px-5 pt-16 pb-6">
         <AgentMark slug={space.dm_agent_name} size={42} label={agent} />
         <div className="space-y-1.5">
-          <h2 className="text-2xl font-semibold tracking-tight text-balance">{agent}</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-balance">{spaceDisplayName(space, personalName)}</h2>
           <p className="text-muted-foreground text-sm text-pretty">{t('dmIntro', { agent })}</p>
         </div>
       </div>
@@ -344,31 +349,68 @@ function ThreadRow({
       }
     >
       <ThreadPrompt session={session} onOpen={onOpen} />
-      {latestReply && !byKortix ? <ThreadLatestReply session={session} space={space} onOpen={onOpen} /> : null}
-      <ThreadSummary session={session} space={space} needsYou={needsYou} onOpen={onOpen} />
+      {latestReply ? (
+        <ThreadReplyLine session={session} space={space} needsYou={needsYou} showReply={!byKortix} onOpen={onOpen} />
+      ) : (
+        <ThreadSummary session={session} space={space} needsYou={needsYou} onOpen={onOpen} />
+      )}
     </MessageRow>
   );
 }
 
 /**
- * Chat (`chat`): the agent's newest reply under the message, at most
- * 2 lines (`result_excerpt`, ≤ 280 characters, stamped at turn end). Hidden
- * while a turn runs, so an old reply never reads as the current one.
+ * Chat (`chat`): every message is a thread, and its ONE reply line sits under
+ * it: the agent's tile, then three dots while it works, a "Needs you" mark
+ * while it waits on the viewer, else its newest reply on one line
+ * (`result_excerpt`, stamped at turn end); the reply count and the last
+ * activity at the end. The whole line opens the thread.
  */
-function ThreadLatestReply({ session, space, onOpen }: { session: ProjectSession; space: ProjectSpace; onOpen: () => void }) {
-  const text = session.result_excerpt?.trim();
-  if (!text || threadIsWorking(session)) return null;
+function ThreadReplyLine({
+  session,
+  space,
+  needsYou,
+  showReply,
+  onOpen,
+}: {
+  session: ProjectSession;
+  space: ProjectSpace;
+  needsYou: NeedsYou;
+  /** False for a thread Kortix started: its top message is already the agent's. */
+  showReply: boolean;
+  onOpen: () => void;
+}) {
+  const t = useTranslations('spaces.view');
+  const tf = useTranslations('spaces.view.threadFilter');
+  const locale = useLocale();
   const agentName = session.agent_name ?? space.dm_agent_name;
+  const agent = agentName ? agentLabel(agentName) : t('agentFallback');
+  const working = threadIsWorking(session);
+  const replies = session.reply_count ?? 0;
+  const reply = showReply ? session.result_excerpt?.replace(/\s+/g, ' ').trim() : null;
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="hover:bg-hover focus-visible:ring-ring -mx-1 mt-1 flex w-full max-w-2xl items-start gap-2 rounded-md px-1 py-1 text-left outline-none focus-visible:ring-2"
+      // `-mx-1` with `pl-1`: the tile lines up with the text above, and the fill extends past it.
+      className="hover:bg-hover focus-visible:ring-ring -mx-1 mt-1 flex w-full max-w-2xl min-w-0 items-center gap-2 rounded-md py-1 pr-1.5 pl-1 text-left outline-none focus-visible:ring-2"
     >
-      <span className="mt-0.5 shrink-0">
-        <AgentMark slug={agentName ?? DEFAULT_AGENT_SLUG} size={14} label={agentName ? agentLabel(agentName) : ''} />
+      <AgentMark slug={agentName ?? DEFAULT_AGENT_SLUG} size={14} label={agent} />
+      {needsYou ? (
+        <span className="text-foreground flex shrink-0 items-center gap-1 text-xs font-medium">
+          <SessionStatusMark status="needs-you" waitingOn={needsYou} />
+          {tf('statusValue.needsYou')}
+        </span>
+      ) : working ? (
+        <TypingIndicator name={agent} className="h-5" />
+      ) : reply ? (
+        <span className="text-foreground min-w-0 truncate text-sm">{reply}</span>
+      ) : (
+        <span className="text-muted-foreground min-w-0 truncate text-xs">{t('openThread')}</span>
+      )}
+      <span className="text-muted-foreground ml-auto shrink-0 pl-2 text-xs tabular-nums">
+        {replies > 0 ? `${t('replies', { count: replies })} · ` : ''}
+        <time dateTime={session.updated_at}>{relativeTime(session.updated_at, locale)}</time>
       </span>
-      <span className="text-foreground line-clamp-2 text-sm leading-relaxed">{text}</span>
     </button>
   );
 }

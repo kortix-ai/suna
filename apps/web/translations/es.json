@@ -1355,7 +1355,7 @@
       },
       "channelsSwitch": {
         "onTitle": "¿Activar Espacios para {project}?",
-        "onBody": "Todos en este proyecto obtienen Espacios y Mensajes directos en lugar de la lista de sesiones. Todas las sesiones existentes pasan a #general. Puedes desactivarlo cuando quieras; no se elimina nada.",
+        "onBody": "Todos en este proyecto reciben Espacios en lugar de la lista de sesiones. Todas las sesiones existentes pasan a #general. Puedes desactivarlo cuando quieras; no se borra nada.",
         "drive": "Activar también Drive, para que los espacios tengan Archivos.",
         "turnOn": "Activar",
         "cancel": "Cancelar",
@@ -1870,10 +1870,14 @@
     "appsNoMatches": "Sin resultados",
     "spaces": {
       "channels": "Espacios",
-      "directMessages": "Mensajes directos",
       "addChannel": "Nuevo espacio",
       "loadError": "No se pudieron cargar los espacios.",
-      "newAgent": "Nuevo agente"
+      "newAgent": "Nuevo agente",
+      "review": "Revisar",
+      "personal": "Tu espacio",
+      "personalNamed": "Espacio de {name}",
+      "private": "Privado",
+      "noMessages": "Aún no hay mensajes"
     }
   },
   "dashboard": {
@@ -24566,7 +24570,7 @@
       "welcomeTitle": "Te damos la bienvenida a #{name}",
       "welcomeEmpty": "Empieza el primer hilo en #{name}. Cada mensaje empieza un hilo nuevo.",
       "welcomeStart": "Aquí empieza #{name}.",
-      "dmIntro": "Esta conversación es solo entre tú y {agent}.",
+      "dmIntro": "Solo tú y {agent} veis este espacio.",
       "today": "Hoy",
       "yesterday": "Ayer",
       "openThread": "Abrir hilo",
@@ -24790,7 +24794,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "Detalles de {name}"
     },
     "details": {
       "about": "Información",
@@ -24846,7 +24851,7 @@
       "memory": "Memoria",
       "loadError": "No se pudo cargar esta carpeta",
       "memoryNoteChannel": "Lo que recuerdan los agentes de {place}. Los agentes lo leen al inicio de cada hilo.",
-      "memoryNoteDm": "Lo que {agent} recuerda de este DM. Lo lee al inicio de cada hilo.",
+      "memoryNoteDm": "Lo que {agent} recuerda de este espacio. Lo lee al empezar cada hilo.",
       "off": {
         "title": "No hay Drive aquí",
         "description": "Los archivos y la memoria de {place} están en el Drive. Esta instancia de Kortix no guarda un Drive: necesita Platinum."
@@ -25019,7 +25024,31 @@
     },
     "filter": "Filtrar por espacio",
     "all": "Todos",
-    "projectWide": "En todo el proyecto"
+    "projectWide": "En todo el proyecto",
+    "panel": {
+      "title": "Detalles de {name}",
+      "heading": "Detalles",
+      "close": "Cerrar detalles",
+      "private": "Privado",
+      "rename": "Renombrar y describir",
+      "personalDescription": "Tu espacio privado con My Kortix. Solo tú lo ves.",
+      "privateDescription": "Solo las personas y los agentes que están en él ven este espacio.",
+      "noDescription": "Aún sin descripción.",
+      "agents": "Agentes",
+      "addAgent": "Añadir agente",
+      "default": "Predeterminado",
+      "projectDefault": "Predeterminado del proyecto",
+      "people": "Personas",
+      "addPeople": "Añadir personas",
+      "you": "Tú",
+      "tabs": "Pestañas",
+      "addTab": "Añadir pestaña",
+      "routines": "Rutinas",
+      "addRoutine": "Añadir rutina",
+      "routinesPrivate": "Un espacio privado aún no admite rutinas.",
+      "allSettings": "Todos los ajustes",
+      "askHint": "También puedes pedirlo en el chat: «añade un agente aquí», «fija el documento del lanzamiento como pestaña»."
+    }
   },
   "imageGen": {
     "generating": "Generando imagen",

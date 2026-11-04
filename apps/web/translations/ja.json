@@ -1355,7 +1355,7 @@
       },
       "channelsSwitch": {
         "onTitle": "{project} でスペースをオンにしますか？",
-        "onBody": "このプロジェクトの全員に、セッション一覧の代わりにスペースとダイレクトメッセージが表示されます。既存のセッションはすべて #general に移動します。いつでもオフにでき、何も削除されません。",
+        "onBody": "このプロジェクトの全員に、セッション一覧の代わりにスペースが表示されます。既存のセッションはすべて #general に移動します。いつでもオフにでき、何も削除されません。",
         "drive": "ドライブもオンにして、スペースでファイルを使えるようにする。",
         "turnOn": "オンにする",
         "cancel": "キャンセル",
@@ -1870,10 +1870,14 @@
     "appsNoMatches": "一致するものはありません",
     "spaces": {
       "channels": "スペース",
-      "directMessages": "ダイレクトメッセージ",
       "addChannel": "新しいスペース",
       "loadError": "スペースを読み込めませんでした。",
-      "newAgent": "新しいエージェント"
+      "newAgent": "新しいエージェント",
+      "review": "レビュー",
+      "personal": "あなたのスペース",
+      "personalNamed": "{name} のスペース",
+      "private": "非公開",
+      "noMessages": "まだメッセージはありません"
     }
   },
   "dashboard": {
@@ -24566,7 +24570,7 @@
       "welcomeTitle": "#{name} へようこそ",
       "welcomeEmpty": "#{name} で最初のスレッドを始めましょう。メッセージごとに新しいスレッドが始まります。",
       "welcomeStart": "ここが #{name} の始まりです。",
-      "dmIntro": "この会話はあなたと {agent} だけのものです。",
+      "dmIntro": "このスペースを見られるのはあなたと {agent} だけです。",
       "today": "今日",
       "yesterday": "昨日",
       "openThread": "スレッドを開く",
@@ -24790,7 +24794,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "{name} の詳細"
     },
     "details": {
       "about": "概要",
@@ -24846,7 +24851,7 @@
       "memory": "メモリ",
       "loadError": "このフォルダを読み込めませんでした",
       "memoryNoteChannel": "{place} のエージェントが覚えていること。エージェントはスレッドの開始時に毎回これを読みます。",
-      "memoryNoteDm": "{agent} がこの DM から覚えていること。スレッドの開始時に毎回これを読みます。",
+      "memoryNoteDm": "{agent} がこのスペースから覚えていること。各スレッドの開始時に読み込みます。",
       "off": {
         "title": "ここに Drive はありません",
         "description": "{place} のファイルとメモリーは Drive にあります。この Kortix は Drive を保存しません。Platinum が必要です。"
@@ -25019,7 +25024,31 @@
     },
     "filter": "スペースで絞り込み",
     "all": "すべて",
-    "projectWide": "プロジェクト全体"
+    "projectWide": "プロジェクト全体",
+    "panel": {
+      "title": "{name} の詳細",
+      "heading": "詳細",
+      "close": "詳細を閉じる",
+      "private": "非公開",
+      "rename": "名前と説明を変更",
+      "personalDescription": "My Kortix とのあなた専用の非公開スペースです。見られるのはあなただけです。",
+      "privateDescription": "このスペースを見られるのは、参加しているメンバーとエージェントだけです。",
+      "noDescription": "まだ説明はありません。",
+      "agents": "エージェント",
+      "addAgent": "エージェントを追加",
+      "default": "デフォルト",
+      "projectDefault": "プロジェクトのデフォルト",
+      "people": "メンバー",
+      "addPeople": "メンバーを追加",
+      "you": "あなた",
+      "tabs": "タブ",
+      "addTab": "タブを追加",
+      "routines": "ルーティン",
+      "addRoutine": "ルーティンを追加",
+      "routinesPrivate": "非公開スペースではまだルーティンを使えません。",
+      "allSettings": "すべての設定",
+      "askHint": "チャットで頼むこともできます:「ここにエージェントを追加して」「ローンチ資料をタブに固定して」。"
+    }
   },
   "imageGen": {
     "generating": "画像を生成中",

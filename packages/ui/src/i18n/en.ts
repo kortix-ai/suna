@@ -866,7 +866,7 @@ const catalog = {
       },
       "channelsSwitch": {
         "onTitle": "Turn on Spaces for {project}?",
-        "onBody": "Everyone in this project gets Spaces and Direct messages instead of the session list. All existing sessions move into #general. You can turn it off any time; nothing is deleted.",
+        "onBody": "Everyone in this project gets Spaces instead of the session list. All existing sessions move into #general. You can turn it off any time; nothing is deleted.",
         "drive": "Turn on Drive too, so spaces get Files.",
         "turnOn": "Turn on",
         "cancel": "Cancel",
@@ -1349,10 +1349,14 @@ const catalog = {
     "appsNoMatches": "No matches",
     "spaces": {
       "channels": "Spaces",
-      "directMessages": "Direct messages",
       "addChannel": "New space",
       "loadError": "Could not load spaces.",
-      "newAgent": "New agent"
+      "newAgent": "New agent",
+      "review": "Review",
+      "personal": "Your space",
+      "personalNamed": "{name}'s space",
+      "private": "Private",
+      "noMessages": "No messages yet"
     }
   },
   "sessionPage": {
@@ -8907,7 +8911,7 @@ const catalog = {
       "welcomeTitle": "Welcome to #{name}",
       "welcomeEmpty": "Start the first thread in #{name}. Every message starts a new thread.",
       "welcomeStart": "This is the start of #{name}.",
-      "dmIntro": "This conversation is just between you and {agent}.",
+      "dmIntro": "Only you and {agent} see this space.",
       "today": "Today",
       "yesterday": "Yesterday",
       "openThread": "Open thread",
@@ -9131,7 +9135,8 @@ const catalog = {
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "{name} details"
     },
     "details": {
       "about": "About",
@@ -9187,7 +9192,7 @@ const catalog = {
       "memory": "Memory",
       "loadError": "Couldn't load this folder",
       "memoryNoteChannel": "What agents in {place} remember. Agents read this at the start of every thread.",
-      "memoryNoteDm": "What {agent} remembers from this DM. It reads this at the start of every thread.",
+      "memoryNoteDm": "What {agent} remembers from this space. It reads this at the start of every thread.",
       "off": {
         "title": "No Drive here",
         "description": "Files and memory for {place} live in the Drive. This Kortix stores no Drive: it needs Platinum."
@@ -9284,6 +9289,30 @@ const catalog = {
       "noApp": "No app selected yet.",
       "noFile": "No file yet.",
       "loadingApp": "Loading app…"
+    },
+    "panel": {
+      "title": "{name} details",
+      "heading": "Details",
+      "close": "Close details",
+      "private": "Private",
+      "rename": "Rename and describe",
+      "personalDescription": "Your private space with My Kortix. Only you see it.",
+      "privateDescription": "Only the people and agents in it see this space.",
+      "noDescription": "No description yet.",
+      "agents": "Agents",
+      "addAgent": "Add agent",
+      "default": "Default",
+      "projectDefault": "Project default",
+      "people": "People",
+      "addPeople": "Add people",
+      "you": "You",
+      "tabs": "Tabs",
+      "addTab": "Add tab",
+      "routines": "Routines",
+      "addRoutine": "Add routine",
+      "routinesPrivate": "A private space takes no routines yet.",
+      "allSettings": "All settings",
+      "askHint": "You can also ask in chat: \"add an agent here\", \"pin the launch doc as a tab\"."
     }
   },
   "imageGen": {

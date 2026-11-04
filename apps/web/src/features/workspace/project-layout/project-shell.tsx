@@ -44,7 +44,6 @@ import {
   qk,
   useFeatureFlag,
   useGatewayCatalogSync,
-  useProjectSpaces,
 } from '@kortix/sdk/react';
 import { SidebarGlyph as PanelLeft } from '@kortix/ui/icons';
 
@@ -206,17 +205,14 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     newSession();
   }, [newSession]);
 
-  // Channels on: "New session" (Mod+T, the desktop File menu) opens the
-  // default channel and focuses its composer, where a message starts a thread.
+  // Spaces on: "New session" (Mod+T, the desktop File menu) opens the
+  // person's own space and focuses its composer, where a message starts a thread.
   const channels = useFeatureFlag(projectId, 'chat').enabled;
-  const spaces = useProjectSpaces(projectId, { enabled: channels });
-  const defaultChannelSlug = spaces.data?.find((space) => space.kind === 'channel' && space.is_default)?.slug;
   const openDefaultChannel = useCallback(() => {
-    if (!defaultChannelSlug) return;
-    router.push(uiRoutes().channel(projectId, defaultChannelSlug));
-    // Already on that channel the composer does not remount; ask it for focus.
+    router.push(`${uiRoutes().project(projectId)}/chat`);
+    // Already on that space the composer does not remount; ask it for focus.
     window.dispatchEvent(new CustomEvent('focus-session-textarea'));
-  }, [defaultChannelSlug, projectId, router]);
+  }, [projectId, router]);
   useProjectShellShortcuts({ projectId, onNewSession: channels ? openDefaultChannel : handleNewSession });
 
   const params = useParams<{ sessionId?: string }>();

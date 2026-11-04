@@ -1355,7 +1355,7 @@
       },
       "channelsSwitch": {
         "onTitle": "Укључити просторе за {project}?",
-        "onBody": "Сви у овом пројекту добијају просторе и директне поруке уместо листе сесија. Све постојеће сесије прелазе у #general. Можете их искључити било када; ништа се не брише.",
+        "onBody": "Сви у овом пројекту добијају Просторе уместо листе сесија. Све постојеће сесије прелазе у #general. Можеш то искључити кад год желиш; ништа се не брише.",
         "drive": "Укључи и Drive, да простори добију датотеке.",
         "turnOn": "Укључи",
         "cancel": "Откажи",
@@ -1870,10 +1870,14 @@
     "appsNoMatches": "Nema rezultata",
     "spaces": {
       "channels": "Простори",
-      "directMessages": "Директне поруке",
       "addChannel": "Нови простор",
       "loadError": "Учитавање простора није успело.",
-      "newAgent": "Нови агент"
+      "newAgent": "Нови агент",
+      "review": "Преглед",
+      "personal": "Твој простор",
+      "personalNamed": "Простор корисника {name}",
+      "private": "Приватно",
+      "noMessages": "Још нема порука"
     }
   },
   "dashboard": {
@@ -24566,7 +24570,7 @@
       "welcomeTitle": "Добро дошао у #{name}",
       "welcomeEmpty": "Започни прву тему у #{name}. Свака порука започиње нову тему.",
       "welcomeStart": "Овде почиње #{name}.",
-      "dmIntro": "Овај разговор је само између тебе и агента {agent}.",
+      "dmIntro": "Само ти и агент {agent} видите овај простор.",
       "today": "Данас",
       "yesterday": "Јуче",
       "openThread": "Отвори тему",
@@ -24790,7 +24794,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "Детаљи: {name}"
     },
     "details": {
       "about": "О каналу",
@@ -24846,7 +24851,7 @@
       "memory": "Меморија",
       "loadError": "Учитавање ове фасцикле није успело",
       "memoryNoteChannel": "Шта агенти у {place} памте. Агенти ово читају на почетку сваке теме.",
-      "memoryNoteDm": "Шта {agent} памти из ове DM поруке. Ово чита на почетку сваке теме.",
+      "memoryNoteDm": "Шта {agent} памти из овог простора. Чита то на почетку сваке нити.",
       "off": {
         "title": "Овде нема Drive-а",
         "description": "Датотеке и меморија за {place} налазе се у Drive-у. Ова Kortix инстанца не чува Drive: потребан јој је Platinum."
@@ -25019,7 +25024,31 @@
     },
     "filter": "Филтрирај по простору",
     "all": "Све",
-    "projectWide": "На нивоу пројекта"
+    "projectWide": "На нивоу пројекта",
+    "panel": {
+      "title": "Детаљи: {name}",
+      "heading": "Детаљи",
+      "close": "Затвори детаље",
+      "private": "Приватно",
+      "rename": "Преименуј и опиши",
+      "personalDescription": "Твој приватни простор са My Kortix. Само ти га видиш.",
+      "privateDescription": "Овај простор виде само људи и агенти који су у њему.",
+      "noDescription": "Још нема описа.",
+      "agents": "Агенти",
+      "addAgent": "Додај агента",
+      "default": "Подразумевани",
+      "projectDefault": "Подразумевани за пројекат",
+      "people": "Људи",
+      "addPeople": "Додај људе",
+      "you": "Ти",
+      "tabs": "Картице",
+      "addTab": "Додај картицу",
+      "routines": "Рутине",
+      "addRoutine": "Додај рутину",
+      "routinesPrivate": "Приватни простор још не прима рутине.",
+      "allSettings": "Сва подешавања",
+      "askHint": "Можеш и да питаш у ћаскању: „додај агента овде“, „закачи документ за лансирање као картицу“."
+    }
   },
   "imageGen": {
     "generating": "Generisanje slike",

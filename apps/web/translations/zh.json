@@ -1355,7 +1355,7 @@
       },
       "channelsSwitch": {
         "onTitle": "为 {project} 开启空间？",
-        "onBody": "此项目中的所有人将看到空间和私信，而不是会话列表。所有现有会话都会移入 #general。你可以随时关闭；不会删除任何内容。",
+        "onBody": "此项目中的所有人都会看到空间，而不是会话列表。所有现有会话都会移到 #general。你可以随时关闭；不会删除任何内容。",
         "drive": "同时开启云盘，让空间拥有文件。",
         "turnOn": "开启",
         "cancel": "取消",
@@ -1870,10 +1870,14 @@
     "appsNoMatches": "无匹配项",
     "spaces": {
       "channels": "空间",
-      "directMessages": "私信",
       "addChannel": "新建空间",
       "loadError": "无法加载空间。",
-      "newAgent": "新建智能体"
+      "newAgent": "新建智能体",
+      "review": "审核",
+      "personal": "你的空间",
+      "personalNamed": "{name} 的空间",
+      "private": "私密",
+      "noMessages": "还没有消息"
     }
   },
   "dashboard": {
@@ -24566,7 +24570,7 @@
       "welcomeTitle": "欢迎来到 #{name}",
       "welcomeEmpty": "在 #{name} 中开始第一个话题。每条消息都会开始一个新话题。",
       "welcomeStart": "这里是 #{name} 的开始。",
-      "dmIntro": "这段对话只在你和 {agent} 之间。",
+      "dmIntro": "只有你和 {agent} 能看到这个空间。",
       "today": "今天",
       "yesterday": "昨天",
       "openThread": "打开话题",
@@ -24790,7 +24794,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "{name} 详情"
     },
     "details": {
       "about": "关于",
@@ -24846,7 +24851,7 @@
       "memory": "记忆",
       "loadError": "无法加载此文件夹",
       "memoryNoteChannel": "{place} 中的智能体记住的内容。智能体会在每个线程开始时阅读这些内容。",
-      "memoryNoteDm": "{agent} 在此私信中记住的内容。它会在每个线程开始时阅读这些内容。",
+      "memoryNoteDm": "{agent} 从这个空间记住的内容。它会在每个话题开始时读取。",
       "off": {
         "title": "这里没有 Drive",
         "description": "{place} 的文件和记忆存放在 Drive 中。此 Kortix 不存储 Drive：它需要 Platinum。"
@@ -25019,7 +25024,31 @@
     },
     "filter": "按空间筛选",
     "all": "全部",
-    "projectWide": "项目范围"
+    "projectWide": "项目范围",
+    "panel": {
+      "title": "{name} 详情",
+      "heading": "详情",
+      "close": "关闭详情",
+      "private": "私密",
+      "rename": "重命名并添加描述",
+      "personalDescription": "你与 My Kortix 的私密空间。只有你能看到。",
+      "privateDescription": "只有其中的成员和智能体能看到这个空间。",
+      "noDescription": "还没有描述。",
+      "agents": "智能体",
+      "addAgent": "添加智能体",
+      "default": "默认",
+      "projectDefault": "项目默认",
+      "people": "成员",
+      "addPeople": "添加成员",
+      "you": "你",
+      "tabs": "标签页",
+      "addTab": "添加标签页",
+      "routines": "例行任务",
+      "addRoutine": "添加例行任务",
+      "routinesPrivate": "私密空间暂不支持例行任务。",
+      "allSettings": "所有设置",
+      "askHint": "你也可以在聊天中直接说：“在这里添加一个智能体”、“把发布文档固定为标签页”。"
+    }
   },
   "imageGen": {
     "generating": "正在生成图像",

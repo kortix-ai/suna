@@ -1,7 +1,7 @@
 'use client';
 
 import { ApiError, type ProjectSpace } from '@kortix/sdk';
-import { useCreateProjectSpace, usePrivateChannelsAvailable, useUpdateProjectSpace } from '@kortix/sdk/react';
+import { useCreateProjectSpace, useFeatureFlag, usePrivateChannelsAvailable, useUpdateProjectSpace } from '@kortix/sdk/react';
 import { spaceSlug } from '@kortix/shared';
 import { LockSimpleIcon } from '@phosphor-icons/react';
 import { useId, useState, type ReactNode } from 'react';
@@ -75,6 +75,8 @@ export function CreateChannelDialog({
   const [isPrivate, setIsPrivate] = useState(false);
   // "Private" shows only where the server allows it.
   const privateAvailable = usePrivateChannelsAvailable(projectId).data === true;
+  // Spaces (`chat`): a new space opens with its details and "Add members", where its agents and people are picked.
+  const spacesUi = useFeatureFlag(projectId, 'chat').enabled;
   const [error, setError] = useState<NameError | null>(null);
 
   // A rename opens on the channel's current name and description (set while
@@ -134,7 +136,7 @@ export function CreateChannelDialog({
       successToast(t('created'));
       // On a phone the dialog opens from the sidebar sheet: close it so the channel shows.
       sidebar?.setOpenMobile(false);
-      router.push(href);
+      router.push(spacesUi ? `${href}?details=add` : href);
     };
     if (space) {
       update.mutate(
