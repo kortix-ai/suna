@@ -7,6 +7,7 @@ import {
   gutterTime,
   lastReplyLabel,
   liveReplyCount,
+  replyRole,
   spaceRoster,
   threadActivitySince,
   threadFiltersFromParams,
@@ -57,6 +58,37 @@ describe('liveReplyCount', () => {
     expect(liveReplyCount(['user', 'assistant', 'user', 'assistant'])).toBe(3);
     // A steer before the answer: two people messages, one answer.
     expect(liveReplyCount(['user', 'user', 'assistant'])).toBe(2);
+  });
+
+  test('a platform notice is no reply, the answer to it is one', () => {
+    // An intake thread: "On it.", the worker's report, the relayed answer.
+    expect(liveReplyCount(['user', 'assistant', 'notice', 'assistant'])).toBe(2);
+    // A notice nobody answered yet.
+    expect(liveReplyCount(['user', 'assistant', 'notice'])).toBe(1);
+  });
+});
+
+describe('replyRole', () => {
+  test('a worker report the platform delivered reads as a notice', () => {
+    const report = [
+      'A background subagent you started has finished. This message is from the platform, not from the user.',
+      'task_id: 1294b06f-0000-0000-0000-000000000000',
+      'status: completed',
+      '',
+      '<kortix_system type="session-report" source="subagent">',
+      '<session-report>',
+      '<session-id>1294b06f-0000-0000-0000-000000000000</session-id>',
+      '<status>COMPLETE</status>',
+      '<project>worker</project>',
+      '<prompt>Poem</prompt>',
+      '<result>\n<task_result>\nA poem.\n</task_result>\n</result>',
+      '</session-report>',
+      '</kortix_system>',
+    ].join('\n');
+    expect(replyRole('user', [{ type: 'text', text: report }])).toBe('notice');
+    expect(replyRole('user', [{ type: 'text', text: 'Write a poem' }])).toBe('user');
+    expect(replyRole('assistant', [{ type: 'text', text: report }])).toBe('assistant');
+    expect(replyRole('user', undefined)).toBe('user');
   });
 });
 

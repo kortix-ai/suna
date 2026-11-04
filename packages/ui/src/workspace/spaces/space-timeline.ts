@@ -1,4 +1,4 @@
-import type { ProjectSession } from '@kortix/sdk';
+import { parseNoticeBatch, type ProjectSession } from '@kortix/sdk';
 import { capitalizeWords, isMyKortixAgentName, MY_KORTIX_DISPLAY_NAME } from '@kortix/shared';
 
 import { relativeTime } from '../../internal/lib/relative-time';
@@ -77,7 +77,9 @@ export function lastReplyLabel(session: ProjectSession, locale: string, now = Da
 /**
  * `reply_count` from a thread's loaded transcript, by the server's rule
  * (`apps/api/.../session-reply-counts.ts`): every person message after the
- * first, plus one per person message the agent answered.
+ * first, plus one per person or `notice` message the agent answered. A
+ * `notice` is a platform notice (a worker's report): not a reply itself, but
+ * the agent's answer to it is one.
  */
 export function liveReplyCount(roles: readonly string[]): number {
   let people = 0;
@@ -87,12 +89,29 @@ export function liveReplyCount(roles: readonly string[]): number {
     if (role === 'user') {
       people += 1;
       answered = false;
+    } else if (role === 'notice') {
+      answered = false;
     } else if (role === 'assistant' && !answered) {
       answers += 1;
       answered = true;
     }
   }
   return Math.max(people - 1, 0) + answers;
+}
+
+/**
+ * A transcript message's role for `liveReplyCount`: `notice` for a platform
+ * notice the API delivered as a prompt (a worker's report), else its role.
+ */
+export function replyRole(role: string, parts: readonly unknown[] | undefined): string {
+  if (role !== 'user' || !parts) return role;
+  const text = parts
+    .map((part) => {
+      const { type, text: value } = part as { type?: unknown; text?: unknown };
+      return type === 'text' && typeof value === 'string' ? value : '';
+    })
+    .find((value) => value.trim());
+  return parseNoticeBatch(text) ? 'notice' : role;
 }
 
 /** The agent is on it: a turn runs, the first prompt waits for delivery, or the computer starts. */

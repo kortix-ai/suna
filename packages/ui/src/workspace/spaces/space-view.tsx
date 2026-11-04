@@ -56,7 +56,7 @@ import { SpaceDetailsDialog, type SpaceDetailsTab } from './space-details-dialog
 import { ChannelGlyph } from './channel-glyph';
 import { JoinChannelButton } from './space-members';
 import { SpaceRosterButton } from './space-roster';
-import { agentLabel, liveReplyCount, spaceRoster, threadIsWorking } from './space-timeline';
+import { agentLabel, liveReplyCount, replyRole, spaceRoster, threadIsWorking } from './space-timeline';
 import { CHAT_TAB, openTabId } from './space-tab-list';
 import { AddTabMenu, type SpaceFile, StoredTabPanel, StoredTabTrigger, useSpaceTabs } from './space-tabs';
 import { SpaceTimeline, useSpaceThreads, type SpaceThreads } from './space-timeline-view';
@@ -935,7 +935,7 @@ function useLiveThreadRow(projectId: string, sessionId: string, session: ReturnT
       prompt.state !== 'failed' && !ids.has(prompt.message_id) && !(prompt.wire_message_id && ids.has(prompt.wire_message_id)),
   ).length;
   const roles = [
-    ...session.messages.map((message) => message.info.role),
+    ...session.messages.map((message) => replyRole(message.info.role, message.parts)),
     ...Array.from({ length: waiting }, () => 'user'),
   ];
   const replies = session.hasOlder || roles.length === 0 ? null : liveReplyCount(roles);
