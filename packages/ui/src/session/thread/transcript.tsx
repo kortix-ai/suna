@@ -49,7 +49,7 @@ import {
   StopCircleIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { AfterFirstPromptContext } from './after-first-prompt';
 import { TranscriptRowsContext } from './transcript-rows';
 import { AgentBusyRow } from './thread-boot-rows';
@@ -64,7 +64,7 @@ import {
   stripSystemPtyText,
 } from './message-parsing';
 import { ActivityBurst } from '../turn/activity-burst';
-import { TurnWorkAccordion } from '../turn/turn-work-accordion';
+import { TurnWorkAccordion, WorkFoldContext, WorkTouchContext } from '../turn/turn-work-accordion';
 import { CompactionFailedRow, CompactionMarker, compactionReset } from '../turn/compaction-card';
 import { ExpandableOutput } from '../turn/expandable-output';
 import { isPlanWriteTool } from '../turn/plan-anchor';
@@ -1697,13 +1697,39 @@ function TurnToolBlocks(
     model, segments, conversationDensity, fold, durationMs,
   } = props;
   const { working, hasSteps, hasReasoning } = model;
-  // A turn seen live keeps its parent tree at completion, including disclosure state.
-  // Previously completed history still starts behind the compact Worked row.
-  const [seenWorking, setSeenWorking] = useState(working);
-  if (working && !seenWorking) setSeenWorking(true);
+  // Every settled turn folds, live or reloaded (the T3 Code rule): one turn
+  // reads one way. A turn the reader touched while it worked (opened or closed
+  // a row) settles with its "Worked for" row open, so nothing they were
+  // reading disappears under them.
   const split = useMemo(
-    () => (fold && !working && !seenWorking ? splitSessionLogTurnWork(segments.filter(segmentRendersSomething), { working }) : null),
-    [fold, segments, working, seenWorking],
+    () => (fold && !working ? splitSessionLogTurnWork(segments.filter(segmentRendersSomething), { working }) : null),
+    [fold, segments, working],
+  );
+  const workSegments = useMemo(() => new Set<TurnSegments[number]>(split?.work ?? []), [split]);
+  const touchedLive = useRef(false);
+  const markTouched = useCallback(() => {
+    if (working) touchedLive.current = true;
+  }, [working]);
+  const [workOpen, setWorkOpen] = useState(false);
+  // A turn that mounted settled has not rendered its work yet; it mounts on the first open.
+  const [workMounted, setWorkMounted] = useState(working);
+  const [wasWorking, setWasWorking] = useState(working);
+  if (working !== wasWorking) {
+    setWasWorking(working);
+    if (working) setWorkMounted(true);
+    else setWorkOpen(touchedLive.current);
+  }
+  const toggleWork = useCallback(() => {
+    setWorkMounted(true);
+    setWorkOpen((open) => !open);
+  }, []);
+  const workContentId = useId();
+  // A click on any disclosure inside the live turn (a burst, a tool row, a thought).
+  const onClickCapture = useCallback(
+    (event: MouseEvent) => {
+      if (working && (event.target as Element | null)?.closest?.('[aria-expanded]')) touchedLive.current = true;
+    },
+    [working],
   );
   // Settled turns only: while the turn runs, the next step has not happened yet.
   const recovered = useMemo(
@@ -1777,23 +1803,44 @@ function TurnToolBlocks(
        <ImageGenDigestsContext.Provider value={imageGenDigests}>
        <ImageGenRunsContext.Provider value={imageGenRuns}>
        <InTranscriptTurnContext.Provider value>
-        <div className="space-y-3">
-          {/* One keyed array in both states, so the hoisted deliverables and
-              the final text keep their instances at settle: a `show` iframe
-              does not reload and the final markdown does not re-parse. While
-              working (or settled with nothing to fold) it is the plain stream.
-              Settled, the work leaves for the "Worked for" row, which mounts
-              closed. The cost: the work disappears at once, not in a fold. */}
-          {split
-            ? [
-                <TurnWorkAccordion key="turn-work" durationMs={durationMs}>
-                  {split.work.map(renderSegment)}
-                </TurnWorkAccordion>,
-                ...split.hoisted.map(renderSegment),
-                ...split.final.map(renderSegment),
-              ]
-            : segments.map(renderSegment)}
+        {/* `gap`, not `space-y`: a hidden work segment takes no gap. */}
+        <WorkTouchContext.Provider value={markTouched}>
+        <div className="flex flex-col gap-3" onClickCapture={onClickCapture}>
+          {/* One keyed list in both states. Each segment keeps its wrapper and
+              its position, so nothing remounts at settle or on a toggle: a
+              `show` iframe does not reload, the final markdown does not
+              re-parse, and a row the reader opened stays open. Settled, the
+              "Worked for" row joins the list at the top and the work is
+              hidden in place. The hoisted cards stay visible where they were
+              called, so an opened row reads in call order. */}
+          {split && (
+            <TurnWorkAccordion
+              key="turn-work"
+              durationMs={durationMs}
+              open={workOpen}
+              onToggle={toggleWork}
+              contentId={workContentId}
+            />
+          )}
+          {segments.map((segment) => {
+            const isWork = workSegments.has(segment);
+            if (isWork && !workMounted) return null;
+            const node = renderSegment(segment);
+            if (!node) return null;
+            const hidden = isWork && !workOpen;
+            return (
+              <div
+                key={node.key}
+                id={isWork && segment === split?.work[0] ? workContentId : undefined}
+                hidden={hidden}
+                className="min-w-0"
+              >
+                <WorkFoldContext.Provider value={isWork}>{node}</WorkFoldContext.Provider>
+              </div>
+            );
+          })}
         </div>
+        </WorkTouchContext.Provider>
        </InTranscriptTurnContext.Provider>
        </ImageGenRunsContext.Provider>
        </ImageGenDigestsContext.Provider>
