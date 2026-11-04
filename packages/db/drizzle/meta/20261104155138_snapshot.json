@@ -1,5 +1,5 @@
 {
-  "id": "99d66b33-8c23-4c47-b958-c5ccf4b48ebf",
+  "id": "b0eae201-7a47-480f-895d-80cd88c7bd14",
   "prevId": "9fa9d509-9967-49ea-b606-7e7e73fec713",
   "version": "7",
   "dialect": "postgresql",
@@ -5349,6 +5349,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "structs": {
+          "name": "structs",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         }
       },
       "indexes": {},

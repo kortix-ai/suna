@@ -9149,6 +9149,8 @@ export const artifactDocUpdates = kortixSchema.table('artifact_doc_updates', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   /** Compaction found that no Yjs reader takes this row: it is kept and served, never merged again. */
   quarantinedAt: timestamp('quarantined_at', { withTimezone: true }),
+  /** Structs a client integrates when it applies this row (the scan's count): a page and a compaction window count them. */
+  structs: integer('structs').default(0).notNull(),
 }, (table) => [
   primaryKey({ columns: [table.artifactId, table.seq] }),
   foreignKey({ name: 'artifact_doc_updates_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),

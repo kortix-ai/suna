@@ -20,6 +20,8 @@ export const DOC_MARKDOWN_MAX_BYTES = 1_048_576;
 export const DOC_PAGE_MAX_BYTES = 8 * 1024 * 1024;
 /** Rows read for one page at most. */
 export const DOC_PAGE_MAX_ROWS = 1_000;
+/** Structs in one page (a viewer integrates at most this many per pull): the cap of one push. */
+export const DOC_PAGE_MAX_STRUCTS = 200_000;
 /** An Artifact with more update rows than this is compacted. */
 export const DOC_COMPACT_ROWS = 500;
 /** After a compaction that threw (or would pass the page limit), none for this long. */
@@ -114,17 +116,24 @@ export function decideFlush(
 }
 
 /**
- * How many of `rows` (ascending seq) one page carries: as many as fit
- * `budget` bytes, and always at least one, so a large row cannot stall a
- * client. `hasMore` when rows are left, or the caller read `maxRows` + 1.
+ * How many of `rows` (ascending seq) one page carries: as many as fit the
+ * `budget` in bytes and in structs, and always at least one, so a large row
+ * cannot stall a client (no stored row passes either budget alone). `hasMore`
+ * when rows are left, or the caller read `maxRows` + 1.
  */
-export function pageCut(rows: ReadonlyArray<{ seq: number; size: number }>, budget: number, maxRows = Number.POSITIVE_INFINITY) {
+export function pageCut(
+  rows: ReadonlyArray<{ seq: number; size: number; structs: number }>,
+  budget: { bytes: number; structs: number },
+  maxRows = Number.POSITIVE_INFINITY,
+) {
   let count = 0;
-  let total = 0;
+  let bytes = 0;
+  let structs = 0;
   for (const row of rows) {
     if (count >= maxRows) break;
-    if (count > 0 && total + row.size > budget) break;
-    total += row.size;
+    if (count > 0 && (bytes + row.size > budget.bytes || structs + row.structs > budget.structs)) break;
+    bytes += row.size;
+    structs += row.structs;
     count += 1;
   }
   return { count, hasMore: count < rows.length };

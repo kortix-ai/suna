@@ -111,26 +111,33 @@ describe('decideFlush', () => {
 });
 
 describe('pageCut', () => {
-  const rows = (...sizes: number[]) => sizes.map((size, i) => ({ seq: i + 1, size }));
+  const rows = (...sizes: number[]) => sizes.map((size, i) => ({ seq: i + 1, size, structs: 1 }));
+  const budget = { bytes: 100, structs: 1_000 };
 
   test('no rows → an empty page', () => {
-    expect(pageCut([], 100)).toEqual({ count: 0, hasMore: false });
+    expect(pageCut([], budget)).toEqual({ count: 0, hasMore: false });
   });
 
   test('rows that fit take the whole page', () => {
-    expect(pageCut(rows(10, 20, 30), 100)).toEqual({ count: 3, hasMore: false });
+    expect(pageCut(rows(10, 20, 30), budget)).toEqual({ count: 3, hasMore: false });
   });
 
-  test('the page stops before the row that would pass the budget', () => {
-    expect(pageCut(rows(40, 40, 40), 100)).toEqual({ count: 2, hasMore: true });
+  test('the page stops before the row that would pass the byte budget', () => {
+    expect(pageCut(rows(40, 40, 40), budget)).toEqual({ count: 2, hasMore: true });
+  });
+
+  test('the page stops before the row that would pass the struct budget: a viewer never integrates more than it per page', () => {
+    const heavy = [{ seq: 1, size: 1, structs: 600 }, { seq: 2, size: 1, structs: 500 }, { seq: 3, size: 1, structs: 1 }];
+    expect(pageCut(heavy, budget)).toEqual({ count: 1, hasMore: true });
+    expect(pageCut(heavy.slice(1), budget)).toEqual({ count: 2, hasMore: false });
   });
 
   test('a single row larger than the budget still makes progress', () => {
-    expect(pageCut(rows(500, 1), 100)).toEqual({ count: 1, hasMore: true });
+    expect(pageCut(rows(500, 1), budget)).toEqual({ count: 1, hasMore: true });
   });
 
   test('a row cap passed in by the caller marks has_more', () => {
-    expect(pageCut(rows(1, 1, 1), 100, 2)).toEqual({ count: 2, hasMore: true });
+    expect(pageCut(rows(1, 1, 1), budget, 2)).toEqual({ count: 2, hasMore: true });
   });
 });
 

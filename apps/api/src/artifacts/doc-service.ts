@@ -27,6 +27,8 @@ import {
   DOC_MAX_BYTES_TOTAL,
   DOC_PAGE_MAX_BYTES,
   DOC_PAGE_MAX_ROWS,
+  DOC_PAGE_MAX_STRUCTS,
+  DOC_UPDATE_MAX_BYTES,
   compactionWindow,
   decideFlush,
   decideLease,
@@ -36,7 +38,7 @@ import {
   type DocLease,
   type DocLeaseKind,
 } from './doc-rules';
-import { checkDocUpdate, compactDocUpdates, mergesAlone } from './doc-yjs';
+import { DOC_MAX_STRUCTS, checkDocUpdate, compactDocUpdates, measureDocUpdate, mergesAlone } from './doc-yjs';
 
 export class ArtifactDocError extends Error {
   constructor(
@@ -125,12 +127,20 @@ export async function readArtifactDoc(artifactId: string, input: { after: number
     }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId));
     if (!state) return { seeded: false, epoch: null, latestSeq: 0, updates: [], hasMore: false, flushed: null, lease: null };
 
-    const sizes = await tx.select({ seq: artifactDocUpdates.seq, size: sql<number>`octet_length(${artifactDocUpdates.bytes})` })
+    const sizes = await tx.select({
+      seq: artifactDocUpdates.seq,
+      size: sql<number>`octet_length(${artifactDocUpdates.bytes})`,
+      structs: artifactDocUpdates.structs,
+    })
       .from(artifactDocUpdates)
       .where(and(eq(artifactDocUpdates.artifactId, artifactId), gt(artifactDocUpdates.seq, input.after)))
       .orderBy(asc(artifactDocUpdates.seq))
       .limit(DOC_PAGE_MAX_ROWS + 1);
-    const cut = pageCut(sizes.map((row) => ({ seq: row.seq, size: Number(row.size) })), DOC_PAGE_MAX_BYTES, DOC_PAGE_MAX_ROWS);
+    const cut = pageCut(
+      sizes.map((row) => ({ seq: row.seq, size: Number(row.size), structs: row.structs })),
+      { bytes: DOC_PAGE_MAX_BYTES, structs: DOC_PAGE_MAX_STRUCTS },
+      DOC_PAGE_MAX_ROWS,
+    );
     const last = cut.count > 0 ? sizes[cut.count - 1]!.seq : input.after;
     const updates = cut.count === 0 ? [] : await tx.select({ seq: artifactDocUpdates.seq, bytes: artifactDocUpdates.bytes })
       .from(artifactDocUpdates)
@@ -161,7 +171,7 @@ export async function readArtifactDoc(artifactId: string, input: { after: number
  */
 export async function seedArtifactDoc(
   artifactId: string,
-  input: { update: Buffer; markdown: string; version: string; userId: string },
+  input: { update: Buffer; markdown: string; version: string; userId: string; structs?: number },
 ): Promise<{ seq: number; epoch: string }> {
   return db.transaction(async (tx) => {
     await lockArtifact(tx, artifactId);
@@ -174,7 +184,7 @@ export async function seedArtifactDoc(
       flushedMarkdown: input.markdown,
     }).onConflictDoNothing({ target: artifactDocState.artifactId }).returning({ epoch: artifactDocState.epoch });
     if (!created) throw new ArtifactDocError(409, 'This doc already has a live state: read it instead', 'doc_seeded');
-    await tx.insert(artifactDocUpdates).values({ artifactId, seq: 1, bytes: input.update, createdBy: input.userId });
+    await tx.insert(artifactDocUpdates).values({ artifactId, seq: 1, bytes: input.update, createdBy: input.userId, structs: input.structs ?? 0 });
     return { seq: 1, epoch: created.epoch };
   });
 }
@@ -187,7 +197,7 @@ export async function seedArtifactDoc(
  */
 export async function appendArtifactDocUpdate(
   artifactId: string,
-  input: { update: Buffer; userId: string; epoch?: string },
+  input: { update: Buffer; userId: string; epoch?: string; structs?: number },
 ): Promise<{ seq: number; rows: number }> {
   return db.transaction(async (tx) => {
     await lockArtifact(tx, artifactId);
@@ -212,7 +222,7 @@ export async function appendArtifactDocUpdate(
       .where(eq(artifactDocState.artifactId, artifactId))
       .returning({ nextSeq: artifactDocState.nextSeq });
     const seq = next!.nextSeq - 1;
-    await tx.insert(artifactDocUpdates).values({ artifactId, seq, bytes: input.update, createdBy: input.userId });
+    await tx.insert(artifactDocUpdates).values({ artifactId, seq, bytes: input.update, createdBy: input.userId, structs: input.structs ?? 0 });
     const [count] = await tx.select({ rows: sql<number>`count(*)::int` }).from(artifactDocUpdates)
       .where(and(eq(artifactDocUpdates.artifactId, artifactId), isNull(artifactDocUpdates.quarantinedAt)));
     return { seq, rows: Number(count?.rows ?? 0) };
@@ -229,7 +239,8 @@ function mergeRows(rows: Array<{ bytes: Buffer }>): Uint8Array | null | 'failed'
   // Every row is scanned before Yjs reads it: a row stored before a check existed never reaches a decode.
   if (rows.some((row) => !checkDocUpdate(new Uint8Array(row.bytes), 'seed').ok)) return 'failed';
   try {
-    return compactDocUpdates(rows.map((row) => new Uint8Array(row.bytes)), DOC_PAGE_MAX_BYTES);
+    // The merged row is stored and served like a push: it meets a push's caps, or the window is skipped.
+    return compactDocUpdates(rows.map((row) => new Uint8Array(row.bytes)), { maxBytes: DOC_UPDATE_MAX_BYTES, maxStructs: DOC_MAX_STRUCTS });
   } catch {
     return 'failed';
   }
@@ -294,7 +305,8 @@ export async function compactArtifactDoc(artifactId: string): Promise<ArtifactDo
     const toSeq = rows[rows.length - 1]!.seq;
     const removed = rows.reduce((total, row) => total + row.bytes.length, 0);
     // A merged row holds several people's updates: it names none of them (who wrote is recorded at each flush).
-    await tx.update(artifactDocUpdates).set({ bytes: Buffer.from(merged), createdBy: null })
+    const mergedStructs = measureDocUpdate(merged, 'seed');
+    await tx.update(artifactDocUpdates).set({ bytes: Buffer.from(merged), createdBy: null, structs: mergedStructs.ok ? mergedStructs.structs : 0 })
       .where(and(eq(artifactDocUpdates.artifactId, artifactId), eq(artifactDocUpdates.seq, toSeq)));
     await tx.delete(artifactDocUpdates)
       .where(and(live, gte(artifactDocUpdates.seq, fromSeq), lt(artifactDocUpdates.seq, toSeq)));

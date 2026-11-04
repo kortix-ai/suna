@@ -48,6 +48,7 @@ CREATE TABLE "kortix"."artifact_doc_updates" (
 	"created_by" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"quarantined_at" timestamp with time zone,
+	"structs" integer DEFAULT 0 NOT NULL,
 	CONSTRAINT "artifact_doc_updates_artifact_id_seq_pk" PRIMARY KEY("artifact_id","seq")
 );
 --> statement-breakpoint

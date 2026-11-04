@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { DOC_MAX_STRUCTS, checkDocUpdate, compactDocUpdates } from './doc-yjs';
+import { DOC_MAX_STRUCTS, checkDocUpdate, compactDocUpdates, measureDocUpdate } from './doc-yjs';
 
 /** A doc shaped like tiptap's: paragraphs of text in the `default` fragment. */
 function paragraphs(doc: Y.Doc): string {
@@ -158,7 +158,7 @@ describe('compactDocUpdates (Y.mergeUpdates, never integration)', () => {
   test('one row holds every update: a fresh client gets the same doc, byte for byte the flat merge', () => {
     const { seed, pushes } = twoWriters();
     const log = [seed, ...pushes];
-    const compacted = compactDocUpdates(log, 8 * 1024 * 1024)!;
+    const compacted = compactDocUpdates(log, { maxBytes: 8 * 1024 * 1024, maxStructs: 1_000_000 })!;
     expect(Buffer.from(compacted).equals(Buffer.from(Y.mergeUpdates(log)))).toBe(true);
     const expected = paragraphs(fresh(log));
     expect(expected).toContain('note 28');
@@ -170,26 +170,31 @@ describe('compactDocUpdates (Y.mergeUpdates, never integration)', () => {
     const { seed, pushes } = twoWriters();
     const log = [seed, ...pushes];
     const client = fresh(log.slice(0, 25));
-    Y.applyUpdate(client, compactDocUpdates(log.slice(0, 40), 8 * 1024 * 1024)!);
+    Y.applyUpdate(client, compactDocUpdates(log.slice(0, 40), { maxBytes: 8 * 1024 * 1024, maxStructs: 1_000_000 })!);
     for (const update of log.slice(40)) Y.applyUpdate(client, update);
     expect(paragraphs(client)).toBe(paragraphs(fresh(log)));
   });
 
   test('a crafted set (3 clients, ~500 KB each, every item at one position) compacts fast, or is skipped, without integrating', () => {
     const crafted = [11, 22, 33].map((client) => {
-      const count = 40_000;
+      const count = 80_000;
       const w = new V1().uint(1).uint(count).uint(client).uint(0);
-      for (let i = 0; i < count; i++) w.byte(STRING).uint(1).str('default').str('x'); // no origins: all at the start of `default`
+      for (let i = 0; i < count; i++) w.byte(STRING).uint(0).uint(42).uint(0).str('x'); // no origins: all at the start of one element (42:0)
       return w.uint(0).done();
     });
     expect(crafted.every((row) => row.length > 450_000)).toBe(true);
+    // All three would merge into 240,000 structs, past the scan cap of a stored row: skipped, fast.
     let started = performance.now();
-    const merged = compactDocUpdates(crafted, 8 * 1024 * 1024);
+    expect(compactDocUpdates(crafted, { maxBytes: 8 * 1024 * 1024, maxStructs: 1_000_000 })).toBeNull();
     expect(performance.now() - started).toBeLessThan(2_000);
-    expect(Y.decodeUpdate(merged!).structs).toHaveLength(120_000);
+    // Two of them (160,000 structs) merge.
+    started = performance.now();
+    const merged = compactDocUpdates(crafted.slice(0, 2), { maxBytes: 8 * 1024 * 1024, maxStructs: 1_000_000 });
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(Y.decodeUpdate(merged!).structs).toHaveLength(160_000);
     // Past the cap the merge is dropped: the caller keeps the rows.
     started = performance.now();
-    expect(compactDocUpdates(crafted, 1_000_000)).toBeNull();
+    expect(compactDocUpdates(crafted, { maxBytes: 1_000_000, maxStructs: 1_000_000 })).toBeNull();
     expect(performance.now() - started).toBeLessThan(2_000);
   });
 
@@ -200,13 +205,41 @@ describe('compactDocUpdates (Y.mergeUpdates, never integration)', () => {
       const w = new V1().uint(1).uint(perRow * 2 - 1).uint(7).uint(r);
       for (let k = 0; k < perRow; k++) {
         if (k > 0) w.byte(10).uint(rows - 1); // a Skip over the other rows' clocks
-        w.byte(STRING).uint(1).str('default').str('x');
+        w.byte(STRING).uint(0).uint(42).uint(0).str('x');
       }
       return w.uint(0).done();
     });
     const started = performance.now();
-    const merged = compactDocUpdates(interleaved, 8 * 1024 * 1024)!;
+    const merged = compactDocUpdates(interleaved, { maxBytes: 8 * 1024 * 1024, maxStructs: 1_000_000 })!;
     expect(performance.now() - started).toBeLessThan(1_500);
     expect(Buffer.from(merged).equals(Buffer.from(Y.mergeUpdates(interleaved)))).toBe(true);
+  });
+});
+
+describe('a merged row meets the caps of a push', () => {
+  /** The review's shape: one push of `count` ContentDeleted items of length 1 (four bytes each), chained by origin. */
+  function deletedRow(client: number, clock0: number, count: number): Uint8Array {
+    const w = new V1().uint(1).uint(count).uint(client).uint(clock0);
+    for (let i = 0; i < count; i++) {
+      const clock = clock0 + i;
+      if (clock === 0) w.byte(1).uint(0).uint(42).uint(0).uint(1);
+      else w.byte(0x80 | 1).uint(client).uint(clock - 1).uint(1);
+    }
+    return w.uint(0).done();
+  }
+
+  test('32 pushes of 8,250 ContentDeleted items (each a valid push) would merge into 264,000 structs: refused (null), never stored', () => {
+    const rows = Array.from({ length: 32 }, (_, p) => deletedRow(5, p * 8_250, 8_250));
+    for (const row of rows) expect(checkDocUpdate(row, 'push')).toEqual({ ok: true });
+    expect(compactDocUpdates(rows, { maxBytes: 8 * 1024 * 1024, maxStructs: DOC_MAX_STRUCTS })).toBeNull();
+  });
+
+  test('a merge within the caps is kept, and the scan counts its structs', () => {
+    const rows = Array.from({ length: 4 }, (_, p) => deletedRow(5, p * 8_250, 8_250));
+    const merged = compactDocUpdates(rows, { maxBytes: 512 * 1024, maxStructs: DOC_MAX_STRUCTS })!;
+    expect(merged).not.toBeNull();
+    expect(measureDocUpdate(merged, 'seed')).toEqual({ ok: true, structs: 33_000 });
+    // Past the byte cap: refused as well.
+    expect(compactDocUpdates(rows, { maxBytes: 64 * 1024, maxStructs: DOC_MAX_STRUCTS })).toBeNull();
   });
 });

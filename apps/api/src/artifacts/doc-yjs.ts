@@ -6,9 +6,9 @@
  * hundreds of megabytes. Scanning and merging are linear in the bytes.
  */
 import { mergeUpdates } from 'yjs';
-import { scanDocUpdate, type DocUpdateCheck } from './doc-scan';
+import { measureDocUpdate, scanDocUpdate, type DocUpdateCheck } from './doc-scan';
 
-export { DOC_MAX_DELETES, DOC_MAX_STRUCTS, DOC_MAX_TEXT_BYTES, type DocScanReason, type DocUpdateCheck } from './doc-scan';
+export { DOC_MAX_DELETES, DOC_MAX_STRUCTS, DOC_MAX_TEXT_BYTES, measureDocUpdate, type DocScanReason, type DocUpdateCheck } from './doc-scan';
 
 /**
  * The check of a pushed update, a seed, and every row before compaction
@@ -25,24 +25,28 @@ const MERGE_FAN_IN = 4;
 
 /**
  * Compaction: one update equal to applying `updates` (`Y.mergeUpdates`, no
- * integration), or null when the result would pass `maxBytes`: the caller
- * then keeps the rows. Merged as a tree of 4-way merges: one 500-way merge of
+ * integration), or null when the result would pass `caps` (bytes, or structs
+ * as the scan counts them; a merge of many valid pushes can hold more structs
+ * than one push may): the caller then keeps the rows. Merged as a tree of 4-way merges: one 500-way merge of
  * rows whose clocks interleave re-sorts 500 inputs per struct (593 ms for
  * 1.5 MB measured), the tree 4 per struct (101 ms for the same input).
  */
-export function compactDocUpdates(updates: Uint8Array[], maxBytes: number): Uint8Array | null {
+export function compactDocUpdates(updates: Uint8Array[], caps: { maxBytes: number; maxStructs: number }): Uint8Array | null {
   let level = updates;
   while (level.length > 1) {
     const next: Uint8Array[] = [];
     for (let i = 0; i < level.length; i += MERGE_FAN_IN) {
       const merged = mergeUpdates(level.slice(i, i + MERGE_FAN_IN));
-      if (merged.length > maxBytes) return null;
+      if (merged.length > caps.maxBytes) return null;
       next.push(merged);
     }
     level = next;
   }
   const result = level[0] ?? null;
-  return result && result.length <= maxBytes ? result : null;
+  if (!result || result.length > caps.maxBytes) return null;
+  // The merged row is stored and served like a push: it meets the same scan and caps.
+  const measured = measureDocUpdate(result, 'seed');
+  return measured.ok && measured.structs <= caps.maxStructs ? result : null;
 }
 
 const EMPTY_UPDATE = new Uint8Array([0, 0]);

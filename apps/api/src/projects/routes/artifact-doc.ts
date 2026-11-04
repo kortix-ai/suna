@@ -34,7 +34,7 @@ import {
   DocReadAuditThrottle,
   isIncrementalDocPull,
 } from '../../artifacts/doc-rules';
-import { DOC_MAX_DELETES, DOC_MAX_STRUCTS, checkDocUpdate } from '../../artifacts/doc-yjs';
+import { DOC_MAX_DELETES, DOC_MAX_STRUCTS, measureDocUpdate } from '../../artifacts/doc-yjs';
 import {
   ArtifactDocError,
   appendArtifactDocUpdate,
@@ -124,9 +124,9 @@ function updateFrom(c: Context, value: string, input: { max: number; kind: 'push
     const taken = pushBytes.take(input.byteKey, bytes.length, Date.now());
     if (!taken.allowed) return { ok: false as const, response: rateLimited(c, taken.retryAfterMs) };
   }
-  const checked = checkDocUpdate(bytes, input.kind);
+  const checked = measureDocUpdate(bytes, input.kind);
   if (!checked.ok) return { ok: false as const, response: c.json({ error: 'The update is not an acceptable Yjs update', code: 'invalid_update', reason: checked.reason }, 400) };
-  return { ok: true as const, bytes };
+  return { ok: true as const, bytes, structs: checked.structs };
 }
 
 function markdownTooLarge(c: Context, markdown: string) {
@@ -206,7 +206,7 @@ export function registerArtifactDocRoutes(): void {
     const update = updateFrom(c, input.update, { max: DOC_SEED_UPDATE_MAX_BYTES, kind: 'seed', byteKey: access.viewer.userId });
     if (!update.ok) return update.response;
     try {
-      const seeded = await seedArtifactDoc(access.row.artifactId, { update: update.bytes, markdown: input.markdown, version: input.version, userId: access.viewer.userId });
+      const seeded = await seedArtifactDoc(access.row.artifactId, { update: update.bytes, structs: update.structs, markdown: input.markdown, version: input.version, userId: access.viewer.userId });
       publishArtifactLiveChange(access.row.artifactId, 'doc', String(seeded.seq));
       return c.json(seeded, 201);
     } catch (err) {
@@ -231,7 +231,7 @@ export function registerArtifactDocRoutes(): void {
     if (!update.ok) return update.response;
     try {
       const artifactId = access.row.artifactId;
-      const appended = await appendArtifactDocUpdate(artifactId, { update: update.bytes, userId: access.viewer.userId, epoch: input.epoch });
+      const appended = await appendArtifactDocUpdate(artifactId, { update: update.bytes, structs: update.structs, userId: access.viewer.userId, epoch: input.epoch });
       publishArtifactLiveChange(artifactId, 'doc', String(appended.seq));
       if (appended.rows > DOC_COMPACT_ROWS) {
         void compactArtifactDoc(artifactId).catch((error) => logger.warn('[artifact-doc] compaction failed', {

@@ -230,7 +230,7 @@ function positive(length: number): number {
   return length;
 }
 
-function scan(update: Uint8Array, kind: 'push' | 'seed'): void {
+function scan(update: Uint8Array, kind: 'push' | 'seed'): { structs: number } {
   const r = new Reader(update);
   const clients = r.uint();
   let structs = 0;
@@ -292,6 +292,7 @@ function scan(update: Uint8Array, kind: 'push' | 'seed'): void {
     }
   }
   if (!r.done) throw new Refused('malformed');
+  return { structs };
 }
 
 /**
@@ -299,9 +300,18 @@ function scan(update: Uint8Array, kind: 'push' | 'seed'): void {
  * client at most); `seed`: a whole doc, or rows to compact (many clients).
  */
 export function scanDocUpdate(update: Uint8Array, kind: 'push' | 'seed'): DocUpdateCheck {
+  const measured = measureDocUpdate(update, kind);
+  return measured.ok ? { ok: true } : measured;
+}
+
+/**
+ * The same check, with the number of structs a client integrates when it
+ * applies the update: stored per row, so a page and a compaction window can
+ * count structs as well as bytes.
+ */
+export function measureDocUpdate(update: Uint8Array, kind: 'push' | 'seed'): { ok: true; structs: number } | { ok: false; reason: DocScanReason } {
   try {
-    scan(update, kind);
-    return { ok: true };
+    return { ok: true, structs: scan(update, kind).structs };
   } catch (error) {
     if (error instanceof Refused) return { ok: false, reason: error.reason };
     throw error;

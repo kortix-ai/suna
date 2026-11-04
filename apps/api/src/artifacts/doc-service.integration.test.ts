@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 import { db } from '../shared/db';
 import { localTestDatabaseUrl } from '../__tests__/helpers/integration-fixtures';
 import { interleave } from '../__tests__/helpers/interleave';
-import { DOC_COMPACT_ROWS, DOC_MAX_BYTES_TOTAL, DOC_PAGE_MAX_BYTES } from './doc-rules';
+import { DOC_COMPACT_ROWS, DOC_MAX_BYTES_TOTAL, DOC_PAGE_MAX_BYTES, DOC_PAGE_MAX_STRUCTS } from './doc-rules';
 import {
   ArtifactDocError,
   appendArtifactDocUpdate,
@@ -458,4 +458,22 @@ describe('a flush is only what the file holds now (replays name nobody)', () => 
     const flushed = await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 206, version: 'v2', markdown: '', currentVersion: 'v2' });
     expect(flushed.contributors).toHaveLength(200);
   }, 30_000);
+});
+
+describe('a page counts structs', () => {
+  test('rows whose struct counts pass the page’s struct budget go on the next page; every row stores its count', async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: '', version: 'v1', userId, structs: 0 });
+    const heavy = Math.floor(DOC_PAGE_MAX_STRUCTS * 0.6);
+    await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId, structs: heavy });
+    await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId, structs: heavy });
+    await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId, structs: 10 });
+    const first = await readArtifactDoc(artifactId, { after: 0, base: false });
+    expect({ seqs: first.updates.map((u) => u.seq), hasMore: first.hasMore }).toEqual({ seqs: [1, 2], hasMore: true });
+    const second = await readArtifactDoc(artifactId, { after: 2, base: false });
+    expect({ seqs: second.updates.map((u) => u.seq), hasMore: second.hasMore }).toEqual({ seqs: [3, 4], hasMore: false });
+    const counts = await db.select({ seq: artifactDocUpdates.seq, structs: artifactDocUpdates.structs }).from(artifactDocUpdates)
+      .where(eq(artifactDocUpdates.artifactId, artifactId)).orderBy(artifactDocUpdates.seq);
+    expect(counts.map((r) => r.structs)).toEqual([0, heavy, heavy, 10]);
+  });
 });

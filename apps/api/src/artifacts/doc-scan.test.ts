@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { EDITOR_PUSHES, EDITOR_SEED } from './doc-editor-updates.fixture';
-import { DOC_MAX_DELETES, DOC_MAX_STRUCTS, checkDocUpdate } from './doc-yjs';
+import { DOC_MAX_DELETES, DOC_MAX_STRUCTS, checkDocUpdate, measureDocUpdate } from './doc-yjs';
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, 'base64'));
 
@@ -62,6 +62,16 @@ describe('the editor’s own updates pass', () => {
   test('a merge of the recorded updates (what compaction stores) passes as a seed', () => {
     const merged = Y.mergeUpdates([bytes(EDITOR_SEED), ...EDITOR_PUSHES.map((p) => bytes(p.update))]);
     expect(checkDocUpdate(merged, 'seed')).toEqual({ ok: true });
+  });
+});
+
+describe('measureDocUpdate', () => {
+  test('counts the structs of every recorded editor update exactly as Y.decodeUpdate does', () => {
+    for (const b64 of [EDITOR_SEED, ...EDITOR_PUSHES.map((p) => p.update)]) {
+      const update = bytes(b64);
+      expect(measureDocUpdate(update, 'seed')).toEqual({ ok: true, structs: Y.decodeUpdate(update).structs.length });
+    }
+    expect(measureDocUpdate(new Uint8Array([0xff]), 'seed')).toEqual({ ok: false, reason: 'malformed' });
   });
 });
 
