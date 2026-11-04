@@ -666,7 +666,8 @@ export function ArtifactCommentThreadView({
             <button
               ref={replyControl}
               type="button"
-              aria-label={t('replyLabel')}
+              // A saved draft is the visible text, so it names the button.
+              aria-label={reply.value ? undefined : t('replyLabel')}
               // A quiet line, not a field: the composer opens on click.
               className={cn(
                 'focus-visible:ring-ring flex min-w-0 items-center rounded-sm text-left text-sm outline-none focus-visible:ring-2',
