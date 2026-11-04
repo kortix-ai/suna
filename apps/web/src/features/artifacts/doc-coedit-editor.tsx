@@ -13,6 +13,11 @@
  *   the shared doc would expire in 12 h and land in the file.
  * - `seedUpdate`: the first state of a doc, built from the file's Markdown
  *   through the editor's own load path.
+ * - Untrusted attributes: any writer can put any JSON value on a node of the
+ *   shared doc. The doc schema normalizes every change before the view renders
+ *   it (`SafeAttributes`, doc-attrs.ts), node views read attributes through
+ *   typed helpers, and a node view that still fails shows a placeholder for
+ *   that node only (`safeNodeView`).
  */
 
 import { createDocument, getSchema, type Editor, type Extensions } from '@tiptap/core';
@@ -20,7 +25,14 @@ import Collaboration from '@tiptap/extension-collaboration';
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
 import { prosemirrorToYDoc } from '@tiptap/y-tiptap';
 import { SessionDotMatrix } from '@kortix/ui/dot-matrix/session-dot-matrix';
-import { DocImage, Video } from '@kortix/ui/markdown/doc-editor/doc-extensions';
+import {
+  DocImage,
+  Video,
+  attrBoolean,
+  attrString,
+  attrStringOrNull,
+  safeNodeView,
+} from '@kortix/ui/markdown/doc-editor/doc-extensions';
 import { htmlToMarkdown, markdownToHtml, type DocRoundTrip } from '@kortix/ui/markdown/doc-editor/markdown';
 import { TextShimmer } from '@kortix/ui/text-shimmer';
 import { UsersThreeIcon } from '@phosphor-icons/react';
@@ -37,20 +49,19 @@ function liveMedia(resolve: (src: string) => string) {
   /** The doc editor's media view (doc-extensions.tsx), with the path resolved for display only. */
   function LiveMediaView({ node }: ReactNodeViewProps) {
     const t = useTranslations('artifacts');
-    const { src, alt, title, uploading } = node.attrs as {
-      src: string;
-      alt?: string;
-      title?: string;
-      uploading: boolean;
-    };
-    const shown = src ? resolve(src) : src;
+    // Typed reads: a writer can set any JSON value on a node of the shared doc.
+    const src = attrString(node.attrs.src);
+    const alt = attrString(node.attrs.alt);
+    const title = attrStringOrNull(node.attrs.title) ?? undefined;
+    const uploading = attrBoolean(node.attrs.uploading);
+    const shown = src ? resolve(src) : undefined;
     return (
       <NodeViewWrapper className="kx-media" data-uploading={uploading || undefined} data-drag-handle="">
         {node.type.name === 'video' ? (
           <video src={shown} controls preload="metadata" />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element -- a doc's own media, any origin
-          <img src={shown} alt={alt ?? ''} title={title} />
+          <img src={shown} alt={alt} title={title} />
         )}
         {uploading ? (
           <span
@@ -66,15 +77,17 @@ function liveMedia(resolve: (src: string) => string) {
       </NodeViewWrapper>
     );
   }
+  // One node that cannot render shows a placeholder; the pane stays.
+  const View = safeNodeView(LiveMediaView);
   return {
     image: DocImage.extend({
       addNodeView() {
-        return ReactNodeViewRenderer(LiveMediaView);
+        return ReactNodeViewRenderer(View);
       },
     }),
     video: Video.extend({
       addNodeView() {
-        return ReactNodeViewRenderer(LiveMediaView);
+        return ReactNodeViewRenderer(View);
       },
     }),
   };

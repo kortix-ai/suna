@@ -14,7 +14,7 @@ import { docExtensions } from '@kortix/ui/markdown/doc-editor/doc-extensions';
 import * as Y from 'yjs';
 
 import type { Known, Timers } from './doc-autosave';
-import { createDocCoedit, type DocCoeditSession } from './doc-coedit';
+import { COEDIT_FIELD, createDocCoedit, type DocCoeditSession } from './doc-coedit';
 import { liveBridge, liveExtensions, seedUpdate } from './doc-coedit-editor';
 
 // TipTap parses and prints HTML with the browser DOM (as doc-round-trip.test.ts).
@@ -475,6 +475,70 @@ describe('two editors on one doc', () => {
     expect(viewer.markdown()).toBe('Draft. More\n');
     expect(viewer.pushed).toHaveLength(0);
     expect(viewer.leaders).not.toContain(true);
+    a.close();
+    viewer.close();
+  });
+
+  test('a writer pushes attributes of the wrong type: every other tab stays alive, typed, and in step', async () => {
+    const card =
+      '<div class="kx-embed"><a href="https://example.com/a" target="_blank" rel="noopener noreferrer"><span class="kx-embed-text">' +
+      '<span class="kx-embed-title">Card</span><span class="kx-embed-url"><img class="kx-embed-favicon" ' +
+      'src="https://www.google.com/s2/favicons?domain=example.com&amp;sz=128" alt="" referrerpolicy="no-referrer">' +
+      '<span class="kx-embed-href">https://example.com/a</span></span></span></a></div>';
+    const markdown = ['# Plan', '', `See the [notes](https://example.com/n).`, '', card, '', '![chart](media/chart.png)', '', '- [ ] Task', '', '| a | b |', '| --- | --- |', '| 1 | 2 |', ''].join('\n');
+    const w = world(markdown);
+    const a = await w.open();
+    const viewer = await w.open({ readOnly: true });
+    // A raw Yjs client (not an editor): it takes the doc and sets values no editor writes.
+    const writer = new Y.Doc();
+    for (const row of w.server.state.rows) Y.applyUpdate(writer, row.update);
+    const before = Y.encodeStateVector(writer);
+    const poison: Record<string, Record<string, unknown>> = {
+      heading: { level: { x: 1 } },
+      linkEmbed: { href: { x: 1 }, title: 42 },
+      image: { src: ['media/chart.png'] },
+      taskItem: { checked: 'yes' },
+      tableHeader: { colspan: { x: 1 }, colwidth: 'abc' },
+      tableCell: { rowspan: -3 },
+    };
+    writer.transact(() => {
+      for (const node of writer.getXmlFragment(COEDIT_FIELD).createTreeWalker(() => true)) {
+        if (node instanceof Y.XmlElement)
+          for (const [name, value] of Object.entries(poison[node.nodeName] ?? {})) node.setAttribute(name, value as string);
+        // The link mark's href as an object (the offset in the text, not in its XML form).
+        if (node instanceof Y.XmlText) {
+          let offset = 0;
+          for (const op of node.toDelta() as Array<{ insert: unknown }>) {
+            const at = typeof op.insert === 'string' ? op.insert.indexOf('notes') : -1;
+            if (at >= 0) node.format(offset + at, 5, { link: { href: { x: 1 } } });
+            offset += typeof op.insert === 'string' ? op.insert.length : 1;
+          }
+        }
+      }
+    });
+    await w.server.client({ cut: false, dropFlush: false }).push('project', 'artifact', Y.encodeStateAsUpdate(writer, before));
+    await w.clock.advance(100);
+    for (const tab of [a, viewer]) {
+      expect(tab.editor.isDestroyed).toBe(false);
+      const attrs: Record<string, Record<string, unknown>> = {};
+      tab.editor.state.doc.descendants((node) => {
+        attrs[node.type.name] ??= node.attrs;
+        for (const mark of node.marks) attrs[mark.type.name] ??= mark.attrs;
+      });
+      expect(attrs.heading).toMatchObject({ level: 1 });
+      expect(attrs.linkEmbed).toMatchObject({ href: '', title: '' });
+      expect(attrs.image).toMatchObject({ src: null });
+      expect(attrs.taskItem).toMatchObject({ checked: false });
+      expect(attrs.tableHeader).toMatchObject({ colspan: 1, colwidth: null });
+      expect(attrs.tableCell).toMatchObject({ rowspan: 1 });
+      expect(attrs.link).toMatchObject({ href: null });
+      // It still saves, and still takes an edit that reaches every tab.
+      expect(tab.markdown()).toContain('- [ ] Task');
+    }
+    typeAfter(a, 'Task', ' done');
+    await w.clock.advance(100);
+    expect(viewer.markdown()).toContain('- [ ] Task done');
+    expect(viewer.markdown()).toBe(a.markdown());
     a.close();
     viewer.close();
   });

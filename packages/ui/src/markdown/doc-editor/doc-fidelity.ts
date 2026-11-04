@@ -56,11 +56,30 @@ export function readMd(el: Element): MdBlock | null {
   const raw = el.getAttribute(MD_ATTRIBUTE);
   if (!raw) return null;
   try {
-    const value = JSON.parse(raw) as unknown;
-    return value && typeof value === 'object' && !Array.isArray(value) ? (value as MdBlock) : null;
+    return sanitizeMd(JSON.parse(raw));
   } catch {
     return null;
   }
+}
+
+const MD_STRINGS = new Set(['gap', 'pair', 'end', 'src', 'norm']);
+const mdField = (key: string, value: unknown) =>
+  MD_STRINGS.has(key)
+    ? typeof value === 'string'
+    : key === 'span'
+      ? typeof value === 'number' && Number.isInteger(value) && value > 1 && value <= 10_000
+      : key === 'crlf' && value === true;
+
+/**
+ * `md` with only its known fields of their own type (a writer can set any
+ * JSON value): the same object when it is valid, null when nothing is left.
+ */
+export function sanitizeMd(value: unknown): MdBlock | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value);
+  if (entries.every(([key, field]) => mdField(key, field))) return entries.length ? (value as MdBlock) : null;
+  const kept = entries.filter(([key, field]) => mdField(key, field));
+  return kept.length ? (Object.fromEntries(kept) as MdBlock) : null;
 }
 
 export function writeMd(md: MdBlock | null | undefined): string | null {
