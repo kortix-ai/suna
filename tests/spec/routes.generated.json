@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1021,
+  "count": 1022,
   "routes": [
     {
       "method": "GET",
@@ -2507,6 +2507,10 @@
       "path": "/v1/projects/:projectId/channels/telegram/users/:user_id/photo"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/chat/threads"
+    },
+    {
       "method": "DELETE",
       "path": "/v1/projects/:projectId/claude-subscription"
     },
@@ -3567,6 +3571,10 @@
       "path": "/v1/projects/:projectId/spaces/:spaceId/members/:userId"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/tabs"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/spaces/dm"
     },
@@ -4081,10 +4089,6 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/telegram/:projectId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/chat/threads"
     }
   ]
 }

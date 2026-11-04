@@ -1160,6 +1160,19 @@ export const projectSpaceKindEnum = kortixSchema.enum('project_space_kind', ['ch
 export const projectSpaceVisibilityEnum = kortixSchema.enum('project_space_visibility', ['public', 'private']);
 
 /**
+ * One stored tab of a space (`project_spaces.tabs`). The Chat tab is not
+ * stored: it is always first. `ref` names what the tab shows: an artifact id,
+ * an App slug, a Drive folder path or an https URL (`SpaceTabSchema` in
+ * `@kortix/api-contract` validates every write).
+ */
+export interface ProjectSpaceTabRecord {
+  id: string;
+  title: string;
+  kind: 'threads' | 'artifact' | 'app' | 'folder' | 'link' | 'memory';
+  ref?: string;
+}
+
+/**
  * A project space: a channel (product word "Channel") or a member's DM with one
  * agent. A thread is a `project_sessions` row whose `space_id` points here.
  * Named "space" in code because "channel" already means a chat integration
@@ -1191,6 +1204,8 @@ export const projectSpaces = kortixSchema.table(
     agents: text('agents').array().default(sql`'{}'::text[]`).notNull(),
     /** `private`: only the channel's members see it and its threads. `#general` and DMs are always `public` (check below). */
     visibility: projectSpaceVisibilityEnum('visibility').default('public').notNull(),
+    /** The space's tabs after Chat, in order (at most 20). People who may edit the space and its threads' agents replace the list (`PUT /spaces/:spaceId/tabs`). */
+    tabs: jsonb('tabs').$type<ProjectSpaceTabRecord[]>().default(sql`'[]'::jsonb`).notNull(),
     createdBy: uuid('created_by'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

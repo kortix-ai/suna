@@ -1284,6 +1284,58 @@ export type SessionDeleteResult = z.infer<typeof SessionDeleteResultSchema>;
 export const SPACE_KINDS = ['channel', 'dm'] as const;
 /** Who sees a channel: every project member (`public`) or only its members (`private`). */
 export const SPACE_VISIBILITIES = ['public', 'private'] as const;
+/** What a stored space tab shows. Chat is not a kind: it is always the first tab and is never stored. */
+export const SPACE_TAB_KINDS = ['threads', 'artifact', 'app', 'folder', 'link', 'memory'] as const;
+/** The kinds whose tab names its target in `ref`. */
+export const SPACE_TAB_REF_KINDS = ['artifact', 'app', 'folder', 'link'] as const;
+/** At most this many stored tabs per space (Chat not counted). */
+export const SPACE_TABS_MAX = 20;
+export const SPACE_TAB_TITLE_MAX = 60;
+
+/**
+ * One stored tab of a space, after Chat. `ref`: an artifact id (`artifact`),
+ * an App slug (`app`), a Drive folder path (`folder`) or an https URL
+ * (`link`); required for those kinds, absent for `threads` and `memory`.
+ */
+export const SpaceTabSchema = z
+  .object({
+    /** Stable: the client's `?tab=` key. 1–64 of `A-Za-z0-9_-`. */
+    id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+    title: z.string().trim().min(1).max(SPACE_TAB_TITLE_MAX),
+    kind: z.enum(SPACE_TAB_KINDS),
+    ref: z.string().trim().min(1).max(2_048).optional(),
+  })
+  .strict()
+  .superRefine((tab, ctx) => {
+    const needsRef = (SPACE_TAB_REF_KINDS as readonly string[]).includes(tab.kind);
+    if (needsRef && !tab.ref) ctx.addIssue({ code: 'custom', path: ['ref'], message: `A ${tab.kind} tab needs a ref.` });
+    if (!needsRef && tab.ref !== undefined) ctx.addIssue({ code: 'custom', path: ['ref'], message: `A ${tab.kind} tab takes no ref.` });
+    if (tab.kind === 'link' && tab.ref && !/^https:\/\/[^\s]+$/i.test(tab.ref)) {
+      ctx.addIssue({ code: 'custom', path: ['ref'], message: 'A link tab needs an https URL.' });
+    }
+  });
+export type SpaceTab = z.infer<typeof SpaceTabSchema>;
+
+/**
+ * `PUT /projects/:id/spaces/:spaceId/tabs`: the whole ordered list, replacing
+ * the stored one (add, remove, rename and reorder in one call). Ids are unique.
+ */
+export const SpaceTabsInputSchema = z
+  .object({
+    tabs: z
+      .array(SpaceTabSchema)
+      .max(SPACE_TABS_MAX)
+      .superRefine((tabs, ctx) => {
+        const seen = new Set<string>();
+        tabs.forEach((tab, index) => {
+          if (seen.has(tab.id)) ctx.addIssue({ code: 'custom', path: [index, 'id'], message: `Tab id "${tab.id}" is in the list twice.` });
+          seen.add(tab.id);
+        });
+      }),
+  })
+  .strict();
+export type SpaceTabsInput = z.infer<typeof SpaceTabsInputSchema>;
+
 export const SpaceSchema = z
   .object({
     space_id: z.string(),
@@ -1317,6 +1369,8 @@ export const SpaceSchema = z
      * always `public`.
      */
     visibility: z.enum(SPACE_VISIBILITIES),
+    /** The tabs after Chat, in order. Chat is always first and never listed. */
+    tabs: z.array(SpaceTabSchema),
   })
   .strict();
 export type Space = z.infer<typeof SpaceSchema>;

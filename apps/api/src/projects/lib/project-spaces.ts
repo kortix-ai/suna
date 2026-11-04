@@ -14,7 +14,7 @@
  * takes the caller's `SpaceAccess`, and a channel the caller may not see reads
  * as not found. A taken slug's 409 never names a hidden channel.
  */
-import type { PrivateChannelSummary, Space, SpaceCreateInput, SpaceUpdateInput } from '@kortix/api-contract';
+import type { PrivateChannelSummary, Space, SpaceCreateInput, SpaceTab, SpaceUpdateInput } from '@kortix/api-contract';
 import { projectSessions, projectSpaceLinks, projectSpaceMembers, projectSpaces } from '@kortix/db';
 import { spaceSlug } from '@kortix/shared';
 import { type SQL, and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
@@ -24,7 +24,7 @@ import { db } from '../../shared/db';
 import { recordAuditEvent } from '../../shared/audit';
 import { loadProjectRosterIds } from './project-access-view';
 import { uniqueViolationConstraint } from '../../shared/postgres-errors';
-import { insertSpaceMembers, memberDisplayName, nonProjectMembers } from './project-space-members';
+import { insertSpaceMembers, isSpaceMember, memberDisplayName, nonProjectMembers } from './project-space-members';
 import { resolveUserIdentities } from './user-identity';
 import { bustSpaceAccess, canSeeSpace, type SpaceAccess } from '../../shared/space-access';
 import { normalizeString } from './serializers';
@@ -82,7 +82,13 @@ export function serializeSpace(row: SpaceRow, viewer: SpaceViewer, isMember: boo
     agents: row.agents,
     is_member: row.kind === 'dm' || row.isDefault || isMember,
     visibility: row.visibility,
+    tabs: serializeTabs(row.tabs),
   };
+}
+
+/** The stored tabs as the contract shapes them: a `ref` only where it is set. */
+function serializeTabs(tabs: SpaceRow['tabs'] | null | undefined): SpaceTab[] {
+  return (tabs ?? []).map((tab) => ({ id: tab.id, title: tab.title, kind: tab.kind, ...(tab.ref ? { ref: tab.ref } : {}) }));
 }
 
 async function findDefaultSpace(projectId: string): Promise<SpaceRow | null> {
@@ -564,6 +570,49 @@ function convertMembersSql(spaceId: string, actorId: string, roster: readonly st
      where people.user_id::text in (${inRoster})
     union select ${spaceId}::uuid, ${actorId}::uuid, ${actorId}::uuid
     on conflict do nothing`;
+}
+
+/**
+ * A live space of the project (a channel or any member's DM) by id; null when
+ * unknown or archived. The caller checks who may see and edit it.
+ */
+export async function findLiveSpace(projectId: string, spaceId: string): Promise<SpaceRow | null> {
+  const [row] = await db
+    .select()
+    .from(projectSpaces)
+    .where(and(eq(projectSpaces.projectId, projectId), eq(projectSpaces.spaceId, spaceId), isNull(projectSpaces.archivedAt)))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Who may replace a space's tabs. A person: a DM's owner, or a channel's
+ * editor (`canEditSpace`). A session-bound token (Kortix in a thread): a
+ * session filed in this space, or one working for a person in it (the DM's
+ * owner, or a member of the channel). `person`: the bound session's person,
+ * null for a session of no person. The caller already checked `canSeeSpace`.
+ */
+export async function mayEditSpaceTabs(
+  row: SpaceRow,
+  viewer: SpaceViewer,
+  person: string | null,
+): Promise<boolean> {
+  if (viewer.access.bound === null) return row.kind === 'dm' ? row.dmUserId === viewer.userId : canEditSpace(row, viewer);
+  if (viewer.access.boundSpaceId === row.spaceId) return true;
+  if (!person) return false;
+  if (row.kind === 'dm') return row.dmUserId === person;
+  return isSpaceMember(row, person);
+}
+
+/** Replace a space's tabs (the whole ordered list). Returns the updated row, null when it is gone. */
+export async function setSpaceTabs(projectId: string, spaceId: string, tabs: readonly SpaceTab[]): Promise<SpaceRow | null> {
+  const stored = tabs.map((tab) => ({ id: tab.id, title: tab.title, kind: tab.kind, ...(tab.ref ? { ref: tab.ref } : {}) }));
+  const [row] = await db
+    .update(projectSpaces)
+    .set({ tabs: stored, updatedAt: new Date() })
+    .where(and(eq(projectSpaces.projectId, projectId), eq(projectSpaces.spaceId, spaceId), isNull(projectSpaces.archivedAt)))
+    .returning();
+  return row ?? null;
 }
 
 /**
