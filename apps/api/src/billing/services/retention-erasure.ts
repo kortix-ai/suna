@@ -123,11 +123,30 @@ async function record(
     });
 }
 
+/** The liveness rule of `dueClosures`, read again for one account. */
+async function isLiveNow(accountId: string): Promise<boolean> {
+  const [row] = await db.execute(sql`
+    select ${liveClosedAccountSql('k')} as live
+    from (select r.account_id, min(r.scheduled_for) as closed_at
+      from kortix.account_deletion_requests r
+      where r.account_id = ${accountId}::uuid and r.status in ('pending', 'processing')
+        and not coalesce(r.is_cancelled, false)
+      group by r.account_id) k`);
+  return Boolean((row as { live?: boolean } | undefined)?.live);
+}
+
 /** Erase one closure through the deletion routine. Returns the outcome to record. */
 async function erase(row: RetentionCandidate): Promise<{ outcome: RetentionOutcome; error?: string } | null> {
   const request = await claimOpenDeletionRequest(row.request_id);
   // A cancel or the account-deletion worker got there first: nothing to record.
   if (!request) return null;
+  // The batch decided liveness when it was selected. Decide it again after the
+  // claim, right before the irreversible step: a payment or a new session since
+  // the selection keeps the account.
+  if (await isLiveNow(row.account_id)) {
+    await releaseDeletionRequest(request.id);
+    return { outcome: 'skipped_live' };
+  }
   try {
     await runAccountDeletion(request.accountId, request.userId, request.id);
     await markDeletionCompleted(request.id);

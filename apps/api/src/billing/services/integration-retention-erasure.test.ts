@@ -30,6 +30,7 @@ mock.module('../../shared/supabase', () => ({
 }));
 
 const { processRetentionErasures } = await import('./retention-erasure');
+const { claimOpenDeletionRequest } = await import('../repositories/account-deletion');
 
 const confirmed = Boolean(
   process.env.TEST_DATABASE_URL &&
@@ -130,5 +131,18 @@ withDb('retention erasure backstop — real PostgreSQL', () => {
     expect(await requestStatus(due.requestId)).toBe('completed');
     expect(deletedAuthUsers).toEqual([due.accountId]);
     expect((await evidence(due.accountId)).map((r) => r.outcome).sort()).toEqual(['erased', 'failed']);
+  }, 30_000);
+
+  test('the backstop claim refuses a request before its date or a cancelled one, whatever the caller selected', async () => {
+    const future = await closure({ closedDaysAgo: -3 });
+    expect(await claimOpenDeletionRequest(future.requestId)).toBeNull();
+    expect(await requestStatus(future.requestId)).toBe('pending');
+
+    const due = await closure({ closedDaysAgo: 85 });
+    await db.update(accountDeletionRequests).set({ isCancelled: true }).where(eq(accountDeletionRequests.id, due.requestId));
+    expect(await claimOpenDeletionRequest(due.requestId)).toBeNull();
+
+    const open = await closure({ closedDaysAgo: 85 });
+    expect((await claimOpenDeletionRequest(open.requestId))?.status).toBe('processing');
   }, 30_000);
 });

@@ -263,7 +263,9 @@ const envSchema = z.object({
   // deletes nothing; `execute` runs the deletion routine; `off` stops the tick.
   // ACCOUNT_DELETION_SWEEP_PAUSED forces dry_run.
   RETENTION_ERASURE_MODE: z.enum(['off', 'dry_run', 'execute']).optional().default('dry_run'),
-  RETENTION_ERASURE_AFTER_DAYS: optInt(80),
+  RETENTION_ERASURE_AFTER_DAYS: optInt(80).refine((days) => days >= 0, {
+    message: 'Must be 0 or more days: the retention backstop never erases an account before its date',
+  }),
   /**
    * Enforce the sandbox egress pin on the secret-broker route (default ON).
    *
