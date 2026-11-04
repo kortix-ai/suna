@@ -106,6 +106,8 @@ async function open(ws: WS) {
       manual: (q.get('turns') ?? process.env.TURNS) === 'client',
       session: call.sid,
       agentTools: brain.tools(call.sid),
+      // A meeting's trusted speakers (?trusted=Ana,Ben; empty: nobody): only their words reach the agent.
+      trusted: q.has('trusted') ? (q.get('trusted') ?? '').split(',').map((n) => n.trim()).filter(Boolean).slice(0, 20) : undefined,
       instructions: INSTRUCTIONS + (past.text && `\n\nRecent session history, oldest first:\n${past.text}`),
       thread: past.thread,
       tools,
