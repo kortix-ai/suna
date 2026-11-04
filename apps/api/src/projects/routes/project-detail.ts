@@ -43,8 +43,14 @@ const ProjectDetailSchema = z
     project: ProjectSchema,
     git_connection: z.record(z.string(), z.unknown()).nullable(),
     config: z.record(z.string(), z.unknown()),
-    file_count: z.number(),
-    files: z.array(z.record(z.string(), z.unknown())),
+    file_count: z.number().openapi({
+      deprecated: true,
+      description: 'Deprecated: use `GET /projects/{projectId}/files`.',
+    }),
+    files: z.array(z.record(z.string(), z.unknown())).openapi({
+      deprecated: true,
+      description: 'Deprecated: the first 300 repository paths only. Use `GET /projects/{projectId}/files?path=<folder>`.',
+    }),
   })
   .openapi('ProjectDetail');
 
@@ -260,13 +266,18 @@ export function registerProjectDetailRoutes(): void {
         canSkills,
         canCommands,
       });
+      // The parsed kortix.yaml stays on the server: no client reads it, and on
+      // a large project it was 84 KB of a 208 KB body that every project page
+      // loads (2026-11-04). The summary below, and `manifest_raw` for the
+      // agent editor, are what the readers use.
+      const { manifest: _parsedManifest, ...wireConfig } = gated.config;
       return c.json({
         project: serializeProject(loaded.row, {
           projectRole: loaded.projectRole,
           effectiveRole: loaded.effectiveRole,
         }),
         git_connection: serializeProjectGitConnection(await getProjectGitConnection(projectId)),
-        config: gated.config,
+        config: wireConfig,
         file_count: gated.file_count,
         files: gated.files,
       });

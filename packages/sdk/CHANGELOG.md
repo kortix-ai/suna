@@ -5,6 +5,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Deprecated (project detail file list)
+- `ProjectDetail.files` and `ProjectDetail.file_count` are marked `@deprecated`. `files` holds
+  only the first 300 repository paths, so on a large repository it misses files. Use
+  `listProjectFiles(projectId, { path })` for the files of one folder. Both fields stay on the
+  wire and in the type until the next major.
+- `GET /projects/:id/detail` no longer sends `config.manifest`, the parsed `kortix.yaml`. It was
+  never part of `ProjectConfigSummary`. `config.manifest_raw` still carries the file's text.
+
 ### Deprecated (warm sessions removed)
 - Warm sessions were removed from the platform. The API answers `410 ENDPOINT_RETIRED` to
   `POST /projects/:id/sessions/warm` and `/warm/claim`, and sends `experimental.warm_sessions: false`
