@@ -1,7 +1,8 @@
 'use client';
 
 import type { ProjectSpace } from '@kortix/sdk';
-import { useProjectSessions, useProjectSpaces } from '@kortix/sdk/react';
+import { useProjectSessions, useProjectSpaces, useSessionAsks } from '@kortix/sdk/react';
+import { useReviewSessionSummary } from '../../internal/hooks/use-review-session-summary';
 import { MY_KORTIX_AGENT_NAME } from '@kortix/shared';
 import { CheckIcon, LockSimpleIcon, PlusIcon } from '@phosphor-icons/react';
 import { type KeyboardEvent, useMemo, useState } from 'react';
@@ -45,11 +46,14 @@ function isAt(pathname: string | null, href: string): boolean {
 }
 
 /**
- * The person's open asks across the project. Empty until the Review Center
- * ships `useOpenAskCount(projectId)`: the badge then reads it here.
+ * What waits on the person across the project, the Customize nav's number:
+ * the review summary's "needs you", plus the agents' questions and permission
+ * asks (`useSessionAsks`). Connector approvals are already in the summary.
  */
-function useOpenAskCount(_projectId: string): number {
-  return 0;
+function useReviewBadgeCount(projectId: string): number {
+  const reviewNeedsYou = useReviewSessionSummary(projectId, { enabled: true }).totalNeedsYou;
+  const asks = useSessionAsks(projectId).data?.asks;
+  return reviewNeedsYou + (asks?.filter((ask) => ask.kind !== 'approval').length ?? 0);
 }
 
 /**
@@ -71,9 +75,9 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
   const [createOpen, setCreateOpen] = useState(false);
   const { personal, others } = useMemo(() => orderSpaces(spaces.data ?? []), [spaces.data]);
   const chatHref = `${uiRoutes().project(projectId)}/chat`;
-  // The Review Center on its own route, beside this sidebar (no Customize shell).
-  const review = reviewHref(projectId) ? `${uiRoutes().project(projectId)}/review` : null;
-  const openAsks = useOpenAskCount(projectId);
+  // The Review page on its own route (`reviewHref`), beside this sidebar.
+  const review = reviewHref(projectId);
+  const openAsks = useReviewBadgeCount(projectId);
 
   const hrefOf = (space: ProjectSpace) =>
     space.kind === 'dm' ? uiRoutes().dm(projectId, space.dm_agent_name ?? '') : uiRoutes().channel(projectId, space.slug ?? '');

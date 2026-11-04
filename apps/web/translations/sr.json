@@ -2163,7 +2163,8 @@
       "notSent": "Није послато",
       "retry": "Покушај поново",
       "resume": "Настави",
-      "agentIsWorking": "{agent} ради"
+      "agentIsWorking": "{agent} ради",
+      "needsYouOn": "Потребан си: {header}"
     }
   },
   "agents": {

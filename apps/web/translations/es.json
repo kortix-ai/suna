@@ -2163,7 +2163,8 @@
       "notSent": "No enviado",
       "retry": "Reintentar",
       "resume": "Reanudar",
-      "agentIsWorking": "{agent} está trabajando"
+      "agentIsWorking": "{agent} está trabajando",
+      "needsYouOn": "Te necesita: {header}"
     }
   },
   "agents": {

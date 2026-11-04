@@ -1542,7 +1542,8 @@ const catalog = {
       "notSent": "Not sent",
       "retry": "Retry",
       "resume": "Resume",
-      "agentIsWorking": "{agent} is working"
+      "agentIsWorking": "{agent} is working",
+      "needsYouOn": "Needs you: {header}"
     }
   },
   "agents": {
@@ -1769,7 +1770,8 @@ const catalog = {
         "notReceived": "Didn't receive the link?",
         "confirmNotReceived": "Didn't receive the confirmation email?",
         "resendIn": "Resend in {seconds}",
-        "resend": "Resend"
+        "resend": "Resend",
+        "checkSpam": "Not there? Check your spam or junk folder."
       },
       "credentials": {
         "signin": {

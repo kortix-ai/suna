@@ -1,7 +1,7 @@
 'use client';
 
 import type { ProjectSession, ProjectSpace } from '@kortix/sdk';
-import { type UseProjectSessionsOptions, useFeatureFlag, useProjectSessions } from '@kortix/sdk/react';
+import { type UseProjectSessionsOptions, useFeatureFlag, useProjectSessions, useSessionNeedsYou } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   ChatTeardropTextIcon,
@@ -424,6 +424,10 @@ function ThreadReplyLine({
   const replies = session.reply_count ?? 0;
   const names = useMentionNames(projectId);
   const tTurn = useTranslations('sessionUi.turn');
+  // An ask that waits on the person (its hidden workers' included): the line says so and opens the thread.
+  const asks = useSessionNeedsYou(projectId, session.session_id);
+  const firstAsk = asks.asks[0];
+  const askHeader = firstAsk ? (firstAsk.question?.questions[0]?.header || firstAsk.title) : null;
   // The wait, said: "Starting…" while the thread's computer comes up, else "Working · 0:42".
   // A stopped thread that works again is waking its computer: a start too.
   const booting = session.status === 'provisioning' || session.status === 'queued' || session.status === 'branching' || (working && session.status === 'stopped');
@@ -432,9 +436,9 @@ function ThreadReplyLine({
   // An agent's own post: its reply line starts with the first reply. Mentions read as names; no address shows.
   const reply = showReply || replies > 0 ? oneLineWithoutEmails(names(session.result_excerpt ?? '')) || null : null;
   // The thread's own turn ended ("On it."), its hidden worker still runs: say who works.
-  const childAgent = !working && !needsYou ? (session.active_child_agent ?? null) : null;
+  const childAgent = !working && !needsYou && !asks.needsYou ? (session.active_child_agent ?? null) : null;
   // Nothing to say yet (no reply, no work, nothing waiting): no line, as in Slack.
-  if (!needsYou && !working && !childAgent && !reply && replies === 0) return null;
+  if (!needsYou && !asks.needsYou && !working && !childAgent && !reply && replies === 0) return null;
   const time = <time dateTime={session.updated_at}>{relativeTime(session.updated_at, locale)}</time>;
   if (childAgent) {
     return (
@@ -457,7 +461,7 @@ function ThreadReplyLine({
     );
   }
   // Replies without a text to show: the count and the time alone, no empty face.
-  if (!needsYou && !working && !reply) {
+  if (!needsYou && !asks.needsYou && !working && !reply) {
     return (
       <button
         type="button"
@@ -481,7 +485,14 @@ function ThreadReplyLine({
         onClick={onOpen}
         className="hover:bg-hover focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 pr-1.5 pl-1 text-left outline-none focus-visible:ring-2"
       >
-        {needsYou ? (
+        {asks.needsYou ? (
+          <span className="text-foreground flex min-w-0 items-center gap-1 text-xs font-medium">
+            <SessionStatusMark status="needs-you" waitingOn="answer" />
+            <span className="truncate" title={askHeader ?? undefined}>
+              {askHeader ? tTurn('needsYouOn', { header: askHeader }) : tf('statusValue.needsYou')}
+            </span>
+          </span>
+        ) : needsYou ? (
           <span className="text-foreground flex shrink-0 items-center gap-1 text-xs font-medium">
             <SessionStatusMark status="needs-you" waitingOn={needsYou} />
             {tf('statusValue.needsYou')}

@@ -2163,7 +2163,8 @@
       "notSent": "未发送",
       "retry": "重试",
       "resume": "继续",
-      "agentIsWorking": "{agent} 正在处理"
+      "agentIsWorking": "{agent} 正在处理",
+      "needsYouOn": "需要你：{header}"
     }
   },
   "agents": {
