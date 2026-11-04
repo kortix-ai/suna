@@ -47,6 +47,12 @@ const rootItem = (ref: number, content: (w: V1) => void) => (w: V1) => {
   content(w);
 };
 
+/** An item inside an element of another client (parent by ID: not the root) with content ref `ref`. */
+const childItem = (ref: number, content: (w: V1) => void) => (w: V1) => {
+  w.byte(ref).uint(0).uint(42).uint(0);
+  content(w);
+};
+
 describe('the editor’s own updates pass', () => {
   test('the recorded seed passes as a seed, and every recorded push as a push', () => {
     expect(checkDocUpdate(bytes(EDITOR_SEED), 'seed')).toEqual({ ok: true });
@@ -100,7 +106,7 @@ describe('content the editor never emits is refused before any decode', () => {
   test('the scan’s own worst case: 512 KiB of allowed attribute items with nested values → checked in bounded time and heap', () => {
     // ContentAny items (node attributes) with a nested object each: the most work per byte the scan accepts.
     const payload = items(35_500, (w, i) => {
-      if (i === 0) w.byte(8).uint(PARENT_KEY).str('d');
+      if (i === 0) w.byte(8).uint(0).uint(42).uint(0);
       else w.byte(0x80 | 8).uint(CLIENT).uint(i - 1);
       w.uint(1).byte(118).uint(1).str('k').byte(117).uint(2).byte(125).byte(5).byte(120);
     });
@@ -112,6 +118,36 @@ describe('content the editor never emits is refused before any decode', () => {
     expect(checkDocUpdate(payload, 'push')).toEqual({ ok: true });
     expect(performance.now() - started).toBeLessThan(250);
     expect(process.memoryUsage().heapUsed - heap).toBeLessThan(32 * 1024 * 1024);
+  });
+});
+
+describe('the root of the doc holds XML elements only', () => {
+  test('an XML text, a string or an attribute placed at the root `default` → content_not_allowed (y-tiptap throws on any root child that is not an element)', () => {
+    for (const [name, item] of [
+      ['XML text', rootItem(7, (w) => w.uint(6))],
+      ['string', rootItem(4, (w) => w.str('root text'))],
+      ['format', rootItem(6, (w) => w.str('bold').str('true'))],
+      ['attribute', rootItem(8, (w) => w.uint(1).byte(120))],
+    ] as const) {
+      const update = items(1, item);
+      expect({ name, push: checkDocUpdate(update, 'push'), seed: checkDocUpdate(update, 'seed') })
+        .toEqual({ name, push: { ok: false, reason: 'content_not_allowed' }, seed: { ok: false, reason: 'content_not_allowed' } });
+    }
+  });
+
+  test('a root type the editor never uses, and a map entry on `default` → content_not_allowed; the position-migration map of y-tiptap passes', () => {
+    const otherRoot = items(1, (w) => w.byte(7).uint(PARENT_KEY).str('meta').uint(3).str('paragraph'));
+    expect(checkDocUpdate(otherRoot, 'seed')).toEqual({ ok: false, reason: 'content_not_allowed' });
+    const migrations = items(1, (w) => w.byte(0x20 | 8).uint(PARENT_KEY).str('__tiptap_position_migrations:root:default').str('123:4').uint(1).byte(125).byte(3));
+    expect(checkDocUpdate(migrations, 'push')).toEqual({ ok: true });
+    const rootEntry = items(1, (w) => w.byte(0x20 | 7).uint(PARENT_KEY).str('default').str('key').uint(3).str('paragraph'));
+    expect(checkDocUpdate(rootEntry, 'seed')).toEqual({ ok: false, reason: 'content_not_allowed' });
+  });
+
+  test('an XML element at the root, and text inside an element, pass', () => {
+    expect(checkDocUpdate(items(1, rootItem(7, (w) => w.uint(3).str('paragraph'))), 'push')).toEqual({ ok: true });
+    expect(checkDocUpdate(items(1, childItem(7, (w) => w.uint(6))), 'push')).toEqual({ ok: true });
+    expect(checkDocUpdate(items(1, childItem(4, (w) => w.str('text'))), 'push')).toEqual({ ok: true });
   });
 });
 
@@ -135,10 +171,10 @@ describe('caps, counted in the same pass', () => {
   });
 
   test('strings Yjs would refuse (invalid UTF-8) and format values that are not JSON → malformed', () => {
-    const badUtf8 = new V1().uint(1).uint(1).uint(CLIENT).uint(0).byte(4).uint(PARENT_KEY).str('d').uint(2).byte(0xc3).byte(0x28).uint(0).done();
+    const badUtf8 = new V1().uint(1).uint(1).uint(CLIENT).uint(0).byte(4).uint(0).uint(42).uint(0).uint(2).byte(0xc3).byte(0x28).uint(0).done();
     expect(() => Y.decodeUpdate(badUtf8)).toThrow();
     expect(checkDocUpdate(badUtf8, 'push')).toEqual({ ok: false, reason: 'malformed' });
-    const badJson = items(1, rootItem(6, (w) => w.str('bold').str('{not json')));
+    const badJson = items(1, childItem(6, (w) => w.str('bold').str('{not json')));
     expect(() => Y.decodeUpdate(badJson)).toThrow();
     expect(checkDocUpdate(badJson, 'push')).toEqual({ ok: false, reason: 'malformed' });
   });

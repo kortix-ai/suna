@@ -39,7 +39,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** A ContentDoc item (a Yjs sub-document): valid Yjs, content the editor never emits. */
 const SUBDOC = Buffer.from([1, 1, 77, 0, 9, 1, 0, 0, 118, 0, 0]).toString('base64');
 
-/** One Yjs text item of `size` bytes at the root of `default` (an allowed, plain seed). */
+/** A seed of one paragraph holding `size` bytes of text (paragraph at the root, an XML text in it, the text in that). */
 function bigTextUpdate(size: number): string {
   const varUint = (n: number) => {
     const out: number[] = [];
@@ -50,7 +50,13 @@ function bigTextUpdate(size: number): string {
     out.push(n);
     return out;
   };
-  const head = [1, 1, 77, 0, 4, 1, 7, ...Buffer.from('default'), ...varUint(size)];
+  const str = (text: string) => [...varUint(Buffer.byteLength(text)), ...Buffer.from(text)];
+  const head = [
+    1, 3, 77, 0,
+    7, 1, ...str('default'), 3, ...str('paragraph'), // 77:0, a paragraph at the root
+    7, 0, 77, 0, 6, // 77:1, an XML text inside 77:0
+    4, 0, 77, 1, ...varUint(size), // 77:2, the text inside 77:1
+  ];
   return Buffer.concat([Buffer.from(head), Buffer.alloc(size, 0x61), Buffer.from([0])]).toString('base64');
 }
 
@@ -252,6 +258,8 @@ flow('ART-10', {
       // A Yjs sub-document: decoding one builds a whole Y.Doc. Refused byte by byte, before any decode, on a push and on a seed.
       (await owner.post(UPDATES, { update: SUBDOC }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'content_not_allowed');
       (await owner.post(SEED, { update: SUBDOC, markdown: '', version: 'v9' }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'content_not_allowed');
+      // Text at the root of the doc (not inside an element): y-tiptap throws on it when a tab mounts the doc.
+      (await owner.post(UPDATES, { update: Buffer.from([1, 1, 77, 0, 4, 1, 7, ...Buffer.from('default'), 1, 0x61, 0]).toString('base64') }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'content_not_allowed');
       // 0x4a: a Skip to applyUpdate, an Item with content ref 10 to Y.mergeUpdates. Only the forms every Yjs reader agrees on pass.
       (await owner.post(UPDATES, { update: Buffer.from([0x01, 0x01, 0x01, 0x00, 0x4a, 0x01, 0x00]).toString('base64') }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'malformed');
       if ((await read()).latest_seq !== 3) throw new Error('a refused update was stored');
@@ -351,7 +359,7 @@ flow('ART-10', {
     });
 
     await ctx.step('a seed counts against the same byte budget as pushes: four 2 MiB seeds at once from one person → a 429 among them', async () => {
-      const update = bigTextUpdate(2 * 1024 * 1024 - 32);
+      const update = bigTextUpdate(2 * 1024 * 1024 - 64);
       const answers = await Promise.all(Array.from({ length: 4 }, () => asWriter.post(SEED, { update, markdown: '', version: 'v9' }, { params })));
       const statuses = answers.map((a) => a.statusCode).sort();
       if (!statuses.includes(429) || statuses.some((s) => s !== 409 && s !== 429)) throw new Error(`seed statuses ${JSON.stringify(statuses)}, expected 409 (already seeded) and at least one 429`);

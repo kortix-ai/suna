@@ -72,6 +72,12 @@ class Reader {
     return this.buf[this.pos++]!;
   }
 
+  /** The next byte, not consumed (a one-byte varuint such as a type ref reads as itself). */
+  peek(): number {
+    if (this.pos >= this.buf.length) throw new Refused('malformed');
+    return this.buf[this.pos]!;
+  }
+
   /** lib0 `readVarUint`. */
   uint(): number {
     let num = 0;
@@ -164,6 +170,23 @@ class Reader {
   }
 }
 
+/** The fragment the editor binds (Collaboration `field`). */
+const ROOT_FIELD = 'default';
+/** y-tiptap's map of relative-position migrations for that fragment: map entries of `Any`. */
+const ROOT_POSITION_MIGRATIONS = `__tiptap_position_migrations:root:${ROOT_FIELD}`;
+
+/**
+ * An item whose parent is the root `default` must be an XML element:
+ * y-tiptap maps the fragment's children to block nodes and throws on anything
+ * else (an XML text, a string), so every tab that loads the doc fails to mount.
+ * Reads nothing: the content is read next by `contentLength`.
+ * Only a parent named in the item is seen here: an item placed by its origin
+ * takes its parent from that item at integration, which no byte scan can know.
+ */
+function rootElementOnly(r: Reader, ref: number): void {
+  if (ref !== 7 || r.peek() !== XML_ELEMENT) throw new Refused('content_not_allowed');
+}
+
 /** One item's content (Yjs `readItemContent`): its length in clock units, or refused. */
 function contentLength(r: Reader, ref: number): number {
   switch (ref) {
@@ -237,11 +260,19 @@ function scan(update: Uint8Array, kind: 'push' | 'seed'): void {
         };
         if (info & BIT8) pointsAt(r.uint(), r.uint());
         if (info & BIT7) pointsAt(r.uint(), r.uint());
+        let atRoot = false;
         if ((info & (BIT7 | BIT8)) === 0) {
-          if (r.uint() === 1) r.string();
-          else pointsAt(r.uint(), r.uint());
+          if (r.uint() === 1) {
+            // A root type: only the two the editor uses (recorded in doc-editor-updates.fixture.ts).
+            const root = r.string();
+            if (root === ROOT_FIELD) {
+              if (info & BIT6) throw new Refused('content_not_allowed');
+              atRoot = true;
+            } else if (root !== ROOT_POSITION_MIGRATIONS) throw new Refused('content_not_allowed');
+          } else pointsAt(r.uint(), r.uint());
           if (info & BIT6) r.string();
         }
+        if (atRoot) rootElementOnly(r, ref);
         clock += positive(contentLength(r, ref));
       }
       if (clock > Number.MAX_SAFE_INTEGER) throw new Refused('malformed');
