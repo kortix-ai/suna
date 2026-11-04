@@ -138,3 +138,33 @@ export async function releaseDeletionRequest(requestId: string) {
       and(eq(accountDeletionRequests.id, requestId), eq(accountDeletionRequests.status, 'processing')),
     );
 }
+
+/**
+ * Take one open request for the retention backstop (`retention-erasure.ts`),
+ * however far past its date: the backstop selects requests long past
+ * `MAX_OVERDUE`. The date must have passed and the request must not be
+ * cancelled, whatever the caller selected. Same claim rules otherwise:
+ * `pending`, or a `processing` claim a dead worker left. Null when a cancel or
+ * another worker got there first.
+ */
+export async function claimOpenDeletionRequest(requestId: string) {
+  const [row] = await db
+    .update(accountDeletionRequests)
+    .set({ status: 'processing', processingStartedAt: sql`now()` })
+    .where(
+      and(
+        eq(accountDeletionRequests.id, requestId),
+        lte(accountDeletionRequests.scheduledFor, sql`now()`),
+        sql`not coalesce(${accountDeletionRequests.isCancelled}, false)`,
+        or(
+          eq(accountDeletionRequests.status, 'pending'),
+          and(
+            eq(accountDeletionRequests.status, 'processing'),
+            lte(accountDeletionRequests.processingStartedAt, sql`now() - ${STALE_CLAIM_INTERVAL}`),
+          ),
+        ),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
