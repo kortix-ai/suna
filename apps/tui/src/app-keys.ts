@@ -33,6 +33,8 @@ export type Route =
   | 'apps'
   | 'customize'
   | 'providers'
+  | 'connectors'
+  | 'connect'
   | 'account'
   | 'drive'
   | 'repo'
