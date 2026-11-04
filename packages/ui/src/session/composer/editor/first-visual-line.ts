@@ -19,3 +19,13 @@ export function isCursorOnFirstVisualLine(
   if (selection.$head.index(0) !== 0) return false;
   return view.endOfTextblock('up');
 }
+
+/** Is the caret on the editor's LAST visual row? The mirror of the test above, for Down. */
+export function isCursorOnLastVisualLine(
+  view: Pick<EditorView, 'state' | 'endOfTextblock'>,
+): boolean {
+  const { selection } = view.state;
+  if (!selection.empty) return false;
+  if (selection.$head.index(0) !== view.state.doc.childCount - 1) return false;
+  return view.endOfTextblock('down');
+}

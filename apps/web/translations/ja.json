@@ -21303,7 +21303,8 @@
       "aboutDescription": "この説明について",
       "senderUnavailable": "送信アカウントを読み込めませんでした。差出人の行を確認してください。",
       "quoted": "「{text}」"
-    }
+    },
+    "promptHistory": "履歴 {index}/{total}"
   },
   "commandPalette": {
     "title": "コマンドパレット",

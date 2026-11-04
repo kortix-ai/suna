@@ -21303,7 +21303,8 @@
       "aboutDescription": "Informazioni su questa descrizione",
       "senderUnavailable": "Impossibile caricare l'account di invio. Controlla la riga Da.",
       "quoted": "«{text}»"
-    }
+    },
+    "promptHistory": "Cronologia {index}/{total}"
   },
   "commandPalette": {
     "title": "Tavolozza dei comandi",
