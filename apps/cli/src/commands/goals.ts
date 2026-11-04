@@ -65,6 +65,7 @@ Subcommands:
                       re-arm a missing heartbeat, hold the heartbeat until the
                       next UTC day at the wake cap, drop a closed goal's
                       heartbeat, and prompt the owner for what code cannot fix.
+                      A goal a person paused (paused_at in GOAL.md) is skipped.
   bind [<slug>]       Group the goal under a space or an agent (--space,
                       --agent, --clear). Grouping only: it grants nothing.
   ls                  List every goal in the mounted folders.
@@ -561,6 +562,8 @@ async function checkGoals(ctx: Ctx, folderArg: string | undefined, flags: Flags)
   const results: Array<{ folder: string; violations: string[]; repaired: string[] }> = [];
   for (const folder of folders) {
     const g = readGoal(folder);
+    // A person paused it: nothing wakes it, counts a wake or asks for a fix until they resume it.
+    if (flags.enforce && g?.paused_at) continue;
     const repaired = flags.enforce && g?.format === 'goal.md' && ownerOf(g) === ctx.sessionId ? await repair(ctx, folder, g) : [];
     results.push({ folder, violations: goalViolations(readGoal(folder), { verification: readReport(folder) }), repaired });
   }
@@ -648,6 +651,7 @@ function summarize(folder: string) {
     criteria_met: criteria.filter((c) => c.met).length,
     criteria_total: criteria.length,
     waiting_on: g?.waiting_on ?? null,
+    paused_at: g?.paused_at ?? null,
     owner_session_id: ownerOf(g),
     next_wake_at: g?.next_wake_at ?? null,
     last_wake_at: g?.last_wake_at ?? null,
@@ -667,7 +671,7 @@ function listGoals(json: boolean): number {
   const w = Math.max(...goals.map((g) => g.slug.length), 4);
   process.stdout.write(`\n  ${C.dim}${pad('GOAL', w)}  ${pad('STATE', 16)}  CRITERIA  NEXT WAKE${C.reset}\n`);
   for (const g of goals) {
-    process.stdout.write(`  ${pad(g.slug, w)}  ${pad(g.status, 16)}  ${pad(`${g.criteria_met}/${g.criteria_total}`, 8)}  ${g.next_wake_at ?? '—'}\n`);
+    process.stdout.write(`  ${pad(g.slug, w)}  ${pad(g.paused_at ? `${g.status} (paused)` : g.status, 16)}  ${pad(`${g.criteria_met}/${g.criteria_total}`, 8)}  ${g.next_wake_at ?? '—'}\n`);
   }
   process.stdout.write('\n');
   return 0;
@@ -701,7 +705,7 @@ function goalStatus(slug: string | undefined, json: boolean): number {
     return 0;
   }
   process.stdout.write(`\n  ${C.bold}${s.objective}${C.reset}\n  ${C.dim}${s.folder}${C.reset}\n\n`);
-  process.stdout.write(`  ${C.dim}state    ${C.reset}${s.status}\n  ${C.dim}criteria ${C.reset}${s.criteria_met}/${s.criteria_total} met\n`);
+  process.stdout.write(`  ${C.dim}state    ${C.reset}${s.status}${s.paused_at ? ` (paused by a person ${s.paused_at})` : ''}\n  ${C.dim}criteria ${C.reset}${s.criteria_met}/${s.criteria_total} met\n`);
   process.stdout.write(`  ${C.dim}agent    ${C.reset}${s.assigned_agent ?? '—'}\n  ${C.dim}owner    ${C.reset}${s.owner_session_id ?? '—'}\n  ${C.dim}next     ${C.reset}${s.next_wake_at ?? '—'}\n`);
   if (s.waiting_on) process.stdout.write(`\n  ${C.dim}Waiting on the assigned user:${C.reset} ${s.waiting_on}\n`);
   if (s.summary) process.stdout.write(`\n  ${s.summary}\n`);

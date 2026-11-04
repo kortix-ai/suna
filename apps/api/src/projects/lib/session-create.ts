@@ -158,10 +158,14 @@ type PostgresErrorFields = {
  *
  * A `23505` unique violation on the session PK means the caller retried a
  * create with a `session_id` that already exists; that is an idempotent race,
- * not a defect, so it maps to a typed 409.
+ * not a defect, so it maps to a typed 409 (`createProjectGoal` retries rely on it).
  */
 export function resolveSessionInsertFailure(error: unknown): SessionCreateError {
-  const pg = (error ?? {}) as PostgresErrorFields;
+  // Drizzle throws its own `Failed query: …` error and keeps the postgres.js
+  // error, which carries `code` and `constraint`, on `cause`.
+  const outer = (error ?? {}) as PostgresErrorFields & { cause?: unknown };
+  const cause = (outer.cause ?? null) as PostgresErrorFields | null;
+  const pg: PostgresErrorFields = outer.code || !cause || typeof cause !== 'object' ? outer : { ...cause, message: outer.message ?? cause.message };
   // postgres.js appends the bound parameter values after "\nparams:" in the
   // message. Keep the statement (column names only) and drop the values, so the
   // server log identifies the failing insert without duplicating customer data.

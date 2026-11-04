@@ -292,6 +292,24 @@ test('check --enforce re-arms a missing heartbeat, counts wakes and, at the cap,
   }
 });
 
+test('check --enforce leaves a paused goal alone: no heartbeat, no wake counted, no prompt', async () => {
+  const fake = fakeApi();
+  const root = mkdtempSync(join(tmpdir(), 'goals-paused-'));
+  const folder = join(root, 'drives', 'me', 'Goals', 'eu-billing');
+  mkdirSync(join(folder, 'evidence'), { recursive: true });
+  writeFileSync(join(folder, 'GOAL.md'), formatGoalFile({ ...base, reminder_id: null, paused_at: '2026-11-04T10:00:00Z', paused_by: 'person' }));
+  writeFileSync(join(folder, 'log.md'), '# Log\n');
+  const read = () => parseGoalFile(readFileSync(join(folder, 'GOAL.md'), 'utf8'))!;
+  try {
+    expect((await cli(fake, root, 'owner', ['check', '--enforce', '--quiet'])).code).toBe(0);
+    expect(fake.reminders).toHaveLength(0);
+    expect(read().wake_count ?? 0).toBe(0);
+    expect(fake.requests.some((r) => r.method === 'POST')).toBe(false);
+  } finally {
+    fake.stop();
+  }
+});
+
 test('handover starts a fresh owner with the note, records it, and drops the old heartbeat', async () => {
   const fake = fakeApi();
   const root = mkdtempSync(join(tmpdir(), 'goals-handover-'));

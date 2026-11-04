@@ -80,6 +80,22 @@ describe('resolveSessionInsertFailure', () => {
     expect(JSON.stringify(mapped.body)).not.toContain('insert into');
   });
 
+  test('a unique violation that Drizzle wraps (the code on `cause`) still maps to the typed 409', () => {
+    // Drizzle throws `Failed query: …` and keeps the postgres.js error on `cause`.
+    const raw = Object.assign(new Error('Failed query: insert into "kortix"."project_sessions" …'), {
+      cause: Object.assign(new Error('duplicate key value violates unique constraint "project_sessions_pkey"'), {
+        code: '23505',
+        constraint: 'project_sessions_pkey',
+      }),
+    });
+
+    const mapped = resolveSessionInsertFailure(raw);
+
+    expect(mapped.status).toBe(409);
+    expect(mapped.body).toEqual({ error: 'A session with this id already exists', code: 'session_already_exists' });
+    expect(errorSpy.mock.calls[0]?.[1]).toMatchObject({ pgCode: '23505', constraint: 'project_sessions_pkey' });
+  });
+
   test('a non-Error value still yields the stable body and is logged', () => {
     const mapped = resolveSessionInsertFailure('boom');
 

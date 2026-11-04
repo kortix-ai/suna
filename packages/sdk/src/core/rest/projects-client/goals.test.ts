@@ -2,12 +2,15 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { formatGoalFile, parseGoalFile } from './goal-file';
 import {
+  createProjectGoal,
   getProjectGoalFiles,
   goalHealth,
   listProjectGoals,
   MAKE_GOAL_PROMPT,
   makeSessionGoal,
+  pauseProjectGoal,
   replyToProjectGoal,
+  resumeProjectGoal,
   setProjectGoalBinding,
   stopProjectGoal,
   type ProjectGoalDocument,
@@ -371,5 +374,267 @@ describe('GOAL.md goals', () => {
     expect(post.key).toBe('/projects/p1/sessions/s-chat/prompts');
     expect(JSON.parse(post.body).parts[0].text).toBe(MAKE_GOAL_PROMPT);
     expect(MAKE_GOAL_PROMPT).toContain('kortix goals new');
+  });
+});
+
+describe('person controls: create, pause, resume', () => {
+  const SESSION = '0b6c7c55-8f3e-4b8a-9d55-0e0f6a1c2d3e';
+  let requested: Array<{ method: string; key: string; body: string; ifMatch: string | null }> = [];
+  const routes: Record<string, { status: number; body: unknown }> = {};
+
+  beforeEach(() => {
+    requested = [];
+    for (const key of Object.keys(routes)) delete routes[key];
+    globalThis.fetch = mock(async (input: unknown, init: RequestInit = {}) => {
+      const request = input instanceof Request ? input : null;
+      const url = new URL(request ? request.url : String(input));
+      const method = (init.method ?? request?.method ?? 'GET').toUpperCase();
+      const key = `${url.pathname}${url.searchParams.has('path') ? `?path=${url.searchParams.get('path')}` : ''}`;
+      const body =
+        init.body !== undefined && init.body !== null
+          ? await new Response(init.body as BodyInit).text()
+          : request
+            ? await request.clone().text()
+            : '';
+      requested.push({ method, key, body, ifMatch: new Headers(init.headers ?? request?.headers).get('if-match') });
+      const route = routes[`${method} ${key}`] ?? (method === 'GET' ? routes[key] : undefined) ?? { status: 404, body: { message: 'Not found' } };
+      const text = typeof route.body === 'string' ? route.body : JSON.stringify(route.body);
+      return new Response(text, { status: route.status, headers: { 'content-type': 'application/json', etag: 'v1' } });
+    }) as unknown as typeof fetch;
+  });
+
+  const roster = (default_agent: string | null, agents: Array<Record<string, unknown>>) =>
+    (routes['/projects/p1/detail'] = { status: 200, body: { project: {}, config: { default_agent, agents }, file_count: 0, files: [] } });
+  const drive = () => {
+    routes['/drives'] = { status: 200, body: { drives: [{ driveId: 'd1', projectId: 'p1', personalFolder: '/Users/u1' }] } };
+    roster('mykortix', [
+      { name: 'mykortix', platform: true, sandbox: 'mykortix', mode: 'primary' },
+      { name: 'billing', mode: 'primary' },
+      { name: 'worker', mode: 'primary' },
+    ]);
+  };
+  const put = (path: string) => (routes[`PUT /drives/d1/files/content?path=${path}`] = { status: 200, body: { version: 'v2' } });
+  const sessionCreated = () => {
+    routes['POST /projects/p1/sessions'] = { status: 201, body: { session_id: SESSION } };
+    routes[`/projects/p1/sessions/${SESSION}/reminders`] = { status: 200, body: { reminders: [] } };
+    routes[`POST /projects/p1/sessions/${SESSION}/reminders`] = {
+      status: 201,
+      body: { ...HEARTBEAT, id: 'reminder.bbbbbbbbbbbb', session_id: SESSION, next_fire_at: '2026-11-04T14:00:00.000Z' },
+    };
+    routes[`POST /projects/p1/sessions/${SESSION}/prompts`] = {
+      status: 202,
+      body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false },
+    };
+  };
+
+  test('createProjectGoal writes a draft GOAL.md owned by the new session, then starts that session', async () => {
+    drive();
+    put('/Users/u1/Goals/eu-billing-live/GOAL.md');
+    put('/Users/u1/Goals/eu-billing-live/log.md');
+    sessionCreated();
+
+    const created = await createProjectGoal('p1', {
+      outcome: '  EU billing live  ',
+      criteria: ['Invoices in EUR', ' ', 'VAT on every invoice'],
+      agent: 'billing',
+      assignedUser: 'u1',
+      sessionId: SESSION,
+      now: '2026-11-04T10:00:00.000Z',
+    });
+
+    expect(created).toEqual({
+      slug: 'eu-billing-live',
+      scope: 'personal',
+      driveId: 'd1',
+      folder: '/Users/u1/Goals/eu-billing-live',
+      sessionId: SESSION,
+    });
+    const goalPut = requested.find((r) => r.method === 'PUT' && r.key.endsWith('GOAL.md'))!;
+    const doc = parseGoalFile(goalPut.body)!;
+    expect(doc).toMatchObject({
+      objective: 'EU billing live',
+      status: 'draft',
+      assigned_user: 'u1',
+      agent: 'billing',
+      heartbeat_every: '4h',
+      max_wakes_per_day: 12,
+      max_sessions: 10,
+      sessions: [{ id: SESSION, role: 'owner', since: '2026-11-04T10:00:00.000Z' }],
+      transitions: [{ from: null, to: 'draft', reason: 'goal created', by: 'person' }],
+    });
+    expect(doc.success_criteria).toEqual([
+      { id: 'c1', text: 'Invoices in EUR', met: false, evidence: null },
+      { id: 'c2', text: 'VAT on every invoice', met: false, evidence: null },
+    ]);
+    // The session is created idle; GOAL.md is written once, with its heartbeat; only then does the first wake go in.
+    const order = requested.filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.key.split('?')[0].replace(`/${SESSION}`, '/:s')}`);
+    expect(order).toEqual([
+      'POST /projects/p1/sessions',
+      'POST /projects/p1/sessions/:s/reminders',
+      'PUT /drives/d1/files/content',
+      'PUT /drives/d1/files/content',
+      'POST /projects/p1/sessions/:s/prompts',
+    ]);
+    const create = JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/projects/p1/sessions')!.body);
+    expect(create).toMatchObject({
+      session_id: SESSION,
+      name: 'EU billing live',
+      agent_name: 'billing',
+      metadata: { unattended: 'true', goal: '/drives/me/Goals/eu-billing-live', goal_role: 'owner' },
+    });
+    expect(create.initial_prompt).toBeUndefined();
+    const heartbeat = JSON.parse(requested.find((r) => r.method === 'POST' && r.key.endsWith('/reminders'))!.body);
+    expect(heartbeat).toMatchObject({ prompt: 'Goal wake: /drives/me/Goals/eu-billing-live. Load the kortix-goals skill and run one wake.', every: '4h', in: '4h' });
+    expect(doc).toMatchObject({ reminder_id: 'reminder.bbbbbbbbbbbb', next_wake_at: '2026-11-04T14:00:00.000Z' });
+    const wake = JSON.parse(requested.find((r) => r.method === 'POST' && r.key.endsWith('/prompts'))!.body);
+    expect(wake.client_message_id).toBe(`goal-start:${SESSION}`);
+    expect(wake.parts[0].text).toContain('Goal wake: /drives/me/Goals/eu-billing-live.');
+  });
+
+  test('createProjectGoal picks the next free slug when another goal holds the folder', async () => {
+    drive();
+    routes['/drives/d1/files/content?path=/Users/u1/Goals/ship-it/GOAL.md'] = {
+      status: 200,
+      body: formatGoalFile({ ...GOAL, sessions: [{ id: 'someone-else', role: 'owner', since: '2026-11-01T00:00:00Z' }] }),
+    };
+    put('/Users/u1/Goals/ship-it-2/GOAL.md');
+    put('/Users/u1/Goals/ship-it-2/log.md');
+    sessionCreated();
+    const created = await createProjectGoal('p1', { outcome: 'Ship it', sessionId: SESSION });
+    expect(created.slug).toBe('ship-it-2');
+  });
+
+  test('a retry with the same session id writes nothing twice and accepts the session that already exists', async () => {
+    drive();
+    routes['/drives/d1/files/content?path=/Users/u1/Goals/ship-it/GOAL.md'] = {
+      status: 200,
+      body: formatGoalFile({ ...GOAL, objective: 'Ship it', sessions: [{ id: SESSION, role: 'owner', since: '2026-11-01T00:00:00Z' }] }),
+    };
+    routes['POST /projects/p1/sessions'] = { status: 409, body: { error: 'Session already exists' } };
+    routes[`POST /projects/p1/sessions/${SESSION}/prompts`] = { status: 200, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
+    routes[`/projects/p1/sessions/${SESSION}/reminders`] = {
+      status: 200,
+      body: { reminders: [{ ...HEARTBEAT, session_id: SESSION, prompt: 'Goal wake: /drives/me/Goals/ship-it. Load the kortix-goals skill and run one wake.' }] },
+    };
+    const created = await createProjectGoal('p1', { outcome: 'Ship it', sessionId: SESSION });
+    expect(created).toMatchObject({ slug: 'ship-it', sessionId: SESSION });
+    // GOAL.md already exists: nothing is written, no second heartbeat is armed, and the first wake reuses its id (the server dedupes it).
+    expect(requested.filter((r) => r.method === 'PUT' || (r.method === 'POST' && r.key.endsWith('/reminders')))).toEqual([]);
+    expect(JSON.parse(requested.find((r) => r.key.endsWith('/prompts'))!.body).client_message_id).toBe(`goal-start:${SESSION}`);
+  });
+
+  test('with no agent named, the owner is the default agent unless it is My Kortix (no Files), else the first agent with Files', async () => {
+    drive();
+    put('/Users/u1/Goals/ship-it/GOAL.md');
+    put('/Users/u1/Goals/ship-it/log.md');
+    sessionCreated();
+    await createProjectGoal('p1', { outcome: 'Ship it', sessionId: SESSION });
+    const create = JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/projects/p1/sessions')!.body);
+    expect(create.agent_name).toBe('billing');
+    expect(parseGoalFile(requested.find((r) => r.method === 'PUT' && r.key.endsWith('GOAL.md'))!.body)?.agent).toBe('billing');
+
+    requested = [];
+    roster('worker', [
+      { name: 'mykortix', platform: true, sandbox: 'mykortix' },
+      { name: 'billing' },
+      { name: 'worker' },
+    ]);
+    await createProjectGoal('p1', { outcome: 'Ship it', sessionId: SESSION });
+    expect(JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/projects/p1/sessions')!.body).agent_name).toBe('worker');
+  });
+
+  test('createProjectGoal refuses My Kortix and a project with no agent that has Files', async () => {
+    drive();
+    await expect(createProjectGoal('p1', { outcome: 'Ship it', agent: 'mykortix' })).rejects.toThrow('cannot work a goal');
+    roster('mykortix', [{ name: 'mykortix', platform: true, sandbox: 'mykortix' }, { name: 'old', enabled: false }, { name: 'bot', hidden: true }]);
+    await expect(createProjectGoal('p1', { outcome: 'Ship it' })).rejects.toThrow('no agent');
+    expect(requested.some((r) => r.method !== 'GET')).toBe(false);
+  });
+
+  test('createProjectGoal refuses an empty outcome, more than 8 criteria, and a project with no personal folder', async () => {
+    await expect(createProjectGoal('p1', { outcome: '   ' })).rejects.toThrow('outcome');
+    await expect(createProjectGoal('p1', { outcome: 'x', criteria: Array.from({ length: 9 }, (_, i) => `c${i}`) })).rejects.toThrow('8');
+    drive();
+    routes['/drives'] = { status: 200, body: { drives: [{ driveId: 'd1', projectId: 'p1', personalFolder: null }] } };
+    await expect(createProjectGoal('p1', { outcome: 'x' })).rejects.toThrow('personal folder');
+  });
+
+  const OPEN_DOC: ProjectGoalDocument = {
+    ...GOAL,
+    status: 'active',
+    items: [],
+    sessions: [{ id: 's-owner', role: 'owner', since: '2026-10-21T10:00:00Z' }],
+  };
+  const goalRef = {
+    driveId: 'd1',
+    folder: '/Company/Goals/bank-close',
+    scope: 'company' as const,
+    slug: 'bank-close',
+    coordinatorSessionId: 's-owner',
+    heartbeat: { ...HEARTBEAT, session_id: 's-owner' },
+  };
+  const goalRoutes = (doc: ProjectGoalDocument) => {
+    routes['/drives/d1/files/content?path=/Company/Goals/bank-close/GOAL.md'] = { status: 200, body: formatGoalFile(doc) };
+    routes['/drives/d1/files/content?path=/Company/Goals/bank-close/log.md'] = { status: 200, body: '# Log\n' };
+    put('/Company/Goals/bank-close/GOAL.md');
+    put('/Company/Goals/bank-close/log.md');
+  };
+
+  test('pauseProjectGoal records the pause in GOAL.md on the version it read, logs it and disables the heartbeat', async () => {
+    goalRoutes(OPEN_DOC);
+    routes[`PATCH /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ...HEARTBEAT, state: 'paused' } };
+    const doc = await pauseProjectGoal('p1', goalRef, 'Waiting for the new budget');
+    expect(doc).toMatchObject({ status: 'active', paused_by: 'person' });
+    expect(typeof doc.paused_at).toBe('string');
+    const goalPut = requested.find((r) => r.method === 'PUT' && r.key.endsWith('GOAL.md'))!;
+    expect(goalPut.ifMatch).toBe('v1');
+    expect(parseGoalFile(goalPut.body)?.paused_at).toBe(doc.paused_at);
+    expect(requested.find((r) => r.method === 'PUT' && r.key.endsWith('log.md'))!.body).toContain('paused: Waiting for the new budget');
+    expect(JSON.parse(requested.find((r) => r.method === 'PATCH')!.body)).toEqual({ enabled: false });
+  });
+
+  test('pauseProjectGoal refuses a closed goal and a goal that is already paused', async () => {
+    goalRoutes({ ...OPEN_DOC, status: 'done' });
+    await expect(pauseProjectGoal('p1', goalRef, 'x')).rejects.toThrow('already done');
+    goalRoutes({ ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z' });
+    await expect(pauseProjectGoal('p1', goalRef, 'x')).rejects.toThrow('already paused');
+  });
+
+  test('resumeProjectGoal clears the pause, re-enables the heartbeat and wakes the owner now', async () => {
+    goalRoutes({ ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
+    routes[`PATCH /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: HEARTBEAT };
+    routes['POST /projects/p1/sessions/s-owner/prompts'] = {
+      status: 202,
+      body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false },
+    };
+    const doc = await resumeProjectGoal('p1', { ...goalRef, heartbeat: { ...goalRef.heartbeat, state: 'paused' } });
+    expect(doc).toMatchObject({ paused_at: null, paused_by: null });
+    expect(JSON.parse(requested.find((r) => r.method === 'PATCH')!.body)).toEqual({ enabled: true });
+    const wake = JSON.parse(requested.find((r) => r.method === 'POST')!.body).parts[0].text as string;
+    expect(wake).toContain('Goal wake: /drives/company/Goals/bank-close.');
+    expect(requested.find((r) => r.method === 'PUT' && r.key.endsWith('log.md'))!.body).toContain('resumed');
+  });
+
+  test('resumeProjectGoal refuses a goal that is not paused', async () => {
+    goalRoutes(OPEN_DOC);
+    await expect(resumeProjectGoal('p1', goalRef)).rejects.toThrow('not paused');
+  });
+
+  test('a paused goal is healthy: its disabled heartbeat is the pause, not a problem', () => {
+    const paused = { ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z' };
+    expect(goalHealth(paused, { ...HEARTBEAT, state: 'paused' }, NOW)).toEqual({ state: 'healthy', issues: [] });
+    expect(goalHealth(paused, null, NOW)).toEqual({ state: 'healthy', issues: [] });
+  });
+
+  test('stopping a paused goal clears the pause', async () => {
+    goalRoutes({ ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
+    routes[`DELETE /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ok: true } };
+    const doc = await stopProjectGoal('p1', goalRef, 'Dropped');
+    expect(doc).toMatchObject({ status: 'stopped', paused_at: null, paused_by: null });
+  });
+
+  test('paused_at and paused_by round-trip through GOAL.md', () => {
+    const doc = { ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person', body: '' };
+    expect(parseGoalFile(formatGoalFile(doc))).toMatchObject({ paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
   });
 });
