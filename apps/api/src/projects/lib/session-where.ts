@@ -66,13 +66,14 @@ export function sessionSourceText(source: string | null, triggerSlug: string | n
 
 /**
  * The block's text (pure). Member-written values (names, titles) are one line
- * each, so none can start a heading. The person is named by display name,
+ * each, so none can start a heading, and the space name and parent title are
+ * JSON-quoted, so none can close its quote and read as a directive. The person is named by display name,
  * never by email (`memberDisplayName` keeps only the part before `@`).
  */
 export function sessionWhereText(row: SessionWhereRow): string {
   const space =
     row.space_id && row.space_kind === 'channel'
-      ? `#${oneLine(row.space_slug ?? row.space_name ?? '', 40)}${row.space_name && row.space_name !== row.space_slug ? ` ("${oneLine(row.space_name, 60)}")` : ''}, space ${row.space_id}`
+      ? `#${oneLine(row.space_slug ?? row.space_name ?? '', 40)}${row.space_name && row.space_name !== row.space_slug ? ` (${JSON.stringify(oneLine(row.space_name, 60))})` : ''}, space ${row.space_id}`
       : row.space_id && row.space_kind === 'dm'
         ? `the direct message with ${oneLine(row.space_dm_agent ?? row.space_name ?? 'an agent', 40)}, space ${row.space_id}`
         : null;
@@ -83,7 +84,7 @@ export function sessionWhereText(row: SessionWhereRow): string {
     ...(space ? [`- Space: ${space}`] : []),
     ...(from ? [`- Started from: ${from}`] : []),
     `- Started by: ${name ? oneLine(name, 60) : 'no person (an automation)'}`,
-    ...(row.parent_session_id ? [`- Parent session: "${oneLine(row.parent_title || 'Untitled', 80)}", id ${row.parent_session_id}`] : []),
+    ...(row.parent_session_id ? [`- Parent session: ${JSON.stringify(oneLine(row.parent_title || 'Untitled', 80))}, id ${row.parent_session_id}`] : []),
   ];
   return lines.join('\n').slice(0, SESSION_WHERE_MAX_CHARS);
 }

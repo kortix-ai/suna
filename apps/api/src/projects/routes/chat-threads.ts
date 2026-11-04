@@ -7,7 +7,7 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { auth, errors, json } from '../../openapi';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { CHAT_AGENT, CHAT_ROOT_TEXT_KEY, CHAT_ROOT_TEXT_MAX, sessionPerson } from '../lib/chat-threads';
+import { CHAT_AGENT, CHAT_ROOT_TEXT_KEY, CHAT_ROOT_TEXT_MAX, sessionThread, threadWorksOnlyForPerson } from '../lib/chat-threads';
 import { getOrCreateDm } from '../lib/project-spaces';
 import { requestAuditContext } from '../lib/serializers';
 import { SESSION_CREATE_ERROR_STATUSES, sendSessionCreateError } from '../lib/sessions';
@@ -28,7 +28,7 @@ export function registerChatThreadRoutes(): void {
     path: '/{projectId}/chat/threads',
     tags: ['sessions'],
     summary: 'Start a thread in the person’s chat',
-    description: 'A session posts a top-level message to the person it works for, in their chat with Kortix (their DM with My Kortix). The person’s reply runs in that thread. Flag `chat`.',
+    description: 'A session posts a top-level message to the person it works for, in their chat with Kortix (their DM with My Kortix). The person’s reply runs in that thread. Only a `private` session filed in no space or in one of the person’s own DMs may post; any other session gets 403 `not_the_persons_chat`. Flag `chat`.',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -43,8 +43,16 @@ export function registerChatThreadRoutes(): void {
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const disabled = requireFeatureFlag(c, loaded.row.metadata, 'chat');
     if (disabled) return disabled;
-    const person = await sessionPerson(projectId, caller);
-    if (!person) return c.json({ error: 'This session works for no person', code: 'no_person' }, 409);
+    const thread = await sessionThread(projectId, caller);
+    if (!thread) return c.json({ error: 'This session works for no person', code: 'no_person' }, 409);
+    // Checked before the DM is made: a refused call writes nothing.
+    if (!(await threadWorksOnlyForPerson(projectId, thread))) {
+      return c.json(
+        { error: 'Only a private session in the person’s own chat or in no space posts to their chat', code: 'not_the_persons_chat' },
+        403,
+      );
+    }
+    const person = thread.personId;
     const space = await getOrCreateDm(projectId, loaded.row.accountId, person, CHAT_AGENT);
     const result = await createSession({
       source: 'system:chat-post',

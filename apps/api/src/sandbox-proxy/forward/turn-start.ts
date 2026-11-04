@@ -397,13 +397,13 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
         isPlatinumConfigured()
           ? import('../../memory/my-memory').then(({ myKortixMemoryTurn }) => myKortixMemoryTurn(req.record.projectId, sessionId, req.userId))
           : null,
-        chatThreadBoardTurn(req.record.projectId, sessionId),
+        chatThreadBoardTurn(req.record.projectId, sessionId, req.userId),
       ]);
       // The board before the memory list: the end is what gets cut.
       put([board, memory?.system]);
       return;
     }
-    const board = myKortix ? await chatThreadBoardTurn(req.record.projectId, sessionId) : null;
+    const board = myKortix ? await chatThreadBoardTurn(req.record.projectId, sessionId, req.userId) : null;
     // Flag off: the memory and drives services are never loaded on this path.
     if (!(await memoryChannelsOn(req.record.projectId))) return put([board]);
     const { memoryTurnContext } = await import('../../memory/turn-context');
