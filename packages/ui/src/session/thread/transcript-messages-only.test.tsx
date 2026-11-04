@@ -259,4 +259,18 @@ describe('Show work', () => {
     expect(rowCount(html)).toBe(1);
     expect(render(peer, ROWS)).toContain('reviewer');
   });
+
+  test("an agent's post into the space thread (`kortix spaces post --thread`) is a row in a messages-only thread", () => {
+    const post = turnOf([
+      message('prompt', 'user', [{
+        type: 'text', id: 'q', synthetic: true,
+        text: '[message from launch-weather · session 3f2a1b9c · #m_synth · post in this space]\n\nTomorrow looks dry too.\n\n---\nfooter',
+      }]),
+    ]);
+    const html = render(post, { ...ROWS, messagesOnly: true });
+    expect(html).toContain('Tomorrow looks dry too.');
+    expect(html).toContain('launch-weather');
+    expect(html).not.toContain('footer');
+    expect(rowCount(html)).toBe(1);
+  });
 });

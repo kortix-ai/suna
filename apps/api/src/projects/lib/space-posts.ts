@@ -18,7 +18,7 @@
 // own threads, `spaceAccessFor`), or a DM the person owns, from a private
 // session that works only for them (`threadWorksOnlyForPerson`).
 import { projectSessions, projectSpaceMembers, projects } from '@kortix/db';
-import { isMyKortixAgentName } from '@kortix/shared';
+import { isMyKortixAgentName, SPACE_POST_SUMMARY } from '@kortix/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Actor } from '../../iam/actor';
 import { db } from '../../shared/db';
@@ -207,7 +207,7 @@ export async function postIntoSpace(input: {
     try {
       const outcome = await sendPeerMessage({
         sender,
-        body: { to: target, message: input.text },
+        body: { to: target, message: input.text, summary: SPACE_POST_SUMMARY },
         caller: {
           actor: input.actor ?? { userId: person, accountId: project.accountId, credential: { kind: 'jwt' }, ctx: {} },
           userId: person,

@@ -56,7 +56,7 @@ import { TranscriptRowsContext } from './transcript-rows';
 import { messageWorkerIds, ShowWork, WorkerTranscripts } from './show-work';
 import { TypingIndicator } from './typing-indicator';
 import { AgentBusyRow } from './thread-boot-rows';
-import { MessageRow } from '../turn/message-row';
+import { MESSAGE_TEXT_CLASS, MessageRow } from '../turn/message-row';
 import { agentDisplayLabel } from '../composer/agent-selector';
 import { participantLabel } from '../participants/session-participants';
 import { AgentMark } from '../../internal/components/agent-mark';
@@ -113,7 +113,7 @@ import { parseNoticeBatch, parseSubagentNotice, type NoticeBatchItem, type Subag
 import { SubagentNoticeRow } from '../turn/subagent-notice-row';
 import { NoticeBatchGroup } from '../turn/notice-batch-group';
 import { PeerMessageRow } from '../turn/peer-message-row';
-import { parsePeerMessagePrompt, type PeerMessagePromptInfo } from '@kortix/shared';
+import { parsePeerMessagePrompt, SPACE_POST_SUMMARY, type PeerMessagePromptInfo } from '@kortix/shared';
 import { ToolPartRenderer, TurnLiveContext } from '../tool/tool-renderers';
 import {
   ImageGenDigestsContext,
@@ -2611,13 +2611,16 @@ function SessionTurnImpl(props: SessionTurnProps) {
         shownSegments.length > 0
       : turn.assistant.length > 0 || model.working || !!errors.turnErrorRow.text;
     // Messages only: a person's prompt, never a notice, a report, a peer message or a restore note.
+    // An agent's post into this space thread (`SPACE_POST_SUMMARY`) is a message; other peer messages are work.
+    const spacePost = userContent.peerMessage?.summary === SPACE_POST_SUMMARY;
     const showUser = messagesOnly
-      ? userContent.hasVisibleUserContent &&
-        !userContent.sessionReport &&
-        !userContent.noticeBatch &&
-        !userContent.subagentNotice &&
-        !userContent.peerMessage &&
-        !isSessionLogRestoreNote(turn.user)
+      ? spacePost ||
+        (userContent.hasVisibleUserContent &&
+          !userContent.sessionReport &&
+          !userContent.noticeBatch &&
+          !userContent.subagentNotice &&
+          !userContent.peerMessage &&
+          !isSessionLogRestoreNote(turn.user))
       : userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.peerMessage || userContent.systemMessages.length > 0;
     return (
       <div className="text-factor-[2]">
@@ -2626,22 +2629,25 @@ function SessionTurnImpl(props: SessionTurnProps) {
             // The first message's turn clips its toolbar's overhang: it sits inside the row.
             className={cn('group/turn', props.isFirstTurn && '[&_[data-slot=row-toolbar]]:top-0.5')}
             avatar={
-              sender ? (
+              sender || (messagesOnly && spacePost) ? (
                 // 36px, the `lg` avatar column (`w-10`).
                 <AgentMark
                   slug={author?.kind === 'session' && author.agent ? author.agent : DEFAULT_AGENT_SLUG}
                   size={28}
                   tile={36}
-                  label={sender}
+                  label={sender ?? userContent.peerMessage?.from ?? ''}
                 />
               ) : (
                 <UserAvatar email={person?.email ?? ''} name={personName} avatarUrl={person?.avatarUrl} size="lg" />
               )
             }
-            name={sender ?? (personName || rows.unknownAuthor)}
+            name={sender ?? (spacePost ? userContent.peerMessage!.from : personName || rows.unknownAuthor)}
             time={rowTime(userAt, locale)}
           >
-            {messagesOnly ? (
+            {messagesOnly && spacePost ? (
+              // The agent's post as its own words, without the "Message from" frame.
+              <p className={cn(MESSAGE_TEXT_CLASS, 'text-pretty whitespace-pre-wrap wrap-anywhere')}>{userContent.peerMessage!.text}</p>
+            ) : messagesOnly ? (
               <TurnUserBubble {...props} queueTone={queueTone} userContent={userContent} />
             ) : (
               <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />

@@ -31,6 +31,13 @@ export interface PeerMessagePromptInfo {
   text: string;
 }
 
+/**
+ * The summary of a message an agent posted into a space's thread
+ * (`kortix spaces post --thread`, apps/api space-posts.ts): a messages-only
+ * thread shows it as that agent's message, where it hides other peer messages.
+ */
+export const SPACE_POST_SUMMARY = 'post in this space';
+
 const FOOTER = '\n\n---\n';
 const LABEL: Record<PeerMessageKind, string> = {
   message: 'message',
