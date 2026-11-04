@@ -57,9 +57,8 @@ import { JoinChannelButton } from './space-members';
 import { SpaceRosterButton } from './space-roster';
 import { agentLabel, liveReplyCount, spaceRoster, threadIsWorking } from './space-timeline';
 import { CHAT_TAB, openTabId } from './space-tab-list';
-import { AddTabMenu, StoredTabPanel, StoredTabTrigger, useSpaceTabs } from './space-tabs';
+import { AddTabMenu, type SpaceFile, StoredTabPanel, StoredTabTrigger, useSpaceTabs } from './space-tabs';
 import { SpaceTimeline, useSpaceThreads, type SpaceThreads } from './space-timeline-view';
-import { SpaceThreadsTab } from './space-threads-tab';
 
 /** The search and filter keys of the Threads and Links tabs. */
 const TAB_FILTER_PARAMS = ['q', 'status', 'by', 'agent', 'active', 'pinned', 'added'] as const;
@@ -78,6 +77,11 @@ export interface SpaceViewProps {
    */
   renderFolder?: (folder: SpaceFolder) => ReactNode;
   /**
+   * A file tab: the host's Drive file view (apps/web passes its Drive file
+   * viewer). Absent: a file tab shows its empty state.
+   */
+  renderFile?: (file: SpaceFile) => ReactNode;
+  /**
    * Chat (flag `chat`): the DM as the person's only chat with
    * Kortix. A plain header and no intro; a thread links its full session.
    * Its tab row is the same as any space's: Chat, then its own tabs.
@@ -86,6 +90,8 @@ export interface SpaceViewProps {
 }
 
 /** What a host's folder view draws for a space. `place` is "#general" or the DM's agent. */
+export type { SpaceFile };
+
 export interface SpaceFolder {
   space: ProjectSpace;
   tab: 'files' | 'memory';
@@ -130,7 +136,7 @@ export function SpaceView(props: SpaceViewProps) {
   );
 }
 
-function SpaceViewBody({ projectId, target, beforeSend, renderFolder, chat = false }: SpaceViewProps) {
+function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile, chat = false }: SpaceViewProps) {
   const t = useTranslations('spaces.view');
   const router = useUiRouter();
   const pathname = useUiPathname();
@@ -335,8 +341,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, chat = fal
             onOpenMembers={() => setDetails('members')}
             beforeSend={beforeSend}
             renderFolder={renderFolder}
-            params={searchParams}
-            setParams={setParams}
+            renderFile={renderFile}
           />
         </ComposerDropZone>
       </ResizablePanel>
@@ -380,8 +385,7 @@ function SpaceTabs({
   onOpenMembers,
   beforeSend,
   renderFolder,
-  params,
-  setParams,
+  renderFile,
 }: {
   projectId: string;
   space: ProjectSpace;
@@ -396,9 +400,7 @@ function SpaceTabs({
   onOpenMembers: () => void;
   beforeSend?: () => Promise<void>;
   renderFolder?: (folder: SpaceFolder) => ReactNode;
-  /** The page's query: the Threads tab keeps its search and filters there. */
-  params: { get(name: string): string | null };
-  setParams: (change: (params: URLSearchParams) => void) => void;
+  renderFile?: (file: SpaceFile) => ReactNode;
 }) {
   const t = useTranslations('spaces.view');
   const state = useSpaceTabs(projectId, space);
@@ -428,17 +430,7 @@ function SpaceTabs({
             place={place}
             state={state}
             renderFolder={renderFolder}
-            threads={
-              <SpaceThreadsTab
-                projectId={projectId}
-                space={space}
-                threads={threads}
-                selectedId={threadId}
-                onOpenThread={onOpenThread}
-                params={params}
-                setParams={setParams}
-              />
-            }
+            renderFile={renderFile}
           />
         </TabsContent>
       ))}

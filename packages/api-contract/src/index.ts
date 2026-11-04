@@ -1284,18 +1284,22 @@ export type SessionDeleteResult = z.infer<typeof SessionDeleteResultSchema>;
 export const SPACE_KINDS = ['channel', 'dm'] as const;
 /** Who sees a channel: every project member (`public`) or only its members (`private`). */
 export const SPACE_VISIBILITIES = ['public', 'private'] as const;
-/** What a stored space tab shows. Chat is not a kind: it is always the first tab and is never stored. */
-export const SPACE_TAB_KINDS = ['threads', 'artifact', 'app', 'folder', 'link', 'memory'] as const;
-/** The kinds whose tab names its target in `ref`. */
-export const SPACE_TAB_REF_KINDS = ['artifact', 'app', 'folder', 'link'] as const;
+/**
+ * What a stored space tab shows. Chat is not a kind: it is always the first
+ * tab and is never stored. `threads` and `memory` were kinds before
+ * 2026-11-04; a stored row with one is dropped on read (no migration).
+ */
+export const SPACE_TAB_KINDS = ['file', 'folder', 'artifact', 'app', 'link'] as const;
 /** At most this many stored tabs per space (Chat not counted). */
 export const SPACE_TABS_MAX = 20;
 export const SPACE_TAB_TITLE_MAX = 60;
 
 /**
- * One stored tab of a space, after Chat. `ref`: an artifact id (`artifact`),
- * an App slug (`app`), a Drive folder path (`folder`) or an https URL
- * (`link`); required for those kinds, absent for `threads` and `memory`.
+ * One stored tab of a space, after Chat. `ref` (required): a Drive file path
+ * (`file`, any file: an `.html` page renders as the page), a Drive folder
+ * path (`folder`), an artifact id (`artifact`), an App slug (`app`) or an
+ * https URL (`link`). `embeddable`: `link` only, set by the server on every
+ * write (it fetches the URL once); a value sent in a request is ignored.
  */
 export const SpaceTabSchema = z
   .object({
@@ -1303,15 +1307,21 @@ export const SpaceTabSchema = z
     id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
     title: z.string().trim().min(1).max(SPACE_TAB_TITLE_MAX),
     kind: z.enum(SPACE_TAB_KINDS),
-    ref: z.string().trim().min(1).max(2_048).optional(),
+    ref: z.string().trim().min(1).max(2_048),
+    /**
+     * A `link` tab: the page lets the web app frame it (no `X-Frame-Options`
+     * DENY/SAMEORIGIN, a `frame-ancestors` that allows it) and the server
+     * reached it. False: the tab shows a link card instead of a frame.
+     */
+    embeddable: z.boolean().optional(),
   })
   .strict()
   .superRefine((tab, ctx) => {
-    const needsRef = (SPACE_TAB_REF_KINDS as readonly string[]).includes(tab.kind);
-    if (needsRef && !tab.ref) ctx.addIssue({ code: 'custom', path: ['ref'], message: `A ${tab.kind} tab needs a ref.` });
-    if (!needsRef && tab.ref !== undefined) ctx.addIssue({ code: 'custom', path: ['ref'], message: `A ${tab.kind} tab takes no ref.` });
-    if (tab.kind === 'link' && tab.ref && !/^https:\/\/[^\s]+$/i.test(tab.ref)) {
+    if (tab.kind === 'link' && !/^https:\/\/[^\s]+$/i.test(tab.ref)) {
       ctx.addIssue({ code: 'custom', path: ['ref'], message: 'A link tab needs an https URL.' });
+    }
+    if ((tab.kind === 'file' || tab.kind === 'folder') && !tab.ref.startsWith('/')) {
+      ctx.addIssue({ code: 'custom', path: ['ref'], message: `A ${tab.kind} tab needs a Drive path that starts with "/".` });
     }
   });
 export type SpaceTab = z.infer<typeof SpaceTabSchema>;

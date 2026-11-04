@@ -1161,15 +1161,19 @@ export const projectSpaceVisibilityEnum = kortixSchema.enum('project_space_visib
 
 /**
  * One stored tab of a space (`project_spaces.tabs`). The Chat tab is not
- * stored: it is always first. `ref` names what the tab shows: an artifact id,
- * an App slug, a Drive folder path or an https URL (`SpaceTabSchema` in
- * `@kortix/api-contract` validates every write).
+ * stored: it is always first. `ref` names what the tab shows: a Drive file or
+ * folder path, an artifact id, an App slug or an https URL (`SpaceTabSchema`
+ * in `@kortix/api-contract` validates every write). `embeddable`: a link tab
+ * whose page the web app may frame, set by the API on write. Rows written
+ * before 2026-11-04 may hold `threads` or `memory`: the API drops those on
+ * read.
  */
 export interface ProjectSpaceTabRecord {
   id: string;
   title: string;
-  kind: 'threads' | 'artifact' | 'app' | 'folder' | 'link' | 'memory';
+  kind: 'file' | 'folder' | 'artifact' | 'app' | 'link' | 'threads' | 'memory';
   ref?: string;
+  embeddable?: boolean;
 }
 
 /**

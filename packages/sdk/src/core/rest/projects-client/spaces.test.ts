@@ -26,6 +26,8 @@ import {
   type ProjectSpace,
   type ProjectSpaceLink,
   type ProjectSpaceMemberList,
+  type ProjectSpaceTab,
+  type ProjectSpaceTabKind,
 } from './spaces';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -367,16 +369,28 @@ test('adding someone outside the project rejects with ApiError 400 not_project_m
 });
 
 test('setProjectSpaceTabs PUTs the whole ordered list and returns the space with its tabs', async () => {
-  const tabs = [
-    { id: 'threads', title: 'Threads', kind: 'threads' as const },
-    { id: 'docs', title: 'Docs', kind: 'link' as const, ref: 'https://example.test/docs' },
+  const tabs: ProjectSpaceTab[] = [
+    { id: 'page', title: 'Launch page', kind: 'file', ref: '/Company/Channels/general/launch.html' },
+    { id: 'docs', title: 'Docs', kind: 'link', ref: 'https://example.test/docs' },
   ];
-  nextResponse = { status: 200, body: { ...general, tabs } };
+  nextResponse = { status: 200, body: { ...general, tabs: [tabs[0], { ...tabs[1], embeddable: false }] } };
   const space = await setProjectSpaceTabs('P1', general.space_id, tabs);
   expect(calls).toEqual([
     { url: `http://test.local/v1/projects/P1/spaces/${general.space_id}/tabs`, method: 'PUT', body: { tabs } },
   ]);
-  expect(space.tabs).toEqual(tabs);
+  // The server sets a link tab's embeddable.
+  expect(space.tabs).toEqual([tabs[0]!, { ...tabs[1]!, embeddable: false }]);
+});
+
+test('ProjectSpaceTabKind is file | folder | artifact | app | link, and every tab has a ref', () => {
+  const kinds: ProjectSpaceTabKind[] = ['file', 'folder', 'artifact', 'app', 'link'];
+  // @ts-expect-error threads is not a tab kind any more
+  const threads: ProjectSpaceTabKind = 'threads';
+  // @ts-expect-error memory is not a tab kind any more
+  const memory: ProjectSpaceTabKind = 'memory';
+  // @ts-expect-error a tab without a ref
+  const noRef: ProjectSpaceTab = { id: 'x', title: 'X', kind: 'app' };
+  expect([kinds.length, threads, memory, noRef.id]).toEqual([5, 'threads', 'memory', 'x']);
 });
 
 test('setProjectSpaceTabs rejects a refusal with ApiError and never reaches the host error handler', async () => {

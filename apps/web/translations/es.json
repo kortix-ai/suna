@@ -24666,8 +24666,7 @@
       "openFullSession": "Open full session",
       "tabEdit": {
         "kind": {
-          "threads": "Threads",
-          "memory": "Memory",
+          "file": "Archivo",
           "artifact": "Artifact",
           "app": "App",
           "folder": "Folder",
@@ -24679,13 +24678,17 @@
         "noApps": "No Apps in this project",
         "spaceFiles": "This space’s files",
         "otherFolder": "Another folder…",
+        "fileItem": "Archivo…",
         "linkItem": "Link…",
         "linkTitle": "Add a link",
         "linkHint": "An https page, shown inside the tab.",
         "folderTitle": "Add a folder",
         "folderHint": "A Drive folder, by its path.",
+        "fileTitle": "Añadir un archivo",
+        "fileHint": "Cualquier archivo de Drive, por su ruta. Un archivo .html se muestra como página.",
         "url": "URL",
         "path": "Folder path",
+        "filePath": "Ruta del archivo",
         "submit": "Add tab",
         "cancel": "Cancel",
         "options": "Options for {name}",
@@ -24700,6 +24703,10 @@
         "undo": "Undo",
         "saveError": "The tabs could not be saved",
         "openLink": "Open in new tab",
+        "linkCard": {
+          "description": "{host} no permite que otros sitios lo muestren dentro de una pestaña.",
+          "open": "Abrir"
+        },
         "missing": {
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."

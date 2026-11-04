@@ -12,11 +12,6 @@ export const CHAT_TAB = 'chat';
 export const SPACE_TABS_MAX = 20;
 export const SPACE_TAB_TITLE_MAX = 60;
 
-/** The kinds whose tab names its target in `ref`. */
-export function tabNeedsRef(kind: ProjectSpaceTabKind): boolean {
-  return kind === 'artifact' || kind === 'app' || kind === 'folder' || kind === 'link';
-}
-
 /** The open tab: a stored tab's id when `?tab=` names one, else Chat. */
 export function openTabId(tabs: readonly ProjectSpaceTab[], param: string | null): string {
   return param && tabs.some((tab) => tab.id === param) ? param : CHAT_TAB;
@@ -38,7 +33,7 @@ export function tabTitle(text: string, fallback: string): string {
   return flat.length > SPACE_TAB_TITLE_MAX ? `${flat.slice(0, SPACE_TAB_TITLE_MAX - 1)}…` : flat;
 }
 
-/** The last segment of a Drive folder path, else the path. */
+/** The last segment of a Drive file or folder path, else the path. */
 export function folderTitle(path: string): string {
   return path.split('/').filter(Boolean).at(-1) ?? path;
 }
@@ -52,10 +47,23 @@ export function linkTitle(url: string): string {
   }
 }
 
-/** A Drive folder path as stored: one leading slash, no trailing slash. */
+/** A Drive file or folder path as stored: one leading slash, no trailing slash. */
 export function normalizeFolderPath(path: string): string {
   const inner = path.trim().replace(/^\/+|\/+$/g, '');
   return inner ? `/${inner}` : '';
+}
+
+/** A file tab shows the file as a page in a sandboxed frame: `.html` and `.htm`. */
+export function isHtmlPath(path: string): boolean {
+  return /\.html?$/i.test(path.trim());
+}
+
+/**
+ * Where a "File…" path starts: the space's own files folder plus a slash, so
+ * a person types only the file name. `/` when the space has no folder.
+ */
+export function filePathPrefix(folder: string | null): string {
+  return folder ? `${folder.replace(/\/+$/, '')}/` : '/';
 }
 
 /** Whether the text is a URL a link tab may store. */

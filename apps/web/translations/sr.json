@@ -24666,8 +24666,7 @@
       "openFullSession": "Open full session",
       "tabEdit": {
         "kind": {
-          "threads": "Threads",
-          "memory": "Memory",
+          "file": "Fajl",
           "artifact": "Artifact",
           "app": "App",
           "folder": "Folder",
@@ -24679,13 +24678,17 @@
         "noApps": "No Apps in this project",
         "spaceFiles": "This space’s files",
         "otherFolder": "Another folder…",
+        "fileItem": "Fajl…",
         "linkItem": "Link…",
         "linkTitle": "Add a link",
         "linkHint": "An https page, shown inside the tab.",
         "folderTitle": "Add a folder",
         "folderHint": "A Drive folder, by its path.",
+        "fileTitle": "Dodaj fajl",
+        "fileHint": "Bilo koji fajl u Drive-u, po putanji. Fajl .html se prikazuje kao stranica.",
         "url": "URL",
         "path": "Folder path",
+        "filePath": "Putanja fajla",
         "submit": "Add tab",
         "cancel": "Cancel",
         "options": "Options for {name}",
@@ -24700,6 +24703,10 @@
         "undo": "Undo",
         "saveError": "The tabs could not be saved",
         "openLink": "Open in new tab",
+        "linkCard": {
+          "description": "{host} ne dozvoljava drugim sajtovima da ga prikažu u kartici.",
+          "open": "Otvori"
+        },
         "missing": {
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."

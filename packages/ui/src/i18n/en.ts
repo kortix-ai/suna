@@ -9007,8 +9007,7 @@ const catalog = {
       "openFullSession": "Open full session",
       "tabEdit": {
         "kind": {
-          "threads": "Threads",
-          "memory": "Memory",
+          "file": "File",
           "artifact": "Artifact",
           "app": "App",
           "folder": "Folder",
@@ -9020,13 +9019,17 @@ const catalog = {
         "noApps": "No Apps in this project",
         "spaceFiles": "This space’s files",
         "otherFolder": "Another folder…",
+        "fileItem": "File…",
         "linkItem": "Link…",
         "linkTitle": "Add a link",
         "linkHint": "An https page, shown inside the tab.",
         "folderTitle": "Add a folder",
         "folderHint": "A Drive folder, by its path.",
+        "fileTitle": "Add a file",
+        "fileHint": "Any file in Drive, by its path. An .html file shows as a page.",
         "url": "URL",
         "path": "Folder path",
+        "filePath": "File path",
         "submit": "Add tab",
         "cancel": "Cancel",
         "options": "Options for {name}",
@@ -9041,6 +9044,10 @@ const catalog = {
         "undo": "Undo",
         "saveError": "The tabs could not be saved",
         "openLink": "Open in new tab",
+        "linkCard": {
+          "description": "{host} does not allow other sites to show it inside a tab.",
+          "open": "Open"
+        },
         "missing": {
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."

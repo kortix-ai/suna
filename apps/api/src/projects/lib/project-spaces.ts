@@ -14,10 +14,12 @@
  * takes the caller's `SpaceAccess`, and a channel the caller may not see reads
  * as not found. A taken slug's 409 never names a hidden channel.
  */
-import type { PrivateChannelSummary, Space, SpaceCreateInput, SpaceTab, SpaceUpdateInput } from '@kortix/api-contract';
+import { SPACE_TAB_KINDS, type PrivateChannelSummary, type Space, type SpaceCreateInput, type SpaceTab, type SpaceUpdateInput } from '@kortix/api-contract';
 import { projectSessions, projectSpaceLinks, projectSpaceMembers, projectSpaces } from '@kortix/db';
 import { spaceSlug } from '@kortix/shared';
 import { type SQL, and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { probeLinkEmbeddable } from '../../apps/external';
+import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
@@ -86,9 +88,18 @@ export function serializeSpace(row: SpaceRow, viewer: SpaceViewer, isMember: boo
   };
 }
 
-/** The stored tabs as the contract shapes them: a `ref` only where it is set. */
+/**
+ * The stored tabs as the contract shapes them. A row of a kind that no longer
+ * exists (`threads`, `memory`, before 2026-11-04) or without a ref is dropped
+ * here, on read: no migration rewrites the stored jsonb, and the next write
+ * stores the list without it.
+ */
 function serializeTabs(tabs: SpaceRow['tabs'] | null | undefined): SpaceTab[] {
-  return (tabs ?? []).map((tab) => ({ id: tab.id, title: tab.title, kind: tab.kind, ...(tab.ref ? { ref: tab.ref } : {}) }));
+  return (tabs ?? []).flatMap((tab): SpaceTab[] => {
+    if (!(SPACE_TAB_KINDS as readonly string[]).includes(tab.kind) || !tab.ref) return [];
+    const kind = tab.kind as SpaceTab['kind'];
+    return [{ id: tab.id, title: tab.title, kind, ref: tab.ref, ...(kind === 'link' ? { embeddable: tab.embeddable === true } : {}) }];
+  });
 }
 
 async function findDefaultSpace(projectId: string): Promise<SpaceRow | null> {
@@ -604,9 +615,32 @@ export async function mayEditSpaceTabs(
   return isSpaceMember(row, person);
 }
 
-/** Replace a space's tabs (the whole ordered list). Returns the updated row, null when it is gone. */
-export async function setSpaceTabs(projectId: string, spaceId: string, tabs: readonly SpaceTab[]): Promise<SpaceRow | null> {
-  const stored = tabs.map((tab) => ({ id: tab.id, title: tab.title, kind: tab.kind, ...(tab.ref ? { ref: tab.ref } : {}) }));
+/**
+ * Replace a space's tabs (the whole ordered list). A link tab's `embeddable`
+ * is the server's: kept from the stored tab with the same URL, else probed
+ * once (`probeLinkEmbeddable`, all new URLs at once, 5 s each). A value in
+ * the request is ignored. Returns the updated row, null when it is gone.
+ */
+export async function setSpaceTabs(
+  projectId: string,
+  space: Pick<SpaceRow, 'spaceId' | 'tabs'>,
+  tabs: readonly SpaceTab[],
+  probe: (url: string) => Promise<boolean> = (url) => probeLinkEmbeddable(url, config.FRONTEND_URL),
+): Promise<SpaceRow | null> {
+  const known = new Map(
+    (space.tabs ?? []).filter((tab) => tab.kind === 'link' && typeof tab.embeddable === 'boolean').map((tab) => [tab.ref, tab.embeddable === true]),
+  );
+  const fresh = [...new Set(tabs.filter((tab) => tab.kind === 'link' && !known.has(tab.ref)).map((tab) => tab.ref))];
+  const probed = await Promise.all(fresh.map(async (url) => [url, await probe(url)] as const));
+  for (const [url, embeddable] of probed) known.set(url, embeddable);
+  const stored = tabs.map((tab) => ({
+    id: tab.id,
+    title: tab.title,
+    kind: tab.kind,
+    ref: tab.ref,
+    ...(tab.kind === 'link' ? { embeddable: known.get(tab.ref) === true } : {}),
+  }));
+  const spaceId = space.spaceId;
   const [row] = await db
     .update(projectSpaces)
     .set({ tabs: stored, updatedAt: new Date() })

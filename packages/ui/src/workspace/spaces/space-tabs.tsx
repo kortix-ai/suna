@@ -8,13 +8,13 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowSquareOutIcon,
-  BrainIcon,
   CaretDownIcon,
+  FileIcon,
   FileTextIcon,
   FolderSimpleIcon,
+  GlobeSimpleIcon,
   type Icon,
   LinkSimpleIcon,
-  ListBulletsIcon,
   PencilSimpleIcon,
   PlusIcon,
   XIcon,
@@ -44,11 +44,11 @@ import { Input } from '../../primitives/input';
 import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '../../primitives/modal';
 import { TabsTrigger } from '../../primitives/tabs';
 import { errorToast, successToast } from '../../primitives/toast';
-import { MemoryView } from '../memory/memory-view';
 import { AppTab, ArtifactTab } from '../space/space-tab-panels';
 import {
   SPACE_TABS_MAX,
   appendTab,
+  filePathPrefix,
   folderTitle,
   isLinkUrl,
   linkTitle,
@@ -62,8 +62,7 @@ import {
 
 /** The glyph of each kind, in the add menu and the empty state of a tab whose target is gone. */
 const KIND_ICON: Record<ProjectSpaceTabKind, Icon> = {
-  threads: ListBulletsIcon,
-  memory: BrainIcon,
+  file: FileIcon,
   artifact: FileTextIcon,
   app: AppWindowIcon,
   folder: FolderSimpleIcon,
@@ -184,9 +183,9 @@ export function StoredTabTrigger({
 }
 
 /**
- * The "+" at the end of the tab row: add a Threads or Memory tab, an artifact,
- * an App, a folder (the space's own files, or a path) or a link. The new tab
- * opens.
+ * The "+" at the end of the tab row: add a file (a Drive path, starting in the
+ * space's own folder), a folder (the space's own files, or a path), an
+ * artifact, an App or a link. The new tab opens.
  */
 export function AddTabMenu({
   projectId,
@@ -204,7 +203,7 @@ export function AddTabMenu({
   const apps = useProjectApps(projectId);
   const artifacts = useArtifacts(artifactsOn ? projectId : null, { limit: 20 });
   const drive = useProjectDrive(projectId);
-  const [ask, setAsk] = useState<'folder' | 'link' | null>(null);
+  const [ask, setAsk] = useState<TargetKind | null>(null);
   const { tabs, save } = state;
   const full = tabs.length >= SPACE_TABS_MAX;
   const name = space.kind === 'channel' ? space.slug : space.dm_agent_name;
@@ -212,13 +211,13 @@ export function AddTabMenu({
     ? spaceDriveFolders(space.kind, name, drive.data?.personalFolder ?? null, space.visibility === 'private' ? space.space_id : null)?.files ?? null
     : null;
 
-  const add = async (kind: ProjectSpaceTabKind, title: string, ref?: string) => {
-    const tab: ProjectSpaceTab = { id: newTabId(kind, tabs), title: tabTitle(title, t(`kind.${kind}`)), kind, ...(ref ? { ref } : {}) };
+  const add = async (kind: ProjectSpaceTabKind, title: string, ref: string) => {
+    const tab: ProjectSpaceTab = { id: newTabId(kind, tabs), title: tabTitle(title, t(`kind.${kind}`)), kind, ref };
     await save(appendTab(tabs, tab));
     onAdded(tab.id);
   };
-  const quick = (kind: ProjectSpaceTabKind, title: string, ref?: string) => () => void add(kind, title, ref).catch(() => undefined);
-  const open = (next: 'folder' | 'link') => requestAnimationFrame(() => setAsk(next));
+  const quick = (kind: ProjectSpaceTabKind, title: string, ref: string) => () => void add(kind, title, ref).catch(() => undefined);
+  const open = (next: TargetKind) => requestAnimationFrame(() => setAsk(next));
 
   return (
     <>
@@ -231,14 +230,22 @@ export function AddTabMenu({
           </DropdownMenuTrigger>
         </Hint>
         <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuItem onSelect={quick('threads', t('kind.threads'))}>
-            <ListBulletsIcon />
-            {t('kind.threads')}
+          <DropdownMenuItem onSelect={() => open('file')}>
+            <FileIcon />
+            {t('fileItem')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={quick('memory', t('kind.memory'))}>
-            <BrainIcon />
-            {t('kind.memory')}
-          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <FolderSimpleIcon />
+              {t('kind.folder')}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-56">
+              {ownFolder ? (
+                <DropdownMenuItem onSelect={quick('folder', t('spaceFiles'), ownFolder)}>{t('spaceFiles')}</DropdownMenuItem>
+              ) : null}
+              <DropdownMenuItem onSelect={() => open('folder')}>{t('otherFolder')}</DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           {artifactsOn ? (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
@@ -275,18 +282,6 @@ export function AddTabMenu({
               )}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <FolderSimpleIcon />
-              {t('kind.folder')}
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-56">
-              {ownFolder ? (
-                <DropdownMenuItem onSelect={quick('folder', t('spaceFiles'), ownFolder)}>{t('spaceFiles')}</DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem onSelect={() => open('folder')}>{t('otherFolder')}</DropdownMenuItem>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
           <DropdownMenuItem onSelect={() => open('link')}>
             <LinkSimpleIcon />
             {t('linkItem')}
@@ -294,7 +289,10 @@ export function AddTabMenu({
         </DropdownMenuContent>
       </DropdownMenu>
       <TargetModal
+        // A new key per open: the path starts again from the space's folder.
+        key={ask ?? 'closed'}
         kind={ask}
+        initial={ask === 'file' ? filePathPrefix(ownFolder) : ''}
         onClose={() => setAsk(null)}
         onAdd={(kind, ref) => add(kind, kind === 'link' ? linkTitle(ref) : folderTitle(ref), ref)}
       />
@@ -302,22 +300,37 @@ export function AddTabMenu({
   );
 }
 
-/** Ask for a folder's Drive path or a link's https URL. */
+/** The tabs the "+" menu asks a target for in a dialog. */
+type TargetKind = 'file' | 'folder' | 'link';
+
+/** The dialog copy of each target, by kind. */
+const TARGET_COPY = {
+  file: { title: 'fileTitle', hint: 'fileHint', label: 'filePath', placeholder: '/Company/page.html' },
+  folder: { title: 'folderTitle', hint: 'folderHint', label: 'path', placeholder: '/Company' },
+  link: { title: 'linkTitle', hint: 'linkHint', label: 'url', placeholder: 'https://' },
+} as const;
+
+/** Ask for a file's or a folder's Drive path, or a link's https URL. */
 function TargetModal({
   kind,
+  initial,
   onClose,
   onAdd,
 }: {
-  kind: 'folder' | 'link' | null;
+  kind: TargetKind | null;
+  /** The field's first value: a file path starts in the space's folder. */
+  initial: string;
   onClose: () => void;
-  onAdd: (kind: 'folder' | 'link', ref: string) => Promise<void>;
+  onAdd: (kind: TargetKind, ref: string) => Promise<void>;
 }) {
   const t = useTranslations('spaces.view.tabEdit');
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(initial);
   const [pending, setPending] = useState(false);
   const isLink = kind === 'link';
+  const copy = TARGET_COPY[kind ?? 'folder'];
   const ref = isLink ? value.trim() : normalizeFolderPath(value);
-  const valid = isLink ? isLinkUrl(ref) : ref.length > 0;
+  // A file path names a file: not a folder (a trailing slash) and not the prefix alone.
+  const valid = isLink ? isLinkUrl(ref) : kind === 'file' ? ref.length > 0 && !value.trim().endsWith('/') : ref.length > 0;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!kind || !valid || pending) return;
@@ -336,18 +349,18 @@ function TargetModal({
     <Modal open={kind !== null} onOpenChange={(next) => (next ? null : onClose())}>
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
-          <ModalTitle>{isLink ? t('linkTitle') : t('folderTitle')}</ModalTitle>
-          <ModalDescription>{isLink ? t('linkHint') : t('folderHint')}</ModalDescription>
+          <ModalTitle>{t(copy.title)}</ModalTitle>
+          <ModalDescription>{t(copy.hint)}</ModalDescription>
         </ModalHeader>
         <form onSubmit={submit}>
           <ModalBody>
             <Field>
-              <FieldLabel htmlFor="space-tab-ref">{isLink ? t('url') : t('path')}</FieldLabel>
+              <FieldLabel htmlFor="space-tab-ref">{t(copy.label)}</FieldLabel>
               <Input
                 id="space-tab-ref"
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
-                placeholder={isLink ? 'https://' : '/Company'}
+                placeholder={copy.placeholder}
                 className={isLink ? undefined : 'font-mono'}
                 autoFocus
               />
@@ -422,12 +435,25 @@ function RenameTabModal({
   );
 }
 
+/** What a host's file view draws for a `file` tab. `place` is "#general" or the DM's agent. */
+export interface SpaceFile {
+  space: ProjectSpace;
+  place: string;
+  /** The Drive path of the file. */
+  path: string;
+  /** The tab's title: the frame title of an HTML page. */
+  title: string;
+  /** The file is gone: what to show instead (its "Remove tab"). */
+  missing: ReactNode;
+}
+
 /**
  * What a stored tab shows, by kind, with the views that already exist:
- * `threads` the space's thread list, `memory` its memory pages, `artifact`
- * the artifact viewer, `app` the live App, `folder` the host's Drive folder
- * view, `link` the page in a sandboxed frame. A target that is gone shows
- * a small empty state with "Remove tab" for a person who may edit.
+ * `file` the host's Drive file view (any file; an `.html` page as the page),
+ * `folder` the host's Drive folder view, `artifact` the artifact viewer,
+ * `app` the live App, `link` the page in a sandboxed frame when the server
+ * found it embeddable, else a link card. A target that is gone shows a small
+ * empty state with "Remove tab" for a person who may edit.
  */
 export function StoredTabPanel({
   projectId,
@@ -435,17 +461,16 @@ export function StoredTabPanel({
   tab,
   place,
   state,
-  threads,
   renderFolder,
+  renderFile,
 }: {
   projectId: string;
   space: ProjectSpace;
   tab: ProjectSpaceTab;
   place: string;
   state: SpaceTabsState;
-  /** The Threads list, drawn by the view that owns the open thread. */
-  threads: ReactNode;
   renderFolder?: (folder: { space: ProjectSpace; tab: 'files'; place: string; path: string; missing: ReactNode }) => ReactNode;
+  renderFile?: (file: SpaceFile) => ReactNode;
 }) {
   const t = useTranslations('spaces.view.tabEdit');
   const removeAction = state.canEdit ? (
@@ -457,7 +482,7 @@ export function StoredTabPanel({
   const missing = (
     <EmptyState
       className="min-h-full"
-      media={<EmptyArt icon={KIND_ICON[tab.kind]} />}
+      media={<EmptyArt icon={KIND_ICON[tab.kind] ?? FileIcon} />}
       title={t('missing.title')}
       description={t('missing.description')}
       action={removeAction}
@@ -465,10 +490,8 @@ export function StoredTabPanel({
   );
   const ref = tab.ref ?? '';
   switch (tab.kind) {
-    case 'threads':
-      return <>{threads}</>;
-    case 'memory':
-      return <MemoryView projectId={projectId} layerKey={space.space_id} place={place} />;
+    case 'file':
+      return ref && renderFile ? <>{renderFile({ space, place, path: ref, title: tab.title, missing })}</> : missing;
     case 'artifact':
       return <ArtifactTab projectId={projectId} artifactId={ref} missingAction={removeAction} />;
     case 'app':
@@ -476,11 +499,37 @@ export function StoredTabPanel({
     case 'folder':
       return ref && renderFolder ? <>{renderFolder({ space, tab: 'files', place, path: ref, missing })}</> : missing;
     case 'link':
-      return isLinkUrl(ref) ? <LinkFrame url={ref} title={tab.title} /> : missing;
+      if (!isLinkUrl(ref)) return missing;
+      return tab.embeddable === true ? <LinkFrame url={ref} title={tab.title} /> : <LinkCard url={ref} title={tab.title} />;
+    default:
+      // A kind this client does not know (a newer API): the tab says so instead of a blank panel.
+      return missing;
   }
 }
 
-/** A link tab: the page in a sandboxed frame, and a way out for a page that refuses to be framed. */
+/** A link tab whose page refuses to be framed (or the server could not reach it): what it is and a way to open it. */
+function LinkCard({ url, title }: { url: string; title: string }) {
+  const t = useTranslations('spaces.view.tabEdit');
+  const host = linkTitle(url);
+  return (
+    <EmptyState
+      className="min-h-full"
+      media={<EmptyArt icon={GlobeSimpleIcon} />}
+      title={title}
+      description={t('linkCard.description', { host })}
+      action={
+        <Button asChild size="sm">
+          <a href={url} target="_blank" rel="noopener noreferrer">
+            <ArrowSquareOutIcon />
+            {t('linkCard.open')}
+          </a>
+        </Button>
+      }
+    />
+  );
+}
+
+/** A link tab: the page in a sandboxed frame, and a way out to a new browser tab. */
 function LinkFrame({ url, title }: { url: string; title: string }) {
   const t = useTranslations('spaces.view.tabEdit');
   return (

@@ -51,12 +51,13 @@ export interface ProjectSpace {
 }
 
 /** What a space tab shows. Same values as the API's `SPACE_TAB_KINDS`. */
-export type ProjectSpaceTabKind = 'threads' | 'artifact' | 'app' | 'folder' | 'link' | 'memory';
+export type ProjectSpaceTabKind = 'file' | 'folder' | 'artifact' | 'app' | 'link';
 
 /**
- * One tab of a space after Chat. `ref`: an artifact id (`artifact`), an App
- * slug (`app`), a Drive folder path (`folder`) or an https URL (`link`);
- * required for those kinds, absent for `threads` and `memory`.
+ * One tab of a space after Chat. `ref` names its target: a Drive file path
+ * (`file`; any file, an `.html` page renders as the page), a Drive folder path
+ * (`folder`), an artifact id (`artifact`), an App slug (`app`) or an https URL
+ * (`link`).
  */
 export interface ProjectSpaceTab {
   /** Stable; 1–64 of `A-Za-z0-9_-`. */
@@ -64,7 +65,13 @@ export interface ProjectSpaceTab {
   /** 1–60 characters. */
   title: string;
   kind: ProjectSpaceTabKind;
-  ref?: string;
+  ref: string;
+  /**
+   * A `link` tab: the server fetched the page on save and it allows framing.
+   * False: show a link card, not a frame. Set by the server; a value sent in
+   * `setProjectSpaceTabs` is ignored. Absent on other kinds.
+   */
+  embeddable?: boolean;
 }
 
 export interface CreateProjectSpaceInput {
@@ -175,8 +182,8 @@ export async function updateProjectSpace(projectId: string, spaceId: string, inp
 
 /**
  * Replace a space's tabs after Chat with `tabs`, in order: add, remove,
- * rename and reorder in one call. At most 20; `artifact`, `app`, `folder` and
- * `link` need a `ref` (else 400). A channel's editor (`can_edit`), a DM's
+ * rename and reorder in one call. At most 20; every tab needs a `ref` (else
+ * 400). The server sets each link tab's `embeddable`. A channel's editor (`can_edit`), a DM's
  * owner, or a session token of a thread in the space may; anyone else rejects
  * with 403 `forbidden`. The caller shows the error, so it never reaches the
  * host error handler. Resolves the space with its new tabs.

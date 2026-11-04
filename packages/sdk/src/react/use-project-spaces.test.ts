@@ -99,7 +99,7 @@ describe('space mutations', () => {
 describe('useSetProjectSpaceTabs', () => {
   test('PUTs the whole tab list and waits for the spaces list to refetch', async () => {
     const setTabs = useSetProjectSpaceTabs('P1') as any;
-    const tabs = [{ id: 'mem', title: 'Memory', kind: 'memory' }];
+    const tabs = [{ id: 'notes', title: 'Notes', kind: 'file', ref: '/Company/Channels/general/notes.md' }];
     await setTabs.mutationFn({ spaceId: 'S1', tabs });
     expect(calls).toEqual([{ url: 'http://test.local/projects/P1/spaces/S1/tabs', method: 'PUT', body: { tabs } }]);
     const pending = setTabs.onSuccess();

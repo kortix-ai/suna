@@ -2,6 +2,7 @@
 
 import { useParams } from 'next/navigation';
 
+import { SpaceFileView } from '@/features/drives/space-file-view';
 import { SpaceFolderView } from '@/features/drives/space-folder-view';
 import { useProjectSendGate } from '@/hooks/projects/use-project-send-gate';
 import { useFeatureFlag } from '@kortix/sdk/react';
@@ -27,6 +28,7 @@ export default function OneChatPage() {
       target={{ kind: 'dm', agentName: MY_KORTIX_AGENT_NAME }}
       beforeSend={beforeSend}
       renderFolder={(folder) => <SpaceFolderView projectId={id} {...folder} />}
+      renderFile={(file) => <SpaceFileView projectId={id} {...file} />}
       chat
     />
   );

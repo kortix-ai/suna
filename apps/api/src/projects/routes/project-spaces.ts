@@ -355,7 +355,8 @@ function registerSpaceRoutes(): void {
       summary: 'Replace the tabs of a space',
       description:
         'The whole ordered list after Chat (Chat is always first and is never stored): add, remove, rename and reorder in one call. ' +
-        'At most 20 tabs. `artifact`, `app`, `folder` and `link` need a `ref` (an artifact id, an App slug, a Drive folder path, an https URL). ' +
+        'At most 20 tabs. Every tab needs a `ref`: a Drive file path (`file`), a Drive folder path (`folder`), an artifact id, an App slug or an https URL (`link`). ' +
+        'The server fetches a new link URL once (public addresses only, 5 s) and sets `embeddable`: false when the page refuses framing or cannot be reached. ' +
         'A person may when they may edit the channel (`can_edit`) or own the DM. A session token may for a session filed in the space ' +
         'or working for a person in it. Anyone else gets 403 `forbidden`; a space the caller may not see is 404 `space_not_found`.',
       ...auth,
@@ -386,7 +387,7 @@ function registerSpaceRoutes(): void {
           403,
         );
       }
-      const updated = await setSpaceTabs(project.projectId, space.spaceId, c.req.valid('json').tabs);
+      const updated = await setSpaceTabs(project.projectId, space, c.req.valid('json').tabs);
       if (!updated) return c.json(SPACE_NOT_FOUND, 404);
       return c.json(serializeSpace(updated, viewer, await isSpaceMember(updated, viewer.userId)), 200);
     },

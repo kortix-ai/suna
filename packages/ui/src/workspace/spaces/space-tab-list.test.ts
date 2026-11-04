@@ -3,6 +3,9 @@ import type { ProjectSpaceTab } from '@kortix/sdk';
 
 import {
   CHAT_TAB,
+  filePathPrefix,
+  folderTitle,
+  isHtmlPath,
   isLinkUrl,
   moveTab,
   newTabId,
@@ -14,9 +17,9 @@ import {
 } from './space-tab-list';
 
 const TABS: ProjectSpaceTab[] = [
-  { id: 'threads-a', title: 'Threads', kind: 'threads' },
+  { id: 'threads-a', title: 'Page', kind: 'file', ref: '/Company/Channels/eng/page.html' },
   { id: 'link-b', title: 'Docs', kind: 'link', ref: 'https://example.test' },
-  { id: 'memory-c', title: 'Memory', kind: 'memory' },
+  { id: 'memory-c', title: 'Specs', kind: 'folder', ref: '/Company/Channels/eng' },
 ];
 const ids = (tabs: ProjectSpaceTab[]) => tabs.map((tab) => tab.id);
 
@@ -53,9 +56,9 @@ describe('rename and remove', () => {
 describe('new tabs', () => {
   test('a new id is the kind plus 6 characters, never one already taken', () => {
     const values = [0, 0, 0.5];
-    const id = newTabId('threads', [{ id: 'threads-000000', title: 'T', kind: 'threads' }], () => values.shift()!);
-    expect(id).toMatch(/^threads-[0-9a-z]{6}$/);
-    expect(id).not.toBe('threads-000000');
+    const id = newTabId('file', [{ id: 'file-000000', title: 'T', kind: 'file', ref: '/a.md' }], () => values.shift()!);
+    expect(id).toMatch(/^file-[0-9a-z]{6}$/);
+    expect(id).not.toBe('file-000000');
   });
 
   test('folder paths take one leading slash; links must be https', () => {
@@ -63,5 +66,20 @@ describe('new tabs', () => {
     expect(normalizeFolderPath('/')).toBe('');
     expect(isLinkUrl('https://example.test/a')).toBe(true);
     expect(isLinkUrl('http://example.test')).toBe(false);
+  });
+});
+
+describe('file tabs', () => {
+  test('.html and .htm render as a page; every other file uses the file viewer', () => {
+    expect(isHtmlPath('/Company/Channels/eng/news.html')).toBe(true);
+    expect(isHtmlPath('/a/B.HTM')).toBe(true);
+    expect(isHtmlPath('/a/notes.md')).toBe(false);
+    expect(isHtmlPath('/a/html')).toBe(false);
+  });
+
+  test('a new file path starts in the space folder; the title is the file name', () => {
+    expect(filePathPrefix('/Company/Channels/eng')).toBe('/Company/Channels/eng/');
+    expect(filePathPrefix(null)).toBe('/');
+    expect(folderTitle('/Company/Channels/eng/launch.html')).toBe('launch.html');
   });
 });
