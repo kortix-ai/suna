@@ -194,6 +194,16 @@ Never resolve a thread you did not address. Reply with a question instead.
 When a fact needs a person's confirmation, comment to `@name`. Never comment
 only to report status. Stop when a thread shows "Waiting for a person".
 
+People viewing the artifact see where you work. Tell them as you go:
+
+    kortix artifacts focus <id> --thread <thread_id>                    # before you answer a thread
+    kortix artifacts focus <id> --quote "Revenue rose."                 # before you change that passage
+    kortix artifacts focus <id> --thread <thread_id> --status writing   # while you draft the reply
+    kortix artifacts focus <id> --status idle                           # when you are done
+
+`--status` defaults to `editing`. Focus is a signal, not a comment: skip it
+when it fails and continue the work.
+
 When asked to review, open one thread per issue, anchored to an exact quote:
 
     kortix artifacts comment <id> "Confirm the source for this figure, @name." --quote "Revenue rose."
@@ -234,6 +244,7 @@ lists events and saves. Add `--json` to any comment command for structured outpu
 | `kortix artifacts comment <id> "text" [--quote "text"\|--selector "css"]` | open one thread |
 | `kortix artifacts reply <thread_id> "text"` / `resolve <thread_id>` / `reopen <thread_id>` | address threads |
 | `kortix artifacts activity <id> [--limit N]` | events and saves |
+| `kortix artifacts focus <id> [--thread <thread_id>\|--quote "text"] [--status reading\|editing\|writing\|idle]` | show viewers where you work |
 | `kortix artifacts versions` / `restore` / `rename` / `pin` / `unpin` / `rm` | manage |
 
 Add `--json` for machine-readable output. Permissions (a role's, and for an

@@ -10,6 +10,7 @@
  */
 
 import * as Sentry from '@sentry/bun';
+import { redactSentryRequestSecrets } from './redact-url-secrets';
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -137,7 +138,8 @@ if (SENTRY_DSN) {
       if (event.transaction?.includes('/health')) return null;
       // Don't trace CORS preflights
       if (event.contexts?.trace?.op === 'http' && event.request?.method === 'OPTIONS') return null;
-      return event;
+      // An Artifact live socket's `?ticket=` never leaves the process.
+      return redactSentryRequestSecrets(event);
     },
 
     // Enrich error events with extra context
@@ -151,7 +153,8 @@ if (SENTRY_DSN) {
           }
         }
       }
-      return event;
+      // An Artifact live socket's `?ticket=` never leaves the process.
+      return redactSentryRequestSecrets(event);
     },
   });
 
