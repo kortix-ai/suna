@@ -5939,6 +5939,37 @@ A Composio tool's file field (for example YouTube's `videoFile` or a Gmail `atta
 kortix connectors call youtube multipart_upload_video '{"title":"Demo","videoFile":"https://example.com/demo.mp4"}'
 ```
 
+##### Upload a video to YouTube
+
+Connect YouTube with one click: Install YouTube from the catalogue, then sign in with Google. No API key, client id or client secret.
+
+`youtube.upload_video` uploads a file from the session at any size, up to YouTube's 256 GB. Kortix runs this action itself. It starts a YouTube resumable upload on the connected account and answers:
+
+| Field | Value |
+| --- | --- |
+| `upload_url` | The upload session URL. It serves this one video only and expires after about a week. |
+| `upload_command` | A `curl` command that sends the file to `upload_url`. It prints the video resource: `id` is the video, `https://youtu.be/<id>`. |
+| `resume_status_command` | Asks how many bytes YouTube has. HTTP `308` with `Range: bytes=0-N` means: send the rest from byte `N+1`. |
+| `video` | The title, privacy status and schedule YouTube received. |
+
+The file goes from the session straight to Google. The Google token stays with the sign-in provider and never enters the session.
+
+```bash
+F=/workspace/output/video.mp4
+kortix connectors call youtube upload_video \
+  "{\"title\":\"Launch demo\",\"privacy_status\":\"private\",\"file_path\":\"$F\",\"file_size\":$(stat -c %s "$F"),\"mime_type\":\"video/mp4\"}" \
+  --out /tmp/yt-upload.json
+bash -c "$(jq -r '.data.result.upload_command' /tmp/yt-upload.json)"
+```
+
+Arguments: `title` (required, at most 100 characters), `description`, `tags`, `category_id`, `privacy_status` (`private` by default, `unlisted`, `public`), `publish_at` (an ISO 8601 time; needs `private`), `made_for_kids`, `contains_synthetic_media`, `notify_subscribers` (default `true`), `default_language`, `file_path` and `file_size` (written into `upload_command`), `mime_type` (default `video/*`).
+
+| Answer | Meaning |
+| --- | --- |
+| `400` | An argument is wrong. The message names it. |
+| `upstream_429` | YouTube's daily upload quota is used up. Retry after midnight Pacific time. |
+| `upstream_502` with `youtubeSignupRequired` | The Google account has no YouTube channel. Create one at youtube.com/create_channel. |
+
 `kortix connectors types --out kortix-connectors.d.ts` generates types for `run`, `call` and `paginate`. Without the file, args are any object and outputs are `unknown`.
 
 #### Connector errors

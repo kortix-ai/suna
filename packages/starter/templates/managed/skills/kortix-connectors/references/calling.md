@@ -47,6 +47,25 @@ the CLI cannot find the field, pass `--attach-path <a.b.c>`, or run
 `contentBytes`. Pass the body as a JSON object, never as a string. Never put
 base64 in args yourself.
 
+## Videos to YouTube
+
+A video in the session goes to YouTube in two steps, at any size. Never use
+`multipart_upload_video` for a file in the session: it needs a public URL and
+stops at 100 MB.
+
+```sh
+F=/workspace/output/video.mp4
+kortix connectors call youtube upload_video \
+  "{\"title\":\"Launch demo\",\"privacy_status\":\"private\",\"file_path\":\"$F\",\"file_size\":$(stat -c %s "$F"),\"mime_type\":\"video/mp4\"}" \
+  --out /tmp/yt-upload.json
+bash -c "$(jq -r '.data.result.upload_command' /tmp/yt-upload.json)"
+```
+
+The `curl` prints the video JSON: `id` is the video, `https://youtu.be/<id>`.
+Upload as `private` unless the human chose otherwise. YouTube processes the
+video after the upload. If `curl` breaks, run `resume_status_command`: HTTP
+308 with `Range: bytes=0-N` means send the rest from byte N+1.
+
 ## GraphQL field selection
 
 Put the selected fields in `args.__select`:
