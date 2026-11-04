@@ -69,7 +69,7 @@ describe('parseSections', () => {
 
   test("reads New/Improved/Fixed and stops at What's Changed", () => {
     const s = parseSections(
-      "### New\n- **A.** one\n- B\n\n### Improved\n- C\n\n### Fixed\n- D\n\n## What's Changed\n* feat: x by @y in https://github.com/kortix-ai/suna/pull/1\n",
+      "### New\n- **A.** one\n- B\n\n### Improved\n- C\n\n### Fixed\n- D\n\n## What's Changed\n* feat: x by @y in https://github.com/kortix-ai/CompanyOS/pull/1\n",
     );
     expect(s).toEqual({ new: ['**A.** one', 'B'], improved: ['C'], fixed: ['D'] });
   });

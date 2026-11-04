@@ -196,7 +196,7 @@ export async function enforceAdmission(
   // "Before a box is handed to a session, it must prove its runtime identity…
   // A box that fails admission is replaced, not used." This is the ONE
   // chokepoint every session-open path shares — `runOpenSession` is what
-  // `/start`, warm-session adoption, restart, and resume-from-stopped all
+  // `/start`, restart, and resume-from-stopped all
   // funnel through (see the flows into `openSession` above) — so gating here
   // covers all of them without touching each caller.
   //

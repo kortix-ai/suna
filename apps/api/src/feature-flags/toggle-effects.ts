@@ -12,7 +12,7 @@
  * they call are themselves idempotent. The connector and event-subscription
  * ones re-run on their periodic sweeps. The `project_channels` backfill re-runs
  * only from the call that creates `#general` (`ensureDefaultSpace`: a channel
- * list, a session create or a warm claim): a failure after `#general` exists is
+ * list or a session create): a failure after `#general` exists is
  * not retried until the flag is toggled again.
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
@@ -22,7 +22,6 @@ import {
   reconcileEventSubscriptionsFromCatalog,
   recordChannelsReenabled,
   releaseProjectEventSubscriptions,
-  retireWarmProjectSessions,
   turnOnChannels,
 } from '../projects/surface';
 import { resolveFeatureFlag } from './registry';
@@ -94,13 +93,8 @@ export async function toggleEffectsSettled(): Promise<void> {
 }
 
 async function runWithRetry(ctx: FeatureFlagToggleContext): Promise<void> {
-  // Every flag reaches the box as boot-only env (KORTIX_FEATURE_FLAGS): a warm box
-  // from before the change must not be adopted, or its skills and CLI keep the old flag.
-  const own = TOGGLE_EFFECTS[ctx.key];
-  const effect: ToggleEffect = async (c) => {
-    await retireWarmProjectSessions(c.projectId);
-    if (own) await own(c);
-  };
+  const effect = TOGGLE_EFFECTS[ctx.key];
+  if (!effect) return;
   try {
     await effect(ctx);
     return;

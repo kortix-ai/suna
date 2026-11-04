@@ -10,7 +10,7 @@ import { adminPath } from '../../lib/routes';
  * other agent is a work product with only the access its work needs. So the
  * page is the agent: one identity header, one rail, and room to edit.
  *
- *   ┌ Agents › ▣ Researcher  Default         [Share] [Start session] [⋯] ┐
+ *   ┌ Agents › ▣ Researcher  Default  [Share] [Call] [Start session] [⋯] ┐
  *   ├ General      ┬ the row's content, one centered column              ┤
  *   │  Overview    │                                                     │
  *   │  Basics      │                                                     │
@@ -64,6 +64,7 @@ import { useLocale, useTranslations as useI18nTranslations } from '../../i18n';
 import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
 import { useAgentConfig, useUpdateAgentConfig } from '../../internal/hooks/projects/use-agent-config';
 import { useNewProjectSession } from '../../internal/hooks/projects/use-new-project-session';
+import { AgentCallButton } from '../../session/voice/voice-call';
 import { agentHref, capabilityTabHref } from '../../internal/lib/capability-tab-routes';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectCan } from '../../internal/lib/use-project-can';
@@ -544,8 +545,10 @@ function RailLayout({ rail, children }: { rail: ReactNode; children: ReactNode }
 // ─── Header actions ──────────────────────────────────────────────────────────
 
 /**
- * Share, Start session, and the ⋯ menu. Share renders for everyone and gates
+ * Share, Call, Start session, and the ⋯ menu. Share renders for everyone and gates
  * itself on `project.members.manage`. The ⋯ menu needs `project.agent.write`.
+ * Call (behind the project's `voice_call` flag) starts a session on this agent
+ * with its call open, so it is offered only where Start session is.
  * Start session boots a session
  * on THIS agent through the sidebar's New session hook. A subagent is called
  * by other agents, never picked for a session, so its button is disabled with
@@ -607,6 +610,8 @@ function AgentActions({
     <>
       <AgentPinButton projectId={projectId} agent={agent.name} />
       <AgentShareControl projectId={projectId} agentName={agent.name} open={share.open} onOpenChange={share.setOpen} />
+      {/* A call starts its own session on this agent, so it is offered where Start session is. */}
+      {startBlocked ? null : <AgentCallButton projectId={projectId} agentName={agent.name} />}
       {startBlocked ? (
         <Hint label={startBlocked}>
           <span className="inline-flex">{start}</span>

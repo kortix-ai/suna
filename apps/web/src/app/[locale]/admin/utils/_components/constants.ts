@@ -76,7 +76,7 @@ export const MAINTENANCE_LEVELS: {
   {
     value: 'blocking',
     label: 'Full lockdown',
-    description: 'Blocks all access and redirects everyone to the maintenance page.',
+    description: 'Sends everyone in the app to the maintenance page. The API, CLI and agents keep running.',
     icon: ShieldSlashIcon,
     tone: 'danger',
   },

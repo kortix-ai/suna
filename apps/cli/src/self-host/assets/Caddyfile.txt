@@ -61,6 +61,17 @@
 		}
 	}
 
+	# Project snapshots: a sandbox downloads its presigned snapshot URL
+	# (https://api.<domain>/kortix-project-snapshots/<key>) from the same
+	# bundled store, with the Host header and path untouched, like the Capture
+	# prefix above. The store checks every signature.
+	@snapshots path /kortix-project-snapshots /kortix-project-snapshots/*
+	handle @snapshots {
+		reverse_proxy capture-store:9000 {
+			flush_interval -1
+		}
+	}
+
 	@llm path /v1/llm*
 	handle @llm {
 		reverse_proxy {

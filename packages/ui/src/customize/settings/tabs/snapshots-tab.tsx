@@ -672,7 +672,7 @@ export function SnapshotsTabView({
             sandbox template, not a separate pane — and `SandboxTabView`,
             mounted directly above this one on `/projects/[id]/config`, already
             renders the shared pane heading (title, description, and its own
-            `docsHref` to the same `/docs/work/runtime` page). A second
+            `docsHref` to the same `/docs/developers#sandbox-templates` page). A second
             top-level heading here would be a duplicate, not a fix for the
             'snapshots' id no longer existing in either heading registry. */}
         {isLoading ? (

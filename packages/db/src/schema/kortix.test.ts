@@ -444,9 +444,9 @@ describe('Kortix Apps schema', () => {
 
 describe('warm project sessions', () => {
   // `idx_project_sessions_one_available_warm` used to arbitrate a warm-session
-  // create race. A warm session is now an ordinary session and a duplicate costs
-  // one extra box, bounded by the reserved concurrent-session slot, so the index
-  // was dropped (migrations/20260813203000000_drop_one_available_warm_index).
+  // create race. That race went first, and warm sessions were removed on
+  // 2026-11-03, so the index was dropped
+  // (migrations/20260813203000000_drop_one_available_warm_index).
   // Re-declaring it would make `db:generate` emit a CREATE against a dropped
   // index, so the schema must stay free of it.
   test('declares no partial unique index on the warm marker', () => {

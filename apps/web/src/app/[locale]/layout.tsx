@@ -171,7 +171,7 @@ const SITE_JSON_LD = {
       description: siteMetadata.description,
       foundingDate: '2024',
       sameAs: [
-        'https://github.com/kortix-ai/suna',
+        'https://github.com/kortix-ai/CompanyOS',
         'https://x.com/kortix',
         'https://linkedin.com/company/kortix',
       ],
@@ -213,7 +213,7 @@ const SITE_JSON_LD = {
       '@type': 'SoftwareSourceCode',
       '@id': `${siteMetadata.url}/#source`,
       name: 'Kortix CompanyOS',
-      codeRepository: 'https://github.com/kortix-ai/suna',
+      codeRepository: 'https://github.com/kortix-ai/CompanyOS',
       programmingLanguage: 'TypeScript',
       isPartOf: { '@id': `${siteMetadata.url}/#software` },
     },

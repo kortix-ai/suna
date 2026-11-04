@@ -44,29 +44,4 @@ export async function assertMayRunAgent(
   await assertActorMayRunAgent(actor, requestOnBehalfOf(c), projectId, agentName, action);
 }
 
-/**
- * The same question, asked without a 403.
- *
- * For a SPECULATIVE, unrequested action — warming a session the user has not
- * asked for — a denial is not news the caller needs. The route turns a `false`
- * into its ordinary "nothing available" response, so a member who cannot run an
- * agent simply gets no warm box, instead of a red 403 on every page load for
- * doing nothing.
- *
- * Only for actions the user did not initiate. Anything the user actually asked
- * for goes through `resolveAndAuthorizeAgent`, which explains itself.
- */
-export async function canUseAnyAgent(
-  c: Context,
-  loaded: { row: any; userId: string },
-  projectId: string,
-): Promise<boolean> {
-  try {
-    await resolveAndAuthorizeAgent(c, loaded, projectId);
-    return true;
-  } catch (error) {
-    if (error instanceof HTTPException && error.status === 403) return false;
-    throw error;
-  }
-}
 

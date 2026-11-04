@@ -25,7 +25,7 @@ defaults keep today's behavior, so a valid file stays valid.
 | `apps` | Map of Apps and their settings (the `kortix-apps` skill). |
 | `triggers` | List of triggers (below). |
 | `policy`, `policies`, `approvals` | Connector call policies and how long a held call stays decidable (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). Approve runs the held call once, as its caller, and resumes the agent with the result: the agent does not repeat it. A caller without a project-scoped token repeats it within 15 minutes. |
-| `builtin_agents` | `my_kortix: true` adds My Kortix, the built-in agent (slug `mykortix`). Absent or `false` = off. A file that cannot be used at all still runs My Kortix, so that it can fix it. |
+| `builtin_agents` | `my_kortix: true` adds My Kortix, the built-in agent (slug `mykortix`). Absent, `false` or an unreadable file = off. |
 | `spaces` | Work in progress: channels per area of work (below). |
 | `agents` | Map of agent name → agent block. Omitted: My Kortix only. |
 
@@ -239,7 +239,7 @@ error:
 | An agent or a trigger | That entry is off. A session that names the agent fails with the issue. |
 | A connector, App, skill, tool, command, extension, space or sandbox template | That entry is gone. |
 | `project` or `default_agent` | The key falls back to its default. |
-| Anything else (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, an unknown format version, YAML syntax) | Only My Kortix runs, so it can fix the file. |
+| Anything else (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, an unknown format version, YAML syntax) | No project agent runs. My Kortix runs when the file sets `builtin_agents.my_kortix: true`, so it can fix the file. |
 
 Each rule only takes access away. The project page shows the errors and
 the warnings without a fix id, with **Fix with My Kortix**. Every session's

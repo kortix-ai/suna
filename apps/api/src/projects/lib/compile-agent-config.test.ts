@@ -46,6 +46,8 @@ mock.module('../git', () => ({
   // for a declared agent with no .md, so the predicate recognises exactly that
   // and treats anything else as a real failure — which is the distinction the
   // compiler now depends on.
+  // The last commit whose manifest parses (#11641); null: no fallback needed here.
+  findLastGoodManifestCommit: async () => null,
   isRepoFileNotFoundError: (err: unknown) =>
     /no such file/.test(String((err as Error)?.message ?? '')),
   // Unused here; present so the barrel keeps its shape for other modules.

@@ -122,7 +122,6 @@
     "./internal/hooks/projects/use-new-project-session",
     "./internal/hooks/projects/use-project-can-run",
     "./internal/hooks/projects/use-restart-project-session",
-    "./internal/hooks/projects/use-warm-project-session",
     "./internal/hooks/use-auto-scroll",
     "./internal/hooks/use-channel-bindings",
     "./internal/hooks/use-copy",

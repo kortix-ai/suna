@@ -68,7 +68,7 @@ Every session opens on a machine of its own, on a branch cut from the repo, so t
 
 ## A person reads the diff
 
-An agent's work is governed through Git: it reaches the default branch as a change request a person reviews, and an agent cannot merge its own work unless an admin grants that capability, so a colleague sees the change before it lands ([Kortix on GitHub](https://github.com/kortix-ai/suna)).
+An agent's work is governed through Git: it reaches the default branch as a change request a person reviews, and an agent cannot merge its own work unless an admin grants that capability, so a colleague sees the change before it lands ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)).
 
 Connector calls are governed one action at a time. Each carries a rule that says run, ask first or block, and a rule can reach the individual arguments of a call. Anything set to ask holds the agent's turn until somebody approves. Permissions work the same way, granted per resource to people and to agents, with roles, groups and a record of every action ([Kortix docs](https://kortix.com/docs)).
 

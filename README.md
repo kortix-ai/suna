@@ -21,8 +21,8 @@ Agents connect to 3,000+ apps, build and host the apps your company needs, and l
 through a review your team approves. Share agents and context across your whole team.
 Open source, any model, on your infrastructure or ours.
 
-[![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
-[![Release](https://img.shields.io/github/v/release/kortix-ai/suna?style=flat&color=111111&label=Release)](https://github.com/kortix-ai/suna/releases/latest)
+[![GitHub stars](https://img.shields.io/github/stars/kortix-ai/CompanyOS?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/CompanyOS/stargazers)
+[![Release](https://img.shields.io/github/v/release/kortix-ai/CompanyOS?style=flat&color=111111&label=Release)](https://github.com/kortix-ai/CompanyOS/releases/latest)
 [![Guide](https://img.shields.io/badge/Guide-kortix.com%2Fdocs-111111.svg)](https://kortix.com/docs/guide)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-111111.svg)](#contributing)
 

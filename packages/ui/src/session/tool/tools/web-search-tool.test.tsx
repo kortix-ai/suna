@@ -78,7 +78,7 @@ describe('WebSearchTool', () => {
       <WebSearchTool
         call={toolCallBlock(completedSearchPart([
           { title: 'Kortix SDK repo', url: 'https://github.com/kortix-ai/sdk' },
-          { title: 'Suna repo', url: 'https://github.com/kortix-ai/suna' },
+          { title: 'Suna repo', url: 'https://github.com/kortix-ai/CompanyOS' },
         ]))}
         defaultOpen
       />,

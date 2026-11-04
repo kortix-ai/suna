@@ -25,7 +25,7 @@ Host header and path untouched.
 | Mode | What serves `https://api.<domain>/kortix-capture/*` |
 |---|---|
 | domain | Caddy, `@capture` in `apps/cli/src/self-host/assets/Caddyfile.txt`. Uploads do not depend on the API. |
-| tunnel, local | The API, `apps/api/src/capture/store-proxy.ts`, when `KORTIX_CAPTURE_S3_PROXY_TARGET` is set. A named tunnel has an operator-set origin, so only the API can serve the prefix there. |
+| tunnel, local | The API, `apps/api/src/object-store/bucket-proxy.ts` (mounted by `capture/store-proxy.ts`), when `KORTIX_CAPTURE_S3_PROXY_TARGET` is set. A named tunnel has an operator-set origin, so only the API can serve the prefix there. |
 
 Rejected:
 
@@ -51,6 +51,13 @@ Rejected:
   `KORTIX_CAPTURE_S3_CREATE_BUCKET` is on.
 - No bucket events without SQS: the index reader polls every 30 s
   (`KORTIX_CAPTURE_INDEX_POLL_SECONDS`).
+- The store holds a second bucket, `kortix-project-snapshots`: the prebuilt
+  project snapshots a new session boots from (the `KORTIX_PROJECT_SNAPSHOT_*`
+  block of `kortix-api`, mode `prefer-s3`). It has its own path prefix, the
+  `@snapshots` Caddy route and its own passthrough
+  (`git-proxy/project-snapshot-store-proxy.ts`). The API creates it with a
+  30-day expiry rule (`ensureProjectSnapshotBucket()`). The external mode
+  below drops this wiring with the store.
 
 ## External object store (AWS S3 / R2)
 
@@ -111,11 +118,37 @@ If `KORTIX_CAPTURE_STS_ROLE_ARN` or the bucket is missing, the API cannot issue
 credentials and a device gets `503 capture_credentials_unavailable`, the same
 signal as a store that is not configured.
 
+### Project snapshots with an external store
+
+External mode also drops the `KORTIX_PROJECT_SNAPSHOT_*` wiring, because it
+pointed at the on-box MinIO. New sessions then clone over Git, and a repository
+over the 32 MiB config archive limit clones twice. Give snapshots their own
+bucket:
+
+- A private bucket in the box's region, with a 30-day expiry rule and abort of
+  incomplete multipart uploads after 1 day. The API does not create it in
+  external mode.
+- The box identity gets `s3:PutObject` + `s3:GetObject` on `<bucket>/*` and
+  `s3:ListBucket` on `<bucket>`, the same grant as the prod task role
+  (`infra/terraform/modules/ecs-api/main.tf`, `SnapshotObjects`). No delete.
+- `kortix self-host env set KORTIX_PROJECT_SNAPSHOT_MODE=prefer-s3
+  KORTIX_PROJECT_SNAPSHOT_S3_BUCKET=<bucket> KORTIX_PROJECT_SNAPSHOT_S3_REGION=<region>`.
+  Leave `_ENDPOINT`, `_PUBLIC_ENDPOINT` and the key pair empty on AWS.
+  Sandboxes download presigned regional S3 URLs directly.
+
+Verified 2026-11-04 on an AWS self-host box in external mode, on v0.14.18:
+the first archive (40.6 MB, 1,882 files) was built in 29 s, and a new session
+took 5.2 s from daemon start to `runtime-ready`, against 12.1–18.6 s over Git.
+Its daemon log showed `"provider":"s3"`, `"fallback":null` and
+`"transport":"snapshot"`.
+
 ## Upgrade an existing install
 
 The nightly updater never re-renders Compose. On the box:
 `kortix self-host update` with a CLI that knows the store. It generates the
-secrets, adds `capture-store`, and recreates `kortix-api` once. The API image
+secrets, adds `capture-store`, recreates `kortix-api` once, and reloads Caddy
+when the Caddyfile changed (a CLI from before that reload needs the manual
+`caddy reload` of learnings entry 2026-10-20T071256Z). The API image
 must be a release with the passthrough. `kortix self-host doctor` reports
 `capture-store`.
 

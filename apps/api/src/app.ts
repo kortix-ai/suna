@@ -67,6 +67,7 @@ import { registerPlatformEndpoints } from './routes/platform-endpoints';
 import { registerRetiredRoutes } from './routes/retired';
 import { dispatchInProcess } from './inbound-dispatch';
 import { registerCaptureStoreProxy } from './capture/store-proxy';
+import { registerProjectSnapshotStoreProxy } from './git-proxy/project-snapshot-store-proxy';
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
@@ -91,6 +92,9 @@ registerPlatformEndpoints(app);
 // /<capture bucket>/* — the Capture store's S3 path prefix, only when
 // KORTIX_CAPTURE_S3_PROXY_TARGET is set (self-host without a domain).
 registerCaptureStoreProxy(app);
+// /<snapshot bucket>/* — sandboxes download project snapshots here, only when
+// KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET is set (self-host without a domain).
+registerProjectSnapshotStoreProxy(app);
 
 // /v1/capture/* — Kortix Capture device sign-in (public, RFC 8628), the
 // device credential endpoint (device token), the approval reads and the agent

@@ -21,21 +21,39 @@
 import { gatewayErrorResponse } from './error-response';
 import type { InflightBudget } from './inflight-budget';
 
+type AdmissionRefusal = {
+  ok: false;
+  reason: 'too_large' | 'overloaded' | 'client_aborted';
+  bytes: number;
+  limit: number;
+  retryAfterSeconds?: number;
+};
+
 export type AdmittedBodyResult =
   | { ok: true; body: string; bytes: number; release: () => void }
-  | {
-      ok: false;
-      reason: 'too_large' | 'overloaded' | 'client_aborted';
-      bytes: number;
-      limit: number;
-      retryAfterSeconds?: number;
-    };
+  | AdmissionRefusal;
+
+/** The same admission, with the body kept as bytes: a multipart upload is binary. */
+export type AdmittedBytesResult =
+  | { ok: true; body: Uint8Array<ArrayBuffer>; bytes: number; release: () => void }
+  | AdmissionRefusal;
 
 function declaredContentLength(request: Request): number | null {
   const raw = request.headers.get('content-length');
   if (raw === null || !/^\d+$/.test(raw)) return null;
   const value = Number(raw);
   return Number.isSafeInteger(value) ? value : null;
+}
+
+/** `readAdmittedBytes`, decoded to one string: the body of every JSON ingress. */
+export async function readAdmittedBody(
+  request: Request,
+  maxBytes: number,
+  budget: InflightBudget,
+): Promise<AdmittedBodyResult> {
+  const read = await readAdmittedBytes(request, maxBytes, budget);
+  if (!read.ok) return read;
+  return { ok: true, body: new TextDecoder().decode(read.body), bytes: read.bytes, release: read.release };
 }
 
 /**
@@ -46,11 +64,11 @@ function declaredContentLength(request: Request): number | null {
  * the gap where many concurrent requests could all allocate their bodies and
  * only then compete for the in-flight budget.
  */
-export async function readAdmittedBody(
+export async function readAdmittedBytes(
   request: Request,
   maxBytes: number,
   budget: InflightBudget,
-): Promise<AdmittedBodyResult> {
+): Promise<AdmittedBytesResult> {
   /**
    * Refusing a request does NOT stop the client from sending its body.
    *
@@ -65,7 +83,7 @@ export async function readAdmittedBody(
    * Cancelling the body tears down the read side, so the bytes we already
    * decided not to read are never accumulated.
    */
-  const refuse = (result: AdmittedBodyResult): AdmittedBodyResult => {
+  const refuse = (result: AdmissionRefusal): AdmissionRefusal => {
     void request.body?.cancel().catch(() => {});
     return result;
   };
@@ -90,7 +108,7 @@ export async function readAdmittedBody(
 
   const reader = request.body?.getReader();
   if (!reader) {
-    return { ok: true, body: '', bytes: 0, release: lease.release };
+    return { ok: true, body: new Uint8Array(0), bytes: 0, release: lease.release };
   }
 
   // A client that disconnects MID-UPLOAD must not strand its reservation.
@@ -113,7 +131,8 @@ export async function readAdmittedBody(
   }
   signal?.addEventListener('abort', abortRead, { once: true });
 
-  // Bytes are retained as bytes and decoded to ONE string at the end. The
+  // Bytes are retained as bytes and `readAdmittedBody` decodes them to ONE
+  // string at the end. The
   // previous implementation decoded every chunk to a string and then
   // `join`ed them, which held two full copies of the body (the parts and the
   // joined result) at the moment of the join. Here a declared body lands in a
@@ -121,11 +140,11 @@ export async function readAdmittedBody(
   // is copied), and an undeclared body is concatenated once. Peak is one
   // byte buffer plus the decoded string, and the buffer is a local that dies
   // on return.
-  let buffer: Uint8Array | null =
+  let buffer: Uint8Array<ArrayBuffer> | null =
     declared !== null && declared > 0 && (maxBytes <= 0 || declared <= maxBytes)
       ? new Uint8Array(declared)
       : null;
-  const chunks: Uint8Array[] = [];
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
   let bytes = 0;
   try {
     for (;;) {
@@ -161,7 +180,7 @@ export async function readAdmittedBody(
       }
       bytes = nextBytes;
     }
-    let whole: Uint8Array;
+    let whole: Uint8Array<ArrayBuffer>;
     if (buffer) {
       whole = bytes === buffer.byteLength ? buffer : buffer.subarray(0, bytes);
     } else if (chunks.length === 1) {
@@ -183,7 +202,7 @@ export async function readAdmittedBody(
       lease.release();
       return { ok: false, reason: 'client_aborted', bytes, limit: maxBytes };
     }
-    return { ok: true, body: new TextDecoder().decode(whole), bytes, release: lease.release };
+    return { ok: true, body: whole, bytes, release: lease.release };
   } catch (error) {
     lease.release();
     throw error;

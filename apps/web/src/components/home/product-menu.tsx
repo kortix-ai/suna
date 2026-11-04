@@ -127,7 +127,7 @@ type MegaMenuPanelProps = {
   stars?: string | null;
 };
 
-const REPO = 'kortix-ai/suna';
+const REPO = 'kortix-ai/CompanyOS';
 const REPO_URL = `https://github.com/${REPO}`;
 
 /**

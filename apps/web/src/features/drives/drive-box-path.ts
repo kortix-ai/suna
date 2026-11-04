@@ -1,26 +1,20 @@
 'use client';
 
-import type { AgentMountPlan, Drive } from '@kortix/sdk';
-import { useProjectMounts } from '@kortix/sdk/react';
+import type { Drive } from '@kortix/sdk';
 
 const within = (path: string, folder: string) => path === folder || path.startsWith(`${folder}/`);
 
 /**
  * Where sessions see a folder of the Drive: your own folder at ~/Desktop in
- * your sessions; anything else through the deepest folder every session of
- * the project mounts (`GET /drives/:id/mounts`), e.g. `/drives/company/Memory`.
- * Null when no session mounts it by default.
+ * your sessions. Null for any other folder: a shared Drive mounts only in the
+ * sessions of the agents added to it, under the name their README gives.
  */
-export function boxPathOf(path: string, personal: string | null, plan: AgentMountPlan | undefined): string | null {
+export function boxPathOf(path: string, personal: string | null): string | null {
   if (personal && within(path, personal)) return `~/Desktop${path.slice(personal.length)}`;
-  const mount = (plan?.mounts ?? [])
-    .filter((m) => within(path, m.path))
-    .sort((a, b) => b.path.length - a.path.length)[0];
-  return mount ? `${mount.mountPath}${path.slice(mount.path.length)}` : null;
+  return null;
 }
 
-/** The project's mount plan, for {@link boxPathOf}. */
+/** {@link boxPathOf} for this drive's caller. */
 export function useBoxPaths(drive: Drive): (path: string) => string | null {
-  const plan = useProjectMounts(drive.driveId);
-  return (path) => boxPathOf(path, drive.personalFolder, plan.data);
+  return (path) => boxPathOf(path, drive.personalFolder);
 }

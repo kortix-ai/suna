@@ -14,7 +14,7 @@
  * membership and the DB are real.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
-import { accountMembers, accounts, projectMembers, projectSessions, projectSpaceMembers, projectSpaces, projects } from '@kortix/db';
+import { accountMembers, accounts, projectMembers, projectSessions, projectSpaceMembers, projectSpaces, projects, serviceAccounts } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import * as realVolumes from '../drives/volumes';
 import { config } from '../config';
@@ -53,14 +53,16 @@ const CAROL = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
 const USERS = [ALICE, BOB, CAROL, MANAGER];
 const NOTES = '/Channels/notes';
+/** The agent `/Channels/notes` is shared with: since #11606 a folder is shared with an agent, never a person. */
+const EDITOR = 'editor';
 const P = crypto.randomUUID();
 const P_FOLDER = `/Channels/${P}`;
 const minted: string[] = [];
 
-type Fixture = { projectId: string; driveId: string; bobThread: string; keys: Record<string, string> };
+type Fixture = { projectId: string; driveId: string; bobThread: string; editorThread: string; agent: string; keys: Record<string, string> };
 const fixtures: Record<'off' | 'on', Fixture> = {
-  off: { projectId: crypto.randomUUID(), driveId: '', bobThread: crypto.randomUUID(), keys: {} },
-  on: { projectId: crypto.randomUUID(), driveId: '', bobThread: crypto.randomUUID(), keys: {} },
+  off: { projectId: crypto.randomUUID(), driveId: '', bobThread: crypto.randomUUID(), editorThread: crypto.randomUUID(), agent: crypto.randomUUID(), keys: {} },
+  on: { projectId: crypto.randomUUID(), driveId: '', bobThread: crypto.randomUUID(), editorThread: crypto.randomUUID(), agent: crypto.randomUUID(), keys: {} },
 };
 
 /** A project member; `admin` may change the project (a Files admin). */
@@ -105,7 +107,7 @@ beforeAll(async () => {
     USERS.map((userId) => ({ userId, accountId: ACCOUNT, accountRole: 'member' as const, isSuperAdmin: false })),
   );
   for (const [mode, f] of Object.entries(fixtures) as Array<['off' | 'on', Fixture]>) {
-    const metadata = { experimental: { drives: true, project_channels: mode === 'on' } };
+    const metadata = { experimental: { drives: true, shared_drives: true, project_channels: mode === 'on' } };
     await db.insert(projects).values({ projectId: f.projectId, accountId: ACCOUNT, name: `reservation-${mode}`, repoUrl: 'https://example.test/r.git', metadata });
     await insertIntoView(db, projectMembers, [
       { accountId: ACCOUNT, projectId: f.projectId, userId: MANAGER, projectRole: 'manager' },
@@ -123,9 +125,30 @@ beforeAll(async () => {
       origin: 'user',
       metadata: {},
     });
+    // The editor agent and one of its sessions: a shared Drive reaches a session through its agent.
+    await db.insert(serviceAccounts).values({
+      serviceAccountId: f.agent,
+      accountId: ACCOUNT,
+      projectId: f.projectId,
+      agentName: EDITOR,
+      name: EDITOR,
+      secretHash: `channels-folder-reservation-${f.agent}`,
+      publicPrefix: 'kortix_sa_cfr',
+    });
+    await db.insert(projectSessions).values({
+      accountId: ACCOUNT,
+      projectId: f.projectId,
+      agentName: EDITOR,
+      sessionId: f.editorThread,
+      branchName: f.editorThread,
+      createdBy: BOB,
+      visibility: 'private',
+      origin: 'user',
+      metadata: {},
+    });
     const drive = await driveOf(f);
     f.driveId = drive.driveId;
-    await setFolderGrant({ drive, path: NOTES, principal: { type: 'user', id: BOB }, level: 'write', grantedBy: BOB, source: 'manual' });
+    await setFolderGrant({ drive, path: NOTES, principal: { type: 'agent', id: f.agent }, level: 'write', grantedBy: MANAGER, source: 'manual' });
     f.keys.bob = await mint(f.projectId, BOB);
     f.keys.manager = await mint(f.projectId, MANAGER);
   }
@@ -156,42 +179,27 @@ for (const mode of ['off', 'on'] as const) {
   describe(`project_channels ${mode}: a person-made /Channels/notes is an ordinary folder`, () => {
     const f = fixtures[mode];
 
-    test('its grant counts, an admin manages it, anyone else gets nothing', async () => {
-      expect(await accessAt(f, BOB, `${NOTES}/plan.md`)).toBe('write');
+    test('an admin manages it like any folder', async () => {
       expect(await accessAt(f, MANAGER, `${NOTES}/plan.md`, true)).toBe('manage');
-      expect(await accessAt(f, CAROL, `${NOTES}/plan.md`)).toBe('none');
     });
 
-    test('a private-channel grant sync never deletes it', async () => {
+    test('a private-channel grant sync never deletes its agent grant', async () => {
       await afterPrivateChannelChange(f.projectId, { enforce: false });
       const grants = (await listFolderGrants(await driveOf(f))).filter((g) => g.path === NOTES);
-      expect(grants.map((g) => [g.principalId, g.level, g.source])).toEqual([[BOB, 'write', 'manual']]);
+      expect(grants.map((g) => [g.principalId, g.level])).toEqual([[f.agent, 'write']]);
     });
 
-    test('Bob’s own session mounts it read-write', async () => {
-      const plan = await planSessionDrives({ accountId: ACCOUNT, projectId: f.projectId, sessionId: f.bobThread, bootingUserId: BOB, agentName: 'kortix', slots: 16 });
+    test('the agent’s session mounts it read-write', async () => {
+      const plan = await planSessionDrives({ accountId: ACCOUNT, projectId: f.projectId, sessionId: f.editorThread, bootingUserId: BOB, agentName: EDITOR, slots: 16 });
       expect(plan.mounts.find((m) => m.path === NOTES)).toMatchObject({ readOnly: false });
     });
 
-    test('HTTP: Files lists /Channels and the folder to Bob, and the manager shares it with Carol', async () => {
-      listing['/'] = [{ path: '/Channels', type: 'dir', size: 0, mtime: 0 }];
-      listing['/Channels'] = [
-        { path: NOTES, type: 'dir', size: 0, mtime: 0 },
-        ...(mode === 'on' ? [{ path: P_FOLDER, type: 'dir' as const, size: 0, mtime: 0 }] : []),
-      ];
-      const files = (secret: string, path: string) => req('GET', `/v1/drives/${f.driveId}/files?path=${encodeURIComponent(path)}`, secret);
-      const root = await files(f.keys.bob!, '/');
-      expect(root.status).toBe(200);
-      expect(root.body.entries.map((e: any) => e.path)).toContain('/Channels');
-      const channels = await files(f.keys.bob!, '/Channels');
-      expect(channels.status).toBe(200);
-      expect(channels.body.entries.map((e: any) => e.path)).toEqual([NOTES]);
+    test('HTTP: the manager may share it, and shares it with the agent', async () => {
       const access = await req('GET', `/v1/drives/${f.driveId}/access?path=${encodeURIComponent(NOTES)}`, f.keys.manager!);
       expect(access.status).toBe(200);
       expect(access.body.grantable).toBe(true);
-      const shared = await req('PUT', `/v1/drives/${f.driveId}/access`, f.keys.manager!, { path: NOTES, principalType: 'user', principalId: CAROL, level: 'read' });
+      const shared = await req('PUT', `/v1/drives/${f.driveId}/access`, f.keys.manager!, { path: NOTES, principalType: 'agent', principalId: EDITOR, level: 'read' });
       expect(shared.status).toBe(200);
-      expect(await accessAt(f, CAROL, `${NOTES}/plan.md`)).toBe('read');
     });
   });
 }
@@ -207,17 +215,18 @@ describe('project_channels on: the private channel folder stays reserved', () =>
 
   test('it cannot be shared, nor /Channels that holds it', async () => {
     for (const path of [P_FOLDER, '/Channels']) {
-      const res = await req('PUT', `/v1/drives/${f.driveId}/access`, f.keys.manager!, { path, principalType: 'user', principalId: BOB, level: 'read' });
+      // A valid agent share, so a refusal is the reservation, not request validation.
+      const res = await req('PUT', `/v1/drives/${f.driveId}/access`, f.keys.manager!, { path, principalType: 'agent', principalId: EDITOR, level: 'read' });
       expect([400, 403, 404]).toContain(res.status);
     }
   });
 
-  test('a stray grant inside it is removed by the sync; Bob’s /Channels/notes grant stays', async () => {
+  test('a stray grant inside it is removed by the sync; the agent’s /Channels/notes grant stays', async () => {
     const drive = await driveOf(f);
-    await setFolderGrant({ drive, path: `${P_FOLDER}/x`, principal: { type: 'user', id: BOB }, level: 'write', grantedBy: null, source: 'manual' });
+    await setFolderGrant({ drive, path: `${P_FOLDER}/x`, principal: { type: 'agent', id: f.agent }, level: 'write', grantedBy: null, source: 'manual' });
     await afterPrivateChannelChange(f.projectId, { enforce: false });
     const paths = (await listFolderGrants(drive)).filter((g) => g.path.startsWith('/Channels')).map((g) => `${g.path} ${g.principalId}`).sort();
-    expect(paths).toEqual([`${NOTES} ${BOB}`, `${NOTES} ${CAROL}`, `${P_FOLDER} ${ALICE}`].sort());
+    expect(paths).toEqual([`${NOTES} ${f.agent}`, `${P_FOLDER} ${ALICE}`].sort());
   });
 
   test('Bob’s session never mounts the private channel folder', async () => {

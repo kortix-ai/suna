@@ -63,7 +63,7 @@ commit or a branch.
   the body back (`gh pr view <pr> --json body`) and re-run `gh pr edit --attach` for the
   missing file.
 - **`attaching files requires write access to the repository`:** the token's user cannot
-  push to `kortix-ai/suna`.
+  push to `kortix-ai/CompanyOS`.
 - **The same file twice in one command:** refused.
 - **GitHub Enterprise Server:** not supported. github.com only.
 
@@ -77,5 +77,5 @@ commit or a branch.
 
 ## Visibility
 
-`kortix-ai/suna` is public, so anyone with an attachment URL can open it. Record synthetic
+`kortix-ai/CompanyOS` is public, so anyone with an attachment URL can open it. Record synthetic
 data only.

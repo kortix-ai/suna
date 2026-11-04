@@ -14,7 +14,7 @@ installed app on the channel and needs Jay's explicit approval.
    address the phone can reach, for example the cloudflared tunnel URL plus
    `/v1`).
 2. Use a session that started on a sandbox image with the current skill. A
-   running, restarted or warm session keeps the skill text it booted with.
+   running or restarted session keeps the skill text it booted with.
 3. Start Metro from the `genui` worktree's `apps/mobile` directory. Copy
    `apps/mobile/.env` from the primary checkout first (the file is gitignored;
    edit `EXPO_PUBLIC_BACKEND_URL` if needed), then run `pnpm dev`
@@ -292,10 +292,10 @@ Commands:
 
 ```bash
 # Dry run: checks every guard, publishes nothing.
-gh workflow run mobile-ota.yml --repo kortix-ai/suna --ref dev -f channel=dev -f dry_run=true
+gh workflow run mobile-ota.yml --repo kortix-ai/CompanyOS --ref dev -f channel=dev -f dry_run=true
 
 # Publish to dev-backend builds (after genui is merged to dev and dev is deployed).
-gh workflow run mobile-ota.yml --repo kortix-ai/suna --ref dev -f channel=dev
+gh workflow run mobile-ota.yml --repo kortix-ai/CompanyOS --ref dev -f channel=dev
 
 # Production: no manual step for new code. The next production release
 # (Deploy Prod) publishes the released prod commit automatically.

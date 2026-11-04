@@ -393,9 +393,9 @@ function compileAgent(
  *
  * The compiled JSON already exists at every point that matters (boot, push,
  * recompile), so hashing it costs nothing and needs no new storage. Content, not
- * a commit sha: `refreshWarmSessionWorkspace` advances a box's commit while
- * deliberately skipping the restart, so a sandbox can report the newest commit
- * while running config compiled days earlier. Two commits that do not touch any
+ * a commit sha: a box's commit can advance without a restart, so a sandbox can
+ * report the newest commit while running config compiled days earlier. Two
+ * commits that do not touch any
  * agent also produce the same config, and calling that "stale" would send people
  * reloading for nothing.
  *

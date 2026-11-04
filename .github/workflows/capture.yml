@@ -3,7 +3,7 @@ name: Capture
 # Kortix Capture DEV build, kept out of Deploy Dev on purpose: it needs slow,
 # expensive macOS (10x) and Windows (2x) runners. It runs only when dispatched:
 #
-#   gh workflow run capture.yml --repo kortix-ai/suna --ref dev
+#   gh workflow run capture.yml --repo kortix-ai/CompanyOS --ref dev
 #
 # On any ref it builds, signs and verifies every installer. Only the `dev` ref
 # publishes: the mutable `capture-dev-latest` prerelease, with the installers,

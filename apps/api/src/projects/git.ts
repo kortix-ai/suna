@@ -50,6 +50,7 @@ export {
   readRepoFile,
   readRepoFileBytes,
   readManifestFromRepo,
+  findLastGoodManifestCommit,
   archiveRepoSubtree,
   getFileHistory,
   RepoFileNotFoundError,

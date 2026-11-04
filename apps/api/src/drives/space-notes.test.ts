@@ -111,9 +111,10 @@ describe('spaceNotesLines', () => {
 describe('renderDriveNotes', () => {
   const own = { mountPath: '/drives/me', subdir: '/Users/ana', role: 'me', readOnly: false } as SessionDriveView;
 
-  test('a channel or DM thread keeps team facts in Company/Memory, like every thread', () => {
+  test('a channel or DM thread is never told to keep team facts in Company: nothing is shared with the whole project', () => {
     const text = renderDriveNotes([own], [], null, spaceNotesLines({ kind: 'channel', name: 'launch' }, [own]));
-    expect(text).toContain('what the whole team should know goes in Company/Memory/ when that folder is mounted.');
+    expect(text).not.toContain('Company');
+    expect(text).toContain('only the user sees it');
     expect(text).not.toContain('`remember`');
     expect(text).toContain('/drives/me/Memory/ (load the kortix-user-memory skill)');
   });
@@ -127,9 +128,12 @@ describe('renderDriveNotes', () => {
     expect(text).toContain('read-only in this thread');
   });
 
-  test('a thread with no space keeps the Company/Memory folder', () => {
+  test('a thread with no space names only the user’s own folder; a shared Drive mount says who else sees it', () => {
     const text = renderDriveNotes([own], []);
-    expect(text).toContain('what the whole team should know goes in Company/Memory/ when that folder is mounted.');
+    expect(text).not.toContain('Company');
+    expect(text).not.toContain('a shared Drive');
+    const shared = renderDriveNotes([own, { ...own, mountPath: '/drives/sales', subdir: '/Sales', role: 'drive' }], []);
+    expect(shared).toContain('A shared Drive is seen by everyone who may use this agent.');
     expect(text).not.toContain('`remember`');
   });
 });

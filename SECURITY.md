@@ -3,7 +3,7 @@
 ## Report a vulnerability
 
 Report suspected vulnerabilities privately through
-[GitHub private vulnerability reporting](https://github.com/kortix-ai/suna/security/advisories/new).
+[GitHub private vulnerability reporting](https://github.com/kortix-ai/CompanyOS/security/advisories/new).
 Sign in to GitHub, then select **Report a vulnerability** in this repository's
 **Security** tab. Do not report vulnerabilities in public issues or pull requests.
 

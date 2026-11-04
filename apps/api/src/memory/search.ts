@@ -1,6 +1,6 @@
 /**
  * Memory search (`GET /memory/search`) over files: the layers a person reads
- * (Company, every live channel, their own Memory folder, or their My Kortix
+ * (every live channel they may read, their own Memory folder, or their My Kortix
  * memory when they have no DM), or the one layer
  * `layer` names. The newest 300 page files are read (cached by path and
  * mtime) and matched case-insensitively on title and body; title hits rank first.
@@ -46,7 +46,7 @@ async function textOf(layer: Layer, file: PageFile): Promise<string> {
   return text;
 }
 
-/** Company, every live channel, and the viewer's Memory folder (as their newest DM, or the DM whose agent folder holds a file). */
+/** Every live channel the viewer may read, and the viewer's Memory folder (as their newest DM, or the DM whose agent folder holds a file). */
 async function peopleLayers(project: Project, viewer: Viewer): Promise<Layer[]> {
   const channels = await db
     .select({ spaceId: projectSpaces.spaceId })
@@ -54,7 +54,7 @@ async function peopleLayers(project: Project, viewer: Viewer): Promise<Layer[]> 
     .where(and(eq(projectSpaces.projectId, project.projectId), eq(projectSpaces.kind, 'channel'), isNull(projectSpaces.archivedAt)));
   const dmKey = await newestDmKey(project.projectId, viewer.userId);
   // Without a DM, the viewer's My Kortix memory stands for their own folder (a DM layer covers it otherwise).
-  const keys = ['company', ...channels.map((c) => c.spaceId), dmKey ?? MY_KORTIX_MEMORY_LAYER_KEY];
+  const keys = [...channels.map((c) => c.spaceId), dmKey ?? MY_KORTIX_MEMORY_LAYER_KEY];
   const layers = await Promise.all(keys.map((key) => resolveLayer(project, key, viewer).catch(() => null)));
   return layers.filter((layer): layer is Layer => layer !== null);
 }

@@ -18,12 +18,12 @@ export function spaceSlug(name: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-/** Where every public channel's folder lives in the project's Files. */
+/** Where every public channel's folder lives in the project's Files. Nothing grants it to the project: admins and agents granted it reach it. */
 const SPACE_CHANNELS_DIR = '/Company/Channels';
 
 /**
- * Where every private channel's folder lives: outside `/Company`, so the
- * project grant on `/Company` and project admins never reach it. Only the
+ * Where every private channel's folder lives: outside `/Company`, so project
+ * admins never reach it. Only the
  * channel's members (one grant each) and the channel's own threads do. The
  * folder is named by the channel's id, never its name: a rename moves
  * nothing, and a later channel that takes the name never inherits the folder.
@@ -38,8 +38,7 @@ const FOLDER_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 /**
  * A space's two folders in the project's Files (drive paths). A public
- * channel's are shared with the project: `/Company/Channels/<slug>` and its
- * `Memory`. A private channel's are `/Channels/<space_id>` and its `Memory`
+ * channel's are `/Company/Channels/<slug>` and its `Memory`. A private channel's are `/Channels/<space_id>` and its `Memory`
  * (pass its id as `privateSpaceId`). A DM's
  * are in the member's own folder: `<personal>/Agents/<agent>` and its
  * memory `<personal>/Memory/<agent>` (the agent folder of the DM's Memory

@@ -43,6 +43,7 @@ import { cloudChildReport, cloudChildToolDetails, cloudSpawnSession, cloudStopCh
 import type { ControlPlane } from './extensions/control-plane'
 import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
 import { TEAM_TASK_TOOLS, teamTasks } from './extensions/team-tasks'
+import { VOICE_CALL_FLAG, voice } from './extensions/voice'
 import { BUNDLED_WORKFLOWS } from './extensions/bundled-workflows'
 import { isWorkflowRunner, WORKFLOW_TOOL, WorkflowRuns, type WorkflowControlAnswer } from './extensions/workflow'
 import { contextRecord } from './extensions/context-record'
@@ -384,6 +385,26 @@ export const piDumpPath = (stateDir: string, sessionId: string) => join(stateDir
 function replying(agent: Agent | null, turn: PiTurnEvents | null | undefined): { id: string; timestamp: number } | null {
   const message = agent?.state.streamingMessage
   return message && turn?.messageId ? { id: turn.messageId, timestamp: message.timestamp } : null
+}
+
+/**
+ * Load, ahead of time, the modules `PiRuntime.start` imports. Boot calls this
+ * while the config release downloads, so `start` finds them evaluated instead
+ * of loading the coding agent, its tools and extensions after the release
+ * lands. The same specifiers as `start`: a module loads once per process.
+ * Never throws; a failed load surfaces where `start` imports it.
+ */
+export function preloadPiRuntimeModules(): void {
+  void Promise.all([
+    import('./model'),
+    import('./tools'),
+    import('@earendil-works/pi-agent-core'),
+    import('@earendil-works/pi-coding-agent'),
+    import('./extensions/host'),
+    import('./extensions/subagents'),
+    import('./extensions/workflow'),
+    import('./codemode'),
+  ]).catch(() => undefined)
 }
 
 export class PiRuntime {
@@ -745,7 +766,7 @@ export class PiRuntime {
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
         // The nested-call gate is first: pi runs `tool_call` handlers in load order and stops at the first block.
-        extensions: [this.nestedCallGate(), this.presentationExtension(), this.turnExtension(), ...this.contextExtensions(), subagents(this.kortixHost()), workflow(this.kortixHost()), ...this.multiAgentExtensions(), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
+        extensions: [this.nestedCallGate(), this.presentationExtension(), this.turnExtension(), ...this.contextExtensions(), subagents(this.kortixHost()), workflow(this.kortixHost()), ...this.voiceExtensions(), ...this.multiAgentExtensions(), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         // Every provider a turn may switch to: the gateway, and Claude subscription models.
@@ -1726,6 +1747,13 @@ export class PiRuntime {
 
   private agentTeams(): boolean {
     return enabledFeatureFlags(this.env).has(AGENT_TEAMS_FLAG)
+  }
+
+  /** Voice calls with this session: the project's `voice_call` flag on, a top-level cloud session. */
+  private voiceExtensions(): InlineExtension[] {
+    const session = this.controlPlane()?.sessionId
+    if (!session || this.subagentContext.depth !== 0 || !enabledFeatureFlags(this.env).has(VOICE_CALL_FLAG)) return []
+    return [voice(session)]
   }
 
   /** The lead whose task list this session uses: itself at depth 0, its lead as a teammate; null without agent teams. */

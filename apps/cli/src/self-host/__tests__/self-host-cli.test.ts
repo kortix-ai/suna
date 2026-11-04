@@ -887,6 +887,29 @@ exit 0
     expect(docker.recreated()).toEqual(['supabase-auth']);
   }, 60_000);
 
+  // Compose never recreates Caddy for a changed bind-mounted Caddyfile, so a
+  // version that adds a route (the project snapshots' `@snapshots`) must
+  // reload it, or the prefix answers the API's 404 (learnings 2026-10-20T071256Z).
+  test('update reloads Caddy when the new version changes the Caddyfile, and only then', async () => {
+    const docker = runningStackDocker();
+    expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
+    const caddyfile = join(configRoot, instance, 'Caddyfile');
+    const reloads = () => docker.calls().split('\n').filter((line) => line.includes('exec -T caddy caddy reload')).length;
+    // An instance rendered by a CLI from before the route.
+    writeFileSync(caddyfile, readFileSync(caddyfile, 'utf8').replace(/\n\t# Project snapshots:[\s\S]*?\n\t@snapshots path[\s\S]*?\n\t\}\n/, ''));
+    expect(readFileSync(caddyfile, 'utf8')).not.toContain('@snapshots');
+
+    const updated = await run(['update'], docker.env);
+    expect(updated.code).toBe(0);
+    expect(readFileSync(caddyfile, 'utf8')).toContain('@snapshots path /kortix-project-snapshots /kortix-project-snapshots/*');
+    expect(reloads()).toBe(1);
+    expect(updated.stdout).toContain('reloaded: caddy');
+
+    // Nothing changed in the Caddyfile: no reload.
+    expect((await run(['update'], docker.env)).code).toBe(0);
+    expect(reloads()).toBe(1);
+  }, 60_000);
+
   test('doctor checks open sign-up on a tunnel instance, and not on a laptop instance', async () => {
     await run(['init', '--yes']);
     expect((await signUpCheck()).check).toBeUndefined();

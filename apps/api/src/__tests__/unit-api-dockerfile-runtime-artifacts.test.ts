@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { RUNTIME_ARTIFACTS } from '../snapshots/templates';
+import { metaRuntimeArtifacts } from '../snapshots/runtime-images';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -9,6 +11,11 @@ describe('API image sandbox runtime artifacts', () => {
     const dockerfile = readFileSync(resolve(repoRoot, 'apps/api/Dockerfile'), 'utf8');
 
     expect(dockerfile).toContain('COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md');
+    // The daemon fingerprint hashes the compile recipe; a missing input fails
+    // every template listing (ENOENT).
+    expect(dockerfile).toContain(
+      'COPY apps/kortix-sandbox-agent-server/scripts/build.sh ./apps/kortix-sandbox-agent-server/scripts/build.sh',
+    );
   });
 
   test('refreshes the compiled agent time after the final source copy', () => {
@@ -72,5 +79,24 @@ describe('API image sandbox runtime artifacts', () => {
         `COPY --from=deps /app/packages/db/scripts/${file} ./packages/db/scripts/${file}`,
       );
     }
+  });
+
+  test('copies every input the image fingerprints hash into the runtime stage', () => {
+    // A fingerprint input missing from the image fails every session start with
+    // ENOENT at image resolve: dev 2026-11-03, `lstat '/app/packages/voice/src'`
+    // after the voice runtime joined KORTIXD_SHARED_SOURCES.
+    const dockerfile = readFileSync(resolve(repoRoot, 'apps/api/Dockerfile'), 'utf8');
+    const runtime = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '));
+    const destinations = [...runtime.matchAll(/^COPY\s+(?:--from=\S+\s+)?(?:\S+\s+)+?(\S+)\s*$/gm)].map((m) =>
+      m[1]!.replace(/^\.\//, '').replace(/\/$/, ''),
+    );
+    // Present in the image: copied itself, inside a copied directory, or a
+    // directory whose contents were copied piecemeal.
+    const copied = (path: string) =>
+      destinations.some((dest) => path === dest || path.startsWith(`${dest}/`) || dest.startsWith(`${path}/`));
+    const inputs = [...RUNTIME_ARTIFACTS, ...metaRuntimeArtifacts(repoRoot)].map((artifact) =>
+      artifact.path.slice(repoRoot.length + 1),
+    );
+    expect(inputs.filter((path) => !copied(path))).toEqual([]);
   });
 });

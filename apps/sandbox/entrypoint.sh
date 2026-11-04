@@ -56,6 +56,11 @@ desktop() {
       Xvfb "${DISPLAY}" -screen 0 2560x1600x24 -shmem -nolisten tcp &
       for _ in $(seq 1 50); do xset q >/dev/null 2>&1 && break; sleep 0.1; done
       xset s off -dpms s noblank || true
+      # The display is up: a headed browser can open on it now. The session
+      # around it (sound, XFCE, the stream) costs ~1.4 CPU-seconds to start;
+      # the boot asks it to wait so that cost misses the daemon's boot and the
+      # session's first turn on 2 vCPUs (dev 2026-11-03). `start` by hand: no wait.
+      sleep "${KORTIX_DESKTOP_SESSION_DELAY_S:-0}" 2>/dev/null || true
       # No sound card: voxl streams the monitor of a null sink named `output`.
       pulseaudio --start --exit-idle-time=-1 \
         && pactl load-module module-null-sink sink_name=output >/dev/null \
@@ -563,7 +568,7 @@ fi
 if [ -e /usr/local/bin/kortix-desktop ]; then
   export DISPLAY=:1 AGENT_BROWSER_HEADED=true DBUS_SESSION_BUS_ADDRESS="${DESKTOP_BUS}" \
     AGENT_BROWSER_ARGS="${AGENT_BROWSER_ARGS:+${AGENT_BROWSER_ARGS},}--start-maximized,--no-startup-window"
-  ( /usr/local/bin/kortix-desktop start || true ) 9>&- >&2 &
+  ( KORTIX_DESKTOP_SESSION_DELAY_S=2 /usr/local/bin/kortix-desktop start || true ) 9>&- >&2 &
 fi
 
 echo "[entrypoint] daemon takeover (cwd=/, workspace=${WORKSPACE})" >&2

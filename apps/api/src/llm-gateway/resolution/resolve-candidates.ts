@@ -28,6 +28,7 @@ import {
   canonicalManagedModelId,
   getRuntimeManagedModel,
   isKnownManagedModelId,
+  isManagedAudioModelId,
   managedLineup,
   isRetiredManagedModelId,
 } from '../models/managed-models';
@@ -397,10 +398,12 @@ async function resolveCustomCandidates(context: Context, provider: CustomLlmProv
  * getRuntimeManagedModel() matches only when KORTIX_MANAGED_PROVIDER_ENABLED is
  * on, so a self-host falls through to "model not available on this deployment".
  * An empty result (no transport credential configured) falls through the same way.
+ * A managed audio model (the gateway's `/audio/*` routes) takes the same gates.
  */
 async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveModel: string,
   access: Awaited<ReturnType<typeof getProjectModelAccess>>): Promise<UpstreamDescriptor[]> {
-  const managed = getRuntimeManagedModel(effectiveModel);
+  const managed = getRuntimeManagedModel(effectiveModel)
+    ?? (isManagedAudioModelId(effectiveModel) ? { id: effectiveModel } : undefined);
   if (!managed || !config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
   if (access.disabledProviders.includes('kortix')) throw new GatewayResolutionError('provider_disabled',
     'Kortix Managed Models are disabled for this project.',

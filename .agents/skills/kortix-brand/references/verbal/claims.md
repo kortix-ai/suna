@@ -27,7 +27,7 @@ Use these words. Do not invent others.
 | Claim | Exact words | Source | Verified |
 | --- | --- | --- | --- |
 | Source | Open source. Read it, fork it, audit it. | README.md "How it compares" | 2026-10-01 |
-| Stars | 20,000+ GitHub stars on `kortix-ai/suna`. | `gh api repos/kortix-ai/suna` returned 20,239 | 2026-10-01 |
+| Stars | 20,000+ GitHub stars on `kortix-ai/CompanyOS`. | `gh api repos/kortix-ai/CompanyOS` returned 20,239 | 2026-10-01 |
 | Connectors | 3,000+ apps in a click, plus MCP, OpenAPI, Postman, GraphQL and raw HTTP. | `apps/web/src/features/marketing/connectors/content.ts:43,63,70` | 2026-10-01 |
 | Connector credentials | Connector credentials are brokered server-side and never enter the machine. | `connectors/content.ts` gate; `apps/api/src/projects/secrets.ts` | gate cited 2026-07-31 |
 | One sandbox per session | One isolated sandbox per session. Each session has its own isolated machine and branch. | `security-page/content.ts` (UNIQUE constraint) | gate cited 2026-07-31 |

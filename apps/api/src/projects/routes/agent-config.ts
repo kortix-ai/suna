@@ -20,6 +20,7 @@ import { ignoredAgentSettings } from '@kortix/api-contract/runtime-relay';
 import { projects } from '@kortix/db';
 import {
   type ManifestIssue,
+  isManifestSyntaxError,
   SLUG_RE,
   SPACE_SLUG_RE,
 } from '@kortix/manifest-schema';
@@ -187,7 +188,7 @@ export function registerAgentConfigRoutes(): void {
       summary: 'Get an agent\'s configuration',
       ...auth,
       request: { params: z.object({ projectId: z.string(), agentName: z.string() }) },
-      responses: { 200: json(z.any(), 'The agent config block'), ...errors(400, 403, 404) },
+      responses: { 200: json(z.any(), 'The agent config block'), ...errors(400, 403, 404, 409) },
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
@@ -209,6 +210,13 @@ export function registerAgentConfigRoutes(): void {
         manifest = await loadManifestForEdit(gitProject);
       } catch (e) {
         rethrowDatabaseError(e);
+        if (isManifestSyntaxError(e)) {
+          // Repair mode: My Kortix runs while kortix.yaml is not YAML, and its
+          // config is platform-owned. Every other agent names the error.
+          const builtinKey = enabledBuiltinAgentKey(agentName, { my_kortix: true });
+          if (builtinKey) return c.json(builtinAgentConfigView(builtinKey, null));
+          return c.json({ error: `kortix.yaml is not valid YAML (${e.message}). Only My Kortix runs until it is fixed.`, code: 'manifest_invalid' }, 409);
+        }
         return c.json(
           { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
           400,
@@ -321,9 +329,9 @@ export function registerAgentConfigRoutes(): void {
 
       manifest.raw = applied.raw;
       const manifestPath = manifest.path || loaded.row.manifestPath || MANIFEST_FILENAME;
+      const writes = manifestWrites(manifest, manifestPath);
       try {
         const gitProject = await withProjectGitAuth(loaded.row);
-        const writes = manifestWrites(manifest, manifestPath);
         await commitMultipleFilesToBranch(gitProject, {
           files: writes.files,
           deletes: writes.deletes,

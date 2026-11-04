@@ -42,8 +42,8 @@
  *
  *   • API — `requireFeatureFlag` on its routes (403 `feature_disabled`).
  *   • Session box — the API lists the enabled flags in KORTIX_FEATURE_FLAGS
- *     (projects/lib/feature-flag-env.ts). Boot-only; a change retires warm
- *     sessions (toggle-effects.ts) and reaches the next new box.
+ *     (projects/lib/feature-flag-env.ts). Boot-only; a change reaches the next
+ *     new box.
  *   • Managed skill — put the feature's agent docs in their own skill under
  *     packages/starter/templates/managed/skills, with `metadata:
  *     kortix-feature-flag: <key>` in its frontmatter. kortixd withholds it from a
@@ -196,6 +196,11 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // `monitors` (the per-project monitor box) was removed: an App with a
   // schedule or `type: app` trigger replaces it. A stored
   // `experimental.monitors` override is inert.
+  // `warm_sessions` removed (2026-11-03): a session boots fast enough on its
+  // own, and 66 % of the pre-created sessions were never used. Clients no
+  // longer pre-create a session; POST /sessions/warm and /sessions/warm/claim
+  // answer 410 (routes/retired.ts). A stored `experimental.warm_sessions`
+  // override is inert; the API still sends `false` to older clients.
   {
     key: 'reminders',
     name: 'Loops',
@@ -207,21 +212,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => true,
     // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
     // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
-    enforcement: 'routes',
-  },
-  {
-    key: 'warm_sessions',
-    name: 'Warm Sessions',
-    description:
-      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, until you use it or it expires. Turn this off to trade instant starts for lower cost.',
-    stability: 'beta',
-    available: () => true,
-    // Idle compute requires explicit opt-in. Opening a project or sending its
-    // first prompt must not create an unused replacement sandbox by default.
-    platformDefault: () => false,
-    // NOT 'ui-only'. A flag that only hid client surface would let any other
-    // caller keep booting billed sandboxes, which defeats the reason someone
-    // turns this off.
     enforcement: 'routes',
   },
   {
@@ -438,12 +428,29 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
     enforcementNote:
       'Every /projects/:id/spaces route returns 403 feature_disabled while off. Session create/list ignore space_id while off. ' +
-      'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box and retires warm sessions (feature-flags/toggle-effects.ts). ' +
+      'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box. ' +
       'PRIVATE CHANNELS (shared/space-access.ts) are enforced whatever this flag says, and created only with KORTIX_PRIVATE_CHANNELS_ENABLED. ' +
       'Revocation windows after a removal or a conversion: REST ≤ 10 s on another replica (access memo; busted at once on the serving one), ' +
       'proxy ≤ 10 s more (verdict cache; cleared on the serving replica), /events SSE, proxied SSE and proxied WebSockets ≤ 60 s (re-check; WebSockets of the serving replica at once). ' +
       'A channel created private reads as public on another replica for ≤ 10 s. ' +
       'Accepted limits: a private thread\'s git branch is readable like any branch, and agent config, skills, MCP tools and network egress are not private.',
+  },
+  {
+    key: 'shared_drives',
+    name: 'Shared drives',
+    description:
+      'Drives the whole team can use: an admin makes a Drive and adds agents to it. Every session of those agents mounts it, and everyone who may use one of them can open it. Off, every person has only My files.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    // Off by default (Marko, 2026-11-03): Drive is My files until shared Drives are figured out.
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'PUT /v1/drives/:driveId/access answers 403 feature_disabled while off. Off, driveSubjectFor gives a person no agent reach (agentIds empty) and ' +
+      'planSessionDrives mounts no folder granted to an agent: a session mounts only its person\'s own folder (and a private channel thread its channel folder). ' +
+      'Grants made while on stay stored and count again when it is turned on; a change reaches running sessions at their next mount enforcement or boot. ' +
+      'WEB: the Drive tree shows only My files while off (no Drives section, no All files, no Share).',
   },
   {
     key: 'agent_rooms',
@@ -458,7 +465,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
-      'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box, and retires warm sessions (feature-flags/toggle-effects.ts). CLI outside a box: hidden and refused unless the linked project has the flag on. IAM: project.room.* leave the account permission catalog until a project of the account has it on. NOTIFICATIONS: the `message` kind is in `hidden_kinds` (no settings row) unless the person is in a room of a flag-on project. WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen. DOCS: the reference is the kortix-rooms skill (references/rooms.md), not the public docs.',
+      'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box. CLI outside a box: hidden and refused unless the linked project has the flag on. IAM: project.room.* leave the account permission catalog until a project of the account has it on. NOTIFICATIONS: the `message` kind is in `hidden_kinds` (no settings row) unless the person is in a room of a flag-on project. WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen. DOCS: the reference is the kortix-rooms skill (references/rooms.md), not the public docs.',
   },
   {
     key: 'workspace_volume',
@@ -533,6 +540,21 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'a change reaches the next new box. Cross-session messages (`send_message`, `list_agents`, the peer-message ' +
       'routes) do not read this flag. The session list `team_lead` filter and the session row fields stay on: ' +
       'without teammates they return nothing new.',
+  },
+  {
+    key: 'voice_call',
+    name: 'Voice calls',
+    description:
+      'Call the session\'s agent from the session page and talk it through: it hears you, answers in a voice, sees a screen you share, and works in the same session, so the conversation stays in the chat.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Off ⇒ nothing of the voice loads. BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so ' +
+      'kortixd registers no voice extension and opens no voice port; a change reaches the next new box. WEB: no call ' +
+      'button on the session page. The gateway\'s audio routes are inference like chat: billed per use, not gated here.',
   },
 ];
 

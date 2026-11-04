@@ -355,12 +355,6 @@ mock.module('../lib/agent-access', () => ({
     agentAccessCalls.push({ requested, sessionAgent });
     return { agentName: 'kortix', accessible: ['kortix'], memberTier: false };
   },
-  // Declared even though this suite never calls it: `warm-sessions.ts` imports
-  // it, and that module is pulled in with the rest of the app. A `mock.module`
-  // REPLACES the module, so any exported name an importer expects and the stub
-  // omits fails the whole isolate with
-  // `SyntaxError: Export named '…' not found`.
-  canUseAnyAgent: async () => true,
 }));
 
 // The Stop's first request is the hold, and the hold's background settle can

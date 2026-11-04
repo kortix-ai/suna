@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1035,
+  "count": 1036,
   "routes": [
     {
       "method": "GET",
@@ -3973,6 +3973,10 @@
     {
       "method": "GET",
       "path": "/v1/skills/:name/file"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/system/confirmed-signups"
     },
     {
       "method": "POST",

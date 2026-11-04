@@ -8,7 +8,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { TooltipProvider } from '../../primitives/tooltip';
 import { IntlTestProvider } from '../../test-utils/intl';
 import '../tool/tools/register';
-import { SessionTurn } from '../thread/transcript';
+import { SessionTurn, isAgentNoticeTurn } from '../thread/transcript';
 import { NoticeBatchGroup } from './notice-batch-group';
 import { parseNoticeBatch } from './subagent-notice';
 import { UserMessage } from './user-message';
@@ -120,10 +120,12 @@ describe('in the thread', () => {
       producer: { harness: 'pi', harness_version: '1', adapter_version: '1' }, blocks: [{ type: 'text', id: `${mid}-t`, text }], ...extra,
     };
   }
-  const turnHtml = (prompt: string) => {
+  const turnHtml = (prompt: string, opts: { synthetic?: boolean } = {}) => {
+    const notice = message('notice', 'user', prompt);
+    if (opts.synthetic) notice.blocks = [{ type: 'text', id: 'notice-t', text: prompt, synthetic: true }];
     const turns = sessionLogTurns({
       schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, thread_id: 'synthetic', parent_thread_id: null, spawned_by: null,
-      agent: null, title: null, created_at: '', messages: [message('notice', 'user', prompt), message('reply', 'assistant', 'Both are done.', { reply_to: 'notice' })],
+      agent: null, title: null, created_at: '', messages: [notice, message('reply', 'assistant', 'Both are done.', { reply_to: 'notice' })],
     });
     return render(
       <SessionTurn
@@ -134,6 +136,30 @@ describe('in the thread', () => {
       />,
     );
   };
+
+  test("another agent's notice is a continuation; a person's prompt is not", () => {
+    const user = (text: string) => ({ user: message('u', 'user', text) });
+    const peer = peerMessagePromptText({ kind: 'message', from: 'builder', fromShortId: '3f2a1b9c', messageId: 'm_1', summary: null, text: 'Done.' });
+    expect(isAgentNoticeTurn(user(peer))).toBe(true);
+    expect(isAgentNoticeTurn(user(subagent(1)))).toBe(true);
+    expect(isAgentNoticeTurn(user(batch(subagent(1), subagent(2))))).toBe(true);
+    expect(isAgentNoticeTurn(user('Can you check the build?'))).toBe(false);
+  });
+
+  test('a peer message the API delivered as harness context draws its row, not an empty gap', () => {
+    const prompt = peerMessagePromptText({
+      kind: 'message',
+      from: 'builder',
+      fromShortId: '3f2a1b9c',
+      messageId: 'm_build1',
+      summary: 'Build passed',
+      text: 'The build passed and the PR is staged.',
+    });
+    const html = turnHtml(prompt, { synthetic: true });
+    expect(html.match(/data-testid="peer-message-turn"/g)).toHaveLength(1);
+    expect(textOf(html)).toContain('@builder');
+    expect(textOf(html)).not.toContain('carries no authority');
+  });
 
   test('a batch turn draws the group, not one row per first notice or a bubble', () => {
     const html = turnHtml(batch(subagent(1), subagent(2)));

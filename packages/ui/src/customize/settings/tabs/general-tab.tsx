@@ -328,9 +328,11 @@ function GeneralWorkspaceCard({
   // write is rolled back by `renameOnError`, and the summary cache this card
   // reads is never optimistically written), so the effect's equality guard
   // alone would re-fire the same rename on every `isRenamePending` flip,
-  // forever. Skipping the attempted name breaks that loop: a failed save
-  // idles until the user edits again (any settled edit that differs clears
-  // it), and a successful one clears it in `onSuccess`.
+  // forever. Skipping the attempted name breaks that loop: a save, failed or
+  // successful, idles until the user edits again (any settled edit that
+  // differs clears it). A success keeps it too: the rename refetches the
+  // project row (`renameOnSettled`), and a read that still returns the old
+  // name would otherwise re-send the same rename on every refetch.
   const attemptedName = useRef<string | null>(null);
 
   useEffect(() => {
@@ -341,7 +343,6 @@ function GeneralWorkspaceCard({
     mutationFn: (nextName: string) => updateProject(project.project_id, { name: nextName }),
     onMutate: (nextName) => renameOnMutate(queryClient, project.project_id, nextName),
     onSuccess: (updated) => {
-      attemptedName.current = null;
       queryClient.setQueryData(qk.project.summary(project.project_id), updated);
     },
     onError: (error: Error, _nextName, context) => {

@@ -2,7 +2,7 @@
  * `kortix goals` — what a person wants plus a definition of done, worked by an
  * assigned agent until an independent verifier session confirms it.
  *
- * A goal is a folder in Files, `Goals/<slug>/` in the company folder by
+ * A goal is a folder in Files, `Goals/<slug>/` in the user's own folder by
  * default (the `kortix-goals` skill): `GOAL.md` (front matter = definition and
  * state, `@kortix/sdk` parseGoalFile/formatGoalFile), `log.md` (append-only),
  * `evidence/`. The folder is the source of truth; sessions are replaceable.
@@ -42,7 +42,7 @@ Lifecycle: draft → active ⇄ waiting_on_user; active → verifying (verify) �
 done (verifier PASS) or back to active (verifier FAIL); any → stopped.
 
 Subcommands:
-  new "<goal>"        Create Goals/<slug>/ in the company folder, make this
+  new "<goal>"        Create Goals/<slug>/ in your own folder, make this
                       session its owner, mark it unattended and arm the
                       heartbeat. State: draft.
   transition <to> --reason "<why>" [<folder>]
@@ -73,7 +73,8 @@ Subcommands:
 Options:
   --slug <slug>       new: the folder name (default: from the goal).
   --folder <dir>      new: put Goals/<slug>/ under this folder of /drives
-                      instead of /drives/company. Sharing stays Files sharing.
+                      instead of /drives/me (for example this agent's Drive,
+                      /drives/<agent>, which everyone who uses it sees).
   --user <user_id>    new: the assigned user (default: this session's creator).
   --agent <name>      new: the assigned agent (default: $KORTIX_AGENT_NAME);
                       bind: the agent the goal is grouped under.
@@ -331,7 +332,7 @@ interface Flags {
 }
 
 function parseFlags(rest: string[]): Flags {
-  // --shared meant "in the company folder": that is the default now.
+  // --shared meant "in the company folder", which no longer exists: ignored.
   takeFlagBool(rest, ['--shared']);
   return {
     slug: takeFlagValue(rest, ['--slug']),
@@ -422,7 +423,7 @@ async function newGoal(ctx: Ctx, objective: string, flags: Flags): Promise<numbe
     return fail(`Goals need these project features on: ${off.join(', ')}. Turn them on with ${off.map((f) => `kortix projects features enable ${f}`).join(' && ')} (a project admin), then run this again.`);
   }
   if (!existsSync(drivesRoot())) return fail('Files is not mounted in this session yet. Volumes is on: start a new session, then run this again.');
-  const parent = flags.folder ?? join(drivesRoot(), 'company');
+  const parent = flags.folder ?? join(drivesRoot(), 'me');
   if (!parent.startsWith(`${drivesRoot()}/`) || !existsSync(parent)) return fail(`${parent} is not a mounted folder under ${drivesRoot()}; see /drives/README.md.`);
   const slug = flags.slug ?? slugify(objective);
   const folder = join(parent, 'Goals', slug);

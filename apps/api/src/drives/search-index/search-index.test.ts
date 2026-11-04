@@ -76,26 +76,27 @@ describe('who reads what', () => {
     { path: '/Users/ana', level: 'manage', principalType: 'user', principalId: ANA, source: 'system' },
     { path: '/Users/ben', level: 'manage', principalType: 'user', principalId: BEN, source: 'system' },
     { path: '/Users/ben/shared', level: 'read', principalType: 'user', principalId: ANA },
-    { path: '/Company', level: 'write', principalType: 'project', principalId: 'p', source: 'system' },
+    { path: '/Sales', level: 'write', principalType: 'agent', principalId: 'sa-sales' },
     { path: '/Channels/s1', level: 'write', principalType: 'user', principalId: BEN, source: 'system' },
   ];
   const channels = new Set(['/Channels/s1']);
 
-  test('a member reads their folder, what is shared with them and the project folders, nothing else', () => {
-    const r = personReader(grants, { userId: ANA, projectMember: true, privateChannelFolders: channels });
+  test('a member reads their folder, what is shared with them and the shared Drives of agents they may use, nothing else', () => {
+    const r = personReader(grants, { userId: ANA, agentIds: new Set(['sa-sales']), privateChannelFolders: channels });
     expect(r.access('/Users/ana/notes.md')).toBe('manage');
     expect(r.access('/Users/ben/shared/q3.md')).toBe('read');
-    expect(r.access('/Company/plan.md')).toBe('write');
+    expect(r.access('/Sales/plan.md')).toBe('write');
+    expect(r.access('/Company/plan.md')).toBe('none');
     expect(r.access('/Users/ben/diary.md')).toBe('none');
     expect(r.access('/Channels/s1/x.md')).toBe('none');
     expect(r.access('/Team/x.md')).toBe('none');
-    expect(r.include?.sort()).toEqual(['/Company', '/Users/ana', '/Users/ben/shared']);
+    expect(r.include?.sort()).toEqual(['/Sales', '/Users/ana', '/Users/ben/shared']);
     // ben's folder holds a share with ana, so SQL keeps it and the per-path rule decides.
     expect(r.exclude).toEqual(['/Channels/s1']);
   });
 
   test('a project admin reaches every folder but people’s and private channels’ they hold no grant in', () => {
-    const r = personReader(grants, { userId: ANA, projectMember: true, admin: true, privateChannelFolders: channels });
+    const r = personReader(grants, { userId: ANA, admin: true, privateChannelFolders: channels });
     expect(r.include).toBeNull();
     expect(r.access('/Team/x.md')).toBe('manage');
     expect(r.access('/Users/ben/diary.md')).toBe('none');
