@@ -18,6 +18,7 @@ import { ApprovalsScreen } from './features/approvals/index.ts';
 import { ArtifactsScreen } from './features/artifacts/index.ts';
 import { AuditScreen } from './features/audit/index.ts';
 import { CustomizeScreen } from './features/customize/index.ts';
+import { ProvidersScreen } from './features/providers/index.ts';
 import { DriveScreen } from './features/drive/index.ts';
 import { FilesScreen } from './features/files/index.ts';
 import { GoalsScreen } from './features/goals/index.ts';
@@ -40,6 +41,7 @@ export const SCREEN_TITLE: Record<ScreenRoute, string> = {
   review: 'Change requests',
   apps: 'Apps',
   customize: 'Customize',
+  providers: 'Model providers',
   account: 'Account',
   drive: 'Drive',
   repo: 'Repository',
@@ -71,6 +73,8 @@ export interface ScreenProps {
   onBack(): void;
   onOpenSession(sessionId: string): void;
   onToast(message: string, kind?: ToastKind): void;
+  /** `/providers <id>`: the provider whose sheet opens first. */
+  providerId?: string;
 }
 
 /**
@@ -160,6 +164,19 @@ export function Screen(props: ScreenProps) {
           width={width}
           height={height}
           webBaseUrl={props.webBaseUrl}
+          onBack={onBack}
+          onToast={onToast}
+        />
+      );
+    case 'providers':
+      return (
+        <ProvidersScreen
+          projectId={projectId}
+          accountId={accountId}
+          focused={focused}
+          width={width}
+          height={height}
+          initialProviderId={props.providerId}
           onBack={onBack}
           onToast={onToast}
         />

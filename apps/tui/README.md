@@ -378,6 +378,7 @@ is `/feedback`.
 | `/review` | `/changes` `/pr-comments` `Alt+r` | Screens: Review change requests. |
 | `/apps` | `Alt+a` | Screens: List and deploy Apps. |
 | `/customize` | `/settings` `/config` `/mcp` `/connectors` `Alt+c` | Screens: Agents, skills, secrets, triggers, connectors. |
+| `/providers [provider]` | `/provider` | Screens: Connect model providers: ChatGPT, Claude, API keys, and who can use them. |
 | `/account` | `/members` `/billing` `/usage` `Alt+u` | Screens: Members, invites, roles, credits. |
 | `/status` | `/doctor` `/whoami` | App: Host, account, project, session, runtime and version. |
 | `/feedback` | `/bug` | App: Report a bug or an idea on GitHub. |
@@ -385,7 +386,7 @@ is `/feedback`.
 | `/help` | `/keys` `/?` `?` | App: Show every command and key. |
 | `/quit` | `/exit` `/q` `Ctrl+c / Ctrl+q` | App: Leave the TUI. |
 
-_58 commands._
+_59 commands._
 
 ### Anywhere
 
@@ -847,7 +848,33 @@ _58 commands._
 | `PgUp` | Page up. |
 | `Enter` | Open the row. |
 
-_319 bindings._
+### Model providers
+
+| Keys | Action |
+| --- | --- |
+| `j / ↓` | Move down. |
+| `k / ↑` | Move up. |
+| `g` | Go to the first row. |
+| `G` | Go to the last row. |
+| `/` | Search providers. |
+| `Enter / → / l` | Open the selected provider. |
+| `Esc / ← / h` | Back to the list, or close the screen. |
+| `s` | Sign in with the subscription. |
+| `Shift+k / K` | Add or replace the API key. |
+| `a` | Add an account or a key. |
+| `r` | Reconnect the selected account. |
+| `m` | Change who can use the selected account. |
+| `x` | Rotate the selected key. |
+| `d` | Remove or disconnect (asks first). |
+| `e` | Turn the provider on or off for this project. |
+| `o` | Open the sign-in link in the browser. |
+| `c` | Copy the sign-in code, or the link. |
+| `y` | Confirm. |
+| `Enter` | Submit. |
+| `Esc` | Cancel. |
+| `Space /  ` | Select or clear a member. |
+
+_351 bindings._
 
 ## Tests
 

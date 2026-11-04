@@ -244,6 +244,8 @@ export function App({
   const renderer = useRenderer();
 
   const [route, setRoute] = useState<Route>('session');
+  /** `/providers <id>`: the sheet the providers screen opens on. */
+  const [providerTarget, setProviderTarget] = useState<string | undefined>(undefined);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const bootTerminal = initialTerminalOpen && Boolean(initialSessionId);
   const [focus, setFocus] = useState<Focus>(bootTerminal ? 'terminal' : 'composer');
@@ -745,6 +747,9 @@ export function App({
         case 'customize':
         case 'account':
           return openScreen(command);
+        case 'providers':
+          setProviderTarget(args.trim().toLowerCase() || undefined);
+          return openScreen('providers');
         case 'life':
           return setLifeSignal((value) => value + 1);
         case 'help':
@@ -1047,6 +1052,7 @@ export function App({
               }}
               onOpenSession={openSession}
               onToast={pushToast}
+              providerId={providerTarget}
             />
           </Panel>
         ) : null}

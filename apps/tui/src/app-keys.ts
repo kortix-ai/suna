@@ -32,6 +32,7 @@ export type Route =
   | 'review'
   | 'apps'
   | 'customize'
+  | 'providers'
   | 'account'
   | 'drive'
   | 'repo'
