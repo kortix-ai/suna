@@ -683,7 +683,7 @@
       "threadsDeleted": "所有会话和消息都将被删除",
       "credentialsDeleted": "所有凭证和秘密都被删除",
       "subscriptionCancelled": "您的订阅已取消",
-      "billingHistoryRemoved": "您的帐单历史记录已删除",
+      "billingRecordsKept": "您的账单记录将按法律要求的期限保留",
       "chooseWhen": "选择何时",
       "gracePeriodLabel": "宽限期",
       "gracePeriodDescription": "账户将在预定日期删除。在此之前可随时取消。",

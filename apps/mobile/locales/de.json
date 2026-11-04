@@ -606,7 +606,7 @@
     "notAvailableTitle": "Auf diesem Server nicht verfügbar",
     "projectsAndSessions": "Projekte und Sitzungen",
     "credentialsAndConnections": "Zugangsdaten und Verbindungen",
-    "subscriptionAndBilling": "Abonnement und Abrechnung",
+    "subscriptionAndBilling": "Abonnement",
     "when": "Wann",
     "in30Days": "In 30 Tagen",
     "immediately": "Sofort",
@@ -618,8 +618,8 @@
     "deleting": "Wird gelöscht…",
     "cancelling": "Wird abgebrochen…",
     "finalTitle": "Bist du sicher?",
-    "finalDescriptionNow": "Alles in deinem Konto wird sofort gelöscht: Projekte, Sitzungen, Zugangsdaten und Abrechnung. Das kann nicht rückgängig gemacht werden.",
-    "finalDescriptionScheduled": "Alles in deinem Konto wird in 30 Tagen gelöscht: Projekte, Sitzungen, Zugangsdaten und Abrechnung. Bis dahin kannst du abbrechen."
+    "finalDescriptionNow": "Deine Projekte, Sitzungen und Zugangsdaten werden sofort gelöscht. Abrechnungsunterlagen bleiben so lange erhalten, wie es das Gesetz vorschreibt. Das kann nicht rückgängig gemacht werden.",
+    "finalDescriptionScheduled": "Deine Projekte, Sitzungen und Zugangsdaten werden in 30 Tagen gelöscht. Abrechnungsunterlagen bleiben so lange erhalten, wie es das Gesetz vorschreibt. Bis dahin kannst du abbrechen."
   },
   "models": {
     "selectModel": "Modell wählen",

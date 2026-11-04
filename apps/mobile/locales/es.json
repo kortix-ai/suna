@@ -612,7 +612,7 @@
     "notAvailableTitle": "No disponible en este servidor",
     "projectsAndSessions": "Proyectos y sesiones",
     "credentialsAndConnections": "Credenciales y conexiones",
-    "subscriptionAndBilling": "Suscripción y facturación",
+    "subscriptionAndBilling": "Suscripción",
     "when": "Cuándo",
     "in30Days": "En 30 días",
     "immediately": "Inmediatamente",
@@ -624,8 +624,8 @@
     "deleting": "Eliminando…",
     "cancelling": "Cancelando…",
     "finalTitle": "¿Estás seguro?",
-    "finalDescriptionNow": "Todo lo de tu cuenta se elimina ahora: proyectos, sesiones, credenciales y facturación. Esto no se puede deshacer.",
-    "finalDescriptionScheduled": "Todo lo de tu cuenta se eliminará en 30 días: proyectos, sesiones, credenciales y facturación. Puedes cancelarlo antes."
+    "finalDescriptionNow": "Tus proyectos, sesiones y credenciales se eliminan ahora. Los registros de facturación se conservan durante el tiempo que exige la ley. Esto no se puede deshacer.",
+    "finalDescriptionScheduled": "Tus proyectos, sesiones y credenciales se eliminarán en 30 días. Los registros de facturación se conservan durante el tiempo que exige la ley. Puedes cancelarlo antes."
   },
   "models": {
     "selectModel": "Elegir Modelo",

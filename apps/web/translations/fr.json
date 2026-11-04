@@ -683,7 +683,7 @@
       "threadsDeleted": "Toutes les sessions et tous les messages sont supprimés",
       "credentialsDeleted": "Chaque identifiant et secret est supprimé",
       "subscriptionCancelled": "Votre abonnement est annulé",
-      "billingHistoryRemoved": "Votre historique de facturation est supprimé",
+      "billingRecordsKept": "Vos documents de facturation sont conservés aussi longtemps que la loi l’exige",
       "chooseWhen": "Choisissez quand",
       "gracePeriodLabel": "Délai de grâce",
       "gracePeriodDescription": "La suppression a lieu à la date prévue. Vous pouvez annuler avant cette date.",

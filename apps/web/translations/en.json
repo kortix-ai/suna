@@ -505,7 +505,7 @@
       "threadsDeleted": "Every session and message is deleted",
       "credentialsDeleted": "Every credential and secret is removed",
       "subscriptionCancelled": "Your subscription is cancelled",
-      "billingHistoryRemoved": "Your billing history is removed",
+      "billingRecordsKept": "Your billing records are kept as long as the law requires",
       "chooseWhen": "Choose when",
       "gracePeriodLabel": "Grace period",
       "gracePeriodDescription": "Deletion happens on the scheduled date. Cancel any time before then.",

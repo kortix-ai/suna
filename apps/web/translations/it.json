@@ -683,7 +683,7 @@
       "threadsDeleted": "Ogni sessione e ogni messaggio vengono eliminati",
       "credentialsDeleted": "Ogni credenziale e segreto viene rimosso",
       "subscriptionCancelled": "Il tuo abbonamento è stato annullato",
-      "billingHistoryRemoved": "La cronologia di fatturazione viene rimossa",
+      "billingRecordsKept": "I documenti di fatturazione vengono conservati per il tempo previsto dalla legge",
       "chooseWhen": "Scegli quando",
       "gracePeriodLabel": "Periodo di attesa",
       "gracePeriodDescription": "L’eliminazione avviene alla data prevista. Puoi annullarla prima.",

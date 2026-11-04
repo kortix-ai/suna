@@ -683,7 +683,7 @@
       "threadsDeleted": "Jede Session und jede Nachricht wird gelöscht",
       "credentialsDeleted": "Alle Anmeldeinformationen und Geheimnisse werden entfernt",
       "subscriptionCancelled": "Ihr Abonnement ist gekündigt",
-      "billingHistoryRemoved": "Ihr Abrechnungsverlauf wird entfernt",
+      "billingRecordsKept": "Ihre Abrechnungsunterlagen bleiben so lange erhalten, wie es das Gesetz vorschreibt",
       "chooseWhen": "Wählen Sie wann",
       "gracePeriodLabel": "Schonfrist",
       "gracePeriodDescription": "Die Löschung erfolgt am geplanten Datum. Du kannst sie vorher jederzeit abbrechen.",

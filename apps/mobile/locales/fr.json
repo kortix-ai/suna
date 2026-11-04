@@ -612,7 +612,7 @@
     "notAvailableTitle": "Non disponible sur ce serveur",
     "projectsAndSessions": "Projets et sessions",
     "credentialsAndConnections": "Identifiants et connexions",
-    "subscriptionAndBilling": "Abonnement et facturation",
+    "subscriptionAndBilling": "Abonnement",
     "when": "Quand",
     "in30Days": "Dans 30 jours",
     "immediately": "Immédiatement",
@@ -624,8 +624,8 @@
     "deleting": "Suppression…",
     "cancelling": "Annulation…",
     "finalTitle": "Êtes-vous sûr ?",
-    "finalDescriptionNow": "Tout le contenu de votre compte est supprimé maintenant : projets, sessions, identifiants et facturation. Cette action est irréversible.",
-    "finalDescriptionScheduled": "Tout le contenu de votre compte sera supprimé dans 30 jours : projets, sessions, identifiants et facturation. Vous pouvez annuler d'ici là."
+    "finalDescriptionNow": "Vos projets, sessions et identifiants sont supprimés maintenant. Les documents de facturation sont conservés aussi longtemps que la loi l'exige. Cette action est irréversible.",
+    "finalDescriptionScheduled": "Vos projets, sessions et identifiants seront supprimés dans 30 jours. Les documents de facturation sont conservés aussi longtemps que la loi l'exige. Vous pouvez annuler d'ici là."
   },
   "models": {
     "selectModel": "Choisir un Modèle",
