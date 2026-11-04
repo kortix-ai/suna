@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlTestProvider } from '../test-utils/intl';
-import { UnifiedMarkdown } from './unified-markdown';
+import { MarkdownLink, UnifiedMarkdown } from './unified-markdown';
 import { appLink } from './app-links';
 
 const cases = [
@@ -59,4 +59,17 @@ test('rejects lookalike hosts, credentials, protocols and non-resource pages', (
     '#section',
   ])
     expect(appLink(href)).toBeNull();
+});
+
+test('compacts streaming word wrappers and preserves formatted custom labels', () => {
+  const href = 'https://github.com/example/project/pull/123';
+  const render = (children: React.ReactNode) => renderToStaticMarkup(
+    <IntlTestProvider locale="en" onError={() => {}}>
+      <MarkdownLink href={href}>{children}</MarkdownLink>
+    </IntlTestProvider>,
+  );
+  const streaming = render(<span className="kx-stream-word">{href}</span>);
+  expect(streaming).toContain('PR #123');
+  expect(streaming).toContain(`href="${href}"`);
+  expect(render(<strong><span className="kx-stream-word">{href}</span></strong>)).not.toContain('PR #123');
 });

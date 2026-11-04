@@ -97,6 +97,20 @@ const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
   genui: false,
 });
 
+/** Only streaming word wrappers are transparent; formatting remains custom content. */
+function bareLinkText(children: React.ReactNode): string | null {
+  let text = '';
+  for (const child of React.Children.toArray(children)) {
+    if (typeof child === 'string') { text += child; continue; }
+    if (!React.isValidElement<{ className?: string; children?: React.ReactNode }>(child) ||
+        child.props.className !== STREAM_WORD_CLASS) return null;
+    const word = bareLinkText(child.props.children);
+    if (word === null) return null;
+    text += word;
+  }
+  return text;
+}
+
 export function MarkdownLink({
   href,
   children,
@@ -167,11 +181,7 @@ export function MarkdownLink({
         google: presentation.kind === 'googleDoc' ? GoogleDocsMark : presentation.kind === 'googleSheet' ? GoogleSheetsMark : GoogleSlidesMark,
       }[presentation.app]
     : null;
-  const plainText = React.Children.toArray(children).every(
-    (child) => typeof child === 'string',
-  )
-    ? React.Children.toArray(children).join('')
-    : null;
+  const plainText = bareLinkText(children);
   const compactLabel = presentation?.name ?? (presentation &&
     presentation.kind !== 'commit' && presentation.kind !== 'linearIssue'
       ? tAppLink(presentation.kind, { number: presentation.number ?? '' }) : '');
