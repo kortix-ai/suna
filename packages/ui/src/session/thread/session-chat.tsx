@@ -75,6 +75,7 @@ import {
 } from '../turn/message-author';
 import { stopRefusalMessage } from '../status/stop-refusal';
 import { QueuedPromptList } from '../composer/queued-prompt-list';
+import { ComposerAutoFocusContext } from '../composer/composer-focus-context';
 import { ChatQueueLines } from '../composer/chat-queue-lines';
 import { runtimePermissionLocksComposer } from '../composer/send-blockers';
 import { SessionPrintHeader } from '../print/session-print-header';
@@ -500,6 +501,7 @@ export function SessionChat({
   const tHardcodedUi = useTranslations('hardcodedUi');
   // A channel's thread panel: turns are message rows, full width, end-anchored.
   const rowsContext = useContext(TranscriptRowsContext);
+  const composerAutoFocus = useContext(ComposerAutoFocusContext);
   const transcriptRows = rowsContext !== null;
   const isMobile = useIsMobile();
   const isPhone = useIsPhone();
@@ -5135,7 +5137,8 @@ export function SessionChat({
                 // `undefined`, not `true`, once released: the composer's own
                 // viewport rule (>= 640px) still decides, so this never forces
                 // focus onto a phone keyboard.
-                autoFocus={deferComposerFocus ? false : undefined}
+                // A thread a space's chat opened by itself does not take the focus (`ComposerAutoFocusContext`).
+                autoFocus={deferComposerFocus || !composerAutoFocus ? false : undefined}
                 onSend={async (text, files, mentions, attachments, placement) => {
                   if (await queueEdit.save(text)) return;
                   // Enter while a turn runs steers it (D9.1); Cmd/Ctrl+Enter is Queue List.
