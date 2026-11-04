@@ -1,0 +1,84 @@
+diff --git a/dist/esm/server/route-modules/app-route/helpers/auto-implement-methods.js b/dist/esm/server/route-modules/app-route/helpers/auto-implement-methods.js
+index a0f9abdecf94dfdcd57f7a01f2d7aabb55faf824..9811ecfbc5f84b4e00c552b489dc695345476ebe 100644
+--- a/dist/esm/server/route-modules/app-route/helpers/auto-implement-methods.js
++++ b/dist/esm/server/route-modules/app-route/helpers/auto-implement-methods.js
+@@ -3,12 +3,22 @@ const AUTOMATIC_ROUTE_METHODS = [
+     'HEAD',
+     'OPTIONS'
+ ];
+-function handleMethodNotAllowedResponse() {
+-    return new Response(null, {
+-        status: 405
+-    });
+-}
+ export function autoImplementMethods(handlers) {
++    // Get all the methods that could be automatically implemented that were not
++    // implemented by the userland module. Computed before `methods` so the
++    // 405 fallback below can name them.
++    const implemented = new Set(HTTP_METHODS.filter((method)=>handlers[method]));
++    // KORTIX-3380: RFC 9110 §15.5.6 — a 405 response names the methods the
++    // resource supports. The fallback reads `implemented` lazily, so the
++    // methods auto-implemented below (HEAD, OPTIONS) appear in its Allow list.
++    const handleMethodNotAllowedResponse = ()=>new Response(null, {
++            status: 405,
++            headers: {
++                Allow: [
++                    ...implemented
++                ].sort().join(', ')
++            }
++        });
+     // Loop through all the HTTP methods to create the initial methods object.
+     // Each of the methods will be set to the 405 response handler.
+     const methods = HTTP_METHODS.reduce((acc, method)=>({
+@@ -17,9 +27,6 @@ export function autoImplementMethods(handlers) {
+             // use the 405 response handler.
+             [method]: handlers[method] ?? handleMethodNotAllowedResponse
+         }), {});
+-    // Get all the methods that could be automatically implemented that were not
+-    // implemented by the userland module.
+-    const implemented = new Set(HTTP_METHODS.filter((method)=>handlers[method]));
+     const missing = AUTOMATIC_ROUTE_METHODS.filter((method)=>!implemented.has(method));
+     // Loop over the missing methods to automatically implement them if we can.
+     for (const method of missing){
+diff --git a/dist/server/route-modules/app-route/helpers/auto-implement-methods.js b/dist/server/route-modules/app-route/helpers/auto-implement-methods.js
+index b46096e30ef10f41dc00c8162a09218c3545658c..31908b0e3f82846e53206b6bd09a7eb2a51c10d9 100644
+--- a/dist/server/route-modules/app-route/helpers/auto-implement-methods.js
++++ b/dist/server/route-modules/app-route/helpers/auto-implement-methods.js
+@@ -13,12 +13,22 @@ const AUTOMATIC_ROUTE_METHODS = [
+     'HEAD',
+     'OPTIONS'
+ ];
+-function handleMethodNotAllowedResponse() {
+-    return new Response(null, {
+-        status: 405
+-    });
+-}
+ function autoImplementMethods(handlers) {
++    // Get all the methods that could be automatically implemented that were not
++    // implemented by the userland module. Computed before `methods` so the
++    // 405 fallback below can name them.
++    const implemented = new Set(_http.HTTP_METHODS.filter((method)=>handlers[method]));
++    // KORTIX-3380: RFC 9110 §15.5.6 — a 405 response names the methods the
++    // resource supports. The fallback reads `implemented` lazily, so the
++    // methods auto-implemented below (HEAD, OPTIONS) appear in its Allow list.
++    const handleMethodNotAllowedResponse = ()=>new Response(null, {
++            status: 405,
++            headers: {
++                Allow: [
++                    ...implemented
++                ].sort().join(', ')
++            }
++        });
+     // Loop through all the HTTP methods to create the initial methods object.
+     // Each of the methods will be set to the 405 response handler.
+     const methods = _http.HTTP_METHODS.reduce((acc, method)=>({
+@@ -27,9 +37,6 @@ function autoImplementMethods(handlers) {
+             // use the 405 response handler.
+             [method]: handlers[method] ?? handleMethodNotAllowedResponse
+         }), {});
+-    // Get all the methods that could be automatically implemented that were not
+-    // implemented by the userland module.
+-    const implemented = new Set(_http.HTTP_METHODS.filter((method)=>handlers[method]));
+     const missing = AUTOMATIC_ROUTE_METHODS.filter((method)=>!implemented.has(method));
+     // Loop over the missing methods to automatically implement them if we can.
+     for (const method of missing){

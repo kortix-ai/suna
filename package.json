@@ -179,7 +179,8 @@
       "postgres@3.4.9": "patches/postgres@3.4.9.patch",
       "undici@8.12.2": "patches/undici@8.12.2.patch",
       "@electron/asar@3.4.1": "patches/@electron__asar@3.4.1.patch",
-      "rimraf@2.6.3": "patches/rimraf@2.6.3.patch"
+      "rimraf@2.6.3": "patches/rimraf@2.6.3.patch",
+      "next@16.4.2": "patches/next@16.4.2.patch"
     }
   },
   "version": "1.0.0",

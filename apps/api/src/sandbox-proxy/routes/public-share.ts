@@ -2,6 +2,7 @@ import { Context, Hono } from 'hono';
 import { normalizeForwardedHeader } from '../../lib/request-url';
 import {
   PUBLIC_SHARE_BLOCKED_PORTS,
+  PUBLIC_SHARE_VIEW_ALLOW,
   PUBLIC_SHARE_VIEW_METHODS,
   STATIC_FILE_SHARE_PORT,
   resolvePublicShare,
@@ -152,7 +153,7 @@ async function forwardPublicShare(c: any, args: {
 }) {
   const method = c.req.method.toUpperCase();
   if (args.share.resourceType === 'file' && !PUBLIC_SHARE_VIEW_METHODS.has(method)) {
-    return c.json({ error: 'This public share is view-only' }, 405);
+    return c.json({ error: 'This public share is view-only' }, 405, { Allow: PUBLIC_SHARE_VIEW_ALLOW });
   }
   // A view-mode PREVIEW share must also be view-only: without this gate a holder
   // of a `mode:'view'` preview link could POST/PUT/DELETE to the sandboxed
@@ -162,7 +163,7 @@ async function forwardPublicShare(c: any, args: {
     args.share.mode === 'view' &&
     !PUBLIC_SHARE_VIEW_METHODS.has(method)
   ) {
-    return c.json({ error: 'This public share is view-only' }, 405);
+    return c.json({ error: 'This public share is view-only' }, 405, { Allow: PUBLIC_SHARE_VIEW_ALLOW });
   }
 
   const origin = c.req.header('Origin') || '';
