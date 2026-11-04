@@ -40,41 +40,55 @@ function render(working: boolean) {
   </TooltipProvider></QueryClientProvider></IntlTestProvider>;
 }
 
-test('completion preserves an expanded tool tree and its component identity', async () => {
-  await act(async () => { mounted = create(render(true)); });
-  if (!mounted) throw new Error('Missing renderer');
-  const burst = mounted.root.find(node => typeof node.type === 'function' && node.type.name === 'ActivityBurstImpl');
-  const disclosure = burst.findAllByType(Disclosure)[0];
-  await act(async () => disclosure.props.onOpenChange(true));
-  expect(disclosure.props.open).toBe(true);
-  await act(async () => mounted?.update(render(false)));
-  expect(mounted.root.find(node => typeof node.type === 'function' && node.type.name === 'ActivityBurstImpl')).toBe(burst);
-  expect(burst.findAllByType(Disclosure)[0].props.open).toBe(true);
-});
+const findBurst = () => mounted!.root.find(node => typeof node.type === 'function' && node.type.name === 'ActivityBurstImpl');
+const workRow = () => mounted!.root.find(node => node.type === 'button' && node.props['aria-expanded'] !== undefined && String(node.props.children?.[0]?.props?.children ?? '').startsWith('Worked'));
+/** The keyed wrapper around a segment: its `hidden` is the fold. */
+const wrapperOf = (node: ReturnType<typeof findBurst>) => {
+  let current = node.parent;
+  while (current && !(current.type === 'div' && 'hidden' in current.props)) current = current.parent;
+  if (!current) throw new Error('Missing segment wrapper');
+  return current;
+};
 
-test('completion preserves a manually collapsed tool tree', async () => {
+test('an untouched live turn folds closed at completion, without a remount', async () => {
   await act(async () => { mounted = create(render(true)); });
-  if (!mounted) throw new Error('Missing renderer');
-  const burst = mounted.root.find(node => typeof node.type === 'function' && node.type.name === 'ActivityBurstImpl');
-  await act(async () => burst.findAllByType(Disclosure)[0].props.onOpenChange(true));
-  await act(async () => burst.findAllByType(Disclosure)[0].props.onOpenChange(false));
+  const burst = findBurst();
+  expect(wrapperOf(burst).props.hidden).toBe(false);
   await act(async () => mounted?.update(render(false)));
-  expect(mounted.root.find(node => typeof node.type === 'function' && node.type.name === 'ActivityBurstImpl')).toBe(burst);
+  expect(findBurst()).toBe(burst);
+  expect(workRow().props['aria-expanded']).toBe(false);
+  expect(wrapperOf(burst).props.hidden).toBe(true);
+  // The burst closed again when the turn stopped: an opened row reads as one line per burst.
   expect(burst.findAllByType(Disclosure)[0].props.open).toBe(false);
 });
 
-test('previously completed history retains its compact Worked disclosure', async () => {
-  await act(async () => { mounted = create(render(false)); });
-  if (!mounted) throw new Error('Missing renderer');
-  const work = mounted.root.find(node => typeof node.type === 'function' && node.type.name === 'TurnWorkAccordion');
-  expect(work.findByType(Disclosure).findAll(node => node.props['data-state'] === 'closed').length).toBeGreaterThan(0);
+test('a turn the reader touched while live settles open, its tree as the reader left it', async () => {
+  await act(async () => { mounted = create(render(true)); });
+  const burst = findBurst();
+  await act(async () => burst.findAllByType(Disclosure)[0].props.onOpenChange(true));
+  await act(async () => mounted?.update(render(false)));
+  expect(findBurst()).toBe(burst);
+  expect(workRow().props['aria-expanded']).toBe(true);
+  expect(wrapperOf(burst).props.hidden).toBe(false);
+  expect(burst.findAllByType(Disclosure)[0].props.open).toBe(true);
 });
 
-test('completion keeps the live parent open around expanded command details', async () => {
+test('a manually collapsed burst stays collapsed after completion', async () => {
   await act(async () => { mounted = create(render(true)); });
-  if (!mounted) throw new Error('Missing renderer');
-  const burst = mounted.root.find(node => typeof node.type === 'function' && node.type.name === 'ActivityBurstImpl');
-  expect(burst.findAllByType(Disclosure)[0].props.open).toBe(true);
+  const burst = findBurst();
+  await act(async () => burst.findAllByType(Disclosure)[0].props.onOpenChange(false));
   await act(async () => mounted?.update(render(false)));
-  expect(burst.findAllByType(Disclosure)[0].props.open).toBe(true);
+  expect(findBurst()).toBe(burst);
+  expect(burst.findAllByType(Disclosure)[0].props.open).toBe(false);
+});
+
+test('reloaded history paints the closed row and mounts its work on the first open', async () => {
+  await act(async () => { mounted = create(render(false)); });
+  expect(workRow().props['aria-expanded']).toBe(false);
+  expect(mounted!.root.findAll(node => typeof node.type === 'function' && node.type.name === 'ActivityBurstImpl')).toHaveLength(0);
+  await act(async () => workRow().props.onClick());
+  expect(workRow().props['aria-expanded']).toBe(true);
+  expect(wrapperOf(findBurst()).props.hidden).toBe(false);
+  await act(async () => workRow().props.onClick());
+  expect(wrapperOf(findBurst()).props.hidden).toBe(true);
 });

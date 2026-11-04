@@ -25182,6 +25182,10 @@
       "collapse": "Ergebnis ausblenden",
       "batchTitle": "{count, plural, one {# Agent ist fertig} other {# Agenten sind fertig}}",
       "ownsTasks": "Hat noch {tasks}",
+      "source": "Agentenmeldung",
+      "statusFailedShort": "Nicht abgeschlossen",
+      "statusStoppedShort": "Gestoppt",
+      "updateCount": "{count, plural, one {# Agentenmeldung} other {# Agentenmeldungen}}",
       "details": "Details",
       "failedSentence": "Der Agent hat aufgehört, bevor er fertig war.",
       "state": {

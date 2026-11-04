@@ -25182,6 +25182,10 @@
       "collapse": "Nascondi il risultato",
       "batchTitle": "{count, plural, one {# agente ha finito} other {# agenti hanno finito}}",
       "ownsTasks": "Ha ancora {tasks}",
+      "source": "Aggiornamento agente",
+      "statusFailedShort": "Non completato",
+      "statusStoppedShort": "Interrotto",
+      "updateCount": "{count, plural, one {# aggiornamento agente} other {# aggiornamenti agenti}}",
       "details": "Dettagli",
       "failedSentence": "L’agente si è fermato prima di finire.",
       "state": {

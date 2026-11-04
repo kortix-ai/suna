@@ -9487,6 +9487,10 @@ const catalog = {
       "collapse": "Hide the result",
       "batchTitle": "{count, plural, one {# agent finished} other {# agents finished}}",
       "ownsTasks": "Still owns {tasks}",
+      "source": "Agent update",
+      "statusFailedShort": "Didn’t finish",
+      "statusStoppedShort": "Stopped",
+      "updateCount": "{count, plural, one {# agent update} other {# agent updates}}",
       "details": "Details",
       "failedSentence": "The agent stopped before it finished.",
       "state": {

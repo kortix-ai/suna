@@ -130,7 +130,6 @@ import {
 } from '@kortix/sdk/react';
 import {
   ArchiveIcon,
-  ArrowsSplitIcon,
   CaretRightIcon,
   CheckIcon,
   DotsThreeIcon,
@@ -139,7 +138,6 @@ import {
   FolderSimplePlusIcon,
   PushPinIcon,
   PushPinSlashIcon,
-  RobotIcon,
   FolderSimpleIcon as MetaFolder,
   GitForkIcon,
   PencilSimpleIcon,
@@ -149,7 +147,6 @@ import {
   SquareIcon as Square,
   TagIcon,
   TrashIcon,
-  TreeViewIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -582,7 +579,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             renderSubagent={(child) => (
               <ProjectSubsessionRow
                 id={child.id}
-                title={child.title || 'Sub-session'}
+                title={subagentTitle(child.title || '') || 'Sub-session'}
                 href={childSessionHref(href, child.id)}
                 isActive={!!isActive && activeRuntimeSessionId === child.id}
                 createdAt={child.created_at}
@@ -1076,7 +1073,7 @@ function SessionSectionMenu({
   );
 }
 
-/** Tree icon + count of everything this session started: its sub-agents and
+/** Count + caret for everything this session started: its sub-agents and
  *  the sessions it spawned. A `span`, not a button: it lives inside the row's
  *  link, so it stops the click before it navigates. Without an indicator strip
  *  beside it, it keeps the `⋯` slot free at rest, so hovering the row never
@@ -1110,7 +1107,7 @@ function ChildRunsToggle({
         if (event.key === 'Enter' || event.key === ' ') toggle(event);
       }}
       className={cn(
-        'flex shrink-0 items-center rounded-sm',
+        'flex shrink-0 items-center gap-0.5 rounded-sm',
         open ? 'text-sidebar-foreground' : 'text-muted-foreground hover:text-sidebar-foreground',
         'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
         // Reserve the `⋯` slot at rest. A toggle that slid out of the way on
@@ -1118,10 +1115,12 @@ function ChildRunsToggle({
         clearOfMenu && 'mr-6',
       )}
     >
-      <CountBadge
-        count={count}
-        icon={<TreeViewIcon aria-hidden className="size-3.5" />}
-        className={cn(open && 'bg-foreground/12')}
+      {/* The count says how many; the caret says it opens. One mark each,
+          and the caret turns as the tree opens below the row. */}
+      <CountBadge count={count} className={cn(open && 'bg-foreground/12')} />
+      <CaretRightIcon
+        aria-hidden
+        className={cn('duration-normal size-3 shrink-0 transition-transform ease-out motion-reduce:transition-none', open && 'rotate-90')}
       />
     </span>
   );
@@ -1435,17 +1434,15 @@ function ProjectSessionRow({
       className="focus-visible:ring-kortix-base flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md py-1 focus-visible:ring-[0.6px] focus-visible:outline-none"
     >
       <div className="size-4 shrink-0">
-        {/* A spawned child shows what it is; its status is in its hover card. */}
-        {spawned ? (
-          <ArrowsSplitIcon aria-hidden className="text-muted-foreground size-4" />
-        ) : (
-          <SessionStatusDot
-            session={session}
-            reviewCount={reviewCount}
-            waitingOn={waitingOn}
-            changeRequests={changeRequests}
-          />
-        )}
+        {/* Every session row leads with its status, a spawned child too: the
+            connector line already says it is a child, a second glyph saying
+            the same only crowded the row. */}
+        <SessionStatusDot
+          session={session}
+          reviewCount={reviewCount}
+          waitingOn={waitingOn}
+          changeRequests={changeRequests}
+        />
       </div>
 
       <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
@@ -1840,7 +1837,12 @@ function ProjectSubsessionRow({
             isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
           )}
         >
-          <RobotIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
+          {/* An empty slot, no glyph: the connector elbow already marks the
+              row as a sub-agent, and a runtime sub-session carries no agent
+              identity to draw a pixel mark from (pi titles it with the task
+              alone). The slot keeps its title on the same column as a spawned
+              sibling's, which leads with a status mark. */}
+          <span aria-hidden className="size-4 shrink-0" />
           <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{title}</span>
           {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
         </div>

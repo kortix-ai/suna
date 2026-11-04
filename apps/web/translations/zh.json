@@ -25182,6 +25182,10 @@
       "collapse": "收起结果",
       "batchTitle": "{count, plural, other {# 个智能体已完成}}",
       "ownsTasks": "仍负责 {tasks}",
+      "source": "智能体更新",
+      "statusFailedShort": "未完成",
+      "statusStoppedShort": "已停止",
+      "updateCount": "{count} 条智能体更新",
       "details": "详情",
       "failedSentence": "该智能体在完成前停止了。",
       "state": {

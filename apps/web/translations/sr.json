@@ -25182,6 +25182,10 @@
       "collapse": "Сакриј резултат",
       "batchTitle": "{count, plural, one {# агент је завршио} few {# агента су завршила} other {# агената је завршило}}",
       "ownsTasks": "Још има {tasks}",
+      "source": "Ажурирање агента",
+      "statusFailedShort": "Није завршено",
+      "statusStoppedShort": "Заустављено",
+      "updateCount": "{count, plural, one {# ажурирање агента} few {# ажурирања агента} other {# ажурирања агента}}",
       "details": "Detalji",
       "failedSentence": "Agent je stao pre nego što je završio.",
       "state": {
