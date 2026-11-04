@@ -20,6 +20,7 @@ import { errorToast, successToast } from '../../primitives/toast';
 import { UiLink } from '../../providers/ui-provider';
 import { useSessionIds } from '../../providers/session-ids';
 import { agentRowOf, isActive, shortElapsed, type AgentRow } from './agent-model';
+import { AgentFace, AgentFailure } from './agent-surface';
 import { AgentStateMark } from './agent-state-mark';
 import { LegacySubagentChat } from './legacy-subagent-chat';
 import { SessionPeek } from './session-peek';
@@ -40,6 +41,8 @@ export interface SubagentDialogProps {
   title?: string;
   /** The project; default: the project of the session page the dialog opens over. */
   projectId?: string;
+  /** Why it did not finish, when the opener knows: one sentence, the raw text behind Details. */
+  failure?: string;
 }
 
 
@@ -169,8 +172,9 @@ function SubagentBody({ sub, projectId, sessionId, density }: { sub: Subagent; p
   );
 }
 
-export function SubagentDialogContent({ open, onOpenChange, sessionId, title, projectId: projectIdProp }: SubagentDialogProps) {
+export function SubagentDialogContent({ open, onOpenChange, sessionId, title, projectId: projectIdProp, failure }: SubagentDialogProps) {
   const tStrip = useTranslations('multiAgent.strip');
+  const tNotice = useTranslations('multiAgent.notice');
   const ids = useSessionIds();
   const projectId = projectIdProp ?? ids.projectId ?? undefined;
   const sub = useSubagent(projectId, sessionId, title, open);
@@ -217,6 +221,11 @@ export function SubagentDialogContent({ open, onOpenChange, sessionId, title, pr
           </SubagentActions>
         </div>
 
+        {failure && (
+          <div data-testid="subagent-dialog-failure" className="shrink-0 border-b px-4 py-2.5 text-sm">
+            <AgentFailure sentence={tNotice('failedSentence')} raw={failure} />
+          </div>
+        )}
         <div className="flex min-h-0 flex-1 flex-col">
           <SubagentBody sub={sub} projectId={projectId} sessionId={sessionId} />
         </div>
@@ -226,6 +235,90 @@ export function SubagentDialogContent({ open, onOpenChange, sessionId, title, pr
         )}
       </ModalContent>
     </Modal>
+  );
+}
+
+export interface SubagentPanelProps {
+  /** The child session. */
+  sessionId: string;
+  /** What the chat row calls it; the session's own handle wins once its row loads. */
+  title?: string;
+  /** The agent's handle, for its pixel mark. */
+  handle?: string;
+  projectId?: string;
+  /** What it works on, as the chat row says it; the session's own name wins. */
+  task?: string;
+  /** Why it did not finish, when the chat row knows. */
+  failure?: string;
+  /** Closes the side panel's detail. */
+  onClose: () => void;
+  /** What leads the header: the panel's sidebar toggle, when the panel fills the window. */
+  leading?: React.ReactNode;
+}
+
+/**
+ * An agent's session in the side panel, opened from its row in the chat:
+ *
+ *   [face] pricing-scout  ◔ Working for 2m            [Open page][■] [×]
+ *   the agent's conversation, live
+ *   [+  Message pricing-scout…                                    ↑]
+ *
+ * The same reads and actions as the agent dialog, in the panel's header grammar.
+ */
+export function SubagentPanel({ sessionId, title, handle, projectId: projectIdProp, task: taskProp, failure, onClose, leading }: SubagentPanelProps) {
+  const tNotice = useTranslations('multiAgent.notice');
+  const ids = useSessionIds();
+  const projectId = projectIdProp ?? ids.projectId ?? undefined;
+  const sub = useSubagent(projectId, sessionId, title, true);
+  const tAgent = useTranslations('tools.agent');
+  const now = useNow(sub.working);
+  const face = handle || sub.agent?.agent || 'general';
+  // The name the person clicked in the chat; what the agent works on, muted, after it.
+  const name = title || sub.name;
+  const ownName = typeof sub.row.data?.name === 'string' ? sub.row.data.name : '';
+  const task = [ownName, taskProp].find((line) => !!line && line !== name) ?? null;
+  // The chat row's state words ("Done", "Working"), so the row and its panel read the same.
+  const stateText = sub.agent ? tAgent(`state.${sub.agent.state}`) : null;
+  const elapsed = sub.agent?.state === 'working' && sub.agent.workingSinceMs !== null ? shortElapsed(now - sub.agent.workingSinceMs) : null;
+  return (
+    <section data-testid="subagent-panel" data-body={sub.kind} aria-label={name} className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <header className="flex shrink-0 items-center gap-2 px-3 py-2.5">
+        {leading}
+        <AgentFace handle={face} />
+        <h2 className="text-foreground max-w-40 min-w-0 shrink-0 truncate text-sm font-semibold" title={name}>
+          {name}
+        </h2>
+        {task && (
+          <span className="text-muted-foreground min-w-0 truncate text-sm" title={task}>
+            {task}
+          </span>
+        )}
+        {sub.agent && (
+          <span data-agent-state={sub.agent.state} className="text-muted-foreground flex shrink-0 items-center gap-1.5 pl-1 text-xs tabular-nums">
+            <AgentStateMark state={sub.agent.state} />
+            <span aria-hidden className="max-sm:hidden">
+              {stateText}
+            </span>
+            {elapsed && <span className="max-sm:hidden">{elapsed}</span>}
+          </span>
+        )}
+        <span className="min-w-0 flex-1" />
+        <SubagentActions sub={sub} projectId={projectId} sessionId={sessionId} onLeave={onClose}>
+          <CloseAction onClose={onClose} />
+        </SubagentActions>
+      </header>
+      {failure && (
+        <div data-testid="subagent-panel-failure" className="shrink-0 px-3 pb-2.5 text-sm">
+          <AgentFailure sentence={tNotice('failedSentence')} raw={failure} />
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <SubagentBody sub={sub} projectId={projectId} sessionId={sessionId} density="compact" />
+      </div>
+      {sub.kind === 'peek' && projectId && (
+        <SubagentMessageBox key={sessionId} projectId={projectId} sessionId={sessionId} name={name} onSent={sub.refreshRow} className="px-3 pb-3" autoFocus={false} />
+      )}
+    </section>
   );
 }
 
@@ -251,7 +344,22 @@ function SessionPeekRowError({ onRetry }: { onRetry: () => void }) {
  * and Enter sends it to the agent as a steer. Attached images show as chips
  * above the text until the message is sent.
  */
-function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId: string; sessionId: string; name: string; onSent: () => void }) {
+function SubagentMessageBox({
+  projectId,
+  sessionId,
+  name,
+  onSent,
+  className,
+  autoFocus = true,
+}: {
+  projectId: string;
+  sessionId: string;
+  name: string;
+  onSent: () => void;
+  className?: string;
+  /** The dialog types at once; the panel beside the chat leaves the focus in the chat. */
+  autoFocus?: boolean;
+}) {
   const t = useTranslations('multiAgent.subagent');
   const [text, setText] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
@@ -298,7 +406,7 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
   const canSend = (!!text.trim() || images.length > 0) && !busy;
   return (
     <form
-      className="shrink-0 px-4 pt-2 pb-4"
+      className={cn('shrink-0 px-4 pt-2 pb-4', className)}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -375,7 +483,7 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
           <input
             data-testid="subagent-dialog-message"
             // The box mounts once the agent's row loads: with a mouse it takes the focus then (onOpenAutoFocus covers a cached row).
-            autoFocus={finePointer()}
+            autoFocus={autoFocus && finePointer()}
             value={text}
             onChange={(event) => setText(event.target.value)}
             placeholder={t('messagePlaceholder', { name })}
