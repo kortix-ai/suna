@@ -172,7 +172,7 @@ export interface ArtifactDocLeaseResult {
 
 export type ArtifactDocCompaction =
   | { done: true; fromSeq: number; toSeq: number; rows: number; quarantined?: number[] }
-  | { done: false; reason: 'busy' | 'below_threshold' | 'backoff' | 'too_large' | 'failed' };
+  | { done: false; reason: 'busy' | 'below_threshold' | 'backoff' | 'too_large' | 'failed' | 'stale' };
 
 /** The database clock, in ms: every replica decides a lease on one clock. */
 const dbNowMs = sql<number>`(extract(epoch from clock_timestamp()) * 1000)::float8`;
@@ -261,7 +261,7 @@ export async function seedArtifactDoc(
     }).onConflictDoNothing({ target: artifactDocState.artifactId }).returning({ epoch: artifactDocState.epoch });
     if (!created) throw new ArtifactDocError(409, 'This doc already has a live state: read it instead', 'doc_seeded');
     await placeRoots(tx, artifactId, input.placement);
-    await tx.insert(artifactDocUpdates).values({ artifactId, seq: 1, bytes: input.update, createdBy: input.userId, structs: input.structs ?? 0 });
+    await tx.insert(artifactDocUpdates).values({ artifactId, seq: 1, epoch: created.epoch, bytes: input.update, createdBy: input.userId, structs: input.structs ?? 0 });
     return { seq: 1, epoch: created.epoch };
   });
 }
@@ -300,7 +300,7 @@ export async function appendArtifactDocUpdate(
       .where(eq(artifactDocState.artifactId, artifactId))
       .returning({ nextSeq: artifactDocState.nextSeq });
     const seq = next!.nextSeq - 1;
-    await tx.insert(artifactDocUpdates).values({ artifactId, seq, bytes: input.update, createdBy: input.userId, structs: input.structs ?? 0 });
+    await tx.insert(artifactDocUpdates).values({ artifactId, seq, epoch: state.epoch, bytes: input.update, createdBy: input.userId, structs: input.structs ?? 0 });
     const [count] = await tx.select({ rows: sql<number>`count(*)::int` }).from(artifactDocUpdates)
       .where(and(eq(artifactDocUpdates.artifactId, artifactId), isNull(artifactDocUpdates.quarantinedAt)));
     const rows = Number(count?.rows ?? 0);
@@ -314,9 +314,10 @@ export async function appendArtifactDocUpdate(
   });
 }
 
-/** Back off compaction for this Artifact (`DOC_COMPACTION_BACKOFF_MS`). Never touches updated_at. */
-async function stampCompactionFailed(artifactId: string): Promise<void> {
-  await db.update(artifactDocState).set({ compactionFailedAt: sql`clock_timestamp()` }).where(eq(artifactDocState.artifactId, artifactId));
+/** Back off compaction for this Artifact's `epoch` (`DOC_COMPACTION_BACKOFF_MS`); a later epoch keeps none. Never touches updated_at. */
+async function stampCompactionFailed(artifactId: string, epoch: string): Promise<void> {
+  await db.update(artifactDocState).set({ compactionFailedAt: sql`clock_timestamp()` })
+    .where(and(eq(artifactDocState.artifactId, artifactId), eq(artifactDocState.epoch, epoch)));
 }
 
 /** Scan every row, then merge: the merged bytes, null past the page limit, or 'failed'. */
@@ -349,17 +350,32 @@ function mergeRows(rows: Array<{ bytes: Buffer }>): Uint8Array | null | 'failed'
  * One compaction per Artifact at a time; a second one answers `busy` at once
  * instead of waiting. Appends never conflict with it: they only insert rows
  * above every seq it touches.
+ *
+ * Scoped to the epoch it planned against. The plan and the merge read without
+ * locks, so a push is never held up by a merge. The write phase then takes the
+ * state row FOR UPDATE (a reset or the GC job deletes it under the same lock),
+ * and checks that the state still has the planned epoch and that the planned
+ * rows are still there, live, with the same byte lengths. Otherwise the step
+ * answers `stale` and writes nothing: a reset and re-seed reuse seqs from 1.
+ * Every write names that epoch too (quarantine, merged row, delete,
+ * `bytes_total`, the compaction mark and the back-off stamp).
  */
 export async function compactArtifactDoc(artifactId: string): Promise<ArtifactDocCompaction> {
+  let planned: string | null = null;
   const outcome = await db.transaction(async (tx): Promise<ArtifactDocCompaction> => {
     const res = await tx.execute(sql`select pg_try_advisory_xact_lock(hashtextextended(${`artifact-doc:${artifactId}`}, 0)) as ok`);
     if ((res as unknown as Array<{ ok: boolean }>)[0]?.ok !== true) return { done: false, reason: 'busy' };
+    // ── Plan, without locks ──────────────────────────────────────────────────
     const [state] = await tx.select({
+      epoch: artifactDocState.epoch,
       backoff: sql<boolean>`coalesce(${artifactDocState.compactionFailedAt} > now() - make_interval(secs => ${DOC_COMPACTION_BACKOFF_MS / 1000}), false)`,
     }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId));
     if (!state) return { done: false, reason: 'below_threshold' };
+    const epoch = state.epoch;
+    planned = epoch;
     if (state.backoff) return { done: false, reason: 'backoff' };
-    const live = and(eq(artifactDocUpdates.artifactId, artifactId), isNull(artifactDocUpdates.quarantinedAt));
+    const ofEpoch = and(eq(artifactDocUpdates.artifactId, artifactId), eq(artifactDocUpdates.epoch, epoch));
+    const live = and(ofEpoch, isNull(artifactDocUpdates.quarantinedAt));
     const sizes = await tx.select({
       seq: artifactDocUpdates.seq,
       size: sql<number>`octet_length(${artifactDocUpdates.bytes})`,
@@ -368,12 +384,18 @@ export async function compactArtifactDoc(artifactId: string): Promise<ArtifactDo
       .from(artifactDocUpdates)
       .where(live)
       .orderBy(asc(artifactDocUpdates.seq));
-    if (sizes.length <= DOC_COMPACT_ROWS) return { done: false, reason: 'below_threshold' };
+    if (sizes.length <= DOC_COMPACT_ROWS) {
+      // Nothing to do for this epoch: its mark goes (a push past the threshold sets it again).
+      await tx.update(artifactDocState).set({ compactionRequestedAt: null })
+        .where(and(eq(artifactDocState.artifactId, artifactId), eq(artifactDocState.epoch, epoch)));
+      return { done: false, reason: 'below_threshold' };
+    }
     const plan = compactionWindow(sizes.map((row) => ({ seq: row.seq, size: Number(row.size), structs: row.structs })));
     if (!plan) return { done: false, reason: 'too_large' };
-    let rows = await tx.select({ seq: artifactDocUpdates.seq, bytes: artifactDocUpdates.bytes }).from(artifactDocUpdates)
+    const windowRows = await tx.select({ seq: artifactDocUpdates.seq, bytes: artifactDocUpdates.bytes }).from(artifactDocUpdates)
       .where(and(live, gte(artifactDocUpdates.seq, plan.fromSeq), lte(artifactDocUpdates.seq, plan.toSeq)))
       .orderBy(asc(artifactDocUpdates.seq));
+    let rows = windowRows;
     let merged = mergeRows(rows);
     let quarantined: number[] = [];
     if (merged === 'failed') {
@@ -383,30 +405,44 @@ export async function compactArtifactDoc(artifactId: string): Promise<ArtifactDo
         logger.warn('[artifact-doc] compaction failed', { artifactId, fromSeq: plan.fromSeq, toSeq: plan.toSeq });
         return { done: false, reason: 'failed' };
       }
-      await tx.update(artifactDocUpdates).set({ quarantinedAt: sql`now()` })
-        .where(and(eq(artifactDocUpdates.artifactId, artifactId), inArray(artifactDocUpdates.seq, quarantined)));
-      logger.warn('[artifact-doc] quarantined rows no Yjs reader takes', { artifactId, seqs: quarantined });
       rows = rows.filter((row) => !quarantined.includes(row.seq));
-      if (rows.length < 2) return { done: false, reason: 'below_threshold' };
-      merged = mergeRows(rows);
+      merged = rows.length < 2 ? null : mergeRows(rows);
       if (merged === 'failed') return { done: false, reason: 'failed' };
     }
-    if (!merged) return { done: false, reason: 'too_large' };
+    if (!merged && quarantined.length === 0) return { done: false, reason: 'too_large' };
+
+    // ── Write, under the state row's lock, only if nothing moved ─────────────
+    const [current] = await tx.select({ epoch: artifactDocState.epoch }).from(artifactDocState)
+      .where(eq(artifactDocState.artifactId, artifactId)).for('update');
+    if (!current || current.epoch !== epoch) return { done: false, reason: 'stale' };
+    const now = await tx.select({ seq: artifactDocUpdates.seq, size: sql<number>`octet_length(${artifactDocUpdates.bytes})` })
+      .from(artifactDocUpdates)
+      .where(and(live, gte(artifactDocUpdates.seq, plan.fromSeq), lte(artifactDocUpdates.seq, plan.toSeq)))
+      .orderBy(asc(artifactDocUpdates.seq));
+    const same = now.length === windowRows.length
+      && now.every((row, i) => row.seq === windowRows[i]!.seq && Number(row.size) === windowRows[i]!.bytes.length);
+    if (!same) return { done: false, reason: 'stale' };
+    if (quarantined.length > 0) {
+      await tx.update(artifactDocUpdates).set({ quarantinedAt: sql`now()` })
+        .where(and(ofEpoch, inArray(artifactDocUpdates.seq, quarantined)));
+      logger.warn('[artifact-doc] quarantined rows no Yjs reader takes', { artifactId, seqs: quarantined });
+    }
+    if (!merged) return rows.length < 2 ? { done: false, reason: 'below_threshold' } : { done: false, reason: 'too_large' };
     const fromSeq = rows[0]!.seq;
     const toSeq = rows[rows.length - 1]!.seq;
     const removed = rows.reduce((total, row) => total + row.bytes.length, 0);
     // A merged row holds several people's updates: it names none of them (who wrote is recorded at each flush).
     const mergedStructs = measureDocUpdate(merged, 'seed');
     await tx.update(artifactDocUpdates).set({ bytes: Buffer.from(merged), createdBy: null, structs: mergedStructs.ok ? mergedStructs.structs : 0 })
-      .where(and(eq(artifactDocUpdates.artifactId, artifactId), eq(artifactDocUpdates.seq, toSeq)));
+      .where(and(ofEpoch, eq(artifactDocUpdates.seq, toSeq)));
     await tx.delete(artifactDocUpdates)
       .where(and(live, gte(artifactDocUpdates.seq, fromSeq), lt(artifactDocUpdates.seq, toSeq)));
     await tx.update(artifactDocState)
       .set({ bytesTotal: sql`greatest(0, ${artifactDocState.bytesTotal} - ${removed} + ${merged.length})` })
-      .where(eq(artifactDocState.artifactId, artifactId));
+      .where(and(eq(artifactDocState.artifactId, artifactId), eq(artifactDocState.epoch, epoch)));
     return { done: true, fromSeq, toSeq, rows: rows.length, ...(quarantined.length > 0 ? { quarantined } : {}) };
   });
-  if (!outcome.done && (outcome.reason === 'failed' || outcome.reason === 'too_large')) await stampCompactionFailed(artifactId);
+  if (planned && !outcome.done && (outcome.reason === 'failed' || outcome.reason === 'too_large')) await stampCompactionFailed(artifactId, planned);
   return outcome;
 }
 
@@ -513,8 +549,9 @@ export async function markArtifactDocFlushed(
 }
 
 /**
- * `POST …/doc/reset`: delete the live state and every update row in one
- * transaction (a poisoned update, or a client that must start over). The
+ * `POST …/doc/reset`: delete the live state, under its row lock, in one
+ * transaction (a poisoned update, or a client that must start over). Its
+ * update rows and root index go with it (foreign keys on the state). The
  * lease holder may reset, and anyone while the lease is free or expired;
  * another live holder → 409 `not_leader`. A doc with no state: nothing to do.
  */
@@ -532,9 +569,9 @@ export async function resetArtifactDoc(artifactId: string, input: { holder: stri
       if (!decideReset(lease, input, new Date(Number(state.nowMs)))) {
         throw new ArtifactDocError(409, 'Another tab holds the lease: only it may reset this doc', 'not_leader');
       }
+      // Cascades to this epoch's rows (`artifact_doc_updates_epoch_fk`), roots and clients: no other epoch's rows exist.
       await tx.delete(artifactDocState).where(eq(artifactDocState.artifactId, artifactId));
     }
-    await tx.delete(artifactDocUpdates).where(eq(artifactDocUpdates.artifactId, artifactId));
     return { reset: true as const };
   });
 }

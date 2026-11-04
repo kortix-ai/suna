@@ -247,8 +247,8 @@ describe('compaction failure', () => {
   async function docWithRows(bad: Record<number, Buffer>): Promise<string> {
     const artifactId = await newDoc();
     await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: '', version: 'v1', userId });
-    await db.execute(sql`insert into kortix.artifact_doc_updates (artifact_id, seq, bytes)
-      select ${artifactId}::uuid, g, decode('0000', 'hex') from generate_series(2, ${DOC_COMPACT_ROWS + 1}) g`);
+    await db.execute(sql`insert into kortix.artifact_doc_updates (artifact_id, seq, epoch, bytes)
+      select ${artifactId}::uuid, g, (select epoch from kortix.artifact_doc_state where artifact_id = ${artifactId}::uuid), decode('0000', 'hex') from generate_series(2, ${DOC_COMPACT_ROWS + 1}) g`);
     for (const [seq, bytes] of Object.entries(bad)) {
       await db.update(artifactDocUpdates).set({ bytes }).where(and(eq(artifactDocUpdates.artifactId, artifactId), eq(artifactDocUpdates.seq, Number(seq))));
     }
@@ -319,6 +319,64 @@ describe('reset', () => {
     await db.update(artifactDocState).set({ leaseExpiresAt: sql`now() - interval '1 second'` }).where(eq(artifactDocState.artifactId, artifactId));
     expect(await resetArtifactDoc(artifactId, { holder: 'tab-b', userId: otherUserId })).toEqual({ reset: true });
     expect((await readArtifactDoc(artifactId, { after: 0, base: false })).seeded).toBe(false);
+  });
+});
+
+describe('a compaction step is scoped to the epoch it planned against', () => {
+  /** 501 rows of 2 bytes in the current epoch, past the threshold. */
+  async function bigDoc(): Promise<string> {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: '', version: 'v1', userId });
+    await db.execute(sql`insert into kortix.artifact_doc_updates (artifact_id, seq, epoch, bytes)
+      select ${artifactId}::uuid, g, (select epoch from kortix.artifact_doc_state where artifact_id = ${artifactId}::uuid), decode('0000', 'hex') from generate_series(2, ${DOC_COMPACT_ROWS + 1}) g`);
+    await db.update(artifactDocState).set({ nextSeq: DOC_COMPACT_ROWS + 2, bytesTotal: (DOC_COMPACT_ROWS + 1) * 2 }).where(eq(artifactDocState.artifactId, artifactId));
+    return artifactId;
+  }
+  /** A reset and a re-seed in one open transaction: a new epoch whose rows start again at seq 1 (7 bytes). */
+  const resetAndReseed = (artifactId: string) => async (tx: { query: (q: string, v: unknown[]) => Promise<unknown> }) => {
+    await tx.query('DELETE FROM kortix.artifact_doc_updates WHERE artifact_id = $1', [artifactId]);
+    await tx.query('DELETE FROM kortix.artifact_doc_state WHERE artifact_id = $1', [artifactId]);
+    await tx.query(`INSERT INTO kortix.artifact_doc_state (artifact_id, next_seq, flushed_seq, flushed_version, flushed_markdown, bytes_total)
+      VALUES ($1, 3, 1, 'v2', 'new', 7)`, [artifactId]);
+    await tx.query(`INSERT INTO kortix.artifact_doc_updates (artifact_id, seq, epoch, bytes)
+      SELECT $1, seq, (SELECT epoch FROM kortix.artifact_doc_state WHERE artifact_id = $1), decode(hex, 'hex')
+        FROM (VALUES (1, '61616161'), (2, '626262')) AS v(seq, hex)`, [artifactId]);
+  };
+  const newEpoch = async (artifactId: string) => ({
+    rows: (await db.execute(sql`select seq::int as seq, encode(bytes, 'hex') as hex from kortix.artifact_doc_updates
+      where artifact_id = ${artifactId}::uuid order by seq`) as unknown as Array<{ seq: number; hex: string }>).map((row) => ({ ...row })),
+    bytesTotal: (await db.select({ total: artifactDocState.bytesTotal }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId)))[0]?.total,
+  });
+
+  test('a reset and re-seed that commit after the step planned and before it writes: the step aborts (stale) and the new epoch keeps its rows and bytes_total', async () => {
+    const artifactId = await bigDoc();
+    // The step plans on the old epoch (its reads do not wait), then waits on the open reset at its first write.
+    const outcome = await interleave(resetAndReseed(artifactId), () => compactArtifactDoc(artifactId), 'artifact_doc');
+    expect(outcome).toEqual({ done: false, reason: 'stale' });
+    expect(await newEpoch(artifactId)).toEqual({ rows: [{ seq: 1, hex: '61616161' }, { seq: 2, hex: '626262' }], bytesTotal: 7 });
+  }, 30_000);
+
+  test('the GC job racing a reset and re-seed: it skips the locked state, and the new epoch keeps its rows and bytes_total', async () => {
+    const artifactId = await bigDoc();
+    await db.update(artifactDocState).set({ flushedSeq: DOC_COMPACT_ROWS + 1, updatedAt: sql`now() - interval '1 hour'` }).where(eq(artifactDocState.artifactId, artifactId));
+    const swept = await interleave(resetAndReseed(artifactId), () => gcArtifactDocs(), 'artifact_doc');
+    expect(swept.deleted).not.toContain(artifactId);
+    expect(await newEpoch(artifactId)).toEqual({ rows: [{ seq: 1, hex: '61616161' }, { seq: 2, hex: '626262' }], bytesTotal: 7 });
+  }, 30_000);
+
+  test('the GC job deletes only the state rows it locked; their epoch’s update rows go with them by foreign key', async () => {
+    const artifactId = await bigDoc();
+    await db.update(artifactDocState).set({ flushedSeq: DOC_COMPACT_ROWS + 1, updatedAt: sql`now() - interval '1 hour'` }).where(eq(artifactDocState.artifactId, artifactId));
+    expect((await gcArtifactDocs()).deleted).toContain(artifactId);
+    const after = await newEpoch(artifactId);
+    expect({ rows: after.rows, state: after.bytesTotal === undefined ? 'gone' : 'kept' }).toEqual({ rows: [], state: 'gone' });
+  });
+
+  test('an update row must name its state’s current epoch (foreign key): a row of another epoch cannot be stored', async () => {
+    const artifactId = await bigDoc();
+    const stored = await db.execute(sql`insert into kortix.artifact_doc_updates (artifact_id, seq, epoch, bytes)
+      values (${artifactId}::uuid, 9999, gen_random_uuid(), decode('0000', 'hex'))`).then(() => 'stored', (e: unknown) => String((e as { cause?: { code?: string } }).cause?.code ?? e));
+    expect(stored).toBe('23503');
   });
 });
 
@@ -427,8 +485,8 @@ describe('who wrote (pending writers: each person’s last pushed seq)', () => {
   test('a merged (compacted) row names no single author', async () => {
     const artifactId = await newDoc();
     await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: '', version: 'v1', userId });
-    await db.execute(sql`insert into kortix.artifact_doc_updates (artifact_id, seq, bytes, created_by)
-      select ${artifactId}::uuid, g, decode('0000', 'hex'), ${otherUserId}::uuid from generate_series(2, ${DOC_COMPACT_ROWS + 1}) g`);
+    await db.execute(sql`insert into kortix.artifact_doc_updates (artifact_id, seq, epoch, bytes, created_by)
+      select ${artifactId}::uuid, g, (select epoch from kortix.artifact_doc_state where artifact_id = ${artifactId}::uuid), decode('0000', 'hex'), ${otherUserId}::uuid from generate_series(2, ${DOC_COMPACT_ROWS + 1}) g`);
     await db.update(artifactDocState).set({ nextSeq: DOC_COMPACT_ROWS + 2 }).where(eq(artifactDocState.artifactId, artifactId));
     expect((await compactArtifactDoc(artifactId)).done).toBe(true);
     const rows = await db.select({ createdBy: artifactDocUpdates.createdBy }).from(artifactDocUpdates).where(eq(artifactDocUpdates.artifactId, artifactId));

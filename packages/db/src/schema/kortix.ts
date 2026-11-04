@@ -9174,6 +9174,8 @@ export const artifactDocState = kortixSchema.table('artifact_doc_state', {
   check('artifact_doc_state_seq_check', sql`${table.flushedSeq} >= 0 and ${table.flushedSeq} < ${table.nextSeq}`),
   check('artifact_doc_state_lease_holder_check', sql`${table.leaseHolder} is null or char_length(${table.leaseHolder}) between 1 and 64`),
   check('artifact_doc_state_pending_writers_check', sql`jsonb_typeof(${table.pendingWriters}) = 'object'`),
+  // The target of `artifact_doc_updates`' (artifact_id, epoch) foreign key.
+  unique('artifact_doc_state_artifact_epoch_key').on(table.artifactId, table.epoch),
 ]).enableRLS();
 
 /**
@@ -9181,10 +9183,15 @@ export const artifactDocState = kortixSchema.table('artifact_doc_state', {
  * Compaction merges the oldest rows into one row that keeps the highest of
  * their seqs, so a client that asks for `seq > k` still gets every update it
  * lacks. The column is `bytes`, not `update` (a reserved word in SQL).
+ * Every row names the epoch of the state it belongs to: a foreign key on
+ * (artifact_id, epoch) deletes it with that state, and a background write
+ * (compaction) filters on the epoch it planned against, so it can never reach
+ * the rows of a later epoch that reuses the same seqs.
  */
 export const artifactDocUpdates = kortixSchema.table('artifact_doc_updates', {
   artifactId: uuid('artifact_id').notNull(),
   seq: bigint('seq', { mode: 'number' }).notNull(),
+  epoch: uuid('epoch').notNull(),
   bytes: bytea('bytes').notNull(),
   createdBy: uuid('created_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -9195,6 +9202,7 @@ export const artifactDocUpdates = kortixSchema.table('artifact_doc_updates', {
 }, (table) => [
   primaryKey({ columns: [table.artifactId, table.seq] }),
   foreignKey({ name: 'artifact_doc_updates_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
+  foreignKey({ name: 'artifact_doc_updates_epoch_fk', columns: [table.artifactId, table.epoch], foreignColumns: [artifactDocState.artifactId, artifactDocState.epoch] }).onDelete('cascade'),
 ]).enableRLS();
 
 /**

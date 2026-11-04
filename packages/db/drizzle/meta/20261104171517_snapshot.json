@@ -1,5 +1,5 @@
 {
-  "id": "fb850e38-fcd9-42c0-97ab-304e7cf6d1d4",
+  "id": "135c91a6-1179-4551-82ab-5aaa0f4e2b36",
   "prevId": "5f42472b-5a72-45db-942f-7eb1a1259102",
   "version": "7",
   "dialect": "postgresql",
@@ -5410,7 +5410,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "artifact_doc_state_artifact_epoch_key": {
+          "name": "artifact_doc_state_artifact_epoch_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "artifact_id",
+            "epoch"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "artifact_doc_state_seq_check": {
@@ -5441,6 +5450,12 @@
         "seq": {
           "name": "seq",
           "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "epoch": {
+          "name": "epoch",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
@@ -5489,6 +5504,22 @@
           ],
           "columnsTo": [
             "artifact_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "artifact_doc_updates_epoch_fk": {
+          "name": "artifact_doc_updates_epoch_fk",
+          "tableFrom": "artifact_doc_updates",
+          "tableTo": "artifact_doc_state",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "artifact_id",
+            "epoch"
+          ],
+          "columnsTo": [
+            "artifact_id",
+            "epoch"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"

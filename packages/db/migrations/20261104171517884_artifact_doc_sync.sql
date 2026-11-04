@@ -53,6 +53,7 @@ CREATE TABLE "kortix"."artifact_doc_state" (
 	"lease_expires_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "artifact_doc_state_artifact_epoch_key" UNIQUE("artifact_id","epoch"),
 	CONSTRAINT "artifact_doc_state_seq_check" CHECK ("kortix"."artifact_doc_state"."flushed_seq" >= 0 and "kortix"."artifact_doc_state"."flushed_seq" < "kortix"."artifact_doc_state"."next_seq"),
 	CONSTRAINT "artifact_doc_state_lease_holder_check" CHECK ("kortix"."artifact_doc_state"."lease_holder" is null or char_length("kortix"."artifact_doc_state"."lease_holder") between 1 and 64),
 	CONSTRAINT "artifact_doc_state_pending_writers_check" CHECK (jsonb_typeof("kortix"."artifact_doc_state"."pending_writers") = 'object')
@@ -62,6 +63,7 @@ ALTER TABLE "kortix"."artifact_doc_state" ENABLE ROW LEVEL SECURITY;--> statemen
 CREATE TABLE "kortix"."artifact_doc_updates" (
 	"artifact_id" uuid NOT NULL,
 	"seq" bigint NOT NULL,
+	"epoch" uuid NOT NULL,
 	"bytes" "bytea" NOT NULL,
 	"created_by" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -74,4 +76,5 @@ ALTER TABLE "kortix"."artifact_doc_updates" ENABLE ROW LEVEL SECURITY;--> statem
 ALTER TABLE "kortix"."artifact_doc_clients" ADD CONSTRAINT "artifact_doc_clients_state_fk" FOREIGN KEY ("artifact_id") REFERENCES "kortix"."artifact_doc_state"("artifact_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."artifact_doc_roots" ADD CONSTRAINT "artifact_doc_roots_state_fk" FOREIGN KEY ("artifact_id") REFERENCES "kortix"."artifact_doc_state"("artifact_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."artifact_doc_state" ADD CONSTRAINT "artifact_doc_state_artifact_fk" FOREIGN KEY ("artifact_id") REFERENCES "kortix"."artifacts"("artifact_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "kortix"."artifact_doc_updates" ADD CONSTRAINT "artifact_doc_updates_artifact_fk" FOREIGN KEY ("artifact_id") REFERENCES "kortix"."artifacts"("artifact_id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "kortix"."artifact_doc_updates" ADD CONSTRAINT "artifact_doc_updates_artifact_fk" FOREIGN KEY ("artifact_id") REFERENCES "kortix"."artifacts"("artifact_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "kortix"."artifact_doc_updates" ADD CONSTRAINT "artifact_doc_updates_epoch_fk" FOREIGN KEY ("artifact_id","epoch") REFERENCES "kortix"."artifact_doc_state"("artifact_id","epoch") ON DELETE cascade ON UPDATE no action;

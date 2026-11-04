@@ -24,8 +24,8 @@ async function newDoc(): Promise<string> {
 async function docWithRows(rows: number, structs: number): Promise<string> {
   const artifactId = await newDoc();
   await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: '', version: 'v1', userId });
-  await db.execute(sql`insert into kortix.artifact_doc_updates (artifact_id, seq, bytes, structs)
-    select ${artifactId}::uuid, g, decode('0000', 'hex'), ${structs} from generate_series(2, ${rows - 1}) g`);
+  await db.execute(sql`insert into kortix.artifact_doc_updates (artifact_id, seq, epoch, bytes, structs)
+    select ${artifactId}::uuid, g, (select epoch from kortix.artifact_doc_state where artifact_id = ${artifactId}::uuid), decode('0000', 'hex'), ${structs} from generate_series(2, ${rows - 1}) g`);
   await db.update(artifactDocState).set({ nextSeq: rows }).where(eq(artifactDocState.artifactId, artifactId));
   await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId, structs });
   return artifactId;

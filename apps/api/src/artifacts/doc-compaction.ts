@@ -6,7 +6,7 @@
  * each is below the threshold or the tick's time budget is spent. It yields to
  * the event loop between steps. A doc in its compaction back-off waits.
  */
-import { and, asc, eq, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 import { artifactDocState } from '@kortix/db';
 import { db } from '../shared/db';
 import { DOC_COMPACTION_BACKOFF_MS } from './doc-rules';
@@ -41,10 +41,8 @@ export async function compactRequestedArtifactDocs(
         await yieldToEventLoop();
         continue;
       }
-      if (step.reason === 'below_threshold') {
-        await db.update(artifactDocState).set({ compactionRequestedAt: null }).where(eq(artifactDocState.artifactId, artifactId));
-      }
-      // busy, backoff, failed, too_large: the mark stays; the back-off (if any) keeps it out of the next ticks.
+      // below_threshold: the step cleared the mark of the epoch it read. busy, backoff, failed, too_large,
+      // stale (a reset or the GC replaced the state mid-step): the mark stays; a back-off keeps it out of the next ticks.
       break;
     }
   }
