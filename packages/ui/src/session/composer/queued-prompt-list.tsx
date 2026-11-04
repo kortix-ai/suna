@@ -4,7 +4,6 @@ import { Button } from '../../primitives/button';
 import Loading from '../../primitives/loading';
 import { CountBadge } from '../../primitives/count-badge';
 import { parseNoticeBatch } from '../turn/subagent-notice';
-import { CaretRightIcon } from '@phosphor-icons/react';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import {
@@ -18,6 +17,7 @@ import {
   ArrowClockwiseIcon,
   ArrowUpIcon,
   CaretUpIcon,
+  CaretRightIcon,
   DotsThreeIcon,
   PencilSimpleIcon,
   StopIcon,
@@ -94,8 +94,12 @@ function QueuedMessageText({ row }: { row: QueueRow }) {
     ? parsed.length > 1
       ? copy('updateCount', { count: parsed.length })
       : reportTitle(parsed[0]!)
-    : row.text.split('\n').find((line) => line.trim()) || t('queued');
-  const expandable = Boolean(parsed || row.text.includes('\n') || row.text.length > 100);
+    : row.synthetic
+      ? copy('source')
+      : row.text.split('\n').find((line) => line.trim()) || t('queued');
+  const expandable = Boolean(
+    parsed || (!row.synthetic && (row.text.includes('\n') || row.text.length > 100)),
+  );
   const secondary =
     parsed &&
     (parsed.length > 1
@@ -107,13 +111,25 @@ function QueuedMessageText({ row }: { row: QueueRow }) {
             : parsed[0]!.status === 'stopped'
               ? copy('statusStoppedShort')
               : null,
-          !open && parsed[0]!.excerpt,
+          !open && parsed[0]!.excerpt !== title && parsed[0]!.excerpt,
         ]
           .filter(Boolean)
           .join(' · '));
   const heading = (
     <span className="min-w-0 flex-1">
-      <span className={cn('block', parsed ? 'truncate' : 'line-clamp-2 break-words')}>{title}</span>
+      <span
+        id={!parsed ? contentId : undefined}
+        className={cn(
+          'block',
+          parsed
+            ? 'truncate'
+            : open
+              ? 'break-words whitespace-pre-wrap'
+              : 'line-clamp-2 break-words',
+        )}
+      >
+        {open && !parsed ? row.text : title}
+      </span>
       {secondary && (
         <span className="text-muted-foreground block truncate text-xs">{secondary}</span>
       )}
@@ -136,9 +152,9 @@ function QueuedMessageText({ row }: { row: QueueRow }) {
           />
         </button>
       ) : (
-        <p className="break-words whitespace-pre-wrap">{row.text}</p>
+        <p className="break-words whitespace-pre-wrap">{title}</p>
       )}
-      {open && (
+      {open && parsed && (
         <div
           id={contentId}
           className="text-muted-foreground mt-2 space-y-3 text-sm leading-relaxed break-words whitespace-pre-wrap"
@@ -346,13 +362,16 @@ export function QueuedPromptList({
                           {t('commandRunsWhenDone')}
                         </p>
                       )}
-                      {!sharedSteer && !failed && (row.steer || row.steerFallback) && (
-                        <p className="text-muted-foreground text-xs" data-queued-delivery>
-                          {row.steerFallback
-                            ? t(STEER_FALLBACK_KEY[row.steerFallback])
-                            : t('steerNextStep')}
-                        </p>
-                      )}
+                      {heldCount === 0 &&
+                        !sharedSteer &&
+                        !failed &&
+                        (row.steer || row.steerFallback) && (
+                          <p className="text-muted-foreground text-xs" data-queued-delivery>
+                            {row.steerFallback
+                              ? t(STEER_FALLBACK_KEY[row.steerFallback])
+                              : t('steerNextStep')}
+                          </p>
+                        )}
                       {failed && (
                         <p className="text-kortix-red text-xs" role="status" title={row.lastError}>
                           {copy.raw('textcd5f943d5863')}
