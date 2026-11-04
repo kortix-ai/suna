@@ -10,6 +10,9 @@
  *     String (4), Format (6), Type (7: XML element and XML text only), Any (8).
  *     Deleted (1) is kept: Yjs writes it for content deleted before encoding.
  *     JSON (2), Binary (3), Embed (5), Doc (9) and unknown refs are refused;
+ *   - an item whose parent is the root `default` and that is not an XML
+ *     element (`root_not_element`; items placed there by an origin are
+ *     decided by `doc-roots.ts` from `placeDocUpdate`);
  *   - an item that names its own client at its own clock or later as origin,
  *     right origin or parent (the 17-byte poison: every client throws on it);
  *   - a push carrying the structs of more than one client;
@@ -45,7 +48,8 @@ export type DocScanReason =
   | 'too_much_text'
   | 'many_clients'
   | 'self_reference'
-  | 'content_not_allowed';
+  | 'content_not_allowed'
+  | 'root_not_element';
 
 export type DocUpdateCheck = { ok: true } | { ok: false; reason: DocScanReason };
 
@@ -175,16 +179,53 @@ const ROOT_FIELD = 'default';
 /** y-tiptap's map of relative-position migrations for that fragment: map entries of `Any`. */
 const ROOT_POSITION_MIGRATIONS = `__tiptap_position_migrations:root:${ROOT_FIELD}`;
 
-/**
- * An item whose parent is the root `default` must be an XML element:
- * y-tiptap maps the fragment's children to block nodes and throws on anything
- * else (an XML text, a string), so every tab that loads the doc fails to mount.
- * Reads nothing: the content is read next by `contentLength`.
- * Only a parent named in the item is seen here: an item placed by its origin
- * takes its parent from that item at integration, which no byte scan can know.
+/*
+ * The root rule. An item whose parent is the root `default` must be an XML
+ * element: y-tiptap maps the fragment's children to block nodes and throws on
+ * anything else (an XML text, a string), so every tab that loads the doc
+ * fails to mount. The scan refuses an item that names the root as its parent
+ * (`root_not_element`). An item placed by its origin or right origin takes
+ * its parent from that item at integration, which the bytes alone cannot
+ * tell: the service decides those (`doc-roots.ts`) from `placeDocUpdate` and
+ * the stored index of root items.
  */
-function rootElementOnly(r: Reader, ref: number): void {
-  if (ref !== 7 || r.peek() !== XML_ELEMENT) throw new Refused('content_not_allowed');
+
+/** How one struct of a placed update sits (`DocPlacement.structs`). */
+export const DOC_STRUCT = {
+  /** Its parent is the root `default` (an XML element: the scan refuses anything else there). */
+  root: 0,
+  /** Its parent is named in the item: a type item, or y-tiptap's position-migration map. */
+  nested: 1,
+  /** No parent in the bytes (it has an origin or a right origin), and an XML element. */
+  placedElement: 2,
+  /** No parent in the bytes, and any other content. */
+  placed: 3,
+  /** A GC struct: no content and no parent. */
+  gc: 4,
+} as const;
+
+/** Numbers per struct in `DocPlacement.structs`. */
+export const DOC_PLACEMENT_FIELDS = 7;
+
+/**
+ * Where the structs of one seed or push go, read from the bytes alone, for
+ * the root rule (`doc-roots.ts`). A placed update carries one client.
+ */
+export interface DocPlacement {
+  /** The client whose structs the update carries; null when it carries none (a delete-only push). */
+  client: number | null;
+  /** The clock of its first struct, and the clock after its last. */
+  start: number;
+  end: number;
+  /** A Skip struct: the update leaves a hole in its client's clocks. */
+  gap: boolean;
+  /**
+   * `DOC_PLACEMENT_FIELDS` numbers per struct (a Skip has none), in clock
+   * order: clock, length, kind (`DOC_STRUCT`), origin client, origin clock,
+   * right-origin client, right-origin clock (-1 when absent). A flat array:
+   * 7 numbers for each of at most `DOC_MAX_STRUCTS` structs.
+   */
+  structs: number[];
 }
 
 /** One item's content (Yjs `readItemContent`): its length in clock units, or refused. */
@@ -230,18 +271,29 @@ function positive(length: number): number {
   return length;
 }
 
-function scan(update: Uint8Array, kind: 'push' | 'seed'): { structs: number } {
+type Scanned = { structs: number; client: number | null; start: number; end: number; gap: boolean };
+
+/**
+ * `place`: when given, the update must carry the structs of one client (as a
+ * seed too), and each struct's placement is appended (`DocPlacement.structs`).
+ */
+function scan(update: Uint8Array, kind: 'push' | 'seed', place?: number[]): Scanned {
   const r = new Reader(update);
   const clients = r.uint();
   let structs = 0;
   let structClients = 0;
+  const placed: Scanned = { structs: 0, client: null, start: 0, end: 0, gap: false };
   for (let c = 0; c < clients; c++) {
     const count = r.uint();
     structs += count;
     if (structs > DOC_MAX_STRUCTS) throw new Refused('too_many_structs');
     const client = r.uint();
     let clock = r.uint();
-    if (count > 0 && ++structClients > 1 && kind === 'push') throw new Refused('many_clients');
+    if (count > 0 && ++structClients > 1 && (kind === 'push' || place)) throw new Refused('many_clients');
+    if (count > 0) {
+      placed.client = client;
+      placed.start = clock;
+    }
     for (let s = 0; s < count; s++) {
       const info = r.u8();
       const ref = info & BITS5;
@@ -250,7 +302,10 @@ function scan(update: Uint8Array, kind: 'push' | 'seed'): { structs: number } {
         // merge reader (`lazyStructReaderGenerator`) takes Skip only when
         // info === 10; applyUpdate (`readClientsStructRefs`) takes any info
         // whose low bits are 10. A byte they disagree on is refused.
-        clock += positive(r.uint());
+        const length = positive(r.uint());
+        if (info === 10) placed.gap = true;
+        else place?.push(clock, length, DOC_STRUCT.gc, -1, -1, -1, -1);
+        clock += length;
       } else if (ref === 0 || ref === 10) {
         throw new Refused('malformed');
       } else {
@@ -258,25 +313,44 @@ function scan(update: Uint8Array, kind: 'push' | 'seed'): { structs: number } {
         const pointsAt = (refClient: number, refClock: number) => {
           if (refClient === client && refClock >= own) throw new Refused('self_reference');
         };
-        if (info & BIT8) pointsAt(r.uint(), r.uint());
-        if (info & BIT7) pointsAt(r.uint(), r.uint());
-        let atRoot = false;
+        let originClient = -1;
+        let originClock = -1;
+        let rightClient = -1;
+        let rightClock = -1;
+        if (info & BIT8) {
+          originClient = r.uint();
+          originClock = r.uint();
+          pointsAt(originClient, originClock);
+        }
+        if (info & BIT7) {
+          rightClient = r.uint();
+          rightClock = r.uint();
+          pointsAt(rightClient, rightClock);
+        }
+        let parent: number = DOC_STRUCT.placed;
         if ((info & (BIT7 | BIT8)) === 0) {
+          parent = DOC_STRUCT.nested;
           if (r.uint() === 1) {
             // A root type: only the two the editor uses (recorded in doc-editor-updates.fixture.ts).
             const root = r.string();
             if (root === ROOT_FIELD) {
               if (info & BIT6) throw new Refused('content_not_allowed');
-              atRoot = true;
+              parent = DOC_STRUCT.root;
             } else if (root !== ROOT_POSITION_MIGRATIONS) throw new Refused('content_not_allowed');
           } else pointsAt(r.uint(), r.uint());
           if (info & BIT6) r.string();
         }
-        if (atRoot) rootElementOnly(r, ref);
-        clock += positive(contentLength(r, ref));
+        // An XML element: content ref 7 whose type ref (one byte, read next by `contentLength`) is 3.
+        const element = ref === 7 && r.peek() === XML_ELEMENT;
+        // Content the editor never emits is refused first, wherever it sits.
+        const length = positive(contentLength(r, ref));
+        if (parent === DOC_STRUCT.root && !element) throw new Refused('root_not_element');
+        place?.push(own, length, parent === DOC_STRUCT.placed && element ? DOC_STRUCT.placedElement : parent, originClient, originClock, rightClient, rightClock);
+        clock += length;
       }
       if (clock > Number.MAX_SAFE_INTEGER) throw new Refused('malformed');
     }
+    if (count > 0) placed.end = clock;
   }
   const deleteClients = r.uint();
   let ranges = 0;
@@ -292,7 +366,8 @@ function scan(update: Uint8Array, kind: 'push' | 'seed'): { structs: number } {
     }
   }
   if (!r.done) throw new Refused('malformed');
-  return { structs };
+  placed.structs = structs;
+  return placed;
 }
 
 /**
@@ -312,6 +387,25 @@ export function scanDocUpdate(update: Uint8Array, kind: 'push' | 'seed'): DocUpd
 export function measureDocUpdate(update: Uint8Array, kind: 'push' | 'seed'): { ok: true; structs: number } | { ok: false; reason: DocScanReason } {
   try {
     return { ok: true, structs: scan(update, kind).structs };
+  } catch (error) {
+    if (error instanceof Refused) return { ok: false, reason: error.reason };
+    throw error;
+  }
+}
+
+/**
+ * The same check for a seed or a push a client sends, plus where its structs
+ * go (`DocPlacement`). Either kind must carry the structs of one client. The
+ * service applies the root rule to the result (`doc-roots.ts`).
+ */
+export function placeDocUpdate(
+  update: Uint8Array,
+  kind: 'push' | 'seed',
+): { ok: true; structs: number; placement: DocPlacement } | { ok: false; reason: DocScanReason } {
+  const place: number[] = [];
+  try {
+    const { structs, client, start, end, gap } = scan(update, kind, place);
+    return { ok: true, structs, placement: { client, start, end, gap, structs: place } };
   } catch (error) {
     if (error instanceof Refused) return { ok: false, reason: error.reason };
     throw error;

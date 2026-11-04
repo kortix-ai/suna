@@ -21,6 +21,22 @@ set statement_timeout = '30s';
 --   [ ] Any ALTER TYPE ... ADD VALUE needs:
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
+CREATE TABLE "kortix"."artifact_doc_clients" (
+	"artifact_id" uuid NOT NULL,
+	"client" bigint NOT NULL,
+	"next_clock" bigint NOT NULL,
+	CONSTRAINT "artifact_doc_clients_artifact_id_client_pk" PRIMARY KEY("artifact_id","client")
+);
+--> statement-breakpoint
+ALTER TABLE "kortix"."artifact_doc_clients" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "kortix"."artifact_doc_roots" (
+	"artifact_id" uuid NOT NULL,
+	"client" bigint NOT NULL,
+	"clock" bigint NOT NULL,
+	CONSTRAINT "artifact_doc_roots_artifact_id_client_clock_pk" PRIMARY KEY("artifact_id","client","clock")
+);
+--> statement-breakpoint
+ALTER TABLE "kortix"."artifact_doc_roots" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "kortix"."artifact_doc_state" (
 	"artifact_id" uuid PRIMARY KEY NOT NULL,
 	"epoch" uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -55,5 +71,7 @@ CREATE TABLE "kortix"."artifact_doc_updates" (
 );
 --> statement-breakpoint
 ALTER TABLE "kortix"."artifact_doc_updates" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "kortix"."artifact_doc_clients" ADD CONSTRAINT "artifact_doc_clients_state_fk" FOREIGN KEY ("artifact_id") REFERENCES "kortix"."artifact_doc_state"("artifact_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "kortix"."artifact_doc_roots" ADD CONSTRAINT "artifact_doc_roots_state_fk" FOREIGN KEY ("artifact_id") REFERENCES "kortix"."artifact_doc_state"("artifact_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."artifact_doc_state" ADD CONSTRAINT "artifact_doc_state_artifact_fk" FOREIGN KEY ("artifact_id") REFERENCES "kortix"."artifacts"("artifact_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."artifact_doc_updates" ADD CONSTRAINT "artifact_doc_updates_artifact_fk" FOREIGN KEY ("artifact_id") REFERENCES "kortix"."artifacts"("artifact_id") ON DELETE cascade ON UPDATE no action;

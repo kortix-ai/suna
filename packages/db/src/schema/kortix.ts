@@ -9197,6 +9197,38 @@ export const artifactDocUpdates = kortixSchema.table('artifact_doc_updates', {
   foreignKey({ name: 'artifact_doc_updates_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
 ]).enableRLS();
 
+/**
+ * The root-level items of a co-edited doc: every item whose parent is the
+ * root fragment `default`, named in the item or taken from its origin or
+ * right origin (`apps/api/src/artifacts/doc-roots.ts`). Each is an XML
+ * element, so one ID is one clock. A push names an origin; the service looks
+ * it up here to know whether the new item lands at the root. Written in the
+ * transaction that stores the update; a reset or the GC job deletes the state
+ * row, and these rows with it.
+ */
+export const artifactDocRoots = kortixSchema.table('artifact_doc_roots', {
+  artifactId: uuid('artifact_id').notNull(),
+  client: bigint('client', { mode: 'number' }).notNull(),
+  clock: bigint('clock', { mode: 'number' }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.artifactId, table.client, table.clock] }),
+  foreignKey({ name: 'artifact_doc_roots_state_fk', columns: [table.artifactId], foreignColumns: [artifactDocState.artifactId] }).onDelete('cascade'),
+]).enableRLS();
+
+/**
+ * Per Yjs client of a co-edited doc, the clock after its last stored struct.
+ * An origin at a lower clock is a stored item; a push starts at or before it
+ * (a client's structs stay contiguous). Same lifetime as `artifact_doc_roots`.
+ */
+export const artifactDocClients = kortixSchema.table('artifact_doc_clients', {
+  artifactId: uuid('artifact_id').notNull(),
+  client: bigint('client', { mode: 'number' }).notNull(),
+  nextClock: bigint('next_clock', { mode: 'number' }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.artifactId, table.client] }),
+  foreignKey({ name: 'artifact_doc_clients_state_fk', columns: [table.artifactId], foreignColumns: [artifactDocState.artifactId] }).onDelete('cascade'),
+]).enableRLS();
+
 export const driveCommitAuthors = kortixSchema.table('drive_commit_authors', {
   driveId: uuid('drive_id').notNull(),
   commitId: text('commit_id').notNull(),

@@ -32,7 +32,7 @@ import {
   DocReadAuditThrottle,
   isIncrementalDocPull,
 } from '../../artifacts/doc-rules';
-import { DOC_MAX_DELETES, DOC_MAX_STRUCTS, measureDocUpdate } from '../../artifacts/doc-yjs';
+import { DOC_MAX_DELETES, DOC_MAX_STRUCTS, placeDocUpdate } from '../../artifacts/doc-yjs';
 import {
   ArtifactDocError,
   appendArtifactDocUpdate,
@@ -124,9 +124,10 @@ function updateFrom(c: Context, value: string, input: { max: number; kind: 'push
     const taken = pushBytes.take(input.byteKey, bytes.length, Date.now());
     if (!taken.allowed) return { ok: false as const, response: rateLimited(c, taken.retryAfterMs) };
   }
-  const checked = measureDocUpdate(bytes, input.kind);
+  const checked = placeDocUpdate(bytes, input.kind);
   if (!checked.ok) return { ok: false as const, response: c.json({ error: 'The update is not an acceptable Yjs update', code: 'invalid_update', reason: checked.reason }, 400) };
-  return { ok: true as const, bytes, structs: checked.structs };
+  // `placement`: where the structs go, for the root rule the service applies under the state lock (doc-roots.ts).
+  return { ok: true as const, bytes, structs: checked.structs, placement: checked.placement };
 }
 
 function markdownTooLarge(c: Context, markdown: string) {
@@ -148,7 +149,7 @@ function failure(c: Context, err: unknown) {
   throw err;
 }
 
-const CHECKS = `Scanned byte by byte before anything decodes it: only the content the doc editor emits (text, formats, XML elements and text, attributes; \`reason: content_not_allowed\` otherwise), at most ${DOC_MAX_STRUCTS} structs and ${DOC_MAX_DELETES} delete ranges, and no item may name its own client at its own clock or later as origin, right origin or parent; otherwise 400 \`invalid_update\` with a \`reason\`.`;
+const CHECKS = `Scanned byte by byte before anything decodes it: only the content the doc editor emits (text, formats, XML elements and text, attributes; \`reason: content_not_allowed\` otherwise), at most ${DOC_MAX_STRUCTS} structs and ${DOC_MAX_DELETES} delete ranges, and no item may name its own client at its own clock or later as origin, right origin or parent. Then the root rule, against the doc's index of root items: an item at the root \`default\` (named as its parent, or placed next to a root item by its origin or right origin) must be an XML element (\`root_not_element\`); every origin outside the update must be a stored item (\`unknown_origin\`); a client's structs stay contiguous (\`clock_gap\`); and stored clocks sent again (a retry) must sit where they sit (\`clock_overlap\`). A seed carries the structs of one client. Otherwise 400 \`invalid_update\` with a \`reason\`.`;
 
 export function registerArtifactDocRoutes(): void {
   limitBody('/:projectId/artifacts/:artifactId/doc/seed', 8 * MiB, 'doc_too_large');
@@ -206,7 +207,7 @@ export function registerArtifactDocRoutes(): void {
     const update = updateFrom(c, input.update, { max: DOC_SEED_UPDATE_MAX_BYTES, kind: 'seed', byteKey: access.viewer.userId });
     if (!update.ok) return update.response;
     try {
-      const seeded = await seedArtifactDoc(access.row.artifactId, { update: update.bytes, structs: update.structs, markdown: input.markdown, version: input.version, userId: access.viewer.userId });
+      const seeded = await seedArtifactDoc(access.row.artifactId, { update: update.bytes, structs: update.structs, placement: update.placement, markdown: input.markdown, version: input.version, userId: access.viewer.userId });
       publishArtifactLiveChange(access.row.artifactId, 'doc', String(seeded.seq));
       return c.json(seeded, 201);
     } catch (err) {
@@ -231,7 +232,7 @@ export function registerArtifactDocRoutes(): void {
     if (!update.ok) return update.response;
     try {
       const artifactId = access.row.artifactId;
-      const appended = await appendArtifactDocUpdate(artifactId, { update: update.bytes, structs: update.structs, userId: access.viewer.userId, epoch: input.epoch });
+      const appended = await appendArtifactDocUpdate(artifactId, { update: update.bytes, structs: update.structs, placement: update.placement, userId: access.viewer.userId, epoch: input.epoch });
       // Past the row threshold the service marks the doc; the worker compacts it (never this replica).
       publishArtifactLiveChange(artifactId, 'doc', String(appended.seq));
       return c.json({ seq: appended.seq }, 200);

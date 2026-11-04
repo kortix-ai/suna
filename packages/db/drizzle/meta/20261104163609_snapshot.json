@@ -1,5 +1,5 @@
 {
-  "id": "e9235e84-badb-47c5-ae2a-7c80a0a94e0d",
+  "id": "fb850e38-fcd9-42c0-97ab-304e7cf6d1d4",
   "prevId": "5f42472b-5a72-45db-942f-7eb1a1259102",
   "version": "7",
   "dialect": "postgresql",
@@ -5179,6 +5179,115 @@
           "value": "char_length(\"kortix\".\"artifact_comments\".\"body\") <= 10000 and (\"kortix\".\"artifact_comments\".\"deleted_at\" is not null or char_length(\"kortix\".\"artifact_comments\".\"body\") >= 1)"
         }
       },
+      "isRLSEnabled": true
+    },
+    "kortix.artifact_doc_clients": {
+      "name": "artifact_doc_clients",
+      "schema": "kortix",
+      "columns": {
+        "artifact_id": {
+          "name": "artifact_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client": {
+          "name": "client",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "next_clock": {
+          "name": "next_clock",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "artifact_doc_clients_state_fk": {
+          "name": "artifact_doc_clients_state_fk",
+          "tableFrom": "artifact_doc_clients",
+          "tableTo": "artifact_doc_state",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "artifact_id"
+          ],
+          "columnsTo": [
+            "artifact_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "artifact_doc_clients_artifact_id_client_pk": {
+          "name": "artifact_doc_clients_artifact_id_client_pk",
+          "columns": [
+            "artifact_id",
+            "client"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "kortix.artifact_doc_roots": {
+      "name": "artifact_doc_roots",
+      "schema": "kortix",
+      "columns": {
+        "artifact_id": {
+          "name": "artifact_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client": {
+          "name": "client",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "clock": {
+          "name": "clock",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "artifact_doc_roots_state_fk": {
+          "name": "artifact_doc_roots_state_fk",
+          "tableFrom": "artifact_doc_roots",
+          "tableTo": "artifact_doc_state",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "artifact_id"
+          ],
+          "columnsTo": [
+            "artifact_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "artifact_doc_roots_artifact_id_client_clock_pk": {
+          "name": "artifact_doc_roots_artifact_id_client_clock_pk",
+          "columns": [
+            "artifact_id",
+            "client",
+            "clock"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": true
     },
     "kortix.artifact_doc_state": {

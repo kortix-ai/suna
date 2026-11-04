@@ -5,7 +5,10 @@ import * as Y from 'yjs';
 import { db } from '../shared/db';
 import { localTestDatabaseUrl } from '../__tests__/helpers/integration-fixtures';
 import { interleave } from '../__tests__/helpers/interleave';
+import { EDITOR_BLOCK_PUSHES, EDITOR_BLOCK_SEED } from './doc-editor-updates.fixture';
+import { gcArtifactDocs } from './doc-gc';
 import { DOC_COMPACT_ROWS, DOC_MAX_BYTES_TOTAL, DOC_PAGE_MAX_BYTES, DOC_PAGE_MAX_STRUCTS } from './doc-rules';
+import { placeDocUpdate } from './doc-scan';
 import {
   ArtifactDocError,
   appendArtifactDocUpdate,
@@ -496,5 +499,83 @@ describe('a page counts structs', () => {
     const counts = await db.select({ seq: artifactDocUpdates.seq, structs: artifactDocUpdates.structs }).from(artifactDocUpdates)
       .where(eq(artifactDocUpdates.artifactId, artifactId)).orderBy(artifactDocUpdates.seq);
     expect(counts.map((r) => r.structs)).toEqual([0, heavy, heavy, 10]);
+  });
+});
+
+describe('the root index: an item placed by its origin at the root must be an XML element', () => {
+  /** An update as the route passes it: the bytes, their struct count, and where the structs go. */
+  const placed = (update: Uint8Array | string, kind: 'push' | 'seed') => {
+    const bytes = typeof update === 'string' ? new Uint8Array(Buffer.from(update, 'base64')) : update;
+    const scanned = placeDocUpdate(bytes, kind);
+    if (!scanned.ok) throw new Error(`scan refused: ${scanned.reason}`);
+    return { update: Buffer.from(bytes), structs: scanned.structs, placement: scanned.placement };
+  };
+  const reason = async (run: Promise<unknown>) => {
+    const error = (await run.then(() => null, (e: unknown) => e)) as ArtifactDocError | null;
+    return error && { status: error.status, code: error.code, reason: error.detail?.reason };
+  };
+  const roots = async (artifactId: string) => (await db.execute(sql`select client::text || ':' || clock::text as id from kortix.artifact_doc_roots
+    where artifact_id = ${artifactId}::uuid order by 1`) as unknown as Array<{ id: string }>).map((row) => row.id);
+  const clients = async (artifactId: string) => Number((await db.execute(sql`select count(*)::int as n from kortix.artifact_doc_clients
+    where artifact_id = ${artifactId}::uuid`) as unknown as Array<{ n: number }>)[0]!.n);
+
+  // A seed by client 4131944473: one paragraph at the root, at clock 0 (header 01 01 <client> 00, then the item).
+  const STRIX_CLIENT_SEED = new Uint8Array([1, 1, 0x99, 0xf0, 0xa1, 0xb2, 0x0f, 0, 7, 1, 7, ...Buffer.from('default'), 3, 9, ...Buffer.from('paragraph'), 0]);
+  /** Strix's 27 bytes: an XML text placed after 4131944473:0 (so at the root), then text inside it. */
+  const STRIX = 'AQKj4fJVAIeZ8KGyDwAGBACj4fJVAANwd24A';
+
+  test('Strix’s 27-byte payload after a seed whose root holds its origin → 400 invalid_update root_not_element, and nothing is stored', async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { ...placed(STRIX_CLIENT_SEED, 'seed'), markdown: '', version: 'v1', userId });
+    expect(await roots(artifactId)).toEqual(['4131944473:0']);
+    expect(await reason(appendArtifactDocUpdate(artifactId, { ...placed(STRIX, 'push'), userId })))
+      .toEqual({ status: 400, code: 'invalid_update', reason: 'root_not_element' });
+    expect((await readArtifactDoc(artifactId, { after: 0, base: false })).latestSeq).toBe(1);
+    expect(await roots(artifactId)).toEqual(['4131944473:0']);
+  });
+
+  test('the same bytes on a doc that never had that origin → 400 unknown_origin', async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { ...placed(EDITOR_BLOCK_SEED, 'seed'), markdown: '', version: 'v1', userId });
+    expect(await reason(appendArtifactDocUpdate(artifactId, { ...placed(STRIX, 'push'), userId })))
+      .toEqual({ status: 400, code: 'invalid_update', reason: 'unknown_origin' });
+  });
+
+  test('the real editor’s block edits (insert, split, join, delete, undo, redo, Enter, delete all) all pass; the index equals what Yjs places at the root; a reset clears it', async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { ...placed(EDITOR_BLOCK_SEED, 'seed'), markdown: '', version: 'v1', userId });
+    for (const push of EDITOR_BLOCK_PUSHES) await appendArtifactDocUpdate(artifactId, { ...placed(push.update, 'push'), userId });
+    // A retry of the last push (its answer lost) passes and changes nothing.
+    await appendArtifactDocUpdate(artifactId, { ...placed(EDITOR_BLOCK_PUSHES.at(-1)!.update, 'push'), userId });
+
+    const doc = new Y.Doc({ gc: false });
+    for (const update of [EDITOR_BLOCK_SEED, ...EDITOR_BLOCK_PUSHES.map((push) => push.update)]) Y.applyUpdate(doc, Buffer.from(update, 'base64'));
+    const truth: string[] = [];
+    for (let item = doc.getXmlFragment('default')._start; item; item = item.right) truth.push(`${item.id.client}:${item.id.clock}`);
+    expect(await roots(artifactId)).toEqual(truth.sort());
+    expect(await clients(artifactId)).toBe(2);
+
+    await resetArtifactDoc(artifactId, { holder: 'tab-a', userId });
+    expect({ roots: await roots(artifactId), clients: await clients(artifactId) }).toEqual({ roots: [], clients: 0 });
+  });
+
+  test('the GC job and a delete of the Artifact clear the index with the state', async () => {
+    const collected = await newDoc();
+    const deleted = await newDoc();
+    for (const artifactId of [collected, deleted]) {
+      await seedArtifactDoc(artifactId, { ...placed(EDITOR_BLOCK_SEED, 'seed'), markdown: '', version: 'v1', userId });
+      expect({ roots: (await roots(artifactId)).length > 0, clients: await clients(artifactId) }).toEqual({ roots: true, clients: 1 });
+    }
+    await db.update(artifactDocState).set({ updatedAt: sql`now() - interval '1 hour'` }).where(eq(artifactDocState.artifactId, collected));
+    expect((await gcArtifactDocs()).deleted).toContain(collected);
+    await db.delete(artifacts).where(eq(artifacts.artifactId, deleted));
+    for (const artifactId of [collected, deleted]) expect({ roots: await roots(artifactId), clients: await clients(artifactId) }).toEqual({ roots: [], clients: 0 });
+  });
+
+  test('a push that starts past its client’s stored clocks → 400 clock_gap', async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { ...placed(EDITOR_BLOCK_SEED, 'seed'), markdown: '', version: 'v1', userId });
+    expect(await reason(appendArtifactDocUpdate(artifactId, { ...placed(EDITOR_BLOCK_PUSHES[1]!.update, 'push'), userId })))
+      .toEqual({ status: 400, code: 'invalid_update', reason: 'clock_gap' });
   });
 });

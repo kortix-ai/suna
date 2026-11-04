@@ -16,7 +16,7 @@
  * Callers pass plain values; the access check is the route's.
  */
 import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm';
-import { artifactDocState, artifactDocUpdates, artifacts } from '@kortix/db';
+import { artifactDocClients, artifactDocRoots, artifactDocState, artifactDocUpdates, artifacts } from '@kortix/db';
 import { logger } from '../lib/logger';
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
@@ -39,6 +39,8 @@ import {
   type DocLease,
   type DocLeaseKind,
 } from './doc-rules';
+import { decideRoots, rootLookups, type DocRootReason } from './doc-roots';
+import type { DocPlacement } from './doc-scan';
 import { DOC_MAX_STRUCTS, checkDocUpdate, compactDocUpdates, measureDocUpdate, mergesAlone } from './doc-yjs';
 
 export class ArtifactDocError extends Error {
@@ -76,6 +78,79 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 async function lockArtifact(tx: Tx, artifactId: string): Promise<void> {
   const [row] = await tx.select({ id: artifacts.artifactId }).from(artifacts).where(eq(artifacts.artifactId, artifactId)).for('key share');
   if (!row) throw new ArtifactDocError(404, 'Artifact not found', 'not_found');
+}
+
+const ROOT_REFUSALS: Record<DocRootReason, string> = {
+  root_not_element: 'An item at the root of the doc must be an XML element (a block)',
+  unknown_origin: 'An item names an origin this doc does not hold',
+  clock_gap: 'The update leaves a hole in its client’s clocks',
+  clock_overlap: 'The update sends stored items again, placed differently',
+};
+
+/** A Postgres bigint[] literal of integers (every value is a Yjs client or clock, at most 2^53). */
+const bigints = (values: readonly number[]) => `{${values.join(',')}}`;
+
+/**
+ * The root rule for one seed or push (`doc-roots.ts`), under the state row's
+ * lock: read the index for the IDs the update names (one query for the
+ * origins, one for a re-sent range), decide, and write the update's new
+ * root-level IDs and its client's clock. 400 `invalid_update` with the
+ * `reason` otherwise. Without `placement` (a caller that did not scan the
+ * bytes) nothing is checked or indexed.
+ */
+async function placeRoots(tx: Tx, artifactId: string, placement: DocPlacement | undefined): Promise<void> {
+  if (!placement || placement.client === null) return;
+  const own = placement.client;
+  const [current] = await tx.select({ nextClock: artifactDocClients.nextClock }).from(artifactDocClients)
+    .where(and(eq(artifactDocClients.artifactId, artifactId), eq(artifactDocClients.client, own)));
+  const nextClock = current?.nextClock ?? 0;
+  const lookups = rootLookups(placement, nextClock);
+  const known = new Set<string>();
+  const roots = new Set<string>();
+  if (lookups.refs.length > 0) {
+    const rows = await tx.execute(sql`select r.client::text as client, r.clock::text as clock,
+        exists (select 1 from kortix.artifact_doc_clients c
+                 where c.artifact_id = ${artifactId}::uuid and c.client = r.client and c.next_clock > r.clock) as known,
+        exists (select 1 from kortix.artifact_doc_roots o
+                 where o.artifact_id = ${artifactId}::uuid and o.client = r.client and o.clock = r.clock) as root
+      from unnest(${bigints(lookups.refs.map(([client]) => client))}::bigint[], ${bigints(lookups.refs.map(([, clock]) => clock))}::bigint[]) as r(client, clock)`);
+    for (const row of rows as unknown as Array<{ client: string; clock: string; known: boolean; root: boolean }>) {
+      if (row.known) known.add(`${row.client}:${row.clock}`);
+      if (row.root) roots.add(`${row.client}:${row.clock}`);
+    }
+  }
+  const storedRoots = new Set<number>();
+  if (lookups.overlap) {
+    const rows = await tx.select({ clock: artifactDocRoots.clock }).from(artifactDocRoots)
+      .where(and(
+        eq(artifactDocRoots.artifactId, artifactId),
+        eq(artifactDocRoots.client, own),
+        gte(artifactDocRoots.clock, lookups.overlap.from),
+        lt(artifactDocRoots.clock, lookups.overlap.to),
+      ))
+      .orderBy(asc(artifactDocRoots.clock))
+      .limit(lookups.overlap.limit);
+    for (const row of rows) storedRoots.add(row.clock);
+  }
+  const decision = decideRoots(placement, {
+    nextClock,
+    known: (client, clock) => known.has(`${client}:${clock}`),
+    root: (client, clock) => roots.has(`${client}:${clock}`),
+    storedRoots,
+  });
+  if (!decision.ok) throw new ArtifactDocError(400, ROOT_REFUSALS[decision.reason], 'invalid_update', { reason: decision.reason });
+  if (decision.roots.length > 0) {
+    await tx.execute(sql`insert into kortix.artifact_doc_roots (artifact_id, client, clock)
+      select ${artifactId}::uuid, ${String(own)}::bigint, unnest(${bigints(decision.roots)}::bigint[])
+      on conflict do nothing`);
+  }
+  if (decision.nextClock > nextClock) {
+    await tx.insert(artifactDocClients).values({ artifactId, client: own, nextClock: decision.nextClock })
+      .onConflictDoUpdate({
+        target: [artifactDocClients.artifactId, artifactDocClients.client],
+        set: { nextClock: sql`greatest(${artifactDocClients.nextClock}, excluded.next_clock)` },
+      });
+  }
 }
 
 export interface ArtifactDocRead {
@@ -172,7 +247,7 @@ export async function readArtifactDoc(artifactId: string, input: { after: number
  */
 export async function seedArtifactDoc(
   artifactId: string,
-  input: { update: Buffer; markdown: string; version: string; userId: string; structs?: number },
+  input: { update: Buffer; markdown: string; version: string; userId: string; structs?: number; placement?: DocPlacement },
 ): Promise<{ seq: number; epoch: string }> {
   return db.transaction(async (tx) => {
     await lockArtifact(tx, artifactId);
@@ -185,6 +260,7 @@ export async function seedArtifactDoc(
       flushedMarkdown: input.markdown,
     }).onConflictDoNothing({ target: artifactDocState.artifactId }).returning({ epoch: artifactDocState.epoch });
     if (!created) throw new ArtifactDocError(409, 'This doc already has a live state: read it instead', 'doc_seeded');
+    await placeRoots(tx, artifactId, input.placement);
     await tx.insert(artifactDocUpdates).values({ artifactId, seq: 1, bytes: input.update, createdBy: input.userId, structs: input.structs ?? 0 });
     return { seq: 1, epoch: created.epoch };
   });
@@ -198,7 +274,7 @@ export async function seedArtifactDoc(
  */
 export async function appendArtifactDocUpdate(
   artifactId: string,
-  input: { update: Buffer; userId: string; epoch?: string; structs?: number },
+  input: { update: Buffer; userId: string; epoch?: string; structs?: number; placement?: DocPlacement },
 ): Promise<{ seq: number; rows: number }> {
   return db.transaction(async (tx) => {
     await lockArtifact(tx, artifactId);
@@ -209,6 +285,7 @@ export async function appendArtifactDocUpdate(
     if (state.bytesTotal + input.update.length > DOC_MAX_BYTES_TOTAL) {
       throw new ArtifactDocError(413, `This doc's live state holds at most ${DOC_MAX_BYTES_TOTAL / 1048576} MiB of updates`, 'doc_too_large');
     }
+    await placeRoots(tx, artifactId, input.placement);
     const [next] = await tx.update(artifactDocState)
       .set({
         nextSeq: sql`${artifactDocState.nextSeq} + 1`,

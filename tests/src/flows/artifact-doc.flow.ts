@@ -36,6 +36,10 @@ const POISON = 'AQGVmu86AISVmu86yAEBeAA=';
 /** The seed merged with the first edit: the structs of two clients in one push. */
 const TWO_CLIENTS = 'AgHSDwCE6QcMByBmb3IgUTMD6QcABwEHZGVmYXVsdAMJcGFyYWdyYXBoBwDpBwAGBADpBwELTGF1bmNoIHBsYW4A';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** Strix's 27 bytes: an XML text placed by its origin (client 4131944473, clock 0), then text inside it. This doc never had that origin. */
+const ORIGIN_PLACED_TEXT = 'AQKj4fJVAIeZ8KGyDwAGBACj4fJVAANwd24A';
+/** Client 3003, clock 0: an XML text placed by its origin right after the seed's paragraph (1001:0), so at the root. */
+const TEXT_AFTER_ROOT_PARAGRAPH = Buffer.from([1, 1, 0xbb, 0x17, 0, 0x87, 0xe9, 0x07, 0, 6, 0]).toString('base64');
 /** A ContentDoc item (a Yjs sub-document): valid Yjs, content the editor never emits. */
 const SUBDOC = Buffer.from([1, 1, 77, 0, 9, 1, 0, 0, 118, 0, 0]).toString('base64');
 
@@ -249,7 +253,7 @@ flow('ART-10', {
       if ((await read()).latest_seq !== 3) throw new Error('a refused update was stored');
     });
 
-    await ctx.step('garbage → 400 invalid_update: not Yjs, truncated, not base64, empty, the self-referencing poison, and two clients in one push', async () => {
+    await ctx.step('garbage → 400 invalid_update: not Yjs, truncated, not base64, empty, the self-referencing poison, two clients in one push, and anything but an element at the root (named as the parent, or placed there by an origin)', async () => {
       for (const update of [Buffer.from('not a yjs update').toString('base64'), Buffer.from(EDITS[1]!, 'base64').subarray(0, 10).toString('base64'), '%%%not-base64%%%', '']) {
         (await owner.post(UPDATES, { update }, { params })).status(400).body().has('$.code', 'invalid_update');
       }
@@ -260,7 +264,11 @@ flow('ART-10', {
       (await owner.post(UPDATES, { update: SUBDOC }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'content_not_allowed');
       (await owner.post(SEED, { update: SUBDOC, markdown: '', version: 'v9' }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'content_not_allowed');
       // Text at the root of the doc (not inside an element): y-tiptap throws on it when a tab mounts the doc.
-      (await owner.post(UPDATES, { update: Buffer.from([1, 1, 77, 0, 4, 1, 7, ...Buffer.from('default'), 1, 0x61, 0]).toString('base64') }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'content_not_allowed');
+      (await owner.post(UPDATES, { update: Buffer.from([1, 1, 77, 0, 4, 1, 7, ...Buffer.from('default'), 1, 0x61, 0]).toString('base64') }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'root_not_element');
+      // The same, placed by an origin: no parent in the bytes, so the server reads its index of root items.
+      (await owner.post(UPDATES, { update: TEXT_AFTER_ROOT_PARAGRAPH }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'root_not_element');
+      // An origin this doc never held: Yjs would hold the item and place it once that origin arrives, unchecked.
+      (await owner.post(UPDATES, { update: ORIGIN_PLACED_TEXT }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'unknown_origin');
       // 0x4a: a Skip to applyUpdate, an Item with content ref 10 to Y.mergeUpdates. Only the forms every Yjs reader agrees on pass.
       (await owner.post(UPDATES, { update: Buffer.from([0x01, 0x01, 0x01, 0x00, 0x4a, 0x01, 0x00]).toString('base64') }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'malformed');
       if ((await read()).latest_seq !== 3) throw new Error('a refused update was stored');

@@ -8,7 +8,7 @@
 import { mergeUpdates } from 'yjs';
 import { measureDocUpdate, scanDocUpdate, type DocUpdateCheck } from './doc-scan';
 
-export { DOC_MAX_DELETES, DOC_MAX_STRUCTS, DOC_MAX_TEXT_BYTES, measureDocUpdate, type DocScanReason, type DocUpdateCheck } from './doc-scan';
+export { DOC_MAX_DELETES, DOC_MAX_STRUCTS, DOC_MAX_TEXT_BYTES, measureDocUpdate, placeDocUpdate, type DocPlacement, type DocScanReason, type DocUpdateCheck } from './doc-scan';
 
 /**
  * The check of a pushed update, a seed, and every row before compaction

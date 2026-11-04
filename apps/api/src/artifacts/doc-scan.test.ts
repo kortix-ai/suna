@@ -132,7 +132,7 @@ describe('content the editor never emits is refused before any decode', () => {
 });
 
 describe('the root of the doc holds XML elements only', () => {
-  test('an XML text, a string or an attribute placed at the root `default` → content_not_allowed (y-tiptap throws on any root child that is not an element)', () => {
+  test('an XML text, a string or an attribute placed at the root `default` → root_not_element (y-tiptap throws on any root child that is not an element)', () => {
     for (const [name, item] of [
       ['XML text', rootItem(7, (w) => w.uint(6))],
       ['string', rootItem(4, (w) => w.str('root text'))],
@@ -141,7 +141,7 @@ describe('the root of the doc holds XML elements only', () => {
     ] as const) {
       const update = items(1, item);
       expect({ name, push: checkDocUpdate(update, 'push'), seed: checkDocUpdate(update, 'seed') })
-        .toEqual({ name, push: { ok: false, reason: 'content_not_allowed' }, seed: { ok: false, reason: 'content_not_allowed' } });
+        .toEqual({ name, push: { ok: false, reason: 'root_not_element' }, seed: { ok: false, reason: 'root_not_element' } });
     }
   });
 

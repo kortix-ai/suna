@@ -182,6 +182,8 @@ export {
   artifactEvents,
   artifactDocState,
   artifactDocUpdates,
+  artifactDocRoots,
+  artifactDocClients,
   driveCommitAuthors,
   sessionSandboxIdentities,
   claudeSubscriptionLogins,
