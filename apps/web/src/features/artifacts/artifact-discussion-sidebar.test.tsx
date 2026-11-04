@@ -268,7 +268,7 @@ async function type(label: string, text: string) {
   return input;
 }
 
-test('one header holds the view tabs and the counted filter, and both counts agree', async () => {
+test('one header row holds the view tabs and the status filter menu', async () => {
   const resolved = { ...item, thread_id: 'done', status: 'resolved' as const };
   const value = props();
   value.comments.data = [item, resolved];
@@ -278,18 +278,14 @@ test('one header holds the view tabs and the counted filter, and both counts agr
   expect([...header!.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
     'Comments1',
     'Activity',
-    'Open1',
-    'Resolved1',
-    'All',
   ]);
+  const filter = () => header!.querySelector('button[aria-label^="Thread status"]');
+  expect(filter()?.getAttribute('aria-label')).toBe('Thread status: Open');
   await tab('Activity');
-  expect([...header!.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
-    'Comments1',
-    'Activity',
-  ]);
+  expect(filter()).toBeNull();
 });
 
-test('a failed comment retains its draft through tabs and filters', async () => {
+test('a failed comment retains its draft through tabs', async () => {
   const value = props();
   value.comments.create = mock(async () => {
     throw new Error('offline');
@@ -305,8 +301,6 @@ test('a failed comment retains its draft through tabs and filters', async () => 
   });
   await tab('Activity');
   await tab('Comments');
-  await tab('Resolved');
-  await tab('All');
   expect(
     (
       browser.document.querySelector('textarea[aria-label="Comment"]') as InstanceType<

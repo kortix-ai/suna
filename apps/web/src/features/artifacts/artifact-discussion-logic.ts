@@ -167,7 +167,11 @@ export function groupCommentThreads(
     current: visible
       .filter((thread) => !thread.outdated)
       .sort(
-        (a, b) => (a.position?.start ?? Infinity) - (b.position?.start ?? Infinity) || stable(a, b),
+        (a, b) =>
+          // Under All, open threads lead: they are the ones that wait on someone.
+          (filter === 'all' ? Number(a.status !== 'open') - Number(b.status !== 'open') : 0) ||
+          (a.position?.start ?? Infinity) - (b.position?.start ?? Infinity) ||
+          stable(a, b),
       ),
     outdated: visible.filter((thread) => thread.outdated).sort(stable),
   };

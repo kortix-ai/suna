@@ -31,3 +31,5 @@ export function relativeTime(iso: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(iso));
 }
 
+/** The `sm` UserAvatar's edge in px: an agent's mark tile lines up with a person's face. */
+export const AVATAR_SM_EDGE = 22;

@@ -16,8 +16,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@kortix/ui/dropdown-menu';
-import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import Hint from '@kortix/ui/hint';
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { InfoBanner } from '@kortix/ui/info-banner';
 import { inputFocusClasses, inputSurfaceClasses } from '@kortix/ui/input';
 import Loading from '@kortix/ui/loading';
@@ -27,7 +27,7 @@ import {
   DotsThreeIcon,
   HandIcon,
   PencilSimpleIcon,
-  RobotIcon,
+  PaperPlaneTiltIcon,
   TrashIcon,
   WarningCircleIcon,
 } from '@phosphor-icons/react';
@@ -39,13 +39,14 @@ import { ArtifactCommentComposer, type CommentMentionOption } from './artifact-c
 import { SavedArtifactCommentImage } from './artifact-comment-image';
 import {
   collapseComments,
+  deliveryAgent,
   isOptimistic,
   resolverName,
   threadDeleted,
   threadQuote,
 } from './artifact-discussion-logic';
 import { ArtifactThreadPresence } from './artifact-live-presence';
-import { relativeTime } from './artifact-meta';
+import { AVATAR_SM_EDGE, relativeTime } from './artifact-meta';
 
 interface ComposerState {
   value: string;
@@ -152,7 +153,16 @@ function CommentTime({ at, locale }: { at: string; locale: string }) {
 }
 
 /** Long comments stop at 6 lines until "Show more". The control appears only when the text overflows. */
-function ClampedBody({ text, children }: { text: string; children: ReactNode }) {
+function ClampedBody({
+  text,
+  muted,
+  children,
+}: {
+  text: string;
+  /** A resolved thread's text recedes, so open threads lead the list. */
+  muted?: boolean;
+  children: ReactNode;
+}) {
   const t = useTranslations('artifacts.discussion');
   const ref = useRef<HTMLParagraphElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -172,7 +182,8 @@ function ClampedBody({ text, children }: { text: string; children: ReactNode }) 
       <p
         ref={ref}
         className={cn(
-          'text-foreground text-sm text-pretty break-words whitespace-pre-wrap',
+          'text-sm text-pretty break-words whitespace-pre-wrap',
+          muted ? 'text-muted-foreground' : 'text-foreground',
           !expanded && 'line-clamp-6',
         )}
       >
@@ -251,8 +262,10 @@ export function ArtifactCommentThreadView({
   const deleted = threadDeleted(thread);
   const writable = !readOnly && context?.can_comment === true && !deleted;
   const canResolve = writable && thread.can_resolve === true;
-  const canReply = writable && thread.can_reply === true;
+  // A resolved thread takes no reply: Reopen is its one action.
+  const canReply = writable && thread.can_reply === true && thread.status === 'open';
   const quote = threadQuote(thread);
+  const sentAgent = thread.agent_state === 'sent' ? deliveryAgent(thread) : undefined;
   const located = !!thread.position && !thread.outdated;
   const [allComments, setAllComments] = useState(false);
   const [replyOpen, setReplyOpen] = useState(() => reply.value !== '');
@@ -333,7 +346,7 @@ export function ArtifactCommentThreadView({
               size="sm"
             />
           ) : (
-            <EntityAvatar icon={RobotIcon} label={name} size="sm" />
+            <AgentMark slug={name} tile={AVATAR_SM_EDGE} />
           )}
         </span>
         <div className="min-w-0 flex-1">
@@ -426,7 +439,7 @@ export function ArtifactCommentThreadView({
               />
             </div>
           ) : (
-            <ClampedBody text={comment.body}>
+            <ClampedBody text={comment.body} muted={thread.status === 'resolved'}>
               {commentBody(comment, mentions, t('person'))}
             </ClampedBody>
           )}
@@ -501,28 +514,23 @@ export function ArtifactCommentThreadView({
         </div>
       ) : null}
       {thread.status === 'resolved' ? (
-        <div className="text-muted-foreground flex min-h-7 items-center gap-1.5 text-xs">
-          <div className="flex min-w-0 flex-1 items-start gap-1.5">
-            <CheckCircleIcon
-              weight="fill"
-              className="text-kortix-green mt-0.5 size-3.5 shrink-0"
-              aria-hidden
-            />
-            <p className="min-w-0 break-words">
-              {resolver ? t('resolvedBy', { name: resolver }) : t('resolved')}
-              {thread.resolved_at ? (
-                <>
-                  {' · '}
-                  <CommentTime at={thread.resolved_at} locale={locale} />
-                </>
-              ) : null}
-            </p>
-          </div>
+        <div className="text-muted-foreground flex h-7 min-w-0 items-center gap-1.5 text-xs">
+          <CheckCircleIcon weight="fill" className="text-kortix-green size-3.5 shrink-0" aria-hidden />
+          <span className="min-w-0 truncate">
+            {resolver ? t('resolvedBy', { name: resolver }) : t('resolved')}
+          </span>
+          {thread.resolved_at ? (
+            <>
+              <span aria-hidden>·</span>
+              <CommentTime at={thread.resolved_at} locale={locale} />
+            </>
+          ) : null}
           {canResolve ? (
             <Button
               type="button"
               size="xs"
               variant="ghost"
+              className="-mr-2 ml-auto shrink-0"
               disabled={statusPending}
               aria-busy={statusPending}
               onClick={onStatus}
@@ -545,7 +553,11 @@ export function ArtifactCommentThreadView({
         </p>
       ) : thread.agent_state === 'sent' ? (
         <p className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
-          <RobotIcon className="size-3.5 shrink-0" aria-hidden />
+          {sentAgent ? (
+            <AgentMark slug={sentAgent} />
+          ) : (
+            <PaperPlaneTiltIcon className="size-3.5 shrink-0" aria-hidden />
+          )}
           <span className="truncate">{t('agentSent')}</span>
           {thread.sent_session_id ? (
             <>

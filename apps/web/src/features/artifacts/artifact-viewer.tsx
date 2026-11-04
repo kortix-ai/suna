@@ -29,7 +29,7 @@ import {
 import { Button } from '@kortix/ui/button';
 import { ButtonGroup } from '@kortix/ui/button-group';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
-import { CountBadge } from '@kortix/ui/count-badge';
+import { BellMark } from '@kortix/ui/internal/notifications/notification-bell';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -879,7 +879,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 )
               ) : null}
               {artifact && VisIcon ? (
-                <Hint label={t(`visibility.${artifact.visibility}`)}>
+                <Hint label={t(`visibility.${artifact.visibility}`)} side="bottom">
                   <span
                     className="text-muted-foreground flex shrink-0"
                     aria-label={t(`visibility.${artifact.visibility}`)}
@@ -889,7 +889,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 </Hint>
               ) : null}
               {artifact?.pinned ? (
-                <Hint label={t('pinned')}>
+                <Hint label={t('pinned')} side="bottom">
                   <span className="text-muted-foreground flex shrink-0" aria-label={t('pinned')}>
                     <PushPinIcon weight="fill" className="size-3.5" aria-hidden />
                   </span>
@@ -931,7 +931,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             {/* Two groups: the artifact's history and Ask AI; then Share and More. */}
             <ButtonGroup>
               <DropdownMenu open={historyOpen} onOpenChange={setHistoryOpen}>
-                <Hint label={t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })}>
+                <Hint label={t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })} side="bottom">
                   <DropdownMenuTrigger asChild>
                     <Button size="icon-sm" variant="secondary" aria-label={t('history')}>
                       <ClockCounterClockwiseIcon className="size-3.5" />
@@ -1003,7 +1003,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             {discussionEnabled ? (
               <ButtonGroup>
                 {annotationControls && !compact ? (
-                  <Hint label={pinHint}>
+                  <Hint label={pinHint} side="bottom">
                     <Button
                       ref={pinButton}
                       size="icon-sm"
@@ -1026,7 +1026,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   </Hint>
                 ) : null}
                 {annotationControls && !compact ? (
-                  <Hint label={drawHint}>
+                  <Hint label={drawHint} side="bottom">
                     <Button
                       ref={drawButton}
                       size="icon-sm"
@@ -1044,20 +1044,17 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     </Button>
                   </Hint>
                 ) : null}
-                <Hint label={commentsLabel}>
+                <Hint label={commentsLabel} side="bottom">
                   <Button
                     ref={commentsButton}
-                    size={openComments > 0 ? 'xs' : 'icon-sm'}
+                    size="icon-sm"
                     variant="secondary"
                     aria-label={commentsLabel}
                     aria-expanded={discussionOpen}
                     aria-controls={discussionOpen ? panelId : undefined}
                     onClick={() => changeDiscussionOpen(!discussionOpen)}
                   >
-                    <ChatCircleIcon className="size-3.5" aria-hidden />
-                    {openComments > 0 ? (
-                      <CountBadge count={openComments} tone="waiting" aria-hidden />
-                    ) : null}
+                    <BellMark count={openComments} needsYou={false} icon={ChatCircleIcon} />
                   </Button>
                 </Hint>
               </ButtonGroup>
@@ -1065,7 +1062,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             <ButtonGroup>
               {artifact.can_manage ? (
                 compact ? (
-                  <Hint label={t('share')}>
+                  <Hint label={t('share')} side="bottom">
                     <Button
                       size="icon-sm"
                       variant="secondary"
@@ -1184,14 +1181,14 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         {embedded ? (
           <div className="flex shrink-0 items-center">
             {/* `data-no-panel`: the session's link interceptor would reopen it in this panel. */}
-            <Hint label={t('openFullPage')}>
+            <Hint label={t('openFullPage')} side="bottom">
               <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} asChild>
                 <Link href={`/projects/${projectId}/artifacts/${artifactId}`} data-no-panel>
                   <ArrowsOutSimpleIcon className="size-3.5" />
                 </Link>
               </Button>
             </Hint>
-            <Hint label={t('close')}>
+            <Hint label={t('close')} side="bottom">
               <Button size="icon-sm" variant="ghost" aria-label={t('close')} onClick={onClose}>
                 <XIcon className="size-3.5" />
               </Button>

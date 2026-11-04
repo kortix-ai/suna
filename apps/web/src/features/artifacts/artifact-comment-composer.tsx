@@ -5,13 +5,12 @@ import { cn } from '@kortix/ui';
 import { Button } from '@kortix/ui/button';
 import { Command, CommandGroup, CommandItem, CommandList } from '@kortix/ui/command';
 import { MentionNode } from '@kortix/ui/composer';
-import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { Field, FieldLabel } from '@kortix/ui/field';
 import { inputFocusClasses, inputSurfaceClasses } from '@kortix/ui/input';
 import Loading from '@kortix/ui/loading';
 import { Popover, PopoverAnchor, PopoverContent } from '@kortix/ui/popover';
 import { UserAvatar } from '@kortix/ui/user-avatar';
-import { RobotIcon } from '@phosphor-icons/react';
 import { Placeholder } from '@tiptap/extensions';
 import { EditorContent, useEditor, type Editor, type JSONContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -20,6 +19,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslations } from '@/i18n/use-translations';
 import { commentEnterAction, mentionAtCaret } from './artifact-discussion-logic';
 import { useLiveTyping } from './artifact-live-presence';
+import { AVATAR_SM_EDGE } from './artifact-meta';
 
 export interface CommentMentionOption {
   key: string;
@@ -376,7 +376,11 @@ export function ArtifactCommentComposer(props: Props) {
                               size="sm"
                             />
                           ) : (
-                            <EntityAvatar icon={RobotIcon} label={option.label} size="sm" />
+                            <AgentMark
+                              slug={option.label}
+                              label={option.label}
+                              tile={AVATAR_SM_EDGE}
+                            />
                           )}
                           <span className="min-w-0 truncate">{option.label}</span>
                           {option.kind === 'session' ? (
