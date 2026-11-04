@@ -68,7 +68,8 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
   const [createOpen, setCreateOpen] = useState(false);
   const { personal, others } = useMemo(() => orderSpaces(spaces.data ?? []), [spaces.data]);
   const chatHref = `${uiRoutes().project(projectId)}/chat`;
-  const review = reviewHref(projectId);
+  // The Review Center on its own route, beside this sidebar (no Customize shell).
+  const review = reviewHref(projectId) ? `${uiRoutes().project(projectId)}/review` : null;
   const openAsks = useOpenAskCount(projectId);
 
   const hrefOf = (space: ProjectSpace) =>
