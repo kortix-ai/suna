@@ -5888,7 +5888,7 @@ describe('session-log actions (runtime.actions.v1)', () => {
   })
 })
 
- test('live reconfigure preserves the model for every step of the current prompt', async () => {
+ test.each([false, true])('live reconfigure preserves the current prompt and respects explicit continuation model: %s', async (explicitModel) => {
   const nextModel = 'next-test-model'
   const before = gateway.requestedModels.length
   const r = await boot({
@@ -5906,7 +5906,28 @@ describe('session-log actions (runtime.actions.v1)', () => {
   await r.service.runtime()!.reconfigure()
   writeFileSync(join(r.workspace, 'release-tool'), '')
   await waitFor(() => !r.service.runtime()!.busy())
-  await promptAndSettle(r, 'continue')
+  expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'continue' }], ...(explicitModel ? { model: { providerID: 'kortix', modelID: MODEL_ID } } : {}) }) })).status).toBe(204)
+  await waitFor(() => gateway.requestedModels.length >= before + 3 && !r.service.runtime()!.busy())
+  expect(gateway.requestedModels.slice(before)).toEqual([MODEL_ID, MODEL_ID, explicitModel ? MODEL_ID : nextModel])
+ })
+ test('queued explicit model does not change the active prompt model', async () => {
+  const nextModel = 'next-test-model'
+  const before = gateway.requestedModels.length
+  const r = await boot({
+    catalog: { ...TEST_CATALOG, [nextModel]: TEST_CATALOG[MODEL_ID] },
+    script: [
+      { tool: 'bash', args: { command: 'touch tool-started; while [ ! -f release-tool ]; do sleep 0.02; done' } },
+      { text: 'current prompt finished' },
+      { text: 'continuation finished' },
+    ],
+  })
+  const root = r.service.runtime()!.rootId
+  expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'do work' }] }) })).status).toBe(204)
+  await waitFor(() => existsSync(join(r.workspace, 'tool-started')))
+  r.env.KORTIX_MODEL = `kortix/${nextModel}`
+  await r.service.runtime()!.reconfigure()
+  expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'continue' }], model: { providerID: 'kortix', modelID: nextModel } }) })).status).toBe(204)
+  writeFileSync(join(r.workspace, 'release-tool'), '')
   await waitFor(() => gateway.requestedModels.length >= before + 3 && !r.service.runtime()!.busy())
   expect(gateway.requestedModels.slice(before)).toEqual([MODEL_ID, MODEL_ID, nextModel])
  })

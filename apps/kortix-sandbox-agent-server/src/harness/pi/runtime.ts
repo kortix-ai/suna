@@ -921,8 +921,8 @@ export class PiRuntime {
     const modelId = input.model
       ? promptModelId(input.model)
       : input.agent ? nativeModelId(this.compiled?.agent?.[agentName]?.model) : null
-    if (modelId && modelId !== selectId(this.selected!.providerID, this.selected!.modelID)) this.selected = this.models!.select(modelId)
-    this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected: this.selected! })
+    const selected = modelId ? this.models!.select(modelId) : this.selected!
+    this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected })
     this.dismissOpenQuestions()
     if (input.noReply) {
       // `noReply`: the next turn's model sees this message, and none
@@ -1270,6 +1270,10 @@ export class PiRuntime {
       return
     }
     if (this.reconfigurePending) await this.reconfigure()
+    const modelId = turn.input.model
+      ? promptModelId(turn.input.model)
+      : turn.input.agent ? nativeModelId(this.compiled?.agent?.[turn.agent]?.model) : null
+    if (modelId) this.selected = this.models!.select(modelId)
     // The turn's first model call reads every `noReply` message before it.
     this.unreadNoReply.clear()
     this.applyAgent(turn.agent)
