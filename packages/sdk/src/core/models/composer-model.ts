@@ -100,7 +100,7 @@ export function sessionModelFallback(
  */
 export function sessionPickStands(
   pickedOverAtMs: number | undefined,
-  fallback: SessionModelFallback | undefined,
+  fallback: Pick<SessionModelFallback, 'atMs'> | undefined,
 ): boolean {
   return !fallback || (pickedOverAtMs ?? -1) >= fallback.atMs;
 }
