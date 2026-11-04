@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '../../../lib/utils';
+import { SolidCheckIcon } from '../../../internal/icons/solid-check-icon';
 import type { WorkflowRunAgent } from './workflow-run';
 
 /**
@@ -35,6 +36,19 @@ export function RunProgressRing({
   ended?: 'done' | 'stopped';
 }) {
   const big = size === 28;
+  // Every agent finished: the solid check (the house check, never a stroked one), in the done hue.
+  if (ended === 'done' && failed === 0) {
+    return (
+      <SolidCheckIcon
+        data-tone="run-progress"
+        data-done={done}
+        data-failed={failed}
+        data-total={total}
+        data-ended="done"
+        className={cn('text-kortix-green shrink-0', big ? 'size-7' : 'size-4')}
+      />
+    );
+  }
   const ring = big ? { box: 28, c: 14, r: 11, stroke: 2.5 } : { box: 16, c: 8, r: 6.3, stroke: 1.5 };
   const part = (count: number) => (total > 0 ? (count / total) * 100 : 0);
   const arc = (count: number) => Math.max(0, part(count) - (count > 0 && count < total ? RING_GAP : 0));
@@ -70,15 +84,6 @@ export function RunProgressRing({
         />
       )}
       {/* The ring is turned -90°; these marks are drawn turned back, so they read upright. */}
-      {ended === 'done' && failed === 0 && (
-        <path
-          transform={`rotate(90 ${ring.c} ${ring.c})`}
-          d={big ? 'M9.5 14.3l3 3 6-6.3' : 'M5.3 8.2l1.8 1.8 3.6-3.8'}
-          stroke="var(--kortix-green)"
-          strokeWidth={big ? 2 : 1.4}
-          strokeLinejoin="round"
-        />
-      )}
       {ended === 'stopped' && (
         <rect
           x={ring.c - (big ? 3 : 1.75)}

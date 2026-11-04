@@ -423,7 +423,7 @@ describe('WorkflowRunRows — the phase ring', () => {
     const stop = { enabled: false, pending: new Set<string>(), stop: () => {} };
     const doc = (status: string) =>
       run({ status: 'done', phases: [{ title: 'Plan', status: 'done' }], agents: [{ id: 'a', label: 'Draft', phase: 'Plan', status, sessionId: 'ses_a' }] });
-    const check = 'M5.3 8.2l1.8 1.8 3.6-3.8';
+    const check = 'data-ended="done"';
     expect(render(<WorkflowRunRows run={doc('done') as never} live={false} now={0} onOpen={() => {}} stop={stop} />)).toContain(check);
     expect(render(<WorkflowRunRows run={doc('stopped') as never} live={false} now={0} onOpen={() => {}} stop={stop} />)).not.toContain(check);
   });
