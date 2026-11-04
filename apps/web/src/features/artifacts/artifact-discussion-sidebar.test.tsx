@@ -231,8 +231,9 @@ async function render(value: ArtifactDiscussionSidebarProps) {
   });
 }
 function button(text: string) {
+  // A button's name: its text, or its aria-label for an icon button (the round Send).
   const found = [...browser.document.querySelectorAll('button')].find(
-    (button) => button.textContent === text,
+    (button) => button.textContent === text || button.getAttribute('aria-label') === text,
   );
   if (!found) throw new Error(`Missing button ${text}`);
   return found;

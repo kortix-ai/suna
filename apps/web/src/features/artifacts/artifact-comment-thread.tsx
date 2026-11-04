@@ -623,7 +623,8 @@ export function ArtifactCommentThreadView({
         </InfoBanner>
       ) : null}
       {canReply ? (
-        replyOpen ? (
+        // A draft always shows in its box, so it never reads as a posted reply.
+        replyOpen || reply.value ? (
           <div
             // Aligned with the comment text: the avatar column stays empty.
             className="flex gap-2.5"
@@ -666,16 +667,12 @@ export function ArtifactCommentThreadView({
             <button
               ref={replyControl}
               type="button"
-              // A saved draft is the visible text, so it names the button.
-              aria-label={reply.value ? undefined : t('replyLabel')}
+              aria-label={t('replyLabel')}
               // A quiet line, not a field: the composer opens on click.
-              className={cn(
-                'focus-visible:ring-ring flex min-w-0 items-center rounded-sm text-left text-sm outline-none focus-visible:ring-2',
-                reply.value ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-              )}
+              className="focus-visible:ring-ring text-muted-foreground hover:text-foreground flex min-w-0 items-center rounded-sm text-left text-sm outline-none focus-visible:ring-2"
               onClick={expandReply}
             >
-              <span className="truncate">{reply.value || t('replyPlaceholder')}</span>
+              <span className="truncate">{t('replyPlaceholder')}</span>
             </button>
           </div>
         )

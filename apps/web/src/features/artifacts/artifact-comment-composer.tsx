@@ -2,15 +2,15 @@
 
 import type { ArtifactLiveTyping } from '@kortix/sdk';
 import { cn } from '@kortix/ui';
-import { Button } from '@kortix/ui/button';
 import { Command, CommandGroup, CommandItem, CommandList } from '@kortix/ui/command';
 import { MentionNode } from '@kortix/ui/composer';
 import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { Field, FieldLabel } from '@kortix/ui/field';
-import { inputFocusClasses, inputSurfaceClasses } from '@kortix/ui/input';
+import { InputGroup, InputGroupAddon, InputGroupButton } from '@kortix/ui/input-group';
 import Loading from '@kortix/ui/loading';
 import { Popover, PopoverAnchor, PopoverContent } from '@kortix/ui/popover';
 import { UserAvatar } from '@kortix/ui/user-avatar';
+import { ArrowUpIcon } from '@phosphor-icons/react';
 import { Placeholder } from '@tiptap/extensions';
 import { EditorContent, useEditor, type Editor, type JSONContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -214,8 +214,11 @@ export function ArtifactCommentComposer(props: Props) {
           'aria-multiline': 'true',
           'aria-labelledby': `${id}-label`,
           'aria-autocomplete': 'list',
+          'aria-describedby': `${id}-keys`,
+          // The group draws its focus ring when this control has focus.
+          'data-slot': 'input-group-control',
           class:
-            `${props.compact ? 'min-h-14' : 'min-h-20'} max-h-52 overflow-y-auto px-3 py-2 text-sm outline-none whitespace-pre-wrap break-words [&_p.is-editor-empty:first-child::before]:text-muted-foreground [&_p.is-editor-empty:first-child::before]:pointer-events-none [&_p.is-editor-empty:first-child::before]:float-left [&_p.is-editor-empty:first-child::before]:h-0 [&_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]`,
+            `${props.compact ? 'min-h-10' : 'min-h-16'} max-h-52 overflow-y-auto px-3 pt-2.5 pb-1 text-sm outline-none whitespace-pre-wrap break-words [&_p.is-editor-empty:first-child::before]:text-muted-foreground [&_p.is-editor-empty:first-child::before]:pointer-events-none [&_p.is-editor-empty:first-child::before]:float-left [&_p.is-editor-empty:first-child::before]:h-0 [&_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]`,
         },
         handleKeyDown: (_view, event) => {
           if (event.isComposing || event.keyCode === 229) return false;
@@ -315,11 +318,50 @@ export function ArtifactCommentComposer(props: Props) {
           }}
         >
           <PopoverAnchor asChild>
-            <div
-              className={`${inputSurfaceClasses} ${inputFocusClasses} focus-within:border-ring focus-within:ring-ring/15 focus-within:ring-3`}
-            >
-              <EditorContent editor={editor} />
-            </div>
+            {/* The prompt-input shape: the editor, then Cancel and Send inside the same box. */}
+            <InputGroup className="items-stretch">
+              <EditorContent editor={editor} className="w-full min-w-0" />
+              <InputGroupAddon
+                align="block-end"
+                className="justify-end gap-1 px-2 pt-0 pb-2"
+                onClick={(event) => {
+                  if (!(event.target as HTMLElement).closest('button')) editor?.commands.focus('end');
+                }}
+              >
+                {props.onCancel ? (
+                  <InputGroupButton
+                    size="xs"
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-foreground"
+                    disabled={props.pending}
+                    onClick={props.onCancel}
+                  >
+                    {t('cancel')}
+                  </InputGroupButton>
+                ) : null}
+                <InputGroupButton
+                  type="submit"
+                  size="icon-xs"
+                  variant="default"
+                  className="rounded-full"
+                  aria-label={props.submitLabel}
+                  disabled={
+                    !editor ||
+                    !props.value.trim() ||
+                    props.value.length > 10_000 ||
+                    props.pending ||
+                    props.submitDisabled
+                  }
+                  aria-busy={props.pending}
+                >
+                  {props.pending ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : (
+                    <ArrowUpIcon weight="bold" className="size-3.5" aria-hidden />
+                  )}
+                </InputGroupButton>
+              </InputGroupAddon>
+            </InputGroup>
           </PopoverAnchor>
           <PopoverContent
             side="top"
@@ -403,37 +445,10 @@ export function ArtifactCommentComposer(props: Props) {
           {props.error}
         </p>
       ) : null}
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-muted-foreground min-w-0 text-xs">{t('composerKeys')}</span>
-        <span className="flex shrink-0 gap-1">
-          {props.onCancel ? (
-            <Button
-              size="xs"
-              type="button"
-              variant="ghost"
-              disabled={props.pending}
-              onClick={props.onCancel}
-            >
-              {t('cancel')}
-            </Button>
-          ) : null}
-          <Button
-            type="submit"
-            size="xs"
-            disabled={
-              !editor ||
-              !props.value.trim() ||
-              props.value.length > 10_000 ||
-              props.pending ||
-              props.submitDisabled
-            }
-            aria-busy={props.pending}
-          >
-            {props.pending ? <Loading className="size-3.5 shrink-0" /> : null}
-            {props.submitLabel}
-          </Button>
-        </span>
-      </div>
+      {/* Enter sends, Shift+Enter adds a line: read by screen readers, not shown. */}
+      <span id={`${id}-keys`} className="sr-only">
+        {t('composerKeys')}
+      </span>
     </form>
   );
 }
