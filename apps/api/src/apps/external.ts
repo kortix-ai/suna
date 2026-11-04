@@ -52,3 +52,33 @@ export async function probeFrameable(url: string, frameOrigin: string): Promise<
     return true;
   }
 }
+
+/**
+ * Whether a space's `link` tab may embed `url` in the web app (`frameOrigin`).
+ * One HEAD through the SSRF guard (`safeEgressFetch`: public addresses only,
+ * every redirect re-checked, at most 3), then one GET when the HEAD fails or
+ * answers 4xx/5xx (many sites refuse HEAD). 5 s per request. Unlike
+ * `probeFrameable`, a page the API cannot reach (a private address, a timeout,
+ * an error status) counts as NOT embeddable: the tab then shows a link card,
+ * which works for any page, instead of a frame that may stay blank.
+ */
+export async function probeLinkEmbeddable(
+  url: string,
+  frameOrigin: string,
+  fetchSafe: typeof safeEgressFetch = safeEgressFetch,
+): Promise<boolean> {
+  const request = async (method: 'HEAD' | 'GET') => {
+    const response = await fetchSafe(url, {
+      method,
+      maxRedirects: 3,
+      signal: AbortSignal.timeout(5_000),
+      headers: { accept: 'text/html' },
+    });
+    await response.body?.cancel().catch(() => undefined);
+    return response;
+  };
+  let response = await request('HEAD').catch(() => null);
+  if (!response || response.status >= 400) response = await request('GET').catch(() => null);
+  if (!response || response.status >= 400) return false;
+  return allowsFraming(response.headers, frameOrigin);
+}

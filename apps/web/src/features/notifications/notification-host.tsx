@@ -80,7 +80,6 @@ const HIDDEN_POLL_MS = 60_000;
 
 const ARRIVAL_LABEL = {
   artifact: 'arrival.openArtifact',
-  room: 'arrival.openConversation',
   session: 'arrival.openSession',
   reminders: 'arrival.openReminders',
   triggers: 'arrival.openTriggers',

@@ -6,7 +6,7 @@ import Loading from '../../primitives/loading';
 import { Modal, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '../../primitives/modal';
 
 /**
- * The confirm step of the project's Channels switch (`project_channels`):
+ * The confirm step of the project's Channels switch (`chat`):
  * what turning it on or off changes for everyone in the project. Every
  * project has a Drive, so channels always get their folders. Every surface that flips the flag asks through this dialog.
  */

@@ -61,8 +61,7 @@ export const FeatureFlagMapSchema = z.object({
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
   session_log_restore: z.boolean(),
-  project_channels: z.boolean(),
-  agent_rooms: z.boolean(),
+  chat: z.boolean(),
   shared_drives: z.boolean(),
   goals: z.boolean(),
   workspace_volume: z.boolean(),
@@ -73,6 +72,8 @@ export const FeatureFlagMapSchema = z.object({
   chrome: z.boolean(),
   agent_teams: z.boolean(),
   voice_call: z.boolean(),
+  chat_input: z.boolean(),
+  chat_front: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -209,6 +210,8 @@ export const ProjectSchema = z.object({
     volumes: z.boolean().optional(),
     /** Not a flag since 2026-11-02 (every project has a Drive); `true` wherever the platform stores a Drive (Platinum), for older SDK, CLI and hosts. */
     drives: z.boolean().optional(),
+    /** @deprecated Merged into `chat` (2026-11); equal to `chat`, for released TUI, mobile and CLI builds that show Channels only while it is true. */
+    project_channels: z.boolean().optional(),
   }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
@@ -1047,10 +1050,12 @@ export const SessionCreateInputSchema = z
     labels: SessionLabelsSchema.optional(),
     /**
      * The space (channel or the caller's own DM) the session belongs to.
-     * Read only while the project's `project_channels` flag is on; ignored
+     * Read only while the project's `chat` flag is on; ignored
      * otherwise. Absent: the parent session's space, else `#general`.
+     * `null` on a person's own create (no fork or parent): no space, as with
+     * the flag off; a session in no space is not a thread.
      */
-    space_id: z.string().uuid().optional(),
+    space_id: z.string().uuid().nullable().optional(),
     session_id: z
       .string()
       .regex(
@@ -1214,7 +1219,7 @@ export const ProjectSessionSchema = z.object({
   space_id: z.string().uuid().nullable(),
   /** The session group it is filed in (`session_groups`); null for a session in no group. */
   group_id: z.string().uuid().nullable(),
-  /** The first 500 characters of the first prompt; stored for sessions created while `project_channels` is on, else null. */
+  /** The first 500 characters of the first prompt; stored for sessions created while `chat` is on, else null. */
   first_prompt: z.string().nullable(),
   /** Who started the run this session belongs to (a child carries its parent's). Derived, never client-set. */
   initiator: z
@@ -1279,11 +1284,73 @@ export type SessionDeleteResult = z.infer<typeof SessionDeleteResultSchema>;
 
 /**
  * A project space: a channel (product word "Channel") or the caller's DM with
- * one agent. `/projects/:id/spaces`, behind the `project_channels` flag.
+ * one agent. `/projects/:id/spaces`, behind the `chat` flag.
  */
 export const SPACE_KINDS = ['channel', 'dm'] as const;
 /** Who sees a channel: every project member (`public`) or only its members (`private`). */
 export const SPACE_VISIBILITIES = ['public', 'private'] as const;
+/**
+ * What a stored space tab shows. Chat is not a kind: it is always the first
+ * tab and is never stored. `threads` and `memory` were kinds before
+ * 2026-11-04; a stored row with one is dropped on read (no migration).
+ */
+export const SPACE_TAB_KINDS = ['file', 'folder', 'artifact', 'app', 'link'] as const;
+/** At most this many stored tabs per space (Chat not counted). */
+export const SPACE_TABS_MAX = 20;
+export const SPACE_TAB_TITLE_MAX = 60;
+
+/**
+ * One stored tab of a space, after Chat. `ref` (required): a Drive file path
+ * (`file`, any file: an `.html` page renders as the page), a Drive folder
+ * path (`folder`), an artifact id (`artifact`), an App slug (`app`) or an
+ * https URL (`link`). `embeddable`: `link` only, set by the server on every
+ * write (it fetches the URL once); a value sent in a request is ignored.
+ */
+export const SpaceTabSchema = z
+  .object({
+    /** Stable: the client's `?tab=` key. 1–64 of `A-Za-z0-9_-`. */
+    id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+    title: z.string().trim().min(1).max(SPACE_TAB_TITLE_MAX),
+    kind: z.enum(SPACE_TAB_KINDS),
+    ref: z.string().trim().min(1).max(2_048),
+    /**
+     * A `link` tab: the page lets the web app frame it (no `X-Frame-Options`
+     * DENY/SAMEORIGIN, a `frame-ancestors` that allows it) and the server
+     * reached it. False: the tab shows a link card instead of a frame.
+     */
+    embeddable: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((tab, ctx) => {
+    if (tab.kind === 'link' && !/^https:\/\/[^\s]+$/i.test(tab.ref)) {
+      ctx.addIssue({ code: 'custom', path: ['ref'], message: 'A link tab needs an https URL.' });
+    }
+    if ((tab.kind === 'file' || tab.kind === 'folder') && !tab.ref.startsWith('/')) {
+      ctx.addIssue({ code: 'custom', path: ['ref'], message: `A ${tab.kind} tab needs a Drive path that starts with "/".` });
+    }
+  });
+export type SpaceTab = z.infer<typeof SpaceTabSchema>;
+
+/**
+ * `PUT /projects/:id/spaces/:spaceId/tabs`: the whole ordered list, replacing
+ * the stored one (add, remove, rename and reorder in one call). Ids are unique.
+ */
+export const SpaceTabsInputSchema = z
+  .object({
+    tabs: z
+      .array(SpaceTabSchema)
+      .max(SPACE_TABS_MAX)
+      .superRefine((tabs, ctx) => {
+        const seen = new Set<string>();
+        tabs.forEach((tab, index) => {
+          if (seen.has(tab.id)) ctx.addIssue({ code: 'custom', path: [index, 'id'], message: `Tab id "${tab.id}" is in the list twice.` });
+          seen.add(tab.id);
+        });
+      }),
+  })
+  .strict();
+export type SpaceTabsInput = z.infer<typeof SpaceTabsInputSchema>;
+
 export const SpaceSchema = z
   .object({
     space_id: z.string(),
@@ -1317,6 +1384,8 @@ export const SpaceSchema = z
      * always `public`.
      */
     visibility: z.enum(SPACE_VISIBILITIES),
+    /** The tabs after Chat, in order. Chat is always first and never listed. */
+    tabs: z.array(SpaceTabSchema),
   })
   .strict();
 export type Space = z.infer<typeof SpaceSchema>;
@@ -1993,7 +2062,7 @@ export const TriggerSchema = z.object({
   session_access: TriggerSessionAccessSchema,
   /**
    * The channel or DM its runs post to as threads; null = none (`#general`).
-   * Present only while the project's `project_channels` flag is on.
+   * Present only while the project's `chat` flag is on.
    */
   space_id: z.string().nullable().optional(),
   last_fired_at: z.string().nullable(),

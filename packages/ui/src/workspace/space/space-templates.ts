@@ -14,8 +14,8 @@ import { createTranslator, defaultUiMessages } from '../../i18n';
 
 export interface SpaceTemplate {
   /** Also the catalog key of its name and hint: `spaces.templates.<id>`. */
-  id: 'standard' | 'room' | 'board';
-  /** The tabs after the room. */
+  id: 'standard' | 'board';
+  /** The starting tabs. */
   tabs: SpaceTab[];
 }
 
@@ -25,10 +25,6 @@ export function spaceTemplates(t: (key: 'tabs.board' | 'templates.board.brief' |
     {
       id: 'standard',
       tabs: [...DEFAULT_SPACE_TABS],
-    },
-    {
-      id: 'room',
-      tabs: [],
     },
     {
       id: 'board',
@@ -42,9 +38,8 @@ export function spaceTemplates(t: (key: 'tabs.board' | 'templates.board.brief' |
 
 export const SPACE_TEMPLATES = spaceTemplates(createTranslator({ locale: 'en', messages: defaultUiMessages, namespace: 'spaces' }));
 
-/** Turn a space name into a `spaces:` key. The result is also a valid room
- *  name (the space's room is the room with its slug): at most 63 characters,
- *  starting with a letter or a digit. */
+/** Turn a space name into a `spaces:` key: at most 63 characters, starting
+ *  with a letter or a digit. */
 export function slugifySpace(name: string): string {
   const trim = (value: string) => value.replace(/^[-_]+|[-_]+$/g, '');
   return (

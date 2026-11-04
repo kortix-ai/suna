@@ -139,13 +139,13 @@ export function useNotificationPreferences(options: UseNotificationPreferencesOp
     mutationFn: updateNotificationPreferences,
     onMutate: (patch: NotificationPreferencesPatch) =>
       writeOptimistic<NotificationPreferences>(client, key, (record) => {
-        const kinds = { ...record.kinds };
+        const kinds: Record<string, { push: boolean; email: boolean }> = { ...record.kinds };
         for (const [kind, channels] of Object.entries(patch.kinds) as Array<
-          [keyof NotificationPreferences['kinds'], Partial<{ push: boolean; email: boolean }> | undefined]
+          [string, Partial<{ push: boolean; email: boolean }> | undefined]
         >) {
-          if (channels) kinds[kind] = { ...kinds[kind], ...channels };
+          if (channels) kinds[kind] = { ...kinds[kind], ...channels } as { push: boolean; email: boolean };
         }
-        return { ...record, kinds };
+        return { ...record, kinds: kinds as NotificationPreferences['kinds'] };
       }),
     onError: (_error, _patch, restore) => restore?.(),
     onSuccess: (record) => client.setQueryData(key, record),

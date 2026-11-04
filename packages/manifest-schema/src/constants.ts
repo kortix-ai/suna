@@ -16,10 +16,10 @@ export const RESERVED_SANDBOX_SLUG = 'default';
 /** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
 export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
-/** Regex matching a space slug (a `spaces.<slug>` key, an agent's `space`, a binding's `space`). Tighter than SLUG_RE so every space slug is also a valid room name: the space's room is the project room with that name. */
+/** Regex matching a space slug (a `spaces.<slug>` key, an agent's `space`, a binding's `space`). Tighter than SLUG_RE: at most 63 characters. */
 export const SPACE_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 
-/** The tab types of a space. The room tab is implicit: always first, never listed. */
+/** The tab types of a space. */
 export const SPACE_TAB_TYPES = ['goals', 'apps', 'artifacts', 'files', 'board', 'app', 'artifact', 'link'] as const;
 
 /** What a space header shows, in order. Absent = every item. */
@@ -285,9 +285,6 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.review.read',
   'project.review.submit',
   'project.review.act',
-  // Rooms: read = list rooms and read messages; write = post, join, leave.
-  'project.room.read',
-  'project.room.write',
   // Artifacts: read = gallery and viewer; write = publish and edit; manage =
   // anyone's sharing; public = public links.
   'project.artifact.read',
@@ -337,6 +334,17 @@ export const DEPRECATED_KORTIX_PERMISSION_ALIASES: Readonly<Record<string, reado
     'project.agent.write',
   ],
 };
+
+/**
+ * Actions retired with their feature. A manifest that still grants one keeps
+ * validating with a warning, and the grant holds nothing: rejecting it would
+ * fail the agent's parse and give it an EMPTY grant. `project.room.*`: Rooms,
+ * removed 2026-11.
+ */
+export const RETIRED_KORTIX_PERMISSIONS: readonly string[] = ['project.room.read', 'project.room.write'];
+
+/** Kortix skills retired with their feature. An agent that still grants one validates with a warning. `kortix-rooms`: Rooms, removed 2026-11. */
+export const RETIRED_KORTIX_SKILL_NAMES: readonly string[] = ['kortix-rooms'];
 
 export const LEGACY_TOLERATED_KORTIX_PERMISSIONS: readonly string[] = [
   'project.session.exec',
@@ -518,7 +526,6 @@ export const KORTIX_SKILL_NAMES = [
   'kortix-marketplace',
   'kortix-memory',
   'kortix-onboarding',
-  'kortix-rooms',
   'kortix-slack',
   'kortix-system',
   'kortix-teams',

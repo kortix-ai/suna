@@ -24,7 +24,6 @@ import { ProjectManifestIssuesAlert } from './footer/project-manifest-issues-ale
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
 import { NewAgentModalProvider } from './new-agent-modal-provider';
-import { ProjectMemoryNavItem } from './footer/project-memory-nav';
 import { ProjectNavItems } from './project-nav-items';
 import { ProjectSessionList } from './project-session-list';
 import { ProjectSpacesNav } from './project-spaces-nav';
@@ -83,8 +82,9 @@ export function ProjectSidebar({
   const [connectMcpOpen, setConnectMcpOpen] = useState(false);
 
   const accountId = useBillingAccountId();
-  // Channels replace New session and the session list (fail-closed: off until the project answers).
-  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
+  // Chat (`chat`): the spaces list replaces New session, and the session list
+  // moves below it, closed by default (fail-closed: off until the project answers).
+  const chat = useFeatureFlag(projectId, 'chat').enabled;
   // The project flag and the web app's master switch (`CHROME_UI_ENABLED`) must both be on.
   const chrome = useFeatureFlag(projectId, 'chrome').enabled && CHROME_UI_ENABLED;
 
@@ -128,8 +128,8 @@ export function ProjectSidebar({
     onOpenSearch?.();
   }, [isMobile, setOpenMobile, onOpenSearch]);
 
+  // Cmd+J opens the new-session composer with `chat` on too (`newSessionHref`).
   useEffect(() => {
-    if (channels) return;
     const handler = (event: KeyboardEvent) => {
       if (
         (event.metaKey || event.ctrlKey) &&
@@ -143,7 +143,7 @@ export function ProjectSidebar({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [channels, handleNewSession]);
+  }, [handleNewSession]);
 
   return (
     // The New agent modal mounts beside <Sidebar>, outside the mobile sheet.
@@ -285,7 +285,8 @@ export function ProjectSidebar({
         <div className="flex h-full min-h-0 flex-col space-y-2">
           <SidebarGroup className="py-0">
             <SidebarMenu>
-              {channels ? null : (
+              {/* Chat on: no New session row; the person's chat with Kortix is the My Kortix DM row below. */}
+              {chat ? null : (
                 <SidebarMenuItem>
                   {creatingSession ? (
                     <SidebarMenuButton
@@ -311,15 +312,21 @@ export function ProjectSidebar({
               {/* Customize, Apps, Files: order and
                   visibility come from "Customize sidebar". They moved up here
                   from the footer (Jay, 2026-10-12) to keep the footer short. */}
-              {/* Channels on: the Company memory, the first row under the new-thread slot. */}
-              {channels ? <ProjectMemoryNavItem projectId={projectId} /> : null}
               <ProjectNavItems projectId={projectId} />
             </SidebarMenu>
           </SidebarGroup>
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            {channels ? (
-              <ProjectSpacesNav projectId={projectId} />
+            {chat ? (
+              <>
+                {/* Channels and Direct messages are the core surface. The
+                    session list sits below them, closed by default: every
+                    session the viewer runs, threads included. */}
+                <div className="min-h-0 flex-1">
+                  <ProjectSpacesNav projectId={projectId} />
+                </div>
+                <ProjectSessionList projectId={projectId} secondary />
+              </>
             ) : (
               <ProjectSessionList projectId={projectId} />
             )}

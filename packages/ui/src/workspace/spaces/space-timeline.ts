@@ -103,6 +103,9 @@ export function threadIsWorking(session: ProjectSession): boolean {
 
 /** The thread's top message: its first prompt as the person wrote it, else its title. */
 export function threadMessageText(session: ProjectSession): string {
+  // A thread Kortix started (Chat): its own message is the top of the thread.
+  const kortixText = kortixRootText(session);
+  if (kortixText) return kortixText;
   let text = session.first_prompt ?? '';
   text = parseFileReferences(text).cleanText;
   text = parseSessionReferences(text).cleanText;
@@ -110,6 +113,12 @@ export function threadMessageText(session: ProjectSession): string {
   text = parseAgentMentionReferences(text).cleanText;
   text = stripReplyContexts(text).trim();
   return text || sessionDisplayLabel(session);
+}
+
+/** Chat (`chat`): the message a thread Kortix started opens with, or null for a person's thread. */
+export function kortixRootText(session: ProjectSession): string | null {
+  const value = session.metadata?.chat_root_text;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 /**
@@ -174,21 +183,6 @@ export function spaceRoster(
     if (session.agent_name) agentThreads[session.agent_name] = (agentThreads[session.agent_name] ?? 0) + 1;
   }
   return { people: [...people.values()], agents: Object.keys(agentThreads), agentThreads };
-}
-
-/** A channel's tabs, in order. `?tab=` names one; Chat has no param. */
-const CHANNEL_TABS = ['chat', 'threads', 'files', 'memory', 'apps', 'links', 'triggers'] as const;
-/** A DM has no apps or links of its own. */
-const DM_TABS = ['chat', 'threads', 'files', 'memory', 'triggers'] as const;
-export type SpaceTab = (typeof CHANNEL_TABS)[number];
-
-export function spaceTabs(kind: 'channel' | 'dm'): readonly SpaceTab[] {
-  return kind === 'dm' ? DM_TABS : CHANNEL_TABS;
-}
-
-/** The `?tab=` value as a tab of this kind of space; anything else is Chat. */
-export function spaceTabFromParam(value: string | null, kind: 'channel' | 'dm'): SpaceTab {
-  return spaceTabs(kind).find((tab) => tab === value) ?? 'chat';
 }
 
 /** The Threads tab's Status filter: the states a thread row shows. */

@@ -3,7 +3,7 @@
  * `@kortix/api-contract/multi-agent`): one session writes to another, as
  * Claude Code's cross-session messaging does. Unflagged.
  *
- * Delivery is a room message to a member session, minus the room: a durable
+ * Delivery is a durable
  * `continue_session` row written in the SAME transaction as the message
  * record (`session_peer_messages`), with the text `peerMessagePromptText`
  * builds. A running turn reads it between steps (`steer`); an idle session
@@ -11,7 +11,7 @@
  * never waits for the receiver's box: the row is durable, the drain kick is
  * fire-and-forget, and a dead box keeps the row queued until it is back.
  *
- * Authorization is the rooms rule: a message reaches a session only when the
+ * Authorization: a message reaches a session only when the
  * person the sender acts for may prompt that session themselves
  * (`mayPromptSessions`), and the sender's agent grant includes
  * `project.session.start`. A refusal is a result (`refused`, "Not sent: …"),

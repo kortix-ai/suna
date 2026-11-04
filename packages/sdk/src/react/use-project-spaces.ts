@@ -20,9 +20,11 @@ import {
   listProjectSpaces,
   listPrivateChannelsNotIn,
   removeProjectSpaceLink,
+  setProjectSpaceTabs,
   updateProjectSpace,
   type AddProjectSpaceLinkInput,
   type ChannelsOnboardingMark,
+  type ProjectSpaceTab,
   type UpdateProjectSpaceInput,
 } from '../core/rest/projects-client/spaces';
 import { contract } from './query-contracts';
@@ -31,7 +33,7 @@ import { qk } from './query-keys';
 /**
  * The project's channels and the caller's DMs. Members create and archive
  * channels, so this is the `inventory` tier. Pass `enabled: false` while the
- * project's `project_channels` flag is off: the route answers 403 then.
+ * project's `chat` flag is off: the route answers 403 then.
  */
 export function useProjectSpaces(projectId: string | null | undefined, options?: { enabled?: boolean }) {
   return useQuery({
@@ -109,6 +111,19 @@ export function useUpdateProjectSpace(projectId: string) {
   return useMutation({
     mutationFn: (args: { spaceId: string; input: UpdateProjectSpaceInput }) =>
       updateProjectSpace(projectId, args.spaceId, args.input),
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * Replace a space's tabs after Chat (`setProjectSpaceTabs`): a channel's
+ * editor or a DM's owner, else 403 `forbidden`. Resolves after the spaces
+ * list refetched, so the tab row shows the new list.
+ */
+export function useSetProjectSpaceTabs(projectId: string) {
+  const invalidate = useInvalidateSpaces(projectId);
+  return useMutation({
+    mutationFn: (args: { spaceId: string; tabs: ProjectSpaceTab[] }) => setProjectSpaceTabs(projectId, args.spaceId, args.tabs),
     onSuccess: invalidate,
   });
 }
@@ -219,7 +234,7 @@ export function useLeaveProjectSpace(projectId: string, spaceId: string) {
 
 /**
  * The caller's Channels onboarding state: `intro_seen` and the `#general`
- * "Get started" rows. Pass `enabled: false` while `project_channels` is off.
+ * "Get started" rows. Pass `enabled: false` while `chat` is off.
  */
 export function useChannelsOnboarding(projectId: Id, options?: { enabled?: boolean }) {
   return useQuery({

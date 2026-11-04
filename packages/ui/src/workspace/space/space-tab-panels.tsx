@@ -38,7 +38,6 @@ import { ErrorState } from '../../primitives/error-state';
 import { Skeleton } from '../../primitives/skeleton';
 import { framePolicy } from '../../files/viewer/preview-policy';
 import { SpaceBlocks } from './space-blocks';
-import { SpaceRoom } from './space-room';
 
 /** Same sandbox as the Artifacts viewer: the content server's CSP decides the rest. */
 const ARTIFACT_SANDBOX =
@@ -62,7 +61,7 @@ function hostOf(url: string): string {
   }
 }
 
-/** The content of one tab; `tab` null is the room. */
+/** The content of one tab; `tab` null (a space with no tab) is the space's intro. */
 export function SpaceTabPanel({
   projectId,
   space,
@@ -72,7 +71,7 @@ export function SpaceTabPanel({
   space: ManifestSpace;
   tab: SpaceTab | null;
 }) {
-  if (!tab) return <RoomTab projectId={projectId} space={space} />;
+  if (!tab) return <SpaceIntro projectId={projectId} space={space} />;
   switch (tab.type) {
     case 'goals':
       return <GoalsTab projectId={projectId} slug={space.name} />;
@@ -93,36 +92,14 @@ export function SpaceTabPanel({
   }
 }
 
-function RoomTab({ projectId, space }: { projectId: string; space: ManifestSpace }) {
-  const t = useTranslations('spaces');
-  const rooms = useFeatureFlag(projectId, 'agent_rooms');
-  if (!rooms.isLoading && !rooms.enabled) {
-    return (
-      <Centered>
-        <EmptyState size="sm" title={t('roomsOff')} description={t('roomsOffHint')} />
-      </Centered>
-    );
-  }
-  return (
-    <SpaceRoom
-      projectId={projectId}
-      roomName={space.name}
-      topic={space.description}
-      fill
-      intro={<RoomIntro projectId={projectId} space={space} />}
-      className="h-full"
-    />
-  );
-}
-
-/** The top of the room: what the space is for, who posts in it, and how to bring someone in. */
-function RoomIntro({ projectId, space }: { projectId: string; space: ManifestSpace }) {
+/** A space with no tab: what it is for, its agents, and how to add a tab. */
+function SpaceIntro({ projectId, space }: { projectId: string; space: ManifestSpace }) {
   const t = useTranslations('spaces');
   const locale = useLocale();
   const agents = agentsInSpace(space.name, useProjectConfig(projectId)?.agents ?? []);
   const names = new Intl.ListFormat(locale, { type: 'conjunction' }).format(agents.map(agentDisplayName));
   return (
-    <div className="flex max-w-2xl flex-col gap-3 px-5 pb-2">
+    <div className="flex max-w-2xl flex-col gap-3 px-5 py-5">
       {agents.length ? (
         <span className="flex -space-x-1">
           {agents.map((name) => (
@@ -132,13 +109,13 @@ function RoomIntro({ projectId, space }: { projectId: string; space: ManifestSpa
       ) : null}
       <div className="flex flex-col gap-1.5">
         <h2 className="text-foreground text-xl font-medium text-balance">
-          {t('room.introTitle', { name: space.label || space.name })}
+          {t('intro.title', { name: space.label || space.name })}
         </h2>
-        <p className="text-muted-foreground text-sm text-pretty">{space.description?.trim() || t('room.introBody')}</p>
+        <p className="text-muted-foreground text-sm text-pretty">{space.description?.trim() || t('intro.body')}</p>
       </div>
       <p className="text-muted-foreground text-xs text-pretty">
-        {agents.length ? t('room.introAgents', { count: agents.length, names }) : t('room.introNoAgents')}{' '}
-        {t('room.introMention')}
+        {agents.length ? t('intro.agents', { count: agents.length, names }) : t('intro.noAgents')}{' '}
+        {t('intro.addTab')}
       </p>
     </div>
   );
@@ -402,8 +379,8 @@ function BoardTab({ projectId, tab }: { projectId: string; tab: SpaceTab }) {
   );
 }
 
-/** A pinned App, live and interactive, filling the tab. */
-function AppTab({ projectId, slug }: { projectId: string; slug: string }) {
+/** A pinned App, live and interactive, filling the tab. `missingAction`: shown under "not in this project" (a Space's "Remove tab"). */
+export function AppTab({ projectId, slug, missingAction }: { projectId: string; slug: string; missingAction?: ReactNode }) {
   const t = useTranslations('spaces');
   const apps = useProjectApps(projectId);
   const app = apps.data?.find((candidate) => candidate.slug === slug);
@@ -413,7 +390,7 @@ function AppTab({ projectId, slug }: { projectId: string; slug: string }) {
   if (!app) {
     return (
       <Centered>
-        <EmptyState size="sm" title={t('missing.app', { slug })} />
+        <EmptyState size="sm" title={t('missing.app', { slug })} action={missingAction} />
       </Centered>
     );
   }
@@ -428,8 +405,8 @@ function AppTab({ projectId, slug }: { projectId: string; slug: string }) {
   );
 }
 
-/** A pinned Artifact, its current state in a sandboxed frame. */
-function ArtifactTab({ projectId, artifactId }: { projectId: string; artifactId: string }) {
+/** A pinned Artifact, its current state in a sandboxed frame. `missingAction`: shown under "gone" (a Space's "Remove tab"). */
+export function ArtifactTab({ projectId, artifactId, missingAction }: { projectId: string; artifactId: string; missingAction?: ReactNode }) {
   const t = useTranslations('spaces');
   const artifact = useArtifact(projectId, artifactId);
   const href = uiRoutes().artifacts(projectId);
@@ -437,7 +414,7 @@ function ArtifactTab({ projectId, artifactId }: { projectId: string; artifactId:
   if (!artifact.data) {
     return (
       <Centered>
-        <EmptyState size="sm" title={t('missing.artifact')} />
+        <EmptyState size="sm" title={t('missing.artifact')} action={missingAction} />
       </Centered>
     );
   }

@@ -21,7 +21,7 @@ export interface RuntimePromptInput {
   /** Persist the message and start no turn. */
   noReply?: boolean
   /**
-   * Text added to this turn's system prompt only (`project_channels`: the
+   * Text added to this turn's system prompt only (`chat`: the
    * thread's memory file list). The next turn without it runs without it.
    */
   system?: string

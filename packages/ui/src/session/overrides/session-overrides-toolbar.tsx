@@ -8,6 +8,7 @@ import {
   CpuIcon as Cpu,
   FolderIcon,
   KeyIcon as KeyRound,
+  PlugsConnectedIcon,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { lazyClient } from '../../lib/lazy-client';
@@ -18,7 +19,10 @@ import {
 } from '../scope/session-scope-control';
 import {
   createSessionScopeDraft,
+  resetSessionConnectorBindings,
   resetSessionSecrets,
+  sessionConnectorsAreOverridden,
+  sessionConnectorsSummary,
   sessionSecretsAreOverridden,
   sessionSecretsSummary,
   type SessionScopeCommit,
@@ -42,7 +46,8 @@ import { useProjectCan } from '../../internal/lib/use-project-can';
 
 import { SessionOverridesControl, type SessionOverrideRow } from './session-overrides-control';
 import { useProviderPoolEditingState } from './provider-pool-draft-context';
-import { effectiveProviderPools, updateProviderPoolDraft } from './provider-pool-draft';
+import { effectiveProviderPools, updateProviderPoolDraft, type ProviderPoolDrafts } from './provider-pool-draft';
+import { useChatInputOverridesStore } from '../composer/chat-input/chat-input-overrides';
 
 // The pooled-key editors read the full LLM provider catalog (`packages/ui/src/internal/lib/llm-providers`
 // → the bundled models.dev snapshot). They render only when the user opens the
@@ -111,6 +116,15 @@ function activeScopeSignature(scope: SessionScope | undefined): string {
 
 function newScopeCatalogSignature(catalog: SessionScopeSelectionCatalog): string {
   return JSON.stringify(catalog);
+}
+
+/** The parts of a scope draft that Save writes, for a dirty check. */
+function scopeDraftSignature(draft: SessionScopeDraft | undefined): string {
+  if (!draft) return 'none';
+  return JSON.stringify({
+    secrets: draft.secrets === undefined ? 'unset' : draft.secrets === null ? 'inherit' : [...draft.secrets].sort(),
+    connectors: draft.connector_bindings_inherited === true ? 'inherit' : (draft.connector_bindings ?? null),
+  });
 }
 
 function hasAvailableScopeAxis(catalog: SessionScopeSelectionCatalog): boolean {
@@ -287,7 +301,9 @@ export function SessionOverridesToolbar({
     return `${identity}:${newScopeCatalogSignature(catalog)}`;
   }, [agentName, catalog, projectId, scope, sessionId]);
 
-  const [draftState, setDraftState] = useState<{ key: string | null; draft: SessionScopeDraft }>({
+  // `base` is the draft as last loaded or saved: the `chat_input` control
+  // shows its Save only while `draft` differs from it.
+  const [draftState, setDraftState] = useState<{ key: string | null; draft: SessionScopeDraft; base?: SessionScopeDraft }>({
     key: null,
     draft: {},
   });
@@ -309,7 +325,7 @@ export function SessionOverridesToolbar({
       sessionId && scope
         ? { draft: createSessionScopeDraft(scope, catalog), commit: undefined }
         : createNewSessionScopeInitialization(catalog);
-    setDraftState({ key: initializationKey, draft: initialization.draft });
+    setDraftState({ key: initializationKey, draft: initialization.draft, base: initialization.draft });
     setRetroactive(sessionId ? scope?.retroactive : undefined);
     if (!sessionId) committedDraftRef.current?.(initialization.commit);
   }, [catalog, draftState.key, initializationKey, scope, sessionId]);
@@ -325,13 +341,20 @@ export function SessionOverridesToolbar({
     ? providerPools.isError || providerPools.isLoading || !providerPools.data?.can_edit
     : !(scopeReady && hasAvailableScopeAxis(activeCatalog)));
 
-  const handleSave = useCallback(async (): Promise<boolean> => {
+  // `override` commits a given draft instead of the edited one: the
+  // `chat_input` control's one-click "Reset to auto" resets and saves at once.
+  const handleSave = useCallback(async (
+    override?: { draft?: SessionScopeDraft; providerDrafts?: ProviderPoolDrafts },
+  ): Promise<boolean> => {
     if (savingRef.current) return false;
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
+    const scopeDraft = override?.draft ?? draftState.draft;
+    if (override?.draft) setDraftState((current) => ({ ...current, draft: scopeDraft }));
+    const committedBase = scopeDraft;
     try {
-      for (const [providerId, secretIds] of Object.entries(providerDrafts)) {
+      for (const [providerId, secretIds] of Object.entries(override?.providerDrafts ?? providerDrafts)) {
         await providerPools.setPool.mutateAsync({ providerId, secretIds });
         setProviderDrafts((current) => {
           if (current[providerId] !== secretIds) return current;
@@ -343,7 +366,7 @@ export function SessionOverridesToolbar({
       if (catalog && scopeReady) {
         const result = await commitSessionScopeDraft({
           sessionId,
-          draft: draftState.draft,
+          draft: scopeDraft,
           catalog,
           previousScope: scope,
           replaceScope: saveScope.mutateAsync,
@@ -351,7 +374,10 @@ export function SessionOverridesToolbar({
         });
         if (sessionId && result) {
           setRetroactive(result.retroactive);
-          setDraftState({ key: initializationKey, draft: createSessionScopeDraft(result, catalog) });
+          const saved = createSessionScopeDraft(result, catalog);
+          setDraftState({ key: initializationKey, draft: saved, base: saved });
+        } else {
+          setDraftState((current) => ({ ...current, base: committedBase }));
         }
       }
       successToast(tI18nComplete.raw(sessionId ? 'textdf7987d6fd91' : 'text2467c93661b7'));
@@ -446,6 +472,131 @@ export function SessionOverridesToolbar({
     tI18nComplete,
     tPooled,
   ]);
+
+  // Inside a `chat_input` composer the rows go to the one control under the
+  // composer instead of this gear (see `chat-input-overrides.tsx`). Same rows,
+  // same drafts, same Save; only "Reset to auto" differs: it resets AND saves,
+  // one click, where the gear's reset only edits the draft.
+  const chatInputStore = useChatInputOverridesStore();
+  const savedPools = providerPools.data?.pools;
+  const resetSecretsAndSave = useCallback(
+    () => void handleSave({ draft: resetSessionSecrets(draft) }),
+    [handleSave, draft],
+  );
+  const resetProviderKeys = useCallback(() => {
+    if (!sessionId) {
+      onProviderSecretPoolsChange?.({});
+      return;
+    }
+    void handleSave({
+      providerDrafts: Object.fromEntries((savedPools ?? []).map((pool) => [pool.provider_id, null])),
+    });
+  }, [handleSave, onProviderSecretPoolsChange, savedPools, sessionId]);
+  const resetConnectorsAndSave = useCallback(
+    () => void handleSave({ draft: resetSessionConnectorBindings(draft, activeCatalog) }),
+    [handleSave, draft, activeCatalog],
+  );
+  // Connectors: a row only when some app has more than one account to run as.
+  // With one account per app there is nothing to choose.
+  const connectorChoice =
+    activeCatalog.connector_connections.status === 'ready' &&
+    activeCatalog.connector_connections.items.some((connector) => connector.connections.length > 1);
+  const chatInputRows = useMemo(() => {
+    if (!chatInputStore) return null;
+    // A row the session cannot change is not an override: the read-only
+    // sandbox of a started session and the Files list stay out.
+    const list = rows
+      .filter((row) => !row.readOnly)
+      .map((row): SessionOverrideRow => {
+        // The gear's draft-only reset is replaced by `onResetRow` below.
+        if (row.id === 'secrets') return { ...row, inheritsFromAgent: draft.secrets === null, onReset: undefined };
+        return row;
+      });
+    if (connectorChoice) {
+      list.push({
+        id: 'connectors',
+        name: 'Connectors',
+        icon: PlugsConnectedIcon,
+        hint: '',
+        summary: sessionConnectorsSummary(draft),
+        overridden: sessionConnectorsAreOverridden(draft),
+        inheritsFromAgent: !sessionConnectorsAreOverridden(draft),
+        description: '',
+        // The `chat_input` control draws this axis from `scope` itself.
+        editor: null,
+      });
+    }
+    return list;
+  }, [chatInputStore, rows, draft, connectorChoice]);
+  const chatInputSaveRowIds = useMemo(
+    () =>
+      (chatInputRows ?? [])
+        .filter((row) => row.id === 'secrets' || row.id === 'provider-keys' || row.id === 'connectors')
+        .map((row) => row.id),
+    [chatInputRows],
+  );
+  // What Save would write: the scope draft moved off what was loaded or last
+  // saved, or a provider-key draft exists.
+  const scopeDirty =
+    initialized && scopeDraftSignature(draft) !== scopeDraftSignature(draftState.base);
+  const chatInputDirty = scopeDirty || hasProviderChanges;
+  const chatInputNotice = retroactive === false ? (
+    <InfoBanner tone="warning" icon={TriangleAlert} title={tI18nComplete.raw('texta6cd531093d4')}>
+      {tI18nComplete.raw('text54a4e6b3594a')}
+    </InfoBanner>
+  ) : null;
+  const chatInputPendingNote = hasProviderChanges ? tPooled('unsavedChanges') : undefined;
+  const chatInputSave = useCallback(() => handleSave(), [handleSave]);
+  const scopeControlsDisabled = controlsDisabled || saveScope.isPending;
+  const secretsLoadingFlag = secretsLoading !== null;
+  useEffect(() => {
+    if (!chatInputStore || !chatInputRows) return;
+    chatInputStore.set({
+      rows: chatInputRows,
+      saveRowIds: chatInputSaveRowIds,
+      saving,
+      saveDisabled,
+      dirty: chatInputDirty,
+      pendingNote: chatInputPendingNote,
+      error: saveError,
+      notice: chatInputNotice,
+      onSave: chatInputSave,
+      scope: {
+        draft,
+        catalog: activeCatalog,
+        loading: secretsLoadingFlag,
+        disabled: scopeControlsDisabled,
+        onChange,
+      },
+      providerKeys: {
+        projectId,
+        sessionId,
+        selection: providerPoolDraft,
+        canEdit: !sessionId || providerPools.data?.can_edit === true,
+        loading: Boolean(sessionId) && providerPools.isLoading,
+        onChange: (provider, ids) => {
+          if (sessionId) {
+            onProviderDraftChange(provider, ids);
+            return;
+          }
+          const next = { ...(providerSecretPools ?? {}) };
+          if (ids && ids.length > 0) next[provider] = ids;
+          else delete next[provider];
+          onProviderSecretPoolsChange?.(next);
+        },
+      },
+      onResetRow: (id) => {
+        if (id === 'secrets') resetSecretsAndSave();
+        else if (id === 'provider-keys') resetProviderKeys();
+        else if (id === 'connectors') resetConnectorsAndSave();
+        else chatInputRows.find((row) => row.id === id)?.onReset?.();
+      },
+    });
+    // `chatInputNotice` is a fresh element each render; `retroactive` is what it reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatInputStore, chatInputRows, chatInputSaveRowIds, saving, saveDisabled, chatInputDirty, chatInputPendingNote, saveError, retroactive, chatInputSave, resetSecretsAndSave, resetProviderKeys, resetConnectorsAndSave, draft, activeCatalog, secretsLoadingFlag, scopeControlsDisabled, onChange, projectId, sessionId, providerPoolDraft, providerPools.data?.can_edit, providerPools.isLoading, onProviderDraftChange, providerSecretPools, onProviderSecretPoolsChange]);
+  useEffect(() => () => chatInputStore?.set(null), [chatInputStore]);
+  if (chatInputStore) return null;
 
   // Nothing left to change (a member in an existing session: the sandbox row is
   // read-only and fixed at create). A gear that opens onto a Save button and
