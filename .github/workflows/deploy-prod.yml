@@ -1407,8 +1407,8 @@ jobs:
             # The /internal edge gate: the Worker's INTERNAL_EDGE_KEY secret must
             # equal the blob's KORTIX_INTERNAL_EDGE_KEY — the value the gateway
             # and API hydrate. Optional: a blob without the key disengages the
-            # gate (the sync below deletes the Worker secret), the documented
-            # pre-engagement state where the static bearer is the only gate.
+            # gate (the sync below deletes the Worker secret) and leaves the static
+            # bearer as the only gate in front of /internal.
             INTERNAL_EDGE_KEY=kortix-prod-env:KORTIX_INTERNAL_EDGE_KEY?
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
