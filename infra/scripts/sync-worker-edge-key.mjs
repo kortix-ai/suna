@@ -10,10 +10,8 @@ import { pathToFileURL } from 'node:url';
 // when it does not — then proves the public origin's engagement state, so a
 // drift fails loudly instead of silently downgrading the control plane's gate.
 //
-// Prod wiring (deploy-prod.yml): deploy-ecs rolls the gateway BEFORE the API so
-// both hydrate the key from the blob without a breakage window (the API's edge
-// check 404s calls that lack the header, so the sender must roll first), then
-// deploy-api-router reads the optional key with the aws-env action and runs:
+// Prod wiring (deploy-prod.yml): deploy-ecs rolls the API and the gateway, which
+// both hydrate the key from the blob, then deploy-api-router reads the optional key with the aws-env action and runs:
 //   node infra/scripts/sync-worker-edge-key.mjs
 // with CLOUDFLARE_ACCOUNT_ID, WORKER_NAME and PUBLIC_API_ORIGIN in the env.
 

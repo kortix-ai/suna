@@ -1340,21 +1340,15 @@ jobs:
       - name: Report a failed worker roll
         if: steps.worker.outcome == 'failure'
         run: echo "::error title=Worker deploy::the prod worker did not roll onto kortix/kortix-api:${VERSION}. The API rolls with KORTIX_PROCESS_ROLE=all and runs the scheduled jobs; read the step 'Roll the prod worker service from the prod-env blob'."
-      # The gateway rolls BEFORE the API. The env blob is the one source of
-      # truth for KORTIX_INTERNAL_EDGE_KEY, and the API's edge check 404s every
-      # /internal/gateway call that lacks the header the moment its env carries
-      # the key (apps/api/src/llm-gateway/internal-routes.ts) — an API-first
-      # roll would therefore break model calls for the whole window the old
-      # gateway tasks (no key, no header) still serve in. Gateway-first is also
-      # the safer general order: a bad gateway image fails this roll before the
-      # API — everything else's dependency — touches it. deploy-api-router then
-      # syncs the api-router Worker's INTERNAL_EDGE_KEY from the same blob and
-      # proves the public origin's posture — 404 keyless once engaged, the
-      # fail-closed static-bearer answer before that (KRTX-2775).
-      - name: Roll prod ECS (gateway + api) from the prod-env blob
+      # API first, then gateway (staging parity, kept on purpose). Once the env
+      # blob names KORTIX_INTERNAL_EDGE_KEY the API 404s every /internal/gateway
+      # call that lacks the header, so the window between the two rolls is the
+      # only edge-key breakage window. The api-router Worker is synced and
+      # probed afterwards by deploy-api-router (KRTX-2775).
+      - name: Roll prod ECS (api + gateway) from the prod-env blob
         run: |
-          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway --version "${VERSION}" --database-migrated
           bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --version "${VERSION}" --database-migrated
+          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway --version "${VERSION}" --database-migrated
 
   # ── Deploy the prod API router Worker ───────────────────────────────────────
   # api.kortix.com and gateway.kortix.com are fronted by the Cloudflare Worker

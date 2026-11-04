@@ -23,9 +23,9 @@
 # deploy (set when the blob names the key, delete when it does not), then proves
 # the public origin answers 404 keyless. Manual fallback: `wrangler secret put
 # INTERNAL_EDGE_KEY --env <env>`. Engage the gateway and API first — they
-# hydrate the key from the same blob, and the API 404s calls that lack the
-# header, so the gateway must roll before the API (Deploy Prod's deploy-ecs
-# does) and this secret lands only with or after their roll.
+# hydrate the key from the same blob. Deploy Prod rolls the API, then the
+# gateway (a call that lacks the header 404s once the API carries the key), and
+# this secret lands only after both rolls.
 main = "worker.mjs"
 compatibility_date = "2026-06-01"
 workers_dev = false
