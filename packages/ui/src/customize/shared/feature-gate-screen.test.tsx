@@ -13,10 +13,17 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 let allowed = true;
 let loading = false;
 let failed = false;
+// The project row as the server stores it. The enable writes it; every
+// `GET /projects/:id` (the row refetch after the enable) reads it, so no
+// response can race the mutation back to `reminders: false`.
+let stored = { project_id: 'test-project', experimental: { reminders: false } };
 const update = mock(async () => {
   if (failed) throw new Error('Could not enable reminders');
-  return { project_id: 'test-project', experimental: { reminders: true } };
+  stored = { project_id: 'test-project', experimental: { reminders: true } };
+  return stored;
 });
+globalThis.fetch = (async () =>
+  new Response(JSON.stringify(stored), { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
 
 mock.module('../../internal/lib/use-project-can', () => ({
   useProjectCan: () => ({ allowed, isLoading: loading }),
@@ -31,6 +38,7 @@ afterEach(() => {
   allowed = true;
   loading = false;
   failed = false;
+  stored = { project_id: 'test-project', experimental: { reminders: false } };
 });
 function Surface({ internalOnly }: { internalOnly: boolean }) {
   const flag = useFeatureFlag('test-project', 'reminders');
@@ -46,10 +54,10 @@ function Surface({ internalOnly }: { internalOnly: boolean }) {
   );
 }
 async function render(internalOnly = false) {
-  const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-  client.setQueryData(qk.project.detail('test-project'), {
-    project: { experimental: { reminders: false } },
-  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  client.setQueryData(qk.project.detail('test-project'), { project: stored });
+  // `useFeatureFlag` reads the bare row (`qk.project.summary`) since #11651.
+  client.setQueryData(qk.project.summary('test-project'), stored);
   const host = document.createElement('div');
   document.body.append(host);
   const root = createRoot(host);

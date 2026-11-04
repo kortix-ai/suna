@@ -191,6 +191,18 @@ describe('Esc', () => {
     });
   });
 
+  test('a screen that holds Esc keeps it: back to its list, or cancel its input', () => {
+    expect(
+      globalKeyAction(key('escape'), state({ route: 'providers', focus: 'screen', screenHoldsBack: true })),
+    ).toBeNull();
+  });
+
+  test('the same screen gives Esc back once it holds nothing', () => {
+    expect(
+      globalKeyAction(key('escape'), state({ route: 'providers', focus: 'screen', screenHoldsBack: false })),
+    ).toEqual({ kind: 'back' });
+  });
+
   test('in the transcript it moves focus to the composer', () => {
     expect(globalKeyAction(key('escape'), state({ focus: 'transcript' }))).toEqual({
       kind: 'focus-composer',

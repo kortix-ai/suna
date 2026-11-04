@@ -6,7 +6,6 @@ import {
   buildEmailConnectorConnectionSlug,
   connectorConnectionQueryKeys,
   connectorConnectionSlugAfterNameChange,
-  connectorSetupStatus,
   connectorSyncErrorForSlug,
   createOnlyConnectorDraft,
   isConnectorConnectionSlugAvailable,
@@ -149,54 +148,6 @@ describe('connector creation contract', () => {
   });
 });
 
-describe('connector setup status', () => {
-  const connector = {
-    status: 'active' as const,
-    authSecret: 'TOKEN',
-    secretSet: false,
-    authorizationStrategy: 'project' as const,
-  };
-
-  test('uses the shared secret state only for project authorization', () => {
-    expect(connectorSetupStatus(connector)).toBe('needs_setup');
-    expect(connectorSetupStatus({ ...connector, secretSet: true })).toBe('connected');
-  });
-
-  // The list's `status` is computed for the caller: a per-person connector
-  // reads `active` only when the caller's own account holds a credential, and
-  // `needs_auth` when it does not. It used to show "User-managed" either way.
-  test('a per-person connector is connected when the caller is, never "user managed"', () => {
-    expect(connectorSetupStatus({ ...connector, authorizationStrategy: 'user' })).toBe(
-      'connected',
-    );
-    expect(
-      connectorSetupStatus({ ...connector, authorizationStrategy: 'user', status: 'needs_auth' }),
-    ).toBe('needs_setup');
-  });
-
-  // Prod 2026-08-28: 6 of 6 GitHub connections had a null `connected_account_id`
-  // — authorization was never completed — and no GitHub tool call had ever run,
-  // yet the connector grid showed a checkmark. `needs_auth` used to fall
-  // through to the secretSet branch and read as `connected`.
-  test('an authorization that never completed is setup that never finished', () => {
-    expect(connectorSetupStatus({ ...connector, status: 'needs_auth' })).toBe('needs_setup');
-    // Even with a credential present it is NOT connected — the credential is
-    // not the thing that is missing.
-    expect(connectorSetupStatus({ ...connector, status: 'needs_auth', secretSet: true })).toBe(
-      'needs_setup',
-    );
-  });
-
-  test('error still outranks needs_auth', () => {
-    expect(connectorSetupStatus({ ...connector, status: 'error' })).toBe('error');
-  });
-
-  test('keeps error and no-auth states independent of credential ownership', () => {
-    expect(connectorSetupStatus({ ...connector, status: 'error' })).toBe('error');
-    expect(connectorSetupStatus({ ...connector, authSecret: null })).toBe('no_auth');
-  });
-});
-
 // The connector-level authorization-strategy controls
 // (`connectionOwnerTypeForStrategy`, `connectorAuthorizationStrategyForProvider`,
 // `connectorAuthorizationStrategyIsEditable`, `connectorAuthorizationUpdateIsPending`)
@@ -212,27 +163,5 @@ describe('connector connection query keys', () => {
       ['connections-all', 'project-1'],
       ['session-scope-catalog', 'project-1'],
     ]);
-  });
-});
-
-describe('connectorSetupStatus: MCP sign-in still to do', () => {
-  const failing = {
-    authorizationStrategy: 'project' as const,
-    authSecret: null,
-    secretSet: false,
-    status: 'error' as const,
-    provider: 'mcp' as const,
-  };
-
-  test('an MCP server asking for sign-in is pending, not an error', () => {
-    expect(
-      connectorSetupStatus({ ...failing, lastError: 'MCP tools/list failed: HTTP 401' }),
-    ).toBe('pending');
-  });
-
-  test('any other MCP failure stays an error', () => {
-    expect(connectorSetupStatus({ ...failing, lastError: 'MCP tools/list failed: HTTP 500' })).toBe(
-      'error',
-    );
   });
 });

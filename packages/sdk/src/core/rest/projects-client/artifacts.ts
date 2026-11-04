@@ -545,3 +545,27 @@ export async function readArtifactCommentScreenshot(
   }
   return response.blob();
 }
+
+const ARTIFACT_UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const ARTIFACT_IN_PROJECT = new RegExp(`/projects/(${ARTIFACT_UUID})/artifacts/(${ARTIFACT_UUID})/?$`, 'i');
+const ARTIFACT_PUBLIC = new RegExp(`/share/artifact/(${ARTIFACT_UUID})/?$`, 'i');
+
+/**
+ * The artifact an app link names: `/projects/<project>/artifacts/<artifact>`
+ * (the app viewer, on any Kortix host, or a relative path) or
+ * `/share/artifact/<artifact>` (a public link, no project). Ids are
+ * lower-case. Null for any other URL. This is the link an agent hands over
+ * with `show`, so a host uses it to tell an artifact from a website.
+ */
+export function parseArtifactUrl(url: string): { projectId: string | null; artifactId: string } | null {
+  let path: string;
+  try {
+    path = new URL(url, 'http://localhost').pathname;
+  } catch {
+    return null;
+  }
+  const inProject = ARTIFACT_IN_PROJECT.exec(path);
+  if (inProject) return { projectId: inProject[1]!.toLowerCase(), artifactId: inProject[2]!.toLowerCase() };
+  const shared = ARTIFACT_PUBLIC.exec(path);
+  return shared ? { projectId: null, artifactId: shared[1]!.toLowerCase() } : null;
+}

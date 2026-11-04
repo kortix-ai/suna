@@ -543,3 +543,9 @@ describe('unavailable models (KRTX-3011)', () => {
     ).toBeUndefined();
   });
 });
+
+test('server model switches supersede persisted older browser picks', () => {
+  expect(sessionPickStands(undefined, { atMs: 2000 })).toBe(false);
+  expect(sessionPickStands(1000, { atMs: 2000 })).toBe(false);
+  expect(sessionPickStands(2000, { atMs: 2000 })).toBe(true);
+});

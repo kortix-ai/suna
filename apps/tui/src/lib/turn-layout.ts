@@ -16,13 +16,20 @@
  * `formatElapsed` is NOT redeclared here — `lib/transcript-view.ts` owns it.
  */
 
-import type {
-  ClassifiedPart,
-  ClassifiedToolPart,
-  DiffLine,
-  SessionLogMessage,
-  SessionLogTurn,
+import {
+  type ClassifiedPart,
+  type ClassifiedToolPart,
+  type DiffLine,
+  type SessionLogMessage,
+  type SessionLogTurn,
+  normalizeActivityToolName,
 } from '@kortix/sdk';
+
+/** `show` and `show_user`, named as the SDK's `groupShowSegments` names them. */
+export function isShowTool(name: string): boolean {
+  const bare = normalizeActivityToolName(name);
+  return bare === 'show' || bare === 'show_user';
+}
 
 // ============================================================================
 // Rows
@@ -88,7 +95,9 @@ export function collapseToolRuns(parts: readonly ClassifiedPart[]): TurnRow[] {
   };
 
   for (const part of visible) {
-    if (part.kind === 'tool') {
+    // A `show` is the agent handing something over: its own card, never folded
+    // into "Completed N steps" (the web keeps it standalone too).
+    if (part.kind === 'tool' && !isShowTool(part.tool.name)) {
       run.push(part);
       continue;
     }

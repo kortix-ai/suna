@@ -21,10 +21,9 @@ import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush, modelChangeResult, validateModelChangeShape } from '../lib/session-model-change';
+import { canChangeSessionModel, mayChangeSessionModel, modelChangeResult, validateModelChangeShape } from '../lib/session-model-change';
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
-import { pickedModelMetadata } from '../../llm-gateway/resolution/session-model-fallback';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { admitSessionModelChange } from '../lib/session-model-keys';
 import { validateProviderSecretPool } from './provider-secret-pools';
@@ -37,6 +36,13 @@ import {
   resolvePostWriteBindings,
   scopeResponseBody,
 } from './session-scope-decide';
+import { resolveAndAuthorizeAgent } from '../lib/agent-access';
+import { missingClaudeSubscription, claudeSubscriptionRequiredBody } from '../claude-subscription/gate';
+import { parseModelSwitchInput } from '../lib/session-model-switch-input';
+import { storeSessionModelSwitch } from '../lib/session-model-switch-store';
+import { drainSessionLifecycleQueue } from '../session-lifecycle';
+import { checkBillingAdmission } from '../../billing/services/billing-gate';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 
 export function registerSessionScopeRoutes(): void {
@@ -335,6 +341,8 @@ export function registerSessionScopeRoutes(): void {
               // `model` wins; `opencode_model` is its pre-W4 name.
               schema: z.object({
                 model: z.string().min(1).max(128).optional(),
+                prompt: z.string().min(1).max(32000).optional(),
+                idempotency_key: z.string().min(1).max(128).optional(),
                 opencode_model: z.string().min(1).max(128).optional(),
               }),
             },
@@ -356,6 +364,8 @@ export function registerSessionScopeRoutes(): void {
              * benign cold-session answer), so a client must read THIS to tell a
              * half-applied change from a stored one.
              */
+            prompt_id: z.string().optional(),
+            deduped: z.boolean().optional(),
             push_failed: z.literal(true).optional(),
             detail: z.string().optional(),
           }),
@@ -389,6 +399,8 @@ export function registerSessionScopeRoutes(): void {
       }
 
       const body = await readJsonObject(c);
+      const switchInput = parseModelSwitchInput(body);
+      if (switchInput.kind === 'invalid') return c.json({ error: switchInput.error }, 400);
       const named = body.model ?? body.opencode_model;
       const requested = typeof named === 'string' ? named : '';
       const shapeError = validateModelChangeShape(requested);
@@ -449,29 +461,34 @@ export function registerSessionScopeRoutes(): void {
       const currentMetadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
       const currentModel =
         typeof currentMetadata.opencode_model === 'string' ? currentMetadata.opencode_model : null;
-      const needsPush = modelChangeNeedsLivePush({
-        current: currentModel,
-        next: nextModel,
-        status: visible.row.status,
-      });
-
-      await db
-        .update(projectSessions)
-        .set({
-          // A pick ends any fallback; a late fallback trace skips it.
-          metadata: pickedModelMetadata(currentMetadata, nextModel),
-          updatedAt: new Date(),
-        })
-        .where(eq(projectSessions.sessionId, sessionId));
-
-      if (!needsPush) {
-        return c.json(
-          modelChangeResult({ model: nextModel, needsPush: false, current: currentModel }),
-        );
+      if (switchInput.kind === 'switch') {
+        assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+        await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_START);
+        await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
+        if (!isProjectSessionPrincipal(c)) {
+          const missing = await missingClaudeSubscription({ accountId: loaded.row.accountId,
+            projectId, sessionId, userId: loaded.userId, model: nextModel });
+          if (missing) return c.json(claudeSubscriptionRequiredBody(missing), 409);
+        }
+        const billing = await checkBillingAdmission(loaded.row.accountId);
+        if (!billing.ok) return c.json({ error: billing.message, code: billing.reason }, 402);
       }
-
-      const push = await pushSessionModelToSandbox({ projectId, sessionId, model: nextModel });
-      return c.json(modelChangeResult({ model: nextModel, needsPush: true, push }));
+      const stored = await storeSessionModelSwitch({
+        projectId, accountId: loaded.row.accountId, sessionId, actorUserId: loaded.userId,
+        actorSessionId: isProjectSessionPrincipal(c) ? callerKortixSessionId(c) : null,
+        model: nextModel,
+        ...(switchInput.kind === 'switch' ? { prompt: switchInput.prompt } : {}),
+        key: switchInput.kind === 'switch' ? switchInput.key : crypto.randomUUID(),
+        push: (model) => pushSessionModelToSandbox({ projectId, sessionId, model }),
+      });
+      if (stored.kind === 'conflict') return c.json({ error: 'Retry key belongs to a different model switch' }, 409);
+      if (stored.kind === 'limited') return c.json({ error: 'At most three self model switches per hour' }, 409);
+      if (switchInput.kind === 'switch') {
+        void drainSessionLifecycleQueue({ idempotencyKey: `model-switch:${sessionId}:${switchInput.key}` }).catch(() => undefined);
+      }
+      return c.json({ ...modelChangeResult({ model: stored.model, needsPush: stored.needsPush,
+        push: stored.deduped ? undefined : stored.push, current: stored.deduped ? stored.model : currentModel }),
+        ...(switchInput.kind === 'switch' ? { prompt_id: stored.promptId, deduped: stored.deduped } : {}) });
     },
   );
 }

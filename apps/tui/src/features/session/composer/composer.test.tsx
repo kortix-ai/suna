@@ -7,7 +7,10 @@ import { testRender } from '@opentui/react/test-utils';
 
 import { initKortix, resetKortixForTest } from '../../../kortix.ts';
 import type { CommandContext } from '../../../commands/registry.ts';
-import { Composer, type SessionState, exportFileName } from './composer.tsx';
+import { sessionLogOfV1Rows } from '@kortix/sdk';
+
+import { message, toolPart } from '../transcript/test-session.ts';
+import { Composer, NO_OUTPUTS, type SessionState, exportFileName } from './composer.tsx';
 
 // React 19 needs this before `act`. See docs/opentui-notes.md.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -669,5 +672,190 @@ describe('/copy and /export', () => {
       'kortix-fix-the-login-bug-1a2b3c4d.md',
     );
     expect(exportFileName('', '1a2b3c4d-xyz')).toBe('kortix-1a2b3c4d.md');
+  });
+});
+
+describe('outputs: the tray, Alt+O and /shown', () => {
+  const P = '11111111-2222-4333-8444-555555555555';
+  const A = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const ARTIFACT_URL = `https://kortix.test/projects/${P}/artifacts/${A}`;
+
+  function shownThread() {
+    return sessionLogOfV1Rows('session-1', 'session-1', [
+      message('m1', 'assistant', [
+        toolPart('t1', 'show', 'completed', { path: '/workspace/out/data.csv', title: 'Raw data' }),
+      ], { time: { created: Date.now() - 120_000, completed: Date.now() - 120_000 } }),
+      message('m2', 'assistant', [
+        toolPart('t2', 'show', 'completed', { url: ARTIFACT_URL, title: 'Q3 churn report' }),
+      ], { time: { created: Date.now() - 60_000, completed: Date.now() - 60_000 } }),
+    ] as never).threads[0]?.messages ?? [];
+  }
+
+  interface Seams {
+    copied: string[];
+    opened: string[];
+    toasts: string[];
+  }
+
+  async function mountShown(spies: Spies, seams: Seams, messages = shownThread()) {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 } },
+    });
+    const setup = await testRender(
+      <QueryClientProvider client={queryClient}>
+        <Composer
+          session={fakeSession(spies)}
+          projectId={P}
+          sessionId="session-1"
+          focused
+          width={90}
+          context={CONTEXT}
+          onCommand={spies.onCommand}
+          onToast={(text) => seams.toasts.push(text)}
+          messages={messages}
+          webBaseUrl="https://kortix.test"
+          copyText={async (text) => {
+            seams.copied.push(text);
+            return { ok: true };
+          }}
+          openUrl={async (url) => {
+            seams.opened.push(url);
+          }}
+        />
+      </QueryClientProvider>,
+      { width: 90, height: 30 },
+    );
+    active = setup;
+    await setup.renderOnce();
+    return setup;
+  }
+
+  const newSeams = (): Seams => ({ copied: [], opened: [], toasts: [] });
+
+  async function openOutputs(setup: TestRendererSetup) {
+    await act(async () => {
+      setup.mockInput.pressKey('o', { meta: true });
+    });
+    await setup.renderOnce();
+  }
+
+  test('the tray names the newest output and counts them', async () => {
+    const spies = newSpies();
+    const setup = await mountShown(spies, newSeams());
+    expect(frame(setup)).toContain('▣ 2 outputs · Q3 churn report');
+  });
+
+  test('Alt+O lists the outputs newest first, with their kind', async () => {
+    const spies = newSpies();
+    const setup = await mountShown(spies, newSeams());
+    await openOutputs(setup);
+    const text = frame(setup);
+    expect(text).toContain('2 outputs');
+    expect(text).toContain('Enter open · Tab reference');
+    const lines = text.split('\n');
+    const report = lines.findIndex((line) => line.includes('▣ Q3 churn report'));
+    const data = lines.findIndex((line) => line.includes('▢ Raw data'));
+    expect(report).toBeGreaterThanOrEqual(0);
+    expect(report).toBeLessThan(data);
+    expect(lines[report]).toContain('Artifact');
+    expect(lines[data]).toContain('File');
+  });
+
+  test('Enter opens the artifact link in the browser and closes the list', async () => {
+    const spies = newSpies();
+    const seams = newSeams();
+    const setup = await mountShown(spies, seams);
+    await openOutputs(setup);
+    await act(async () => {
+      setup.mockInput.pressEnter();
+    });
+    await setup.renderOnce();
+    expect(seams.opened).toEqual([ARTIFACT_URL]);
+    expect(frame(setup)).not.toContain('Tab reference');
+  });
+
+  test('Enter on a shown file opens /files on its path', async () => {
+    const spies = newSpies();
+    const setup = await mountShown(spies, newSeams());
+    await openOutputs(setup);
+    await act(async () => {
+      setup.mockInput.pressArrow('down');
+    });
+    await act(async () => {
+      setup.mockInput.pressEnter();
+    });
+    expect(spies.onCommand.mock.calls).toEqual([['files', '/workspace/out/data.csv']]);
+  });
+
+  test('Tab puts a reference into the prompt, after what was typed', async () => {
+    const spies = newSpies();
+    const setup = await mountShown(spies, newSeams());
+    await act(async () => {
+      await setup.mockInput.typeText('summarize', 1);
+    });
+    await openOutputs(setup);
+    await act(async () => {
+      setup.mockInput.pressTab();
+    });
+    await setup.renderOnce();
+    await act(async () => {
+      setup.mockInput.pressEnter();
+    });
+    expect(spies.send.mock.calls[0]?.[0]).toBe(`summarize "Q3 churn report" (${ARTIFACT_URL}) `.trimEnd());
+  });
+
+  test('Ctrl+Y copies the link; Ctrl+O opens the artifact in /artifacts', async () => {
+    const spies = newSpies();
+    const seams = newSeams();
+    const setup = await mountShown(spies, seams);
+    await openOutputs(setup);
+    await act(async () => {
+      setup.mockInput.pressKey('y', { ctrl: true });
+    });
+    expect(seams.copied).toEqual([ARTIFACT_URL]);
+    await act(async () => {
+      setup.mockInput.pressKey('o', { ctrl: true });
+    });
+    expect(spies.onCommand.mock.calls).toEqual([['artifacts', A]]);
+  });
+
+  test('with nothing shown, Alt+O says so and the tray has no segment', async () => {
+    const spies = newSpies();
+    const seams = newSeams();
+    const setup = await mountShown(spies, seams, []);
+    expect(frame(setup)).not.toContain('▣');
+    await openOutputs(setup);
+    expect(seams.toasts).toEqual([NO_OUTPUTS]);
+    expect(frame(setup)).not.toContain('Tab reference');
+  });
+});
+
+describe('/shown', () => {
+  test('/shown opens the same list as Alt+O', async () => {
+    const spies = newSpies();
+    const messages =
+      sessionLogOfV1Rows('session-1', 'session-1', [
+        message('m1', 'assistant', [toolPart('t1', 'show', 'completed', { url: 'http://localhost:3000/', title: 'Landing page' })]),
+      ] as never).threads[0]?.messages ?? [];
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const setup = await testRender(
+      <QueryClientProvider client={queryClient}>
+        <Composer session={fakeSession(spies)} projectId="project-1" sessionId="session-1" focused width={90} context={CONTEXT} onCommand={spies.onCommand} messages={messages} />
+      </QueryClientProvider>,
+      { width: 90, height: 30 },
+    );
+    active = setup;
+    await act(async () => {
+      await setup.mockInput.typeText('/shown', 1);
+    });
+    await act(async () => {
+      setup.mockInput.pressEnter();
+    });
+    await setup.renderOnce();
+    const text = frame(setup);
+    expect(text).toContain('1 output');
+    expect(text).toContain('◎ Landing page');
+    expect(text).toContain('Web page');
+    expect(spies.onCommand).not.toHaveBeenCalled();
   });
 });

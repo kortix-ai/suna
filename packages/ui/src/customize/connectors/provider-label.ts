@@ -1,37 +1,12 @@
-import type { AdminConnector } from '@kortix/sdk';
-
 /**
- * Forward-facing provider label. A managed connector names its partner
- * (Composio, Pipedream): it is never just an "App".
- *
- * Lives here, in the connectors feature folder, rather than in
- * `customize/sections/connectors-view.tsx` where it started. That module is
- * 5,219 lines and 50 components; exporting this plain function beside them took
- * the whole file off React Fast Refresh's hot path (every edit = full page
- * reload), and importing this six-line switch from it dragged the entire module
- * — plus `@pipedream/sdk/browser`, `HighlightedCode`, `PoliciesPanel` — into
- * the `/projects/[id]/connectors` route chunk.
- *
- * The legacy Customize surface imports it back from here. That direction is
- * deliberate: when `connectors-view.tsx` is retired, this module does not move.
+ * Forward-facing provider label, and whether a provider's accounts sign in
+ * through a managed partner. Both live in `@kortix/sdk`
+ * (`core/connectors/connector-status`), which the TUI reads too.
  */
-export function providerLabel(p: AdminConnector['provider']): string {
-  if (p === 'composio') return 'Composio';
-  if (p === 'pipedream') return 'Pipedream';
-  if (p === 'channel') return 'Channel';
-  if (p === 'computer') return 'Computer';
-  if (p === 'postman') return 'Postman';
-  // The catalogue's words for the same ways in (`install/way-kind.ts`).
-  if (p === 'openapi') return 'REST API';
-  if (p === 'graphql') return 'GraphQL';
-  if (p === 'http') return 'HTTP API';
-  return p.toUpperCase();
-}
-
-/** Providers whose accounts are authorized through the normalized Connect Link gateway. */
-export function isManagedConnectorProvider(p: AdminConnector['provider']): boolean {
-  return p === 'composio' || p === 'pipedream';
-}
+export {
+  connectorProviderLabel as providerLabel,
+  isManagedConnectorProvider,
+} from '@kortix/sdk';
 
 /** Whether a Composio connection has completed provider authorization. */
 export function composioConnectionIsAuthorized(

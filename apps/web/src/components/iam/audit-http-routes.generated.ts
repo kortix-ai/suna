@@ -692,6 +692,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|projects|:projectId|gateway|keys|:keyId",
   "GET|v1|projects|:projectId|gateway|logs",
   "GET|v1|projects|:projectId|gateway|logs|:logId",
+  "GET|v1|projects|:projectId|gateway|logs|facets",
   "GET|v1|projects|:projectId|gateway|overview",
   "POST|v1|projects|:projectId|gateway|playground",
   "POST|v1|projects|:projectId|gateway|providers|:providerId|verify",

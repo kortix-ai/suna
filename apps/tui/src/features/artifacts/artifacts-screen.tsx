@@ -38,6 +38,8 @@ export interface ArtifactsScreenProps {
   width: number;
   height: number;
   webBaseUrl: string;
+  /** An artifact id: the screen opens on its details. */
+  target?: string | null;
   onBack(): void;
   onOpenSession(sessionId: string): void;
   onToast(message: string, kind?: 'info' | 'error'): void;
@@ -59,11 +61,12 @@ export function ArtifactsScreen({
   width,
   height,
   webBaseUrl,
+  target = null,
   onBack,
   onOpenSession,
   onToast,
 }: ArtifactsScreenProps) {
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(target);
   const [busy, setBusy] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -176,6 +179,7 @@ export function ArtifactsScreen({
       }
       onOpenSession={onOpenSession}
       onBack={onBack}
+      initialId={target}
     />
   );
 }
