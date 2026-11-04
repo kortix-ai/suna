@@ -65,6 +65,33 @@ describe('subscriptionUsageFromHeaders', () => {
     expect(subscriptionUsageFromHeaders(new Headers({ 'content-type': 'application/json' }), NOW)).toBeNull();
     expect(subscriptionUsageFromHeaders(new Headers({ 'x-codex-primary-used-percent': 'garbage' }), NOW)).toBeNull();
   });
+
+  // A reset time `Date` cannot represent is no reset time: the window keeps its
+  // used_percent and the served answer stands, instead of a RangeError escaping
+  // the post-response usage read.
+  test('a ChatGPT reset time Date cannot represent is dropped, the window stays', () => {
+    const beyondDate = '1e15';
+    expect(subscriptionUsageFromHeaders(new Headers({
+      'x-codex-primary-used-percent': '41',
+      'x-codex-primary-window-minutes': '300',
+      'x-codex-primary-reset-at': beyondDate,
+      'x-codex-secondary-used-percent': '12',
+      'x-codex-secondary-window-minutes': '10080',
+      'x-codex-secondary-reset-after-seconds': beyondDate,
+    }), NOW)?.windows).toEqual([
+      { id: 'five_hour', window_minutes: 300, used_percent: 41, resets_at: null },
+      { id: 'weekly', window_minutes: 10080, used_percent: 12, resets_at: null },
+    ]);
+  });
+
+  test('a Claude reset time Date cannot represent is dropped, the window stays', () => {
+    expect(subscriptionUsageFromHeaders(new Headers({
+      'anthropic-ratelimit-unified-5h-utilization': '0.72',
+      'anthropic-ratelimit-unified-5h-reset': '1e15',
+    }), NOW)?.windows).toEqual([
+      { id: 'five_hour', window_minutes: 300, used_percent: 72, resets_at: null },
+    ]);
+  });
 });
 
 describe('createUsageReporter', () => {
