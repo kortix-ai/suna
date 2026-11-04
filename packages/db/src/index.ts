@@ -180,6 +180,8 @@ export {
   artifactCommentScreenshotObjects,
   artifactCommentWriteLimits,
   artifactEvents,
+  artifactDocState,
+  artifactDocUpdates,
   driveCommitAuthors,
   sessionSandboxIdentities,
   claudeSubscriptionLogins,

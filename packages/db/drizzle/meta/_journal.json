@@ -1513,6 +1513,27 @@
       "when": 1793753140870,
       "tag": "20261104004540_retention_erasures",
       "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1793789517106,
+      "tag": "20261104105157_artifact_doc_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1793796222904,
+      "tag": "20261104124342_artifact_doc_epoch",
+      "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1793798960188,
+      "tag": "20261104132920_artifact_doc_epoch_not_null",
+      "breakpoints": true
     }
   ]
 }

@@ -9085,6 +9085,62 @@ export const artifactEvents = kortixSchema.table('artifact_events', {
   check('artifact_events_actor_check', sql`${table.actorUserId} is null or ${table.actorSessionId} is null`),
 ]).enableRLS();
 
+/** Raw bytes: postgres-js reads and writes a `bytea` as a Buffer. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
+
+/**
+ * Live co-editing of a doc Artifact (KRTX-3670): one row per Artifact that has
+ * a shared Yjs document. The server keeps the Yjs bytes opaque. The Markdown
+ * file in Files stays the truth; one browser tab (the lease holder) writes it.
+ *   next_seq          the seq the next update gets
+ *   flushed_seq       every update with seq <= it is in the file
+ *   flushed_version   the entry version that flush produced (or the seed's)
+ *   flushed_markdown  the file text the doc was last made equal to
+ *   lease_*           the tab that writes the file: an opaque client id, its
+ *                     person, and when the lease ends (TTL 15 s)
+ *   epoch             new on every seed: a client that sees another epoch
+ *                     rebuilds its doc (a reset or the GC job deleted the state)
+ *   bytes_total       the stored update bytes; capped (413 doc_too_large)
+ *   compaction_failed_at  the last compaction that threw or would pass the
+ *                     page limit; none again for 10 min
+ */
+export const artifactDocState = kortixSchema.table('artifact_doc_state', {
+  artifactId: uuid('artifact_id').primaryKey(),
+  epoch: uuid('epoch').defaultRandom().notNull(),
+  bytesTotal: bigint('bytes_total', { mode: 'number' }).default(0).notNull(),
+  compactionFailedAt: timestamp('compaction_failed_at', { withTimezone: true }),
+  nextSeq: bigint('next_seq', { mode: 'number' }).default(1).notNull(),
+  flushedSeq: bigint('flushed_seq', { mode: 'number' }).default(0).notNull(),
+  flushedVersion: text('flushed_version'),
+  flushedMarkdown: text('flushed_markdown').notNull(),
+  leaseHolder: text('lease_holder'),
+  leaseUserId: uuid('lease_user_id'),
+  leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'artifact_doc_state_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
+  check('artifact_doc_state_seq_check', sql`${table.flushedSeq} >= 0 and ${table.flushedSeq} < ${table.nextSeq}`),
+  check('artifact_doc_state_lease_holder_check', sql`${table.leaseHolder} is null or char_length(${table.leaseHolder}) between 1 and 64`),
+]).enableRLS();
+
+/**
+ * The Yjs updates of a co-edited doc, one row per push, in `seq` order.
+ * Compaction merges the oldest rows into one row that keeps the highest of
+ * their seqs, so a client that asks for `seq > k` still gets every update it
+ * lacks. The column is `bytes`, not `update` (a reserved word in SQL).
+ */
+export const artifactDocUpdates = kortixSchema.table('artifact_doc_updates', {
+  artifactId: uuid('artifact_id').notNull(),
+  seq: bigint('seq', { mode: 'number' }).notNull(),
+  bytes: bytea('bytes').notNull(),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.artifactId, table.seq] }),
+  foreignKey({ name: 'artifact_doc_updates_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
+]).enableRLS();
+
 export const driveCommitAuthors = kortixSchema.table('drive_commit_authors', {
   driveId: uuid('drive_id').notNull(),
   commitId: text('commit_id').notNull(),
