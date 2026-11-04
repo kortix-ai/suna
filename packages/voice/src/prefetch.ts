@@ -108,6 +108,7 @@ async function race(q: string): Promise<string> {
 async function serper(q: string, signal: AbortSignal): Promise<string> {
   const to = routed('serper', '/search') ?? (process.env.SERPER_API_KEY ? { url: 'https://google.serper.dev/search', headers: { 'X-API-KEY': process.env.SERPER_API_KEY } } : undefined)
   if (!to) return ''
+  //codeql[js/file-access-to-http] Non-exploit, by design: the web-search call goes to the session's own Kortix router (KORTIX_API_URL config) or the fixed https://google.serper.dev host; the spoken query is body text, never the request target.
   const res = await fetch(to.url, { method: 'POST', signal, headers: { ...to.headers, 'content-type': 'application/json' }, body: JSON.stringify({ q, num: 5 }) })
   if (res.ok) chargeSearch('serper') // answered: billed, even when another provider wins the race
   type R = { answerBox?: { answer?: string; snippet?: string; title?: string }; knowledgeGraph?: { title?: string; description?: string }; organic?: { title: string; link: string; snippet?: string; date?: string }[] }
@@ -128,6 +129,7 @@ async function tavily(q: string, signal: AbortSignal): Promise<string> {
     headers: { ...to.headers, 'content-type': 'application/json' },
     // Basic depth, no answer: Tavily's own answer added ~1 s and was right 52% of the time, the agent reads the
     // snippets better; "fast" and "ultra-fast" (0.4–0.7 s) had the fact 29–33% of the time (n = 21, measured).
+    //codeql[js/file-access-to-http] Non-exploit, by design: the web-search call goes to the session's own Kortix router (KORTIX_API_URL config) or the fixed https://api.tavily.com host; the spoken query is body text, never the request target.
     body: JSON.stringify({ query: q, search_depth: 'basic', max_results: 5 }),
   })
   if (res.ok) chargeSearch('tavily')
@@ -138,6 +140,7 @@ async function tavily(q: string, signal: AbortSignal): Promise<string> {
 async function firecrawl(q: string, signal: AbortSignal): Promise<string> {
   const to = routed('firecrawl', '/v2/search') ?? (process.env.FIRECRAWL_API_KEY ? { url: 'https://api.firecrawl.dev/v2/search', headers: { Authorization: `Bearer ${process.env.FIRECRAWL_API_KEY}` } } : undefined)
   if (!to) return ''
+  //codeql[js/file-access-to-http] Non-exploit, by design: the web-search call goes to the session's own Kortix router (KORTIX_API_URL config) or the fixed https://api.firecrawl.dev host; the spoken query is body text, never the request target.
   const res = await fetch(to.url, { method: 'POST', signal, headers: { ...to.headers, 'content-type': 'application/json' }, body: JSON.stringify({ query: q, limit: 5 }) })
   if (res.ok) chargeSearch('firecrawl')
   const web = ((await res.json()) as { data?: { web?: { title: string; url: string; description?: string }[] } }).data?.web ?? []
