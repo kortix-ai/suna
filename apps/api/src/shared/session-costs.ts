@@ -2,6 +2,7 @@ import { llmValueFields, llmValueBasis } from './llm-value';
 import { numberValue, isoValue, type NumericValue, type TemporalValue } from './cost-values';
 import {
   gatewayRequestLogs,
+  gatewaySessionDaily,
   projectSessions,
   projects,
   sandboxComputeSessions,
@@ -889,6 +890,136 @@ export async function getSessionCostRecord(input: {
   };
 }
 
+/**
+ * `YYYY-MM-DD` for a Date's UTC calendar day.
+ */
+function utcDayString(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/** One settled-day rollup aggregate: same shape as a raw llm aggregate row. */
+interface GatewayLlmAggregateRow {
+  sessionId: string | null;
+  requests: NumericValue;
+  errors: NumericValue;
+  estimated_usage_value: NumericValue;
+  priced_requests: NumericValue;
+  unpriced_requests: NumericValue;
+  cost: NumericValue;
+  tokens: NumericValue;
+  models: string[];
+  lastAt: TemporalValue;
+}
+
+function addMoney(left: NumericValue, right: NumericValue): number {
+  return Number((numberValue(left) + numberValue(right)).toFixed(10));
+}
+
+/**
+ * Add the settled-day rollup aggregates to the raw-window ones, per session.
+ * `models` arrives as the distinct model list from each half (the rollup's
+ * requested_model grain), so the merged distinct count is the union — the raw
+ * query's count(distinct) over the whole window.
+ */
+function mergeSettledAndLiveLlmRows(
+  rollupRows: GatewayLlmAggregateRow[],
+  liveRows: GatewayLlmAggregateRow[],
+): Array<Omit<LegacyLlmAggregateRow, 'models'> & { models: number; estimated_usage_value: number | null; priced_requests: number; unpriced_requests: number }> {
+  const bySession = new Map<
+    string,
+    {
+      requests: number;
+      errors: number;
+      cost: number;
+      tokens: number;
+      lastAt: TemporalValue;
+      estimatedUsageValue: number | null;
+      pricedRequests: number;
+      unpricedRequests: number;
+      models: Set<string>;
+    }
+  >();
+  const add = (row: GatewayLlmAggregateRow): void => {
+    if (!row.sessionId) return;
+    const existing = bySession.get(row.sessionId);
+    if (!existing) {
+      bySession.set(row.sessionId, {
+        requests: numberValue(row.requests),
+        errors: numberValue(row.errors),
+        cost: numberValue(row.cost),
+        tokens: numberValue(row.tokens),
+        lastAt: row.lastAt,
+        estimatedUsageValue:
+          numberValue(row.priced_requests) > 0 ? numberValue(row.estimated_usage_value) : null,
+        pricedRequests: numberValue(row.priced_requests),
+        unpricedRequests: numberValue(row.unpriced_requests),
+        models: new Set(row.models),
+      });
+      return;
+    }
+    existing.requests += numberValue(row.requests);
+    existing.errors += numberValue(row.errors);
+    existing.cost = addMoney(existing.cost, row.cost);
+    existing.tokens += numberValue(row.tokens);
+    existing.lastAt = latestIsoValue(existing.lastAt, row.lastAt) ?? existing.lastAt;
+    if (numberValue(row.priced_requests) > 0) {
+      existing.estimatedUsageValue = addMoney(
+        existing.estimatedUsageValue ?? 0,
+        row.estimated_usage_value,
+      );
+    }
+    existing.pricedRequests += numberValue(row.priced_requests);
+    existing.unpricedRequests += numberValue(row.unpriced_requests);
+    for (const model of row.models) existing.models.add(model);
+  };
+  for (const row of rollupRows) add(row);
+  for (const row of liveRows) add(row);
+  return [...bySession].map(([sessionId, row]) => ({
+    sessionId,
+    requests: row.requests,
+    errors: row.errors,
+    cost: row.cost,
+    tokens: row.tokens,
+    models: row.models.size,
+    lastAt: row.lastAt,
+    estimated_usage_value: row.estimatedUsageValue,
+    priced_requests: row.pricedRequests,
+    unpriced_requests: row.unpricedRequests,
+  }));
+}
+
+/**
+ * The window's first UTC day and the first day in the window whose
+ * gateway_session_daily rollup is not settled yet, from ONE now(): the
+ * gateway-spend-backfill worker recomputes each closed UTC day and marks it
+ * in gateway_session_days oldest-first, so every day before the first unmarked
+ * one is covered by the rollup. Both aggregates below consume these two DATES
+ * as frozen literals, so a midnight crossing between statements can never
+ * split a day between the rollup half and the raw half. `first_unsettled` is
+ * non-null while today is in the window (today is never settled); a null
+ * means nothing is settled — read everything raw.
+ */
+async function gatewayRollupCoverage(
+  days: number,
+): Promise<{ winDay: string; firstUnsettled: string | null }> {
+  const [probe] = await db.execute<{ win_day: string; first_unsettled: string | null }>(sql`
+    select
+      ((now() - make_interval(days => ${days})) at time zone 'UTC')::date::text as win_day,
+      (select min(d)::date::text
+       from generate_series(
+         ((now() - make_interval(days => ${days})) at time zone 'UTC')::date::timestamp,
+         (now() at time zone 'UTC')::date::timestamp,
+         interval '1 day'
+       ) as d
+       where not exists (
+         select 1 from kortix.gateway_session_days m where m.day = d::date
+       )) as first_unsettled`);
+  return {
+    winDay: probe?.win_day ?? utcDayString(new Date(Date.now() - days * 86_400_000)),
+    firstUnsettled: probe?.first_unsettled ?? null,
+  };
+}
+
 export async function listProjectGatewaySessionSpend(input: {
   accountId: string;
   projectId: string;
@@ -896,7 +1027,49 @@ export async function listProjectGatewaySessionSpend(input: {
   /** The caller's session filter (`ProjectReadView.where`); absent reads every session. */
   sessionsVisibleTo?: (sessionColumn: AnyColumn) => SQL | undefined;
 }): Promise<{ window_days: number; sessions: LegacyGatewaySessionRow[] }> {
-  const [llmRows, computeRows] = await Promise.all([
+  // The settled-day rollup is what keeps this route under its deadline
+  // (KRTX-4021): without it the per-session aggregate scans every raw
+  // gateway_request_logs row in the window. The rollup covers the marked days
+  // (win_day, first_unsettled); the raw query covers the rest — the window's
+  // first day and everything unsettled — so the two halves add up to exactly
+  // the old raw scan. Nothing marked yet → firstUnsettled = winDay → the raw
+  // query reads the whole window, today's behavior, and the rollup query is
+  // skipped.
+  const { winDay, firstUnsettled } = await gatewayRollupCoverage(input.days);
+  // The rollup covers the days strictly after the window's first day and
+  // strictly before first_unsettled: non-empty only when first_unsettled is at
+  // least two days past win_day. An unsettled day is NEVER answered from the
+  // rollup — its rows are not written yet.
+  const dayAfterWin = utcDayString(new Date(new Date(`${winDay}T00:00:00.000Z`).getTime() + 86_400_000));
+  const rollupRange = firstUnsettled !== null && firstUnsettled > dayAfterWin;
+  const [rollupRows, llmRows, computeRows] = await Promise.all([
+    rollupRange
+      ? db
+          .select({
+            sessionId: gatewaySessionDaily.sessionId,
+            requests: sql<number>`coalesce(sum(${gatewaySessionDaily.requests}), 0)::int`,
+            errors: sql<number>`coalesce(sum(${gatewaySessionDaily.errors}), 0)::int`,
+            estimated_usage_value:
+              sql<number | null>`case when sum(${gatewaySessionDaily.valueRows}) > 0
+                then sum(${gatewaySessionDaily.value})::float8 end`,
+            priced_requests: sql<number>`coalesce(sum(${gatewaySessionDaily.valueRows}), 0)::int`,
+            unpriced_requests: sql<number>`coalesce(sum(${gatewaySessionDaily.unpricedRows}), 0)::int`,
+            cost: sql<number>`coalesce(sum(${gatewaySessionDaily.totalCost}), 0)::float8`,
+            tokens: sql<number>`coalesce(sum(${gatewaySessionDaily.inputTokens} + ${gatewaySessionDaily.outputTokens}), 0)::float8`,
+            models: sql<string[]>`coalesce(array_agg(distinct ${gatewaySessionDaily.requestedModel}), '{}')`,
+            lastAt: sql<Date | null>`max(${gatewaySessionDaily.lastAt})`,
+          })
+          .from(gatewaySessionDaily)
+          .where(
+            and(
+              eq(gatewaySessionDaily.projectId, input.projectId),
+              sql`${gatewaySessionDaily.day} > ${winDay}::date`,
+              sql`${gatewaySessionDaily.day} < ${firstUnsettled}::date`,
+              input.sessionsVisibleTo?.(gatewaySessionDaily.sessionId),
+            ),
+          )
+          .groupBy(gatewaySessionDaily.sessionId)
+      : Promise.resolve([] as GatewayLlmAggregateRow[]),
     db
       .select({
         sessionId: gatewayRequestLogs.sessionId,
@@ -905,7 +1078,7 @@ export async function listProjectGatewaySessionSpend(input: {
         ...llmValueFields,
         cost: totalSpendSql,
         tokens: sql<number>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)::float8`,
-        models: sql<number>`count(distinct ${gatewayRequestLogs.requestedModel})::int`,
+        models: sql<string[]>`coalesce(array_agg(distinct ${gatewayRequestLogs.requestedModel}), '{}')`,
         lastAt: sql<Date | null>`max(${gatewayRequestLogs.createdAt})`,
       })
       .from(gatewayRequestLogs)
@@ -915,6 +1088,18 @@ export async function listProjectGatewaySessionSpend(input: {
           eq(gatewayRequestLogs.projectId, input.projectId),
           sql`${gatewayRequestLogs.sessionId} is not null`,
           sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${input.days})`,
+          // The days the rollup covers: strictly after the window's first day
+          // and strictly before the first unsettled day. Dates, from the frozen
+          // coverage probe — a midnight crossing between statements cannot move
+          // a row between the halves.
+          ...(rollupRange
+            ? [
+                sql`(
+                  ${gatewayRequestLogs.createdAt} < (${dayAfterWin}::date)::timestamp at time zone 'UTC'
+                  or ${gatewayRequestLogs.createdAt} >= (${firstUnsettled}::date)::timestamp at time zone 'UTC'
+                )`,
+              ]
+            : []),
           input.sessionsVisibleTo?.(gatewayRequestLogs.sessionId),
         ),
       )
@@ -941,10 +1126,11 @@ export async function listProjectGatewaySessionSpend(input: {
       .groupBy(sandboxComputeSessions.sessionId),
   ]);
 
-  const values = new Map(llmRows.map((row) => [row.sessionId, row]));
+  const llmAggregateRows = mergeSettledAndLiveLlmRows(rollupRows, llmRows);
+  const values = new Map(llmAggregateRows.map((row) => [row.sessionId, row]));
   return {
     window_days: input.days,
-    sessions: mergeLegacyGatewaySessionRows(llmRows, computeRows).map((session) => {
+    sessions: mergeLegacyGatewaySessionRows(llmAggregateRows, computeRows).map((session) => {
       const value = values.get(session.session_id);
       return {
         ...session,
