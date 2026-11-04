@@ -41,6 +41,12 @@ function install() {
   // offer first, so the next press reports a new gesture even with nothing offered at that moment.
   let heard = false;
   let capture: { request: number; revision: number; abort: AbortController } | null = null;
+  // Live presence: the parent asked for the pointer. Element → its number in the current layout.
+  let tracking = false;
+  let elementIndex = new WeakMap<Element, number>();
+  let pointerSent = '';
+  let pointerFrame = 0;
+  let pendingPointer: PointerEvent | null = null;
   const scroll = () => ({ x: Math.max(0, window.scrollX), y: Math.max(0, window.scrollY) });
   const send = (message: ArtifactAnnotationFrameMessage) => {
     if (parseArtifactAnnotationFrameMessage(message)) window.parent.postMessage(message, '*');
@@ -106,6 +112,7 @@ function install() {
   const report = () => {
     timer = undefined;
     inventory = annotationInventory(document); revision = revision === 2_147_483_647 ? 1 : revision + 1;
+    elementIndex = new WeakMap(inventory.elementNodes.map((node, n) => [node, n]));
     dirty = false; drawn = []; marks.replaceChildren(); hover.hidden = true; drag = null;
     const viewport = { width: window.innerWidth, height: window.innerHeight, scroll: scroll() };
     const chunks = annotationLayoutChunks(inventory, revision, viewport);
@@ -133,6 +140,30 @@ function install() {
     return -1;
   };
   const point = (event: PointerEvent) => ({ x: event.clientX + window.scrollX, y: event.clientY + window.scrollY });
+  // Live presence: the pointer as the nearest layout element under it and fractions of that
+  // element's box, at most once a frame. The parent maps the element to its selector.
+  const fraction = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 1000) / 1000;
+  const pointer = (at: { n: number; x: number; y: number } | null) => {
+    const key = at ? `${revision}:${at.n}:${at.x}:${at.y}` : '';
+    if (key === pointerSent) return;
+    pointerSent = key;
+    send({ kortix: 'annotate', v: 1, type: 'pointer', revision, at });
+  };
+  const reportPointer = () => {
+    pointerFrame = 0;
+    const event = pendingPointer; pendingPointer = null;
+    // A layout is on its way: the element numbers are stale, so keep the last place.
+    if (!tracking || !event || dirty || !inventory.complete) return;
+    for (let node = event.target instanceof Element ? event.target : null; node; node = node.parentElement) {
+      const n = elementIndex.get(node);
+      if (n === undefined) continue;
+      const box = node.getBoundingClientRect();
+      if (box.width <= 0 || box.height <= 0) break;
+      pointer({ n, x: fraction((event.clientX - box.left) / box.width), y: fraction((event.clientY - box.top) / box.height) });
+      return;
+    }
+    pointer(null);
+  };
   const stop = (event: Event) => { event.preventDefault(); event.stopImmediatePropagation(); };
   const selection = (event: Event) => {
     if (!owned(event)) offer();
@@ -170,6 +201,10 @@ function install() {
       mode = message.mode; hover.hidden = true; drag = null;
     }
     else if (message.type === 'request_layout') schedule();
+    else if (message.type === 'track') {
+      tracking = message.pointer;
+      if (!tracking) { pendingPointer = null; pointer(null); }
+    }
     else if (message.type === "cancel_capture") {
       if (capture?.request === message.request)
         capture.abort.abort("cancelled");
@@ -276,6 +311,15 @@ function install() {
     send({ kortix: 'annotate', v: 1, type: 'candidate', revision, anchor });
   }, true);
   document.addEventListener('pointercancel', () => { drag = null; hover.hidden = true; }, true);
+  document.addEventListener('pointermove', event => {
+    if (!tracking || event.pointerType === 'touch' || owned(event)) return;
+    pendingPointer = event;
+    if (!pointerFrame) pointerFrame = requestAnimationFrame(reportPointer);
+  }, { capture: true, passive: true });
+  document.documentElement.addEventListener('pointerleave', () => {
+    pendingPointer = null;
+    if (tracking) pointer(null);
+  });
   document.addEventListener('click', event => { if (mode === 'comment' && !owned(event)) stop(event); }, true);
   window.addEventListener('scroll', moved, { passive: true });
   window.addEventListener('resize', moved, { passive: true });

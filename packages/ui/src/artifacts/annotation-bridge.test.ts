@@ -789,3 +789,46 @@ test("page inventory includes bounded document geometry for a whole-area drawing
     snippet: "Small child.",
   });
 });
+
+test("live pointer: reported only while the parent tracks it, as an element number and fractions", async () => {
+  const page = frame('<p id="forecast">Forecast</p>');
+  await page.flush();
+  const paragraph = page.window.document.querySelector("p")!;
+  const move = (clientX: number, clientY: number) =>
+    paragraph.dispatchEvent(
+      new page.window.PointerEvent("pointermove", {
+        bubbles: true,
+        clientX,
+        clientY,
+        pointerType: "mouse",
+      }),
+    );
+  move(110, 55);
+  await page.flush();
+  expect(page.messages("pointer")).toHaveLength(0);
+  page.send({ type: "track", pointer: true });
+  move(110, 55);
+  await page.flush();
+  const layout = page.messages("layout").at(-1);
+  const n = layout.elements.find(
+    (element: { selector: string }) => element.selector === "#forecast",
+  ).n;
+  // The box is (10, 30, 400 × 100): the pointer is a quarter across and a quarter down.
+  expect(page.messages("pointer").at(-1)).toEqual({
+    ...envelope,
+    type: "pointer",
+    revision: layout.revision,
+    at: { n, x: 0.25, y: 0.25 },
+  });
+  // The same place twice is one message.
+  move(110, 55);
+  await page.flush();
+  expect(page.messages("pointer")).toHaveLength(1);
+  page.send({ type: "track", pointer: false });
+  expect(page.messages("pointer").at(-1).at).toBeNull();
+  move(300, 100);
+  await page.flush();
+  expect(page.messages("pointer")).toHaveLength(2);
+  for (const message of page.sent)
+    expect(parseArtifactAnnotationFrameMessage(message)).not.toBeNull();
+});
