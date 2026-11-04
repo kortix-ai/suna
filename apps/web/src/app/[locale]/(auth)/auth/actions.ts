@@ -13,11 +13,13 @@ import {
 } from '@/lib/auth/return-url';
 import { clearAuthBounceCookie } from '@/lib/auth/sign-out-actions';
 import {
+  AUTH_EMAIL_COOLDOWN_SECONDS,
   type EmailFlowMode,
   SIGNUPS_CLOSED_MESSAGE,
   SSO_REQUIRED_MESSAGE,
   authRateLimitCopy,
   resolveEmailFlowMode,
+  resolveEmailRetryAfter,
 } from '@/lib/auth/unified-auth-flow';
 import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { getServerPublicEnv } from '@/lib/public-env-server';
@@ -127,8 +129,14 @@ function emailRedirectUrl({
  * The visitor's IP is forwarded so the API's per-IP rate limit lands on the
  * actual client rather than pooling every visitor into the web server's
  * single outbound address.
+ *
+ * `emailRetryAfterSeconds` is set when an auth email went to the address less
+ * than a minute ago: the send actions then answer "already sent" and do not ask
+ * GoTrue for another email (apps/api/src/auth/email-cooldown.ts).
  */
-async function checkEmailFlowMode(email: string): Promise<EmailFlowMode> {
+async function checkEmailFlow(
+  email: string,
+): Promise<{ mode: EmailFlowMode; emailRetryAfterSeconds: number | null }> {
   try {
     const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
     const requestHeaders = await headers();
@@ -140,12 +148,16 @@ async function checkEmailFlowMode(email: string): Promise<EmailFlowMode> {
       },
       signal: AbortSignal.timeout(4_000),
     });
-    return resolveEmailFlowMode(body);
+    return { mode: resolveEmailFlowMode(body), emailRetryAfterSeconds: resolveEmailRetryAfter(body) };
   } catch {
     // Fail open — 'unknown' routes through the adaptive signup action, which
     // signs in existing users and registers new ones.
-    return 'unknown';
+    return { mode: 'unknown', emailRetryAfterSeconds: null };
   }
+}
+
+async function checkEmailFlowMode(email: string): Promise<EmailFlowMode> {
+  return (await checkEmailFlow(email)).mode;
 }
 
 /**
@@ -180,7 +192,7 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
 
   const normalizedEmail = email.trim().toLowerCase();
 
-  const flowMode = await checkEmailFlowMode(normalizedEmail);
+  const { mode: flowMode, emailRetryAfterSeconds } = await checkEmailFlow(normalizedEmail);
   if (flowMode === 'closed') {
     return { code: 'signups_closed', message: SIGNUPS_CLOSED_MESSAGE };
   }
@@ -216,6 +228,23 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
     acceptedTerms,
     mobileState,
   });
+
+  // An email went to this address less than a minute ago: its link and code
+  // still work, so answer with the link step and the time left instead of
+  // mailing the address again. No GoTrue call means no new PKCE verifier, so
+  // the one this browser already holds still matches the mailed link.
+  if (emailRetryAfterSeconds) {
+    return {
+      success: true,
+      alreadySent: true,
+      message: tI18nComplete.raw('authEmailAlreadySent'),
+      email: normalizedEmail,
+      redirectTo: returnUrl,
+      codeVerifier: null,
+      mode: flowMode,
+      retryAfterSeconds: emailRetryAfterSeconds,
+    };
+  }
 
   // Resolve presentation before the irreversible send; it must not turn a
   // delivered email into a failed submit.
@@ -273,6 +302,7 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
     // confirmation ("Confirm your email"), an existing one the sign-in link.
     // The link step names the email the mailbox actually receives (KRTX-2195).
     mode: flowMode,
+    retryAfterSeconds: AUTH_EMAIL_COOLDOWN_SECONDS,
   };
 }
 
@@ -493,7 +523,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   // address while signups are closed never reaches GoTrue, and an SSO-enforced
   // domain never gets a password identity created. Existing accounts resolve
   // to 'signin' and pass straight through to the sign-in attempt.
-  const flowMode = await checkEmailFlowMode(email);
+  const { mode: flowMode, emailRetryAfterSeconds } = await checkEmailFlow(email);
   if (flowMode === 'closed') {
     return { code: 'signups_closed', message: SIGNUPS_CLOSED_MESSAGE };
   }
@@ -510,21 +540,28 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     mobileState,
   });
 
-  const { error: signUpError } = await settleWithin(
-    supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo },
-    }),
-    AUTH_UPSTREAM_TIMEOUT_MS,
-    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
-  );
+  // GoTrue mails the confirmation again on every signUp for an unconfirmed
+  // address. Inside the cooldown the account already exists, so skip signUp:
+  // the sign-in below still lets a confirmed account in, and an unconfirmed one
+  // gets "already sent" instead of one more email per click.
+  const { error: signUpError } = emailRetryAfterSeconds
+    ? { error: null }
+    : await settleWithin(
+        supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo },
+        }),
+        AUTH_UPSTREAM_TIMEOUT_MS,
+        () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
+      );
 
   const alreadyExists =
-    signUpError &&
-    (signUpError.message?.toLowerCase().includes('already registered') ||
-      signUpError.message?.toLowerCase().includes('already exists') ||
-      signUpError.status === 422);
+    !!emailRetryAfterSeconds ||
+    (signUpError &&
+      (signUpError.message?.toLowerCase().includes('already registered') ||
+        signUpError.message?.toLowerCase().includes('already exists') ||
+        signUpError.status === 422));
 
   if (signUpError && !alreadyExists) {
     return authFailure(signUpError, 'Could not create account', tI18nComplete);
@@ -549,9 +586,13 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     ) {
       return {
         success: true,
-        message: tI18nComplete.raw('textac0a6f3b5c61'),
+        message: tI18nComplete.raw(
+          emailRetryAfterSeconds ? 'authEmailAlreadySent' : 'textac0a6f3b5c61',
+        ),
         email,
         requiresEmailConfirmation: true,
+        alreadySent: !!emailRetryAfterSeconds,
+        retryAfterSeconds: emailRetryAfterSeconds ?? AUTH_EMAIL_COOLDOWN_SECONDS,
       };
     }
     if (alreadyExists) {

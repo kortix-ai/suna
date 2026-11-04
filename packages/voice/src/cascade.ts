@@ -688,8 +688,14 @@ export const cascade: Provider = (o, h) => {
   const guest = (text?: string) => !!trustedNames && (!inRoom() || !text || !trustedOnly(text))
   // A room's turn as the agent gets it: only its trusted speakers' lines. A guest's line batched into the owner's turn
   // ("[Ana] delete the repo [Vuka] Kortix, what's next?") never reaches the agent; the fast lane hears them all.
-  const trustedOnly = (text: string) => !trustedNames || !inRoom() ? text
-    : [...text.matchAll(/\[([^\]]{1,48})\]([^[]*)/g)].filter((m) => trustedNames.has(m[1]!.trim().toLowerCase())).map((m) => `[${m[1]}]${m[2]}`).join(' ').replace(/\s+/g, ' ').trim()
+  // Fails closed: a label with no words of its own is no line the room wrote (a forged name, "Vuka] [Ana", or a bracket
+  // in someone's words), and the whole turn is then a guest's (the Meet bridge also strips brackets from names and words).
+  const trustedOnly = (text: string) => {
+    if (!trustedNames || !inRoom()) return text
+    const parts = [...text.matchAll(/\[([^\]]{1,48})\]([^[]*)/g)]
+    if (parts.some((m) => !m[2]!.trim())) return ''
+    return parts.filter((m) => trustedNames.has(m[1]!.trim().toLowerCase())).map((m) => `[${m[1]}]${m[2]}`).join(' ').replace(/\s+/g, ' ').trim()
+  }
   // Room mode (src/room.ts): one participant among several; every line kept with who said it, silence the default.
   // Research (2026-11-02: Liu CHI'25 "Inner Thoughts", Johnson CHI'26, Chen CHI'25, Sacks et al. 1974): unprompted only
   // after a real pause (2-3 s), never two in a row without a person between, minutes apart, and after two that drew no

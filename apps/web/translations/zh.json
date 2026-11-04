@@ -2950,7 +2950,8 @@
         "notReceived": "未收到链接？",
         "confirmNotReceived": "未收到确认邮件？",
         "resendIn": "{seconds} 秒后重新发送",
-        "resend": "重新发送"
+        "resend": "重新发送",
+        "checkSpam": "没有收到？请检查垃圾邮件文件夹。"
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21191,8 @@
       "text507c24b6792d": "变更请求合并到 {branch} 时，{agent} 会执行你的指令。",
       "text05ee1d6181f3": "变更请求合并时，{agent} 会执行你的指令。",
       "texte608495c45ce": "合并到 {branch}",
-      "text80ca527b0d55": "已创建变更请求触发器"
+      "text80ca527b0d55": "已创建变更请求触发器",
+      "authEmailAlreadySent": "我们在一分钟内已发送过这封邮件。请先检查收件箱和垃圾邮件文件夹，再申请重新发送。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

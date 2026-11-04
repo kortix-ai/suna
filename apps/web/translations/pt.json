@@ -2950,7 +2950,8 @@
         "notReceived": "Não recebeu o link?",
         "confirmNotReceived": "Não recebeu o e-mail de confirmação?",
         "resendIn": "Reenviar em {seconds}",
-        "resend": "Reenviar"
+        "resend": "Reenviar",
+        "checkSpam": "Não está lá? Verifique a pasta de spam ou lixo eletrónico."
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21191,8 @@
       "text507c24b6792d": "Quando uma solicitação de mudança é mesclada em {branch}, {agent} executa sua instrução.",
       "text05ee1d6181f3": "Quando uma solicitação de mudança é mesclada, {agent} executa sua instrução.",
       "texte608495c45ce": "Mesclada em {branch}",
-      "text80ca527b0d55": "Gatilho de solicitação de mudança criado"
+      "text80ca527b0d55": "Gatilho de solicitação de mudança criado",
+      "authEmailAlreadySent": "Enviamos este e-mail há menos de um minuto. Verifique a sua caixa de entrada e a pasta de spam antes de pedir outro."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
