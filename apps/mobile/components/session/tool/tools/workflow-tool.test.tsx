@@ -20,7 +20,7 @@ mock.module('react-native', () => ({
 mock.module('react-native-svg', () => ({ default: host('svg'), Circle: host('circle'), Path: host('path'), Rect: host('rect') }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@/components/ui/icon', () => ({ Icon: none }));
-mock.module('@/lib/icons', () => ({ TreeStructureIcon: none }));
+mock.module('@/lib/icons', () => ({ CaretRightIcon: none, TreeStructureIcon: none }));
 mock.module('@/lib/projects/hooks', () => ({ useProjectSession: () => ({ data: undefined }) }));
 mock.module('@/lib/session/session-list', () => ({ sessionDisplayStatus: () => 'running' }));
 mock.module('@/lib/session/user-message', () => ({ webSpace: (n: number) => n * 4 }));
@@ -98,17 +98,20 @@ test('workflow and runtime aliases resolve to the workflow card', () => {
   for (const name of ['workflow', 'oc-workflow', 'mcp/workflow']) expect(ToolRegistry.get(name)).toBe(WorkflowTool);
 });
 
-test('a run is one card: ring, title, phase line, rows under their phase, the phase not started as one row', async () => {
+test('a run is one card: ring, title, phase line, one closed row per phase that opens onto its agents', async () => {
   await act(async () => {
     tree = create(<WorkflowTool call={call(RUN)} />);
   });
   const text = texts(tree!);
   expect(text).toContain('Kortix growth marketing deep dive');
   expect(text).toContain('Investigate 1 of 2 done');
-  expect(text).toContain('Investigate');
-  expect(text).toContain('Customers and demand');
   expect(text).toContain('Build strategy');
   expect(text).toContain('Waits for 1 more');
+  // Every phase starts closed; a tap opens it onto its agents.
+  expect(text).not.toContain('Customers and demand');
+  const phase = tree!.root.findAll((node) => node.props?.accessibilityLabel === 'Investigate, 1 of 2 done')[0]!;
+  await act(async () => phase.props.onPress());
+  expect(texts(tree!)).toContain('Customers and demand');
   // Never a fold: no disclosure row draws the run.
   expect(tree!.root.findAllByType('details' as never)).toHaveLength(0);
   // A row with a session opens it.
@@ -138,7 +141,7 @@ test('a call that failed says so under the card, even when its last run document
   await act(async () => {
     tree = create(<WorkflowTool call={failed(RUN)} />);
   });
-  expect(texts(tree!)).toContain('Customers and demand');
+  expect(texts(tree!)).toContain('Investigate');
   expect(sentences(tree!)).toEqual(['The workflow stopped before it finished.']);
   // A background run with no rows yet: the link line, and the failure under it.
   await act(async () => tree?.unmount());

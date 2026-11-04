@@ -119,7 +119,7 @@ describe('WorkflowTool — keyboard and folds', () => {
     await unmount();
   });
 
-  test('a phase header is a plain line: its agents stay listed, nothing folds', async () => {
+  test('a phase opens in place onto its agents, nested on the trunk, and closes again', async () => {
     const agents = [
       { id: 'a1', label: 'Read docs', phase: 'Research', status: 'done', sessionId: 'ses_1' },
       { id: 'a2', label: 'Draft', phase: 'Write', status: 'running', sessionId: 'ses_2' },
@@ -127,9 +127,15 @@ describe('WorkflowTool — keyboard and folds', () => {
     const { host, unmount } = await mount(
       runDoc(agents, { phases: [{ title: 'Research', status: 'done' }, { title: 'Write', status: 'running' }] }),
     );
-    expect(host.querySelector('[aria-expanded]')).toBeNull();
-    // Each agent under its phase, in phase order.
-    expect(rowLabels(host)).toEqual(['Read docs, Done', 'Draft, Running']);
+    // Every phase starts closed: no agent row yet.
+    expect(rowLabels(host)).toEqual([]);
+    const write = host.querySelector<HTMLElement>('[data-workflow-phase="Write"] button[aria-expanded]')!;
+    expect(write.getAttribute('aria-expanded')).toBe('false');
+    await act(async () => write.click());
+    expect(write.getAttribute('aria-expanded')).toBe('true');
+    expect(rowLabels(host)).toEqual(['Draft, Running']);
+    await act(async () => write.click());
+    expect(rowLabels(host)).toEqual([]);
     await unmount();
   });
 

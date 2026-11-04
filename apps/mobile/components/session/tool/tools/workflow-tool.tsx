@@ -19,7 +19,7 @@ import { useContext, useEffect, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { parseWorkflowResult, parseWorkflowRun, type WorkflowRun } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
-import { TreeStructureIcon } from '@/lib/icons';
+import { CaretRightIcon, TreeStructureIcon } from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
 import { useProjectSession } from '@/lib/projects/hooks';
 import { agentSessionDisplay } from '@/lib/session/tools/agents-task';
@@ -36,7 +36,7 @@ import { ConnectorHandoffContext } from '../shared/connector-handoff-context';
 import { BasicTool, partError, partMetadata, partOutput, partStatus, ToolOutputFallback, useToolNavigation } from '../shared/infrastructure';
 import { OutputBlock } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
-import { AgentCard, DashedRule, RunProgressRing } from '../shared/agent-surface';
+import { AgentCard, RunProgressRing } from '../shared/agent-surface';
 import { AgentFailure } from '../shared/message-row';
 import { FONT_MEDIUM, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
@@ -208,44 +208,124 @@ function WorkflowRunCard({
         </View>
       ) : null}
       {/* Never a fold (web `WorkflowRunCard`): running or ended, the rows are the record of who did what. */}
-      {model.groups.map((group, index) => (
-        <View key={group.kind === 'pending' ? `pending:${group.title}` : `phase:${group.title ?? ''}`}>
-          {index > 0 ? <DashedRule /> : null}
-          <GroupView group={group} open={open} />
-        </View>
-      ))}
+      <View style={{ padding: webSpace(1.5) }}>
+        {model.groups.map((group) => (
+          <GroupView key={group.kind === 'pending' ? `pending:${group.title}` : `phase:${group.title ?? ''}`} group={group} open={open} />
+        ))}
+      </View>
     </AgentCard>
   );
 }
 
+/** The ring of a phase row sits in this lane; the trunk of its open agents hangs from the ring's centre. */
+const PHASE_PAD = webSpace(2.5);
+const RING = 16;
+
 function GroupView({ group, open }: { group: WorkflowGroupModel; open: (sessionId: string | null) => (() => void) | undefined }) {
-  const palette = useTurnPalette();
   if (group.kind === 'pending') {
+    // One phrase for why it has not started: the agents it waits on, else the phase before it.
+    return <PhaseHeader title={group.title} ring={{ done: 0, failed: 0, total: 0, ended: null }} meta={group.waits || (group.after ? `Starts after ${group.after}` : null)} muted />;
+  }
+  if (!group.title) {
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: webSpace(2.5), paddingHorizontal: webSpace(4), minHeight: 44 }}>
-        <SessionStatusMark status="starting" />
-        <Text numberOfLines={1} style={[TURN_TYPE.sm, { flex: 1, color: palette.mutedForeground }]}>
-          {group.title}
-        </Text>
-        {/* One phrase for why it has not started: the agents it waits on, else the phase before it. */}
-        <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>{group.waits || (group.after ? `Starts after ${group.after}` : '')}</Text>
+      <View>
+        {group.rows.map((row) => (
+          <AgentRowView key={row.id} row={row} onPress={open(row.sessionId)} />
+        ))}
       </View>
     );
   }
+  return <PhaseView group={group} open={open} />;
+}
+
+/** A phase (web `PhaseRow`): its ring, name and progress; it opens onto its agents on a curved trunk. */
+function PhaseView({
+  group,
+  open,
+}: {
+  group: Extract<WorkflowGroupModel, { kind: 'phase' }>;
+  open: (sessionId: string | null) => (() => void) | undefined;
+}) {
+  const palette = useTurnPalette();
+  const [expanded, setExpanded] = useState(false);
   return (
-    <View style={{ padding: webSpace(1.5) }}>
-      {group.title ? (
-        <View style={{ flexDirection: 'row', gap: webSpace(1.5), paddingHorizontal: webSpace(2.5), paddingTop: webSpace(1), paddingBottom: webSpace(0.5) }}>
-          <Text numberOfLines={1} style={[TURN_TYPE.xs, { fontFamily: FONT_MEDIUM, color: palette.foreground, flexShrink: 1 }]}>
-            {group.title}
-          </Text>
-          {group.progress ? <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>{group.progress}</Text> : null}
+    <View>
+      <PhaseHeader
+        title={group.title!}
+        progress={group.progress}
+        ring={group.ring}
+        meta={group.failed}
+        expanded={expanded}
+        onPress={() => setExpanded((value) => !value)}
+      />
+      {expanded ? (
+        <View style={{ marginLeft: PHASE_PAD + RING / 2 - 1 }}>
+          {group.rows.map((row, index) => (
+            <View key={row.id} style={{ position: 'relative' }}>
+              {index < group.rows.length - 1 ? (
+                <View pointerEvents="none" style={{ position: 'absolute', top: 0, bottom: -1, left: 0, borderLeftWidth: 2, borderColor: palette.border }} />
+              ) : null}
+              {/* The elbow meets the row's first line at the middle of its 44pt touch row. */}
+              <View
+                pointerEvents="none"
+                style={{ position: 'absolute', top: 0, left: 0, width: webSpace(3.5), height: 22, borderLeftWidth: 2, borderBottomWidth: 2, borderBottomLeftRadius: 6, borderColor: palette.border }}
+              />
+              <View style={{ marginLeft: webSpace(3.5) }}>
+                <AgentRowView row={row} onPress={open(row.sessionId)} />
+              </View>
+            </View>
+          ))}
         </View>
       ) : null}
-      {group.rows.map((row) => (
-        <AgentRowView key={row.id} row={row} onPress={open(row.sessionId)} />
-      ))}
     </View>
+  );
+}
+
+function PhaseHeader({
+  title,
+  progress,
+  ring,
+  meta,
+  muted = false,
+  expanded,
+  onPress,
+}: {
+  title: string;
+  progress?: string | null;
+  ring: { done: number; failed: number; total: number; ended: 'done' | 'stopped' | null };
+  meta?: string | null;
+  muted?: boolean;
+  expanded?: boolean;
+  onPress?: () => void;
+}) {
+  const palette = useTurnPalette();
+  const body = (
+    <>
+      <RunProgressRing done={ring.done} failed={ring.failed} total={ring.total} ended={ring.ended} />
+      <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: webSpace(1.5) }}>
+        <Text numberOfLines={1} style={[TURN_TYPE.sm, { flexShrink: 1, color: muted ? palette.mutedForeground : palette.foreground }]}>
+          {title}
+        </Text>
+        {progress ? <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground, fontVariant: ['tabular-nums'] }]}>{progress}</Text> : null}
+      </View>
+      {meta ? <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>{meta}</Text> : null}
+      <View style={{ width: 14, opacity: onPress ? 1 : 0, transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}>
+        <Icon as={CaretRightIcon} size={12} className="text-muted-foreground" />
+      </View>
+    </>
+  );
+  const rowStyle = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: webSpace(2.5), paddingHorizontal: PHASE_PAD, minHeight: 44, borderRadius: 8 };
+  if (!onPress) return <View style={rowStyle}>{body}</View>;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${title}${progress ? `, ${progress}` : ''}`}
+      accessibilityState={{ expanded: !!expanded }}
+      onPress={onPress}
+      style={({ pressed }) => [rowStyle, pressed && { backgroundColor: palette.pressed }]}
+    >
+      {body}
+    </Pressable>
   );
 }
 

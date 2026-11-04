@@ -53,7 +53,8 @@ export function RunProgressRing({
       strokeLinecap="round"
       className={cn('shrink-0 -rotate-90', big ? 'size-7' : 'size-4')}
     >
-      <circle cx={ring.c} cy={ring.c} r={ring.r} stroke="var(--border)" />
+      {/* The track reads as a ring on its own (a phase not started), in both themes: the border token vanishes on dark. */}
+      <circle cx={ring.c} cy={ring.c} r={ring.r} stroke="var(--muted-foreground)" strokeOpacity={0.35} />
       {done > 0 && (
         <circle cx={ring.c} cy={ring.c} r={ring.r} pathLength={100} stroke="var(--kortix-green)" strokeDasharray={`${doneArc} 100`} />
       )}

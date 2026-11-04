@@ -103,7 +103,7 @@ export function RunProgressRing({
   return (
     <View accessible={false} importantForAccessibility="no-hide-descendants">
       <Svg width={size} height={size} viewBox={`0 0 ${c * 2} ${c * 2}`}>
-        <Circle cx={c} cy={c} r={r} stroke={palette.border} strokeWidth={stroke} fill="none" />
+        <Circle cx={c} cy={c} r={r} stroke={palette.mutedForeground} strokeOpacity={0.35} strokeWidth={stroke} fill="none" />
         {done > 0 ? (
           <Circle
             cx={c}
