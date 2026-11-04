@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1040,
+  "count": 1042,
   "routes": [
     {
       "method": "GET",
@@ -69,6 +69,10 @@
     {
       "method": "POST",
       "path": "/internal/gateway/pool-rate-limit"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/pool-usage"
     },
     {
       "method": "POST",
@@ -725,6 +729,10 @@
     {
       "method": "POST",
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/retry"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/usage"
     },
     {
       "method": "PUT",
