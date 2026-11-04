@@ -1907,7 +1907,7 @@ export function messageOnlySegments(
  * read-only transcript. Nothing to open: no control. Exported for its test.
  */
 export function TurnMessageWork(
-  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'permissions' | 'onPermissionReply' | 'disableToolNavigation'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'permissions' | 'onPermissionReply' | 'disableToolNavigation' | 'isLast'> & {
     model: TurnModelState;
     segments: TurnSegments;
     /** The segments the message itself draws (`messageOnlySegments`). */
@@ -1924,16 +1924,19 @@ export function TurnMessageWork(
     return segments.filter((segment) => segmentRendersSomething(segment) && !kept.has(segment));
   }, [segments, shown]);
   const { sessionReport, noticeBatch, subagentNotice } = userContent;
+  // A router thread shows each worker's work once: under the message that relays its report. The
+  // message that only started a worker ("On it.") shows it while it is the newest turn, as live progress.
+  const isLast = props.isLast;
   const workers = useMemo(
     () =>
       front
-        ? messageWorkerIds(turnBlocks(turn), [
+        ? messageWorkerIds(isLast ? turnBlocks(turn) : [], [
             sessionReport?.sessionId,
             subagentNotice?.sessionId,
             ...(noticeBatch ?? []).map((item) => (item.kind === 'peer_idle' ? null : item.notice.sessionId)),
           ])
         : [],
-    [front, turn, sessionReport, subagentNotice, noticeBatch],
+    [front, turn, sessionReport, subagentNotice, noticeBatch, isLast],
   );
   if (front ? workers.length === 0 : work.length === 0) return null;
   return (
