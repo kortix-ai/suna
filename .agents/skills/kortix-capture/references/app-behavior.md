@@ -103,7 +103,21 @@ that is locked, inactive or silent while idle is `idle`.
 | `paused` by a person | `attention` |
 | sync `error` | `attention`, `sync_error` |
 | items pending, no upload for 30 min of awake time | `attention`, `backlog` |
+| `update.status` `failed` (the newest release was rolled back or did not install) | `attention`, `update_failed` |
 | app older than the newest version in `capture-update.json` | `attention`, `behind_version` |
+
+Every device in `GET /v1/accounts/:id/capture/devices` carries `diagnostics`
+(`apps/api/src/capture/diagnostics.ts`, SDK type `CaptureDeviceDiagnostics`): `os`
+(`family`, `name` such as `Windows 11 Pro 24H2`, `version`, `build`, `arch`),
+`hostname` and `computer_name` (null when masked), `member_email`, `app_version`,
+`update` (status.json `update`, parsed: `status`, `installed`, `channel`, `latest`,
+`last_check_at`, `last_check`, `updating_to`, `last_result` with `detail`, `skipped`),
+`recording`, `sync`, `policy`, `machine` (device.json `machine`: CPU, cores, memory,
+free disk, GPUs, boot time, timezone, locale), `encrypted`, `managed`,
+`described_at`, `reported_at`, `last_credentials_at`, `created_at`. A field an older
+app did not send is null. **Device details** in the device's `...` menu (the list
+row and the device page) shows it in four sections and copies it as plain text
+(**Copy diagnostics**).
 
 A closed laptop cannot report. A computer that was recording when it went
 silent therefore shows `offline` after 30 min and clears when it wakes. The
