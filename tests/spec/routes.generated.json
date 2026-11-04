@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1040,
+  "count": 1046,
   "routes": [
     {
       "method": "GET",
@@ -2201,6 +2201,30 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/artifacts/:artifactId/content"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/doc"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/doc/flushed"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/doc/lease"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/doc/reset"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/doc/seed"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/doc/updates"
     },
     {
       "method": "GET",

@@ -88,6 +88,7 @@ import { registerTeamTasksRoutes } from './routes/team-tasks';
 import { registerArtifactRoutes } from './routes/artifacts';
 import { registerArtifactCommentRoutes } from './routes/artifact-comments';
 import { registerArtifactLiveRoutes } from './routes/artifact-live';
+import { registerArtifactDocRoutes } from './routes/artifact-doc';
 import { registerLinkPreviewRoutes } from './routes/link-preview';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
 import { registerRuntimeTriggersRoutes } from './routes/runtime-triggers';
@@ -192,6 +193,7 @@ export function registerAllProjectRoutes(): void {
   registerArtifactRoutes();
   registerArtifactCommentRoutes();
   registerArtifactLiveRoutes();
+  registerArtifactDocRoutes();
   registerLinkPreviewRoutes();
   registerSessionRemindersRoutes();
   registerRuntimeTriggersRoutes();
