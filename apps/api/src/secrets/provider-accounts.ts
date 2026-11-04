@@ -158,6 +158,10 @@ export async function reconnectProviderAccount(input: {
     active: true,
     cooldownUntil: null,
     needsReauthAt: null,
+    // A reconnect may sign in someone else: the old login's usage and identity go.
+    usage: null,
+    usageCheckedAt: null,
+    providerAccount: null,
     updatedAt: new Date(),
   }).where(and(
     eq(accountSecretResources.accountId, accountId),

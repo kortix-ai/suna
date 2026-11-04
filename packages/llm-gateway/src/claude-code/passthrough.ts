@@ -33,7 +33,11 @@ export interface ClaudeCodeCredential {
 
 export type ClaudeCodeCredentials =
   | { credentials: ClaudeCodeCredential[] }
-  | { error: { status: number; code: string; message: string; suggestion?: string; retryAfterSeconds?: number } };
+  | { error: {
+    status: number; code: string; message: string; suggestion?: string; retryAfterSeconds?: number;
+    /** How long the first usable account still rests. Over a minute it is a plan usage limit. */
+    restSeconds?: number;
+  } };
 
 export interface ClaudeCodeHooks {
   authenticate: (token: string) => Promise<AuthedPrincipal | null>;
@@ -81,10 +85,32 @@ const ERROR_TYPES: Record<number, string> = {
   429: 'rate_limit_error', 503: 'overloaded_error',
 };
 
-function anthropicError(status: number, message: string, retryAfterSeconds?: number): Response {
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
+function anthropicError(status: number, message: string, retryAfterSeconds?: number, extraHeaders: Record<string, string> = {}): Response {
+  const headers: Record<string, string> = { 'content-type': 'application/json', ...extraHeaders };
   if (retryAfterSeconds) headers['retry-after'] = String(retryAfterSeconds);
   return new Response(JSON.stringify({ type: 'error', error: { type: ERROR_TYPES[status] ?? 'api_error', message } }), { status, headers });
+}
+
+/** A rest longer than this is a plan usage limit, not a short rate limit (the API's `accountsResting`). */
+const USAGE_LIMIT_MIN_REST_SECONDS = 60;
+/**
+ * The representative claim of a Kortix usage-limit 429. Claude Code reads a 429 as a usage limit
+ * only when it carries `anthropic-ratelimit-unified-representative-claim`; without it, it prints
+ * "Server is temporarily limiting requests (not your usage limit)" and retries. Anthropic's own
+ * claims name a window (`five_hour`, `seven_day`, …). Kortix stores only when the account's rest
+ * ends, so this claim names no window: Claude Code 0.3.x then prints
+ * "You've hit your usage limit · resets <time>" and stops retrying.
+ */
+const KORTIX_USAGE_LIMIT_CLAIM = 'kortix_claude_accounts';
+
+/** Every usable Claude account rests on its plan limit: answer the way Anthropic answers a usage limit. */
+function usageLimitError(message: string, restSeconds: number): Response {
+  const seconds = Math.ceil(restSeconds);
+  return anthropicError(429, message, seconds, {
+    'anthropic-ratelimit-unified-status': 'rejected',
+    'anthropic-ratelimit-unified-representative-claim': KORTIX_USAGE_LIMIT_CLAIM,
+    'anthropic-ratelimit-unified-reset': String(Math.floor(Date.now() / 1000) + seconds),
+  });
 }
 
 function sessionToken(headers: Headers): string | null {
@@ -134,8 +160,10 @@ export function createClaudeCodePassthrough(hooks: ClaudeCodeHooks, deps: Claude
 
     const found = await hooks.claudeCredentials(principal, { model: requestModel(req.body) });
     if ('error' in found) {
-      const { status, message, suggestion, retryAfterSeconds } = found.error;
-      return anthropicError(status, suggestion ? `${message} ${suggestion}` : message, retryAfterSeconds);
+      const { status, message, suggestion, retryAfterSeconds, restSeconds } = found.error;
+      const text = suggestion ? `${message} ${suggestion}` : message;
+      if (status === 429 && restSeconds !== undefined && restSeconds > USAGE_LIMIT_MIN_REST_SECONDS) return usageLimitError(text, restSeconds);
+      return anthropicError(status, text, retryAfterSeconds);
     }
 
     const headers = new Headers();

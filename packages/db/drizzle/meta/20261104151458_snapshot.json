@@ -1,6 +1,6 @@
 {
-  "id": "7ee37633-4336-45b4-8f83-26b8a55fcaa2",
-  "prevId": "8aca98d6-2e13-4a62-8205-c8849fdd7081",
+  "id": "99d66b33-8c23-4c47-b958-c5ccf4b48ebf",
+  "prevId": "9fa9d509-9967-49ea-b606-7e7e73fec713",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1624,6 +1624,12 @@
         "usage_checked_at": {
           "name": "usage_checked_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_account": {
+          "name": "provider_account",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
