@@ -123,7 +123,7 @@ in a HAR.
    replaced. The first load in a fresh browser adds CORS preflights
    (53 `OPTIONS` in the first local load, which also ran the onboarding); the
    counts below exclude them (preflight cache warm).
-5. Stop the kept session and the warm session the page started (`POST …/sessions/warm`).
+5. Stop the kept session.
 
 ## Baseline, 2026-09-29
 
@@ -198,8 +198,8 @@ unfiltered), `GET …/sessions/:id/transcript` ×4 locally and ×3 on dev (the s
 `GET …/change-requests`, `GET …/turn` and `GET …/prompts` (`…/turn` and
 `…/prompts` once in 1 of the 2 dev loads). The in-app open repeats
 `…/transcript` (×3–4), `…/sessions` (×3) and `…/sessions/:id` (×2); locally also
-`…/turn` and `…/prompts` (×2). A session page also calls `POST …/sessions/warm`, which starts
-a new warm session with a sandbox: stop it after a capture.
+`…/turn` and `…/prompts` (×2). On that date a session page also called `POST …/sessions/warm`
+(warm sessions, removed on 2026-11-03).
 
 Comparison with 2026-09-19 (same method and 50 ms RTT, before / after PR #7430,
 which is merged): POST /prompts 1,057 / 562 ms, delivery 5,516 / 3,617 ms,

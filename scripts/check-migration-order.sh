@@ -40,7 +40,7 @@ for ref in refs/remotes/origin/dev refs/remotes/upstream/dev; do
 done
 if [ -z "$base" ]; then
   echo "migration-order: no origin/dev or upstream/dev ref with migrations; check skipped." >&2
-  echo "  Fetch the canonical dev branch (git fetch <kortix-ai/suna remote> dev) so this guard can run." >&2
+  echo "  Fetch the canonical dev branch (git fetch <kortix-ai/CompanyOS remote> dev) so this guard can run." >&2
   exit 0
 fi
 

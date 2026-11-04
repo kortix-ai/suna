@@ -1,6 +1,7 @@
 //! Protocol conformance for the Rust capture engine (Windows and Linux).
 //! Spawns the real binary, speaks JSON lines, and checks ping, permissions,
-//! ocr on a synthetic PNG, convert/crop, and the error path.
+//! ocr on a synthetic PNG, convert/crop, the error path, and (Windows) a real
+//! screen capture through Desktop Duplication.
 #![cfg(all(
     feature = "capture-engine",
     any(target_os = "windows", target_os = "linux")
@@ -19,10 +20,14 @@ struct Engine {
 
 impl Engine {
     fn start() -> Self {
+        Self::start_with(Stdio::inherit())
+    }
+
+    fn start_with(stderr: Stdio) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_kortix-capture-engine"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(stderr)
             .spawn()
             .expect("spawn engine");
         let stdin = child.stdin.take().unwrap();
@@ -215,4 +220,51 @@ fn convert_crops_and_ocr_reads_synthetic_png() {
         }
     }
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Every display is grabbed by Desktop Duplication, not the GDI fallback: GDI
+/// paints GPU-rendered content (a CAD canvas, a game, video) black. Two ticks:
+/// the first opens the duplication, the second reads it again (a static screen
+/// hands out no new frame). Each frame is a real picture, not one flat color.
+#[cfg(target_os = "windows")]
+#[test]
+fn windows_captures_every_display_through_desktop_duplication() {
+    let dir = std::env::temp_dir().join(format!("kce-dup-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = dir.join("engine.stderr");
+    let mut e = Engine::start_with(Stdio::from(std::fs::File::create(&log).unwrap()));
+    for tick in 0..2 {
+        let out = dir.join(format!("tick{tick}.jpg"));
+        let res = e.call(
+            json!({"cmd": "capture", "all_displays": true, "record_unknown": true,
+            "out": out.to_str().unwrap(), "max_width": 0, "max_height": 0}),
+        );
+        assert_eq!(res["ok"], json!(true), "{res}");
+        let displays = res["displays"].as_array().expect("displays");
+        assert!(!displays.is_empty(), "{res}");
+        for d in displays {
+            let path = d["path"]
+                .as_str()
+                .unwrap_or_else(|| panic!("no frame: {d}"));
+            let img = image::open(path).unwrap().to_luma8();
+            let (lo, hi) = img
+                .pixels()
+                .fold((255u8, 0u8), |(lo, hi), p| (lo.min(p.0[0]), hi.max(p.0[0])));
+            assert!(hi - lo > 32, "tick {tick}: a flat frame ({lo}..{hi}): {d}");
+            assert_eq!(
+                (img.width() as i64, img.height() as i64),
+                (
+                    d["display"]["w"].as_i64().unwrap(),
+                    d["display"]["h"].as_i64().unwrap()
+                ),
+                "the frame is the whole display"
+            );
+        }
+    }
+    drop(e);
+    let stderr = std::fs::read_to_string(&log).unwrap();
+    assert!(
+        !stderr.contains("desktop duplication unavailable"),
+        "the engine fell back to GDI: {stderr}"
+    );
 }

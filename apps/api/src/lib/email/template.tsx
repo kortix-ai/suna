@@ -66,7 +66,7 @@ const st = {
 const SOCIALS = [
   { href: 'https://x.com/kortix', icon: 'social-x.png', alt: 'X' },
   { href: 'https://linkedin.com/company/kortix', icon: 'social-linkedin.png', alt: 'LinkedIn' },
-  { href: 'https://github.com/kortix-ai/suna', icon: 'social-github.png', alt: 'GitHub' },
+  { href: 'https://github.com/kortix-ai/CompanyOS', icon: 'social-github.png', alt: 'GitHub' },
 ];
 
 function Shell(props: { title: string; body: string; preview: string }) {

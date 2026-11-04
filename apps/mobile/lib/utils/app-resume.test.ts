@@ -2,8 +2,8 @@ import { afterEach, beforeEach, expect, jest, mock, test } from 'bun:test';
 
 /**
  * About 12 `AppState` handlers fire on the same tick when the app returns to
- * the foreground. Work that can wait (warm session, push registration, the OTA
- * check) runs a moment later, and not at all if the app leaves again first.
+ * the foreground. Work that can wait (push registration, the OTA check) runs
+ * a moment later, and not at all if the app leaves again first.
  * Fake timers: no wall-clock margins to flake under the concurrent suite.
  */
 

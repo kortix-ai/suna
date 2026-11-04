@@ -863,7 +863,7 @@ describe('enforcedEchoNotice', () => {
 
   test('points at the two-probe procedure in the docs', () => {
     const notice = enforcedEchoNotice('api.stripe.com', testUiTranslator);
-    expect(notice.docsHref).toBe('/docs/project/secrets#verify-it-with-two-probes');
+    expect(notice.docsHref).toBe('/docs/guide#verify-it-with-two-probes');
     expect(notice.docsLabel).toBe('Verify it with two probes');
   });
 

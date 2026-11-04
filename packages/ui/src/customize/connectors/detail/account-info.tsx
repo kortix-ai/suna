@@ -10,7 +10,7 @@ import { Button } from '../../../primitives/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../../primitives/hover-card';
 import { useTranslations } from '../../../i18n';
 
-const DOCS_HREF = '/docs/connect/connectors#connectors-connections-and-accounts';
+const DOCS_HREF = '/docs/guide#who-can-use-an-account';
 
 /** The ⓘ beside "Accounts": what an account is, and who can use each kind. */
 export function AccountInfo({ projectId, displayName }: { projectId: string; displayName: string }) {

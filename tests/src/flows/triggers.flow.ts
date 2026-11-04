@@ -1534,7 +1534,7 @@ flow(
     domain: 'triggers',
     requires: ['database'],
     timeoutMs: 300_000,
-    routes: ['POST /v1/projects/:projectId/triggers', 'GET /v1/projects/:projectId/triggers'],
+    routes: ['POST /v1/projects/:projectId/triggers', 'GET /v1/projects/:projectId/triggers', 'GET /v1/projects/:projectId/detail'],
   },
   async (ctx) => {
     if (ctx.env.target !== 'local') return; // pushes straight to the local bare repository, as PROJ-39
@@ -1589,15 +1589,24 @@ flow(
         if (!slugs.includes('keep-me') || slugs.includes('broken')) throw new Error(`parse error dropped or kept the wrong triggers: ${JSON.stringify(listed)}`);
       });
 
-      await ctx.step('push an unparseable manifest → GET 200 {triggers:[], errors:[(manifest)]}; the runtime row survives', async () => {
+      await ctx.step('push an unparseable manifest → the project keeps running the last version that parses: /detail names the error and that commit, GET still lists keep-me, the runtime row survives', async () => {
         push('agents: [invalid\n', 'ke2e: unparseable manifest');
-        const listed = await waitFor(list, {
-          until: (v) => v.errors.some((e) => e.slug === '(manifest)'),
-          timeoutMs: 90_000,
-          intervalMs: 2_000,
-          description: 'the unparseable manifest reaches the API mirror',
-        });
-        if (listed.triggers.length !== 0) throw new Error(`unparseable manifest still lists triggers: ${JSON.stringify(listed)}`);
+        type Detail = { config?: { manifest_health?: { issues?: Array<{ message?: string }> } } };
+        await waitFor(
+          async () => {
+            const r = await owner.get('/v1/projects/:projectId/detail', { params });
+            r.status(200);
+            return r.json<Detail>();
+          },
+          {
+            until: (d) => (d.config?.manifest_health?.issues ?? []).some((i) => /last version that parses/.test(i.message ?? '')),
+            timeoutMs: 90_000,
+            intervalMs: 2_000,
+            description: 'the unparseable manifest reaches the API mirror and /detail names the last good commit',
+          },
+        );
+        const listed = await list();
+        if (!listed.triggers.some((t) => t.slug === 'keep-me')) throw new Error(`the last good version's trigger is gone: ${JSON.stringify(listed)}`);
         if ((await runtimeRows()).length !== 1) throw new Error('an unparseable manifest pruned the trigger runtime row');
       });
     } finally {

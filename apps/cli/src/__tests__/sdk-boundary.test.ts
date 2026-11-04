@@ -35,7 +35,7 @@ describe('scanSource raw-kortix-fetch', () => {
   });
 
   test('allows the GitHub releases API', () => {
-    const source = "await fetch('https://api.github.com/repos/kortix-ai/suna/releases/latest')";
+    const source = "await fetch('https://api.github.com/repos/kortix-ai/CompanyOS/releases/latest')";
 
     expect(scanSource(source)).toEqual([]);
   });
@@ -267,7 +267,7 @@ describe('scanCliBoundary', () => {
       [
         "import { createKortix } from '@kortix/sdk';",
         'export async function latest() {',
-        "  return fetch('https://api.github.com/repos/kortix-ai/suna/releases/latest');",
+        "  return fetch('https://api.github.com/repos/kortix-ai/CompanyOS/releases/latest');",
         '}',
         'export { createKortix };',
         '',

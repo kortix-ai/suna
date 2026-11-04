@@ -24,7 +24,7 @@ import {
 const input = {
   provider: 'auto' as const,
   prNumber: 6337,
-  repository: 'kortix-ai/suna',
+  repository: 'kortix-ai/CompanyOS',
   sha: 'a'.repeat(40),
 };
 
@@ -132,7 +132,7 @@ describe('provider-neutral preview lifecycle', () => {
 
   it('deploys without the suite, and runs the suite only from its own script', () => {
     const base = {
-      repository: 'kortix-ai/suna',
+      repository: 'kortix-ai/CompanyOS',
       ref: 'pi-worker',
       sha: 'a'.repeat(40),
       prNumber: 6998,
@@ -192,7 +192,7 @@ describe('provider-neutral preview lifecycle', () => {
     // in the bootstrap now, and each is asserted here by the text a deploy
     // actually runs.
     const script = buildPreviewBootstrapScript({
-      repository: 'kortix-ai/suna',
+      repository: 'kortix-ai/CompanyOS',
       ref: 'pi-worker',
       sha: 'a'.repeat(40),
       prNumber: 6998,
@@ -238,7 +238,7 @@ describe('provider-neutral preview lifecycle', () => {
 
   it('repairs the Node floor inside a reused branch sandbox before pnpm runs', () => {
     const script = buildPreviewBootstrapScript({
-      repository: 'kortix-ai/suna',
+      repository: 'kortix-ai/CompanyOS',
       ref: 'i18n-complete-serbian',
       sha: 'a'.repeat(40),
       prNumber: 7109,
@@ -259,7 +259,7 @@ describe('provider-neutral preview lifecycle', () => {
     // first deploy, and on later ones would be answered by the PREVIOUS
     // sandbox — reporting success for a stack that never came up.
     const script = buildPreviewBootstrapScript({
-      repository: 'kortix-ai/suna',
+      repository: 'kortix-ai/CompanyOS',
       ref: 'pi-worker',
       sha: 'a'.repeat(40),
       prNumber: 6998,
@@ -417,7 +417,7 @@ describe('provider-neutral preview lifecycle', () => {
 
   it('boots the exact self-host distribution and runs the canonical deployed suite', () => {
     const script = buildPreviewBootstrapScript({
-      repository: 'kortix-ai/suna',
+      repository: 'kortix-ai/CompanyOS',
       ref: 'refs/pull/6337/head',
       sha: 'a'.repeat(40),
       prNumber: 6337,

@@ -4,13 +4,14 @@ import { PROJECT_ACTIONS, VALID_ACTIONS } from '../../iam/actions';
 import type { GitBackedProject, MirrorRefresh } from '../git';
 import {
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
+  isManifestSyntaxError,
   resolveGrantSet,
   SLUG_RE,
   resolveProjectRepository,
   type GrantSetV2,
 } from '@kortix/manifest-schema';
 import { readAgentBlockV2 } from '../lib/agent-config-v2';
-import { manifestNeedsRepair, projectBuiltinAgents } from '../lib/my-kortix-agent';
+import { projectBuiltinAgents } from '../lib/my-kortix-agent';
 import {
   MANIFEST_FILENAME,
   type AgentParseError,
@@ -139,7 +140,16 @@ export async function loadProjectAgents(
     // and an unparseable one produces the error-carrying result below, which
     // `grantFromLoadedAgents` resolves to null — i.e. UNRESTRICTED — for the
     // `default` sentinel. See projects/lib/secret-grant.ts.
-    if (opts?.rethrowReadErrors) throw err;
+    //
+    // One exception, for every caller: a file that was READ but is not YAML
+    // (a duplicate key, a bad indent). Rethrowing it made every session create
+    // a 500, including the My Kortix session that fixes the file. It is repair
+    // mode instead: no project agent is declared and the error is listed, so
+    // every project agent and the `default` sentinel resolve to deny-all
+    // (`grantFromLoadedAgents`), and only My Kortix runs, on its platform-owned
+    // grant. A file that could not be READ still rethrows.
+    const syntaxError = isManifestSyntaxError(err);
+    if (opts?.rethrowReadErrors && !syntaxError) throw err;
     return {
       specs: [],
       errors: [{
@@ -148,19 +158,19 @@ export async function loadProjectAgents(
         error: (err as Error).message || 'Failed to read manifest',
       }],
       defaultAgent: null,
-      // A manifest that cannot be read or parsed needs repair: My Kortix runs to fix it.
-      builtinAgents: { my_kortix: true },
-      needsRepair: true,
+      // A manifest that cannot be read turns nothing on. One that is not YAML
+      // runs My Kortix, so it can be fixed.
+      builtinAgents: { my_kortix: syntaxError },
       manifest: null,
+      ...(syntaxError ? { manifestSyntaxError: (err as Error).message } : {}),
     };
   }
   const applied = runtimeManifest(manifest ?? synthesizeBlankManifest({ manifestPath: project.manifestPath }));
   return {
     ...extractAgents(applied),
     issues: applied.issues,
-    // No manifest committed yet reads as one that needs repair, as GET /detail reads it.
+    // The file's own switch: no manifest committed yet turns nothing on.
     builtinAgents: projectBuiltinAgents(manifest?.raw ?? null),
-    needsRepair: manifestNeedsRepair(manifest?.raw ?? null),
     manifest: { revision: applied.revision ?? null, commit: applied.commit ?? null },
   };
 }

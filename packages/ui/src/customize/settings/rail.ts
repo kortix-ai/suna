@@ -125,7 +125,7 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
         label: 'MCP',
         description:
           'Use Kortix from Claude, Claude Code, Cursor, Codex, or any MCP client. You sign in once. Nothing to install.',
-        docsHref: '/docs/connect/mcp',
+        docsHref: '/docs/guide#other-ai-tools-mcp',
         icon: Mcp,
       },
       {
@@ -176,7 +176,7 @@ export const RETIRED_RAIL_ITEMS: readonly RailItem[] = [
     // machine from it.
     description:
       'The recipe for the machine a session runs on, and the record of every time Kortix prepared one.',
-    docsHref: '/docs/work/runtime',
+    docsHref: '/docs/developers#sandbox-templates',
     icon: Container,
   },
   {

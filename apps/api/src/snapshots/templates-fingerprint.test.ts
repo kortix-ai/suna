@@ -7,12 +7,14 @@ test('runtime fingerprint and artifact closure remain stable', async () => {
   expect(fingerprint).toMatch(/^kortix-runtime:.*:artifacts:[a-f0-9]{64}$/);
   expect(await currentRuntimeArtifactFingerprint()).toBe(fingerprint);
   const labels = RUNTIME_ARTIFACTS.map(({ label }) => label);
-  const nonAgent = labels.slice(2 + KORTIXD_SHARED_SOURCES.length);
+  const nonAgent = labels.slice(3 + KORTIXD_SHARED_SOURCES.length);
   // The daemon binary bundles these contract files, so a change to one must
   // rebuild the snapshot like a change to the daemon's own source.
   expect(labels).toEqual([
     'kortix-agent-src',
     'kortix-agent-pkg',
+    // The compile flags change the binary with no source change.
+    'kortix-agent-build',
     ...KORTIXD_SHARED_SOURCES.map((path) => `kortix-agent-shared:${path}`),
     ...nonAgent,
   ]);

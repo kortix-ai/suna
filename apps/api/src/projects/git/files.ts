@@ -7,6 +7,7 @@ import {
   type ManifestImportReader,
   type ResolvedManifest,
   MANIFEST_IMPORTS_KEY,
+  MAX_IMPORT_FILES,
   hasManifestImports,
   normalizeImportPath,
   parseManifestText,
@@ -33,7 +34,7 @@ import {
   runGitCapture,
   spawn,
 } from './mirror';
-import { isObjectFetchTooLargeError } from './object-store';
+import { isObjectFetchTooLargeError, partialStoresEnabled } from './object-store';
 import { cachedGitRead, resolveRefSha } from './read-cache';
 import type {
   GetFileHistoryOptions,
@@ -394,12 +395,17 @@ const SEARCH_FETCH_BATCH = 500;
  */
 export async function prefetchRepoFiles(project: GitBackedProject, paths: readonly string[], ref?: string): Promise<void> {
   try {
+    // A whole-history store holds every file already.
+    if (!(await partialStoresEnabled())) return;
     const normalized = paths.map((path) => normalizeTreePath(path)).filter((path): path is string => Boolean(path));
     if (normalized.length === 0) return;
     const treeRef = validateRef(ref || project.defaultBranch);
     const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
     const sha = await resolveRefSha(repoPath, treeRef);
-    await ensurePathObjects(repoPath, sha ?? treeRef, normalized, { maxBytes: FILE_READ_MAX_BYTES });
+    const fetch = () => ensurePathObjects(repoPath, sha ?? treeRef, normalized, { maxBytes: FILE_READ_MAX_BYTES }).then(() => true);
+    // Once per commit and path set: a warm read spawns no git process.
+    if (sha) await cachedGitRead(repoPath, sha, 'prefetch-files', normalized.join('\0'), fetch);
+    else await fetch();
   } catch {
     // The per-file reads fetch what is missing.
   }
@@ -716,6 +722,54 @@ export async function readManifestFromRepo(
   return legacyFrom ? convertLegacyRead(merged, legacyFrom, repoPath, commit ?? treeRef, imports.raw) : merged;
 }
 
+/** How far back the last-good manifest walk looks: first-parent commits, and distinct file versions. */
+const LAST_GOOD_MANIFEST_COMMITS = 200;
+const LAST_GOOD_MANIFEST_VERSIONS = 20;
+
+/**
+ * The newest commit on `headCommit`'s first-parent line whose file at `path`
+ * passes `isGood`, or null. The walk stops where the file did not exist: an
+ * older commit without it is not a version of it.
+ *
+ * Cheap on the partial store: one request for the root trees of every commit,
+ * then only the distinct file versions, newest first. A run of commits that
+ * keep the same broken file costs one check.
+ */
+export async function findLastGoodManifestCommit(
+  project: GitBackedProject,
+  path: string,
+  headCommit: string,
+  isGood: (content: string) => boolean,
+): Promise<string | null> {
+  const normalized = normalizeTreePath(path);
+  if (!normalized) return null;
+  const repoPath = await refreshMirror(project);
+  const listed = await runGitCapture(
+    ['rev-list', '--first-parent', `--max-count=${LAST_GOOD_MANIFEST_COMMITS}`, headCommit],
+    repoPath,
+  );
+  if (listed.exitCode !== 0) throw new Error(listed.stderr.trim() || `git rev-list ${headCommit} failed`);
+  const commits = listed.stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+  await ensureCommitTrees(repoPath, commits);
+  const checked = new Set<string>();
+  for (const commit of commits) {
+    // A nested manifest path needs the trees that lead to it.
+    if (normalized.includes('/')) await ensurePathObjects(repoPath, commit, [normalized]);
+    const tree = await runGitCapture(['ls-tree', commit, '--', normalized], repoPath);
+    if (tree.exitCode !== 0) throw new Error(tree.stderr.trim() || `git ls-tree ${commit} failed`);
+    const blob = /^\d+ blob ([0-9a-f]{40})\t/m.exec(tree.stdout)?.[1];
+    if (!blob) return null;
+    if (checked.has(blob)) continue;
+    if (checked.size >= LAST_GOOD_MANIFEST_VERSIONS) return null;
+    checked.add(blob);
+    await ensureStoreObjects(repoPath, [blob], { maxBytes: FILE_READ_MAX_BYTES });
+    const shown = await runGitCapture(['cat-file', 'blob', blob], repoPath);
+    if (shown.exitCode !== 0) throw new Error(shown.stderr.trim() || `git cat-file ${blob} failed`);
+    if (isGood(shown.stdout)) return commit;
+  }
+  return null;
+}
+
 /** A legacy manifest as the latest shape, and what the conversion read (`legacy`). */
 export interface ManifestLegacy {
   /** The format the file is in: 1 (`kortix.toml`) or 2. */
@@ -791,18 +845,31 @@ async function prefetchDeclaredImports(repoPath: string, ref: string, rootRaw: R
   const paths = declared.map((entry) => normalizeImportPath(entry)).filter((path): path is string => path !== null);
   if (paths.length === 0) return;
   try {
-    await ensureCommitTrees(repoPath, [ref]);
-    // `-r`: a directory import reads every YAML file under it.
-    const listed = await runGitCapture(['--literal-pathspecs', 'ls-tree', '-r', '-z', ref, '--', ...paths], repoPath);
-    if (listed.exitCode !== 0) return;
-    const blobs = listed.stdout
-      .split('\0')
-      .map((record) => /^\d+ blob ([0-9a-f]{40})\t.+\.ya?ml$/.exec(record)?.[1])
-      .filter((id): id is string => Boolean(id));
-    await ensureStoreObjects(repoPath, blobs, { maxBytes: FILE_READ_MAX_BYTES });
+    // A whole-history store holds every file already.
+    if (!(await partialStoresEnabled())) return;
+    // Once per commit: a warm read spawns no git process.
+    if (/^[0-9a-f]{40}$/.test(ref)) {
+      await cachedGitRead(repoPath, ref, 'prefetch-imports', paths.join('\0'), () => fetchDeclaredImports(repoPath, ref, paths).then(() => true));
+    } else {
+      await fetchDeclaredImports(repoPath, ref, paths);
+    }
   } catch {
     // The resolver's own reads fetch what is missing.
   }
+}
+
+async function fetchDeclaredImports(repoPath: string, ref: string, paths: string[]): Promise<void> {
+  await ensureCommitTrees(repoPath, [ref]);
+  // `-r`: a directory import reads every YAML file under it.
+  const listed = await runGitCapture(['--literal-pathspecs', 'ls-tree', '-r', '-z', ref, '--', ...paths], repoPath);
+  if (listed.exitCode !== 0) return;
+  const blobs = listed.stdout
+    .split('\0')
+    .map((record) => /^\d+ blob ([0-9a-f]{40})\t.+\.ya?ml$/i.exec(record)?.[1])
+    .filter((id): id is string => Boolean(id))
+    // The resolver reads at most this many files; past it the import fails anyway.
+    .slice(0, MAX_IMPORT_FILES);
+  await ensureStoreObjects(repoPath, blobs, { maxBytes: FILE_READ_MAX_BYTES });
 }
 
 /** `ManifestImportReader` over a bare mirror at one fixed ref. */

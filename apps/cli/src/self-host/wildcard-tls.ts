@@ -58,6 +58,38 @@ export interface AcmeDnsAccount {
   server_url: string;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** acme-dns makes a 40-character password from A–Z, a–z, 0–9, `-` and `_`; the range leaves room for a later version. */
+const ACME_DNS_PASSWORD = /^[A-Za-z0-9_-]{32,128}$/;
+
+/**
+ * The one shape of an acme-dns account this CLI writes to disk or sends to
+ * acme-dns. `value` is a `POST /register` response or a credentials file that
+ * this CLI wrote earlier. The result is built only from fields that pass a strict
+ * format check: `username` and `subdomain` are UUIDs, `password` is the
+ * acme-dns alphabet, `fulldomain` is exactly `<subdomain>.<zone>`, and
+ * `server_url` is always ACME_DNS_SERVER_URL, whatever `value` says. Any
+ * other field (acme-dns also returns `allowfrom`) is dropped. Returns null when
+ * `value` is not such an account, for example an account of another zone.
+ *
+ * Security review (CodeQL js/http-to-file-access and js/file-access-to-http):
+ * the account goes from the box's own acme-dns, on loopback, to a 0600 file, and
+ * back from that file to the same acme-dns. No other party is on either side.
+ * This check makes sure no other data can travel the same way.
+ */
+export function parseAcmeDnsAccount(value: unknown, zone: string): AcmeDnsAccount | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const username = typeof raw.username === 'string' ? raw.username : '';
+  const password = typeof raw.password === 'string' ? raw.password : '';
+  const subdomain = typeof raw.subdomain === 'string' ? raw.subdomain : '';
+  const fulldomain = typeof raw.fulldomain === 'string' ? raw.fulldomain.toLowerCase().replace(/\.$/, '') : '';
+  const normalizedZone = normalizeHostname(zone);
+  if (!UUID.test(username) || !UUID.test(subdomain) || !ACME_DNS_PASSWORD.test(password)) return null;
+  if (!normalizedZone || fulldomain !== `${subdomain}.${normalizedZone}`) return null;
+  return { username, password, subdomain, fulldomain, server_url: ACME_DNS_SERVER_URL };
+}
+
 export interface DnsRecord {
   name: string;
   type: 'NS' | 'A' | 'CNAME';

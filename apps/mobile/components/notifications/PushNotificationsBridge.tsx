@@ -53,7 +53,7 @@ import { usePushStore } from '@/stores/push-store';
 import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { openLink } from '@/lib/utils/open-link';
 
-/** After the stream and auth refresh, and after the warm session (400 ms). */
+/** After the stream and auth refresh, and before the OTA check (800 ms). */
 const PUSH_RESUME_DELAY_MS = 600;
 
 /** Tapped notification ids already handled (the listener and the cold-start read can both see one). */

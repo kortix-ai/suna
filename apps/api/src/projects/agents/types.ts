@@ -79,11 +79,11 @@ export interface LoadedAgents {
    *  them names is off, and a refusal to start it names them. */
   issues?: ManifestIssue[];
   /** Which built-in agents the project runs, resolved by
-   *  `projectBuiltinAgents` (lib/my-kortix-agent.ts): `builtin_agents.<key>`,
-   *  absent = off unless the manifest needs repair. Unset = off. */
+   *  `projectBuiltinAgents` (lib/my-kortix-agent.ts): `builtin_agents.<key>: true`
+   *  = on, anything else off. Unset = off. */
   builtinAgents?: Record<BuiltinAgentKey, boolean>;
-  /** The manifest is unusable as a whole (`manifestNeedsRepair`): no file, an
-   *  unreadable or unparseable one, or an error that voids every key. A session
-   *  that names no agent then runs My Kortix, so that it can fix the file. */
-  needsRepair?: boolean;
+  /** Set when kortix.yaml is not YAML: the parser's message. The project is in
+   *  repair mode: only My Kortix runs, and a session for any other agent is
+   *  refused with 422 `manifest_invalid`. */
+  manifestSyntaxError?: string;
 }

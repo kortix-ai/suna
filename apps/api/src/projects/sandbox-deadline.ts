@@ -35,10 +35,8 @@ import { db } from '../shared/db';
 import {
   NON_TURN_DEADLINE_CAP_MS,
   idleGraceMs,
-  isWarmPoolBox,
   turnGrantMs,
   turnUnconfirmedDripMs,
-  warmPoolGrantMs,
 } from './sandbox-deadline-policy';
 
 export {
@@ -50,13 +48,11 @@ export {
   isSandboxAuthored,
   isTerminalTurnEnd,
   isTurnStartRequest,
-  isWarmPoolBox,
   llmActivityGrantMs,
   previewGrantMs,
   turnGrantMs,
   turnDeliveryGraceMs,
   turnUnconfirmedDripMs,
-  warmPoolGrantMs,
 } from './sandbox-deadline-policy';
 
 export type DeadlineTarget = { sandboxId: string } | { sessionId: string } | { externalId: string };
@@ -294,27 +290,3 @@ export async function shortenSandboxDeadline(
      WHERE s.session_id = ${sessionId} AND s.status = 'active'`);
 }
 
-/**
- * Give a freshly provisioned WARM-POOL box its whole (bounded) lifetime.
- *
- * A warm box is the one box that can never be observed: nobody has claimed it,
- * so it has no turns, no LLM calls and no human preview traffic, and under the
- * bare 15-minute boot floor it was always reaped before it could be handed out.
- * The control plane itself decided to bake it, which is as control-plane-observed
- * as an event gets, so it is granted its lifetime up front instead.
- *
- * A no-op for every other box, and best-effort: losing this write costs the warm
- * box its head start, never correctness.
- */
-export async function grantWarmPoolLifetime(
-  sandboxId: string,
-  metadata: Record<string, unknown> | null | undefined,
-): Promise<void> {
-  if (!isWarmPoolBox(metadata)) return;
-  await extendSandboxDeadline({ sandboxId }, warmPoolGrantMs()).catch((err) =>
-    console.warn(
-      `[deadline] warm-pool grant failed for ${sandboxId}:`,
-      err instanceof Error ? err.message : err,
-    ),
-  );
-}

@@ -61,7 +61,7 @@ Agents are markdown, memory is plain files, and `kortix.yaml` declares the machi
 
 ## Every session lands as a change request
 
-Each Kortix session runs on its own isolated cloud computer, on a branch named after the session. The agent can install packages, run code, and break things, and only what it commits survives ([Kortix on GitHub](https://github.com/kortix-ai/suna)).
+Each Kortix session runs on its own isolated cloud computer, on a branch named after the session. The agent can install packages, run code, and break things, and only what it commits survives ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)).
 
 Work reaches the default branch through a change request a person reads as a diff, so nothing lands unreviewed. You set each connector call to allow, ask or block, and you choose the model per agent with your own keys. Run it on Kortix Cloud, in your VPC or on-prem, or self-host for free.
 

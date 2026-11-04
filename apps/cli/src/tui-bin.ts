@@ -43,7 +43,7 @@ export interface TuiBinResolution {
 
 /** The repo whose releases carry the assets. Overridable for forks/tests. */
 function releaseRepo(env: NodeJS.ProcessEnv = process.env): string {
-  return env.KORTIX_REPO ?? 'kortix-ai/suna';
+  return env.KORTIX_REPO ?? 'kortix-ai/CompanyOS';
 }
 
 /**

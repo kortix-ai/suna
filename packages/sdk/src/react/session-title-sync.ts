@@ -1,13 +1,8 @@
 import type { QueryClient } from '@tanstack/react-query';
 
-import { sessionStartKey } from '../core/rest/projects-client';
 import { qk } from './query-keys';
 
-type SessionTitleQueryClient = Pick<QueryClient, 'getQueryData' | 'refetchQueries'> & {
-  /** Optional so lean test fakes (and older callers) keep working; a real
-   *  QueryClient always has it. */
-  getQueryState?: QueryClient['getQueryState'];
-};
+type SessionTitleQueryClient = Pick<QueryClient, 'getQueryData' | 'refetchQueries'>;
 
 interface SessionTitleRefreshOptions {
   delaysMs?: number[];
@@ -64,14 +59,6 @@ function refetchSessionTitleQueries(
   projectId: string,
   sessionId: string,
 ): Promise<unknown[]> {
-  // An adopted warm session is revealed by /start dropping `metadata.warm`.
-  // While THIS session's /start is still in flight, a sessions-list refetch
-  // can beat it, observe the row still hidden, and overwrite the adopting
-  // tab's optimistic seed (warm-session-seed.ts in apps/web) — so the list
-  // half waits for the next ladder pass. The detail refetch stays: the
-  // session route serves the owner regardless of the marker.
-  const startFetching =
-    queryClient.getQueryState?.(sessionStartKey(projectId, sessionId))?.fetchStatus === 'fetching';
   return Promise.all([
     // The LIST family — `[...sessionsScope, 'list']` — so a manager-only
     // 'project'-scope reader picks up the resolved title too, not only the
@@ -84,19 +71,15 @@ function refetchSessionTitleQueries(
     // deployment: 5.8 `GET /sessions` and 6 `GET .../turn` per session open,
     // the single largest cumulative cost on the open path. A title ladder
     // refetches titles.
-    ...(startFetching
-      ? []
-      : [
-          queryClient.refetchQueries({
-            queryKey: [...qk.project.sessionsScope(projectId), 'list'],
-            type: 'active',
-          }),
-          // The paged family: what the sidebar and the Sessions page read.
-          queryClient.refetchQueries({
-            queryKey: [...qk.project.sessionsScope(projectId), 'list-paged'],
-            type: 'active',
-          }),
-        ]),
+    queryClient.refetchQueries({
+      queryKey: [...qk.project.sessionsScope(projectId), 'list'],
+      type: 'active',
+    }),
+    // The paged family: what the sidebar and the Sessions page read.
+    queryClient.refetchQueries({
+      queryKey: [...qk.project.sessionsScope(projectId), 'list-paged'],
+      type: 'active',
+    }),
     queryClient.refetchQueries({
       // EXACT: `qk.project.session(...)` is the PARENT of `prompts` and `turn`,
       // so a prefix refetch here is the same accident in miniature.

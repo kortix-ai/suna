@@ -1,7 +1,7 @@
 {
   "$schema": "https://ui.shadcn.com/schema/registry.json",
   "name": "kortix-examples",
-  "homepage": "https://github.com/kortix-ai/suna",
+  "homepage": "https://github.com/kortix-ai/CompanyOS",
   "items": [
     {
       "name": "hello-skill",

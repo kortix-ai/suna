@@ -41,7 +41,7 @@ describe('runtime catalog provider resolution', () => {
     });
   });
 
-  // Regression (kortix-ai/suna self-host report, 2026-09-17): the baseUrl
+  // Regression (kortix-ai/CompanyOS self-host report, 2026-09-17): the baseUrl
   // override keyed off `kind === 'anthropic'`, so EVERY provider with an
   // Anthropic-shaped transport (npm: @ai-sdk/anthropic) — not just Anthropic
   // itself — had its catalog `api` base discarded and its users' keys sent to

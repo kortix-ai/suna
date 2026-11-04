@@ -58,7 +58,6 @@ import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { log, setLoggerUserId } from '@/lib/logger';
 import { queryCachePersistence } from '@/lib/query/query-cache';
 import { releaseSavedCopies } from '@/lib/session/saved-copy-registry';
-import { warmSessionPool } from '@/lib/session/warm-session-pool';
 
 /**
  * Sign-out: reset the in-memory stores that hold the previous user's data.
@@ -80,8 +79,6 @@ function resetUserStores() {
   useSessionTreeStore.getState().reset();
   // Also deletes the screenshot files.
   useTabScreenshotStore.getState().clear();
-  // A warm session belongs to the signed-in user.
-  warmSessionPool.reset();
 }
 
 // Complete any pending auth sessions (required for web)

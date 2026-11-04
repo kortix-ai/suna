@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { accounts, baseTipChecks, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { dbBaseTipStore, expireBaseTips, sharedBaseTip, storedBaseTipProof } from './base-tip';
+import { dbBaseTipStore, expireBaseTips, publishBaseTipProof, sharedBaseTip, storedBaseTipProof } from './base-tip';
 
 const TIP_A = 'a'.repeat(40);
 const TIP_B = 'b'.repeat(40);
@@ -137,5 +137,40 @@ describe('sharedBaseTip', () => {
     upstream = TIP_B;
     expect(await tip()).toBe(TIP_B);
     expect(asks).toBe(3);
+  });
+});
+
+describe('publishBaseTipProof (a mirror fetch shares the tip it saw)', () => {
+  const at = (offsetMs: number) => Date.now() + offsetMs;
+
+  test('a first proof creates the row; the shared check in the interval then reads it without asking', async () => {
+    const askedAt = at(-1_000);
+    clock = new Date(askedAt + 5_000);
+    await publishBaseTipProof(projectId, 'main', TIP_A, askedAt);
+
+    expect(await storedBaseTipProof(projectId, 'main')).toEqual({ tip: TIP_A, provenAt: askedAt });
+    expect(await tip()).toBe(TIP_A);
+    expect(asks).toBe(0);
+  });
+
+  test('a newer proof replaces an older one; an older one never replaces a newer one', async () => {
+    await publishBaseTipProof(projectId, 'main', TIP_A, at(-10_000));
+    await publishBaseTipProof(projectId, 'main', TIP_B, at(-5_000));
+    expect((await storedBaseTipProof(projectId, 'main'))?.tip).toBe(TIP_B);
+
+    await publishBaseTipProof(projectId, 'main', TIP_A, at(-8_000));
+    expect((await storedBaseTipProof(projectId, 'main'))?.tip).toBe(TIP_B);
+  });
+
+  test('an expired row stays expired: a base move still makes the next check ask', async () => {
+    await publishBaseTipProof(projectId, 'main', TIP_A, at(-10_000));
+    await expireBaseTips(projectId);
+    // A fetch that started before the move lands after it.
+    await publishBaseTipProof(projectId, 'main', TIP_A, at(-5_000));
+
+    expect(await storedBaseTipProof(projectId, 'main')).toBeNull();
+    upstream = TIP_B;
+    expect(await tip()).toBe(TIP_B);
+    expect(asks).toBe(1);
   });
 });

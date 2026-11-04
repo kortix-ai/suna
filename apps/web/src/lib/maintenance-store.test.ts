@@ -151,7 +151,7 @@ describe('environment-scoped key', () => {
     expect(edgeReadKeys).toEqual(['maintenance_config_prod']);
   });
 
-  test('the edge write gate reads only its own environment key', async () => {
+  test('the edge gate reads only its own environment key', async () => {
     setApiHost('https://staging-api.kortix.com/v1');
     const staging = await getEdgeMaintenanceConfig();
     setApiHost('https://api.kortix.com/v1');
@@ -222,13 +222,11 @@ describe('request path (middleware)', () => {
   });
 });
 
-// ── Independent edge write gate (`GET /api/maintenance/edge`) ──────────────
+// ── Edge Config lockdown state (`getEdgeMaintenanceConfig`) ────────────────
 //
-// The api-router worker reads this route as `MAINTENANCE_STATE_URL` and, on
-// `level: 'blocking'`, answers every non-read-only request to api.kortix.com
-// with a 503 carrying `config.message`. Only a REAL admin state of THIS
-// environment may produce that lockdown.
-describe('edge write gate', () => {
+// The web middleware sends app traffic to /maintenance on `level: 'blocking'`.
+// Only a REAL admin state of THIS environment may produce that lockdown.
+describe('edge gate: web lockdown state', () => {
   test('stays open when the environment key is absent (fresh deploy)', async () => {
     edgeItems.delete('maintenance_config_prod');
 

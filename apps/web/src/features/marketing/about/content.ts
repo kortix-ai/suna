@@ -43,9 +43,9 @@ export const hero = {
   ctaPrimary: 'We are hiring',
   ctaPrimaryHref: '/careers',
   ctaSecondary: 'Read the code',
-  ctaSecondaryHref: 'https://github.com/kortix-ai/suna',
+  ctaSecondaryHref: 'https://github.com/kortix-ai/CompanyOS',
   imageAlt: 'The Kortix team',
-  starsCaption: 'stars on kortix-ai/suna',
+  starsCaption: 'stars on kortix-ai/CompanyOS',
 } as const;
 
 /**
@@ -137,7 +137,7 @@ export const closing = {
   ctaPrimary: 'See open positions',
   ctaPrimaryHref: '/careers',
   ctaSecondary: 'Read the code',
-  ctaSecondaryHref: 'https://github.com/kortix-ai/suna',
+  ctaSecondaryHref: 'https://github.com/kortix-ai/CompanyOS',
 } as const;
 
 export function getLocalizedAboutContent(tI18nComplete: UiTranslator) {

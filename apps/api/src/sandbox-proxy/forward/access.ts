@@ -150,9 +150,8 @@ export async function refuseSessionOrControlAccess(input: {
   // The path itself must stay open: the SDK's `restart` mode is a plain
   // `/kortix/refresh`, and users legitimately reach it. Only the destructive
   // flag is refused, and refused HERE because this is the layer that knows the
-  // request came from a user at all. Its one legitimate caller is the
-  // warm-session workspace refresh at session create, which calls the daemon
-  // directly and never traverses this proxy.
+  // request came from a user at all. No API path sends the flag any more; an
+  // older daemon that still honors it must never get it from a user.
   //
   // The daemon enforces this independently (it also demands the stripped
   // service-call header) — a destructive primitive should not depend on a remote
@@ -176,9 +175,8 @@ export async function refuseSessionOrControlAccess(input: {
  *
  * `/kortix/refresh?base=1` runs `git checkout -B <branch> <sha>` in the box, and
  * the branch IS the session id — so it discards every commit the session made
- * and deletes the files they added. Its one legitimate caller is the
- * warm-session workspace refresh at session create, which calls the daemon
- * directly and never comes through here.
+ * and deletes the files they added. No API path sends the flag any more; an
+ * older daemon that still honors it must never get it from a user.
  *
  * The PATH stays open on purpose: a plain `/kortix/refresh` is the SDK's
  * `restart` mode and users legitimately reach it. Only the flag is refused.

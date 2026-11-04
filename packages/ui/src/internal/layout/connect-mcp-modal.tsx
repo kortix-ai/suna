@@ -147,7 +147,7 @@ export function ConnectMcpModal({
             {/* Actions sit on the bottom edge, level with the foot of the art. */}
             <footer className="mt-auto flex items-center justify-between pt-2">
               <Button asChild variant="ghost" size="sm" className="text-muted-foreground gap-1">
-                <Link href="/docs/connect/mcp" target="_blank">
+                <Link href="/docs/guide#other-ai-tools-mcp" target="_blank">
                   {t('docs')}
                   <ArrowUpRightIcon className="size-3.5 shrink-0" />
                 </Link>

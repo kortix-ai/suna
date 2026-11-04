@@ -406,7 +406,7 @@ function SavedThread({
                 sessionId={sessionId}
                 onFileMention={openFilePreview}
                 rewindDisabled
-                sender={messageAvatarPerson(messageAuthors, participants, viewerId, turn.id)}
+                sender={messageAvatarPerson(messageAuthors, turn.id)}
                 stoppedBy={turnStoppedBy(messageAuthors, viewerId, turn.id)}
               />
             </View>

@@ -114,6 +114,24 @@ export function turnEndPushType(input: {
   return 'error';
 }
 
+/**
+ * What a chat that marks a person's message while the agent works (Discord's
+ * ⏳) hears when a turn ends: only an end that closed a root turn in this call
+ * and left the session idle. A promoted queued prompt keeps it running, so its
+ * marks stay; a child session's parent still runs.
+ */
+export function chatTurnSettlement(input: {
+  outcome: SandboxTurnCompletionOutcome;
+  status: 'idle' | 'error';
+  errorName?: string | null;
+  childSession?: boolean;
+  promoted?: boolean;
+}): 'done' | 'failed' | 'stopped' | null {
+  if (input.childSession || input.outcome !== 'closed' || input.promoted) return null;
+  if (input.status === 'idle') return 'done';
+  return input.errorName && ABORT_END_ERROR_NAMES.includes(input.errorName) ? 'stopped' : 'failed';
+}
+
 /** `metadata.custom_name`, else the generated `metadata.name`, else null. */
 export function sessionTitleOf(metadata: unknown): string | null {
   const meta = (metadata && typeof metadata === 'object' ? metadata : {}) as Record<string, unknown>;

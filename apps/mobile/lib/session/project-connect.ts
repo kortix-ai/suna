@@ -1,8 +1,6 @@
 import type React from 'react';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { appIsActive } from '@/hooks/useWarmProjectSession';
-import { warmSessionPool } from '@/lib/session/warm-session-pool';
 import { useTabStore } from '@/stores/tab-store';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
@@ -49,7 +47,7 @@ import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { useFocusEffect } from 'expo-router/react-navigation';
 import { leaveSandboxOnFocus, showsSessionContent as showsSessionContentFor } from '@/lib/session/session-sandbox';
 
-export function useProjectSessionConnect(projectId: string, projectSessions: ProjectSession[], activeSessionId: string | null, activePageId: string | null, releaseWarmSession: (id: string) => void, setHomeKey: React.Dispatch<React.SetStateAction<number>>) {
+export function useProjectSessionConnect(projectId: string, projectSessions: ProjectSession[], activeSessionId: string | null, activePageId: string | null, setHomeKey: React.Dispatch<React.SetStateAction<number>>) {
   const { switchSandbox, clearSandbox } = useSandboxContext();
   const navigateToSession = useTabStore((s) => s.navigateToSession);
   const queryClient = useQueryClient();
@@ -233,8 +231,8 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
       // between must see one of them: `isHome` is "no page, no thread, not
       // connecting", and the view route pops itself and resets the project
       // the moment it reads true. Cleared first, a render forced in between
-      // (`seedFirstPrompt` writes the sync store) read home, and a home send
-      // that opened at once (a warm session) landed back on project home.
+      // (`seedFirstPrompt` writes the sync store) read home, and a session
+      // that opened at once landed back on project home.
       navigateToSession(threadId);
       setConnectingProjectSessionId(null);
       setConnectError(null);
@@ -395,7 +393,6 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
         ? { sessionId: ps.session_id, runtimeId: focusRuntimeSessionId }
         : null;
       haptics.tap();
-      releaseWarmSession(ps.session_id);
       setConnectError(null);
       erroredSessionRef.current = null;
       // A reopened session, never a fresh one: Cancel must not stop it server-side.
@@ -405,21 +402,20 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
       setConnectingProjectSessionId(ps.session_id);
       navigateToSession(null);
     },
-    [navigateToSession, releaseWarmSession]
+    [navigateToSession]
   );
 
   // Open a session by raw id (e.g. Fix-with-agent returns a new session).
   const handleOpenSessionById = useCallback(
     (sessionId: string) => {
       pendingThreadFocusRef.current = null;
-      releaseWarmSession(sessionId);
       setConnectError(null);
       erroredSessionRef.current = null;
       freshSessionIdRef.current = null;
       setConnectingProjectSessionId(sessionId);
       navigateToSession(null);
     },
-    [navigateToSession, releaseWarmSession]
+    [navigateToSession]
   );
 
   // Restart a session whose runtime failed to boot (web parity:

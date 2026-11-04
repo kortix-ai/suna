@@ -347,7 +347,7 @@ describe('us_region: a template not yet copied to the region', () => {
     });
   }
 
-  test('a warm (speculative) box never leaves its region: failed fails fast, with no home-region create', async () => {
+  test('a box that must run in its region never leaves it: failed fails fast, with no home-region create', async () => {
     createSequence = [{ error: notResident('failed') }];
     const p = new PlatinumProvider();
     const err = await p
@@ -433,7 +433,7 @@ describe('us_region: a drive that lives in another region', () => {
     expect((err as Error).message).toContain('[drives]');
   });
 
-  test('a warm (speculative) box keeps its region and fails with the drives error', async () => {
+  test('a box that must run in its region keeps it and fails with the drives error', async () => {
     createSequence = [{ error: refusals.volume_in_other_region }];
     const p = new PlatinumProvider();
     const err = await p

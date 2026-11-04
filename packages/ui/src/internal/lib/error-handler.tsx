@@ -179,7 +179,7 @@ export const handleApiError = (
   // deadline — packages/sdk/src/core/http/api-client.ts) is intentionally NOT
   // captured here. It is the frontend mirror of the API's request-deadline 503
   // (apps/api/src/middleware/request-deadline.ts, de-noised from Sentry by
-  // https://github.com/kortix-ai/suna/pull/4524): the API has a 25s server
+  // https://github.com/kortix-ai/CompanyOS/pull/4524): the API has a 25s server
   // deadline that returns a clean 503 + Retry-After, and react-query retries
   // background polls, so a 30s client abort is an EXPECTED, retryable
   // degradation under momentary API saturation — not an actionable bug. The

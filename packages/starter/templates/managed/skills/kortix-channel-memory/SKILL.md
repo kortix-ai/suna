@@ -16,7 +16,6 @@ copied: what you write is what they see, and the reverse.
 | --- | --- | --- |
 | This channel | the channel's `Memory/` folder (`/drives/README.md` names its path) | every member, every thread of the channel; a private channel: only its members |
 | This DM | `/drives/me/Memory/<your agent name>/`, beside the user's own memory in `/drives/me/Memory/` | only the user |
-| Company | `/drives/company/Memory/` | every member, every thread |
 
 The turn's system prompt lists the files of each folder this thread reads,
 by title and path. A folder marked "not mounted in this thread" is not
@@ -26,9 +25,9 @@ In a private thread in a channel, the list can show the user's DM memory
 with you: read it, but save to it only from the DM.
 
 In a private channel (`/drives/README.md` says so), the channel's `Memory/`
-is the only place you save, team facts included. Company memory and the
-user's folder are read-only in its threads. Never copy what you learn there
-into Company memory, another channel or anywhere outside the channel.
+is the only place you save, team facts included. Every other folder,
+the user's included, is read-only in its threads. Never copy what you learn there
+into another folder, another channel or anywhere outside the channel.
 </folders>
 
 <read>
@@ -74,7 +73,7 @@ Save in the same turn you learn the fact, with your file tools (`write`,
 - Read a file just before you edit it, and change only your lines: people
   and other threads edit the same files.
 - Facts only. Never a secret, a password, a key or a token.
-- Never a person's private facts in a channel or Company folder. Keep them
+- Never a person's private facts in a channel or a shared folder. Keep them
   in the DM folder from a DM thread, or in `/drives/me/Memory/` (the
   `kortix-user-memory` skill).
 - To forget a fact, delete its line, or the file when nothing is left, and

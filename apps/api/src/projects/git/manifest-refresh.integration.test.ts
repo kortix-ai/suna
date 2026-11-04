@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { loadProjectAgents } from '../agents';
-import { invalidateProjectMirror, provenMirrorTip, refreshMirror, repoCachePath } from './mirror';
+import { invalidateProjectMirror, provenMirrorTip, publishTipProofsTo, refreshMirror, repoCachePath } from './mirror';
 import type { GitBackedProject } from './types';
 
 /** The connectors an enabled agent declares as required, read off the loaded manifest. */
@@ -83,6 +83,21 @@ afterEach(async () => {
   else process.env.KORTIX_GIT_REFRESH_INTERVAL_MS = previousRefreshInterval;
   await rm(testRoot, { recursive: true, force: true });
 });
+
+/**
+ * From here on, every fetch the mirror makes reads the remote's refs at once
+ * and receives them 1.5 s later: protocol v0 advertises refs when upload-pack
+ * starts, and the pipe holds its output back. A fetch that spans a push
+ * therefore lands the tip from before it.
+ */
+async function slowRemoteFetches(): Promise<void> {
+  const slowUploadPack = join(testRoot, 'slow-upload-pack');
+  await writeFile(slowUploadPack, '#!/bin/sh\ngit-upload-pack "$@" | (sleep 1.5; cat)\n');
+  await chmod(slowUploadPack, 0o755);
+  const mirror = repoCachePath(project);
+  await git(['config', 'remote.origin.uploadpack', slowUploadPack], mirror);
+  await git(['config', 'protocol.version', '0'], mirror);
+}
 
 describe('manifest refresh', () => {
   test('a forced agent load observes a remote governance update during the cache interval', async () => {
@@ -186,6 +201,88 @@ describe('manifest refresh', () => {
       invalidateProjectMirror(project.projectId);
       expect(await provenMirrorTip(project, 'main')).toBeNull();
     });
+
+    describe('shared proofs', () => {
+      let published: Array<{ ref: string; tip: string; askedAt: number }> = [];
+      /** When each proof was handed to the publisher. */
+      let publishedAt: number[] = [];
+      beforeEach(() => {
+        published = [];
+        publishedAt = [];
+        publishTipProofsTo(async (projectId, ref, tip, askedAt) => {
+          if (projectId !== project.projectId) return;
+          published.push({ ref, tip, askedAt });
+          publishedAt.push(Date.now());
+        });
+      });
+      afterEach(() => publishTipProofsTo(null));
+      /** Publishing runs behind the read. */
+      const settled = async (expected: number) => {
+        for (let i = 0; i < 100 && published.length < expected; i++) await Bun.sleep(10);
+        await Bun.sleep(30);
+      };
+      const remoteMain = async () => (await exec('git', ['rev-parse', 'refs/heads/main'], { cwd: remotePath })).stdout.trim();
+
+      test('a read that asked the remote shares the tip it saw and when it asked', async () => {
+        const before = Date.now();
+        await required(tipProof);
+        const after = Date.now();
+        await settled(1);
+
+        expect(published.map(({ ref, tip }) => ({ ref, tip }))).toEqual([{ ref: 'main', tip: await remoteMain() }]);
+        expect(published[0]!.askedAt).toBeGreaterThanOrEqual(before);
+        expect(published[0]!.askedAt).toBeLessThanOrEqual(after);
+      });
+
+      test('a read answered from its proof shares nothing: it did not ask', async () => {
+        await required(tipProof);
+        await settled(1);
+        published = [];
+
+        await required(tipProof);
+        await settled(0);
+        expect(published).toEqual([]);
+      });
+
+      test('a proof in flight across a base move is not shared; the retried read shares the moved tip', async () => {
+        await loadProjectAgents(project);
+        await settled(1);
+        const oldTip = await remoteMain();
+        // The read below is still fetching when the move is announced.
+        await slowRemoteFetches();
+        invalidateProjectMirror(project.projectId);
+        const inFlight = refreshMirror(project, 'tip-proof', { freshRef: 'main' });
+        await pushRequiredManifest();
+        const movedAt = Date.now();
+        invalidateProjectMirror(project.projectId);
+        await inFlight;
+        await settled(published.length + 1);
+
+        const staleAfterMove = published.filter((proof, i) => proof.tip === oldTip && publishedAt[i]! >= movedAt);
+        expect(staleAfterMove).toEqual([]);
+        expect(published.at(-1)).toMatchObject({ ref: 'main', tip: await remoteMain() });
+        expect(published.at(-1)!.askedAt).toBeGreaterThanOrEqual(movedAt);
+      }, 20_000);
+    });
+
+    test('a read whose proof stands does not wait out another caller\'s fetch; a moved base still does', async () => {
+      await required(tipProof);
+      await slowRemoteFetches();
+
+      const otherFetch = refreshMirror(project, true);
+      const started = performance.now();
+      await refreshMirror(project, 'tip-proof', { freshRef: 'main' });
+      expect(performance.now() - started).toBeLessThan(500);
+      await otherFetch;
+
+      // After a move the proof is gone: the read queues behind the fetch, as before.
+      invalidateProjectMirror(project.projectId);
+      const nextFetch = refreshMirror(project, true);
+      const queued = performance.now();
+      await refreshMirror(project, 'tip-proof', { freshRef: 'main' });
+      expect(performance.now() - queued).toBeGreaterThan(1_000);
+      await nextFetch;
+    }, 20_000);
 
     test('an expired proof is re-proved against the remote', async () => {
       expect(await required(tipProof)).toEqual([]);

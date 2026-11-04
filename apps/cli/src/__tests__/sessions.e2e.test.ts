@@ -51,7 +51,7 @@ describe('sessions new CLI flow', () => {
     // Park the process OUTSIDE any git repository for the whole file. A
     // timed-out beforeEach used to leave cwd inside the checkout, so `sessions
     // new` pushed the session branch with the CLI's own git credentials and
-    // targeted github.com/kortix-ai/suna. It only failed because the CI
+    // targeted github.com/kortix-ai/CompanyOS. It only failed because the CI
     // checkout is a detached HEAD with no refs/heads/main. From a non-repo
     // directory the same path can only produce an immediate local git error.
     parkedCwd = await mkdtemp(join(tmpdir(), 'kortix-cli-session-parked-'));
