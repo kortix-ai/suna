@@ -628,7 +628,6 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|:projectId|channels|telegram|installation",
   "GET|v1|projects|:projectId|channels|telegram|users",
   "GET|v1|projects|:projectId|channels|telegram|users|:user_id|photo",
-  "POST|v1|projects|:projectId|chat|threads",
   "DELETE|v1|projects|:projectId|claude-subscription",
   "GET|v1|projects|:projectId|claude-subscription",
   "POST|v1|projects|:projectId|claude-subscription|login|complete",
@@ -693,6 +692,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|projects|:projectId|gateway|keys|:keyId",
   "GET|v1|projects|:projectId|gateway|logs",
   "GET|v1|projects|:projectId|gateway|logs|:logId",
+  "GET|v1|projects|:projectId|gateway|logs|facets",
   "GET|v1|projects|:projectId|gateway|overview",
   "POST|v1|projects|:projectId|gateway|playground",
   "POST|v1|projects|:projectId|gateway|providers|:providerId|verify",
@@ -1022,6 +1022,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|webhooks|teams|messages",
   "GET|v1|webhooks|teams|oauth|callback",
   "POST|v1|webhooks|telegram|:projectId",
+  "POST|v1|projects|:projectId|chat|threads",
 ] as const;
 
 export const AUDIT_HTTP_ROUTES = AUDIT_HTTP_ROUTE_KEYS.map((key) => {

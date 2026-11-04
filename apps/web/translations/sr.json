@@ -683,7 +683,7 @@
       "threadsDeleted": "Свака сесија и порука се бришу",
       "credentialsDeleted": "Сви приступни подаци и тајне се уклањају",
       "subscriptionCancelled": "Ваша претплата је отказана",
-      "billingHistoryRemoved": "Историја наплате се уклања",
+      "billingRecordsKept": "Евиденција наплате се чува онолико дуго колико закон захтева",
       "chooseWhen": "Изаберите када",
       "gracePeriodLabel": "Период одлагања",
       "gracePeriodDescription": "Брисање се обавља заказаног датума. Можете отказати пре тога.",
@@ -1333,6 +1333,10 @@
         "shared_drives": {
           "name": "Deljeni drajvovi",
           "description": "Drajvovi koje ceo tim može da koristi: administrator pravi drajv i dodaje mu agente. Svaka sesija tih agenata ga montira, a svako ko sme da koristi nekog od njih može da ga otvori. Isključeno, svaka osoba ima samo Moje fajlove."
+        },
+        "chat_input": {
+          "name": "Unos u četu",
+          "description": "Jedna kontrola ispod polja za unos za to ko odgovara i kako: izaberi agenta, a sva ostala podešavanja ostaju na Automatski, nasleđena od tog agenta. Otvori red da zameniš model, nivo razmišljanja, tajne, ključeve provajdera ili sandbox za ovu sesiju, i vrati na Automatski jednim klikom."
         }
       },
       "channelsSwitch": {
@@ -2255,6 +2259,14 @@
     "thinkingEffort": "Ниво размишљања",
     "sessionOverrides": "Измене сесије",
     "auto": "Аутоматски",
+    "chatInput": "Unos u četu",
+    "chatInputAgent": "Agent",
+    "chatInputSettings": "Podešavanja",
+    "chatInputModel": "Model",
+    "chatInputEffort": "Nivo",
+    "chatInputAutoFrom": "Automatski (od {agent})",
+    "chatInputOverrideCount": "{count, plural, one {# izmena} few {# izmene} other {# izmena}}",
+    "chatInputResetToAuto": "Vrati na automatski",
     "sending": "Слање",
     "stop": "Заустави",
     "startingSession": "Покретање сесије…",
@@ -21413,11 +21425,11 @@
     "getAKey": "Набави кључ"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "Претражи модел, провајдера или грешку",
+    "searchPlaceholder": "Претражи модел, провајдера, грешку или id",
     "requestsLabel": "{count, plural, one {захтев} few {захтева} other {захтева}}",
     "errorsLabel": "{count, plural, one {грешка} few {грешке} other {грешака}}",
     "medianLatency": "медијана кашњења",
-    "noMatch": "Ниједан учитани захтев не одговара „{query}“",
+    "noMatch": "Ниједан захтев не одговара „{query}“",
     "histogram": "Захтеви кроз време",
     "close": "Затвори",
     "now": "Сада",
@@ -21425,7 +21437,33 @@
     "topModel": "Најчешћи модел",
     "noRequests": "Нема захтева",
     "cardErrors": "Грешке",
-    "cardMedianLatency": "Медијана кашњења"
+    "cardMedianLatency": "Медијана кашњења",
+    "noFilterMatch": "Ниједан захтев не одговара овим филтерима",
+    "sessionColumn": "Сесија",
+    "untitledSession": "Сесија без наслова",
+    "openInSession": "Отвори у сесији",
+    "openMessage": "Отвори на овој поруци",
+    "onlyThisSession": "Само ова сесија",
+    "noSession": "Није из сесије",
+    "fromGatewayKey": "Послато кључем gateway-а, не из сесије",
+    "messageLabel": "Порука",
+    "turnLabel": "Тура",
+    "threadLabel": "Нит подагента",
+    "sessionIdLabel": "Ид сесије",
+    "byTimeHint": "Послато пре него што су сесије именовале поруке: линк отвара туру која је тада била активна.",
+    "filter": "Филтер",
+    "filterTime": "Време",
+    "filterModel": "Модел",
+    "filterProvider": "Провајдер",
+    "filterError": "Грешка",
+    "clearFilters": "Обриши филтере",
+    "facetEmptyDay": "Ниједан у последња 24 сата",
+    "facetEmptyWeek": "Ниједан у последњих 7 дана",
+    "windowAny": "Било када",
+    "window15m": "Последњих 15 минута",
+    "window1h": "Последњи сат",
+    "window24h": "Последња 24 сата",
+    "window7d": "Последњих 7 дана"
   },
   "modelsList": {
     "onCount": "{on} од {total} укључено",

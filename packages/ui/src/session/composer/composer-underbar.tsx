@@ -10,6 +10,7 @@ import { PaperclipIcon as Paperclip } from '@phosphor-icons/react';
 import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
 import { AgentSelector } from './agent-selector';
+import { ChatInputControl, type ChatInputControlProps } from './chat-input/chat-input-control';
 import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 import { TokenProgress } from './token-progress';
 
@@ -74,6 +75,12 @@ export interface ComposerUnderbarProps {
   toolbarSlot?: React.ReactNode;
   /** Right of the agent picker: the session's agents line. Same row, no added height. */
   agentsSlot?: React.ReactNode;
+  /**
+   * The `chat_input` flag is on: one control for the agent, model, effort and
+   * session overrides takes the agent picker's place. The card then renders
+   * no model or effort picker and no overrides gear. Unset: the agent picker.
+   */
+  chatInput?: Omit<ChatInputControlProps, 'agents' | 'selectedAgent' | 'onAgentChange' | 'unavailableHint'>;
 }
 
 export function ComposerUnderbar({
@@ -92,6 +99,7 @@ export function ComposerUnderbar({
   agentPickerCompact = false,
   toolbarSlot,
   agentsSlot,
+  chatInput,
 }: ComposerUnderbarProps) {
   const t = useTranslations('threads');
   const { contextMeterEnabled } = useUiHostConfig();
@@ -154,16 +162,26 @@ export function ComposerUnderbar({
           </Button>
         </Hint>
 
-        <AgentSelector
-          compact={agentPickerCompact}
-          agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
-          selectedAgent={selectedAgent}
-          open={agentMenuOpen}
-          onOpenChange={onAgentMenuOpenChange}
-          onSelect={onAgentChange ?? NO_AGENT_SELECT}
-          triggerLabelClassName="max-w-[7rem]"
-          unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
-        />
+        {chatInput ? (
+          <ChatInputControl
+            {...chatInput}
+            agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
+            selectedAgent={selectedAgent}
+            onAgentChange={onAgentChange}
+            unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
+          />
+        ) : (
+          <AgentSelector
+            compact={agentPickerCompact}
+            agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
+            selectedAgent={selectedAgent}
+            open={agentMenuOpen}
+            onOpenChange={onAgentMenuOpenChange}
+            onSelect={onAgentChange ?? NO_AGENT_SELECT}
+            triggerLabelClassName="max-w-[7rem]"
+            unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
+          />
+        )}
 
         {agentsSlot}
       </div>

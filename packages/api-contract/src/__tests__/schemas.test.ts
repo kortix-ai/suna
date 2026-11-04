@@ -161,6 +161,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       chrome: false,
       agent_teams: false,
       voice_call: false,
+      chat_input: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -877,6 +878,7 @@ describe('envelopes', () => {
       'chrome',
       'agent_teams',
       'voice_call',
+      'chat_input',
     ]);
   });
 

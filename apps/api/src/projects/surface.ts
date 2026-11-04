@@ -159,6 +159,8 @@ export { abortRuntimeTurn } from './session-lifecycle/abort-runtime-turn';
 
 // The retention purge of session content (consumed by worker/jobs/session-log-purge.ts).
 export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
+// The liveness rule of a closed account, shared with billing/services/retention-erasure.ts.
+export { LIVE as liveClosedAccountSql } from './session-log-purge';
 
 // Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
 export { resolveCommitSha, resolveCommitShaAt } from './git/commits';

@@ -683,7 +683,7 @@
       "threadsDeleted": "Se eliminan todas las sesiones y mensajes",
       "credentialsDeleted": "Se eliminan todas las credenciales y secretos.",
       "subscriptionCancelled": "Tu suscripción está cancelada",
-      "billingHistoryRemoved": "Se elimina tu historial de facturación",
+      "billingRecordsKept": "Tus registros de facturación se conservan durante el tiempo que exige la ley",
       "chooseWhen": "Elige cuando",
       "gracePeriodLabel": "Período de gracia",
       "gracePeriodDescription": "La eliminación se realiza en la fecha prevista. Puedes cancelarla antes.",
@@ -1333,6 +1333,10 @@
         "shared_drives": {
           "name": "Unidades compartidas",
           "description": "Unidades que todo el equipo puede usar: un admin crea una unidad y le añade agentes. Cada sesión de esos agentes la monta, y quien pueda usar uno de ellos puede abrirla. Desactivado, cada persona solo tiene Mis archivos."
+        },
+        "chat_input": {
+          "name": "Entrada de chat",
+          "description": "Un solo control bajo el editor para quién responde y cómo: elige el agente y todos los demás ajustes quedan en Automático, heredados de ese agente. Abre una fila para sobrescribir el modelo, el esfuerzo de razonamiento, los secretos, las claves de proveedor o el sandbox de esta sesión, y vuelve a Automático con un clic."
         }
       },
       "channelsSwitch": {
@@ -2255,6 +2259,14 @@
     "thinkingEffort": "Nivel de razonamiento",
     "sessionOverrides": "Ajustes de la sesión",
     "auto": "Automático",
+    "chatInput": "Entrada de chat",
+    "chatInputAgent": "Agente",
+    "chatInputSettings": "Ajustes",
+    "chatInputModel": "Modelo",
+    "chatInputEffort": "Esfuerzo",
+    "chatInputAutoFrom": "Automático (de {agent})",
+    "chatInputOverrideCount": "{count, plural, one {# cambio} other {# cambios}}",
+    "chatInputResetToAuto": "Volver a automático",
     "sending": "Enviando",
     "stop": "Detener",
     "startingSession": "Iniciando sesión…",
@@ -21413,11 +21425,11 @@
     "getAKey": "Obtener una clave"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "Buscar modelo, proveedor o error",
+    "searchPlaceholder": "Buscar modelo, proveedor, error o id",
     "requestsLabel": "{count, plural, one {solicitud} other {solicitudes}}",
     "errorsLabel": "{count, plural, one {error} other {errores}}",
     "medianLatency": "latencia mediana",
-    "noMatch": "Ninguna solicitud cargada coincide con «{query}»",
+    "noMatch": "Ninguna solicitud coincide con “{query}”",
     "histogram": "Solicitudes en el tiempo",
     "close": "Cerrar",
     "now": "Ahora",
@@ -21425,7 +21437,33 @@
     "topModel": "Modelo principal",
     "noRequests": "Sin solicitudes",
     "cardErrors": "Errores",
-    "cardMedianLatency": "Latencia mediana"
+    "cardMedianLatency": "Latencia mediana",
+    "noFilterMatch": "Ninguna solicitud coincide con estos filtros",
+    "sessionColumn": "Sesión",
+    "untitledSession": "Sesión sin título",
+    "openInSession": "Abrir en la sesión",
+    "openMessage": "Abrir en este mensaje",
+    "onlyThisSession": "Solo esta sesión",
+    "noSession": "No viene de una sesión",
+    "fromGatewayKey": "Enviada con una clave del gateway, no desde una sesión",
+    "messageLabel": "Mensaje",
+    "turnLabel": "Turno",
+    "threadLabel": "Hilo de subagente",
+    "sessionIdLabel": "Id de sesión",
+    "byTimeHint": "Enviada antes de que las sesiones nombraran sus mensajes: el enlace abre el turno que se ejecutaba en ese momento.",
+    "filter": "Filtrar",
+    "filterTime": "Tiempo",
+    "filterModel": "Modelo",
+    "filterProvider": "Proveedor",
+    "filterError": "Error",
+    "clearFilters": "Borrar filtros",
+    "facetEmptyDay": "Ninguno en las últimas 24 horas",
+    "facetEmptyWeek": "Ninguno en los últimos 7 días",
+    "windowAny": "Cualquier momento",
+    "window15m": "Últimos 15 minutos",
+    "window1h": "Última hora",
+    "window24h": "Últimas 24 horas",
+    "window7d": "Últimos 7 días"
   },
   "modelsList": {
     "onCount": "{on} de {total} activos",

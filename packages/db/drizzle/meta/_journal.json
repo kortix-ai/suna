@@ -1506,6 +1506,13 @@
       "when": 1793741721457,
       "tag": "20261103213521_project_config_summaries_manifest_path",
       "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1793753140870,
+      "tag": "20261104004540_retention_erasures",
+      "breakpoints": true
     }
   ]
 }

@@ -736,9 +736,16 @@ export const qk = {
       [...qk.project.gateway(id), 'sessions', days] as const,
     gatewayErrors: (id: string, days: number) =>
       [...qk.project.gateway(id), 'errors', days] as const,
-    /** `ok` mirrors `listGatewayLogs`'s optional pass/fail filter — `null` = unfiltered. */
-    gatewayLogs: (id: string, ok: boolean | null) =>
-      [...qk.project.gateway(id), 'logs', ok] as const,
+    /**
+     * `ok` mirrors `listGatewayLogs`'s optional pass/fail filter — `null` = unfiltered.
+     * `filters` are the other server-side filters (`GatewayLogFilters`).
+     */
+    gatewayLogs: (id: string, ok: boolean | null, filters?: Record<string, string | undefined>) =>
+      filters
+        ? ([...qk.project.gateway(id), 'logs', ok, filters] as const)
+        : ([...qk.project.gateway(id), 'logs', ok] as const),
+    gatewayLogFacets: (id: string, hours: number) =>
+      [...qk.project.gateway(id), 'logFacets', hours] as const,
     gatewayLog: (id: string, logId: string | null) =>
       [...qk.project.gateway(id), 'log', logId] as const,
     gatewayBudgets: (id: string) => [...qk.project.gateway(id), 'budgets'] as const,

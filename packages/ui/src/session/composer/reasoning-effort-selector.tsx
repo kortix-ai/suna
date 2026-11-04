@@ -70,7 +70,7 @@ export function reasoningEffortChoices(
 
 /** `medium` → `Medium`. The catalog ships lowercase ids; the trigger and the
  *  menu should not. */
-function label(value: string): string {
+export function effortLabel(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
@@ -87,7 +87,7 @@ function label(value: string): string {
  * `const Icon = map[value]` and then `<Icon />` trips the React Compiler's
  * "Cannot create components during render" rule.
  */
-function EffortIcon({ value, className }: { value: string | null; className?: string }) {
+export function EffortIcon({ value, className }: { value: string | null; className?: string }) {
   switch (value) {
     case null:
     case 'auto':
@@ -183,7 +183,7 @@ export function ReasoningEffortSelector({
           className="text-muted-foreground gap-1.5 rounded-lg hit-area-y-3"
         >
           <EffortIcon value={current} className="size-4 shrink-0" />
-          <span className="max-w-[7rem] truncate">{current ? label(current) : t('auto')}</span>
+          <span className="max-w-[7rem] truncate">{current ? effortLabel(current) : t('auto')}</span>
           <CaretDownIcon
             className={cn(
               'size-3 opacity-50 transition-transform duration-200 ease-out',
@@ -205,7 +205,7 @@ export function ReasoningEffortSelector({
           {choices.map((value) => (
             <DropdownMenuRadioItem key={value} value={value}>
               <EffortIcon value={value} className="size-4 shrink-0" />
-              {label(value)}
+              {effortLabel(value)}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

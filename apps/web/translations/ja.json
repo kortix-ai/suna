@@ -683,7 +683,7 @@
       "threadsDeleted": "すべてのセッションとメッセージが削除されます",
       "credentialsDeleted": "すべての資格情報とシークレットが削除されます",
       "subscriptionCancelled": "サブスクリプションがキャンセルされました",
-      "billingHistoryRemoved": "請求履歴は削除されます",
+      "billingRecordsKept": "請求記録は法律で定められた期間保管されます",
       "chooseWhen": "いつ選択するか",
       "gracePeriodLabel": "猶予期間",
       "gracePeriodDescription": "予定日に削除されます。それまではいつでもキャンセルできます。",
@@ -1333,6 +1333,10 @@
         "shared_drives": {
           "name": "共有ドライブ",
           "description": "チーム全体で使えるドライブです。管理者がドライブを作成してエージェントを追加します。そのエージェントの各セッションがドライブをマウントし、いずれかのエージェントを使える人は誰でも開けます。オフのときは、各自のマイファイルだけになります。"
+        },
+        "chat_input": {
+          "name": "チャット入力",
+          "description": "入力欄の下にある 1 つのコントロールで、誰がどう答えるかを決めます。エージェントを選ぶと、他の設定はすべてそのエージェントから引き継ぐ自動のままです。行を開くと、このセッションのモデル、思考レベル、シークレット、プロバイダーキー、サンドボックスを上書きでき、1 クリックで自動に戻せます。"
         }
       },
       "channelsSwitch": {
@@ -2255,6 +2259,14 @@
     "thinkingEffort": "思考レベル",
     "sessionOverrides": "セッションの上書き",
     "auto": "自動",
+    "chatInput": "チャット入力",
+    "chatInputAgent": "エージェント",
+    "chatInputSettings": "設定",
+    "chatInputModel": "モデル",
+    "chatInputEffort": "レベル",
+    "chatInputAutoFrom": "自動（{agent} から）",
+    "chatInputOverrideCount": "{count, plural, other {# 件の上書き}}",
+    "chatInputResetToAuto": "自動に戻す",
     "sending": "送信中",
     "stop": "停止",
     "startingSession": "セッションを開始しています…",
@@ -21413,11 +21425,11 @@
     "getAKey": "キーを取得"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "モデル、プロバイダー、エラーを検索",
+    "searchPlaceholder": "モデル、プロバイダー、エラー、ID を検索",
     "requestsLabel": "{count, plural, other {件のリクエスト}}",
     "errorsLabel": "{count, plural, other {件のエラー}}",
     "medianLatency": "レイテンシ中央値",
-    "noMatch": "読み込まれたリクエストに「{query}」に一致するものはありません",
+    "noMatch": "“{query}” に一致するリクエストはありません",
     "histogram": "時間ごとのリクエスト",
     "close": "閉じる",
     "now": "現在",
@@ -21425,7 +21437,33 @@
     "topModel": "最多のモデル",
     "noRequests": "リクエストなし",
     "cardErrors": "エラー",
-    "cardMedianLatency": "レイテンシ中央値"
+    "cardMedianLatency": "レイテンシ中央値",
+    "noFilterMatch": "このフィルターに一致するリクエストはありません",
+    "sessionColumn": "セッション",
+    "untitledSession": "無題のセッション",
+    "openInSession": "セッションで開く",
+    "openMessage": "このメッセージで開く",
+    "onlyThisSession": "このセッションのみ",
+    "noSession": "セッションからではありません",
+    "fromGatewayKey": "セッションではなくゲートウェイキーで送信",
+    "messageLabel": "メッセージ",
+    "turnLabel": "ターン",
+    "threadLabel": "サブエージェントのスレッド",
+    "sessionIdLabel": "セッション ID",
+    "byTimeHint": "セッションがメッセージに名前を付ける前に送信されました。リンクはその時刻に実行中だったターンを開きます。",
+    "filter": "フィルター",
+    "filterTime": "期間",
+    "filterModel": "モデル",
+    "filterProvider": "プロバイダー",
+    "filterError": "エラー",
+    "clearFilters": "フィルターをクリア",
+    "facetEmptyDay": "過去 24 時間にはありません",
+    "facetEmptyWeek": "過去 7 日間にはありません",
+    "windowAny": "すべての期間",
+    "window15m": "過去 15 分",
+    "window1h": "過去 1 時間",
+    "window24h": "過去 24 時間",
+    "window7d": "過去 7 日間"
   },
   "modelsList": {
     "onCount": "{total} 件中 {on} 件オン",

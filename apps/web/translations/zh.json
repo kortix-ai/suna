@@ -683,7 +683,7 @@
       "threadsDeleted": "所有会话和消息都将被删除",
       "credentialsDeleted": "所有凭证和秘密都被删除",
       "subscriptionCancelled": "您的订阅已取消",
-      "billingHistoryRemoved": "您的帐单历史记录已删除",
+      "billingRecordsKept": "您的账单记录将按法律要求的期限保留",
       "chooseWhen": "选择何时",
       "gracePeriodLabel": "宽限期",
       "gracePeriodDescription": "账户将在预定日期删除。在此之前可随时取消。",
@@ -1333,6 +1333,10 @@
         "shared_drives": {
           "name": "共享云盘",
           "description": "整个团队都能使用的云盘：管理员创建云盘并为其添加智能体。这些智能体的每个会话都会挂载它，任何可以使用其中某个智能体的人都能打开它。关闭时，每个人只有“我的文件”。"
+        },
+        "chat_input": {
+          "name": "聊天输入",
+          "description": "输入框下方的一个控件，决定由谁回答以及如何回答：选择智能体后，其他所有设置都保持自动，继承自该智能体。打开某一行即可为本会话覆盖模型、思考强度、密钥、提供商密钥或沙盒，并一键恢复为自动。"
         }
       },
       "channelsSwitch": {
@@ -2255,6 +2259,14 @@
     "thinkingEffort": "思考强度",
     "sessionOverrides": "会话覆盖",
     "auto": "自动",
+    "chatInput": "聊天输入",
+    "chatInputAgent": "智能体",
+    "chatInputSettings": "设置",
+    "chatInputModel": "模型",
+    "chatInputEffort": "强度",
+    "chatInputAutoFrom": "自动（来自 {agent}）",
+    "chatInputOverrideCount": "{count, plural, other {# 项覆盖}}",
+    "chatInputResetToAuto": "恢复为自动",
     "sending": "正在发送",
     "stop": "停止",
     "startingSession": "正在启动会话…",
@@ -21413,11 +21425,11 @@
     "getAKey": "获取密钥"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "搜索模型、提供商或错误",
+    "searchPlaceholder": "搜索模型、提供商、错误或 ID",
     "requestsLabel": "{count, plural, other {个请求}}",
     "errorsLabel": "{count, plural, other {个错误}}",
     "medianLatency": "延迟中位数",
-    "noMatch": "没有已加载的请求匹配“{query}”",
+    "noMatch": "没有与“{query}”匹配的请求",
     "histogram": "请求随时间变化",
     "close": "关闭",
     "now": "现在",
@@ -21425,7 +21437,33 @@
     "topModel": "最常用模型",
     "noRequests": "无请求",
     "cardErrors": "错误",
-    "cardMedianLatency": "延迟中位数"
+    "cardMedianLatency": "延迟中位数",
+    "noFilterMatch": "没有与这些筛选条件匹配的请求",
+    "sessionColumn": "会话",
+    "untitledSession": "未命名会话",
+    "openInSession": "在会话中打开",
+    "openMessage": "在此消息处打开",
+    "onlyThisSession": "仅此会话",
+    "noSession": "不是来自会话",
+    "fromGatewayKey": "通过网关密钥发送，而非来自会话",
+    "messageLabel": "消息",
+    "turnLabel": "轮次",
+    "threadLabel": "子代理线程",
+    "sessionIdLabel": "会话 ID",
+    "byTimeHint": "在会话为消息命名之前发送：链接会打开当时正在运行的轮次。",
+    "filter": "筛选",
+    "filterTime": "时间",
+    "filterModel": "模型",
+    "filterProvider": "提供商",
+    "filterError": "错误",
+    "clearFilters": "清除筛选",
+    "facetEmptyDay": "过去 24 小时内没有",
+    "facetEmptyWeek": "过去 7 天内没有",
+    "windowAny": "任何时间",
+    "window15m": "过去 15 分钟",
+    "window1h": "过去 1 小时",
+    "window24h": "过去 24 小时",
+    "window7d": "过去 7 天"
   },
   "modelsList": {
     "onCount": "已开启 {on} / {total}",

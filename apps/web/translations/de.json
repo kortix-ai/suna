@@ -683,7 +683,7 @@
       "threadsDeleted": "Jede Session und jede Nachricht wird gelöscht",
       "credentialsDeleted": "Alle Anmeldeinformationen und Geheimnisse werden entfernt",
       "subscriptionCancelled": "Ihr Abonnement ist gekündigt",
-      "billingHistoryRemoved": "Ihr Abrechnungsverlauf wird entfernt",
+      "billingRecordsKept": "Ihre Abrechnungsunterlagen bleiben so lange erhalten, wie es das Gesetz vorschreibt",
       "chooseWhen": "Wählen Sie wann",
       "gracePeriodLabel": "Schonfrist",
       "gracePeriodDescription": "Die Löschung erfolgt am geplanten Datum. Du kannst sie vorher jederzeit abbrechen.",
@@ -1333,6 +1333,10 @@
         "shared_drives": {
           "name": "Geteilte Drives",
           "description": "Drives für das ganze Team: Ein Admin legt ein Drive an und fügt ihm Agenten hinzu. Jede Session dieser Agenten bindet es ein, und alle, die einen davon nutzen dürfen, können es öffnen. Aus: Jede Person hat nur Meine Dateien."
+        },
+        "chat_input": {
+          "name": "Chat-Eingabe",
+          "description": "Ein Steuerelement unter dem Eingabefeld dafür, wer antwortet und wie: Wähle den Agenten, und jede andere Einstellung bleibt auf Automatisch, geerbt von diesem Agenten. Öffne eine Zeile, um Modell, Denkaufwand, Secrets, Anbieterschlüssel oder Sandbox für diese Sitzung zu überschreiben, und setze sie mit einem Klick auf Automatisch zurück."
         }
       },
       "channelsSwitch": {
@@ -2255,6 +2259,14 @@
     "thinkingEffort": "Denkaufwand",
     "sessionOverrides": "Sitzungsüberschreibungen",
     "auto": "Automatisch",
+    "chatInput": "Chat-Eingabe",
+    "chatInputAgent": "Agent",
+    "chatInputSettings": "Einstellungen",
+    "chatInputModel": "Modell",
+    "chatInputEffort": "Aufwand",
+    "chatInputAutoFrom": "Automatisch (von {agent})",
+    "chatInputOverrideCount": "{count, plural, one {# Überschreibung} other {# Überschreibungen}}",
+    "chatInputResetToAuto": "Auf Automatisch zurücksetzen",
     "sending": "Wird gesendet",
     "stop": "Stoppen",
     "startingSession": "Sitzung wird gestartet…",
@@ -21413,11 +21425,11 @@
     "getAKey": "Schlüssel holen"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "Modell, Anbieter oder Fehler suchen",
+    "searchPlaceholder": "Modell, Anbieter, Fehler oder ID suchen",
     "requestsLabel": "{count, plural, one {Anfrage} other {Anfragen}}",
     "errorsLabel": "{count, plural, one {Fehler} other {Fehler}}",
     "medianLatency": "Median-Latenz",
-    "noMatch": "Keine geladene Anfrage passt zu „{query}“",
+    "noMatch": "Keine Anfrage passt zu „{query}“",
     "histogram": "Anfragen im Zeitverlauf",
     "close": "Schließen",
     "now": "Jetzt",
@@ -21425,7 +21437,33 @@
     "topModel": "Häufigstes Modell",
     "noRequests": "Keine Anfragen",
     "cardErrors": "Fehler",
-    "cardMedianLatency": "Median-Latenz"
+    "cardMedianLatency": "Median-Latenz",
+    "noFilterMatch": "Keine Anfrage passt zu diesen Filtern",
+    "sessionColumn": "Sitzung",
+    "untitledSession": "Unbenannte Sitzung",
+    "openInSession": "In Sitzung öffnen",
+    "openMessage": "Bei dieser Nachricht öffnen",
+    "onlyThisSession": "Nur diese Sitzung",
+    "noSession": "Nicht aus einer Sitzung",
+    "fromGatewayKey": "Mit einem Gateway-Schlüssel gesendet, nicht aus einer Sitzung",
+    "messageLabel": "Nachricht",
+    "turnLabel": "Turn",
+    "threadLabel": "Subagent-Thread",
+    "sessionIdLabel": "Sitzungs-ID",
+    "byTimeHint": "Gesendet, bevor Sitzungen ihre Nachrichten benannten: Der Link öffnet den Turn, der zu dieser Zeit lief.",
+    "filter": "Filter",
+    "filterTime": "Zeit",
+    "filterModel": "Modell",
+    "filterProvider": "Anbieter",
+    "filterError": "Fehler",
+    "clearFilters": "Filter zurücksetzen",
+    "facetEmptyDay": "Keine in den letzten 24 Stunden",
+    "facetEmptyWeek": "Keine in den letzten 7 Tagen",
+    "windowAny": "Beliebige Zeit",
+    "window15m": "Letzte 15 Minuten",
+    "window1h": "Letzte Stunde",
+    "window24h": "Letzte 24 Stunden",
+    "window7d": "Letzte 7 Tage"
   },
   "modelsList": {
     "onCount": "{on} von {total} an",

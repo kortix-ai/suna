@@ -8,6 +8,7 @@
  * Stop button and the session page's open call drive, disk kept.
  */
 
+import { sessionModelTarget } from './session-model-input';
 import { ApiError, runtimeSupports } from '@kortix/sdk';
 
 import {
@@ -117,15 +118,20 @@ Needs project.session.start.
 const MODEL_HELP = help`Usage: kortix sessions model <session-id> <model-id> [options]
 
 Change the model a session runs, mid-session. A live sandbox is re-pointed and
-its runtime restarts, which ENDS the turn running right now; a stopped session
-stores the value for its next start. The reply says which happened:
+pi reconfigures without restarting. The running turn finishes on its model;
+the next turn uses the saved model. The reply says which happened:
 
   applied_live true    the running box answers from the new model now
   applied_live false   stored; it takes effect at the next start
   push_failed  true    stored, but the live push FAILED — the running harness
                        still answers from the OLD model
 
+New verbs: get [session-id], set [session-id] <model>, switch [session-id] <model>.
+The new verbs default to KORTIX_SESSION_ID.
+
 Options:
+  --prompt <text>  Queue a continuation after the running turn.
+  --idempotency-key <key>  Required with --prompt; reuse for retries.
   --project <id>   Operate on this project id (default: linked).
   --host <name>    Operate against a non-default Kortix host.
   --json           Machine-readable output.
@@ -365,14 +371,17 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   if (typeof parsed === 'number') return parsed;
   const { rest, opts, json } = parsed;
 
+  const explicitSession = takeFlagValue(rest, ['--session']);
+  const prompt = takeFlagValue(rest, ['--prompt']);
+  const retryKey = takeFlagValue(rest, ['--idempotency-key']);
   const positional = rest.filter((a) => !a.startsWith('-'));
-  const [sessionId, model] = positional;
-  if (!sessionId) {
-    process.stderr.write(`${status.err('Pass a session id.')}\n\n${MODEL_HELP}`);
+  const { action, sessionId, model } = sessionModelTarget(positional, explicitSession ?? process.env.KORTIX_SESSION_ID);
+  if (!sessionId || (action !== 'get' && !model)) {
+    process.stderr.write(`${status.err('Pass a model id and session id, or use get/set/switch inside a session.')}\n`);
     return 2;
   }
-  if (!model) {
-    process.stderr.write(`${status.err('Pass a model id (e.g. `kortix/deepseek-v4.1-flash`).')}\n`);
+  if ((action === 'switch' || prompt !== undefined || retryKey !== undefined) && (!prompt || !retryKey)) {
+    process.stderr.write(`${status.err('A switch requires --prompt and --idempotency-key.')}\n`);
     return 2;
   }
 
@@ -383,6 +392,14 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   );
   if (!located) return 1;
   const { client, projectId, session } = located.located;
+
+  if (action === 'get') {
+    const metadata = session.metadata ?? {};
+    const model = typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null;
+    if (json) emitJson({ model });
+    else process.stdout.write(`${model ?? 'default'}\n`);
+    return 0;
+  }
 
   let result: {
     /** `model` since W4; an older API answers only `opencode_model`. */
@@ -396,6 +413,7 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
     result = await client.put(`/projects/${projectId}/sessions/${session.session_id}/model`, {
       model,
       opencode_model: model,
+      ...(prompt && retryKey ? { prompt, idempotency_key: retryKey } : {}),
     });
   } catch (err) {
     return surfaceApiError(err);
@@ -417,7 +435,7 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   process.stdout.write(
     `${status.ok(
       result.applied_live
-        ? `Now running ${C.bold}${result.model ?? result.opencode_model}${C.reset}${C.dim} — the runtime restarted, so any turn in flight ended${C.reset}`
+        ? `Now running ${C.bold}${result.model ?? result.opencode_model}${C.reset}${C.dim} — applies to the next turn without restarting${C.reset}`
         : `Stored ${C.bold}${result.model ?? result.opencode_model}${C.reset}${C.dim} — it applies when this session next starts${C.reset}`,
     )}\n`,
   );

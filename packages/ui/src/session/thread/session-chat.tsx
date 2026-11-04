@@ -1,6 +1,7 @@
 'use client';
 
 
+import { ModelSwitchHistory } from '../panel/model-switch-event';
 import { uiRoutes } from '../../lib/routes';
 import { isQuestionTool } from '@kortix/sdk';
 import { SessionApprovalPrompt } from '../prompts/session-approval-prompt';
@@ -133,8 +134,13 @@ import { inboxHoldsLivePrompt } from '../composer/inbox-live-prompt';
 import { type TurnSpan } from '../outcomes/anchor-outcomes';
 import type { Outcome } from '../../internal/outcomes/outcome-types';
 import { SessionOutcomesProvider } from '../outcomes/session-outcomes-provider';
+import { deleteMessageLinkParams, readMessageLinkParams, resolveMessageLinkTurn } from './message-link';
+
+/** How long a message link waits for the transcript's turns to mount before it jumps anyway. */
+const MESSAGE_LINK_MOUNT_WAIT_MS = 8_000;
 import { TurnOutcomes } from '../outcomes/turn-outcomes';
 import { SessionOverridesComposer } from '../overrides/session-overrides-composer';
+import { inheritedModelFor } from '../composer/chat-input/chat-input-summary';
 import {
   type QuestionAction,
   QuestionPrompt,
@@ -2559,7 +2565,8 @@ export function SessionChat({
   useEffect(() => {
     outcomeJumpRef.current = { sessionId, hasOlder, isLoadingOlder, loadOlder };
   }, [sessionId, hasOlder, isLoadingOlder, loadOlder]);
-  const handleJumpToOutcome = useCallback(async (resolveTurn: () => string | undefined, createdAt: number) => {
+  // `quiet`: a jump the reader did not click (a `?m=` link) fails silently, without the change-request toasts.
+  const handleJumpToOutcome = useCallback(async (resolveTurn: () => string | undefined, createdAt: number, quiet = false) => {
     if (jumpingToOutcome) return;
     setJumpingToOutcome(true);
     const currentSession = sessionId;
@@ -2575,9 +2582,11 @@ export function SessionChat({
           settle,
         },
         resolve: () => outcomeJumpRef.current.sessionId === currentSession ? resolveTurn() : undefined,
-        loadError: () => errorToast(tChangeRequests('loadError')),
+        loadError: () => {
+          if (!quiet) errorToast(tChangeRequests('loadError'));
+        },
         unavailable: () => {
-          if (outcomeJumpRef.current.sessionId === currentSession) errorToast(tChangeRequests('unavailable'));
+          if (!quiet && outcomeJumpRef.current.sessionId === currentSession) errorToast(tChangeRequests('unavailable'));
         },
         scroll: async (key) => {
           if (mobileChangeRequests) {
@@ -2604,7 +2613,7 @@ export function SessionChat({
         },
       });
     } catch {
-      errorToast(tChangeRequests('loadError'));
+      if (!quiet) errorToast(tChangeRequests('loadError'));
     } finally {
       setJumpingToOutcome(false);
     }
@@ -4213,6 +4222,61 @@ export function SessionChat({
   useEffect(() => {
     if (crParam) setOpenCrIdState(crParam);
   }, [crParam]);
+
+  // ---- Message link: `?m=<message_id>&at=<ms>` (the gateway request log's "Open in session") ----
+  // Once per link, after the transcript first paints: page back until the turn
+  // is loaded, scroll to it, flash it, then drop `m`/`at` so a reload stays put.
+  const messageLink = readOnly ? null : readMessageLinkParams(searchParams);
+  const messageLinkKey = messageLink ? `${sessionId}|${messageLink.messageId ?? ''}|${messageLink.at ?? ''}` : null;
+  const linkTurnsRef = useRef(turns);
+  useEffect(() => {
+    linkTurnsRef.current = turns;
+  }, [turns]);
+  const jumpedLinkRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!messageLink || !messageLinkKey || isDataLoading || turns.length === 0) return;
+    if (jumpedLinkRef.current === messageLinkKey) return;
+    jumpedLinkRef.current = messageLinkKey;
+    const resolve = () => resolveMessageLinkTurn(linkTurnsRef.current, messageLink);
+    // An in-app navigation has the transcript cached: `turns` exist frames before
+    // their `[data-turn-id]` nodes mount, and the first paint scrolls to the
+    // bottom. Jump only once the turns are in the DOM and that scroll has run,
+    // else the scroll finds no node and the link lands at the bottom.
+    let cancelled = false;
+    let jumped = false;
+    const startedAt = Date.now();
+    const jump = () => {
+      jumped = true;
+      // Already on screen: no history to load. Else `at`, or NaN (load it all) for an id alone.
+      const createdAt = resolve() ? Number.MAX_SAFE_INTEGER : (messageLink.at ?? Number.NaN);
+      void handleJumpToOutcome(resolve, createdAt, true).finally(() => {
+        const params = new URLSearchParams(searchParams?.toString());
+        deleteMessageLinkParams(params);
+        const qs = params.toString();
+        shallowNavigate(qs ? `${pathname}?${qs}` : pathname, { replace: true });
+      });
+    };
+    const waitForTurns = () => {
+      if (cancelled) return;
+      const mounted = !!contentRef.current?.querySelector('[data-turn-id]');
+      if (!mounted && Date.now() - startedAt < MESSAGE_LINK_MOUNT_WAIT_MS) {
+        window.setTimeout(waitForTurns, 100);
+        return;
+      }
+      // Two frames: the first paint's bottom scroll lands before the jump, never after it.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!cancelled) jump();
+      }));
+    };
+    waitForTurns();
+    return () => {
+      cancelled = true;
+      // A wait cancelled before it jumped runs again on the next pass; a jump in flight is not repeated.
+      if (!jumped && jumpedLinkRef.current === messageLinkKey) jumpedLinkRef.current = null;
+    };
+    // `messageLinkKey` stands for `messageLink`, which is a new object every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageLinkKey, isDataLoading, turns.length, handleJumpToOutcome, searchParams, pathname, shallowNavigate, contentRef]);
   const handleOpenOutcome = useCallback(
     (outcome: Outcome) => {
       // Change requests are the only kind a turn produces. `external` exists on
@@ -4330,6 +4394,8 @@ export function SessionChat({
             parent={parentCrumb}
           />
         )}
+
+        <ModelSwitchHistory history={projectSessionRow?.metadata?.model_switches} current={projectSessionRow?.metadata?.opencode_model} />
 
         {/* Context modal — triple-click the session title area to open */}
         <SessionContextModal
@@ -5015,6 +5081,7 @@ export function SessionChat({
                 selectedModel={local.model.currentKey ?? null}
                 onModelChange={handleModelChange}
                 modelDefaultControls={chatModelDefaultControls}
+                inheritedModel={inheritedModelFor(local.model, composerAgentName)}
                 variants={local.model.variant.list}
                 selectedVariant={local.model.variant.current ?? null}
                 onVariantChange={handleVariantChange}

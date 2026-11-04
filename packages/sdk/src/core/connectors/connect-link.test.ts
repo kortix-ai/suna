@@ -2,9 +2,13 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   DEFAULT_PROJECT_CONNECTION_LABEL,
-  type ProjectConnectDeps,
-  projectConnectSteps,
-} from './use-pipedream-connect-project';
+  type ProjectConnectionConnectDeps,
+  CONNECT_LINK_POLL_INTERVAL_MS,
+  CONNECT_LINK_TIMEOUT_MS,
+  connectLinkUrl,
+  pollConnectLinkFinalize,
+  projectConnectionConnectSteps,
+} from './connect-link';
 
 /**
  * The 409 the connection-scoped connect route answers for a connector's
@@ -26,7 +30,7 @@ const sharedDefaultConflict = () =>
 
 interface Recorded {
   calls: string[];
-  deps: ProjectConnectDeps;
+  deps: ProjectConnectionConnectDeps;
 }
 
 /**
@@ -71,13 +75,13 @@ function recordingDeps(
   };
 }
 
-describe('projectConnectSteps — sole shared account (the connector default)', () => {
+describe('projectConnectionConnectSteps — sole shared account (the connector default)', () => {
   test('falls back to the connector-scoped route the 409 names, so Connect is not dead', async () => {
     // The state immediately after a user adds their first shared account: one
     // unpinned project-owned row, which IS the connector's effective default.
     // Before the fix both shared "Connect" CTAs died here on the 409.
     const { calls, deps } = recordingDeps('409');
-    const steps = projectConnectSteps('project-1', 'notion-product', 'Support', deps);
+    const steps = projectConnectionConnectSteps('project-1', 'notion-product', 'Support', deps);
 
     const started = await steps.start();
 
@@ -97,7 +101,7 @@ describe('projectConnectSteps — sole shared account (the connector default)', 
     // `me` and poll the caller's member account. Either way the account never
     // reports active and the flow burns its full 10-minute timeout.
     const { calls, deps } = recordingDeps('409');
-    const steps = projectConnectSteps('project-1', 'notion-product', 'Support', deps);
+    const steps = projectConnectionConnectSteps('project-1', 'notion-product', 'Support', deps);
 
     await steps.start();
     calls.length = 0;
@@ -113,7 +117,7 @@ describe('projectConnectSteps — sole shared account (the connector default)', 
     // created — so the label survives rather than being replaced.
     const { calls, deps } = recordingDeps('409');
 
-    await projectConnectSteps('project-1', 'notion-product', '  Support  ', deps).start();
+    await projectConnectionConnectSteps('project-1', 'notion-product', '  Support  ', deps).start();
 
     expect(calls[0]).toBe('reconcile:project-1:project:Support');
   });
@@ -121,13 +125,13 @@ describe('projectConnectSteps — sole shared account (the connector default)', 
   test('an omitted label falls back to the default name', async () => {
     const { calls, deps } = recordingDeps('409');
 
-    await projectConnectSteps('project-1', 'notion-product', '   ', deps).start();
+    await projectConnectionConnectSteps('project-1', 'notion-product', '   ', deps).start();
 
     expect(calls[0]).toBe(`reconcile:project-1:project:${DEFAULT_PROJECT_CONNECTION_LABEL}`);
   });
 });
 
-describe('projectConnectSteps — a second labelled shared account', () => {
+describe('projectConnectionConnectSteps — a second labelled shared account', () => {
   test('stays on the connection-scoped route, so the new account is the one authorized', async () => {
     // Several project-owned connections per connector are supported and are
     // distinguished by label (`ReconcileConnectionInput`). A non-default row is
@@ -135,7 +139,7 @@ describe('projectConnectSteps — a second labelled shared account', () => {
     // `owner: 'project'` there reuses `ensureDefaultConnection` and would
     // re-authorize the DEFAULT account, leaving this new row unauthorized.
     const { calls, deps } = recordingDeps('ok', 'conn-2');
-    const steps = projectConnectSteps('project-1', 'notion-product', 'Sales', deps);
+    const steps = projectConnectionConnectSteps('project-1', 'notion-product', 'Sales', deps);
 
     const started = await steps.start();
     const finalized = await steps.finalize();
@@ -151,10 +155,10 @@ describe('projectConnectSteps — a second labelled shared account', () => {
   });
 });
 
-describe('projectConnectSteps — errors that are not the default-account 409', () => {
+describe('projectConnectionConnectSteps — errors that are not the default-account 409', () => {
   test('a 403 propagates instead of silently retrying the other route', async () => {
     const { calls, deps } = recordingDeps(403);
-    const steps = projectConnectSteps('project-1', 'notion-product', 'Support', deps);
+    const steps = projectConnectionConnectSteps('project-1', 'notion-product', 'Support', deps);
 
     await expect(steps.start()).rejects.toThrow('forbidden');
     expect(calls).not.toContain('connect-connector:project-1:notion-product:project');
@@ -162,19 +166,19 @@ describe('projectConnectSteps — errors that are not the default-account 409', 
 
   test('finalize before start names the missing connection rather than throwing on null', async () => {
     const { deps } = recordingDeps('ok');
-    const steps = projectConnectSteps('project-1', 'notion-product', 'Support', deps);
+    const steps = projectConnectionConnectSteps('project-1', 'notion-product', 'Support', deps);
 
     expect(() => steps.finalize()).toThrow('The project connection was not created.');
   });
 });
 
-describe('projectConnectSteps — an account shared with chosen people', () => {
+describe('projectConnectionConnectSteps — an account shared with chosen people', () => {
   test('narrows the new account after it exists and before authorization starts', async () => {
     // A shared account with no grant is usable by everyone. Writing the grants
     // before the OAuth link opens means the account never holds a credential
     // while it is open to the whole project.
     const { calls, deps } = recordingDeps('ok', 'conn-3');
-    const steps = projectConnectSteps('project-1', 'notion-product', 'Sales', deps, async (id) => {
+    const steps = projectConnectionConnectSteps('project-1', 'notion-product', 'Sales', deps, async (id) => {
       calls.push(`narrow:${id}`);
     });
 
@@ -189,7 +193,7 @@ describe('projectConnectSteps — an account shared with chosen people', () => {
 
   test('names the account it created, so a caller can finalize exactly that one', async () => {
     const { deps } = recordingDeps('ok', 'conn-5');
-    const steps = projectConnectSteps('project-1', 'notion-product', 'Sales', deps);
+    const steps = projectConnectionConnectSteps('project-1', 'notion-product', 'Sales', deps);
     expect(steps.connectionId()).toBeNull();
     await steps.start();
     expect(steps.connectionId()).toBe('conn-5');
@@ -197,11 +201,53 @@ describe('projectConnectSteps — an account shared with chosen people', () => {
 
   test('a failed narrowing stops the flow before any authorization link', async () => {
     const { calls, deps } = recordingDeps('ok', 'conn-4');
-    const steps = projectConnectSteps('project-1', 'notion-product', 'Sales', deps, async () => {
+    const steps = projectConnectionConnectSteps('project-1', 'notion-product', 'Sales', deps, async () => {
       throw new Error('grant refused');
     });
 
     await expect(steps.start()).rejects.toThrow('grant refused');
     expect(calls).toEqual(['reconcile:project-1:project:Sales']);
+  });
+});
+
+describe('pollConnectLinkFinalize', () => {
+  test('polls every 2 s until the provider reports the account connected', async () => {
+    let calls = 0;
+    const slept: number[] = [];
+    await expect(
+      pollConnectLinkFinalize(async () => ({ connected: ++calls === 3 }), {
+        sleep: async (ms) => void slept.push(ms),
+        now: () => 0,
+      }),
+    ).resolves.toEqual({ connected: true });
+    expect(calls).toBe(3);
+    expect(slept).toEqual([CONNECT_LINK_POLL_INTERVAL_MS, CONNECT_LINK_POLL_INTERVAL_MS]);
+    expect(CONNECT_LINK_POLL_INTERVAL_MS).toBe(2000);
+  });
+
+  test('gives up after 10 minutes with the web wording', async () => {
+    let now = 0;
+    await expect(
+      pollConnectLinkFinalize(async () => ({ connected: false }), {
+        sleep: async (ms) => {
+          now += ms;
+        },
+        now: () => now,
+      }),
+    ).rejects.toThrow('Authorization timed out after 10 minutes. Try again.');
+    expect(now).toBe(CONNECT_LINK_TIMEOUT_MS);
+  });
+
+  test('an abort ends the wait, even while a finalize is still pending', async () => {
+    const controller = new AbortController();
+    const wait = pollConnectLinkFinalize(() => new Promise(() => undefined), { signal: controller.signal });
+    controller.abort(new Error('cancelled'));
+    await expect(wait).rejects.toThrow('cancelled');
+  });
+
+  test('the Connect Link URL is the normalized field first', () => {
+    expect(connectLinkUrl({ connectUrl: 'https://a', redirectUrl: 'https://b' })).toBe('https://a');
+    expect(connectLinkUrl({ redirectUrl: 'https://b' })).toBe('https://b');
+    expect(connectLinkUrl({})).toBeNull();
   });
 });

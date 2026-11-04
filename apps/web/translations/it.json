@@ -683,7 +683,7 @@
       "threadsDeleted": "Ogni sessione e ogni messaggio vengono eliminati",
       "credentialsDeleted": "Ogni credenziale e segreto viene rimosso",
       "subscriptionCancelled": "Il tuo abbonamento è stato annullato",
-      "billingHistoryRemoved": "La cronologia di fatturazione viene rimossa",
+      "billingRecordsKept": "I documenti di fatturazione vengono conservati per il tempo previsto dalla legge",
       "chooseWhen": "Scegli quando",
       "gracePeriodLabel": "Periodo di attesa",
       "gracePeriodDescription": "L’eliminazione avviene alla data prevista. Puoi annullarla prima.",
@@ -1333,6 +1333,10 @@
         "shared_drives": {
           "name": "Drive condivisi",
           "description": "Drive che tutto il team può usare: un admin crea un Drive e vi aggiunge agenti. Ogni sessione di quegli agenti lo monta, e chi può usare uno di loro può aprirlo. Disattivato, ogni persona ha solo I miei file."
+        },
+        "chat_input": {
+          "name": "Input della chat",
+          "description": "Un solo controllo sotto il compositore per chi risponde e come: scegli l’agente e ogni altra impostazione resta su Automatico, ereditata da quell’agente. Apri una riga per sostituire modello, sforzo di ragionamento, segreti, chiavi del provider o sandbox per questa sessione, e torna ad Automatico con un clic."
         }
       },
       "channelsSwitch": {
@@ -2255,6 +2259,14 @@
     "thinkingEffort": "Livello di ragionamento",
     "sessionOverrides": "Override della sessione",
     "auto": "Automatico",
+    "chatInput": "Input della chat",
+    "chatInputAgent": "Agente",
+    "chatInputSettings": "Impostazioni",
+    "chatInputModel": "Modello",
+    "chatInputEffort": "Sforzo",
+    "chatInputAutoFrom": "Automatico (da {agent})",
+    "chatInputOverrideCount": "{count, plural, one {# modifica} other {# modifiche}}",
+    "chatInputResetToAuto": "Torna ad automatico",
     "sending": "Invio in corso",
     "stop": "Interrompi",
     "startingSession": "Avvio della sessione…",
@@ -21413,11 +21425,11 @@
     "getAKey": "Ottieni una chiave"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "Cerca modello, provider o errore",
+    "searchPlaceholder": "Cerca modello, provider, errore o id",
     "requestsLabel": "{count, plural, one {richiesta} other {richieste}}",
     "errorsLabel": "{count, plural, one {errore} other {errori}}",
     "medianLatency": "latenza mediana",
-    "noMatch": "Nessuna richiesta caricata corrisponde a «{query}»",
+    "noMatch": "Nessuna richiesta corrisponde a “{query}”",
     "histogram": "Richieste nel tempo",
     "close": "Chiudi",
     "now": "Ora",
@@ -21425,7 +21437,33 @@
     "topModel": "Modello principale",
     "noRequests": "Nessuna richiesta",
     "cardErrors": "Errori",
-    "cardMedianLatency": "Latenza mediana"
+    "cardMedianLatency": "Latenza mediana",
+    "noFilterMatch": "Nessuna richiesta corrisponde a questi filtri",
+    "sessionColumn": "Sessione",
+    "untitledSession": "Sessione senza titolo",
+    "openInSession": "Apri nella sessione",
+    "openMessage": "Apri a questo messaggio",
+    "onlyThisSession": "Solo questa sessione",
+    "noSession": "Non proviene da una sessione",
+    "fromGatewayKey": "Inviata con una chiave del gateway, non da una sessione",
+    "messageLabel": "Messaggio",
+    "turnLabel": "Turno",
+    "threadLabel": "Thread del subagente",
+    "sessionIdLabel": "Id sessione",
+    "byTimeHint": "Inviata prima che le sessioni nominassero i messaggi: il link apre il turno in corso in quel momento.",
+    "filter": "Filtra",
+    "filterTime": "Periodo",
+    "filterModel": "Modello",
+    "filterProvider": "Provider",
+    "filterError": "Errore",
+    "clearFilters": "Cancella filtri",
+    "facetEmptyDay": "Nessuno nelle ultime 24 ore",
+    "facetEmptyWeek": "Nessuno negli ultimi 7 giorni",
+    "windowAny": "Qualsiasi momento",
+    "window15m": "Ultimi 15 minuti",
+    "window1h": "Ultima ora",
+    "window24h": "Ultime 24 ore",
+    "window7d": "Ultimi 7 giorni"
   },
   "modelsList": {
     "onCount": "{on} di {total} attivi",

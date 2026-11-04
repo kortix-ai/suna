@@ -175,8 +175,15 @@ export const COMMANDS = [
   {
     name: 'link',
     aliases: ['id'],
-    description: 'Copy the session id and its web link.',
+    description: 'Copy the session web link.',
     group: 'session',
+    needs: 'session',
+  },
+  {
+    name: 'shown',
+    description: 'What this session showed you: open, reference or copy an artifact, page or file.',
+    group: 'session',
+    binding: 'composer.outputs',
     needs: 'session',
   },
   {
@@ -310,6 +317,7 @@ export const COMMANDS = [
   // — screens —
   {
     name: 'files',
+    args: '[path]',
     description: "Browse this session's files.",
     group: 'screen',
     binding: 'screen.files',
@@ -333,6 +341,7 @@ export const COMMANDS = [
   {
     name: 'artifacts',
     aliases: ['docs'],
+    args: '[id]',
     description: 'Docs and pages the agents published.',
     group: 'screen',
     needs: 'project',
@@ -405,10 +414,33 @@ export const COMMANDS = [
   },
   {
     name: 'customize',
-    aliases: ['settings', 'config', 'mcp', 'connectors'],
+    aliases: ['settings', 'config', 'mcp'],
     description: 'Agents, skills, secrets, triggers, connectors.',
     group: 'screen',
     binding: 'screen.customize',
+  },
+  {
+    name: 'providers',
+    aliases: ['provider'],
+    args: '[provider]',
+    description: 'Connect model providers: ChatGPT, Claude, API keys, and who can use them.',
+    group: 'screen',
+    needs: 'project',
+  },
+  {
+    name: 'connectors',
+    aliases: ['connector', 'integrations'],
+    args: '[app]',
+    description: 'Connect apps and tools: browse the catalogue, add accounts, sign in, and share them.',
+    group: 'screen',
+    needs: 'project',
+  },
+  {
+    name: 'connect',
+    args: '[provider or app]',
+    description: 'Connect a model provider or a connector.',
+    group: 'screen',
+    needs: 'project',
   },
   {
     name: 'account',

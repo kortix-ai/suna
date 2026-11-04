@@ -256,6 +256,16 @@ const envSchema = z.object({
   // Kill switch for the scheduled account-deletion sweep. True skips every
   // scheduled run; immediate deletion is unaffected. Default off (sweep runs).
   ACCOUNT_DELETION_SWEEP_PAUSED: optBoolFalse,
+  // The retention backstop (billing/services/retention-erasure.ts): erases an
+  // account whose closure (account_deletion_requests) is still open
+  // RETENTION_ERASURE_AFTER_DAYS after its date, inside the 90-day promise.
+  // `dry_run` (default) records the decision in kortix.retention_erasures and
+  // deletes nothing; `execute` runs the deletion routine; `off` stops the tick.
+  // ACCOUNT_DELETION_SWEEP_PAUSED forces dry_run.
+  RETENTION_ERASURE_MODE: z.enum(['off', 'dry_run', 'execute']).optional().default('dry_run'),
+  RETENTION_ERASURE_AFTER_DAYS: optInt(80).refine((days) => days >= 0, {
+    message: 'Must be 0 or more days: the retention backstop never erases an account before its date',
+  }),
   /**
    * Enforce the sandbox egress pin on the secret-broker route (default ON).
    *
@@ -1390,6 +1400,8 @@ export const config = {
   HEALTH_MAX_EVENT_LOOP_LAG_MS: env.HEALTH_MAX_EVENT_LOOP_LAG_MS,
   KORTIX_JOB_WORKER_ENABLED: env.KORTIX_JOB_WORKER_ENABLED,
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
+  RETENTION_ERASURE_MODE: env.RETENTION_ERASURE_MODE,
+  RETENTION_ERASURE_AFTER_DAYS: env.RETENTION_ERASURE_AFTER_DAYS,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS.split(',')
     .map((host) => host.trim())

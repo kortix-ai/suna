@@ -844,6 +844,10 @@ const catalog = {
         "shared_drives": {
           "name": "Shared drives",
           "description": "Drives the whole team can use: an admin makes a Drive and adds agents to it. Every session of those agents mounts it, and everyone who may use one of them can open it. Off, every person has only My files."
+        },
+        "chat_input": {
+          "name": "Chat input",
+          "description": "One control under the composer for who answers and how: pick the agent, and every other setting stays on Auto, inherited from that agent. Open a row to override the model, thinking effort, secrets, provider keys or sandbox for this session, and reset it to Auto in one click."
         }
       },
       "channelsSwitch": {
@@ -1563,6 +1567,14 @@ const catalog = {
     "thinkingEffort": "Thinking effort",
     "sessionOverrides": "Session overrides",
     "auto": "Auto",
+    "chatInput": "Chat input",
+    "chatInputAgent": "Agent",
+    "chatInputSettings": "Settings",
+    "chatInputModel": "Model",
+    "chatInputEffort": "Effort",
+    "chatInputAutoFrom": "Auto (from {agent})",
+    "chatInputOverrideCount": "{count, plural, one {# override} other {# overrides}}",
+    "chatInputResetToAuto": "Reset to auto",
     "sending": "Sending",
     "stop": "Stop",
     "startingSession": "Starting session…",
@@ -6314,11 +6326,11 @@ const catalog = {
     "getAKey": "Get a key"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "Search model, provider or error",
+    "searchPlaceholder": "Search model, provider, error or id",
     "requestsLabel": "{count, plural, one {request} other {requests}}",
     "errorsLabel": "{count, plural, one {error} other {errors}}",
     "medianLatency": "median latency",
-    "noMatch": "No loaded request matches “{query}”",
+    "noMatch": "No request matches “{query}”",
     "histogram": "Requests over time",
     "close": "Close",
     "now": "Now",
@@ -6326,7 +6338,33 @@ const catalog = {
     "topModel": "Top model",
     "noRequests": "No requests",
     "cardErrors": "Errors",
-    "cardMedianLatency": "Median latency"
+    "cardMedianLatency": "Median latency",
+    "noFilterMatch": "No request matches these filters",
+    "sessionColumn": "Session",
+    "untitledSession": "Untitled session",
+    "openInSession": "Open in session",
+    "openMessage": "Open at this message",
+    "onlyThisSession": "Only this session",
+    "noSession": "Not from a session",
+    "fromGatewayKey": "Sent with a gateway key, not from a session",
+    "messageLabel": "Message",
+    "turnLabel": "Turn",
+    "threadLabel": "Subagent thread",
+    "sessionIdLabel": "Session id",
+    "byTimeHint": "Sent before sessions named their messages: the link opens the turn that was running at that time.",
+    "filter": "Filter",
+    "filterTime": "Time",
+    "filterModel": "Model",
+    "filterProvider": "Provider",
+    "filterError": "Error",
+    "clearFilters": "Clear filters",
+    "facetEmptyDay": "None in the last 24 hours",
+    "facetEmptyWeek": "None in the last 7 days",
+    "windowAny": "Any time",
+    "window15m": "Last 15 minutes",
+    "window1h": "Last hour",
+    "window24h": "Last 24 hours",
+    "window7d": "Last 7 days"
   },
   "modelsList": {
     "onCount": "{on} of {total} on",

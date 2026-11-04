@@ -431,8 +431,11 @@ export function useRuntimeLocal({
       providerMode,
     ],
   );
+  const pickedAt = projectSession?.metadata?.opencode_model_picked_at;
+  const switchAtMs = Math.max(sessionFallback?.atMs ?? -1, typeof pickedAt === 'number' ? pickedAt : -1);
+  const sessionSwitch = switchAtMs >= 0 ? { atMs: switchAtMs } : undefined;
   const sessionPick = (key: string | undefined): ModelKey | undefined =>
-    key && sessionPickStands(modelStore.getSessionModelFallbackAt(key), sessionFallback)
+    key && sessionPickStands(modelStore.getSessionModelFallbackAt(key), sessionSwitch)
       ? modelStore.getSessionModel(key)
       : undefined;
 
@@ -480,6 +483,7 @@ export function useRuntimeLocal({
       resolveServerDefault,
       sessionModels,
       sessionFallback,
+      switchAtMs,
       config?.model,
       providers,
       modelStore,
@@ -531,7 +535,7 @@ export function useRuntimeLocal({
         // A person's pick records the switch it was made over, so it outranks
         // that switch and no newer one. A seed was picked before this session
         // existed: it records none and never outranks a switch.
-        modelStore.setSessionModel(scopedSessionModelKey, next, options?.autoSeed ? undefined : sessionFallback?.atMs);
+        modelStore.setSessionModel(scopedSessionModelKey, next, options?.autoSeed ? undefined : sessionSwitch?.atMs);
       }
       if (options?.recent && model) {
         modelStore.pushRecent(model);
@@ -541,7 +545,7 @@ export function useRuntimeLocal({
         // for NEW sessions even when they change model in an existing session.
       }
     },
-    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid, sessionFallback?.atMs],
+    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid, switchAtMs],
   );
 
   // ---- Agent set (matching SolidJS local.tsx:52-63) ----

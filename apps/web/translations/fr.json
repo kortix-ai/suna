@@ -683,7 +683,7 @@
       "threadsDeleted": "Toutes les sessions et tous les messages sont supprimés",
       "credentialsDeleted": "Chaque identifiant et secret est supprimé",
       "subscriptionCancelled": "Votre abonnement est annulé",
-      "billingHistoryRemoved": "Votre historique de facturation est supprimé",
+      "billingRecordsKept": "Vos documents de facturation sont conservés aussi longtemps que la loi l’exige",
       "chooseWhen": "Choisissez quand",
       "gracePeriodLabel": "Délai de grâce",
       "gracePeriodDescription": "La suppression a lieu à la date prévue. Vous pouvez annuler avant cette date.",
@@ -1333,6 +1333,10 @@
         "shared_drives": {
           "name": "Drives partagés",
           "description": "Des Drives pour toute l'équipe : un admin crée un Drive et y ajoute des agents. Chaque session de ces agents le monte, et toute personne autorisée à utiliser l'un d'eux peut l'ouvrir. Désactivé, chaque personne n'a que Mes fichiers."
+        },
+        "chat_input": {
+          "name": "Saisie du chat",
+          "description": "Un seul contrôle sous la zone de saisie pour qui répond et comment : choisissez l’agent, et tous les autres réglages restent sur Automatique, hérités de cet agent. Ouvrez une ligne pour remplacer le modèle, l’effort de raisonnement, les secrets, les clés de fournisseur ou la sandbox de cette session, et revenez à Automatique en un clic."
         }
       },
       "channelsSwitch": {
@@ -2255,6 +2259,14 @@
     "thinkingEffort": "Effort de raisonnement",
     "sessionOverrides": "Remplacements de session",
     "auto": "Automatique",
+    "chatInput": "Saisie du chat",
+    "chatInputAgent": "Agent",
+    "chatInputSettings": "Réglages",
+    "chatInputModel": "Modèle",
+    "chatInputEffort": "Effort",
+    "chatInputAutoFrom": "Automatique (de {agent})",
+    "chatInputOverrideCount": "{count, plural, one {# remplacement} other {# remplacements}}",
+    "chatInputResetToAuto": "Revenir à automatique",
     "sending": "Envoi en cours",
     "stop": "Arrêter",
     "startingSession": "Démarrage de la session…",
@@ -21413,11 +21425,11 @@
     "getAKey": "Obtenir une clé"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "Rechercher un modèle, un fournisseur ou une erreur",
+    "searchPlaceholder": "Rechercher un modèle, un fournisseur, une erreur ou un id",
     "requestsLabel": "{count, plural, one {requête} other {requêtes}}",
     "errorsLabel": "{count, plural, one {erreur} other {erreurs}}",
     "medianLatency": "latence médiane",
-    "noMatch": "Aucune requête chargée ne correspond à « {query} »",
+    "noMatch": "Aucune requête ne correspond à « {query} »",
     "histogram": "Requêtes dans le temps",
     "close": "Fermer",
     "now": "Maintenant",
@@ -21425,7 +21437,33 @@
     "topModel": "Modèle principal",
     "noRequests": "Aucune requête",
     "cardErrors": "Erreurs",
-    "cardMedianLatency": "Latence médiane"
+    "cardMedianLatency": "Latence médiane",
+    "noFilterMatch": "Aucune requête ne correspond à ces filtres",
+    "sessionColumn": "Session",
+    "untitledSession": "Session sans titre",
+    "openInSession": "Ouvrir dans la session",
+    "openMessage": "Ouvrir à ce message",
+    "onlyThisSession": "Seulement cette session",
+    "noSession": "Ne vient pas d’une session",
+    "fromGatewayKey": "Envoyée avec une clé de gateway, pas depuis une session",
+    "messageLabel": "Message",
+    "turnLabel": "Tour",
+    "threadLabel": "Fil de sous-agent",
+    "sessionIdLabel": "Id de session",
+    "byTimeHint": "Envoyée avant que les sessions nomment leurs messages : le lien ouvre le tour en cours à ce moment.",
+    "filter": "Filtrer",
+    "filterTime": "Période",
+    "filterModel": "Modèle",
+    "filterProvider": "Fournisseur",
+    "filterError": "Erreur",
+    "clearFilters": "Effacer les filtres",
+    "facetEmptyDay": "Aucun ces dernières 24 heures",
+    "facetEmptyWeek": "Aucun ces 7 derniers jours",
+    "windowAny": "N’importe quand",
+    "window15m": "15 dernières minutes",
+    "window1h": "Dernière heure",
+    "window24h": "Dernières 24 heures",
+    "window7d": "7 derniers jours"
   },
   "modelsList": {
     "onCount": "{on} sur {total} activés",

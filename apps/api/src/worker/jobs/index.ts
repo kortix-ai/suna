@@ -39,6 +39,7 @@ import { startProjectMaintenance, stopProjectMaintenance } from './project-maint
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './project-snapshot';
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './provider-transition';
 import { startResidentialProxyBillingWorker, stopResidentialProxyBillingWorker } from './residential-proxy-billing';
+import { startRetentionErasureWorker, stopRetentionErasureWorker } from './retention-erasure';
 import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './session-log-purge';
 import { startStorageBillingWorker, stopStorageBillingWorker } from './storage-billing';
 import { startSessionModelFallbackWorker, stopSessionModelFallbackWorker } from './session-model-fallback';
@@ -117,6 +118,8 @@ export const JOBS: readonly Job[] = [
   { ticks: { 'notification-digest': 10 * MIN }, start: startNotificationWorker, stop: stopNotificationWorker },
   // Retention purge of session content.
   { ticks: { 'session-log-purge': 3 * HOUR }, start: startSessionLogPurgeWorker, stop: stopSessionLogPurgeWorker },
+  // The 90-day retention backstop: closures still open 80 days after their date. Daily; a minute apart while a backlog lasts.
+  { ticks: { 'retention-erasure': 26 * HOUR }, start: startRetentionErasureWorker, stop: stopRetentionErasureWorker },
   // Idle sessions off a fallback model once their own model serves again.
   { ticks: { 'session-model-fallback': 10 * MIN }, start: startSessionModelFallbackWorker, stop: stopSessionModelFallbackWorker },
   // Closed pending days of the gateway spend running total.

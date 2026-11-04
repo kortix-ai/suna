@@ -26,6 +26,7 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // is stamped only by session-model-repoint.ts, when a retired managed id gets
   // moved to a servable one at boot — a client value here would forge history.
   'opencode_model',
+  'model_switches',
   'opencode_model_source',
   'opencode_model_repointed_from',
   // The gateway fallback record (`llm-gateway/resolution/session-model-fallback.ts`).

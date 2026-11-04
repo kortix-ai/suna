@@ -28,7 +28,7 @@ const MIN_LOUD = 120, MIN_VOICED = 80 // ms of a piece above the gate, and voice
 const CAPTURE = process.env.VOICE_TRACE_AUDIO === '1' && process.env.VOICE_TRACE_DIR ? `${process.env.VOICE_TRACE_DIR}/audio` : undefined
 const repo = process.env.VOICE_WORKSPACE ?? process.env.KORTIX_WORKSPACE
 // Code files only, not tests, benches or notes: their names ("named-evidence-proof", "personas") took prompt slots real words need.
-const files = repo ? Bun.spawnSync(['git', '-C', repo, 'ls-files']).stdout.toString().split('\n').filter((f) => /\.(?:tsx?|jsx?|mjs|py|go|rs|rb|java|kt|swift|cs|php|vue|svelte)$/.test(f) && !/(?:^|\/)(?:bench|tests?|__tests__|fixtures|runs|spec)\/|\.(?:test|spec)\.[^/]+$/.test(f)) : []
+const files = repo ? Bun.spawnSync(['git', '-C', repo, 'ls-files']).stdout.toString().split('\n').filter((f) => /\.(?:tsx?|jsx?|mjs|py|go|rs|rb|java|kt|swift|cs|php|vue|svelte)$/.test(f) && !/(?:^|\/)(?:bench|tests?|__tests__|fixtures|runs|spec)\//.test(f) && !/\.(?:test|spec)\.[^/]+$/.test(f)) : []
 const names = files.sort((a, b) => a.split('/').length - b.split('/').length).map((f) => f.split('/').pop()!.replace(/\.\w+$/, ''))
 const terms = [...(process.env.VOCAB ?? `${NAME},Kortix,OpenCode,Bun,TypeScript`).split(',').map((t) => t.trim()), ...names.filter((n) => /^\w[\w-]{2,23}$/.test(n))]
 const VOCAB = terms.filter((t, i) => terms.findIndex((u) => u.toLowerCase() === t.toLowerCase()) === i).slice(0, 40)
@@ -257,7 +257,12 @@ const PROMPT = new Set(VOCAB.join(' ').toLowerCase().match(/[a-z0-9']+/g))
 // Top non-speech outputs of large-v3 (Barański et al. 2025): "thank you" 24.8%, "thanks for watching" 10.3%, ...
 // Whisper's stock words for noise ("and so on.", "and more." from a noisy room, a live call), not things people said.
 // A text of nothing but them, once or repeated ("Thank you for watching! Thank you for watching!", a noisy room).
-const HALLUCINATION = /^((thank you( (so much|very much))?( for watching)?|thanks for watching|so|the|you|oh|bye|uh|um|and so on|and more|and so forth|subtitles by[^.!]*|\.+)[.!]?\s*)+$/i
+// Punctuation and space between the words are one run, so a long "..." or a repeated phrase cannot backtrack (CodeQL js/redos).
+// A subtitle credit ("Subtitles by the Amara.org community") is cut out first: its open-ended words inside the
+// pattern could each be read as one of the words above, and that backtracked exponentially.
+const CREDIT = /subtitles by[^.!]*/gi
+const HALLUCINATION_WORDS = /^[\s.!]*(?:(?:thank you(?: (?:so much|very much))?(?: for watching)?|thanks for watching|so|the|you|oh|bye|uh|um|and so on|and more|and so forth)[\s.!]*)*$/i
+const HALLUCINATION = { test: (text: string) => HALLUCINATION_WORDS.test(text.replace(CREDIT, ' ')) }
 // The ones from video subtitles: never what a caller says to an assistant, however sure Whisper is of them.
 const SUBTITLE = /\b(for watching|subtitles|subscribe)\b/i
 const REPEATED = /^(.{4,}?[.!?])\s*\1/i // the same sentence again at once: Whisper's loop on noise

@@ -683,7 +683,7 @@
       "threadsDeleted": "Todas as sessões e mensagens são excluídas",
       "credentialsDeleted": "Todas as credenciais e segredos são removidos",
       "subscriptionCancelled": "Sua assinatura foi cancelada",
-      "billingHistoryRemoved": "Seu histórico de faturamento foi removido",
+      "billingRecordsKept": "Seus registros de faturamento são mantidos pelo tempo exigido por lei",
       "chooseWhen": "Escolha quando",
       "gracePeriodLabel": "Período de carência",
       "gracePeriodDescription": "A exclusão ocorre na data prevista. Você pode cancelar antes.",
@@ -1333,6 +1333,10 @@
         "shared_drives": {
           "name": "Drives compartilhados",
           "description": "Drives que toda a equipe pode usar: um admin cria um Drive e adiciona agentes a ele. Cada sessão desses agentes o monta, e quem pode usar um deles pode abri-lo. Desativado, cada pessoa tem apenas Meus arquivos."
+        },
+        "chat_input": {
+          "name": "Entrada do chat",
+          "description": "Um único controle abaixo do editor para quem responde e como: escolha o agente, e todas as outras configurações ficam em Automático, herdadas desse agente. Abra uma linha para substituir o modelo, o esforço de raciocínio, os segredos, as chaves de provedor ou o sandbox desta sessão, e volte ao Automático com um clique."
         }
       },
       "channelsSwitch": {
@@ -2255,6 +2259,14 @@
     "thinkingEffort": "Esforço de raciocínio",
     "sessionOverrides": "Substituições da sessão",
     "auto": "Automático",
+    "chatInput": "Entrada do chat",
+    "chatInputAgent": "Agente",
+    "chatInputSettings": "Configurações",
+    "chatInputModel": "Modelo",
+    "chatInputEffort": "Esforço",
+    "chatInputAutoFrom": "Automático (de {agent})",
+    "chatInputOverrideCount": "{count, plural, one {# substituição} other {# substituições}}",
+    "chatInputResetToAuto": "Voltar ao automático",
     "sending": "Enviando",
     "stop": "Parar",
     "startingSession": "A iniciar a sessão…",
@@ -21413,11 +21425,11 @@
     "getAKey": "Obter uma chave"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "Pesquisar modelo, provedor ou erro",
+    "searchPlaceholder": "Pesquisar modelo, provedor, erro ou id",
     "requestsLabel": "{count, plural, one {solicitação} other {solicitações}}",
     "errorsLabel": "{count, plural, one {erro} other {erros}}",
     "medianLatency": "latência mediana",
-    "noMatch": "Nenhuma solicitação carregada corresponde a “{query}”",
+    "noMatch": "Nenhuma solicitação corresponde a “{query}”",
     "histogram": "Solicitações ao longo do tempo",
     "close": "Fechar",
     "now": "Agora",
@@ -21425,7 +21437,33 @@
     "topModel": "Modelo principal",
     "noRequests": "Nenhuma solicitação",
     "cardErrors": "Erros",
-    "cardMedianLatency": "Latência mediana"
+    "cardMedianLatency": "Latência mediana",
+    "noFilterMatch": "Nenhuma solicitação corresponde a estes filtros",
+    "sessionColumn": "Sessão",
+    "untitledSession": "Sessão sem título",
+    "openInSession": "Abrir na sessão",
+    "openMessage": "Abrir nesta mensagem",
+    "onlyThisSession": "Somente esta sessão",
+    "noSession": "Não veio de uma sessão",
+    "fromGatewayKey": "Enviada com uma chave do gateway, não de uma sessão",
+    "messageLabel": "Mensagem",
+    "turnLabel": "Turno",
+    "threadLabel": "Thread de subagente",
+    "sessionIdLabel": "Id da sessão",
+    "byTimeHint": "Enviada antes de as sessões nomearem suas mensagens: o link abre o turno que estava em execução naquele momento.",
+    "filter": "Filtrar",
+    "filterTime": "Período",
+    "filterModel": "Modelo",
+    "filterProvider": "Provedor",
+    "filterError": "Erro",
+    "clearFilters": "Limpar filtros",
+    "facetEmptyDay": "Nenhum nas últimas 24 horas",
+    "facetEmptyWeek": "Nenhum nos últimos 7 dias",
+    "windowAny": "Qualquer momento",
+    "window15m": "Últimos 15 minutos",
+    "window1h": "Última hora",
+    "window24h": "Últimas 24 horas",
+    "window7d": "Últimos 7 dias"
   },
   "modelsList": {
     "onCount": "{on} de {total} ativos",
