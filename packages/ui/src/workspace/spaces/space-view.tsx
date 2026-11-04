@@ -41,6 +41,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../primitives/tabs'
 import { errorToast, successToast } from '../../primitives/toast';
 import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { ComposerChatInput, type ComposerOptions } from '../../session/composer/composer-chat-input';
+import { ComposerAutoFocusContext } from '../../session/composer/composer-focus-context';
 import { FeaturedAgentsContext } from '../../session/composer/agent-selector';
 import { ComposerDropZone } from '../../session/composer/composer-drop-zone';
 import type { DraftScope } from '../../session/composer/draft/composer-draft';
@@ -57,6 +58,7 @@ import { SpaceDetailsPanel } from './space-details-panel';
 import { CurrentSpaceContext, parseProfileParam, type Principal, PrincipalHover, ProfileContext, ProfilePanel, profileParam } from './principal-card';
 import { SpaceAvatar } from './space-avatar';
 import { useSpaceMentionSource } from './space-mention-source';
+import { autoOpenThread } from './space-auto-open';
 import { useOtherPerson } from './space-people';
 import { SpaceMentionContext } from '../../session/composer/menus/space-mentions';
 import { isPrivateSpace, spaceDisplayName } from './space-identity';
@@ -187,7 +189,16 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
   const threads = useSpaceThreads(projectId, space?.space_id);
   // The `@` menu of this space's composers (and its thread's reply box): its people and agents.
   const mentionSource = useSpaceMentionSource(projectId, space);
-  const threadId = searchParams.get(THREAD_PARAM);
+  const urlThreadId = searchParams.get(THREAD_PARAM);
+  // A thread the chat just opened shows at once; the URL follows a moment later
+  // (a router round trip). Cleared when the URL names a thread or none.
+  const [pendingThreadId, setPendingThreadId] = useState<string | null>(null);
+  const [pendingFrom, setPendingFrom] = useState<string | null>(null);
+  if (pendingThreadId && urlThreadId !== pendingFrom) {
+    setPendingThreadId(null);
+    setPendingFrom(null);
+  }
+  const threadId = pendingThreadId ?? urlThreadId;
   const tab = openTabId(space?.tabs ?? [], searchParams.get(TAB_PARAM));
   // `push` adds a history entry, so the browser's Back walks it: a tab, and
   // opening the thread panel. Filters and switching threads replace the entry.
@@ -218,6 +229,29 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
       }, 'push');
     },
     [setParams, threadId],
+  );
+  // The thread a message just sent from the chat opened by itself: its reply box does not take the focus.
+  const [autoOpenedId, setAutoOpenedId] = useState<string | null>(null);
+  const autoOpen = useCallback(
+    (sessionId: string) => {
+      // The chat's composer stays the place to type: the send disables its editor
+      // for a moment (the focus drops to the page) and the panel opens after it.
+      // Back to the chat's editor, unless the person is already somewhere else.
+      setAutoOpenedId(sessionId);
+      setPendingThreadId(sessionId);
+      setPendingFrom(urlThreadId);
+      openThread(sessionId);
+      let tries = 0;
+      const restore = () => {
+        const now = document.activeElement;
+        if (now && now !== document.body) return;
+        const editor = document.querySelector<HTMLElement>('[data-space-composer] [contenteditable="true"]');
+        if (editor) editor.focus({ preventScroll: true });
+        else if (++tries < 15) setTimeout(restore, 100);
+      };
+      setTimeout(restore, 0);
+    },
+    [openThread, urlThreadId],
   );
   const closeThread = useCallback(() => {
     if (ownThreadEntry.current) {
@@ -419,6 +453,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
             threads={threads}
             threadId={threadId}
             onOpenThread={openThread}
+            onAutoOpenThread={autoOpen}
             onOpenMembers={() => openDetails('add')}
             beforeSend={beforeSend}
             renderFolder={renderFolder}
@@ -443,6 +478,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
               // The `chat` flag, not the /chat page: every space's thread shows only messages, and links its full session.
               fullSessionHref={chatOn ? uiRoutes().session(projectId, threadId) : undefined}
               messagesOnly={chatOn}
+              quietFocus={threadId === autoOpenedId}
             />
           </ResizablePanel>
         </>
@@ -493,6 +529,7 @@ function SpaceTabs({
   threads,
   threadId,
   onOpenThread,
+  onAutoOpenThread,
   onOpenMembers,
   beforeSend,
   renderFolder,
@@ -508,6 +545,8 @@ function SpaceTabs({
   threads: SpaceThreads;
   threadId: string | null;
   onOpenThread: (sessionId: string) => void;
+  /** A message just sent from the chat: open its thread without taking the focus. */
+  onAutoOpenThread: (sessionId: string) => void;
   onOpenMembers: () => void;
   beforeSend?: () => Promise<void>;
   renderFolder?: (folder: SpaceFolder) => ReactNode;
@@ -530,7 +569,7 @@ function SpaceTabs({
         {space.is_default ? <GeneralChatHead projectId={projectId} /> : null}
         {space.kind === 'channel' ? <ChannelSetup projectId={projectId} space={space} onOpenMembers={onOpenMembers} /> : null}
         <SpaceTimeline projectId={projectId} space={space} threads={threads} selectedId={threadId} onOpenThread={onOpenThread} />
-        <SpaceComposer projectId={projectId} space={space} onOpenThread={onOpenThread} beforeSend={beforeSend} />
+        <SpaceComposer projectId={projectId} space={space} onOpenThread={onOpenThread} onAutoOpenThread={onAutoOpenThread} beforeSend={beforeSend} />
       </TabsContent>
       {state.tabs.map((stored) => (
         <TabsContent key={stored.id} value={stored.id} className="flex min-h-0 flex-col overflow-y-auto">
@@ -751,20 +790,32 @@ function SpaceComposer({
   projectId,
   space,
   onOpenThread,
+  onAutoOpenThread,
   beforeSend,
 }: {
   projectId: string;
   space: ProjectSpace;
   onOpenThread: (sessionId: string) => void;
+  onAutoOpenThread: (sessionId: string) => void;
   beforeSend?: () => Promise<void>;
 }) {
   const t = useTranslations('spaces.view');
   const isPhone = useIsPhone();
   // Chat (`chat`): a new message stays in the chat, so several threads start side by side.
   const oneChat = useFeatureFlag(projectId, 'chat').enabled;
+  // Chat (`chat`): the new thread opens on the right the moment it exists, and
+  // the chat stays where it is, ready for the next message (`autoOpenThread`).
   const spaceSend = useMemo(
-    () => ({ spaceId: space.space_id, onOpen: oneChat ? () => undefined : onOpenThread }),
-    [space.space_id, onOpenThread, oneChat],
+    () =>
+      oneChat
+        ? {
+            spaceId: space.space_id,
+            // Opened the instant Enter is pressed (the optimistic row has the final id).
+            onCreating: (sessionId: string) => autoOpenThread(sessionId, onAutoOpenThread),
+            onOpen: () => undefined,
+          }
+        : { spaceId: space.space_id, onOpen: onOpenThread },
+    [space.space_id, onOpenThread, onAutoOpenThread, oneChat],
   );
   const { send, sending } = useProjectHomeSend(projectId, { beforeSend, space: spaceSend });
   const draftScope = useMemo<DraftScope>(() => ({ kind: 'space', spaceId: space.space_id }), [space.space_id]);
@@ -813,7 +864,7 @@ function SpaceComposer({
     [channelAgents, channelName, t],
   );
   return (
-    <div className="shrink-0 pt-1 pb-4">
+    <div data-space-composer="" className="shrink-0 pt-1 pb-4">
       <FeaturedAgentsContext.Provider value={featured}>
         <ComposerChatInput
           defaultAgentName={channelAgents[0] ?? null}
@@ -890,6 +941,7 @@ function ThreadPanel({
   onClose,
   fullSessionHref,
   messagesOnly = false,
+  quietFocus = false,
 }: {
   projectId: string;
   sessionId: string;
@@ -902,6 +954,8 @@ function ThreadPanel({
   fullSessionHref?: string;
   /** Chat (`chat`): the thread shows only messages; its work stays in the full session. */
   messagesOnly?: boolean;
+  /** Opened by a message just sent from the chat: its reply box does not take the focus. */
+  quietFocus?: boolean;
 }) {
   const t = useTranslations('spaces.view');
   const session = useSession(projectId, sessionId);
@@ -964,7 +1018,7 @@ function ThreadPanel({
     [agentName, thread, t, messagesOnly, projectId],
   );
   return (
-    <aside aria-label={t('threadTitle')} className="bg-background flex min-h-0 w-full flex-1 flex-col">
+    <aside aria-label={t('threadTitle')} data-thread-panel="" className="bg-background flex min-h-0 w-full flex-1 flex-col">
       <div className="kx-titlebar-row relative flex shrink-0 items-center gap-2 border-b px-2">
         <div className="kx-titlebar-tabs flex h-12 min-w-0 flex-1 items-center px-3">
           <div className="flex min-w-0 items-baseline gap-2">
@@ -1003,7 +1057,9 @@ function ThreadPanel({
       ) : null}
       <TranscriptRowsContext.Provider value={rows}>
         <AfterFirstPromptContext.Provider value={afterFirstPrompt}>
-          <SessionThread session={session} hideHeader composerPlaceholder={t('replyPlaceholder')} className="min-h-0 flex-1" />
+          <ComposerAutoFocusContext.Provider value={!quietFocus}>
+            <SessionThread session={session} hideHeader composerPlaceholder={t('replyPlaceholder')} className="min-h-0 flex-1" />
+          </ComposerAutoFocusContext.Provider>
         </AfterFirstPromptContext.Provider>
       </TranscriptRowsContext.Provider>
     </aside>
