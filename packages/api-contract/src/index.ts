@@ -2241,25 +2241,24 @@ export const SessionPromptPlacementSchema = z.enum(['transcript', 'composer']);
 export type SessionPromptPlacement = z.infer<typeof SessionPromptPlacementSchema>;
 
 /**
- * How a prompt reaches a session whose turn is running.
- * - `steer`: the running turn reads it at its next step boundary; the turn
- *   does not stop. Needs the runtime capability `session.steer` and the
- *   turn's own prompter; otherwise the row falls back to `queue`.
- * - `queue` (Queue List): waits for the turn to end, then runs as its own turn.
- * - `interrupt` (Quick Queue, "Stop and send"): ends the turn after the
- *   running tool, then runs as its own turn.
- * With no turn running, all three start a turn. `placement` is derived:
- * `interrupt` is `transcript`, the other two are `composer`.
+ * How a prompt reaches a session whose turn is running. There is one mode:
+ * `steer`. The running turn reads the prompt at its next step, after the
+ * running tool call returns; the turn does not stop. With no turn running, the
+ * prompt starts a turn. The API serves `steer` for every row.
+ *
+ * `queue` and `interrupt` are accepted from older clients and delivered as
+ * `steer`. @deprecated values, removed in the next major.
  */
 export const SessionPromptDeliverySchema = z.enum(['steer', 'queue', 'interrupt']);
 export type SessionPromptDelivery = z.infer<typeof SessionPromptDeliverySchema>;
 
 /**
- * Why a `steer` row was delivered as `queue` instead:
+ * Why a prompt did not steer the running turn and waits for the next turn:
  * - `unsupported`: the session's runtime does not list `session.steer`
- *   (OpenCode 1.18.14 or earlier, or an older daemon).
- * - `not_prompter`: the running turn belongs to another member.
+ *   (an older daemon).
  * - `turn_ended`: the turn ended before the message reached it.
+ * - `not_prompter`: @deprecated, never written since 2026-11-04 (anyone who
+ *   may send to the session steers it); old rows may still carry it.
  */
 export const SessionPromptSteerFallbackSchema = z.enum(['unsupported', 'not_prompter', 'turn_ended']);
 export type SessionPromptSteerFallback = z.infer<typeof SessionPromptSteerFallbackSchema>;
@@ -2273,7 +2272,7 @@ export const SessionPromptSchema = z.object({
   placement: SessionPromptPlacementSchema,
   /** Absent from an API built before steering: read it as `placement` implies. */
   delivery: SessionPromptDeliverySchema.optional(),
-  /** Set when a `steer` row fell back to `queue`; `delivery` then reads `queue`. */
+  /** Set when a prompt could not steer the running turn and waits for the next one. */
   steer_fallback: SessionPromptSteerFallbackSchema.nullable().optional(),
   /** Full accepted text. `text` is the capped preview. */
   full_text: z.string(),

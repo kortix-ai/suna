@@ -102,6 +102,8 @@ function sameModel(a: ModelKey | null | undefined, b: { providerID: string; mode
 export function useComposerSelection(
   session: ComposerSelectionSession,
   projectId: string,
+  /** The model the session's newest message ran on, or null before the first. */
+  sessionModel: ModelKey | null = null,
 ): ComposerSelection {
   const models = session.models;
   const groups = useMemo(() => groupModels(models), [models]);
@@ -110,11 +112,14 @@ export function useComposerSelection(
 
   const agent = session.picks.agent ?? session.agentName ?? session.defaultAgent ?? null;
 
-  // With no explicit pick, the send goes out under the server-resolved default
-  // (agent → project → account → platform). Print THAT, not "Default": the
-  // toggle states the model the next prompt will really use.
+  // With no explicit pick, the send goes out under the session's own model
+  // (the server pins it), and before the session's first message under the
+  // server-resolved default (agent → project → account → platform). Print THAT,
+  // not "Default": the toggle states the model the next prompt will really use.
+  // Without `sessionModel` a session on one model printed the project default
+  // (prod 2026-11-04: a `codex/gpt-6.1-sol` session read "Claude Opus 5.5").
   const resolvedDefault = defaults.resolveDefaultFor(agent ?? undefined);
-  const activeKey = session.picks.model ?? resolvedDefault ?? null;
+  const activeKey = session.picks.model ?? sessionModel ?? resolvedDefault ?? null;
   const model = useMemo(
     () => (activeKey ? models.find((candidate) => sameModel(activeKey, candidate)) : undefined),
     [models, activeKey],

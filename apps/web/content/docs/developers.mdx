@@ -2182,8 +2182,8 @@ The commands below are `kortix sessions <subcommand>`. `kortix sessions --help` 
 | --- | --- |
 | `chat [<session_id>]` | A line chat with the agent. With no ID it picks your most recent running session. `--new` starts one. |
 | `chat <session_id> -p "<text>"` | Send one prompt, print the reply and exit. `--json` prints the reply as JSON. |
-| `chat <session_id> -p "<text>" --queue` | Store the prompt in the session's inbox and return at once. It survives a sleeping or busy sandbox. |
-| `chat <session_id> -p "<text>" --steer` | Give the prompt to the running turn. The agent reads it at its next step. With no turn running, it starts one. |
+| `chat <session_id> -p "<text>" --queue` | Store the prompt in the session's inbox and return at once. A running turn reads it at its next step; with no turn running, it starts one. It survives a sleeping sandbox. |
+| `chat <session_id> -p "<text>" --steer` | Same as `--queue`. |
 | `queue <session_id>` | The inbox: `ls`, `rm <prompt-id>`, `now <prompt-id>`, `hold`, `release`. |
 | `message <to> "<text>"` | Send another session a message from this one (`$KORTIX_SESSION_ID`, else `--from <session_id>`). `--summary`, `--notify-idle`. Exit `1` when it was not sent. See [Messages between sessions](#messages-between-sessions). |
 | `reachable` | The sessions this one can message. `--scope project` lists every live session. |
@@ -5265,9 +5265,9 @@ s.setAgent('reviewer');
 
 Precedence: the `send()` option, then `setModel()` / `setAgent()` on this handle, then the session's saved default. Model ids come from `kortix.projects.modelPicker(projectId)`. Agent names come from `kortix.projects.detail(projectId)`, in `config.agents`. To change the saved model, see [Control the session](#control-the-session).
 
-#### Steer, queue or interrupt
+#### Sending while the agent works
 
-`send()` queues: the prompt waits for the running turn to end. To choose how a prompt reaches a running turn, write it with `s.prompts.create()`:
+A prompt sent while a turn runs steers that turn: the agent reads it at its next step, after its current tool call. The turn does not stop. A prompt sent while no turn runs starts one. `send()` and `s.prompts.create()` deliver the same way, and so does every Kortix surface (web, desktop, mobile, CLI, TUI):
 
 ```ts
 import { mintWireMessageId } from '@kortix/sdk';
@@ -5277,22 +5277,18 @@ await s.prompts.create({
   clientMessageId: messageId,
   messageId,
   remintOnDelivery: true,
-  delivery: 'steer',
   parts: [{ type: 'text', text: 'Use the staging database.' }],
 });
 ```
 
-| `delivery` | While a turn runs |
-| --- | --- |
-| `steer` | The running turn reads the prompt at its next step. The turn does not stop. |
-| `queue` | The prompt waits for the turn to end, then runs as its own turn. |
-| `interrupt` | The turn ends after the running tool. Then the prompt runs as its own turn. |
+Anyone who may send to the session steers its running turn, an agent's own subagents included. Prompts reach the agent one at a time, in send order. A prompt that cannot reach the running turn starts the next turn, and its inbox row says why in `steer_fallback`:
 
-With no turn running, all three start a turn. A `steer` needs the runtime capability `session.steer` and must come from the member who started the turn. Otherwise the server delivers it as `queue` and sets `steer_fallback` on the inbox row:
-
-- `unsupported`: the runtime does not list `session.steer`.
-- `not_prompter`: another member started the running turn.
+- `unsupported`: the runtime does not list `session.steer` (an older sandbox).
 - `turn_ended`: the turn ended before the prompt reached it.
+
+Stop ends the running turn. The prompts that waited go out together as the next turn, and the agent answers them once.
+
+`delivery` (`steer`, `queue`, `interrupt`) is accepted for older clients and changes nothing: every row reads `delivery: 'steer'`.
 
 #### The inbox
 
@@ -5302,10 +5298,10 @@ The inbox lists only the prompts that the session did not deliver yet.
 | --- | --- |
 | `s.prompts.list()` | `{ prompts }`: the waiting prompts, oldest first, each with `state`, `reason` and `steer_fallback`. |
 | `s.prompts.edit(promptId, text)` | Replaces the text of a waiting prompt. `409` when the prompt is on its way to the runtime. |
-| `s.prompts.interrupt(promptId)` | Turns a waiting prompt into an `interrupt`. |
+| `s.prompts.interrupt(promptId)` | Sends a waiting prompt next, ahead of older waiting prompts. It does not stop the turn. |
 | `s.prompts.retry(promptId)` | Retries a `failed` prompt. |
 | `s.prompts.remove(promptId)` | Removes a prompt and returns it. `409` when the agent already reads it. |
-| `s.prompts.hold(held)` | Holds (`true`) or releases (`false`) the whole queue. |
+| `s.prompts.hold(held)` | `true` is Stop: it ends the running turn, and the waiting prompts then go out as the next turn. `false` releases a hold. |
 
 #### Attach files
 

@@ -339,9 +339,9 @@ describe('composerSendDelivery', () => {
     });
   });
 
-  test('Cmd/Ctrl+Enter is Queue List, busy or idle', () => {
-    expect(composerSendDelivery('composer', true)).toEqual({ placement: 'composer', delivery: 'queue' });
-    expect(composerSendDelivery('composer', false)).toEqual({ placement: 'composer', delivery: 'queue' });
+  test('Cmd/Ctrl+Enter sends exactly like Enter: there is no Queue List', () => {
+    expect(composerSendDelivery('composer', true)).toEqual({ placement: 'composer', delivery: 'steer' });
+    expect(composerSendDelivery('composer', false)).toEqual({ placement: 'transcript' });
   });
 
   test('Enter while idle is unchanged: a transcript send with no delivery mode', () => {

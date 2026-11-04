@@ -257,10 +257,10 @@ describe('composer typing and sending', () => {
     expect(frame(setup)).toContain('billing: Out of credits');
   });
 
-  test('a busy session says the next prompt queues', async () => {
+  test('a busy session says the next prompt steers the running turn', async () => {
     const spies = newSpies();
     const setup = await mountComposer(fakeSession(spies, { isBusy: true }), spies);
-    expect(frame(setup)).toContain('Type to queue the next prompt');
+    expect(frame(setup)).toContain('Type to steer');
   });
 });
 

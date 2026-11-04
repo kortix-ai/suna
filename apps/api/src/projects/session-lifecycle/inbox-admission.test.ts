@@ -4,10 +4,8 @@ import {
   INBOX_ORDER_MAX_BACKOFF_MS,
   INBOX_STALE_ORDER_BACKOFF_MS,
   INBOX_STALE_ORDER_REFUSALS,
-  QUEUE_BOUNDARY_FALLBACK_MS,
   admissionBackoffMs,
   admitInboxPrompt,
-  boundaryWaitDecision,
   sessionHoldsTurnAuthority,
 } from './inbox-admission';
 import type { SessionLifecycleCommandRow } from './store';
@@ -58,13 +56,13 @@ const row = (overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecy
   }) as SessionLifecycleCommandRow;
 
 // The admission verdicts on real rows (live turn, stopped box, older pending,
-// on-the-wire sibling, promoted row, Quick Queue interrupt) are proven in
+// on-the-wire sibling, promoted row) are proven in
 // __tests__/integration-prompt-inbox.test.ts. These rows pin the branches it
 // cannot reach and the backoff curve.
 describe('admitInboxPrompt', () => {
-  test('"send now" does NOT jump a live turn — it jumps the QUEUE', async () => {
-    // Promotion reorders the line. It cannot put a second message in front of
-    // a turn that is already running, because that is the merge above.
+  test('without the steer reads, "send now" waits for a live turn — it jumps the QUEUE', async () => {
+    // Promotion reorders the line. With no way to steer, it cannot put a second
+    // message into a turn that is already running.
     const admission = await admitInboxPrompt(row({ result: { promoted: true } }), {
       readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }),
       hasInFlightPrompt: async () => false,
@@ -156,7 +154,7 @@ describe('admitInboxPrompt', () => {
     for (const [older, inFlight] of [[true, false], [false, true]] as const) {
       expect(await admitInboxPrompt(waiting, live(older, inFlight))).toEqual({
         admit: false,
-        reason: 'turn_active',
+        reason: 'older_prompt_pending',
         retryAfterMs: INBOX_STALE_ORDER_BACKOFF_MS,
       });
     }
@@ -234,193 +232,27 @@ describe('missed turn-end recovery', () => {
     });
     expect(result).toMatchObject({ admit: false, reason: 'turn_active' });
   });
-
-  test('a turn entry stuck in delivering never arms the interrupt', async () => {
-    // Acceptance is the daemon's own relay; until it lands the runtime has not
-    // confirmed the turn, so ending it at a boundary is the arm's decision to
-    // skip, not this gate's.
-    const delivering = {
-      t1: { token: 't1', state: 'delivering', opencodeSessionId: 'ses_1', messageId: 'msg_1', startedAtMs: 1 },
-    };
-    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript' } }), {
-      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: delivering } }),
-      hasInFlightPrompt: async () => false,
-      hasOlderPendingPrompt: async () => false,
-    });
-    expect(result).toMatchObject({ admit: false, reason: 'turn_active' });
-    expect(result).not.toHaveProperty('interruptAtBoundary');
-  });
 });
 
-describe('the boundary interrupt names the live turn', () => {
-  test('a stale coexisting turn entry does not disable the interrupt — the NEWEST active turn is interrupted', async () => {
-    // One turn entry that outlived its end relay used to make `turns.length
-    // === 1` fail, which silently disarmed the Quick Queue interrupt for the
-    // WHOLE run: every queued message then waited out a 30-minute turn the
-    // reporter could not stop without losing the queue (KRTX-1684, prod
-    // 2026-10-06). The newest entry is the turn that is running.
-    const turns = {
-      'turn-stale': { token: 'turn-stale', state: 'active', opencodeSessionId: 'ses_old', messageId: 'msg_old', startedAtMs: 1 },
-      'turn-live': { token: 'turn-live', state: 'active', opencodeSessionId: 'ses_live', messageId: 'msg_live', startedAtMs: 2 },
-    };
-    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript', mayStopAnyTurn: true } }), {
-      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: turns } }),
-      hasInFlightPrompt: async () => false,
-      hasOlderPendingPrompt: async () => false,
-    });
-    expect(result).toMatchObject({
-      admit: false,
-      reason: 'turn_active',
-      interruptAtBoundary: { opencodeSessionId: 'ses_live', messageId: 'msg_live' },
-    });
-  });
-
-  test('a legacy entry without a start stamp yields to one that has one', async () => {
-    const turns = {
-      'turn-legacy': { token: 'turn-legacy', state: 'active', opencodeSessionId: 'ses_old', messageId: 'msg_old' },
-      'turn-live': { token: 'turn-live', state: 'active', opencodeSessionId: 'ses_live', messageId: 'msg_live', startedAtMs: 7 },
-    };
-    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript', mayStopAnyTurn: true } }), {
-      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: turns } }),
-      hasInFlightPrompt: async () => false,
-      hasOlderPendingPrompt: async () => false,
-    });
-    expect(result).toMatchObject({
-      interruptAtBoundary: { opencodeSessionId: 'ses_live', messageId: 'msg_live' },
-    });
-  });
-});
-
-// A Quick Queue row ends the running turn, so its sender must be allowed to
-// stop that turn (`turn-stop-authority.ts`): its prompter, or the session owner
-// or a manager (`mayStopAnyTurn`, stamped at send). Any other row waits.
-describe('only a sender who may stop the turn arms its interrupt', () => {
-  const ARMED = { opencodeSessionId: 'ses_1', messageId: 'msg_1' };
-  /** A person's Quick Queue send, as `POST .../prompts` stores it. */
-  const quickQueue = (actorUserId: string, payload: Record<string, unknown> = {}) =>
-    row({ actorUserId, payload: { text: 'hi', placement: 'transcript', bindTurnIdentity: true, ...payload } });
-  function admit(target: SessionLifecycleCommandRow, prompter: string | null, asked: string[][]) {
-    return admitInboxPrompt(target, {
-      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }),
-      hasInFlightPrompt: async () => false,
-      hasOlderPendingPrompt: async () => false,
-      turnPrompter: async (sessionId, messageId) => {
-        asked.push([sessionId, messageId]);
-        return prompter;
-      },
-    });
-  }
-
-  test("the turn's prompter arms it; the read names the live turn", async () => {
-    const asked: string[][] = [];
-    expect(await admit(quickQueue('user-a'), 'user-a', asked)).toMatchObject({ reason: 'turn_active', interruptAtBoundary: ARMED });
-    expect(asked).toEqual([['sess-1', 'msg_1']]);
-  });
-
-  test('another member waits for the turn to end, unarmed', async () => {
-    const result = await admit(quickQueue('user-b'), 'user-a', []);
-    expect(result).toMatchObject({ admit: false, reason: 'turn_active' });
-    expect(result).not.toHaveProperty('interruptAtBoundary');
-  });
-
-  test('an owner or manager row arms it without reading the prompter', async () => {
-    const asked: string[][] = [];
-    expect(await admit(quickQueue('user-b', { mayStopAnyTurn: true }), 'user-a', asked)).toMatchObject({
-      interruptAtBoundary: ARMED,
-    });
-    expect(asked).toEqual([]);
-  });
-
-  test("an agent session's row is never the prompter, even under the prompter's user id", async () => {
-    const asked: string[][] = [];
-    const agentRow = quickQueue('user-a', { bindTurnIdentity: false, authorSessionId: 'sess-agent' });
-    expect(await admit(agentRow, 'user-a', asked)).not.toHaveProperty('interruptAtBoundary');
-    expect(asked).toEqual([]);
-  });
-
-  test('a Queue List row never reads the prompter: the read stays off the hot path', async () => {
-    const asked: string[][] = [];
-    const queueList = quickQueue('user-a', { placement: 'composer' });
-    expect(await admit(queueList, 'user-a', asked)).not.toHaveProperty('interruptAtBoundary');
-    expect(asked).toEqual([]);
-  });
-});
-
-describe('boundaryWaitDecision — the bounded fallback for a silent interrupt', () => {
-  const identity = { opencodeSessionId: 'ses_live', messageId: 'msg_live' };
-  const windowStart = 1_000_000;
-
-  test('the first refusal starts the window and aborts nothing', () => {
-    expect(boundaryWaitDecision(null, identity, windowStart)).toEqual({
-      wait: { ...identity, sinceMs: windowStart },
-      abort: false,
-    });
-  });
-
-  test('inside the window the row keeps waiting on the same turn', () => {
-    const waiting = { boundary_wait: { ...identity, sinceMs: windowStart } };
-    expect(
-      boundaryWaitDecision(waiting, identity, windowStart + QUEUE_BOUNDARY_FALLBACK_MS - 1),
-    ).toEqual({ wait: { ...identity, sinceMs: windowStart }, abort: false });
-  });
-
-  test('past the window the abort fires once and the window restarts', () => {
-    const waiting = { boundary_wait: { ...identity, sinceMs: windowStart } };
-    const due = boundaryWaitDecision(waiting, identity, windowStart + QUEUE_BOUNDARY_FALLBACK_MS);
-    expect(due.abort).toBe(true);
-    expect(due.wait.sinceMs).toBe(windowStart + QUEUE_BOUNDARY_FALLBACK_MS);
-  });
-
-  test('a different live turn resets the window — the boundary already moved', () => {
-    const waiting = { boundary_wait: { ...identity, sinceMs: windowStart } };
-    expect(
-      boundaryWaitDecision(waiting, { opencodeSessionId: 'ses_live', messageId: 'msg_newer' }, windowStart + 1),
-    ).toEqual({
-      wait: { opencodeSessionId: 'ses_live', messageId: 'msg_newer', sinceMs: windowStart + 1 },
-      abort: false,
-    });
-  });
-
-  test('a corrupt or stale marker is treated as a fresh window', () => {
-    expect(
-      boundaryWaitDecision({ boundary_wait: { sinceMs: 'not-a-number' } }, identity, windowStart),
-    ).toEqual({ wait: { ...identity, sinceMs: windowStart }, abort: false });
-    expect(boundaryWaitDecision({ boundary_wait: 'garbage' }, identity, windowStart)).toEqual({
-      wait: { ...identity, sinceMs: windowStart },
-      abort: false,
-    });
-  });
-});
-
-describe('steer admission (R10)', () => {
+describe('one delivery mode: every row steers a live turn', () => {
   const ACTOR = 'user-a';
-  const steerRow = (overrides: Partial<SessionLifecycleCommandRow> = {}) =>
-    row({
-      actorUserId: ACTOR,
-      payload: { text: 'also check the tests', delivery: 'steer', placement: 'composer', wireMessageId: 'msg_steer' },
-      ...overrides,
-    });
+  const liveRow = (payload: Record<string, unknown> = {}, overrides: Partial<SessionLifecycleCommandRow> = {}) =>
+    row({ actorUserId: ACTOR, payload: { text: 'also check the tests', wireMessageId: 'msg_2', ...payload }, ...overrides });
   type Box = { status: string; metadata: Record<string, unknown>; externalId: string };
   const liveBox = async (): Promise<Box> => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') }, externalId: 'box-1' });
   function steerDeps(over: {
     capabilities?: string[] | null;
-    prompter?: string | null;
-    olderSteer?: boolean;
-    olderQueue?: boolean;
+    older?: boolean;
+    inFlight?: boolean;
     sandbox?: typeof liveBox;
   } = {}) {
     const fallbacks: string[] = [];
     const deps = {
       readSandbox: over.sandbox ?? liveBox,
-      hasInFlightPrompt: async () => false,
-      hasOlderPendingPrompt: async () => over.olderQueue ?? false,
+      hasInFlightPrompt: async () => over.inFlight ?? false,
+      hasOlderPendingPrompt: async () => over.older ?? false,
       steer: {
         capabilities: async () => (over.capabilities === undefined ? ['session.steer'] : over.capabilities),
-        turnPrompter: async (_s: string, messageId: string) => {
-          expect(messageId).toBe('msg_1');
-          return over.prompter === undefined ? ACTOR : over.prompter;
-        },
-        hasOlderSteerPrompt: async () => over.olderSteer ?? false,
         recordFallback: async (_r: SessionLifecycleCommandRow, reason: string) => {
           fallbacks.push(reason);
         },
@@ -429,35 +261,74 @@ describe('steer admission (R10)', () => {
     return { deps, fallbacks };
   }
 
-  test('the prompter steers into the live turn, past an older Queue List row', async () => {
-    const { deps, fallbacks } = steerDeps({ olderQueue: true });
-    expect(await admitInboxPrompt(steerRow(), deps)).toEqual({ admit: true, steerInto: 'msg_1' });
-    expect(fallbacks).toEqual([]);
-  });
-
-  test('an older steer row still pending holds it, without a fallback', async () => {
-    const { deps, fallbacks } = steerDeps({ olderSteer: true });
-    expect(await admitInboxPrompt(steerRow(), deps)).toMatchObject({ admit: false, reason: 'older_prompt_pending' });
-    expect(fallbacks).toEqual([]);
-  });
-
-  test('a runtime without session.steer falls back to queue for good and waits for the turn', async () => {
-    const { deps, fallbacks } = steerDeps({ capabilities: ['runtime.turns.v1'] });
-    expect(await admitInboxPrompt(steerRow(), deps)).toMatchObject({ admit: false, reason: 'turn_active' });
-    expect(fallbacks).toEqual(['unsupported']);
-  });
-
-  test("another member's turn falls back not_prompter; a turn with no inbox row too", async () => {
-    for (const prompter of ['user-b', null]) {
-      const { deps, fallbacks } = steerDeps({ prompter });
-      expect(await admitInboxPrompt(steerRow(), deps)).toMatchObject({ admit: false, reason: 'turn_active' });
-      expect(fallbacks).toEqual(['not_prompter']);
+  test('a row steers into the live turn whatever delivery or placement it was written with', async () => {
+    // Prod 2026-11-04: a TUI "go on" (placement composer, no delivery) waited out a 30-step turn.
+    for (const payload of [{}, { placement: 'composer' }, { delivery: 'queue', placement: 'composer' }, { delivery: 'interrupt', placement: 'transcript' }, { delivery: 'steer' }]) {
+      const { deps, fallbacks } = steerDeps();
+      expect(await admitInboxPrompt(liveRow(payload), deps)).toEqual({ admit: true, steerInto: 'msg_1' });
+      expect(fallbacks).toEqual([]);
     }
   });
 
-  test('an unreadable capability list or a turn still being delivered waits and stays steer', async () => {
+  test("a row from another member or from the session's own subagent steers: there is no prompter rule", async () => {
+    // Prod 2026-11-04: three subagent results waited `not_prompter` behind the turn that started the subagent.
+    const { deps, fallbacks } = steerDeps();
+    expect(await admitInboxPrompt(liveRow({ authorSessionId: 'sess-child' }, { actorUserId: 'user-b' }), deps))
+      .toEqual({ admit: true, steerInto: 'msg_1' });
+    expect(fallbacks).toEqual([]);
+  });
+
+  test('a row with no wire id steers too: delivery mints one', async () => {
+    const { deps } = steerDeps();
+    expect(await admitInboxPrompt(liveRow({ wireMessageId: undefined }), deps)).toEqual({ admit: true, steerInto: 'msg_1' });
+  });
+
+  test('rows go one at a time in send order: a row behind an older or in-flight row waits for it', async () => {
+    for (const over of [{ older: true }, { inFlight: true }]) {
+      const { deps, fallbacks } = steerDeps(over);
+      expect(await admitInboxPrompt(liveRow(), deps)).toEqual({
+        admit: false,
+        reason: 'older_prompt_pending',
+        retryAfterMs: INBOX_STALE_ORDER_BACKOFF_MS,
+      });
+      expect(fallbacks).toEqual([]);
+    }
+  });
+
+  test('"send now" steers past an older waiting row, never past one in flight', async () => {
+    const promoted = liveRow({}, { result: { promoted: true } });
+    expect(await admitInboxPrompt(promoted, steerDeps({ older: true }).deps)).toEqual({ admit: true, steerInto: 'msg_1' });
+    expect(await admitInboxPrompt(promoted, steerDeps({ inFlight: true }).deps)).toMatchObject({ admit: false, reason: 'older_prompt_pending' });
+  });
+
+  test('a runtime without session.steer records unsupported and the row waits for the next turn', async () => {
+    const { deps, fallbacks } = steerDeps({ capabilities: ['runtime.turns.v1'] });
+    expect(await admitInboxPrompt(liveRow(), deps)).toMatchObject({ admit: false, reason: 'turn_active' });
+    expect(fallbacks).toEqual(['unsupported']);
+  });
+
+  test('a row the runtime refused into this turn waits for its end; a newer turn takes the steer', async () => {
+    const refused = liveRow({ steerFallback: 'turn_ended', steerRefusedTurn: 'msg_1' });
+    const same = steerDeps();
+    expect(await admitInboxPrompt(refused, same.deps)).toMatchObject({ admit: false, reason: 'turn_active' });
+    expect(same.fallbacks).toEqual([]);
+    const newer = steerDeps({
+      sandbox: async () => ({
+        status: 'active',
+        metadata: { activeTurns: { t2: { token: 't2', state: 'active', opencodeSessionId: 'ses_1', messageId: 'msg_3', startedAtMs: 2 } } },
+        externalId: 'box-1',
+      }),
+    });
+    expect(await admitInboxPrompt(refused, newer.deps)).toEqual({ admit: true, steerInto: 'msg_3' });
+  });
+
+  test('an unreadable capability list or a turn still being delivered waits on the short clock, no fallback', async () => {
     const unreadable = steerDeps({ capabilities: null });
-    expect(await admitInboxPrompt(steerRow(), unreadable.deps)).toMatchObject({ admit: false, reason: 'turn_active' });
+    expect(await admitInboxPrompt(liveRow(), unreadable.deps)).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
     const delivering = steerDeps({
       sandbox: async () => ({
         status: 'active',
@@ -465,12 +336,31 @@ describe('steer admission (R10)', () => {
         externalId: 'box-1',
       }),
     });
-    expect(await admitInboxPrompt(steerRow(), delivering.deps)).toMatchObject({ admit: false, reason: 'turn_active' });
+    expect(await admitInboxPrompt(liveRow(), delivering.deps)).toMatchObject({ admit: false, reason: 'turn_active' });
     expect([...unreadable.fallbacks, ...delivering.fallbacks]).toEqual([]);
   });
 
-  test('with no live turn a steer row is an ordinary prompt: it starts a turn', async () => {
+  test('the newest active turn takes the steer when a stale entry outlived its end relay', async () => {
+    const { deps } = steerDeps({
+      sandbox: async () => ({
+        status: 'active',
+        metadata: { activeTurns: {
+          old: { token: 'old', state: 'active', opencodeSessionId: 'ses_1', messageId: 'msg_old', startedAtMs: 1 },
+          now: { token: 'now', state: 'active', opencodeSessionId: 'ses_1', messageId: 'msg_now', startedAtMs: 5 },
+        } },
+        externalId: 'box-1',
+      }),
+    });
+    expect(await admitInboxPrompt(liveRow(), deps)).toEqual({ admit: true, steerInto: 'msg_now' });
+  });
+
+  test('a row with no actor cannot be posted as a steer: it waits for the next turn', async () => {
+    const { deps } = steerDeps();
+    expect(await admitInboxPrompt(liveRow({}, { actorUserId: null }), deps)).toMatchObject({ admit: false, reason: 'turn_active' });
+  });
+
+  test('with no live turn every row starts a turn', async () => {
     const { deps } = steerDeps({ sandbox: async () => ({ status: 'active', metadata: {}, externalId: 'box-1' }) });
-    expect(await admitInboxPrompt(steerRow(), deps)).toEqual({ admit: true });
+    expect(await admitInboxPrompt(liveRow(), deps)).toEqual({ admit: true });
   });
 });

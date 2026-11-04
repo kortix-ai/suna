@@ -206,7 +206,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
     const rows = await commands();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ idempotencyKey: claimed.jobKey, sessionId, source: 'system:artifact-comment', artifactId: artifact.artifactId,
-      payload: { delivery: 'queue', placement: 'composer' } });
+      payload: { delivery: 'steer', placement: 'composer' } });
     expect(rows[0]!.payload.text).toContain('actual-entry-etag');
     expect(rows[0]!.payload.text).toContain(`kortix artifacts reply ${source.row.threadId}`);
     expect(await events()).toHaveLength(1);
@@ -259,7 +259,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
     await runArtifactCommentAgentJob(second);
     const rows = await commands();
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.payload).toMatchObject({ delivery: 'queue', placement: 'composer', artifactCommentDigest: { deliveries: [
+    expect(rows[0]!.payload).toMatchObject({ delivery: 'steer', placement: 'composer', artifactCommentDigest: { deliveries: [
       { job_id: first.jobId, target_key: first.jobKey }, { job_id: second.jobId, target_key: second.jobKey },
     ] } });
     expect(rows[0]!.payload.text).toContain('First concern.');

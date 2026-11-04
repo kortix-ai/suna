@@ -174,14 +174,6 @@ export function createPiControlService(
           await rt.abort()
           return { outcome: 'aborted', body: { ok: true, runtime_session_id: rt.rootId } }
         },
-        // Quick Queue. The runtime holds the turn and tool state in-process, so
-        // there is nothing to poll: it aborts on its own `tool_execution_end`.
-        async armAbortAfterTool(input) {
-          runtime()?.armAbortAfterTool(input)
-        },
-        disarmAbortAfterTool(promptId) {
-          runtime()?.disarmAbortAfterTool(promptId)
-        },
       }
     },
   }

@@ -1004,7 +1004,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     const request = store.take(sessionId) ?? (projectSessionId ? store.take(projectSessionId) : null);
     if (!request) return;
     if (isBusy || hasQuestion) {
-      void handleEnqueue(request.text, {}, undefined, 'queue').catch(() => {});
+      void handleEnqueue(request.text, {}, undefined, 'steer').catch(() => {});
       return;
     }
     const { agent, modelKey, variant } = resolvedRef.current;

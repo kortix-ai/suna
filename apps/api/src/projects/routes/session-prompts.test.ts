@@ -303,7 +303,7 @@ mock.module('../session-lifecycle', () => ({
       outcome: 'edited',
       row: row({
         idempotencyKey: `prompt:${SESSION_ID}:q_1`,
-        payload: { text: 'say hi', clientMessageId: 'q_1', wireMessageId: WIRE_ID, delivery: 'interrupt', placement: 'transcript' },
+        payload: { text: 'say hi', clientMessageId: 'q_1', wireMessageId: WIRE_ID, delivery: 'steer', remintOnDelivery: true },
         result: { promoted: true },
       }),
     };
@@ -506,17 +506,19 @@ describe('POST .../prompts', () => {
     });
   });
 
-  test('delivery sets the stored placement; placement alone keeps its meaning (R10)', async () => {
+  test('every row is stored as steer; delivery only picks where an older client draws it', async () => {
     await post({ ...validBody, delivery: 'steer' });
     await post({ ...validBody, client_message_id: 'q_2', delivery: 'interrupt', placement: 'composer' });
     await post({ ...validBody, client_message_id: 'q_3', placement: 'transcript' });
+    await post({ ...validBody, client_message_id: 'q_5', delivery: 'queue' });
     expect(enqueued.map((e) => [e.delivery, e.placement])).toEqual([
       ['steer', 'composer'],
-      ['interrupt', 'transcript'],
-      [undefined, 'transcript'],
+      ['steer', 'transcript'],
+      ['steer', 'transcript'],
+      ['steer', 'composer'],
     ]);
     expect((await post({ ...validBody, client_message_id: 'q_4', delivery: 'now' })).status).toBe(400);
-    expect(enqueued).toHaveLength(3);
+    expect(enqueued).toHaveLength(4);
   });
 
   test('carries the client-minted wire id, the parts and the overrides into the payload', async () => {
@@ -810,7 +812,7 @@ describe('GET .../prompts', () => {
         full_text: 'say hi',
         placement: 'composer',
         // A row from before steering: `queue`, as its placement implies.
-        delivery: 'queue',
+        delivery: 'steer',
         steer_fallback: null,
         attempts: 0,
         runtime_retries: 0,
@@ -961,7 +963,7 @@ describe('DELETE .../prompts/:promptId', () => {
     expect(await response.json()).toEqual({
       removed: {
         placement: 'composer',
-        delivery: 'queue',
+        delivery: 'steer',
         prompt_id: PROMPT_ID,
         removed_message_ids: [WIRE_ID],
         client_message_id: 'q_1',
@@ -1055,10 +1057,10 @@ describe('PATCH .../prompts/:promptId', () => {
     expect((await edit({ text: 'x' }, 'not-a-uuid')).status).toBe(400);
   });
 
-  test('"Stop and send": delivery interrupt converts the row and kicks the drain (R10)', async () => {
+  test('"Send now": delivery interrupt promotes the row and kicks the drain', async () => {
     const response = await edit({ delivery: 'interrupt' });
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ delivery: 'interrupt', placement: 'transcript' });
+    expect(await response.json()).toMatchObject({ delivery: 'steer' });
     expect(interrupts).toEqual([PROMPT_ID]);
     expect(edits).toHaveLength(0);
     expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
@@ -1305,35 +1307,10 @@ describe('POST .../prompts/hold', () => {
 
 // "Stop and send" ends the running turn after its current tool, so it asks
 // what Stop asks. Refused before any write.
-describe('Stop and send on a turn another member prompted', () => {
-  test('PATCH delivery interrupt → 403 not_turn_prompter; nothing is edited or sent', async () => {
+describe('a send into a turn another member prompted', () => {
+  test('PATCH "send now" and POST with any delivery need no stop authority: nothing stops the turn', async () => {
     turnRunning = true;
     turnPrompter = OTHER_MEMBER;
-    const response = await app().request(`${base()}/${PROMPT_ID}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: 'rewritten', delivery: 'interrupt' }),
-    });
-    expect(response.status).toBe(403);
-    expect(await response.json()).toEqual(NOT_TURN_PROMPTER_BODY);
-    expect(edits).toEqual([]);
-    expect(interrupts).toEqual([]);
-    expect(drains).toEqual([]);
-  });
-
-  test('POST delivery interrupt → 403 not_turn_prompter; nothing is queued', async () => {
-    turnRunning = true;
-    turnPrompter = OTHER_MEMBER;
-    const response = await post({ ...validBody, delivery: 'interrupt' });
-    expect(response.status).toBe(403);
-    expect(await response.json()).toEqual(NOT_TURN_PROMPTER_BODY);
-    expect(enqueued).toEqual([]);
-  });
-
-  test('the prompter, the owner or a manager may; a steer or queue send never asks', async () => {
-    turnRunning = true;
-    turnPrompter = USER_ID;
-    expect((await post({ ...validBody, delivery: 'interrupt' })).status).toBe(202);
     const patched = await app().request(`${base()}/${PROMPT_ID}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -1341,21 +1318,12 @@ describe('Stop and send on a turn another member prompted', () => {
     });
     expect(patched.status).toBe(200);
     expect(interrupts).toEqual([PROMPT_ID]);
-    turnPrompter = OTHER_MEMBER;
-    visibleSession = { ...visibleSession, canManageLifecycle: true };
-    expect((await post({ ...validBody, client_message_id: 'q_2', delivery: 'interrupt' })).status).toBe(202);
-    stopChecks = [];
-    visibleSession = { ...visibleSession, canManageLifecycle: false };
-    expect((await post({ ...validBody, client_message_id: 'q_3', delivery: 'steer' })).status).toBe(202);
-    expect((await post({ ...validBody, client_message_id: 'q_4', delivery: 'queue' })).status).toBe(202);
+    for (const [id, delivery] of [['q_2', 'interrupt'], ['q_3', 'steer'], ['q_4', 'queue']] as const) {
+      expect((await post({ ...validBody, client_message_id: id, delivery })).status).toBe(202);
+    }
     expect(stopChecks).toEqual([]);
-  });
-
-  test("an owner's or manager's send carries mayStopAnyTurn; anyone else's does not", async () => {
-    await post(validBody);
-    visibleSession = { ...visibleSession, canManageLifecycle: true };
-    await post({ ...validBody, client_message_id: 'q_2' });
-    expect(enqueued.map((e) => e.mayStopAnyTurn)).toEqual([undefined, true]);
+    expect(enqueued.map((e) => e.delivery)).toEqual(['steer', 'steer', 'steer']);
+    expect(enqueued.map((e) => e.mayStopAnyTurn)).toEqual([undefined, undefined, undefined]);
   });
 });
 

@@ -188,14 +188,16 @@ export interface QueuedContinueSessionPayload {
   clientSentAtMs?: number;
   placement?: 'transcript' | 'composer';
   /**
-   * How the prompt reaches a running turn (`SessionPromptDelivery`). Absent on
-   * rows from before steering: `placement` implies it. `placement` is stored
-   * beside it, derived (`interrupt` → `transcript`, else `composer`), so an
-   * older API task treats a `steer` row as a Queue List row.
+   * Written as `steer` for every new row. Admission does not read it: every
+   * row steers a running turn (`inbox-admission.ts`). Older rows may carry
+   * `queue` or `interrupt`; they are delivered the same way.
    */
   delivery?: SessionPromptDelivery;
-  /** Why a `steer` row went out as `queue` instead. Written once, with `delivery: 'queue'`. */
+  /** Why the row did not steer a running turn (`recordSteerFallback`). */
   steerFallback?: SessionPromptSteerFallback;
+  /** The turn whose runtime refused this row's steer (`turn_ended`). The row
+   *  starts the next turn instead of re-steering into this one. */
+  steerRefusedTurn?: string;
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
   /** The row's `actor_user_id` is the person who sent it — see
@@ -205,11 +207,6 @@ export interface QueuedContinueSessionPayload {
   /** The Kortix session whose agent sent this prompt. Absent when a person
    *  sent it. Set by the server from the caller's credential, never the body. */
   authorSessionId?: string;
-  /** The sender was the session owner or a project manager when they sent
-   *  this, so as a Quick Queue row it may end ANY running turn. Without it the
-   *  row ends only a turn its own sender prompted (`turn-stop-authority.ts`).
-   *  Absent on rows from before the rule. */
-  mayStopAnyTurn?: boolean;
   /** Deliver as OpenCode `noReply`: the message joins the transcript and no
    *  turn starts. The first message of a conversation with people. */
   noReply?: boolean;

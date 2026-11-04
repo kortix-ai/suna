@@ -40,13 +40,9 @@ describe('queueSessionPrompt', () => {
     expect((await posted()).remint_on_delivery).toBe(true);
   });
 
-  test('--queue sends no delivery mode: the API keeps it on Queue List', async () => {
-    const body = await posted();
-    expect(body).not.toHaveProperty('delivery');
-    expect(body).not.toHaveProperty('placement');
-  });
-
-  test('--steer sends delivery steer with the composer placement an older API reads as Queue List', async () => {
-    expect(await posted('steer')).toMatchObject({ delivery: 'steer', placement: 'composer' });
+  test('--queue and --steer send the same body: one mode, steer', async () => {
+    for (const delivery of [undefined, 'steer'] as const) {
+      expect(await posted(delivery)).toMatchObject({ delivery: 'steer', placement: 'composer' });
+    }
   });
 });

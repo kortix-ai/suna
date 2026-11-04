@@ -60,13 +60,11 @@ function promptAttachments(payload: Record<string, unknown>): Array<{
 }
 
 /**
- * The row's delivery mode. A row from before steering has none: `transcript`
- * is `interrupt` (Quick Queue), everything else `queue`.
+ * The row's delivery mode: always `steer` (2026-11-04). A row an older client
+ * wrote as `queue` or `interrupt` is admitted as a steer, so it reads as one.
  */
-export function promptDelivery(payload: Record<string, unknown>): SessionPromptDelivery {
-  const parsed = SessionPromptDeliverySchema.safeParse(payload.delivery);
-  if (parsed.success) return parsed.data;
-  return payload.placement === 'transcript' ? 'interrupt' : 'queue';
+export function promptDelivery(_payload: Record<string, unknown>): SessionPromptDelivery {
+  return 'steer';
 }
 
 /**

@@ -52,12 +52,6 @@ export type HarnessAbortResult =
   | { outcome: 'not-pinned'; body: { ok: false; error: string } }
   | { outcome: 'failed'; body: { ok: false; error: string; detail?: string } }
 
-/** A queued prompt that interrupts the named turn after its running tool ends. */
-export interface HarnessAbortAfterToolInput {
-  promptId: string
-  runtimeSessionId: string
-  messageId: string
-}
 
 /** The health `config` block. */
 export interface HarnessConfigReleaseReport {
@@ -108,9 +102,6 @@ export interface HarnessControlOperations {
    */
   convergeConfig?(options?: HarnessConfigConvergeOptions): Promise<HarnessConfigConvergeResult>
   abort(): Promise<HarnessAbortResult>
-  armAbortAfterTool(input: HarnessAbortAfterToolInput): Promise<void>
-  /** Without a prompt id, disarm every pending interrupt. */
-  disarmAbortAfterTool(promptId?: string): void
 }
 
 export interface HarnessControlContext {

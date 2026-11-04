@@ -1487,21 +1487,22 @@ export interface SessionPromptOverrides {
 export type SessionPromptState = 'queued' | 'delivering' | 'waiting' | 'failed';
 
 /**
- * How a prompt reaches a session whose turn is running.
- * - `steer`: the running turn reads it at its next step boundary. The turn
- *   does not stop.
- * - `queue` (Queue List): waits for the turn to end, then runs as its own turn.
- * - `interrupt` (Quick Queue, "Stop and send"): ends the turn after the
- *   running tool, then runs as its own turn.
- * With no turn running, all three start a turn.
+ * How a prompt reaches a session whose turn is running. There is one mode,
+ * `steer`: the running turn reads it at its next step, after its current tool
+ * call, and does not stop. With no turn running, it starts a turn. The server
+ * delivers every prompt this way and serves `steer` for every row.
+ *
+ * `queue` and `interrupt` are still accepted and change nothing.
+ * @deprecated values `'queue'` and `'interrupt'`; removed in the next major.
  */
 export type SessionPromptDelivery = 'steer' | 'queue' | 'interrupt';
 
 /**
- * Why a `steer` prompt was delivered as `queue` instead:
+ * Why a prompt did not reach the running turn and starts the next one:
  * - `unsupported`: the session's runtime cannot take a message mid-turn.
- * - `not_prompter`: the running turn belongs to another member.
  * - `turn_ended`: the turn ended before the message reached it.
+ * - `not_prompter`: no longer written (anyone who may send steers); old rows
+ *   may carry it.
  */
 export type SessionPromptSteerFallback = 'unsupported' | 'not_prompter' | 'turn_ended';
 
@@ -1749,9 +1750,9 @@ export async function editSessionPrompt(
 }
 
 /**
- * "Stop and send": turn a prompt still waiting in the queue into Quick Queue
- * (`delivery: 'interrupt'`). The running turn ends after its running tool,
- * then this prompt runs. A row already on the wire answers `409`.
+ * "Send now": a prompt still waiting goes next, ahead of older waiting
+ * prompts. It steers the running turn, which is not stopped, or starts one.
+ * A row already on the wire answers `409`.
  */
 export async function interruptSessionPrompt(
   projectId: string,

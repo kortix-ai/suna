@@ -84,7 +84,6 @@ async function enqueue(
     delivery?: 'steer' | 'queue' | 'interrupt';
     actorUserId?: string;
     /** Sent by the session owner or a manager: may end any running turn. */
-    mayStopAnyTurn?: boolean;
   } = {},
 ): Promise<SessionLifecycleCommandRow> {
   const { row } = await enqueueContinueSessionCommand({
@@ -100,7 +99,6 @@ async function enqueue(
     clientSentAtMs: overrides.clientSentAtMs,
     ...(overrides.placement ? { placement: overrides.placement } : {}),
     ...(overrides.delivery ? { delivery: overrides.delivery } : {}),
-    ...(overrides.mayStopAnyTurn ? { mayStopAnyTurn: true } : {}),
     parts: [{ type: 'text', text: 'say hi' }],
     overrides: { agent: 'build', model: null, variant: null, directory: '/workspace' },
   });
@@ -455,106 +453,43 @@ describe('admitInboxPrompt against real rows', () => {
     ).toBe(true);
   });
 
-  test('a Quick Queue entry behind an older Queue List entry heads the queue and arms the interrupt', async () => {
-    // 2026-09-17, local: "stop" (Quick Queue) waited 72 refusals behind an
-    // older Queue List entry, so the response never stopped at its tool boundary.
+  test('one lane: the oldest row heads a live turn whatever its placement; a row behind waits for it', async () => {
+    // 2026-11-04: Quick Queue sorted ahead of older Queue List rows; now send order alone decides.
     const sentAt = Date.now();
-    const queueList = await enqueue('q_list', {
+    const composer = await enqueue('q_list', {
       clientSentAtMs: sentAt,
       placement: 'composer',
       wireMessageId: 'msg_000000000001QueueListEntryW',
     });
-    // An owner's send: only a sender who may stop the running turn arms its
-    // interrupt (`inbox-admission.test.ts` covers the prompter and the refusal).
-    const quickQueue = await enqueue('q_quick', {
+    const transcript = await enqueue('q_quick', {
       clientSentAtMs: sentAt + 1_000,
       placement: 'transcript',
       wireMessageId: 'msg_000000000002QuickQueueEntry',
-      mayStopAnyTurn: true,
     });
     await setBox('active', turn);
 
     expect((await listInboxPrompts(SESSION_ID, 200)).map((row) => row.commandId)).toEqual([
-      quickQueue.commandId,
-      queueList.commandId,
+      composer.commandId,
+      transcript.commandId,
     ]);
-    expect(await admitInboxPrompt(quickQueue)).toEqual({
+    // The head would steer; this box has no readable `/kortix/health`, so it
+    // waits on the short clock (`inbox-admission.test.ts` covers the steer).
+    expect(await admitInboxPrompt(composer)).toEqual({
       admit: false,
       reason: 'turn_active',
       retryAfterMs: INBOX_ORDER_BACKOFF_MS,
-      interruptAtBoundary: { opencodeSessionId: 'ses_root', messageId: WIRE_ID },
     });
-    // Not the head: the head's progress wakes it, so it keeps only the
-    // one-minute fallback clock.
-    expect(await admitInboxPrompt(queueList)).toEqual({
+    expect(await admitInboxPrompt(transcript)).toEqual({
       admit: false,
-      reason: 'turn_active',
+      reason: 'older_prompt_pending',
       retryAfterMs: INBOX_STALE_ORDER_BACKOFF_MS,
     });
-    // Only the HEAD Quick Queue entry arms the interrupt: a second one behind
-    // it would stop the turn for a prompt that is not next.
-    const quickQueueBehind = await enqueue('q_quick_behind', {
-      clientSentAtMs: sentAt + 2_000,
-      placement: 'transcript',
-      wireMessageId: 'msg_000000000003QuickQueueLater',
-      mayStopAnyTurn: true,
-    });
-    expect(await admitInboxPrompt(quickQueueBehind)).not.toHaveProperty('interruptAtBoundary');
-    await db.execute(sql`
-      DELETE FROM kortix.session_lifecycle_commands
-       WHERE command_id = ${quickQueueBehind.commandId}::uuid`);
-
     await db.execute(sql`
       UPDATE kortix.session_lifecycle_commands
          SET available_at = now() + interval '5 minutes',
              result = '{"admission_reason":"turn_active"}'::jsonb
-       WHERE command_id IN (${queueList.commandId}::uuid, ${quickQueue.commandId}::uuid)`);
-    expect(await promoteNextInboxRow(SESSION_ID)).toBe(quickQueue.idempotencyKey);
-  });
-
-  test('a refused head row carries its boundary-wait window through the result merge', async () => {
-    // KRTX-1684: the fallback needs the row to remember how long it has waited
-    // behind WHICH turn. The marker rides `requeueForAdmission`'s result
-    // merge, so the refusal counter it shares that column with must keep
-    // growing, and a later refusal without a patch must keep the window.
-    const row = await enqueue('q_boundary', { placement: 'transcript', mayStopAnyTurn: true });
-    const lease = await hold(row);
-    await setBox('active', turn);
-    expect(await admitInboxPrompt(row)).toEqual({
-      admit: false,
-      reason: 'turn_active',
-      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
-      interruptAtBoundary: { opencodeSessionId: 'ses_root', messageId: WIRE_ID },
-    });
-    const sinceMs = 1_700_000_000_000;
-    expect(
-      await requeueForAdmission(lease, 'turn_active', new Date(Date.now() + INBOX_ORDER_BACKOFF_MS), {
-        boundary_wait: { opencodeSessionId: 'ses_root', messageId: WIRE_ID, sinceMs },
-      }),
-    ).toBe(true);
-    const stored = await readRow(row.commandId);
-    const result = stored.result as Record<string, unknown>;
-    expect(result.admission_reason).toBe('turn_active');
-    expect(result.admission_refusals).toBe(1);
-    expect((result.boundary_wait as Record<string, unknown>).sinceMs).toBe(sinceMs);
-
-    // A later refusal with no patch keeps the window and still grows the
-    // counter — the fallback must not disturb the backoff curve it shares
-    // the result column with.
-    await db.execute(sql`
-      UPDATE kortix.session_lifecycle_commands
-         SET status = 'running', locked_by = 'prompt-inbox-it'
-       WHERE command_id = ${row.commandId}::uuid`);
-    expect(
-      await requeueForAdmission(
-        { commandId: row.commandId, lockedBy: 'prompt-inbox-it' },
-        'turn_active',
-        new Date(Date.now() + INBOX_ORDER_BACKOFF_MS),
-      ),
-    ).toBe(true);
-    const afterSecond = ((await readRow(row.commandId)).result ?? {}) as Record<string, unknown>;
-    expect(afterSecond.admission_refusals).toBe(2);
-    expect((afterSecond.boundary_wait as Record<string, unknown>).sinceMs).toBe(sinceMs);
+       WHERE command_id IN (${composer.commandId}::uuid, ${transcript.commandId}::uuid)`);
+    expect(await promoteNextInboxRow(SESSION_ID)).toBe(composer.idempotencyKey);
   });
 
   test('the SAME metadata on a STOPPED box admits — authority dies with the runtime', async () => {
@@ -2335,15 +2270,18 @@ describe('steering (R10)', () => {
     expect(listed.payload).toMatchObject({ delivery: 'steer', placement: 'composer' });
   });
 
-  test("the turn's prompter steers into the live turn, past an older Queue List row", async () => {
+  test('the head row steers into the live turn whatever delivery it was written with; a younger row waits for it', async () => {
     await runningTurn();
-    await enqueue('s_older_queue', {
+    const older = await enqueue('s_older_queue', {
       wireMessageId: 'msg_000000000002OlderQueueRowAa', placement: 'composer', delivery: 'queue',
       actorUserId: PROMPTER, clientSentAtMs: Date.now() - 30_000,
     });
-    const steer = await claimedSteer('s_steer', PROMPTER);
-    expect(await admit(steer)).toEqual({ admit: true, steerInto: TURN_ID });
-    expect((await readRow(steer.commandId)).payload).toMatchObject({ delivery: 'steer' });
+    const younger = await enqueue('s_steer', {
+      wireMessageId: STEER_ID, actorUserId: PROMPTER, delivery: 'steer', placement: 'composer', clientSentAtMs: Date.now(),
+    });
+    expect(await admit(younger)).toMatchObject({ admit: false, reason: 'older_prompt_pending' });
+    const head = { ...older, status: 'running' as const, lockedBy: (await hold(older)).lockedBy };
+    expect(await admit(head)).toEqual({ admit: true, steerInto: TURN_ID });
   });
 
   test('a steer waits for an OLDER steer row still pending', async () => {
@@ -2357,25 +2295,22 @@ describe('steering (R10)', () => {
     expect((await readRow(second.commandId)).payload).toMatchObject({ delivery: 'steer' });
   });
 
-  test("another member's steer falls back to queue (not_prompter) and waits for the turn", async () => {
+  test("another member's prompt steers the live turn: there is no prompter rule", async () => {
     await runningTurn();
     const steer = await claimedSteer('s_other', OTHER);
-    expect(await admit(steer)).toMatchObject({ admit: false, reason: 'turn_active' });
-    expect((await readRow(steer.commandId)).payload).toMatchObject({
-      delivery: 'queue', steerFallback: 'not_prompter', placement: 'composer',
-    });
+    expect(await admit(steer)).toEqual({ admit: true, steerInto: TURN_ID });
+    expect((await readRow(steer.commandId)).payload).not.toHaveProperty('steerFallback');
   });
 
-  test('a runtime without session.steer falls back unsupported, written once', async () => {
+  test('a runtime without session.steer records unsupported and the row waits; a runtime that steers takes it', async () => {
     await runningTurn();
     capabilities = ['runtime.turns.v1'];
     const steer = await claimedSteer('s_unsupported', PROMPTER);
     expect(await admit(steer)).toMatchObject({ admit: false, reason: 'turn_active' });
-    expect((await readRow(steer.commandId)).payload).toMatchObject({ delivery: 'queue', steerFallback: 'unsupported' });
-    // Once a queue row, always a queue row: a later admission writes nothing.
+    expect((await readRow(steer.commandId)).payload).toMatchObject({ delivery: 'steer', steerFallback: 'unsupported' });
     capabilities = ['runtime.turns.v1', 'session.steer'];
-    await admit({ ...steer, payload: (await readRow(steer.commandId)).payload as Record<string, unknown> });
-    expect((await readRow(steer.commandId)).payload).toMatchObject({ steerFallback: 'unsupported' });
+    expect(await admit({ ...steer, payload: (await readRow(steer.commandId)).payload as Record<string, unknown> }))
+      .toEqual({ admit: true, steerInto: TURN_ID });
   });
 
   test('steer_read closes the forwarded steer row as delivered', async () => {
@@ -2402,7 +2337,7 @@ describe('steering (R10)', () => {
     expect(await steerTargetAtTurnEnd(SESSION_ID, TURN_ID)).toBeNull();
   });
 
-  test('"Stop and send" turns a queued row into Quick Queue; a row on its way is a 409', async () => {
+  test('"Send now" promotes a queued row to steer next; a row on its way is a 409', async () => {
     const queued = await enqueue('s_interrupt', { delivery: 'queue', placement: 'composer' });
     await db.execute(sql`
       UPDATE kortix.session_lifecycle_commands
@@ -2412,7 +2347,7 @@ describe('steering (R10)', () => {
     const converted = await interruptInboxPrompt(SESSION_ID, queued.commandId, AS_AUTHOR);
     expect(converted.outcome).toBe('edited');
     const after = await readRow(queued.commandId);
-    expect(after.payload).toMatchObject({ delivery: 'interrupt', placement: 'transcript', remintOnDelivery: true });
+    expect(after.payload).toMatchObject({ delivery: 'steer', placement: 'composer', remintOnDelivery: true });
     expect(after.result).toEqual({ promoted: true });
     expect(promptState({ status: 'queued', result: after.result as Record<string, unknown> }).state).toBe('queued');
 

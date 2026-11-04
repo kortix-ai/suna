@@ -30,8 +30,6 @@ function fixture() {
     applyEnvironment: async (input) => { calls.push(input); return applied },
     refresh: async () => { throw new Error('unexpected refresh') },
     abort: async () => { throw new Error('unexpected abort') },
-    armAbortAfterTool: async () => { throw new Error('unexpected arm') },
-    disarmAbortAfterTool: () => { throw new Error('unexpected disarm') },
   }
   return { router: createEnvRouter(cfg, control), calls }
 }

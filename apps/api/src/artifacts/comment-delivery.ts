@@ -222,7 +222,7 @@ async function deliverToExisting(job: Job, payload: ArtifactCommentAgentPayload,
     } else {
       const values = buildContinueSessionCommandValues({ source: 'system:artifact-comment', projectId: loaded.artifact.projectId,
         accountId: loaded.artifact.accountId, sessionId: target.sessionId, actorUserId: actor.userId, text, ...(imageParts.length ? { parts: imageParts } : {}), idempotencyKey: target.key,
-        delivery: 'queue', placement: 'composer', bindTurnIdentity: !payload.callerSessionId, authorSessionId: payload.callerSessionId,
+        delivery: 'steer', placement: 'composer', bindTurnIdentity: !payload.callerSessionId, authorSessionId: payload.callerSessionId,
         ...(running ? { availableAt: new Date(Date.now() + 15_000) } : {}),
       });
       await tx.insert(sessionLifecycleCommands).values({ ...values, artifactId: payload.artifactId, payload: { ...values.payload,

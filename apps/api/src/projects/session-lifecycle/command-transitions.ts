@@ -163,22 +163,25 @@ export async function requeueForAdmission(
 }
 
 /**
- * A `steer` row that cannot steer becomes a Queue List row for good (R10):
- * `payload.delivery = 'queue'` and the reason in `payload.steerFallback`. The
- * predicate on `delivery` writes it once. The claim is kept; the caller
- * admits or requeues the row as a queue row.
+ * Record why a row did not steer: `payload.steerFallback`, read by `GET
+ * .../prompts` as `steer_fallback`. `turn_ended` also records the turn that
+ * refused it (`steerRefusedTurn`): admission then holds the row for that
+ * turn's end instead of re-posting it into a turn that is ending, and steers
+ * it into any newer turn. The claim is kept; the caller requeues the row.
  */
 export async function recordSteerFallback(
   lease: CommandLease,
-  reason: 'unsupported' | 'not_prompter' | 'turn_ended',
+  reason: 'unsupported' | 'turn_ended',
+  refusedTurnMessageId?: string,
 ): Promise<void> {
+  const patch = { steerFallback: reason, ...(refusedTurnMessageId ? { steerRefusedTurn: refusedTurnMessageId } : {}) };
   await db
     .update(sessionLifecycleCommands)
     .set({
-      payload: sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ delivery: 'queue', steerFallback: reason })}::jsonb`,
+      payload: sql`${sessionLifecycleCommands.payload} || ${JSON.stringify(patch)}::jsonb`,
       updatedAt: new Date(),
     })
-    .where(and(ownedByLease(lease), sql`${sessionLifecycleCommands.payload}->>'delivery' = 'steer'`));
+    .where(ownedByLease(lease));
 }
 
 /**

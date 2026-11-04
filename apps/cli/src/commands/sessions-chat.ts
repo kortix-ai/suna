@@ -256,16 +256,12 @@ session (or starts one with --new).
   --prompt, -p "<text>"   Send one message, print the reply, exit (one-shot).
                           Without it, opens an interactive REPL.
   --queue                 One-shot only: put the prompt in the session's
-                          DURABLE inbox instead of handing it to the runtime,
-                          and return as soon as it is stored. Survives a
-                          sleeping or mid-turn sandbox; manage what is waiting
+                          DURABLE inbox and return as soon as it is stored,
+                          without waiting for a reply. A running turn reads it
+                          at its next step (the turn does not stop); with no
+                          turn running, it starts one. See what is waiting
                           with \`kortix sessions queue\`.
-  --steer                 One-shot only: hand the prompt to the turn that is
-                          running now. The agent reads it at its next step;
-                          the turn does not stop. Stored like --queue, so it
-                          never wakes the sandbox. With no turn running, it
-                          starts one. A session that cannot steer runs it as
-                          --queue.
+  --steer                 Same as --queue. Kept so existing scripts work.
   --json                  One-shot only: print the reply as JSON (for scripts /
                           synchronous subagent calls).
   --new                   Start a fresh session and chat with it.
@@ -424,21 +420,11 @@ async function queuePrompt(
     return 0;
   }
   const short = session.session_id.split('-')[0];
-  if (delivery === 'steer') {
-    process.stdout.write(
-      `${status.ok(
-        result.deduped
-          ? `Already sent as ${C.bold}${result.prompt_id}${C.reset}`
-          : `Sent ${C.bold}${result.prompt_id}${C.reset} to steer the running turn ${C.dim}(${result.state}). The agent reads it at its next step. Track it with \`kortix sessions queue ${short}\`.${C.reset}`,
-      )}\n`,
-    );
-    return 0;
-  }
   process.stdout.write(
     `${status.ok(
       result.deduped
-        ? `Already queued as ${C.bold}${result.prompt_id}${C.reset}`
-        : `Queued ${C.bold}${result.prompt_id}${C.reset} ${C.dim}(${result.state}) — \`kortix sessions queue ${session.session_id.split('-')[0]}\` to track it${C.reset}`,
+        ? `Already sent as ${C.bold}${result.prompt_id}${C.reset}`
+        : `Sent ${C.bold}${result.prompt_id}${C.reset} ${C.dim}(${result.state}). A running turn reads it at its next step; with no turn running, it starts one. Track it with \`kortix sessions queue ${short}\`.${C.reset}`,
     )}\n`,
   );
   return 0;
