@@ -23621,7 +23621,6 @@
       "stopped": "Arrêté. Plus rien ne le réveille.",
       "abandoned": "Abandonné.",
       "paused": "En pause {time}. Rien ne le réveille tant que tu ne le relances pas.",
-      "waitingOnQuestion": "En attente d’une réponse : {question}",
       "waitingOn": "En attente d’une réponse.",
       "verifying": "Une vérification indépendante contrôle le résultat.",
       "draft": "Démarrage : l’agent écrit le plan.",
@@ -23660,7 +23659,12 @@
     "shareTitle": "Partager l’objectif",
     "details": "Détails",
     "scopeLabel": "Visible par",
-    "folder": "Dossier"
+    "folder": "Dossier",
+    "verifiedPass": "Validé. La session de vérification n’a fait aucune partie du travail.",
+    "verifiedReport": "La session de vérification a écrit ce rapport.",
+    "showReport": "Afficher le rapport",
+    "openInFiles": "Ouvrir le dossier dans Fichiers",
+    "openFolderOf": "Ouvrir le dossier de {file} dans Fichiers"
   },
   "agentEditor": {
     "manage": "Gérer",

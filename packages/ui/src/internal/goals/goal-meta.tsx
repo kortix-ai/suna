@@ -20,23 +20,32 @@ import { MAKE_GOAL_PROMPT } from '@kortix/sdk';
 import { useProjectAccountId } from '@kortix/sdk/react';
 import { useCallback, useMemo } from 'react';
 
+/**
+ * One accent per meaning: orange only where a person must act, green only for
+ * done, every other state neutral (black and white carry the page).
+ */
 const STATUS_TONE: Record<ProjectGoalStatus, StatusTone> = {
   draft: 'neutral',
-  active: 'info',
+  active: 'neutral',
   waiting_on_user: 'warning',
   waiting_external: 'neutral',
-  verifying: 'info',
+  verifying: 'neutral',
   done: 'success',
   stopped: 'neutral',
   abandoned: 'neutral',
 };
 
-/** The state chip. A paused open goal reads "Paused" (orange: a person can act), whatever its state. */
+/** The state chip. A paused open goal reads "Paused", whatever its state. */
 export function GoalStatusBadge({ status, paused }: { status: ProjectGoalStatus | null | undefined; paused?: boolean }) {
   const t = useTranslations('goals');
   if (!status) return null;
-  if (paused && !CLOSED.has(status)) return <StatusBadge tone="warning">{t('paused')}</StatusBadge>;
-  return <StatusBadge tone={STATUS_TONE[status] ?? 'neutral'}>{t(`status.${status}`)}</StatusBadge>;
+  const tone = paused && !CLOSED.has(status) ? 'neutral' : (STATUS_TONE[status] ?? 'neutral');
+  // The neutral status fill is the page white: a muted fill keeps the chip visible.
+  return (
+    <StatusBadge tone={tone} className={tone === 'neutral' ? 'bg-muted' : undefined}>
+      {paused && !CLOSED.has(status) ? t('paused') : t(`status.${status}`)}
+    </StatusBadge>
+  );
 }
 
 const CLOSED = new Set<ProjectGoalStatus>(['done', 'stopped', 'abandoned']);
@@ -48,26 +57,22 @@ export function goalPaused(goal: Pick<ProjectGoal, 'goal' | 'health'>): boolean 
 
 /**
  * One sentence for where a goal stands and what happens next, the same on the
- * Goals list and the goal's page: closed, paused, waiting on a person, a
- * problem, verifying, setting up, or working with its next check-in.
+ * Goals list and the goal's page: closed, paused, the question it waits on a
+ * person for, a problem, verifying, setting up, or working with its next check.
  */
 export function useGoalStateText() {
   const t = useTranslations('goals');
   const issueText = useGoalIssueText();
-  /** `withQuestion: false`: say only that it waits, for a page that shows the question itself. */
-  return (goal: ProjectGoal, locale: string, now: number, options?: { withQuestion?: boolean }): string => {
-    const withQuestion = options?.withQuestion ?? true;
+  return (goal: ProjectGoal, locale: string, now: number): string => {
     const doc = goal.goal;
     if (!doc) return issueText('unreadable', goal);
     if (doc.status === 'done') return t('state.done');
     if (CLOSED.has(doc.status)) return t(`state.${doc.status === 'stopped' ? 'stopped' : 'abandoned'}`);
     if (doc.paused_at) return t('state.paused', { time: formatGoalTime(doc.paused_at, locale, now) });
-    const ask = goalOpenAsks(doc)[0];
-    if (doc.status === 'waiting_on_user') {
-      const question = doc.waiting_on ?? ask?.title;
-      return question && withQuestion ? t('state.waitingOnQuestion', { question }) : t('state.waitingOn');
-    }
-    if (ask) return withQuestion ? t('state.waitingOnQuestion', { question: ask.title }) : t('state.waitingOn');
+    // Waiting on a person: the question itself is the sentence.
+    const question = (doc.status === 'waiting_on_user' ? doc.waiting_on : null) ?? goalOpenAsks(doc)[0]?.title;
+    if (question) return question;
+    if (doc.status === 'waiting_on_user') return t('state.waitingOn');
     if (goal.health.issues[0]) return issueText(goal.health.issues[0], goal);
     if (doc.status === 'verifying') return t('state.verifying');
     if (doc.status === 'draft') return t('state.draft');
@@ -76,10 +81,13 @@ export function useGoalStateText() {
   };
 }
 
-/** Green: running. Orange: needs attention. Grey: closed or paused (nothing runs). */
+/** Orange: a person must act (a question or a problem). Green: running. Grey: closed or paused (nothing runs). */
 export function GoalHealthDot({ goal }: { goal: Pick<ProjectGoal, 'health'> & Partial<Pick<ProjectGoal, 'goal'>> }) {
-  const paused = goal.health.state !== 'closed' && !!goal.goal?.paused_at;
-  const tone: StatusTone = paused ? 'neutral' : goal.health.state === 'healthy' ? 'success' : goal.health.state === 'attention' ? 'warning' : 'neutral';
+  const open = goal.health.state !== 'closed';
+  const paused = open && !!goal.goal?.paused_at;
+  const waiting = open && !paused && (goal.goal?.status === 'waiting_on_user' || goalOpenAsks(goal.goal ?? null).length > 0);
+  const tone: StatusTone =
+    !open || paused ? 'neutral' : waiting || goal.health.state === 'attention' ? 'warning' : 'success';
   return <StatusDot tone={tone} />;
 }
 

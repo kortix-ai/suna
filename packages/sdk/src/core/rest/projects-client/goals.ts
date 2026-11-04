@@ -19,7 +19,7 @@ import type { ResourceBinding } from './manifest-spaces';
 import { getProjectDrive, listDriveFolder, readDriveFile, uploadDriveFile } from './drives';
 import { formatGoalFile, parseGoalFile } from './goal-file';
 import { getProjectDetail, type ProjectConfigSummary } from './projects';
-import { createProjectSession, createSessionPrompt } from './sessions';
+import { createProjectSession, createSessionPrompt, getProjectSession } from './sessions';
 import {
   createSessionReminder,
   deleteSessionReminder,
@@ -404,7 +404,8 @@ async function readGoalForWrite(goal: Pick<ProjectGoal, 'driveId' | 'folder'>): 
  * (a concurrent write throws `ApiError` 409), `log.md` records the reason,
  * and the heartbeat is disabled. The state does not change, so resuming picks
  * up where the goal was. A turn already running finishes; no new one starts.
- * Throws on a closed goal and on a goal that is already paused.
+ * Throws on a closed goal. On a goal GOAL.md already records as paused (a
+ * retry after the heartbeat update failed) it only disables the heartbeat.
  */
 export async function pauseProjectGoal(
   projectId: string,
@@ -413,11 +414,14 @@ export async function pauseProjectGoal(
 ): Promise<ProjectGoalDocument> {
   const { doc: current, version } = await readGoalForWrite(goal);
   if (CLOSED.has(current.status)) throw new Error(`The goal is already ${current.status}.`);
-  if (current.paused_at) throw new Error('The goal is already paused.');
-  const at = new Date().toISOString();
-  const next: ProjectGoalDocument = { ...current, paused_at: at, paused_by: 'person' };
-  await uploadDriveFile(goal.driveId, `${goal.folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
-  await appendGoalLog(goal, `- ${at} paused: ${reason}`);
+  let next = current;
+  // Already paused: a retry after the heartbeat update failed. Finish that step only.
+  if (!current.paused_at) {
+    const at = new Date().toISOString();
+    next = { ...current, paused_at: at, paused_by: 'person' };
+    await uploadDriveFile(goal.driveId, `${goal.folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
+    await appendGoalLog(goal, `- ${at} paused: ${reason}`);
+  }
   if (goal.heartbeat?.session_id && goal.heartbeat.state === 'active') {
     await updateSessionReminder(projectId, goal.heartbeat.session_id, goal.heartbeat.id, { enabled: false });
   }
@@ -427,8 +431,8 @@ export async function pauseProjectGoal(
 /**
  * A person resumes a paused goal: GOAL.md clears `paused_at`, `log.md`
  * records it, the heartbeat is enabled again, and the owner session wakes now
- * (its turn end re-arms a heartbeat that went missing). Throws on a goal that
- * is not paused.
+ * (its turn end re-arms a heartbeat that went missing). On a goal GOAL.md
+ * already records as running (a retry) it only re-enables the heartbeat.
  */
 export async function resumeProjectGoal(
   projectId: string,
@@ -436,16 +440,22 @@ export async function resumeProjectGoal(
 ): Promise<ProjectGoalDocument> {
   const { doc: current, version } = await readGoalForWrite(goal);
   if (CLOSED.has(current.status)) throw new Error(`The goal is already ${current.status}.`);
-  if (!current.paused_at) throw new Error('The goal is not paused.');
-  const at = new Date().toISOString();
-  const next: ProjectGoalDocument = { ...current, paused_at: null, paused_by: null };
-  await uploadDriveFile(goal.driveId, `${goal.folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
-  await appendGoalLog(goal, `- ${at} resumed`);
+  const pausedAt = current.paused_at;
+  let next = current;
+  // Not paused: a retry after the heartbeat update failed. Finish that step; the heartbeat wakes it.
+  if (pausedAt) {
+    next = { ...current, paused_at: null, paused_by: null };
+    await uploadDriveFile(goal.driveId, `${goal.folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
+    await appendGoalLog(goal, `- ${new Date().toISOString()} resumed`);
+  }
   if (goal.heartbeat?.session_id && goal.heartbeat.state === 'paused') {
     await updateSessionReminder(projectId, goal.heartbeat.session_id, goal.heartbeat.id, { enabled: true });
   }
   const owner = ownerSessionId(current) ?? goal.coordinatorSessionId;
-  if (owner) await queueText(projectId, owner, `${goalWakePrompt(goalBoxFolder(goal))} A person resumed it.`);
+  if (owner && pausedAt) {
+    // One wake per pause: its id names the pause, so a repeated request is deduped by the server.
+    await queueText(projectId, owner, `${goalWakePrompt(goalBoxFolder(goal))} A person resumed it.`, `goal-resume:${owner}:${pausedAt}`);
+  }
   return next;
 }
 
@@ -542,7 +552,15 @@ export async function createProjectGoal(projectId: string, input: CreateProjectG
   const drive = await getProjectDrive(projectId);
   if (!drive.personalFolder) throw new Error('Goals live in your personal folder in Files, and this project has none for you.');
   const sessionId = input.sessionId ?? generateSessionId();
-  const base = goalSlug(outcome);
+  // A retry whose session already exists keeps that session's folder, even when the outcome was edited.
+  const owned = await getProjectSession(projectId, sessionId, { showErrors: false }).then(
+    (s) => /^\/drives\/me\/Goals\/([^/]+)$/.exec(String(s?.metadata?.goal ?? ''))?.[1] ?? null,
+    (error: unknown) => {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    },
+  );
+  const base = owned ?? goalSlug(outcome);
   let slug = base;
   let reuse = false;
   for (let n = 2; ; n++) {
@@ -600,6 +618,10 @@ export async function createProjectGoal(projectId: string, input: CreateProjectG
       body: `# ${outcome}\n\n## Context\n\nThe request in the person's words, constraints, and what was learned.\n`,
     };
     await uploadDriveFile(drive.driveId, `${folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(doc)));
+    await uploadDriveFile(drive.driveId, `${folder}/log.md`, new TextEncoder().encode(`# Log\n\n- ${at} Goal created: ${outcome}\n`));
+  } else if ((await readText(drive.driveId, `${folder}/log.md`)) === null) {
+    // A retry after the log.md upload failed.
+    const at = input.now ?? new Date().toISOString();
     await uploadDriveFile(drive.driveId, `${folder}/log.md`, new TextEncoder().encode(`# Log\n\n- ${at} Goal created: ${outcome}\n`));
   }
   // 4. The first wake. Its id is fixed per session, so a retry is deduped by the server.

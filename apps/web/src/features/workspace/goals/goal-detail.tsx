@@ -12,6 +12,7 @@ import {
 } from '@kortix/ui/dropdown-menu';
 import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
+import { Hint } from '@kortix/ui/hint';
 import { InfoBanner } from '@kortix/ui/info-banner';
 import { UnifiedMarkdown } from '@kortix/ui/markdown';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@kortix/ui/modal';
@@ -43,7 +44,9 @@ import {
   CheckCircleIcon,
   CircleIcon,
   DotsThreeIcon,
+  FileIcon,
   FolderOpenIcon,
+  LinkIcon,
   PauseIcon,
   PlayIcon,
   ShareNetworkIcon,
@@ -111,11 +114,14 @@ export function GoalDetail({ projectId, scope, slug }: { projectId: string; scop
 function Section({ title, children, testId }: { title: string; children: ReactNode; testId?: string }) {
   return (
     <section className="flex flex-col gap-2" aria-label={title} data-testid={testId}>
-      <h2 className="text-foreground text-sm font-medium">{title}</h2>
+      <h2 className="text-muted-foreground text-xs font-medium">{title}</h2>
       {children}
     </section>
   );
 }
+
+/** Characters past which the lead sentence (usually an agent's question) drops to body size. */
+const LONG_LEAD = 160;
 
 type GoalFilesData = { log: string | null; notes: string | null; verification: string | null };
 
@@ -142,6 +148,10 @@ function GoalBody({
   const waiting = open && !paused && (doc?.status === 'waiting_on_user' || asks.length > 0);
   const issues = open && !paused ? goal.health.issues : [];
   const updatedAt = goalLastWake(goal) ?? doc?.transitions?.at(-1)?.at ?? null;
+  const leadText = stateText(goal, locale, now);
+  // Results: what the goal produced, minus the evidence files Done when already cites.
+  const cited = new Set((doc?.success_criteria ?? []).map((c) => c.evidence).filter(Boolean));
+  const results = (doc?.links ?? []).filter((link) => !cited.has(link));
 
   return (
     <>
@@ -150,13 +160,19 @@ function GoalBody({
           <GoalStatusBadge status={doc?.status} paused={paused} />
           <GoalCriteriaProgress goal={doc} />
         </div>
-        <p className="text-foreground text-base text-pretty" data-testid="goal-state">
-          {stateText(goal, locale, now, { withQuestion: false })}
+        <p
+          className={
+            // A short state reads as the page's lead; an agent's long question reads as body text.
+            leadText.length > LONG_LEAD ? 'text-foreground text-sm whitespace-pre-line text-pretty' : 'text-foreground text-base text-pretty'
+          }
+          data-testid="goal-state"
+        >
+          {leadText}
         </p>
         {doc?.summary ? (
           <p className="text-muted-foreground text-sm text-pretty">
             {doc.summary}
-            {updatedAt ? <span className="tabular-nums"> · {t('updated', { time: formatGoalTime(updatedAt, locale, now) })}</span> : null}
+            {updatedAt ? <span className="whitespace-nowrap tabular-nums"> · {t('updated', { time: formatGoalTime(updatedAt, locale, now) })}</span> : null}
           </p>
         ) : null}
       </div>
@@ -173,11 +189,11 @@ function GoalBody({
         {doc?.success_criteria?.length ? <CriteriaList projectId={projectId} goal={goal} /> : <p className="text-muted-foreground text-sm">{t('noCriteria')}</p>}
       </Section>
 
-      {doc?.links?.length ? (
+      {results.length ? (
         <Section title={t('results')}>
-          <ul className="flex flex-col gap-1 text-sm">
-            {doc.links.map((link) => (
-              <li key={link} className="min-w-0 truncate">
+          <ul className="flex flex-col gap-1.5 text-sm">
+            {results.map((link) => (
+              <li key={link} className="min-w-0">
                 <LinkTarget link={link} folder={goal.folder} driveHref={uiRoutes().drive(projectId)} />
               </li>
             ))}
@@ -185,15 +201,17 @@ function GoalBody({
         </Section>
       ) : null}
 
-      {files?.verification ? (
-        <Section title={t('verification')}>
-          <UnifiedMarkdown content={withoutTitle(files.verification)} trust="untrusted" variant="document" />
-        </Section>
-      ) : null}
+      {files?.verification ? <Verification report={files.verification} done={doc?.status === 'done'} /> : null}
 
       {doc?.transitions?.length ? (
         <Section title={t('activity')}>
           <ol className="flex flex-col gap-3 text-sm">
+            {paused && doc.paused_at ? (
+              <li className="flex items-baseline gap-3">
+                <span className="text-muted-foreground w-24 shrink-0 text-xs tabular-nums">{formatGoalTime(doc.paused_at, locale, now)}</span>
+                <span className="text-foreground">{t('paused')}</span>
+              </li>
+            ) : null}
             {[...doc.transitions].reverse().map((tr, index) => (
               <li key={`${tr.at}:${index}`} className="flex items-baseline gap-3">
                 <span className="text-muted-foreground w-24 shrink-0 text-xs tabular-nums">{formatGoalTime(tr.at, locale, now)}</span>
@@ -216,12 +234,9 @@ function GoalBody({
 function CriteriaList({ projectId, goal }: { projectId: string; goal: ProjectGoal }) {
   const t = useTranslations('goals');
   const driveHref = uiRoutes().drive(projectId);
-  const fileHref = (relative: string) =>
-    driveHref ? `${driveHref}?path=${encodeURIComponent(`${goal.folder}/${relative.split('/').slice(0, -1).join('/')}`.replace(/\/$/, ''))}` : null;
   return (
     <ul className="flex flex-col gap-2 text-sm">
       {(goal.goal?.success_criteria ?? []).map((c) => {
-        const href = c.evidence ? fileHref(c.evidence) : null;
         return (
           <li key={c.id} className="flex items-start gap-2">
             {c.met ? (
@@ -231,15 +246,7 @@ function CriteriaList({ projectId, goal }: { projectId: string; goal: ProjectGoa
             )}
             <span className="flex min-w-0 flex-col gap-0.5">
               <span className="text-foreground">{c.text}</span>
-              {c.evidence ? (
-                href ? (
-                  <Link href={href} className="text-muted-foreground hover:text-foreground w-fit truncate text-xs underline-offset-2 hover:underline">
-                    {c.evidence}
-                  </Link>
-                ) : (
-                  <span className="text-muted-foreground text-xs">{c.evidence}</span>
-                )
-              ) : null}
+              {c.evidence ? <EvidenceFile path={c.evidence} folder={goal.folder} driveHref={driveHref} /> : null}
             </span>
           </li>
         );
@@ -255,7 +262,9 @@ function NeedsYou({ projectId, goal, onChanged }: { projectId: string; goal: Pro
   const now = useGoalClock();
   const doc = goal.goal;
   const asks = goalOpenAsks(doc);
+  // The page's lead sentence is the question; list only the other open asks here.
   const question = doc?.status === 'waiting_on_user' ? (doc.waiting_on ?? null) : null;
+  const otherAsks = question ? asks : asks.slice(1);
   const [answer, setAnswer] = useState('');
   const [sent, setSent] = useState(false);
   const chatHref = goal.coordinatorSessionId ? uiRoutes().session(projectId, goal.coordinatorSessionId) : null;
@@ -270,12 +279,10 @@ function NeedsYou({ projectId, goal, onChanged }: { projectId: string; goal: Pro
     onError: () => errorToast(t('answerError')),
   });
   return (
-    <Section title={t('needsYou')} testId="goal-needs-you">
-      <div className="bg-background border-border flex flex-col gap-3 rounded-md border px-4 py-4">
-        {question ? <p className="text-foreground text-sm text-pretty">{question}</p> : null}
-        {asks.length > 0 ? (
+    <div className="flex flex-col gap-3" data-testid="goal-needs-you">
+        {otherAsks.length > 0 ? (
           <ul className="flex flex-col gap-1 text-sm">
-            {asks.map((ask) => (
+            {otherAsks.map((ask) => (
               <li key={ask.id} className="flex items-baseline justify-between gap-3">
                 <span className="text-foreground min-w-0">{ask.title}</span>
                 {ask.due ? <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{t('due', { time: formatGoalTime(ask.due, locale, now) })}</span> : null}
@@ -323,8 +330,52 @@ function NeedsYou({ projectId, goal, onChanged }: { projectId: string; goal: Pro
             </div>
           </form>
         ) : null}
-      </div>
+    </div>
+  );
+}
+
+/** The verifier's verdict in one line; its full report folds behind "Show report". */
+function Verification({ report, done }: { report: string; done: boolean }) {
+  const t = useTranslations('goals');
+  const [open, setOpen] = useState(false);
+  return (
+    <Section title={t('verification')} testId="goal-verification">
+      <p className="text-foreground flex items-center gap-2 text-sm">
+        {done ? <CheckCircleIcon weight="fill" className="text-kortix-green size-4 shrink-0" aria-hidden /> : null}
+        {done ? t('verifiedPass') : t('verifiedReport')}
+      </p>
+      <Disclosure open={open} onOpenChange={setOpen}>
+        <DisclosureTrigger>
+          <button type="button" className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-xs">
+            <CaretRightIcon className="size-3 transition-transform data-[open=true]:rotate-90" data-open={open} aria-hidden />
+            {t('showReport')}
+          </button>
+        </DisclosureTrigger>
+        <DisclosureContent>
+          <div className="pt-2">
+            <UnifiedMarkdown content={withoutTitle(report)} trust="untrusted" variant="message" className="text-sm" />
+          </div>
+        </DisclosureContent>
+      </Disclosure>
     </Section>
+  );
+}
+
+/** An evidence file: its name, and a way to its folder in Files that says it opens the folder. */
+function EvidenceFile({ path, folder, driveHref }: { path: string; folder: string; driveHref: string | null }) {
+  const t = useTranslations('goals');
+  const parent = `${folder}/${path}`.split('/').slice(0, -1).join('/');
+  return (
+    <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+      <span className="min-w-0 truncate">{path}</span>
+      {driveHref ? (
+        <Hint label={t('openInFiles')}>
+          <Link href={`${driveHref}?path=${encodeURIComponent(parent)}`} className="hover:text-foreground shrink-0" aria-label={t('openFolderOf', { file: path })}>
+            <FolderOpenIcon className="size-3.5" aria-hidden />
+          </Link>
+        </Hint>
+      ) : null}
+    </span>
   );
 }
 
@@ -561,17 +612,17 @@ function GoalDetails({ projectId, goal, files }: { projectId: string; goal: Proj
 
           {doc?.body?.trim() ? (
             <Section title={t('context')}>
-              <UnifiedMarkdown content={doc.body} trust="untrusted" variant="document" />
+              <UnifiedMarkdown content={doc.body} trust="untrusted" variant="document" className="text-sm" />
             </Section>
           ) : null}
           {files?.notes ? (
             <Section title={t('notes')}>
-              <UnifiedMarkdown content={withoutTitle(files.notes)} trust="untrusted" variant="document" />
+              <UnifiedMarkdown content={withoutTitle(files.notes)} trust="untrusted" variant="document" className="text-sm" />
             </Section>
           ) : null}
           {files?.log ? (
             <Section title={t('log')}>
-              <UnifiedMarkdown content={withoutTitle(files.log)} trust="untrusted" variant="document" />
+              <UnifiedMarkdown content={withoutTitle(files.log)} trust="untrusted" variant="document" className="text-sm" />
             </Section>
           ) : null}
         </div>
@@ -591,23 +642,39 @@ function SessionName({ projectId, sessionId }: { projectId: string; sessionId: s
   return <>{session.data?.name || sessionId}</>;
 }
 
-/** A `links:` entry: a URL opens as is, a path opens its folder in Files (relative paths are inside the goal folder). */
+/**
+ * A `links:` entry: a URL opens as is. A path in Files shows its name, its
+ * folder muted, and opens that folder. A path inside a session's sandbox
+ * (`/workspace`, `/drives`) is not in Files: it shows as text.
+ */
 function LinkTarget({ link, folder, driveHref }: { link: string; folder: string; driveHref: string | null }) {
-  const className = 'text-foreground underline-offset-2 hover:underline';
+  const t = useTranslations('goals');
   if (/^https?:\/\//.test(link)) {
     return (
-      <a href={link} target="_blank" rel="noreferrer" className={className}>
-        {link}
+      <a href={link} target="_blank" rel="noreferrer" className="text-foreground flex min-w-0 items-center gap-2 underline-offset-2 hover:underline">
+        <LinkIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
+        <span className="truncate">{link}</span>
       </a>
     );
   }
   const path = link.startsWith('/') ? link : `${folder}/${link}`;
+  const name = path.split('/').at(-1) ?? path;
   const parent = path.split('/').slice(0, -1).join('/') || '/';
-  return driveHref ? (
-    <Link href={`${driveHref}?path=${encodeURIComponent(parent)}`} className={className}>
-      {link}
+  const label = (
+    <>
+      <FileIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
+      <span className="text-foreground shrink-0">{name}</span>
+      <span className="text-muted-foreground min-w-0 truncate text-xs">{link.startsWith('/') ? parent : link.split('/').slice(0, -1).join('/')}</span>
+    </>
+  );
+  if (!driveHref || /^\/(workspace|drives)\//.test(link)) return <span className="flex min-w-0 items-center gap-2">{label}</span>;
+  return (
+    <Link
+      href={`${driveHref}?path=${encodeURIComponent(parent)}`}
+      className="flex min-w-0 items-center gap-2 hover:underline"
+      aria-label={t('openFolderOf', { file: name })}
+    >
+      {label}
     </Link>
-  ) : (
-    <span className="text-foreground">{link}</span>
   );
 }

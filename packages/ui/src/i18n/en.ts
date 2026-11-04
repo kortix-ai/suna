@@ -7846,7 +7846,7 @@ const catalog = {
       "missed_wake": "The last wake is overdue.",
       "ask_overdue": "An ask is past its due time.",
       "verification_stalled": "Verification started more than 24 hours ago.",
-      "unreadable": "GOAL.md is missing or has no goal front matter."
+      "unreadable": "This folder has no goal file."
     },
     "sessionChip": "Goal",
     "sessionRole": {
@@ -7930,11 +7930,10 @@ const catalog = {
       "stopped": "Stopped. Nothing wakes it again.",
       "abandoned": "Abandoned.",
       "paused": "Paused {time}. Nothing wakes it until you resume it.",
-      "waitingOnQuestion": "Waiting for an answer: {question}",
       "waitingOn": "Waiting for an answer.",
       "verifying": "An independent check is verifying the result.",
       "draft": "Getting started: the agent is writing the plan.",
-      "working": "In progress. Next check-in {time}.",
+      "working": "In progress. Next check {time}.",
       "workingNoWake": "In progress."
     },
     "startedToast": "Goal started",
@@ -7969,7 +7968,12 @@ const catalog = {
     "shareTitle": "Share goal",
     "details": "Details",
     "scopeLabel": "Visible to",
-    "folder": "Folder"
+    "folder": "Folder",
+    "verifiedPass": "Passed. The verifier session did none of the work.",
+    "verifiedReport": "The verifier session wrote this report.",
+    "showReport": "Show report",
+    "openInFiles": "Open folder in Files",
+    "openFolderOf": "Open the folder of {file} in Files"
   },
   "agentEditor": {
     "manage": "Manage",

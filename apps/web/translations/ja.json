@@ -23621,7 +23621,6 @@
       "stopped": "停止済み。今後起動しません。",
       "abandoned": "中止済み。",
       "paused": "{time}に一時停止。再開するまで起動しません。",
-      "waitingOnQuestion": "回答待ち: {question}",
       "waitingOn": "回答待ち。",
       "verifying": "独立した確認が結果を検証しています。",
       "draft": "開始中: エージェントが計画を書いています。",
@@ -23660,7 +23659,12 @@
     "shareTitle": "ゴールを共有",
     "details": "詳細",
     "scopeLabel": "表示できる人",
-    "folder": "フォルダ"
+    "folder": "フォルダ",
+    "verifiedPass": "合格。検証セッションは作業に関わっていません。",
+    "verifiedReport": "検証セッションがこのレポートを書きました。",
+    "showReport": "レポートを表示",
+    "openInFiles": "ファイルでフォルダを開く",
+    "openFolderOf": "{file} のフォルダをファイルで開く"
   },
   "agentEditor": {
     "manage": "管理",

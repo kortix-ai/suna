@@ -512,6 +512,7 @@ describe('person controls: create, pause, resume', () => {
     };
     routes['POST /projects/p1/sessions'] = { status: 409, body: { error: 'Session already exists' } };
     routes[`POST /projects/p1/sessions/${SESSION}/prompts`] = { status: 200, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
+    routes['/drives/d1/files/content?path=/Users/u1/Goals/ship-it/log.md'] = { status: 200, body: '# Log\n' };
     routes[`/projects/p1/sessions/${SESSION}/reminders`] = {
       status: 200,
       body: { reminders: [{ ...HEARTBEAT, session_id: SESSION, prompt: 'Goal wake: /drives/me/Goals/ship-it. Load the kortix-goals skill and run one wake.' }] },
@@ -549,6 +550,34 @@ describe('person controls: create, pause, resume', () => {
     roster('mykortix', [{ name: 'mykortix', platform: true, sandbox: 'mykortix' }, { name: 'old', enabled: false }, { name: 'bot', hidden: true }]);
     await expect(createProjectGoal('p1', { outcome: 'Ship it' })).rejects.toThrow('no agent');
     expect(requested.some((r) => r.method !== 'GET')).toBe(false);
+  });
+
+  test('a retry with an edited outcome reuses the folder the session already owns', async () => {
+    drive();
+    routes[`/projects/p1/sessions/${SESSION}`] = { status: 200, body: { session_id: SESSION, metadata: { goal: '/drives/me/Goals/ship-it' } } };
+    routes['/drives/d1/files/content?path=/Users/u1/Goals/ship-it/GOAL.md'] = {
+      status: 200,
+      body: formatGoalFile({ ...GOAL, objective: 'Ship it', sessions: [{ id: SESSION, role: 'owner', since: '2026-11-01T00:00:00Z' }] }),
+    };
+    routes['/drives/d1/files/content?path=/Users/u1/Goals/ship-it/log.md'] = { status: 200, body: '# Log\n' };
+    routes['POST /projects/p1/sessions'] = { status: 409, body: { error: 'Session already exists' } };
+    routes[`POST /projects/p1/sessions/${SESSION}/prompts`] = { status: 200, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
+    const created = await createProjectGoal('p1', { outcome: 'Ship it this week instead', sessionId: SESSION });
+    expect(created.slug).toBe('ship-it');
+    expect(requested.filter((r) => r.method === 'PUT' || r.key.endsWith('/reminders'))).toEqual([]);
+  });
+
+  test('a retry whose log.md upload failed creates log.md without touching GOAL.md', async () => {
+    drive();
+    routes['/drives/d1/files/content?path=/Users/u1/Goals/ship-it/GOAL.md'] = {
+      status: 200,
+      body: formatGoalFile({ ...GOAL, objective: 'Ship it', sessions: [{ id: SESSION, role: 'owner', since: '2026-11-01T00:00:00Z' }] }),
+    };
+    put('/Users/u1/Goals/ship-it/log.md');
+    routes['POST /projects/p1/sessions'] = { status: 409, body: { error: 'Session already exists' } };
+    routes[`POST /projects/p1/sessions/${SESSION}/prompts`] = { status: 200, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
+    await createProjectGoal('p1', { outcome: 'Ship it', sessionId: SESSION });
+    expect(requested.filter((r) => r.method === 'PUT').map((r) => r.key.split('/').at(-1))).toEqual(['log.md']);
   });
 
   test('createProjectGoal refuses an empty outcome, more than 8 criteria, and a project with no personal folder', async () => {
@@ -593,11 +622,18 @@ describe('person controls: create, pause, resume', () => {
     expect(JSON.parse(requested.find((r) => r.method === 'PATCH')!.body)).toEqual({ enabled: false });
   });
 
-  test('pauseProjectGoal refuses a closed goal and a goal that is already paused', async () => {
+  test('pauseProjectGoal refuses a closed goal', async () => {
     goalRoutes({ ...OPEN_DOC, status: 'done' });
     await expect(pauseProjectGoal('p1', goalRef, 'x')).rejects.toThrow('already done');
-    goalRoutes({ ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z' });
-    await expect(pauseProjectGoal('p1', goalRef, 'x')).rejects.toThrow('already paused');
+  });
+
+  test('a retry of a pause whose heartbeat update failed only finishes the heartbeat', async () => {
+    goalRoutes({ ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
+    routes[`PATCH /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ...HEARTBEAT, state: 'paused' } };
+    const doc = await pauseProjectGoal('p1', goalRef, 'x');
+    expect(doc.paused_at).toBe('2026-11-01T00:00:00Z');
+    expect(requested.filter((r) => r.method === 'PUT')).toEqual([]);
+    expect(JSON.parse(requested.find((r) => r.method === 'PATCH')!.body)).toEqual({ enabled: false });
   });
 
   test('resumeProjectGoal clears the pause, re-enables the heartbeat and wakes the owner now', async () => {
@@ -610,14 +646,21 @@ describe('person controls: create, pause, resume', () => {
     const doc = await resumeProjectGoal('p1', { ...goalRef, heartbeat: { ...goalRef.heartbeat, state: 'paused' } });
     expect(doc).toMatchObject({ paused_at: null, paused_by: null });
     expect(JSON.parse(requested.find((r) => r.method === 'PATCH')!.body)).toEqual({ enabled: true });
-    const wake = JSON.parse(requested.find((r) => r.method === 'POST')!.body).parts[0].text as string;
+    const wakeBody = JSON.parse(requested.find((r) => r.method === 'POST')!.body);
+    const wake = wakeBody.parts[0].text as string;
     expect(wake).toContain('Goal wake: /drives/company/Goals/bank-close.');
+    // One wake per pause: a retry reuses the id and the server dedupes it.
+    expect(wakeBody.client_message_id).toBe('goal-resume:s-owner:2026-11-01T00:00:00Z');
     expect(requested.find((r) => r.method === 'PUT' && r.key.endsWith('log.md'))!.body).toContain('resumed');
   });
 
-  test('resumeProjectGoal refuses a goal that is not paused', async () => {
+  test('a retry of a resume whose heartbeat update failed re-enables the heartbeat and writes nothing', async () => {
     goalRoutes(OPEN_DOC);
-    await expect(resumeProjectGoal('p1', goalRef)).rejects.toThrow('not paused');
+    routes[`PATCH /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: HEARTBEAT };
+    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
+    await resumeProjectGoal('p1', { ...goalRef, heartbeat: { ...goalRef.heartbeat, state: 'paused' } });
+    expect(requested.filter((r) => r.method === 'PUT')).toEqual([]);
+    expect(JSON.parse(requested.find((r) => r.method === 'PATCH')!.body)).toEqual({ enabled: true });
   });
 
   test('a paused goal is healthy: its disabled heartbeat is the pause, not a problem', () => {

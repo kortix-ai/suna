@@ -63,6 +63,11 @@ export function NewGoalModal({ projectId, open, onOpenChange }: { projectId: str
   const setCriterion = (index: number, value: string) => setCriteria((list) => list.map((c, i) => (i === index ? value : c)));
   const removeCriterion = (index: number) => setCriteria((list) => (list.length === 1 ? [''] : list.filter((_, i) => i !== index)));
   const canAdd = criteria.length < MAX_CRITERIA && (criteria.at(-1) ?? '').trim() !== '';
+  const focusCriterion = (index: number) => requestAnimationFrame(() => document.getElementById(`new-goal-criterion-${index}`)?.focus());
+  const addCriterion = () => {
+    setCriteria((list) => [...list, '']);
+    focusCriterion(criteria.length);
+  };
 
   return (
     <Modal open={open} onOpenChange={(next) => (create.isPending ? undefined : onOpenChange(next))}>
@@ -105,10 +110,15 @@ export function NewGoalModal({ projectId, open, onOpenChange }: { projectId: str
                         value={value}
                         onChange={(event) => setCriterion(index, event.target.value)}
                         onKeyDown={(event) => {
-                          if (event.key === 'Enter' && !(event.metaKey || event.ctrlKey) && canAdd && index === criteria.length - 1) {
-                            event.preventDefault();
-                            setCriteria((list) => [...list, '']);
+                          if (event.key !== 'Enter') return;
+                          // ⌘/Ctrl+Enter starts the goal; a plain Enter never does: it moves to the next criterion.
+                          if (event.metaKey || event.ctrlKey) {
+                            event.currentTarget.form?.requestSubmit();
+                            return;
                           }
+                          event.preventDefault();
+                          if (index < criteria.length - 1) focusCriterion(index + 1);
+                          else if (canAdd) addCriterion();
                         }}
                         placeholder={index === 0 ? t('criterionPlaceholder') : undefined}
                         aria-label={t('criterionLabel', { n: index + 1 })}
@@ -136,7 +146,7 @@ export function NewGoalModal({ projectId, open, onOpenChange }: { projectId: str
                     variant="ghost"
                     size="sm"
                     className="w-fit gap-1.5 self-start"
-                    onClick={() => setCriteria((list) => [...list, ''])}
+                    onClick={addCriterion}
                   >
                     <PlusIcon className="size-3.5 shrink-0" aria-hidden />
                     {t('addCriterion')}

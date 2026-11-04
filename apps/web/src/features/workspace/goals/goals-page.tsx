@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@kortix/ui/button';
+import { CountBadge } from '@kortix/ui/count-badge';
 import { EmptyArt } from '@kortix/ui/empty-art';
 import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
@@ -16,7 +17,6 @@ import {
   goalNeedsAttention,
   goalNeedsYou,
   goalPaused,
-  GoalStatusBadge,
   ProjectPageHeader,
   SpaceFilterTabs,
   spaceFilterLabel,
@@ -123,7 +123,7 @@ export function GoalsPage({ projectId }: { projectId: string }) {
                   }
                 />
               ) : null}
-              <GoalGroup projectId={projectId} title={t('needsYou')} goals={needsYou} spaceLabel={spaceLabel} />
+              <GoalGroup projectId={projectId} title={t('needsYou')} goals={needsYou} spaceLabel={spaceLabel} countTone="waiting" />
               <GoalGroup projectId={projectId} title={t('needsAttention')} goals={attention} spaceLabel={spaceLabel} />
               <GoalGroup projectId={projectId} title={t('working')} goals={working} spaceLabel={spaceLabel} />
               <GoalGroup projectId={projectId} title={t('pausedGroup')} goals={paused} spaceLabel={spaceLabel} />
@@ -141,18 +141,21 @@ function GoalGroup({
   title,
   goals,
   spaceLabel,
+  countTone = 'neutral',
 }: {
   projectId: string;
   title: string;
   goals: ProjectGoal[];
+  countTone?: 'waiting' | 'neutral';
   /** The space of a row: only while every space is shown. */
   spaceLabel: (goal: ProjectGoal) => string | undefined;
 }) {
   if (goals.length === 0) return null;
   return (
     <section className="flex flex-col gap-1" aria-label={title}>
-      <h2 className="text-muted-foreground px-3 text-xs font-medium">
-        {title} <span className="tabular-nums">{goals.length}</span>
+      <h2 className="text-muted-foreground flex items-center gap-1.5 px-3 text-xs font-medium">
+        {title}
+        <CountBadge count={goals.length} tone={countTone} />
       </h2>
       <ul className="flex flex-col">
         {goals.map((goal) => (
@@ -163,7 +166,11 @@ function GoalGroup({
   );
 }
 
-/** One goal: the outcome, where it stands and what happens next, who it is for, criteria met, and its state. */
+/**
+ * One goal: the outcome, where it stands or the question it waits on, who it
+ * is for, and criteria met. No state chip: the group heading and the sentence
+ * already say it.
+ */
 function GoalRow({ projectId, goal, space }: { projectId: string; goal: ProjectGoal; space?: string }) {
   const t = useTranslations('goals');
   const locale = useLocale();
@@ -191,13 +198,14 @@ function GoalRow({ projectId, goal, space }: { projectId: string; goal: ProjectG
         <GoalHealthDot goal={goal} />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-foreground truncate text-sm">{doc?.objective ?? goal.slug}</span>
-          <span className="text-muted-foreground truncate text-xs">{[stateText(goal, locale, now), ...meta].join(' · ')}</span>
-        </span>
-        <span className="flex shrink-0 items-center gap-3">
-          <span className="hidden sm:inline-flex">
-            <GoalCriteriaProgress goal={doc} />
+          {/* The sentence gives way first: who it is for stays readable beside a long question. */}
+          <span className="text-muted-foreground flex min-w-0 text-xs">
+            <span className="min-w-0 truncate">{stateText(goal, locale, now)}</span>
+            {meta.length ? <span className="shrink-0 whitespace-nowrap">&nbsp;· {meta.join(' · ')}</span> : null}
           </span>
-          <GoalStatusBadge status={doc?.status} paused={goalPaused(goal)} />
+        </span>
+        <span className="hidden shrink-0 sm:inline-flex">
+          <GoalCriteriaProgress goal={doc} />
         </span>
       </Link>
     </li>

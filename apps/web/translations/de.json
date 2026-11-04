@@ -23621,7 +23621,6 @@
       "stopped": "Gestoppt. Nichts weckt es wieder.",
       "abandoned": "Aufgegeben.",
       "paused": "Pausiert {time}. Nichts weckt es, bis du es fortsetzt.",
-      "waitingOnQuestion": "Wartet auf eine Antwort: {question}",
       "waitingOn": "Wartet auf eine Antwort.",
       "verifying": "Eine unabhängige Prüfung kontrolliert das Ergebnis.",
       "draft": "Startet: Der Agent schreibt den Plan.",
@@ -23660,7 +23659,12 @@
     "shareTitle": "Ziel teilen",
     "details": "Details",
     "scopeLabel": "Sichtbar für",
-    "folder": "Ordner"
+    "folder": "Ordner",
+    "verifiedPass": "Bestanden. Die Prüfsitzung hat nichts an der Arbeit gemacht.",
+    "verifiedReport": "Die Prüfsitzung hat diesen Bericht geschrieben.",
+    "showReport": "Bericht anzeigen",
+    "openInFiles": "Ordner in Dateien öffnen",
+    "openFolderOf": "Ordner von {file} in Dateien öffnen"
   },
   "agentEditor": {
     "manage": "Verwalten",

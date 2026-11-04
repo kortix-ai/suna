@@ -23621,7 +23621,6 @@
       "stopped": "Detenido. Nada lo vuelve a activar.",
       "abandoned": "Abandonado.",
       "paused": "En pausa {time}. Nada lo activa hasta que lo reanudes.",
-      "waitingOnQuestion": "Esperando una respuesta: {question}",
       "waitingOn": "Esperando una respuesta.",
       "verifying": "Una revisión independiente está verificando el resultado.",
       "draft": "Empezando: el agente está escribiendo el plan.",
@@ -23660,7 +23659,12 @@
     "shareTitle": "Compartir objetivo",
     "details": "Detalles",
     "scopeLabel": "Visible para",
-    "folder": "Carpeta"
+    "folder": "Carpeta",
+    "verifiedPass": "Aprobado. La sesión de verificación no hizo nada del trabajo.",
+    "verifiedReport": "La sesión de verificación escribió este informe.",
+    "showReport": "Mostrar informe",
+    "openInFiles": "Abrir carpeta en Archivos",
+    "openFolderOf": "Abrir la carpeta de {file} en Archivos"
   },
   "agentEditor": {
     "manage": "Gestionar",

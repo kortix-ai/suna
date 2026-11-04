@@ -23621,7 +23621,6 @@
       "stopped": "已停止。不会再被唤醒。",
       "abandoned": "已放弃。",
       "paused": "{time}暂停。在你恢复之前不会被唤醒。",
-      "waitingOnQuestion": "等待回答：{question}",
       "waitingOn": "等待回答。",
       "verifying": "独立检查正在核实结果。",
       "draft": "正在开始：智能体正在撰写计划。",
@@ -23660,7 +23659,12 @@
     "shareTitle": "共享目标",
     "details": "详情",
     "scopeLabel": "可见范围",
-    "folder": "文件夹"
+    "folder": "文件夹",
+    "verifiedPass": "已通过。验证会话没有参与任何工作。",
+    "verifiedReport": "验证会话写下了这份报告。",
+    "showReport": "显示报告",
+    "openInFiles": "在文件中打开文件夹",
+    "openFolderOf": "在文件中打开 {file} 所在文件夹"
   },
   "agentEditor": {
     "manage": "管理",

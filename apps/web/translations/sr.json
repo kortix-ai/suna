@@ -23621,7 +23621,6 @@
       "stopped": "Zaustavljeno. Ništa ga više ne pokreće.",
       "abandoned": "Napušteno.",
       "paused": "Pauzirano {time}. Ništa ga ne pokreće dok ga ne nastaviš.",
-      "waitingOnQuestion": "Čeka odgovor: {question}",
       "waitingOn": "Čeka odgovor.",
       "verifying": "Nezavisna provera proverava rezultat.",
       "draft": "Početak: agent piše plan.",
@@ -23660,7 +23659,12 @@
     "shareTitle": "Podeli cilj",
     "details": "Detalji",
     "scopeLabel": "Vidljivo za",
-    "folder": "Fascikla"
+    "folder": "Fascikla",
+    "verifiedPass": "Prošlo. Sesija provere nije radila ništa od posla.",
+    "verifiedReport": "Sesija provere je napisala ovaj izveštaj.",
+    "showReport": "Prikaži izveštaj",
+    "openInFiles": "Otvori fasciklu u Fajlovima",
+    "openFolderOf": "Otvori fasciklu fajla {file} u Fajlovima"
   },
   "agentEditor": {
     "manage": "Upravljaj",

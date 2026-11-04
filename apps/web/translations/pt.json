@@ -23621,7 +23621,6 @@
       "stopped": "Parada. Nada a ativa de novo.",
       "abandoned": "Abandonada.",
       "paused": "Pausada {time}. Nada a ativa até você retomá-la.",
-      "waitingOnQuestion": "Aguardando uma resposta: {question}",
       "waitingOn": "Aguardando uma resposta.",
       "verifying": "Uma verificação independente está conferindo o resultado.",
       "draft": "Começando: o agente está escrevendo o plano.",
@@ -23660,7 +23659,12 @@
     "shareTitle": "Compartilhar meta",
     "details": "Detalhes",
     "scopeLabel": "Visível para",
-    "folder": "Pasta"
+    "folder": "Pasta",
+    "verifiedPass": "Aprovada. A sessão de verificação não fez nada do trabalho.",
+    "verifiedReport": "A sessão de verificação escreveu este relatório.",
+    "showReport": "Mostrar relatório",
+    "openInFiles": "Abrir pasta em Arquivos",
+    "openFolderOf": "Abrir a pasta de {file} em Arquivos"
   },
   "agentEditor": {
     "manage": "Gerenciar",

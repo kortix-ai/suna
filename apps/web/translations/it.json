@@ -23621,7 +23621,6 @@
       "stopped": "Fermato. Niente lo riattiva.",
       "abandoned": "Abbandonato.",
       "paused": "In pausa {time}. Niente lo riattiva finché non lo riprendi.",
-      "waitingOnQuestion": "In attesa di una risposta: {question}",
       "waitingOn": "In attesa di una risposta.",
       "verifying": "Una verifica indipendente sta controllando il risultato.",
       "draft": "Avvio: l’agente sta scrivendo il piano.",
@@ -23660,7 +23659,12 @@
     "shareTitle": "Condividi obiettivo",
     "details": "Dettagli",
     "scopeLabel": "Visibile a",
-    "folder": "Cartella"
+    "folder": "Cartella",
+    "verifiedPass": "Superato. La sessione di verifica non ha svolto alcun lavoro.",
+    "verifiedReport": "La sessione di verifica ha scritto questo report.",
+    "showReport": "Mostra report",
+    "openInFiles": "Apri cartella in File",
+    "openFolderOf": "Apri la cartella di {file} in File"
   },
   "agentEditor": {
     "manage": "Gestisci",
