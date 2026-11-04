@@ -7,6 +7,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { markdownToHtml } from '@kortix/ui/markdown/doc-editor/markdown';
+import { docExtensions } from '@kortix/ui/markdown/doc-editor/doc-extensions';
 import { ARTIFACT_REANCHOR_READ_UNITS, type ArtifactReanchorBudget } from '@kortix/shared/artifact-comments';
 import { EditorState } from '@tiptap/pm/state';
 import type { DecorationSet } from '@tiptap/pm/view';
@@ -119,6 +120,25 @@ describe('doc caret as a text anchor', () => {
     // Inside "**" before "3 percent": the end of the text before it.
     const stars = MARKDOWN.indexOf('**3') + 1;
     expect(docPositionForSource(map, stars)).toBe(at(doc, '3 percent'));
+  });
+
+  test('carets land on the same words in front matter (a raw block) and in a * list kept by `md`', () => {
+    // The editor's own schema: a raw block is `rawMarkdown`, a kept block carries `md` (doc-fidelity.ts).
+    const editorSchema = getSchema(docExtensions({ editable: false, placeholder: () => '' }));
+    const markdown = '---\ntitle: Launch plan\n---\n\n* Ship the importer\n* Fix the parser\n\nDone today.\n';
+    const element = window.document.createElement('div');
+    element.innerHTML = markdownToHtml(markdown);
+    const doc = PMParser.fromSchema(editorSchema).parse(element as unknown as HTMLElement);
+    expect(doc.firstChild?.type.name).toBe('rawMarkdown');
+    expect(doc.child(1).attrs.md?.src).toBe('* Ship the importer\n* Fix the parser');
+    const map = cachedDocMarkdownPositions(markdown, doc);
+    for (const word of ['Launch', 'parser', 'today']) {
+      const pos = at(doc, word);
+      const offset = docSourceOffset(map, pos)!;
+      expect(markdown.slice(offset, offset + word.length)).toBe(word);
+      // The caret another viewer receives comes back to the same editor position.
+      expect(docPositionForSource(map, resolveDocLiveCursor(markdown, docLiveCursor(markdown, offset)!)!)).toBe(pos);
+    }
   });
 });
 

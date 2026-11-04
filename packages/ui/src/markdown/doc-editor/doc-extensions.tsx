@@ -5,7 +5,9 @@
  * a person edits it in place. Doc artifacts and an agent's instructions use
  * the same set, so a doc reads and edits the same everywhere. The look is
  * `ARTIFACT_DOC_CSS` (`.kx-doc`); Markdown goes in and out through
- * `markdown.ts`.
+ * `markdown.ts`, which keeps a file's own spelling on each block
+ * (`MarkdownSource`) and holds what the editor cannot show as a raw block
+ * (`RawMarkdown`), so an unedited file saves byte for byte.
  */
 
 import { Code } from '@tiptap/extension-code';
@@ -27,7 +29,13 @@ import { SessionDotMatrix } from '../../primitives/dot-matrix/session-dot-matrix
 import { MermaidRenderer } from '../../primitives/mermaid-renderer';
 import { TextShimmer } from '../../primitives/text-shimmer';
 import { CopyButton } from '../copy-button';
+import { SafeAttributes, attrBoolean, attrString, attrStringOrNull } from './doc-attrs';
 import { LinkEmbed } from './doc-embed';
+import { MarkdownSource, PastedMarkdownSource, RAW_ATTRIBUTE } from './doc-fidelity';
+import { safeNodeView } from './doc-node-view';
+
+// Hosts that render their own node views (the co-editing editor) use the same guards.
+export { attrBoolean, attrString, attrStringOrNull, safeNodeView };
 
 /**
  * `uploading`: a pasted or dropped file shown from a local URL while it
@@ -44,14 +52,17 @@ const uploadingAttribute = {
 /** An image or video in the editor, with an "Uploading…" chip while its file uploads. */
 function MediaView({ node }: ReactNodeViewProps) {
   const t = useTranslations('artifacts');
-  const { src, alt, title, uploading } = node.attrs as { src: string; alt?: string; title?: string; uploading: boolean };
+  const src = attrString(node.attrs.src);
+  const alt = attrString(node.attrs.alt);
+  const title = attrStringOrNull(node.attrs.title) ?? undefined;
+  const uploading = attrBoolean(node.attrs.uploading);
   return (
     <NodeViewWrapper className="kx-media" data-uploading={uploading || undefined} data-drag-handle="">
       {node.type.name === 'video' ? (
-        <video src={src} controls preload="metadata" />
+        <video src={src || undefined} controls preload="metadata" />
       ) : (
         // eslint-disable-next-line @next/next/no-img-element -- a doc's own media, any origin
-        <img src={src} alt={alt ?? ''} title={title} />
+        <img src={src || undefined} alt={alt} title={title} />
       )}
       {uploading ? (
         <span
@@ -76,7 +87,7 @@ export const DocImage = Image.extend({
     return { ...this.parent?.(), ...uploadingAttribute };
   },
   addNodeView() {
-    return ReactNodeViewRenderer(MediaView);
+    return ReactNodeViewRenderer(safeNodeView(MediaView));
   },
 });
 
@@ -90,7 +101,7 @@ export const Video = Node.create({
     return { src: { default: null }, ...uploadingAttribute };
   },
   addNodeView() {
-    return ReactNodeViewRenderer(MediaView);
+    return ReactNodeViewRenderer(safeNodeView(MediaView));
   },
   parseHTML() {
     return [{ tag: 'video[src]' }];
@@ -107,7 +118,7 @@ function CodeBlockView({ node, editor, updateAttributes }: ReactNodeViewProps) {
   const t = useTranslations('artifacts');
   const [editing, setEditing] = useState(false);
   const source = node.textContent.trim();
-  const language = (node.attrs.language as string | null) ?? '';
+  const language = attrString(node.attrs.language);
   const diagram = language === 'mermaid' && source;
   // A diagram shows as a picture; its source opens only for someone editing it.
   const showSource = !diagram || editing;
@@ -170,8 +181,56 @@ export const DocCodeBlock = CodeBlock.extend({
     const elementOf = (target: unknown): Element | null =>
       target instanceof Element ? target : ((target as { parentElement?: Element | null } | null)?.parentElement ?? null);
     const controls = (target: unknown) => !!elementOf(target)?.closest('.kx-diagram, .kx-code > figcaption');
-    return ReactNodeViewRenderer(CodeBlockView, {
+    return ReactNodeViewRenderer(safeNodeView(CodeBlockView), {
       stopEvent: ({ event }) => controls(event.target),
+    });
+  },
+});
+
+/** A raw block's caption: the name of the format it holds, a Markdown token like a code block's language, not UI copy. */
+const RAW_LABEL = 'markdown';
+
+/** A raw block: the file's own Markdown as monospace text, in the code figure's look. */
+function RawMarkdownView({ node }: ReactNodeViewProps) {
+  return (
+    <NodeViewWrapper as="div">
+      <figure className="kx-code">
+        <figcaption contentEditable={false}>
+          <span>{RAW_LABEL}</span>
+          {node.textContent ? <CopyButton code={node.textContent} /> : null}
+        </figcaption>
+        <pre>
+          <NodeViewContent<'code'> as="code" />
+        </pre>
+      </figure>
+    </NodeViewWrapper>
+  );
+}
+
+/**
+ * A block the editor cannot show without rewriting it (front matter, a link
+ * reference definition, an HTML block; `markdown.ts` decides): its Markdown
+ * source as plain text. A person edits it as text, and it saves exactly as it
+ * reads. Input rules and marks do not apply inside it (`code`).
+ */
+export const RawMarkdown = Node.create({
+  name: 'rawMarkdown',
+  group: 'block',
+  content: 'text*',
+  marks: '',
+  code: true,
+  defining: true,
+  whitespace: 'pre',
+  parseHTML() {
+    // Before the code block's `pre` rule.
+    return [{ tag: `pre[${RAW_ATTRIBUTE}]`, preserveWhitespace: 'full', priority: 60 }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['pre', mergeAttributes(HTMLAttributes, { [RAW_ATTRIBUTE]: '' }), 0];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(safeNodeView(RawMarkdownView), {
+      stopEvent: ({ event }) => !!(event.target as Element | null)?.closest?.('.kx-code > figcaption'),
     });
   },
 });
@@ -227,6 +286,10 @@ export function docExtensions({
     TaskList,
     TaskItem.configure({ nested: true }),
     LinkEmbed,
+    RawMarkdown,
+    MarkdownSource,
+    PastedMarkdownSource,
+    SafeAttributes,
     Placeholder.configure({ placeholder: ({ node }) => placeholder(node) }),
   ];
 }

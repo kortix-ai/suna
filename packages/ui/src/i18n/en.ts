@@ -8600,6 +8600,14 @@ const catalog = {
       "typingTwo": "{first} and {second} are typing…",
       "typingMany": "{count, plural, one {# person is typing…} other {# people are typing…}}",
       "writing": "{name} is writing…"
+    },
+    "coedit": {
+      "offLarge": "Live co-editing is off: this doc is over 1 MiB. Changes save as you type.",
+      "offLineEndings": "Live co-editing is off: this doc mixes CRLF and LF line endings. Changes save as you type.",
+      "offShape": "Live co-editing is off: the editor would rewrite part of this doc's Markdown. Changes save as you type.",
+      "stoppedLarge": "Live co-editing stopped: one change was too large to share. Changes save as you type.",
+      "stoppedFailed": "Live co-editing stopped: the connection failed. Changes save as you type.",
+      "stoppedHistory": "Live co-editing stopped: this doc's edit history is too large. Changes save as you type."
     }
   },
   "emailConnect": {

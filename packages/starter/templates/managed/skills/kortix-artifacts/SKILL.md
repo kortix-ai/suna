@@ -204,6 +204,13 @@ People viewing the artifact see where you work. Tell them as you go:
 `--status` defaults to `editing`. Focus is a signal, not a comment: skip it
 when it fails and continue the work.
 
+People may be typing in a doc while you edit it. Publish to the doc as
+usual: your change merges into their editors, and nothing they typed is
+lost. Change only the passages you mean to change, and keep the rest of the
+file byte for byte: read the current file right before you edit, never an
+older copy. When a person changed the same words, both versions of that
+paragraph stay, yours under theirs, so the person can pick.
+
 When asked to review, open one thread per issue, anchored to an exact quote:
 
     kortix artifacts comment <id> "Confirm the source for this figure, @name." --quote "Revenue rose."

@@ -20,6 +20,8 @@ type SourceRun = { value: string; start: number; end: number; preserve: boolean 
 type PositionRun = { from: number; to: number; start: number; end: number };
 export type DocMarkdownPositions = { markdown: string; runs: PositionRun[] };
 const parser = unified().use(remarkParse).use(remarkGfm);
+/** The doc editor's raw block (`RawMarkdown`, `@kortix/ui/markdown/doc-editor/doc-extensions`). */
+const RAW_BLOCK = 'rawMarkdown';
 let entityDecoder: HTMLTextAreaElement | undefined;
 
 function append(runs: SourceRun[], value: string, start: number, end: number, preserve = false) {
@@ -220,15 +222,52 @@ export function docMarkdownPositions(markdown: string, doc: PMNode): DocMarkdown
     else for (const child of node.children ?? []) visit(child);
   };
   visit(parser.parse(markdown) as MdNode);
-  const rendered: Array<{ value: string; pos: number }> = [];
-  doc.descendants((node, pos) => {
-    if (node.isText) rendered.push({ value: node.text!, pos });
+  const rendered: Array<{ value: string; pos: number; raw?: true }> = [];
+  doc.descendants((node, pos, parent) => {
+    if (node.isText)
+      rendered.push(parent?.type.name === RAW_BLOCK ? { value: node.text!, pos, raw: true } : { value: node.text!, pos });
     else if (node.type.name === 'hardBreak') rendered.push({ value: '\n', pos });
   });
   const runs: PositionRun[] = [];
   let index = 0;
   let offset = 0;
-  for (const run of source) {
+  let next = 0;
+  // Where the Markdown mapped so far ends.
+  let cursor = 0;
+  /**
+   * A raw block shows its Markdown as written (front matter, an HTML block): its text is the
+   * next copy of that Markdown in the file (LF in the editor, CRLF in a CRLF file), mapped
+   * character for character. Every source run inside that copy is the block's own syntax.
+   */
+  const placeRaw = () => {
+    while (offset === 0 && rendered[index]?.raw) {
+      const { value, pos } = rendered[index]!;
+      let written = value;
+      let start = markdown.indexOf(written, cursor);
+      if (start === -1 && markdown.includes('\r\n')) {
+        written = value.replace(/\n/g, '\r\n');
+        start = markdown.indexOf(written, cursor);
+      }
+      if (start === -1) return false;
+      const end = start + written.length;
+      for (; next < source.length && source[next]!.start < end; next++)
+        // Text before the block that the doc does not show.
+        if (source[next]!.start < start) return false;
+      let from = pos;
+      for (const part of literal(written, start, true)) {
+        runs.push({ from, to: from + part.value.length, start: part.start, end: part.end });
+        from += part.value.length;
+      }
+      cursor = end;
+      index++;
+    }
+    return true;
+  };
+  for (;;) {
+    if (!placeRaw()) return null;
+    const run = source[next++];
+    if (!run) break;
+    cursor = run.end;
     let used = 0;
     while (used < run.value.length) {
       const target = rendered[index];
