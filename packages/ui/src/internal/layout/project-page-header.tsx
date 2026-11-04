@@ -18,9 +18,12 @@ import { SidebarToggle } from './sidebar-toggle';
 export function ProjectPageHeader({
   title,
   titleAccessory,
+  breadcrumb,
   children,
 }: {
   title: string;
+  /** The parent page before the title (a link and a separator): "Goals › <goal>". */
+  breadcrumb?: React.ReactNode;
   titleAccessory?: React.ReactNode;
   children?: React.ReactNode;
 }) {
@@ -32,6 +35,7 @@ export function ProjectPageHeader({
     >
       <SidebarToggle />
       <div className="kx-titlebar-tabs flex h-10 min-w-0 flex-1 items-center gap-1.5 px-3">
+        {breadcrumb}
         <h1 className="text-foreground truncate text-sm font-medium">{title}</h1>
         {titleAccessory}
       </div>

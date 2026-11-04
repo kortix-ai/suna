@@ -192,12 +192,20 @@ export const workspaceMap = () => (repo ? repoMap(repo) : '')
 // What the router is told the workspace is: what the project calls itself (else its folder's name), what it says it is,
 // and its root folders (a Kortix project's memory notes are files there: a question on them is a workspace question,
 // answered from the files in a second, not handed to the agent).
-const named = repo ? identity(repo) || basename(repo) : ''
 /** Text for inside a data envelope's attribute or body: no quote to close the attribute, no data tag to close it. */
 const envelope = (s: string) => s.replace(/"/g, "'").replace(/<\/?data\b[^>]*>/gi, '')
-const project = repo ? ((o = outline(repo)) => envelope(`${named}${o.about ? `: ${o.about}` : ''}${o.folders ? `; its folders: ${o.folders}` : ''}${o.notes ? `; its memory notes (memory/): ${o.notes}` : ''}`))() : ''
+// Read when asked, kept 30 s: in a Kortix box the voice loads with kortixd, before the project's files are in /workspace
+// (read at load, the name was the folder's, "workspace", and the router was told no folders and no notes).
+let known: { at: number; named: string; project: string } | undefined
+const workspace = () => {
+  if (known && Date.now() - known.at < 30_000) return known
+  const named = repo ? identity(repo) || basename(repo) : ''
+  const o = repo ? outline(repo) : { about: '', folders: '', notes: '' }
+  const project = repo ? envelope(`${named}${o.about ? `: ${o.about}` : ''}${o.folders ? `; its folders: ${o.folders}` : ''}${o.notes ? `; its memory notes (memory/): ${o.notes}` : ''}`) : ''
+  return (known = { at: Date.now(), named, project })
+}
 /** The workspace as the router is told it (for evals). */
-export const workspaceProject = () => project
+export const workspaceProject = () => workspace().project
 
 // And the files of it the words name: "What does the cascade file do?" was routed none (the router had only the name and
 // description, and "cascade" read as a general idea), and the agent's opener made up what it does (bench/namedfile-proof.ts).
@@ -206,6 +214,7 @@ export const workspaceProject = () => project
 // (~150 ms, every 30 s) never lands on an ordinary turn's routing.
 const projectFor = (q: string) => {
   const files = repo && /\b(file|module|script)\b|\w\.\w{1,4}\b|\bdot\s+[a-z]{1,4}\b/i.test(q) ? namedFiles(repo, q) : []
+  const { project } = workspace()
   return files.length ? `${project}; the turn names its file ${files.slice(0, 3).join(', ')}` : project
 }
 
@@ -248,7 +257,7 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
     // Named inside the data too: "What is the name of this project?" with the name only in the label got "I don't see a
     // project name in those files" (a Kortix dev call, its chunks a sub-project's).
     // Escaped as the web-search query is: a README title cannot close the data envelope and speak as instructions.
-    const of = envelope(named)
+    const of = envelope(workspace().named)
     return [state && `<data source="git of ${of}, read just now">\n${state}\n</data>`, data && `<data source="workspace: ${of}">\nThis project: ${of}\n${data}\n</data>`].filter(Boolean).join('\n')
   }
   let fallback: Promise<string> | undefined

@@ -59,7 +59,11 @@ export function extensionAgentHooks(ref: RunnerRef): Pick<AgentOptions, 'onPaylo
         await ref.current.emit({ type: 'after_provider_response', status: response.status, headers: response.headers })
       }
     },
-    transformContext: async (messages) => (ref.current ? ref.current.emitContext(messages) : messages),
+    // pi's `emitContext` deep-copies the whole context before it looks for a handler: every
+    // screenshot, on every model step (prod 2026-11-04: a Claude turn's daemon peaked at 3.1 GB).
+    // Without a `context` handler the context goes through as it is.
+    transformContext: async (messages) =>
+      ref.current?.hasHandlers('context') || ref.current?.hasHandlers('context_with_system') ? ref.current.emitContext(messages) : messages,
   }
 }
 
