@@ -11,7 +11,7 @@ import { clearAccountSecretCooldown, encryptAccountSecret, memberMayReadProject,
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { ACCOUNT_ACTIONS, actorOf, authorize, PROJECT_ACTIONS } from '../iam';
 import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry';
-import { SUBSCRIPTION_PROVIDERS, SubscriptionUsageSchema, refreshSubscriptionUsage, storedSubscriptionUsage } from '../llm-gateway/subscription-usage';
+import { SUBSCRIPTION_PROVIDERS, SubscriptionAccountSchema, SubscriptionUsageSchema, refreshSubscriptionUsage, storedSubscriptionUsage, subscriptionAccount } from '../llm-gateway/subscription-usage';
 import { AccountIdParam, accountsRouter, getMembership } from './core/app';
 import { readJsonObject } from '../shared/http-body';
 
@@ -26,6 +26,8 @@ const View = z.object({
   needs_reauth_at: z.string().nullable(),
   /** A subscription login's last seen plan usage (5-hour and weekly windows); null for keys and before first use. */
   usage: SubscriptionUsageSchema.nullable(),
+  /** Who a ChatGPT or Claude login signs in as (email, plan); null for keys and when the provider does not say. */
+  provider_account: SubscriptionAccountSchema.nullable(),
   created_by: z.string(), created_at: z.string(), updated_at: z.string(),
   granted_user_ids: z.array(z.string()), can_use: z.boolean(),
   /** Can the server decrypt the stored value? Never carries the value. */
@@ -67,6 +69,7 @@ async function view(row: typeof accountSecretResources.$inferSelect, actorId: st
     cooldown_until: row.cooldownUntil?.toISOString() ?? null,
     needs_reauth_at: row.needsReauthAt?.toISOString() ?? null,
     usage: storedSubscriptionUsage(row.usage),
+    provider_account: subscriptionAccount(row),
     created_by: row.createdBy, created_at: row.createdAt.toISOString(), updated_at: row.updatedAt.toISOString(),
     granted_user_ids: grants.map((grant) => grant.userId),
     status: probeAccountSecret(row.accountId, row.valueEnc),
@@ -246,7 +249,7 @@ export function registerSecretResourceRoutes() {
     method: 'post', path: '/{accountId}/secret-resources/{secretId}/usage', tags: ['secrets'],
     summary: 'Refresh the plan usage of one subscription login (ChatGPT, Claude)', ...auth,
     request: { params: SecretIdParam },
-    responses: { 200: json(z.object({ usage: SubscriptionUsageSchema.nullable() }), 'Current plan usage, or null when the provider reports none'), ...errors(400, 403, 404) },
+    responses: { 200: json(z.object({ usage: SubscriptionUsageSchema.nullable(), provider_account: SubscriptionAccountSchema.nullable() }), 'Current plan usage and who the login signs in as; null when the provider does not say'), ...errors(400, 403, 404) },
   }), async (c) => {
     const { accountId, secretId } = c.req.valid('param');
     const userId = c.get('userId') as string;
@@ -256,7 +259,10 @@ export function registerSecretResourceRoutes() {
     // The same rule as the list: a manager sees every login, a member the ones they may use.
     if (!(await mayWriteAccount(c, accountId)) && !(await view(row, userId)).can_use) return c.json({ error: 'Forbidden' }, 403);
     if (!row.providerId || !SUBSCRIPTION_PROVIDERS.has(row.providerId)) return c.json({ error: 'Not a subscription login' }, 400);
-    return c.json({ usage: await refreshSubscriptionUsage(row) }, 200);
+    const usage = await refreshSubscriptionUsage(row);
+    // The refresh may have stored the Claude profile; read it back.
+    const current = await loadSecret(accountId, secretId);
+    return c.json({ usage, provider_account: current ? subscriptionAccount(current) : null }, 200);
   });
 
   accountsRouter.openapi(createRoute({

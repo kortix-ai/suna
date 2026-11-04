@@ -1,6 +1,6 @@
 'use client';
 
-import type { AccountSecretResource, SubscriptionUsage, SubscriptionUsageWindow } from '@kortix/sdk';
+import type { AccountSecretResource, SubscriptionAccount, SubscriptionUsage, SubscriptionUsageWindow } from '@kortix/sdk';
 import { useSubscriptionUsage } from '@kortix/sdk/react';
 import { useLocale, useTranslations } from '../../../i18n';
 import { Progress } from '../../../primitives/progress';
@@ -46,6 +46,24 @@ export function formatReset(iso: string, now: number, locale: string): string {
 export function shownUsage(live: SubscriptionUsage | null | undefined, listed: SubscriptionUsage | null | undefined): SubscriptionUsage | null {
   if (live && listed) return Date.parse(live.observed_at) >= Date.parse(listed.observed_at) ? live : listed;
   return live ?? listed ?? null;
+}
+
+/**
+ * `person@example.test · Pro`: who the login signs in as. The email is left out
+ * when the label already shows it; null when the provider says nothing.
+ */
+export function accountLine(account: SubscriptionAccount | null | undefined, label: string): string | null {
+  if (!account) return null;
+  const email = account.email && !label.toLowerCase().includes(account.email.toLowerCase()) ? account.email : null;
+  const plan = account.plan ? account.plan[0]!.toUpperCase() + account.plan.slice(1) : null;
+  return [email, plan].filter(Boolean).join(' · ') || null;
+}
+
+/** The login's email and plan, under its name: the live read when it answered, else the list's. */
+export function SubscriptionAccountLine({ accountId, secret }: { accountId: string; secret: AccountSecretResource }) {
+  const live = useSubscriptionUsage(accountId, secret.secret_id, { enabled: isSubscriptionLogin(secret) });
+  const line = accountLine(live.data?.provider_account ?? secret.provider_account, secret.label);
+  return line ? <span className="text-muted-foreground block truncate text-xs font-normal">{line}</span> : null;
 }
 
 export function isSubscriptionLogin(secret: Pick<AccountSecretResource, 'provider_id'>): boolean {

@@ -1097,6 +1097,9 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
   usage: jsonb('usage'),
   /** The last refresh from the provider's usage API: at most one call a minute per login. */
   usageCheckedAt: timestamp('usage_checked_at', { withTimezone: true }),
+  /** Who the stored login signs in as, when the provider says: `{ email, plan }`.
+   *  Claude's profile API fills it on a usage refresh; a ChatGPT login carries it in its token. */
+  providerAccount: jsonb('provider_account'),
   createdBy: uuid('created_by').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
