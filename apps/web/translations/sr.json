@@ -1349,8 +1349,8 @@
           "description": "Jedna kontrola ispod polja za unos za to ko odgovara i kako: izaberi agenta, a sva ostala podešavanja ostaju na Automatski, nasleđena od tog agenta. Otvori red da zameniš model, nivo razmišljanja, tajne, ključeve provajdera ili sandbox za ovu sesiju, i vrati na Automatski jednim klikom."
         },
         "chat_front": {
-          "name": "Prijemni agent",
-          "description": "Kada su Prostori uključeni, agent sa kojim razgovarate u niti prosleđuje posao vašim agentima i odgovara kao čovek: kratke poruke sa rezultatom, linkom ili odlukom koju treba da donesete. Vidite razgovor; „Prikaži rad“ ispod poruke otvara rad iza nje. Zahteva uključen My Kortix u kortix.yaml."
+          "name": "Ruter",
+          "description": "Kada su Prostori uključeni, agent sa kojim razgovarate u niti je ruter: prosleđuje posao vašim agentima i odgovara kao čovek, kratkim porukama sa rezultatom, linkom ili odlukom koju treba da donesete. Vaši agenti dele nit kroz njene fajlove, pa ruter prosleđuje putanje fajlova, a ne prepisan tekst. „Prikaži rad“ ispod poruke otvara rad iza nje. Zahteva uključen My Kortix u kortix.yaml."
         }
       },
       "channelsSwitch": {

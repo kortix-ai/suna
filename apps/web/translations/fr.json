@@ -1349,8 +1349,8 @@
           "description": "Un seul contrôle sous la zone de saisie pour qui répond et comment : choisissez l’agent, et tous les autres réglages restent sur Automatique, hérités de cet agent. Ouvrez une ligne pour remplacer le modèle, l’effort de raisonnement, les secrets, les clés de fournisseur ou la sandbox de cette session, et revenez à Automatique en un clic."
         },
         "chat_front": {
-          "name": "Agent d’accueil",
-          "description": "Avec les Espaces activés, l’agent avec qui vous discutez dans un fil confie le travail à vos agents et vous répond comme une personne : des messages courts avec le résultat, un lien ou la décision à prendre. Vous voyez la conversation ; « Voir le travail » sous un message ouvre le travail derrière. Nécessite My Kortix activé dans kortix.yaml."
+          "name": "Routeur",
+          "description": "Avec les Espaces activés, l’agent avec qui vous discutez dans un fil est un routeur : il confie le travail à vos agents et vous répond comme une personne, en messages courts avec le résultat, un lien ou la décision à prendre. Vos agents partagent le fil par ses fichiers : le routeur transmet des chemins de fichiers, pas du texte recopié. « Voir le travail » sous un message ouvre le travail derrière. Nécessite My Kortix activé dans kortix.yaml."
         }
       },
       "channelsSwitch": {

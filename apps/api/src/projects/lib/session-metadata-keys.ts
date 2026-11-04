@@ -16,8 +16,10 @@
 import { SUBAGENT_NOTIFY_PARENT_KEY } from '@kortix/api-contract/runtime-relay';
 
 export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
-  // The intake agent (`chat_front`): only session-create.ts marks a front (front-thread.ts).
+  // The router (`chat_front`): only session-create.ts marks a front (front-thread.ts).
   'kortix_front',
+  // Thread files: the thread's folder name and message numbering (memory/thread-files.ts).
+  'thread_files',
   // Chat: Kortix's own top-level message; only POST /chat/threads sets it (chat-threads.ts).
   'chat_root_text',
   // Soft delete (`deleteSession`).

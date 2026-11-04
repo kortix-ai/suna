@@ -1,4 +1,4 @@
-// The intake agent (flag `chat_front`): a space thread whose My Kortix agent
+// The router (flag `chat_front`): a space thread whose My Kortix agent
 // only talks. It routes each request to a hidden worker (any project agent,
 // else My Kortix) and writes back like a person. kortixd reads the
 // runtime_context key (`harness/pi/front.ts`, FRONT_CONTEXT_KEY).

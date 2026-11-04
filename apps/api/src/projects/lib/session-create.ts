@@ -613,7 +613,7 @@ async function resolveSessionAgent(params: {
     callerIsMeta &&
     isWorkflowRunnerContext(body.runtime_context) &&
     !(await sessionIsWorkflowRunner(input.callerSessionId!));
-  // An intake (flag `chat_front`, front-thread.ts) only talks: it may start My Kortix workers.
+  // A router (flag `chat_front`, front-thread.ts) only talks: it may start My Kortix workers.
   const frontWorker =
     platformMetaAgent &&
     callerIsMeta &&
@@ -1905,7 +1905,7 @@ export async function createProjectSession(input: {
     workspaceVolume: providerName === 'platinum' && !isMyKortixSandboxSlug(sandboxSlug) ? workspaceVolume : null,
   });
 
-  // The intake agent (`chat_front`): server-side state alone makes this session a front, never the body.
+  // The router (`chat_front`): server-side state alone makes this session a front, never the body.
   const front = startsFrontThread({
     projectMetadata: project.metadata,
     spaceId,

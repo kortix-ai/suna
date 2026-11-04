@@ -1349,8 +1349,8 @@
           "description": "Un solo controllo sotto il compositore per chi risponde e come: scegli l’agente e ogni altra impostazione resta su Automatico, ereditata da quell’agente. Apri una riga per sostituire modello, sforzo di ragionamento, segreti, chiavi del provider o sandbox per questa sessione, e torna ad Automatico con un clic."
         },
         "chat_front": {
-          "name": "Agente di accoglienza",
-          "description": "Con gli Spazi attivi, l'agente con cui chatti in un thread affida il lavoro ai tuoi agenti e ti risponde come una persona: messaggi brevi con il risultato, un link o la decisione da prendere. Vedi la conversazione; «Mostra lavoro» sotto un messaggio apre il lavoro che c'è dietro. Richiede My Kortix attivo in kortix.yaml."
+          "name": "Router",
+          "description": "Con gli Spazi attivi, l'agente con cui chatti in un thread è un router: affida il lavoro ai tuoi agenti e ti risponde come una persona, con messaggi brevi con il risultato, un link o la decisione da prendere. I tuoi agenti condividono il thread tramite i suoi file, quindi il router passa percorsi di file, non testo ricopiato. «Mostra lavoro» sotto un messaggio apre il lavoro che c'è dietro. Richiede My Kortix attivo in kortix.yaml."
         }
       },
       "channelsSwitch": {

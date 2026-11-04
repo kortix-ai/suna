@@ -169,9 +169,9 @@ export interface SubagentContext {
   handle?: string
   /** The lead session of this teammate. */
   teamLead?: string
-  /** An intake front (`kortix.front`, front.ts): messaging tools only, and its workers are not narrowed to them. */
+  /** A router (`kortix.front`, front.ts): messaging tools only, and its workers are not narrowed to them. */
   front?: boolean
-  /** A worker of an intake front (`kortix.front.thread`): its answer reaches the thread as its run's report. */
+  /** A worker of a router (`kortix.front.thread`): its answer reaches the thread as its run's report. */
   frontThread?: boolean
 }
 

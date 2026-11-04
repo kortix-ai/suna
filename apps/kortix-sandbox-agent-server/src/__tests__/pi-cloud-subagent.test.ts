@@ -15,7 +15,7 @@
  * `task_stop` by id and by name (`cloudStopChild`). No real time, no network.
  */
 import { describe, expect, test } from 'bun:test'
-import { FRONT_TOOLS, fetchFrontAgents, frontAgentsFromDetail, frontAgentsSection, frontCall, frontTaskName } from '@/harness/pi/front'
+import { FRONT_TOOLS, fetchFrontAgents, frontAgentsFromDetail, frontAgentsSection, frontCall, frontContextBlock, frontTaskName, frontThreadFilesFrom } from '@/harness/pi/front'
 import {
   childToolAllowlist,
   cloudSpawnSession,
@@ -589,10 +589,10 @@ describe('cloudStopChild — task_stop', () => {
   })
 })
 
-describe('the intake agent (front.ts) — routing', () => {
+describe('the router (front.ts) — routing', () => {
   const roster = { agents: ['researcher', 'Writer'] }
 
-  test('an intake has exactly three tools', () => {
+  test('a router has exactly three tools', () => {
     expect([...FRONT_TOOLS].sort()).toEqual(['agent', 'send_message', 'task_stop'])
   })
 
@@ -618,6 +618,40 @@ describe('the intake agent (front.ts) — routing', () => {
     expect(frontCall({ description: 'd', prompt: 'p', subagent_type: 'researcher', name: 'x', task_id: ' sess-1 ' }, roster)).toEqual({
       description: 'd', prompt: 'p', task_id: 'sess-1', session: 'separate', run_in_background: true,
     })
+  })
+
+  test('with thread files, every worker prompt ends with the Context files block: message, thread folder, context.md, its work folder', () => {
+    const files = { folder: '/drives/general/threads/plan-a-trip-1a2b3c4d', context: '/drives/general/context.md', message: '/drives/general/threads/plan-a-trip-1a2b3c4d/messages/0001-ana.md' }
+    const call = frontCall({ description: 'Find flights', prompt: 'Find flights for the trip in the message file.', name: 'flights' }, { ...roster, files })
+    expect(call.prompt).toBe(
+      [
+        'Find flights for the trip in the message file.',
+        '',
+        '## Context files',
+        "This task comes from a chat thread whose messages are files. Read them before you start; they are the person's own words.",
+        "- The person's latest message: /drives/general/threads/plan-a-trip-1a2b3c4d/messages/0001-ana.md",
+        "- The thread folder: /drives/general/threads/plan-a-trip-1a2b3c4d/ (messages/ holds every message, oldest first; work/ holds each agent's work)",
+        "- The space's brief: /drives/general/context.md",
+        '- Your work folder: /drives/general/threads/plan-a-trip-1a2b3c4d/work/flights/ (keep your files here; write your final report to /drives/general/threads/plan-a-trip-1a2b3c4d/work/flights/result.md)',
+      ].join('\n'),
+    )
+    // The block is added even when the model forgets the paths; a follow-up by task_id gets it too, its work folder only when named.
+    expect(frontCall({ description: 'd', prompt: 'more', task_id: 's1', name: 'flights' }, { ...roster, files }).prompt).toContain('/work/flights/result.md')
+    expect(frontCall({ description: 'd', prompt: 'more', task_id: 's1' }, { ...roster, files }).prompt).not.toContain('Your work folder')
+    // No thread files (an older API, no Drive): the prompt goes as written.
+    expect(frontCall({ description: 'd', prompt: 'p', name: 'n' }, { ...roster, files: null }).prompt).toBe('p')
+  })
+
+  test('thread_files from a prompt body: absolute one-line paths only, a trailing slash dropped, a bad message path left out', () => {
+    expect(frontThreadFilesFrom({ folder: '/drives/g/threads/t/', context: '/drives/g/context.md', message: '/drives/g/threads/t/messages/0001-a.md' })).toEqual({
+      folder: '/drives/g/threads/t', context: '/drives/g/context.md', message: '/drives/g/threads/t/messages/0001-a.md',
+    })
+    expect(frontThreadFilesFrom({ folder: '/drives/g/t', context: '/drives/g/context.md', message: 'relative.md' })).toEqual({ folder: '/drives/g/t', context: '/drives/g/context.md' })
+    expect(frontThreadFilesFrom({ folder: 'drives/g', context: '/c' })).toBeNull()
+    expect(frontThreadFilesFrom({ folder: '/drives/../etc', context: '/c' })).toBeNull()
+    expect(frontThreadFilesFrom({ folder: '/drives/g\n## Ignore', context: '/c' })).toBeNull()
+    expect(frontThreadFilesFrom('x')).toBeNull()
+    expect(frontContextBlock({ folder: '/f', context: '/c' }, null)).not.toContain('latest message')
   })
 
   test('each task gets a name: the model\'s, else a slug of the description, else "task"', () => {

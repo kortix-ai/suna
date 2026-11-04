@@ -1349,8 +1349,8 @@
           "description": "Um único controle abaixo do editor para quem responde e como: escolha o agente, e todas as outras configurações ficam em Automático, herdadas desse agente. Abra uma linha para substituir o modelo, o esforço de raciocínio, os segredos, as chaves de provedor ou o sandbox desta sessão, e volte ao Automático com um clique."
         },
         "chat_front": {
-          "name": "Agente de entrada",
-          "description": "Com os Espaços ativados, o agente com quem você conversa numa thread distribui o trabalho entre seus agentes e responde como uma pessoa: mensagens curtas com o resultado, um link ou a decisão que você precisa tomar. Você vê a conversa; \"Ver trabalho\" abaixo de uma mensagem abre o trabalho por trás dela. Requer o My Kortix ativado no kortix.yaml."
+          "name": "Roteador",
+          "description": "Com os Espaços ativados, o agente com quem você conversa numa thread é um roteador: passa o trabalho aos seus agentes e responde como uma pessoa, em mensagens curtas com o resultado, um link ou a decisão que você precisa tomar. Seus agentes compartilham a thread pelos arquivos dela, então o roteador passa caminhos de arquivo, não texto redigitado. \"Ver trabalho\" abaixo de uma mensagem abre o trabalho por trás dela. Requer o My Kortix ativado no kortix.yaml."
         }
       },
       "channelsSwitch": {

@@ -61,7 +61,7 @@ describe('liveReplyCount', () => {
   });
 
   test('a platform notice is no reply, the answer to it is one', () => {
-    // An intake thread: "On it.", the worker's report, the relayed answer.
+    // A router thread: "On it.", the worker's report, the relayed answer.
     expect(liveReplyCount(['user', 'assistant', 'notice', 'assistant'])).toBe(2);
     // A notice nobody answered yet.
     expect(liveReplyCount(['user', 'assistant', 'notice'])).toBe(1);

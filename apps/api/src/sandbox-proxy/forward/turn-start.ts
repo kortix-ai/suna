@@ -41,7 +41,7 @@ import {
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
 import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
-import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText, withMemoryTurn, withoutClientSystem } from '../../memory/turn-body';
+import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText, withMemoryTurn, withThreadFiles, withoutClientSystem } from '../../memory/turn-body';
 import { isMyKortixAgentName } from '@kortix/shared';
 import { logger } from '../../lib/logger';
 import { isPlatinumConfigured } from '../../shared/platinum';
@@ -386,8 +386,11 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
     });
     return null;
   });
+  // Thread files (`chat`): the person's message as a file, and every session of the thread told its folder.
+  const thread = await threadFilesForTurn(req, state.requestBody);
+  if (thread?.files) state.requestBody = withThreadFiles(state.requestBody, thread.files);
   const put = (parts: readonly (string | null | undefined)[]) => {
-    const system = turnSystemText(where?.system ?? null, parts);
+    const system = turnSystemText(where?.system ?? null, [thread?.system, ...parts]);
     if (system) state.requestBody = withMemoryTurn(state.requestBody, { system });
   };
   try {
@@ -427,6 +430,21 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
       session_id: sessionId,
       error: error instanceof Error ? error.message : String(error),
     });
+  }
+}
+
+/** The thread-files turn of a session in a space (`memory/thread-files.ts`), or null: `chat` off, no space, any failure. */
+async function threadFilesForTurn(req: ForwardRequest, body: ArrayBuffer | undefined) {
+  try {
+    if (!(await memoryChannelsOn(req.record.projectId))) return null;
+    const [{ threadFilesTurn }, { authorName }] = await Promise.all([import('../../memory/thread-files'), import('../../memory/layers')]);
+    return await threadFilesTurn({ sessionId: req.record.sessionId, userId: req.sandboxAuthored ? null : req.userId ?? null, body, authorName });
+  } catch (error) {
+    logger.warn('[thread-files] turn start forwarded without thread files', {
+      session_id: req.record.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
   }
 }
 

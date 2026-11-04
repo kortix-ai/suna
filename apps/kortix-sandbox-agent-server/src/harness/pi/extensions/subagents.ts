@@ -122,7 +122,7 @@ export interface KortixHost {
    */
   anyProjectAgent?(): boolean
   /**
-   * The intake agent (flag `chat_front`, harness/pi/front.ts): every `agent`
+   * The router (flag `chat_front`, harness/pi/front.ts): every `agent`
    * call starts or continues one named background worker, as the project
    * agent the call picks (`frontCall`). Returns the agents it may name; null
    * for every other session.
@@ -461,7 +461,7 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
       executionMode: 'parallel' as const,
       ...(name === 'agent' && host.codemodeOnly?.() ? { exposure: 'model-only' as const } : {}),
       async execute(_toolCallId: string, input: SubagentParams, signal: AbortSignal | undefined, onUpdate?: (update: { content: never[]; details: unknown }) => void) {
-        // An intake's call always starts or continues one named worker, in the background, in its own session.
+        // A router's call always starts or continues one named worker, in the background, in its own session.
         const front = host.frontRouter?.() ?? null
         const params: SubagentParams = front ? frontCall(input, front) : input
         const spawn = resolveSpawn(params, host)
@@ -471,7 +471,7 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
           ...(params.session ? { session: params.session } : {}),
           ...shape,
           ...spawn,
-          // The worker knows it reports to an intake: its runtime adds FRONT_WORKER_NOTE to its system prompt.
+          // The worker knows it reports to a router: its runtime adds FRONT_WORKER_NOTE to its system prompt.
           ...(front ? { runtimeContext: { [FRONT_THREAD_CONTEXT_KEY]: true } } : {}),
           prompt: params.prompt,
           signal,

@@ -14,7 +14,7 @@
  * (a background worker's report, a teammate's or a peer's idle notice,
  * `subagent-notice.ts` / `peer-messages/service.ts`) is a user row with no
  * origin: it is not a person message, but the agent's answer to it is a reply.
- * An intake thread (`chat_front`) gets one per hand-off. An aggregate on an
+ * A router thread (`chat_front`) gets one per hand-off. An aggregate on an
  * index that leads with `session_id`. It reads three keys of each matching
  * row's `record` jsonb (`origin`, `reply_to`, `hidden_reason`), so it detoasts
  * every message record of the listed root threads: its cost grows with

@@ -637,8 +637,25 @@ export async function firePeerIdleNotices(input: {
   return sent;
 }
 
+/** The turn's last assistant answer in full, with its message id; null when the turn wrote none. */
+export async function lastTurnAnswer(sessionId: string): Promise<{ id: string | null; text: string } | null> {
+  const session = await loadSession(sessionId);
+  if (!session) return null;
+  const transcript = await buildSessionTranscriptDigest({ session, limit: 24, maxChars: 40_000 });
+  const messages = transcript.messages;
+  const lastUser = messages.map((m) => m.role).lastIndexOf('user');
+  const answer = messages.slice(lastUser + 1).filter((m) => m.role === 'assistant' && m.text.trim()).at(-1);
+  return answer ? { id: answer.id, text: answer.text.trim() } : null;
+}
+
 /** A turn of `sessionId` closed (`settleTurnEnd`): stamp its excerpt, then send the idle notices it owes. Never throws. */
 export async function onPeerTurnEnded(sessionId: string, outcome: 'idle' | 'error', errorName?: string | null): Promise<void> {
+  // A space thread's answer as its next message file (`memory/thread-files.ts`), off this path.
+  if (outcome === 'idle') {
+    void import('../../memory/thread-files')
+      .then(({ recordThreadReply }) => recordThreadReply(sessionId, lastTurnAnswer))
+      .catch(() => undefined);
+  }
   try {
     const excerpt = outcome === 'idle' ? await recordResultExcerpt(sessionId) : null;
     await firePeerIdleNotices({ sessionId, outcome, errorName, excerpt });

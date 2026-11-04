@@ -2142,7 +2142,7 @@ describe('pi subagents extension', () => {
     }
   })
 
-  test('an intake (kortix.front) has only agent, send_message and task_stop; it routes each task to a roster agent or My Kortix, as a named background worker, not narrowed', async () => {
+  test('a router (kortix.front) has only agent, send_message and task_stop; it routes each task to a roster agent or My Kortix, as a named background worker, not narrowed', async () => {
     const creates: Array<Record<string, any>> = []
     let detailReads = 0
     const server = Bun.serve({
@@ -2173,7 +2173,7 @@ describe('pi subagents extension', () => {
     try {
       const r = await boot({
         script: [
-          // A roster agent, in the same session, in the foreground: the intake keeps the agent and overrides the rest.
+          // A roster agent, in the same session, in the foreground: the router keeps the agent and overrides the rest.
           { tool: 'agent', args: { description: 'Find flights', prompt: 'find flights to Lisbon', subagent_type: 'researcher', name: 'flights', session: 'same', run_in_background: false } },
           // No agent named and no name: My Kortix, named after the description.
           { tool: 'agent', args: { description: 'Draft the invite', prompt: 'draft the invite' } },
@@ -2198,7 +2198,7 @@ describe('pi subagents extension', () => {
       expect(routed.metadata).toMatchObject({ notify_parent: true, agent_handle: 'flights' })
       expect(routed.runtime_context['kortix.front.thread']).toBe(true)
       expect(routed.runtime_context['kortix.agent.handle']).toBe('flights')
-      // The worker is not narrowed to the intake's three tools.
+      // The worker is not narrowed to the router's three tools.
       expect(routed.runtime_context['kortix.subagent.tools']).toBeUndefined()
       expect(fallback.agent_name).toBe('mykortix')
       expect(fallback.metadata).toMatchObject({ notify_parent: true, agent_handle: 'draft-the-invite' })
@@ -2210,12 +2210,64 @@ describe('pi subagents extension', () => {
       // The roster is read once (boot warm-up and first turn share the read) and is cached across the turn.
       expect(detailReads).toBe(1)
       const systems = gateway.sent.slice(sentBefore).map(systemSent)
-      // The intake's own prompt replaces the agent's: it only talks and routes.
+      // The router's own prompt replaces the agent's: it only talks and routes.
       expect(systems.every((system) => system.startsWith('You are Kortix, talking with a person in a chat thread.'))).toBe(true)
       expect(systems[0]).toContain('## Agents you can hand work to\n- mykortix (the default)')
       expect(systems[0]).toContain('- researcher: Finds facts on the web and cites sources.')
       expect(systems[0]).not.toContain('retired')
       expect(systems[0]).not.toContain('cron-bot')
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test("a router's prompt body thread_files end every worker prompt with the Context files block, kept across a notice turn", async () => {
+    const creates: Array<Record<string, any>> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url)
+        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+          creates.push((await req.json()) as Record<string, any>)
+          return Response.json({ session_id: `files-worker-${creates.length}` }, { status: 201 })
+        }
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([])
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/detail') return Response.json({ config: { agents: [] } })
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const r = await boot({
+        script: [
+          { tool: 'agent', args: { description: 'Write a poem', prompt: 'Write the poem the person asked for.', name: 'poem' } },
+          { text: 'On it.' },
+          { tool: 'agent', args: { description: 'Shorter', prompt: 'Make it shorter.', name: 'poem-short' } },
+          { text: 'Sure.' },
+        ],
+        env: {
+          KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1`,
+          KORTIX_SESSION_CONTEXT: JSON.stringify({ 'kortix.front': true }),
+          KORTIX_META_AGENT: '1',
+        },
+      })
+      const root = r.service.runtime()!.rootId
+      const files = { folder: '/drives/general/threads/a-poem-1a2b3c4d', context: '/drives/general/context.md', message: '/drives/general/threads/a-poem-1a2b3c4d/messages/0001-ana.md' }
+      const sent = await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'a poem about rain' }], thread_files: files }) })
+      expect(sent.status).toBe(204)
+      await waitFor(() => !r.service.runtime()!.busy())
+      expect(creates).toHaveLength(1)
+      const prompt = creates[0]!.initial_prompt as string
+      expect(prompt.startsWith('Write the poem the person asked for.\n\n## Context files\n')).toBe(true)
+      expect(prompt).toContain("- The person's latest message: /drives/general/threads/a-poem-1a2b3c4d/messages/0001-ana.md")
+      expect(prompt).toContain('- Your work folder: /drives/general/threads/a-poem-1a2b3c4d/work/poem/ (keep your files here; write your final report to /drives/general/threads/a-poem-1a2b3c4d/work/poem/result.md)')
+      // A notice turn carries the folder but no message: the newest message file stays.
+      const notice = { folder: files.folder, context: files.context }
+      const again = await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'worker done', synthetic: true }], thread_files: notice }) })
+      expect(again.status).toBe(204)
+      await waitFor(() => !r.service.runtime()!.busy())
+      expect(creates).toHaveLength(2)
+      expect(creates[1]!.initial_prompt).toContain("- The person's latest message: /drives/general/threads/a-poem-1a2b3c4d/messages/0001-ana.md")
+      expect(creates[1]!.initial_prompt).toContain('/work/poem-short/result.md')
     } finally {
       server.stop(true)
     }
