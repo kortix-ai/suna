@@ -5,7 +5,7 @@ import { Button } from '@kortix/ui/button';
 import { CountBadge } from '@kortix/ui/count-badge';
 import Hint from '@kortix/ui/hint';
 import { ProgressRing } from '@kortix/ui/progress-ring';
-import { SidebarToggle } from '@kortix/ui/workspace';
+import { SessionStatusMark, SidebarToggle } from '@kortix/ui/workspace';
 import {
   ArrowUpIcon,
   CaretDownIcon,
@@ -23,8 +23,6 @@ import {
 } from '@phosphor-icons/react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CustomizeGlyph } from './customize-glyph';
-
-import { SessionStatusMark } from './session-status-mark';
 
 /**
  * The Kortix session screen, rebuilt as live DOM for the landing hero (Paper
