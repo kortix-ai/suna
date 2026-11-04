@@ -1697,16 +1697,13 @@ function TurnToolBlocks(
     model, segments, conversationDensity, fold, durationMs,
   } = props;
   const { working, hasSteps, hasReasoning } = model;
-  // KRTX-2113: a settled turn folds its work behind one "Worked for" row and
-  // keeps the `show` deliverables and the final text below it. Segments that
-  // render nothing (a hidden tool, a plumbing-only burst) are dropped first,
-  // so they can neither be the only "work" nor stand between the final text
-  // and the end of the turn.
-  // Settled turns only: while working the split is null anyway, and the
-  // filter re-runs the burst steps on every SSE frame.
+  // A turn seen live keeps its parent tree at completion, including disclosure state.
+  // Previously completed history still starts behind the compact Worked row.
+  const [seenWorking, setSeenWorking] = useState(working);
+  if (working && !seenWorking) setSeenWorking(true);
   const split = useMemo(
-    () => (fold && !working ? splitSessionLogTurnWork(segments.filter(segmentRendersSomething), { working }) : null),
-    [fold, segments, working],
+    () => (fold && !working && !seenWorking ? splitSessionLogTurnWork(segments.filter(segmentRendersSomething), { working }) : null),
+    [fold, segments, working, seenWorking],
   );
   // Settled turns only: while the turn runs, the next step has not happened yet.
   const recovered = useMemo(
