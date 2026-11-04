@@ -8487,7 +8487,7 @@ See [Computers](/docs/guide#computers).
 | Conversation | `rewind(messageId)` · `restoreRewind()` | Rewind to a message · undo the rewind. Needs the `session.rewind` capability; pi does not serve it. |
 | Stored reads | `turn()` | The current turn, read on the server. |
 | Stored reads | `log({ thread?, before_seq?, limit? }?)` | One page of the stored session log, or `null` when the session has none. It answers while the sandbox is stopped. |
-| Stored reads | `liveLog({ thread?, before_seq?, limit? }?)` | One page of a thread of the sandbox's own session log, ahead of `log()` while a turn runs. `null` on a sandbox without the session-log actions. |
+| Stored reads | `liveLog({ thread?, before_seq?, limit? }?)` | One page of a thread of the sandbox's own session log, ahead of `log()` while a turn runs. |
 | Stored reads | `messageAuthors()` · `modelUsage()` · `usage()` · `cost()` · `audit(limit?, options?)` | Who wrote each message · which model answered each turn and what Kortix billed · what the session and every session it started cost, in USD · the session's usage record · the session's audit actions. |
 | Model and agent | `setModel({ providerID, modelID } \| undefined)` · `setAgent(agent)` | The model or agent of every later `send` on this handle. `send(text, { model, agent })` overrides it for one prompt. |
 | Model and agent | `changeModel('provider/model')` | Persists the model without restarting pi. |

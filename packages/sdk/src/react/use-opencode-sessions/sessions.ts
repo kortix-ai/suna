@@ -16,17 +16,16 @@ import { NoCompactionModelError } from './no-compaction-model-error';
 import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-controller';
 import { useMemo } from 'react';
 import { useSyncStore } from '../../browser/stores/sync-store';
-import { logSessionRows, settledFromLog, useRuntimeServesLog } from './log-sessions';
+import { logSessionRows, settledFromLog } from './log-sessions';
 
 // ============================================================================
 // Session Hooks
 // ============================================================================
 
-/** The held session logs' threads on a box that serves its log; null on any other box. */
+/** The held session logs' threads (`runtime.log.v1`, every box past the runtime floor). */
 function useLogSessionRows(): Session[] | null {
-  const servesLog = useRuntimeServesLog();
   const logs = useSyncStore((state) => state.sessionLogs);
-  return useMemo(() => (servesLog ? logSessionRows(logs) : null), [servesLog, logs]);
+  return useMemo(() => logSessionRows(logs), [logs]);
 }
 
 /** The runtime's sessions. A box that serves its log answers them from the session log: no box read. */
@@ -303,55 +302,9 @@ export function useSummarizeRuntimeSession() {
       providerID?: string;
       modelID?: string;
     }) => {
-      // A box with the session-log actions compacts with the model it runs.
+      // The box compacts with the model it runs (`runtime.actions.v1`).
       const compacted = await activeRuntimeAction('POST', runtimeActionPaths.compact(params.sessionId));
-      if (compacted) {
-        if (!compacted.ok) throw await runtimeActionError(compacted, 'Compacting the session failed');
-        return params.sessionId;
-      }
-      const client = getClient();
-
-      let { providerID, modelID } = params;
-
-      // The model of the session's last assistant message. pi summarizes with
-      // the model it runs; the request still names one for the wire.
-      if (!providerID || !modelID) {
-        try {
-          const msgs = await client.session.messages({
-            sessionID: params.sessionId,
-            limit: SESSION_SYNC_PAGE_SIZE,
-          });
-          const allMsgs = (msgs.data ?? []) as Array<{
-            info: { role: string; providerID?: string; modelID?: string };
-          }>;
-          for (let i = allMsgs.length - 1; i >= 0; i--) {
-            const m = allMsgs[i].info;
-            if (m.role === 'assistant' && m.providerID && m.modelID) {
-              providerID = providerID || m.providerID;
-              modelID = modelID || m.modelID;
-              break;
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      if (!providerID || !modelID) {
-        // Expected user-facing config state (no model configured anywhere):
-        // the host toast already tells the user to configure a model. Throw a
-        // sentinel-marked class so the Sentry telemetry gate can drop it
-        // across every capture path instead of paging Better Stack for an
-        // expected configuration outcome. See `NoCompactionModelError`.
-        throw new NoCompactionModelError();
-      }
-
-      const result = await client.session.summarize({
-        sessionID: params.sessionId,
-        providerID,
-        modelID,
-      });
-      unwrap(result);
+      if (!compacted.ok) throw await runtimeActionError(compacted, 'Compacting the session failed');
       return params.sessionId;
     },
     onMutate: ({ sessionId }) => {
