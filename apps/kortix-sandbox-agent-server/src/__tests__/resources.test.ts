@@ -417,6 +417,97 @@ describe('memory guard — process shedding (prefer shedding over losing the VM)
     expect(killed).toEqual([]) // nothing safe to shed — abortTurn is the only lever
   })
 
+  test('never sheds a harness runtime binary (the claude process a turn runs in), even as the largest child', async () => {
+    // prod 2026-11-04: the daemon held 3.1 GB, the guard shed the 284 MB `claude`
+    // process as a "runaway", and the turn ended "terminated by signal SIGKILL".
+    let usedPct = 50
+    const killed: number[] = []
+    const aborts: string[] = []
+    const monitor = startResourceMonitor({
+      intervalMs: 60_000,
+      runtimePid: () => 2423,
+      runtimeProcessNames: ['claude'],
+      snapshot: async () =>
+        snapshot({
+          memory: { totalMb: 3917, availableMb: 125, usedPct, swapTotalMb: 0, swapFreeMb: 0 },
+          topProcesses: [
+            { pid: 2423, name: 'bun', rssMb: 3107 },
+            { pid: 1554, name: 'claude', rssMb: 284 },
+            { pid: 283, name: 'other', rssMb: 71 },
+          ],
+        }),
+      guard: {
+        guardPct: 92,
+        elevatedPct: 80,
+        fastIntervalMs: 60_000,
+        turnInFlight: async () => true,
+        abortTurn: async (reason) => {
+          aborts.push(reason)
+          return true
+        },
+        killProcess: (pid) => {
+          killed.push(pid)
+          return true
+        },
+      },
+    })
+    stop = monitor.stop
+    await Bun.sleep(20)
+    usedPct = 97
+    await monitor.tick('t')
+    expect(killed).toEqual([283])
+    expect(aborts).toHaveLength(0)
+  })
+
+  test('recycles idle model processes before killing anything, once per elevated episode', async () => {
+    let usedPct = 50
+    const killed: number[] = []
+    const aborts: string[] = []
+    let relieveCalls = 0
+    const monitor = startResourceMonitor({
+      intervalMs: 60_000,
+      runtimePid: () => 2423,
+      snapshot: async () =>
+        snapshot({
+          memory: { totalMb: 3917, availableMb: 125, usedPct, swapTotalMb: 0, swapFreeMb: 0 },
+          topProcesses: [{ pid: 2423, name: 'bun', rssMb: 3107 }, { pid: 283, name: 'other', rssMb: 71 }],
+        }),
+      guard: {
+        guardPct: 92,
+        elevatedPct: 80,
+        fastIntervalMs: 60_000,
+        turnInFlight: async () => true,
+        relieve: async () => {
+          relieveCalls++
+          return 1
+        },
+        abortTurn: async (reason) => {
+          aborts.push(reason)
+          return true
+        },
+        killProcess: (pid) => {
+          killed.push(pid)
+          return true
+        },
+      },
+    })
+    stop = monitor.stop
+    await Bun.sleep(20)
+    usedPct = 97
+    await monitor.tick('t')
+    expect(relieveCalls).toBe(1)
+    expect(killed).toEqual([]) // the recycle came first; the next tick judges whether it helped
+    await monitor.tick('t')
+    expect(relieveCalls).toBe(1) // once per episode: still high, so shedding takes over
+    expect(killed).toEqual([283])
+    usedPct = 50
+    await monitor.tick('t') // the episode ends
+    usedPct = 97
+    await monitor.tick('t')
+    expect(relieveCalls).toBe(2)
+    expect(aborts).toHaveLength(0)
+  })
+
   test('gives up shedding after maxShedAttemptsPerEpisode and falls back to abortTurn', async () => {
     let usedPct = 50
     let pid = 9000
