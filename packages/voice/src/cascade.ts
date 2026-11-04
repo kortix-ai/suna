@@ -669,8 +669,10 @@ export const cascade: Provider = (o, h) => {
   // owner's tools, files and access: no turn, no speculative start, no nudge, no deeper look, no words steered into
   // its work. A turn is a guest's when none of its speakers is trusted.
   const trustedNames = o.trusted && new Set(o.trusted.map((n) => n.trim().toLowerCase()).filter(Boolean))
-  // Out of a room (a one-to-one web call: no names come with its audio), a trusted list makes every turn a guest's.
-  const guest = (text?: string) => !!trustedNames && !!text && !(inRoom() && [...text.matchAll(/\[([^\]]{1,48})\]/g)].some((m) => trustedNames.has(m[1]!.trim().toLowerCase())))
+  // Out of a room (a one-to-one web call: no names come with its audio), a trusted list makes every turn a guest's,
+  // a hidden turn of ours too: nothing in it names a trusted person, so with nobody trusted no turn reaches the agent.
+  // In a room a turn is a guest's when its words name only untrusted speakers; a hidden one there is the meeting's own.
+  const guest = (text?: string) => !!trustedNames && (!inRoom() || (!!text && ![...text.matchAll(/\[([^\]]{1,48})\]/g)].some((m) => trustedNames.has(m[1]!.trim().toLowerCase()))))
   // Room mode (src/room.ts): one participant among several; every line kept with who said it, silence the default.
   // Research (2026-11-02: Liu CHI'25 "Inner Thoughts", Johnson CHI'26, Chen CHI'25, Sacks et al. 1974): unprompted only
   // after a real pause (2-3 s), never two in a row without a person between, minutes apart, and after two that drew no
@@ -1487,7 +1489,7 @@ export const cascade: Provider = (o, h) => {
       else log('listening: no turn of ours', hidden ?? '')
       return
     }
-    const t: Turn = (current = { guest: !!user && guest(user), ac: new AbortController(), sp: undefined!, audible: false, spoke: 0, informed: 0, text: '', user, streaming: true, tools: 0, hidden: !user && !!hidden, asked: user, started: performance.now(), steps: [] })
+    const t: Turn = (current = { guest: guest(user), ac: new AbortController(), sp: undefined!, audible: false, spoke: 0, informed: 0, text: '', user, streaming: true, tools: 0, hidden: !user && !!hidden, asked: user, started: performance.now(), steps: [] })
     t.clock = { end: user ? endAt : performance.now(), ...(user && stamps), ask: performance.now() }
     t.sp = speaker(t, user && is(LENGTHY, user) ? 400 : inRoom() ? ROOM_BUDGET : BUDGET)
     // While a lookup runs, the acknowledgment says so ("Let me look that up."): "Okay." then silence then
