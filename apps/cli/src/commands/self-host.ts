@@ -651,13 +651,18 @@ function selfHostDoctor(flags: GlobalFlags): number {
     // Kortix Capture devices upload to the bundled store. A compose file
     // rendered by an older CLI has none, so every device gets 503
     // capture_credentials_unavailable until `update` re-renders it.
-    const hasStore = readFileSync(composePath(flags.instance), 'utf8').includes('\n  capture-store:\n');
+    // An instance with KORTIX_CAPTURE_STORE=external renders no bundled store
+    // by design: its devices upload to the operator's own S3-compatible store.
+    const externalStore = loadEnv(flags.instance)?.KORTIX_CAPTURE_STORE?.trim() === 'external';
+    const hasStore = externalStore || readFileSync(composePath(flags.instance), 'utf8').includes('\n  capture-store:\n');
     checks.push({
       name: 'capture-store',
       ok: hasStore,
-      detail: hasStore
-        ? 'bundled Kortix Capture store present'
-        : 'this instance has no Kortix Capture store, so Capture devices cannot sync — run: kortix self-host update',
+      detail: externalStore
+        ? 'external Kortix Capture store (KORTIX_CAPTURE_STORE=external)'
+        : hasStore
+          ? 'bundled Kortix Capture store present'
+          : 'this instance has no Kortix Capture store, so Capture devices cannot sync — run: kortix self-host update',
     });
   }
   if (existsSync(envPath(flags.instance))) {
@@ -842,8 +847,16 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   // API without the Kortix Capture store wiring (every device gets 503) until
   // its container is recreated. Without `--force-recreate`, compose recreates
   // it only when its rendered configuration differs: a no-op on every later run.
-  const converge = compose(flags.instance, ['up', '-d', '--no-deps', 'kortix-api']);
+  // Behind Caddy the API runs 2 replicas, and `up` would recreate both at once:
+  // a new version that adds an API environment key took the API down for 24 s
+  // (2026-11-04, a self-host update to v0.14.19). A drifted API rolls start-first
+  // through the updater instead, like `env set` does.
+  const apiDrifted = Boolean(env.KORTIX_DOMAIN?.trim()) && serviceConfigDrifted(flags.instance, 'kortix-api');
+  const converge = apiDrifted
+    ? compose(flags.instance, ['run', '--rm', '--no-deps', 'kortix-updater', 'roll', 'kortix-api'])
+    : compose(flags.instance, ['up', '-d', '--no-deps', 'kortix-api']);
   if (converge !== 0) return converge;
+  if (apiDrifted) process.stdout.write(`${C.dim}  rolled: kortix-api (configuration changed)${C.reset}\n`);
 
   // A version that changes the Caddyfile (a new route, such as Capture's
   // `@capture` or the project snapshots' `@snapshots`) reaches the running
@@ -2889,6 +2902,33 @@ async function ensurePort(
     env[urlKey] = url.toString().replace(/\/$/, '');
   }
   changes.push(`${portKey} ${current}->${next}`);
+}
+
+/**
+ * Whether a running container of `service` was created from another rendered
+ * configuration than the compose file has now. Compose labels each container
+ * with `com.docker.compose.config-hash`, and `compose config --hash` prints the
+ * hash the current file renders. No running container, or a hash Docker does
+ * not report, counts as no drift: `up` then creates what is missing.
+ */
+function serviceConfigDrifted(instance: string, service: string): boolean {
+  const options = { cwd: instanceDir(instance), encoding: 'utf8' as const, timeout: 30_000 };
+  const rendered = spawnSync(
+    'docker',
+    ['compose', '--project-name', composeProject(instance), '--env-file', envPath(instance), '-f', composePath(instance), 'config', '--hash', service],
+    options,
+  );
+  const want = rendered.stdout?.trim().split(/\s+/)[1];
+  const ids = (
+    spawnSync(
+      'docker',
+      ['ps', '--quiet', '--filter', `label=com.docker.compose.project=${composeProject(instance)}`, '--filter', `label=com.docker.compose.service=${service}`],
+      options,
+    ).stdout ?? ''
+  ).split('\n').map((id) => id.trim()).filter(Boolean);
+  if (!want || ids.length === 0) return false;
+  const running = spawnSync('docker', ['inspect', '--format', '{{index .Config.Labels "com.docker.compose.config-hash"}}', ...ids], options);
+  return (running.stdout ?? '').split('\n').map((hash) => hash.trim()).filter(Boolean).some((hash) => hash !== want);
 }
 
 function composeHasRunningServices(instance: string): boolean {

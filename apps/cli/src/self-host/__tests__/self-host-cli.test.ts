@@ -161,6 +161,11 @@ esac
     expect((await run(['init', '--yes'])).code).toBe(0);
     expect(readEnv().KORTIX_CAPTURE_STORE).toBe('external');
     expect(readCompose().services['capture-store']).toBeUndefined();
+
+    // doctor does not report the missing bundled store as a fault.
+    const doctor = await run(['doctor', '--json']);
+    const store = (JSON.parse(doctor.stdout).checks as { name: string; ok: boolean; detail: string }[]).find((c) => c.name === 'capture-store');
+    expect(store).toEqual({ name: 'capture-store', ok: true, detail: 'external Kortix Capture store (KORTIX_CAPTURE_STORE=external)' });
   });
 
   test('init defaults to the shared auth+sandbox defaults and the stable channel', async () => {
@@ -830,6 +835,8 @@ esac
 echo "$*" >> '${log}'
 case " $* " in
   *" ps --quiet "*) echo fixture-container ;;
+  *" config --hash "*) echo "kortix-api \${FAKE_RENDERED_HASH:-same}" ;;
+  *" inspect --format "*) echo "\${FAKE_RUNNING_HASH:-same}" ;;
 esac
 exit 0
 `, { mode: 0o755 });
@@ -885,6 +892,23 @@ exit 0
     // A flag that changes nothing recreates nothing.
     expect((await run(['update', '--disable-signup'], docker.env)).code).toBe(0);
     expect(docker.recreated()).toEqual(['supabase-auth']);
+  }, 60_000);
+
+  // A new version can add an API environment key. `up` would then recreate
+  // both API replicas at once (24 s without an API on 2026-11-04); the update
+  // rolls them start-first instead, and leaves an unchanged API alone.
+  test('update rolls a drifted API start-first and leaves an unchanged one to compose', async () => {
+    const docker = runningStackDocker();
+    expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
+
+    expect((await run(['update'], docker.env)).code).toBe(0);
+    expect(docker.rolled()).toEqual([]);
+    expect(docker.calls()).toContain('up -d --no-deps kortix-api');
+
+    const drifted = await run(['update'], { ...docker.env, FAKE_RENDERED_HASH: 'new', FAKE_RUNNING_HASH: 'old' });
+    expect(drifted.code).toBe(0);
+    expect(docker.rolled()).toEqual(['kortix-api']);
+    expect(drifted.stdout).toContain('rolled: kortix-api (configuration changed)');
   }, 60_000);
 
   // Compose never recreates Caddy for a changed bind-mounted Caddyfile, so a
