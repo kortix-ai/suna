@@ -9,9 +9,8 @@
  * opened stays open, a `show` iframe does not reload, and an opened row
  * reads in call order, the work between the cards and the text it led to.
  *
- * A full-width hairline under the row marks the boundary between the work
- * and the answer, so the row does not read as one more burst line
- * ("Ran 3 commands").
+ * While the row is open, a full-width hairline under it marks where the
+ * work starts. A closed row has no line: it is one quiet line over the answer.
  */
 
 import { CaretRightIcon } from '@phosphor-icons/react';
@@ -46,7 +45,7 @@ export function TurnWorkAccordion({
   contentId?: string;
 }) {
   return (
-    <div className="border-border/60 flex items-center border-b pb-2">
+    <div className={cn('flex items-center', open && 'border-border/60 border-b pb-2')}>
       <button
         type="button"
         aria-expanded={open}

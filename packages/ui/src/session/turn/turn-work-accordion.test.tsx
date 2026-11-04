@@ -16,6 +16,7 @@ describe('TurnWorkAccordion', () => {
     expect(html).toContain('Worked for 2m 14s');
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain('aria-controls');
+    expect(html).not.toContain('border-b');
   });
 
   test('an open row names the work it controls and turns its caret', () => {
@@ -23,6 +24,7 @@ describe('TurnWorkAccordion', () => {
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain('aria-controls="work"');
     expect(html).toContain('rotate-90');
+    expect(html).toContain('border-b');
   });
 
   test('an unknown or sub-second duration reads "Worked"', () => {

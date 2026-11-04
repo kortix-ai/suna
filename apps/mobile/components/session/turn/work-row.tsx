@@ -3,9 +3,8 @@
  *
  * Same shape as web `packages/ui/src/session/turn/turn-work-accordion.tsx`:
  * the label (`text-sm text-muted-foreground/70`), a trailing caret
- * (`size-3.5 text-muted-foreground/40`), and a full-width hairline under the
- * row that marks the boundary between the work and the answer, so the row
- * does not read as one more burst line.
+ * (`size-3.5 text-muted-foreground/40`). While the row is open, a full-width
+ * hairline under it marks where the work starts; a closed row has no line.
  *
  * The row owns only the toggle. `SessionTurn` keeps every segment in one keyed
  * list and hides the work in place while the row is closed, so an opened row
@@ -41,9 +40,11 @@ export function WorkRow({
         flexDirection: 'row',
         alignItems: 'center',
         gap: TURN_SPACE.gap2,
-        paddingBottom: TURN_SPACE.gap2,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: palette.border,
+        ...(open && {
+          paddingBottom: TURN_SPACE.gap2,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: palette.border,
+        }),
       }}
     >
       <Text variant="muted" numberOfLines={1} style={[TURN_TYPE.sm, TABULAR, { flexShrink: 1, color: palette.muted70 }]}>
