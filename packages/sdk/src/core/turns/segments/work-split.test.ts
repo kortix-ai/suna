@@ -34,6 +34,18 @@ describe('splitTurnWork', () => {
     expect(split?.final.map((x) => (x.kind === 'text' ? x.part.id : null))).toEqual(['5']);
   });
 
+  test('a generative-UI fence nested in a list item or a blockquote stays out of the fold', () => {
+    const bodies = [
+      'Next steps:\n\n1. ```openui\n   root = Card([])\n   ```',
+      'Next steps:\n\n- ~~~openui-v2\n  root = Card([])\n  ~~~',
+      'Summary:\n\n> ```openui\n> root = Card([])\n> ```',
+    ];
+    for (const body of bodies) {
+      const s = segments([text('1', body), tool('2', 'bash'), text('3', 'Done.')]);
+      expect(splitTurnWork(s, { working: false })?.hoisted.map((x) => (x.kind === 'text' ? x.part.id : null))).toEqual(['1']);
+    }
+  });
+
   test('interim text carrying a setup link stays out of the fold', () => {
     const bodies = [
       'Add the key here: [Add key](https://kortix.com/secret-intake/ksl_abc)',

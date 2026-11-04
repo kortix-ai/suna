@@ -37,8 +37,13 @@ function isDeliverableSegment(segment: ShowGroupedSegment): boolean {
   return segment.kind === 'standalone' && isNoGroupActivityTool(segment.part.tool);
 }
 
-/** A fence line that opens a generative-UI block: ```openui, ~~~openui-v2, … */
-const GENUI_FENCE = /^[ \t]*(?:`{3,}|~{3,})[ \t]*openui/im;
+/**
+ * A fence line that opens a generative-UI block (```openui, ~~~openui-v2, …) at
+ * any container depth: top level, in a blockquote, or in a list item. The
+ * renderer opens a block at all three (`genui/fence.ts`, `FENCE_START` and
+ * `LIST_FENCE`).
+ */
+const GENUI_FENCE = /^[ \t>]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?(?:`{3,}|~{3,})[ \t]*openui/im;
 /**
  * A setup route the renderer turns into a card: as a link target, inline code,
  * or a bare URL (an autolink). A relative path is always ours. An absolute URL

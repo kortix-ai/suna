@@ -9,8 +9,9 @@
  * opened stays open, a `show` iframe does not reload, and an opened row
  * reads in call order, the work between the cards and the text it led to.
  *
- * The trailing rule marks the row as the boundary between the work and the
- * answer, so it does not read as one more burst line ("Ran 3 commands").
+ * A full-width hairline under the row marks the boundary between the work
+ * and the answer, so the row does not read as one more burst line
+ * ("Ran 3 commands").
  */
 
 import { CaretRightIcon } from '@phosphor-icons/react';
@@ -45,7 +46,7 @@ export function TurnWorkAccordion({
   contentId?: string;
 }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="border-border/60 flex items-center border-b pb-2">
       <button
         type="button"
         aria-expanded={open}
@@ -65,7 +66,6 @@ export function TurnWorkAccordion({
           )}
         />
       </button>
-      <div aria-hidden className="bg-border/60 h-px min-w-6 flex-1" />
     </div>
   );
 }
