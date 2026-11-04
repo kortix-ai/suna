@@ -9,6 +9,7 @@ import {
   matchesStatusFilters,
   sessionCanBeStopped,
   sessionDisplayStatus,
+  type SessionDisplayStatus,
   sessionIsShared,
   sessionSource,
 } from '../../session/actions/session-label';
@@ -130,6 +131,7 @@ import {
 } from '@kortix/sdk/react';
 import {
   ArchiveIcon,
+  ArrowsSplitIcon,
   CaretRightIcon,
   CheckIcon,
   DotsThreeIcon,
@@ -138,6 +140,7 @@ import {
   FolderSimplePlusIcon,
   PushPinIcon,
   PushPinSlashIcon,
+  RobotIcon,
   FolderSimpleIcon as MetaFolder,
   GitForkIcon,
   PencilSimpleIcon,
@@ -1434,18 +1437,25 @@ function ProjectSessionRow({
       className="focus-visible:ring-kortix-base flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md py-1 focus-visible:ring-[0.6px] focus-visible:outline-none"
     >
       <div className="size-4 shrink-0">
-        {/* Every session row leads with its status, a spawned child too: the
-            connector line already says it is a child, a second glyph saying
-            the same only crowded the row. */}
-        <SessionStatusDot
-          session={session}
-          reviewCount={reviewCount}
-          waitingOn={waitingOn}
-          changeRequests={changeRequests}
-        />
+        {/* A spawned child leads with what it is (a goal session or a
+            spawned session) and trades that mark for its status only while
+            it is live. A top-level row always leads with its status. */}
+        {spawned && !isLiveStatus(displayStatus) ? (
+          <ChildSessionMark projectId={session.project_id} sessionId={session.session_id} />
+        ) : (
+          <SessionStatusDot
+            session={session}
+            reviewCount={reviewCount}
+            waitingOn={waitingOn}
+            changeRequests={changeRequests}
+          />
+        )}
       </div>
 
-      <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
+      {/* A resting spawned child already leads with its goal mark. */}
+      {!(spawned && !isLiveStatus(displayStatus)) && (
+        <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
+      )}
 
       <span className="min-w-0 flex-1">
         <SessionTitle title={displayTitle} className={cn('min-w-0', isActive && 'font-medium')} />
@@ -1837,12 +1847,10 @@ function ProjectSubsessionRow({
             isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
           )}
         >
-          {/* An empty slot, no glyph: the connector elbow already marks the
-              row as a sub-agent, and a runtime sub-session carries no agent
-              identity to draw a pixel mark from (pi titles it with the task
-              alone). The slot keeps its title on the same column as a spawned
-              sibling's, which leads with a status mark. */}
-          <span aria-hidden className="size-4 shrink-0" />
+          {/* The sub-agent mark, the same glyph its hover card names. A
+              runtime sub-session carries no status and no agent identity, so
+              the mark never changes. */}
+          <RobotIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
           <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{title}</span>
           {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
         </div>
@@ -1864,6 +1872,19 @@ function SessionGoalMark({ projectId, sessionId }: { projectId: string; sessionI
       </span>
     </Hint>
   );
+}
+
+/** A child's status shows in place of its type mark only while it runs or waits on someone. */
+function isLiveStatus(status: SessionDisplayStatus): boolean {
+  return status === 'running' || status === 'starting' || status === 'needs-you';
+}
+
+/** What a spawned child is: a target for a goal's worker or verifier, else the spawned-session mark. */
+function ChildSessionMark({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const flag = useFeatureFlag(projectId, 'goals');
+  const { role } = useSessionGoal(flag.enabled ? projectId : null, sessionId);
+  const Icon = role ? TargetIcon : ArrowsSplitIcon;
+  return <Icon aria-hidden className="text-muted-foreground size-4 shrink-0" />;
 }
 
 function SessionStatusDot({
