@@ -39,7 +39,7 @@ import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import { SUBAGENT_SPEC_REQUIRED, TASK_STOP_TOOL, type KortixHost, type SpawnSessionInput, type SpawnSessionResult } from './extensions/subagents'
-import { FRONT_PROMPT, FRONT_TOOLS, FRONT_WORKER_AGENT, FRONT_WORKER_NAME, FRONT_WORKER_NOTE } from './front'
+import { FRONT_PROMPT, FRONT_TOOLS, FRONT_WORKER_AGENT, FRONT_WORKER_NOTE } from './front'
 import { cloudChildReport, cloudChildToolDetails, cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import type { ControlPlane } from './extensions/control-plane'
 import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
@@ -1843,7 +1843,7 @@ export class PiRuntime {
       codemodeOnly: () => this.codemodeMode === 'only',
       // My Kortix's box (the coordinator): its config declares only itself, and every hand-off names a project agent.
       anyProjectAgent: () => this.env.KORTIX_META_AGENT === '1',
-      frontWorker: () => (this.subagentContext.front ? { agent: FRONT_WORKER_AGENT, name: FRONT_WORKER_NAME, note: FRONT_WORKER_NOTE } : null),
+      frontWorker: () => (this.subagentContext.front ? { agent: FRONT_WORKER_AGENT } : null),
       currentAgentName: () => this.agentName,
       toolNames: () => this.ownToolNames(),
       spawnSession: (input) => this.resolveSpawn(input),
@@ -2444,6 +2444,7 @@ export class PiRuntime {
       ].join('\n'),
     )
     parts.push(ACT_BEFORE_YOU_ASK)
+    if (!child && this.subagentContext.frontThread) parts.push(FRONT_WORKER_NOTE)
     return parts.join('\n\n')
   }
 

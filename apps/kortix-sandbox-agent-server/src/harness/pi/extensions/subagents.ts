@@ -60,6 +60,7 @@
  * A `same` child gets no `agent`/`task` (no nesting) and no `question` (nobody answers a
  * child). A `separate` child runs its own pi, so it may delegate again, up to the depth cap.
  */
+import { FRONT_THREAD_CONTEXT_KEY } from '../cloud-subagent'
 import { frontThreadName } from '../front'
 import type { ExtensionAPI, InlineExtension } from '@earendil-works/pi-coding-agent'
 import type { CompiledAgent } from '@kortix/api-contract/runtime-relay'
@@ -125,7 +126,7 @@ export interface KortixHost {
    * A front chat (flag `infinichat`, harness/pi/front.ts): every call goes to
    * its one worker, whatever the model passed. Returns the worker's agent and name.
    */
-  frontWorker?(): { agent: string; name: string; note: string } | null
+  frontWorker?(): { agent: string } | null
   /** The agent this session runs as (its resolved name). */
   currentAgentName?(): string
   /** Every tool this session's agent may use: a child's `tools` must name only these. */
@@ -462,7 +463,7 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
         // A front chat's call always starts or continues its one worker, in the background.
         const front = host.frontWorker?.()
         const params: SubagentParams = front
-          ? { description: input.description, prompt: `${input.prompt}\n\n${front.note}`, subagent_type: front.agent, name: frontThreadName(input.name, input.description), session: 'separate', run_in_background: true }
+          ? { description: input.description, prompt: input.prompt, subagent_type: front.agent, name: frontThreadName(input.name, input.description), session: 'separate', run_in_background: true }
           : input
         const spawn = resolveSpawn(params, host)
         const shape = spawnShape(params, host)
@@ -471,6 +472,8 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
           ...(params.session ? { session: params.session } : {}),
           ...shape,
           ...spawn,
+          // A front chat's thread knows it is one: its runtime adds FRONT_WORKER_NOTE to its system prompt.
+          ...(front ? { runtimeContext: { [FRONT_THREAD_CONTEXT_KEY]: true } } : {}),
           prompt: params.prompt,
           signal,
           // The running part carries the child id at once, so the product links the child while it works.
