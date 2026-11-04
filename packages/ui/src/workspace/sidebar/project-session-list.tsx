@@ -86,7 +86,7 @@ import {
   type SessionSection,
 } from './session-grouping';
 import { useSessionOpenIntent } from './session-open-intent';
-import { isReviewOverdue, SessionStatusMark } from './session-status-mark';
+import { GoalStatusMark, isReviewOverdue, SessionStatusMark } from './session-status-mark';
 import { SessionTitle } from './session-title';
 import { useMediaQuery } from '../../internal/hooks';
 import { cn } from '../../internal/lib/utils';
@@ -147,7 +147,6 @@ import {
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
-  TargetIcon,
   SquareIcon as Square,
   TagIcon,
   TrashIcon,
@@ -1178,13 +1177,9 @@ function ChildRunsToggle({
         clearOfMenu && 'mr-6',
       )}
     >
-      {/* The count says how many; the caret says it opens. One mark each,
-          and the caret turns as the tree opens below the row. */}
+      {/* The count alone is the toggle: it says how many and, darker while
+          open, that the tree below the row is its own. No caret. */}
       <CountBadge count={count} className={cn(open && 'bg-foreground/12')} />
-      <CaretRightIcon
-        aria-hidden
-        className={cn('duration-normal size-3 shrink-0 transition-transform ease-out motion-reduce:transition-none', open && 'rotate-90')}
-      />
     </span>
   );
 }
@@ -1497,25 +1492,15 @@ function ProjectSessionRow({
       className="focus-visible:ring-kortix-base flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md py-1 focus-visible:ring-[0.6px] focus-visible:outline-none"
     >
       <div className="size-4 shrink-0">
-        {/* A spawned child leads with what it is (a goal session or a
-            spawned session) and trades that mark for its status only while
-            it is live. A top-level row always leads with its status. */}
-        {spawned && !isLiveStatus(displayStatus) ? (
-          <ChildSessionMark projectId={session.project_id} sessionId={session.session_id} />
-        ) : (
-          <SessionStatusDot
-            session={session}
-            reviewCount={reviewCount}
-            waitingOn={waitingOn}
-            changeRequests={changeRequests}
-          />
-        )}
+        <SessionLeadingMark
+          session={session}
+          spawned={spawned}
+          displayStatus={displayStatus}
+          reviewCount={reviewCount}
+          waitingOn={waitingOn}
+          changeRequests={changeRequests}
+        />
       </div>
-
-      {/* A resting spawned child already leads with its goal mark. */}
-      {!(spawned && !isLiveStatus(displayStatus)) && (
-        <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
-      )}
 
       <span className="min-w-0 flex-1">
         <SessionTitle title={displayTitle} className={cn('min-w-0', isActive && 'font-medium')} />
@@ -1919,32 +1904,70 @@ function ProjectSubsessionRow({
   );
 }
 
-/** A target beside a session that runs a goal (flag `goals`); the hint names the goal. */
-function SessionGoalMark({ projectId, sessionId }: { projectId: string; sessionId: string }) {
-  const tGoals = useTranslations('goals');
-  const flag = useFeatureFlag(projectId, 'goals');
-  const { goal, role } = useSessionGoal(flag.enabled ? projectId : null, sessionId);
-  if (!goal || role !== 'coordinator') return null;
-  return (
-    <Hint side="top" label={`${tGoals('sessionChip')}: ${goal.goal?.objective ?? goal.slug}`}>
-      <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center" data-testid="session-goal-mark">
-        <TargetIcon className="size-3.5" />
-      </span>
-    </Hint>
-  );
-}
-
-/** A child's status shows in place of its type mark only while it runs or waits on someone. */
+/** A child's status shows on its type mark only while it runs or waits on someone. */
 function isLiveStatus(status: SessionDisplayStatus): boolean {
   return status === 'running' || status === 'starting' || status === 'needs-you';
 }
 
-/** What a spawned child is: a target for a goal's worker or verifier, else the spawned-session mark. */
-function ChildSessionMark({ projectId, sessionId }: { projectId: string; sessionId: string }) {
-  const flag = useFeatureFlag(projectId, 'goals');
-  const { role } = useSessionGoal(flag.enabled ? projectId : null, sessionId);
-  const Icon = role ? TargetIcon : ArrowsSplitIcon;
-  return <Icon aria-hidden className="text-muted-foreground size-4 shrink-0" />;
+/**
+ * A row's one leading mark.
+ *
+ * - A goal session (its coordinator at the top level, or a spawned worker or
+ *   verifier) leads with the target, its status as a coloured corner dot
+ *   (`GoalStatusMark`). A spawned goal child shows that status only while it
+ *   is live; at rest it is the plain target.
+ * - Any other spawned child leads with the spawned-session mark, traded for
+ *   its status only while it is live.
+ * - Any other top-level row leads with its status.
+ */
+function SessionLeadingMark({
+  session,
+  spawned,
+  displayStatus,
+  reviewCount,
+  waitingOn,
+  changeRequests,
+}: {
+  session: ProjectSession;
+  spawned: boolean;
+  displayStatus: SessionDisplayStatus;
+  reviewCount: number;
+  waitingOn: 'answer' | 'review';
+  changeRequests: readonly ChangeRequest[];
+}) {
+  const tGoals = useTranslations('goals');
+  const flag = useFeatureFlag(session.project_id, 'goals');
+  const { goal, role } = useSessionGoal(flag.enabled ? session.project_id : null, session.session_id);
+  const live = isLiveStatus(displayStatus);
+
+  if (role && (spawned || role === 'coordinator')) {
+    const mark = (
+      <span className="flex size-4 shrink-0 items-center justify-center" data-testid="session-goal-mark">
+        <GoalStatusMark
+          status={spawned && !live ? null : displayStatus}
+          waitingOn={waitingOn}
+          overdue={isReviewOverdue(changeRequests)}
+        />
+      </span>
+    );
+    if (!goal) return mark;
+    return (
+      <Hint side="top" label={`${tGoals('sessionChip')}: ${goal.goal?.objective ?? goal.slug}`}>
+        {mark}
+      </Hint>
+    );
+  }
+
+  if (spawned && !live) return <ArrowsSplitIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />;
+
+  return (
+    <SessionStatusDot
+      session={session}
+      reviewCount={reviewCount}
+      waitingOn={waitingOn}
+      changeRequests={changeRequests}
+    />
+  );
 }
 
 function SessionStatusDot({

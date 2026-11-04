@@ -5,7 +5,7 @@
  * - `StarterLabel`: who started the run (`sessionStarter`): a glyph for an
  *   automated starter (schedule, webhook, channel, API key), the name for a
  *   member. No robot emoji.
- * - `ExpandControl`: the child count and a caret. It toggles a parent's
+ * - `ExpandControl`: the child count, as the toggle. It toggles a parent's
  *   children. Its own hit target, so a tap never opens the session.
  * - `SessionChildren`: one parent's children, loaded 20 at a time
  *   (`useSessionChildren`), with "Show more". Nothing loads while collapsed
@@ -24,8 +24,6 @@ import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { haptics } from '@/lib/haptics';
 import {
-  CaretDownIcon,
-  CaretRightIcon,
   ChatCircleIcon,
   ClockIcon,
   EnvelopeIcon,
@@ -66,7 +64,7 @@ export function StarterLabel({ starter }: { starter: SessionStarter }) {
   );
 }
 
-/** The child count and a caret; tap toggles the parent's children. */
+/** The child count, as the toggle (no caret, as on web); tap toggles the parent's children. */
 export function ExpandControl({
   count,
   expanded,
@@ -90,8 +88,11 @@ export function ExpandControl({
       accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} ${count} sub-agent ${count === 1 ? 'session' : 'sessions'} of ${title}`}
       accessibilityState={{ expanded }}
       className="flex-row items-center gap-1 rounded-sm px-1 py-0.5 active:bg-foreground/5">
-      <CountBadge count={count} textClassName="text-muted-foreground" />
-      <Icon as={expanded ? CaretDownIcon : CaretRightIcon} size={14} className="text-muted-foreground" />
+      <CountBadge
+        count={count}
+        textClassName={expanded ? 'text-foreground' : 'text-muted-foreground'}
+        className={expanded ? 'bg-foreground/[0.12]' : undefined}
+      />
     </Pressable>
   );
 }
