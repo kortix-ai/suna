@@ -50,6 +50,11 @@ import { platinumBox } from './recover-opencode-history/platinum-box';
 import { RECOVERY_KEY, rowParked, stamp, stillRecoverable, writeRecoveredLog, type RecoveryStamp } from './recover-opencode-history/write';
 
 const BATCH = 200;
+/** Caps on a tenant-written store, checked before the conversion (fromV1 is quadratic in sessions). */
+const MAX_STORE_SESSIONS = 500;
+const MAX_STORE_MESSAGES = 50_000;
+const MAX_STORE_PARTS = 500_000;
+const MAX_SIDECARS = 500;
 const MAX_ATTEMPTS = 3;
 const CONSECUTIVE_FAILURES_STOP = 5;
 const THROTTLE_STOP_MS = 5 * 60_000;
@@ -186,7 +191,13 @@ async function recoverOne(box: BoxReader, c: Candidate, apply: boolean): Promise
     } else {
       boxTemp = copied.boxTemp;
       const store = readOpenCodeStore(copied.dbPath);
-      const sidecars = await box.copySidecars(c.external_id, sidecarPaths(store), join(local, 'sidecars'));
+      const paths = sidecarPaths(store);
+      // The store is tenant-written: bound what the conversion walks before it walks it.
+      const over = store.sessions.length > MAX_STORE_SESSIONS || store.messages.length > MAX_STORE_MESSAGES || store.parts.length > MAX_STORE_PARTS || paths.length > MAX_SIDECARS;
+      if (over) {
+        result = { outcome: 'too_large', detail: `sessions=${store.sessions.length} messages=${store.messages.length} parts=${store.parts.length} sidecars=${paths.length}`, bytes: copied.bytes };
+      } else {
+      const sidecars = await box.copySidecars(c.external_id, paths, join(local, 'sidecars'));
       const rootId = c.root ?? copied.pinnedRoot;
       const { log, blobs, messages } = recoverSessionLog({ sessionId: c.session_id, rootId, store, sidecars });
       const counts = { messages, threads: log.threads.length, blobs: blobs.size, bytes: copied.bytes };
@@ -195,6 +206,7 @@ async function recoverOne(box: BoxReader, c: Candidate, apply: boolean): Promise
       else {
         const written = await writeRecoveredLog({ sessionId: c.session_id, projectId: c.project_id, accountId: c.account_id }, log, blobs);
         result = { outcome: written.outcome, detail: written.detail, ...counts };
+      }
       }
     }
   } catch (err) {
