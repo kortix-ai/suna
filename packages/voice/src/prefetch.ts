@@ -67,11 +67,12 @@ function cardOf(c: Card): Promise<string | undefined> {
   return result
 }
 
-function search(q: string): Promise<string> {
+// pages: the top results' pages are read behind it (src/pages.ts), each a paid scrape ($0.01 through the Kortix router).
+function search(q: string, pages = true): Promise<string> {
   const key = norm(q).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim()
   const hit = searches.get(key)
   if (hit && Date.now() - hit.at < ttl(key)) return hit.result
-  const result = race(q)
+  const result = race(q, pages)
   searches.set(key, { at: Date.now(), words: content(q), result })
   result.then((r) => r || searches.delete(key))
   return result
@@ -107,7 +108,7 @@ function reuse(q: string): Promise<string> | undefined {
 
 // The providers, raced, the first usable result wins: Tavily, Serper (Google results) and Firecrawl. Alone each
 // is ~1.26–1.35 s p50, 2.0–3.1 s p90; raced, 1.14 s / 1.48 s with the fact in the data 81% (n = 21, measured).
-async function race(q: string): Promise<string> {
+async function race(q: string, pages = true): Promise<string> {
   const ac = new AbortController()
   const tries = [tavily(q, ac.signal), serper(q, ac.signal), firecrawl(q, ac.signal)].map((p) => p.catch(() => ''))
   const first = await new Promise<string>((resolve) => {
@@ -115,7 +116,7 @@ async function race(q: string): Promise<string> {
     for (const t of tries) t.then((r) => (r ? resolve(r) : --left || resolve('')))
   })
   ac.abort()
-  if (first) readPages(first)
+  if (first && pages) readPages(first)
   return first
 }
 
@@ -283,7 +284,7 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
   // A web turn: the glance when it is in and useful; else the full race on the router's query beside it (the glance is one
   // provider, its p90 2-3 s; raced, 1.5 s), never the glance taken for the search (a query inside its words reused it).
   const searchNow = () => fallback ??= searching
-    ? (raw ? (words ? raw : glanced ? raw : firstUseful([raw, search(r.query)])) : reuse(r.query) ?? search(r.query))
+    ? (raw ? (words ? raw : glanced ? raw : firstUseful([raw, search(r.query)])) : reuse(r.query) ?? search(r.query, !ahead))
     : Promise.resolve('')
   const web = async () => {
     const data = await searchNow()
