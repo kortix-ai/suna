@@ -5,18 +5,7 @@ import type { LlmProviderEntry, LlmProviderModel } from '../../../internal/lib/l
 import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME } from './constants';
 import type { ActiveTab } from './types';
 
-export function providerDisconnectPlan(provider: Pick<LlmProviderEntry, 'id' | 'envVars'>): {
-  oauthProvider: string | null;
-  secretNames: string[];
-} {
-  const removesSubscription = provider.id === 'codex' || provider.id === 'openai';
-  const names = new Set(provider.envVars.filter((name) => name !== CODEX_AUTH_JSON_SECRET_NAME));
-  if (removesSubscription) names.add(LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME);
-  return {
-    oauthProvider: removesSubscription ? 'openai' : null,
-    secretNames: [...names],
-  };
-}
+export { orderProviderRows, providerDisconnectPlan } from '@kortix/sdk';
 
 type RuntimeProvidersSnapshot =
   | {
@@ -267,63 +256,4 @@ export function shouldSaveCredential(input: {
   });
   if (typed.some(({ value }) => !value)) return false;
   return typed.some(({ key, value }) => input.savedValues[key] !== value);
-}
-
-/** The minimum a provider entry needs for `orderProviderRows` to place it. */
-interface OrderableProvider {
-  id: string;
-  label: string;
-  envVars: string[];
-}
-
-/**
- * Which providers the API-keys list shows, and IN WHAT ORDER.
- *
- * **Every provider, always.** The list used to show three (the first-class
- * ids) plus whatever already had a key, and hid the other ~185 behind the
- * search field. That is the thing this screen was asked to stop doing: a
- * settings page that answers "which providers can I use?" with three, and
- * only tells you the rest exist if you happen to type a name you already
- * know, is not a list — it is a guess. The whole catalog renders; the search
- * field narrows it.
- *
- * The ORDER is fixed and never depends on whether a provider has a key —
- * that invariant survives unchanged, and it is the defect this function
- * exists to make untestable-to-reintroduce. The list used to sort connected
- * providers into a block above the rest, so finishing a key field made that
- * row jump out of the list you were reading. Now:
- *
- *  - **No search** — the first-class ids in their declared order, then EVERY
- *    other provider in catalog order. Connecting one does not move it.
- *  - **Search** — every catalog match, connected or not, in catalog order.
- *
- * Matching covers label, id and env-var name, so both "bedrock" and
- * "AWS_ACCESS_KEY_ID" find AWS.
- */
-export function orderProviderRows<T extends OrderableProvider>(input: {
-  providers: T[];
-  firstClassIds: readonly string[];
-  connectedIds: ReadonlySet<string>;
-  search: string;
-}): T[] {
-  const query = input.search.trim().toLowerCase();
-  if (query) {
-    return input.providers.filter(
-      (provider) =>
-        provider.label.toLowerCase().includes(query) ||
-        provider.id.toLowerCase().includes(query) ||
-        provider.envVars.some((envVar) => envVar.toLowerCase().includes(query)),
-    );
-  }
-
-  const byId = new Map(input.providers.map((provider) => [provider.id, provider]));
-  const firstClass = input.firstClassIds
-    .map((id) => byId.get(id))
-    .filter((provider): provider is T => !!provider);
-  const shown = new Set(firstClass.map((provider) => provider.id));
-  // Catalog order for the rest — NOT "connected first". A provider that moves
-  // the moment you finish typing in it is the exact regression the fixed order
-  // above exists to prevent.
-  const rest = input.providers.filter((provider) => !shown.has(provider.id));
-  return [...firstClass, ...rest];
 }
