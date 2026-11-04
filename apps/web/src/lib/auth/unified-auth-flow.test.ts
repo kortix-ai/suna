@@ -38,7 +38,9 @@ describe('resolveEmailFlowMode', () => {
     expect(resolveEmailFlowMode({ allowed: true, mode: 'sso' })).toBe('sso');
   });
 
-  test('degrades legacy allowed-only responses', () => {
+  test('degrades the mode-less eligibility response', () => {
+    // The API's primary shape since KRTX-3504: eligibility carries no `mode`,
+    // so the step stays neutral and adaptive.
     expect(resolveEmailFlowMode({ allowed: true })).toBe('unknown');
     expect(resolveEmailFlowMode({ allowed: false })).toBe('closed');
   });
@@ -74,6 +76,25 @@ describe('credentialsCopy', () => {
     expect(copy.title).toBe('Enter your password');
     expect(copy.showForgotPassword).toBe(true);
     expect(copy.submitsAs).toBe('signup');
+  });
+
+  test('closed mode keeps the neutral copy and closes the sign-up door for every address', () => {
+    // KRTX-3504: an existing account must still reach this step and sign in,
+    // so identical, address-independent copy is what keeps a closed
+    // resolution from leaking account history.
+    const copy = credentialsCopy('closed', testUiTranslator);
+    expect(copy.title).toBe('Enter your password');
+    expect(copy.description).toContain('Signups are currently closed');
+    expect(copy.passwordAutoComplete).toBe('current-password');
+    expect(copy.showForgotPassword).toBe(true);
+    expect(copy.submitsAs).toBe('signin');
+  });
+
+  test('closed mode never reuses the sign-up or sign-in copy that implies account history', () => {
+    // 'closed' must not say "Welcome back" (that confirms the account exists)
+    // nor "Create your account" (closed means nobody may create one).
+    expect(credentialsCopy('closed', testUiTranslator).title).not.toBe('Welcome back');
+    expect(credentialsCopy('closed', testUiTranslator).title).not.toBe('Create your account');
   });
 });
 
@@ -176,5 +197,31 @@ describe('passwordFailureCopy', () => {
       testUiTranslator,
     );
     expect(failure.message).toBe('Invalid login credentials');
+  });
+
+  test('closed mode reads invalid credentials as a wrong password, never as missing account', () => {
+    const failure = passwordFailureCopy(
+      {
+        mode: 'closed',
+        code: 'invalid_credentials',
+        fallback: 'Invalid login credentials',
+      },
+      testUiTranslator,
+    );
+    expect(failure.message).toContain('Incorrect password');
+    expect(failure.switchToSignin).toBeUndefined();
+  });
+
+  test('closed mode flips an adaptive signup discovery to sign-in', () => {
+    const failure = passwordFailureCopy(
+      {
+        mode: 'closed',
+        code: 'existing_account_wrong_password',
+        fallback: null,
+      },
+      testUiTranslator,
+    );
+    expect(failure.message).toContain('Incorrect password');
+    expect(failure.switchToSignin).toBe(true);
   });
 });

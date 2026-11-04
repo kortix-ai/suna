@@ -109,9 +109,9 @@ flow(
       }
     });
 
-    await ctx.step('enforce_sso on an unverified domain changes nothing: check-email says signin, password sign-in works', async () => {
+    await ctx.step('enforce_sso on an unverified domain changes nothing: check-email does not answer sso, password sign-in works', async () => {
       const mode = await checkEmailMode(ctx, email);
-      if (mode !== 'signin') throw new Error(`expected signin for an unverified domain, got ${mode}`);
+      if (mode === 'sso') throw new Error(`an unverified domain must not enforce SSO, got ${mode}`);
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/auth/sign-in/password', { email, password });
       if (confirmationRequired) r.status(400);
       else r.status(200).body().exists('$.session.access_token');
@@ -179,7 +179,7 @@ flow(
       const moved = await saveProvider(ctx, team.id, { supabaseProviderId: crypto.randomUUID(), domain: other, enforceSso: true });
       if (moved.domain_verified !== false) throw new Error(`a changed domain must be unverified: ${JSON.stringify(moved)}`);
       const mode = await checkEmailMode(ctx, email);
-      if (mode !== 'signin') throw new Error(`the released domain must fall back to signin, got ${mode}`);
+      if (mode === 'sso') throw new Error(`the released domain must not enforce SSO anymore, got ${mode}`);
     });
 
     await ctx.step('cleanup: remove both providers', async () => {
@@ -359,10 +359,10 @@ flow(
       (await operatorVerifies(ctx, team.id, true)).status(200).body().has('$.domain_verified', true);
     });
 
-    await ctx.step('a verified domain without enforce_sso: check-email for an existing address on it → signin, not sso', async () => {
+    await ctx.step('a verified domain without enforce_sso: check-email for an existing address on it → not sso', async () => {
       const person = await ctx.fixtures.userWithEmail(`${ctx.fixtures.name('no-enforce')}@${domain}`);
       const mode = await checkEmailMode(ctx, person.email!);
-      if (mode !== 'signin') throw new Error(`a verified domain without enforce_sso must not force SSO, got ${mode}`);
+      if (mode === 'sso') throw new Error(`a verified domain without enforce_sso must not force SSO, got ${mode}`);
     });
 
     await ctx.step('verified domain: an owner is never merged; the SSO identity joins as a plain member', async () => {

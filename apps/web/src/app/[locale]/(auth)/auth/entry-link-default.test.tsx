@@ -182,10 +182,36 @@ test('every resolution hands off to the link action — the server gates closed 
     const root = await continueWithEmail(`${mode}@example.test`);
     try {
       expect(emailCodeSends).toBe(1);
-      expect(JSON.stringify(root.toJSON())).toContain('We sent a link to');
+      // The send result carries no mode, so the step renders the eligible
+      // send's copy (KRTX-3504): the mail is a sign-in link or a confirmation
+      // link, and only the mailbox knows which.
+      expect(JSON.stringify(root.toJSON())).toContain('We emailed');
+      expect(JSON.stringify(root.toJSON())).toContain('a sign-in link, or a confirmation link');
     } finally {
       await act(async () => root.unmount());
     }
+  }
+});
+
+// KRTX-3504: a closed-signup send goes out with shouldCreateUser:false — the
+// mailbox receives a sign-in link ONLY when the account exists — so the step
+// must claim nothing more than that conditional.
+test('a closed-signup send renders the conditional copy, never a delivery promise', async () => {
+  resolvedMode = 'closed';
+  emailCodeMode = 'closed';
+  emailCodeSends = 0;
+  const root = await continueWithEmail('gated@example.test');
+  try {
+    expect(emailCodeSends).toBe(1);
+    const json = JSON.stringify(root.toJSON());
+    expect(json).toContain('If');
+    expect(json).toContain('has an account, its sign-in link is on its way');
+    // The unconditional delivery promise would claim a mail an unknown
+    // address never receives.
+    expect(json).not.toContain('We emailed');
+  } finally {
+    emailCodeMode = null;
+    await act(async () => root.unmount());
   }
 });
 
@@ -238,7 +264,7 @@ test('the password form still offers the email link as an explicit choice', asyn
     expect(linkButton.props.disabled).toBe(false);
     await act(async () => linkButton.props.onClick());
     expect(emailCodeSends).toBe(2);
-    expect(JSON.stringify(root.toJSON())).toContain('Open it to continue');
+    expect(JSON.stringify(root.toJSON())).toContain('a sign-in link, or a confirmation link');
   } finally {
     jest.useRealTimers();
     await act(async () => root.unmount());
@@ -273,7 +299,7 @@ test('a non-rate-limit send failure stays visible and the retry stays available'
     emailFailure = null;
     await act(async () => linkButton().props.onClick());
     expect(root.root.findAllByProps({ role: 'alert' })).toHaveLength(0);
-    expect(JSON.stringify(root.toJSON())).toContain('Open it to continue');
+    expect(JSON.stringify(root.toJSON())).toContain('a sign-in link, or a confirmation link');
   } finally {
     emailFailure = null;
     emailFailureStatus = null;
@@ -327,7 +353,7 @@ test('a rate-limited send cools the password form link button down', async () =>
     emailFailureStatus = null;
     await act(async () => linkButton().props.onClick());
     expect(emailCodeSends).toBe(3);
-    expect(JSON.stringify(root.toJSON())).toContain('Open it to continue');
+    expect(JSON.stringify(root.toJSON())).toContain('a sign-in link, or a confirmation link');
   } finally {
     emailFailure = null;
     emailFailureStatus = null;
@@ -426,16 +452,40 @@ test('an explicit password choice survives remount without another auth email', 
 });
 
 
-test('remembered password still obeys closed-signup and enforced-SSO gates', async () => {
+test('remembered password keeps enforced-SSO shut and renders closed signups as a sign-in step', async () => {
   preferences.set('kortix:auth-method', 'password');
-  for (const mode of ['closed', 'sso']) {
-    resolvedMode = mode;
-    emailCodeSends = 0;
+  // SSO enforcement: the password door stays shut for any address on an
+  // enforced domain — no credentials form, one inline alert.
+  resolvedMode = 'sso';
+  emailCodeSends = 0;
+  {
     const tree = await continueWithEmail('gated@example.test');
     try {
       expect(emailCodeSends).toBe(0);
       expectNoPasswordInput(tree);
       expect(tree.root.findAllByProps({ role: 'alert' })).toHaveLength(1);
+    } finally {
+      await act(async () => tree.unmount());
+    }
+  }
+  // Closed signups (KRTX-3504): check-email can no longer tell an existing
+  // account from a new visitor, so the neutral sign-in credentials step
+  // renders for the address — an existing account signs in from here, and the
+  // sign-up door stays shut server-side (the web signup action and the
+  // headless route both refuse closed signups). No auth email goes out.
+  resolvedMode = 'closed';
+  emailCodeSends = 0;
+  {
+    const tree = await continueWithEmail('gated@example.test');
+    try {
+      expect(emailCodeSends).toBe(0);
+      expect(tree.root.findByProps({ autoComplete: 'current-password' })).toBeDefined();
+      expect(tree.root.findAllByProps({ role: 'alert' })).toHaveLength(0);
+      // The step explains the closed door with the localized catalog copy
+      // (t('errors.signupsClosed')), not a hardcoded literal.
+      expect(JSON.stringify(tree.toJSON())).toContain(
+        messages.auth.unified.errors.signupsClosed,
+      );
     } finally {
       await act(async () => tree.unmount());
     }

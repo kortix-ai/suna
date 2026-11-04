@@ -171,22 +171,38 @@ flow("ACC-2", { domain: "access", tags: [], routes: ["POST /v1/access/check-emai
     const r = await ctx.client.post("/v1/access/check-email", {});
     r.status(400);
   });
-  await ctx.step("POST /v1/access/check-email (valid) → 200 with flow mode", async () => {
+  await ctx.step("POST /v1/access/check-email (valid) → 200: split only on policy, never on account history", async () => {
     const r = await ctx.client.post("/v1/access/check-email", { email: `probe-${Date.now()}@ke2e.kortix.test` });
-    r.status(200).body().exists("$.allowed").exists("$.mode");
+    r.status(200);
+    const body = r.json<{ allowed: boolean; mode?: string }>();
+    if (body.allowed !== true) throw new Error(`an eligible address must read allowed, got ${JSON.stringify(body)}`);
+    // KRTX-3504: a `mode` may only name instance policy. A 'signin'/'signup'
+    // response would give an anonymous caller an account-existence oracle.
+    if (body.mode && !['closed', 'sso'].includes(body.mode)) {
+      throw new Error(`check-email leaked a per-address mode: ${JSON.stringify(body)}`);
+    }
   });
   await ctx.step("POST /v1/access/check-email (malformed email) → 400", async () => {
     const r = await ctx.client.post("/v1/access/check-email", { email: "not-an-email" });
     r.status(400);
   });
-  await ctx.step("a new address → {allowed:true, mode:'signup'} while signups are open; allowed matches mode otherwise", async () => {
+  await ctx.step("an eligible address answers the mode-less body over HTTP (parity with an account-bearing address is pinned by the API unit tests)", async () => {
     const status = await ctx.client.get("/v1/access/signup-status");
     status.status(200);
     const open = status.json<{ signupsEnabled: boolean }>().signupsEnabled;
+    if (!open) return; // closed-signup parity is pinned in the API unit tests
+    // This domain is public-only (no provisioning): the probe is a brand-new
+    // address, so what runs here is the response SHAPE — `{allowed:true}`, no
+    // `mode` — and the earlier step's policy-only mode allowlist. That an
+    // account-bearing address reads the same body is pinned where the auth
+    // DB's answer is forced both ways ("exists" row and unreachable):
+    // apps/api/src/__tests__/unit-access-check-email.test.ts (KRTX-3504).
     const r = await ctx.client.post("/v1/access/check-email", { email: `probe-new-${Date.now()}@ke2e.kortix.test` });
     r.status(200);
-    if (open) r.body().has("$.allowed", true).has("$.mode", "signup");
-    else r.body().has("$.allowed", r.json<{ mode: string }>().mode === "signup");
+    const body = r.json<{ allowed: boolean; mode?: string }>();
+    if (body.allowed !== true || body.mode !== undefined) {
+      throw new Error(`a new address must answer {allowed:true} with no mode, got ${JSON.stringify(body)}`);
+    }
   });
 });
 

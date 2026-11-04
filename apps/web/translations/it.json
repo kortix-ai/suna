@@ -2901,6 +2901,8 @@
         "title": "Controlla la tua email",
         "description": "Abbiamo inviato un link a <address>{email}</address>. Aprilo per continuare.",
         "confirmDescription": "Abbiamo inviato un'email di conferma a <address>{email}</address>. Conferma la tua email per continuare.",
+        "unknownDescription": "Ti abbiamo inviato un'e-mail a <address>{email}</address> — un link di accesso o un link di conferma per un nuovo account.",
+        "closedDescription": "Se <address>{email}</address> ha un account, il suo link di accesso è in arrivo.",
         "notReceived": "Non hai ricevuto il link?",
         "confirmNotReceived": "Non hai ricevuto l'email di conferma?",
         "resendIn": "Invia di nuovo tra {seconds}",

@@ -159,11 +159,12 @@ export async function resolveAuthMode(email: string): Promise<{ mode: EmailFlowM
 }
 
 /**
- * Send the sign-in/sign-up email link — ONE action for both cases. GoTrue's
- * OTP with `shouldCreateUser: true` already treats new and existing addresses
- * identically, so the only gate is access control: a brand-new address while
- * signups are closed is turned away before any email goes out (previously the
- * "sign in" tab skipped this check entirely and quietly created accounts).
+ * Send the sign-in/sign-up email link — ONE action for both cases. While
+ * signups are open the OTP sends with `shouldCreateUser: true`, so new and
+ * existing addresses are treated identically and GoTrue picks the email kind.
+ * A closed-signup address still gets its send — with `shouldCreateUser: false`
+ * — because `closed` there covers existing accounts too (KRTX-3504): the
+ * public API no longer says who holds one.
  */
 export async function sendEmailCode(prevState: any, formData: FormData) {
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
@@ -181,21 +182,26 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   const normalizedEmail = email.trim().toLowerCase();
 
   const flowMode = await checkEmailFlowMode(normalizedEmail);
-  if (flowMode === 'closed') {
-    return { code: 'signups_closed', message: SIGNUPS_CLOSED_MESSAGE };
-  }
   if (flowMode === 'sso') {
     return { code: 'sso_required', message: SSO_REQUIRED_MESSAGE };
   }
+  // KRTX-3504: `closed` covers BOTH an unknown address and an existing one —
+  // an existing passwordless account must still reach its sign-in link. So the
+  // send happens with `shouldCreateUser: false` (GoTrue mints nothing), and
+  // every non-429 failure below answers the same neutral body as success:
+  // GoTrue's not-found for an unknown address must not become this action's
+  // fresh existence oracle. The sign-up door stays shut server-side; only
+  // account creation is gated, never the sign-in mail.
+  const closedSignups = flowMode === 'closed';
 
   // Resolve the return URL HERE — before it is baked into the email link. That
   // link can be opened minutes or days later, on a device that never held the
   // bounced session, so this is the LAST point at which either rule can still
   // reach it:
-  //  - `flowMode === 'signup'` means the API just confirmed this address has no
-  //    account. The link outlives the callback's "created in the last 60s?"
-  //    heuristic, and a stale link is precisely how a fresh account ends up
-  //    staring at a stranger's "Request access" page.
+  //  - the send no longer knows whether the address is new (KRTX-3504: the
+  //    API answers policy only, never account history), so the fresh-account
+  //    half of the rule is applied where the account IS known: the verify
+  //    callback re-runs it with the real `created_at`.
   //  - an ATTRIBUTED bounce cannot be matched against a signer here, because no
   //    identity exists yet — the address has not been proven. Fail closed: a
   //    path bounced from a named session does not get minted into an email.
@@ -204,7 +210,7 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   const returnUrl = shouldDemoteReturnUrl({
     bouncedOwnerId: await readBouncedOwnerId(),
     signedInUserId: null,
-    isNewUser: flowMode === 'signup',
+    isNewUser: false,
   })
     ? resolveNewAccountReturnUrl(requestedReturnUrl)
     : requestedReturnUrl;
@@ -225,7 +231,7 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
       email: normalizedEmail,
       options: {
         emailRedirectTo,
-        shouldCreateUser: true,
+        shouldCreateUser: !closedSignups,
         data: referralCode
           ? {
               referral_code: referralCode.trim().toUpperCase(),
@@ -238,10 +244,18 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   );
 
   if (error) {
-    return {
-      ...authFailure(error, 'Could not send the link', tI18nComplete),
-      status: authRateLimitCopy(error, tI18nComplete) ? 429 : error.status === 503 ? 503 : 400,
-    };
+    // A closed-signup send answers neutrally unless the refusal is a shared
+    // rate limit — ANY 429, not just the code `authRateLimitCopy` recognizes
+    // (GoTrue maps every 429 it returns to `over_request_rate_limit`):
+    // per-IP pressure says nothing about the address, and hiding it would
+    // invite blind retries against a backoff the visitor cannot see.
+    const limitCopy = authRateLimitCopy(error, tI18nComplete);
+    if (!closedSignups || error.status === 429 || limitCopy) {
+      return {
+        ...authFailure(error, 'Could not send the link', tI18nComplete),
+        status: limitCopy || error.status === 429 ? 429 : error.status === 503 ? 503 : 400,
+      };
+    }
   }
 
   // Hand the PKCE verifier to the browser in the RESULT, not only as a
@@ -269,9 +283,10 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
     email: normalizedEmail,
     redirectTo: returnUrl,
     codeVerifier,
-    // Which email GoTrue just minted: a new address got the signup
-    // confirmation ("Confirm your email"), an existing one the sign-in link.
-    // The link step names the email the mailbox actually receives (KRTX-2195).
+    // The link step's copy must name what the mailbox actually receives
+    // (KRTX-2195): while creation is allowed GoTrue picked the email kind, and
+    // on closed signups the send was sign-in-only-if-the-account-exists —
+    // `mode` tells the step which copy is honest.
     mode: flowMode,
   };
 }
@@ -489,10 +504,12 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     return { message: tI18nComplete.raw('textb6eb82cd3300') };
   }
 
-  // Access control gate — same rule the email-link path enforces: a brand-new
-  // address while signups are closed never reaches GoTrue, and an SSO-enforced
-  // domain never gets a password identity created. Existing accounts resolve
-  // to 'signin' and pass straight through to the sign-in attempt.
+  // Access control gate — this is the CREATE door: a brand-new address while
+  // signups are closed never reaches GoTrue, and an SSO-enforced domain never
+  // gets a password identity created. The gate answers policy only, so it
+  // refuses every address on a closed deployment alike (KRTX-3504) — an
+  // existing account signs in through the sign-in door, which never consults
+  // this check.
   const flowMode = await checkEmailFlowMode(email);
   if (flowMode === 'closed') {
     return { code: 'signups_closed', message: SIGNUPS_CLOSED_MESSAGE };

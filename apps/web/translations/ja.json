@@ -2901,6 +2901,8 @@
         "title": "メールを確認してください",
         "description": "<address>{email}</address> にリンクを送信しました。リンクを開いて続行してください。",
         "confirmDescription": "<address>{email}</address> に確認メールを送信しました。メールを確認して続行してください。",
+        "unknownDescription": "<address>{email}</address> にメールを送信しました — サインイン用リンク、または新規アカウント用の確認リンクです。",
+        "closedDescription": "<address>{email}</address> のアカウントがある場合、サインイン用リンクを送信しました。",
         "notReceived": "リンクが届きませんか？",
         "confirmNotReceived": "確認メールが届きませんか？",
         "resendIn": "{seconds}秒後に再送信",

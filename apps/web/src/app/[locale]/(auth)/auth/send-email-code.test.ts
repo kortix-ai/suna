@@ -43,7 +43,7 @@ const form = () => {
 };
 beforeEach(() => {
   delivered = false; cookieFailure = false; translationFailureAfterDelivery = false;
-  mode = 'signin'; sendError = null; send.mockClear();
+  mode = 'unknown'; sendError = null; send.mockClear();
 });
 test('delivered send stays successful if the verifier cookie store fails', async () => {
   cookieFailure = true;
@@ -74,13 +74,65 @@ for (const error of [
     expect(result.message).toBeTruthy();
   });
 }
-for (const blocked of ['closed', 'sso']) {
-  test(`${blocked} blocks delivery`, async () => {
-    mode = blocked;
-    expect(await sendEmailCode(null, form())).not.toHaveProperty('success', true);
-    expect(send).not.toHaveBeenCalled();
+test('sso blocks delivery', async () => {
+  mode = 'sso';
+  expect(await sendEmailCode(null, form())).not.toHaveProperty('success', true);
+  expect(send).not.toHaveBeenCalled();
+});
+
+// KRTX-3504: the public API answers `closed` for every address on a closed
+// deployment — it can no longer say who holds an account — so the send must
+// still go out (an existing passwordless account signs in through this link)
+// with `shouldCreateUser: false` (GoTrue mints nothing), and every non-429
+// failure must answer the same neutral body as success: GoTrue's not-found
+// for an unknown address must not become this action's fresh existence
+// oracle. Only the shared rate limit still surfaces — per-IP pressure says
+// nothing about the address, and hiding it would invite blind retries.
+test('a closed-signup send still goes out, with shouldCreateUser:false', async () => {
+  mode = 'closed';
+  expect(await sendEmailCode(null, form())).toMatchObject({ success: true, mode: 'closed', email: 'synthetic@example.test' });
+  expect(send).toHaveBeenCalledWith({ email: 'synthetic@example.test', options: expect.objectContaining({ shouldCreateUser: false }) });
+});
+test('an open-signup send keeps shouldCreateUser:true', async () => {
+  mode = 'unknown';
+  await sendEmailCode(null, form());
+  expect(send).toHaveBeenCalledWith({ email: 'synthetic@example.test', options: expect.objectContaining({ shouldCreateUser: true }) });
+});
+for (const error of [
+  { code: 'email_address_invalid', message: 'Invalid email address', status: 400 },
+  { code: 'timeout', message: 'Delivery is unknown', status: 503 },
+]) {
+  test(`closed-signup upstream ${error.code} answers the same neutral body as success`, async () => {
+    mode = 'closed';
+    sendError = error;
+    const neutral = await sendEmailCode(null, form());
+    expect(neutral).toMatchObject({ success: true, mode: 'closed', email: 'synthetic@example.test' });
+    expect(neutral).not.toHaveProperty('status');
+    sendError = null;
+    const success = await sendEmailCode(null, form());
+    expect(neutral).toEqual(success);
   });
 }
+test('a closed-signup rate limit still surfaces', async () => {
+  mode = 'closed';
+  sendError = { code: 'over_email_send_rate_limit', message: 'Email rate limit exceeded', status: 429 };
+  const result = await sendEmailCode(null, form());
+  expect(result).not.toHaveProperty('success', true);
+  expect(result).toHaveProperty('status', 429);
+});
+test('a closed-signup 429 whose code the copy helper does not know still surfaces', async () => {
+  // GoTrue maps its own 429s to `over_request_rate_limit`, but a 429 can also
+  // arrive from a proxy or a newer GoTrue with a body `authRateLimitCopy`
+  // cannot match (no `over_*_rate_limit` code, no "rate limit" in the
+  // message). The neutral swallow must key on the STATUS, so the visitor
+  // still gets the backoff — with status 429, which arms the resend cooldown
+  // — instead of a delivery promise no mail will keep.
+  mode = 'closed';
+  sendError = { code: 'too_many_requests', message: 'Slow down', status: 429 };
+  const result = await sendEmailCode(null, form());
+  expect(result).not.toHaveProperty('success', true);
+  expect(result).toHaveProperty('status', 429);
+});
 test('a rejected transport does not fabricate delivery success', async () => {
   send.mockImplementationOnce(async () => { throw new Error('transport failed'); });
   await expect(sendEmailCode(null, form())).rejects.toThrow('transport failed');
