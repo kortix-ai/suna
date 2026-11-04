@@ -418,9 +418,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // serializer keeps sending `true` for older clients.
   {
     key: 'chat',
-    name: 'Chat',
+    name: 'Spaces',
     description:
-      "Slack-style chat with Kortix: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces you share with people. Replaces the session list in the sidebar.",
+      "Spaces with Kortix, the way Slack works: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and you share spaces with people. Replaces the session list in the sidebar.",
     stability: 'experimental',
     wip: true,
     available: () => true,
@@ -563,9 +563,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'chat_front',
-    name: 'Talk-only threads',
+    name: 'Intake agent',
     description:
-      'With Chat on, a new message in a space starts a thread whose agent only talks. It hands every request to one hidden My Kortix session that does the work, and answers in short messages with only what matters. Needs My Kortix on in kortix.yaml.',
+      'With Chat on, the agent you chat with in a thread routes the work to your agents and writes back like a person: short messages with the result, a link or the decision you need to make. You see the conversation, not the work. Needs My Kortix on in kortix.yaml.',
     stability: 'experimental',
     wip: true,
     available: () => true,
@@ -575,9 +575,11 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Off ⇒ every thread runs as before. API: on together with `chat`, a top-level My Kortix session created in a space ' +
       '(no parent, no fork, no session caller) gets the reserved runtime_context key `kortix.front` and the server-managed ' +
       'metadata `kortix_front` (projects/lib/front-thread.ts); a request body cannot set either. Only such a front may start ' +
-      'a My Kortix session (its worker), an exception to META_AGENT_RECURSION. BOX: kortixd gives a front only `agent`, ' +
-      '`send_message` and `task_stop` (harness/pi/front.ts), and KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 so the worker ' +
-      'keeps its own subagents (projects/lib/feature-flag-env.ts). WEB: a front thread\'s "Open full session" opens its worker.',
+      'a My Kortix worker, an exception to META_AGENT_RECURSION; a worker of any other project agent is a normal hand-off. ' +
+      'BOX: kortixd gives a front only `agent`, `send_message` and `task_stop` (harness/pi/front.ts); each `agent` call ' +
+      'starts or continues one named background worker as the project agent the front picks from the roster it reads ' +
+      'from `/detail` each turn, else My Kortix. KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 so a worker keeps its own ' +
+      'subagents (projects/lib/feature-flag-env.ts). WEB: a front thread\'s "Open full session" opens its worker.',
   },
 ];
 

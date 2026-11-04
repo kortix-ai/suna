@@ -2142,25 +2142,43 @@ describe('pi subagents extension', () => {
     }
   })
 
-  test('a talk-only front (kortix.front) has only agent, send_message and task_stop; every agent call starts its one My Kortix worker, not narrowed', async () => {
+  test('an intake (kortix.front) has only agent, send_message and task_stop; it routes each task to a roster agent or My Kortix, as a named background worker, not narrowed', async () => {
     const creates: Array<Record<string, any>> = []
+    let detailReads = 0
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url)
         if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
           creates.push((await req.json()) as Record<string, any>)
-          return Response.json({ session_id: 'front-worker-1' }, { status: 201 })
+          return Response.json({ session_id: `front-worker-${creates.length}` }, { status: 201 })
         }
         if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([])
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/detail') {
+          detailReads++
+          return Response.json({
+            config: {
+              agents: [
+                { name: 'mykortix', description: 'My Kortix', platform: true },
+                { name: 'researcher', description: 'Finds facts on the web\nand cites sources.' },
+                { name: 'retired', description: 'Off', enabled: false },
+                { name: 'cron-bot', description: 'Internal', hidden: true },
+              ],
+            },
+          })
+        }
         return new Response('not found', { status: 404 })
       },
     })
     try {
       const r = await boot({
-        // The model asks for another agent, in the same session, in the foreground: the front overrides all of it.
         script: [
-          { tool: 'agent', args: { description: 'Check the logs', prompt: 'check the logs', subagent_type: 'general', session: 'same', run_in_background: false } },
+          // A roster agent, in the same session, in the foreground: the intake keeps the agent and overrides the rest.
+          { tool: 'agent', args: { description: 'Find flights', prompt: 'find flights to Lisbon', subagent_type: 'researcher', name: 'flights', session: 'same', run_in_background: false } },
+          // No agent named and no name: My Kortix, named after the description.
+          { tool: 'agent', args: { description: 'Draft the invite', prompt: 'draft the invite' } },
+          // An agent the roster does not hold: refused with the roster.
+          { tool: 'agent', args: { description: 'Do it', prompt: 'do it', subagent_type: 'nope' } },
           { text: 'On it.' },
         ],
         env: {
@@ -2172,18 +2190,32 @@ describe('pi subagents extension', () => {
       })
       expect((await toolIds(r)).sort()).toEqual(['agent', 'send_message', 'task_stop'])
       const sentBefore = gateway.sent.length
-      await promptAndSettle(r, 'check the logs')
-      expect(creates).toHaveLength(1)
-      const create = creates[0]!
-      expect(create.agent_name).toBe('mykortix')
-      expect(create.initial_prompt).toBe('check the logs')
-      expect(create.metadata).toMatchObject({ notify_parent: true, agent_handle: 'kortix' })
-      expect(create.runtime_context['kortix.front.thread']).toBe(true)
-      expect(create.runtime_context['kortix.agent.handle']).toBe('kortix')
-      // The worker is not narrowed to the front's three tools.
-      expect(create.runtime_context['kortix.subagent.tools']).toBeUndefined()
-      // The front's own prompt replaces the agent's: it only talks.
-      expect(gateway.sent.slice(sentBefore).map(systemSent).every((system) => system.startsWith('You are Kortix in a chat thread.'))).toBe(true)
+      await promptAndSettle(r, 'find flights to Lisbon and draft the invite')
+      expect(creates).toHaveLength(2)
+      const [routed, fallback] = creates as [Record<string, any>, Record<string, any>]
+      expect(routed.agent_name).toBe('researcher')
+      expect(routed.initial_prompt).toBe('find flights to Lisbon')
+      expect(routed.metadata).toMatchObject({ notify_parent: true, agent_handle: 'flights' })
+      expect(routed.runtime_context['kortix.front.thread']).toBe(true)
+      expect(routed.runtime_context['kortix.agent.handle']).toBe('flights')
+      // The worker is not narrowed to the intake's three tools.
+      expect(routed.runtime_context['kortix.subagent.tools']).toBeUndefined()
+      expect(fallback.agent_name).toBe('mykortix')
+      expect(fallback.metadata).toMatchObject({ notify_parent: true, agent_handle: 'draft-the-invite' })
+      expect(fallback.runtime_context['kortix.front.thread']).toBe(true)
+      const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      const refused = toolParts(page, 'agent')[2]!
+      expect(refused.state.status).toBe('error')
+      expect(JSON.stringify(refused.state)).toContain('\\"nope\\" is not an agent of this project. Pick one of: mykortix, researcher.')
+      // The roster is read once (boot warm-up and first turn share the read) and is cached across the turn.
+      expect(detailReads).toBe(1)
+      const systems = gateway.sent.slice(sentBefore).map(systemSent)
+      // The intake's own prompt replaces the agent's: it only talks and routes.
+      expect(systems.every((system) => system.startsWith('You are Kortix, talking with a person in a chat thread.'))).toBe(true)
+      expect(systems[0]).toContain('## Agents you can hand work to\n- mykortix (the default)')
+      expect(systems[0]).toContain('- researcher: Finds facts on the web and cites sources.')
+      expect(systems[0]).not.toContain('retired')
+      expect(systems[0]).not.toContain('cron-bot')
     } finally {
       server.stop(true)
     }

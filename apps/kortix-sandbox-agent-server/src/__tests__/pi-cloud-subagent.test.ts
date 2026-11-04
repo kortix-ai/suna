@@ -15,6 +15,7 @@
  * `task_stop` by id and by name (`cloudStopChild`). No real time, no network.
  */
 import { describe, expect, test } from 'bun:test'
+import { FRONT_TOOLS, fetchFrontAgents, frontAgentsFromDetail, frontAgentsSection, frontCall, frontTaskName } from '@/harness/pi/front'
 import {
   childToolAllowlist,
   cloudSpawnSession,
@@ -585,5 +586,92 @@ describe('cloudStopChild — task_stop', () => {
     const { impl } = fakeApi({ children: [] })
     await expect(cloudStopChild(api(impl), { name: 'ghost' })).rejects.toThrow('No subagent of this session is named "ghost".')
     await expect(cloudStopChild(api(impl), {})).rejects.toThrow('Name the subagent to stop')
+  })
+})
+
+describe('the intake agent (front.ts) — routing', () => {
+  const roster = { agents: ['researcher', 'Writer'] }
+
+  test('an intake has exactly three tools', () => {
+    expect([...FRONT_TOOLS].sort()).toEqual(['agent', 'send_message', 'task_stop'])
+  })
+
+  test('a roster agent is kept; every call runs separate and in the background, whatever the model passed', () => {
+    expect(frontCall({ description: 'Find flights', prompt: 'p', subagent_type: 'researcher', name: 'flights' }, roster)).toEqual({
+      description: 'Find flights', prompt: 'p', subagent_type: 'researcher', name: 'flights', session: 'separate', run_in_background: true,
+    })
+    // The roster's own spelling wins over the model's case.
+    expect(frontCall({ description: 'd', prompt: 'p', subagent_type: '@writer', name: 'w' }, roster).subagent_type).toBe('Writer')
+  })
+
+  test('no agent named, or mykortix named: My Kortix', () => {
+    expect(frontCall({ description: 'd', prompt: 'p', name: 'n' }, roster).subagent_type).toBe('mykortix')
+    expect(frontCall({ description: 'd', prompt: 'p', subagent_type: 'MyKortix', name: 'n' }, roster).subagent_type).toBe('mykortix')
+  })
+
+  test('an agent outside the roster is refused with the roster; without a roster the API decides', () => {
+    expect(() => frontCall({ description: 'd', prompt: 'p', subagent_type: 'nope' }, roster)).toThrow('"nope" is not an agent of this project. Pick one of: mykortix, researcher, Writer.')
+    expect(frontCall({ description: 'd', prompt: 'p', subagent_type: 'nope' }, { agents: null }).subagent_type).toBe('nope')
+  })
+
+  test('a task_id continues that worker as it was: no agent, no name', () => {
+    expect(frontCall({ description: 'd', prompt: 'p', subagent_type: 'researcher', name: 'x', task_id: ' sess-1 ' }, roster)).toEqual({
+      description: 'd', prompt: 'p', task_id: 'sess-1', session: 'separate', run_in_background: true,
+    })
+  })
+
+  test('each task gets a name: the model\'s, else a slug of the description, else "task"', () => {
+    expect(frontTaskName('Find flights', '@flights')).toBe('flights')
+    expect(frontTaskName('Find flights to Lisbon!')).toBe('find-flights-to-lisbon')
+    expect(frontTaskName('Find flights', 'not valid')).toBe('not-valid-find-flights')
+    expect(frontTaskName('x'.repeat(60))).toHaveLength(40)
+    expect(frontTaskName('!!!')).toBe('task')
+  })
+
+  test('the roster: enabled, offered agents only; My Kortix and platform agents are left to the default line', () => {
+    const detail = {
+      config: {
+        agents: [
+          { name: 'mykortix', platform: true },
+          { name: 'researcher', description: '  Finds  facts\n' },
+          { name: 'off', enabled: false },
+          { name: 'internal', hidden: true },
+          { name: 'bare' },
+          { name: '' },
+        ],
+      },
+    }
+    expect(frontAgentsFromDetail(detail)).toEqual([{ name: 'researcher', description: 'Finds facts' }, { name: 'bare' }])
+    expect(frontAgentsFromDetail({})).toBeNull()
+    expect(frontAgentsFromDetail(null)).toBeNull()
+  })
+
+  test('the roster section names the default first, and says when the list is empty or did not load', () => {
+    expect(frontAgentsSection([{ name: 'researcher', description: 'Finds facts' }, { name: 'bare' }])).toBe(
+      '## Agents you can hand work to\n- mykortix (the default): My Kortix, a general assistant with every tool and connector. Use it when no agent below fits.\n- researcher: Finds facts\n- bare',
+    )
+    expect(frontAgentsSection([])).toContain('This project has no other agents: hand everything to mykortix.')
+    expect(frontAgentsSection(null)).toContain('did not load. Hand work to mykortix')
+    const many = Array.from({ length: 45 }, (_, i) => ({ name: `a${i}`, description: 'd'.repeat(300) }))
+    const section = frontAgentsSection(many)
+    expect(section).toContain('(5 more agents are not listed.)')
+    expect(section).not.toContain('- a40')
+    expect(section).toContain(`${'d'.repeat(239)}…`)
+  })
+
+  test('fetchFrontAgents reads /v1/projects/:id/detail with the box token, and answers null on a failure', async () => {
+    const seen: Array<{ url: string; auth: string | null }> = []
+    const ok = (async (url: string, init?: RequestInit) => {
+      seen.push({ url, auth: new Headers(init?.headers).get('authorization') })
+      return Response.json({ config: { agents: [{ name: 'researcher' }] } })
+    }) as unknown as typeof fetch
+    expect(await fetchFrontAgents({ apiUrl: 'http://api.test/v1/', projectId: 'proj 1', token: 'tok' }, ok)).toEqual([{ name: 'researcher' }])
+    expect(seen).toEqual([{ url: 'http://api.test/v1/projects/proj%201/detail', auth: 'Bearer tok' }])
+    const down = (async () => new Response('no', { status: 503 })) as unknown as typeof fetch
+    expect(await fetchFrontAgents({ apiUrl: 'http://api.test', projectId: 'p', token: 't' }, down)).toBeNull()
+    const thrown = (async () => {
+      throw new Error('network')
+    }) as unknown as typeof fetch
+    expect(await fetchFrontAgents({ apiUrl: 'http://api.test', projectId: 'p', token: 't' }, thrown)).toBeNull()
   })
 })
