@@ -141,12 +141,13 @@ async function providerUsage(row: UsageRow, fetchImpl: FetchImpl): Promise<Subsc
     });
     return claudeUsageFromBody(body);
   }
-  // A login stored before project scoping has no project to refresh against:
-  // its stored access token is used as is.
+  // Read-only: the stored access token as is. A usage read never refreshes a
+  // login and never marks it for reconnection; model calls do both. An expired
+  // token reads nothing, and the stored snapshot stays.
   const credential = await resolveCodexAccountCredential({
     projectId: row.projectId ?? '', accountId: row.accountId, sessionId: null, userId: row.createdBy,
     secretId: row.secretId, value: readAccountSecret(row.accountId, row.secretId, row.valueEnc), updatedAt: row.updatedAt,
-    probe: !row.projectId,
+    probe: true,
   }, fetchImpl);
   if (!credential) return null;
   const headers: Record<string, string> = { authorization: `Bearer ${credential.access}`, 'user-agent': CODEX_USER_AGENT, accept: 'application/json' };
