@@ -15,7 +15,7 @@ function harness(options: {
   principal?: AuthedPrincipal | null;
 }) {
   const seen: Seen[] = [];
-  const calls = { authenticate: [] as string[], credentials: [] as Array<string | null>, rateLimits: [] as Array<[string, number]>, refused: [] as Array<[string, string]> };
+  const calls = { authenticate: [] as string[], credentials: [] as Array<string | null>, rateLimits: [] as Array<[string, number]>, refused: [] as Array<[string, string]>, usage: [] as Array<[string, number | undefined, boolean]> };
   const hooks: ClaudeCodeHooks = {
     authenticate: async (token) => {
       calls.authenticate.push(token);
@@ -27,6 +27,9 @@ function harness(options: {
     },
     notePoolRateLimit: async (_principal, secretId, seconds) => {
       calls.rateLimits.push([secretId, seconds]);
+    },
+    notePoolUsage: async (_principal, secretId, usage) => {
+      calls.usage.push([secretId, usage.windows[0]?.used_percent, usage.limited]);
     },
     claudeRefused: async (_principal, secretId, failedKeySha256) => {
       calls.refused.push([secretId, failedKeySha256]);
@@ -112,6 +115,16 @@ describe('Claude Code passthrough', () => {
     expect(res.status).toBe(200);
     expect(calls.rateLimits).toEqual([['acc-1', 120]]);
     expect(seen.map((entry) => entry.headers.authorization)).toEqual(['Bearer sk-ant-oat01-first', 'Bearer sk-ant-oat01-second']);
+  });
+
+  test('every answer reports its account plan usage: the refused account limited, the next one at its percent', async () => {
+    const { handle, calls } = harness({
+      upstream: (attempt) => attempt === 1
+        ? new Response('{"type":"error"}', { status: 429, headers: { 'anthropic-ratelimit-unified-status': 'rejected', 'anthropic-ratelimit-unified-5h-utilization': '1' } })
+        : new Response('{"id":"msg"}', { headers: { 'anthropic-ratelimit-unified-5h-utilization': '0.25' } }),
+    });
+    expect((await handle(request())).status).toBe(200);
+    expect(calls.usage).toEqual([['acc-1', 100, true], ['acc-2', 25, false]]);
   });
 
   test('a 429 without retry-after rests the account 60 s; the last account answers the 429', async () => {
