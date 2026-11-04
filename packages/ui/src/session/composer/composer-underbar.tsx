@@ -54,6 +54,8 @@ export interface ComposerUnderbarProps {
    * normal composer right up to the server's 403.
    */
   noAccessibleAgents?: boolean;
+  /** The agent is fixed (a DM): the picker names `selectedAgent` and offers no other. */
+  agentLocked?: boolean;
 
   messages: SessionLogMessage[] | undefined;
   models: FlatModel[];
@@ -80,7 +82,7 @@ export interface ComposerUnderbarProps {
    * session overrides takes the agent picker's place. The card then renders
    * no model or effort picker and no overrides gear. Unset: the agent picker.
    */
-  chatInput?: Omit<ChatInputControlProps, 'agents' | 'selectedAgent' | 'onAgentChange' | 'unavailableHint'>;
+  chatInput?: Omit<ChatInputControlProps, 'agents' | 'selectedAgent' | 'onAgentChange' | 'unavailableHint' | 'agentLocked'>;
 }
 
 export function ComposerUnderbar({
@@ -91,6 +93,7 @@ export function ComposerUnderbar({
   onAgentMenuOpenChange,
   onAgentChange,
   noAccessibleAgents = false,
+  agentLocked = false,
   messages,
   models,
   selectedModel,
@@ -167,13 +170,15 @@ export function ComposerUnderbar({
             {...chatInput}
             agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
             selectedAgent={selectedAgent}
-            onAgentChange={onAgentChange}
+            onAgentChange={agentLocked ? undefined : onAgentChange}
+            agentLocked={agentLocked}
             unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
           />
         ) : (
           <AgentSelector
             compact={agentPickerCompact}
-            agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
+            // A fixed agent (a DM): the picker lists only it.
+            agents={noAccessibleAgents ? EMPTY_AGENTS : agentLocked ? fixedAgentRoster(agents, selectedAgent) : agents}
             selectedAgent={selectedAgent}
             open={agentMenuOpen}
             onOpenChange={onAgentMenuOpenChange}
@@ -200,4 +205,10 @@ export function ComposerUnderbar({
       </div>
     </div>
   );
+}
+
+/** A fixed agent's picker roster: only that agent, even when the caller's roster does not list it (a DM's agent without a grant). */
+function fixedAgentRoster(agents: Agent[], selected: string | null): Agent[] {
+  const own = agents.filter((agent) => agent.name === selected);
+  return own.length > 0 || !selected ? own : [{ name: selected, mode: 'primary' } as unknown as Agent];
 }

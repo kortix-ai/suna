@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { chatInputSummary, inheritedModelFor, modelIsOverridden } from './chat-input-summary';
+import { chatInputAgents, chatInputSummary, inheritedModelFor, modelIsOverridden } from './chat-input-summary';
 
 const glm = { providerID: 'kortix', modelID: 'glm-5.3-flash' };
 const kimi = { providerID: 'kortix', modelID: 'kimi-k3' };
@@ -70,5 +70,21 @@ describe('inheritedModelFor — the model "Reset to auto" goes back to', () => {
         'coder',
       ),
     ).toBeNull();
+  });
+});
+
+describe('chatInputAgents — the agent the control names, and the agents it offers', () => {
+  const isMyKortix = (name: string) => name === 'mykortix';
+  const roster = ['worker', 'mykortix', 'coder'];
+
+  test('a bound agent (a DM) is named whatever was picked before, and no agent is offered', () => {
+    expect(chatInputAgents(roster, 'worker', true, isMyKortix)).toEqual({ name: 'worker', offered: [] });
+    // Bound to an agent the roster does not list (no grant): still that agent.
+    expect(chatInputAgents([], 'worker', true, isMyKortix)).toEqual({ name: 'worker', offered: [] });
+  });
+
+  test('a free composer names the selection and offers every agent, My Kortix first', () => {
+    expect(chatInputAgents(roster, 'coder', false, isMyKortix)).toEqual({ name: 'coder', offered: ['mykortix', 'worker', 'coder'] });
+    expect(chatInputAgents(roster, null, false, isMyKortix).name).toBe('worker');
   });
 });

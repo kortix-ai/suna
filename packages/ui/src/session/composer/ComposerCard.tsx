@@ -198,6 +198,7 @@ export function ComposerCard({
   selectedAgent = null,
   onAgentChange,
   noAccessibleAgents = false,
+  agentLocked = false,
   onContextClick,
   messages,
   underbarPlacement = 'below',
@@ -445,6 +446,7 @@ export function ComposerCard({
                   agentMenuOpen={agentMenuOpen}
                   onAgentMenuOpenChange={setAgentMenuOpen}
                   noAccessibleAgents={noAccessibleAgents}
+                  agentLocked={agentLocked}
                   messages={messages}
                   models={models}
                   selectedModel={availableSelectedModel}
@@ -532,6 +534,7 @@ export function ComposerCard({
         agentMenuOpen={agentMenuOpen}
         onAgentMenuOpenChange={setAgentMenuOpen}
         noAccessibleAgents={noAccessibleAgents}
+        agentLocked={agentLocked}
         messages={messages}
         models={models}
         selectedModel={availableSelectedModel}

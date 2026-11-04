@@ -198,6 +198,8 @@ export interface SessionChatInputProps {
    * `composer-agent-access.ts`.
    */
   noAccessibleAgents?: boolean;
+  /** The agent is fixed (a DM): the picker names it and offers no other. Pass no `onAgentChange` with it. */
+  agentLocked?: boolean;
   commands?: Command[];
   /**
    * Whether the live command list has EVER resolved — the hook's `data`

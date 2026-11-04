@@ -61,6 +61,7 @@ export function ComposerChatInput({
   cardClassName,
   parentClassName,
   boundAgentName,
+  lockAgent = false,
   defaultAgentName,
   channelAgentNames,
   projectSession,
@@ -124,6 +125,13 @@ export function ComposerChatInput({
   parentClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
+  /**
+   * The agent is `boundAgentName` and nothing else (a DM: the space's agent).
+   * The picker names it and offers no other agent, a pick made elsewhere
+   * never outranks it, and every send runs it. Default false: a pick
+   * outranks the bound agent (KRTX-1290).
+   */
+  lockAgent?: boolean;
   /** The agent a new thread starts on here (a channel's default). Unset: the project's default. */
   defaultAgentName?: string | null;
   /** A channel's agents: anyone who posts here runs them, granted or not. */
@@ -198,8 +206,9 @@ export function ComposerChatInput({
     agents,
     boundAgent: boundAgentName,
     defaultAgent: startAgent,
-    selectedAgent: local.agent.current?.name ?? null,
+    selectedAgent: lockAgent && boundAgentName ? null : (local.agent.current?.name ?? null),
   });
+  const agentLocked = lockAgent && !!boundAgentName;
   const selectedAgentName = agentResolution.selected;
   // An empty project roster refuses an unbound composer; the resolver answers
   // `disabled` for exactly that case.
@@ -328,7 +337,9 @@ export function ComposerChatInput({
       agents={local.agent.list}
       selectedAgent={selectedAgentName}
       noAccessibleAgents={noAccessibleAgents}
-      onAgentChange={(name) => local.agent.set(name ?? undefined)}
+      agentLocked={agentLocked}
+      // A locked agent has nothing to switch to: no handler is the composer's "fixed agent" signal.
+      onAgentChange={agentLocked ? undefined : (name) => local.agent.set(name ?? undefined)}
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}

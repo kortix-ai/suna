@@ -28,6 +28,7 @@ import { AgentSelector, resolveDisplayedAgentName, useComposerAgentChoices } fro
 import { EffortIcon, effortLabel, reasoningEffortChoices } from '../reasoning-effort-selector';
 import { useChatInputOverrides } from './chat-input-overrides';
 import {
+  chatInputAgents,
   chatInputSummary,
   modelIsOverridden,
   sameModel,
@@ -48,6 +49,8 @@ export interface ChatInputControlProps {
   agents: Agent[];
   selectedAgent: string | null;
   onAgentChange?: (agentName: string | null) => void;
+  /** The agent is fixed (a DM): the panel names `selectedAgent`, offers no agent list, and keeps only the settings. */
+  agentLocked?: boolean;
   /** Why there is nothing to pick. See `AgentSelector.unavailableHint`. */
   unavailableHint?: string | null;
   open?: boolean;
@@ -106,6 +109,7 @@ export function ChatInputControl({
   agents,
   selectedAgent,
   onAgentChange,
+  agentLocked = false,
   unavailableHint,
   open: openProp,
   onOpenChange,
@@ -155,7 +159,15 @@ export function ChatInputControl({
     else setSearch('');
   }
 
-  const displayedName = resolveDisplayedAgentName(primaryAgents, selectedAgent);
+  // A fixed agent (a DM): name it and offer no other.
+  const agentFixed = agentLocked;
+  const agentChoice = chatInputAgents(
+    primaryAgents.map((agent) => agent.name),
+    agentFixed ? selectedAgent : (resolveDisplayedAgentName(primaryAgents, selectedAgent) ?? null),
+    agentFixed,
+    isMyKortixAgentName,
+  );
+  const displayedName = agentChoice.name ?? undefined;
   const agentLabel = displayedName ? label(displayedName) : 'Agent';
   const autoFrom = t('chatInputAutoFrom', { agent: agentLabel });
 
@@ -279,22 +291,21 @@ export function ChatInputControl({
         ? summary.values.join(' · ')
         : t('chatInputOverrideCount', { count: summary.count });
 
+  const offeredKey = agentChoice.offered.join('\n');
   const filteredAgents = useMemo(() => {
     const query = search.toLowerCase().trim();
-    const list = query
-      ? primaryAgents.filter(
+    // `chatInputAgents` orders them (My Kortix first) and offers none for a fixed agent.
+    const offered = offeredKey ? offeredKey.split('\n') : [];
+    const list = offered.flatMap((name) => primaryAgents.filter((agent) => agent.name === name));
+    return query
+      ? list.filter(
           (agent) =>
             agent.name.toLowerCase().includes(query) ||
             label(agent.name).toLowerCase().includes(query) ||
             (agent.description ?? '').toLowerCase().includes(query),
         )
-      : primaryAgents;
-    // My Kortix first, the same order the agent picker uses.
-    return [
-      ...list.filter((agent) => isMyKortixAgentName(agent.name)),
-      ...list.filter((agent) => !isMyKortixAgentName(agent.name)),
-    ];
-  }, [label, primaryAgents, search]);
+      : list;
+  }, [label, offeredKey, primaryAgents, search]);
 
   const panelRef = useRef<HTMLDivElement>(null);
   const onPanelKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
@@ -328,7 +339,7 @@ export function ChatInputControl({
     Model and effort have no agent to inherit from and the send is refused
     (see `composer-agent-access.ts`), so there is nothing else to show.
   */
-  if (primaryAgents.length === 0) {
+  if (primaryAgents.length === 0 && !(agentFixed && displayedName)) {
     return (
       <AgentSelector
         agents={primaryAgents}
@@ -401,8 +412,8 @@ export function ChatInputControl({
           className="flex max-h-[min(36rem,var(--radix-popover-content-available-height,36rem))] flex-col"
         >
           <div className="min-h-0 flex-1 overflow-y-auto p-1">
-            <p className={MENU_LABEL}>{t('chatInputAgent')}</p>
-            {primaryAgents.length >= SEARCH_MIN_AGENTS ? (
+            {agentFixed ? null : <p className={MENU_LABEL}>{t('chatInputAgent')}</p>}
+            {!agentFixed && primaryAgents.length >= SEARCH_MIN_AGENTS ? (
               <InputGroupSearch className="px-1 pb-1">
                 <InputGroupSearchIcon>
                   <MagnifyingGlassIcon />
@@ -418,6 +429,7 @@ export function ChatInputControl({
                 />
               </InputGroupSearch>
             ) : null}
+            {agentFixed ? null : (
             <div role="radiogroup" aria-label={t('chatInputAgent')} className="flex flex-col gap-px">
               {filteredAgents.map((agent) => {
                 const checked = agent.name === displayedName;
@@ -447,10 +459,11 @@ export function ChatInputControl({
                 </p>
               ) : null}
             </div>
+            )}
 
             {rows.length > 0 ? (
               <>
-                <div className={MENU_SEPARATOR} />
+                {agentFixed ? null : <div className={MENU_SEPARATOR} />}
                 <p className={MENU_LABEL}>{t('chatInputSettings')}</p>
                 <ul className="flex flex-col gap-px">
                   {rows.map((row) => (

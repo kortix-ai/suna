@@ -720,6 +720,8 @@ function SpaceComposer({
           // The box empties at the keypress; the thread on the right draws the attachments.
           clearOnSend="text-only"
           boundAgentName={agent}
+          // A DM is with one agent: its composer never switches to another.
+          lockAgent={!!agent}
           // `hint`, not `placeholder`: a placeholder is only the first frame of
           // the rotating tips, and this box must always say where the message goes.
           hint={

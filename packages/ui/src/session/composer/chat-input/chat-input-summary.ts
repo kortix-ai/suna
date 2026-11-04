@@ -80,3 +80,23 @@ export function inheritedModelFor(
   if (model.onDefault) return model.currentKey ?? null;
   return model.defaults?.resolveDefaultFor(agentName ?? undefined) ?? null;
 }
+
+/**
+ * Which agent the control names, and which agents it offers.
+ *
+ * `fixed`: the composer is bound to one agent it may not leave (a DM: the
+ * space's agent; the host passes no `onAgentChange`). The control names that
+ * agent, whatever the person picked elsewhere last, and offers no list. Else
+ * it names the selection (or the first agent) and offers every agent, My
+ * Kortix first, the same order the agent picker uses.
+ */
+export function chatInputAgents(
+  agentNames: readonly string[],
+  selected: string | null,
+  fixed: boolean,
+  isMyKortix: (name: string) => boolean,
+): { name: string | null; offered: string[] } {
+  if (fixed) return { name: selected ?? agentNames[0] ?? null, offered: [] };
+  const name = (selected && agentNames.includes(selected) ? selected : null) ?? selected ?? agentNames[0] ?? null;
+  return { name, offered: [...agentNames.filter(isMyKortix), ...agentNames.filter((agent) => !isMyKortix(agent))] };
+}
