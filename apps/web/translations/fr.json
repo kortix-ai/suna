@@ -1332,7 +1332,7 @@
         },
         "voice_call": {
           "name": "Appels vocaux",
-          "description": "Appelle l'agent de la session depuis la page de la session et parle-lui. Il t'entend, répond à voix haute, voit l'écran que tu partages et travaille dans la même session : la conversation reste dans le chat."
+          "description": "Appelle un agent depuis sa page (Personnaliser → Agents) et parle-lui. Un appel est une session à part de cet agent : il t'entend, répond à voix haute et voit l'écran que tu partages, et la conversation est le chat de cette session."
         },
         "shared_drives": {
           "name": "Drives partagés",
@@ -3167,6 +3167,13 @@
       "large": "Grande exécution",
       "largeHint": "Cette exécution lance plus de 25 agents. Vous pouvez arrêter chaque agent depuis sa ligne.",
       "openRun": "Ouvrir l'exécution",
+      "viewingAgent": "Affiché",
+      "startsAfter": "Commence après {phase}",
+      "didntFinish": "N’a pas terminé",
+      "retryNow": "Réessayer",
+      "retryAgent": "Réessayer {label}",
+      "waitsFor": "Attend encore {count}",
+      "phaseProgress": "{phase} : {done} sur {total} terminés",
       "openRunLabel": "Ouvrir la session de l'exécution",
       "backgroundIdle": "Dans sa propre session",
       "savedName": "Workflow enregistré {name}",
@@ -3194,11 +3201,23 @@
       "stopFailed": "Impossible d'arrêter {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # clé} other {JSON · # clés}}",
-      "jsonItems": "{count, plural, one {JSON · # élément} other {JSON · # éléments}}"
+      "jsonItems": "{count, plural, one {JSON · # élément} other {JSON · # éléments}}",
+      "failedSentence": "Le workflow s’est arrêté avant d’avoir fini.",
+      "runningCount": "{count} en cours"
     },
     "agent": {
       "backgroundWorking": "Travaille en arrière-plan",
-      "backgroundSession": "Dans sa propre session"
+      "backgroundSession": "Dans sa propre session",
+      "open": "Ouvrir",
+      "openAgent": "Ouvrir {name}",
+      "state": {
+        "working": "Travaille",
+        "needs_input": "Vous attend",
+        "idle": "Terminé",
+        "completed": "Terminé",
+        "failed": "N’a pas terminé",
+        "stopped": "Arrêté"
+      }
     }
   },
   "agentRunLimit": {
@@ -21285,7 +21304,8 @@
       "aboutDescription": "À propos de cette description",
       "senderUnavailable": "Impossible de charger le compte d'envoi. Vérifie la ligne De.",
       "quoted": "« {text} »"
-    }
+    },
+    "promptHistory": "Historique {index}/{total}"
   },
   "commandPalette": {
     "title": "Palette de commandes",
@@ -25107,6 +25127,7 @@
   "voiceCall": {
     "title": "Appel vocal",
     "call": "Appeler",
+    "calling": "Appel en cours…",
     "start": "Démarrer un appel vocal",
     "end": "Terminer l’appel",
     "connecting": "Connexion…",
@@ -25124,6 +25145,7 @@
     "lost": "Impossible de rétablir l’appel",
     "unavailable": "Le bac à sable de cette session a démarré avant l’activation des appels vocaux. Les appels fonctionnent à partir de son prochain démarrage.",
     "callAgain": "Rappeler",
+    "openChat": "Ouvrir le chat",
     "close": "Fermer"
   },
   "agentMounts": {
@@ -25171,12 +25193,21 @@
       "shutdownRequest": "Demande d’arrêt de {from}",
       "shutdownResponse": "Réponse à la demande d’arrêt de {from}",
       "expand": "Afficher tout le message",
-      "collapse": "Masquer le message"
+      "collapse": "Masquer le message",
+      "kind": {
+        "message": "Message",
+        "finished": "Terminé",
+        "shutdownRequest": "Demande l’arrêt",
+        "shutdownResponse": "Réponse à l’arrêt"
+      }
     },
     "notice": {
       "completed": "{name} a terminé",
       "failed": "{name} n’a pas terminé",
       "stopped": "{name} a été arrêté",
+      "viewRun": "Voir l’exécution",
+      "peerFinished": "{name} a terminé",
+      "result": "Résultat",
       "fallbackName": "Votre agent",
       "openSession": "Ouvrir la session",
       "expand": "Afficher tout le résultat",
@@ -25186,7 +25217,14 @@
       "source": "Message de l’agent",
       "statusFailedShort": "Non terminé",
       "statusStoppedShort": "Arrêté",
-      "updateCount": "{count, plural, one {# message d’agent} other {# messages d’agents}}"
+      "updateCount": "{count, plural, one {# message d’agent} other {# messages d’agents}}",
+      "details": "Détails",
+      "failedSentence": "L’agent s’est arrêté avant d’avoir fini.",
+      "state": {
+        "completed": "Terminé",
+        "failed": "Pas terminé",
+        "stopped": "Arrêté"
+      }
     },
     "tools": {
       "running": {
@@ -25197,6 +25235,8 @@
         "stopping": "Arrêt d’un agent…"
       },
       "to": "À",
+      "messageTo": "Message à @{to}",
+      "messageSent": "Message envoyé",
       "peerStatus": {
         "delivered": "Transmis",
         "held": "En attente d’approbation",
@@ -25229,7 +25269,8 @@
       "blockedBy": "bloquée par {tasks}",
       "stopped": "Arrêté",
       "alreadyEnded": "Déjà terminé",
-      "openSession": "Ouvrir la session"
+      "openSession": "Ouvrir la session",
+      "messageToName": "À {to}"
     },
     "strip": {
       "label": "Agents",
@@ -25286,7 +25327,15 @@
       "retry": "Réessayer",
       "emptyTitle": "Rien pour l’instant",
       "emptyDescription": "Ses messages s’affichent ici pendant qu’il travaille.",
-      "loadOlder": "Afficher les messages précédents"
+      "loadOlder": "Afficher les messages précédents",
+      "runsLabel": "Exécutions du workflow",
+      "previousAgent": "Agent précédent",
+      "nextAgent": "Agent suivant",
+      "moreActions": "Plus d’actions",
+      "attachments": "Images jointes",
+      "removeAttachment": "Retirer {name}",
+      "attachImages": "Joindre des images",
+      "attachFailed": "Impossible de joindre l’image"
     },
     "tasks": {
       "label": "Tâches de l’équipe",
@@ -25304,10 +25353,15 @@
       "title": "Message de {from}",
       "titleShutdown": "{from} demande d’arrêter cette session",
       "waiting": "En attente de votre approbation. Elle expire au bout de 5 minutes.",
+      "waitingShort": "En attente de votre approbation",
+      "expires": "Expire au bout de 5 minutes",
       "deny": "Refuser",
       "approve": "Approuver",
       "approveFailed": "Impossible de transmettre le message",
-      "denyFailed": "Impossible de refuser le message"
+      "denyFailed": "Impossible de refuser le message",
+      "wantsToSend": "veut envoyer un message à cet agent",
+      "asksStop": "demande à cet agent de s’arrêter",
+      "needsApproval": "Attend ton accord"
     },
     "workflow": {
       "large": "Grand workflow",
@@ -25315,6 +25369,9 @@
       "paused": "En pause",
       "pause": "Mettre l’exécution en pause",
       "resume": "Reprendre l’exécution",
+      "pauseShort": "Pause",
+      "resumeShort": "Reprendre",
+      "stopShort": "Arrêter",
       "pauseHint": "Pause : aucun nouvel agent ne démarre, les agents en cours terminent (p)",
       "resumeHint": "Reprendre l’exécution (p)",
       "stop": "Arrêter l’exécution",
@@ -25324,6 +25381,7 @@
       "savePrompt": "Enregistrez l’exécution de workflow « {title} » (exécution {runId}) comme workflow enregistré : écrivez son script dans {file} et ouvrez une demande de modification pour celui-ci.",
       "saveSent": "Enregistrement du workflow demandé",
       "saveFailed": "Impossible de demander l’enregistrement du workflow",
+      "viewing": "Affiché",
       "restartHint": "Redémarrer cet agent avec le même prompt (r)",
       "restartAgent": "Redémarrer {label}",
       "failed": {
@@ -25422,5 +25480,18 @@
     "dialogTitle": "Démarrer un nouveau contexte ?",
     "dialogDescription": "L’agent continue dans un nouveau contexte et cherche dans l’historique complet quand il a besoin d’un détail. Rien n’est résumé, et la conversation reste ici telle quelle.",
     "dialogAction": "Démarrer un nouveau contexte"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Message Slack",
+    "slackConversation": "Conversation Slack",
+    "notionPage": "Page Notion",
+    "figmaDesign": "Design Figma",
+    "figjamBoard": "Tableau FigJam",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Document Google",
+    "googleSheet": "Feuille Google",
+    "googleSlides": "Google Slides",
+    "pullRequest": "PR #{number}",
+    "issue": "Ticket #{number}"
   }
 }

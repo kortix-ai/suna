@@ -22,3 +22,4 @@ import './session-read-tool';
 import './session-search-tool';
 import './session-stats-tool';
 import './session-lineage-tool';
+import './team-tools';

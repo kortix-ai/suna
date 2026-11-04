@@ -1332,7 +1332,7 @@
         },
         "voice_call": {
           "name": "音声通話",
-          "description": "セッションページからセッションのエージェントに電話して話せます。あなたの声を聞き、音声で答え、共有した画面を見て、同じセッションで作業するので、会話はチャットに残ります。"
+          "description": "エージェントのページ（カスタマイズ → エージェント）から電話して話せます。通話はそのエージェントの独立したセッションで、あなたの声を聞き、音声で答え、共有した画面を見ます。会話はそのセッションのチャットになります。"
         },
         "shared_drives": {
           "name": "共有ドライブ",
@@ -3167,6 +3167,13 @@
       "large": "大規模な実行",
       "largeHint": "この実行は 25 個を超えるエージェントを起動します。各エージェントは行から停止できます。",
       "openRun": "実行を開く",
+      "viewingAgent": "表示中",
+      "startsAfter": "{phase} の後に開始",
+      "didntFinish": "完了しませんでした",
+      "retryNow": "再試行",
+      "retryAgent": "{label} を再試行",
+      "waitsFor": "あと {count} 件を待機中",
+      "phaseProgress": "{phase} {total} 件中 {done} 件完了",
       "openRunLabel": "実行のセッションを開く",
       "backgroundIdle": "専用のセッションで実行",
       "savedName": "保存済みワークフロー {name}",
@@ -3194,11 +3201,23 @@
       "stopFailed": "{label} を停止できませんでした",
       "json": "JSON",
       "jsonKeys": "{count, plural, other {JSON · # 個のキー}}",
-      "jsonItems": "{count, plural, other {JSON · # 個の項目}}"
+      "jsonItems": "{count, plural, other {JSON · # 個の項目}}",
+      "failedSentence": "ワークフローは完了前に停止しました。",
+      "runningCount": "{count} 件実行中"
     },
     "agent": {
       "backgroundWorking": "バックグラウンドで作業中",
-      "backgroundSession": "専用のセッションで実行"
+      "backgroundSession": "専用のセッションで実行",
+      "open": "開く",
+      "openAgent": "{name} を開く",
+      "state": {
+        "working": "作業中",
+        "needs_input": "対応が必要",
+        "idle": "完了",
+        "completed": "完了",
+        "failed": "完了しませんでした",
+        "stopped": "停止"
+      }
     }
   },
   "agentRunLimit": {
@@ -21285,7 +21304,8 @@
       "aboutDescription": "この説明について",
       "senderUnavailable": "送信アカウントを読み込めませんでした。差出人の行を確認してください。",
       "quoted": "「{text}」"
-    }
+    },
+    "promptHistory": "履歴 {index}/{total}"
   },
   "commandPalette": {
     "title": "コマンドパレット",
@@ -25107,6 +25127,7 @@
   "voiceCall": {
     "title": "音声通話",
     "call": "通話",
+    "calling": "呼び出し中…",
     "start": "音声通話を開始",
     "end": "通話を終了",
     "connecting": "接続中…",
@@ -25124,6 +25145,7 @@
     "lost": "通話に再接続できませんでした",
     "unavailable": "このセッションのサンドボックスは、音声通話が有効になる前に起動しました。次回の起動から通話できます。",
     "callAgain": "もう一度通話",
+    "openChat": "チャットを開く",
     "close": "閉じる"
   },
   "agentMounts": {
@@ -25171,12 +25193,21 @@
       "shutdownRequest": "{from} からの終了リクエスト",
       "shutdownResponse": "{from} からの終了リクエストへの返答",
       "expand": "メッセージ全体を表示",
-      "collapse": "メッセージを隠す"
+      "collapse": "メッセージを隠す",
+      "kind": {
+        "message": "メッセージ",
+        "finished": "完了",
+        "shutdownRequest": "停止の依頼",
+        "shutdownResponse": "停止への回答"
+      }
     },
     "notice": {
       "completed": "{name} が完了しました",
       "failed": "{name} は完了しませんでした",
       "stopped": "{name} は停止されました",
+      "viewRun": "実行を表示",
+      "peerFinished": "{name} が完了しました",
+      "result": "結果",
       "fallbackName": "あなたのエージェント",
       "openSession": "セッションを開く",
       "expand": "結果全体を表示",
@@ -25186,7 +25217,14 @@
       "source": "エージェントの更新",
       "statusFailedShort": "未完了",
       "statusStoppedShort": "停止済み",
-      "updateCount": "{count} 件のエージェント更新"
+      "updateCount": "{count} 件のエージェント更新",
+      "details": "詳細",
+      "failedSentence": "エージェントは完了前に停止しました。",
+      "state": {
+        "completed": "完了",
+        "failed": "未完了",
+        "stopped": "停止"
+      }
     },
     "tools": {
       "running": {
@@ -25197,6 +25235,8 @@
         "stopping": "エージェントを停止中…"
       },
       "to": "宛先",
+      "messageTo": "@{to} へのメッセージ",
+      "messageSent": "メッセージを送信しました",
       "peerStatus": {
         "delivered": "配信済み",
         "held": "承認待ち",
@@ -25229,7 +25269,8 @@
       "blockedBy": "{tasks} によりブロック中",
       "stopped": "停止",
       "alreadyEnded": "すでに終了しています",
-      "openSession": "セッションを開く"
+      "openSession": "セッションを開く",
+      "messageToName": "{to} へ"
     },
     "strip": {
       "label": "エージェント",
@@ -25286,7 +25327,15 @@
       "retry": "再試行",
       "emptyTitle": "まだ何もありません",
       "emptyDescription": "作業中のメッセージがここに表示されます。",
-      "loadOlder": "以前のメッセージを表示"
+      "loadOlder": "以前のメッセージを表示",
+      "runsLabel": "ワークフローの実行",
+      "previousAgent": "前のエージェント",
+      "nextAgent": "次のエージェント",
+      "moreActions": "その他の操作",
+      "attachments": "添付した画像",
+      "removeAttachment": "{name} を削除",
+      "attachImages": "画像を添付",
+      "attachFailed": "画像を添付できませんでした"
     },
     "tasks": {
       "label": "チームのタスク",
@@ -25304,10 +25353,15 @@
       "title": "{from} からのメッセージ",
       "titleShutdown": "{from} がこのセッションの停止を求めています",
       "waiting": "承認を待っています。5 分後に期限切れになります。",
+      "waitingShort": "承認を待っています",
+      "expires": "5 分後に期限切れ",
       "deny": "拒否",
       "approve": "承認",
       "approveFailed": "メッセージを配信できませんでした",
-      "denyFailed": "メッセージを拒否できませんでした"
+      "denyFailed": "メッセージを拒否できませんでした",
+      "wantsToSend": "がこのエージェントにメッセージを送ろうとしています",
+      "asksStop": "がこのエージェントに停止を依頼しています",
+      "needsApproval": "承認が必要です"
     },
     "workflow": {
       "large": "大規模なワークフロー",
@@ -25315,6 +25369,9 @@
       "paused": "一時停止中",
       "pause": "実行を一時停止",
       "resume": "実行を再開",
+      "pauseShort": "一時停止",
+      "resumeShort": "再開",
+      "stopShort": "停止",
       "pauseHint": "一時停止: 新しいエージェントは起動せず、実行中のエージェントは完了します (p)",
       "resumeHint": "実行を再開 (p)",
       "stop": "実行を停止",
@@ -25324,6 +25381,7 @@
       "savePrompt": "ワークフローの実行「{title}」(実行 {runId}) を保存済みワークフローとして保存してください。スクリプトを {file} に書き込み、そのための変更リクエストを作成してください。",
       "saveSent": "ワークフローの保存を依頼しました",
       "saveFailed": "ワークフローの保存を依頼できませんでした",
+      "viewing": "表示中",
       "restartHint": "同じプロンプトでこのエージェントを再起動 (r)",
       "restartAgent": "{label} を再起動",
       "failed": {
@@ -25422,5 +25480,18 @@
     "dialogTitle": "新しいコンテキストを開始しますか？",
     "dialogDescription": "エージェントは新しいコンテキストで続行し、必要な詳細があると完全な履歴を検索します。要約はせず、会話はここにそのまま残ります。",
     "dialogAction": "新しいコンテキストを開始"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Slack メッセージ",
+    "slackConversation": "Slack 会話",
+    "notionPage": "Notion ページ",
+    "figmaDesign": "Figma デザイン",
+    "figjamBoard": "FigJam ボード",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Google ドキュメント",
+    "googleSheet": "Google スプレッドシート",
+    "googleSlides": "Google スライド",
+    "pullRequest": "PR #{number}",
+    "issue": "課題 #{number}"
   }
 }

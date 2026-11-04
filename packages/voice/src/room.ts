@@ -10,7 +10,7 @@
 import { chargeReply } from './cost'
 import { hedged } from './hedge'
 import type { Msg } from './lane'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
 
 const MODEL = process.env.VOICE_ROOM_MODEL ?? 'qwen/qwen3.8-27b'
 
@@ -65,7 +65,7 @@ export type Verdict = { to_me: boolean; speak: boolean; say: string; lookup: str
 const ROOM_HEDGE = Number(process.env.VOICE_ROOM_HEDGE_MS ?? 400)
 export async function judge(name: string, lines: Line[], youLast: string, signal?: AbortSignal, ms = 1500, notes = '', screen = '', people = 0): Promise<Verdict> {
   const none: Verdict = { to_me: false, speak: false, say: '', lookup: '', hush: false }
-  if (process.env.VOICE_ROOM_JUDGE === '0' || !process.env.GROQ_API_KEY || !lines.length) return none
+  if (process.env.VOICE_ROOM_JUDGE === '0' || !fastOn() || !lines.length) return none
   try {
     // Hedged (a second request after ROOM_HEDGE ms, the first answer wins), within the caller's deadline: one stalled
     // request was a silent marked moment (bench/room.ts meeting #17, a stuck group, 1 run in 3; bench/roomhedge-proof.ts).
@@ -106,7 +106,7 @@ const SUMMARY =
   'dates, and questions still open; drop small talk. Plain sentences, under 120 words. Reply with the notes only.'
 /** The running notes with these lines folded in (the previous notes when no model or no answer). */
 export async function summarize(previous: string, lines: Line[], ms = 4000): Promise<string> {
-  if (!process.env.GROQ_API_KEY || !lines.length) return previous
+  if (!fastOn() || !lines.length) return previous
   try {
     const res = await fastFetch({
       method: 'POST',

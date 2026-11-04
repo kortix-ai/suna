@@ -1332,7 +1332,7 @@
         },
         "voice_call": {
           "name": "语音通话",
-          "description": "在会话页面直接呼叫会话的智能体并与它交谈。它能听到你的声音、用语音回答、看到你共享的屏幕，并在同一会话中工作，对话会保留在聊天里。"
+          "description": "在智能体的页面（自定义 → 智能体）呼叫它并与它交谈。每次通话都是该智能体的一个独立会话：它能听到你的声音、用语音回答并看到你共享的屏幕，对话就是该会话的聊天。"
         },
         "shared_drives": {
           "name": "共享云盘",
@@ -3167,6 +3167,13 @@
       "large": "大型运行",
       "largeHint": "此次运行会启动超过 25 个智能体。你可以在每一行停止对应的智能体。",
       "openRun": "打开运行",
+      "viewingAgent": "正在查看",
+      "startsAfter": "在 {phase} 之后开始",
+      "didntFinish": "未完成",
+      "retryNow": "重试",
+      "retryAgent": "重试 {label}",
+      "waitsFor": "还在等待 {count} 个",
+      "phaseProgress": "{phase} 已完成 {done}/{total}",
       "openRunLabel": "打开此次运行的会话",
       "backgroundIdle": "在独立会话中",
       "savedName": "已保存的工作流 {name}",
@@ -3194,11 +3201,23 @@
       "stopFailed": "无法停止 {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, other {JSON · # 个键}}",
-      "jsonItems": "{count, plural, other {JSON · # 项}}"
+      "jsonItems": "{count, plural, other {JSON · # 项}}",
+      "failedSentence": "该工作流在完成前停止了。",
+      "runningCount": "{count} 个运行中"
     },
     "agent": {
       "backgroundWorking": "正在后台工作",
-      "backgroundSession": "在独立会话中"
+      "backgroundSession": "在独立会话中",
+      "open": "打开",
+      "openAgent": "打开 {name}",
+      "state": {
+        "working": "工作中",
+        "needs_input": "需要你处理",
+        "idle": "已完成",
+        "completed": "已完成",
+        "failed": "未完成",
+        "stopped": "已停止"
+      }
     }
   },
   "agentRunLimit": {
@@ -21285,7 +21304,8 @@
       "aboutDescription": "关于此描述",
       "senderUnavailable": "无法加载发送账户。请检查发件人一行。",
       "quoted": "“{text}”"
-    }
+    },
+    "promptHistory": "历史记录 {index}/{total}"
   },
   "commandPalette": {
     "title": "命令面板",
@@ -25107,6 +25127,7 @@
   "voiceCall": {
     "title": "语音通话",
     "call": "通话",
+    "calling": "正在呼叫…",
     "start": "开始语音通话",
     "end": "结束通话",
     "connecting": "正在连接…",
@@ -25124,6 +25145,7 @@
     "lost": "无法重新连接通话",
     "unavailable": "此会话的沙盒在语音通话开启之前启动。从它下次启动起即可通话。",
     "callAgain": "重新呼叫",
+    "openChat": "打开聊天",
     "close": "关闭"
   },
   "agentMounts": {
@@ -25171,12 +25193,21 @@
       "shutdownRequest": "来自 {from} 的关闭请求",
       "shutdownResponse": "{from} 的关闭请求答复",
       "expand": "显示完整消息",
-      "collapse": "收起消息"
+      "collapse": "收起消息",
+      "kind": {
+        "message": "消息",
+        "finished": "已完成",
+        "shutdownRequest": "请求停止",
+        "shutdownResponse": "停止回复"
+      }
     },
     "notice": {
       "completed": "{name} 已完成",
       "failed": "{name} 未完成",
       "stopped": "{name} 已停止",
+      "viewRun": "查看运行",
+      "peerFinished": "{name} 已完成",
+      "result": "结果",
       "fallbackName": "你的智能体",
       "openSession": "打开会话",
       "expand": "显示完整结果",
@@ -25186,7 +25217,14 @@
       "source": "智能体更新",
       "statusFailedShort": "未完成",
       "statusStoppedShort": "已停止",
-      "updateCount": "{count} 条智能体更新"
+      "updateCount": "{count} 条智能体更新",
+      "details": "详情",
+      "failedSentence": "该智能体在完成前停止了。",
+      "state": {
+        "completed": "已完成",
+        "failed": "未完成",
+        "stopped": "已停止"
+      }
     },
     "tools": {
       "running": {
@@ -25197,6 +25235,8 @@
         "stopping": "正在停止智能体…"
       },
       "to": "收件人",
+      "messageTo": "发给 @{to} 的消息",
+      "messageSent": "消息已发送",
       "peerStatus": {
         "delivered": "已送达",
         "held": "等待批准",
@@ -25229,7 +25269,8 @@
       "blockedBy": "被 {tasks} 阻塞",
       "stopped": "已停止",
       "alreadyEnded": "已结束",
-      "openSession": "打开会话"
+      "openSession": "打开会话",
+      "messageToName": "发给 {to}"
     },
     "strip": {
       "label": "智能体",
@@ -25286,7 +25327,15 @@
       "retry": "重试",
       "emptyTitle": "暂无内容",
       "emptyDescription": "它工作时的消息会显示在这里。",
-      "loadOlder": "显示更早的消息"
+      "loadOlder": "显示更早的消息",
+      "runsLabel": "工作流运行",
+      "previousAgent": "上一个代理",
+      "nextAgent": "下一个代理",
+      "moreActions": "更多操作",
+      "attachments": "已附加的图片",
+      "removeAttachment": "移除 {name}",
+      "attachImages": "附加图片",
+      "attachFailed": "无法附加图片"
     },
     "tasks": {
       "label": "团队任务",
@@ -25304,10 +25353,15 @@
       "title": "来自 {from} 的消息",
       "titleShutdown": "{from} 请求停止此会话",
       "waiting": "等待你的批准。5 分钟后过期。",
+      "waitingShort": "等待你的批准",
+      "expires": "5 分钟后过期",
       "deny": "拒绝",
       "approve": "批准",
       "approveFailed": "无法送达消息",
-      "denyFailed": "无法拒绝消息"
+      "denyFailed": "无法拒绝消息",
+      "wantsToSend": "想给这个智能体发消息",
+      "asksStop": "请求这个智能体停止",
+      "needsApproval": "需要你批准"
     },
     "workflow": {
       "large": "大型工作流",
@@ -25315,6 +25369,9 @@
       "paused": "已暂停",
       "pause": "暂停运行",
       "resume": "恢复运行",
+      "pauseShort": "暂停",
+      "resumeShort": "继续",
+      "stopShort": "停止",
       "pauseHint": "暂停：不再启动新的智能体，正在运行的智能体会完成 (p)",
       "resumeHint": "恢复运行 (p)",
       "stop": "停止运行",
@@ -25324,6 +25381,7 @@
       "savePrompt": "请将工作流运行“{title}”（运行 {runId}）保存为已保存的工作流：把它的脚本写入 {file}，并为此发起一个变更请求。",
       "saveSent": "已请求保存工作流",
       "saveFailed": "无法请求保存工作流",
+      "viewing": "正在查看",
       "restartHint": "用相同的提示词重启此智能体 (r)",
       "restartAgent": "重启 {label}",
       "failed": {
@@ -25422,5 +25480,18 @@
     "dialogTitle": "开始新的上下文？",
     "dialogDescription": "智能体在新的上下文中继续，需要细节时会搜索完整历史。不会进行任何总结，对话会原样保留在这里。",
     "dialogAction": "开始新的上下文"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Slack 消息",
+    "slackConversation": "Slack 对话",
+    "notionPage": "Notion 页面",
+    "figmaDesign": "Figma 设计",
+    "figjamBoard": "FigJam 白板",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Google 文档",
+    "googleSheet": "Google 表格",
+    "googleSlides": "Google 幻灯片",
+    "pullRequest": "PR #{number}",
+    "issue": "议题 #{number}"
   }
 }

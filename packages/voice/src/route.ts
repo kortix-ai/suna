@@ -8,7 +8,7 @@ import { metered } from './cost'
 import { hedged } from './hedge'
 import { norm } from './lang'
 import { threadSnapshot, type ThreadSnapshot } from './thread'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
 
 export type Card = { type: 'weather'; place: string; horizon?: 'next_week' } | { type: 'version'; product: string } | { type: 'price'; asset: string } | { type: 'fx'; from: string; to: string } | { type: 'f1' }
 export type Route = { need: 'web' | 'code' | 'none' | 'clarify'; query: string; card?: Card; locationEvidence?: string; heard?: string } // heard: what they most likely said, when speech-to-text misheard it
@@ -131,7 +131,7 @@ const said = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, '
 export function route(text: string, context = '', workspace = '', ms = 1200): Promise<Route | undefined> {
   const key = `${context}\n${said(text)}`
   if (cache.has(key)) return cache.get(key)!
-  if (!process.env.GROQ_API_KEY || process.env.VOICE_ROUTE === '0') return Promise.resolve(undefined)
+  if (!fastOn() || process.env.VOICE_ROUTE === '0') return Promise.resolve(undefined)
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), ms)
   const users = [...context.matchAll(/^User: (.*)$/gm)].map((match) => match[1]!)

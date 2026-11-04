@@ -4,7 +4,7 @@
 // changing, sending, deleting or deploying stays a question. Runs while the answer's first sentence plays.
 // Off with VOICE_OFFERS=0.
 import { chargeReply } from './cost'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
 const MODEL = process.env.VOICE_OFFER_MODEL ?? 'qwen/qwen3.8-27b'
 const SYSTEM =
   'A voice assistant just said the sentence below after answering. Decide what kind of sentence it is, in any language. ' +
@@ -19,7 +19,7 @@ export type Offer = { say: string; step: string }
 
 /** The step this sentence offers, restated, or undefined (not an offer, no model, or no answer within `ms`). */
 export async function offered(sentence: string, ms = 600): Promise<Offer | undefined> {
-  if (process.env.VOICE_OFFERS === '0' || !process.env.GROQ_API_KEY) return undefined
+  if (process.env.VOICE_OFFERS === '0' || !fastOn()) return undefined
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), ms)
   try {

@@ -445,11 +445,18 @@ export async function connectorsV2Items(
     const key = v2AppKey(item.name);
     if (key && !domainOf.has(key)) domainOf.set(key, item.domain);
   }
-  const items = [
-    ...kortix,
-    ...direct,
-    ...toolkits.map((card) => composioCatalogItem(card, domainOf.get(v2AppKey(card.name)))),
-  ];
+  // A toolkit whose name matches no record joins the registry's `<slug>.com`:
+  // Composio's YouTube (`youtube`) is the registry's "YouTube Data"
+  // (youtube.com), Twitter is "twitter.com – current". Without this the app
+  // lists twice, and the registry card asks for an API key or OAuth client.
+  const registryDomains = new Set(direct.map((item) => item.domain));
+  const toolkitDomain = (card: ComposioCatalogCard): string | undefined => {
+    const named = domainOf.get(v2AppKey(card.name));
+    if (named) return named;
+    const slugDomain = `${card.slug.toLowerCase()}.com`;
+    return registryDomains.has(slugDomain) ? slugDomain : undefined;
+  };
+  const items = [...kortix, ...direct, ...toolkits.map((card) => composioCatalogItem(card, toolkitDomain(card)))];
   // Every record stays: a search must still find a worse surface of an app,
   // and the registry files several apps under one domain (Microsoft Graph).
   // Records come grouped by domain, best way in first, so `list` and the
