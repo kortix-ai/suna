@@ -72,6 +72,7 @@ import {
 import { registerSecretRateLimitRoutes } from './secret-rate-limit';
 import { registerSecretPersonalRoutes } from './secret-personal';
 import { registerSecretSyncRoutes } from './secret-sync';
+import { capturePersonEvent } from './product-events';
 
 const SecretSharePrincipalSchema = z.object({
   /** `agent`: the id is the agent's service account (`/iam/agent-identities`). */
@@ -534,6 +535,22 @@ export function registerSecretsRoutes(): void {
         userId: loaded.userId,
         secretName: name,
       });
+    }
+
+    // New secrets only, and only their kind: never the name or the value.
+    if (value !== null && !existing) {
+      const providerKey = isGatewayManagedEnv(name);
+      capturePersonEvent(c, loaded, projectId, 'secret_created', {
+        name_kind: providerKey ? 'provider' : 'other',
+        strategy: explicitStrategy ?? 'runtime',
+      });
+      if (providerKey) {
+        // A gateway-managed env var is one of our provider keys (ANTHROPIC_API_KEY → anthropic).
+        capturePersonEvent(c, loaded, projectId, 'provider_configured', {
+          provider: name.replace(/_(API_KEY|KEY|TOKEN)$/, '').toLowerCase(),
+          method: 'api_key',
+        });
+      }
     }
 
     const views = await loadSecretViewsForUser({

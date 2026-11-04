@@ -686,6 +686,10 @@ export async function completeSandboxTurn(
       endedTurnLedger(owner, turns, endReason, endError),
       `complete ${turns.map((turn) => turn.token).join(',')} (${endReason})`,
     );
+    // Lazy like `../shared/db` above: this module loads without a database.
+    void import('./turn-analytics')
+      .then((m) => m.reportTurnsCompleted(owner, turns, status, error?.name, ABORT_END_ERROR_NAMES))
+      .catch(() => undefined);
     // The backstop for an acceptance that never landed: `completed`/`failed`
     // both mean the turn RAN, so the prompt it carried is consumed either way.
     // The never-ran reasons (`abandoned`, `runtime_gone`, `unknown`) cannot

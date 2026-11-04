@@ -1,6 +1,6 @@
 'use client';
 
-import { uiRoutes } from '../../lib/routes';
+import { newSessionHref } from '../../lib/routes';
 import { Button } from '../../primitives/button';
 import { DropdownMenu, DropdownMenuTrigger } from '../../primitives/dropdown-menu';
 import Hint from '../../primitives/hint';
@@ -47,7 +47,7 @@ export function SessionsToolbar({
   onNewSession?: () => void;
   creatingSession: boolean;
   canSelect: boolean;
-  /** False under `project_channels`: work starts from a channel's composer. */
+  /** False under `chat`: work starts from a channel's composer. */
   showNewSession?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -98,7 +98,7 @@ export function SessionsToolbar({
           size="icon"
           aria-label={tI18nComplete.raw('text8cb650539ec8')}
           onClick={() => onSearchOpenChange(true)}
-          className="size-8 transition-[scale] duration-150 active:scale-[0.96]"
+          className="size-8 transition-[scale] duration-normal active:scale-[0.96]"
         >
           <MagnifyingGlassIcon className="size-4 shrink-0" />
         </Button>
@@ -122,7 +122,7 @@ export function SessionsToolbar({
                 variant="outline"
                 size="sm"
                 aria-label={tI18nComplete.raw('text6c03b504d991')}
-                className="transition-[scale] duration-150 active:scale-[0.96]"
+                className="transition-[scale] duration-normal active:scale-[0.96]"
               >
                 {tI18nComplete.raw('text638e249f4a15')}
               </Button>
@@ -147,7 +147,7 @@ export function SessionsToolbar({
           variant="outline"
           size="sm"
           onClick={onEnterSelectMode}
-          className="h-8 transition-[scale] duration-150 active:scale-[0.96]"
+          className="h-8 transition-[scale] duration-normal active:scale-[0.96]"
         >
           {tI18nComplete.raw('text2a78025de6aa')}
         </Button>
@@ -162,7 +162,7 @@ export function SessionsToolbar({
           type="button"
           size="sm"
           variant="secondary"
-          className={cn('h-8 gap-1.5 transition-[scale] duration-150 active:scale-[0.96]')}
+          className={cn('h-8 gap-1.5 transition-[scale] duration-normal active:scale-[0.96]')}
           disabled
           aria-busy
         >
@@ -174,9 +174,9 @@ export function SessionsToolbar({
           asChild
           size="sm"
           variant="secondary"
-          className={cn('h-8 gap-1.5 transition-[scale] duration-150 active:scale-[0.96]')}
+          className={cn('h-8 gap-1.5 transition-[scale] duration-normal active:scale-[0.96]')}
         >
-          <Link href={uiRoutes().project(projectId)} prefetch onClick={onNewSession}>
+          <Link href={newSessionHref(projectId)} prefetch onClick={onNewSession}>
             <PlusIcon className="size-4 shrink-0" />
             {tI18nComplete.raw('text18fdd549b2ed')}
           </Link>

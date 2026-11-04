@@ -72,3 +72,8 @@ describe('notice lines', () => {
     expect(batchTitle(1)).toBe('1 agent finished');
   });
 });
+
+test('a JSON workflow result reads as its document', () => {
+  const doc = '# Growth plan\n\nOne pack. Ten pilots.';
+  expect(noticeReport(JSON.stringify({ strategy: doc }))).toBe(doc);
+});

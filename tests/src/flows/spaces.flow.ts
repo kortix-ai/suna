@@ -1,6 +1,6 @@
 /**
  * Project spaces — channels (product word "Channel") and a member's DMs with an
- * agent, behind the `project_channels` flag. Spec: tests/spec/end-to-end.md
+ * agent, behind the `chat` flag. Spec: tests/spec/end-to-end.md
  * § 7a. Source of truth: apps/api/src/projects/routes/project-spaces.ts +
  * projects/lib/project-spaces.ts + feature-flags/toggle-effects.ts.
  */
@@ -69,14 +69,14 @@ flow('SPACE-1', meta(Object.values(ROUTES)), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
-    await ctx.step('with project_channels off (the default), every spaces route → 403 feature_disabled', async () => {
+    await ctx.step('with chat off (the default), every spaces route → 403 feature_disabled', async () => {
       for (const r of [
         await world.owner.get(SPACES, { params }),
         await world.owner.post(SPACES, { name: 'Launch Week' }, { params }),
         await world.owner.patch(SPACE, { name: 'x' }, { params: { ...params, spaceId: randomUUID() } }),
         await world.owner.post(DM, { agent_name: 'kortix' }, { params }),
       ]) {
-        r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'project_channels');
+        r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'chat');
       }
     });
 
@@ -109,8 +109,8 @@ flow('SPACE-2', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
     });
 
     let generalId = '';
-    await ctx.step('turn project_channels on, then two concurrent GET /spaces → both list exactly #general (is_default) with the same space_id', async () => {
-      await world.setFeature('project_channels', true);
+    await ctx.step('turn chat on, then two concurrent GET /spaces → both list exactly #general (is_default) with the same space_id', async () => {
+      await world.setFeature('chat', true);
       const [a, b] = await Promise.all([world.owner.get(SPACES, { params }), world.owner.get(SPACES, { params })]);
       for (const r of [a, b]) {
         r.status(200).body().schema(SpaceListSchema)
@@ -145,7 +145,7 @@ flow('SPACE-2', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
     });
 
     await ctx.step('turning the flag off deletes nothing: #general and the session link stay, the route → 403', async () => {
-      await world.setFeature('project_channels', false);
+      await world.setFeature('chat', false);
       (await world.owner.get(SPACES, { params })).status(403).body().has('$.code', 'feature_disabled');
       const { rows } = await world.db.query<{ space_id: string | null }>(
         'SELECT s.space_id FROM kortix.project_sessions s JOIN kortix.project_spaces p ON p.space_id = s.space_id WHERE s.session_id = $1',
@@ -162,7 +162,7 @@ flow('SPACE-3', meta([ROUTES.list, ROUTES.create, ROUTES.update, FEATURES_ROUTE]
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
-    await world.setFeature('project_channels', true);
+    await world.setFeature('chat', true);
     let launchId = '';
     let generalId = '';
 
@@ -254,7 +254,7 @@ flow('SPACE-4', meta([ROUTES.list, ROUTES.dm, ROUTES.update, FEATURES_ROUTE]), a
   const { team, project, world } = await openWorld(ctx, { manifest: true });
   const params = { projectId: project.id };
   try {
-    await world.setFeature('project_channels', true);
+    await world.setFeature('chat', true);
     let dmId = '';
 
     await ctx.step('POST /spaces/dm {agent_name: kortix} twice → 200, the same DM space_id', async () => {
@@ -356,11 +356,11 @@ async function sessionSpaceId(world: AgentPrincipalsWorld, sessionId: string): P
 }
 
 /**
- * Turn `project_channels` on and wait for its toggle effect to finish: it
+ * Turn `chat` on and wait for its toggle effect to finish: it
  * files `canary` (a session in no space) into `#general`. Returns `#general`'s id.
  */
 async function enableChannelsAndSettle(world: AgentPrincipalsWorld, canary: string): Promise<string> {
-  await world.setFeature('project_channels', true);
+  await world.setFeature('chat', true);
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     if (await sessionSpaceId(world, canary)) break;
@@ -384,7 +384,7 @@ flow('SPACE-5', createMeta([ROUTES.create, SESSION_ROUTES.create, SESSION_ROUTES
   const { team, project, world } = await openWorld(ctx, { manifest: true });
   const params = { projectId: project.id };
   try {
-    await world.setFeature('project_channels', true);
+    await world.setFeature('chat', true);
     await world.fund();
     const channelId = (await world.owner.post(SPACES, { name: 'Launch Week' }, { params })).status(201).json<Space>().space_id;
     const text = 'ke2e: plan the launch week';
@@ -422,7 +422,7 @@ flow('SPACE-6', createMeta([ROUTES.list, SESSION_ROUTES.create, FEATURES_ROUTE])
   const { project, world } = await openWorld(ctx, { manifest: true });
   const params = { projectId: project.id };
   try {
-    await world.setFeature('project_channels', true);
+    await world.setFeature('chat', true);
     await world.fund();
     await ctx.step('create without space_id (flag on) → 201 in #general, private by default, first_prompt is the initial prompt', async () => {
       const r = await world.owner.post(SESSIONS, { initial_prompt: 'ke2e: noop' }, { params });
@@ -442,7 +442,7 @@ flow('SPACE-7', meta([ROUTES.create, ROUTES.update, ROUTES.dm, SESSION_ROUTES.cr
   const { team, project, world } = await openWorld(ctx, { manifest: true });
   const params = { projectId: project.id };
   try {
-    await world.setFeature('project_channels', true);
+    await world.setFeature('chat', true);
     await world.fund();
     const member = await team.addMember('member');
     await team.grantProjectRole(project.id, member.userId!, 'member');
@@ -523,7 +523,7 @@ flow('SPACE-9', meta([ROUTES.list, SESSION_ROUTES.list, FEATURES_ROUTE]), async 
 
     let generalId = '';
     await ctx.step('turn the flag on → every one of them lands in #general (count before = count in #general after)', async () => {
-      await world.setFeature('project_channels', true);
+      await world.setFeature('chat', true);
       generalId = await generalSpaceId(world, project.id);
       const deadline = Date.now() + 15_000;
       let after = 0;
@@ -568,7 +568,7 @@ flow('SPACE-10', meta([ROUTES.list, ROUTES.create, SESSION_ROUTES.list, FEATURES
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
-    await world.setFeature('project_channels', true);
+    await world.setFeature('chat', true);
     const generalId = await generalSpaceId(world, project.id);
     const channelId = (await world.owner.post(SPACES, { name: 'Paging' }, { params })).status(201).json<Space>().space_id;
     // 5 threads in the channel and 5 in #general, interleaved in time, so every
@@ -674,7 +674,7 @@ flow('SPACE-13', createMeta([ROUTES.list, SESSION_ROUTES.create, SESSION_ROUTES.
   const { team, project, world } = await openWorld(ctx, { manifest: true });
   const params = { projectId: project.id };
   try {
-    await world.setFeature('project_channels', true);
+    await world.setFeature('chat', true);
     await world.fund();
     const general = await generalSpaceId(world, project.id);
     const member = await team.addMember('member');
@@ -732,7 +732,7 @@ flow('SPACE-14', meta([...Object.values(TAB_ROUTES), FEATURES_ROUTE]), async (ct
   const { project, world } = await openWorld(ctx);
   const params = { projectId: project.id, spaceId: randomUUID() };
   try {
-    await ctx.step('with project_channels off, the apps, links and pin routes → 403 feature_disabled', async () => {
+    await ctx.step('with chat off, the apps, links and pin routes → 403 feature_disabled', async () => {
       for (const r of [
         await world.owner.get(SPACE_APPS, { params }),
         await world.owner.get(SPACE_LINKS, { params }),
@@ -740,7 +740,7 @@ flow('SPACE-14', meta([...Object.values(TAB_ROUTES), FEATURES_ROUTE]), async (ct
         await world.owner.del(SPACE_LINK, { params: { ...params, linkId: randomUUID() } }),
         await world.owner.patch(SPACE_LINK, { pinned: true }, { params: { ...params, linkId: randomUUID() } }),
       ]) {
-        r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'project_channels');
+        r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'chat');
       }
     });
   } finally {
@@ -768,7 +768,7 @@ flow('SPACE-15', meta([TAB_ROUTES.apps, ROUTES.create, ROUTES.dm, FEATURES_ROUTE
   const { project, world } = await openWorld(ctx, { manifest: true });
   const params = { projectId: project.id };
   try {
-    await world.setFeature('project_channels', true);
+    await world.setFeature('chat', true);
     const general = await generalSpaceId(world, project.id);
     const channel = (await world.owner.post(SPACES, { name: 'Builds' }, { params })).status(201).json<Space>().space_id;
     const appIds: string[] = [];
@@ -804,7 +804,7 @@ flow('SPACE-16', meta([TAB_ROUTES.links, TAB_ROUTES.addLink, TAB_ROUTES.removeLi
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
-    await world.setFeature('project_channels', true);
+    await world.setFeature('chat', true);
     const channel = (await world.owner.post(SPACES, { name: 'Research' }, { params })).status(201).json<Space>().space_id;
     const at = { ...params, spaceId: channel };
     const member = await team.addMember('member');
@@ -944,7 +944,7 @@ flow(
         if ((await storedTriggerSpace(world, 'off-digest')) !== null) throw new Error('space_id stored with the flag off');
       });
 
-      await world.setFeature('project_channels', true);
+      await world.setFeature('chat', true);
       await generalSpaceId(world, project.id); // creates #general
       const channel = (await world.owner.post(SPACES, { name: 'Ops' }, { params })).status(201).json<Space>().space_id;
 
@@ -1018,9 +1018,9 @@ flow(
       });
 
       await ctx.step('flag off: a PATCH asking a DM trigger for project sharing keeps it DM-only', async () => {
-        await world.setFeature('project_channels', false);
+        await world.setFeature('chat', false);
         (await world.owner.patch(TRIGGER, { session_access: { mode: 'project' } }, { params: { ...params, slug: 'dm-digest' } })).status(200);
-        await world.setFeature('project_channels', true);
+        await world.setFeature('chat', true);
         const listed = await listedTrigger(world, 'dm-digest');
         if (listed.session_access.mode !== 'members') throw new Error(`flag-off PATCH stored ${listed.session_access.mode}`);
       });
@@ -1087,7 +1087,7 @@ flow(
       return firedSession(world, body.session_id);
     };
     try {
-      await world.setFeature('project_channels', true);
+      await world.setFeature('chat', true);
       await world.fund();
       // A BYOK key gives the account a usable model, so the fire passes the no-usable-model gate.
       (await world.owner.post(
@@ -1156,7 +1156,7 @@ flow(
     const { team, project, world } = await openWorld(ctx, { manifest: true });
     const params = { projectId: project.id };
     try {
-      await world.setFeature('project_channels', true);
+      await world.setFeature('chat', true);
       const channel = (await world.owner.post(SPACES, { name: 'Shared links' }, { params })).status(201).json<Space>().space_id;
       const at = { ...params, spaceId: channel };
       const thread = await insertSession(world, world.ownerUserId, 'project', { spaceId: channel });
@@ -1269,9 +1269,9 @@ flow(
         const privateThread = await insertSession(world, world.ownerUserId, 'private', { spaceId: channel });
         await prompt(dmThread, 'https://example.test/from-dm');
         await prompt(privateThread, 'https://example.test/from-private');
-        await world.setFeature('project_channels', false);
+        await world.setFeature('chat', false);
         await prompt(thread, 'https://example.test/flag-off');
-        await world.setFeature('project_channels', true);
+        await world.setFeature('chat', true);
         // A positive control after the three: once it is listed, the three were decided.
         await prompt(thread, 'https://example.test/control');
         const rows = await waitFor((r) => !!byUrl(r, 'https://example.test/control'));
@@ -1300,7 +1300,7 @@ flow('SPACE-21', meta([TAB_ROUTES.links, TAB_ROUTES.addLink, ROUTES.create, FEAT
   const { project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
-    await world.setFeature('project_channels', true);
+    await world.setFeature('chat', true);
     const channel = (await world.owner.post(SPACES, { name: 'Unfurl' }, { params })).status(201).json<Space>().space_id;
     const at = { ...params, spaceId: channel };
     type Row = { link_id: string; fetched_title: string | null; site_name: string | null; icon_url: string | null; fetched_at: Date | null; fetch_failed_at: Date | null };
@@ -1364,7 +1364,7 @@ flow('SPACE-22', meta([ROUTES.list, ROUTES.create, ROUTES.update, ROUTES.dm, FEA
   const params = { projectId: project.id };
   try {
     await world.writeManifest(TWO_AGENT_MANIFEST, 'ke2e: two agents');
-    await world.setFeature('project_channels', true);
+    await world.setFeature('chat', true);
     let channelId = '';
 
     await ctx.step('a new channel and #general have no agent list: agents []', async () => {
@@ -1436,7 +1436,7 @@ flow('SPACE-23', meta([...Object.values(MEMBER_ROUTES), ROUTES.list, ROUTES.crea
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
-    await world.setFeature('project_channels', true);
+    await world.setFeature('chat', true);
     const priya = await team.addMember('member');
     const sam = await team.addMember('member');
     const outsider = await team.addMember('member');

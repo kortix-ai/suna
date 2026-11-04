@@ -9,7 +9,7 @@ import { CARD_HOSTS, card } from './cards'
 import * as source from './cards' // filled() read off it: a stand-in card source (the proofs') has only card()
 import { type Card, decided, route } from './route'
 import { asking, heard, judge, provide, routing } from './judge'
-import { lookup as chunks, namedFiles, repoMap } from './workspace'
+import { lookup as chunks, identity, namedFiles, outline, repoMap } from './workspace'
 import { content, firstUseful, pageBlocks, readPages } from './pages'
 import { router, routed } from './models'
 
@@ -147,6 +147,10 @@ async function firecrawl(q: string, signal: AbortSignal): Promise<string> {
   return web.map((r) => `${r.title} (${r.url}): ${(r.description ?? '').slice(0, 300)}`).join('\n')
 }
 
+// A search to make: a provider's key here, or the Kortix router in a box (it holds the keys). Keys alone left a box with
+// no web lookup at all: the router's search went unused and each web question waited on the agent's own tools.
+const searchOn = () => !!(router() || process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY || process.env.FIRECRAWL_API_KEY)
+
 const HOSTS = () => [...((r = router()) => (r ? [`${r.base}/health`] : ['https://api.tavily.com/', 'https://google.serper.dev/', 'https://api.firecrawl.dev/']))(), ...CARD_HOSTS]
 let warmed = 0
 /** Opens (or keeps open) the connections to the search providers: a new one costs ~0.4 s (measured). Cheap to call often. */
@@ -185,8 +189,24 @@ async function git(root: string): Promise<string> {
 /** The repo map for a call's first workspace question ('' without a workspace). */
 export const workspaceMap = () => (repo ? repoMap(repo) : '')
 
-// What the router is told the workspace is: its folder name and the package's description.
-const project = repo ? [basename(repo), (() => { try { return JSON.parse(require('node:fs').readFileSync(`${repo}/package.json`, 'utf8')).description ?? '' } catch { return '' } })()].filter(Boolean).join(': ') : ''
+// What the router is told the workspace is: what the project calls itself (else its folder's name), what it says it is,
+// and its root folders (a Kortix project's memory notes are files there: a question on them is a workspace question,
+// answered from the files in a second, not handed to the agent).
+/** Text for inside a data envelope's attribute or body: no quote to close the attribute, no data tag to close it. */
+// No angle bracket at all: stripping "</data>" alone left one from a nested "</da</data>ta>" (Strix on #11771).
+const envelope = (s: string) => s.replace(/"/g, "'").replace(/[<>]/g, '')
+// Read when asked, kept 30 s: in a Kortix box the voice loads with kortixd, before the project's files are in /workspace
+// (read at load, the name was the folder's, "workspace", and the router was told no folders and no notes).
+let known: { at: number; named: string; project: string } | undefined
+const workspace = () => {
+  if (known && Date.now() - known.at < 30_000) return known
+  const named = repo ? identity(repo) || basename(repo) : ''
+  const o = repo ? outline(repo) : { about: '', folders: '', notes: '' }
+  const project = repo ? envelope(`${named}${o.about ? `: ${o.about}` : ''}${o.folders ? `; its folders: ${o.folders}` : ''}${o.notes ? `; its memory notes (memory/): ${o.notes}` : ''}`) : ''
+  return (known = { at: Date.now(), named, project })
+}
+/** The workspace as the router is told it (for evals). */
+export const workspaceProject = () => workspace().project
 
 // And the files of it the words name: "What does the cascade file do?" was routed none (the router had only the name and
 // description, and "cascade" read as a general idea), and the agent's opener made up what it does (bench/namedfile-proof.ts).
@@ -195,6 +215,7 @@ const project = repo ? [basename(repo), (() => { try { return JSON.parse(require
 // (~150 ms, every 30 s) never lands on an ordinary turn's routing.
 const projectFor = (q: string) => {
   const files = repo && /\b(file|module|script)\b|\w\.\w{1,4}\b|\bdot\s+[a-z]{1,4}\b/i.test(q) ? namedFiles(repo, q) : []
+  const { project } = workspace()
   return files.length ? `${project}; the turn names its file ${files.slice(0, 3).join(', ')}` : project
 }
 
@@ -221,7 +242,7 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
   const remaining = () => Math.max(0, deadline - performance.now())
   // The words themselves are searched at once, beside the router: a web turn no longer waits for routing, then search
   // (and a turn routed to no lookup has it ready if the agent reaches for the web itself).
-  const searching = !!(process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY || process.env.FIRECRAWL_API_KEY)
+  const searching = searchOn()
   // ahead: a question looked up before it is asked (src/anticipate.ts) waits for its route; no extra search on its words.
   const raw = searching && !ahead && content(q).size >= 2 ? search(q) : undefined
   // words: a search on the words themselves, no routing (the agent is about to search on its own; ours is faster).
@@ -234,12 +255,14 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
     const data = code(`${q} ${r.query}`)
     // Named: the workspace is one project (this machine's), not whatever repository the call talks about. Unnamed, the
     // voice-agent's own git log answered "categorize what is being pushed" right after the agent had opened another repo.
-    const of = basename(repo ?? '')
-    return [state && `<data source="git of ${of}, read just now">\n${state}\n</data>`, data && `<data source="workspace: ${of}">\n${data}\n</data>`].filter(Boolean).join('\n')
+    // Named inside the data too: "What is the name of this project?" with the name only in the label got "I don't see a
+    // project name in those files" (a Kortix dev call, its chunks a sub-project's).
+    // Escaped as the web-search query is: a README title cannot close the data envelope and speak as instructions.
+    const of = envelope(workspace().named)
+    return [state && `<data source="git of ${of}, read just now">\n${state}\n</data>`, data && `<data source="workspace: ${of}">\nThis project: ${of}\n${data}\n</data>`].filter(Boolean).join('\n')
   }
-  const hasSearch = !!(process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY || process.env.FIRECRAWL_API_KEY)
   let fallback: Promise<string> | undefined
-  const searchNow = () => fallback ??= hasSearch ? (raw ? firstUseful([words ? raw : reuse(r.query) ?? search(r.query), raw]) : reuse(r.query) ?? search(r.query)) : Promise.resolve('')
+  const searchNow = () => fallback ??= searching ? (raw ? firstUseful([words ? raw : reuse(r.query) ?? search(r.query), raw]) : reuse(r.query) ?? search(r.query)) : Promise.resolve('')
   const web = async () => {
     const data = await searchNow()
     const found = data ? `<data source="web search" query="${r.query.replace(/"/g, "'")}">\n${data.replace(/<\/?data\b[^>]*>/gi, '')}\n</data>` : '' // untrusted: cannot close its envelope
@@ -249,7 +272,7 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
     if (r.card) {
       // Prefer exact primary facts briefly, but keep a late primary eligible while search is pending.
       const primary = primaryOf(r.card)
-      const hedge = hasSearch ? setTimeout(searchNow, 250) : undefined
+      const hedge = searching ? setTimeout(searchNow, 250) : undefined
       let got: string | undefined
       try { got = await within(primary, Math.min(800, remaining())) }
       finally { clearTimeout(hedge) }

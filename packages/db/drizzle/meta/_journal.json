@@ -1513,6 +1513,41 @@
       "when": 1793753140870,
       "tag": "20261104004540_retention_erasures",
       "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1793800516626,
+      "tag": "20261104135516_subscription_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1793802606647,
+      "tag": "20261104143006_subscription_provider_account",
+      "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1793804676095,
+      "tag": "20261104150436_project_space_tabs",
+      "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1793807577127,
+      "tag": "20261104155257_self_host_signup_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1793813803361,
+      "tag": "20261104173643_artifact_doc_sync",
+      "breakpoints": true
     }
   ]
 }

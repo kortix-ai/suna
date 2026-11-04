@@ -1,0 +1,58 @@
+-- Migration: drop_rooms
+--
+-- CONTRACT half of removing Rooms (2026-11). The EXPAND half is the release
+-- that deleted every reader: the /rooms routes, the idle-notice route, the
+-- `agent_rooms` flag, the `message` notification kind, project.room.* in the
+-- code catalog, the CLI `rooms` / `peers` commands and the kortix-rooms skill.
+--
+-- PRECONDITIONS (all must hold before this file moves into migrations/):
+--   1. The release that removed every reader is live on prod. Old API images
+--      read room_members/rooms UNGATED (hiddenNotificationKinds on every
+--      GET /v1/notifications/preferences, notifications/cleanup.ts,
+--      projects/lib/project-transfer.ts) and select notifications.room_id on
+--      every inbox read.
+--   2. `git grep -n -E "rooms|roomMembers|roomMessages|sessionIdleWatches|room_messages|room_members|session_idle_watches|room_id|room_thread_seq"`
+--      on the live release tag finds no reader outside packages/db (learnings
+--      2026-10-28 "before a migration drops a table").
+--   3. In the same PR: delete rooms, roomMessages, roomMembers,
+--      sessionIdleWatches and notifications.roomId / roomThreadSeq from
+--      packages/db/src/schema/kortix.ts and packages/db/src/index.ts, remove
+--      them from PROJECT_TRANSFER_TABLES (projects/lib/project-transfer.ts),
+--      the purge classification (integration-session-log-purge.test.ts) and
+--      the project-transfer integration test, rename this file with a fresh
+--      17-digit timestamp, run `pnpm migrate:generate drop_rooms` for the
+--      Drizzle snapshot, and keep THIS SQL as the migration body.
+--
+-- mixed-version-safe: applies only after precondition 1. No running API image
+-- reads or writes these tables, these columns or these permission rows then.
+-- The DROPs take ACCESS EXCLUSIVE on tables nothing touches; the
+-- notifications column drop is catalog-only (no rewrite) under a 2 s lock
+-- budget.
+--
+-- backfill-safe: the DELETEs touch the 2 retired catalog rows and their grants
+-- on system and custom roles (a few dozen rows at most). Catalog tables are
+-- written only by migrations and the role editor.
+--
+-- The notifications_kind CHECK keeps 'message': rows of that kind may exist
+-- until the 90-day notification sweep, and a CHECK that allows an unused value
+-- costs nothing.
+
+set lock_timeout = '2s';
+set statement_timeout = '30s';
+
+-- role_permissions references permissions ON DELETE RESTRICT: grants first.
+DELETE FROM kortix.role_permissions
+ WHERE action IN ('project.room.read', 'project.room.write');
+
+DELETE FROM kortix.permissions
+ WHERE action IN ('project.room.read', 'project.room.write');
+
+-- Children before their parent: idle watches, messages and members reference rooms.
+DROP TABLE IF EXISTS kortix.session_idle_watches CASCADE;
+DROP TABLE IF EXISTS kortix.room_messages CASCADE;
+DROP TABLE IF EXISTS kortix.room_members CASCADE;
+DROP TABLE IF EXISTS kortix.rooms CASCADE;
+
+ALTER TABLE kortix.notifications
+  DROP COLUMN IF EXISTS room_id,
+  DROP COLUMN IF EXISTS room_thread_seq;

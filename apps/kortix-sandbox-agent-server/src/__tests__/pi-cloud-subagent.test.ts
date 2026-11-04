@@ -553,6 +553,13 @@ describe('cloudSpawnSession — names, teammates, forks', () => {
     expect(subagentContextFrom(JSON.stringify({ 'kortix.subagent.depth': 1, 'kortix.agent.handle': 'researcher', 'kortix.team.lead': PARENT }))).toEqual({ depth: 1, handle: 'researcher', teamLead: PARENT })
     expect(subagentContextFrom(JSON.stringify({ 'kortix.subagent.depth': 1, 'kortix.agent.handle': 'no spaces allowed' }))).toEqual({ depth: 1 })
   })
+
+  test('subagentContextFrom marks a talk-only front and its worker only for the boolean true', () => {
+    expect(subagentContextFrom(JSON.stringify({ 'kortix.front': true }))).toEqual({ depth: 0, front: true })
+    expect(subagentContextFrom(JSON.stringify({ 'kortix.front': 'true' }))).toEqual({ depth: 0 })
+    expect(subagentContextFrom(JSON.stringify({ 'kortix.subagent.depth': 1, 'kortix.front.thread': true }))).toEqual({ depth: 1, frontThread: true })
+    expect(subagentContextFrom(JSON.stringify({ 'kortix.subagent.depth': 1, 'kortix.front.thread': 1 }))).toEqual({ depth: 1 })
+  })
 })
 
 describe('cloudStopChild — task_stop', () => {

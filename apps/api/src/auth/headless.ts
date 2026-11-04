@@ -31,6 +31,8 @@ import { isLoopbackHost } from '../repositories/oauth-clients';
 import { canSignUp } from '../shared/access-control-cache';
 import { requestClientIp, requestClientKey } from '../middleware/client-ip';
 import { config } from '../config';
+import { captureProductEvent } from '../shared/product-analytics';
+import { analyticsSource } from '../middleware/analytics-source';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
 
@@ -114,12 +116,36 @@ async function ssoRequired(c: Context, email: string): Promise<Response | null> 
   );
 }
 
-function sessionResponse(c: Context, body: Record<string, unknown>, status: 200 | 201 = 200) {
+/** The OAuth provider of a session body (`google`, `github`, …), or `oauth`. */
+function oauthProvider(body: Record<string, unknown>): string {
+  const provider = (body.user as { app_metadata?: { provider?: unknown } } | undefined)?.app_metadata?.provider;
+  return typeof provider === 'string' && /^[a-z0-9_-]{1,32}$/.test(provider) ? provider : 'oauth';
+}
+
+/**
+ * `loginMethod`: a sign-in (password, otp, oauth) reports `user_logged_in`; a
+ * token refresh passes none and reports nothing.
+ */
+function sessionResponse(
+  c: Context,
+  body: Record<string, unknown>,
+  status: 200 | 201 = 200,
+  loginMethod?: string,
+) {
   const session = sessionFrom(body);
   if (!session) {
     return c.json({ error: 'auth_error', error_description: 'Supabase returned no session' }, 502);
   }
-  return c.json({ session, user: (body.user as GoTrueUser | undefined) ?? null }, status);
+  const user = (body.user as GoTrueUser | undefined) ?? null;
+  const userId = (user as { id?: unknown } | null)?.id;
+  if (loginMethod && typeof userId === 'string') {
+    captureProductEvent({
+      userId,
+      event: 'user_logged_in',
+      properties: { method: loginMethod, source: analyticsSource(c) },
+    });
+  }
+  return c.json({ session, user }, status);
 }
 
 // ─── GET /client-config ──────────────────────────────────────────────────────
@@ -255,7 +281,7 @@ headlessAuthRouter.openapi(
       auditLoginFail({ c, reason: `password_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
       return upstreamError(c, result);
     }
-    return sessionResponse(c, result.body);
+    return sessionResponse(c, result.body, 200, 'password');
   },
 );
 
@@ -335,7 +361,7 @@ headlessAuthRouter.openapi(
       auditLoginFail({ c, reason: `otp_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
       return upstreamError(c, result);
     }
-    return sessionResponse(c, result.body);
+    return sessionResponse(c, result.body, 200, 'otp');
   },
 );
 
@@ -414,7 +440,7 @@ headlessAuthRouter.openapi(
       auditLoginFail({ c, reason: `oauth_exchange_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
       return upstreamError(c, result);
     }
-    return sessionResponse(c, result.body);
+    return sessionResponse(c, result.body, 200, oauthProvider(result.body));
   },
 );
 

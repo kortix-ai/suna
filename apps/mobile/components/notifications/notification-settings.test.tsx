@@ -196,7 +196,6 @@ describe('Settings → Notifications with a notification_center project', () => 
       'Recovery alert',
       'Capture computer stopped',
       'Capture computer recording again',
-      'Message',
       'Artifact comments',
       'Device settings',
     ]);
@@ -205,9 +204,9 @@ describe('Settings → Notifications with a notification_center project', () => 
     expect(row('Recovery alert').right.props.checked).toBe(false);
   });
 
-  test('a kind in hidden_kinds has no row; an API without hidden_kinds hides Message', async () => {
+  test('a kind in hidden_kinds has no row; the retired Message kind never has one', async () => {
     const labels = () => rows.map((props) => props.label);
-    record = recordWith({ data: { kinds: KINDS, email_available: true, hidden_kinds: ['message', 'shared'] } });
+    record = recordWith({ data: { kinds: KINDS, email_available: true, hidden_kinds: ['shared'] } });
     await render();
     expect(labels()).not.toContain('Message');
     expect(labels()).not.toContain('Shared with you');

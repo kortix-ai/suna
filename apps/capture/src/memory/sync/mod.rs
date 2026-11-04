@@ -334,6 +334,8 @@ fn os_version() -> String {
         crate::os_proc::no_window(&mut c);
         if let Ok(out) = c.output() {
             let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            // Windows: `Microsoft Windows [Version 10.0.26200.9448]` → `10.0.26200.9448`.
+            let v = crate::machine_info::windows_ver_number(&v).unwrap_or(v);
             if !v.is_empty() {
                 return v;
             }
@@ -2359,6 +2361,8 @@ pub fn device_json(ctx: &Ctx, conn: &Connection) -> Value {
         "first_chunk_ms": q("SELECT min(start_timestamp) FROM video WHERE remote_key IS NOT NULL"),
         "last_chunk_ms": q("SELECT max(end_timestamp) FROM video WHERE remote_key IS NOT NULL"),
         "displays": device_displays(ctx.paths),
+        // Hardware and OS details for support; no names. Refreshed at most hourly.
+        "machine": crate::machine_info::cached(&ctx.paths.root),
     })
 }
 

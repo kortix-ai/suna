@@ -8,7 +8,6 @@ import {
   lastReplyLabel,
   liveReplyCount,
   spaceRoster,
-  spaceTabFromParam,
   threadActivitySince,
   threadFiltersFromParams,
   threadIsWorking,
@@ -127,16 +126,6 @@ describe('spaceRoster', () => {
 
   test("a DM counts its agent before any thread exists", () => {
     expect(spaceRoster([], 'writer')).toEqual({ people: [], agents: ['writer'], agentThreads: { writer: 0 } });
-  });
-});
-
-describe('spaceTabFromParam', () => {
-  test('reads a tab the space has, and falls back to Chat for anything else', () => {
-    expect(spaceTabFromParam('files', 'channel')).toBe('files');
-    expect(spaceTabFromParam('links', 'channel')).toBe('links');
-    expect(spaceTabFromParam('links', 'dm')).toBe('chat');
-    expect(spaceTabFromParam('nope', 'channel')).toBe('chat');
-    expect(spaceTabFromParam(null, 'dm')).toBe('chat');
   });
 });
 

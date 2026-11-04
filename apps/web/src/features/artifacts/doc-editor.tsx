@@ -2,7 +2,9 @@
 
 import {
   getArtifact,
+  getArtifactDoc,
   getLinkPreview,
+  listArtifactActivity,
   readArtifactFile,
   type ArtifactCommentSnapshot,
   type ArtifactCommentThread,
@@ -18,7 +20,7 @@ import { ARTIFACT_DOC_CSS } from '@kortix/shared/artifact-doc';
 import { canEmbed, fetchEmbed } from '@kortix/ui/markdown/doc-editor/doc-embed';
 import { docExtensions } from '@kortix/ui/markdown/doc-editor/doc-extensions';
 import { DocMenus } from '@kortix/ui/markdown/doc-editor/doc-menus';
-import { htmlToMarkdown, markdownToHtml } from '@kortix/ui/markdown/doc-editor/markdown';
+import { docRoundTrips, htmlToMarkdown, markdownToHtml } from '@kortix/ui/markdown/doc-editor/markdown';
 import Loading from '@kortix/ui/loading';
 import { MENU_PANEL_STATIC, menuRow } from '@kortix/ui/menu-recipe';
 import { dismissToast, errorToast } from '@kortix/ui/toast';
@@ -29,6 +31,23 @@ import { createPortal } from 'react-dom';
 
 import { createPacedSender, createTypingSignal } from './artifact-live-logic';
 import { createDocSaver, pendingSave, type DocSaveStatus, type DocSaver, type Known } from './doc-autosave';
+import {
+  CoeditUnavailable,
+  createDocCoedit,
+  waitForSeed,
+  type CoeditFallback,
+  type DocCoeditSession,
+  type DocPings,
+} from './doc-coedit';
+import {
+  CoeditNote,
+  fallbackNote,
+  guardNote,
+  liveBridge,
+  liveExtensions,
+  seedUpdate,
+  type CoeditNoteReason,
+} from './doc-coedit-editor';
 import { captureDocComment } from './doc-comment-capture';
 import {
   DocCommentDecorations,
@@ -61,6 +80,24 @@ const isConflict = (err: unknown) =>
   (err as { status?: number }).status === 409 &&
   (err as { code?: string }).code === 'version_conflict';
 const NO_COMMENTS: readonly ArtifactCommentThread[] = [];
+/** A co-edited doc that has not loaded by then opens with autosave instead. */
+const COEDIT_START_MS = 10_000;
+
+/**
+ * What the editor opened on. `live`: co-edited (KRTX-3670), the editor binds
+ * to the session's `Y.Doc` and autosave is off. Otherwise `html` loads into a
+ * single-writer editor; `note` says why co-editing is off, `dirty` that the
+ * editor holds text the file lacks (co-editing stopped mid-way).
+ */
+type Loaded = {
+  html: string;
+  start: Known;
+  live?: DocCoeditSession;
+  note?: CoeditNoteReason;
+  dirty?: boolean;
+  /** A read-only viewer of a doc nobody seeded yet: it goes live once someone does. */
+  unseeded?: boolean;
+};
 
 /**
  * Live presence in the doc (KRTX-3669): the others' carets and selections,
@@ -104,6 +141,13 @@ function selectionInside(editor: Editor): boolean {
  *
  * Changes save themselves back to the file; each save is a commit of the Files
  * volume (`doc-autosave.ts` has the rules).
+ *
+ * With `coedit` (the `artifact_comments` flag, the current version), a doc
+ * whose Markdown survives the editor byte for byte (`docRoundTrips`, at most
+ * 1 MiB) is co-edited live: everyone's text appears as they type, and the tab
+ * that holds the lease writes the file (`doc-coedit.ts` has the rules). A
+ * read-only viewer sees the live text. Any other doc keeps autosave, with a
+ * one-line note for an editor.
  */
 export function DocEditor({
   projectId,
@@ -123,6 +167,7 @@ export function DocEditor({
   commentEntryVersion,
   live,
   onReady,
+  coedit,
 }: {
   projectId: string;
   artifact: ArtifactDetail;
@@ -144,13 +189,24 @@ export function DocEditor({
   live?: DocLiveBinding;
   /** The doc's text is on screen (once per editor): the viewer restores its scroll position. */
   onReady?: () => void;
+  /**
+   * Live co-editing: the viewer's `changed doc` pings. Set while the flag is
+   * on and this is the current version (never on a historical one).
+   */
+  coedit?: DocPings;
 }) {
   const t = useTranslations('artifacts');
   const editable = mayEdit && !historical;
   const { save: saveMutation } = useArtifactMutations(projectId);
-  const [loaded, setLoaded] = useState<{ html: string; start: Known } | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const liveSession = loaded?.live ?? null;
   const saver = useRef<DocSaver | null>(null);
   const sourceMarkdown = useRef('');
+  /**
+   * A read-only editor with co-editing on stays mounted across file versions (the viewer keys it
+   * so) and shows the file it last read: this one.
+   */
+  const shownFile = useRef<Known | null>(null);
   const [revision, setRevision] = useState(0);
   const [commenting, setCommenting] = useState(false);
   const commentCapture = useRef<{ cancel: () => void } | null>(null);
@@ -168,6 +224,7 @@ export function DocEditor({
     historical,
     live,
     onReady,
+    coedited: false,
   });
   useLayoutEffect(() => {
     latest.current = {
@@ -184,6 +241,7 @@ export function DocEditor({
       historical,
       live,
       onReady,
+      coedited: !!liveSession,
     };
   });
   // eslint-disable-next-line react-hooks/refs -- configure stores this callback; editor events read the ref after render.
@@ -218,8 +276,16 @@ export function DocEditor({
     (handoff === null && text.data !== undefined
       ? { version: opened.entry_version, text: text.data }
       : null);
-  if (loaded === null && start)
-    setLoaded({ html: media.resolveHtml(markdownToHtml(start.text)), start });
+  // Co-editing needs the flag, the current version, a versioned file, and a byte-for-byte round trip.
+  const coeditWanted = !!coedit && !historical;
+  const guard = start && coeditWanted ? docRoundTrips(start.text) : null;
+  const coeditable = !!start && start.version !== null && !!guard?.ok;
+  if (loaded === null && start && !coeditable)
+    setLoaded({
+      html: media.resolveHtml(markdownToHtml(start.text)),
+      start,
+      note: guard && !guard.ok && editable ? guardNote(guard) : undefined,
+    });
   useEffect(() => {
     if (text.error) errorToast(text.error.message);
   }, [text.error]);
@@ -235,6 +301,157 @@ export function DocEditor({
     ]);
     return { version: detail.entry_version, text: await file.text() };
   };
+
+  const writeEntry = async (current: ArtifactDetail, markdown: string, base: string | null) => {
+    const next = await latest.current.save.mutateAsync({
+      artifactId: current.artifact_id,
+      ...(base ? { base_version: base } : {}),
+      files: { [current.entry]: { content: markdown } },
+    });
+    return next.entry_version;
+  };
+
+  /**
+   * Co-editing stopped mid-way (a 413, the doc's history over its cap, or a
+   * refusal the engine cannot retry): reopen with autosave on what the editor
+   * holds now, from the file this tab last knew. A save on top of a newer
+   * file meets today's conflict choice. A read-only viewer whose doc was reset
+   * and not seeded again shows the file until it is (`unseeded`).
+   */
+  const leaveLive = (session: DocCoeditSession, reason: CoeditFallback) => {
+    const known = session.known();
+    const text = session.markdown() ?? known.text;
+    session.close();
+    setLoaded({
+      html: media.resolveHtml(markdownToHtml(text)),
+      start: known,
+      note: editable ? fallbackNote(reason) : undefined,
+      dirty: editable && text !== known.text,
+      unseeded: reason === 'unseeded',
+    });
+  };
+  const leaveLiveRef = useRef(leaveLive);
+  useEffect(() => {
+    leaveLiveRef.current = leaveLive;
+  });
+
+  /**
+   * A reset loaded the doc again on a fresh `Y.Doc`: a new editor binds to it
+   * (`loaded` changes). The session puts the caret and focus back once it is
+   * attached (`liveBridge`); the viewer restores the scroll position of each
+   * new editor (`onReady`).
+   */
+  const rebind = () => setLoaded((prev) => (prev?.live ? { ...prev } : prev));
+
+  /**
+   * Co-editing: load (or seed) the shared doc, then open the editor on it.
+   * `onSolo`: it did not load within COEDIT_START_MS or was refused (`note`),
+   * or nobody seeded it yet and this viewer may not (`unseeded`). Returns the
+   * cancel; once the editor opened on the session, the `liveSession` effect
+   * closes it instead.
+   */
+  const openLive = (opened: Known, onSolo: (outcome: { note?: CoeditNoteReason; unseeded?: boolean }) => void) => {
+    const current = latest.current.artifact;
+    const schema = docExtensions({ editable, placeholder: () => '' });
+    let adopted = false;
+    let over = false;
+    const session = createDocCoedit({
+      projectId,
+      artifactId: current.artifact_id,
+      holder: crypto.randomUUID(),
+      readOnly: !editable,
+      opened,
+      seed: (markdown) => seedUpdate(markdown, schema),
+      write: (markdown, base) => writeEntry(current, markdown, base),
+      read: () => readNow(current),
+      isConflict,
+      // A restore records itself in Activity; a Files mount heal does not.
+      restores: async () =>
+        (await listArtifactActivity(projectId, current.artifact_id, { limit: 20 })).items
+          .filter((item) => item.type === 'restored')
+          .map((item) => item.id),
+      onStatus: (status) => {
+        if (adopted && editable) latest.current.onStatus(status);
+      },
+      onFallback: (reason) => {
+        if (adopted) leaveLiveRef.current(session, reason);
+      },
+      onRebind: rebind,
+      // A read-only viewer waits for an editor to seed the doc again after a reset.
+      seeded: async () =>
+        (await getArtifactDoc(projectId, current.artifact_id, { after: Number.MAX_SAFE_INTEGER })).seeded,
+    });
+    const solo = (outcome: { note?: CoeditNoteReason; unseeded?: boolean }) => {
+      if (over) return;
+      over = true;
+      window.clearTimeout(timer);
+      session.close();
+      onSolo(outcome);
+    };
+    const timer = window.setTimeout(() => solo({ note: 'stopped-failed' }), COEDIT_START_MS);
+    session.start().then(
+      () => {
+        if (over) return;
+        over = true;
+        adopted = true;
+        window.clearTimeout(timer);
+        setLoaded({ html: '', start: opened, live: session });
+      },
+      (err: unknown) => solo(err instanceof CoeditUnavailable ? { unseeded: true } : { note: 'stopped-failed' }),
+    );
+    return () => {
+      if (adopted) return;
+      over = true;
+      window.clearTimeout(timer);
+      session.close();
+    };
+  };
+
+  // Open the doc live when it may be co-edited. A doc that does not load opens with autosave and a
+  // note; a read-only viewer of a doc nobody seeded yet sees the file, without a note, until it is.
+  const startText = coeditable ? start?.text : undefined;
+  const startVersion = coeditable ? start?.version : undefined;
+  useEffect(() => {
+    if (loaded !== null || startText === undefined || !startVersion) return;
+    const opened: Known = { version: startVersion, text: startText };
+    return openLive(opened, ({ note, unseeded }) =>
+      setLoaded({
+        html: media.resolveHtml(markdownToHtml(opened.text)),
+        start: opened,
+        note: editable ? note : undefined,
+        unseeded,
+      }),
+    );
+    // Once per opened file: `loaded` changing to this session must not cancel it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startText, startVersion]);
+
+  // A read-only viewer of a doc nobody seeded goes live, without a reload, once an editor seeds it.
+  useEffect(() => {
+    if (!loaded?.unseeded) return;
+    const current = latest.current.artifact;
+    const shown = shownFile.current ?? loaded.start;
+    let cancel: (() => void) | null = null;
+    const stop = waitForSeed({
+      seeded: async () =>
+        (await getArtifactDoc(projectId, current.artifact_id, { after: Number.MAX_SAFE_INTEGER })).seeded,
+      // A refusal now keeps the file on screen as it is.
+      onSeeded: () => {
+        cancel = openLive(shown, () => {});
+      },
+    });
+    return () => {
+      stop();
+      cancel?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
+
+  // The session the editor opened on closes when the editor leaves it: unmount, a fallback, a Reload.
+  useEffect(() => {
+    if (!liveSession) return;
+    return () => liveSession.close();
+  }, [liveSession]);
 
   const showConflict = () => {
     const { t: t, artifact: current } = latest.current;
@@ -275,21 +492,24 @@ export function DocEditor({
         placed.map(({ kind, local }) => ({ type: kind, attrs: { src: local, uploading: true } })),
       )
       .run();
+    // Co-edited: the "Uploading…" chip is the status; the doc's text syncs on its own.
+    const coedited = latest.current.coedited;
     for (const { file, kind, local } of placed) {
       const path = mediaPath(file);
-      report('saving');
+      if (!coedited) report('saving');
       let src: string | null = null;
       try {
         await run.mutateAsync({
           artifactId: current.artifact_id,
           files: { [path]: { content_base64: await fileBase64(file) } },
         });
-        src = media.absolute(path);
+        // The shared doc of a co-edited doc holds the file's own relative path; the editor resolves it.
+        src = coedited ? path : media.absolute(path);
         // Swap to the uploaded file once it has loaded, so the picture does not blink.
-        if (kind === 'image') await preload(src);
+        if (kind === 'image') await preload(media.absolute(path));
       } catch {
         // The API client toasts the error; the doc's own text is unaffected.
-        report(saver.current?.busy() ? 'unsaved' : 'saved');
+        if (!coedited) report(saver.current?.busy() ? 'unsaved' : 'saved');
       }
       if (!editor.isDestroyed) replaceMedia(editor, local, src);
       URL.revokeObjectURL(local);
@@ -315,17 +535,22 @@ export function DocEditor({
       immediatelyRender: false,
       editable,
       extensions: [
-        ...docExtensions({
-          editable,
-          // None in a code block: it would sit on the block's language caption.
-          placeholder: (node) =>
-            node.type.name === 'codeBlock' ? '' : node.type.name === 'heading' ? t('placeholderHeading') : t('placeholder'),
-        }),
+        ...(() => {
+          const base = docExtensions({
+            editable,
+            // None in a code block: it would sit on the block's language caption.
+            placeholder: (node) =>
+              node.type.name === 'codeBlock' ? '' : node.type.name === 'heading' ? t('placeholderHeading') : t('placeholder'),
+          });
+          // Co-edited: bound to the shared doc, which holds the file's relative media paths.
+          return liveSession ? liveExtensions(base, { doc: liveSession.doc, resolveSrc: media.absolute.bind(media) }) : base;
+        })(),
         commentExtension,
         DocLiveDecorations,
         slashExtension,
       ],
-      content: loaded?.html ?? '',
+      // A co-edited editor takes its content from the shared doc.
+      ...(liveSession ? {} : { content: loaded?.html ?? '' }),
       editorProps: {
         handlePaste: (view, event) => {
           const ed = editorRef.current;
@@ -363,10 +588,11 @@ export function DocEditor({
         },
       },
       onUpdate: ({ editor: updated }) => {
-        if (editable) {
+        // A co-edited doc also changes under a read-only viewer: others' text arrives.
+        if (editable || liveSession) {
           sourceMarkdown.current = markdownOf(updated);
           setRevision((value) => value + 1);
-          saver.current?.edited();
+          if (!liveSession) saver.current?.edited();
         }
       },
     },
@@ -385,8 +611,53 @@ export function DocEditor({
       }
     };
   }, [editor]);
+
+  // Co-editing: the leader's duties need the mounted editor (its Markdown, the outside-edit merge).
+  // Binding renders the shared doc, which may be ahead of the file it opened on, as one update:
+  // `onUpdate` anchors comments and carets in that text.
+  // The render that adopts the session still holds the editor it replaces (already destroyed).
   useEffect(() => {
-    if (!editor || !loaded) return;
+    if (!editor || editor.isDestroyed || !liveSession) return;
+    return liveSession.attach(liveBridge(editor));
+  }, [editor, liveSession]);
+
+  // Co-editing: `changed doc` pings pull at once; the page going away sends what is unsent and
+  // releases the lease; back from the back-forward cache, the doc opens again. ⌘S writes now (the
+  // leader); leaving warns while an edit is not safe yet.
+  const pings = coedit;
+  useEffect(() => {
+    if (!liveSession) return;
+    const unsubscribe = pings?.subscribe((seq) => liveSession.notify(seq));
+    const onHide = () => liveSession.close();
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted) latest.current.onReload();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        void liveSession.flushNow();
+      }
+    };
+    const onLeave = (e: BeforeUnloadEvent) => {
+      if (liveSession.busy()) e.preventDefault();
+    };
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('pageshow', onShow);
+    if (editable) {
+      window.addEventListener('keydown', onKey);
+      window.addEventListener('beforeunload', onLeave);
+    }
+    return () => {
+      unsubscribe?.();
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('pageshow', onShow);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('beforeunload', onLeave);
+    };
+  }, [liveSession, pings, editable]);
+  useEffect(() => {
+    // The render that switches what the editor opened on (live ↔ autosave) still holds the old, destroyed editor.
+    if (!editor || editor.isDestroyed || !loaded) return;
     const highlights: DocCommentHighlights = {
       markdown: sourceMarkdown.current,
       comments,
@@ -410,7 +681,7 @@ export function DocEditor({
     t,
   ]);
   useEffect(() => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     handledFocus.current = scrollDocCommentHighlight(
       editor.view.dom,
       focusedThreadId,
@@ -448,7 +719,7 @@ export function DocEditor({
   const liveHidden = live?.hidden ?? false;
   const ownLive = useRef<{ report: () => void } | null>(null);
   useEffect(() => {
-    if (!editor || !loaded || !liveOn) return;
+    if (!editor || editor.isDestroyed || !loaded || !liveOn) return;
     const sender = createPacedSender<OwnPlace>((place) => {
       latest.current.live?.setCursor(place.cursor);
       latest.current.live?.setSelection(place.selection);
@@ -546,7 +817,11 @@ export function DocEditor({
           }
           let saved: Known;
           try {
-            saved = editable ? await saver.current!.snapshot() : loaded.start;
+            saved = loaded.live
+              ? await loaded.live.snapshot()
+              : editable
+                ? await saver.current!.snapshot()
+                : (shownFile.current ?? loaded.start);
           } catch {
             errorToast(t('discussion.commentSaveFailed'));
             return;
@@ -594,6 +869,25 @@ export function DocEditor({
   // The file moved (an agent wrote it, the artifact says so): an editor with nothing unsaved shows the new text.
   const fileVersion = artifact.entry_version;
   useEffect(() => {
+    // Co-edited: only the leader looks (an outside edit is merged into the live doc).
+    if (liveSession) return liveSession.fileMoved(fileVersion);
+    const shown = shownFile.current ?? loaded?.start;
+    if (editor && !editable && coedit && loaded && fileVersion !== shown?.version) {
+      let live = true;
+      void readNow(latest.current.artifact).then(
+        (now) => {
+          if (!live || editor.isDestroyed || now.text === sourceMarkdown.current) return;
+          shownFile.current = now;
+          sourceMarkdown.current = now.text;
+          editor.commands.setContent(media.resolveHtml(markdownToHtml(now.text)), { emitUpdate: false });
+          setRevision((value) => value + 1);
+        },
+        () => {},
+      );
+      return () => {
+        live = false;
+      };
+    }
     const docSaver = saver.current;
     if (!editor || !docSaver) return;
     let live = true;
@@ -613,18 +907,11 @@ export function DocEditor({
 
   // One saver per editor; save now on ⌘S, warn before the page goes away with changes not in the file.
   useEffect(() => {
-    if (!editor || !editable || !loaded) return;
+    if (!editor || editor.isDestroyed || !editable || !loaded || loaded.live) return;
     const current = latest.current.artifact;
     const docSaver = createDocSaver(loaded.start, {
       artifactId: current.artifact_id,
-      write: async (markdown, base) => {
-        const next = await latest.current.save.mutateAsync({
-          artifactId: current.artifact_id,
-          ...(base ? { base_version: base } : {}),
-          files: { [current.entry]: { content: markdown } },
-        });
-        return next.entry_version;
-      },
+      write: (markdown, base) => writeEntry(current, markdown, base),
       read: () => readNow(current),
       text: () => markdownOf(editor),
       onStatus: (status) => latest.current.onStatus(status),
@@ -632,6 +919,8 @@ export function DocEditor({
       isConflict,
     });
     saver.current = docSaver;
+    // Co-editing stopped with text the file lacks: save it (a newer file meets the conflict choice).
+    if (loaded.dirty) docSaver.edited();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -691,6 +980,7 @@ export function DocEditor({
               onClose={() => setOffer(null)}
             />
           ) : null}
+          {loaded.note ? <CoeditNote reason={loaded.note} /> : null}
           <EditorContent editor={editor} />
           <input
             ref={picker}

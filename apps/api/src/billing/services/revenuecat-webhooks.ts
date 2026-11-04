@@ -10,6 +10,46 @@ import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix
 import { resolveAccountId } from '../../shared/resolve-account';
 import { config } from '../../config';
 import { formatUsdAsCredits } from '@kortix/shared';
+import { captureProductEvent, type ProductEvent } from '../../shared/product-analytics';
+
+/** In-app store purchases as product events; `app_user_id` is the Supabase user id. */
+const REVENUECAT_PRODUCT_EVENTS: Partial<Record<string, ProductEvent>> = {
+  INITIAL_PURCHASE: 'subscription_activated',
+  NON_RENEWING_PURCHASE: 'credits_topped_up',
+  EXPIRATION: 'subscription_cancelled',
+};
+
+function captureRevenueCatProductEvent(
+  eventType: string,
+  appUserId: string,
+  accountId: string,
+  eventId: string,
+  event: { product_id?: unknown; store?: unknown; price?: unknown; period_type?: unknown },
+): void {
+  const productEvent = REVENUECAT_PRODUCT_EVENTS[eventType];
+  if (!productEvent) return;
+  const productId = typeof event.product_id === 'string' ? event.product_id : null;
+  const amountUsd =
+    productEvent === 'credits_topped_up'
+      ? Number(event.price) || null
+      : productId
+        ? revenueCatProductMonthlyUsd(productId)
+        : null;
+  captureProductEvent({
+    userId: appUserId,
+    accountId,
+    event: productEvent,
+    dedupeKey: `revenuecat:${eventId}`,
+    properties: {
+      store: typeof event.store === 'string' ? event.store.toLowerCase() : 'revenuecat',
+      via: 'revenuecat_webhook',
+      tier: 'credits',
+      product_id: productId,
+      amount_usd: amountUsd,
+      trial: event.period_type === 'TRIAL',
+    },
+  });
+}
 
 /**
  * A deleted account keeps its row (ledger history, audit) but is terminal:
@@ -96,6 +136,7 @@ export async function processRevenueCatWebhook(body: any) {
   }
 
   await recordWebhookEvent(dedupeKey, eventType);
+  captureRevenueCatProductEvent(eventType, appUserId, accountId, eventId, event);
   return { received: true, event_type: eventType, account_id: accountId };
 }
 

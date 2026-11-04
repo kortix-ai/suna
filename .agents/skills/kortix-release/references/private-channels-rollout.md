@@ -50,7 +50,7 @@ channels. It does not hide existing ones from an older build.
       > visibility = 'private'` on that environment's database. A count above 0
       > refuses the rollback: roll forward instead, or get the owner's written
       > approval to expose private channels.
-- [ ] Check that the revocation windows in the `project_channels`
+- [ ] Check that the revocation windows in the `chat`
       `enforcementNote` (`apps/api/src/feature-flags/registry.ts`) are current.
 - [ ] Keep the accepted limits listed in the release notes and the PR body:
   - A member of a private channel may publish one of its threads with a public

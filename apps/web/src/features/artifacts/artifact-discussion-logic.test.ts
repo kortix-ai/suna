@@ -49,7 +49,7 @@ describe('Artifact thread groups', () => {
       thread('old', { outdated: true }),
       thread('early', { position: { start: 4, end: 8 } }),
     ];
-    const result = groupCommentThreads(input, 'all');
+    const result = groupCommentThreads(input, 'open');
     expect(result.current.map((t) => t.thread_id)).toEqual(['early', 'later', 'none']);
     expect(result.outdated.map((t) => t.thread_id)).toEqual(['old']);
     expect(input.map((t) => t.thread_id)).toEqual(['none', 'later', 'old', 'early']);
@@ -76,7 +76,7 @@ describe('Artifact thread groups', () => {
     expect(threadDeleted(deleted)).toBe(true);
     expect(threadDeleted(thread('live'))).toBe(false);
     expect(groupCommentThreads([deleted], 'open').current).toEqual([]);
-    expect(groupCommentThreads([deleted], 'all').current).toEqual([deleted]);
+    expect(groupCommentThreads([deleted], 'open', 'gone').current).toEqual([deleted]);
   });
   test('filter counts skip a deleted root, so Open matches the header badge', () => {
     const deleted = thread('gone', {

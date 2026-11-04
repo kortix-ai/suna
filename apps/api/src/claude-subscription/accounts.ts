@@ -100,11 +100,12 @@ async function usable(accountId: string, secrets: ResolvedAccountSecret[]): Prom
   return { credentials, refused };
 }
 
-async function sharedCredentials(principal: ClaudeAccountPrincipal): Promise<ClaudeCredential[] | GatewayResolutionError | null> {
+async function sharedCredentials(principal: ClaudeAccountPrincipal, probe?: boolean): Promise<ClaudeCredential[] | GatewayResolutionError | null> {
   const shared = await resolveProjectSharedProviderSecrets({
     accountId: principal.accountId, projectId: principal.projectId, userId: principal.userId,
     grantUserId: principal.keyId ? null : principal.personalUserId,
     providerId: CLAUDE_ACCOUNT.providerId, name: CLAUDE_ACCOUNT.name,
+    sessionId: principal.sessionId, probe,
   });
   if (shared.secrets.length) {
     const { credentials, refused } = await usable(principal.accountId, shared.secrets);
@@ -146,13 +147,13 @@ export async function resolveClaudeCredentials(principal: ClaudeAccountPrincipal
     }
     if (own) {
       // Resting or refused: an account shared with the project may serve instead.
-      const shared = await sharedCredentials(principal);
+      const shared = await sharedCredentials(principal, options.probe);
       if (Array.isArray(shared)) return shared;
       if (own.restingSeconds) throw accountsResting('Your Claude accounts', own.restingSeconds);
       throw needsReconnection([own.label], 'own');
     }
   }
-  const shared = await sharedCredentials(principal);
+  const shared = await sharedCredentials(principal, options.probe);
   if (Array.isArray(shared)) return shared;
   throw shared ?? notConnected();
 }
@@ -260,6 +261,8 @@ export async function claudeCredentialsForGateway(principal: {
     return { error: {
       status: err.code === 'provider_pool_rate_limited' ? 429 : 400,
       code: err.code, message: err.message, suggestion: err.suggestion, retryAfterSeconds: err.retryAfterSeconds,
+      // The gateway answers a rest over a minute as a usage limit, which Claude Code shows as one.
+      ...(err.restSeconds !== undefined ? { restSeconds: err.restSeconds } : {}),
     } };
   }
 }

@@ -13,13 +13,13 @@ import { useFeatureFlag } from '@kortix/sdk/react';
 
 /**
  * Spaces are Work in progress. A space is a channel (`spaces:` in kortix.yaml,
- * `agents.<name>.space`, a resource's `space` binding), so the `project_channels`
+ * `agents.<name>.space`, a resource's `space` binding), so the `chat`
  * flag gates them. Off (the default), no surface shows a space, a space
  * filter, a space column or "Move to space"; the bindings stay in the files.
  */
-export const SPACES_FLAG = 'project_channels' as const;
+export const SPACES_FLAG = 'chat' as const;
 
-/** True only while the project's `project_channels` flag is on. False while it loads. */
+/** True only while the project's `chat` flag is on. False while it loads. */
 export function useSpacesEnabled(projectId: string | null | undefined): boolean {
   return useFeatureFlag(projectId, SPACES_FLAG).enabled === true;
 }

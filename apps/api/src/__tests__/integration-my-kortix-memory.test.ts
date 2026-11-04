@@ -3,7 +3,7 @@
  * remembers about a person (`kortix_memory`). One page per name in the
  * person's own `/Users/<person>/Memory/mykortix`, nobody else's; the caps and
  * the secret check; and the index every My Kortix turn starts with, with
- * `project_channels` off.
+ * `chat` off.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectSessions, projects } from '@kortix/db';
@@ -37,7 +37,7 @@ const SAM = crypto.randomUUID();
 const MK_SESSION = crypto.randomUUID();
 const WORKER_SESSION = crypto.randomUUID();
 // Channels off on purpose: My Kortix memory needs Files only.
-const project = { projectId: PROJECT, accountId: ACCOUNT, metadata: { experimental: { project_channels: false, drives: true } } };
+const project = { projectId: PROJECT, accountId: ACCOUNT, metadata: { experimental: { chat: false, drives: true } } };
 const person = (userId: string): Viewer => ({ userId, may: async (action) => action === 'session' });
 const volume = new FakeVolume();
 let priyaFolder = '';
@@ -173,7 +173,7 @@ describe('save, view, list, delete', () => {
 });
 
 describe('the index a My Kortix turn starts with', () => {
-  test('lists the session owner’s pages, with project_channels off, and sets the prompt body’s system', async () => {
+  test('lists the session owner’s pages, with chat off, and sets the prompt body’s system', async () => {
     const turn = (await myKortixMemoryTurn(PROJECT, MK_SESSION, PRIYA))!;
     expect(turn.pages).toBe(1);
     expect(turn.system).toContain('## Your memory of this person');

@@ -139,6 +139,7 @@ import { deleteMessageLinkParams, readMessageLinkParams, resolveMessageLinkTurn 
 const MESSAGE_LINK_MOUNT_WAIT_MS = 8_000;
 import { TurnOutcomes } from '../outcomes/turn-outcomes';
 import { SessionOverridesComposer } from '../overrides/session-overrides-composer';
+import { inheritedModelFor } from '../composer/chat-input/chat-input-summary';
 import {
   type QuestionAction,
   QuestionPrompt,
@@ -175,6 +176,7 @@ import type { DraftScope } from '../composer/draft/composer-draft';
 import { usePlanInChat } from './plan-surface';
 import { SessionStartingLoader } from '../status/session-starting-loader';
 import { ToolActivateContext } from '../tool/tool-renderers';
+import { AgentActivateContext } from '../tool/shared/infrastructure-contexts';
 import { ReadOnlySessionContext } from '../tool/shared/infrastructure-contexts';
 import {
   firstPromptAttachments,
@@ -401,6 +403,8 @@ interface SessionChatProps {
   headerLeadingAction?: React.ReactNode;
   /** Hide the session site header entirely */
   hideHeader?: boolean;
+  /** Paint no background: the host's surface shows through (an agent in the side panel's card). */
+  transparent?: boolean;
   /** Read-only mode — hides the chat input bar (used for sub-session modal viewer) */
   readOnly?: boolean;
   /** The composer's placeholder (a channel thread says "Reply…"). Default: the composer's own. */
@@ -480,6 +484,7 @@ export function SessionChat({
   boundAgentName,
   headerLeadingAction,
   hideHeader,
+  transparent = false,
   readOnly,
   composerPlaceholder,
   inputReplacement,
@@ -536,6 +541,20 @@ export function SessionChat({
     [sessionId, setSidePanelView, focusToolCall],
   );
   const toolActivate = readOnly || disableToolNavigation ? null : handleToolActivate;
+
+  // Clicking an agent (a sub-agent row, its finish notice, a workflow agent, the
+  // agents line) opens that agent's session in the side panel, beside the chat.
+  const focusAgent = useKortixComputerStore((s) => s.focusAgent);
+  const handleAgentActivate = useCallback(
+    (agent: { sessionId: string; title: string; handle: string; task?: string; failure?: string }) => {
+      const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;
+      setSidePanelView(sessionId, 'actions');
+      focusAgent(agent);
+      if (!wasOpen) track('panel_opened', { source: 'chat_agent' });
+    },
+    [sessionId, setSidePanelView, focusAgent],
+  );
+  const agentActivate = readOnly || disableToolNavigation ? null : handleAgentActivate;
 
   // ---- Context modal ----
   const [contextModalOpen, setContextModalOpen] = useState(false);
@@ -4304,7 +4323,7 @@ export function SessionChat({
     // screen, staleness is repaired in the background instead.
     if (transcriptFreshness === 'error' && !hasMessages) {
       return (
-        <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
+        <div className={cn('relative flex h-full flex-col', !transparent && 'bg-background')} data-testid="session-chat">
           <div
             className="flex flex-1 flex-col items-center justify-center gap-3 p-6"
             data-testid="session-transcript-error"
@@ -4320,7 +4339,7 @@ export function SessionChat({
       );
     }
     return (
-      <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
+      <div className={cn('relative flex h-full flex-col', !transparent && 'bg-background')} data-testid="session-chat">
         {/* `projectId`/`sessionId` are what arm the loader's restart offer
             (`canRestart`). Without them a session wedged in this state spun
             forever with no way out but a page reload. */}
@@ -4335,6 +4354,7 @@ export function SessionChat({
   return (
     // A read-only view (the sub-session modal) offers no fix inside a tool card.
     <ReadOnlySessionContext.Provider value={!!readOnly}>
+    <AgentActivateContext.Provider value={agentActivate}>
     <SessionPromptContext.Provider value={readOnly ? null : sendSessionPrompt}>
     {/* Outcomes' cache coherence and the shareable `?cr=` link both hinge on
         ONE `ProjectFilesProvider`: `useChangeRequests` inside
@@ -4352,7 +4372,7 @@ export function SessionChat({
           // Transparent in the welcome state so the root-level full-bleed wallpaper
           // (portaled into SessionLayout) reads through; solid once real content
           // takes over. Same base color either way, so non-welcome is unchanged.
-          shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+          shouldShowWelcomeOverlay || transparent ? 'bg-transparent' : 'bg-background',
         )}
         data-testid="session-chat"
       >
@@ -4471,7 +4491,7 @@ export function SessionChat({
                   // teleport: ours restores the reader's position, then the
                   // native one nudges it again.
                   'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto] [overflow-anchor:none]',
-                  shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+                  shouldShowWelcomeOverlay || transparent ? 'bg-transparent' : 'bg-background',
                 )}
                 onMouseUp={handleChatMouseUp}
                 onMouseDown={handleChatMouseDown}
@@ -5076,6 +5096,7 @@ export function SessionChat({
                 selectedModel={local.model.currentKey ?? null}
                 onModelChange={handleModelChange}
                 modelDefaultControls={chatModelDefaultControls}
+                inheritedModel={inheritedModelFor(local.model, composerAgentName)}
                 variants={local.model.variant.list}
                 selectedVariant={local.model.variant.current ?? null}
                 onVariantChange={handleVariantChange}
@@ -5139,6 +5160,7 @@ export function SessionChat({
       </ComposerDropZone>
     </ProjectFilesProvider>
     </SessionPromptContext.Provider>
+    </AgentActivateContext.Provider>
     </ReadOnlySessionContext.Provider>
   );
 }

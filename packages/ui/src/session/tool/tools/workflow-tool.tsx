@@ -278,12 +278,9 @@ export function WorkflowTool(props: ToolProps) {
     return (
       <>
         {/* The run card's header, alone: its progress and its result live in the run's own session. */}
-        <button
-          type="button"
+        <div
           data-testid="workflow-run-link"
-          aria-label={t('openRunLabel')}
-          onClick={openRunner}
-          className="border-border bg-background hover:bg-muted/40 mt-1.5 flex w-full min-w-0 cursor-pointer items-start gap-2.5 rounded-lg border px-4 py-3 text-left text-xs transition-colors"
+          className="border-border bg-background mt-1.5 flex w-full min-w-0 items-start gap-2.5 rounded-lg border px-4 py-3 text-left text-xs"
         >
           <span className="flex h-5 shrink-0 items-center">
             {runnerEnded === 'done' ? (
@@ -311,11 +308,12 @@ export function WorkflowTool(props: ToolProps) {
                     : [t('status.running'), tally.total > 0 ? t('progress', { done: tally.done, total: tally.total }) : null].filter(Boolean).join(' · ')}
             </span>
           </span>
-          <span className="text-foreground flex h-5 shrink-0 items-center gap-1">
+          {/* The one way in: a secondary button, on the title's line. */}
+          <Button type="button" variant="secondary" size="xs" aria-label={t('openRunLabel')} onClick={openRunner} className="-my-1 shrink-0">
             {t('openRun')}
-            <ArrowUpRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
-          </span>
-        </button>
+            <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0" />
+          </Button>
+        </div>
         {modal}
       </>
     );
@@ -391,13 +389,14 @@ export function WorkflowTool(props: ToolProps) {
             {run.background && (
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 size="xs"
                 aria-label={t('openRunLabel')}
                 onClick={() => setOpen({ sessionId: run.background!.sessionId, title })}
-                className="text-foreground px-2 text-xs font-normal"
+                className="ml-1"
               >
                 {t('openRun')}
+                <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0" />
               </Button>
             )}
           </>

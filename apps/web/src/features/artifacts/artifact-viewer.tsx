@@ -29,7 +29,7 @@ import {
 import { Button } from '@kortix/ui/button';
 import { ButtonGroup } from '@kortix/ui/button-group';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
-import { CountBadge } from '@kortix/ui/count-badge';
+import { BellMark } from '@kortix/ui/internal/notifications/notification-bell';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -126,6 +126,7 @@ import {
   selectionOfferKey,
 } from './artifact-selection-chip';
 import { AskAgentSheet } from './ask-agent-sheet';
+import { createDocPings } from './doc-coedit';
 import { DocEditor, type DocLiveBinding, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
 import {
@@ -299,8 +300,16 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const viewingOld = !!artifact?.version.id;
   const canEdit = !!artifact?.can_edit && !viewingOld;
   const isDoc = artifact?.type === 'doc';
+  const commentsFlag = useFeatureFlag(projectId, 'artifact_comments').enabled;
+  const artifactsFlag = useFeatureFlag(projectId, 'artifacts').enabled;
+  const discussionEnabled = commentsFlag && artifactsFlag;
+  // Live co-editing (KRTX-3670) of the current version: `changed doc` pings reach the editor.
+  const [docPings] = useState(createDocPings);
+  const coedit = discussionEnabled && !version ? docPings : undefined;
+  // A read-only doc opens a new editor per file version, unless it may be co-edited: that editor
+  // shows new text in place.
   const docKey = artifact
-    ? `${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}${canEdit || viewingOld ? '' : `:${artifact.entry_version}`}`
+    ? `${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}${canEdit || viewingOld || coedit ? '' : `:${artifact.entry_version}`}`
     : '';
   // A new editor (a read-only doc's new version, a Reload) opens where the person was reading.
   // The scroll position is kept only while an editor shows its text: the empty editor's collapse
@@ -316,9 +325,6 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     docScroll.current.ready = true;
   }, []);
   const sidebar = useOptionalSidebar();
-  const commentsFlag = useFeatureFlag(projectId, 'artifact_comments').enabled;
-  const artifactsFlag = useFeatureFlag(projectId, 'artifacts').enabled;
-  const discussionEnabled = commentsFlag && artifactsFlag;
   const comments = useArtifactComments(projectId, artifactId, {
     status: 'all',
     version,
@@ -442,6 +448,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     view: isDoc ? 'doc' : 'page',
     version: artifact?.entry_version ?? null,
     hidden: liveHidden,
+    onDoc: docPings.emit,
   });
   const liveOn = liveEnabled && live.status !== 'closed' && live.status !== 'access_lost';
   const { setTyping: liveSetTyping, setCursor: liveSetCursor, setSelection: liveSetSelection, setFocus: liveSetFocus } = live;
@@ -879,7 +886,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 )
               ) : null}
               {artifact && VisIcon ? (
-                <Hint label={t(`visibility.${artifact.visibility}`)}>
+                <Hint label={t(`visibility.${artifact.visibility}`)} side="bottom">
                   <span
                     className="text-muted-foreground flex shrink-0"
                     aria-label={t(`visibility.${artifact.visibility}`)}
@@ -889,7 +896,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 </Hint>
               ) : null}
               {artifact?.pinned ? (
-                <Hint label={t('pinned')}>
+                <Hint label={t('pinned')} side="bottom">
                   <span className="text-muted-foreground flex shrink-0" aria-label={t('pinned')}>
                     <PushPinIcon weight="fill" className="size-3.5" aria-hidden />
                   </span>
@@ -931,7 +938,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             {/* Two groups: the artifact's history and Ask AI; then Share and More. */}
             <ButtonGroup>
               <DropdownMenu open={historyOpen} onOpenChange={setHistoryOpen}>
-                <Hint label={t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })}>
+                <Hint label={t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })} side="bottom">
                   <DropdownMenuTrigger asChild>
                     <Button size="icon-sm" variant="secondary" aria-label={t('history')}>
                       <ClockCounterClockwiseIcon className="size-3.5" />
@@ -1003,7 +1010,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             {discussionEnabled ? (
               <ButtonGroup>
                 {annotationControls && !compact ? (
-                  <Hint label={pinHint}>
+                  <Hint label={pinHint} side="bottom">
                     <Button
                       ref={pinButton}
                       size="icon-sm"
@@ -1026,7 +1033,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   </Hint>
                 ) : null}
                 {annotationControls && !compact ? (
-                  <Hint label={drawHint}>
+                  <Hint label={drawHint} side="bottom">
                     <Button
                       ref={drawButton}
                       size="icon-sm"
@@ -1044,20 +1051,17 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     </Button>
                   </Hint>
                 ) : null}
-                <Hint label={commentsLabel}>
+                <Hint label={commentsLabel} side="bottom">
                   <Button
                     ref={commentsButton}
-                    size={openComments > 0 ? 'xs' : 'icon-sm'}
+                    size="icon-sm"
                     variant="secondary"
                     aria-label={commentsLabel}
                     aria-expanded={discussionOpen}
                     aria-controls={discussionOpen ? panelId : undefined}
                     onClick={() => changeDiscussionOpen(!discussionOpen)}
                   >
-                    <ChatCircleIcon className="size-3.5" aria-hidden />
-                    {openComments > 0 ? (
-                      <CountBadge count={openComments} tone="waiting" aria-hidden />
-                    ) : null}
+                    <BellMark count={openComments} needsYou={false} icon={ChatCircleIcon} />
                   </Button>
                 </Hint>
               </ButtonGroup>
@@ -1065,7 +1069,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             <ButtonGroup>
               {artifact.can_manage ? (
                 compact ? (
-                  <Hint label={t('share')}>
+                  <Hint label={t('share')} side="bottom">
                     <Button
                       size="icon-sm"
                       variant="secondary"
@@ -1184,14 +1188,14 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         {embedded ? (
           <div className="flex shrink-0 items-center">
             {/* `data-no-panel`: the session's link interceptor would reopen it in this panel. */}
-            <Hint label={t('openFullPage')}>
+            <Hint label={t('openFullPage')} side="bottom">
               <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} asChild>
                 <Link href={`/projects/${projectId}/artifacts/${artifactId}`} data-no-panel>
                   <ArrowsOutSimpleIcon className="size-3.5" />
                 </Link>
               </Button>
             </Hint>
-            <Hint label={t('close')}>
+            <Hint label={t('close')} side="bottom">
               <Button size="icon-sm" variant="ghost" aria-label={t('close')} onClick={onClose}>
                 <XIcon className="size-3.5" />
               </Button>
@@ -1292,6 +1296,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   readCommentSnapshot={discussionEnabled ? readCommentSnapshot : undefined}
                   live={docLive}
                   onReady={restoreDocScroll}
+                  coedit={coedit}
                 />
               </div>
             ) : (

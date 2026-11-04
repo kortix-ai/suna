@@ -2851,7 +2851,7 @@
         "object",
         "null"
       ],
-      "description": "Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`.",
+      "description": "Spaces: channels with configured tabs. Agents join one with `agents.<name>.space`.",
       "propertyNames": {
         "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
       },
@@ -2883,7 +2883,7 @@
           },
           "tabs": {
             "type": "array",
-            "description": "The tabs after the room, in order. Absent: the default set.",
+            "description": "The tabs, in order. Absent: the default set.",
             "items": {
               "type": "object",
               "required": [
@@ -2950,7 +2950,9 @@
                         "type": "string"
                       },
                       "room": {
-                        "type": "string"
+                        "type": "string",
+                        "deprecated": true,
+                        "description": "Retired with Rooms (2026-11); ignored."
                       },
                       "path": {
                         "type": "string"
@@ -3610,8 +3612,6 @@
                     "project.review.read",
                     "project.review.submit",
                     "project.review.act",
-                    "project.room.read",
-                    "project.room.write",
                     "project.artifact.read",
                     "project.artifact.comment",
                     "project.artifact.write",
@@ -3622,6 +3622,8 @@
                     "project.cr.merge",
                     "project.customize.read",
                     "project.customize.write",
+                    "project.room.read",
+                    "project.room.write",
                     "*"
                   ]
                 }
@@ -3799,8 +3801,6 @@
                     "project.review.read",
                     "project.review.submit",
                     "project.review.act",
-                    "project.room.read",
-                    "project.room.write",
                     "project.artifact.read",
                     "project.artifact.comment",
                     "project.artifact.write",
@@ -3811,6 +3811,8 @@
                     "project.cr.merge",
                     "project.customize.read",
                     "project.customize.write",
+                    "project.room.read",
+                    "project.room.write",
                     "*"
                   ]
                 }

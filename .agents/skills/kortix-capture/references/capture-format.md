@@ -185,6 +185,16 @@ null), `domain_icon`, `display` (`x`, `y`, `w`, `h`, and since multi-display
 
 `displays` lists every connected display at the last capture, the focused one first.
 
+`machine` (optional, every field nullable) describes the computer for support:
+`os_name` (`Windows 11 Pro 24H2`, `macOS 26.0`, `Ubuntu 24.04.1 LTS`), `os_build`
+(Windows `26200.9448`, macOS `25A354`, Linux the kernel release), `cpu`, `cpu_cores`
+(logical), `memory_bytes`, `disk_free_bytes` and `disk_total_bytes` (the library's
+volume), `gpus` (Windows display adapters; empty elsewhere), `booted_at_ms` (to the
+minute), `timezone`, `utc_offset`, `locale`. It holds no names. The app collects it
+at most hourly on the sync thread (`src/machine_info.rs`). `os_version` is the version
+number (Windows `10.0.26200.9448`); an older app sent the raw
+`Microsoft Windows [Version …]` line, which the API cleans.
+
 `device_id` is 32 hex characters of SHA-256(`kortix-capture/device/v2\n`,
 machine key, `\n`, prefix): one machine keeps one id under one prefix, and a
 different prefix gives a different id. With credentials from an issuer the device
@@ -207,7 +217,8 @@ every connected display, the focused one first), `appVersion`, `actionsRecording
 `capture` (`intervalMs`, `maxHeight`: the rate and size in force),
 `policy` (null, or the policy in force: `source`, `updatedAtMs`, `fetchedAtMs`),
 `host` (`awakeSinceMs`: when the computer last woke from sleep, or the app started),
-plus `reportedAtMs`. status.json goes out every 15 s. A reader
+`update` (null without the machine service, else its self-update state: see the
+release runbook, section Updater), plus `reportedAtMs`. status.json goes out every 15 s. A reader
 shows a device as offline when `reportedAtMs` is older than 120 s. After the
 policy in force changes, the device writes status.json about 15 s later (once its
 recorders followed the change), so a policy change shows within ~80 s. status.json is

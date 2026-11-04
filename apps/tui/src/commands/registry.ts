@@ -373,7 +373,7 @@ export const COMMANDS = [
     description: 'Read and search company memory pages.',
     group: 'screen',
     needs: 'project',
-    flag: 'project_channels',
+    flag: 'chat',
   },
   {
     name: 'spaces',
@@ -381,14 +381,7 @@ export const COMMANDS = [
     description: 'Channels and DMs, and the threads in them.',
     group: 'screen',
     needs: 'project',
-    flag: 'project_channels',
-  },
-  {
-    name: 'rooms',
-    description: 'Rooms where agents and people talk.',
-    group: 'screen',
-    needs: 'project',
-    flag: 'agent_rooms',
+    flag: 'chat',
   },
   {
     name: 'loops',

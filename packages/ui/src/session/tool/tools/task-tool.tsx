@@ -1,17 +1,16 @@
 'use client';
 
 import { SubagentDialog } from '../../agents/subagent-view';
-import { BasicTool, firstMeaningfulLine, partInput, partMetadata, partOutput, partStatus, partError } from '../shared/infrastructure';
+import { BasicTool, ToolSurfaceContext, firstMeaningfulLine, partInput, partMetadata, partStatus, partError } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
-import { SubAgentActivity, SubAgentStatusBanner, useSubAgentThread } from '../shared/sub-agent';
+import { SubAgentStatusBanner, useSubAgentThread } from '../shared/sub-agent';
 import type { ToolProps } from '../shared/types';
 import { useTranslations } from '../../../i18n';
 import { getChildSessionId } from '../../../internal/session-types';
-import { useMemo, useState } from 'react';
-import { subAgentCalls, type ProjectSession, type SessionLogThread } from '@kortix/sdk';
+import { useContext, useMemo, useState } from 'react';
+import type { ProjectSession, SessionLogThread } from '@kortix/sdk';
 import { useProjectSession, useSessionStateStore } from '@kortix/sdk/react';
 import { agentDisplayName } from '../../../internal/components/agent-mark';
-import { UnifiedMarkdown } from '../../../markdown/unified-markdown';
 import { useSessionIds } from '../../../providers/session-ids';
 import type { SessionDisplayStatus } from '../../actions/session-label';
 import { agentRowOf, type AgentRowState } from '../../agents/agent-model';
@@ -34,14 +33,10 @@ function useBackgroundWorking(childSessionId: string | undefined, childThread: S
  * An agent call (`agent`, `task`, Codex `spawn_agent`) is one tool row, the
  * grammar of every other tool row:
  *
- *   [face] Researcher  Research competitor pricing…          ◔ Working
- *          │ what it was asked
- *          │ its steps, live
- *          │ its answer, or why it did not finish
- *          │ Open ↗
+ *   [face] Researcher  Research competitor pricing…          ◔ Working  >
  *
- * The row opens in place. "Open" shows the agent's whole conversation in the
- * agent dialog; nothing opens beside the chat on its own.
+ * A click opens the agent's session in the side panel (its face, name, state,
+ * conversation and a box to message it); without a panel, in the agent dialog.
  */
 export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const t = useTranslations('tools.agent');
@@ -63,7 +58,6 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(call), [call]);
   const childThread = useSubAgentThread(childSessionId);
-  const childCalls = useMemo(() => subAgentCalls(childThread), [childThread]);
 
   // `agent(…, { background: true })` returns as soon as the child exists. The call is
   // over; the work goes on in the child's own session, and the row says so.
@@ -84,16 +78,22 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   // The name its parent gave it (`agent({ name })`) reads best; else the kind of agent.
   const handle = (input.name as string) || (child?.named ? child.handle : '') || subagentType;
   const title = (input.name as string) || (child?.named ? child.handle : '') || agentDisplayName(subagentType);
-  // A foreground call returns the agent's answer as its output; a background call returns only that it started.
-  const answer = !background && status === 'completed' ? partOutput(call).trim() : '';
 
-  const hasBody = !!prompt || childCalls.length > 0 || !!answer || !!errorText || !!childSessionId;
+  // A row with a session opens it: beside the chat in the side panel, or as the agent
+  // dialog where there is no panel. Its prompt, steps and answer are that session's
+  // conversation, so the row carries no copy of them. A call that never got a
+  // session keeps what it has in place. On the panel's own surface a row is a fold
+  // (it takes no click), so there the fold holds Open.
+  const surface = useContext(ToolSurfaceContext);
+  const opensAgent = !!childSessionId && surface !== 'panel';
+  const hasBody = !opensAgent && (!!prompt || !!errorText || !!childSessionId);
   return (
     <AgentRowScope>
       <BasicTool
         icon={<AgentFace handle={handle} />}
         trigger={<AgentTrigger title={title} subtitle={description} />}
-        triggerAction={<AgentStatus status={STATE_GLYPH[state]} label={t(`state.${state}`)} opens={hasBody} />}
+        triggerAction={<AgentStatus status={STATE_GLYPH[state]} label={t(`state.${state}`)} opens={opensAgent || hasBody} />}
+        onClick={opensAgent ? () => setModalOpen(true) : undefined}
         defaultOpen={defaultOpen}
         forceOpen={forceOpen}
         locked={locked}
@@ -103,19 +103,15 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
             {prompt && prompt !== description && (
               <p className="text-muted-foreground line-clamp-4 whitespace-pre-wrap wrap-break-word">{prompt}</p>
             )}
-            {childCalls.length > 0 && <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />}
-            {answer && (
-              <div className="max-h-96 min-w-0 overflow-y-auto">
-                <UnifiedMarkdown content={answer} trust="agent" isStreaming={false} />
-              </div>
-            )}
             {errorText && <AgentFailure sentence={tNotice('failedSentence')} raw={errorText} />}
             {childSessionId && <OpenAgentButton label={t('openAgent', { name: description || title })} onClick={() => setModalOpen(true)} />}
           </AgentRowBody>
         ) : undefined}
       </BasicTool>
       <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
-      {childSessionId && <SubagentDialog open={modalOpen} onOpenChange={setModalOpen} sessionId={childSessionId} title={title} />}
+      {childSessionId && (
+        <SubagentDialog open={modalOpen} onOpenChange={setModalOpen} sessionId={childSessionId} title={title} handle={handle} task={description || undefined} failure={errorText || undefined} />
+      )}
     </AgentRowScope>
   );
 }

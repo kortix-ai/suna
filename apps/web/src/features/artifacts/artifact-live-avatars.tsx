@@ -2,19 +2,20 @@
 
 import type { ArtifactLiveState } from '@kortix/sdk/react';
 import { cn } from '@kortix/ui';
-import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { Field, FieldContent, FieldDescription, FieldLabel } from '@kortix/ui/field';
 import Hint from '@kortix/ui/hint';
 import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
 import { Switch } from '@kortix/ui/switch';
 import { UserAvatar } from '@kortix/ui/user-avatar';
-import { RobotIcon, UsersIcon } from '@phosphor-icons/react';
+import { UsersIcon } from '@phosphor-icons/react';
 import { useId, useState } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
 import { LIVE_RING } from './artifact-live-colors';
 import { liveStack, type LiveMember, type LiveMembers } from './artifact-live-logic';
 import { useLiveStatusLabel } from './artifact-live-presence';
+import { AVATAR_SM_EDGE } from './artifact-meta';
 
 /** The color ring that ties a face to its cursor; the offset keeps overlapping faces apart. */
 const ringOf = (member: LiveMember) =>
@@ -22,12 +23,11 @@ const ringOf = (member: LiveMember) =>
 
 function LiveFace({ member, hint }: { member: LiveMember; hint?: string }) {
   return member.kind === 'session' ? (
-    // The agent glyph is the agent badge: a person's tile shows a face or initials.
-    <EntityAvatar
-      icon={RobotIcon}
-      label={member.name}
-      size="sm"
-      hint={hint}
+    // The agent's pixel mark is its face: a person's tile shows a photo or initials.
+    <AgentMark
+      slug={member.name}
+      label={hint ?? member.name}
+      tile={AVATAR_SM_EDGE}
       className={ringOf(member)}
     />
   ) : (

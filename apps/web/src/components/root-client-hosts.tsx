@@ -24,8 +24,8 @@ const SpeedInsights = dynamic(
   () => import('@vercel/speed-insights/next').then((mod) => mod.SpeedInsights),
   { ssr: false },
 );
-const PostHogIdentify = dynamic(
-  () => import('@/components/posthog-identify').then((mod) => mod.PostHogIdentify),
+const PostHogHost = dynamic(
+  () => import('@/components/analytics/posthog-host').then((mod) => mod.PostHogHost),
   { ssr: false },
 );
 const RouteChangeTracker = dynamic(
@@ -82,7 +82,7 @@ export function RootClientHosts({ vercel }: { vercel: boolean }) {
       {desktop ? <DesktopUrlPrompt /> : null}
       {vercel ? <Analytics /> : null}
       {vercel ? <SpeedInsights /> : null}
-      <PostHogIdentify />
+      <PostHogHost />
       <RouteChangeTracker />
       <AuthEventTracker />
       <LocalhostLinkInterceptor />

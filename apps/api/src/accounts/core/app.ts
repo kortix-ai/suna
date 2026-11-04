@@ -17,6 +17,7 @@ import { isUuid } from '../../shared/validate';
 import { suggestAccountName } from './account-name';
 import { lookupEmailsByUserIds } from './owner-emails';
 import type { AppEnv } from '../../types';
+import { captureProductEvent } from '../../shared/product-analytics';
 
 // ─── Public router (leaf module — no route imports here to avoid cycles) ─────
 export const accountsRouter = makeOpenApiApp<AppEnv>();
@@ -364,6 +365,13 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
           .update(accountInvitations)
           .set({ acceptedAt: new Date() })
           .where(eq(accountInvitations.inviteId, invite.inviteId));
+        captureProductEvent({
+          userId,
+          accountId: invite.accountId,
+          event: 'member_joined',
+          dedupeKey: invite.inviteId,
+          properties: { via: 'auto_claim', role: invite.initialRole },
+        });
         claimed += 1;
       } catch {
         // Skip individual invite failures; keep processing the rest.

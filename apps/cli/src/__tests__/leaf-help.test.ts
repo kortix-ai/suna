@@ -43,7 +43,6 @@ const GROUPS = [
   'providers',
   'review',
   'roles',
-  'rooms',
   'sandboxes',
   'secrets',
   'sessions',

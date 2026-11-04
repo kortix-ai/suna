@@ -52,6 +52,7 @@ import {
   ENV_NAME_RE,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   GRANTABLE_KORTIX_PERMISSIONS,
+  RETIRED_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
   PI_PACKAGE_NAME_RE,
   PI_PACKAGE_NPM_RE,
@@ -180,7 +181,8 @@ function kortixPermissionsEnum(): readonly string[] {
   // still resolve), so an editor must not red-squiggle a file that passes
   // `kortix validate`. They are absent from the grantable catalog, so nothing
   // presents them as a live choice.
-  return [...GRANTABLE_KORTIX_PERMISSIONS, ...Object.keys(DEPRECATED_KORTIX_PERMISSION_ALIASES), '*'];
+  // The retired actions are in it for the same reason: `kortix validate` only warns on them.
+  return [...GRANTABLE_KORTIX_PERMISSIONS, ...Object.keys(DEPRECATED_KORTIX_PERMISSION_ALIASES), ...RETIRED_KORTIX_PERMISSIONS, '*'];
 }
 
 function kortixPermissionsGrantSetSchema(): JsonSchemaFragment {
@@ -1465,7 +1467,7 @@ export function buildManifestSchema(): JsonSchemaFragment {
       },
       spaces: {
         type: ['object', 'null'],
-        description: 'Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`.',
+        description: 'Spaces: channels with configured tabs. Agents join one with `agents.<name>.space`.',
         propertyNames: { pattern: SPACE_SLUG_RE.source },
         additionalProperties: {
           type: 'object',
@@ -1480,7 +1482,7 @@ export function buildManifestSchema(): JsonSchemaFragment {
             },
             tabs: {
               type: 'array',
-              description: 'The tabs after the room, in order. Absent: the default set.',
+              description: 'The tabs, in order. Absent: the default set.',
               items: {
                 type: 'object',
                 required: ['type'],
@@ -1501,7 +1503,7 @@ export function buildManifestSchema(): JsonSchemaFragment {
                       properties: {
                         type: { type: 'string', enum: ['chat', 'artifact', 'app', 'iframe', 'text'] },
                         label: { type: 'string' },
-                        room: { type: 'string' },
+                        room: { type: 'string', deprecated: true, description: 'Retired with Rooms (2026-11); ignored.' },
                         path: { type: 'string' },
                         app: { type: 'string' },
                         url: { type: 'string' },

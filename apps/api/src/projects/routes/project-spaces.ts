@@ -1,7 +1,7 @@
 /**
  * Project spaces: channels and the caller's DMs with an agent
  * (`lib/project-spaces.ts`). Every route needs `session` project access and the
- * `project_channels` flag. A public channel is seen and used by every member
+ * `chat` flag. A public channel is seen and used by every member
  * of the project; membership (`lib/project-space-members.ts`) is its roster. A
  * private channel exists only for its members (`lib/space-access.ts`): to
  * anyone else every route answers 404 `space_not_found`, never 403, so its id
@@ -25,6 +25,7 @@ import {
   SpaceMemberListSchema,
   SpaceMembersAddInputSchema,
   SpaceSchema,
+  SpaceTabsInputSchema,
   SpaceUpdateInputSchema,
 } from '@kortix/api-contract';
 import type { Context } from 'hono';
@@ -62,22 +63,26 @@ import {
   SPACE_NOT_FOUND,
   createChannel,
   findLiveChannel,
+  findLiveSpace,
   findSessionSpace,
   getOrCreateDm,
   listHiddenPrivateChannels,
   listSpacesForUser,
+  mayEditSpaceTabs,
   serializeSpace,
+  setSpaceTabs,
   type SpaceViewer,
   updateChannel,
 } from '../lib/project-spaces';
 import { canSeeSpace, PRIVATE_CHANNELS_UNAVAILABLE, privateChannelsAvailable, spaceAccessFor } from '../../shared/space-access';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { sessionPerson } from '../lib/chat-threads';
 
 const projectParams = z.object({ projectId: z.string() });
 const spaceParams = projectParams.extend({ spaceId: z.string() });
 
 /**
- * The project (`session` access), the `project_channels` flag, then a live
+ * The project (`session` access), the `chat` flag, then a live
  * channel of the project the caller may see: the gate of every
  * `/spaces/:spaceId/*` tab route. A DM, an archived channel, an unknown id and
  * a private channel the caller is not in answer 404. `managerMay`: a project
@@ -97,11 +102,11 @@ async function loadChannel(c: Context<AppEnv>, opts: { managerMay?: boolean } = 
 
 type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
 
-/** The project (`session` access) and the `project_channels` flag: the gate of every route here. */
+/** The project (`session` access) and the `chat` flag: the gate of every route here. */
 async function loadSpacesProject(c: Context<AppEnv>) {
   const loaded = await loadProjectForUser(c, c.req.param('projectId')!, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  const gate = requireFeatureFlag(c, loaded.row.metadata, 'project_channels');
+  const gate = requireFeatureFlag(c, loaded.row.metadata, 'chat');
   if (gate) return gate;
   return loaded;
 }
@@ -338,6 +343,53 @@ function registerSpaceRoutes(): void {
       // A manager outside a private channel gets its name and state, not its description or agents.
       if (!canSeeSpace(result.space, viewer.access)) return c.json({ ...serialized, description: null, agents: [] }, 200);
       return c.json(serialized, 200);
+    },
+  );
+
+  // PUT /v1/projects/:projectId/spaces/:spaceId/tabs — replace the space's tabs after Chat.
+  projectsApp.openapi(
+    createRoute({
+      method: 'put',
+      path: '/{projectId}/spaces/{spaceId}/tabs',
+      tags: ['spaces'],
+      summary: 'Replace the tabs of a space',
+      description:
+        'The whole ordered list after Chat (Chat is always first and is never stored): add, remove, rename and reorder in one call. ' +
+        'At most 20 tabs. Every tab needs a `ref`: a Drive file path (`file`), a Drive folder path (`folder`), an artifact id, an App slug or an https URL (`link`). ' +
+        'The server fetches a new link URL once (public addresses only, 5 s) and sets `embeddable`: false when the page refuses framing or cannot be reached. ' +
+        'A person may when they may edit the channel (`can_edit`) or own the DM. A session token may for a session filed in the space ' +
+        'or working for a person in it. Anyone else gets 403 `forbidden`; a space the caller may not see is 404 `space_not_found`.',
+      ...auth,
+      request: {
+        params: spaceParams,
+        body: { required: true, content: { 'application/json': { schema: SpaceTabsInputSchema } } },
+      },
+      responses: {
+        200: json(SpaceSchema, 'The space with its new tabs'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => {
+      const loaded = await loadSpacesProject(c);
+      if (loaded instanceof Response) return loaded;
+      const { row: project, userId } = loaded;
+      const spaceId = c.req.param('spaceId');
+      const space = isUuid(spaceId) ? await findLiveSpace(project.projectId, spaceId) : null;
+      const bound = callerKortixSessionId(c);
+      const person = bound ? await sessionPerson(project.projectId, bound) : userId;
+      // Another member's DM is not found, never "not editable".
+      if (!space || (space.kind === 'dm' && space.dmUserId !== userId && space.dmUserId !== person)) return c.json(SPACE_NOT_FOUND, 404);
+      const viewer = await spaceViewer(c, loaded);
+      if (!canSeeSpace(space, viewer.access)) return c.json(SPACE_NOT_FOUND, 404);
+      if (!(await mayEditSpaceTabs(space, viewer, person))) {
+        return c.json(
+          { error: 'Only the space’s creator, a project manager, the DM’s owner or an agent working in the space can change its tabs.', code: 'forbidden' },
+          403,
+        );
+      }
+      const updated = await setSpaceTabs(project.projectId, space, c.req.valid('json').tabs);
+      if (!updated) return c.json(SPACE_NOT_FOUND, 404);
+      return c.json(serializeSpace(updated, viewer, await isSpaceMember(updated, viewer.userId)), 200);
     },
   );
 

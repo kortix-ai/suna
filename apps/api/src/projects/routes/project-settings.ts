@@ -48,6 +48,7 @@ import {
   readPublicProjectTransitionState,
   ProviderTransitionError,
 } from '../provider-transition/provider-transition-service';
+import { capturePersonEvent } from './product-events';
 
 // PATCH /v1/projects/:projectId/onboarding
 // Persist whether the project's guided onboarding wizard has been completed
@@ -120,7 +121,9 @@ const patchFeatureFlagHandler = async (c: any) => {
   if (!isPlainObject(body)) {
     return c.json({ error: 'Request body must be a JSON object' }, 400);
   }
-  const feature = body.feature;
+  // `project_channels` merged into `chat` (2026-11): released TUI, mobile and
+  // CLI builds still toggle Channels by the old key, so it writes `chat`.
+  const feature = body.feature === 'project_channels' ? 'chat' : body.feature;
   const enabled = body.enabled;
   // Floor 'read' (membership); project.settings.write is the gate below.
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -158,6 +161,10 @@ const patchFeatureFlagHandler = async (c: any) => {
   }
   const row = await writeProjectFeatureFlag(projectId, feature, enabled);
   if (!row) return c.json({ error: 'Not found' }, 404);
+  capturePersonEvent(c, loaded, projectId, 'feature_flag_toggled', {
+    key: String(feature),
+    enabled: enabled === null ? 'default' : enabled,
+  });
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 };
 

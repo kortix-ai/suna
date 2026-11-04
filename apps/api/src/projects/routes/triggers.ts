@@ -85,6 +85,7 @@ import {
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
+import { capturePersonEvent } from './product-events';
 
 /**
  * The person who created or edited a trigger follows its alerts (KRTX-1742).
@@ -405,7 +406,7 @@ export function registerTriggersRoutes(): void {
             max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in a UTC day. Omit for no daily cap.' }),
             overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'skip holds a fire while the previous run is still active; in reuse, pinned and keyed mode, while its previous prompt still waits in the session queue. Omit for the default: skip for cron, allow for the other types.' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates. Default private; project when space_id is a channel.' }),
-            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to as threads (project_channels flag; ignored while it is off). A DM must be the caller\'s own and the trigger must run the DM\'s agent. A DM run is shared with the DM\'s member; like every trigger run, trigger managers and account owners and admins can also open it.' }),
+            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to as threads (chat flag; ignored while it is off). A DM must be the caller\'s own and the trigger must run the DM\'s agent. A DM run is shared with the DM\'s member; like every trigger run, trigger managers and account owners and admins can also open it.' }),
           }) } } },
       },
       responses: {
@@ -506,6 +507,7 @@ export function registerTriggersRoutes(): void {
         pinnedSessionId: draft.pinnedSessionId,
       });
       await followTrigger(c, loaded.row, projectId, draft.slug);
+      capturePersonEvent(c, loaded, projectId, 'trigger_created', { type: draft.type });
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row, { userId: loaded.userId, bound: callerKortixSessionId(c) }), 201);
     },
@@ -615,7 +617,7 @@ export function registerTriggersRoutes(): void {
             max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs per UTC day; null removes the daily cap.' }),
             overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'skip or allow; null resets it to the default (skip for cron, allow otherwise).' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates.' }),
-            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to; null clears it (project_channels flag; ignored while it is off). It applies to later runs only; moving to a channel without session_access makes later threads project-visible.' }),
+            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to; null clears it (chat flag; ignored while it is off). It applies to later runs only; moving to a channel without session_access makes later threads project-visible.' }),
           }) } } },
       },
       responses: {

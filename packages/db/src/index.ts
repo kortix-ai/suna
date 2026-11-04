@@ -180,6 +180,10 @@ export {
   artifactCommentScreenshotObjects,
   artifactCommentWriteLimits,
   artifactEvents,
+  artifactDocState,
+  artifactDocUpdates,
+  artifactDocRoots,
+  artifactDocClients,
   driveCommitAuthors,
   sessionSandboxIdentities,
   claudeSubscriptionLogins,
@@ -331,6 +335,7 @@ export {
   connectorPoliciesRelations,
   connectorProjectPoliciesRelations,
   connectorProjectSettingsRelations,
+  selfHostSignupPolicy,
 } from './schema/kortix';
 export type { AgentGrant, StoredAgentGrant, ArtifactCommentMention } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';

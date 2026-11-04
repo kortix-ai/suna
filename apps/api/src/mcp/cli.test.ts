@@ -50,8 +50,6 @@ describe('denial', () => {
     [['env', 'push']],
     [['drive', 'put', './a.txt', '/a.txt']],
     [['goals', 'ls']],
-    [['rooms', 'watch', 'general']],
-    [['rooms', 'chat', 'general']],
     [['artifacts', 'publish', './deck']],
     [['artifacts', 'pull', 'abc', './out']],
     [['apps', 'deploy', './x']],

@@ -1,6 +1,7 @@
 'use client';
 
 import { useProjectSpaces, useVisibleAgents } from '@kortix/sdk/react';
+import { isMyKortixAgentName } from '@kortix/shared';
 import { CaretRightIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMemo, useState, type ReactNode } from 'react';
 
@@ -34,7 +35,7 @@ function isAt(pathname: string | null, href: string): boolean {
 }
 
 /**
- * The sidebar under the `project_channels` flag: Channels, then Direct
+ * The sidebar under the `chat` flag: Channels, then Direct
  * messages, in the slot the session list holds with the flag off. A section
  * renders once its data arrives: no skeleton rows for navigation.
  */
@@ -43,7 +44,13 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
   const pathname = useUiPathname();
   const router = useUiRouter();
   const spaces = useProjectSpaces(projectId);
-  const agents = useVisibleAgents({ projectId });
+  // My Kortix first: its DM is the person's chat with Kortix (`/chat` opens it too).
+  const visible = useVisibleAgents({ projectId });
+  const agents = useMemo(
+    () => [...visible.filter((agent) => isMyKortixAgentName(agent.name)), ...visible.filter((agent) => !isMyKortixAgentName(agent.name))],
+    [visible],
+  );
+  const chatHref = `${uiRoutes().project(projectId)}/chat`;
   const [createOpen, setCreateOpen] = useState(false);
   const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId));
   const collapsed = useMemo(() => new Set(collapsedSections), [collapsedSections]);
@@ -107,7 +114,7 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
               <ProjectNavRow
                 key={agent.name}
                 href={href}
-                active={isAt(pathname, href)}
+                active={isAt(pathname, href) || (isMyKortixAgentName(agent.name) && isAt(pathname, chatHref))}
                 label={name}
                 // The row forces every svg to size-4: the pixel mark keeps its 14px glyph.
                 className="[&_[data-slot=agent-mark]>svg]:size-[14px]!"

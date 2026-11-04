@@ -1,6 +1,6 @@
 'use client';
 
-import { sessionIdFromPath, uiRoutes } from '../../lib/routes';
+import { newSessionHref, sessionIdFromPath, uiRoutes } from '../../lib/routes';
 import { useTranslations } from '../../i18n';
 
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
@@ -86,7 +86,7 @@ import {
   type SessionSection,
 } from './session-grouping';
 import { useSessionOpenIntent } from './session-open-intent';
-import { isReviewOverdue, SessionStatusMark } from './session-status-mark';
+import { GoalStatusMark, isReviewOverdue, SessionStatusMark } from './session-status-mark';
 import { SessionTitle } from './session-title';
 import { useMediaQuery } from '../../internal/hooks';
 import { cn } from '../../internal/lib/utils';
@@ -138,6 +138,7 @@ import {
   FolderSimpleIcon,
   FolderSimpleMinusIcon,
   FolderSimplePlusIcon,
+  PlusIcon,
   PushPinIcon,
   PushPinSlashIcon,
   RobotIcon,
@@ -146,20 +147,25 @@ import {
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
-  TargetIcon,
   SquareIcon as Square,
   TagIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { useUiPathname, useUiRouter, useUiSearchParams, useUiViewerId } from '../../providers/ui-provider';
+import { UiLink, useUiPathname, useUiRouter, useUiSearchParams, useUiViewerId } from '../../providers/ui-provider';
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSessionListActions } from '../../session/actions/use-session-list-actions';
 import { Separator } from '../../primitives/separator';
 
 interface ProjectSessionListProps {
   projectId: string;
+  /**
+   * The list below Channels and Direct messages (`chat` on): closed until the
+   * viewer opens it, a quieter header, and a `+` that opens the project
+   * composer, because the sidebar has no New session row then.
+   */
+  secondary?: boolean;
 }
 
 const SESSION_RELATIVE_TIME_CLASS =
@@ -207,7 +213,7 @@ function ProjectSessionListSkeleton() {
   );
 }
 
-export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
+export function ProjectSessionList({ projectId, secondary = false }: ProjectSessionListProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
   const tPinArchive = useTranslations('sidebar.pinArchive');
@@ -401,6 +407,16 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId));
   const collapsedSectionIds = useMemo(() => new Set(collapsedSections), [collapsedSections]);
   const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
+  // Open by default: the collapsed-sections store, as Channels and Direct
+  // messages. Closed by default (`secondary`): the expanded store, as Shared
+  // and Automated. Both persist per project.
+  const listOpen = secondary
+    ? expandedIdSet.has(SESSIONS_SECTION_ID)
+    : !collapsedSectionIds.has(SESSIONS_SECTION_ID);
+  const toggleListOpen = () =>
+    secondary
+      ? toggleExpanded(projectId, SESSIONS_SECTION_ID)
+      : toggleSectionCollapsed(projectId, SESSIONS_SECTION_ID);
 
   const restartMutation = useMutation({
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
@@ -775,12 +791,19 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col space-y-px">
+    <div
+      className={cn(
+        'flex min-h-0 flex-col space-y-px',
+        // Below the spaces: the header alone while closed, an equal share of the column while open.
+        secondary ? (listOpen ? 'flex-1' : 'shrink-0') : 'h-full',
+      )}
+    >
       {/* The header collapses the whole list: Pinned, the time or status
-          sections, Shared, Automated. Open by default; the choice persists. */}
+          sections, Shared, Automated. Open by default (closed when
+          `secondary`); the choice persists. */}
       <Disclosure
-        open={!collapsedSectionIds.has(SESSIONS_SECTION_ID)}
-        onOpenChange={() => toggleSectionCollapsed(projectId, SESSIONS_SECTION_ID)}
+        open={listOpen}
+        onOpenChange={toggleListOpen}
         className="group/sessions flex min-h-0 flex-1 flex-col space-y-px"
         transition={{ duration: 0.15, ease: 'easeOut' }}
       >
@@ -790,6 +813,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           reviewCountBySession={needsYouBySession}
           onMenuOpenChange={holdPeek}
           onNewGroup={groupsEnabled ? () => setGroupCreate({ fileSessionId: null }) : undefined}
+          secondary={secondary}
         />
         <DisclosureContent className="flex min-h-0 flex-1 flex-col" contentClassName="flex min-h-0 flex-1 flex-col overflow-hidden">
           {renderBody()}
@@ -863,6 +887,7 @@ function SessionListHeader({
   reviewCountBySession,
   onMenuOpenChange,
   onNewGroup,
+  secondary,
 }: {
   projectId: string;
   sessions: ProjectSession[];
@@ -870,9 +895,18 @@ function SessionListHeader({
   onMenuOpenChange: (open: boolean) => void;
   /** Open the New group dialog; absent while `session_groups` is off. */
   onNewGroup?: () => void;
+  /** Below the spaces (`chat` on): a smaller label and a `+` to the project's new-session composer (`newSessionHref`). */
+  secondary?: boolean;
 }) {
   const t = useTranslations('sidebar');
   const tGroups = useTranslations('sidebar.sessionGroups');
+  const { isMobile, setOpenMobile } = useSidebar();
+  // Secondary: the header's controls show on hover or focus only, as the Channels header's `+`.
+  const controlClass = cn(
+    SESSION_MENU_TRIGGER_CLASS,
+    secondary &&
+      'opacity-0 group-focus-within/sessions-header:opacity-100 group-hover/sessions-header:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100',
+  );
   return (
     <div
       className={cn(
@@ -881,7 +915,12 @@ function SessionListHeader({
       )}
     >
       <DisclosureTrigger>
-        <div className="text-muted-foreground group-hover/sessions-header:text-sidebar-foreground flex min-w-0 flex-1 cursor-pointer flex-row items-center gap-1 self-stretch text-sm font-medium focus-visible:outline-none">
+        <div
+          className={cn(
+            'text-muted-foreground group-hover/sessions-header:text-sidebar-foreground flex min-w-0 flex-1 cursor-pointer flex-row items-center gap-1 self-stretch focus-visible:outline-none',
+            secondary ? 'text-xs' : 'text-sm font-medium',
+          )}
+        >
           <span className="truncate">{t('sessions')}</span>
           <CaretRightIcon
             aria-hidden
@@ -889,6 +928,26 @@ function SessionListHeader({
           />
         </div>
       </DisclosureTrigger>
+      {secondary && (
+        <Hint side="top" label={t('newSession')}>
+          <Button
+            asChild
+            variant="ghost"
+            size="icon-xs"
+            className={controlClass}
+          >
+            <UiLink
+              href={newSessionHref(projectId)}
+              aria-label={t('newSession')}
+              onClick={() => {
+                if (isMobile) setOpenMobile(false);
+              }}
+            >
+              <PlusIcon className="size-3.5" />
+            </UiLink>
+          </Button>
+        </Hint>
+      )}
       {onNewGroup && (
         <Hint side="top" label={tGroups('newGroup')}>
           <Button
@@ -896,7 +955,7 @@ function SessionListHeader({
             size="icon-xs"
             type="button"
             aria-label={tGroups('newGroup')}
-            className={SESSION_MENU_TRIGGER_CLASS}
+            className={controlClass}
             onClick={onNewGroup}
           >
             <FolderSimplePlusIcon className="size-4" />
@@ -917,7 +976,7 @@ function SessionListHeader({
               size="icon-xs"
               type="button"
               aria-label={t('sessionViewOptions')}
-              className={SESSION_MENU_TRIGGER_CLASS}
+              className={controlClass}
             >
               <DotsThreeIcon className="size-4" />
             </Button>
@@ -1118,13 +1177,9 @@ function ChildRunsToggle({
         clearOfMenu && 'mr-6',
       )}
     >
-      {/* The count says how many; the caret says it opens. One mark each,
-          and the caret turns as the tree opens below the row. */}
+      {/* The count alone is the toggle: it says how many and, darker while
+          open, that the tree below the row is its own. No caret. */}
       <CountBadge count={count} className={cn(open && 'bg-foreground/12')} />
-      <CaretRightIcon
-        aria-hidden
-        className={cn('duration-normal size-3 shrink-0 transition-transform ease-out motion-reduce:transition-none', open && 'rotate-90')}
-      />
     </span>
   );
 }
@@ -1437,25 +1492,15 @@ function ProjectSessionRow({
       className="focus-visible:ring-kortix-base flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md py-1 focus-visible:ring-[0.6px] focus-visible:outline-none"
     >
       <div className="size-4 shrink-0">
-        {/* A spawned child leads with what it is (a goal session or a
-            spawned session) and trades that mark for its status only while
-            it is live. A top-level row always leads with its status. */}
-        {spawned && !isLiveStatus(displayStatus) ? (
-          <ChildSessionMark projectId={session.project_id} sessionId={session.session_id} />
-        ) : (
-          <SessionStatusDot
-            session={session}
-            reviewCount={reviewCount}
-            waitingOn={waitingOn}
-            changeRequests={changeRequests}
-          />
-        )}
+        <SessionLeadingMark
+          session={session}
+          spawned={spawned}
+          displayStatus={displayStatus}
+          reviewCount={reviewCount}
+          waitingOn={waitingOn}
+          changeRequests={changeRequests}
+        />
       </div>
-
-      {/* A resting spawned child already leads with its goal mark. */}
-      {!(spawned && !isLiveStatus(displayStatus)) && (
-        <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
-      )}
 
       <span className="min-w-0 flex-1">
         <SessionTitle title={displayTitle} className={cn('min-w-0', isActive && 'font-medium')} />
@@ -1859,32 +1904,70 @@ function ProjectSubsessionRow({
   );
 }
 
-/** A target beside a session that runs a goal (flag `goals`); the hint names the goal. */
-function SessionGoalMark({ projectId, sessionId }: { projectId: string; sessionId: string }) {
-  const tGoals = useTranslations('goals');
-  const flag = useFeatureFlag(projectId, 'goals');
-  const { goal, role } = useSessionGoal(flag.enabled ? projectId : null, sessionId);
-  if (!goal || role !== 'coordinator') return null;
-  return (
-    <Hint side="top" label={`${tGoals('sessionChip')}: ${goal.goal?.objective ?? goal.slug}`}>
-      <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center" data-testid="session-goal-mark">
-        <TargetIcon className="size-3.5" />
-      </span>
-    </Hint>
-  );
-}
-
-/** A child's status shows in place of its type mark only while it runs or waits on someone. */
+/** A child's status shows on its type mark only while it runs or waits on someone. */
 function isLiveStatus(status: SessionDisplayStatus): boolean {
   return status === 'running' || status === 'starting' || status === 'needs-you';
 }
 
-/** What a spawned child is: a target for a goal's worker or verifier, else the spawned-session mark. */
-function ChildSessionMark({ projectId, sessionId }: { projectId: string; sessionId: string }) {
-  const flag = useFeatureFlag(projectId, 'goals');
-  const { role } = useSessionGoal(flag.enabled ? projectId : null, sessionId);
-  const Icon = role ? TargetIcon : ArrowsSplitIcon;
-  return <Icon aria-hidden className="text-muted-foreground size-4 shrink-0" />;
+/**
+ * A row's one leading mark.
+ *
+ * - A goal session (its coordinator at the top level, or a spawned worker or
+ *   verifier) leads with the target, its status as a coloured corner dot
+ *   (`GoalStatusMark`). A spawned goal child shows that status only while it
+ *   is live; at rest it is the plain target.
+ * - Any other spawned child leads with the spawned-session mark, traded for
+ *   its status only while it is live.
+ * - Any other top-level row leads with its status.
+ */
+function SessionLeadingMark({
+  session,
+  spawned,
+  displayStatus,
+  reviewCount,
+  waitingOn,
+  changeRequests,
+}: {
+  session: ProjectSession;
+  spawned: boolean;
+  displayStatus: SessionDisplayStatus;
+  reviewCount: number;
+  waitingOn: 'answer' | 'review';
+  changeRequests: readonly ChangeRequest[];
+}) {
+  const tGoals = useTranslations('goals');
+  const flag = useFeatureFlag(session.project_id, 'goals');
+  const { goal, role } = useSessionGoal(flag.enabled ? session.project_id : null, session.session_id);
+  const live = isLiveStatus(displayStatus);
+
+  if (role && (spawned || role === 'coordinator')) {
+    const mark = (
+      <span className="flex size-4 shrink-0 items-center justify-center" data-testid="session-goal-mark">
+        <GoalStatusMark
+          status={spawned && !live ? null : displayStatus}
+          waitingOn={waitingOn}
+          overdue={isReviewOverdue(changeRequests)}
+        />
+      </span>
+    );
+    if (!goal) return mark;
+    return (
+      <Hint side="top" label={`${tGoals('sessionChip')}: ${goal.goal?.objective ?? goal.slug}`}>
+        {mark}
+      </Hint>
+    );
+  }
+
+  if (spawned && !live) return <ArrowsSplitIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />;
+
+  return (
+    <SessionStatusDot
+      session={session}
+      reviewCount={reviewCount}
+      waitingOn={waitingOn}
+      changeRequests={changeRequests}
+    />
+  );
 }
 
 function SessionStatusDot({

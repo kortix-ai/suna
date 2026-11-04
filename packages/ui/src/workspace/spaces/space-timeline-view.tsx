@@ -1,7 +1,7 @@
 'use client';
 
 import type { ProjectSession, ProjectSpace } from '@kortix/sdk';
-import { type UseProjectSessionsOptions, useProjectSessions } from '@kortix/sdk/react';
+import { type UseProjectSessionsOptions, useFeatureFlag, useProjectSessions } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   ChatTeardropTextIcon,
@@ -40,6 +40,7 @@ import {
   firstPromptTruncated,
   gutterTime,
   lastReplyLabel,
+  kortixRootText,
   threadIsWorking,
   threadMessageText,
   threadStatus,
@@ -147,6 +148,8 @@ export function SpaceTimeline({
   const days = useMemo(() => buildSpaceTimeline(threads.sessions), [threads.sessions]);
   const loading = threads.isLoading || threads.isScanning;
   const needsYou = useThreadNeedsYou(projectId);
+  // Chat (`chat`): Kortix's newest reply shows under each message.
+  const oneChat = useFeatureFlag(projectId, 'chat').enabled;
   const now = new Date();
 
   const dayLabel = (day: TimelineDay) => {
@@ -190,6 +193,7 @@ export function SpaceTimeline({
                     session={session}
                     space={space}
                     needsYou={needsYou(session)}
+                    latestReply={oneChat}
                     selected={session.session_id === selectedId}
                     onOpen={() => onOpenThread(session.session_id)}
                   />
@@ -271,12 +275,15 @@ function ThreadRow({
   session,
   space,
   needsYou,
+  latestReply = false,
   selected,
   onOpen,
 }: {
   session: ProjectSession;
   space: ProjectSpace;
   needsYou: NeedsYou;
+  /** Chat (`chat`): the agent's newest reply shows under the message. */
+  latestReply?: boolean;
   selected: boolean;
   onOpen: () => void;
 }) {
@@ -285,12 +292,16 @@ function ThreadRow({
   const created = new Date(session.created_at);
   // A trigger's run reads as the trigger: its name and its type's glyph.
   const trigger = triggerAuthor(session);
+  // A thread Kortix started (Chat) reads as Kortix's own message.
+  const byKortix = kortixRootText(session) !== null;
   // A trigger or an API key starts a thread as a service account: an agent tile, not a person.
-  const machine = trigger !== null || session.owner_type === 'service_account';
+  const machine = trigger !== null || byKortix || session.owner_type === 'service_account';
   // The profile name, never a raw email (`participantLabel`).
   const name = trigger
     ? trigger.name
-    : machine
+    : byKortix
+      ? agentLabel(session.agent_name ?? space.dm_agent_name ?? t('agentFallback'))
+      : machine
       ? agentLabel(session.owner_name || t('agentFallback'))
       : participantLabel({ name: session.owner_name ?? null, email: session.owner_email ?? null }) ||
         t('authorFallback');
@@ -330,8 +341,32 @@ function ThreadRow({
       }
     >
       <ThreadPrompt session={session} onOpen={onOpen} />
+      {latestReply && !byKortix ? <ThreadLatestReply session={session} space={space} onOpen={onOpen} /> : null}
       <ThreadSummary session={session} space={space} needsYou={needsYou} onOpen={onOpen} />
     </MessageRow>
+  );
+}
+
+/**
+ * Chat (`chat`): the agent's newest reply under the message, at most
+ * 2 lines (`result_excerpt`, ≤ 280 characters, stamped at turn end). Hidden
+ * while a turn runs, so an old reply never reads as the current one.
+ */
+function ThreadLatestReply({ session, space, onOpen }: { session: ProjectSession; space: ProjectSpace; onOpen: () => void }) {
+  const text = session.result_excerpt?.trim();
+  if (!text || threadIsWorking(session)) return null;
+  const agentName = session.agent_name ?? space.dm_agent_name;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="hover:bg-hover focus-visible:ring-ring -mx-1 mt-1 flex w-full max-w-2xl items-start gap-2 rounded-md px-1 py-1 text-left outline-none focus-visible:ring-2"
+    >
+      <span className="mt-0.5 shrink-0">
+        <AgentMark slug={agentName ?? DEFAULT_AGENT_SLUG} size={14} label={agentName ? agentLabel(agentName) : ''} />
+      </span>
+      <span className="text-foreground line-clamp-2 text-sm leading-relaxed">{text}</span>
+    </button>
   );
 }
 

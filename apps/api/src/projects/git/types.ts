@@ -85,7 +85,7 @@ export interface ProjectConfigSummary {
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
   /** The spaces from the manifest's top-level `spaces:` map, sorted by
-   *  `order`, then slug. Each one is a channel: a room plus `tabs`. */
+   *  `order`, then slug. Each one is a channel with its `tabs`. */
   spaces?: Array<SpaceV3 & { name: string }>;
 }
 

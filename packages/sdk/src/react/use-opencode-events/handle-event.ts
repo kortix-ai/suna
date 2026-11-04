@@ -7,8 +7,6 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { RefObject } from 'react';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import type { getClient } from '../../core/runtime/client';
-import type { SessionSyncReason } from '../../core/session-sync/session-sync-controller';
-import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-controller';
 import { binaryBlobKeys, fileContentKeys, fileListKeys, gitStatusKeys } from '../file-keys';
 import { type Session, runtimeKeys } from '../use-opencode-sessions';
 import { handleInteractionEvent } from './handle-interaction-event';
@@ -19,7 +17,6 @@ import { pendingEventsOfLogState, sessionStatusOfLogFrame } from './log-control'
 import type { HandlerContext } from './handler-context';
 import { cachedSessionName } from './helpers';
 import type { NormalizeDiagnosticPaths, RuntimeEvent } from './types';
-export const USER_PARTS_GRACE_MS = 1_500;
 export function createEventHandler(deps: {
   queryClient: QueryClient;
   client: ReturnType<typeof getClient>;
@@ -32,15 +29,6 @@ export function createEventHandler(deps: {
   normalizeDiagnosticPaths: RefObject<NormalizeDiagnosticPaths>;
   markSessionAbortedLocally: RefObject<(sessionID: string, message?: string) => void>;
   fetchLspDiagnosticsDebounced: RefObject<() => void>;
-  reconcileSessionTail?: (sessionID: string, reason: SessionSyncReason) => Promise<void>;
-  /**
-   * How long a USER `message.updated` may sit with no parts before the tail is
-   * re-read. The runtime emits the info frame and the text part separately;
-   * lose the part (a stream reconnect during the boot hand-off) and the
-   * transcript shows an empty bubble until a reload. Injected so tests can
-   * make it immediate.
-   */
-  userPartsGraceMs?: number;
   /** The route-scoped project this SSE connection belongs to — see
    *  `refetchKortixSessionMirrors`'s doc comment for why this can't default
    *  to "every project". Optional only so existing test harnesses that don't
@@ -55,27 +43,13 @@ export function createEventHandler(deps: {
    * are dropped: the frames name no session.
    */
   sessionId?: string | null;
-  /**
-   * The box serves its log (`runtime.log.v1`): the session log holds the transcript, so a turn
-   * end, an error or a compaction re-reads no transcript tail and no session record.
-   */
-  logNative?: boolean;
   /** A `log.status` `compacting` starts the thread's compaction; its next status ends it. */
   startCompaction?: (sessionID: string) => void;
 }) {
   const { queryClient, client } = deps;
-  const reconcileTail = deps.logNative
-    ? async () => {}
-    : (deps.reconcileSessionTail ??
-      (async (sessionID: string) => {
-        const result = await client.session.messages({ sessionID, limit: SESSION_SYNC_PAGE_SIZE });
-        if (result.data) useSyncStore.getState().hydrate(sessionID, result.data);
-      }));
   const ctx: HandlerContext = {
     ...deps,
     projectId: deps.projectId ?? null,
-    userPartsGraceMs: deps.userPartsGraceMs ?? USER_PARTS_GRACE_MS,
-    reconcileTail,
     getSessionTitle(sessionID) {
       // The stream's session, not `sessionID`: a sub-agent's request names the
       // session the notification opens.

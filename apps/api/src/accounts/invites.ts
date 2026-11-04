@@ -22,6 +22,7 @@ import { trustedEmailForUser } from '../iam/email-trust';
 import { getSsoProvider } from '../repositories/sso';
 import { isUuid } from '../shared/validate';
 import { logger } from '../lib/logger';
+import { captureProductEvent } from '../shared/product-analytics';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -561,6 +562,16 @@ accountInvitesRouter.openapi(
     await convertPendingAssignments(invite.accountId, invite.email, userId);
   } catch (err) {
     console.warn('[accept-invite] converting pending assignments failed', err);
+  }
+
+  if (!alreadyAccepted) {
+    captureProductEvent({
+      userId,
+      accountId: invite.accountId,
+      event: 'member_joined',
+      dedupeKey: invite.inviteId,
+      properties: { via: 'invite', role: invite.initialRole },
+    });
   }
 
   return c.json({

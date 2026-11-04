@@ -6,6 +6,7 @@
 // speak); 'named' (answers only turns that name it).
 export type Mode = 'normal' | 'listen' | 'named'
 export type Persona = { name: string; voice?: string; look?: string; style?: string; mode?: Mode; rate?: number } // rate: speaking speed, 0.5-1.5
+import { ours, voiceName } from './speech'
 
 /** A [set ...] tag anywhere in a reply (attributes in double quotes; one tag per reply is enough). */
 // A quoted value may hold "]" ([set style="like a pirate [arr]"]): quotes are skipped whole.
@@ -33,9 +34,11 @@ export function personaNote(p: Persona, base: string): string {
     `${p.mode === 'listen' ? ' You are listening only now and they just named you: if they tell you to speak again, reply [set mode="normal"] and a few words so they hear you are back ("Sure, I\'m back."); if they ask you something directly, answer it in a sentence and keep listening; otherwise reply with exactly (nothing).' : p.mode === 'named' ? ' You answer only turns that name you now, as this one does.' : ''})`
 }
 
-/** A short list of voices to offer, from the catalog (one per kind), for the note. */
+/** A short list of voices to offer, from the catalog, for the note: this deployment's own voices first ("<workspace>__<name>"
+ * of INWORLD_WORKSPACE, by name), then one stock voice per kind. */
 export function someVoices(all: { id: string; about: string }[]): string {
   const pick = ['Ashley', 'Chloe', 'Alex', 'Bianca', 'Casey', 'Clive', 'Elliot', 'Imogen', 'Lauren', 'Marcus', 'Selene', 'Sienna', 'Theodore', 'Tyler', 'Wade', 'Zoe']
+  const own = all.filter((v) => v.id.includes('__') && ours(v.id)).map((v) => voiceName(v.id)).slice(0, 8)
   const have = all.length ? pick.filter((id) => all.some((v) => v.id === id)) : pick
-  return have.join(', ')
+  return [...new Set([...own, ...have])].join(', ')
 }

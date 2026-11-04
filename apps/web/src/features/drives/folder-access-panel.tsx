@@ -123,7 +123,7 @@ export function FolderAccessPanel({
 }
 
 /** A person's own folder: the project admins who opened it, newest first. */
-function AdminOpens({ driveId, path }: { driveId: string; path: string }) {
+export function AdminOpens({ driveId, path }: { driveId: string; path: string }) {
   const t = useTranslations('drives');
   const locale = useLocale();
   const reads = useDriveAdminReads(driveId, path);

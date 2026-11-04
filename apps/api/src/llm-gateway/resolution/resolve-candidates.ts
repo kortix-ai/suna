@@ -169,6 +169,7 @@ async function codexSharedCandidates(context: Context): Promise<UpstreamDescript
     accountId: principal.accountId, projectId: principal.projectId!,
     userId: principal.userId, grantUserId: principal.keyId ? null : personalUserId,
     providerId: 'codex', name: 'CODEX_AUTH_JSON',
+    sessionId: principal.sessionId, probe: context.options?.probe,
   });
   if (shared.secrets.length) {
     const { candidates, failed } = await codexAccountCandidates(context, shared.secrets);
