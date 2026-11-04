@@ -1340,10 +1340,21 @@ jobs:
       - name: Report a failed worker roll
         if: steps.worker.outcome == 'failure'
         run: echo "::error title=Worker deploy::the prod worker did not roll onto kortix/kortix-api:${VERSION}. The API rolls with KORTIX_PROCESS_ROLE=all and runs the scheduled jobs; read the step 'Roll the prod worker service from the prod-env blob'."
-      - name: Roll prod ECS (api + gateway) from the prod-env blob
+      # The gateway rolls BEFORE the API. The env blob is the one source of
+      # truth for KORTIX_INTERNAL_EDGE_KEY, and the API's edge check 404s every
+      # /internal/gateway call that lacks the header the moment its env carries
+      # the key (apps/api/src/llm-gateway/internal-routes.ts) — an API-first
+      # roll would therefore break model calls for the whole window the old
+      # gateway tasks (no key, no header) still serve in. Gateway-first is also
+      # the safer general order: a bad gateway image fails this roll before the
+      # API — everything else's dependency — touches it. deploy-api-router then
+      # syncs the api-router Worker's INTERNAL_EDGE_KEY from the same blob and
+      # proves the public origin's posture — 404 keyless once engaged, the
+      # fail-closed static-bearer answer before that (KRTX-2775).
+      - name: Roll prod ECS (gateway + api) from the prod-env blob
         run: |
-          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --version "${VERSION}" --database-migrated
           bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway --version "${VERSION}" --database-migrated
+          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --version "${VERSION}" --database-migrated
 
   # ── Deploy the prod API router Worker ───────────────────────────────────────
   # api.kortix.com and gateway.kortix.com are fronted by the Cloudflare Worker
@@ -1371,6 +1382,10 @@ jobs:
   deploy-api-router:
     name: Deploy prod API router Worker
     needs: [deploy-ecs]
+    # Trust invariant (tests/unit/prod-deploy-trust.test.ts): this job now reads
+    # the prod blob (the optional KORTIX_INTERNAL_EDGE_KEY), so it runs under
+    # the prod environment like every other prod-blob job.
+    environment: prod
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     continue-on-error: true
@@ -1389,8 +1404,18 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
+          # The prod blob is readable only by the prod role (the default
+          # kortix-gha-ecs-deploy role's SecretsManager policy excludes every
+          # kortix-prod* resource) — same read as the migrate job.
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
           keys: |
             CLOUDFLARE_API_TOKEN
+            # The /internal edge gate: the Worker's INTERNAL_EDGE_KEY secret must
+            # equal the blob's KORTIX_INTERNAL_EDGE_KEY — the value the gateway
+            # and API hydrate. Optional: a blob without the key disengages the
+            # gate (the sync below deletes the Worker secret), the documented
+            # pre-engagement state where the static bearer is the only gate.
+            INTERNAL_EDGE_KEY=kortix-prod-env:KORTIX_INTERNAL_EDGE_KEY?
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -1416,6 +1441,16 @@ jobs:
             echo "::error::api-kortix-router modified_on ($modified) predates this run — the live Worker did not change."
             exit 1
           fi
+      # The blob is the one source of truth for the edge key: set the Worker
+      # secret when it names KORTIX_INTERNAL_EDGE_KEY, delete when it does not,
+      # then prove the public origin's posture (404 keyless when engaged, the
+      # fail-closed static-bearer answer when not). Loud but non-blocking, like
+      # the whole job: a refusal here must not freeze the release — the failed
+      # step stays visible and verify-live-version curls the origin anyway.
+      - name: Sync the INTERNAL_EDGE_KEY gate from the prod env blob
+        env:
+          PUBLIC_API_ORIGIN: https://api.kortix.com
+        run: node infra/scripts/sync-worker-edge-key.mjs
 
   # ── Verify the release is ACTUALLY live on the public endpoints ──────────────
   # The backstop that catches ANY deploy/routing divergence regardless of cause:
