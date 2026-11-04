@@ -2,7 +2,7 @@
 
 import { stopProjectSession, type ProjectSession, type SessionPromptPart } from '@kortix/sdk';
 import { qk, useProjectSession, usePromptAttachments } from '@kortix/sdk/react';
-import { ArrowElbowDownLeftIcon, ArrowSquareOutIcon, ImageIcon, PlusIcon, SquareIcon, WarningCircleIcon, XIcon } from '@phosphor-icons/react';
+import { ArrowUpIcon, ArrowSquareOutIcon, ImageIcon, PlusIcon, SquareIcon, WarningCircleIcon, XIcon } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 
@@ -341,16 +341,16 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
             ))}
           </ul>
         )}
-        <div className="flex min-w-0 items-center gap-1 py-1.5 pr-1.5 pl-1.5">
+        <div className="flex min-w-0 items-center gap-1 p-1.5">
           <Hint label={t('attachImages')} side="top">
             <Button
               type="button"
               variant="ghost"
-              size="icon"
+              size="icon-base"
               aria-label={t('attachImages')}
               disabled={busy}
               onClick={() => fileInput.current?.click()}
-              className="text-muted-foreground hover:text-foreground rounded-full"
+              className="text-muted-foreground hover:text-foreground shrink-0 rounded-full"
             >
               <PlusIcon className="size-4" />
             </Button>
@@ -386,17 +386,16 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
             className="text-foreground placeholder:text-muted-foreground h-8 min-w-0 flex-1 bg-transparent px-1.5 text-sm outline-none"
           />
           <Hint label={t('send')} side="top">
+            {/* The composer's own send button (send-stop-control.tsx): filled, round, an up arrow. */}
             <Button
               type="submit"
-              variant="ghost"
-              size="icon"
+              size="icon-base"
               aria-label={t('send')}
               disabled={!canSend}
               aria-busy={busy}
-              // Ink when there is something to send; muted when there is not.
-              className={cn('rounded-full', canSend ? 'text-foreground' : 'text-muted-foreground')}
+              className="shrink-0 rounded-full transition-[color,background-color,opacity,scale] duration-(--duration-slow) ease-out active:scale-[0.96] active:duration-(--duration-normal)"
             >
-              <ArrowElbowDownLeftIcon className="size-4" />
+              <ArrowUpIcon className="size-4" />
             </Button>
           </Hint>
         </div>
