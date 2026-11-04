@@ -5531,7 +5531,7 @@ The session's computer can have a desktop, streamed on port `6901`. The daemon l
 const { applied_live, push_failed } = await s.changeModel('glm-5.3-flash');
 ```
 
-- `changeModel()` restarts the runtime when the model changes on a running session. A running turn ends.
+- `changeModel()` reconfigures pi without restarting. A running turn finishes on its current model.
 - `applied_live: true`: the running session took the model now. `false`: it applies at the next start.
 - `push_failed: true`: the model is stored, but the running runtime still uses the old one.
 - On a `stopped`, `failed` or `completed` session it returns `409` `SESSION_NOT_RUNNING`. Only the session owner or a project manager may call it; anyone else gets `403`.
@@ -8349,7 +8349,7 @@ See [Computers](/docs/guide#computers).
 | Stored reads | `liveLog({ thread?, before_seq?, limit? }?)` | One page of a thread of the sandbox's own session log, ahead of `log()` while a turn runs. `null` on a sandbox without the session-log actions. |
 | Stored reads | `messageAuthors()` · `modelUsage()` · `usage()` · `cost()` · `audit(limit?, options?)` | Who wrote each message · which model answered each turn and what Kortix billed · what the session and every session it started cost, in USD · the session's usage record · the session's audit actions. |
 | Model and agent | `setModel({ providerID, modelID } \| undefined)` · `setAgent(agent)` | The model or agent of every later `send` on this handle. `send(text, { model, agent })` overrides it for one prompt. |
-| Model and agent | `changeModel('provider/model')` | Persists the model and restarts the runtime. |
+| Model and agent | `changeModel('provider/model')` | Persists the model without restarting pi. |
 | Scope | `scope()` · `rescope(scope)` | Read · change the session's scope. |
 | Scope | `providerSecretPool.list()` · `.get(providerId)` · `.set(providerId, secretIds \| null)` | The pooled provider secrets this session may use. |
 | Config | `configState()` · `reloadConfig(input?)` · `reloadConfigStream(…)` | Whether the session runs the config the manifest compiles to · reload it · reload with progress. |
@@ -8723,3 +8723,44 @@ These subpaths re-export names that the root or `@kortix/sdk/react` already expo
 | `billing.subscription.scheduleDowngrade` · `.cancelScheduledChange` · `.prorationPreview` | `billing.setPlan(input)` or `billing.subscription.createPortalSession`. They reject with `ENDPOINT_RETIRED`. |
 
 Other deprecated root names wrap routes that the API does not serve. They reject with `ENDPOINT_RETIRED`, resolve `null`, or return `404`, and have no replacement.
+
+### Durable session model controls
+
+`session.setModel()` remains a local preference for later sends from that SDK handle.
+`session.getModel()` reads the durable pin (`{ model: string | null }`).
+`session.changeModel(model)` saves the pin without sending a prompt.
+Pi reconfigures without restarting; the running turn finishes before the next turn uses the new model.
+
+**Agent pins, permissions and precedence.** An agent's configured `model` is a
+default, not a lock: an authorized caller may replace it with a durable session
+pin. Changing that pin requires session-owner or project-manager lifecycle
+permission; a scoped agent token also needs `project.session.stop`. Project
+visibility alone grants no override permission. The requested model must pass
+account/model availability and provider-key access checks; changing a pin does
+not bypass those checks.
+
+The durable pin takes precedence over the default agent/project model when pi
+initializes or reconfigures. For a turn, an explicit prompt model wins; otherwise
+an explicitly selected agent's configured model wins, then the current session
+selection applies. A per-prompt override does not rewrite the durable pin.
+`switchModel` queues its continuation with the requested model explicitly, so
+that continuation uses the switch model even if the agent has a model default.
+The running turn keeps its model; the new selection applies to a later turn.
+
+```ts
+await session.switchModel({
+  model: 'kortix/glm-5.3-flash',
+  prompt: 'Continue verification with the new model.',
+  idempotency_key: 'verification-model-1',
+});
+```
+
+The switch saves the pin and queues the continuation in one database transaction.
+Reuse the same key and payload after a transport failure. A different payload with the same key is refused.
+Self-switches are limited to three per hour. A queued continuation waits for the current turn.
+The response contains `prompt_id` and `deduped`; inspect `push_failed` before reporting live application.
+
+CLI: `kortix sessions model get [session-id]`, `set [session-id] <model>`,
+and `switch [session-id] <model> --prompt "Continue verification" --idempotency-key verification-model-1`.
+The new verbs default to `KORTIX_SESSION_ID`. The existing `sessions model <session-id> <model>` remains supported.
+Never send a peer message to yourself to continue a model switch.
