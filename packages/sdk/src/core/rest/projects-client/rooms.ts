@@ -10,8 +10,7 @@
 // for one addressed to them. Reading
 // needs `project.room.read`, posting and joining `project.room.write`.
 
-import { backendApi } from '../../http/api-client';
-import { unwrap } from './shared';
+import { retiredEndpointError } from '../../http/api/errors';
 
 /**
  * Which messages reach a member: every one, only @-mentions (in a room), or none.
@@ -148,106 +147,69 @@ export interface RoomMessagePageQuery {
   thread?: number;
 }
 
-const rooms = (projectId: string) => `/projects/${projectId}/rooms`;
 
-function query(params: Record<string, string | number | boolean | undefined>): string {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== false) search.set(key, String(value));
-  }
-  const text = search.toString();
-  return text ? `?${text}` : '';
+
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function listRooms(_projectId: string, _options: ListRoomsOptions = {}): Promise<{ rooms: Array<Room | RoomConversation> }> {
+  throw retiredEndpointError('listRooms');
 }
 
-/** @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major. */
-export async function listRooms(projectId: string, options: ListRoomsOptions = {}) {
-  return unwrap(
-    await backendApi.get<{ rooms: Array<Room | RoomConversation> }>(
-      `${rooms(projectId)}${query({ name: options.name, archived: options.archived, mine: options.mine })}`,
-    ),
-  );
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function findRoomByName(_projectId: string, _name: string): Promise<Room | null> {
+  throw retiredEndpointError('findRoomByName');
 }
 
-/**
- * The project room named `name`, archived included (check `archived_at`), or
- * null. A space's room is the room named like the space's slug.
- *
- * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
- */
-export async function findRoomByName(projectId: string, name: string): Promise<Room | null> {
-  const { rooms: found } = await listRooms(projectId, { name, archived: true });
-  return found.find((room) => room.name === name) ?? null;
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function createRoom(_projectId: string, _input: { name: string; topic?: string | null }): Promise<Room> {
+  throw retiredEndpointError('createRoom');
 }
 
-/**
- * Creates the named room, or returns the existing room with that name.
- *
- * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
- */
-export async function createRoom(projectId: string, input: { name: string; topic?: string | null }) {
-  return unwrap(await backendApi.post<Room>(rooms(projectId), input));
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function getRoom(_projectId: string, _roomId: string): Promise<Room & { members: RoomMember[] }> {
+  throw retiredEndpointError('getRoom');
 }
 
-/** @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major. */
-export async function getRoom(projectId: string, roomId: string) {
-  return unwrap(await backendApi.get<Room & { members: RoomMember[] }>(`${rooms(projectId)}/${roomId}`));
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function updateRoom(_projectId: string, _roomId: string, _input: { topic?: string | null; archived?: boolean }): Promise<Room> {
+  throw retiredEndpointError('updateRoom');
 }
 
-/** @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major. */
-export async function updateRoom(projectId: string, roomId: string, input: { topic?: string | null; archived?: boolean }) {
-  return unwrap(await backendApi.patch<Room>(`${rooms(projectId)}/${roomId}`, input));
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function listRoomMessages(_projectId: string, _roomId: string, _page: RoomMessagePageQuery = {}): Promise<RoomMessagePage> {
+  throw retiredEndpointError('listRoomMessages');
 }
 
-/** @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major. */
-export async function listRoomMessages(projectId: string, roomId: string, page: RoomMessagePageQuery = {}) {
-  return unwrap(
-    await backendApi.get<RoomMessagePage>(
-      `${rooms(projectId)}/${roomId}/messages${query({ after: page.after, before: page.before, limit: page.limit, top: page.top, thread: page.thread })}`,
-    ),
-  );
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function postRoomMessage(_projectId: string, _roomId: string, _input: { text: string; reply_to?: number | null }): Promise<PostRoomMessageResult> {
+  throw retiredEndpointError('postRoomMessage');
 }
 
-/** @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major. */
-export async function postRoomMessage(projectId: string, roomId: string, input: { text: string; reply_to?: number | null }) {
-  return unwrap(await backendApi.post<PostRoomMessageResult>(`${rooms(projectId)}/${roomId}/messages`, input));
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function markRoomRead(_projectId: string, _roomId: string, _seq?: number): Promise<{ last_read_seq: number }> {
+  throw retiredEndpointError('markRoomRead');
 }
 
-/**
- * Move the caller's read cursor (a person member) to `seq`, default the newest message.
- *
- * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
- */
-export async function markRoomRead(projectId: string, roomId: string, seq?: number) {
-  return unwrap(
-    await backendApi.post<{ last_read_seq: number }>(`${rooms(projectId)}/${roomId}/read`, seq === undefined ? {} : { seq }),
-  );
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function addRoomSession(_projectId: string, _roomId: string, _sessionId: string, _input: { notify?: RoomNotify } = {}): Promise<RoomMember> {
+  throw retiredEndpointError('addRoomSession');
 }
 
-/** @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major. */
-export async function addRoomSession(projectId: string, roomId: string, sessionId: string, input: { notify?: RoomNotify } = {}) {
-  return unwrap(await backendApi.put<RoomMember>(`${rooms(projectId)}/${roomId}/members/sessions/${sessionId}`, input));
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function removeRoomSession(_projectId: string, _roomId: string, _sessionId: string): Promise<{ removed: boolean }> {
+  throw retiredEndpointError('removeRoomSession');
 }
 
-/** @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major. */
-export async function removeRoomSession(projectId: string, roomId: string, sessionId: string) {
-  return unwrap(await backendApi.delete<{ removed: boolean }>(`${rooms(projectId)}/${roomId}/members/sessions/${sessionId}`));
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function addRoomPerson(_projectId: string, _roomId: string, _userId: string, _input: { notify?: RoomNotify } = {}): Promise<RoomMember> {
+  throw retiredEndpointError('addRoomPerson');
 }
 
-/** @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major. */
-export async function addRoomPerson(projectId: string, roomId: string, userId: string, input: { notify?: RoomNotify } = {}) {
-  return unwrap(await backendApi.put<RoomMember>(`${rooms(projectId)}/${roomId}/members/people/${userId}`, input));
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function removeRoomPerson(_projectId: string, _roomId: string, _userId: string): Promise<{ removed: boolean }> {
+  throw retiredEndpointError('removeRoomPerson');
 }
 
-/** @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major. */
-export async function removeRoomPerson(projectId: string, roomId: string, userId: string) {
-  return unwrap(await backendApi.delete<{ removed: boolean }>(`${rooms(projectId)}/${roomId}/members/people/${userId}`));
-}
-
-/**
- * People the caller may message in the project; `q` filters by name or email.
- *
- * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
- */
-export async function listRoomPeople(projectId: string, q?: string) {
-  return unwrap(await backendApi.get<{ people: RoomPerson[] }>(`${rooms(projectId)}/people${query({ q })}`));
+/** @deprecated Rooms were removed (2026-11). Always rejects with `ENDPOINT_RETIRED`; it sends no request. Removed in the next major. */
+export async function listRoomPeople(_projectId: string, _q?: string): Promise<{ people: RoomPerson[] }> {
+  throw retiredEndpointError('listRoomPeople');
 }
