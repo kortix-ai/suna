@@ -50,7 +50,6 @@ import { SessionsEmptyState } from '../sessions/sessions-empty-state';
 import { RenameSessionModal } from './modal/rename-session-modal';
 import { SessionDeleteModal } from '../../session/actions/session-delete-modal';
 import { subagentTitle } from '../../session/agents/agent-model';
-import { AgentMarkGlyph } from '../../internal/components/agent-mark';
 import { SessionLabelsModal } from './modal/session-labels-modal';
 import { ShareSessionModal } from './modal/share-session-modal';
 import {
@@ -580,7 +579,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             renderSubagent={(child) => (
               <ProjectSubsessionRow
                 id={child.id}
-                title={child.title || 'Sub-session'}
+                title={subagentTitle(child.title || '') || 'Sub-session'}
                 href={childSessionHref(href, child.id)}
                 isActive={!!isActive && activeRuntimeSessionId === child.id}
                 createdAt={child.created_at}
@@ -1121,7 +1120,7 @@ function ChildRunsToggle({
       <CountBadge count={count} className={cn(open && 'bg-foreground/12')} />
       <CaretRightIcon
         aria-hidden
-        className={cn('duration-normal size-3 shrink-0 transition-transform ease-out', open && 'rotate-90')}
+        className={cn('duration-normal size-3 shrink-0 transition-transform ease-out motion-reduce:transition-none', open && 'rotate-90')}
       />
     </span>
   );
@@ -1808,11 +1807,6 @@ function SubAgentConnector() {
   );
 }
 
-/** The agent a sub-agent title names (`Explore files (@explore subagent)` → `explore`). */
-function subagentSlug(title: string): string {
-  return /\(@([\w-]+)/.exec(title)?.[1] ?? 'general';
-}
-
 function ProjectSubsessionRow({
   id,
   title,
@@ -1843,14 +1837,10 @@ function ProjectSubsessionRow({
             isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
           )}
         >
-          {/* The agent's own pixel figure, in the row's muted ink: which agent
-              ran, without a tinted tile competing with the status marks. */}
-          <span
-            aria-hidden
-            className="text-muted-foreground flex size-4 shrink-0 items-center justify-center [--mark-ink:currentColor]"
-          >
-            <AgentMarkGlyph slug={subagentSlug(title)} size={14} />
-          </span>
+          {/* No leading glyph: the connector elbow already marks the row as a
+              sub-agent, and a runtime sub-session carries no agent identity
+              to draw a pixel mark from (pi titles it with the task alone).
+              Same as the mobile drawer's sub-session rows. */}
           <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{title}</span>
           {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
         </div>
