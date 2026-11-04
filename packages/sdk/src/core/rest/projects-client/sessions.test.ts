@@ -9,6 +9,7 @@ import type {
   RemovedSessionPrompt,
   SessionConfigRelease,
   SessionListState,
+  FrontChat,
   SessionManagedCatalogState,
   SessionModelUsage,
   SessionUsage,
@@ -68,6 +69,7 @@ import {
   setProjectSessionSharing,
   setSessionArchived,
   setSessionPinned,
+  openFrontChat,
   setSessionWatch,
   stopProjectSession,
   updateProjectSession,
@@ -2002,6 +2004,18 @@ describe('session pin and archive', () => {
     nextResponse = { status: 200, body: { pinned_at: null, archived_at: null } };
     expect(await setSessionArchived('P1', 'S1', false)).toEqual({ pinned_at: null, archived_at: null });
     expect(last()).toEqual({ url: 'http://test.local/projects/P1/sessions/S1/archive', method: 'PUT', body: { archived: false } });
+  });
+
+  test('openFrontChat POSTs /front-chat and returns the session id', async () => {
+    nextResponse = { status: 201, body: { session_id: 'S9', created: true } };
+    const chat: FrontChat = await openFrontChat('P1');
+    expect(chat).toEqual({ session_id: 'S9', created: true });
+    expect(last()).toEqual({ url: 'http://test.local/projects/P1/front-chat', method: 'POST', body: {} });
+  });
+
+  test('openFrontChat rejects while the infinichat flag is off', async () => {
+    nextResponse = { status: 403, body: { error: 'Feature disabled', code: 'feature_disabled' } };
+    await expect(openFrontChat('P1')).rejects.toBeTruthy();
   });
 
   test('both reject on a 403 (an agent token has no list of its own)', async () => {

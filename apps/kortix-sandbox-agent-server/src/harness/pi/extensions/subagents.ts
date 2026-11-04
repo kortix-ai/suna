@@ -120,6 +120,11 @@ export interface KortixHost {
    * would otherwise have no type to name.
    */
   anyProjectAgent?(): boolean
+  /**
+   * A front chat (flag `infinichat`, harness/pi/front.ts): every call goes to
+   * its one worker, whatever the model passed. Returns the worker's agent and name.
+   */
+  frontWorker?(): { agent: string; name: string } | null
   /** The agent this session runs as (its resolved name). */
   currentAgentName?(): string
   /** Every tool this session's agent may use: a child's `tools` must name only these. */
@@ -452,7 +457,12 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
       parameters,
       executionMode: 'parallel' as const,
       ...(name === 'agent' && host.codemodeOnly?.() ? { exposure: 'model-only' as const } : {}),
-      async execute(_toolCallId: string, params: SubagentParams, signal: AbortSignal | undefined, onUpdate?: (update: { content: never[]; details: unknown }) => void) {
+      async execute(_toolCallId: string, input: SubagentParams, signal: AbortSignal | undefined, onUpdate?: (update: { content: never[]; details: unknown }) => void) {
+        // A front chat's call always starts or continues its one worker, in the background.
+        const front = host.frontWorker?.()
+        const params: SubagentParams = front
+          ? { description: input.description, prompt: input.prompt, subagent_type: front.agent, name: front.name, session: 'separate', run_in_background: true }
+          : input
         const spawn = resolveSpawn(params, host)
         const shape = spawnShape(params, host)
         const result = await host.spawnSession({

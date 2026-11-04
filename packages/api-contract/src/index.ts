@@ -73,6 +73,7 @@ export const FeatureFlagMapSchema = z.object({
   chrome: z.boolean(),
   agent_teams: z.boolean(),
   voice_call: z.boolean(),
+  infinichat: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 

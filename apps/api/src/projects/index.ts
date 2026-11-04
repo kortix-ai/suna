@@ -60,6 +60,7 @@ import { registerProjectInvitesRoutes } from './routes/project-invites';
 import { registerGroupGrantsRoutes } from './routes/group-grants';
 import { registerProviderSecretPoolsRoutes } from './routes/provider-secret-pools';
 import { registerProjectSessionsRoutes, registerSessionLookupRoutes } from './routes/project-sessions';
+import { registerFrontChatRoutes } from './routes/front-chat';
 import { registerSessionTranscriptsRoutes } from './routes/session-transcripts';
 import { registerSessionAttachmentsRoutes } from './routes/session-attachments';
 import { registerSessionOpenBundleRoutes } from './routes/session-open-bundle';
@@ -164,6 +165,7 @@ export function registerAllProjectRoutes(): void {
   registerGroupGrantsRoutes();
   registerProviderSecretPoolsRoutes();
   registerProjectSessionsRoutes();
+  registerFrontChatRoutes();
   registerSessionTranscriptsRoutes();
   registerSessionAttachmentsRoutes();
   registerSessionOpenBundleRoutes();

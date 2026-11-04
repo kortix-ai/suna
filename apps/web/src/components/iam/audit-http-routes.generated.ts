@@ -682,6 +682,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|:projectId|files|history",
   "GET|v1|projects|:projectId|files|raw",
   "GET|v1|projects|:projectId|files|search",
+  "POST|v1|projects|:projectId|front-chat",
   "GET|v1|projects|:projectId|gateway|breakdown",
   "GET|v1|projects|:projectId|gateway|budgets",
   "PUT|v1|projects|:projectId|gateway|budgets",

@@ -556,6 +556,21 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'kortixd registers no voice extension and opens no voice port; a change reaches the next new box. WEB: no call ' +
       'button on the session page. The gateway\'s audio routes are inference like chat: billed per use, not gated here.',
   },
+  {
+    key: 'infinichat',
+    name: 'One chat',
+    description:
+      'One endless chat with Kortix. You only talk: it passes everything to a My Kortix session that does the work in the background, and answers with only what matters. Needs My Kortix on in kortix.yaml.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Off ⇒ POST /projects/:id/front-chat answers 403 `feature_disabled` (projects/routes/front-chat.ts), so no front ' +
+      'session exists. BOX: on, KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 (projects/lib/feature-flag-env.ts), so the ' +
+      'worker under a front chat can still run workflows. WEB: no One chat entry and the /chat page renders FeatureGateScreen.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

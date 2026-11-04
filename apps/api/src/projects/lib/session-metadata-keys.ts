@@ -16,6 +16,8 @@
 import { SUBAGENT_NOTIFY_PARENT_KEY } from '@kortix/api-contract/runtime-relay';
 
 export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
+  // A front chat (flag `infinichat`): only POST /front-chat creates one (front-chat.ts).
+  'kortix_front',
   // Soft delete (`deleteSession`).
   'forkedFromSessionId',
   'deletedAt',

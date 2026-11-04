@@ -93,6 +93,8 @@ import {
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext, reservedRuntimeContextRefusal } from './session-runtime-context';
+import { FRONT_CHAT_CONTEXT_KEY, FRONT_CHAT_METADATA_KEY } from './front-chat-keys';
+import { sessionIsFrontChat } from './front-chat';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
@@ -607,7 +609,9 @@ async function resolveSessionAgent(params: {
     callerIsMeta &&
     isWorkflowRunnerContext(body.runtime_context) &&
     !(await sessionIsWorkflowRunner(input.callerSessionId!));
-  if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner) {
+  // A front chat (flag `infinichat`) only talks: its one worker is a My Kortix session.
+  const frontChatWorker = platformMetaAgent && callerIsMeta && (await sessionIsFrontChat(input.callerSessionId!));
+  if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner && !frontChatWorker) {
     return {
       error: {
         status: 400,
@@ -1916,7 +1920,10 @@ export async function createProjectSession(input: {
         inheritedGrants,
         spaceId,
       },
-      parsedRuntimeContext.context,
+      // A front chat (front-chat.ts): only the platform's own create sets this metadata, never a request body.
+      input.metadata?.[FRONT_CHAT_METADATA_KEY] === true
+        ? { ...parsedRuntimeContext.context, [FRONT_CHAT_CONTEXT_KEY]: true }
+        : parsedRuntimeContext.context,
       validatedConnectorBindings.bindings,
     );
     sessionRow = typeof body.fork_from_session_id === 'string'

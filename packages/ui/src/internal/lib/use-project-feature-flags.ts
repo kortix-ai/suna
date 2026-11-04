@@ -50,6 +50,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const chrome = useFeatureFlag(projectId, 'chrome');
   const agentTeams = useFeatureFlag(projectId, 'agent_teams');
   const voiceCall = useFeatureFlag(projectId, 'voice_call');
+  const infinichat = useFeatureFlag(projectId, 'infinichat');
 
   return {
     flags: {
@@ -76,8 +77,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       chrome: chrome.enabled,
       agent_teams: agentTeams.enabled,
       voice_call: voiceCall.enabled,
+      infinichat: infinichat.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: voiceCall.isLoading,
+    isLoading: infinichat.isLoading,
   };
 }
