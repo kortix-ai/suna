@@ -10,11 +10,31 @@ let calls: { url: string; method: string; body?: any }[] = [];
 beforeEach(() => {
   calls = [];
   globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
+    const body = typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body;
     calls.push({
       url: String(url),
       method: opts.method ?? 'GET',
-      body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
+      body,
     });
+    // The coalesced probe (KRTX-4005) POSTs `effective:batch`; answer one
+    // allowed verdict per requested probe so the caller's promise settles.
+    if (String(url).includes('/effective:batch')) {
+      const probes = Array.isArray(body?.probes) ? body.probes : [];
+      return new Response(
+        JSON.stringify({
+          results: probes.map(
+            (probe: { action: string; resourceType?: string; resourceId?: string }) => ({
+              action: probe.action,
+              resource_type: probe.resourceType ?? 'account',
+              resource_id: probe.resourceId ?? null,
+              allowed: true,
+              reason: null,
+            }),
+          ),
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
     return new Response(
       JSON.stringify({
         ok: true,
@@ -1999,13 +2019,18 @@ test('kortix.iam.roles and kortix.iam.groups reach their collections', async () 
 });
 
 test('kortix.iam.can probes one leaf for one principal', async () => {
+  // One leaf, one principal — carried by the coalesced batch POST since
+  // KRTX-4005, so concurrent gates share the request.
   await kortix.iam.can('ACC1', 'U1', {
     action: 'project.write',
     resourceType: 'project',
     resourceId: 'PID1',
   });
-  expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective?');
-  expect(last().url).toContain('action=project.write');
+  expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective:batch');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    probes: [{ action: 'project.write', resourceType: 'project', resourceId: 'PID1' }],
+  });
 });
 
 test('session attachments upload before runtime initialization', async () => {
