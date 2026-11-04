@@ -1,17 +1,18 @@
 'use client';
 
 import { Button } from '@kortix/ui/button';
+import { ButtonGroup } from '@kortix/ui/button-group';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@kortix/ui/disclosure';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@kortix/ui/dropdown-menu';
 import { EmptyState } from '@kortix/ui/empty-state';
+import { FaviconAvatar } from '@kortix/ui/favicon-avatar';
 import { ErrorState } from '@kortix/ui/error-state';
 import { Hint } from '@kortix/ui/hint';
 import { InfoBanner } from '@kortix/ui/info-banner';
 import { InputGroup, InputGroupAddon, InputGroupButton } from '@kortix/ui/input-group';
 import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { UnifiedMarkdown } from '@kortix/ui/markdown';
-import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@kortix/ui/modal';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { errorToast, successToast } from '@kortix/ui/toast';
 import { uiRoutes } from '@kortix/ui';
@@ -42,6 +43,7 @@ import { useProjectGoalFiles, useProjectGoals, useProjectSession } from '@kortix
 import { useMutation } from '@tanstack/react-query';
 import {
   ArrowUpIcon,
+  CaretDownIcon,
   CaretRightIcon,
   ChatCircleIcon,
   ChatTextIcon,
@@ -54,7 +56,6 @@ import {
   FileIcon,
   FolderOpenIcon,
   LightningIcon,
-  LinkIcon,
   LockSimpleIcon,
   PauseIcon,
   PlayIcon,
@@ -63,7 +64,9 @@ import {
   UsersIcon,
   WarningIcon,
 } from '@phosphor-icons/react';
-import { FolderAccessPanel } from '@/features/drives/folder-access-panel';
+import { parseGoalLog } from './goal-log';
+import { GoalShareModal } from './goal-share-modal';
+import { useAuth } from '@/features/providers/auth-provider';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
@@ -90,6 +93,7 @@ export function GoalDetail({ projectId, scope, slug }: { projectId: string; scop
   const files = useProjectGoalFiles(projectId, goal);
   const listHref = uiRoutes().goals(projectId) ?? '#';
   const refetch = () => goals.refetch();
+  const [sharing, setSharing] = useState(false);
 
   return (
     <div className="flex h-svh flex-col overflow-hidden">
@@ -106,7 +110,7 @@ export function GoalDetail({ projectId, scope, slug }: { projectId: string; scop
           ) : null
         }
       >
-        {goal ? <GoalControls projectId={projectId} goal={goal} onChanged={refetch} /> : null}
+        {goal ? <GoalControls projectId={projectId} goal={goal} onChanged={refetch} onShare={() => setSharing(true)} /> : null}
       </ProjectPageHeader>
       <div className="@container/goal min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-6xl px-4 py-10 pb-24 md:px-10">
@@ -131,11 +135,12 @@ export function GoalDetail({ projectId, scope, slug }: { projectId: string; scop
           ) : (
             <div className="grid grid-cols-1 gap-12 @4xl/goal:grid-cols-[minmax(0,1fr)_15rem] @4xl/goal:gap-16">
               <GoalMain projectId={projectId} goal={goal} files={files.data ?? null} onChanged={refetch} />
-              <GoalRail projectId={projectId} goal={goal} />
+              <GoalRail projectId={projectId} goal={goal} onShare={() => setSharing(true)} />
             </div>
           )}
         </div>
       </div>
+      {goal ? <GoalShareModal projectId={projectId} goal={goal} open={sharing} onOpenChange={setSharing} /> : null}
     </div>
   );
 }
@@ -281,15 +286,20 @@ function QuestionForYou({ projectId, goal, onChanged }: { projectId: string; goa
   const question = asked ?? asks[0]?.title ?? null;
   const otherAsks = asked ? asks : asks.slice(1);
   return (
-    <section className="flex flex-col gap-3" aria-label={t('questionForYou')} data-testid="goal-needs-you">
-      <SectionTitle>
+    // A callout, not a section: the one place the page asks the person for something.
+    <section
+      className="bg-kortix-orange/15 flex flex-col gap-3 rounded-lg p-4"
+      aria-label={t('questionForYou')}
+      data-testid="goal-needs-you"
+    >
+      <div className="flex items-center gap-2">
         <GoalStatusIcon state="waiting" />
-        {t('questionForYou')}
-      </SectionTitle>
+        <h2 className="text-foreground text-sm font-semibold">{t('questionForYou')}</h2>
+      </div>
       {question ? (
         // Agent text: links in it stay clickable; untrusted, so no HTML.
-        <div className="max-w-prose">
-          <UnifiedMarkdown content={question} trust="untrusted" variant="message" className="text-sm" />
+        <div className="text-foreground max-w-prose">
+          <UnifiedMarkdown content={question} trust="untrusted" variant="message" className="text-base" />
         </div>
       ) : null}
       {otherAsks.length > 0 ? (
@@ -336,7 +346,7 @@ function MessageBox({ projectId, goal, onChanged, kind }: { projectId: string; g
         if (draft.trim() && !send.isPending) send.mutate();
       }}
     >
-      <InputGroup className="items-stretch">
+      <InputGroup className="bg-background items-stretch rounded-xl">
         <textarea
           rows={kind === 'answer' ? 3 : 2}
           value={draft}
@@ -349,10 +359,10 @@ function MessageBox({ projectId, goal, onChanged, kind }: { projectId: string; g
           }}
           placeholder={kind === 'answer' ? t('answerPlaceholder') : t('messagePlaceholder')}
           aria-label={kind === 'answer' ? t('answerLabel') : t('messageLabel')}
-          className="text-foreground placeholder:text-muted-foreground w-full min-w-0 resize-none bg-transparent px-3 pt-3 text-sm outline-none"
+          className="text-foreground placeholder:text-muted-foreground w-full min-w-0 resize-none bg-transparent px-4 pt-4 text-sm outline-none"
           data-testid={kind === 'answer' ? 'goal-answer' : 'goal-message'}
         />
-        <InputGroupAddon align="block-end" className="justify-between gap-1 px-3 pt-0 pb-2">
+        <InputGroupAddon align="block-end" className="justify-between gap-2 px-4 pt-2 pb-3">
           {sent ? (
             <span className="text-muted-foreground text-xs" role="status">
               {kind === 'answer' ? t('answerSent') : t('messageSent')}
@@ -362,15 +372,16 @@ function MessageBox({ projectId, goal, onChanged, kind }: { projectId: string; g
           )}
           <InputGroupButton
             type="submit"
-            size="icon-xs"
+            size="sm"
             variant="default"
-            className="rounded-full"
+            className="gap-1.5 rounded-lg"
             aria-label={sendLabel}
             disabled={!draft.trim() || send.isPending}
             aria-busy={send.isPending}
             data-testid={kind === 'answer' ? 'goal-answer-send' : 'goal-message-send'}
           >
             <ArrowUpIcon weight="bold" className="size-3.5" aria-hidden />
+            {t('send')}
           </InputGroupButton>
         </InputGroupAddon>
       </InputGroup>
@@ -384,7 +395,8 @@ type FeedItem = { key: string; at: string | null; order: number; icon: ReactNode
  * What happened, oldest first, under a rule: every state move, a pause, the
  * independent check, and the agent's latest update. Each entry is one quiet line
  * (glyph, what happened, when); a reason sits under it. While the goal runs the
- * feed ends with the note box. The full log opens from the heading's right.
+ * feed ends with the note box. The agent's log (log.md, notes.md) opens
+ * from the heading's right.
  */
 function Activity({ projectId, goal, files, onChanged }: { projectId: string; goal: ProjectGoal; files: GoalFilesData | null; onChanged: () => Promise<unknown> }) {
   const t = useTranslations('goals');
@@ -405,13 +417,13 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
     key: `t:${tr.at}:${index}`,
     at: tr.at,
     order: index,
-    icon: <StatusGlyph status={tr.to} />,
+    icon: tr.from === null ? <CheckCircleIcon weight="fill" className="text-kortix-green size-4" aria-hidden /> : <StatusGlyph status={tr.to} />,
     title:
       tr.from === null ? (
         t('feed.created')
       ) : (
         <>
-          {t('feed.movedPrefix')} <span className="text-foreground">{t(`status.${tr.to}`)}</span>
+          <span className="text-muted-foreground font-normal">{t('feed.movedPrefix')}</span> {t(`status.${tr.to}`)}
         </>
       ),
     body:
@@ -422,7 +434,7 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
       ) : undefined,
   }));
   if (doc?.summary) {
-    items.push({ key: 'summary', at: updatedAt, order: transitions.length + 1, icon: <ChatTextIcon className="text-muted-foreground size-4" aria-hidden />, title: t('feed.update'), body: doc.summary });
+    items.push({ key: 'summary', at: updatedAt, order: transitions.length + 1, icon: <ChatTextIcon weight="fill" className="text-kortix-blue size-4" aria-hidden />, title: t('feed.update'), body: doc.summary });
   }
   if (paused && doc?.paused_at) {
     items.push({ key: 'paused', at: doc.paused_at, order: transitions.length + 2, icon: <GoalStatusIcon state="paused" />, title: t('feed.paused') });
@@ -434,40 +446,41 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-foreground text-base font-semibold">{t('activity')}</h2>
         {hasLog ? (
-          <button
+          <Button
             type="button"
-            className="text-muted-foreground hover:text-foreground text-sm"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground -mr-2 gap-1"
             aria-expanded={logOpen}
+            aria-controls={logOpen ? 'goal-log' : undefined}
             onClick={() => setLogOpen((v) => !v)}
             data-testid="goal-log-toggle"
           >
-            {logOpen ? t('hideLog') : t('showLog')}
-          </button>
+            {t('agentLog')}
+            <CaretDownIcon className={logOpen ? 'size-3 rotate-180 transition-transform motion-reduce:transition-none' : 'size-3 transition-transform motion-reduce:transition-none'} aria-hidden />
+          </Button>
         ) : null}
       </div>
-      <ol className="relative flex flex-col gap-4 text-sm">
+      <ol className="relative flex flex-col gap-5 text-sm">
         {/* The thread: one hairline behind the glyphs, from the first entry to the last. */}
-        <span className="bg-border absolute top-2 bottom-2 left-2 w-px" aria-hidden />
+        <span className="bg-border absolute top-2.5 bottom-2.5 left-2 w-px" aria-hidden />
         {items.map((item) => (
           <li key={item.key} className="relative flex gap-3">
-            <span className="bg-background relative flex size-4 shrink-0 items-center justify-center">{item.icon}</span>
+            <span className="bg-background relative flex h-5 w-4 shrink-0 items-center justify-center">{item.icon}</span>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <p className="text-muted-foreground leading-4">
-                {item.title}
-                {item.at ? <span className="whitespace-nowrap tabular-nums"> · {formatGoalTime(item.at, locale, now)}</span> : null}
+              <p className="flex flex-wrap items-baseline gap-x-2 leading-5">
+                <span className="text-foreground font-medium">{item.title}</span>
+                {item.at ? <FeedTime at={item.at} label={formatGoalTime(item.at, locale, now)} /> : null}
               </p>
-              {typeof item.body === 'string' ? <p className="text-muted-foreground max-w-prose text-pretty whitespace-pre-line">{item.body}</p> : item.body}
+              {typeof item.body === 'string' ? <p className="text-muted-foreground max-w-prose leading-5 text-pretty whitespace-pre-line">{item.body}</p> : item.body}
             </div>
           </li>
         ))}
       </ol>
       {logOpen && hasLog ? (
-        <div className="flex flex-col gap-6" data-testid="goal-log">
-          {files?.log ? (
-            <div className="max-w-prose">
-              <UnifiedMarkdown content={withoutTitle(files.log)} trust="untrusted" variant="document" className="text-sm" />
-            </div>
-          ) : null}
+        <div id="goal-log" className="border-border flex flex-col gap-6 border-t pt-6" data-testid="goal-log">
+          <SectionTitle>{t('agentLog')}</SectionTitle>
+          {files?.log ? <GoalLog markdown={files.log} /> : null}
           {files?.notes ? (
             <div className="flex max-w-prose flex-col gap-2">
               <SectionTitle>{t('notes')}</SectionTitle>
@@ -481,9 +494,63 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
   );
 }
 
+/** The exact local date and time, for a hint: "Wednesday, November 4, 2026 at 11:22:06 PM GMT+5:30". */
+function exactTime(iso: string, locale: string): string {
+  return new Date(iso).toLocaleString(locale, { dateStyle: 'full', timeStyle: 'long' });
+}
+
+/** A feed entry's relative time; hover or focus shows the exact date and time. */
+function FeedTime({ at, label }: { at: string; label: string }) {
+  const locale = useLocale();
+  return (
+    <Hint label={exactTime(at, locale)} side="top" align="start" alignOffset={0} sideOffset={6}>
+      <time dateTime={at} tabIndex={0} className="text-muted-foreground focus-visible:ring-ring rounded-sm text-xs whitespace-nowrap tabular-nums outline-none focus-visible:ring-2">
+        {label}
+      </time>
+    </Hint>
+  );
+}
+
+/** A log time in the reader's time zone: "Nov 4, 11:22 PM"; the year only when it is not this one. */
+function formatLogTime(iso: string, locale: string, now: number): string {
+  const date = new Date(iso);
+  const sameYear = date.getFullYear() === new Date(now).getFullYear();
+  return date.toLocaleString(locale, { month: 'short', day: 'numeric', year: sameYear ? undefined : 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+/** The agent's log in file order: a timed line is a row (its local time, then what happened); other Markdown stays as written. */
+function GoalLog({ markdown }: { markdown: string }) {
+  const locale = useLocale();
+  const now = useGoalClock();
+  return (
+    <div className="flex max-w-prose flex-col gap-2 text-sm">
+      {parseGoalLog(markdown).map((block, index) =>
+        block.kind === 'entry' ? (
+          <div key={`${block.at}:${index}`} className="flex gap-4">
+            <Hint label={exactTime(block.at, locale)} side="top" align="start" alignOffset={0} sideOffset={6}>
+              <time dateTime={block.at} className="text-muted-foreground w-32 shrink-0 leading-6 whitespace-nowrap tabular-nums">
+                {formatLogTime(block.at, locale, now)}
+              </time>
+            </Hint>
+            <div className="text-foreground min-w-0 flex-1">
+              <UnifiedMarkdown content={block.text} trust="untrusted" variant="message" className="text-sm" />
+            </div>
+          </div>
+        ) : (
+          <div key={`text:${index}`} className="py-1">
+            <UnifiedMarkdown content={block.markdown} trust="untrusted" variant="document" className="text-sm" />
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
 /** A state move's glyph: the goal status icon of the state it moved to. */
 function StatusGlyph({ status }: { status: ProjectGoalStatus }) {
-  return <GoalStatusIcon state={goalStatusIconState(status)} progress={0} />;
+  // Work in motion reads blue in the feed; done, waiting and closed keep the icon's own color.
+  const moving = status === 'active' || status === 'verifying';
+  return <GoalStatusIcon state={goalStatusIconState(status)} progress={0} tone={moving ? 'var(--kortix-blue)' : undefined} />;
 }
 
 /** The verifier's report, folded behind "Show report". */
@@ -509,11 +576,11 @@ function VerificationReport({ report }: { report: string }) {
 
 /**
  * The properties rail: one quiet row per property, its glyph and its value,
- * no labels (the glyph says what it is): state, agent, the person it is for,
- * the next and last check, wakes today, who can see it. Then its sessions and
+ * no labels (the glyph says what it is): state, agent, the next and last
+ * check, wakes today, and who can see it (a ghost button to the share dialog). Then its sessions and
  * its folder. Sticky beside the main column; under it on a narrow container.
  */
-function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal }) {
+function GoalRail({ projectId, goal, onShare }: { projectId: string; goal: ProjectGoal; onShare: () => void }) {
   const t = useTranslations('goals');
   const locale = useLocale();
   const now = useGoalClock();
@@ -528,19 +595,17 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
   const driveHref = uiRoutes().drive(projectId);
   const folderHref = driveHref ? `${driveHref}?path=${encodeURIComponent(goal.folder)}` : null;
   const agent = text(doc?.agent);
+  const { user } = useAuth();
   const stateLabel = !doc ? t('health.attention') : paused ? t('paused') : t(`status.${doc.status}`);
 
   return (
-    <aside className="flex min-w-0 flex-col gap-7 self-start @4xl/goal:sticky @4xl/goal:top-0" aria-label={t('properties')} data-testid="goal-properties">
+    <aside className="flex min-w-0 flex-col gap-7 self-start @4xl/goal:sticky @4xl/goal:top-10" aria-label={t('properties')} data-testid="goal-properties">
       <div className="flex flex-col gap-1">
         <SectionTitle>{t('properties')}</SectionTitle>
         <ul className="flex flex-col text-sm">
           <Property icon={<GoalStatusIcon state={goalIconState(goal)} progress={progress.total ? progress.met / progress.total : 0} />}>{stateLabel}</Property>
           <Property icon={agent ? <AgentMark slug={agent} size={14} tile={16} /> : <RobotlessIcon />} muted={!agent}>
             {agent ?? t('noAgent')}
-          </Property>
-          <Property icon={null} bare>
-            <GoalPersonChip projectId={projectId} userId={doc?.assigned_user} />
           </Property>
           <Property icon={<ClockIcon className="size-4" aria-hidden />} muted={!scheduled}>
             {scheduled ? t('nextCheckAt', { time: formatGoalTime(heartbeat!.next_fire_at, locale, now) }) : t('noCheck')}
@@ -553,9 +618,28 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
               {t('wakesTodayCount', { count: doc.wake_day === today ? (doc.wake_count ?? 0) : 0, max: doc.max_wakes_per_day ?? 12 })}
             </Property>
           ) : null}
-          <Property icon={goal.scope === 'personal' ? <LockSimpleIcon className="size-4" aria-hidden /> : <UsersIcon className="size-4" aria-hidden />}>
-            {t(`scope.${goal.scope}`)}
-          </Property>
+          {doc?.assigned_user && doc.assigned_user !== user?.id ? (
+            // Who it is for, only when that is someone else: "you" says nothing.
+            <li className="flex h-8 min-w-0 items-center">
+              <GoalPersonChip projectId={projectId} userId={doc.assigned_user} />
+            </li>
+          ) : null}
+          <li>
+            {/* Who can see it: a ghost button that opens the share dialog. */}
+            <button
+              type="button"
+              onClick={onShare}
+              className="hover:bg-hover text-foreground focus-visible:ring-ring -mx-2 flex h-8 min-w-0 items-center gap-2 rounded-md px-2 text-left outline-none focus-visible:ring-2"
+              aria-haspopup="dialog"
+              aria-label={t('shareVisibility', { scope: t(`scope.${goal.scope}`) })}
+              data-testid="goal-visibility"
+            >
+              <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">
+                {goal.scope === 'personal' ? <LockSimpleIcon className="size-4" aria-hidden /> : <UsersIcon className="size-4" aria-hidden />}
+              </span>
+              <span className="min-w-0 truncate">{t(`scope.${goal.scope}`)}</span>
+            </button>
+          </li>
         </ul>
       </div>
 
@@ -603,10 +687,10 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
 }
 
 /** A glyph-first property row: the glyph in a fixed 16 px slot, then the value. */
-function Property({ icon, children, muted, bare }: { icon: ReactNode; children: ReactNode; muted?: boolean; bare?: boolean }) {
+function Property({ icon, children, muted }: { icon: ReactNode; children: ReactNode; muted?: boolean }) {
   return (
     <li className="flex h-8 min-w-0 items-center gap-2">
-      {bare ? null : <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">{icon}</span>}
+      <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">{icon}</span>
       <span className={muted ? 'text-muted-foreground min-w-0 truncate' : 'text-foreground min-w-0 truncate'}>{children}</span>
     </li>
   );
@@ -634,16 +718,13 @@ function useResume(projectId: string, goal: ProjectGoal, onChanged: () => Promis
  * The goal's controls: Pause or Resume visible (the one frequent control),
  * the rest in one menu: the chat, sharing, and Stop.
  */
-function GoalControls({ projectId, goal, onChanged }: { projectId: string; goal: ProjectGoal; onChanged: () => Promise<unknown> }) {
+function GoalControls({ projectId, goal, onChanged, onShare }: { projectId: string; goal: ProjectGoal; onChanged: () => Promise<unknown>; onShare: () => void }) {
   const t = useTranslations('goals');
   const router = useRouter();
   const [stopping, setStopping] = useState(false);
-  const [sharing, setSharing] = useState(false);
   const open = goal.health.state !== 'closed';
   const writable = open && goal.goal?.format === 'goal.md';
   const paused = goalPaused(goal);
-  const driveHref = uiRoutes().drive(projectId);
-  const folderHref = driveHref ? `${driveHref}?path=${encodeURIComponent(goal.folder)}` : null;
   const sessionHref = goal.coordinatorSessionId ? uiRoutes().session(projectId, goal.coordinatorSessionId) : null;
   const resume = useResume(projectId, goal, onChanged);
   const pause = useMutation({
@@ -666,21 +747,23 @@ function GoalControls({ projectId, goal, onChanged }: { projectId: string; goal:
 
   return (
     <>
-      {writable && !paused ? (
-        <Button size="sm" variant="outline" className="gap-1.5" disabled={pause.isPending} aria-busy={pause.isPending} onClick={() => pause.mutate()} data-testid="goal-pause">
-          <PauseIcon className="size-3.5 shrink-0" aria-hidden />
-          {t('pause')}
-        </Button>
-      ) : null}
-      {writable && paused ? (
-        <Button size="sm" variant="outline" className="gap-1.5" disabled={resume.isPending} aria-busy={resume.isPending} onClick={() => resume.mutate()} data-testid="goal-resume">
-          <PlayIcon className="size-3.5 shrink-0" aria-hidden />
-          {t('resume')}
-        </Button>
-      ) : null}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button size="icon-sm" variant="ghost" aria-label={t('moreActions')} data-testid="goal-more">
+      {/* Pause or Resume and the ⋯ menu: one secondary button group. */}
+      <ButtonGroup>
+        {writable && !paused ? (
+          <Button size="sm" variant="secondary" className="gap-1.5" disabled={pause.isPending} aria-busy={pause.isPending} onClick={() => pause.mutate()} data-testid="goal-pause">
+            <PauseIcon weight="fill" className="size-3.5 shrink-0" aria-hidden />
+            {t('pause')}
+          </Button>
+        ) : null}
+        {writable && paused ? (
+          <Button size="sm" variant="secondary" className="gap-1.5" disabled={resume.isPending} aria-busy={resume.isPending} onClick={() => resume.mutate()} data-testid="goal-resume">
+            <PlayIcon weight="fill" className="size-3.5 shrink-0" aria-hidden />
+            {t('resume')}
+          </Button>
+        ) : null}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="icon-sm" variant="secondary" aria-label={t('moreActions')} data-testid="goal-more">
             <DotsThreeIcon className="size-4" aria-hidden />
           </Button>
         </DropdownMenuTrigger>
@@ -691,7 +774,7 @@ function GoalControls({ projectId, goal, onChanged }: { projectId: string; goal:
               {t('openSession')}
             </DropdownMenuItem>
           ) : null}
-          <DropdownMenuItem onSelect={() => setSharing(true)}>
+          <DropdownMenuItem onSelect={onShare}>
             <ShareNetworkIcon aria-hidden />
             {t('share')}
           </DropdownMenuItem>
@@ -705,7 +788,8 @@ function GoalControls({ projectId, goal, onChanged }: { projectId: string; goal:
             </>
           ) : null}
         </DropdownMenuContent>
-      </DropdownMenu>
+        </DropdownMenu>
+      </ButtonGroup>
       <ConfirmDialog
         open={stopping}
         onOpenChange={setStopping}
@@ -716,23 +800,6 @@ function GoalControls({ projectId, goal, onChanged }: { projectId: string; goal:
         isPending={stop.isPending}
         onConfirm={() => stop.mutate()}
       />
-      <Modal open={sharing} onOpenChange={setSharing}>
-        <ModalContent className="lg:max-w-md">
-          <ModalHeader>
-            <ModalTitle>{t('shareTitle')}</ModalTitle>
-          </ModalHeader>
-          <ModalBody>
-            <FolderAccessPanel
-              driveId={goal.driveId}
-              path={goal.folder}
-              onManage={() => {
-                setSharing(false);
-                if (folderHref) router.push(folderHref);
-              }}
-            />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
     </>
   );
 }
@@ -803,11 +870,13 @@ function urlLabel(link: string): { name: string; host: string } {
  */
 function LinkTarget({ link, folder, driveHref }: { link: string; folder: string; driveHref: string | null }) {
   if (/^https?:\/\//.test(link)) {
+    const label = urlLabel(link);
     return (
       <a href={link} target="_blank" rel="noreferrer" title={link} className="flex min-w-0 items-center gap-2 underline-offset-2 hover:underline">
-        <LinkIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-        <span className="text-foreground min-w-0 truncate">{urlLabel(link).name}</span>
-        <span className="text-muted-foreground min-w-0 truncate text-xs">{urlLabel(link).host}</span>
+        {/* The site's favicon says where it goes (GitHub, Linear, Notion, …): the name alone follows. */}
+        <FaviconAvatar value={link} size="2xs" className="shrink-0" />
+        <span className="text-foreground min-w-0 truncate">{label.name}</span>
+        {label.host.startsWith('/') ? <span className="text-muted-foreground min-w-0 truncate text-xs">{label.host}</span> : null}
       </a>
     );
   }
