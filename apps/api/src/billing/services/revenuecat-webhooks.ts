@@ -14,9 +14,9 @@ import { captureProductEvent, type ProductEvent } from '../../shared/product-ana
 
 /** In-app store purchases as product events; `app_user_id` is the Supabase user id. */
 const REVENUECAT_PRODUCT_EVENTS: Partial<Record<string, ProductEvent>> = {
-  INITIAL_PURCHASE: 'subscription_started',
-  NON_RENEWING_PURCHASE: 'credits_purchased',
-  EXPIRATION: 'subscription_canceled',
+  INITIAL_PURCHASE: 'subscription_activated',
+  NON_RENEWING_PURCHASE: 'credits_topped_up',
+  EXPIRATION: 'subscription_cancelled',
 };
 
 function captureRevenueCatProductEvent(
@@ -30,7 +30,7 @@ function captureRevenueCatProductEvent(
   if (!productEvent) return;
   const productId = typeof event.product_id === 'string' ? event.product_id : null;
   const amountUsd =
-    productEvent === 'credits_purchased'
+    productEvent === 'credits_topped_up'
       ? Number(event.price) || null
       : productId
         ? revenueCatProductMonthlyUsd(productId)
@@ -42,7 +42,9 @@ function captureRevenueCatProductEvent(
     dedupeKey: `revenuecat:${eventId}`,
     properties: {
       store: typeof event.store === 'string' ? event.store.toLowerCase() : 'revenuecat',
-      plan: productId,
+      via: 'revenuecat_webhook',
+      tier: 'credits',
+      product_id: productId,
       amount_usd: amountUsd,
       trial: event.period_type === 'TRIAL',
     },

@@ -2,7 +2,7 @@
 
 /**
  * Starts PostHog on every page once the browser is idle, links the visitor to
- * the signed-in user, and re-applies the per-page rules (masking, replay) on
+ * the signed-in user, and re-applies the per-page masking rule on
  * each navigation. Renders nothing. See lib/analytics/posthog-client.ts.
  */
 
@@ -56,7 +56,8 @@ export function PostHogHost() {
       if (user) {
         if (identified === user.id) return;
         identified = user.id;
-        posthog.identify(user.id, { email: user.email }, { signed_up_at: user.created_at });
+        // The user id only: no email or name goes to PostHog (data minimization).
+        posthog.identify(user.id, undefined, { signed_up_at: user.created_at });
       } else if (event === 'SIGNED_OUT') {
         identified = null;
         posthog.reset();

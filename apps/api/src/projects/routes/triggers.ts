@@ -85,6 +85,7 @@ import {
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
+import { capturePersonEvent } from './product-events';
 
 /**
  * The person who created or edited a trigger follows its alerts (KRTX-1742).
@@ -506,6 +507,7 @@ export function registerTriggersRoutes(): void {
         pinnedSessionId: draft.pinnedSessionId,
       });
       await followTrigger(c, loaded.row, projectId, draft.slug);
+      capturePersonEvent(c, loaded, projectId, 'trigger_created', { type: draft.type });
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row, { userId: loaded.userId, bound: callerKortixSessionId(c) }), 201);
     },

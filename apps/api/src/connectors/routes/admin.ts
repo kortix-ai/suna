@@ -39,6 +39,27 @@ import {
   featureNotSupportedResponse,
 } from './shared';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { analyticsSource, isPersonSource } from '../../middleware/analytics-source';
+import { captureProductEvent } from '../../shared/product-analytics';
+
+/** A product event for the person behind a connector route; agents and API keys send nothing. */
+function captureConnectorEvent(
+  c: Parameters<typeof analyticsSource>[0],
+  admin: { userId: string; accountId: string },
+  projectId: string,
+  event: 'connector_added' | 'connector_connected',
+  properties: Record<string, string | boolean | null>,
+): void {
+  const source = analyticsSource(c);
+  if (!isPersonSource(source)) return;
+  captureProductEvent({
+    userId: admin.userId,
+    accountId: admin.accountId,
+    event,
+    properties: { project_id: projectId, ...properties, source },
+  });
+}
+
 
 /**
  * Structured 400 for an EXPECTED source-address validation rejection from
@@ -302,6 +323,13 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       }
       try {
         const result = await deps.createConnector(projectId, admin.accountId, body, admin.userId);
+        // `app` is the catalog app (gmail); `slug` is the customer's own name and stays out.
+        if (result.ok) {
+          captureConnectorEvent(c, admin, projectId, 'connector_added', {
+            provider: body.provider ?? null,
+            app: typeof body.app === 'string' ? body.app : null,
+          });
+        }
         return result.ok
           ? c.json({ ok: true, sync: result.sync, authDiscovery })
           : c.json(result.body ?? { error: result.error }, result.status as 400 | 403 | 409 | 502);
@@ -397,6 +425,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       }
       // An MCP connector re-syncs on a credential write: return that run, so
       // the caller sees whether the tools load with the new credential.
+      if (result.ok) captureConnectorEvent(c, admin, projectId, 'connector_connected', { method: 'credential' });
       return result.ok
         ? c.json({ ok: true, ...(result.sync ? { sync: result.sync } : {}) })
         : c.json({ error: result.error }, result.status as 400 | 404 | 409);
@@ -447,6 +476,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
         return c.json({ error: 'oauth2_token_failed', code: 'oauth2_token_failed', detail }, 503);
       }
       if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404 | 409);
+      captureConnectorEvent(c, admin, projectId, 'connector_connected', { method: 'oauth2_client' });
       return c.json({
         ok: true,
         slug,
