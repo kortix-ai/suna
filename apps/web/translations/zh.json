@@ -25138,6 +25138,7 @@
     "unavailable": "此会话的沙盒在语音通话开启之前启动。从它下次启动起即可通话。",
     "callAgain": "重新呼叫",
     "openChat": "打开聊天",
+    "turnNote": "在语音通话中说出，并由语音回答。",
     "close": "关闭"
   },
   "agentMounts": {
