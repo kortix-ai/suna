@@ -1852,7 +1852,7 @@
       "moved": "会话已移动",
       "noGroup": "无分组",
       "moveFailed": "无法移动会话",
-      "empty": "你移到这里的会话将显示在这里。",
+      "empty": "将会话拖到这里",
       "groupOptions": "分组选项"
     },
     "recentlyDeleted": {
