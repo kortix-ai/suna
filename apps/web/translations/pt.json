@@ -683,7 +683,7 @@
       "threadsDeleted": "Todas as sessões e mensagens são excluídas",
       "credentialsDeleted": "Todas as credenciais e segredos são removidos",
       "subscriptionCancelled": "Sua assinatura foi cancelada",
-      "billingHistoryRemoved": "Seu histórico de faturamento foi removido",
+      "billingRecordsKept": "Seus registros de faturamento são mantidos pelo tempo exigido por lei",
       "chooseWhen": "Escolha quando",
       "gracePeriodLabel": "Período de carência",
       "gracePeriodDescription": "A exclusão ocorre na data prevista. Você pode cancelar antes.",

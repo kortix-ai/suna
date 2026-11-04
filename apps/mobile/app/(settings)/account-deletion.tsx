@@ -235,7 +235,7 @@ export default function AccountDeletionScreen() {
           />
           <SettingsRow
             icon={CreditCard}
-            label={t('accountDeletion.subscriptionAndBilling', 'Subscription and billing')}
+            label={t('accountDeletion.subscriptionAndBilling', 'Subscription')}
           />
         </SettingsGroup>
 
@@ -338,11 +338,11 @@ export default function AccountDeletionScreen() {
                     (immediate
                       ? t(
                           'accountDeletion.finalDescriptionNow',
-                          'Everything in your account is deleted now: projects, sessions, credentials, and billing. This cannot be undone.'
+                          'Your projects, sessions, and credentials are deleted now. Billing records are kept as long as the law requires. This cannot be undone.'
                         )
                       : t(
                           'accountDeletion.finalDescriptionScheduled',
-                          'Everything in your account is deleted in 30 days: projects, sessions, credentials, and billing. You can cancel before then.'
+                          'Your projects, sessions, and credentials are deleted in 30 days. Billing records are kept as long as the law requires. You can cancel before then.'
                         ))}
                 </AlertDialogDescription>
               </AlertDialogHeader>

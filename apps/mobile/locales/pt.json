@@ -606,7 +606,7 @@
     "notAvailableTitle": "Indisponível neste servidor",
     "projectsAndSessions": "Projetos e sessões",
     "credentialsAndConnections": "Credenciais e conexões",
-    "subscriptionAndBilling": "Assinatura e faturamento",
+    "subscriptionAndBilling": "Assinatura",
     "when": "Quando",
     "in30Days": "Em 30 dias",
     "immediately": "Imediatamente",
@@ -618,8 +618,8 @@
     "deleting": "Excluindo…",
     "cancelling": "Cancelando…",
     "finalTitle": "Tem certeza?",
-    "finalDescriptionNow": "Tudo na sua conta é excluído agora: projetos, sessões, credenciais e faturamento. Isso não pode ser desfeito.",
-    "finalDescriptionScheduled": "Tudo na sua conta será excluído em 30 dias: projetos, sessões, credenciais e faturamento. Você pode cancelar antes disso."
+    "finalDescriptionNow": "Seus projetos, sessões e credenciais são excluídos agora. Os registros de faturamento são mantidos pelo tempo exigido por lei. Isso não pode ser desfeito.",
+    "finalDescriptionScheduled": "Seus projetos, sessões e credenciais serão excluídos em 30 dias. Os registros de faturamento são mantidos pelo tempo exigido por lei. Você pode cancelar antes disso."
   },
   "models": {
     "selectModel": "Selecionar Modelo",

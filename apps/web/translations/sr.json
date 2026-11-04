@@ -683,7 +683,7 @@
       "threadsDeleted": "Свака сесија и порука се бришу",
       "credentialsDeleted": "Сви приступни подаци и тајне се уклањају",
       "subscriptionCancelled": "Ваша претплата је отказана",
-      "billingHistoryRemoved": "Историја наплате се уклања",
+      "billingRecordsKept": "Евиденција наплате се чува онолико дуго колико закон захтева",
       "chooseWhen": "Изаберите када",
       "gracePeriodLabel": "Период одлагања",
       "gracePeriodDescription": "Брисање се обавља заказаног датума. Можете отказати пре тога.",

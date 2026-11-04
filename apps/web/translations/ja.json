@@ -683,7 +683,7 @@
       "threadsDeleted": "すべてのセッションとメッセージが削除されます",
       "credentialsDeleted": "すべての資格情報とシークレットが削除されます",
       "subscriptionCancelled": "サブスクリプションがキャンセルされました",
-      "billingHistoryRemoved": "請求履歴は削除されます",
+      "billingRecordsKept": "請求記録は法律で定められた期間保管されます",
       "chooseWhen": "いつ選択するか",
       "gracePeriodLabel": "猶予期間",
       "gracePeriodDescription": "予定日に削除されます。それまではいつでもキャンセルできます。",

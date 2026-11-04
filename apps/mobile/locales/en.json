@@ -655,7 +655,7 @@
     "notAvailableTitle": "Not available on this server",
     "projectsAndSessions": "Projects and sessions",
     "credentialsAndConnections": "Credentials and connections",
-    "subscriptionAndBilling": "Subscription and billing",
+    "subscriptionAndBilling": "Subscription",
     "when": "When",
     "in30Days": "In 30 days",
     "immediately": "Immediately",
@@ -667,8 +667,8 @@
     "deleting": "Deleting…",
     "cancelling": "Cancelling…",
     "finalTitle": "Are you sure?",
-    "finalDescriptionNow": "Everything in your account is deleted now: projects, sessions, credentials, and billing. This cannot be undone.",
-    "finalDescriptionScheduled": "Everything in your account is deleted in 30 days: projects, sessions, credentials, and billing. You can cancel before then."
+    "finalDescriptionNow": "Your projects, sessions, and credentials are deleted now. Billing records are kept as long as the law requires. This cannot be undone.",
+    "finalDescriptionScheduled": "Your projects, sessions, and credentials are deleted in 30 days. Billing records are kept as long as the law requires. You can cancel before then."
   },
   "connections": {
     "title": "Connections",

@@ -606,7 +606,7 @@
     "notAvailableTitle": "此服务器不支持",
     "projectsAndSessions": "项目和会话",
     "credentialsAndConnections": "凭据和连接",
-    "subscriptionAndBilling": "订阅和账单",
+    "subscriptionAndBilling": "订阅",
     "when": "删除时间",
     "in30Days": "30 天后",
     "immediately": "立即",
@@ -618,8 +618,8 @@
     "deleting": "正在删除…",
     "cancelling": "正在取消…",
     "finalTitle": "确定吗？",
-    "finalDescriptionNow": "你账户中的所有内容（项目、会话、凭据和账单）将立即删除，且无法撤销。",
-    "finalDescriptionScheduled": "你账户中的所有内容（项目、会话、凭据和账单）将在 30 天后删除，在此之前可以取消。"
+    "finalDescriptionNow": "你的项目、会话和凭据将立即删除，且无法撤销。账单记录将按法律要求的期限保留。",
+    "finalDescriptionScheduled": "你的项目、会话和凭据将在 30 天后删除，在此之前可以取消。账单记录将按法律要求的期限保留。"
   },
   "models": {
     "selectModel": "选择模型",

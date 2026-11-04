@@ -606,7 +606,7 @@
     "notAvailableTitle": "このサーバーでは利用できません",
     "projectsAndSessions": "プロジェクトとセッション",
     "credentialsAndConnections": "認証情報と接続",
-    "subscriptionAndBilling": "サブスクリプションと請求",
+    "subscriptionAndBilling": "サブスクリプション",
     "when": "削除のタイミング",
     "in30Days": "30日後",
     "immediately": "今すぐ",
@@ -618,8 +618,8 @@
     "deleting": "削除中…",
     "cancelling": "キャンセル中…",
     "finalTitle": "本当によろしいですか？",
-    "finalDescriptionNow": "アカウント内のすべて（プロジェクト、セッション、認証情報、請求情報）が今すぐ削除されます。元に戻すことはできません。",
-    "finalDescriptionScheduled": "アカウント内のすべて（プロジェクト、セッション、認証情報、請求情報）が30日後に削除されます。それまではキャンセルできます。"
+    "finalDescriptionNow": "プロジェクト、セッション、認証情報は今すぐ削除されます。請求記録は法律で定められた期間保管されます。元に戻すことはできません。",
+    "finalDescriptionScheduled": "プロジェクト、セッション、認証情報は30日後に削除されます。請求記録は法律で定められた期間保管されます。それまではキャンセルできます。"
   },
   "models": {
     "selectModel": "モデルを選択",
