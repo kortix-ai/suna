@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  listAccountSecretResources, listSessionProviderSecretPools, setSessionProviderSecretPool,
+  listAccountSecretResources, listSessionProviderSecretPools, refreshAccountSecretUsage, setSessionProviderSecretPool,
 } from '../core/rest/projects-client/account-secret-resources';
 
 export function useAccountSecretResources(accountId: string | null | undefined, projectId?: string) {
@@ -15,6 +15,21 @@ export function useAccountSecretResources(accountId: string | null | undefined, 
       const deadlines = (query.state.data?.secrets ?? []).map((secret) => Date.parse(secret.cooldown_until ?? '')).filter((deadline) => deadline > now);
       return deadlines.length ? Math.max(1000, Math.min(...deadlines) - now) : false;
     },
+  });
+}
+
+/**
+ * The live plan usage of one ChatGPT or Claude login while it is on screen:
+ * asked once on mount and every minute after. The server reads the provider at
+ * most once a minute per login, however many viewers ask.
+ */
+export function useSubscriptionUsage(accountId: string | null | undefined, secretId: string | null | undefined, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['subscription-usage', accountId, secretId],
+    queryFn: () => refreshAccountSecretUsage(accountId!, secretId!),
+    enabled: Boolean(accountId && secretId) && options.enabled !== false,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 }
 

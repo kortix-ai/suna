@@ -63,16 +63,19 @@ await mock.module('../../agents/subagent-view', () => ({
     open,
     sessionId,
     title,
+    failure,
   }: {
     open: boolean;
     sessionId: string;
     title?: string;
+    failure?: string;
   }) => (
     <div
       data-subagent-dialog
       data-open={String(open)}
       data-session-id={sessionId}
       data-title={title}
+      data-failure={failure}
     />
   ),
 }));
@@ -159,24 +162,30 @@ function render(
 
 const { ToolRegistry } = await import('../shared/registry');
 
-describe('TaskTool — one agent row, opened in place', () => {
-  test('a call with a child session is one row: the agent face, its name, what it was asked, its state, Open in the body', () => {
-    childMessages = undefined;
+describe('TaskTool — one agent row that opens the agent', () => {
+  test('a call with a child session is one button row: the agent face, its name, what it was asked, its state; no inline body', () => {
+    childMessages = CHILD_MESSAGES;
     const markup = render(taskPart({}), { open: true });
     expect(markup).toContain('data-tone="agent"');
     expect(markup).toContain('>Explorer</span>');
     expect(markup).toContain('>Find the bug</span>');
     expect(markup).toContain('data-agent-status="done"');
     expect(markup).toContain('>Done</span>');
-    expect(markup).toContain('aria-label="Open Find the bug"');
+    expect(markup).toContain('role="button"');
+    expect(markup).not.toContain('aria-expanded');
+    expect(markup).toContain('data-slot="agent-row-caret"');
+    // Its steps and answer are the agent's own conversation, in the side panel: never folded into the chat.
+    expect(markup).not.toContain('TODO');
+    expect(markup).not.toContain('**/*.ts');
     expect(markup).toContain(`data-session-id="${CHILD_SESSION_ID}"`);
     expect(markup).not.toContain('text-kortix-red');
   });
 
-  test('closed, the row is a disclosure: nothing opens beside the chat', () => {
+  test('a bound side-panel context does not turn the agent row into a tool row of the panel: the agent opens', () => {
     childMessages = undefined;
     const markup = render(taskPart({}), { activatable: true });
-    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain('role="button"');
+    expect(markup).not.toContain('aria-expanded');
     expect(markup).toContain('data-open="false"');
   });
 
@@ -195,17 +204,27 @@ describe('TaskTool — one agent row, opened in place', () => {
     expect(markup).not.toContain('data-subagent-dialog');
   });
 
-  test('a failed dispatch reads Didn’t finish: one sentence, the raw error only behind Details, no red word', () => {
+  test('a failed agent reads Didn’t finish, no red word; the raw error goes to the agent view, never the chat', () => {
     childMessages = undefined;
     const failed = taskPart({ status: 'error' }) as ToolPart & { state: { error?: string } };
     failed.state.error = 'Subagent failed: This model does not support assistant message prefill.';
     const markup = render(failed as ToolPart, { open: true });
     expect(markup).toContain('data-agent-status="failed"');
     expect(markup).toContain('>Didn’t finish</span>');
+    expect(markup).toContain('data-failure="Subagent failed: This model does not support assistant message prefill."');
+    expect(markup.replace(/data-failure="[^"]*"/, '')).not.toContain('assistant message prefill');
+    expect(markup).not.toContain('text-kortix-red');
+  });
+
+  test('a failed call that never got a session keeps its failure in place: one sentence, the raw error behind Details', () => {
+    childMessages = undefined;
+    const failed = taskPart({ status: 'error', childSessionId: null }) as ToolPart & { state: { error?: string } };
+    failed.state.error = 'The provider refused the request.';
+    const markup = render(failed as ToolPart, { open: true });
     expect(markup).toContain('The agent stopped before it finished.');
     expect(markup).toMatch(/aria-expanded="false"[^>]*>(<svg[\s\S]*?<\/svg>)?Details<\/button>/);
-    expect(markup).not.toContain('assistant message prefill');
-    expect(markup).not.toContain('text-kortix-red');
+    expect(markup).not.toContain('The provider refused the request.');
+    expect(markup).not.toContain('data-subagent-dialog');
   });
 });
 

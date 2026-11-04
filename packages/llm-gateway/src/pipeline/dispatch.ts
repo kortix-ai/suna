@@ -11,6 +11,7 @@ import { noteBedrockOpenAiRejectsReasoningEffort } from '../transports/ai-sdk/re
 import { resolveTransportKind } from '../transports/route-kind';
 import { MAX_RELAYED_RETRY_AFTER_SECONDS, clampRetryAfterSeconds, providerClientErrorBody } from './error-response';
 import { applyGenerationDefaults } from './generation-defaults';
+import { type SubscriptionUsage, subscriptionUsageFromHeaders } from '../usage/subscription-usage';
 import { type CircuitBreakers, breakerKey, tripsBreaker, upstreamBreakers } from './circuit-breaker';
 import { publicUpstreamError, shownModel, shownProvider } from './public-identity';
 
@@ -70,6 +71,8 @@ export interface DispatchContext {
   /** Resolves a fallback model's candidates. Called only when the plan reaches that model. */
   resolveCandidates: (model: string) => Promise<UpstreamDescriptor[]>;
   notePoolRateLimit?: (secretId: string, seconds: number) => Promise<void>;
+  /** `GatewayHooks.notePoolUsage`, bound to the request's principal. */
+  notePoolUsage?: (secretId: string, usage: SubscriptionUsage) => Promise<void>;
   /** `GatewayHooks.refreshCredential`, bound to the request's principal. */
   refreshCredential?: (descriptor: UpstreamDescriptor) => Promise<UpstreamDescriptor | null>;
   /**
@@ -322,6 +325,23 @@ function retryAfterOf(failure: Failure): string | null | undefined {
   return failure.error instanceof UpstreamHttpError ? failure.error.headers?.['retry-after'] : undefined;
 }
 
+/**
+ * A pooled subscription account's every response, 200 or 429, names its plan
+ * usage in headers. The transport may translate the response and drop them, so
+ * they are read here, at the fetch.
+ */
+function withUsageReport(
+  fetchImpl: FetchImpl, secretId: string | undefined, note: DispatchContext['notePoolUsage'],
+): FetchImpl {
+  if (!secretId || !note) return fetchImpl;
+  return async (input, init) => {
+    const response = await fetchImpl(input, init);
+    const usage = subscriptionUsageFromHeaders(response.headers);
+    if (usage) void note(secretId, usage).catch(() => undefined);
+    return response;
+  };
+}
+
 export async function dispatch(
   body: Record<string, unknown> | null,
   plan: DispatchPlan,
@@ -378,7 +398,7 @@ export async function dispatch(
     let payload: Record<string, unknown> | null = firstBody ?? withDefaults(retained!, attempt);
     firstBody = null;
     const fetchImpl = withUpstreamHeadersTimeout(
-      ctx.fetchImpl,
+      withUsageReport(ctx.fetchImpl, attempt.descriptor.poolSecretId, ctx.notePoolUsage),
       upstreamHeadersTimeoutMs(payload, attempt.descriptor, payload.stream === true),
     );
     try {
