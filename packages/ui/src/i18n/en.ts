@@ -6190,7 +6190,8 @@ const catalog = {
       "aboutDescription": "About this description",
       "senderUnavailable": "Couldn't load the sending account. Check the From row.",
       "quoted": "“{text}”"
-    }
+    },
+    "promptHistory": "History {index}/{total}"
   },
   "commandPalette": {
     "title": "Command Palette",

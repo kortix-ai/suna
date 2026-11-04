@@ -21285,7 +21285,8 @@
       "aboutDescription": "À propos de cette description",
       "senderUnavailable": "Impossible de charger le compte d'envoi. Vérifie la ligne De.",
       "quoted": "« {text} »"
-    }
+    },
+    "promptHistory": "Historique {index}/{total}"
   },
   "commandPalette": {
     "title": "Palette de commandes",

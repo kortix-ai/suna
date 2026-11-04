@@ -21285,7 +21285,8 @@
       "aboutDescription": "Über diese Beschreibung",
       "senderUnavailable": "Das sendende Konto konnte nicht geladen werden. Prüfe die Zeile „Von“.",
       "quoted": "„{text}“"
-    }
+    },
+    "promptHistory": "Verlauf {index}/{total}"
   },
   "commandPalette": {
     "title": "Befehlspalette",

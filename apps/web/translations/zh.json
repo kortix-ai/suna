@@ -21285,7 +21285,8 @@
       "aboutDescription": "关于此描述",
       "senderUnavailable": "无法加载发送账户。请检查发件人一行。",
       "quoted": "“{text}”"
-    }
+    },
+    "promptHistory": "历史记录 {index}/{total}"
   },
   "commandPalette": {
     "title": "命令面板",
