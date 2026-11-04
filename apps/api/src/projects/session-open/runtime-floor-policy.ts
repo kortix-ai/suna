@@ -24,6 +24,13 @@ export const RUNTIME_FLOOR_CAPABILITY = RUNTIME_LOG_CAPABILITY;
 export const RUNTIME_FLOOR_METADATA_KEY = 'runtimeFloor';
 
 /**
+ * The sandbox metadata key of the last stop of a box's old daemon. Its own key:
+ * only the stop claim writes it, so no other write of the floor record can
+ * erase it, and every replica sees it.
+ */
+export const RUNTIME_FLOOR_RESTART_METADATA_KEY = 'runtimeFloorRestart';
+
+/**
  * How long a box below the floor may take to download the current daemon.
  * Measured on dev 2026-11-03: an old daemon staged it at, or within 22 s of,
  * its first answer. A daemon that cannot update itself never stages it.
@@ -43,7 +50,7 @@ export interface RuntimeFloorBelow {
   since: string;
   /** Last observation in this spell. */
   seenAt: string;
-  /** When this spell stopped the old daemon. Absent until then. */
+  /** The last stop of this box's old daemon, when it is less than `RUNTIME_FLOOR_SPELL_GAP_MS` old. Never stored here. */
   restartedAt?: string;
 }
 
@@ -52,6 +59,8 @@ export interface RuntimeFloorRecord {
   /** The box served the floor: the delivery fast path may use it. */
   current?: { externalId: string; at: string };
   below?: RuntimeFloorBelow;
+  /** From `RUNTIME_FLOOR_RESTART_METADATA_KEY`. */
+  restart?: { externalId: string; at: string };
 }
 
 export type RuntimeFloorDecision =
@@ -73,12 +82,11 @@ export function readRuntimeFloorRecord(metadata: Record<string, unknown> | null 
   }
   const below = raw.below;
   if (isRecord(below) && typeof below.externalId === 'string' && typeof below.since === 'string' && typeof below.seenAt === 'string') {
-    record.below = {
-      externalId: below.externalId,
-      since: below.since,
-      seenAt: below.seenAt,
-      ...(typeof below.restartedAt === 'string' ? { restartedAt: below.restartedAt } : {}),
-    };
+    record.below = { externalId: below.externalId, since: below.since, seenAt: below.seenAt };
+  }
+  const restart = metadata?.[RUNTIME_FLOOR_RESTART_METADATA_KEY];
+  if (isRecord(restart) && typeof restart.externalId === 'string' && typeof restart.at === 'string') {
+    record.restart = { externalId: restart.externalId, at: restart.at };
   }
   return record;
 }
@@ -94,7 +102,8 @@ export function healthServesRuntimeFloor(health: unknown): boolean {
 
 /**
  * The spell this observation belongs to: the stored one when it is this box's
- * and recent, else a new one that starts now.
+ * and recent, else a new one that starts now. It carries the box's last stop
+ * when that is recent, whichever spell recorded it.
  */
 export function currentBelowSpell(
   record: RuntimeFloorRecord,
@@ -104,10 +113,21 @@ export function currentBelowSpell(
   const nowIso = new Date(nowMs).toISOString();
   const below = record.below;
   const seenMs = below ? Date.parse(below.seenAt) : NaN;
-  if (below && below.externalId === externalId && Number.isFinite(seenMs) && nowMs - seenMs < RUNTIME_FLOOR_SPELL_GAP_MS) {
-    return { ...below, seenAt: nowIso };
+  const spell =
+    below && below.externalId === externalId && Number.isFinite(seenMs) && nowMs - seenMs < RUNTIME_FLOOR_SPELL_GAP_MS
+      ? { externalId, since: below.since, seenAt: nowIso }
+      : { externalId, since: nowIso, seenAt: nowIso };
+  const restart = record.restart;
+  const restartMs = restart ? Date.parse(restart.at) : NaN;
+  if (restart?.externalId === externalId && Number.isFinite(restartMs) && nowMs - restartMs < RUNTIME_FLOOR_SPELL_GAP_MS) {
+    return { ...spell, restartedAt: restart.at };
   }
-  return { externalId, since: nowIso, seenAt: nowIso };
+  return spell;
+}
+
+/** A stop claim wins only when this box had no stop since this instant. */
+export function runtimeFloorRestartCutoff(nowMs: number): string {
+  return new Date(nowMs - RUNTIME_FLOOR_SPELL_GAP_MS).toISOString();
 }
 
 /** The old daemon downloaded the current one and waits for a restart to run it. */
@@ -131,9 +151,9 @@ function stagedCurrentDaemon(health: Record<string, unknown>): boolean {
  * - Nothing staged yet: wait for the old daemon's own update pass, at most
  *   `RUNTIME_FLOOR_STAGE_BUDGET_MS`, then refuse.
  * - Stopped once and still below the floor after `RUNTIME_FLOOR_RESTART_BUDGET_MS`:
- *   refuse. The old daemon is stopped at most once per spell, because two fast
- *   exits make the supervisor roll back and pin updates off. A later open after
- *   `RUNTIME_FLOOR_SPELL_GAP_MS` starts a new spell and tries again.
+ *   refuse. A box's old daemon is stopped at most once per
+ *   `RUNTIME_FLOOR_SPELL_GAP_MS`, across replicas, because two fast exits make
+ *   the supervisor roll back and pin updates off. A later open tries again.
  */
 export function decideRuntimeFloor(input: {
   health: Record<string, unknown>;
@@ -178,7 +198,7 @@ export function decideRuntimeFloorWhileBooting(
   const stored = record.below;
   if (!stored || stored.externalId !== externalId) return { action: 'none' };
   const spell = currentBelowSpell(record, externalId, nowMs);
-  if (spell.since !== stored.since) return { action: 'none' };
+  if (spell.since !== stored.since && !spell.restartedAt) return { action: 'none' };
   const restartedMs = spell.restartedAt ? Date.parse(spell.restartedAt) : NaN;
   if (Number.isFinite(restartedMs) && nowMs - restartedMs >= RUNTIME_FLOOR_RESTART_BUDGET_MS) {
     return { action: 'refuse', why: 'restart_did_not_land' };

@@ -4,6 +4,7 @@ import {
   currentBelowSpell,
   decideRuntimeFloor,
   decideRuntimeFloorWhileBooting,
+  readRuntimeFloorRecord,
   RUNTIME_FLOOR_RESTART_BUDGET_MS,
   RUNTIME_FLOOR_SPELL_GAP_MS,
   RUNTIME_FLOOR_STAGE_BUDGET_MS,
@@ -80,33 +81,61 @@ describe('decideRuntimeFloor', () => {
 
 describe('decideRuntimeFloorWhileBooting', () => {
   test('a box that restarts inside its spell stays held', () => {
-    const stored = spell({ since: iso(-40_000), seenAt: iso(-2_000), restartedAt: iso(-3_000) });
-    expect(decideRuntimeFloorWhileBooting({ below: stored }, 'sbx_a', NOW)).toEqual({ action: 'hold', spell: { ...stored, seenAt: iso(0) } });
+    const stored = spell({ since: iso(-40_000), seenAt: iso(-2_000) });
+    const restart = { externalId: 'sbx_a', at: iso(-3_000) };
+    expect(decideRuntimeFloorWhileBooting({ below: stored, restart }, 'sbx_a', NOW)).toEqual({
+      action: 'hold',
+      spell: { ...stored, seenAt: iso(0), restartedAt: iso(-3_000) },
+    });
   });
 
   test('a restart that never answers is refused', () => {
-    const stored = spell({ since: iso(-200_000), seenAt: iso(-1_000), restartedAt: iso(-RUNTIME_FLOOR_RESTART_BUDGET_MS) });
-    expect(decideRuntimeFloorWhileBooting({ below: stored }, 'sbx_a', NOW)).toEqual({ action: 'refuse', why: 'restart_did_not_land' });
+    const stored = spell({ since: iso(-200_000), seenAt: iso(-1_000) });
+    const restart = { externalId: 'sbx_a', at: iso(-RUNTIME_FLOOR_RESTART_BUDGET_MS) };
+    expect(decideRuntimeFloorWhileBooting({ below: stored, restart }, 'sbx_a', NOW)).toEqual({ action: 'refuse', why: 'restart_did_not_land' });
   });
 
   test('an ordinary boot, another box, or an old spell is not the floor’s business', () => {
     expect(decideRuntimeFloorWhileBooting({}, 'sbx_a', NOW)).toEqual({ action: 'none' });
     expect(decideRuntimeFloorWhileBooting({ below: spell() }, 'sbx_b', NOW)).toEqual({ action: 'none' });
-    const old = spell({ since: iso(-3_600_000), seenAt: iso(-RUNTIME_FLOOR_SPELL_GAP_MS), restartedAt: iso(-3_000_000) });
-    expect(decideRuntimeFloorWhileBooting({ below: old }, 'sbx_a', NOW)).toEqual({ action: 'none' });
+    const old = spell({ since: iso(-3_600_000), seenAt: iso(-RUNTIME_FLOOR_SPELL_GAP_MS) });
+    const restart = { externalId: 'sbx_a', at: iso(-3_000_000) };
+    expect(decideRuntimeFloorWhileBooting({ below: old, restart }, 'sbx_a', NOW)).toEqual({ action: 'none' });
   });
 });
 
 describe('currentBelowSpell', () => {
-  test('continues this box’s recent spell, keeping its stop', () => {
-    const stored = spell({ since: iso(-30_000), seenAt: iso(-5_000), restartedAt: iso(-20_000) });
-    expect(currentBelowSpell({ below: stored }, 'sbx_a', NOW)).toEqual({ ...stored, seenAt: iso(0) });
+  test('continues this box’s recent spell, with its recent stop', () => {
+    const stored = spell({ since: iso(-30_000), seenAt: iso(-5_000) });
+    const restart = { externalId: 'sbx_a', at: iso(-20_000) };
+    expect(currentBelowSpell({ below: stored, restart }, 'sbx_a', NOW)).toEqual({ ...stored, seenAt: iso(0), restartedAt: iso(-20_000) });
   });
 
-  test('starts a new spell after a gap, or for another box', () => {
-    const stored = spell({ since: iso(-3_600_000), seenAt: iso(-RUNTIME_FLOOR_SPELL_GAP_MS), restartedAt: iso(-3_000_000) });
-    expect(currentBelowSpell({ below: stored }, 'sbx_a', NOW)).toEqual({ externalId: 'sbx_a', since: iso(0), seenAt: iso(0) });
-    expect(currentBelowSpell({ below: spell() }, 'sbx_b', NOW)).toEqual({ externalId: 'sbx_b', since: iso(0), seenAt: iso(0) });
+  test('a recent stop counts even when this observation starts a new spell', () => {
+    // Two replicas that both saw no spell: the second must still see the first one's stop.
+    const restart = { externalId: 'sbx_a', at: iso(-1_000) };
+    expect(currentBelowSpell({ restart }, 'sbx_a', NOW)).toEqual({ externalId: 'sbx_a', since: iso(0), seenAt: iso(0), restartedAt: iso(-1_000) });
+    expect(decide(staged(), currentBelowSpell({ restart }, 'sbx_a', NOW))).toEqual({ action: 'wait', why: 'restarting' });
+  });
+
+  test('starts a new spell after a gap, or for another box, and forgets an old stop', () => {
+    const stored = spell({ since: iso(-3_600_000), seenAt: iso(-RUNTIME_FLOOR_SPELL_GAP_MS) });
+    const oldStop = { externalId: 'sbx_a', at: iso(-RUNTIME_FLOOR_SPELL_GAP_MS) };
+    expect(currentBelowSpell({ below: stored, restart: oldStop }, 'sbx_a', NOW)).toEqual({ externalId: 'sbx_a', since: iso(0), seenAt: iso(0) });
+    expect(currentBelowSpell({ below: spell(), restart: { externalId: 'sbx_a', at: iso(-1_000) } }, 'sbx_b', NOW)).toEqual({ externalId: 'sbx_b', since: iso(0), seenAt: iso(0) });
+  });
+});
+
+describe('readRuntimeFloorRecord', () => {
+  test('reads the stop from its own key and never from the spell', () => {
+    const metadata = {
+      runtimeFloor: { below: { externalId: 'sbx_a', since: iso(-10), seenAt: iso(0), restartedAt: iso(-5) } },
+      runtimeFloorRestart: { externalId: 'sbx_a', at: iso(-1) },
+    };
+    expect(readRuntimeFloorRecord(metadata)).toEqual({
+      below: { externalId: 'sbx_a', since: iso(-10), seenAt: iso(0) },
+      restart: { externalId: 'sbx_a', at: iso(-1) },
+    });
   });
 });
 

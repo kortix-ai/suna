@@ -27,7 +27,9 @@ import {
   readRuntimeFloorRecord,
   RUNTIME_FLOOR_CAPABILITY,
   RUNTIME_FLOOR_METADATA_KEY,
+  RUNTIME_FLOOR_RESTART_METADATA_KEY,
   runtimeFloorRestartCommand,
+  runtimeFloorRestartCutoff,
   type RuntimeFloorBelow,
   type RuntimeFloorRecord,
   type RuntimeFloorRefusal,
@@ -55,8 +57,8 @@ export async function holdBelowRuntimeFloor(
   if (booting) {
     const whileBooting = decideRuntimeFloorWhileBooting(record, externalId, Date.now());
     if (whileBooting.action === 'none') return null;
-    if (whileBooting.action === 'refuse') return refuse(args, row, externalId, whileBooting.why);
-    await writeRecord(row.sandboxId, { below: whileBooting.spell });
+    if (whileBooting.action === 'refuse') return refuse(args, row, externalId, whileBooting.why, currentBelowSpell(record, externalId, Date.now()));
+    await writeRecord(row.sandboxId, { below: storedSpell(whileBooting.spell) });
     return holdingAnswer(args, row, externalId);
   }
   if (capabilities?.includes(RUNTIME_FLOOR_CAPABILITY)) {
@@ -101,15 +103,16 @@ export async function holdBelowRuntimeFloor(
       await stampServing(row, record, externalId);
       return null;
     case 'wait':
-      await writeRecord(row.sandboxId, { below: spell });
+      await writeRecord(row.sandboxId, { below: storedSpell(spell) });
       return holdingAnswer(args, row, externalId);
     case 'restart':
-      if (await claimRestart(row.sandboxId, spell, new Date(nowMs).toISOString())) {
+      await writeRecord(row.sandboxId, { below: storedSpell(spell) });
+      if (await claimRestart(row.sandboxId, externalId, nowMs)) {
         await stopOldDaemon(row, externalId);
       }
       return holdingAnswer(args, row, externalId);
     case 'refuse':
-      return refuse(args, row, externalId, decision.why);
+      return refuse(args, row, externalId, decision.why, spell);
   }
 }
 
@@ -122,9 +125,19 @@ const REFUSAL_EVIDENCE: Record<RuntimeFloorRefusal, string> = {
 
 /**
  * The box cannot reach the floor. Refuse the open with the reason. The box is
- * left as it is: its identity is immutable and it may hold uncommitted work.
+ * left running as it is: its identity is immutable and it may hold uncommitted
+ * work.
  */
-function refuse(args: OpenSessionArgs, row: OpenSessionRow, externalId: string, why: RuntimeFloorRefusal): SessionStartResult {
+async function refuse(
+  args: OpenSessionArgs,
+  row: OpenSessionRow,
+  externalId: string,
+  why: RuntimeFloorRefusal,
+  spell: RuntimeFloorBelow,
+): Promise<SessionStartResult> {
+  // The spell replaces the record, so the box loses any `current` stamp: the
+  // delivery fast path must not reach a daemon this open refused.
+  await writeRecord(row.sandboxId, { below: storedSpell(spell) });
   logger.warn('[runtime-floor] refusing a box that cannot reach the runtime floor', {
     session_id: row.sessionId,
     sandbox_id: row.sandboxId,
@@ -214,23 +227,29 @@ function mergedMetadata(record: RuntimeFloorRecord) {
   return sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ [RUNTIME_FLOOR_METADATA_KEY]: record })}::jsonb`;
 }
 
+/** The spell as stored: its stop lives under its own key. */
+function storedSpell(spell: RuntimeFloorBelow): RuntimeFloorBelow {
+  return { externalId: spell.externalId, since: spell.since, seenAt: spell.seenAt };
+}
+
 /**
- * One stop per spell, across every replica and every poll: the row is updated
- * only when its stored spell has no stop yet. Two fast exits in a row make the
- * box's supervisor roll back and pin updates off.
+ * One stop per box per `RUNTIME_FLOOR_SPELL_GAP_MS`, across every replica and
+ * every poll: the row is updated only when it records no stop of this box since
+ * the cutoff. Two fast exits in a row make the box's supervisor roll back and
+ * pin updates off.
  */
-async function claimRestart(sandboxId: string, spell: RuntimeFloorBelow, nowIso: string): Promise<boolean> {
-  const below = sql`${sessionSandboxes.metadata}->${RUNTIME_FLOOR_METADATA_KEY}->'below'`;
+async function claimRestart(sandboxId: string, externalId: string, nowMs: number): Promise<boolean> {
+  const last = sql`${sessionSandboxes.metadata}->${RUNTIME_FLOOR_RESTART_METADATA_KEY}`;
+  const stop = { [RUNTIME_FLOOR_RESTART_METADATA_KEY]: { externalId, at: new Date(nowMs).toISOString() } };
   const [won] = await db
     .update(sessionSandboxes)
-    .set({ metadata: mergedMetadata({ below: { ...spell, restartedAt: nowIso } }) })
+    .set({ metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify(stop)}::jsonb` })
     .where(
       and(
         eq(sessionSandboxes.sandboxId, sandboxId),
-        sql`(
-          coalesce(${below}->>'restartedAt', '') = ''
-          OR coalesce(${below}->>'since', '') <> ${spell.since}
-          OR coalesce(${below}->>'externalId', '') <> ${spell.externalId}
+        sql`NOT (
+          coalesce(${last}->>'externalId', '') = ${externalId}
+          AND coalesce(${last}->>'at', '') > ${runtimeFloorRestartCutoff(nowMs)}
         )`,
       ),
     )
