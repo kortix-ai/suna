@@ -91,7 +91,9 @@ let routes: UiRoutes = DEFAULT_ROUTES;
  */
 export function setUiRoutes(overrides: Partial<UiRoutes>): void {
   const admin = overrides.admin ?? overrides.customize;
-  routes = { ...DEFAULT_ROUTES, ...overrides, ...(admin ? { admin } : {}) };
+  // A host that routes its own customize pages serves Review there unless it also routes `review`.
+  const review = overrides.review ?? (overrides.customize ? undefined : DEFAULT_ROUTES.review);
+  routes = { ...DEFAULT_ROUTES, ...overrides, ...(admin ? { admin } : {}), review };
 }
 
 export function uiRoutes(): UiRoutes {
