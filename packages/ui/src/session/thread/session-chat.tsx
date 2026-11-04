@@ -135,6 +135,9 @@ import { type TurnSpan } from '../outcomes/anchor-outcomes';
 import type { Outcome } from '../../internal/outcomes/outcome-types';
 import { SessionOutcomesProvider } from '../outcomes/session-outcomes-provider';
 import { deleteMessageLinkParams, readMessageLinkParams, resolveMessageLinkTurn } from './message-link';
+
+/** How long a message link waits for the transcript's turns to mount before it jumps anyway. */
+const MESSAGE_LINK_MOUNT_WAIT_MS = 8_000;
 import { TurnOutcomes } from '../outcomes/turn-outcomes';
 import { SessionOverridesComposer } from '../overrides/session-overrides-composer';
 import {
@@ -4234,17 +4237,45 @@ export function SessionChat({
     if (jumpedLinkRef.current === messageLinkKey) return;
     jumpedLinkRef.current = messageLinkKey;
     const resolve = () => resolveMessageLinkTurn(linkTurnsRef.current, messageLink);
-    // Already on screen: no history to load. Else `at`, or NaN (load it all) for an id alone.
-    const createdAt = resolve() ? Number.MAX_SAFE_INTEGER : (messageLink.at ?? Number.NaN);
-    void handleJumpToOutcome(resolve, createdAt, true).finally(() => {
-      const params = new URLSearchParams(searchParams?.toString());
-      deleteMessageLinkParams(params);
-      const qs = params.toString();
-      shallowNavigate(qs ? `${pathname}?${qs}` : pathname, { replace: true });
-    });
+    // An in-app navigation has the transcript cached: `turns` exist frames before
+    // their `[data-turn-id]` nodes mount, and the first paint scrolls to the
+    // bottom. Jump only once the turns are in the DOM and that scroll has run,
+    // else the scroll finds no node and the link lands at the bottom.
+    let cancelled = false;
+    let jumped = false;
+    const startedAt = Date.now();
+    const jump = () => {
+      jumped = true;
+      // Already on screen: no history to load. Else `at`, or NaN (load it all) for an id alone.
+      const createdAt = resolve() ? Number.MAX_SAFE_INTEGER : (messageLink.at ?? Number.NaN);
+      void handleJumpToOutcome(resolve, createdAt, true).finally(() => {
+        const params = new URLSearchParams(searchParams?.toString());
+        deleteMessageLinkParams(params);
+        const qs = params.toString();
+        shallowNavigate(qs ? `${pathname}?${qs}` : pathname, { replace: true });
+      });
+    };
+    const waitForTurns = () => {
+      if (cancelled) return;
+      const mounted = !!contentRef.current?.querySelector('[data-turn-id]');
+      if (!mounted && Date.now() - startedAt < MESSAGE_LINK_MOUNT_WAIT_MS) {
+        window.setTimeout(waitForTurns, 100);
+        return;
+      }
+      // Two frames: the first paint's bottom scroll lands before the jump, never after it.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!cancelled) jump();
+      }));
+    };
+    waitForTurns();
+    return () => {
+      cancelled = true;
+      // A wait cancelled before it jumped runs again on the next pass; a jump in flight is not repeated.
+      if (!jumped && jumpedLinkRef.current === messageLinkKey) jumpedLinkRef.current = null;
+    };
     // `messageLinkKey` stands for `messageLink`, which is a new object every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messageLinkKey, isDataLoading, turns.length, handleJumpToOutcome, searchParams, pathname, shallowNavigate]);
+  }, [messageLinkKey, isDataLoading, turns.length, handleJumpToOutcome, searchParams, pathname, shallowNavigate, contentRef]);
   const handleOpenOutcome = useCallback(
     (outcome: Outcome) => {
       // Change requests are the only kind a turn produces. `external` exists on

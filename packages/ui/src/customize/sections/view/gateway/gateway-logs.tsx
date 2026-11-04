@@ -211,7 +211,24 @@ export interface LogFilterState {
   errorCode?: string;
 }
 
-export const NO_LOG_FILTERS: LogFilterState = { window: 'any' };
+/**
+ * Every key, set to nothing: the menu merges a change into the current state,
+ * so "Clear filters" has to name each filter to clear it.
+ */
+export const NO_LOG_FILTERS: Required<Pick<LogFilterState, 'window'>> & LogFilterState = {
+  window: 'any',
+  since: undefined,
+  sessionId: undefined,
+  sessionTitle: undefined,
+  model: undefined,
+  provider: undefined,
+  errorCode: undefined,
+};
+
+/** The menu's merge: a change applied over the current filters. */
+export function mergeLogFilters(prev: LogFilterState, next: Partial<LogFilterState>): LogFilterState {
+  return { ...prev, ...next };
+}
 
 /** The window as a `since` time, measured from `now`. */
 export function windowSince(window: LogWindow, now: number = Date.now()): string | undefined {
@@ -1149,7 +1166,7 @@ function LogFilterMenu({
           {active > 0 ? <CountBadge count={active} /> : null}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="start" className="w-52">
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <span className="flex-1">{t('filterTime')}</span>
@@ -1288,7 +1305,7 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
   const t = useTranslations('gatewayLogs');
   const [range, setRange] = useState<LogTimeRange | null>(null);
   const updateFilters = (next: Partial<LogFilterState>) => {
-    setMenuFilters((prev) => ({ ...prev, ...next }));
+    setMenuFilters((prev) => mergeLogFilters(prev, next));
     // A new filter is a new list: the cursor, the open request and a bar's range go with the old one.
     setFocused(0);
     setSelectedLogId(null);
@@ -1437,6 +1454,8 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
                 </TabsListCompact>
               </Tabs>
             </div>
+            {/* Beside the outcome tabs, so its submenus open toward the page, never flipped against the window edge. */}
+            <LogFilterMenu projectId={projectId} value={menuFilters} onChange={updateFilters} />
             <InputGroupSearch className="min-w-0 flex-1">
               <InputGroupSearchIcon>
                 <Search />
@@ -1452,7 +1471,6 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
               />
               <InputGroupSearchClear onClick={() => setQuery('')} />
             </InputGroupSearch>
-            <LogFilterMenu projectId={projectId} value={menuFilters} onChange={updateFilters} />
             {range ? (
               <Button
                 variant="secondary"

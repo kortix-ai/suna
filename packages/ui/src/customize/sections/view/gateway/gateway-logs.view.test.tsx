@@ -15,6 +15,7 @@ import {
   logSessionHref,
   matchesLogQuery,
   medianLatency,
+  mergeLogFilters,
   NO_LOG_FILTERS,
   serverLogFilters,
   windowSince,
@@ -256,6 +257,13 @@ describe('server filters', () => {
     const now = Date.parse('2026-01-05T10:00:00.000Z');
     expect(windowSince('1h', now)).toBe('2026-01-05T09:00:00.000Z');
     expect(windowSince('any', now)).toBeUndefined();
+  });
+
+  test('Clear filters clears every filter, not only the time window', () => {
+    const set = { window: '1h' as const, since: 'x', sessionId: 's1', sessionTitle: 't', model: 'm', provider: 'p', errorCode: 'e' };
+    const cleared = mergeLogFilters(set, NO_LOG_FILTERS);
+    expect(hasLogFilters(cleared)).toBe(false);
+    expect(serverLogFilters('all', cleared, '')).toEqual(serverLogFilters('all', NO_LOG_FILTERS, ''));
   });
 
   test('hasLogFilters is false only for the empty state', () => {
