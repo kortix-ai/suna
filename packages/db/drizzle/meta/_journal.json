@@ -1534,6 +1534,13 @@
       "when": 1793798960188,
       "tag": "20261104132920_artifact_doc_epoch_not_null",
       "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1793801601627,
+      "tag": "20261104141321_artifact_doc_contributors",
+      "breakpoints": true
     }
   ]
 }

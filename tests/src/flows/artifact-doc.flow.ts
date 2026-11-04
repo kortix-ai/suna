@@ -319,6 +319,31 @@ flow('ART-10', {
       if ((await read()).latest_seq !== 2) throw new Error('a stale-epoch write was stored');
     });
 
+    await ctx.step('who wrote: two people push and the lease holder flushes → one project.artifact.doc.edit audit row per writer, with the seq range', async () => {
+      if (!(await lease({ holder: 'tab-x' })).leader) throw new Error('tab-x could not take the lease');
+      (await asWriter.post(UPDATES, { update: EDITS[1] }, { params })).status(200);
+      (await owner.post(UPDATES, { update: EDITS[2] }, { params })).status(200);
+      const latest = (await read()).latest_seq;
+      (await owner.post(FLUSHED, { holder: 'tab-x', seq: latest, version: 'v5', markdown: FLUSHED_MARKDOWN }, { params })).status(200).body().has('$.flushed_seq', latest);
+      type Edit = { actor_user_id: string; actor_type: string; metadata: { from_seq: number; to_seq: number; flushed_by: string } };
+      const rows = await waitFor(
+        () => withDb(ctx, async (db) => (await db.query<Edit>(
+          `SELECT actor_user_id, actor_type, metadata FROM kortix.audit_events WHERE project_id = $1 AND action = 'project.artifact.doc.edit' AND resource_id = $2 AND metadata->>'version' = 'v5'`,
+          [project.id, docId],
+        )).rows),
+        { until: (found) => found.length >= 2, timeoutMs: 15_000, intervalMs: 500, description: 'the doc.edit audit rows' },
+      );
+      const actors = rows.map((row) => row.actor_user_id).sort();
+      if (rows.length !== 2 || JSON.stringify(actors) !== JSON.stringify([ctx.P.OWNER.userId, writer.userId].sort())) {
+        throw new Error(`doc.edit rows ${JSON.stringify(rows)}; expected one for OWNER and one for the second writer`);
+      }
+      for (const row of rows) {
+        if (row.actor_type !== 'human' || row.metadata.to_seq !== latest || row.metadata.from_seq !== 2 || row.metadata.flushed_by !== ctx.P.OWNER.userId) {
+          throw new Error(`doc.edit row ${JSON.stringify(row)}`);
+        }
+      }
+    });
+
     await ctx.step('a seed counts against the same byte budget as pushes: four 2 MiB seeds at once from one person → a 429 among them', async () => {
       const update = bigTextUpdate(2 * 1024 * 1024 - 32);
       const answers = await Promise.all(Array.from({ length: 4 }, () => asWriter.post(SEED, { update, markdown: '', version: 'v9' }, { params })));
@@ -341,7 +366,7 @@ flow('ART-10', {
       limited.status(429).body().has('$.code', 'rate_limited');
       if (!/^[1-9]\d*$/.test(limited.header('retry-after') ?? '')) throw new Error(`Retry-After ${limited.header('retry-after')}`);
       if ([...statuses.keys()].some((status) => status !== 400 && status !== 429)) throw new Error(`unexpected statuses ${JSON.stringify([...statuses])}`);
-      if ((await read()).latest_seq !== 2) throw new Error('a refused push was stored');
+      if ((await read()).latest_seq !== 4) throw new Error('a refused push was stored');
     });
   } finally {
     for (const socket of sockets) socket.close();

@@ -18,6 +18,7 @@
 import { and, asc, eq, gt, gte, lt, lte, sql } from 'drizzle-orm';
 import { artifactDocState, artifactDocUpdates, artifacts } from '@kortix/db';
 import { logger } from '../lib/logger';
+import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
 import {
   DOC_COMPACTION_BACKOFF_MS,
@@ -200,6 +201,10 @@ export async function appendArtifactDocUpdate(
       .set({
         nextSeq: sql`${artifactDocState.nextSeq} + 1`,
         bytesTotal: sql`${artifactDocState.bytesTotal} + ${input.update.length}`,
+        // Who wrote: named by the next flush (`markArtifactDocFlushed`), one audit row each.
+        pendingContributors: sql`case when ${input.userId}::uuid = any(${artifactDocState.pendingContributors})
+          then ${artifactDocState.pendingContributors}
+          else array_append(${artifactDocState.pendingContributors}, ${input.userId}::uuid) end`,
         updatedAt: sql`now()`,
       })
       .where(eq(artifactDocState.artifactId, artifactId))
@@ -258,7 +263,8 @@ export async function compactArtifactDoc(artifactId: string): Promise<ArtifactDo
     }
     if (!merged) return { done: false, reason: 'too_large' };
     const removed = rows.reduce((total, row) => total + row.bytes.length, 0);
-    await tx.update(artifactDocUpdates).set({ bytes: Buffer.from(merged) })
+    // A merged row holds several people's updates: it names none of them (who wrote is recorded at each flush).
+    await tx.update(artifactDocUpdates).set({ bytes: Buffer.from(merged), createdBy: null })
       .where(and(eq(artifactDocUpdates.artifactId, artifactId), eq(artifactDocUpdates.seq, plan.toSeq)));
     await tx.delete(artifactDocUpdates)
       .where(and(eq(artifactDocUpdates.artifactId, artifactId), gte(artifactDocUpdates.seq, plan.fromSeq), lt(artifactDocUpdates.seq, plan.toSeq)));
@@ -302,21 +308,37 @@ export async function leaseArtifactDoc(
   });
 }
 
+export interface ArtifactDocFlushResult {
+  flushedSeq: number;
+  /** Everyone whose pushes this flush wrote to the file (the pending list), distinct. */
+  contributors: string[];
+  /** The seqs this flush covers: (the previous flushed seq, `toSeq`]. */
+  fromSeq: number;
+  toSeq: number;
+}
+
 /**
  * `POST …/doc/flushed`: the lease holder wrote the file at `version` with the
  * updates up to `seq`. 409 `not_leader` for anyone else; 400 `invalid_seq`
  * past the newest update. The flushed fields move only forward.
+ *
+ * Returns who wrote (`contributors`): the people who pushed since the last
+ * flush, for one audit row each (`recordArtifactDocEdits`). The list clears
+ * when this flush reaches the newest push; otherwise it is kept, so a writer
+ * whose push came after `seq` is named by the next flush too. A writer may be
+ * named twice; a writer is never dropped.
  */
 export async function markArtifactDocFlushed(
   artifactId: string,
   input: { holder: string; userId: string; seq: number; version: string; markdown: string; epoch?: string },
-): Promise<{ flushedSeq: number }> {
+): Promise<ArtifactDocFlushResult> {
   return db.transaction(async (tx) => {
     await lockArtifact(tx, artifactId);
     const [state] = await tx.select({
       epoch: artifactDocState.epoch,
       nextSeq: artifactDocState.nextSeq,
       flushedSeq: artifactDocState.flushedSeq,
+      pendingContributors: artifactDocState.pendingContributors,
       holder: artifactDocState.leaseHolder,
       userId: artifactDocState.leaseUserId,
       expiresAt: artifactDocState.leaseExpiresAt,
@@ -332,14 +354,16 @@ export async function markArtifactDocFlushed(
         ? new ArtifactDocError(409, 'Only the tab that holds the lease records a flush', 'not_leader')
         : new ArtifactDocError(400, `seq ${input.seq} is past the newest update (${state.nextSeq - 1})`, 'invalid_seq');
     }
-    if (!decision.apply) return { flushedSeq: state.flushedSeq };
+    if (!decision.apply) return { flushedSeq: state.flushedSeq, contributors: [], fromSeq: state.flushedSeq + 1, toSeq: state.flushedSeq };
+    const reachesNewest = input.seq >= state.nextSeq - 1;
     await tx.update(artifactDocState).set({
       flushedSeq: input.seq,
       flushedVersion: input.version,
       flushedMarkdown: input.markdown,
+      ...(reachesNewest ? { pendingContributors: sql`'{}'::uuid[]` } : {}),
       updatedAt: sql`now()`,
     }).where(eq(artifactDocState.artifactId, artifactId));
-    return { flushedSeq: input.seq };
+    return { flushedSeq: input.seq, contributors: state.pendingContributors, fromSeq: state.flushedSeq + 1, toSeq: input.seq };
   });
 }
 
@@ -368,4 +392,40 @@ export async function resetArtifactDoc(artifactId: string, input: { holder: stri
     await tx.delete(artifactDocUpdates).where(eq(artifactDocUpdates.artifactId, artifactId));
     return { reset: true as const };
   });
+}
+
+/**
+ * One `project.artifact.doc.edit` audit row per person whose pushes a flush
+ * wrote to the file: the lease holder saves the file, but the text is theirs.
+ * The row's actor is the writer; the request's own identity (its caller, IP,
+ * session) is not copied onto it.
+ */
+export async function recordArtifactDocEdits(input: {
+  accountId: string;
+  projectId: string;
+  artifactId: string;
+  flushedBy: string;
+  version: string;
+  flush: ArtifactDocFlushResult;
+}): Promise<void> {
+  for (const contributor of input.flush.contributors) {
+    await recordAuditEvent({
+      accountId: input.accountId,
+      projectId: input.projectId,
+      actorUserId: contributor,
+      actorType: 'human',
+      sessionId: null,
+      agentId: null,
+      onBehalfOfUserId: null,
+      credentialKind: null,
+      credentialId: null,
+      ip: null,
+      userAgent: null,
+      action: 'project.artifact.doc.edit',
+      resourceType: 'artifact',
+      resourceId: input.artifactId,
+      outcome: 'success',
+      metadata: { from_seq: input.flush.fromSeq, to_seq: input.flush.toSeq, version: input.version, flushed_by: input.flushedBy },
+    });
+  }
 }

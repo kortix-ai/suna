@@ -41,6 +41,7 @@ import {
   leaseArtifactDoc,
   markArtifactDocFlushed,
   readArtifactDoc,
+  recordArtifactDocEdits,
   resetArtifactDoc,
   seedArtifactDoc,
 } from '../../artifacts/doc-service';
@@ -262,7 +263,7 @@ export function registerArtifactDocRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'post', path: '/{projectId}/artifacts/{artifactId}/doc/flushed', tags: ['artifacts'],
     summary: 'Record that the lease holder wrote the file',
-    description: 'After a save of the file (`PUT …/artifacts/{artifactId}`), the lease holder records which updates the file now holds (`seq`), its new `version` and its text. The flush moves only forward: an older `seq` sets nothing. 409 `not_leader` from a tab that does not hold the lease; 400 `invalid_seq` past the newest update; 413 `markdown_too_large` past 1 MiB; 409 `epoch_mismatch` (with the current `epoch`) when `epoch` names another epoch.',
+    description: 'After a save of the file (`PUT …/artifacts/{artifactId}`), the lease holder records which updates the file now holds (`seq`), its new `version` and its text. The flush moves only forward: an older `seq` sets nothing. Each person who pushed since the last flush gets one `project.artifact.doc.edit` audit row with the seq range: the file is saved by the leader, the text is theirs. 409 `not_leader` from a tab that does not hold the lease; 400 `invalid_seq` past the newest update; 413 `markdown_too_large` past 1 MiB; 409 `epoch_mismatch` (with the current `epoch`) when `epoch` names another epoch.',
     ...auth,
     request: {
       params: ArtifactParams,
@@ -277,6 +278,15 @@ export function registerArtifactDocRoutes(): void {
     if (tooLarge) return tooLarge;
     try {
       const flushed = await markArtifactDocFlushed(access.row.artifactId, { ...input, userId: access.viewer.userId });
+      // The leader saved the file; the text is its writers': one audit row each.
+      await recordArtifactDocEdits({
+        accountId: access.loaded.row.accountId,
+        projectId: access.row.projectId,
+        artifactId: access.row.artifactId,
+        flushedBy: access.viewer.userId,
+        version: input.version,
+        flush: flushed,
+      });
       return c.json({ flushed_seq: flushed.flushedSeq }, 200);
     } catch (err) {
       return failure(c, err);
