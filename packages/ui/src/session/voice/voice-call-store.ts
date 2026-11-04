@@ -2,21 +2,32 @@
 
 import { create } from 'zustand';
 
+/** A call: a session of its own on an agent, placed from that agent's page. */
+export interface ActiveCall {
+  projectId: string;
+  sessionId: string;
+  /** The agent's name (its slug): the card's mark and name. */
+  agent: string;
+  /** When it was placed (ms), for "Calling…" before the box answers. */
+  placedAt: number;
+}
+
 /**
- * The session (Kortix session id) whose call bar is open: one call at a time, as there is one microphone. The agent
- * page's Call button opens it for the session it starts, and the bar above that session's composer runs the call
- * while it is open.
+ * The call in progress, one at a time, as there is one microphone. The agent page's Call button places it and the
+ * call card (voice-call-card.tsx, in the project shell) runs it wherever the person goes in the project, until it is
+ * hung up.
  */
 interface VoiceCallStore {
-  sessionId: string | null;
-  open: (sessionId: string) => void;
-  close: (sessionId: string) => void;
+  call: ActiveCall | null;
+  place: (call: Omit<ActiveCall, 'placedAt'>) => void;
+  /** Ends the call (only that session's, when one is named). */
+  end: (sessionId?: string) => void;
 }
 
 export const useVoiceCallStore = create<VoiceCallStore>()((set, get) => ({
-  sessionId: null,
-  open: (sessionId) => set({ sessionId }),
-  close: (sessionId) => {
-    if (get().sessionId === sessionId) set({ sessionId: null });
+  call: null,
+  place: (call) => set({ call: { ...call, placedAt: Date.now() } }),
+  end: (sessionId) => {
+    if (!sessionId || get().call?.sessionId === sessionId) set({ call: null });
   },
 }));

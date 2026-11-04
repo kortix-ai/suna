@@ -10,6 +10,11 @@ const base = () => process.env.VOICE_MODELS_URL?.replace(/\/+$/, '') || undefine
 /** True when the calls go to VOICE_MODELS_URL (a Kortix box), not the vendors. */
 export const viaModels = (): boolean => base() !== undefined
 
+/** The fast models are at hand: Groq's own key (a local run), or the models base, which serves the same ids. Every
+ * fast step (the lane, the router, end of turn, the room judge, a watch's check, ...) asks this, never the key alone:
+ * a Kortix box has no Groq key. */
+export const fastOn = (): boolean => viaModels() || !!process.env.GROQ_API_KEY
+
 /** A model's id where the call goes: the vendor's own, or the models base's (no org prefix). */
 export const modelId = (id: string): string => (base() ? id.replace(/^[^/]+\//, '') : id)
 

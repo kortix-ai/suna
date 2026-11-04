@@ -126,7 +126,6 @@ import {
 } from './first-prompt-handover';
 import { CompactModal } from '../header/compact-modal';
 import { SessionSiteHeader } from '../header/session-site-header';
-import { VoiceCallSlot } from '../voice/voice-call';
 import { claimFirstTurnRow } from '../composer/inbox-row-claims';
 import { type ModelDefaultControls } from '../models/model-selector';
 import { OptimisticTurn } from './optimistic-turn';
@@ -3949,12 +3948,10 @@ export function SessionChat({
   );
 
   // The queued messages and the one Resume while a Stop holds the queue: their
-  // own full-width card above the composer stack, not inside the strip. A live
-  // voice call is the card above them (nothing unless a call is open).
+  // own full-width card above the composer stack, not inside the strip.
   const chatAboveSlot = useMemo(
     () => (
       <>
-        <VoiceCallSlot sessionId={projectSessionId} />
         <QueuedPromptList
           rows={heldCommands.length > 0 ? [...queueRows.rows, ...heldCommandRows(heldCommands)] : queueRows.rows}
           heldCount={queueRows.heldCount}
@@ -3979,7 +3976,6 @@ export function SessionChat({
       </>
     ),
     [
-      projectSessionId,
       heldCommands,
       queueEdit.editing,
       queueEdit.cancel,

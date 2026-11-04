@@ -678,6 +678,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/gateway/keys': { action: 'gateway.key.create', title: 'Created LLM gateway key' },
   'DELETE /v1/projects/:projectId/gateway/keys/:keyId': { action: 'gateway.key.revoke', title: 'Revoked LLM gateway key' },
   'GET /v1/projects/:projectId/gateway/logs': { action: 'gateway.log.list', title: 'Listed LLM gateway request logs' },
+  'GET /v1/projects/:projectId/gateway/logs/facets': { action: 'gateway.log.facets', title: 'Listed LLM gateway log filter values' },
   'GET /v1/projects/:projectId/gateway/logs/:logId': { action: 'gateway.log.read', title: 'Viewed LLM gateway request log' },
   'GET /v1/projects/:projectId/gateway/overview': { action: 'gateway.overview.read', title: 'Viewed LLM gateway usage overview' },
   'POST /v1/projects/:projectId/gateway/playground': { action: 'gateway.playground.send', title: 'Ran gateway playground request' },

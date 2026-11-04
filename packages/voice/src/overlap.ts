@@ -2,7 +2,7 @@
 // through a listening sound or reaction, stop for a stop, yield to anything that takes the turn. The words come from a
 // peek, often cut off mid-word. Undefined when no model answers in time: the turn manager's own rules decide then.
 import { chargeReply } from './cost'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
 const MODEL = process.env.VOICE_OVERLAP_MODEL ?? 'qwen/qwen3.8-27b'
 const SYSTEM =
   'The assistant is speaking on a voice call. The caller says something over it; you get their words so far as ' +
@@ -13,7 +13,7 @@ const SYSTEM =
 export type Overlap = 'backchannel' | 'stop' | 'interrupt' | undefined
 
 export function overlapping(text: string, said: string, on: (v: Overlap) => void, ms = 700): void {
-  if (process.env.VOICE_OVERLAP === '0' || !process.env.GROQ_API_KEY) return on(undefined)
+  if (process.env.VOICE_OVERLAP === '0' || !fastOn()) return on(undefined)
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), ms)
   fastFetch({

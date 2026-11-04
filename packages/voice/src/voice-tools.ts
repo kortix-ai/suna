@@ -57,8 +57,17 @@ export const META_TOOLS: MetaTool[] = [
     description:
       'Change who you are in the live call, from the next sentence on: name, voice (an id or a description), look (an image URL or an emoji), style (how to speak), mode (normal: answer everyone; listen: keep quiet and keep the transcript until told to speak; named: answer only when addressed by name). Give only what changes.',
     snippet: 'Change your name, voice, look, speaking style or mode in the live voice call.',
-    parameters: object({ name: str('New name.'), voice: str('Voice id or a description of the voice.'), look: str('Image URL or emoji.'), style: str('How to speak.'), mode: str('normal | listen | named') }),
-    request: (a) => ({ method: 'POST', body: { set: given({ name: a.name, voice: a.voice, look: a.look, style: a.style, mode: a.mode }) } }),
+    parameters: object({
+      name: str('New name.'),
+      voice: str('Voice id or a description of the voice.'),
+      look: str('Image URL or emoji.'),
+      style: str('How to speak.'),
+      rate: { type: 'number', description: 'How fast to speak: 1 normal, 0.85 slower, 1.2 faster.' },
+      mode: str('normal | listen | named'),
+      back: str('With mode listen or named: back to normal after this long ("10m", "30s"), by itself.'),
+      say: str('With back: what to say when back.'),
+    }),
+    request: (a) => ({ method: 'POST', body: { set: given({ name: a.name, voice: a.voice, look: a.look, style: a.style, rate: a.rate, mode: a.mode, back: a.back, say: a.say }) } }),
   },
   {
     name: 'voice_later',

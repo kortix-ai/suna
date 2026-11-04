@@ -35,6 +35,8 @@ export interface CallState {
   micBlocked: boolean;
   /** Redials since the call was last live (or, before its first `ready`, since it was placed). */
   redials: number;
+  /** When it was first answered (ms): a call's length counts from there, across reconnects. */
+  liveAt: number | null;
 }
 
 export const INITIAL_CALL: CallState = {
@@ -44,6 +46,7 @@ export const INITIAL_CALL: CallState = {
   end: null,
   micBlocked: false,
   redials: 0,
+  liveAt: null,
 };
 
 /** A live call that drops is dialed again after each of these waits, then it ends as `lost`. */
@@ -57,7 +60,7 @@ export const REDIAL_MS = [1_000, 2_000, 4_000] as const;
 export const DIAL_MS = [1_000, 2_000, 3_000, 4_000] as const;
 
 export type CallEvent =
-  | { type: 'ready' }
+  | { type: 'ready'; at?: number }
   | { type: 'text'; role?: unknown; who?: unknown; text?: unknown }
   | { type: 'closed' }
   /** The socket closed without `closed`. `relay` is the health probe's answer, taken only for a first dial. */
@@ -69,7 +72,7 @@ export type CallEvent =
 export function reduceCall(state: CallState, event: CallEvent): CallState {
   switch (event.type) {
     case 'ready':
-      return state.phase === 'ended' ? state : { ...state, phase: 'live', redials: 0 };
+      return state.phase === 'ended' ? state : { ...state, phase: 'live', redials: 0, liveAt: state.liveAt ?? event.at ?? null };
     case 'text': {
       const { role, who, text } = event;
       // `screen` lines are what the voice read off a shared screen: neither said nor heard.

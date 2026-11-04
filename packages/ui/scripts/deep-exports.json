@@ -287,6 +287,7 @@
     "./session/turn/channel-message",
     "./session/turn/queued-prompt-bubbles",
     "./session/turn/user-message",
+    "./session/voice/voice-call-card",
     "./theme/wallpapers",
     "./workspace/admin/project-admin-dashboard",
     "./workspace/home/access-requests-bell",

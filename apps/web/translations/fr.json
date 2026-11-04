@@ -1332,7 +1332,7 @@
         },
         "voice_call": {
           "name": "Appels vocaux",
-          "description": "Appelle l'agent de la session depuis la page de la session et parle-lui. Il t'entend, répond à voix haute, voit l'écran que tu partages et travaille dans la même session : la conversation reste dans le chat."
+          "description": "Appelle un agent depuis sa page (Personnaliser → Agents) et parle-lui. Un appel est une session à part de cet agent : il t'entend, répond à voix haute et voit l'écran que tu partages, et la conversation est le chat de cette session."
         },
         "shared_drives": {
           "name": "Drives partagés",
@@ -25118,6 +25118,7 @@
   "voiceCall": {
     "title": "Appel vocal",
     "call": "Appeler",
+    "calling": "Appel en cours…",
     "start": "Démarrer un appel vocal",
     "end": "Terminer l’appel",
     "connecting": "Connexion…",
@@ -25135,6 +25136,7 @@
     "lost": "Impossible de rétablir l’appel",
     "unavailable": "Le bac à sable de cette session a démarré avant l’activation des appels vocaux. Les appels fonctionnent à partir de son prochain démarrage.",
     "callAgain": "Rappeler",
+    "openChat": "Ouvrir le chat",
     "close": "Fermer"
   },
   "agentMounts": {

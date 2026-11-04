@@ -11,7 +11,7 @@ import { chargeReply } from './cost'
 import type { Msg } from './lane'
 import { content, firstUseful, pagesOf } from './pages'
 import { prefetch } from './prefetch'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
 
 const MODEL = process.env.VOICE_ANTICIPATE_MODEL ?? 'qwen/qwen3.8-27b'
 // v1 ("the most likely next questions") gave same-type siblings that are general knowledge ("capital of Canada" after
@@ -61,7 +61,7 @@ async function ask(system: string, user: string, ms: number, tokens: number): Pr
   }
 }
 
-const on = () => process.env.VOICE_ANTICIPATE !== '0' && !!process.env.GROQ_API_KEY
+const on = () => process.env.VOICE_ANTICIPATE !== '0' && fastOn()
 
 const FOLLOWS =
   'A voice assistant just answered the caller, who then said only an acknowledgment or went quiet. Decide whether one ' +
@@ -84,7 +84,7 @@ const TONE =
   'serious: grave or careful matters; playful: a joke or teasing. Reply with JSON only: {"tone": "none"}.'
 /** The delivery for the reply to these words ("gently, softly"), or '' for a plain one (a fast judge, ~120 ms). */
 export async function toneOf(user: string, before = ''): Promise<string> {
-  if (!process.env.GROQ_API_KEY || process.env.VOICE_TONE === '0') return ''
+  if (!fastOn() || process.env.VOICE_TONE === '0') return ''
   const o = await ask(TONE, `${before ? `Before: ${before}\n` : ''}Caller: ${user}`, 600, 15)
   return TONES[String(o.tone)] ?? ''
 }
