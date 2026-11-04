@@ -122,6 +122,19 @@ export async function createServiceAccount(args: {
   return { ...mapRow(row), secret };
 }
 
+/** A service account's status and expiry, or null when it is not in the account. Throws when the read fails. */
+export async function readServiceAccountState(
+  accountId: string,
+  serviceAccountId: string,
+): Promise<{ status: string; expiresAt: Date | null } | null> {
+  const [row] = await db
+    .select({ status: serviceAccounts.status, expiresAt: serviceAccounts.expiresAt })
+    .from(serviceAccounts)
+    .where(and(eq(serviceAccounts.accountId, accountId), eq(serviceAccounts.serviceAccountId, serviceAccountId)))
+    .limit(1);
+  return row ?? null;
+}
+
 /** True when `serviceAccountId` is a service account of `accountId` that is active and not expired. */
 export async function isServiceAccountActive(accountId: string, serviceAccountId: string): Promise<boolean> {
   const [row] = await db

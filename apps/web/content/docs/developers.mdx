@@ -2265,6 +2265,7 @@ The commands below are `kortix artifacts <subcommand>`. `kortix artifacts --help
 | `reply <thread-id> "<text>"` | Reply to a thread, by its full ID. |
 | `resolve <thread-id>`, `reopen <thread-id>` | Resolve a thread, or open it again. |
 | `activity <artifact>` | Saves and events, newest first. `--limit` takes 1 to 100. |
+| `focus <artifact>` | Agent sessions only. Shows the people viewing the Artifact where the agent works: `--thread <thread-id>` (a thread it answers) or `--quote "<text>"` (a passage it changes, up to 500 characters). `--status reading\|editing\|writing\|idle`, default `editing`. `idle` removes the agent from the viewers. A person's token exits `1`. |
 
 `<artifact>` is an Artifact ID or its first 8 characters from `ls`. `--json` prints machine-readable output. Exit codes: `0` success, `1` API error, `2` usage error, `3` version conflict.
 
@@ -8325,6 +8326,8 @@ Routes: `/projects/{projectId}/apps/…`. See [Deploy and operate Apps](/docs/de
 | `artifacts.comments.context(artifactId, { version?, agent? }?)` | The caller's rights, the people and agents to mention with their insertion tokens, the Send target, and the threads Send would take: `send_thread_ids` (the first 100) and `send_thread_count`. Root export: `getArtifactCommentContext`. |
 | `artifacts.comments.snapshot(artifactId, { version? }?)` · `.readScreenshot(artifactId, commentId)` | The saved text that text anchors point into, as `{ version, text }` · one comment's screenshot as a `Blob`. Root exports: `readArtifactCommentSnapshot`, `readArtifactCommentScreenshot`. |
 | `artifacts.activity(artifactId, { limit?, cursor? }?)` | One page of saves and events, newest first: `{ items, next_cursor, older_versions }`. `limit` is 1 to 100. Pass `next_cursor` as `cursor`. Root export: `listArtifactActivity`. |
+| `artifacts.live.connect(artifactId, { view, version?, hidden?, webSocket?, onEvent? })` | Opens the Artifact's live WebSocket and returns an `ArtifactLiveConnection`: `status`, `participants`, `you`, `setCursor`, `setSelection`, `setTyping`, `setFocus`, `setHidden`, `close`. It reconnects by itself, 1 to 30 s apart, with a new ticket each time. Close code `4403` ends it with status `access_lost`. Root export: `createArtifactLiveConnection`. React: `useArtifactLive(projectId, artifactId, { enabled, view, version?, hidden? })`. |
+| `artifacts.live.ticket(artifactId)` · `.signal(artifactId, { status, thread_id?, quote? })` | A one-use WebSocket ticket, valid 60 s · an agent session's place in the Artifact: `reading`, `editing`, `writing` or `idle`. `signal` needs a session-bound token; a person's token returns `403`. Root exports: `createArtifactLiveTicket`, `signalArtifactLiveAgent`. |
 
 A thread carries its delivery state: `agent_state` is `none`, `pending`, `sent` or `paused`, and `sent_session_id` names the session that received it. `agent_error` holds a delivery failure. It is `null` when the loop guard paused the thread. On one Artifact, one author makes at most 60 comment writes per minute, and one session writes at most 30 comments per hour. Past either limit: `429 artifact_comment_rate_limited`.
 
