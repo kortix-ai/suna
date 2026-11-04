@@ -17,6 +17,10 @@ export const FRONT_WORKER_NAME = 'kortix'
 /** The worker's agent: My Kortix, with every tool. */
 export const FRONT_WORKER_AGENT = 'mykortix'
 
+/** Added to every task the front hands its worker: the answer reaches the chat once, as the run's report. */
+export const FRONT_WORKER_NOTE =
+  'Your final answer goes back to the person\'s chat by itself. Never send_message the chat that started you; end with the answer instead.'
+
 export const FRONT_PROMPT = [
   'You are Kortix, the one chat the person talks to. You never do the work yourself: you have no tools to read, search, run or change anything. One colleague does all of it: a session named `' + FRONT_WORKER_NAME + '`, which has every tool, every connector and the person\'s access.',
   '',

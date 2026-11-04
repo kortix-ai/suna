@@ -124,7 +124,7 @@ export interface KortixHost {
    * A front chat (flag `infinichat`, harness/pi/front.ts): every call goes to
    * its one worker, whatever the model passed. Returns the worker's agent and name.
    */
-  frontWorker?(): { agent: string; name: string } | null
+  frontWorker?(): { agent: string; name: string; note: string } | null
   /** The agent this session runs as (its resolved name). */
   currentAgentName?(): string
   /** Every tool this session's agent may use: a child's `tools` must name only these. */
@@ -461,7 +461,7 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
         // A front chat's call always starts or continues its one worker, in the background.
         const front = host.frontWorker?.()
         const params: SubagentParams = front
-          ? { description: input.description, prompt: input.prompt, subagent_type: front.agent, name: front.name, session: 'separate', run_in_background: true }
+          ? { description: input.description, prompt: `${input.prompt}\n\n${front.note}`, subagent_type: front.agent, name: front.name, session: 'separate', run_in_background: true }
           : input
         const spawn = resolveSpawn(params, host)
         const shape = spawnShape(params, host)
