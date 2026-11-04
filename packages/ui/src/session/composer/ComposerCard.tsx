@@ -13,7 +13,8 @@ import type {
   RefObject,
   SetStateAction,
 } from 'react';
-import { lazy, Suspense, useRef } from 'react';
+import { lazy, Suspense, useMemo, useRef } from 'react';
+import { useFeatureFlag } from '@kortix/sdk/react';
 
 import { ImagesUnsupportedBar, ModelConnectionBar } from '../models/model-connection-gate';
 import { AnimatedComposerPlaceholder } from './animated-placeholder';
@@ -28,7 +29,8 @@ import {
 } from './composer';
 import { shouldFocusEditorFromPadding } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
-import { ComposerUnderbar } from './composer-underbar';
+import { ComposerUnderbar, type ComposerUnderbarProps } from './composer-underbar';
+import { ChatInputOverridesProvider } from './chat-input/chat-input-overrides';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import type { SlashAction } from './menus/slash-actions';
 import type { AttachedFile } from './types';
@@ -184,6 +186,7 @@ export function ComposerCard({
   modelRequired = false,
   onModelChange,
   modelDefaultControls,
+  inheritedModel,
   providers,
   variants = EMPTY_VARIANTS,
   selectedVariant = null,
@@ -204,11 +207,71 @@ export function ComposerCard({
   onArrowUpAtStart,
 }: ComposerCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
-  const { attachAccept } = useUiHostConfig();
+  const { attachAccept, modelPickerEnabled } = useUiHostConfig();
   const inlineUnderbar = underbarPlacement === 'inline';
 
+  /*
+    `chat_input` on: one control under the card for the agent, model, effort
+    and every session override (`chat-input/chat-input-control.tsx`). The
+    toolbar then draws no model or effort picker, and the overrides gear the
+    host puts in `toolbarSlot` publishes its rows to the control instead of
+    drawing itself (`ChatInputOverridesProvider`). Off, nothing here changes.
+  */
+  const chatInputEnabled = useFeatureFlag(projectId ?? null, 'chat_input').enabled;
+  const chatInputOpen = agentMenuOpen || modelMenuOpen || reasoningMenuOpen;
+  const chatInput = useMemo<ComposerUnderbarProps['chatInput']>(() => {
+    if (!chatInputEnabled) return undefined;
+    return {
+      // The `/` palette's "Switch agent", "Switch model" and "Set reasoning
+      // effort" rows all open this one control, on the row they name.
+      open: chatInputOpen,
+      onOpenChange: (next: boolean) => {
+        setAgentMenuOpen(next);
+        if (!next) {
+          setModelMenuOpen(false);
+          setReasoningMenuOpen(false);
+        }
+      },
+      initialRow: modelMenuOpen ? 'model' : reasoningMenuOpen ? 'effort' : null,
+      // The same predicates the toolbar's pickers render on.
+      showModel: modelPickerEnabled && (models.length > 0 || modelRequired) && !!onModelChange,
+      models,
+      modelsLoading,
+      selectedModel: availableSelectedModel,
+      inheritedModel,
+      onModelChange,
+      providers,
+      modelDefaultControls,
+      projectId,
+      variants,
+      selectedVariant,
+      onVariantChange: modelPickerEnabled ? onVariantChange : undefined,
+    };
+  }, [
+    chatInputEnabled,
+    chatInputOpen,
+    modelMenuOpen,
+    reasoningMenuOpen,
+    setAgentMenuOpen,
+    setModelMenuOpen,
+    setReasoningMenuOpen,
+    modelPickerEnabled,
+    models,
+    modelRequired,
+    onModelChange,
+    modelsLoading,
+    availableSelectedModel,
+    inheritedModel,
+    providers,
+    modelDefaultControls,
+    projectId,
+    variants,
+    selectedVariant,
+    onVariantChange,
+  ]);
+
   return (
-    <>
+    <ChatInputOverridesProvider enabled={chatInputEnabled}>
     <div
       ref={cardRef}
       onDragEnter={handleDragEnter}
@@ -387,9 +450,11 @@ export function ComposerCard({
                   selectedModel={availableSelectedModel}
                   onContextClick={onContextClick}
                   agentsSlot={underbarSlot}
+                  chatInput={chatInput}
                 />
               ) : null
             }
+            pickersInChatInput={chatInputEnabled}
             modelsLoading={modelsLoading}
             models={models}
             selectedModel={availableSelectedModel}
@@ -473,6 +538,7 @@ export function ComposerCard({
         onContextClick={onContextClick}
         toolbarSlot={toolbarSlot}
         agentsSlot={underbarSlot}
+        chatInput={chatInput}
       />
     )}
 
@@ -495,6 +561,6 @@ export function ComposerCard({
     {slashMenuPlacement === 'below' && (
       <div id={dockId} className="absolute top-full right-4 left-4 z-99 mt-3.5" />
     )}
-    </>
+    </ChatInputOverridesProvider>
   );
 }

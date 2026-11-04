@@ -16,6 +16,7 @@ import type { ComposerSendReset } from './composer-reset';
 import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
 import { appendMentionRefs } from '../../internal/lib/project-preamble';
 import { resolveComposerAgent, withChannelAgents } from './composer-agent-access';
+import { inheritedModelFor } from './chat-input/chat-input-summary';
 import type { DraftScope } from './draft/composer-draft';
 
 export interface ComposerOptions {
@@ -331,6 +332,7 @@ export function ComposerChatInput({
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
+      inheritedModel={inheritedModelFor(local.model, selectedAgentName)}
       modelRequired
       modelsLoading={providersLoading}
       variants={local.model.variant.list}

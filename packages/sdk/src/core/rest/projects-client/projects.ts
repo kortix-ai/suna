@@ -120,6 +120,8 @@ export type FeatureFlagKey =
   | 'agent_teams'
   /** Voice calls: talk with the session's agent from the session page, with screen share. Off by default. */
   | 'voice_call'
+  /** Chat input: one composer control for the agent and every session override (model, effort, secrets, provider keys, sandbox). Experimental, off by default. */
+  | 'chat_input'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -177,6 +179,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'chrome',
   'agent_teams',
   'voice_call',
+  'chat_input',
 ] as const;
 
 /**

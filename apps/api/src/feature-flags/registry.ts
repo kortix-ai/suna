@@ -556,6 +556,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'kortixd registers no voice extension and opens no voice port; a change reaches the next new box. WEB: no call ' +
       'button on the session page. The gateway\'s audio routes are inference like chat: billed per use, not gated here.',
   },
+  {
+    key: 'chat_input',
+    name: 'Chat input',
+    description:
+      'One control under the composer for who answers and how: pick the agent, and every other setting stays on Auto, inherited from that agent. Open a row to override the model, thinking effort, secrets, provider keys or sandbox for this session, and reset it to Auto in one click.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'WEB ONLY, presentation. The composer (packages/ui/src/session/composer/ComposerCard.tsx) reads the flag and, on, ' +
+      'renders one chat-input control in place of the agent, model and effort pickers and the session-overrides gear. ' +
+      'It writes through the same handlers, so every prompt carries the same agent/model/variant/scope fields either way. ' +
+      'No route, box env, skill, CLI command or IAM action changes: the API enforces each override exactly as it does with the flag off.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

@@ -1337,6 +1337,10 @@
         "shared_drives": {
           "name": "Drive condivisi",
           "description": "Drive che tutto il team può usare: un admin crea un Drive e vi aggiunge agenti. Ogni sessione di quegli agenti lo monta, e chi può usare uno di loro può aprirlo. Disattivato, ogni persona ha solo I miei file."
+        },
+        "chat_input": {
+          "name": "Input della chat",
+          "description": "Un solo controllo sotto il compositore per chi risponde e come: scegli l’agente e ogni altra impostazione resta su Automatico, ereditata da quell’agente. Apri una riga per sostituire modello, sforzo di ragionamento, segreti, chiavi del provider o sandbox per questa sessione, e torna ad Automatico con un clic."
         }
       },
       "channelsSwitch": {
@@ -2259,6 +2263,14 @@
     "thinkingEffort": "Livello di ragionamento",
     "sessionOverrides": "Override della sessione",
     "auto": "Automatico",
+    "chatInput": "Input della chat",
+    "chatInputAgent": "Agente",
+    "chatInputSettings": "Impostazioni",
+    "chatInputModel": "Modello",
+    "chatInputEffort": "Sforzo",
+    "chatInputAutoFrom": "Automatico (da {agent})",
+    "chatInputOverrideCount": "{count, plural, one {# modifica} other {# modifiche}}",
+    "chatInputResetToAuto": "Torna ad automatico",
     "sending": "Invio in corso",
     "stop": "Interrompi",
     "startingSession": "Avvio della sessione…",

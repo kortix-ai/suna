@@ -1337,6 +1337,10 @@
         "shared_drives": {
           "name": "共享云盘",
           "description": "整个团队都能使用的云盘：管理员创建云盘并为其添加智能体。这些智能体的每个会话都会挂载它，任何可以使用其中某个智能体的人都能打开它。关闭时，每个人只有“我的文件”。"
+        },
+        "chat_input": {
+          "name": "聊天输入",
+          "description": "输入框下方的一个控件，决定由谁回答以及如何回答：选择智能体后，其他所有设置都保持自动，继承自该智能体。打开某一行即可为本会话覆盖模型、思考强度、密钥、提供商密钥或沙盒，并一键恢复为自动。"
         }
       },
       "channelsSwitch": {
@@ -2259,6 +2263,14 @@
     "thinkingEffort": "思考强度",
     "sessionOverrides": "会话覆盖",
     "auto": "自动",
+    "chatInput": "聊天输入",
+    "chatInputAgent": "智能体",
+    "chatInputSettings": "设置",
+    "chatInputModel": "模型",
+    "chatInputEffort": "强度",
+    "chatInputAutoFrom": "自动（来自 {agent}）",
+    "chatInputOverrideCount": "{count, plural, other {# 项覆盖}}",
+    "chatInputResetToAuto": "恢复为自动",
     "sending": "正在发送",
     "stop": "停止",
     "startingSession": "正在启动会话…",

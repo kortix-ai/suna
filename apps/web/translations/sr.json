@@ -1337,6 +1337,10 @@
         "shared_drives": {
           "name": "Deljeni drajvovi",
           "description": "Drajvovi koje ceo tim može da koristi: administrator pravi drajv i dodaje mu agente. Svaka sesija tih agenata ga montira, a svako ko sme da koristi nekog od njih može da ga otvori. Isključeno, svaka osoba ima samo Moje fajlove."
+        },
+        "chat_input": {
+          "name": "Unos u četu",
+          "description": "Jedna kontrola ispod polja za unos za to ko odgovara i kako: izaberi agenta, a sva ostala podešavanja ostaju na Automatski, nasleđena od tog agenta. Otvori red da zameniš model, nivo razmišljanja, tajne, ključeve provajdera ili sandbox za ovu sesiju, i vrati na Automatski jednim klikom."
         }
       },
       "channelsSwitch": {
@@ -2259,6 +2263,14 @@
     "thinkingEffort": "Ниво размишљања",
     "sessionOverrides": "Измене сесије",
     "auto": "Аутоматски",
+    "chatInput": "Unos u četu",
+    "chatInputAgent": "Agent",
+    "chatInputSettings": "Podešavanja",
+    "chatInputModel": "Model",
+    "chatInputEffort": "Nivo",
+    "chatInputAutoFrom": "Automatski (od {agent})",
+    "chatInputOverrideCount": "{count, plural, one {# izmena} few {# izmene} other {# izmena}}",
+    "chatInputResetToAuto": "Vrati na automatski",
     "sending": "Слање",
     "stop": "Заустави",
     "startingSession": "Покретање сесије…",

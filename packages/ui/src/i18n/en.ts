@@ -848,6 +848,10 @@ const catalog = {
         "shared_drives": {
           "name": "Shared drives",
           "description": "Drives the whole team can use: an admin makes a Drive and adds agents to it. Every session of those agents mounts it, and everyone who may use one of them can open it. Off, every person has only My files."
+        },
+        "chat_input": {
+          "name": "Chat input",
+          "description": "One control under the composer for who answers and how: pick the agent, and every other setting stays on Auto, inherited from that agent. Open a row to override the model, thinking effort, secrets, provider keys or sandbox for this session, and reset it to Auto in one click."
         }
       },
       "channelsSwitch": {
@@ -1567,6 +1571,14 @@ const catalog = {
     "thinkingEffort": "Thinking effort",
     "sessionOverrides": "Session overrides",
     "auto": "Auto",
+    "chatInput": "Chat input",
+    "chatInputAgent": "Agent",
+    "chatInputSettings": "Settings",
+    "chatInputModel": "Model",
+    "chatInputEffort": "Effort",
+    "chatInputAutoFrom": "Auto (from {agent})",
+    "chatInputOverrideCount": "{count, plural, one {# override} other {# overrides}}",
+    "chatInputResetToAuto": "Reset to auto",
     "sending": "Sending",
     "stop": "Stop",
     "startingSession": "Starting session…",

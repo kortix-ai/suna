@@ -1337,6 +1337,10 @@
         "shared_drives": {
           "name": "Drives partagés",
           "description": "Des Drives pour toute l'équipe : un admin crée un Drive et y ajoute des agents. Chaque session de ces agents le monte, et toute personne autorisée à utiliser l'un d'eux peut l'ouvrir. Désactivé, chaque personne n'a que Mes fichiers."
+        },
+        "chat_input": {
+          "name": "Saisie du chat",
+          "description": "Un seul contrôle sous la zone de saisie pour qui répond et comment : choisissez l’agent, et tous les autres réglages restent sur Automatique, hérités de cet agent. Ouvrez une ligne pour remplacer le modèle, l’effort de raisonnement, les secrets, les clés de fournisseur ou la sandbox de cette session, et revenez à Automatique en un clic."
         }
       },
       "channelsSwitch": {
@@ -2259,6 +2263,14 @@
     "thinkingEffort": "Effort de raisonnement",
     "sessionOverrides": "Remplacements de session",
     "auto": "Automatique",
+    "chatInput": "Saisie du chat",
+    "chatInputAgent": "Agent",
+    "chatInputSettings": "Réglages",
+    "chatInputModel": "Modèle",
+    "chatInputEffort": "Effort",
+    "chatInputAutoFrom": "Automatique (de {agent})",
+    "chatInputOverrideCount": "{count, plural, one {# remplacement} other {# remplacements}}",
+    "chatInputResetToAuto": "Revenir à automatique",
     "sending": "Envoi en cours",
     "stop": "Arrêter",
     "startingSession": "Démarrage de la session…",

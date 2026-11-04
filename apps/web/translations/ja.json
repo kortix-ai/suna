@@ -1337,6 +1337,10 @@
         "shared_drives": {
           "name": "共有ドライブ",
           "description": "チーム全体で使えるドライブです。管理者がドライブを作成してエージェントを追加します。そのエージェントの各セッションがドライブをマウントし、いずれかのエージェントを使える人は誰でも開けます。オフのときは、各自のマイファイルだけになります。"
+        },
+        "chat_input": {
+          "name": "チャット入力",
+          "description": "入力欄の下にある 1 つのコントロールで、誰がどう答えるかを決めます。エージェントを選ぶと、他の設定はすべてそのエージェントから引き継ぐ自動のままです。行を開くと、このセッションのモデル、思考レベル、シークレット、プロバイダーキー、サンドボックスを上書きでき、1 クリックで自動に戻せます。"
         }
       },
       "channelsSwitch": {
@@ -2259,6 +2263,14 @@
     "thinkingEffort": "思考レベル",
     "sessionOverrides": "セッションの上書き",
     "auto": "自動",
+    "chatInput": "チャット入力",
+    "chatInputAgent": "エージェント",
+    "chatInputSettings": "設定",
+    "chatInputModel": "モデル",
+    "chatInputEffort": "レベル",
+    "chatInputAutoFrom": "自動（{agent} から）",
+    "chatInputOverrideCount": "{count, plural, other {# 件の上書き}}",
+    "chatInputResetToAuto": "自動に戻す",
     "sending": "送信中",
     "stop": "停止",
     "startingSession": "セッションを開始しています…",

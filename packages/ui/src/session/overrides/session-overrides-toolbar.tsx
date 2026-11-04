@@ -42,7 +42,8 @@ import { useProjectCan } from '../../internal/lib/use-project-can';
 
 import { SessionOverridesControl, type SessionOverrideRow } from './session-overrides-control';
 import { useProviderPoolEditingState } from './provider-pool-draft-context';
-import { effectiveProviderPools, updateProviderPoolDraft } from './provider-pool-draft';
+import { effectiveProviderPools, updateProviderPoolDraft, type ProviderPoolDrafts } from './provider-pool-draft';
+import { useChatInputOverridesStore } from '../composer/chat-input/chat-input-overrides';
 
 // The pooled-key editors read the full LLM provider catalog (`packages/ui/src/internal/lib/llm-providers`
 // → the bundled models.dev snapshot). They render only when the user opens the
@@ -325,13 +326,19 @@ export function SessionOverridesToolbar({
     ? providerPools.isError || providerPools.isLoading || !providerPools.data?.can_edit
     : !(scopeReady && hasAvailableScopeAxis(activeCatalog)));
 
-  const handleSave = useCallback(async (): Promise<boolean> => {
+  // `override` commits a given draft instead of the edited one: the
+  // `chat_input` control's one-click "Reset to auto" resets and saves at once.
+  const handleSave = useCallback(async (
+    override?: { draft?: SessionScopeDraft; providerDrafts?: ProviderPoolDrafts },
+  ): Promise<boolean> => {
     if (savingRef.current) return false;
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
+    const scopeDraft = override?.draft ?? draftState.draft;
+    if (override?.draft) setDraftState((current) => ({ ...current, draft: scopeDraft }));
     try {
-      for (const [providerId, secretIds] of Object.entries(providerDrafts)) {
+      for (const [providerId, secretIds] of Object.entries(override?.providerDrafts ?? providerDrafts)) {
         await providerPools.setPool.mutateAsync({ providerId, secretIds });
         setProviderDrafts((current) => {
           if (current[providerId] !== secretIds) return current;
@@ -343,7 +350,7 @@ export function SessionOverridesToolbar({
       if (catalog && scopeReady) {
         const result = await commitSessionScopeDraft({
           sessionId,
-          draft: draftState.draft,
+          draft: scopeDraft,
           catalog,
           previousScope: scope,
           replaceScope: saveScope.mutateAsync,
@@ -446,6 +453,71 @@ export function SessionOverridesToolbar({
     tI18nComplete,
     tPooled,
   ]);
+
+  // Inside a `chat_input` composer the rows go to the one control under the
+  // composer instead of this gear (see `chat-input-overrides.tsx`). Same rows,
+  // same drafts, same Save; only "Reset to auto" differs: it resets AND saves,
+  // one click, where the gear's reset only edits the draft.
+  const chatInputStore = useChatInputOverridesStore();
+  const savedPools = providerPools.data?.pools;
+  const resetSecretsAndSave = useCallback(
+    () => void handleSave({ draft: resetSessionSecrets(draft) }),
+    [handleSave, draft],
+  );
+  const resetProviderKeys = useCallback(() => {
+    if (!sessionId) {
+      onProviderSecretPoolsChange?.({});
+      return;
+    }
+    void handleSave({
+      providerDrafts: Object.fromEntries((savedPools ?? []).map((pool) => [pool.provider_id, null])),
+    });
+  }, [handleSave, onProviderSecretPoolsChange, savedPools, sessionId]);
+  const chatInputRows = useMemo(() => {
+    if (!chatInputStore) return null;
+    // A row the session cannot change is not an override. Files stays: it is
+    // what the session can open, and it has no other home.
+    return rows
+      .filter((row) => !row.readOnly || row.id === 'files')
+      .map((row): SessionOverrideRow => {
+        // The gear's draft-only reset is replaced by `onResetRow` below.
+        if (row.id === 'secrets') return { ...row, inheritsFromAgent: draft.secrets === null, onReset: undefined };
+        return row;
+      });
+  }, [chatInputStore, rows, draft.secrets]);
+  const chatInputSaveRowIds = useMemo(
+    () => (chatInputRows ?? []).filter((row) => row.id === 'secrets' || row.id === 'provider-keys').map((row) => row.id),
+    [chatInputRows],
+  );
+  const chatInputNotice = retroactive === false ? (
+    <InfoBanner tone="warning" icon={TriangleAlert} title={tI18nComplete.raw('texta6cd531093d4')}>
+      {tI18nComplete.raw('text54a4e6b3594a')}
+    </InfoBanner>
+  ) : null;
+  const chatInputPendingNote = hasProviderChanges ? tPooled('unsavedChanges') : undefined;
+  const chatInputSave = useCallback(() => handleSave(), [handleSave]);
+  useEffect(() => {
+    if (!chatInputStore || !chatInputRows) return;
+    chatInputStore.set({
+      rows: chatInputRows,
+      saveRowIds: chatInputSaveRowIds,
+      saving,
+      saveDisabled,
+      pendingNote: chatInputPendingNote,
+      error: saveError,
+      notice: chatInputNotice,
+      onSave: chatInputSave,
+      onResetRow: (id) => {
+        if (id === 'secrets') resetSecretsAndSave();
+        else if (id === 'provider-keys') resetProviderKeys();
+        else chatInputRows.find((row) => row.id === id)?.onReset?.();
+      },
+    });
+    // `chatInputNotice` is a fresh element each render; `retroactive` is what it reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatInputStore, chatInputRows, chatInputSaveRowIds, saving, saveDisabled, chatInputPendingNote, saveError, retroactive, chatInputSave, resetSecretsAndSave, resetProviderKeys]);
+  useEffect(() => () => chatInputStore?.set(null), [chatInputStore]);
+  if (chatInputStore) return null;
 
   // Nothing left to change (a member in an existing session: the sandbox row is
   // read-only and fixed at create). A gear that opens onto a Save button and

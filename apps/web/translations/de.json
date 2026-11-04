@@ -1337,6 +1337,10 @@
         "shared_drives": {
           "name": "Geteilte Drives",
           "description": "Drives für das ganze Team: Ein Admin legt ein Drive an und fügt ihm Agenten hinzu. Jede Session dieser Agenten bindet es ein, und alle, die einen davon nutzen dürfen, können es öffnen. Aus: Jede Person hat nur Meine Dateien."
+        },
+        "chat_input": {
+          "name": "Chat-Eingabe",
+          "description": "Ein Steuerelement unter dem Eingabefeld dafür, wer antwortet und wie: Wähle den Agenten, und jede andere Einstellung bleibt auf Automatisch, geerbt von diesem Agenten. Öffne eine Zeile, um Modell, Denkaufwand, Secrets, Anbieterschlüssel oder Sandbox für diese Sitzung zu überschreiben, und setze sie mit einem Klick auf Automatisch zurück."
         }
       },
       "channelsSwitch": {
@@ -2259,6 +2263,14 @@
     "thinkingEffort": "Denkaufwand",
     "sessionOverrides": "Sitzungsüberschreibungen",
     "auto": "Automatisch",
+    "chatInput": "Chat-Eingabe",
+    "chatInputAgent": "Agent",
+    "chatInputSettings": "Einstellungen",
+    "chatInputModel": "Modell",
+    "chatInputEffort": "Aufwand",
+    "chatInputAutoFrom": "Automatisch (von {agent})",
+    "chatInputOverrideCount": "{count, plural, one {# Überschreibung} other {# Überschreibungen}}",
+    "chatInputResetToAuto": "Auf Automatisch zurücksetzen",
     "sending": "Wird gesendet",
     "stop": "Stoppen",
     "startingSession": "Sitzung wird gestartet…",
