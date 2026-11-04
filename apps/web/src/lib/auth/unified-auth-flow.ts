@@ -56,6 +56,25 @@ export function resolveEmailFlowMode(check: unknown): EmailFlowMode {
 }
 
 /**
+ * One auth email per address per minute: the window the API enforces
+ * (apps/api/src/auth/email-cooldown.ts) and the resend countdown the form shows.
+ */
+export const AUTH_EMAIL_COOLDOWN_SECONDS = 60;
+
+/**
+ * Seconds until the address may get another auth email, from the
+ * `email_retry_after_seconds` field of a `POST /access/check-email` body. Null
+ * when the field is absent (no recent email, or an API older than the web): the
+ * send goes ahead and GoTrue's own per-user interval is the only limit.
+ */
+export function resolveEmailRetryAfter(check: unknown): number | null {
+  if (!check || typeof check !== 'object') return null;
+  const value = (check as { email_retry_after_seconds?: unknown }).email_retry_after_seconds;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
+  return Math.min(Math.ceil(value), AUTH_EMAIL_COOLDOWN_SECONDS);
+}
+
+/**
  * Human copy for a rate-limited auth request. GoTrue surfaces its own error
  * strings ("Email rate limit exceeded") and the auth screen used to show one
  * raw as the toast heading; this maps the rate-limit codes to guidance

@@ -2950,7 +2950,8 @@
         "notReceived": "Keinen Link erhalten?",
         "confirmNotReceived": "Keine Bestätigungs-E-Mail erhalten?",
         "resendIn": "Erneut senden in {seconds}",
-        "resend": "Erneut senden"
+        "resend": "Erneut senden",
+        "checkSpam": "Nicht da? Prüfe deinen Spam- oder Junk-Ordner."
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21191,8 @@
       "text507c24b6792d": "Wenn eine Änderungsanfrage in {branch} zusammengeführt wird, führt {agent} deine Anweisung aus.",
       "text05ee1d6181f3": "Wenn eine Änderungsanfrage zusammengeführt wird, führt {agent} deine Anweisung aus.",
       "texte608495c45ce": "In {branch} zusammengeführt",
-      "text80ca527b0d55": "Änderungsanfrage-Trigger erstellt"
+      "text80ca527b0d55": "Änderungsanfrage-Trigger erstellt",
+      "authEmailAlreadySent": "Wir haben diese E-Mail vor weniger als einer Minute gesendet. Prüfe deinen Posteingang und deinen Spam-Ordner, bevor du eine neue anforderst."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

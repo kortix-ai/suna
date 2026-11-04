@@ -2950,7 +2950,8 @@
         "notReceived": "Нисте добили линк?",
         "confirmNotReceived": "Нисте добили имејл за потврду?",
         "resendIn": "Поново пошаљи за {seconds}",
-        "resend": "Пошаљи поново"
+        "resend": "Пошаљи поново",
+        "checkSpam": "Nije stigla? Proverite fasciklu za neželjenu poštu."
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21191,8 @@
       "text507c24b6792d": "Када се захтев за измену споји у {branch}, {agent} извршава ваше упутство.",
       "text05ee1d6181f3": "Када се захтев за измену споји, {agent} извршава ваше упутство.",
       "texte608495c45ce": "Спојено у {branch}",
-      "text80ca527b0d55": "Окидач за захтев за измену је направљен"
+      "text80ca527b0d55": "Окидач за захтев за измену је направљен",
+      "authEmailAlreadySent": "Ovu e-poruku smo poslali pre manje od minut. Proverite prijemno sanduče i fasciklu za neželjenu poštu pre nego što zatražite novu."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

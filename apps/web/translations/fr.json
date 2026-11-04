@@ -2950,7 +2950,8 @@
         "notReceived": "Vous n’avez pas reçu le lien ?",
         "confirmNotReceived": "Vous n’avez pas reçu l’e-mail de confirmation ?",
         "resendIn": "Renvoyer dans {seconds}",
-        "resend": "Renvoyer"
+        "resend": "Renvoyer",
+        "checkSpam": "Vous ne le trouvez pas ? Vérifiez vos spams ou courriers indésirables."
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21191,8 @@
       "text507c24b6792d": "Quand une demande de modification est fusionnée dans {branch}, {agent} exécute votre instruction.",
       "text05ee1d6181f3": "Quand une demande de modification est fusionnée, {agent} exécute votre instruction.",
       "texte608495c45ce": "Fusionnée dans {branch}",
-      "text80ca527b0d55": "Déclencheur de demande de modification créé"
+      "text80ca527b0d55": "Déclencheur de demande de modification créé",
+      "authEmailAlreadySent": "Nous avons envoyé cet e-mail il y a moins d'une minute. Vérifiez votre boîte de réception et vos spams avant d'en demander un autre."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
