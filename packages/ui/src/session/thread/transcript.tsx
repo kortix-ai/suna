@@ -113,6 +113,7 @@ import { parseNoticeBatch, parseSubagentNotice, type NoticeBatchItem, type Subag
 import { SubagentNoticeRow } from '../turn/subagent-notice-row';
 import { NoticeBatchGroup } from '../turn/notice-batch-group';
 import { PeerMessageRow } from '../turn/peer-message-row';
+import { ParkedAnswerRow, parseParkedQuestionAnswer, type ParkedQuestionAnswer } from '../turn/answered-question-step';
 import { parsePeerMessagePrompt, SPACE_POST_SUMMARY, type PeerMessagePromptInfo } from '@kortix/shared';
 import { ToolPartRenderer, TurnLiveContext } from '../tool/tool-renderers';
 import {
@@ -625,6 +626,9 @@ export function resolveTurnError(turn: SessionLogTurn): string | undefined {
   return undefined;
 }
 
+/** How kortixd's `PARKED_QUESTION_RESULT` starts: a question nobody answered live. */
+const PARKED_QUESTION_PREFIX = 'Nobody answered yet.';
+
 /** The text a call's result carries (a v1 part's `output` or `error`). */
 function resultText(call: ToolCallBlock): string {
   return (call.result?.content ?? []).flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('');
@@ -914,6 +918,10 @@ function collectAnsweredQuestions(
     // evidence it was already answered (no subsequent content).
     if (isPending && !hasSubsequentContent) continue;
 
+    // A parked question was not answered in this turn: it waits in Review, and
+    // its answer later draws as its own row (`ParkedAnswerRow`). The tool sets
+    // `parked` (kortixd tools.ts); its text says nobody answered yet.
+    if (toolCallMetadata(call).parked === true || resultText(call).startsWith(PARKED_QUESTION_PREFIX)) continue;
     const serverAnswers = toolCallMetadata(call).answers as unknown[] | undefined;
     const cached = optimisticAnswersCache.get(call.id);
     const toolOutput = call.status === 'complete' ? resultText(call) : undefined;
@@ -1097,6 +1105,18 @@ const peerMessage = useMemo<PeerMessagePromptInfo | null>(() => {
   }
   return null;
 }, [texts, sessionReport, noticeBatch]);
+// The answer to a question that parked (session-asks): the API delivers it as
+// harness context, so it is never a bubble. It draws as the answered-question
+// row the turn showed before parking existed.
+const parkedAnswer = useMemo<ParkedQuestionAnswer | null>(() => {
+  if (sessionReport || noticeBatch) return null;
+  for (const t of texts) {
+    if (!t.synthetic) continue;
+    const answer = parseParkedQuestionAnswer(t.text);
+    if (answer) return answer;
+  }
+  return null;
+}, [texts, sessionReport, noticeBatch]);
 // Extract kortix_system messages for inline rendering (goal continuations, etc.)
 const systemMessages = useMemo<KortixSystemMessage[]>(() => {
   const msgs: KortixSystemMessage[] = [];
@@ -1151,7 +1171,7 @@ const commandOutput = useMemo(() => {
   const source = Array.isArray(commands) ? commands.find((c) => c.name === commandForTurn.name)?.source : undefined;
   return source === 'skill' ? undefined : commandForTurn;
 }, [commandForTurn, commands]);
-  return { sessionReport, noticeBatch, subagentNotice, peerMessage, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
+  return { sessionReport, noticeBatch, subagentNotice, peerMessage, parkedAnswer, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
 }
 
 /** The throttled working status of the working turn: one status change per
@@ -1579,7 +1599,7 @@ function TurnUserBlock(
   },
 ) {
   const { userContent } = props;
-  const { sessionReport, noticeBatch, subagentNotice, peerMessage, systemMessages, hasVisibleUserContent } = userContent;
+  const { sessionReport, noticeBatch, subagentNotice, peerMessage, parkedAnswer, systemMessages, hasVisibleUserContent } = userContent;
   // P5.6: the note a partial restore left for the agent is a notice, not a person's prompt.
   if (isSessionLogRestoreNote(props.turn.user)) return <RestoreNoteMarker />;
   return (
@@ -1590,11 +1610,13 @@ function TurnUserBlock(
         <SubagentNoticeRow notice={subagentNotice} />
       ) : peerMessage ? (
         <PeerMessageRow info={peerMessage} />
+      ) : parkedAnswer ? (
+        <ParkedAnswerRow answer={parkedAnswer} />
       ) : (
         sessionReport && <TurnSessionReport report={sessionReport} />
       )}
       {/* ── System message indicator — shown for kortix_system-only messages ── */}
-      {!hasVisibleUserContent && !sessionReport && !noticeBatch && !peerMessage && systemMessages.length > 0 && (
+      {!hasVisibleUserContent && !sessionReport && !noticeBatch && !peerMessage && !parkedAnswer && systemMessages.length > 0 && (
         <SystemMessageIndicator messages={systemMessages} />
       )}
       {hasVisibleUserContent && <TurnUserBubble {...props} />}
@@ -2712,7 +2734,7 @@ function SessionTurnImpl(props: SessionTurnProps) {
           !userContent.subagentNotice &&
           !userContent.peerMessage &&
           !isSessionLogRestoreNote(turn.user))
-      : userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.peerMessage || userContent.systemMessages.length > 0;
+      : userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.peerMessage || userContent.parkedAnswer || userContent.systemMessages.length > 0;
     // The host's person or agent card around the row's avatar and name (`TranscriptRows.author`).
     const userAuthor: TranscriptAuthor | null =
       sender || (messagesOnly && spacePost)

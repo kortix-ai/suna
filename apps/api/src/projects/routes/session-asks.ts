@@ -161,6 +161,8 @@ export function registerSessionAsksRoutes(): void {
         idempotencyKey: `question:${question.sessionId}:${question.requestId}`,
         sessionId: question.sessionId,
         text: renderAnswerPrompt(question.questions, answers),
+        // Harness context, not the person's words: the transcript draws it as the answered question.
+        parts: [{ type: 'text', text: renderAnswerPrompt(question.questions, answers), synthetic: true }],
         userId: loaded.userId,
       }, { wait: false });
       return c.json({ ok: outcome === 'delivered' || outcome === 'queued', delivery: outcome });
@@ -193,6 +195,8 @@ async function decidePermission(input: {
     idempotencyKey: `permission:${ask.sessionId}:${ask.requestId}`,
     sessionId: ask.sessionId,
     text: renderPermissionDecisionPrompt(ask, reply),
+    // Harness context: the re-run call (or the agent's reply) is what the transcript shows.
+    parts: [{ type: 'text', text: renderPermissionDecisionPrompt(ask, reply), synthetic: true }],
     userId,
   }, { wait: false }).catch((err) => {
     logger.warn('[asks] permission decision not delivered', { sessionId: ask.sessionId, error: err instanceof Error ? err.message : String(err) });
