@@ -29,7 +29,8 @@ const at = (glob) => posix.normalize(base ? `${base}/${glob}` : glob)
 // path (`zod/index.d.ts`), so every package is allowed in both forms.
 /** @param {string[]} names */
 const pkg = (...names) => names.flatMap((name) => [name, `${name}/**`])
-const RUNTIME = ['node:*', 'node:*/**', ...pkg('bun', 'zod', 'tar')]
+// `bun:jsc`: the engine's heap statistics (services/resources names what a grown daemon holds).
+const RUNTIME = ['node:*', 'node:*/**', 'bun:jsc', ...pkg('bun', 'zod', 'tar')]
 
 /**
  * Host services. A service imports its own folder and the shared layer, never

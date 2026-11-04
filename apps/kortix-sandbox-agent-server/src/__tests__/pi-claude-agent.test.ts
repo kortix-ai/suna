@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAssistantMessageEventStream, type AssistantMessageEvent, type Message } from '@earendil-works/pi-ai'
 import runtimeVersions from '../../../../packages/shared/src/runtime-versions.json' with { type: 'json' }
-import { claudeModelFor } from '@/harness/pi/claude/provider'
+import { claudeModelFor, processDied } from '@/harness/pi/claude/provider'
 import { CLAUDE_AGENT_SDK_VERSION, CLAUDE_CODE_INTEGRITY, ensureClaudeExecutable, installedClaudeExecutable } from '@/harness/pi/claude/install'
 import { CLAUDE_GATEWAY_PLACEHOLDER_TOKEN, claudeEnv, claudeLoginKey, ClaudeLoginMissing } from '@/harness/pi/claude/sdk'
 import { ClaudeReply } from '@/harness/pi/claude/stream'
@@ -210,3 +210,13 @@ describe('Claude Code on a box whose image lacks it', () => {
     }
   })
 })
+
+describe('a Claude Code process that died', () => {
+  test('reads as a stop the person can continue from, not the raw signal', () => {
+    const killed = processDied(new Error('Claude Code process terminated by signal SIGKILL'))
+    expect(killed?.message).toBe('Claude Code stopped unexpectedly (it was killed, most likely because the sandbox ran out of memory). Your session is intact: send a message to continue.')
+    expect(processDied(new Error('Claude Code process exited with code 1. stderr: boom'))?.message).toBe('Claude Code stopped unexpectedly. Your session is intact: send a message to continue.')
+    expect(processDied(new Error('Request was aborted'))).toBeUndefined()
+  })
+})
+
