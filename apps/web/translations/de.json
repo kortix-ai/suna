@@ -1337,6 +1337,10 @@
         "chat_input": {
           "name": "Chat-Eingabe",
           "description": "Ein Steuerelement unter dem Eingabefeld dafür, wer antwortet und wie: Wähle den Agenten, und jede andere Einstellung bleibt auf Automatisch, geerbt von diesem Agenten. Öffne eine Zeile, um Modell, Denkaufwand, Secrets, Anbieterschlüssel oder Sandbox für diese Sitzung zu überschreiben, und setze sie mit einem Klick auf Automatisch zurück."
+        },
+        "chat_front": {
+          "name": "Nur-Gesprächs-Threads",
+          "description": "Mit Chat startet eine neue Nachricht in einem Space einen Thread, dessen Agent nur spricht. Er gibt jede Anfrage an eine verborgene My-Kortix-Sitzung weiter, die die Arbeit erledigt, und antwortet in kurzen Nachrichten nur mit dem, was zählt. Benötigt My Kortix in kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -2265,6 +2269,9 @@
     "chatInputMoreSettings": "Weitere Einstellungen",
     "chatInputOverrideCount": "{count, plural, one {# Überschreibung} other {# Überschreibungen}}",
     "chatInputResetToAuto": "Auf Automatisch zurücksetzen",
+    "chatInputAgentDescription": "Wer auf deinen nächsten Prompt antwortet.",
+    "chatInputModelDescription": "Das Modell, das der Agent für deinen nächsten Prompt nutzt.",
+    "chatInputEffortDescription": "Wie lange das Modell nachdenkt, bevor es antwortet.",
     "sending": "Wird gesendet",
     "stop": "Stoppen",
     "startingSession": "Sitzung wird gestartet…",

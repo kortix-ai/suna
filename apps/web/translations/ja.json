@@ -1337,6 +1337,10 @@
         "chat_input": {
           "name": "チャット入力",
           "description": "入力欄の下にある 1 つのコントロールで、誰がどう答えるかを決めます。エージェントを選ぶと、他の設定はすべてそのエージェントから引き継ぐ自動のままです。行を開くと、このセッションのモデル、思考レベル、シークレット、プロバイダーキー、サンドボックスを上書きでき、1 クリックで自動に戻せます。"
+        },
+        "chat_front": {
+          "name": "会話専用スレッド",
+          "description": "チャットがオンのとき、スペースの新しいメッセージは、会話だけを行うエージェントのスレッドを開始します。エージェントはすべての依頼を、作業を行う非表示の My Kortix セッション 1 つに渡し、大事なことだけを短いメッセージで答えます。kortix.yaml で My Kortix をオンにする必要があります。"
         }
       },
       "channelsSwitch": {
@@ -2265,6 +2269,9 @@
     "chatInputMoreSettings": "その他の設定",
     "chatInputOverrideCount": "{count, plural, other {# 件の上書き}}",
     "chatInputResetToAuto": "自動に戻す",
+    "chatInputAgentDescription": "次のプロンプトに答えるエージェント。",
+    "chatInputModelDescription": "次のプロンプトでエージェントが使うモデル。",
+    "chatInputEffortDescription": "モデルが回答前に考える時間。",
     "sending": "送信中",
     "stop": "停止",
     "startingSession": "セッションを開始しています…",

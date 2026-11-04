@@ -1337,6 +1337,10 @@
         "chat_input": {
           "name": "Unos u četu",
           "description": "Jedna kontrola ispod polja za unos za to ko odgovara i kako: izaberi agenta, a sva ostala podešavanja ostaju na Automatski, nasleđena od tog agenta. Otvori red da zameniš model, nivo razmišljanja, tajne, ključeve provajdera ili sandbox za ovu sesiju, i vrati na Automatski jednim klikom."
+        },
+        "chat_front": {
+          "name": "Niti samo za razgovor",
+          "description": "Kada je Čet uključen, nova poruka u prostoru pokreće nit čiji agent samo razgovara. Svaki zahtev prosleđuje jednoj skrivenoj My Kortix sesiji koja obavlja posao, i odgovara kratkim porukama samo sa onim što je važno. Zahteva uključen My Kortix u kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -2265,6 +2269,9 @@
     "chatInputMoreSettings": "Još podešavanja",
     "chatInputOverrideCount": "{count, plural, one {# izmena} few {# izmene} other {# izmena}}",
     "chatInputResetToAuto": "Vrati na automatski",
+    "chatInputAgentDescription": "Ko odgovara na tvoj sledeći prompt.",
+    "chatInputModelDescription": "Model koji agent koristi za tvoj sledeći prompt.",
+    "chatInputEffortDescription": "Koliko dugo model razmišlja pre nego što odgovori.",
     "sending": "Слање",
     "stop": "Заустави",
     "startingSession": "Покретање сесије…",

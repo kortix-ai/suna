@@ -1337,6 +1337,10 @@
         "chat_input": {
           "name": "Saisie du chat",
           "description": "Un seul contrôle sous la zone de saisie pour qui répond et comment : choisissez l’agent, et tous les autres réglages restent sur Automatique, hérités de cet agent. Ouvrez une ligne pour remplacer le modèle, l’effort de raisonnement, les secrets, les clés de fournisseur ou la sandbox de cette session, et revenez à Automatique en un clic."
+        },
+        "chat_front": {
+          "name": "Fils de conversation seule",
+          "description": "Avec Chat activé, un nouveau message dans un espace démarre un fil dont l’agent ne fait que parler. Il transmet chaque demande à une session My Kortix cachée qui fait le travail, et répond en messages courts avec seulement ce qui compte. Nécessite My Kortix activé dans kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -2265,6 +2269,9 @@
     "chatInputMoreSettings": "Plus de réglages",
     "chatInputOverrideCount": "{count, plural, one {# remplacement} other {# remplacements}}",
     "chatInputResetToAuto": "Revenir à automatique",
+    "chatInputAgentDescription": "Qui répond à votre prochain prompt.",
+    "chatInputModelDescription": "Le modèle que l’agent utilise pour votre prochain prompt.",
+    "chatInputEffortDescription": "Combien de temps le modèle réfléchit avant de répondre.",
     "sending": "Envoi en cours",
     "stop": "Arrêter",
     "startingSession": "Démarrage de la session…",

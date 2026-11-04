@@ -39,6 +39,7 @@ import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import { SUBAGENT_SPEC_REQUIRED, TASK_STOP_TOOL, type KortixHost, type SpawnSessionInput, type SpawnSessionResult } from './extensions/subagents'
+import { FRONT_PROMPT, FRONT_TOOLS, FRONT_WORKER_AGENT, FRONT_WORKER_NAME, FRONT_WORKER_NOTE } from './front'
 import { cloudChildReport, cloudChildToolDetails, cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import type { ControlPlane } from './extensions/control-plane'
 import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
@@ -1857,6 +1858,8 @@ export class PiRuntime {
       codemodeOnly: () => this.codemodeMode === 'only',
       // My Kortix's box (the coordinator): its config declares only itself, and every hand-off names a project agent.
       anyProjectAgent: () => this.env.KORTIX_META_AGENT === '1',
+      // A talk-only front (front.ts): every `agent` call reaches its one worker.
+      frontWorker: () => (this.subagentContext.front ? { agent: FRONT_WORKER_AGENT, name: FRONT_WORKER_NAME } : null),
       currentAgentName: () => this.agentName,
       toolNames: () => this.ownToolNames(),
       spawnSession: (input) => this.resolveSpawn(input),
@@ -1956,6 +1959,8 @@ export class PiRuntime {
    * Undefined = this agent is not narrowed at all.
    */
   private cloudParent(): Pick<CloudSubagentApi, 'parentAgent' | 'toolAllowlist'> {
+    // A front's worker gets every tool of its own agent: the front itself only talks.
+    if (this.subagentContext.front) return { parentAgent: undefined, toolAllowlist: undefined }
     const coordinator = this.env.KORTIX_META_AGENT === '1'
     const declared = Object.prototype.hasOwnProperty.call(this.compiled?.agent ?? {}, this.agentName)
     const narrowed = this.compiledAgent()?.tools !== undefined || this.subagentContext.tools !== undefined
@@ -1983,6 +1988,8 @@ export class PiRuntime {
    * (`kortix.subagent.tools` in KORTIX_SESSION_CONTEXT). Only ever narrows.
    */
   private rootToolAllowed(name: string): boolean {
+    // A talk-only front has only its three messaging tools (front.ts).
+    if (this.subagentContext.front) return FRONT_TOOLS.includes(name)
     // A workflow runs `agent` calls, and the multi-agent tools talk to the sessions it starts: they follow the
     // agent tool's grant, unless the agent's `tools` names them.
     if (DELEGATION_TOOLS.includes(name) && !Object.hasOwn(this.compiledAgent()?.tools ?? {}, name)) {
@@ -2418,6 +2425,7 @@ export class PiRuntime {
   private systemPrompt(
     child?: { base: string; tools: AgentTool<any, any>[]; policy: PermissionPolicy; interactive: false; codemode?: CodemodeMode },
   ): string {
+    if (!child && this.subagentContext.front) return this.frontSystemPrompt()
     const parts = [child?.base || this.compiledAgent()?.prompt?.trim() || DEFAULT_SYSTEM_PROMPT]
     // pi's own context-file format. pi's own loader stays off (`noContextFiles`): it reads `/workspace` and its ancestors, for the root only.
     if (this.instructions) parts.push(`<project_instructions path="${this.instructions.name}">\n${this.instructions.text}\n</project_instructions>`)
@@ -2455,7 +2463,14 @@ export class PiRuntime {
       ].join('\n'),
     )
     parts.push(ACT_BEFORE_YOU_ASK)
+    if (!child && this.subagentContext.frontThread) parts.push(FRONT_WORKER_NOTE)
     return parts.join('\n\n')
+  }
+
+  /** A front's prompt: no project instructions or skills, since it has no tool that uses them. */
+  private frontSystemPrompt(): string {
+    const tools = (this.agent?.state.tools ?? this.baseTools).map((t) => t.name)
+    return [FRONT_PROMPT, `## Runtime capabilities\nRegistered tools: ${tools.join(', ')}.`].join('\n\n')
   }
 
   /** The root AGENTS.md of the checkout the running config decides: the release, the working tree, or none (the image default). */

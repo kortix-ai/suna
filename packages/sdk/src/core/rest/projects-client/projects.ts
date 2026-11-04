@@ -126,6 +126,8 @@ export type FeatureFlagKey =
   | 'voice_call'
   /** Chat input: one composer control for the agent and every session override (model, effort, secrets, provider keys, sandbox). Experimental, off by default. */
   | 'chat_input'
+  /** Talk-only threads: with `chat` on, a new space thread's agent only talks and hands the work to one hidden My Kortix session. Experimental, off by default. */
+  | 'chat_front'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -185,6 +187,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'agent_teams',
   'voice_call',
   'chat_input',
+  'chat_front',
 ] as const;
 
 /**

@@ -50,6 +50,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const agentTeams = useFeatureFlag(projectId, 'agent_teams');
   const voiceCall = useFeatureFlag(projectId, 'voice_call');
   const chatInput = useFeatureFlag(projectId, 'chat_input');
+  const chatFront = useFeatureFlag(projectId, 'chat_front');
 
   return {
     flags: {
@@ -76,8 +77,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       agent_teams: agentTeams.enabled,
       voice_call: voiceCall.enabled,
       chat_input: chatInput.enabled,
+      chat_front: chatFront.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: chatInput.isLoading,
+    isLoading: chatFront.isLoading,
   };
 }

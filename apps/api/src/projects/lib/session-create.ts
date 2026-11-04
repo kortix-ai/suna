@@ -94,6 +94,7 @@ import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext, reservedRuntimeContextRefusal } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { FRONT_THREAD_CONTEXT_KEY, FRONT_THREAD_METADATA_KEY, sessionIsFrontThread, startsFrontThread } from './front-thread';
 import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
 import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, forkSourceVisibility, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
@@ -607,7 +608,14 @@ async function resolveSessionAgent(params: {
     callerIsMeta &&
     isWorkflowRunnerContext(body.runtime_context) &&
     !(await sessionIsWorkflowRunner(input.callerSessionId!));
-  if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner) {
+  // A talk-only front (flag `chat_front`, front-thread.ts) only talks: its one worker is a My Kortix session.
+  const frontWorker =
+    platformMetaAgent &&
+    callerIsMeta &&
+    !myKortixWorkflowRunner &&
+    resolveFeatureFlag(input.project.metadata, 'chat_front') &&
+    (await sessionIsFrontThread(input.callerSessionId!));
+  if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner && !frontWorker) {
     return {
       error: {
         status: 400,
@@ -1892,6 +1900,21 @@ export async function createProjectSession(input: {
     workspaceVolume: providerName === 'platinum' && !isMyKortixSandboxSlug(sandboxSlug) ? workspaceVolume : null,
   });
 
+  // Talk-only threads (`chat_front`): server-side state alone makes this session a front, never the body.
+  const front = startsFrontThread({
+    projectMetadata: project.metadata,
+    spaceId,
+    platformMetaAgent,
+    callerSessionId: input.callerSessionId,
+    parentSessionId: body.parent_session_id,
+    forkFromSessionId: body.fork_from_session_id,
+    source: (input.metadata as Record<string, unknown> | undefined)?.source,
+  });
+  const sessionMetadata = front ? { ...metadata, [FRONT_THREAD_METADATA_KEY]: true } : metadata;
+  const runtimeContext = front
+    ? { ...parsedRuntimeContext.context, [FRONT_THREAD_CONTEXT_KEY]: true }
+    : parsedRuntimeContext.context;
+
   let sessionRow: ProjectSessionRow | null = null;
   try {
     const insert = () => insertSessionAndBindings(
@@ -1910,13 +1933,13 @@ export async function createProjectSession(input: {
         secretsAllowlist,
         connectorBindingsConfigured,
         inheritUnbound,
-        metadata,
+        metadata: sessionMetadata,
         providerSecretPools,
         pendingPromptConversion,
         inheritedGrants,
         spaceId,
       },
-      parsedRuntimeContext.context,
+      runtimeContext,
       validatedConnectorBindings.bindings,
     );
     sessionRow = typeof body.fork_from_session_id === 'string'

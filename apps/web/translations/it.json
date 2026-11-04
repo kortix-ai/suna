@@ -1337,6 +1337,10 @@
         "chat_input": {
           "name": "Input della chat",
           "description": "Un solo controllo sotto il compositore per chi risponde e come: scegli l’agente e ogni altra impostazione resta su Automatico, ereditata da quell’agente. Apri una riga per sostituire modello, sforzo di ragionamento, segreti, chiavi del provider o sandbox per questa sessione, e torna ad Automatico con un clic."
+        },
+        "chat_front": {
+          "name": "Thread solo conversazione",
+          "description": "Con Chat attivo, un nuovo messaggio in uno spazio avvia un thread il cui agente si limita a parlare. Passa ogni richiesta a una sessione My Kortix nascosta che fa il lavoro e risponde con messaggi brevi, solo con ciò che conta. Richiede My Kortix attivo in kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -2265,6 +2269,9 @@
     "chatInputMoreSettings": "Altre impostazioni",
     "chatInputOverrideCount": "{count, plural, one {# modifica} other {# modifiche}}",
     "chatInputResetToAuto": "Torna ad automatico",
+    "chatInputAgentDescription": "Chi risponde al tuo prossimo prompt.",
+    "chatInputModelDescription": "Il modello che l’agente usa per il tuo prossimo prompt.",
+    "chatInputEffortDescription": "Quanto ragiona il modello prima di rispondere.",
     "sending": "Invio in corso",
     "stop": "Interrompi",
     "startingSession": "Avvio della sessione…",

@@ -561,6 +561,24 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'It writes through the same handlers, so every prompt carries the same agent/model/variant/scope fields either way. ' +
       'No route, box env, skill, CLI command or IAM action changes: the API enforces each override exactly as it does with the flag off.',
   },
+  {
+    key: 'chat_front',
+    name: 'Talk-only threads',
+    description:
+      'With Chat on, a new message in a space starts a thread whose agent only talks. It hands every request to one hidden My Kortix session that does the work, and answers in short messages with only what matters. Needs My Kortix on in kortix.yaml.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Off ⇒ every thread runs as before. API: on together with `chat`, a top-level My Kortix session created in a space ' +
+      '(no parent, no fork, no session caller) gets the reserved runtime_context key `kortix.front` and the server-managed ' +
+      'metadata `kortix_front` (projects/lib/front-thread.ts); a request body cannot set either. Only such a front may start ' +
+      'a My Kortix session (its worker), an exception to META_AGENT_RECURSION. BOX: kortixd gives a front only `agent`, ' +
+      '`send_message` and `task_stop` (harness/pi/front.ts), and KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 so the worker ' +
+      'keeps its own subagents (projects/lib/feature-flag-env.ts). WEB: a front thread\'s "Open full session" opens its worker.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

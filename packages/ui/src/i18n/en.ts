@@ -848,6 +848,10 @@ const catalog = {
         "chat_input": {
           "name": "Chat input",
           "description": "One control under the composer for who answers and how: pick the agent, and every other setting stays on Auto, inherited from that agent. Open a row to override the model, thinking effort, secrets, provider keys or sandbox for this session, and reset it to Auto in one click."
+        },
+        "chat_front": {
+          "name": "Talk-only threads",
+          "description": "With Chat on, a new message in a space starts a thread whose agent only talks. It hands every request to one hidden My Kortix session that does the work, and answers in short messages with only what matters. Needs My Kortix on in kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -1573,6 +1577,9 @@ const catalog = {
     "chatInputMoreSettings": "More settings",
     "chatInputOverrideCount": "{count, plural, one {# override} other {# overrides}}",
     "chatInputResetToAuto": "Reset to auto",
+    "chatInputAgentDescription": "Who answers your next prompt.",
+    "chatInputModelDescription": "The model the agent uses for your next prompt.",
+    "chatInputEffortDescription": "How long the model thinks before it answers.",
     "sending": "Sending",
     "stop": "Stop",
     "startingSession": "Starting session…",

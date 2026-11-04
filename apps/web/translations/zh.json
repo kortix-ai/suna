@@ -1337,6 +1337,10 @@
         "chat_input": {
           "name": "聊天输入",
           "description": "输入框下方的一个控件，决定由谁回答以及如何回答：选择智能体后，其他所有设置都保持自动，继承自该智能体。打开某一行即可为本会话覆盖模型、思考强度、密钥、提供商密钥或沙盒，并一键恢复为自动。"
+        },
+        "chat_front": {
+          "name": "仅对话线程",
+          "description": "开启聊天后，空间中的新消息会启动一个线程，其智能体只负责对话。它把每个请求交给一个隐藏的 My Kortix 会话去完成，并只用简短消息回复重要内容。需要在 kortix.yaml 中开启 My Kortix。"
         }
       },
       "channelsSwitch": {
@@ -2265,6 +2269,9 @@
     "chatInputMoreSettings": "更多设置",
     "chatInputOverrideCount": "{count, plural, other {# 项覆盖}}",
     "chatInputResetToAuto": "恢复为自动",
+    "chatInputAgentDescription": "谁来回答你的下一条提示。",
+    "chatInputModelDescription": "智能体在下一条提示中使用的模型。",
+    "chatInputEffortDescription": "模型在回答前思考多久。",
     "sending": "正在发送",
     "stop": "停止",
     "startingSession": "正在启动会话…",
