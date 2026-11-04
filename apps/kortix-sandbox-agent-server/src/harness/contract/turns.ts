@@ -25,6 +25,11 @@ export interface RuntimePromptInput {
    * thread's memory file list). The next turn without it runs without it.
    */
   system?: string
+  /**
+   * The thread's files in this box (`thread_files`, `chat`): the API sets it;
+   * a router names them in its worker prompts (harness/pi/front.ts).
+   */
+  threadFiles?: unknown
 }
 
 /** The HTTP answer a verb produced; the route sends it as it is. */

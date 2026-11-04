@@ -418,9 +418,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // serializer keeps sending `true` for older clients.
   {
     key: 'chat',
-    name: 'Chat',
+    name: 'Spaces',
     description:
-      "Slack-style chat with Kortix: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces you share with people. Replaces the session list in the sidebar.",
+      "Spaces with Kortix, the way Slack works: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and you share spaces with people. Replaces the session list in the sidebar.",
     stability: 'experimental',
     wip: true,
     available: () => true,
@@ -430,6 +430,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Off ⇒ every /projects/:id/spaces route and POST /projects/:id/chat/threads answer 403 feature_disabled (projects/routes/project-spaces.ts, projects/routes/chat-threads.ts); ' +
       'session create/list ignore space_id. On: the person\'s DM with My Kortix is their chat; each My Kortix thread in it gets the board of the other threads at turn start ' +
       '(projects/lib/chat-threads.ts). Turning it on creates #general and files every session without a space into it (feature-flags/toggle-effects.ts). ' +
+      'THREAD FILES (memory/thread-files.ts): every session of a space thread (workers too) mounts the space\'s Files folder read-write ' +
+      '(drives/service.ts sessionSpaceFolder; a private channel\'s as before); a person\'s prompt to a top-level thread is written to ' +
+      '<space folder>/threads/<slug>-<id>/messages/NNNN-<author>.md and the agent\'s answer at turn end to NNNN-<agent>.md, best effort; ' +
+      'each turn\'s system text names the thread folder and context.md. ' +
       'STORED OVERRIDE: experimental.chat, else the legacy experimental.project_channels, else experimental.infinichat (explicitOverride). ' +
       'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box. ' +
       'WEB: a Chat row (/projects/:id/chat) and the spaces list replace New session and the session list; /projects/:id/chat renders FeatureGateScreen while off. ' +
@@ -563,9 +567,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'chat_front',
-    name: 'Talk-only threads',
+    name: 'Router',
     description:
-      'With Chat on, a new message in a space starts a thread whose agent only talks. It hands every request to one hidden My Kortix session that does the work, and answers in short messages with only what matters. Needs My Kortix on in kortix.yaml.',
+      'With Spaces on, the agent you chat with in a thread is a router: it hands the work to your agents and writes back like a person, in short messages with the result, a link or the decision you need to make. Your agents share the thread through its files, so the router passes file paths, not retyped text. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml.',
     stability: 'experimental',
     wip: true,
     available: () => true,
@@ -575,9 +579,14 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Off ⇒ every thread runs as before. API: on together with `chat`, a top-level My Kortix session created in a space ' +
       '(no parent, no fork, no session caller) gets the reserved runtime_context key `kortix.front` and the server-managed ' +
       'metadata `kortix_front` (projects/lib/front-thread.ts); a request body cannot set either. Only such a front may start ' +
-      'a My Kortix session (its worker), an exception to META_AGENT_RECURSION. BOX: kortixd gives a front only `agent`, ' +
-      '`send_message` and `task_stop` (harness/pi/front.ts), and KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 so the worker ' +
-      'keeps its own subagents (projects/lib/feature-flag-env.ts). WEB: a front thread\'s "Open full session" opens its worker.',
+      'a My Kortix worker, an exception to META_AGENT_RECURSION; a worker of any other project agent is a normal hand-off. ' +
+      'BOX: kortixd gives a front only `agent`, `send_message` and `task_stop` (harness/pi/front.ts); each `agent` call ' +
+      'starts or continues one named background worker as the project agent the front picks from the roster it reads ' +
+      'from `/detail` each turn, else My Kortix. KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 so a worker keeps its own ' +
+      'subagents (projects/lib/feature-flag-env.ts). Each worker prompt ends with a "Context files" block (the thread ' +
+      'folder, the newest message file, context.md, the worker\'s work/<name>/ folder) from the prompt body\'s ' +
+      '`thread_files`, which only the API sets (memory/thread-files.ts, with `chat`). WEB: a front thread\'s "Open full ' +
+      'session" opens its worker.',
   },
 ];
 

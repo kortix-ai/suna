@@ -126,6 +126,8 @@ export function serializeSession(
     conversationModel?: string | null;
     /** `reply_count`: set by a channel or DM thread list only. */
     replyCount?: number | null;
+    /** `active_child_agent`: set by a channel or DM thread list only (`session-active-child.ts`). */
+    activeChildAgent?: string | null;
     /** The viewing user, to compute is_owner / can_manage_*. */
     viewerId?: string;
     /** Viewer can manage the project (account owner/admin, or a project manager). */
@@ -240,6 +242,7 @@ export function serializeSession(
     group_id: row.groupId ?? null,
     first_prompt: canAccess && typeof row.metadata?.first_prompt === 'string' ? row.metadata.first_prompt : null,
     reply_count: canAccess ? (ctx?.replyCount ?? null) : null,
+    ...(ctx?.activeChildAgent !== undefined ? { active_child_agent: canAccess ? ctx.activeChildAgent : null } : {}),
     initiator: row.initiatorType
       ? {
           type: row.initiatorType,

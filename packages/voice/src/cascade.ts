@@ -2055,7 +2055,7 @@ export const cascade: Provider = (o, h) => {
     if (inRoom() && clean(t.text).trim()) roomLog.push({ who: roomName(), text: clean(t.text), at: performance.now(), mine: true }) // our line in the room
     log('done', JSON.stringify(t.text.slice(0, 60)), t.tools, t.direct ? 'fast lane' : 'agent')
     const heardBack = clean(t.sp.spoken)
-    if (heardBack && !t.inTalk) talk.push({ role: 'assistant', content: heardBack })
+    if (heardBack && !t.inTalk) talk.push({ role: 'assistant', content: heardBack }), (t.inTalk = true) // once: toHistory() reads the mark
     // What the turn wrote, its tags taken out, and a tag it never closed too: a reply cut after "[" left that bracket as
     // the line the caller saw and as "You said: [" in the session (Kortix dev, 2026-11-04).
     if (t.voiceless) t.text = '' // a claimed voice it does not have: nothing of it shown or kept

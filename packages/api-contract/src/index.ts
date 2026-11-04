@@ -1236,6 +1236,8 @@ export const ProjectSessionSchema = z.object({
    * every other read.
    */
   reply_count: z.number().int().nullable(),
+  /** A space's thread list: the agent of a child session (a router's hidden worker) working now, else null. Absent elsewhere. */
+  active_child_agent: z.string().nullable().optional(),
   /** List with `parent=root` only: the session's non-deleted children. */
   child_count: z.number().int().optional(),
   /** List with `parent=root&q=` only: the session matched itself, or only a child matched. */
