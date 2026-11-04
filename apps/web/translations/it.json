@@ -1317,8 +1317,8 @@
           "description": "Dai all'agente una casella email su Resend: la posta in arrivo avvia e continua le sessioni, e l'agente legge, risponde e invia dalla casella. Usa la tua chiave API Resend e il tuo dominio."
         },
         "chat": {
-          "name": "Chat",
-          "description": "Chat con Kortix in stile Slack: ogni messaggio è un thread, l'ultima risposta di Kortix appare sotto, Kortix può avviare thread e gli spazi si condividono con altre persone. Sostituisce l'elenco delle sessioni nella barra laterale."
+          "name": "Spazi",
+          "description": "Spazi con Kortix in stile Slack: ogni messaggio è un thread, l'ultima risposta di Kortix appare sotto, Kortix può avviare thread e gli spazi si condividono con altre persone. Sostituisce l'elenco delle sessioni nella barra laterale."
         },
         "session_groups": {
           "name": "Gruppi di sessioni",
@@ -1349,8 +1349,8 @@
           "description": "Un solo controllo sotto il compositore per chi risponde e come: scegli l’agente e ogni altra impostazione resta su Automatico, ereditata da quell’agente. Apri una riga per sostituire modello, sforzo di ragionamento, segreti, chiavi del provider o sandbox per questa sessione, e torna ad Automatico con un clic."
         },
         "chat_front": {
-          "name": "Thread solo conversazione",
-          "description": "Con Chat attivo, un nuovo messaggio in uno spazio avvia un thread il cui agente si limita a parlare. Passa ogni richiesta a una sessione My Kortix nascosta che fa il lavoro e risponde con messaggi brevi, solo con ciò che conta. Richiede My Kortix attivo in kortix.yaml."
+          "name": "Agente di accoglienza",
+          "description": "Con gli Spazi attivi, l'agente con cui chatti in un thread affida il lavoro ai tuoi agenti e ti risponde come una persona: messaggi brevi con il risultato, un link o la decisione da prendere. Vedi la conversazione; «Mostra lavoro» sotto un messaggio apre il lavoro che c'è dietro. Richiede My Kortix attivo in kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -2142,7 +2142,10 @@
       "fullTextRetry": "Riprova"
     },
     "turn": {
-      "autoRetried": "Kortix ha riprovato automaticamente il modello {count, plural, one {una volta} other {# volte}} prima di questo errore."
+      "autoRetried": "Kortix ha riprovato automaticamente il modello {count, plural, one {una volta} other {# volte}} prima di questo errore.",
+      "typing": "{name} sta scrivendo…",
+      "showWork": "Mostra lavoro",
+      "hideWork": "Nascondi lavoro"
     }
   },
   "agents": {

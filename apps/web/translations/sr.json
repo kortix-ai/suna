@@ -1317,8 +1317,8 @@
           "description": "Dajte agentu poštansko sanduče na Resend-u: dolazna pošta pokreće i nastavlja sesije, a agent čita, odgovara i šalje iz sandučeta. Koristite sopstveni Resend API ključ i domen."
         },
         "chat": {
-          "name": "Čet",
-          "description": "Čet sa Kortixom kao u Slacku: svaka poruka je nit, najnoviji odgovor Kortixa prikazuje se ispod nje, Kortix može da započne niti, a prostore delite sa drugim ljudima. Zamenjuje listu sesija u bočnoj traci."
+          "name": "Prostori",
+          "description": "Prostori sa Kortixom kao u Slacku: svaka poruka je nit, najnoviji odgovor Kortixa prikazuje se ispod nje, Kortix može da započne niti, a prostore delite sa drugim ljudima. Zamenjuje listu sesija u bočnoj traci."
         },
         "session_groups": {
           "name": "Групе сесија",
@@ -1349,8 +1349,8 @@
           "description": "Jedna kontrola ispod polja za unos za to ko odgovara i kako: izaberi agenta, a sva ostala podešavanja ostaju na Automatski, nasleđena od tog agenta. Otvori red da zameniš model, nivo razmišljanja, tajne, ključeve provajdera ili sandbox za ovu sesiju, i vrati na Automatski jednim klikom."
         },
         "chat_front": {
-          "name": "Niti samo za razgovor",
-          "description": "Kada je Čet uključen, nova poruka u prostoru pokreće nit čiji agent samo razgovara. Svaki zahtev prosleđuje jednoj skrivenoj My Kortix sesiji koja obavlja posao, i odgovara kratkim porukama samo sa onim što je važno. Zahteva uključen My Kortix u kortix.yaml."
+          "name": "Prijemni agent",
+          "description": "Kada su Prostori uključeni, agent sa kojim razgovarate u niti prosleđuje posao vašim agentima i odgovara kao čovek: kratke poruke sa rezultatom, linkom ili odlukom koju treba da donesete. Vidite razgovor; „Prikaži rad“ ispod poruke otvara rad iza nje. Zahteva uključen My Kortix u kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -2142,7 +2142,10 @@
       "fullTextRetry": "Покушај поново"
     },
     "turn": {
-      "autoRetried": "Kortix је аутоматски поново покушао са моделом {count, plural, one {једном} other {# пута}} пре ове грешке."
+      "autoRetried": "Kortix је аутоматски поново покушао са моделом {count, plural, one {једном} other {# пута}} пре ове грешке.",
+      "typing": "{name} kuca…",
+      "showWork": "Prikaži rad",
+      "hideWork": "Sakrij rad"
     }
   },
   "agents": {

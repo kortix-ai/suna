@@ -845,6 +845,8 @@ function ThreadPanel({
         restart: t('boot.restart'),
       },
       messagesOnly,
+      // A talk-only thread: "Show work" opens its worker sessions.
+      front: thread?.metadata?.kortix_front === true,
     }),
     [agentName, thread, t, messagesOnly],
   );

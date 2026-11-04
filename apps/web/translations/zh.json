@@ -1317,8 +1317,8 @@
           "description": "为智能体提供一个 Resend 邮箱：收到的邮件会启动并延续会话，智能体从该邮箱阅读、回复和发送邮件。使用你自己的 Resend API 密钥和域名。"
         },
         "chat": {
-          "name": "聊天",
-          "description": "像 Slack 一样与 Kortix 聊天：每条消息都是一个话题，Kortix 的最新回复显示在其下方，Kortix 也可以发起话题，空间可与他人共享。取代侧边栏中的会话列表。"
+          "name": "空间",
+          "description": "像 Slack 一样与 Kortix 使用空间：每条消息都是一个话题，Kortix 的最新回复显示在其下方，Kortix 也可以发起话题，空间可与他人共享。取代侧边栏中的会话列表。"
         },
         "session_groups": {
           "name": "会话分组",
@@ -1349,8 +1349,8 @@
           "description": "输入框下方的一个控件，决定由谁回答以及如何回答：选择智能体后，其他所有设置都保持自动，继承自该智能体。打开某一行即可为本会话覆盖模型、思考强度、密钥、提供商密钥或沙盒，并一键恢复为自动。"
         },
         "chat_front": {
-          "name": "仅对话线程",
-          "description": "开启聊天后，空间中的新消息会启动一个线程，其智能体只负责对话。它把每个请求交给一个隐藏的 My Kortix 会话去完成，并只用简短消息回复重要内容。需要在 kortix.yaml 中开启 My Kortix。"
+          "name": "接待智能体",
+          "description": "开启空间后，你在话题中对话的智能体会把工作分派给你的智能体，并像人一样回复：用简短消息告诉你结果、链接或需要你做的决定。你看到的是对话；消息下方的「查看过程」可展开其背后的工作。需要在 kortix.yaml 中开启 My Kortix。"
         }
       },
       "channelsSwitch": {
@@ -2142,7 +2142,10 @@
       "fullTextRetry": "重试"
     },
     "turn": {
-      "autoRetried": "Kortix 在此失败前已自动重试该模型 {count, plural, other {# 次}}。"
+      "autoRetried": "Kortix 在此失败前已自动重试该模型 {count, plural, other {# 次}}。",
+      "typing": "{name} 正在输入…",
+      "showWork": "查看过程",
+      "hideWork": "隐藏过程"
     }
   },
   "agents": {

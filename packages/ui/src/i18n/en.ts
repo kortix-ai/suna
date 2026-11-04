@@ -828,8 +828,8 @@ const catalog = {
           "description": "Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain."
         },
         "chat": {
-          "name": "Chat",
-          "description": "Slack-style chat with Kortix: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces you share with people. Replaces the session list in the sidebar."
+          "name": "Spaces",
+          "description": "Spaces with Kortix, the way Slack works: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and you share spaces with people. Replaces the session list in the sidebar."
         },
         "session_groups": {
           "name": "Session groups",
@@ -860,8 +860,8 @@ const catalog = {
           "description": "One control under the composer for who answers and how: pick the agent, and every other setting stays on Auto, inherited from that agent. Open a row to override the model, thinking effort, secrets, provider keys or sandbox for this session, and reset it to Auto in one click."
         },
         "chat_front": {
-          "name": "Talk-only threads",
-          "description": "With Chat on, a new message in a space starts a thread whose agent only talks. It hands every request to one hidden My Kortix session that does the work, and answers in short messages with only what matters. Needs My Kortix on in kortix.yaml."
+          "name": "Intake agent",
+          "description": "With Spaces on, the agent you chat with in a thread routes the work to your agents and writes back like a person: short messages with the result, a link or the decision you need to make. You see the conversation; Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -1521,7 +1521,10 @@ const catalog = {
       "fullTextRetry": "Try again"
     },
     "turn": {
-      "autoRetried": "Kortix automatically retried the model {count, plural, one {once} other {# times}} before this failure."
+      "autoRetried": "Kortix automatically retried the model {count, plural, one {once} other {# times}} before this failure.",
+      "typing": "{name} is typing…",
+      "showWork": "Show work",
+      "hideWork": "Hide work"
     }
   },
   "agents": {

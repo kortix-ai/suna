@@ -1317,8 +1317,8 @@
           "description": "Da al agente una bandeja de correo en Resend: el correo entrante inicia y continúa sesiones, y el agente lee, responde y envía desde la bandeja. Usa tu propia clave de API y dominio de Resend."
         },
         "chat": {
-          "name": "Chat",
-          "description": "Chat con Kortix al estilo de Slack: cada mensaje es un hilo, la respuesta más reciente de Kortix aparece debajo, Kortix puede iniciar hilos y los espacios se comparten con otras personas. Sustituye la lista de sesiones en la barra lateral."
+          "name": "Espacios",
+          "description": "Espacios con Kortix al estilo de Slack: cada mensaje es un hilo, la respuesta más reciente de Kortix aparece debajo, Kortix puede iniciar hilos y los espacios se comparten con otras personas. Sustituye la lista de sesiones en la barra lateral."
         },
         "session_groups": {
           "name": "Grupos de sesiones",
@@ -1349,8 +1349,8 @@
           "description": "Un solo control bajo el editor para quién responde y cómo: elige el agente y todos los demás ajustes quedan en Automático, heredados de ese agente. Abre una fila para sobrescribir el modelo, el esfuerzo de razonamiento, los secretos, las claves de proveedor o el sandbox de esta sesión, y vuelve a Automático con un clic."
         },
         "chat_front": {
-          "name": "Hilos solo de conversación",
-          "description": "Con Chat activado, un mensaje nuevo en un espacio inicia un hilo cuyo agente solo conversa. Pasa cada petición a una sesión oculta de My Kortix que hace el trabajo y responde con mensajes breves, solo con lo que importa. Requiere My Kortix activado en kortix.yaml."
+          "name": "Agente de entrada",
+          "description": "Con Espacios activado, el agente con el que conversas en un hilo reparte el trabajo entre tus agentes y te responde como una persona: mensajes breves con el resultado, un enlace o la decisión que debes tomar. Ves la conversación; «Ver trabajo» bajo un mensaje abre el trabajo que hay detrás. Requiere My Kortix activado en kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -2142,7 +2142,10 @@
       "fullTextRetry": "Intentar de nuevo"
     },
     "turn": {
-      "autoRetried": "Kortix reintentó el modelo automáticamente {count, plural, one {una vez} other {# veces}} antes de este fallo."
+      "autoRetried": "Kortix reintentó el modelo automáticamente {count, plural, one {una vez} other {# veces}} antes de este fallo.",
+      "typing": "{name} está escribiendo…",
+      "showWork": "Ver trabajo",
+      "hideWork": "Ocultar trabajo"
     }
   },
   "agents": {

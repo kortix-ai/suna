@@ -28,10 +28,19 @@ export interface TranscriptRows {
    * deliverables it shows on purpose (`show`, `image_gen`). No "Worked for"
    * row, no tool, thinking or sub-agent rows, no notice or peer-message rows,
    * and no agent row for a settled turn that said nothing. While the turn
-   * works, its row is the quiet busy line. A space's thread panel sets it
-   * with the `chat` flag on; the full session still shows every step.
+   * works, its row is "Kortix is typing…" (`TypingIndicator`). Each agent
+   * message with work behind it carries "Show work", which opens that work
+   * inline. A space's thread panel sets it with the `chat` flag on; the full
+   * session still shows every step.
    */
   messagesOnly?: boolean;
+  /**
+   * A talk-only thread (`chat_front`, session metadata `kortix_front`): its
+   * agent only talks and hands the work to worker sessions. "Show work"
+   * opens the workers the message's turn started or answers, as read-only
+   * transcripts, not the turn's own hand-off calls.
+   */
+  front?: boolean;
   /** The stuck-boot restart button in the host's terms ("Restart thread"). */
   labels?: {
     restart: string;

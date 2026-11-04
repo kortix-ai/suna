@@ -24,6 +24,7 @@ import {
   stripReplyContexts,
 } from './message-parsing';
 import { TranscriptRowsContext, type TranscriptRows } from './transcript-rows';
+import { TypingIndicator } from './typing-indicator';
 
 /** The sentence a person typed, without the ref blocks the composer folds in. */
 function promptSentence(text: string): string {
@@ -68,7 +69,8 @@ export function PendingPromptRows({
 
 /**
  * The agent's answer row while it has drawn nothing yet: its pixel mark, its
- * name and the Thinking line, where a working turn's answer row draws them
+ * name and the Thinking line ("Kortix is typing…" in a messages-only thread),
+ * where a working turn's answer row draws them
  * (`SessionTurn` in rows mode: the body opens `mt-0.5`). Every waiting row of
  * a channel thread is this row, so none sits outside the row grid. Null
  * outside a channel thread.
@@ -82,7 +84,7 @@ export function AgentBusyRow({ sessionId }: { sessionId: string }) {
       name={rows.agent}
     >
       <div className="mt-0.5">
-        <SessionBusyIndicator sessionId={sessionId} />
+        {rows.messagesOnly ? <TypingIndicator name={rows.agent} /> : <SessionBusyIndicator sessionId={sessionId} />}
       </div>
     </MessageRow>
   );

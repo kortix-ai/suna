@@ -1317,8 +1317,8 @@
           "description": "Donnez à l'agent une boîte e-mail sur Resend : les e-mails reçus démarrent et poursuivent des sessions, et l'agent lit, répond et envoie depuis la boîte. Utilisez votre propre clé API Resend et votre domaine."
         },
         "chat": {
-          "name": "Chat",
-          "description": "Un chat avec Kortix façon Slack : chaque message est un fil, la dernière réponse de Kortix s'affiche dessous, Kortix peut lancer des fils et vous partagez des espaces avec d'autres personnes. Remplace la liste des sessions dans la barre latérale."
+          "name": "Espaces",
+          "description": "Des Espaces avec Kortix façon Slack : chaque message est un fil, la dernière réponse de Kortix s'affiche dessous, Kortix peut lancer des fils et vous partagez des espaces avec d'autres personnes. Remplace la liste des sessions dans la barre latérale."
         },
         "session_groups": {
           "name": "Groupes de sessions",
@@ -1349,8 +1349,8 @@
           "description": "Un seul contrôle sous la zone de saisie pour qui répond et comment : choisissez l’agent, et tous les autres réglages restent sur Automatique, hérités de cet agent. Ouvrez une ligne pour remplacer le modèle, l’effort de raisonnement, les secrets, les clés de fournisseur ou la sandbox de cette session, et revenez à Automatique en un clic."
         },
         "chat_front": {
-          "name": "Fils de conversation seule",
-          "description": "Avec Chat activé, un nouveau message dans un espace démarre un fil dont l’agent ne fait que parler. Il transmet chaque demande à une session My Kortix cachée qui fait le travail, et répond en messages courts avec seulement ce qui compte. Nécessite My Kortix activé dans kortix.yaml."
+          "name": "Agent d’accueil",
+          "description": "Avec les Espaces activés, l’agent avec qui vous discutez dans un fil confie le travail à vos agents et vous répond comme une personne : des messages courts avec le résultat, un lien ou la décision à prendre. Vous voyez la conversation ; « Voir le travail » sous un message ouvre le travail derrière. Nécessite My Kortix activé dans kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -2142,7 +2142,10 @@
       "fullTextRetry": "Réessayer"
     },
     "turn": {
-      "autoRetried": "Kortix a automatiquement réessayé le modèle {count, plural, one {une fois} other {# fois}} avant cet échec."
+      "autoRetried": "Kortix a automatiquement réessayé le modèle {count, plural, one {une fois} other {# fois}} avant cet échec.",
+      "typing": "{name} écrit…",
+      "showWork": "Voir le travail",
+      "hideWork": "Masquer le travail"
     }
   },
   "agents": {

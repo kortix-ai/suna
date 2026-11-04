@@ -53,6 +53,8 @@ import { AnimatePresence, m } from 'motion/react';
 import { memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { AfterFirstPromptContext } from './after-first-prompt';
 import { TranscriptRowsContext } from './transcript-rows';
+import { messageWorkerIds, ShowWork, WorkerTranscripts } from './show-work';
+import { TypingIndicator } from './typing-indicator';
 import { AgentBusyRow } from './thread-boot-rows';
 import { MessageRow } from '../turn/message-row';
 import { agentDisplayLabel } from '../composer/agent-selector';
@@ -1896,6 +1898,67 @@ export function messageOnlySegments(
   return (split ? [...split.hoisted, ...split.final] : visible).filter(kept);
 }
 
+/**
+ * "Show work" under a messages-only thread's agent message, and the work it
+ * opens. A thread: the turn's segments the message does not show (its tools,
+ * thinking, sub-agent rows and interim sentences), the "Worked for" fold's
+ * content. A talk-only thread (`TranscriptRows.front`): the worker sessions
+ * the turn started (`agent` calls) or whose report it answers, each as a
+ * read-only transcript. Nothing to open: no control. Exported for its test.
+ */
+export function TurnMessageWork(
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'permissions' | 'onPermissionReply' | 'disableToolNavigation'> & {
+    model: TurnModelState;
+    segments: TurnSegments;
+    /** The segments the message itself draws (`messageOnlySegments`). */
+    shown: TurnSegments;
+    userContent: Pick<TurnUserContentState, 'sessionReport' | 'noticeBatch' | 'subagentNotice'>;
+    conversationDensity: ConversationDensity;
+    front: boolean;
+    defaultOpen?: boolean;
+  },
+) {
+  const { turn, segments, shown, userContent, front } = props;
+  const work = useMemo(() => {
+    const kept = new Set(shown);
+    return segments.filter((segment) => segmentRendersSomething(segment) && !kept.has(segment));
+  }, [segments, shown]);
+  const { sessionReport, noticeBatch, subagentNotice } = userContent;
+  const workers = useMemo(
+    () =>
+      front
+        ? messageWorkerIds(turnBlocks(turn), [
+            sessionReport?.sessionId,
+            subagentNotice?.sessionId,
+            ...(noticeBatch ?? []).map((item) => (item.kind === 'peer_idle' ? null : item.notice.sessionId)),
+          ])
+        : [],
+    [front, turn, sessionReport, subagentNotice, noticeBatch],
+  );
+  if (front ? workers.length === 0 : work.length === 0) return null;
+  return (
+    <ShowWork defaultOpen={props.defaultOpen}>
+      {front ? (
+        <WorkerTranscripts sessionIds={workers} />
+      ) : (
+        <TurnToolBlocks
+          turn={turn}
+          sessionId={props.sessionId}
+          permissions={props.permissions}
+          onPermissionReply={props.onPermissionReply}
+          disableToolNavigation={props.disableToolNavigation}
+          model={props.model}
+          segments={work}
+          conversationDensity={props.conversationDensity}
+          // The work is already the fold's content: nothing is left to fold.
+          fold={false}
+          durationMs={null}
+        />
+      )}
+    </ShowWork>
+  );
+}
+
 function TurnSegment({
   segment,
   isTrailing,
@@ -2280,13 +2343,14 @@ function TurnBusyRow(
     retry: TurnRetryState;
     status: TurnStatusState;
     tHardcodedUi: ReturnType<typeof useTranslations>;
-    /** No tool phrase or elapsed time (`messagesOnly`). */
+    /** "Kortix is typing…", no tool phrase or elapsed time (`messagesOnly`). */
     quietBusy?: boolean;
   },
 ) {
   const { working, turnError, suppressBusyIndicator, awaitingUser, sessionId, retry, status, tHardcodedUi, quietBusy } = props;
   const { retryInfo, retryMessage, retrySecondsLeft } = retry;
   const { statusPhrase, statusElapsedLabel } = status;
+  const rows = useContext(TranscriptRowsContext);
   return (
     <>
     {showTurnBusyIndicator({
@@ -2304,18 +2368,22 @@ function TurnBusyRow(
             details={retryInfo.details}
           />
         )}
-        <SessionBusyIndicator
-          sessionId={sessionId}
-          statusText={quietBusy ? undefined : statusPhrase || undefined}
-          elapsedLabel={quietBusy ? undefined : statusElapsedLabel}
-          retryLabel={
-            retryInfo
-              ? String(
-                  tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry'),
-                )
-              : undefined
-          }
-        />
+        {quietBusy && rows && !retryInfo ? (
+          <TypingIndicator name={rows.agent} />
+        ) : (
+          <SessionBusyIndicator
+            sessionId={sessionId}
+            statusText={quietBusy ? undefined : statusPhrase || undefined}
+            elapsedLabel={quietBusy ? undefined : statusElapsedLabel}
+            retryLabel={
+              retryInfo
+                ? String(
+                    tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry'),
+                  )
+                : undefined
+            }
+          />
+        )}
       </div>
     )}
     </>
@@ -2619,6 +2687,17 @@ function SessionTurnImpl(props: SessionTurnProps) {
                 <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
               </GenuiTelemetryContext.Provider>
               <TurnFooter {...props} hideActionBar quietBusy={messagesOnly} model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
+              {messagesOnly && !model.working ? (
+                <TurnMessageWork
+                  {...props}
+                  model={model}
+                  segments={segments}
+                  shown={shownSegments}
+                  userContent={userContent}
+                  conversationDensity={conversationDensity}
+                  front={rows.front === true}
+                />
+              ) : null}
             </div>
           </MessageRow>
         ) : null}

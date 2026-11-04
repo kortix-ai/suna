@@ -1317,8 +1317,8 @@
           "description": "Dê ao agente uma caixa de entrada no Resend: e-mails recebidos iniciam e continuam sessões, e o agente lê, responde e envia a partir da caixa. Use sua própria chave de API e domínio do Resend."
         },
         "chat": {
-          "name": "Chat",
-          "description": "Chat com o Kortix no estilo do Slack: cada mensagem é uma thread, a resposta mais recente do Kortix aparece abaixo dela, o Kortix pode iniciar threads e os espaços são compartilhados com outras pessoas. Substitui a lista de sessões na barra lateral."
+          "name": "Espaços",
+          "description": "Espaços com o Kortix no estilo do Slack: cada mensagem é uma thread, a resposta mais recente do Kortix aparece abaixo dela, o Kortix pode iniciar threads e os espaços são compartilhados com outras pessoas. Substitui a lista de sessões na barra lateral."
         },
         "session_groups": {
           "name": "Grupos de sessões",
@@ -1349,8 +1349,8 @@
           "description": "Um único controle abaixo do editor para quem responde e como: escolha o agente, e todas as outras configurações ficam em Automático, herdadas desse agente. Abra uma linha para substituir o modelo, o esforço de raciocínio, os segredos, as chaves de provedor ou o sandbox desta sessão, e volte ao Automático com um clique."
         },
         "chat_front": {
-          "name": "Threads só de conversa",
-          "description": "Com o Chat ativado, uma nova mensagem num espaço inicia uma thread cujo agente só conversa. Ele passa cada pedido para uma sessão oculta do My Kortix que faz o trabalho e responde com mensagens curtas, só com o que importa. Requer o My Kortix ativado no kortix.yaml."
+          "name": "Agente de entrada",
+          "description": "Com os Espaços ativados, o agente com quem você conversa numa thread distribui o trabalho entre seus agentes e responde como uma pessoa: mensagens curtas com o resultado, um link ou a decisão que você precisa tomar. Você vê a conversa; \"Ver trabalho\" abaixo de uma mensagem abre o trabalho por trás dela. Requer o My Kortix ativado no kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -2142,7 +2142,10 @@
       "fullTextRetry": "Tentar novamente"
     },
     "turn": {
-      "autoRetried": "A Kortix repetiu o modelo automaticamente {count, plural, one {uma vez} other {# vezes}} antes desta falha."
+      "autoRetried": "A Kortix repetiu o modelo automaticamente {count, plural, one {uma vez} other {# vezes}} antes desta falha.",
+      "typing": "{name} está digitando…",
+      "showWork": "Ver trabalho",
+      "hideWork": "Ocultar trabalho"
     }
   },
   "agents": {

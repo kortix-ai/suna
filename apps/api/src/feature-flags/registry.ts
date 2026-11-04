@@ -565,7 +565,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'chat_front',
     name: 'Intake agent',
     description:
-      'With Chat on, the agent you chat with in a thread routes the work to your agents and writes back like a person: short messages with the result, a link or the decision you need to make. You see the conversation, not the work. Needs My Kortix on in kortix.yaml.',
+      'With Spaces on, the agent you chat with in a thread routes the work to your agents and writes back like a person: short messages with the result, a link or the decision you need to make. You see the conversation; Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml.',
     stability: 'experimental',
     wip: true,
     available: () => true,
