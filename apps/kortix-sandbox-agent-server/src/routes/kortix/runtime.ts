@@ -71,7 +71,7 @@ export const MAX_TURN_SYSTEM_CHARS = 16_000
 
 /**
  * Validate a `POST /sessions/:id/prompt` body:
- * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply?, system? }`.
+ * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply?, system?, thread_files? }`.
  */
 export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | string {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'body must be a JSON object'
@@ -99,6 +99,8 @@ export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | strin
     ...(text('directory') ? { directory: text('directory') } : {}),
     ...(body.no_reply === true ? { noReply: true } : {}),
     ...(text('system') ? { system: text('system') } : {}),
+    // Checked where it is read (`frontThreadFilesFrom`): a malformed value is dropped, never a refusal.
+    ...(body.thread_files && typeof body.thread_files === 'object' ? { threadFiles: body.thread_files } : {}),
   }
 }
 

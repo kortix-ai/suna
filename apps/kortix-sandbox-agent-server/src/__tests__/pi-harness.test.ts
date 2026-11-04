@@ -2252,8 +2252,9 @@ describe('pi subagents extension', () => {
       })
       const root = r.service.runtime()!.rootId
       const files = { folder: '/drives/general/threads/a-poem-1a2b3c4d', context: '/drives/general/context.md', message: '/drives/general/threads/a-poem-1a2b3c4d/messages/0001-ana.md' }
-      const sent = await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'a poem about rain' }], thread_files: files }) })
-      expect(sent.status).toBe(204)
+      // The route the API forwards a prompt to: thread_files rides beside system.
+      const sent = await r.user(`/kortix/runtime/sessions/${root}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ parts: [{ type: 'text', text: 'a poem about rain' }], thread_files: files }) })
+      expect(sent.status).toBe(202)
       await waitFor(() => !r.service.runtime()!.busy())
       expect(creates).toHaveLength(1)
       const prompt = creates[0]!.initial_prompt as string

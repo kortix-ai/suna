@@ -8,7 +8,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectSessions, projectSpaces, projects, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { ensureProjectDrive, planSessionDrives } from '../drives/service';
+import { ensureProjectDrive, planSessionDrives, sessionMountsSpaceFiles } from '../drives/service';
 import { readThreadFilesState, recordThreadReply, threadFilesTurn } from '../memory/thread-files';
 import { setVolumeOpsForTests } from '../memory/volume-ops';
 import { config } from '../config';
@@ -132,6 +132,9 @@ describe('a #general thread keeps its conversation in files', () => {
       const plan = await planSessionDrives({ accountId: ACCOUNT, projectId: PROJECT, sessionId, bootingUserId: PRIYA, agentName: 'mykortix', slots: 16 });
       expect(plan.mounts.map((m) => `${m.path}@${m.mountPath}${m.readOnly ? ':ro' : ''}`)).toContain('/Company/Channels/general@/drives/general');
     }
+    // A My Kortix box, which mounts no Files elsewhere, mounts them in a space thread with chat on.
+    expect(await sessionMountsSpaceFiles(PROJECT, ROUTER)).toBe(true);
+    expect(await sessionMountsSpaceFiles(OFF_PROJECT, OFF_THREAD)).toBe(false);
     const off = await planSessionDrives({ accountId: ACCOUNT, projectId: OFF_PROJECT, sessionId: OFF_THREAD, bootingUserId: PRIYA, agentName: 'mykortix', slots: 16 });
     expect(off.mounts.map((m) => m.path)).not.toContain('/Company/Channels/general');
     expect(await recordThreadReply(OFF_THREAD, async () => ({ id: 'msg_x', text: 'hi' }))).toBeNull();

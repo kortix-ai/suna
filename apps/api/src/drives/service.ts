@@ -639,6 +639,16 @@ export async function sessionSpaceFolder(projectId: string, sessionId: string, g
   return personal ? (spaceDriveFolders('dm', row.dmAgentName, personal)?.files ?? null) : null;
 }
 
+/** With `chat` on, the session is filed in a space, so its box mounts that space's files (`sessionSpaceFolder`). */
+export async function sessionMountsSpaceFiles(projectId: string, sessionId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ spaceId: projectSessions.spaceId })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
+    .limit(1);
+  return !!row?.spaceId && (await projectFeatureFlagEnabled(projectId, 'chat'));
+}
+
 /** The project's `shared_drives` flag: off, nothing but people's own folders (and private channels') reaches anyone. */
 export function sharedDrivesOn(projectId: string): Promise<boolean> {
   return projectFeatureFlagEnabled(projectId, 'shared_drives');
