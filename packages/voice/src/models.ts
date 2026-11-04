@@ -30,6 +30,7 @@ export function fastFetch(init: RequestInit): Promise<Response> {
     const j = JSON.parse(body) as { model?: unknown }
     if (typeof j.model === 'string') body = JSON.stringify({ ...j, model: modelId(j.model) })
   }
+  //codeql[js/file-access-to-http] Non-exploit, by design: forwards the call's chat request to the models base from the session's own configuration (the models base/prompts env), never caller-chosen; the body is the call's own prompt.
   return fetch(`${BASE}/chat/completions`, { ...init, headers: baseHeaders(init.headers), body })
 }
 
