@@ -137,9 +137,11 @@ mock.module('../../secrets/account-resource', () => ({
   },
 }));
 
-mock.module('../../shared/db', () => ({ db: {
+const fakeDb = {
+  transaction: async (run: (tx: unknown) => Promise<unknown>) => run(fakeDb),
   select: () => ({ from: (table: unknown) => {
-    if (table !== sessionProviderSecretPools) throw new Error('unexpected select');
+    if (table === projectSessions) return { where: () => ({ for: async () => [{ sessionId, metadata: sessionMetadata, status: 'idle' }] }) };
+    if (table !== sessionProviderSecretPools) return { where: async () => [] };
     let rows: unknown[] = [];
     const query: any = {
       where: (condition: SQL) => {
@@ -154,6 +156,8 @@ mock.module('../../shared/db', () => ({ db: {
     return query;
   } }),
   insert: (table: unknown) => ({ values: (row: { providerId: string; secretIds: string[] }) => ({
+    returning: async () => [{ commandId: crypto.randomUUID(), createdAt: new Date() }],
+    then: (resolve: (value: unknown) => unknown) => Promise.resolve([]).then(resolve),
     onConflictDoUpdate: async () => { writes++; pools.set(row.providerId, row.secretIds); },
     onConflictDoNothing: () => ({ returning: async () => {
       if (table !== sessionProviderSecretPools) throw new Error('unexpected insert');
@@ -171,7 +175,8 @@ mock.module('../../shared/db', () => ({ db: {
     writes++;
     for (const p of paramsOf(condition)) pools.delete(p as string);
   } }),
-} }));
+};
+mock.module('../../shared/db', () => ({ db: fakeDb }));
 (await import('./provider-secret-pools')).registerProviderSecretPoolsRoutes();
 (await import('./session-scope')).registerSessionScopeRoutes();
 const { MAX_KEYS_PER_PROVIDER } = await import('../../secrets/provider-key-selection');

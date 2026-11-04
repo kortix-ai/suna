@@ -2,7 +2,7 @@
  * Delete account — opened from Account → Advanced → Delete account.
  *
  * Settings-list layout (apps/mobile/design.md):
- * - No deletion scheduled: What gets deleted, When (In 30 days / Immediately),
+ * - No deletion scheduled: What gets deleted, When (In 14 days / Immediately),
  *   and one destructive pill.
  * - Deletion scheduled: the date and a Cancel deletion pill.
  *
@@ -242,7 +242,7 @@ export default function AccountDeletionScreen() {
         <SettingsGroup title={t('accountDeletion.when', 'When')}>
           <SettingsRow
             icon={Clock}
-            label={t('accountDeletion.in30Days', 'In 30 days')}
+            label={t('accountDeletion.in14Days', 'In 14 days')}
             checked={!immediate}
             right={null}
             onPress={() => selectTiming('scheduled')}
@@ -287,7 +287,7 @@ export default function AccountDeletionScreen() {
                       )
                     : t(
                         'accountDeletion.deleteScheduledDescription',
-                        'Your account is deleted in 30 days. You can cancel before then.'
+                        'Your account is deleted in 14 days. You can cancel before then.'
                       )}
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -342,7 +342,7 @@ export default function AccountDeletionScreen() {
                         )
                       : t(
                           'accountDeletion.finalDescriptionScheduled',
-                          'Your projects, sessions, and credentials are deleted in 30 days. Billing records are kept as long as the law requires. You can cancel before then.'
+                          'Your projects, sessions, and credentials are deleted in 14 days. Billing records are kept as long as the law requires. You can cancel before then.'
                         ))}
                 </AlertDialogDescription>
               </AlertDialogHeader>

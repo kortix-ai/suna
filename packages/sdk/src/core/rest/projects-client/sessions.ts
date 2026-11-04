@@ -2394,6 +2394,37 @@ export interface SessionModelChangeResult {
   detail?: string;
 }
 
+export interface SessionModelSwitchInput {
+  model: string;
+  prompt: string;
+  /** Reuse this key for retries of the same switch, never for a different request. */
+  idempotency_key: string;
+}
+
+export interface SessionModelSwitchResult extends SessionModelChangeResult {
+  prompt_id: string;
+  deduped: boolean;
+}
+
+/** Atomically persist a model and queue a continuation after the current turn. */
+export async function switchProjectSessionModel(
+  projectId: string,
+  sessionId: string,
+  input: SessionModelSwitchInput,
+): Promise<SessionModelSwitchResult> {
+  return unwrap(await backendApi.put<SessionModelSwitchResult>(
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`, input,
+  ));
+}
+
+/** Read the durable model pin. Null means this session follows its configured default. */
+export async function getProjectSessionModel(
+  projectId: string,
+  sessionId: string,
+): Promise<{ model: string | null }> {
+  return { model: sessionModelPin(await getProjectSession(projectId, sessionId)) };
+}
+
 export async function setProjectSessionModel(
   projectId: string,
   sessionId: string,

@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { act } from 'react';
 
+import type { MessageWithParts } from '@kortix/sdk';
+import { useSessionStateStore } from '@kortix/sdk/react';
+import { type Renderable, ScrollBoxRenderable } from '@opentui/core';
 import { testRender } from '@opentui/react/test-utils';
 
 import {
@@ -11,7 +14,7 @@ import {
   textPart,
   toolPart,
 } from './test-session.ts';
-import { type SessionState, Transcript } from './transcript.tsx';
+import { type SessionState, Transcript, isAtBottom } from './transcript.tsx';
 
 // React 19 needs this before `act`. Without `act` a key press updates state but
 // the next frame is captured before React commits, so the assertion reads the
@@ -541,4 +544,61 @@ describe('<Transcript/> platform notices and tool result cards', () => {
     expect(frame).not.toContain('"ok": true');
     renderer.destroy();
   });
+});
+
+function findScrollBox(root: Renderable): ScrollBoxRenderable {
+  const stack: Renderable[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop() as Renderable;
+    if (node instanceof ScrollBoxRenderable) return node;
+    stack.push(...(node.getChildren() as Renderable[]));
+  }
+  throw new Error('no scrollbox rendered');
+}
+
+describe('<Transcript/> scroll follow', () => {
+  function longThread(extra = '') {
+    return Array.from({ length: 12 }, (_, index) =>
+      message(`m${index}`, index % 2 ? 'assistant' : 'user', [
+        textPart(`p${index}`, `line ${index} of the thread${index === 11 ? extra : ''}`),
+      ]),
+    );
+  }
+
+  test('a reader who scrolled up stays put while the turn streams and the clock ticks', async () => {
+    const session = fakeSession({ messages: longThread(), isBusy: true });
+    const { flush, mockMouse, renderer } = await render(session);
+    await settle(flush);
+    const box = () => findScrollBox(renderer.root);
+    const bottom = box().scrollTop;
+    expect(bottom).toBeGreaterThan(5);
+
+    for (let step = 0; step < 5; step += 1) await act(async () => mockMouse.scroll(10, 5, 'up'));
+    await flush();
+    const reading = box().scrollTop;
+    expect(reading).toBeLessThan(bottom);
+
+    // A streamed delta, then two clock ticks (busy re-renders every second).
+    const store = useSessionStateStore.getState();
+    await act(async () => {
+      store.hydrate('s1', longThread(' and more streamed text') as unknown as MessageWithParts[]);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 2200));
+    });
+    await flush();
+    expect(box().scrollTop).toBe(reading);
+
+    // Back to the bottom: the follow resumes for the next delta.
+    for (let step = 0; step < 40; step += 1) await act(async () => mockMouse.scroll(10, 5, 'down'));
+    await act(async () => {
+      store.hydrate('s1', [
+        ...longThread(),
+        message('m12', 'assistant', [textPart('p12', 'a new reply\nwith\nseveral\nrows')]),
+      ] as unknown as MessageWithParts[]);
+    });
+    await settle(flush);
+    expect(isAtBottom(box())).toBe(true);
+    renderer.destroy();
+  }, 15_000);
 });
