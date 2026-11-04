@@ -243,8 +243,10 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
     const data = code(`${q} ${r.query}`)
     // Named: the workspace is one project (this machine's), not whatever repository the call talks about. Unnamed, the
     // voice-agent's own git log answered "categorize what is being pushed" right after the agent had opened another repo.
+    // Named inside the data too: "What is the name of this project?" with the name only in the label got "I don't see a
+    // project name in those files" (a Kortix dev call, its chunks a sub-project's).
     const of = named
-    return [state && `<data source="git of ${of}, read just now">\n${state}\n</data>`, data && `<data source="workspace: ${of}">\n${data}\n</data>`].filter(Boolean).join('\n')
+    return [state && `<data source="git of ${of}, read just now">\n${state}\n</data>`, data && `<data source="workspace: ${of}">\nThis project: ${of}\n${data}\n</data>`].filter(Boolean).join('\n')
   }
   let fallback: Promise<string> | undefined
   const searchNow = () => fallback ??= searching ? (raw ? firstUseful([words ? raw : reuse(r.query) ?? search(r.query), raw]) : reuse(r.query) ?? search(r.query)) : Promise.resolve('')
