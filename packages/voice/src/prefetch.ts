@@ -9,7 +9,7 @@ import { CARD_HOSTS, card } from './cards'
 import * as source from './cards' // filled() read off it: a stand-in card source (the proofs') has only card()
 import { type Card, decided, route } from './route'
 import { asking, heard, judge, provide, routing } from './judge'
-import { lookup as chunks, namedFiles, repoMap } from './workspace'
+import { lookup as chunks, identity, namedFiles, repoMap } from './workspace'
 import { content, firstUseful, pageBlocks, readPages } from './pages'
 import { router, routed } from './models'
 
@@ -189,8 +189,10 @@ async function git(root: string): Promise<string> {
 /** The repo map for a call's first workspace question ('' without a workspace). */
 export const workspaceMap = () => (repo ? repoMap(repo) : '')
 
-// What the router is told the workspace is: its folder name and the package's description.
-const project = repo ? [basename(repo), (() => { try { return JSON.parse(require('node:fs').readFileSync(`${repo}/package.json`, 'utf8')).description ?? '' } catch { return '' } })()].filter(Boolean).join(': ') : ''
+// What the router is told the workspace is: what the project calls itself (else its folder's name) and the package's
+// description.
+const named = repo ? identity(repo) || basename(repo) : ''
+const project = repo ? [named, (() => { try { return JSON.parse(require('node:fs').readFileSync(`${repo}/package.json`, 'utf8')).description ?? '' } catch { return '' } })()].filter(Boolean).join(': ') : ''
 
 // And the files of it the words name: "What does the cascade file do?" was routed none (the router had only the name and
 // description, and "cascade" read as a general idea), and the agent's opener made up what it does (bench/namedfile-proof.ts).
@@ -238,7 +240,7 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
     const data = code(`${q} ${r.query}`)
     // Named: the workspace is one project (this machine's), not whatever repository the call talks about. Unnamed, the
     // voice-agent's own git log answered "categorize what is being pushed" right after the agent had opened another repo.
-    const of = basename(repo ?? '')
+    const of = named
     return [state && `<data source="git of ${of}, read just now">\n${state}\n</data>`, data && `<data source="workspace: ${of}">\n${data}\n</data>`].filter(Boolean).join('\n')
   }
   let fallback: Promise<string> | undefined
