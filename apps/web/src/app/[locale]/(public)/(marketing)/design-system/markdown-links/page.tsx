@@ -10,6 +10,8 @@ Discuss in https://example.slack.com/archives/C123/p1234567890123456 or review h
 
 Notes: https://www.notion.so/Example-0123456789abcdef0123456789abcdef and https://docs.google.com/document/d/example/edit
 
+Profiles and repositories: https://github.com/example-user and https://github.com/example/project
+
 Long titles wrap: https://www.notion.so/Engineering-Onboarding-Guide-for-New-Hires-2026-0123456789abcdef0123456789abcdef
 
 Titles without spaces wrap too: [エンジニアリングの新入社員向けオンボーディングガイドと変更の確認](https://github.com/example/project/pull/123)
@@ -32,7 +34,7 @@ export default function MarkdownLinksPage() {
         <UnifiedMarkdown trust="untrusted" isStreaming={streaming} content={EXAMPLE} />
       </div>
       <p className="text-muted-foreground mt-6 text-sm">
-        GitHub pull requests, issues and commits; Linear issues; Slack messages and conversations;
+        GitHub profiles, repositories, pull requests, issues and commits; Linear issues; Slack messages and conversations;
         Figma designs, boards and slides; Notion pages; Google Docs, Sheets and Slides. Labels use
         the URL only. Titles, permissions and live status are not fetched.
       </p>
