@@ -27,6 +27,7 @@ export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert'
 
 // Chat (`chat`): a thread's board of the chat's other threads (consumed by the turn-start path).
 export { chatThreadBoardTurn } from './lib/chat-threads';
+export { sessionWhereTurn } from './lib/session-where';
 
 // A person's pins and archive (consumed by account erasure and offboarding).
 export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';

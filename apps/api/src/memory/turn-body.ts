@@ -66,3 +66,33 @@ export function withMemoryTurn(body: ArrayBuffer | undefined, turn: { system: st
   const { system: _client, ...rest } = parsed;
   return encode({ ...rest, ...(turn.system.length <= MEMORY_TURN_SYSTEM_MAX_CHARS ? { system: turn.system } : {}) });
 }
+
+/**
+ * Which memory a My Kortix turn lists. The person's own My Kortix index
+ * (`myKortixMemoryTurn`) belongs to their DM with My Kortix and to a My Kortix
+ * session in no space. A thread filed in a channel lists that channel's
+ * memory layers (`memoryTurnContext`), as any agent's thread there does: a
+ * thread in #general never loads the person's DM notes.
+ */
+export function myKortixTurnMemory(
+  space: { kind: 'channel' | 'dm'; dmAgent: string | null } | null,
+  isMyKortixAgent: (name: string | null) => boolean,
+): 'personal' | 'space' {
+  if (!space) return 'personal';
+  if (space.kind === 'dm' && isMyKortixAgent(space.dmAgent)) return 'personal';
+  return 'space';
+}
+
+/**
+ * A turn's `system` text: the origin block first and whole, then the other
+ * parts (the board, the memory list) in order, cut so the total stays within
+ * `MEMORY_TURN_SYSTEM_MAX_CHARS` (`withMemoryTurn` drops a longer one whole).
+ * What gets cut is the end: the memory list, never the origin block.
+ */
+export function turnSystemText(where: string | null, parts: readonly (string | null | undefined)[]): string {
+  const head = where ?? '';
+  const rest = parts.filter(Boolean).join('\n\n');
+  if (!rest) return head.slice(0, MEMORY_TURN_SYSTEM_MAX_CHARS);
+  if (!head) return rest.slice(0, MEMORY_TURN_SYSTEM_MAX_CHARS);
+  return `${head}\n\n${rest}`.slice(0, MEMORY_TURN_SYSTEM_MAX_CHARS);
+}
