@@ -60,6 +60,7 @@
  * A `same` child gets no `agent`/`task` (no nesting) and no `question` (nobody answers a
  * child). A `separate` child runs its own pi, so it may delegate again, up to the depth cap.
  */
+import { frontThreadName } from '../front'
 import type { ExtensionAPI, InlineExtension } from '@earendil-works/pi-coding-agent'
 import type { CompiledAgent } from '@kortix/api-contract/runtime-relay'
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript'
@@ -461,7 +462,7 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
         // A front chat's call always starts or continues its one worker, in the background.
         const front = host.frontWorker?.()
         const params: SubagentParams = front
-          ? { description: input.description, prompt: `${input.prompt}\n\n${front.note}`, subagent_type: front.agent, name: front.name, session: 'separate', run_in_background: true }
+          ? { description: input.description, prompt: `${input.prompt}\n\n${front.note}`, subagent_type: front.agent, name: frontThreadName(input.name, input.description), session: 'separate', run_in_background: true }
           : input
         const spawn = resolveSpawn(params, host)
         const shape = spawnShape(params, host)

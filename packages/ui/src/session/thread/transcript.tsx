@@ -1697,6 +1697,8 @@ function TurnToolBlocks(
     model, segments, conversationDensity, fold, durationMs,
   } = props;
   const { working, hasSteps, hasReasoning } = model;
+  // The front chat (`TranscriptRows.messagesOnly`): the agent's words only, never its work.
+  const messagesOnly = useContext(TranscriptRowsContext)?.messagesOnly === true;
   // KRTX-2113: a settled turn folds its work behind one "Worked for" row and
   // keeps the `show` deliverables and the final text below it. Segments that
   // render nothing (a hidden tool, a plumbing-only burst) are dropped first,
@@ -1787,7 +1789,9 @@ function TurnToolBlocks(
               working (or settled with nothing to fold) it is the plain stream.
               Settled, the work leaves for the "Worked for" row, which mounts
               closed. The cost: the work disappears at once, not in a fold. */}
-          {split
+          {messagesOnly
+            ? segments.filter((segment) => segment.kind !== 'burst' && segment.kind !== 'standalone').map(renderSegment)
+            : split
             ? [
                 <TurnWorkAccordion key="turn-work" durationMs={durationMs}>
                   {split.work.map(renderSegment)}
@@ -2456,7 +2460,9 @@ function SessionTurnImpl(props: SessionTurnProps) {
     const showAnswer = turn.assistant.length > 0 || model.working || !!errors.turnErrorRow.text;
     return (
       <div className="text-factor-[2]">
-        {userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.peerMessage || userContent.systemMessages.length > 0 ? (
+        {(rows.messagesOnly
+          ? userContent.hasVisibleUserContent && !userContent.sessionReport && !userContent.noticeBatch && !userContent.peerMessage
+          : userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.peerMessage || userContent.systemMessages.length > 0) ? (
           <MessageRow
             // The first message's turn clips its toolbar's overhang: it sits inside the row.
             className={cn('group/turn', props.isFirstTurn && '[&_[data-slot=row-toolbar]]:top-0.5')}

@@ -23,6 +23,11 @@ export interface TranscriptRows {
    * key: a channel thread says "this thread's computer", not "session".
    */
   notices?: Partial<Record<keyof typeof SESSION_NOTICE, string>>;
+  /**
+   * Only the person's messages and the agent's words: no "Worked for" rows, no
+   * tool rows, no notices from other sessions. The front chat (flag `infinichat`) sets it.
+   */
+  messagesOnly?: boolean;
   /** The stuck-boot restart button in the host's terms ("Restart thread"). */
   labels?: {
     restart: string;
