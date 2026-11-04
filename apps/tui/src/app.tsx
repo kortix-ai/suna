@@ -632,9 +632,9 @@ export function App({
         case 'link': {
           if (!pid || !sid) return;
           const url = sessionWebUrl(webDashboardUrl(host.backendUrl), pid, sid);
-          return void copyToClipboard(`${sid} ${url}`).then((result) =>
+          return void copyToClipboard(url).then((result) =>
             result.ok
-              ? pushToast(`Copied ${sid.slice(0, 8)} and its link.`)
+              ? pushToast(`Copied ${url}`)
               : pushToast(`Copy failed: ${result.error ?? 'no clipboard tool'}. ${url}`, 'error'),
           );
         }
