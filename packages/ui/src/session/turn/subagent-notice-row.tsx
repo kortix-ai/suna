@@ -1,7 +1,7 @@
 'use client';
 
 import { useProjectSession } from '@kortix/sdk/react';
-import { parseWorkflowResult } from '@kortix/sdk';
+import { workflowResultMarkdown } from '../tool/tools/workflow-result-text';
 import { useState } from 'react';
 import { useTranslations } from '../../i18n';
 import { agentDisplayName } from '../../internal/components/agent-mark';
@@ -16,7 +16,8 @@ import { firstLine, type SubagentNotice } from './subagent-notice';
 const RESULT_TAG = /<\/?workflow_?result>/gi;
 
 export function readableReport(text: string): string {
-  return (parseWorkflowResult(text)?.text ?? text).replace(RESULT_TAG, '').trim();
+  // A JSON result reads as its document (a JSON object of prose), never as the JSON source.
+  return workflowResultMarkdown(text).replace(RESULT_TAG, '').trim();
 }
 
 /** A run's own name carries " (workflow)"; the line names the run, the glyph says what it is. */
