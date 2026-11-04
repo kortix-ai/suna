@@ -491,6 +491,25 @@ fn sessions() -> Vec<(u32, bool)> {
     out
 }
 
+/// `--json status` of every signed-in session, for the update health check
+/// (`update::judge`). A session without a user token is left out: nobody is behind it yet.
+fn health_probes(exe: &Path) -> Vec<super::update::Probe> {
+    sessions()
+        .into_iter()
+        .filter_map(|(id, active)| {
+            let token = session_token(id).ok()?;
+            let status = run_as(&token, exe, &["--json", "status"], b"")
+                .map(|(_, out)| out)
+                .map_err(|e| format!("{e:#}"));
+            Some(super::update::Probe {
+                who: format!("session {id}"),
+                active,
+                status,
+            })
+        })
+        .collect()
+}
+
 struct Session {
     state: SessionState,
     sid: String,
@@ -547,25 +566,20 @@ impl Machine {
             }
         }
         self.write_state(cfg.as_ref());
-        self.updater.tick();
-        if let Some(since) = self.updater.verifying_since() {
-            let ok = self.healthy_since(since);
-            self.updater.note_probe(ok);
-        }
-    }
-
-    /// Every signed-in person's recorder runs and saves frames (see `update::person_ok`).
-    fn healthy_since(&mut self, since_ms: i64) -> bool {
         let exe = self.exe.clone();
-        sessions().into_iter().all(|(id, _)| {
-            let Ok(token) = session_token(id) else {
-                return true;
-            };
-            run_as(&token, &exe, &["--json", "status"], b"")
-                .ok()
-                .and_then(|(_, out)| serde_json::from_str::<Value>(&out).ok())
-                .is_some_and(|st| super::update::person_ok(&st, since_ms))
-        })
+        self.updater
+            .tick(|| super::update::baseline(&health_probes(&exe)));
+        if let Some(since) = self.updater.verifying_since() {
+            let result = super::update::judge(
+                &health_probes(&exe),
+                self.updater.required().as_deref(),
+                since,
+            );
+            if let Err(why) = &result {
+                self.log(&format!("update health: {why}"));
+            }
+            self.updater.note_probe(result);
+        }
     }
 
     fn tick_session(&mut self, id: u32, cfg: Option<&ManagedConfig>) -> Result<()> {
