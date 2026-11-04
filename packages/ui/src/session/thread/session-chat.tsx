@@ -134,6 +134,7 @@ import { inboxHoldsLivePrompt } from '../composer/inbox-live-prompt';
 import { type TurnSpan } from '../outcomes/anchor-outcomes';
 import type { Outcome } from '../../internal/outcomes/outcome-types';
 import { SessionOutcomesProvider } from '../outcomes/session-outcomes-provider';
+import { deleteMessageLinkParams, readMessageLinkParams, resolveMessageLinkTurn } from './message-link';
 import { TurnOutcomes } from '../outcomes/turn-outcomes';
 import { SessionOverridesComposer } from '../overrides/session-overrides-composer';
 import {
@@ -2560,7 +2561,8 @@ export function SessionChat({
   useEffect(() => {
     outcomeJumpRef.current = { sessionId, hasOlder, isLoadingOlder, loadOlder };
   }, [sessionId, hasOlder, isLoadingOlder, loadOlder]);
-  const handleJumpToOutcome = useCallback(async (resolveTurn: () => string | undefined, createdAt: number) => {
+  // `quiet`: a jump the reader did not click (a `?m=` link) fails silently, without the change-request toasts.
+  const handleJumpToOutcome = useCallback(async (resolveTurn: () => string | undefined, createdAt: number, quiet = false) => {
     if (jumpingToOutcome) return;
     setJumpingToOutcome(true);
     const currentSession = sessionId;
@@ -2576,9 +2578,11 @@ export function SessionChat({
           settle,
         },
         resolve: () => outcomeJumpRef.current.sessionId === currentSession ? resolveTurn() : undefined,
-        loadError: () => errorToast(tChangeRequests('loadError')),
+        loadError: () => {
+          if (!quiet) errorToast(tChangeRequests('loadError'));
+        },
         unavailable: () => {
-          if (outcomeJumpRef.current.sessionId === currentSession) errorToast(tChangeRequests('unavailable'));
+          if (!quiet && outcomeJumpRef.current.sessionId === currentSession) errorToast(tChangeRequests('unavailable'));
         },
         scroll: async (key) => {
           if (mobileChangeRequests) {
@@ -2605,7 +2609,7 @@ export function SessionChat({
         },
       });
     } catch {
-      errorToast(tChangeRequests('loadError'));
+      if (!quiet) errorToast(tChangeRequests('loadError'));
     } finally {
       setJumpingToOutcome(false);
     }
@@ -4214,6 +4218,33 @@ export function SessionChat({
   useEffect(() => {
     if (crParam) setOpenCrIdState(crParam);
   }, [crParam]);
+
+  // ---- Message link: `?m=<message_id>&at=<ms>` (the gateway request log's "Open in session") ----
+  // Once per link, after the transcript first paints: page back until the turn
+  // is loaded, scroll to it, flash it, then drop `m`/`at` so a reload stays put.
+  const messageLink = readOnly ? null : readMessageLinkParams(searchParams);
+  const messageLinkKey = messageLink ? `${sessionId}|${messageLink.messageId ?? ''}|${messageLink.at ?? ''}` : null;
+  const linkTurnsRef = useRef(turns);
+  useEffect(() => {
+    linkTurnsRef.current = turns;
+  }, [turns]);
+  const jumpedLinkRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!messageLink || !messageLinkKey || isDataLoading || turns.length === 0) return;
+    if (jumpedLinkRef.current === messageLinkKey) return;
+    jumpedLinkRef.current = messageLinkKey;
+    const resolve = () => resolveMessageLinkTurn(linkTurnsRef.current, messageLink);
+    // Already on screen: no history to load. Else `at`, or NaN (load it all) for an id alone.
+    const createdAt = resolve() ? Number.MAX_SAFE_INTEGER : (messageLink.at ?? Number.NaN);
+    void handleJumpToOutcome(resolve, createdAt, true).finally(() => {
+      const params = new URLSearchParams(searchParams?.toString());
+      deleteMessageLinkParams(params);
+      const qs = params.toString();
+      shallowNavigate(qs ? `${pathname}?${qs}` : pathname, { replace: true });
+    });
+    // `messageLinkKey` stands for `messageLink`, which is a new object every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageLinkKey, isDataLoading, turns.length, handleJumpToOutcome, searchParams, pathname, shallowNavigate]);
   const handleOpenOutcome = useCallback(
     (outcome: Outcome) => {
       // Change requests are the only kind a turn produces. `external` exists on

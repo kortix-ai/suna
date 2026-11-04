@@ -1,8 +1,10 @@
 'use client';
 
 import {
+  ArrowSquareOutIcon,
   CaretDownIcon as ChevronDown,
   CaretUpIcon as ChevronUp,
+  FunnelSimpleIcon,
   MagnifyingGlassIcon as Search,
   XIcon,
   ScrollIcon as ScrollText,
@@ -33,8 +35,23 @@ import {
 import { useModelsPageSheet } from '../../models-page-sheet';
 import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from '../../../../primitives/tabs';
 import { EmptyState } from '../../../../primitives/empty-state';
-import { useGatewayLog, useGatewayLogs } from '@kortix/sdk/react';
-import type { GatewayLogRow } from '@kortix/sdk';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '../../../../primitives/dropdown-menu';
+import { CountBadge } from '../../../../primitives/count-badge';
+import { UiLink as Link, useUiRouter } from '../../../../providers/ui-provider';
+import { projectSessionMessageHref } from '../../../../internal/lib/navigation/session-href';
+import { useGatewayLog, useGatewayLogFacets, useGatewayLogs } from '@kortix/sdk/react';
+import type { GatewayLogFilters, GatewayLogRow } from '@kortix/sdk';
 import { cn } from '../../../../internal/lib/utils';
 import { formatUsdAsCredits } from '@kortix/shared';
 
@@ -151,16 +168,96 @@ export function logMeta(parts: (string | null | undefined | false)[]): string {
   return parts.filter((p): p is string => typeof p === 'string' && p.length > 0).join(' · ');
 }
 
-/** Search over the LOADED rows: model, provider and error code. */
+/**
+ * The search, applied to the LOADED rows while the server answers the same
+ * query: a model, provider or error code containing the text, or a request,
+ * session or message id equal to it. The route (`q`) matches the same way, so
+ * the list does not jump when the server's page lands.
+ */
 export function matchesLogQuery(
-  row: Pick<GatewayLogRow, 'requested_model' | 'resolved_model' | 'provider' | 'error_code'>,
+  row: Pick<GatewayLogRow, 'requested_model' | 'resolved_model' | 'provider' | 'error_code'> &
+    Partial<Pick<GatewayLogRow, 'request_id' | 'session_id' | 'message_id' | 'turn_id'>>,
   query: string,
 ): boolean {
-  const q = query.trim().toLowerCase();
+  const raw = query.trim();
+  const q = raw.toLowerCase();
   if (!q) return true;
+  if ([row.request_id, row.session_id, row.message_id, row.turn_id].includes(raw)) return true;
   return [row.requested_model, row.resolved_model, row.provider, row.error_code].some(
     (v) => typeof v === 'string' && v.toLowerCase().includes(q),
   );
+}
+
+/** The time filter: a window ending now. */
+export type LogWindow = 'any' | '15m' | '1h' | '24h' | '7d';
+
+const WINDOW_MS: Record<Exclude<LogWindow, 'any'>, number> = {
+  '15m': 15 * 60_000,
+  '1h': 60 * 60_000,
+  '24h': 24 * 60 * 60_000,
+  '7d': 7 * 24 * 60 * 60_000,
+};
+
+/** The filters the menu sets; each one is applied by the server, over every request. */
+export interface LogFilterState {
+  window: LogWindow;
+  /** Fixed when the window is picked, so the query key does not move every render. */
+  since?: string;
+  sessionId?: string;
+  /** The title the session had when it was picked, for the chip. */
+  sessionTitle?: string | null;
+  model?: string;
+  provider?: string;
+  errorCode?: string;
+}
+
+export const NO_LOG_FILTERS: LogFilterState = { window: 'any' };
+
+/** The window as a `since` time, measured from `now`. */
+export function windowSince(window: LogWindow, now: number = Date.now()): string | undefined {
+  return window === 'any' ? undefined : new Date(now - WINDOW_MS[window]).toISOString();
+}
+
+/** The menu state as the server filters `useGatewayLogs` takes. */
+export function serverLogFilters(
+  filter: LogFilter,
+  state: LogFilterState,
+  query: string,
+): GatewayLogFilters {
+  return {
+    ...(filter === 'all' ? {} : { ok: filter === 'ok' }),
+    sessionId: state.sessionId,
+    model: state.model,
+    provider: state.provider,
+    errorCode: state.errorCode,
+    since: state.since,
+    q: query.trim() || undefined,
+  };
+}
+
+/** True when any menu filter is set. */
+export function hasLogFilters(state: LogFilterState): boolean {
+  return state.window !== 'any' || !!(state.sessionId || state.model || state.provider || state.errorCode);
+}
+
+/**
+ * Where a request's session link lands: the exact message when kortixd named
+ * it, else the turn, else the turn that was running when the request started
+ * (`at`: the log is written when the request ENDS, `latency_ms` later).
+ * Null for a request from outside a session.
+ */
+export function logSessionHref(
+  projectId: string,
+  row: Pick<GatewayLogRow, 'session_id' | 'message_id' | 'turn_id' | 'thread_id' | 'created_at' | 'latency_ms'>,
+): string | null {
+  if (!row.session_id) return null;
+  const end = new Date(row.created_at).getTime();
+  const at = Number.isFinite(end) ? end - Math.max(0, row.latency_ms || 0) : null;
+  return projectSessionMessageHref(projectId, row.session_id, {
+    messageId: row.message_id ?? row.turn_id ?? null,
+    at,
+    threadId: row.thread_id ?? null,
+  });
 }
 
 /** Median latency of the given rows, in ms. `null` when there are none. */
@@ -324,6 +421,7 @@ function StatusBadge({
  */
 const LANE = {
   // "12:55:01 am" at text-xs is ~76px; w-22 holds it on one line.
+  session: 'w-40 shrink-0 truncate @max-2xl/logs:hidden',
   time: 'w-22 shrink-0 text-right whitespace-nowrap',
   latency: 'w-14 shrink-0 text-right whitespace-nowrap @max-sm/logs:hidden',
   tokens: 'w-16 shrink-0 text-right whitespace-nowrap @max-md/logs:hidden',
@@ -333,10 +431,12 @@ const LANE = {
 /** The numeric columns, named once at the top instead of per row. */
 function LogListHeader() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('gatewayLogs');
   return (
     <div className="text-muted-foreground border-border flex h-8 shrink-0 items-center gap-3 border-b px-3 text-xs">
       <span className="w-2 shrink-0" />
       <span className="min-w-0 flex-1">{tI18nComplete.raw('text59f03d642b41')}</span>
+      <span className={LANE.session}>{t('sessionColumn')}</span>
       <span className={LANE.time}>{tI18nComplete.raw('text33b93476cf59')}</span>
       <span className={LANE.latency}>{tI18nComplete.raw('texte0e7d293043c')}</span>
       <span className={LANE.tokens}>{tI18nComplete.raw('texta039dfb9628b')}</span>
@@ -352,29 +452,78 @@ function DayDivider({ iso }: { iso: string }) {
   );
 }
 
+/**
+ * The session a request came from, as a link to the message it produced.
+ * Plain text for a request with no session (a gateway key, a personal token).
+ */
+function SessionLink({
+  projectId,
+  row,
+  className,
+}: {
+  projectId: string;
+  row: GatewayLogRow;
+  className?: string;
+}) {
+  const t = useTranslations('gatewayLogs');
+  const href = logSessionHref(projectId, row);
+  if (!href) return <span className={cn('text-muted-foreground truncate', className)}>—</span>;
+  const title = row.session_title?.trim() || t('untitledSession');
+  return (
+    <Link
+      href={href}
+      title={t('openInSession')}
+      onClick={(e) => e.stopPropagation()}
+      className={cn(
+        'text-foreground hover:text-foreground truncate underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none',
+        className,
+      )}
+    >
+      {title}
+    </Link>
+  );
+}
+
+/**
+ * One request. The row is a stretched button (open the detail) under a real
+ * link to the session, so the session is one click from the list, opens in a
+ * new tab with a modifier, and the markup never nests a link in a button.
+ */
 const LogRow = forwardRef<
-  HTMLButtonElement,
-  { row: GatewayLogRow; focused: boolean; selected: boolean; onClick: () => void; onHover: () => void }
->(function LogRow({ row, focused, selected, onClick, onHover }, ref) {
+  HTMLDivElement,
+  {
+    projectId: string;
+    row: GatewayLogRow;
+    focused: boolean;
+    selected: boolean;
+    onClick: () => void;
+    onHover: () => void;
+  }
+>(function LogRow({ projectId, row, focused, selected, onClick, onHover }, ref) {
   // A failed call that never reached a model has no tokens and no cost; a dash
   // says "nothing" instead of a 0 that reads like a measurement.
   const empty = !row.ok && row.input_tokens + row.output_tokens === 0;
   const locale = useLocale();
   return (
-    <button
+    <div
       ref={ref}
-      type="button"
-      onClick={onClick}
       onMouseMove={onHover}
-      aria-current={selected ? 'true' : undefined}
+      data-slot="log-row"
       className={cn(
-        'flex h-10 w-full shrink-0 scroll-mt-10 items-center gap-3 rounded-md px-3 text-left text-xs',
+        'relative flex h-10 w-full shrink-0 scroll-mt-10 items-center gap-3 rounded-md px-3 text-left text-xs',
         'transition-[background-color] duration-(--duration-normal)',
         selected ? 'bg-muted' : focused ? 'bg-muted/60' : 'hover:bg-muted/60',
       )}
     >
+      <button
+        type="button"
+        onClick={onClick}
+        aria-current={selected ? 'true' : undefined}
+        aria-label={`${logTitle(row)} · ${fmtTime(row.created_at)}`}
+        className="focus-visible:ring-ring absolute inset-0 rounded-md focus-visible:ring-2 focus-visible:outline-none"
+      />
       <StatusMark ok={row.ok} status={row.status} />
-      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+      <span className="pointer-events-none flex min-w-0 flex-1 items-baseline gap-2">
         <span className="text-foreground truncate font-medium">{logTitle(row)}</span>
         {row.provider ? (
           <span className="text-muted-foreground shrink-0 truncate font-mono">{row.provider}</span>
@@ -385,17 +534,20 @@ const LogRow = forwardRef<
           </span>
         ) : null}
       </span>
-      <span className={cn(LANE.time, 'text-muted-foreground tabular-nums')}>{fmtClock(row.created_at)}</span>
-      <span className={cn(LANE.latency, 'text-foreground tabular-nums')}>{fmtLatency(row.latency_ms)}</span>
-      <span className={cn(LANE.tokens, 'tabular-nums', empty ? 'text-muted-foreground' : 'text-foreground')}>
+      <span className={cn(LANE.session, 'relative')}>
+        <SessionLink projectId={projectId} row={row} />
+      </span>
+      <span className={cn(LANE.time, 'text-muted-foreground pointer-events-none tabular-nums')}>{fmtClock(row.created_at)}</span>
+      <span className={cn(LANE.latency, 'text-foreground pointer-events-none tabular-nums')}>{fmtLatency(row.latency_ms)}</span>
+      <span className={cn(LANE.tokens, 'pointer-events-none tabular-nums', empty ? 'text-muted-foreground' : 'text-foreground')}>
         {empty ? '—' : (row.input_tokens + row.output_tokens).toLocaleString()}
       </span>
-      <span className={cn(LANE.cost, 'tabular-nums', empty ? 'text-muted-foreground' : 'text-foreground')}>
+      <span className={cn(LANE.cost, 'pointer-events-none tabular-nums', empty ? 'text-muted-foreground' : 'text-foreground')}>
         {/* What the request cost YOU — the full caller-facing total, not just
             the Kortix-billed slice (`kortix_cost`, 0 on a plain BYOK call). */}
         {empty ? '—' : formatUsdAsCredits(row.total_cost, { locale })}
       </span>
-    </button>
+    </div>
   );
 });
 
@@ -519,6 +671,79 @@ function NavButton({
 }
 
 /**
+ * Where the request came from, first in the pane: the session and the exact
+ * message, one click away. A request with no session (a gateway key, a
+ * personal token) says so instead of showing an empty link.
+ */
+function LogSessionBlock({
+  projectId,
+  row,
+  onFilterSession,
+}: {
+  projectId: string;
+  row: GatewayLogRow;
+  onFilterSession: (sessionId: string, title: string | null) => void;
+}) {
+  const t = useTranslations('gatewayLogs');
+  const href = logSessionHref(projectId, row);
+  if (!row.session_id || !href) {
+    return (
+      <div className="ring-border text-muted-foreground rounded-md px-3.5 py-3 text-xs ring-1">
+        {row.key_id ? t('fromGatewayKey') : t('noSession')}
+      </div>
+    );
+  }
+  const title = row.session_title?.trim() || t('untitledSession');
+  return (
+    <div className="ring-border flex flex-col gap-2.5 rounded-md px-3.5 py-3 ring-1" data-slot="log-session">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="text-muted-foreground text-xs">{t('sessionColumn')}</span>
+          <span className="text-foreground truncate text-sm font-medium">{title}</span>
+        </div>
+        <Button asChild size="sm" variant="secondary" className="shrink-0 gap-1.5">
+          <Link href={href}>
+            {row.message_id || row.turn_id ? t('openMessage') : t('openInSession')}
+            <ArrowSquareOutIcon className="size-3.5" />
+          </Link>
+        </Button>
+      </div>
+      <div className="divide-border flex flex-col divide-y">
+        {row.message_id ? <IdField label={t('messageLabel')} value={row.message_id} /> : null}
+        {row.turn_id && row.turn_id !== row.message_id ? <IdField label={t('turnLabel')} value={row.turn_id} /> : null}
+        {row.thread_id ? <IdField label={t('threadLabel')} value={row.thread_id} /> : null}
+        <IdField label={t('sessionIdLabel')} value={row.session_id} />
+      </div>
+      {!row.message_id && !row.turn_id ? (
+        <p className="text-muted-foreground text-xs">{t('byTimeHint')}</p>
+      ) : null}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="text-muted-foreground -ml-2 h-7 self-start gap-1.5"
+        onClick={() => onFilterSession(row.session_id!, row.session_title ?? null)}
+      >
+        <FunnelSimpleIcon className="size-3.5" />
+        {t('onlyThisSession')}
+      </Button>
+    </div>
+  );
+}
+
+/** An id with Copy, monospaced, one line. */
+function IdField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-1.5 text-xs">
+      <span className="text-muted-foreground shrink-0">{label}</span>
+      <span className="flex min-w-0 items-center gap-1">
+        <span className="text-foreground truncate font-mono">{value}</span>
+        <CopyButton text={value} className="size-5 shrink-0" />
+      </span>
+    </div>
+  );
+}
+
+/**
  * One request, in the split sheet beside the list. The list stays on screen,
  * so ↑/↓ (or the arrows by the timestamp) step through requests while this
  * pane follows.
@@ -530,6 +755,7 @@ function GatewayLogDetail({
   total,
   onPrev,
   onNext,
+  onFilterSession,
 }: {
   projectId: string;
   logId: string;
@@ -537,6 +763,8 @@ function GatewayLogDetail({
   total: number;
   onPrev: () => void;
   onNext: () => void;
+  /** Narrow the list to this request's session. */
+  onFilterSession: (sessionId: string, title: string | null) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('gatewayLogs');
@@ -609,6 +837,8 @@ function GatewayLogDetail({
                 </div>
               </div>
             )}
+
+            <LogSessionBlock projectId={projectId} row={data} onFilterSession={onFilterSession} />
 
             {/* Money cells show only what the CALLER paid. A BYOK request that
                 also carries a Kortix platform fee is the only case with two
@@ -843,19 +1073,227 @@ export function LogHistogram({
   );
 }
 
+const WINDOWS: LogWindow[] = ['any', '15m', '1h', '24h', '7d'];
+const WINDOW_LABEL = {
+  any: 'windowAny',
+  '15m': 'window15m',
+  '1h': 'window1h',
+  '24h': 'window24h',
+  '7d': 'window7d',
+} as const satisfies Record<LogWindow, string>;
+
+/** One facet: a radio list of the values used in the window, the most-used first. */
+function FacetSub({
+  label,
+  value,
+  options,
+  onChange,
+  empty,
+}: {
+  label: string;
+  value: string | undefined;
+  options: { value: string; label: string; count: number; mono?: boolean }[];
+  onChange: (value: string | undefined) => void;
+  empty: string;
+}) {
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <span className="flex-1">{label}</span>
+        {value ? <span className="bg-foreground size-1.5 rounded-full" aria-hidden /> : null}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="max-h-80 w-72 overflow-y-auto">
+        {options.length === 0 ? (
+          <DropdownMenuItem disabled>{empty}</DropdownMenuItem>
+        ) : (
+          <DropdownMenuRadioGroup value={value ?? ''} onValueChange={(next) => onChange(next === value ? undefined : next)}>
+            {options.map((option) => (
+              <DropdownMenuRadioItem key={option.value} value={option.value} onSelect={(e) => e.preventDefault()}>
+                <span className={cn('min-w-0 flex-1 truncate', option.mono && 'font-mono')}>{option.label}</span>
+                <CountBadge count={option.count} className="ml-auto" />
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        )}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
+
+/**
+ * Time, session, model, provider and error code. Every option is a value the
+ * project actually used in the window (`GET …/gateway/logs/facets`), with its
+ * request count, so no pick leads to an empty list by guesswork.
+ */
+function LogFilterMenu({
+  projectId,
+  value,
+  onChange,
+}: {
+  projectId: string;
+  value: LogFilterState;
+  onChange: (next: Partial<LogFilterState>) => void;
+}) {
+  const t = useTranslations('gatewayLogs');
+  const [open, setOpen] = useState(false);
+  const facetHours = value.window === '7d' ? 168 : 24;
+  const { data: facets } = useGatewayLogFacets(open ? projectId : undefined, facetHours);
+  const empty = facetHours === 168 ? t('facetEmptyWeek') : t('facetEmptyDay');
+  const active = [value.window !== 'any', value.sessionId, value.model, value.provider, value.errorCode].filter(Boolean).length;
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5" data-slot="log-filter-menu">
+          <FunnelSimpleIcon className="size-3.5" />
+          {t('filter')}
+          {active > 0 ? <CountBadge count={active} /> : null}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <span className="flex-1">{t('filterTime')}</span>
+            {value.window !== 'any' ? <span className="bg-foreground size-1.5 rounded-full" aria-hidden /> : null}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-48">
+            <DropdownMenuRadioGroup
+              value={value.window}
+              onValueChange={(next) => {
+                const picked = next as LogWindow;
+                onChange({ window: picked, since: windowSince(picked) });
+              }}
+            >
+              {WINDOWS.map((w) => (
+                <DropdownMenuRadioItem key={w} value={w}>
+                  {t(WINDOW_LABEL[w])}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSeparator />
+        <FacetSub
+          label={t('sessionColumn')}
+          value={value.sessionId}
+          empty={empty}
+          options={(facets?.sessions ?? []).map((session) => ({
+            value: session.session_id,
+            label: session.title?.trim() || t('untitledSession'),
+            count: session.count,
+          }))}
+          onChange={(sessionId) =>
+            onChange({
+              sessionId,
+              sessionTitle: facets?.sessions.find((session) => session.session_id === sessionId)?.title ?? null,
+            })
+          }
+        />
+        <FacetSub
+          label={t('filterModel')}
+          value={value.model}
+          empty={empty}
+          options={(facets?.models ?? []).map((m) => ({ value: m.value, label: displayModel(m.value), count: m.count }))}
+          onChange={(model) => onChange({ model })}
+        />
+        <FacetSub
+          label={t('filterProvider')}
+          value={value.provider}
+          empty={empty}
+          options={(facets?.providers ?? []).map((p) => ({ value: p.value, label: p.value, count: p.count, mono: true }))}
+          onChange={(provider) => onChange({ provider })}
+        />
+        <FacetSub
+          label={t('filterError')}
+          value={value.errorCode}
+          empty={empty}
+          options={(facets?.error_codes ?? []).map((e) => ({ value: e.value, label: e.value, count: e.count, mono: true }))}
+          onChange={(errorCode) => onChange({ errorCode })}
+        />
+        {active > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => onChange(NO_LOG_FILTERS)}>{t('clearFilters')}</DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** The active filters, each removable on its own. */
+function LogFilterChips({
+  value,
+  onChange,
+  onClear,
+}: {
+  value: LogFilterState;
+  onChange: (next: Partial<LogFilterState>) => void;
+  onClear: () => void;
+}) {
+  const t = useTranslations('gatewayLogs');
+  const chips: { key: string; label: string; clear: Partial<LogFilterState> }[] = [];
+  if (value.window !== 'any') chips.push({ key: 'window', label: t(WINDOW_LABEL[value.window]), clear: { window: 'any', since: undefined } });
+  if (value.sessionId) {
+    chips.push({
+      key: 'session',
+      label: `${t('sessionColumn')}: ${value.sessionTitle?.trim() || t('untitledSession')}`,
+      clear: { sessionId: undefined, sessionTitle: undefined },
+    });
+  }
+  if (value.model) chips.push({ key: 'model', label: `${t('filterModel')}: ${displayModel(value.model)}`, clear: { model: undefined } });
+  if (value.provider) chips.push({ key: 'provider', label: `${t('filterProvider')}: ${value.provider}`, clear: { provider: undefined } });
+  if (value.errorCode) chips.push({ key: 'error', label: `${t('filterError')}: ${value.errorCode}`, clear: { errorCode: undefined } });
+  return (
+    <div className="-mt-2 flex flex-wrap items-center gap-1.5" data-slot="log-filter-chips">
+      {chips.map((chip) => (
+        <Button
+          key={chip.key}
+          variant="secondary"
+          size="sm"
+          className="h-7 max-w-80 gap-1.5"
+          onClick={() => onChange(chip.clear)}
+          aria-label={`${chip.label} ×`}
+        >
+          <span className="truncate">{chip.label}</span>
+          <XIcon className="size-3.5 shrink-0" />
+        </Button>
+      ))}
+      {chips.length > 1 ? (
+        <Button variant="ghost" size="sm" className="text-muted-foreground h-7" onClick={onClear}>
+          {t('clearFilters')}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 export function GatewayLogs({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const filters = useLocalizedUiCatalog(FILTERS);
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [filter, setFilter] = useState<LogFilter>('all');
   const [focused, setFocused] = useState(0);
-  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useGatewayLogs(
+  const [query, setQuery] = useState('');
+  // The server search waits for a pause in typing; the loaded rows narrow at once.
+  const [serverQuery, setServerQuery] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setServerQuery(query), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+  const [menuFilters, setMenuFilters] = useState<LogFilterState>(NO_LOG_FILTERS);
+  const { data, isLoading, isFetching, hasNextPage, isFetchingNextPage, fetchNextPage } = useGatewayLogs(
     projectId,
-    filter === 'all' ? undefined : { ok: filter === 'ok' },
+    serverLogFilters(filter, menuFilters, serverQuery),
   );
   const t = useTranslations('gatewayLogs');
-  const [query, setQuery] = useState('');
   const [range, setRange] = useState<LogTimeRange | null>(null);
+  const updateFilters = (next: Partial<LogFilterState>) => {
+    setMenuFilters((prev) => ({ ...prev, ...next }));
+    // A new filter is a new list: the cursor, the open request and a bar's range go with the old one.
+    setFocused(0);
+    setSelectedLogId(null);
+    setRange(null);
+  };
   const allLogs = useMemo(() => data?.pages.flatMap((p) => p.logs) ?? [], [data]);
   // The histogram draws the search matches; the list also honours a bar's range.
   const searched = useMemo(
@@ -865,13 +1303,14 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
   const logs = useMemo(() => searched.filter((row) => inLogRange(row, range)), [searched, range]);
   // Polling is on only while the newest page is the only page — see the hook.
   const isLive = (data?.pages.length ?? 1) <= 1;
+  const filtered = hasLogFilters(menuFilters);
 
   // Clamp on read rather than in an effect: the live list shrinks under the
   // cursor whenever a page drops rows, and an effect would render once with an
   // out-of-range index before correcting it.
   const focusedIndex = Math.min(focused, Math.max(0, logs.length - 1));
 
-  const focusedRowRef = useRef<HTMLButtonElement>(null);
+  const focusedRowRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     focusedRowRef.current?.scrollIntoView({ block: 'nearest' });
   }, [focusedIndex]);
@@ -880,6 +1319,13 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
   // control: ↑/↓ or j/k to move, ↵ to open, ↑/↓ to step through an open entry,
   // Esc/← to go back.
   const state = useRef({ logs, selectedLogId, focused: focusedIndex });
+  const router = useUiRouter();
+  const projectIdRef = useRef(projectId);
+  const openHrefRef = useRef((href: string) => router.push(href));
+  useEffect(() => {
+    projectIdRef.current = projectId;
+    openHrefRef.current = (href: string) => router.push(href);
+  });
   useEffect(() => {
     state.current = { logs, selectedLogId, focused: focusedIndex };
   });
@@ -905,6 +1351,16 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
       if (ls.length === 0) return;
       const down = e.key === 'ArrowDown' || e.key === 'j';
       const up = e.key === 'ArrowUp' || e.key === 'k';
+
+      if (e.key === 'o') {
+        const row = sel ? ls.find((l) => l.log_id === sel) : ls[fi];
+        const href = row ? logSessionHref(projectIdRef.current, row) : null;
+        if (href) {
+          e.preventDefault();
+          openHrefRef.current(href);
+        }
+        return;
+      }
 
       if (sel) {
         const idx = ls.findIndex((l) => l.log_id === sel);
@@ -996,6 +1452,7 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
               />
               <InputGroupSearchClear onClick={() => setQuery('')} />
             </InputGroupSearch>
+            <LogFilterMenu projectId={projectId} value={menuFilters} onChange={updateFilters} />
             {range ? (
               <Button
                 variant="secondary"
@@ -1016,6 +1473,10 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
             )}
           </div>
 
+          {filtered ? (
+            <LogFilterChips value={menuFilters} onChange={updateFilters} onClear={() => updateFilters(NO_LOG_FILTERS)} />
+          ) : null}
+
           {searched.length > 0 ? (
             <LogHistogram
               rows={searched}
@@ -1034,12 +1495,18 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
                   <Skeleton key={i} className="h-10 rounded-md" />
                 ))}
               </div>
+            ) : logs.length === 0 && (query.trim() || range) && isFetching ? (
+              <div className="flex justify-center py-6">
+                <Loading className="size-4" />
+              </div>
             ) : logs.length === 0 && (query.trim() || range) ? (
               <EmptyState
                 icon={ScrollText}
                 size="sm"
                 title={t('noMatch', { query: query.trim() || (range ? fmtRange(range) : '') })}
               />
+            ) : logs.length === 0 && filtered ? (
+              <EmptyState icon={ScrollText} size="sm" title={t('noFilterMatch')} />
             ) : logs.length === 0 ? (
               <EmptyState
                 icon={ScrollText}
@@ -1058,6 +1525,7 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
                     )}
                     <LogRow
                       ref={i === focusedIndex ? focusedRowRef : undefined}
+                      projectId={projectId}
                       row={row}
                       focused={i === focusedIndex}
                       selected={row.log_id === selectedLogId}
@@ -1096,6 +1564,7 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
             total={logs.length}
             onPrev={() => step(selectedIndex - 1)}
             onNext={() => step(selectedIndex + 1)}
+            onFilterSession={(sessionId, title) => updateFilters({ sessionId, sessionTitle: title })}
           />
         ) : null,
       )}

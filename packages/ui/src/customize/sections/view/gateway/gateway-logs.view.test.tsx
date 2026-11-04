@@ -11,8 +11,13 @@ import {
   filterCounts,
   fmtRange,
   inLogRange,
+  hasLogFilters,
+  logSessionHref,
   matchesLogQuery,
   medianLatency,
+  NO_LOG_FILTERS,
+  serverLogFilters,
+  windowSince,
 } from './gateway-logs';
 
 function row(overrides: Partial<GatewayLogRow> = {}): GatewayLogRow {
@@ -190,5 +195,79 @@ describe('LogBucketCard', () => {
   test('an empty bucket says so', () => {
     const empty = { start: 0, end: 60_000, total: 0, errors: 0, successRate: null, medianLatency: null, tokens: 0, cost: 0, topModel: null };
     expect(renderToStaticMarkup(<LogBucketCard bucket={empty} />)).toContain('No requests');
+  });
+});
+
+describe('logSessionHref — from a request to the message it produced', () => {
+  test('names the exact message, the subagent thread and the request start', () => {
+    const href = logSessionHref('p1', row({
+      session_id: 's1',
+      message_id: 'msg_reply',
+      turn_id: 'msg_prompt',
+      thread_id: 'ses_child',
+      created_at: '2026-01-05T10:00:10.000Z',
+      latency_ms: 4_000,
+    }));
+    const url = new URL(href!, 'https://x.test');
+    expect(url.pathname).toBe('/projects/p1/sessions/s1');
+    expect(url.searchParams.get('m')).toBe('msg_reply');
+    expect(url.searchParams.get('rs')).toBe('ses_child');
+    // The log is written when the request ends: `at` is when it started.
+    expect(url.searchParams.get('at')).toBe(String(Date.parse('2026-01-05T10:00:06.000Z')));
+  });
+
+  test('falls back to the turn, then to the time alone', () => {
+    const turnOnly = new URL(logSessionHref('p1', row({ session_id: 's1', turn_id: 'msg_prompt' }))!, 'https://x.test');
+    expect(turnOnly.searchParams.get('m')).toBe('msg_prompt');
+    const timeOnly = new URL(logSessionHref('p1', row({ session_id: 's1' }))!, 'https://x.test');
+    expect(timeOnly.searchParams.get('m')).toBeNull();
+    expect(timeOnly.searchParams.get('at')).not.toBeNull();
+  });
+
+  test('is null for a request from outside a session', () => {
+    expect(logSessionHref('p1', row({ session_id: null }))).toBeNull();
+  });
+});
+
+describe('server filters', () => {
+  test('the menu state, the status tab and the search become one server query', () => {
+    expect(
+      serverLogFilters('err', { window: '1h', since: '2026-01-05T09:00:00.000Z', sessionId: 's1', model: 'm' }, '  req_1 '),
+    ).toEqual({
+      ok: false,
+      sessionId: 's1',
+      model: 'm',
+      provider: undefined,
+      errorCode: undefined,
+      since: '2026-01-05T09:00:00.000Z',
+      q: 'req_1',
+    });
+    expect(serverLogFilters('all', NO_LOG_FILTERS, '')).toEqual({
+      sessionId: undefined,
+      model: undefined,
+      provider: undefined,
+      errorCode: undefined,
+      since: undefined,
+      q: undefined,
+    });
+  });
+
+  test('a window is a since time measured back from now', () => {
+    const now = Date.parse('2026-01-05T10:00:00.000Z');
+    expect(windowSince('1h', now)).toBe('2026-01-05T09:00:00.000Z');
+    expect(windowSince('any', now)).toBeUndefined();
+  });
+
+  test('hasLogFilters is false only for the empty state', () => {
+    expect(hasLogFilters(NO_LOG_FILTERS)).toBe(false);
+    expect(hasLogFilters({ window: 'any', provider: 'kortix' })).toBe(true);
+  });
+
+  test('the search matches a request, session or message id exactly', () => {
+    const r = row({ session_id: 'sess_1', message_id: 'msg_1' });
+    expect(matchesLogQuery(r, 'req-1')).toBe(true);
+    expect(matchesLogQuery(r, 'sess_1')).toBe(true);
+    expect(matchesLogQuery(r, 'msg_1')).toBe(true);
+    expect(matchesLogQuery(r, 'msg_')).toBe(false);
   });
 });

@@ -12,6 +12,7 @@ import {
   deleteGatewayBudget,
   getGatewayBudgets,
   getGatewayKeys,
+  getGatewayLogFacets,
   getGatewayOverview,
   listGatewayLogs,
   revokeGatewayKey,
@@ -265,4 +266,64 @@ test('usage value remains distinct from charges and unknown subscription fees on
   expect(result.total_cost).toBe(0);
   expect(result.estimated_usage_value).toBe(0.00205);
   expect(result.valuation?.subscription_fee).toBeNull();
+});
+
+// Optional: a consumer that builds a GatewayLogRow (a fixture, a mock) keeps compiling.
+type GatewayLogNamesItsSessionMessage = Required<GatewayLogRow> extends {
+  session_id: string | null;
+  session_title: string | null;
+  message_id: string | null;
+  turn_id: string | null;
+  thread_id: string | null;
+}
+  ? true
+  : false;
+
+test('GatewayLogRow names the session, message, turn and thread the request came from', () => {
+  const named: GatewayLogNamesItsSessionMessage = true;
+  expect(named).toBe(true);
+});
+
+test('listGatewayLogs sends every filter as a query parameter', async () => {
+  nextResponse = { status: 200, body: { logs: [], next_offset: null } };
+  await listGatewayLogs('p1', {
+    limit: 100,
+    ok: false,
+    sessionId: 'sess_1',
+    model: 'kortix/glm',
+    provider: 'kortix',
+    errorCode: 'model_unavailable',
+    q: 'req_1',
+    since: '2026-11-04T00:00:00.000Z',
+    until: '2026-11-04T01:00:00.000Z',
+  });
+  const url = new URL(last()!.url);
+  expect(url.pathname).toBe('/projects/p1/gateway/logs');
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    limit: '100',
+    ok: 'false',
+    session_id: 'sess_1',
+    model: 'kortix/glm',
+    provider: 'kortix',
+    error_code: 'model_unavailable',
+    q: 'req_1',
+    since: '2026-11-04T00:00:00.000Z',
+    until: '2026-11-04T01:00:00.000Z',
+  });
+});
+
+test('listGatewayLogs leaves out blank filters', async () => {
+  nextResponse = { status: 200, body: { logs: [], next_offset: null } };
+  await listGatewayLogs('p1', { q: '  ', sessionId: '' });
+  expect(new URL(last()!.url).search).toBe('');
+});
+
+test('getGatewayLogFacets reads the window the caller names', async () => {
+  nextResponse = {
+    status: 200,
+    body: { window_hours: 6, models: [{ value: 'm', count: 2 }], providers: [], error_codes: [], sessions: [] },
+  };
+  const facets = await getGatewayLogFacets('p1', { hours: 6 });
+  expect(last()!.url).toBe('http://test.local/projects/p1/gateway/logs/facets?hours=6');
+  expect(facets.models).toEqual([{ value: 'm', count: 2 }]);
 });

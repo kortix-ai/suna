@@ -88,6 +88,7 @@ flow(
       'GET /v1/projects/:projectId/gateway/errors',
       'GET /v1/projects/:projectId/gateway/logs',
       'GET /v1/projects/:projectId/gateway/logs/:logId',
+      'GET /v1/projects/:projectId/gateway/logs/facets',
       'GET /v1/projects/:projectId/gateway/budgets',
       'PUT /v1/projects/:projectId/gateway/budgets',
       'DELETE /v1/projects/:projectId/gateway/budgets/:budgetId',
@@ -129,6 +130,41 @@ flow(
         const r = await logs({ limit, offset: '0' });
         r.status(200).body().exists('$.logs');
         if (r.json<{ logs: unknown[] }>().logs.length > Number(limit)) throw new Error(`limit=${limit} returned more rows`);
+      }
+    });
+    await ctx.step('gateway logs filters: a bad since/until → 400; session, model, provider, error code and search filters → 200 with rows that match', async () => {
+      const logs = (query: Record<string, string>) => owner.get('/v1/projects/:projectId/gateway/logs', { params, query });
+      for (const query of [{ since: 'yesterday' }, { until: 'nope' }]) {
+        (await logs(query)).status(400).body().has('$.error', 'since and until must be ISO-8601 times');
+      }
+      (await logs({ q: 'x'.repeat(201) })).status(400).body().has('$.error', 'q must be at most 200 characters');
+      const filters: Record<string, string>[] = [
+        { session_id: 'sess_none' },
+        { model: 'no-such-model' },
+        { provider: 'no-such-provider' },
+        { error_code: 'no_such_code' },
+        { q: '100%_' },
+        { since: new Date(Date.now() - 3_600_000).toISOString(), until: new Date().toISOString() },
+      ];
+      for (const query of filters) {
+        const r = await logs(query);
+        r.status(200).body().exists('$.logs');
+        const rows = r.json<{ logs: Array<{ session_id: string | null }> }>().logs;
+        if ('session_id' in query && rows.some((row) => row.session_id !== query.session_id)) {
+          throw new Error('session_id filter returned another session');
+        }
+      }
+    });
+    await ctx.step('gateway log facets: hours outside 1–168 → 400; a window → 200 with models, providers, error codes and sessions; `facets` is not read as a log id', async () => {
+      const facets = (query: Record<string, string>) => owner.get('/v1/projects/:projectId/gateway/logs/facets', { params, query });
+      for (const hours of ['0', '169', 'abc']) {
+        (await facets({ hours })).status(400).body().has('$.error', 'hours must be an integer from 1 to 168');
+      }
+      const r = await facets({ hours: '24' });
+      r.status(200).body().has('$.window_hours', 24);
+      const body = r.json<Record<string, unknown>>();
+      for (const key of ['models', 'providers', 'error_codes', 'sessions']) {
+        if (!Array.isArray(body[key])) throw new Error(`${key} is not an array`);
       }
     });
     await ctx.step('gateway spend rejects fractional days before SQL', async () => {

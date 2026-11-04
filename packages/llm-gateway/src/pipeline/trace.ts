@@ -1,4 +1,5 @@
 import type { GatewayHooks, GatewayLogger, GatewayTrace, TokenCounts } from '../domain';
+import type { RequestOrigin } from './request-origin';
 
 const EMPTY_USAGE: TokenCounts = {
   promptTokens: 0,
@@ -63,6 +64,7 @@ export function createTraceEmitter(
   requestId: string,
   startedAt: string,
   startMs: number,
+  origin?: RequestOrigin,
 ): TraceEmitter {
   const marks: Partial<Record<TracePoint, number>> = {};
   let admitSteps: Record<string, number> | undefined;
@@ -120,7 +122,7 @@ export function createTraceEmitter(
       finalCost: fields.finalCost ?? 0,
       request: fields.request,
       response: fields.response,
-      metadata: split ? { ...(fields.metadata ?? {}), timing: split } : (fields.metadata ?? {}),
+      metadata: { ...(origin ?? {}), ...(fields.metadata ?? {}), ...(split ? { timing: split } : {}) },
     };
 
     logTrace(logger, trace);

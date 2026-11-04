@@ -61,6 +61,7 @@ import { CLAUDE_AGENT_PROVIDER_ID } from '@kortix/api-contract/claude-agent'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
+import { withMessageIdentity } from './message-identity'
 import { TransientRetry, type RetryPlan } from './transient-retry'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
@@ -724,9 +725,12 @@ export class PiRuntime {
       if (this.compiledAgent()?.options) logger.warn('[pi] the agent sets `options`; pi does not apply provider options', { agent: this.agentName })
       const agent = new core.Agent({
         // `sessionId` names the thread, so a Claude subscription model keeps one Claude session per thread.
-        streamFn: withAgentSampling(
-          (model, context, options) => this.models!.models.streamSimple(model, context, { ...options, sessionId: this.rootId }),
-          () => this.sampling(this.compiledAgent(), this.selected!),
+        streamFn: withMessageIdentity(
+          withAgentSampling(
+            (model, context, options) => this.models!.models.streamSimple(model, context, { ...options, sessionId: this.rootId }),
+            () => this.sampling(this.compiledAgent(), this.selected!),
+          ),
+          { reserveMessageId: () => this.adapter!.reserveMessageId(), turnId: () => this.turnParent },
         ),
         convertToLlm,
         toolExecution: 'parallel',
@@ -2112,9 +2116,12 @@ export class PiRuntime {
       retryPlan: (message) => retryStatus(retry.plan(message)),
     })
     const agent = new core.Agent({
-      streamFn: withAgentSampling(
-        (m, context, options) => this.models!.models.streamSimple(m, context, { ...options, sessionId: child.id }),
-        () => this.sampling(this.compiled?.agent?.[input.agent], selected),
+      streamFn: withMessageIdentity(
+        withAgentSampling(
+          (m, context, options) => this.models!.models.streamSimple(m, context, { ...options, sessionId: child.id }),
+          () => this.sampling(this.compiled?.agent?.[input.agent], selected),
+        ),
+        { reserveMessageId: () => adapter.reserveMessageId(), turnId: () => messageId, threadId: child.id },
       ),
       toolExecution: 'sequential',
       initialState: {

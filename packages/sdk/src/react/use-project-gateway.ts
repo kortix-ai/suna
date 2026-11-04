@@ -3,6 +3,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
+  type GatewayLogFilters,
   type SetGatewayBudgetInput,
   createGatewayKey,
   deleteGatewayBudget,
@@ -15,6 +16,7 @@ import {
   getGatewaySeries,
   getGatewaySessions,
   listGatewayLogs,
+  getGatewayLogFacets,
   revokeGatewayKey,
   setGatewayBudget,
 } from '../core/rest/projects-client/gateway';
@@ -69,12 +71,17 @@ export function useGatewayErrors(projectId: string | undefined, days = 30) {
 /** Matches the route's `LIST_LIMIT_MAX`, so one click pulls a full server page. */
 export const GATEWAY_LOGS_PAGE_SIZE = 100;
 
-export function useGatewayLogs(projectId: string | undefined, opts?: { ok?: boolean }) {
+export function useGatewayLogs(projectId: string | undefined, opts?: GatewayLogFilters) {
+  const { ok, ...rest } = opts ?? {};
+  // Blank filters are no filter: the same key, the same cache entry.
+  const filters = Object.fromEntries(Object.entries(rest).filter(([, v]) => typeof v === 'string' && v.trim()));
+  const filtered = Object.keys(filters).length > 0;
   return useInfiniteQuery({
-    queryKey: qk.project.gatewayLogs(projectId ?? '', opts?.ok ?? null),
+    queryKey: qk.project.gatewayLogs(projectId ?? '', ok ?? null, filtered ? filters : undefined),
     queryFn: ({ pageParam }) =>
       listGatewayLogs(projectId!, {
-        ok: opts?.ok,
+        ...filters,
+        ok,
         limit: GATEWAY_LOGS_PAGE_SIZE,
         offset: pageParam,
       }),
@@ -84,11 +91,24 @@ export function useGatewayLogs(projectId: string | undefined, opts?: { ok?: bool
     // the viewer at the 100 newest requests with nothing in the UI saying so.
     getNextPageParam: (last) => last.next_offset ?? undefined,
     enabled: !!projectId,
+    // A new filter keeps the rows on screen until its own first page lands.
+    placeholderData: (previous) => previous,
     // Live-tail only while the newest page is the ONLY page. An infinite query
     // refetches every loaded page on each tick, so polling after the reader has
     // paged back through history means N requests per interval and rows moving
-    // under the keyboard cursor.
-    refetchInterval: (query) => ((query.state.data?.pages.length ?? 1) > 1 ? false : 10_000),
+    // under the keyboard cursor. A window that ends in the past never changes.
+    refetchInterval: (query) =>
+      (query.state.data?.pages.length ?? 1) > 1 || filters.until ? false : 10_000,
+  });
+}
+
+/** The values the log filters can take in the last `hours` (default 24), the most-used first. */
+export function useGatewayLogFacets(projectId: string | undefined, hours = 24) {
+  return useQuery({
+    queryKey: qk.project.gatewayLogFacets(projectId ?? '', hours),
+    queryFn: () => getGatewayLogFacets(projectId!, { hours }),
+    enabled: !!projectId,
+    staleTime: 60_000,
   });
 }
 

@@ -342,6 +342,7 @@ export {
   useGatewaySessions,
   useGatewayErrors,
   useGatewayLogs,
+  useGatewayLogFacets,
   useGatewayLog,
   useGatewayBudgets,
   useSetGatewayBudget,

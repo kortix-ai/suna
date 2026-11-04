@@ -194,6 +194,7 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       rawBody: '',
       parsedBody: chatBody as Record<string, unknown>,
       signal: req.signal,
+      origin: req.origin,
     });
 
     if (!upstream.ok) {
@@ -253,6 +254,7 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       rawBody: '',
       parsedBody: chatBody as Record<string, unknown>,
       signal: req.signal,
+      origin: req.origin,
     });
 
     if (!upstream.ok) {
