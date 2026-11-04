@@ -1960,6 +1960,13 @@ const catalog = {
       "large": "Large run",
       "largeHint": "This run starts more than 25 agents. You can stop any agent from its row.",
       "openRun": "Open run",
+      "viewingAgent": "Viewing",
+      "startsAfter": "Starts after {phase}",
+      "didntFinish": "Didn’t finish",
+      "retryNow": "Retry",
+      "retryAgent": "Retry {label}",
+      "waitsFor": "Waits for {count} more",
+      "phaseProgress": "{phase} {done} of {total} done",
       "openRunLabel": "Open the run's session",
       "backgroundIdle": "In its own session",
       "savedName": "Saved workflow {name}",
@@ -1987,11 +1994,22 @@ const catalog = {
       "stopFailed": "Could not stop {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # key} other {JSON · # keys}}",
-      "jsonItems": "{count, plural, one {JSON · # item} other {JSON · # items}}"
+      "jsonItems": "{count, plural, one {JSON · # item} other {JSON · # items}}",
+      "failedSentence": "The workflow stopped before it finished."
     },
     "agent": {
       "backgroundWorking": "Working in the background",
-      "backgroundSession": "In its own session"
+      "backgroundSession": "In its own session",
+      "open": "Open",
+      "openAgent": "Open {name}",
+      "state": {
+        "working": "Working",
+        "needs_input": "Needs you",
+        "idle": "Done",
+        "completed": "Done",
+        "failed": "Didn’t finish",
+        "stopped": "Stopped"
+      }
     }
   },
   "agentScope": {
@@ -9449,12 +9467,21 @@ const catalog = {
       "shutdownRequest": "Shutdown request from {from}",
       "shutdownResponse": "Shutdown answer from {from}",
       "expand": "Show the whole message",
-      "collapse": "Hide the message"
+      "collapse": "Hide the message",
+      "kind": {
+        "message": "Message",
+        "finished": "Finished",
+        "shutdownRequest": "Asks to stop",
+        "shutdownResponse": "Stop answer"
+      }
     },
     "notice": {
       "completed": "{name} finished",
       "failed": "{name} didn’t finish",
       "stopped": "{name} was stopped",
+      "viewRun": "View run",
+      "peerFinished": "{name} finished",
+      "result": "Result",
       "fallbackName": "Your agent",
       "openSession": "Open session",
       "expand": "Show the whole result",
@@ -9464,7 +9491,14 @@ const catalog = {
       "source": "Agent update",
       "statusFailedShort": "Didn’t finish",
       "statusStoppedShort": "Stopped",
-      "updateCount": "{count, plural, one {# agent update} other {# agent updates}}"
+      "updateCount": "{count, plural, one {# agent update} other {# agent updates}}",
+      "details": "Details",
+      "failedSentence": "The agent stopped before it finished.",
+      "state": {
+        "completed": "Finished",
+        "failed": "Didn’t finish",
+        "stopped": "Stopped"
+      }
     },
     "tools": {
       "running": {
@@ -9475,6 +9509,8 @@ const catalog = {
         "stopping": "Stopping an agent…"
       },
       "to": "To",
+      "messageTo": "Message to @{to}",
+      "messageSent": "Message sent",
       "peerStatus": {
         "delivered": "Delivered",
         "held": "Waiting for approval",
@@ -9507,7 +9543,8 @@ const catalog = {
       "blockedBy": "blocked by {tasks}",
       "stopped": "Stopped",
       "alreadyEnded": "Already ended",
-      "openSession": "Open session"
+      "openSession": "Open session",
+      "messageToName": "To {to}"
     },
     "strip": {
       "label": "Agents",
@@ -9564,7 +9601,11 @@ const catalog = {
       "retry": "Try again",
       "emptyTitle": "Nothing yet",
       "emptyDescription": "Its messages show here as it works.",
-      "loadOlder": "Show earlier messages"
+      "loadOlder": "Show earlier messages",
+      "runsLabel": "Workflow runs",
+      "previousAgent": "Previous agent",
+      "nextAgent": "Next agent",
+      "moreActions": "More actions"
     },
     "tasks": {
       "label": "Team tasks",
@@ -9582,10 +9623,15 @@ const catalog = {
       "title": "Message from {from}",
       "titleShutdown": "{from} asks this session to stop",
       "waiting": "Waiting for your approval. It expires after 5 minutes.",
+      "waitingShort": "Waiting for your approval",
+      "expires": "Expires after 5 minutes",
       "deny": "Deny",
       "approve": "Approve",
       "approveFailed": "Could not deliver the message",
-      "denyFailed": "Could not deny the message"
+      "denyFailed": "Could not deny the message",
+      "wantsToSend": "wants to send this agent a message",
+      "asksStop": "asks this agent to stop",
+      "needsApproval": "Needs your approval"
     },
     "workflow": {
       "large": "Large workflow",
@@ -9593,6 +9639,9 @@ const catalog = {
       "paused": "Paused",
       "pause": "Pause the run",
       "resume": "Resume the run",
+      "pauseShort": "Pause",
+      "resumeShort": "Resume",
+      "stopShort": "Stop",
       "pauseHint": "Pause: no new agent starts; running agents finish (p)",
       "resumeHint": "Resume the run (p)",
       "stop": "Stop the run",
@@ -9602,6 +9651,7 @@ const catalog = {
       "savePrompt": "Save the workflow run \"{title}\" (run {runId}) as a saved workflow: write its script to {file} and open a change request for it.",
       "saveSent": "Asked to save the workflow",
       "saveFailed": "Could not ask to save the workflow",
+      "viewing": "Viewing",
       "restartHint": "Restart this agent with the same prompt (r)",
       "restartAgent": "Restart {label}",
       "failed": {

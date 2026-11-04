@@ -3167,6 +3167,13 @@
       "large": "Велико покретање",
       "largeHint": "Ово покретање покреће више од 25 агената. Сваког агента можеш да зауставиш из његовог реда.",
       "openRun": "Отвори покретање",
+      "viewingAgent": "Приказано",
+      "startsAfter": "Почиње после фазе {phase}",
+      "didntFinish": "Није завршио",
+      "retryNow": "Покушај поново",
+      "retryAgent": "Покушај поново {label}",
+      "waitsFor": "Чека још {count}",
+      "phaseProgress": "{phase}: {done} од {total} готово",
       "openRunLabel": "Отвори сесију покретања",
       "backgroundIdle": "У сопственој сесији",
       "savedName": "Сачувани ток рада {name}",
@@ -3194,11 +3201,22 @@
       "stopFailed": "Није могуће зауставити {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # кључ} few {JSON · # кључа} other {JSON · # кључева}}",
-      "jsonItems": "{count, plural, one {JSON · # ставка} few {JSON · # ставке} other {JSON · # ставки}}"
+      "jsonItems": "{count, plural, one {JSON · # ставка} few {JSON · # ставке} other {JSON · # ставки}}",
+      "failedSentence": "Tok rada je stao pre nego što je završio."
     },
     "agent": {
       "backgroundWorking": "Ради у позадини",
-      "backgroundSession": "У сопственој сесији"
+      "backgroundSession": "У сопственој сесији",
+      "open": "Отвори",
+      "openAgent": "Отвори {name}",
+      "state": {
+        "working": "Ради",
+        "needs_input": "Потребан си",
+        "idle": "Готово",
+        "completed": "Готово",
+        "failed": "Није завршио",
+        "stopped": "Заустављено"
+      }
     }
   },
   "agentRunLimit": {
@@ -25144,12 +25162,21 @@
       "shutdownRequest": "Захтев за гашење од {from}",
       "shutdownResponse": "Одговор на захтев за гашење од {from}",
       "expand": "Прикажи целу поруку",
-      "collapse": "Сакриј поруку"
+      "collapse": "Сакриј поруку",
+      "kind": {
+        "message": "Poruka",
+        "finished": "Završeno",
+        "shutdownRequest": "Traži zaustavljanje",
+        "shutdownResponse": "Odgovor na zaustavljanje"
+      }
     },
     "notice": {
       "completed": "{name} је завршио",
       "failed": "{name} није завршио",
       "stopped": "{name} је заустављен",
+      "viewRun": "Погледај покретање",
+      "peerFinished": "{name} је завршио",
+      "result": "Резултат",
       "fallbackName": "Твој агент",
       "openSession": "Отвори сесију",
       "expand": "Прикажи цео резултат",
@@ -25159,7 +25186,14 @@
       "source": "Ажурирање агента",
       "statusFailedShort": "Није завршено",
       "statusStoppedShort": "Заустављено",
-      "updateCount": "{count, plural, one {# ажурирање агента} few {# ажурирања агента} other {# ажурирања агента}}"
+      "updateCount": "{count, plural, one {# ажурирање агента} few {# ажурирања агента} other {# ажурирања агента}}",
+      "details": "Detalji",
+      "failedSentence": "Agent je stao pre nego što je završio.",
+      "state": {
+        "completed": "Završeno",
+        "failed": "Nije završeno",
+        "stopped": "Zaustavljeno"
+      }
     },
     "tools": {
       "running": {
@@ -25170,6 +25204,8 @@
         "stopping": "Зауставља се агент…"
       },
       "to": "За",
+      "messageTo": "Порука за @{to}",
+      "messageSent": "Порука је послата",
       "peerStatus": {
         "delivered": "Испоручено",
         "held": "Чека одобрење",
@@ -25202,7 +25238,8 @@
       "blockedBy": "чека на {tasks}",
       "stopped": "Заустављено",
       "alreadyEnded": "Већ је завршено",
-      "openSession": "Отвори сесију"
+      "openSession": "Отвори сесију",
+      "messageToName": "Za {to}"
     },
     "strip": {
       "label": "Агенти",
@@ -25259,7 +25296,11 @@
       "retry": "Покушај поново",
       "emptyTitle": "Још ништа",
       "emptyDescription": "Његове поруке се појављују овде док ради.",
-      "loadOlder": "Прикажи раније поруке"
+      "loadOlder": "Прикажи раније поруке",
+      "runsLabel": "Покретања workflow-а",
+      "previousAgent": "Претходни агент",
+      "nextAgent": "Следећи агент",
+      "moreActions": "Још радњи"
     },
     "tasks": {
       "label": "Задаци тима",
@@ -25277,10 +25318,15 @@
       "title": "Порука од {from}",
       "titleShutdown": "{from} тражи да се ова сесија заустави",
       "waiting": "Чека твоје одобрење. Истиче за 5 минута.",
+      "waitingShort": "Чека твоје одобрење",
+      "expires": "Истиче за 5 минута",
       "deny": "Одбиј",
       "approve": "Одобри",
       "approveFailed": "Није могуће испоручити поруку",
-      "denyFailed": "Није могуће одбити поруку"
+      "denyFailed": "Није могуће одбити поруку",
+      "wantsToSend": "želi da pošalje poruku ovom agentu",
+      "asksStop": "traži da se ovaj agent zaustavi",
+      "needsApproval": "Potrebno je tvoje odobrenje"
     },
     "workflow": {
       "large": "Велики ток рада",
@@ -25288,6 +25334,9 @@
       "paused": "Паузирано",
       "pause": "Паузирај покретање",
       "resume": "Настави покретање",
+      "pauseShort": "Паузирај",
+      "resumeShort": "Настави",
+      "stopShort": "Заустави",
       "pauseHint": "Паузирај: ниједан нови агент се не покреће, а агенти који раде завршавају (p)",
       "resumeHint": "Настави покретање (p)",
       "stop": "Заустави покретање",
@@ -25297,6 +25346,7 @@
       "savePrompt": "Сачувај покретање тока рада „{title}“ (покретање {runId}) као сачувани ток рада: упиши његову скрипту у {file} и отвори захтев за измену за њега.",
       "saveSent": "Затражено је чување тока рада",
       "saveFailed": "Није могуће затражити чување тока рада",
+      "viewing": "Приказано",
       "restartHint": "Поново покрени овог агента истим упитом (r)",
       "restartAgent": "Поново покрени {label}",
       "failed": {

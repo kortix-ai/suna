@@ -165,3 +165,11 @@ describe('counts and the line', () => {
     expect(shortElapsed(2 * 60 * 60_000 + 5)).toBe('2h');
   });
 });
+
+describe('boardStateOf — a session that failed to start', () => {
+  test('a failed session whose first prompt still waits reads failed, not working', () => {
+    const session = { session_id: 's', status: 'failed', board_state: 'working', working: { state: 'working', pending_delivery: true } } as never;
+    expect(boardStateOf(session)).toBe('failed');
+  });
+});
+

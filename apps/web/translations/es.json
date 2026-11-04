@@ -3167,6 +3167,13 @@
       "large": "Ejecución grande",
       "largeHint": "Esta ejecución inicia más de 25 agentes. Puedes detener cualquier agente desde su fila.",
       "openRun": "Abrir ejecución",
+      "viewingAgent": "Viendo",
+      "startsAfter": "Empieza después de {phase}",
+      "didntFinish": "No terminó",
+      "retryNow": "Reintentar",
+      "retryAgent": "Reintentar {label}",
+      "waitsFor": "Espera a {count} más",
+      "phaseProgress": "{phase}: {done} de {total} hechos",
       "openRunLabel": "Abrir la sesión de la ejecución",
       "backgroundIdle": "En su propia sesión",
       "savedName": "Flujo de trabajo guardado {name}",
@@ -3194,11 +3201,22 @@
       "stopFailed": "No se pudo detener {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # clave} other {JSON · # claves}}",
-      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementos}}"
+      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementos}}",
+      "failedSentence": "El flujo de trabajo se detuvo antes de terminar."
     },
     "agent": {
       "backgroundWorking": "Trabajando en segundo plano",
-      "backgroundSession": "En su propia sesión"
+      "backgroundSession": "En su propia sesión",
+      "open": "Abrir",
+      "openAgent": "Abrir {name}",
+      "state": {
+        "working": "Trabajando",
+        "needs_input": "Te necesita",
+        "idle": "Hecho",
+        "completed": "Hecho",
+        "failed": "No terminó",
+        "stopped": "Detenido"
+      }
     }
   },
   "agentRunLimit": {
@@ -25144,12 +25162,21 @@
       "shutdownRequest": "Solicitud de cierre de {from}",
       "shutdownResponse": "Respuesta a la solicitud de cierre de {from}",
       "expand": "Mostrar el mensaje completo",
-      "collapse": "Ocultar el mensaje"
+      "collapse": "Ocultar el mensaje",
+      "kind": {
+        "message": "Mensaje",
+        "finished": "Terminado",
+        "shutdownRequest": "Pide detenerse",
+        "shutdownResponse": "Respuesta de parada"
+      }
     },
     "notice": {
       "completed": "{name} ha terminado",
       "failed": "{name} no terminó",
       "stopped": "{name} se detuvo",
+      "viewRun": "Ver ejecución",
+      "peerFinished": "{name} ha terminado",
+      "result": "Resultado",
       "fallbackName": "Tu agente",
       "openSession": "Abrir sesión",
       "expand": "Mostrar el resultado completo",
@@ -25159,7 +25186,14 @@
       "source": "Actualización del agente",
       "statusFailedShort": "No terminó",
       "statusStoppedShort": "Detenido",
-      "updateCount": "{count, plural, one {# actualización del agente} other {# actualizaciones de agentes}}"
+      "updateCount": "{count, plural, one {# actualización del agente} other {# actualizaciones de agentes}}",
+      "details": "Detalles",
+      "failedSentence": "El agente se detuvo antes de terminar.",
+      "state": {
+        "completed": "Terminado",
+        "failed": "No terminó",
+        "stopped": "Detenido"
+      }
     },
     "tools": {
       "running": {
@@ -25170,6 +25204,8 @@
         "stopping": "Deteniendo un agente…"
       },
       "to": "Para",
+      "messageTo": "Mensaje para @{to}",
+      "messageSent": "Mensaje enviado",
       "peerStatus": {
         "delivered": "Entregado",
         "held": "Esperando aprobación",
@@ -25202,7 +25238,8 @@
       "blockedBy": "bloqueada por {tasks}",
       "stopped": "Detenido",
       "alreadyEnded": "Ya terminó",
-      "openSession": "Abrir sesión"
+      "openSession": "Abrir sesión",
+      "messageToName": "Para {to}"
     },
     "strip": {
       "label": "Agentes",
@@ -25259,7 +25296,11 @@
       "retry": "Reintentar",
       "emptyTitle": "Nada todavía",
       "emptyDescription": "Sus mensajes aparecen aquí mientras trabaja.",
-      "loadOlder": "Mostrar mensajes anteriores"
+      "loadOlder": "Mostrar mensajes anteriores",
+      "runsLabel": "Ejecuciones de workflow",
+      "previousAgent": "Agente anterior",
+      "nextAgent": "Agente siguiente",
+      "moreActions": "Más acciones"
     },
     "tasks": {
       "label": "Tareas del equipo",
@@ -25277,10 +25318,15 @@
       "title": "Mensaje de {from}",
       "titleShutdown": "{from} pide detener esta sesión",
       "waiting": "Espera tu aprobación. Caduca a los 5 minutos.",
+      "waitingShort": "Espera tu aprobación",
+      "expires": "Caduca a los 5 minutos",
       "deny": "Denegar",
       "approve": "Aprobar",
       "approveFailed": "No se pudo entregar el mensaje",
-      "denyFailed": "No se pudo denegar el mensaje"
+      "denyFailed": "No se pudo denegar el mensaje",
+      "wantsToSend": "quiere enviar un mensaje a este agente",
+      "asksStop": "pide a este agente que se detenga",
+      "needsApproval": "Necesita tu aprobación"
     },
     "workflow": {
       "large": "Flujo de trabajo grande",
@@ -25288,6 +25334,9 @@
       "paused": "En pausa",
       "pause": "Pausar la ejecución",
       "resume": "Reanudar la ejecución",
+      "pauseShort": "Pausar",
+      "resumeShort": "Reanudar",
+      "stopShort": "Detener",
       "pauseHint": "Pausar: no se inicia ningún agente nuevo; los agentes en curso terminan (p)",
       "resumeHint": "Reanudar la ejecución (p)",
       "stop": "Detener la ejecución",
@@ -25297,6 +25346,7 @@
       "savePrompt": "Guarda la ejecución del flujo de trabajo «{title}» (ejecución {runId}) como flujo de trabajo guardado: escribe su script en {file} y abre una solicitud de cambio para él.",
       "saveSent": "Se pidió guardar el flujo de trabajo",
       "saveFailed": "No se pudo pedir que se guardara el flujo de trabajo",
+      "viewing": "Viendo",
       "restartHint": "Reiniciar este agente con el mismo prompt (r)",
       "restartAgent": "Reiniciar {label}",
       "failed": {

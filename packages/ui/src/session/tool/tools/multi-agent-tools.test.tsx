@@ -131,22 +131,31 @@ describe('send_message', () => {
   });
 
   test('done shows the receiver, the preview and that it arrived', () => {
-    const text = textOf(drawn('send_message', done('send_message', SENT), { open: true }));
-    expect(text).toContain('Sent to @reviewer');
-    expect(text).toContain('@reviewer');
+    const html = drawn('send_message', done('send_message', SENT), { open: true });
+    const text = textOf(html);
+    expect(html).toContain('data-tone="agent"');
+    expect(text).toContain('To reviewer');
     expect(text).toContain('Migration finished');
+    expect(text).toContain('The schema migration finished. Rebase now.');
+    expect(html).toContain('data-agent-status="done"');
     expect(text).toContain('Delivered');
+    expect(html).not.toContain('text-kortix-red');
     // The agent-facing note repeats a delivery; it shows only when the message did not arrive.
     expect(text).not.toContain('Sent to reviewer.');
   });
 
   test('a held or refused message says so, with the reason', () => {
     const held = { ...SENT, card: { title: 'Waiting for @reviewer', status: 'needs_you' }, data: { ...SENT.data, status: 'held', note: 'Held until their person approves it.' } };
-    const heldText = textOf(drawn('send_message', done('send_message', held)));
+    const heldHtml = drawn('send_message', done('send_message', held), { open: true });
+    const heldText = textOf(heldHtml);
+    expect(heldHtml).toContain('data-agent-status="needs-you"');
     expect(heldText).toContain('Waiting for approval');
     expect(heldText).toContain('Held until their person approves it.');
     const refused = { ...SENT, ok: true, card: { title: 'Not sent', status: 'done' }, data: { status: 'refused', message: null, to: AGENT('reviewer', 'session', 'idle', { can_receive: false }), note: 'Not sent: reviewer refuses messages.' } };
-    const refusedText = textOf(drawn('send_message', done('send_message', refused), { open: true }));
+    const refusedHtml = drawn('send_message', done('send_message', refused), { open: true });
+    const refusedText = textOf(refusedHtml);
+    expect(refusedHtml).toContain('data-agent-status="stopped"');
+    expect(refusedHtml).not.toContain('text-kortix-red');
     expect(refusedText).toContain('Not sent');
     expect(refusedText).toContain('Not sent: reviewer refuses messages.');
   });
