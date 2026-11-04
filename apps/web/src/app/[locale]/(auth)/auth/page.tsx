@@ -714,16 +714,15 @@ function AuthCardForm({
         return;
       }
       const { mode: resolved } = await resolveAuthMode(trimmed);
-      if (resolved === 'closed') {
-        failWith(t('errors.signupsClosed'));
-        return;
-      }
       if (resolved === 'sso') {
         // Enforced-SSO domain that slipped past the probe above (e.g. SAML
         // temporarily unreachable) — never open the password door.
         failWith(t('errors.ssoRequired'));
         return;
       }
+      // 'closed' renders the neutral sign-in credentials step: whoever holds
+      // an account signs in, a new visitor is told signups are shut (KRTX-3504:
+      // the endpoint cannot say which, and it must not try).
       setCredMode(resolved);
       setStep('credentials');
     } catch (err) {
@@ -809,14 +808,11 @@ function AuthCardForm({
     setPendingAction('password');
     try {
       const { mode: resolved } = await resolveAuthMode(target);
-      if (resolved === 'closed') {
-        failWith(t('errors.signupsClosed'));
-        return;
-      }
       if (resolved === 'sso') {
         failWith(t('errors.ssoRequired'));
         return;
       }
+      // 'closed' renders the neutral sign-in credentials step (KRTX-3504).
       rememberAuthMethod('password');
       setCredMode(resolved);
       setStep('credentials');
@@ -884,7 +880,7 @@ function AuthCardForm({
         // relabel the step so the retry reads as the sign-in it really is.
         if (failure.switchToSignin) setCredMode('signin');
         const localizedFailure =
-          failureCode === 'invalid_credentials' && credMode === 'signin'
+          failureCode === 'invalid_credentials' && (credMode === 'signin' || credMode === 'closed')
             ? t('errors.incorrectPassword')
             : failureCode === 'existing_account_wrong_password' && credMode === 'signup'
               ? t('errors.existingAccountWrongPassword')
@@ -952,18 +948,19 @@ function AuthCardForm({
     await sendMagic(sentEmail, 'resend');
   };
 
-  // Password escape off the SSO interstitial. The existence check already ran
+  // Password escape off the SSO interstitial. The policy check already ran
   // when the interstitial opened, so this is a synchronous relabel + step move.
+  // 'closed' opens the neutral sign-in credentials step like everywhere else,
+  // instead of dead-ending — an existing account must still be able to sign in
+  // with signups closed (KRTX-3504).
   const usePasswordFromSso = () => {
     const fallbackMode = ssoFallbackMode.current;
-    if (fallbackMode === 'closed') {
-      failWith(t('errors.signupsClosed'));
-      return;
-    }
     rememberAuthMethod('password');
     clearNotices();
     setCredMode(
-      fallbackMode === 'signin' || fallbackMode === 'signup' ? fallbackMode : 'unknown',
+      fallbackMode === 'signin' || fallbackMode === 'signup' || fallbackMode === 'closed'
+        ? fallbackMode
+        : 'unknown',
     );
     setStep('credentials');
   };
@@ -1082,9 +1079,11 @@ function AuthCardForm({
           <StepHeader
             title={t(`credentials.${credentialKey}.title`)}
             description={
-              credentialKey === 'unknown'
-                ? undefined
-                : t(`credentials.${credentialKey}.description`)
+              credMode === 'closed'
+                ? t('errors.signupsClosed') // localized; identical for every address
+                : credentialKey === 'unknown'
+                  ? undefined
+                  : t(`credentials.${credentialKey}.description`)
             }
           />
         </m.div>

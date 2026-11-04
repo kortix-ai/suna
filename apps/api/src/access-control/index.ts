@@ -1,9 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { accessRequests } from '@kortix/db';
-import { sql } from 'drizzle-orm';
 import { EffectiveBrandingSchema } from '../accounts/core/app';
 import { instanceBranding } from '../accounts/instance-branding';
-import { config } from '../config';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import { ssoEnforcedForEmail } from '../repositories/sso';
 import { areSignupsEnabled, canSignUp } from '../shared/access-control-cache';
@@ -11,21 +9,6 @@ import { db } from '../shared/db';
 import { createCheckEmailRateLimitMiddleware } from '../middleware/rate-limit';
 
 export const accessControlApp = makeOpenApiApp();
-
-async function userExistsInAuth(email: string): Promise<boolean> {
-  if (!config.DATABASE_URL) return false;
-  // The shared pool: a public, rate-limited route must not open and close a
-  // Postgres connection per request.
-  try {
-    const result = await db.execute(
-      sql`SELECT 1 AS found FROM auth.users WHERE email = ${email.trim().toLowerCase()} LIMIT 1`,
-    );
-    const rows = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? []);
-    return rows.length > 0;
-  } catch {
-    return false;
-  }
-}
 
 // ─── Public endpoints (no auth) ───────────────────────────────────────────────
 
@@ -61,15 +44,23 @@ accessControlApp.openapi(
   async (c) => c.json({ branding: await instanceBranding() }),
 );
 
-// `mode` drives the unified auth flow: 'signin' when the address already has
-// an account, 'signup' when it may register, 'closed' when signups are off and
-// the address isn't allowlisted, 'sso' when the domain's org enforces SSO-only
-// sign-in on a verified domain (the password/email-code paths must refuse; the
-// API's headless sign-in routes refuse too). This is deliberately a
-// flow directive, not a raw "exists" boolean — and the per-IP rate limit above
-// it is what keeps the endpoint useless for bulk account enumeration
-// (`allowed` already implied existence whenever signups were closed, so this
-// widens nothing new).
+// KRTX-3504: this endpoint is public, so its answer must not depend on whether
+// the address already has an account — that was an account-existence oracle an
+// anonymous caller could sweep against the user base. The answer therefore
+// splits only on instance/domain policy, never on account history, and comes
+// with no `mode` when the address is simply eligible:
+//   { allowed: true }        — every address that may hold an account here
+//   { allowed: false, mode:"closed" } — signups closed, address not allowlisted
+//   { allowed: true,  mode:"sso" }    — the domain's org enforces SSO-only
+//                                       sign-in (the password/email-code paths
+//                                       refuse; the headless routes refuse too)
+// Eligibility is re-enforced at account creation (web actions, headless
+// /auth/signup), and the sign-in door exists for every address: GoTrue answers
+// an unknown address exactly like a wrong password. A web client that gets no
+// `mode` renders its neutral/adaptive step and signs the visitor in through
+// the sign-up path, which falls back to sign-in when the account exists.
+// `mode` values 'signin'/'signup' remain in the enum for older deployments;
+// a client may still receive them from an API predating this change.
 accessControlApp.openapi(
   createRoute({
     method: 'post',
@@ -84,8 +75,8 @@ accessControlApp.openapi(
     },
     responses: {
       200: json(
-        z.object({ allowed: z.boolean(), mode: z.enum(['signin', 'signup', 'closed', 'sso']) }),
-        'Whether the email may sign up, and which auth-flow mode applies',
+        z.object({ allowed: z.boolean(), mode: z.enum(['signin', 'signup', 'closed', 'sso']).optional() }),
+        'Whether the email may sign up, and which auth-flow mode applies; `mode` is absent while the address is simply eligible (no account-history signal)',
       ),
       ...errors(400, 429),
     },
@@ -104,8 +95,9 @@ accessControlApp.openapi(
     if (await ssoEnforcedForEmail(email).catch(() => null)) {
       return c.json({ allowed: true, mode: 'sso' as const });
     }
-    if (await userExistsInAuth(email)) return c.json({ allowed: true, mode: 'signin' as const });
-    if (canSignUp(email)) return c.json({ allowed: true, mode: 'signup' as const });
+    // Eligibility, not account history: an address that holds an account and
+    // one that may create one get the identical body.
+    if (canSignUp(email)) return c.json({ allowed: true });
     return c.json({ allowed: false, mode: 'closed' as const });
   },
 );

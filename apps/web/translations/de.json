@@ -2947,6 +2947,8 @@
         "title": "E-Mail prüfen",
         "description": "Wir haben einen Link an <address>{email}</address> gesendet. Öffne ihn, um fortzufahren.",
         "confirmDescription": "Wir haben eine Bestätigungs-E-Mail an <address>{email}</address> gesendet. Bestätige deine E-Mail, um fortzufahren.",
+        "unknownDescription": "Wir haben eine E-Mail an <address>{email}</address> geschickt — ein Anmelde-Link oder ein Bestätigungs-Link für ein neues Konto.",
+        "closedDescription": "Falls <address>{email}</address> ein Konto hat, ist sein Anmelde-Link unterwegs.",
         "notReceived": "Keinen Link erhalten?",
         "confirmNotReceived": "Keine Bestätigungs-E-Mail erhalten?",
         "resendIn": "Erneut senden in {seconds}",

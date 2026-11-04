@@ -21,9 +21,12 @@ export function EmailLinkStep({
   pending,
   pendingAction,
   passwordEnabled,
-  /** The flow mode the send action resolved: 'signup' when GoTrue minted the
-   * signup confirmation email ("Confirm your email"), anything else when the
-   * email kind is unknown (the generic link copy, KRTX-2516's fail-open). */
+  /** The flow mode the send action resolved: 'signup' names the signup
+   * confirmation email GoTrue minted; 'unknown' the send whose email kind
+   * only the mailbox knows (sign-in link or confirmation, KRTX-3504 — the
+   * API no longer says which); 'closed' a sign-in-only send that reaches the
+   * mailbox only when the account exists. Anything else keeps the generic
+   * link copy (KRTX-2516's fail-open). */
   mode,
   onResend,
   onChangeEmail,
@@ -50,7 +53,17 @@ export function EmailLinkStep({
   const t = useTranslations('auth.unified');
   // The copy must name the email the mailbox receives (KRTX-2195): a signup
   // gets the confirmation email, so "a link" read the mail as the wrong
-  // message. Unknown mode keeps the generic link copy.
+  // message. KRTX-3504: the API no longer says whether the address holds an
+  // account, so an eligible send ('unknown') reaches mailboxes as EITHER kind
+  // — the copy names both; a closed-signup send ('closed') mails a sign-in
+  // link only when the account exists — the copy claims nothing more. Any
+  // other mode keeps the generic link copy (KRTX-2516's fail-open).
+  const descriptionKey =
+    mode === 'unknown'
+      ? 'link.unknownDescription'
+      : mode === 'closed'
+        ? 'link.closedDescription'
+        : 'link.description';
   const confirmed = mode === 'signup';
   const prefersReducedMotion = useReducedMotion();
   const rise = (delay = 0) => ({
@@ -63,7 +76,7 @@ export function EmailLinkStep({
       <m.div {...rise(0)}>
         <StepHeader
           title={t('link.title')}
-          description={t.rich(confirmed ? 'link.confirmDescription' : 'link.description', {
+          description={t.rich(confirmed ? 'link.confirmDescription' : descriptionKey, {
             email: sentEmail ?? '',
             address: (chunks) => (
               <span className="text-foreground font-medium wrap-break-word">{chunks}</span>

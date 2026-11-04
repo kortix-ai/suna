@@ -13,14 +13,14 @@ import type { UiTranslator } from '@/i18n/translator';
 export type AuthMethod = 'magic' | 'password';
 
 /** What the credentials (password) step knows about the address. */
-export type CredentialsMode = 'signin' | 'signup' | 'unknown';
+export type CredentialsMode = 'signin' | 'signup' | 'closed' | 'unknown';
 
 /**
  * `CredentialsMode` plus the terminal outcomes: 'closed' (signups off, address
  * not allowlisted) and 'sso' (the domain's org enforces SSO-only sign-in — the
  * password/email-code paths must refuse and route to the IdP).
  */
-export type EmailFlowMode = CredentialsMode | 'closed' | 'sso';
+export type EmailFlowMode = CredentialsMode | 'sso';
 
 export const SIGNUPS_CLOSED_MESSAGE =
   'Signups are currently closed. Contact your administrator or request access.';
@@ -41,11 +41,14 @@ export function parseAuthMethods(raw: string | null | undefined): AuthMethod[] {
 }
 
 /**
- * Map a `POST /access/check-email` response body onto a flow mode. Tolerates
- * the legacy `{ allowed }`-only shape (API older than the web) and any failure
- * shape by degrading to 'unknown' — the credentials step then submits through
- * the adaptive signup action, which signs in existing users and registers new
- * ones, so a degraded check never strands anyone.
+ * Map a `POST /access/check-email` response body onto a flow mode. The API
+ * answers `{ allowed: true }` — no `mode` — while the address is simply
+ * eligible, so eligibility maps to 'unknown': the credentials step stays
+ * neutral and submits through the adaptive signup action, which signs in
+ * existing users and registers new ones. 'closed' and 'sso' still name the
+ * instance's policy, and an older deployment may still answer
+ * 'signin'/'signup' — mapped through unchanged. Any failure shape degrades
+ * to 'unknown', so a degraded check never strands anyone.
  */
 export function resolveEmailFlowMode(check: unknown): EmailFlowMode {
   if (!check || typeof check !== 'object') return 'unknown';
@@ -123,6 +126,23 @@ export function credentialsCopy(
       submitsAs: 'signup',
     };
   }
+  // Signups are closed: the same neutral, address-independent copy greets
+  // everyone — whoever holds an account signs in, a new visitor is told the
+  // door is shut before they type. Identical copy for every address is what
+  // keeps a closed response from leaking account history either (KRTX-3504),
+  // and nobody ever calls the sign-up door here. The description is the
+  // English fallback; the web page renders the localized
+  // t('errors.signupsClosed') with these exact words.
+  if (mode === 'closed') {
+    return {
+      title: tI18nComplete.raw('textc06bf9670174'),
+      description: SIGNUPS_CLOSED_MESSAGE,
+      passwordPlaceholder: 'Your password',
+      passwordAutoComplete: 'current-password',
+      showForgotPassword: true,
+      submitsAs: 'signin',
+    };
+  }
   return {
     title: tI18nComplete.raw('textc06bf9670174'),
     description: null,
@@ -159,7 +179,10 @@ export function passwordFailureCopy(
   },
   tI18nComplete: UiTranslator,
 ): PasswordFailure {
-  if (code === 'invalid_credentials' && mode === 'signin') {
+  // 'closed' renders the sign-in door (nobody signs up behind it), so an
+  // 'invalid_credentials' there reads the same way — and GoTrue answers an
+  // unknown address identically, so this copy never confirms existence.
+  if (code === 'invalid_credentials' && (mode === 'signin' || mode === 'closed')) {
     return { message: WRONG_PASSWORD_MESSAGE };
   }
   if (code === 'existing_account_wrong_password') {

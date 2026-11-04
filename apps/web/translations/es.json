@@ -2947,6 +2947,8 @@
         "title": "Revisa tu correo electrónico",
         "description": "Enviamos un enlace a <address>{email}</address>. Ábrelo para continuar.",
         "confirmDescription": "Enviamos un correo de confirmación a <address>{email}</address>. Confirma tu correo para continuar.",
+        "unknownDescription": "Enviamos un correo a <address>{email}</address> — un enlace para iniciar sesión o un enlace de confirmación para una cuenta nueva.",
+        "closedDescription": "Si <address>{email}</address> tiene una cuenta, su enlace de inicio de sesión está en camino.",
         "notReceived": "¿No recibiste el enlace?",
         "confirmNotReceived": "¿No recibiste el correo de confirmación?",
         "resendIn": "Reenviar en {seconds}",

@@ -76,6 +76,11 @@ const SIGN_IN_WORDING: Record<string, RegExp> = {
  * does resolve the flow mode server-side; it now answers with it, and the step
  * names the confirmation email for a signup while keeping the generic link
  * copy when the mode is unknown (the old fail-open, KRTX-2516).
+ *
+ * KRTX-3504: the public API no longer says whether the address holds an
+ * account, so an eligible send ('unknown') can mint EITHER email and the step
+ * names both; a closed-signup send ('closed') mails a sign-in link only when
+ * the account exists, and the copy claims only that conditional.
  */
 describe('link step copy names the link, not its kind', () => {
   for (const [locale, wording] of Object.entries(SIGN_IN_WORDING)) {
@@ -116,8 +121,8 @@ test('mode=signup: the copy names the confirmation email the mailbox actually re
   expect(markup).not.toContain('Didn&#x27;t receive the link?');
 });
 
-test('mode other than signup keeps the generic link copy (fail-open, KRTX-2516)', () => {
-  for (const mode of [undefined, 'unknown', 'signin'] as const) {
+test('modes without their own send knowledge keep the generic link copy (fail-open, KRTX-2516)', () => {
+  for (const mode of [undefined, 'signin'] as const) {
     const markup = renderToStaticMarkup(
       <EmailLinkStep
         mode={mode}
@@ -139,6 +144,54 @@ test('mode other than signup keeps the generic link copy (fail-open, KRTX-2516)'
   }
 });
 
+test('mode=unknown: the copy names both emails the mailbox may receive (KRTX-3504)', () => {
+  const markup = renderToStaticMarkup(
+    <EmailLinkStep
+      mode="unknown"
+      sentEmail="synthetic@example.test"
+      errorMessage={null}
+      info={null}
+      resendIn={0}
+      pending={false}
+      pendingAction={null}
+      passwordEnabled={true}
+      onResend={() => {}}
+      onChangeEmail={() => {}}
+      onPassword={() => {}}
+    />,
+  );
+  expect(markup).toContain('We emailed');
+  expect(markup).toContain('a sign-in link, or a confirmation link for a new account');
+  // The old generic copy promised one specific email — under the new contract
+  // the page cannot know which kind GoTrue minted.
+  expect(markup).not.toContain('We sent a link to');
+});
+
+test('mode=closed: the copy claims a sign-in link only when the account exists (KRTX-3504)', () => {
+  const markup = renderToStaticMarkup(
+    <EmailLinkStep
+      mode="closed"
+      sentEmail="synthetic@example.test"
+      errorMessage={null}
+      info={null}
+      resendIn={0}
+      pending={false}
+      pendingAction={null}
+      passwordEnabled={true}
+      onResend={() => {}}
+      onChangeEmail={() => {}}
+      onPassword={() => {}}
+    />,
+  );
+  expect(markup).toContain('If');
+  expect(markup).toContain('has an account, its sign-in link is on its way');
+  // Neither the delivery promise (an unknown address gets no mail) nor the
+  // confirmation copy may render for a closed send.
+  expect(markup).not.toContain('We emailed');
+  expect(markup).not.toContain('We sent a link to');
+  expect(markup).not.toContain('confirmation link');
+});
+
 test('every locale carries the confirmation copy with the address placeholder', () => {
   for (const locale of Object.keys(SIGN_IN_WORDING)) {
     const catalog = JSON.parse(
@@ -152,10 +205,25 @@ test('every locale carries the confirmation copy with the address placeholder', 
     expect(link.confirmNotReceived.trim().length, locale).toBeGreaterThan(0);
     expect(link.confirmDescription, locale).toContain('<address>{email}</address>');
     expect(link.confirmDescription, locale).not.toMatch(/\b(link|lien|enlace|リンク|链接|линк)/i);
+    // The KRTX-3504 copies must render the address the mail names, in every
+    // locale; the closed copy's conditional semantics are pinned by the en
+    // render tests above — a regex over conditional words would over-fit
+    // scripts that place it mid-sentence (ja).
+    for (const key of ['unknownDescription', 'closedDescription'] as const) {
+      expect(link[key].trim().length, locale).toBeGreaterThan(0);
+      expect(link[key], locale).toContain('<address>{email}</address>');
+      expect(link[key], locale).toMatch(/\{email\}/);
+    }
+    expect(link.unknownDescription, locale).not.toMatch(/^If\b/);
   }
 });
 
-for (const mode of ['signup', 'signin', 'unknown'] as const) {
+for (const [mode, expected] of [
+  ['signup', 'Confirm your email to continue'],
+  ['unknown', 'a sign-in link, or a confirmation link for a new account'],
+  ['closed', 'has an account, its sign-in link is on its way'],
+  ['signin', 'Open it to continue'],
+] as const) {
   test(`${mode}: the code input shows at once, beside the link`, () => {
     const markup = renderToStaticMarkup(
       <EmailLinkStep
@@ -179,8 +247,6 @@ for (const mode of ['signup', 'signin', 'unknown'] as const) {
     const codeInput = document.querySelector('input[autocomplete="one-time-code"]');
     expect(codeInput).not.toBeNull();
     expect(codeInput?.closest('details')).toBeNull();
-    expect(markup).toContain(
-      mode === 'signup' ? 'Confirm your email to continue' : 'Open it to continue',
-    );
+    expect(markup).toContain(expected);
   });
 }
