@@ -13,7 +13,7 @@ import { useProjectSendGate } from '@/hooks/projects/use-project-send-gate';
 import { isBillingEnabled } from '@/lib/config';
 import { useComposerPrefillStore } from '@kortix/ui/internal/stores/composer-prefill-store';
 import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
-import { getProjectDetail } from '@kortix/sdk';
+import { getProject } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useProjectSpaces } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -31,13 +31,14 @@ export default function ProjectIndexPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const { data: projectDetail } = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+  // The bare project row (one database read), never the git-backed detail.
+  const { data: projectRow } = useQuery({
+    queryKey: qk.project.summary(projectId),
+    queryFn: () => getProject(projectId),
     enabled: !!projectId,
     ...contract('config'),
   });
-  const projectAccountId = projectDetail?.project?.account_id ?? undefined;
+  const projectAccountId = projectRow?.account_id ?? undefined;
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   // The send itself is the package's (`useProjectHomeSend` inside

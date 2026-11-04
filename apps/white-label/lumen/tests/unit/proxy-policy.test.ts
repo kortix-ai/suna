@@ -262,7 +262,7 @@ describe('proxy policy: what a member token may do', () => {
     expect(SESSION_ONE.test(`${S}/start`)).toBe(false);
   });
 
-  test('warm sessions are refused: they skip the Lumen tags and are shared by every member', () => {
+  test('the retired warm-session routes are refused: a literal segment is not a session id', () => {
     expect(blockedReason('POST', `${P}/sessions/warm`)).not.toBeNull();
     expect(blockedReason('POST', `${P}/sessions/warm/claim`)).not.toBeNull();
     expect(blockedReason('GET', `${P}/sessions/warm`)).not.toBeNull();

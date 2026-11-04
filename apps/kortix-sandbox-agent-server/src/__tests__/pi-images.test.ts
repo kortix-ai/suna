@@ -107,8 +107,10 @@ describe('images in the compiled daemon', () => {
 
   // The box runs a `bun build --compile` binary. photon-node reads its wasm from the BUILD
   // machine's path at load: the check builds against a copy of the package, deletes the copy,
-  // then runs the binary, as a box runs it.
-  test('pi reads an image and a prompt tag attaches it', async () => {
+  // then runs the binary, as a box runs it. Twice: as plain source, and as scripts/build.sh
+  // builds it (`--bytecode --format=esm`), where the worker entrypoint is precompiled too.
+  for (const variant of [{ name: 'source', bytecode: false }, { name: 'bytecode', bytecode: true }] as const)
+  test(`pi reads an image and a prompt tag attaches it (${variant.name} binary)`, async () => {
     const dir = tempDir()
     const photonCopy = join(dir, 'photon-node')
     cpSync(realpathSync(join(import.meta.dir, '../../node_modules/@silvia-odwyer/photon-node')), photonCopy, { recursive: true })
@@ -122,6 +124,7 @@ describe('images in the compiled daemon', () => {
       entrypoints: [join(import.meta.dir, 'fixtures/pi-image-probe.ts'), join(pkg, 'src/utils/image-resize-worker.ts')],
       root: pkg,
       compile: { outfile },
+      ...(variant.bytecode ? { bytecode: true, format: 'esm' as const } : {}),
       tsconfig: join(import.meta.dir, '../../tsconfig.json'),
       plugins: [{
         name: 'photon-copy',

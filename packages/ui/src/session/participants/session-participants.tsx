@@ -39,20 +39,31 @@ function ParticipantAvatar({ person, size }: { person: AvatarPerson; size: 'sm' 
 }
 
 /**
- * A message in a shared session: its member author's avatar above the
- * bubble, on the right edge, your own included. A message with no recorded
- * author, or any message in a single-user session, renders alone. The author
- * comes from `.../message-authors`.
+ * A member's message: its author's avatar above the bubble, on the right
+ * edge, your own included, in every session. A message with no recorded
+ * author renders alone. `reserve` keeps the avatar's space empty while the
+ * author loads, so the bubble does not move when it arrives. The author comes
+ * from `.../message-authors`.
  */
 export function MessageSenderAbove({
   sender,
+  reserve = false,
   children,
 }: {
   sender: AvatarPerson | null | undefined;
+  reserve?: boolean;
   children: ReactNode;
 }) {
   const t = useTranslations('sessionParticipants');
-  if (!sender) return children;
+  if (!sender) {
+    if (!reserve) return children;
+    return (
+      <div className="flex max-w-full flex-col items-end gap-1.5">
+        <span aria-hidden className="size-6 shrink-0" />
+        <div className="flex max-w-full min-w-0">{children}</div>
+      </div>
+    );
+  }
   const name = participantLabel(sender);
   return (
     <div className="flex max-w-full flex-col items-end gap-1.5">

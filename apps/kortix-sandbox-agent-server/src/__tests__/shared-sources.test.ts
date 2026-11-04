@@ -1,6 +1,6 @@
 /**
- * kortixd bundles a few files from outside this package (the API contract and
- * the SDK's message-id codec) through tsconfig paths. `KORTIXD_SHARED_SOURCES`
+ * kortixd bundles a few files from outside this package (the API contract,
+ * the SDK's message-id codec, the voice runtime) through tsconfig paths. `KORTIXD_SHARED_SOURCES`
  * names them: apps/api fingerprints them with this source, so a change to one
  * rebuilds sandbox images, and the Dockerfiles copy them into the build stage.
  * An import missing from that list ships a binary whose image never rebuilds,
@@ -22,6 +22,8 @@ function sharedFilesFor(specifier: string): string[] | null {
   const shared = /^@kortix\/shared\/(ssrf-guard|peer-message-prompt|room-prompt)$/.exec(specifier)
   if (shared) return [`packages/shared/src/${shared[1]}.ts`]
   if (specifier === '@kortix/sdk/wire-message-id') return ['packages/sdk/src/core/session/wire-message-id.ts']
+  // The voice package bundles whole: its entry imports the rest of its src/.
+  if (specifier === '@kortix/voice/kortix') return ['packages/voice/src']
   const contract = /^@kortix\/api-contract\/([a-z-]+)$/.exec(specifier)
   if (!contract) return null
   const dir = `packages/api-contract/src/${contract[1]}`
@@ -41,7 +43,8 @@ function productionFiles(dir: string): string[] {
 
 const imported = new Map<string, string>()
 for (const file of productionFiles(join(APP, 'src'))) {
-  for (const match of readFileSync(file, 'utf8').matchAll(/from '(@kortix\/[^']+)'/g)) {
+  // Static `from '…'` and dynamic `import('…')`: bun bundles both, so the build needs both.
+  for (const match of readFileSync(file, 'utf8').matchAll(/(?:from |import\()'(@kortix\/[^']+)'/g)) {
     const shared = sharedFilesFor(match[1]!)
     if (shared) for (const path of shared) imported.set(path, relative(APP, file))
     else throw new Error(`${relative(APP, file)} imports ${match[1]}, which kortixd cannot resolve standalone`)

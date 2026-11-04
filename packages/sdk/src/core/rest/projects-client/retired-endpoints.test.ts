@@ -17,6 +17,8 @@ import {
   scheduleDowngrade,
   cancelScheduledChange,
   claimPerSeatBilling,
+  claimWarmProjectSession,
+  ensureWarmProjectSession,
   createPerSeatCheckout,
   getProrationPreview,
   sendReferralEmails,
@@ -54,6 +56,7 @@ const SLIDES_INSTEAD = 'Export the deck as PDF or PPTX with convertRuntimePresen
 const CHECKOUT_INSTEAD = 'Use setBillingPlan().';
 const PORTAL_INSTEAD = 'Change the plan with setBillingPlan(); manage the card in the Stripe customer portal (createPortalSession()).';
 const DOWNGRADE_INSTEAD = 'Change the plan in the Stripe customer portal (createPortalSession()).';
+const WARM_INSTEAD = 'Warm sessions were removed: create the session with createProjectSession().';
 
 /** `[name, call, message]` for every export that rejects with
  * `ENDPOINT_RETIRED`. */
@@ -129,6 +132,20 @@ const RETIRED: Array<[name: string, call: () => Promise<unknown>, message: strin
     'getProrationPreview',
     () => getProrationPreview('price_1', 'acc-1'),
     retired('getProrationPreview', PORTAL_INSTEAD),
+  ],
+  [
+    'ensureWarmProjectSession',
+    () => ensureWarmProjectSession('p', { excludeSessionId: 's' }),
+    retired('ensureWarmProjectSession', WARM_INSTEAD),
+  ],
+  [
+    'claimWarmProjectSession',
+    () =>
+      claimWarmProjectSession('p', {
+        session_id: '11111111-1111-4111-8111-111111111111',
+        pending_prompt: { text: 'hi', agent: null, model: null, variant: null },
+      }),
+    retired('claimWarmProjectSession', WARM_INSTEAD),
   ],
 ];
 

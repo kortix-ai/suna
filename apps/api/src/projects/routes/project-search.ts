@@ -10,9 +10,11 @@ import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { normalizeDrivePath } from '../../drives/access';
+import { usableDriveAgents } from '../../drives/agent-drives';
 import { decodeCursor, parseLimit, parseSearchQuery, SEARCH_LIMITS } from '../../drives/search-index/query';
 import { personSearchReader, searchDriveIndex, sessionSearchReader } from '../../drives/search-index/search';
 import { findProjectDrive } from '../../drives/service';
+import { actorFor } from '../../middleware/actor';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { auth, errors, json } from '../../openapi';
 import type { AppEnv } from '../../types';
@@ -90,7 +92,9 @@ export function registerProjectSearchRoutes(): void {
       const sessionId = callerKortixSessionId(c);
       const reader = sessionId
         ? await sessionSearchReader({ accountId: loaded.row.accountId, projectId, sessionId })
-        : await personSearchReader(drive, loaded.userId, mayOn(c, projectId));
+        : await personSearchReader(drive, loaded.userId, mayOn(c, projectId), async () =>
+            usableDriveAgents((await actorFor(c, loaded.row.accountId)) ?? null, projectId),
+          );
       const result = await searchDriveIndex({ driveId: drive.driveId, query, under, limit, offset, reader });
       return c.json({ hits: result.hits, next_cursor: result.nextCursor }, 200);
     },

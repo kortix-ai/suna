@@ -241,8 +241,9 @@ export interface RenderCaddyfileOptions {
    * (KORTIX_CAPTURE_STORE=external) instead of the bundled on-box MinIO. When
    * true, the Caddyfile's `@capture` handler is dropped: devices upload
    * straight to the external store, so no request ever reaches the box on
-   * `/kortix-capture/*`. When false (the default), the base file is returned
-   * unchanged with the `@capture` handler intact.
+   * `/kortix-capture/*`. The `@snapshots` handler goes with it: the project
+   * snapshot bucket lived in the same on-box MinIO. When false (the default),
+   * the base file is returned unchanged with both handlers intact.
    */
   captureStoreExternal?: boolean;
   /**
@@ -291,6 +292,13 @@ function withWildcardAliases(block: string, primaryAddress: string, bases: reado
 const CAPTURE_CADDY_BLOCK = /\n\t# Kortix Capture:[\s\S]*?\n\t@capture path[\s\S]*?\n\t\}\n/;
 
 /**
+ * The base Caddyfile's `@snapshots` matcher + handler: the project snapshot
+ * bucket in the same bundled store. Dropped with the `@capture` block when the
+ * store is external, because no on-box MinIO is left to serve it.
+ */
+const SNAPSHOT_CADDY_BLOCK = /\n\t# Project snapshots:[\s\S]*?\n\t@snapshots path[\s\S]*?\n\t\}\n/;
+
+/**
  * The Caddyfile actually written for an instance: the base reverse proxy, plus
  * the wildcard App-serving block + on_demand_tls `ask` when Apps hosting is
  * configured.
@@ -302,6 +310,10 @@ export function renderCaddyfile(options: RenderCaddyfileOptions = {}): string {
       throw new Error('Caddyfile @capture block changed; cannot drop it for an external capture store');
     }
     caddyfile = caddyfile.replace(CAPTURE_CADDY_BLOCK, '');
+    if (!SNAPSHOT_CADDY_BLOCK.test(caddyfile)) {
+      throw new Error('Caddyfile @snapshots block changed; cannot drop it for an external capture store');
+    }
+    caddyfile = caddyfile.replace(SNAPSHOT_CADDY_BLOCK, '');
   }
   const aliases = options.domainAliases ?? { app: [], api: [], apps: [], preview: [] };
   if (aliases.api.length > 0) {
@@ -411,8 +423,9 @@ export interface RenderComposeOptions {
    * is stripped from kortix-api's `environment` so the operator's
    * KORTIX_CAPTURE_S3_* / KORTIX_CAPTURE_STS_* values flow through from .env
    * via `env_file`. The operator (or Terraform) owns the bucket, so the API is
-   * pinned to never create it. When false (the default), the bundled store is
-   * rendered exactly as before.
+   * pinned to never create it. The bundled KORTIX_PROJECT_SNAPSHOT_* wiring is
+   * stripped too, so .env alone decides the snapshot store (unset: none).
+   * When false (the default), the bundled store is rendered exactly as before.
    */
   captureStoreExternal?: boolean;
   /**
@@ -703,12 +716,13 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
       services.caddy.volumes = [...(services.caddy.volumes as string[]), `./acme-dns/accounts:${CADDY_ACME_DNS_DIR}:ro`];
       services['acme-dns'] = { ...ACME_DNS_SERVICE };
     }
-    // Domain mode: Caddy serves the Capture store's path prefix itself (see
-    // assets/Caddyfile.txt), so uploads do not depend on the API. Every other
-    // mode has no Caddy and the API forwards the prefix.
+    // Domain mode: Caddy serves the Capture and project snapshot path
+    // prefixes itself (see assets/Caddyfile.txt), so transfers do not depend
+    // on the API. Every other mode has no Caddy and the API forwards them.
     const api = services['kortix-api'];
     const apiEnv = asRecord(api?.environment);
     delete apiEnv.KORTIX_CAPTURE_S3_PROXY_TARGET;
+    delete apiEnv.KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET;
   }
 
   // The Cloudflare tunnel service is likewise opt-in: only present when
@@ -744,6 +758,13 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
       // set; drop PROXY_TARGET, which has no external analogue.
       const apiEnv = { ...asRecord(api.environment), ...EXTERNAL_CAPTURE_API_ENV } as Record<string, string>;
       delete apiEnv.KORTIX_CAPTURE_S3_PROXY_TARGET;
+      // The project snapshots lived in the same bundled MinIO. Without it the
+      // explicit wiring goes, so .env decides: unset is the API default
+      // (`git`, no snapshots), and an operator may point
+      // KORTIX_PROJECT_SNAPSHOT_* at a store of their own.
+      for (const key of Object.keys(apiEnv)) {
+        if (key.startsWith('KORTIX_PROJECT_SNAPSHOT_')) delete apiEnv[key];
+      }
       api.environment = apiEnv;
       if (isRecord(api.depends_on)) {
         const dependencies = { ...api.depends_on };

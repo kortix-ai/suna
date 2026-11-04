@@ -89,4 +89,40 @@ describe('admitRunningSandbox', () => {
     });
     expect(verdict.admitted).toBe(true);
   });
+
+  test('hands its health read to the turn-start gates, and a failing hand-off changes nothing', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      const health = { capabilities: [] };
+      const noted: Array<[string, unknown]> = [];
+      const verdict = await admitRunningSandbox(BASE_INPUT, {
+        fetchHealth: async () => health,
+        resolveReleaseId: async () => null,
+        noteHealth: async (sessionId, body) => {
+          noted.push([sessionId, body]);
+        },
+      });
+      expect(noted).toEqual([['session_1', health]]);
+      const failing = await admitRunningSandbox(BASE_INPUT, {
+        fetchHealth: async () => health,
+        resolveReleaseId: async () => null,
+        noteHealth: async () => {
+          throw new Error('memo down');
+        },
+      });
+      expect(failing).toEqual(verdict);
+      // No health, nothing to hand off.
+      let calls = 0;
+      await admitRunningSandbox(BASE_INPUT, {
+        fetchHealth: async () => null,
+        resolveReleaseId: async () => null,
+        noteHealth: async () => {
+          calls += 1;
+        },
+      });
+      expect(calls).toBe(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

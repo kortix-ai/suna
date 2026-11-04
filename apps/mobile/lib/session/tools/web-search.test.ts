@@ -46,7 +46,7 @@ describe('web search list', () => {
   test('two sources on the same domain render as two flat rows, never a "N results" domain group', () => {
     const qrs = results([
       { title: 'Kortix SDK repo', url: 'https://github.com/kortix-ai/sdk' },
-      { title: 'Suna repo', url: 'https://github.com/kortix-ai/suna' },
+      { title: 'Suna repo', url: 'https://github.com/kortix-ai/CompanyOS' },
     ]);
     const segments = webSearchSourceSegments(qrs);
     expect(segments.flatMap((s) => s.sources)).toHaveLength(2);

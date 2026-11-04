@@ -19,7 +19,7 @@ release still comes from `staging`, not directly from `dev`.
 ## 1. The one command
 
 ```bash
-gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref prod \
+gh workflow run rollback-prod.yml --repo kortix-ai/CompanyOS --ref prod \
   -f version=vX.Y.Z -f reason="<incident summary>" -f confirm="ROLLBACK PROD"
 ```
 

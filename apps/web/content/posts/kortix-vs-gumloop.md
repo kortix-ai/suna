@@ -50,9 +50,9 @@ agents:
     kortix_permissions: all
 ```
 
-That block is the whole grant. A reviewer reading a change request sees the file and the agent it points at. Every connector, secret and permission the agent may touch is in that block. The starter's own comment is explicit: v2 is deny-by-default, an omitted connectors/secrets/kortix_permissions/skills grant resolves to none, and "so a scoped specialist starts locked down" ([kortix.yaml](https://github.com/kortix-ai/suna/blob/dev/packages/starter/templates/base/kortix.yaml)).
+That block is the whole grant. A reviewer reading a change request sees the file and the agent it points at. Every connector, secret and permission the agent may touch is in that block. The starter's own comment is explicit: v2 is deny-by-default, an omitted connectors/secrets/kortix_permissions/skills grant resolves to none, and "so a scoped specialist starts locked down" ([kortix.yaml](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/kortix.yaml)).
 
-The behaviour sits beside it in Markdown. The starter agent file describes its session as "an ephemeral branch of this repo, your own `/workspace`" where "Only what you commit + push survives" ([agents/kortix.md](https://github.com/kortix-ai/suna/blob/dev/packages/starter/templates/base/agents/kortix.md)).
+The behaviour sits beside it in Markdown. The starter agent file describes its session as "an ephemeral branch of this repo, your own `/workspace`" where "Only what you commit + push survives" ([agents/kortix.md](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/agents/kortix.md)).
 
 Model choice is independent of the repo. Any model provider with your own keys. Or the ChatGPT plan you already pay for ([Kortix models](https://kortix.com/docs/project/models)).
 

@@ -2,28 +2,18 @@
  * Session attachment admission — the deterministic control-plane half of
  * SESS-27. Browser evidence owns attachment tiles, reload timestamps, and turn
  * duration. The focused API tests own runtime write-failure injection. This
- * flow proves that the public warm-session claim boundary durably accepts one
- * ordered mixed batch before runtime readiness and leaves the unused session
- * retryable when staged non-native bytes are absent.
+ * flow proves that the public prompt boundary durably accepts one ordered mixed
+ * batch before runtime readiness and stores nothing when staged non-native
+ * bytes are absent. The session create stores its first prompt through the same
+ * sanitizer (`sanitizeInboxPromptParts`); pending-prompt.unit.test.ts pins that
+ * half, because a create needs a sandbox the local profile does not run.
  */
 import { flow } from '../core/flow';
-import type { FlowContext } from '../core/types';
 import {
   bindDatabaseSessionCredential,
   createDatabaseSession,
   readDatabasePromptAttachmentRetention,
 } from '../fixtures/database-project';
-
-/** Warm sessions are opt-in per project (KRTX-1871): the claim route answers 403 until the flag is on. */
-async function enableWarmSessions(ctx: FlowContext, projectId: string): Promise<void> {
-  await ctx.step('the project opts into warm sessions', async () => {
-    (await ctx.client.as(ctx.P.OWNER).patch(
-      '/v1/projects/:projectId/features',
-      { feature: 'warm_sessions', enabled: true },
-      { params: { projectId } },
-    )).status(200);
-  });
-}
 
 flow('SESS-30', {
   domain: 'sessions', requires: ['database', 'funded'], timeoutMs: 180_000,
@@ -33,8 +23,6 @@ flow('SESS-30', {
     'POST /v1/projects/:projectId/attachments/:attachmentId/complete',
     'DELETE /v1/projects/:projectId/attachments/:attachmentId',
     'DELETE /v1/projects/:projectId/sessions/:sessionId',
-    'POST /v1/projects/:projectId/sessions/warm/claim',
-    'PATCH /v1/projects/:projectId/features',
     'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
     'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
     'GET /v1/projects/:projectId/sessions/:sessionId',
@@ -46,7 +34,6 @@ flow('SESS-30', {
   const project = await ctx.fixtures.project({ seed: true });
   const owner = ctx.client.as(ctx.P.OWNER);
   const base = { projectId: project.id };
-  await enableWarmSessions(ctx, project.id);
   const bytes = new TextEncoder().encode('eager upload before session readiness\n'.repeat(4000));
   let attachmentId = '';
   let upload:
@@ -100,13 +87,11 @@ flow('SESS-30', {
     (await owner.post(complete, {}, { params: params() })).status(200).body().has('$.filename', 'eager.txt');
     (await owner.post(complete, {}, { params: params() })).status(200).body().has('$.attachment_id', attachmentId);
   });
-  const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: ctx.P.OWNER.accountId!, userId: ctx.P.OWNER.userId!, metadata: { warm: true }, platinumRegion: 'eu-west' });
+  const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: ctx.P.OWNER.accountId!, userId: ctx.P.OWNER.userId!, platinumRegion: 'eu-west' });
   ctx.track('session', sessionId, { projectId: project.id });
-  const warmBody = { session_id: sessionId, pending_prompt: { text: 'SESS-30 eager attachment', attachment_names: ['eager.txt'], parts: [{ type: 'text', text: 'SESS-30 eager attachment' }, { type: 'file', attachment_id: attachmentId, filename: 'untrusted.txt', mime: 'image/png' }] } };
-  await ctx.step('claim a warm session with the ready handle, refuse a second claim with 409, and read canonical filename from the durable inbox', async () => {
-    (await owner.post('/v1/projects/:projectId/sessions/warm/claim', warmBody, { params: base })).status(200);
-    // A consumed warm marker answers 409 for every repeat claim, with or without attachments.
-    (await owner.post('/v1/projects/:projectId/sessions/warm/claim', warmBody, { params: base })).status(409);
+  const firstBody = { client_message_id: 'SESS-30-first', parts: [{ type: 'text', text: 'SESS-30 eager attachment' }, { type: 'file', attachment_id: attachmentId, filename: 'untrusted.txt', mime: 'image/png' }] };
+  await ctx.step('send the first prompt with the ready handle before the box exists, and read the canonical filename from the durable inbox', async () => {
+    (await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts', firstBody, { params: { ...base, sessionId } })).status(202);
     const inbox = await owner.get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params: { ...base, sessionId } });
     inbox.status(200);
     const serialized = JSON.stringify(inbox.json());
@@ -242,192 +227,98 @@ flow(
     requires: ['database'],
     timeoutMs: 300_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions/warm/claim',
-    'PATCH /v1/projects/:projectId/features',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
       'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
     ],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
     const owner = ctx.client.as(ctx.P.OWNER);
-    await enableWarmSessions(ctx, project.id);
-    const retrySessionId = await createDatabaseSession(ctx.env, {
-      projectId: project.id,
-      accountId: ctx.P.OWNER.accountId!,
-      userId: ctx.P.OWNER.userId!,
-      metadata: { warm: true },
-      platinumRegion: 'eu-west',
-    });
-    const sessionId = await createDatabaseSession(ctx.env, {
-      projectId: project.id,
-      accountId: ctx.P.OWNER.accountId!,
-      userId: ctx.P.OWNER.userId!,
-      metadata: { warm: true },
-      platinumRegion: 'eu-west',
-    });
+    const seed = () =>
+      createDatabaseSession(ctx.env, {
+        projectId: project.id,
+        accountId: ctx.P.OWNER.accountId!,
+        userId: ctx.P.OWNER.userId!,
+        platinumRegion: 'eu-west',
+      });
+    const sessionId = await seed();
+    const retrySessionId = await seed();
     ctx.track('session', sessionId, { projectId: project.id });
     ctx.track('session', retrySessionId, { projectId: project.id });
+    const prompts = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+    const inbox = async (id: string) => {
+      const r = await owner.get(prompts, { params: { projectId: project.id, sessionId: id } });
+      r.status(200);
+      return (r.json<any>()?.prompts ?? []) as any[];
+    };
 
     await ctx.step(
-      'claim an unused session with Markdown, source, ZIP, and PNG parts -> 200 before runtime readiness',
+      'send a first prompt with Markdown, source, ZIP, and PNG parts before the box exists -> 202',
       async () => {
-        const r = await owner.post(
-          '/v1/projects/:projectId/sessions/warm/claim',
-          {
-            session_id: sessionId,
-            pending_prompt: {
-              text: promptText,
-              parts: stagedParts,
-              attachment_names: attachmentNames,
-            },
-          },
-          { params: { projectId: project.id } },
-        );
-        r.status(200);
-        const returnedId = r.json<any>()?.session_id;
-        if (returnedId !== sessionId) {
-          throw new Error(
-            `warm claim returned ${String(returnedId)} instead of ${sessionId}`,
-          );
-        }
+        (await owner.post(
+          prompts,
+          { client_message_id: 'SESS-27-first', parts: stagedParts },
+          { params: { projectId: project.id, sessionId } },
+        )).status(202);
       },
     );
 
     await ctx.step(
-      'read the new session -> the ordered attachment names persist without duplicating prompt bytes in metadata',
+      'read the prompt inbox -> the row carries the accepted text, a durable prompt_id and a live lifecycle state',
       async () => {
-        const r = await owner.get(
-          '/v1/projects/:projectId/sessions/:sessionId',
-          {
-            params: { projectId: project.id, sessionId },
-          },
-        );
-        r.status(200);
-        const pending = r.json<any>()?.metadata?.pending_prompt;
-        if (
-          JSON.stringify(pending?.attachment_names) !==
-          JSON.stringify(attachmentNames)
-        ) {
-          throw new Error(
-            `pending attachment order changed: ${JSON.stringify(pending?.attachment_names)}`,
-          );
-        }
-        if (
-          Object.hasOwn(pending ?? {}, 'text') ||
-          Object.hasOwn(pending ?? {}, 'parts')
-        ) {
-          throw new Error(
-            'session metadata duplicated the durable prompt body',
-          );
-        }
-      },
-    );
-
-    await ctx.step(
-      'read the prompt inbox -> the pending-first row carries the accepted text and a live lifecycle state',
-      async () => {
-        const r = await owner.get(
-          '/v1/projects/:projectId/sessions/:sessionId/prompts',
-          {
-            params: { projectId: project.id, sessionId },
-          },
-        );
-        r.status(200);
-        const prompt = (r.json<any>()?.prompts ?? []).find(
-          (row: any) => row.client_message_id === `pending:${sessionId}`,
-        );
-        if (!prompt)
-          throw new Error(
-            'the pending-first prompt was not readable from the inbox',
-          );
+        const prompt = (await inbox(sessionId)).find((row) => row.client_message_id === 'SESS-27-first');
+        if (!prompt) throw new Error('the first prompt was not readable from the inbox');
         if (prompt.text !== promptText) {
-          throw new Error(
-            `the pending-first prompt text changed: ${String(prompt.text)}`,
-          );
+          throw new Error(`the first prompt text changed: ${String(prompt.text)}`);
         }
-        if (
-          !['queued', 'delivering', 'waiting', 'failed'].includes(prompt.state)
-        ) {
-          throw new Error(
-            `the pending-first prompt has an invalid state: ${String(prompt.state)}`,
-          );
+        if (!['queued', 'delivering', 'waiting', 'failed'].includes(prompt.state)) {
+          throw new Error(`the first prompt has an invalid state: ${String(prompt.state)}`);
         }
-        if (
-          typeof prompt.prompt_id !== 'string' ||
-          prompt.prompt_id.length === 0
-        ) {
-          throw new Error('the pending-first prompt has no durable prompt_id');
+        if (typeof prompt.prompt_id !== 'string' || prompt.prompt_id.length === 0) {
+          throw new Error('the first prompt has no durable prompt_id');
+        }
+        const serialized = JSON.stringify(prompt);
+        for (const name of attachmentNames) {
+          if (!serialized.includes(name)) throw new Error(`the inbox row lost the attachment ${name}`);
         }
       },
     );
 
     await ctx.step(
-      'claim with a remote ZIP -> 400, no partial prompt, and the unused session stays retryable',
+      'send a remote ZIP -> 400, no partial prompt, and a valid retry on the same session is accepted',
       async () => {
         const rejected = await owner.post(
-          '/v1/projects/:projectId/sessions/warm/claim',
+          prompts,
           {
-            session_id: retrySessionId,
-            pending_prompt: {
-              text: 'SESS-27 rejected remote ZIP',
-              parts: [
-                { type: 'text', text: 'SESS-27 rejected remote ZIP' },
-                {
-                  type: 'file',
-                  mime: 'application/zip',
-                  filename: 'remote.zip',
-                  url: 'https://files.example.test/remote.zip',
-                },
-              ],
-              attachment_names: ['remote.zip'],
-            },
+            client_message_id: 'SESS-27-remote-zip',
+            parts: [
+              { type: 'text', text: 'SESS-27 rejected remote ZIP' },
+              {
+                type: 'file',
+                mime: 'application/zip',
+                filename: 'remote.zip',
+                url: 'https://files.example.test/remote.zip',
+              },
+            ],
           },
-          { params: { projectId: project.id } },
+          { params: { projectId: project.id, sessionId: retrySessionId } },
         );
         rejected
           .status(400)
           .body()
           .matches('$.error', /must be uploaded before it can be sent/);
-
-        const session = await owner.get(
-          '/v1/projects/:projectId/sessions/:sessionId',
-          {
-            params: { projectId: project.id, sessionId: retrySessionId },
-          },
-        );
-        session.status(200);
-        const metadata = session.json<any>()?.metadata ?? {};
-        if (metadata.warm !== true || metadata.pending_prompt !== undefined) {
-          throw new Error(
-            `failed claim changed the unused session: ${JSON.stringify(metadata)}`,
-          );
-        }
-
-        const prompts = await owner.get(
-          '/v1/projects/:projectId/sessions/:sessionId/prompts',
-          {
-            params: { projectId: project.id, sessionId: retrySessionId },
-          },
-        );
-        prompts.status(200);
-        if ((prompts.json<any>()?.prompts ?? []).length !== 0) {
+        if ((await inbox(retrySessionId)).length !== 0) {
           throw new Error('a rejected remote ZIP created a partial prompt');
         }
 
-        const retry = await owner.post(
-          '/v1/projects/:projectId/sessions/warm/claim',
-          {
-            session_id: retrySessionId,
-            pending_prompt: {
-              text: 'SESS-27 valid retry',
-              parts: [{ type: 'text', text: 'SESS-27 valid retry' }],
-              attachment_names: [],
-            },
-          },
-          { params: { projectId: project.id } },
-        );
-        retry.status(200).body().has('$.session_id', retrySessionId);
+        (await owner.post(
+          prompts,
+          { client_message_id: 'SESS-27-retry', parts: [{ type: 'text', text: 'SESS-27 valid retry' }] },
+          { params: { projectId: project.id, sessionId: retrySessionId } },
+        )).status(202);
+        if ((await inbox(retrySessionId)).length !== 1) {
+          throw new Error('the valid retry did not store exactly one prompt');
+        }
       },
     );
   },

@@ -64,6 +64,12 @@ export const RETIRED_ROUTES: ReadonlyArray<readonly [method: string, path: strin
   ['GET', '/v1/projects/suna-migration/eligibility'],
   ['GET', '/v1/projects/suna-migration/status'],
   ['POST', '/v1/projects/suna-migration/start'],
+  // Warm sessions (removed 2026-11-03). The flag was off for every project
+  // but one internal project since 2026-10-21. Older web, SDK, CLI and mobile
+  // builds call these only while `experimental.warm_sessions` reads true, and
+  // the API now always sends false. A send then takes the ordinary create.
+  ['POST', '/v1/projects/:projectId/sessions/warm'],
+  ['POST', '/v1/projects/:projectId/sessions/warm/claim'],
 ];
 
 function gone(c: Context) {

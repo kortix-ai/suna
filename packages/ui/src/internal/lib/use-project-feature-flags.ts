@@ -29,7 +29,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
 } {
   const marketplace = useFeatureFlag(projectId, 'marketplace');
   const reminders = useFeatureFlag(projectId, 'reminders');
-  const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
   const usRegion = useFeatureFlag(projectId, 'us_region');
@@ -41,6 +40,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
   const projectChannels = useFeatureFlag(projectId, 'project_channels');
   const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
+  const sharedDrives = useFeatureFlag(projectId, 'shared_drives');
   const goals = useFeatureFlag(projectId, 'goals');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
   const artifactComments = useFeatureFlag(projectId, 'artifact_comments');
@@ -49,12 +49,12 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const sessionGroups = useFeatureFlag(projectId, 'session_groups');
   const chrome = useFeatureFlag(projectId, 'chrome');
   const agentTeams = useFeatureFlag(projectId, 'agent_teams');
+  const voiceCall = useFeatureFlag(projectId, 'voice_call');
 
   return {
     flags: {
       marketplace: marketplace.enabled,
       reminders: reminders.enabled,
-      warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
       pooled_provider_secrets: pooledProviderSecrets.enabled,
       us_region: usRegion.enabled,
@@ -66,6 +66,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       session_log_restore: sessionLogRestore.enabled,
       project_channels: projectChannels.enabled,
       agent_rooms: agentRooms.enabled,
+      shared_drives: sharedDrives.enabled,
       goals: goals.enabled,
       artifacts: artifacts.enabled,
       artifact_comments: artifactComments.enabled,
@@ -74,8 +75,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       session_groups: sessionGroups.enabled,
       chrome: chrome.enabled,
       agent_teams: agentTeams.enabled,
+      voice_call: voiceCall.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: agentTeams.isLoading,
+    isLoading: voiceCall.isLoading,
   };
 }

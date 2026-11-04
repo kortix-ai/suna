@@ -34,10 +34,10 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'Kortix, run on Kortix.': 'textf2d996d89263',
   'Our company is one Kortix project. Agents triage and fix issues, keep SOC 2 evidence current and run sales and support. People approve.':
     'text34ff4020f800',
-  'Autonomous investment analysis.': 'textf9d6c20c90a0',
+  'Every deal, evaluated by agents.': 'textdd57f275a118',
   'Asset management': 'textacf058bd8604',
-  'Agents read filings and market data, build the thesis and write the investment memo. A portfolio manager decides.':
-    'text6e515c096274',
+  'Every deal that comes in gets a full analysis. Agents screen it against the mandate, read the filings and market data, stress-test the thesis and the downside, and write the investment memo. The investment committee decides.':
+    'text313f92aeb061',
   'Autonomous candidate research.': 'textdc7f8ac95166',
   'Agents research candidates for every search and write a profile of each one. Consultants choose the shortlist.':
     'textb5947f5f79c9',
@@ -479,7 +479,7 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   '- HELPDESK_API_KEY': 'texteca665e8b7c8',
   'secrets: [HELPDESK_API_KEY]': 'text92a51dd3e468',
   'No lock-in.': 'text68a08970653c',
-  'github.com/kortix-ai/suna': 'text70d13140dd29',
+  'github.com/kortix-ai/CompanyOS': 'text70d13140dd29',
   'Customize → Models → Providers': 'text541a2ff8599c',
   'Terminal: your laptop': 'textcc59c4ac4977',
   'Every agent, skill and memory file, with its history.': 'text0749a8e92dda',

@@ -3041,7 +3041,7 @@
         "my_kortix": {
           "type": "boolean",
           "default": false,
-          "description": "My Kortix, the built-in agent you talk to (slug `mykortix`). true adds it to this project; absent or false leaves it out. A kortix.yaml that cannot be used at all still runs My Kortix, so that it can fix the file."
+          "description": "My Kortix, the built-in agent you talk to (slug `mykortix`). true adds it to this project; absent, false or a file Kortix cannot read leaves it out."
         }
       },
       "additionalProperties": false

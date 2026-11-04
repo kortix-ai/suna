@@ -51,6 +51,10 @@ const realToast = await import('@kortix/ui/toast');
 let calls: { url: string; method: string; body: unknown; status: number }[] = [];
 let toastCalls: { kind: 'success' | 'error'; message: string }[] = [];
 let failNextPatch = false;
+/** What the fake server stores: a successful PATCH persists, like the real API. */
+let stored: KortixProject;
+/** A read that lags the write: GET keeps answering the pre-rename row. */
+let staleReads = false;
 
 const uiToastMock = () => ({
   ...realToast,
@@ -134,6 +138,8 @@ beforeEach(() => {
   calls = [];
   toastCalls = [];
   failNextPatch = false;
+  stored = { ...savedProject };
+  staleReads = false;
   configureKortix({
     backendUrl: 'http://api.test/v1',
     getToken: async () => 'token',
@@ -151,13 +157,14 @@ beforeEach(() => {
             headers: { 'content-type': 'application/json' },
           });
         }
-        return new Response(JSON.stringify({ ...savedProject, ...body }), {
+        stored = { ...stored, ...body };
+        return new Response(JSON.stringify(stored), {
           status,
           headers: { 'content-type': 'application/json' },
         });
       }
       if (method === 'GET' && path.endsWith('/v1/projects/proj-1')) {
-        return new Response(JSON.stringify(savedProject), {
+        return new Response(JSON.stringify(staleReads ? savedProject : stored), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
@@ -305,6 +312,20 @@ describe('GeneralTab workspace rename autosave: one attempt per edit', () => {
 
     await flushDebounce();
     await flushDebounce();
+    expect(patches().length).toBe(1);
+  });
+
+  test('a read that still returns the old name after a successful rename never re-sends it', async () => {
+    staleReads = true;
+    const { renderer } = await mountGeneralTab();
+    await flushDebounce();
+
+    typeName(renderer, 'Renamed');
+    await flushDebounce();
+    await flushDebounce();
+    await flushDebounce();
+
+    // Before: every refetch of the stale row re-sent the rename (60 PATCHes in 3 s).
     expect(patches().length).toBe(1);
   });
 });

@@ -18,8 +18,7 @@ replies. Designed so coding agents can verify Kortix end-to-end before
 they start orchestrating real work.
 
 By default, doctor attempts to delete only its diagnostic session.
-With --keep-session, it leaves that session in place. UI-prepared warm
-sessions are left unchanged and may remain billed.
+With --keep-session, it leaves that session in place.
 
 Options:
   --no-session         Stop after auth + project checks. Don't create
@@ -91,10 +90,6 @@ export async function runDoctor(argv: string[]): Promise<number> {
     process.stdout.write(`\n${status.ok('all checks passed (no-session)')}\n\n`);
     return 0;
   }
-
-  process.stdout.write(
-    `  ${C.dim}UI-prepared warm sessions are left unchanged and may remain billed.${C.reset}\n`,
-  );
 
   // Resolve through the server's entitlement and provider checks, not the runtime's default.
   let model: string | null;

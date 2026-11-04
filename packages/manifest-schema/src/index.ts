@@ -24,6 +24,7 @@ import { Cron } from 'croner';
 import { normalizeTriggerList } from './trigger-shape';
 import { Document, isMap, LineCounter, parseDocument } from 'yaml';
 import { type AppliedFix, applyDeprecations, DEPRECATIONS } from './deprecations';
+import { MANIFEST_SYNTAX_ISSUE_PATH, yamlErrorSummary } from './format';
 import { legacyFormatMessage, legacyFormatOf } from './legacy';
 import { areValidConditions, isValidMatcher, MAX_CONDITIONS_PER_POLICY } from './policy-rules';
 import { parseConnectorHeaders } from './connector-headers';
@@ -117,6 +118,10 @@ export {
 
 export {
   MANIFEST_FILENAME,
+  MANIFEST_SYNTAX_ISSUE_PATH,
+  ManifestSyntaxError,
+  isManifestSyntaxError,
+  yamlErrorSummary,
   manifestCandidatePaths,
   parseManifestText,
   serializeManifestObject,
@@ -363,8 +368,8 @@ const RESET_KEYS = new Set(['project', 'default_agent', 'runtime']);
  * template with an error is dropped. Each of these only takes access away.
  * `project`, `default_agent` and `runtime` fall back to their defaults. An
  * error anywhere else (`sandbox`, `env`, `approvals`, `policy`, `imports`, a
- * retired format, …) returns `{}`: the project runs its built-in agents only,
- * so My Kortix can still start and fix the file. Pure: `raw` is not changed.
+ * retired format, …) returns `{}`: the project runs only the built-in agents
+ * the file turns on, so My Kortix (`builtin_agents.my_kortix: true`) can fix it. Pure: `raw` is not changed.
  */
 export function usableManifest(raw: Record<string, unknown> | null, issues: readonly ManifestIssue[]): Record<string, unknown> {
   // A legacy file is usable only once converted (`convertLegacyManifest`); unconverted it means nothing here.
@@ -421,7 +426,7 @@ export function validateManifest(input: string | Record<string, unknown>): Manif
     const error = doc.errors[0];
     if (error) {
       const pos = error.linePos?.[0];
-      issues.push({ path: '<yaml>', message: `Syntax error: ${error.message}`, severity: 'error', line: pos?.line, column: pos?.col });
+      issues.push({ path: MANIFEST_SYNTAX_ISSUE_PATH, message: `Syntax error: ${yamlErrorSummary(error.message)}.`, severity: 'error', line: pos?.line, column: pos?.col });
       return { valid: false, parsed: null, issues };
     }
   } else {

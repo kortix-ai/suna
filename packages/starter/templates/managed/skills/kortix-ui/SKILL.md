@@ -10,7 +10,7 @@ white-label demo and SDK customer apps. Components are Tailwind v4 class strings
 Docs: https://kortix.com/docs/developers#kortix-ui. Live catalog: https://kortix.com/design-system.
 
 Install: `npm i @kortix/ui @kortix/sdk`, the same version of each (peers: `references/custom-dashboard.md`).
-Module entries and `@kortix/ui/theme` need 0.14.4+. Inside `kortix-ai/suna`: `"workspace:*"`. Never copy component source.
+Module entries and `@kortix/ui/theme` need 0.14.4+. Inside `kortix-ai/CompanyOS`: `"workspace:*"`. Never copy component source.
 
 ## 1. Set up once
 
@@ -146,5 +146,5 @@ export function Session({ projectId, sessionId }: { projectId: string; sessionId
 
 ## 11. Kortix-internal work
 
-In `kortix-ai/suna`, `kortix-brand` (values, voice) and `kortix-design-system` (which component) in `.agents/skills/` win
+In `kortix-ai/CompanyOS`, `kortix-brand` (values, voice) and `kortix-design-system` (which component) in `.agents/skills/` win
 over this file. `apps/web` imports `@kortix/ui` like any host and keeps no re-export shims: edit the component in `packages/ui/src/`.

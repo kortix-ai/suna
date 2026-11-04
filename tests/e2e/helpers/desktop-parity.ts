@@ -1742,20 +1742,6 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
               });
               return;
             }
-            // No warm session on any target, so the create carries the prompt.
-            if (
-              request.method() === "POST" &&
-              path === `/v1/projects/${projectId}/sessions/warm`
-            ) {
-              await route.fulfill({
-                status: 503,
-                contentType: "application/json",
-                body: JSON.stringify({
-                  error: { message: "Injected warm-session refusal" },
-                }),
-              });
-              return;
-            }
             if (
               request.method() === "POST" &&
               path === `/v1/projects/${projectId}/sessions`

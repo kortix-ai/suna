@@ -136,7 +136,7 @@ async function liveBranchNames(repository: string, token: string): Promise<Set<s
 }
 
 const action = process.argv[2] ?? 'deploy';
-const repository = value('GITHUB_REPOSITORY', 'kortix-ai/suna');
+const repository = value('GITHUB_REPOSITORY', 'kortix-ai/CompanyOS');
 const platinum = {
   apiUrl: value('PLATINUM_API_URL', 'https://api.platinum.dev'),
   apiKey: value('PLATINUM_API_KEY'),

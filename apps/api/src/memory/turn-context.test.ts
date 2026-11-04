@@ -24,22 +24,23 @@ const row = (over: Partial<ThreadRow>): ThreadRow => ({
 });
 
 describe('the memory folders a thread reads', () => {
-  test('a channel thread: Company and the channel’s Memory folder', () => {
+  test('a channel thread: only the channel’s Memory folder (no project-wide layer)', () => {
     const plan = threadPlan(row({}))!;
-    expect(plan.map((layer) => [layer.key, layer.scope])).toEqual([['company', 'company'], [CHANNEL, 'channel']]);
-    expect(plan.map((layer) => layerFolders(layer, null)?.root)).toEqual(['/Company/Memory', '/Company/Channels/marketing/Memory']);
+    expect(plan.map((layer) => [layer.key, layer.scope])).toEqual([[CHANNEL, 'channel']]);
+    expect(plan.map((layer) => layerFolders(layer, null)?.root)).toEqual(['/Company/Channels/marketing/Memory']);
   });
 
-  test('a DM thread: Company and the owner’s Memory folder, its agent folder first', () => {
+  test('a DM thread: only the owner’s Memory folder, its agent folder first', () => {
     const plan = threadPlan(row({ space_id: DM, space_kind: 'dm', space_slug: null, space_dm_user_id: 'u1', space_dm_agent: 'writer' }))!;
-    expect(plan[1]).toMatchObject({ key: DM, scope: 'dm', dmUserId: 'u1', dmAgent: 'writer' });
-    expect(layerFolders(plan[1]!, '/Users/ana')).toEqual({ root: '/Users/ana/Memory', agentFolder: '/Users/ana/Memory/writer' });
-    expect(layerFolders(plan[1]!, null)).toBeNull();
+    expect(plan).toHaveLength(1);
+    expect(plan[0]).toMatchObject({ key: DM, scope: 'dm', dmUserId: 'u1', dmAgent: 'writer' });
+    expect(layerFolders(plan[0]!, '/Users/ana')).toEqual({ root: '/Users/ana/Memory', agentFolder: '/Users/ana/Memory/writer' });
+    expect(layerFolders(plan[0]!, null)).toBeNull();
   });
 
   test('a private channel thread whose owner has a DM with its agent also reads that DM; a project thread never does', () => {
-    expect(threadPlan(row({ root_visibility: 'private', dm_space_id: DM, dm_user_id: 'u1', dm_agent: 'writer' }))!.map((l) => l.scope)).toEqual(['company', 'channel', 'dm']);
-    expect(threadPlan(row({ dm_space_id: DM }))!.map((l) => l.scope)).toEqual(['company', 'channel']);
+    expect(threadPlan(row({ root_visibility: 'private', dm_space_id: DM, dm_user_id: 'u1', dm_agent: 'writer' }))!.map((l) => l.scope)).toEqual(['channel', 'dm']);
+    expect(threadPlan(row({ dm_space_id: DM }))!.map((l) => l.scope)).toEqual(['channel']);
   });
 
   test('a thread in no space has no memory', () => {
@@ -48,8 +49,8 @@ describe('the memory folders a thread reads', () => {
 
   test('the personal layer goes only to its owner’s prompts', () => {
     const plan = threadPlan(row({ root_visibility: 'private', dm_space_id: DM, dm_user_id: 'owner', dm_agent: 'writer' }))!;
-    expect(promptLayers(plan, 'owner').map((l) => l.scope)).toEqual(['company', 'channel', 'dm']);
-    expect(promptLayers(plan, 'manager').map((l) => l.scope)).toEqual(['company', 'channel']);
+    expect(promptLayers(plan, 'owner').map((l) => l.scope)).toEqual(['channel', 'dm']);
+    expect(promptLayers(plan, 'manager').map((l) => l.scope)).toEqual(['channel']);
   });
 });
 

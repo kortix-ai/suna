@@ -6,6 +6,7 @@ import {
   checkDelegation,
   delegationRecords,
   enabledWildcardBases,
+  parseAcmeDnsAccount,
   renderAcmeDnsConfig,
   WILDCARD_CADDY_IMAGE,
   wildcardBases,
@@ -58,6 +59,36 @@ describe('acme-dns', () => {
       { name: 'ns.acme.kortix.acme.com', type: 'A', value: '203.0.113.10' },
       { name: '_acme-challenge.p.kortix.acme.com', type: 'CNAME', value: 'abc.acme.kortix.acme.com' },
     ]);
+  });
+});
+
+describe('acme-dns account record', () => {
+  const zone = 'acme.kortix.acme.com';
+  const registered = {
+    username: 'eabcdb41-d89f-4580-826f-3e62e9755ef2',
+    password: 'pbAXVjlIOE01xbut7YnAbkhMQIkcwoHO0ek2j4Q0',
+    subdomain: 'd420c923-bbd7-4056-ab64-c3ca54c9b3cf',
+    fulldomain: 'd420c923-bbd7-4056-ab64-c3ca54c9b3cf.acme.kortix.acme.com',
+    allowfrom: [],
+  };
+
+  test('a registration answer becomes exactly the five fields Caddy reads, with the in-network server URL', () => {
+    expect(parseAcmeDnsAccount({ ...registered, server_url: 'http://elsewhere.example' }, zone)).toEqual({
+      username: registered.username,
+      password: registered.password,
+      subdomain: registered.subdomain,
+      fulldomain: registered.fulldomain,
+      server_url: 'http://acme-dns',
+    });
+  });
+
+  test('anything that is not an account of this zone is refused', () => {
+    expect(parseAcmeDnsAccount({ ...registered, fulldomain: 'd420c923-bbd7-4056-ab64-c3ca54c9b3cf.acme.other.com' }, zone)).toBeNull();
+    expect(parseAcmeDnsAccount({ ...registered, subdomain: '../../etc' }, zone)).toBeNull();
+    expect(parseAcmeDnsAccount({ ...registered, password: 'short' }, zone)).toBeNull();
+    expect(parseAcmeDnsAccount({ ...registered, username: 'x\r\nX-Injected: 1' }, zone)).toBeNull();
+    expect(parseAcmeDnsAccount(null, zone)).toBeNull();
+    expect(parseAcmeDnsAccount('text', zone)).toBeNull();
   });
 });
 

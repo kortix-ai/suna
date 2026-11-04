@@ -58,26 +58,17 @@ export function participantStack(
 }
 
 /**
- * The person whose avatar sits beside a message, or null. Web's rule
- * (`showAuthorName`): a group chat draws every author, the viewer included;
- * a one-person session draws only someone else. A session is a group chat
- * when two or more people can open it or two or more authors wrote in it.
- * Another session's agent has no face: null.
+ * The person whose avatar sits above a message, or null. Every member message
+ * draws its author, the viewer included, in every session (web
+ * `MessageSenderAbove`): nothing moves when a second person joins. Another
+ * session's agent has no face: null.
  */
 export function messageAvatarPerson(
   authors: SessionMessageAuthors | undefined,
-  participants: SessionParticipants | undefined,
-  viewerId: string | undefined,
   messageId: string,
 ): AvatarPerson | null {
   const author = authors?.authors[messageId];
   if (author?.kind !== 'member') return null;
-  const distinct = new Set(
-    Object.values(authors!.authors).map((a) => (a.kind === 'member' ? `member:${a.user_id}` : `session:${a.session_id}`)),
-  );
-  const groupChat = !!participants?.multi_user || distinct.size >= 2;
-  // Unknown viewer (participants not loaded): no guess.
-  if (!groupChat && (viewerId === undefined || author.user_id === viewerId)) return null;
   return { name: author.name, email: author.email, avatar_url: author.avatar_url ?? null };
 }
 

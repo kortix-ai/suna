@@ -87,7 +87,7 @@ const SIDEBAR_WIDTH = 28;
 /** The draft's tab id: no session has it. */
 const DRAFT_TAB = 'draft';
 /** Where `/feedback` sends a bug report or an idea. */
-const FEEDBACK_URL = 'https://github.com/kortix-ai/suna/issues/new';
+const FEEDBACK_URL = 'https://github.com/kortix-ai/CompanyOS/issues/new';
 /** Below this width the terminal panel takes the whole main area. */
 export const SPLIT_MIN_COLUMNS = 100;
 /** Below this width the sidebar never draws, whatever was chosen. */

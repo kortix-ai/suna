@@ -15,6 +15,7 @@ import {
   createSessionNotifier,
   notifySessionEvent,
   sessionEventAudience,
+  chatTurnSettlement,
   turnEndPushType,
   type SessionPushEvent,
 } from './session-push';
@@ -39,6 +40,24 @@ const event = (overrides: Partial<SessionPushEvent> = {}): SessionPushEvent => (
   projectId: PROJECT,
   prompterUserId: PROMPTER,
   ...overrides,
+});
+
+describe("chatTurnSettlement — a chat's working marks settle only when the session goes idle", () => {
+  test('a finished run is done, an error failed, a user abort stopped', () => {
+    expect(chatTurnSettlement({ outcome: 'closed', status: 'idle' })).toBe('done');
+    expect(chatTurnSettlement({ outcome: 'closed', status: 'error', errorName: 'APIError' })).toBe('failed');
+    expect(chatTurnSettlement({ outcome: 'closed', status: 'error', errorName: 'MessageAbortedError' })).toBe('stopped');
+  });
+  test('a promoted queued prompt keeps the session running: no settle, whatever the end', () => {
+    expect(chatTurnSettlement({ outcome: 'closed', status: 'idle', promoted: true })).toBeNull();
+    expect(chatTurnSettlement({ outcome: 'closed', status: 'error', errorName: 'APIError', promoted: true })).toBeNull();
+  });
+  test('a child session, a replay and a mismatch settle nothing', () => {
+    expect(chatTurnSettlement({ outcome: 'closed', status: 'idle', childSession: true })).toBeNull();
+    for (const outcome of ['already_closed', 'identity_mismatch', 'no_active_turn', 'non_terminal'] as const) {
+      expect(chatTurnSettlement({ outcome, status: 'idle' })).toBeNull();
+    }
+  });
 });
 
 describe('turnEndPushType — only a turn this call closed notifies', () => {

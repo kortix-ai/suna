@@ -673,7 +673,7 @@ function SecretsAccessInfo({ showEnforced }: { showEnforced: boolean }) {
         </p>
         {/* New tab: this page is often open over live work. */}
         <Link
-          href="/docs/project/secrets"
+          href="/docs/guide#secrets-you-choose-who-uses-them-and-how"
           target="_blank"
           rel="noreferrer"
           className="text-foreground inline-flex items-center gap-1.5 text-xs font-medium hover:underline"

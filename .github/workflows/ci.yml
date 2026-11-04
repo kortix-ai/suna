@@ -84,6 +84,7 @@ jobs:
               # Bundled into the daemon (KORTIXD_SHARED_SOURCES).
               - 'packages/api-contract/src/**'
               - 'packages/sdk/src/core/session/wire-message-id.ts'
+              - 'packages/voice/src/**'
             sandbox_image:
               - '.github/workflows/ci.yml'
               - 'apps/sandbox/Dockerfile'

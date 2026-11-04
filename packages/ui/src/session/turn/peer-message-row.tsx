@@ -13,14 +13,17 @@ import {
 import { useId, useState } from 'react';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
+import { UnifiedMarkdown } from '../../markdown/unified-markdown';
 
 /**
- * A message another Kortix session sent this one (`send_message`), as Claude
- * Code draws it: one dim line, "Message from @reviewer · Schema migration
- * finished", that opens in place to the full text. The header and the footer
- * the API wrapped around it (`peerMessagePromptText`) are for the agent, not
- * the reader, so neither renders. An idle notice, a shutdown request and a
- * shutdown answer get their own words.
+ * A message another Kortix session sent this one (`send_message`): one dim
+ * line that says where it came from, "Message from @reviewer · Schema
+ * migration finished", then the whole message as Markdown behind a left rule,
+ * so it reads as one text and never as this session's own reply. The header
+ * and the footer the API wrapped around it (`peerMessagePromptText`) are for
+ * the agent, not the reader, so neither renders. An idle notice says only that
+ * a teammate finished: it stays one line that opens in place. A shutdown
+ * request and a shutdown answer get their own words.
  */
 
 const KIND_ICON: Record<PeerMessageKind, Icon> = {
@@ -55,6 +58,50 @@ export function peerMessagePreview(info: Pick<PeerMessagePromptInfo, 'summary' |
 }
 
 export function PeerMessageRow({ info, actions }: { info: PeerMessagePromptInfo; actions?: React.ReactNode }) {
+  if (info.kind !== 'idle_notice') return <PeerMessageBody info={info} actions={actions} />;
+  return <PeerIdleRow info={info} actions={actions} />;
+}
+
+/** A message, a shutdown request or a shutdown answer: the source line, then the full text. */
+function PeerMessageBody({ info, actions }: { info: PeerMessagePromptInfo; actions?: React.ReactNode }) {
+  const t = useTranslations('multiAgent.peer');
+  const KindIcon = KIND_ICON[info.kind];
+  const headline = t(KIND_KEY.get(info.kind) ?? 'message', { from: peerHandleLabel(info.from) });
+  const summary = info.summary?.trim();
+  const body = info.text.trim();
+  return (
+    <div
+      data-testid="peer-message-turn"
+      data-peer-kind={info.kind}
+      data-peer-message-id={info.messageId}
+      className="flex min-w-0 flex-col gap-1.5"
+    >
+      <div className="text-muted-foreground flex w-full min-w-0 items-center gap-1.5 text-xs">
+        <KindIcon aria-hidden className="size-3.5 shrink-0" />
+        <span className="shrink-0">{headline}</span>
+        {summary && (
+          <>
+            <span aria-hidden className="shrink-0">
+              ·
+            </span>
+            <span className="min-w-0 truncate" title={summary}>
+              {summary}
+            </span>
+          </>
+        )}
+      </div>
+      {body && (
+        <div data-slot="peer-message-body" className="border-border ml-1.5 min-w-0 border-l pl-3 text-sm">
+          <UnifiedMarkdown content={body} trust="agent" isStreaming={false} />
+        </div>
+      )}
+      {actions}
+    </div>
+  );
+}
+
+/** An idle notice: one line that opens in place to the rest. */
+function PeerIdleRow({ info, actions }: { info: PeerMessagePromptInfo; actions?: React.ReactNode }) {
   const t = useTranslations('multiAgent.peer');
   const [open, setOpen] = useState(false);
   const bodyId = useId();

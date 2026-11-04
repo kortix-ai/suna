@@ -271,7 +271,7 @@ afterAll(async () => {
 
 async function seedPending(
   argsPreviewComplete = true,
-  argsPreview: Record<string, unknown> | null = { repo: 'kortix-ai/suna' },
+  argsPreview: Record<string, unknown> | null = { repo: 'kortix-ai/CompanyOS' },
   call: { sessionId: string; actingUserId: string } | null = null,
 ): Promise<string> {
   if (!ctx) throw new Error('approval integration test has no project context');
@@ -624,7 +624,7 @@ describe('approvals inbox + resolution', () => {
       execution_id: execId,
       pending: true,
       review_complete: true,
-      args_preview: { repo: 'kortix-ai/suna' },
+      args_preview: { repo: 'kortix-ai/CompanyOS' },
     });
 
     const human = await authGet(`/v1/approval-links/${token}`);
@@ -633,7 +633,7 @@ describe('approvals inbox + resolution', () => {
       execution_id: execId,
       pending: true,
       review_complete: true,
-      args_preview: { repo: 'kortix-ai/suna' },
+      args_preview: { repo: 'kortix-ai/CompanyOS' },
       approval_context: null,
     });
 
@@ -641,7 +641,7 @@ describe('approvals inbox + resolution', () => {
       .update(connectorCalls)
       .set({
         resultSummary: {
-          args_preview: { repo: 'kortix-ai/suna' },
+          args_preview: { repo: 'kortix-ai/CompanyOS' },
           args_preview_complete: true,
           approval_context: 'Deletes the scratch repo created in this session',
         },
@@ -724,7 +724,7 @@ describe('approvals inbox + resolution', () => {
       (item) => item.review_item_id === `call:${execId}`,
     );
     expect(ownerItem?.detail).toMatchObject({
-      args_preview: { repo: 'kortix-ai/suna' },
+      args_preview: { repo: 'kortix-ai/CompanyOS' },
       args_preview_complete: true,
       args_preview_authorized: true,
     });
@@ -732,7 +732,7 @@ describe('approvals inbox + resolution', () => {
     // A plain member cannot open the owner's private session, so the item is
     // not listed at all (#10136). On a session shared with the project they
     // see the item, without the parameters they cannot act on.
-    const sharedExecId = await seedPending(true, { repo: 'kortix-ai/suna' }, {
+    const sharedExecId = await seedPending(true, { repo: 'kortix-ai/CompanyOS' }, {
       sessionId: SHARED_SESSION,
       actingUserId: launcherUserId,
     });
@@ -764,7 +764,7 @@ describe('approvals inbox + resolution', () => {
       (item) => item.review_item_id === `call:${execId}`,
     );
     expect(patOwnerItem?.detail).toMatchObject({
-      args_preview: { repo: 'kortix-ai/suna' },
+      args_preview: { repo: 'kortix-ai/CompanyOS' },
       args_preview_complete: true,
       args_preview_authorized: true,
     });
@@ -776,7 +776,7 @@ describe('approvals inbox + resolution', () => {
     // legible, one value is described rather than copied, `complete` is false.
     // This used to 409, leaving Deny as the only possible answer.
     const execId = await seedPending(false, {
-      repo: 'kortix-ai/suna',
+      repo: 'kortix-ai/CompanyOS',
       attachment: '[400 chars omitted]',
     });
     const approve = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
@@ -824,7 +824,7 @@ describe('approvals inbox + resolution', () => {
         sessionId: missingSessionId,
         status: 'pending_approval',
         resultSummary: {
-          args_preview: { repo: 'kortix-ai/suna' },
+          args_preview: { repo: 'kortix-ai/CompanyOS' },
           args_preview_complete: true,
         },
       })
@@ -887,7 +887,7 @@ describe('can_resolve is the resolve route verdict, per caller (KRTX-1724)', () 
       }),
   });
   const sharedPending = (sessionId = SHARED_SESSION) =>
-    seedPending(true, { repo: 'kortix-ai/suna' }, { sessionId, actingUserId: prompterUserId });
+    seedPending(true, { repo: 'kortix-ai/CompanyOS' }, { sessionId, actingUserId: prompterUserId });
 
   type AuditRow = { execution_id: string; can_resolve: boolean; resolvers: string | null };
   type ReviewRow = {

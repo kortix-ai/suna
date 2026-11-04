@@ -38,12 +38,11 @@ ACTIVE_BACKEND = "ecs-fargate"
 BACKEND_ECS_FARGATE = "https://api-ecs-fargate.kortix.com"
 GATEWAY_ACTIVE_BACKEND = "ecs-fargate"
 GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-ecs-fargate.kortix.com"
-# Vercel Edge Config is exposed through this web route. The Worker caches it
-# for two seconds and blocks mutating API/gateway requests at the edge when the
-# level is "blocking". The API origin and database are not part of this read.
-MAINTENANCE_STATE_URL = "https://kortix.com/api/maintenance/edge"
-# An operator sets this to "blocking" to keep the edge write gate closed
-# while Vercel is unavailable. The message falls back to the generic text in
+# The one API/gateway write freeze. An operator sets this to "blocking" and
+# redeploys the Worker: every POST/PUT/PATCH/DELETE then gets a 503
+# MAINTENANCE_MODE answer, and reads still reach the origin. It reads nothing
+# per request. The admin "Full lockdown" level does not set it; that level
+# locks the web app only. The message falls back to the generic text in
 # worker.mjs.
 MAINTENANCE_LEVEL_OVERRIDE = "none"
 MAINTENANCE_TITLE_OVERRIDE = "Scheduled maintenance"

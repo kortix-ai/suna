@@ -4,7 +4,6 @@ import pg from 'pg';
 import { repairEarlyAppliedMigrations } from './early-applied-migration-repair';
 import { repairLocalAuditV2Ledger } from './local-audit-v2-ledger-repair';
 import { dropLocalInvalidIndexes } from './local-invalid-index-repair';
-import { repairLocalWarmSessionIndex } from './local-warm-session-index-repair';
 
 const migrations = join(import.meta.dir, '../migrations');
 const calls: string[] = [];
@@ -18,7 +17,6 @@ const repairs = [
   { name: 'early applied', run: () => repairEarlyAppliedMigrations('postgres://synthetic', migrations), result: [] },
   { name: 'audit ledger no-op', run: () => repairLocalAuditV2Ledger('postgres://synthetic', migrations), result: false },
   { name: 'invalid index', run: () => dropLocalInvalidIndexes('postgres://synthetic'), result: ['kortix.synthetic'] },
-  { name: 'warm index', run: () => repairLocalWarmSessionIndex('postgres://synthetic'), result: { repaired: true, discardedDuplicates: 1 } },
 ];
 
 for (const repair of repairs) {

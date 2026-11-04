@@ -15,7 +15,7 @@ type HastNode = {
 };
 
 /** The repo the release notes come from. `releases.ts` re-exports it. */
-export const CHANGELOG_REPO = 'kortix-ai/suna';
+export const CHANGELOG_REPO = 'kortix-ai/CompanyOS';
 
 /** `#10786` in prose: a pull request number, not part of a word or entity. */
 const PR_REF = /(^|[^\w&#])#(\d{1,6})\b/g;

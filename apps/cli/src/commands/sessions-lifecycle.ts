@@ -1,6 +1,6 @@
 /**
  * Session lifecycle verbs the dashboard has and the CLI did not: pause a
- * session, wake one back up, pre-warm one, change its model mid-flight,
+ * session, wake one back up, change its model mid-flight,
  * compact its conversation, restore a deleted one, and continue a lost one.
  *
  * `restart` (re-provision) already lives in sessions.ts and is a different
@@ -20,7 +20,6 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { withKortixScope } from '../api/sdk.ts';
-import type { ProjectSession } from '../api/types.ts';
 import {
   type SessionStartPayload,
   describeStartProgress,
@@ -111,25 +110,6 @@ Options:
   --host <name>    Operate against a non-default Kortix host.
   --json           Machine-readable output.
   -h, --help       Show this help.
-
-Needs project.session.start.
-`;
-
-const WARM_HELP = help`Usage: kortix sessions warm [options]
-
-Pre-create the session you are about to use, so the sandbox is already up when
-the first prompt lands. Speculative by contract: it reuses an existing unused
-warm session when there is one, and every failure is recoverable — fall back to
-\`kortix sessions new\`. A warm session stays hidden from \`sessions ls\` until
-its first prompt.
-
-Options:
-  --exclude <session-id>   Never hand back this session — pass the warm one you
-                           just took, so a replenish creates a fresh box.
-  --project <id>           Operate on this project id (default: linked).
-  --host <name>            Operate against a non-default Kortix host.
-  --json                   Machine-readable output.
-  -h, --help               Show this help.
 
 Needs project.session.start.
 `;
@@ -377,53 +357,6 @@ export async function runSessionsStart(argv: string[]): Promise<number> {
   process.stdout.write(
     `${status.info(`${short(session.session_id)} is ${describeStartProgress(result)} — re-run with --wait to block until it is ready.`)}\n`,
   );
-  return 0;
-}
-
-export async function runSessionsWarm(argv: string[]): Promise<number> {
-  const rest = [...argv];
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(WARM_HELP);
-    return 0;
-  }
-  let opts: CtxOpts;
-  let exclude: string | undefined;
-  let json = false;
-  try {
-    opts = { projectArg: takeFlagValue(rest, ['--project']), hostArg: takeFlagValue(rest, ['--host']) };
-    exclude = takeFlagValue(rest, ['--exclude']);
-    json = takeFlagBool(rest, ['--json']);
-  } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
-  }
-
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return 1;
-
-  let result: { session: ProjectSession; reused: boolean; workspace_refresh?: { status: string } };
-  try {
-    result = await ctx.client.post(
-      `/projects/${ctx.projectId}/sessions/warm`,
-      exclude ? { exclude_session_id: exclude } : {},
-    );
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-
-  if (json) {
-    emitJson(result);
-    return 0;
-  }
-  process.stdout.write(
-    `\n${status.ok(`${result.reused ? 'Reusing' : 'Warmed'} ${C.bold}${short(result.session.session_id)}${C.reset}`)}\n`,
-  );
-  process.stdout.write(`  ${C.dim}session_id ${C.reset}${result.session.session_id}\n`);
-  process.stdout.write(`  ${C.dim}status     ${C.reset}${result.session.status}\n`);
-  if (result.workspace_refresh) {
-    process.stdout.write(`  ${C.dim}workspace  ${C.reset}${result.workspace_refresh.status}\n`);
-  }
-  process.stdout.write('\n');
   return 0;
 }
 

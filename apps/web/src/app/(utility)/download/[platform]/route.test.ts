@@ -8,7 +8,7 @@ import { GET } from './route';
 const realFetch = globalThis.fetch;
 const asset = (name: string) => ({
   name,
-  browser_download_url: `https://github.com/kortix-ai/suna/releases/download/v1.0.0/${name}`,
+  browser_download_url: `https://github.com/kortix-ai/CompanyOS/releases/download/v1.0.0/${name}`,
   size: 1,
 });
 const release = {
@@ -130,7 +130,7 @@ describe('GET /download/<platform> per deployment', () => {
       await withBackend(`https://${channel}-api.kortix.com/v1`, async () => {
         const res = await call('macos');
         expect(res.headers.get('location') ?? '').toEndWith('/Kortix.Dev-0.14.3-universal.dmg');
-        expect(urls).toEqual([`https://api.github.com/repos/kortix-ai/suna/releases/tags/desktop-${channel}-latest`]);
+        expect(urls).toEqual([`https://api.github.com/repos/kortix-ai/CompanyOS/releases/tags/desktop-${channel}-latest`]);
       });
     });
 
@@ -138,7 +138,7 @@ describe('GET /download/<platform> per deployment', () => {
       githubFetch = (async () => new Response('Not Found', { status: 404 })) as unknown as typeof fetch;
       await withBackend(`https://${channel}-api.kortix.com/v1`, async () => {
         const res = await call('windows');
-        expect(res.headers.get('location')).toBe(`https://github.com/kortix-ai/suna/releases/tag/desktop-${channel}-latest`);
+        expect(res.headers.get('location')).toBe(`https://github.com/kortix-ai/CompanyOS/releases/tag/desktop-${channel}-latest`);
       });
     });
   }
@@ -151,7 +151,7 @@ describe('GET /download/<platform> per deployment', () => {
     }) as unknown as typeof fetch;
     await withBackend('https://api.kortix.com/v1', async () => {
       expect((await call('linux')).headers.get('location') ?? '').toEndWith('/Kortix-1.0.0-x86_64.AppImage');
-      expect(urls).toEqual(['https://api.github.com/repos/kortix-ai/suna/releases/latest']);
+      expect(urls).toEqual(['https://api.github.com/repos/kortix-ai/CompanyOS/releases/latest']);
     });
   });
 });

@@ -29,6 +29,7 @@ import {
   runtimeWakeInProgress,
   stampedRuntimeFailureState,
 } from '../session-lifecycle/runtime-wake-fence';
+import { forRequestApiUrl } from '../../shared/domain-aliases';
 
 /**
  * The relative proxy path a client uses for all OpenCode (port 8000) traffic for
@@ -165,7 +166,7 @@ export function serializeSandboxRow(
     // A legacy `e2b` row passes through as stored: E2B support is discontinued.
     provider: row.provider as ProjectSessionSandbox['provider'],
     external_id: row.externalId,
-    base_url: row.baseUrl,
+    base_url: forRequestApiUrl(row.baseUrl),
     status: row.status,
     config: serializeSessionSandboxConfig(row.config),
     metadata: row.metadata ?? {},

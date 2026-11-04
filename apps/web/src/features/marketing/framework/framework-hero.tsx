@@ -408,7 +408,7 @@ export function FrameworkHero() {
         </div>
         <div className="flex flex-wrap gap-2.5 pt-2">
           <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
-            <a href="https://github.com/kortix-ai/suna" target="_blank" rel="noreferrer">
+            <a href="https://github.com/kortix-ai/CompanyOS" target="_blank" rel="noreferrer">
               {tMarketing('text20672423d716')}
             </a>
           </MarketingButton>

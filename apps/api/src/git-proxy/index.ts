@@ -52,6 +52,7 @@ import {
 import { fetchUpstreamBuffered } from './upstream';
 import { auth, makeOpenApiApp } from '../openapi';
 import { loadGitProject } from '../projects/lib/git';
+import { MAX_CHECKED_PUSH_BYTES, pushedManifestRefusal, pushedManifestSyntaxError } from '../projects/surface';
 import { refreshMirror, runGit } from '../projects/git/mirror';
 import { writeScaffoldDeltaBundle } from '../projects/git/fast-boot-bundle';
 import { resolveFastBootGitHintWithCache } from '../projects/lib/fast-boot-git-hint';
@@ -460,6 +461,34 @@ async function gateReceivePack(
       });
     }
   }
+  // A push that lands a kortix.yaml that is not YAML on the default branch is
+  // refused: the project would run its last good version until a fix. The
+  // check reads the pack, so only these pushes are buffered (up to
+  // MAX_CHECKED_PUSH_BYTES); every case it cannot decide is forwarded.
+  if (denials.length === 0 && toDefault.length === 1) {
+    let complete = false;
+    while (buffered <= MAX_CHECKED_PUSH_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) {
+        complete = true;
+        break;
+      }
+      chunks.push(value);
+      buffered += value.length;
+    }
+    const pack = complete ? packOf(concatChunks(chunks, buffered), parsed) : null;
+    if (pack) {
+      const project = await loadGitProject({ row: auth.project }).catch(() => null);
+      const error = project ? await pushedManifestSyntaxError(project, toDefault[0]!, pack) : null;
+      if (error) {
+        const reason = pushedManifestRefusal(error);
+        // Nothing is forwarded, so no ref of this push moves.
+        for (const u of parsed.updates) {
+          denials.push({ ref: u.ref, reason: u.ref === defaultRef ? reason : `not pushed: ${auth.project.defaultBranch} was refused` });
+        }
+      }
+    }
+  }
   if (denials.length > 0) {
     // Refuse before a single pack byte is uploaded. The client is mid-send;
     // git handles an early response and prints our per-ref reasons, so there is
@@ -507,6 +536,22 @@ async function gateReceivePack(
       },
     }),
   };
+}
+
+/** The pack of a receive-pack body: after the commands and any push options. Null when there is none. */
+function packOf(body: Uint8Array, parsed: { commandBytes: number; capabilities: string[] }): Uint8Array | null {
+  let offset = parsed.commandBytes;
+  if (parsed.capabilities.includes('push-options')) {
+    for (;;) {
+      if (offset + 4 > body.length) return null;
+      const length = parseInt(new TextDecoder('latin1').decode(body.subarray(offset, offset + 4)), 16);
+      if (!Number.isFinite(length)) return null;
+      offset += length === 0 ? 4 : length;
+      if (length === 0) break;
+    }
+  }
+  const magic = new TextDecoder('latin1').decode(body.subarray(offset, offset + 4));
+  return magic === 'PACK' ? body.subarray(offset) : null;
 }
 
 function concatChunks(chunks: Uint8Array[], total: number): Uint8Array {

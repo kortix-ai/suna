@@ -139,24 +139,24 @@ describe('My Kortix agent', () => {
     });
   });
 
-  test('builtin_agents: the manifest boolean wins, else off unless the manifest needs repair', () => {
+  test('builtin_agents: on only when the manifest sets true, else off', () => {
     expect(declaredBuiltinAgents({})).toEqual({});
     expect(declaredBuiltinAgents({ builtin_agents: { my_kortix: false } })).toEqual({ my_kortix: false });
     expect(declaredBuiltinAgents({ builtin_agents: { my_kortix: 'no' } })).toEqual({});
     expect(declaredBuiltinAgents({ builtin_agents: ['my_kortix'] })).toEqual({});
-    expect(resolveBuiltinAgents({}, false)).toEqual({ my_kortix: false });
-    expect(resolveBuiltinAgents({}, true)).toEqual({ my_kortix: true });
-    expect(resolveBuiltinAgents({ my_kortix: false }, true)).toEqual({ my_kortix: false });
-    expect(resolveBuiltinAgents({ my_kortix: true }, false)).toEqual({ my_kortix: true });
+    expect(resolveBuiltinAgents({})).toEqual({ my_kortix: false });
+    expect(resolveBuiltinAgents({ my_kortix: false })).toEqual({ my_kortix: false });
+    expect(resolveBuiltinAgents({ my_kortix: true })).toEqual({ my_kortix: true });
     const valid = { project: { name: 'p' }, default_agent: 'worker', agents: { worker: { mode: 'primary', tools: 'all' } } };
     expect(projectBuiltinAgents(valid)).toEqual({ my_kortix: false });
     expect(projectBuiltinAgents({ ...valid, builtin_agents: { my_kortix: true } })).toEqual({ my_kortix: true });
     expect(projectBuiltinAgents({ ...valid, builtin_agents: { my_kortix: false } })).toEqual({ my_kortix: false });
-    // No usable manifest (missing, empty, an error that voids the file): My Kortix runs to fix it.
-    expect(projectBuiltinAgents(null)).toEqual({ my_kortix: true });
-    expect(projectBuiltinAgents({})).toEqual({ my_kortix: true });
-    expect(projectBuiltinAgents({ ...valid, sandbox: 42 })).toEqual({ my_kortix: true });
-    expect(projectBuiltinAgents({ ...valid, sandbox: 42, builtin_agents: { my_kortix: false } })).toEqual({ my_kortix: false });
+    expect(projectBuiltinAgents({ ...valid, builtin_agents: { my_kortix: 'yes' } })).toEqual({ my_kortix: false });
+    // No exception for a missing, empty or broken file: only the file's own `true` turns it on.
+    expect(projectBuiltinAgents(null)).toEqual({ my_kortix: false });
+    expect(projectBuiltinAgents({})).toEqual({ my_kortix: false });
+    expect(projectBuiltinAgents({ ...valid, sandbox: 42 })).toEqual({ my_kortix: false });
+    expect(projectBuiltinAgents({ ...valid, sandbox: 42, builtin_agents: { my_kortix: true } })).toEqual({ my_kortix: true });
   });
 
   test('a project that runs My Kortix keeps its own default agent', () => {

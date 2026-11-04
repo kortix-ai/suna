@@ -90,6 +90,42 @@ describe('Kortix Capture store', () => {
   });
 });
 
+describe('project snapshots in the bundled store', () => {
+  type Rendered = { services: Record<string, { environment?: Record<string, string> }> };
+  const apiEnv = (options = {}) => (parse(renderFullDockerCompose('kortix-test', options)) as Rendered).services['kortix-api']!.environment!;
+
+  test('the API keeps snapshots in their own bucket of the bundled MinIO, creates it, and prefers them over Git', () => {
+    expect(apiEnv()).toMatchObject({
+      // An operator rolls back with KORTIX_PROJECT_SNAPSHOT_MODE=git in .env.
+      KORTIX_PROJECT_SNAPSHOT_MODE: '${KORTIX_PROJECT_SNAPSHOT_MODE:-prefer-s3}',
+      KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: 'kortix-project-snapshots',
+      KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: 'http://capture-store:9000',
+      // A sandbox downloads its presigned URL on the origin it calls the API on.
+      KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: '${KORTIX_URL}',
+      KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: 'true',
+      KORTIX_PROJECT_SNAPSHOT_S3_CREATE_BUCKET: 'true',
+      KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: '${CAPTURE_STORE_ROOT_USER}',
+      KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: '${CAPTURE_STORE_ROOT_PASSWORD}',
+    });
+    expect(apiEnv().KORTIX_PROJECT_SNAPSHOT_S3_BUCKET).not.toBe(apiEnv().KORTIX_CAPTURE_S3_BUCKET);
+  });
+
+  test('without a domain the API forwards the snapshot prefix; with a domain Caddy does, and the API does not', () => {
+    expect(apiEnv().KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET).toBe('http://capture-store:9000');
+    expect(apiEnv({ tunnelConfigured: true }).KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET).toBe('http://capture-store:9000');
+    expect(apiEnv({ domainConfigured: true })).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET');
+    expect(renderCaddyfile()).toContain('@snapshots path /kortix-project-snapshots /kortix-project-snapshots/*');
+  });
+
+  test('an external capture store leaves no bundled MinIO, so .env alone decides the snapshot store', () => {
+    const env = apiEnv({ captureStoreExternal: true });
+    expect(Object.keys(env).filter((key) => key.startsWith('KORTIX_PROJECT_SNAPSHOT_'))).toEqual([]);
+    const caddyfile = renderCaddyfile({ captureStoreExternal: true });
+    expect(caddyfile).not.toContain('@snapshots');
+    expect(caddyfile).not.toContain('kortix-project-snapshots');
+  });
+});
+
 describe('full self-host Docker distribution', () => {
   test('renders the complete pinned Supabase and Kortix service set', () => {
     const document = parse(renderFullDockerCompose('kortix-enterprise')) as {

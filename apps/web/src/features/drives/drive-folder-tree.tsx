@@ -1,24 +1,18 @@
 'use client';
 
 import type { Drive } from '@kortix/sdk';
-import { useDriveFolder } from '@kortix/ui/files';
+import { getFileIcon, useDriveFolder } from '@kortix/ui/files';
+import { useFilesStore } from '@kortix/ui/internal/stores/files-store';
+import { ErrorState } from '@kortix/ui/error-state';
+import { Button } from '@kortix/ui/button';
 import { Home } from '@kortix/ui/internal/icons/home';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { cn } from '@kortix/ui';
-import {
-  BuildingsIcon,
-  CaretRightIcon,
-  FolderSimpleIcon,
-  HardDriveIcon,
-  HashIcon,
-  ShareNetworkIcon,
-  UsersIcon,
-} from '@phosphor-icons/react';
+import { CaretRightIcon, FolderSimpleIcon, HardDriveIcon, HashIcon, UsersIcon } from '@phosphor-icons/react';
 import { type ComponentType, type ReactNode, useCallback, useEffect, useState } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
 
-const COMPANY = '/Company';
 const USERS = '/Users';
 
 type Glyph = ComponentType<{ className?: string }>;
@@ -33,11 +27,12 @@ function ancestors(path: string): string[] {
 }
 
 /**
- * Beside the folder in view: the places people go first (My files, Company,
- * what others shared with you), then the whole Drive as one tree under the
- * project, every folder the caller may open as it is stored. A folder lists
- * its subfolders when it is expanded; the folders on the way to the one in
- * view are expanded by themselves, and a folder with no subfolders has no caret.
+ * Beside the folder in view: My files. With `shared_drives` on, also the
+ * shared Drives the caller reaches through an agent they may use and, for an
+ * admin (`manage` at the top), the whole Drive as one tree under the project.
+ * A folder lists its visible files and folders when expanded. The folders
+ * on the way to the one in view expand automatically; only confirmed empty
+ * folders lose their caret.
  */
 export function DriveFolderTree({
   drive,
@@ -83,7 +78,9 @@ export function DriveFolderTree({
     [],
   );
   const personal = drive.personalFolder;
-  const shared = drive.sharedWithMe ?? [];
+  const sharedOn = !!drive.sharedDrives;
+  const shared = sharedOn ? (drive.sharedWithMe ?? []) : [];
+  const admin = sharedOn && drive.access === 'manage';
   const tree = { drive, current: path, expanded, leaves, onToggle: toggle, onLeaf: markLeaf, onOpen };
 
   return (
@@ -92,32 +89,27 @@ export function DriveFolderTree({
         {personal ? (
           <PlaceRow icon={Home} label={t('myDrive')} active={within(path, personal)} onClick={() => onOpen(personal)} />
         ) : null}
-        <PlaceRow icon={BuildingsIcon} label={nameOf(COMPANY)} active={within(path, COMPANY)} onClick={() => onOpen(COMPANY)} />
       </ul>
       {shared.length > 0 ? (
         <section className="space-y-1">
-          <p className="text-muted-foreground px-2 text-xs">{t('sharedWithMe')}</p>
+          <p className="text-muted-foreground px-2 text-xs">{t('drivesSection')}</p>
           <ul className="space-y-0.5">
             {shared.map((f) => (
-              <PlaceRow
-                key={f.path}
-                icon={ShareNetworkIcon}
-                label={nameOf(f.path)}
-                active={within(path, f.path)}
-                onClick={() => onOpen(f.path)}
-              />
+              <PlaceRow key={f.path} icon={HardDriveIcon} label={nameOf(f.path)} active={within(path, f.path)} onClick={() => onOpen(f.path)} />
             ))}
           </ul>
         </section>
       ) : null}
-      <section className="space-y-1">
-        <p className="text-muted-foreground px-2 text-xs">{t('allFiles')}</p>
-        <ul role="tree" aria-label={t('allFiles')} className="space-y-0.5">
-          <TreeRow {...tree} path="/" name={rootLabel} icon={HardDriveIcon}>
-            <TreeChildren {...tree} parent="/" />
-          </TreeRow>
-        </ul>
-      </section>
+      {admin ? (
+        <section className="space-y-1">
+          <p className="text-muted-foreground px-2 text-xs">{t('allFiles')}</p>
+          <ul role="tree" aria-label={t('allFiles')} className="space-y-0.5">
+            <TreeRow {...tree} path="/" name={rootLabel} icon={HardDriveIcon}>
+              <TreeChildren {...tree} parent="/" />
+            </TreeRow>
+          </ul>
+        </section>
+      ) : null}
     </nav>
   );
 }
@@ -156,14 +148,17 @@ function TreeChildren({ parent, ...tree }: TreeProps & { parent: string }) {
   const t = useTranslations('drives');
   const { drive, onLeaf } = tree;
   const list = useDriveFolder(drive.driveId, parent);
-  const folders = (list.data?.entries ?? [])
-    .filter((e) => e.type === 'dir' && !e.name.startsWith('.'))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const loaded = !!list.data;
-  // A folder with no subfolders drops its caret instead of opening onto nothing.
+  const openFileWithList = useFilesStore((s) => s.openFileWithList);
+  const selectedFilePath = useFilesStore((s) => s.selectedFilePath);
+  const entries = (list.data?.entries ?? [])
+    .filter((e) => !e.name.startsWith('.'))
+    .sort((a, b) => Number(b.type === 'dir') - Number(a.type === 'dir') || a.name.localeCompare(b.name));
+  const loaded = list.isSuccess && !list.isFetching;
+  const files = entries.filter((e) => e.type !== 'dir').map((e) => e.path);
+  // Loading and failed refreshes never turn an unknown folder into a leaf.
   useEffect(() => {
-    if (loaded) onLeaf(parent, folders.length === 0);
-  }, [loaded, folders.length, parent, onLeaf]);
+    onLeaf(parent, loaded && entries.length === 0);
+  }, [loaded, entries.length, parent, onLeaf]);
   if (list.isLoading) {
     return (
       <li className="py-1 pl-6">
@@ -171,12 +166,34 @@ function TreeChildren({ parent, ...tree }: TreeProps & { parent: string }) {
       </li>
     );
   }
+  if (list.isError) {
+    return (
+      <li>
+        <ErrorState size="sm" title={t('loadError')} action={<Button variant="outline" size="sm" onClick={() => void list.refetch()}>{t('retry')}</Button>} />
+      </li>
+    );
+  }
   return (
     <>
-      {folders.map((e) => {
+      {entries.map((e) => {
+        if (e.type !== 'dir') {
+          return (
+            <li key={e.path} role="treeitem" aria-selected={selectedFilePath === e.path}>
+              <button
+                type="button"
+                title={e.name}
+                onClick={() => openFileWithList(e.path, files, files.indexOf(e.path))}
+                className="text-foreground hover:bg-accent/60 flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md pr-2 pl-6 text-left text-sm"
+              >
+                {getFileIcon(e.name, { className: 'text-muted-foreground size-4 shrink-0' })}
+                <span className="truncate">{e.name}</span>
+              </button>
+            </li>
+          );
+        }
         const mine = e.path === drive.personalFolder;
         const channel = e.name.startsWith('#');
-        const icon: Glyph = mine ? Home : e.path === COMPANY ? BuildingsIcon : e.path === USERS ? UsersIcon : channel ? HashIcon : FolderSimpleIcon;
+        const icon: Glyph = mine ? Home : e.path === USERS ? UsersIcon : channel ? HashIcon : FolderSimpleIcon;
         return (
           <TreeRow key={e.path} {...tree} path={e.path} name={mine ? t('treeYou', { name: e.name }) : channel ? e.name.slice(1) : e.name} icon={icon}>
             <TreeChildren {...tree} parent={e.path} />

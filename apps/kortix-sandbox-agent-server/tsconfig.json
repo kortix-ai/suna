@@ -44,6 +44,7 @@
       "@kortix/shared/peer-message-prompt": ["../../packages/shared/src/peer-message-prompt.ts"],
       "@kortix/shared/room-prompt": ["../../packages/shared/src/room-prompt.ts"],
       "@kortix/api-contract/*": ["../../packages/api-contract/src/*"],
+      "@kortix/voice/*": ["../../packages/voice/src/*"],
       // pi mints message ids with the platform codec. The file imports nothing;
       // the Dockerfiles copy it to the matching relative path.
       "@kortix/sdk/wire-message-id": ["../../packages/sdk/src/core/session/wire-message-id.ts"],

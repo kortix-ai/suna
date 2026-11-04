@@ -112,7 +112,7 @@ Rules for the video:
 - `.mp4` plays in every browser. Keep each file under 100 MB (`ls -lh output/pr/`).
 - For a change with no UI (API, CLI, infra), record the terminal output or the rendered
   result on GitHub. For example, open the changed file on the branch at
-  `https://github.com/kortix-ai/suna/blob/<branch>/<path>`. Or state in the PR why a video
+  `https://github.com/kortix-ai/CompanyOS/blob/<branch>/<path>`. Or state in the PR why a video
   adds nothing.
 
 Look at the video before you attach it. Extract four frames and read them:

@@ -37,8 +37,8 @@ import {
   useSessionLogRecord,
   useSessionLogThread,
   useSessionMessageAuthors,
-  useSessionModelUsage,
   useSessionParticipants,
+  useSessionModelUsage,
 } from '@kortix/sdk/react';
 import {
   ArrowBendUpLeftIcon,
@@ -54,6 +54,7 @@ import {
   useUiRouter,
   useUiShallowNavigate,
   useUiSearchParams,
+  useUiViewer,
   useUiViewerId,
 } from '../../providers/ui-provider';
 import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -65,10 +66,11 @@ import {
   authorForTurn,
   awaitsAgent,
   missingAuthorKey,
+  participantAuthor,
   resolveTranscriptAuthors,
   rewindableMessageIds,
-  showAuthorName,
   stoppedByName,
+  viewerAuthor,
 } from '../turn/message-author';
 import { stopRefusalMessage } from '../status/stop-refusal';
 import { QueuedPromptList } from '../composer/queued-prompt-list';
@@ -123,6 +125,7 @@ import {
 } from './first-prompt-handover';
 import { CompactModal } from '../header/compact-modal';
 import { SessionSiteHeader } from '../header/session-site-header';
+import { VoiceCallSlot } from '../voice/voice-call';
 import { claimFirstTurnRow } from '../composer/inbox-row-claims';
 import { type ModelDefaultControls } from '../models/model-selector';
 import { OptimisticTurn } from './optimistic-turn';
@@ -292,6 +295,7 @@ import { RestoreNotice, hasOutOfContext, type FullTextState } from './session-hi
 
 import {
   TranscriptTurnRow,
+  isAgentNoticeTurn,
   strandedPromptIds,
   optimisticAnswersCache,
   promptTexts,
@@ -747,8 +751,15 @@ export function SessionChat({
     threadRef.current = thread;
   }, [thread]);
   const messagesLoading = syncMessagesLoading;
-  // Who wrote each user message. A one-person session stays unlabelled.
+  // Who wrote each user message: every member message shows its sender's
+  // avatar from the first frame, one-person session included, so nothing
+  // moves when a second person joins.
   const viewerId = useUiViewerId();
+  const viewer = useUiViewer();
+  const viewerAsAuthor = useMemo(() => viewerAuthor(viewer), [viewer]);
+  // Wire ids this tab sent. Their recorded author arrives a moment after the
+  // bubble paints, so the viewer's avatar stands in until then.
+  const sentHereIds = useRef(new Set<string>());
   const Link = useUiLink();
   // Only a user message adds an author, so only user messages key the refetch.
   const userMessageIds = useMemo(
@@ -760,7 +771,11 @@ export function SessionChat({
   const turnOutcome = useSessionTurnOutcome(projectId ?? '', projectSessionId ?? '');
   // A stop adds no message but does add a name ("Stopped by"): the turn that
   // ended keys the read too, so the stopper shows when that turn ends.
-  const { data: messageAuthors, refetch: refetchMessageAuthors } = useSessionMessageAuthors(
+  const {
+    data: messageAuthors,
+    isLoading: messageAuthorsLoading,
+    refetch: refetchMessageAuthors,
+  } = useSessionMessageAuthors(
     projectId,
     projectSessionId,
     `${newestUserMessageId}|${turnOutcome.last_ended?.turn_token ?? ''}`,
@@ -769,10 +784,16 @@ export function SessionChat({
     () => resolveTranscriptAuthors(userMessageIds, messageAuthors),
     [userMessageIds, messageAuthors],
   );
-  // A session two or more people can open reads as a group chat from its first
-  // prompt: every author shows, the viewer included. Same cache as the header.
+  // The user messages on screen when this session's first authors read
+  // landed. A message after them arrived live: the drain may re-mint its id
+  // and the ledger records it a moment later, so its avatar slot is held.
+  const [loadedUserIds, setLoadedUserIds] = useState<{ sessionId: string; ids: ReadonlySet<string> } | null>(null);
+  if (messageAuthors && loadedUserIds?.sessionId !== sessionId) {
+    setLoadedUserIds({ sessionId, ids: new Set(userMessageIds) });
+  }
+  // Names a queued prompt's sender before the authors read lists it. Same
+  // cache as the header.
   const { data: sessionParticipants } = useSessionParticipants(projectId, projectSessionId);
-  const groupChat = transcriptAuthors.multiAuthor || !!sessionParticipants?.multi_user;
   // Project sessions use the server-side project agent roster. A sub-agent's
   // chat has no projectId, but runs inside the parent scope's project: its
   // roster is that project's. Only a chat with neither falls back to the
@@ -806,11 +827,17 @@ export function SessionChat({
     ...promptInbox.prompts.flatMap((prompt) => [prompt.message_id, prompt.wire_message_id ?? '']),
   ]);
   const authorRetry = useRef<{ key: string; count: number }>({ key: '', count: 0 });
+  // The missing set the retries gave up on: a live message still unattributed
+  // then stops holding its avatar slot.
+  const [authorsGaveUp, setAuthorsGaveUp] = useState('');
   useEffect(() => {
     if (!missingAuthors) return;
     if (authorRetry.current.key !== missingAuthors) authorRetry.current = { key: missingAuthors, count: 0 };
     const delay = AUTHOR_RETRY_DELAYS_MS[authorRetry.current.count];
-    if (delay === undefined) return;
+    if (delay === undefined) {
+      setAuthorsGaveUp(missingAuthors);
+      return;
+    }
     const timer = setTimeout(() => {
       authorRetry.current.count += 1;
       void refetchMessageAuthors();
@@ -2328,6 +2355,12 @@ export function SessionChat({
    * 1.5k "two children with the same key" errors in one churn). The origin
    * key goes to the FIRST claimant; any other turn falls back to its own id.
    */
+  // Turns whose prompt is another agent's notice: the work continues across
+  // them, so they sit a continuation's distance below the turn above.
+  const agentNoticeTurnIds = useMemo(
+    () => new Set(turns.filter((turn) => isAgentNoticeTurn(turn)).map((turn) => turn.id)),
+    [turns],
+  );
   const turnRenderKeys = useMemo(() => {
     const keys = new Map<string, string>();
     const used = new Set<string>();
@@ -2690,6 +2723,7 @@ export function SessionChat({
       const clientMessageId = overrides?.clientMessageId ?? ascendingId('msg');
       const sentAtMs = Date.now();
       const messageID = mintSessionWireMessageId(sessionId, clientMessageId);
+      sentHereIds.current.add(messageID);
 
       // Generate part IDs upfront so the optimistic message and the server
       // request use the SAME IDs. When the server echoes parts via
@@ -3907,32 +3941,37 @@ export function SessionChat({
   );
 
   // The queued messages and the one Resume while a Stop holds the queue: their
-  // own full-width card above the composer stack, not inside the strip.
+  // own full-width card above the composer stack, not inside the strip. A live
+  // voice call is the card above them (nothing unless a call is open).
   const chatAboveSlot = useMemo(
     () => (
-      <QueuedPromptList
-        rows={heldCommands.length > 0 ? [...queueRows.rows, ...heldCommandRows(heldCommands)] : queueRows.rows}
-        heldCount={queueRows.heldCount}
-        resumePending={resumePending}
-        onResume={() => void handleResumeQueue()}
-        onEdit={(id) => {
-          queueEdit.takeBack(id);
-        }}
-        onRemove={(id) => {
-          if (id.startsWith(HELD_COMMAND_ROW_PREFIX)) {
-            const heldId = id.slice(HELD_COMMAND_ROW_PREFIX.length);
-            setHeldCommands((held) => held.filter((entry) => entry.id !== heldId));
-            return;
-          }
-          void handleRemoveQueuedMessage(id);
-        }}
-        onRetry={handleRetryQueuedMessage}
-        onStopAndSend={effectiveBusy && canStop ? handleStopAndSendQueuedMessage : undefined}
-        editing={queueEdit.editing}
-        onCancelEdit={queueEdit.cancel}
-      />
+      <>
+        <VoiceCallSlot sessionId={projectSessionId} />
+        <QueuedPromptList
+          rows={heldCommands.length > 0 ? [...queueRows.rows, ...heldCommandRows(heldCommands)] : queueRows.rows}
+          heldCount={queueRows.heldCount}
+          resumePending={resumePending}
+          onResume={() => void handleResumeQueue()}
+          onEdit={(id) => {
+            queueEdit.takeBack(id);
+          }}
+          onRemove={(id) => {
+            if (id.startsWith(HELD_COMMAND_ROW_PREFIX)) {
+              const heldId = id.slice(HELD_COMMAND_ROW_PREFIX.length);
+              setHeldCommands((held) => held.filter((entry) => entry.id !== heldId));
+              return;
+            }
+            void handleRemoveQueuedMessage(id);
+          }}
+          onRetry={handleRetryQueuedMessage}
+          onStopAndSend={effectiveBusy && canStop ? handleStopAndSendQueuedMessage : undefined}
+          editing={queueEdit.editing}
+          onCancelEdit={queueEdit.cancel}
+        />
+      </>
     ),
     [
+      projectSessionId,
       heldCommands,
       queueEdit.editing,
       queueEdit.cancel,
@@ -4582,12 +4621,27 @@ export function SessionChat({
                               : undefined;
                           // A queued prompt is not in the runtime transcript yet;
                           // its author still shows (`authorForTurn`).
-                          const turnAuthor = authorForTurn(
-                            transcriptAuthors,
-                            messageAuthors,
-                            turn.id,
-                            pendingPrompt?.wire_message_id,
-                          );
+                          const promptAuthorId = pendingPromptsByMessageId.get(turn.id)?.author_user_id;
+                          const turnAuthor =
+                            authorForTurn(
+                              transcriptAuthors,
+                              messageAuthors,
+                              turn.id,
+                              pendingPrompt?.wire_message_id,
+                            ) ??
+                            participantAuthor(sessionParticipants, promptAuthorId) ??
+                            (sentHereIds.current.has(turn.id) ||
+                            sentHereIds.current.has(turnRenderKeys.get(turn.id) ?? '') ||
+                            (viewerId !== undefined && promptAuthorId === viewerId) ||
+                            // The first prompt of a session the viewer started,
+                            // sent from another surface (project home), before
+                            // the first authors read lands.
+                            (messageAuthorsLoading &&
+                              viewerId !== undefined &&
+                              projectSessionRow?.created_by === viewerId &&
+                              turn.id === userMessageIds[0])
+                              ? viewerAsAuthor
+                              : undefined);
                           return (
                             <TranscriptTurnRow
                               // ONE element per prompt: keyed by the id the
@@ -4615,8 +4669,8 @@ export function SessionChat({
                               viewportClassName={
                                 turnIndex === 0 || transcriptRows
                                   ? ''
-                                  : // A compaction and the work after it continue the turn above.
-                                    turn.compaction || turn.continues
+                                  : // A compaction, the work after it and another agent's notice continue the turn above.
+                                    turn.compaction || turn.continues || agentNoticeTurnIds.has(turn.id)
                                     ? 'mt-6'
                                     : lastTurnWorking &&
                                       pendingTurnIds.has(turn.id) &&
@@ -4626,7 +4680,17 @@ export function SessionChat({
                               }
                               turn={turn}
                               author={turnAuthor}
-                              showAuthor={showAuthorName(turnAuthor, groupChat, viewerId)}
+                              // Reserve the sender row while the authors load,
+                              // for a queued prompt whose sender is known, and
+                              // for a live message until its author resolves.
+                              showAuthor={
+                                !!turnAuthor ||
+                                messageAuthorsLoading ||
+                                !!promptAuthorId ||
+                                (loadedUserIds?.sessionId === sessionId &&
+                                  !loadedUserIds.ids.has(turn.id) &&
+                                  authorsGaveUp !== missingAuthors)
+                              }
                               stoppedBy={stoppedByName(messageAuthors, turn.id, viewerId)}
                               servedModel={servedModelOfTurn(modelUsage, turn.id, turns[turnIndex - 1]?.id)}
                               turnOutcome={turnOutcome}

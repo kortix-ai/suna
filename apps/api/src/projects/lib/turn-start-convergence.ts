@@ -378,6 +378,49 @@ async function noteAssetsFromHealth(
   }
 }
 
+/**
+ * Record a `GET /kortix/health` body another caller already read — the
+ * session-open admission check reads it on every ready open — exactly as
+ * `probeRunningRelease` records its own read. A first prompt is delivered right
+ * after that open, so its catalog, config and asset gates find a warm memo
+ * instead of reading the same endpoint again (preview 2026-11-02: the catalog
+ * gate's own read was 49 ms p50, 293 ms p90 of every first prompt).
+ *
+ * The same box report, read a few hundred ms earlier than the gate would have
+ * read it. Never throws.
+ *
+ * It records the catalog and the release, NOT the runtime-asset verdict. A
+ * `behind` verdict known at the first turn start makes the asset lane POST
+ * `/kortix/refresh` at once, and the box rebuilt a ~100 MB binary in the middle
+ * of its first turn (preview trace 2026-11-03). Unrecorded, the first turn
+ * only schedules the probe, as before, and the box runs its own first pass
+ * after that turn (harness/shared/after-first-turn.ts in the daemon).
+ */
+export async function noteSandboxHealthBody(sessionId: string, body: unknown): Promise<void> {
+  try {
+    if (!body || typeof body !== 'object') return;
+    const report = body as { capabilities?: unknown; config?: unknown; runtime?: unknown };
+    const [{ parseDaemonRuntimeReport }, { hasConfigReleaseCapability, parseDaemonConfigReport }] =
+      await Promise.all([
+        import('../../runtime-assets/daemon-runtime-report'),
+        import('./session-config-release'),
+      ]);
+    if (hasConfigReleaseCapability(report.capabilities)) {
+      const release = parseDaemonConfigReport(report.config);
+      if (release) noteRunningRelease(sessionId, release.release_id);
+    }
+    const running = parseDaemonRuntimeReport(report.runtime)?.running;
+    if (running) {
+      noteRunningCatalog(sessionId, running.managed_model_ids, running.managed_catalog_fallback_reason);
+    }
+  } catch (error) {
+    logger.warn('[turn-start] could not record an admission health read', {
+      session_id: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 const defaultDeps: ConfigGateDeps = {
   loadTarget: (sessionId) => sessionMemo(sessionId),
   desiredReleaseId: (target, sessionId) => desiredReleases.get(target, sessionId),
