@@ -176,3 +176,14 @@ export class DocByteBudget {
     return { allowed: true };
   }
 }
+
+/**
+ * `GET …/doc` past seq 0 without `base`: a tab catching up on updates it was
+ * pinged about. It changed nothing and returns no whole document, so it
+ * writes no audit row (`markInboundAuditHeartbeat`). A read from seq 0, or
+ * one with the file text (`base`), returns the document: it keeps its row,
+ * as a file read does.
+ */
+export function isIncrementalDocPull(query: { after: number; base: boolean }): boolean {
+  return query.after > 0 && !query.base;
+}

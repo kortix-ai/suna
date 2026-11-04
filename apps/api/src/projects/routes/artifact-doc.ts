@@ -31,6 +31,7 @@ import {
   DOC_SEED_UPDATE_MAX_BYTES,
   DOC_UPDATE_MAX_BYTES,
   DocByteBudget,
+  isIncrementalDocPull,
 } from '../../artifacts/doc-rules';
 import { DOC_MAX_DELETES, DOC_MAX_STRUCTS, checkDocUpdate } from '../../artifacts/doc-yjs';
 import {
@@ -167,7 +168,10 @@ export function registerArtifactDocRoutes(): void {
     const access = await loadDoc(c, 'read');
     if (!access.ok) return access.response;
     const q = c.req.valid('query');
-    const doc = await readArtifactDoc(access.row.artifactId, { after: q.after ?? 0, base: q.base === 'true' || q.base === '1' });
+    const query = { after: q.after ?? 0, base: q.base === 'true' || q.base === '1' };
+    // A catch-up pull writes no audit row; a full read (from seq 0, or with the file text) keeps it.
+    if (isIncrementalDocPull(query)) markInboundAuditHeartbeat();
+    const doc = await readArtifactDoc(access.row.artifactId, query);
     c.header('Cache-Control', 'private, no-store');
     return c.json({
       seeded: doc.seeded,

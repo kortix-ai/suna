@@ -274,7 +274,7 @@ flow('ART-10', {
       if ((await read()).latest_seq !== 4) throw new Error('a refused push was stored');
     });
 
-    await ctx.step('audit: no row for a successful push or a lease renewal; a contested lease call and every refused push keep theirs', async () => {
+    await ctx.step('audit: no row for a successful push, a lease renewal or a catch-up pull; a contested lease call, every refused push and a full read keep theirs', async () => {
       const stable = async (action: string, clause?: string) => {
         let last = -1;
         return waitFor(async () => {
@@ -292,6 +292,13 @@ flow('ART-10', {
       const okPushes = await auditCount('project.artifact.doc.push', 'http_status < 400');
       const refusedPushes = await auditCount('project.artifact.doc.push', 'http_status >= 400');
       if (okPushes !== 0 || refusedPushes < 5) throw new Error(`push audit rows: ${okPushes} successful, ${refusedPushes} refused`);
+      // Reads: a catch-up pull writes no row; a full read (from seq 0) writes one, as a file read does.
+      const reads = (await stable('project.artifact.doc.read', 'http_status = 200')).now;
+      await read({ after: '3' });
+      if ((await stable('project.artifact.doc.read', 'http_status = 200')).now !== reads) throw new Error('an incremental pull wrote an audit row');
+      await read({ after: '0' });
+      const full = (await stable('project.artifact.doc.read', 'http_status = 200')).now;
+      if (full !== reads + 1) throw new Error(`doc.read rows went ${reads} → ${full} after one full read; expected one more`);
     });
 
     await ctx.step('reset: another tab while tab-b holds the lease → 409 not_leader; tab-b → 200, the socket hears changed {doc, "0"}, the doc is unseeded, a new seed has a new epoch, and writes naming the old epoch → 409 epoch_mismatch', async () => {

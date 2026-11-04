@@ -9,6 +9,7 @@ import {
   decideFlush,
   decideLease,
   decideReset,
+  isIncrementalDocPull,
   pageCut,
   type DocLease,
 } from './doc-rules';
@@ -196,5 +197,14 @@ describe('DocByteBudget (pushed bytes per person per process)', () => {
 
   test('a take larger than the burst can never pass', () => {
     expect(new DocByteBudget().take('u1', 4 * MiB + 1, 0).allowed).toBe(false);
+  });
+});
+
+describe('isIncrementalDocPull (an incremental pull writes no audit row; a full read does)', () => {
+  test('after > 0 without base is incremental; after = 0, or base, is a full read', () => {
+    expect(isIncrementalDocPull({ after: 3, base: false })).toBe(true);
+    expect(isIncrementalDocPull({ after: 0, base: false })).toBe(false);
+    expect(isIncrementalDocPull({ after: 3, base: true })).toBe(false);
+    expect(isIncrementalDocPull({ after: 0, base: true })).toBe(false);
   });
 });

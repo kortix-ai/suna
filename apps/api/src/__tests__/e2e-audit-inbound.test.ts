@@ -39,6 +39,7 @@ mock.module('../shared/db', () => ({
 }));
 
 const { auditApiRequest } = await import('../middleware/audit');
+const { isIncrementalDocPull } = await import('../artifacts/doc-rules');
 const { annotateAuditEvent, attachInboundAuditScope, bindAuditPrincipal, markInboundAuditHeartbeat } = await import(
   '../shared/audit-scope'
 );
@@ -158,7 +159,11 @@ describe('a co-edited doc’s successful pushes and pulls write no row (KRTX-367
       (c as any).set('accountId', ACCOUNT);
       return c.json({}, status as 200);
     };
-    app.get('/v1/projects/:projectId/artifacts/:artifactId/doc', answer);
+    // As `routes/artifact-doc.ts`: an incremental pull marks itself a heartbeat; a full read does not.
+    app.get('/v1/projects/:projectId/artifacts/:artifactId/doc', (c) => {
+      if (isIncrementalDocPull({ after: Number(c.req.query('after') ?? 0), base: c.req.query('base') === 'true' })) markInboundAuditHeartbeat();
+      return answer(c);
+    });
     for (const route of ['seed', 'updates', 'lease', 'flushed']) app.post(`/v1/projects/:projectId/artifacts/:artifactId/doc/${route}`, answer);
     return app;
   };
@@ -169,10 +174,21 @@ describe('a co-edited doc’s successful pushes and pulls write no row (KRTX-367
     auditRows = [];
   });
 
-  test('a 200 push and a 200 pull write no row', async () => {
+  test('a 200 push and a 200 incremental pull (after > 0, no base) write no row', async () => {
     expect((await push(200)).status).toBe(200);
     expect((await docApp(200).request(`${DOC}?after=3`)).status).toBe(200);
     expect(auditRows).toHaveLength(0);
+  });
+
+  test('a 200 full read keeps its row: from seq 0, or with the file text (base=true), as a file read does', async () => {
+    expect((await docApp(200).request(DOC)).status).toBe(200);
+    expect((await docApp(200).request(`${DOC}?after=0`)).status).toBe(200);
+    expect((await docApp(200).request(`${DOC}?after=5&base=true`)).status).toBe(200);
+    expect(rows()).toEqual([
+      ['project.artifact.doc.read', 200],
+      ['project.artifact.doc.read', 200],
+      ['project.artifact.doc.read', 200],
+    ]);
   });
 
   test('a refused or failed push or pull keeps its row', async () => {
