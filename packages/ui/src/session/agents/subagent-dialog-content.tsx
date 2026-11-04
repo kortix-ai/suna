@@ -177,9 +177,9 @@ export function SubagentDialogContent({ open, onOpenChange, sessionId, title, pr
         // Open, the message box takes the focus (type at once), never Stop: a focused Stop shows its tooltip.
         onOpenAutoFocus={(event) => {
           const box = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLInputElement>('[data-testid="subagent-dialog-message"]');
-          if (!box) return;
+          // Never Stop: until the box mounts (it takes the focus itself), the dialog keeps it.
           event.preventDefault();
-          box.focus();
+          box?.focus();
         }}
         className={cn(
           'flex flex-col gap-0 space-y-0 overflow-hidden p-0',
@@ -262,18 +262,21 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
     const ids = images.map((image) => image.id);
     let files: SessionPromptPart[] = [];
     if (ids.length > 0) {
+      // The send owns its uploads from here: closing the dialog while they finish does not cancel them.
+      uploads.submit(ids);
       setWaiting(true);
       try {
         files = await uploads.whenReady(ids);
       } catch (error) {
+        uploads.reclaim(ids);
         errorToast(t('sendFailed'), { description: error instanceof Error ? error.message : undefined });
         return;
       } finally {
         setWaiting(false);
       }
-      uploads.submit(ids);
     }
-    send.mutate({ sessionId, text: message, files }, { onSettled: () => uploads.forget(ids) });
+    // Delivered, the uploads are released; refused, they go back to the box for a retry.
+    send.mutate({ sessionId, text: message, files }, { onSuccess: () => uploads.forget(ids), onError: () => uploads.reclaim(ids) });
   };
   const canSend = (!!text.trim() || images.length > 0) && !busy;
   return (
@@ -336,6 +339,8 @@ function SubagentMessageBox({ projectId, sessionId, name, onSent }: { projectId:
           />
           <input
             data-testid="subagent-dialog-message"
+            // The box mounts once the agent's row loads: it takes the focus then (onOpenAutoFocus covers a cached row).
+            autoFocus
             value={text}
             onChange={(event) => setText(event.target.value)}
             placeholder={t('messagePlaceholder', { name })}
