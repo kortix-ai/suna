@@ -380,4 +380,18 @@ describe('agent tools never open in the side panel', () => {
   test('an ordinary tool still opens in the side panel', () => {
     expect(inChat(failed('bash', { command: 'ls' }))).not.toContain('aria-expanded');
   });
+
+  test("a sub-agent's step (not this session's call) never opens this session's panel: it has no view there", () => {
+    const search = { type: 'tool', tool: 'web_search', callID: 'c-child-search', state: { status: 'completed', input: { query: 'agent frameworks' }, output: 'results', time: { start: 1, end: 2 } } } as unknown as ToolPart;
+    const html = renderToStaticMarkup(
+      withProviders(
+        <ToolActivateContext.Provider value={() => {}}>
+          <ToolPartRenderer call={toolCallBlock(search)} sessionId="child" disableNavigation />
+        </ToolActivateContext.Provider>,
+      ),
+    );
+    // The side-panel row ends in the panel glyph; the sub-agent's step does not.
+    expect(inChat(search)).toContain('-scale-x-100');
+    expect(html).not.toContain('-scale-x-100');
+  });
 });

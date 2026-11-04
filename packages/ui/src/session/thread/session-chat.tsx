@@ -175,6 +175,7 @@ import type { DraftScope } from '../composer/draft/composer-draft';
 import { usePlanInChat } from './plan-surface';
 import { SessionStartingLoader } from '../status/session-starting-loader';
 import { ToolActivateContext } from '../tool/tool-renderers';
+import { AgentActivateContext } from '../tool/shared/infrastructure-contexts';
 import { ReadOnlySessionContext } from '../tool/shared/infrastructure-contexts';
 import {
   firstPromptAttachments,
@@ -536,6 +537,20 @@ export function SessionChat({
     [sessionId, setSidePanelView, focusToolCall],
   );
   const toolActivate = readOnly || disableToolNavigation ? null : handleToolActivate;
+
+  // Clicking an agent (a sub-agent row, its finish notice, a workflow agent, the
+  // agents line) opens that agent's session in the side panel, beside the chat.
+  const focusAgent = useKortixComputerStore((s) => s.focusAgent);
+  const handleAgentActivate = useCallback(
+    (agent: { sessionId: string; title: string; handle: string; task?: string; failure?: string }) => {
+      const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;
+      setSidePanelView(sessionId, 'actions');
+      focusAgent(agent);
+      if (!wasOpen) track('panel_opened', { source: 'chat_agent' });
+    },
+    [sessionId, setSidePanelView, focusAgent],
+  );
+  const agentActivate = readOnly || disableToolNavigation ? null : handleAgentActivate;
 
   // ---- Context modal ----
   const [contextModalOpen, setContextModalOpen] = useState(false);
@@ -4335,6 +4350,7 @@ export function SessionChat({
   return (
     // A read-only view (the sub-session modal) offers no fix inside a tool card.
     <ReadOnlySessionContext.Provider value={!!readOnly}>
+    <AgentActivateContext.Provider value={agentActivate}>
     <SessionPromptContext.Provider value={readOnly ? null : sendSessionPrompt}>
     {/* Outcomes' cache coherence and the shareable `?cr=` link both hinge on
         ONE `ProjectFilesProvider`: `useChangeRequests` inside
@@ -5139,6 +5155,7 @@ export function SessionChat({
       </ComposerDropZone>
     </ProjectFilesProvider>
     </SessionPromptContext.Provider>
+    </AgentActivateContext.Provider>
     </ReadOnlySessionContext.Provider>
   );
 }
