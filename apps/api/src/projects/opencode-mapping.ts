@@ -25,7 +25,7 @@
 import { and, eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
-import { BOOT_PHASE_HEADER } from '@kortix/api-contract/runtime-relay';
+import { BOOT_PHASE_HEADER, RUNTIME_LOG_CAPABILITY } from '@kortix/api-contract/runtime-relay';
 import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
 import {
@@ -34,18 +34,10 @@ import {
 } from '../shared/kortix-user-context';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import { resolveSandboxIngress, resolveServiceKey } from '../sandbox-proxy/backend';
-import {
-  pickCanonicalRoot,
-  resolveRootSessionId,
-  type OpencodeSessionLite,
-} from './opencode-session-resolver';
 import { sandboxRuntimeRequestHeaders } from './sandbox-fetch';
-import { runtimeServesLog, runtimeVerbPaths } from './session-lifecycle/runtime-fetch';
+import { runtimeCapabilities, runtimeVerbPaths } from './session-lifecycle/runtime-fetch';
 
-export { pickCanonicalRoot, resolveRootSessionId, type OpencodeSessionLite };
 
-/** Workspace directory the session's OpenCode root lives under. */
-const WORKSPACE = '/workspace';
 /** Daemon (kortix-sandbox-agent-server) port; it reverse-proxies to OpenCode. */
 const DAEMON_PORT = 8000;
 
@@ -116,7 +108,6 @@ export function unreachableCauseForThrow(err: unknown): UnreachableCause {
 }
 
 export type ListResult =
-  | { ok: true; sessions: OpencodeSessionLite[] }
   | {
       ok: false;
       reason: 'no_key' | 'not_ready' | 'unreachable';
@@ -147,89 +138,6 @@ export function finishedBootError(health: unknown): string | null {
   if (body.harness?.state !== 'down' || typeof body.boot_error !== 'string') return null;
   const error = body.boot_error.replace(/\s+/g, ' ').trim().slice(0, 500);
   return error || null;
-}
-
-/** List the sandbox's OpenCode sessions (server-side, via the signed proxy). */
-export async function listSandboxOpencodeSessions(
-  externalId: string,
-  userId: string | undefined,
-  opts: { endpoint?: { url: string; headers: Record<string, string> } } = {},
-): Promise<ListResult> {
-  try {
-    // Endpoint resolution itself can throw (provider preview-link API errors,
-    // rate limits, archived/deleted sandboxes). Keep it INSIDE the try so any
-    // failure degrades to a clean `unreachable` instead of rejecting up the
-    // call stack and 500ing the caller (e.g. the session list title-sync).
-    // A caller that already resolved the endpoint hands it in and skips its
-    // own resolution — the transcript read resolves it once per request, not
-    // once per stage.
-    const ep = opts.endpoint ?? (await sandboxOpencodeEndpoint(externalId, userId));
-    if (!ep) return { ok: false, reason: 'no_key', cause: 'no_key' };
-    const res = await fetch(
-      `${ep.url}/session?directory=${encodeURIComponent(WORKSPACE)}`,
-      // Fail FAST: a healthy daemon answers this list in <300ms; an 8s budget
-      // only ever bought riding out a wedged first connection to a freshly
-      // restored microVM (residual CH RX stall), and it costs chat-ready
-      // latency 1:1 because the FE's ensure retry can't start until this
-      // returns. Observed: 8s 'unreachable' tails on warm forks; 3s + the
-      // FE's ~1.6s backoff retry beats hanging.
-      {
-        method: 'GET',
-        headers: sandboxRuntimeRequestHeaders(ep.headers),
-        signal: AbortSignal.timeout(3_000),
-      },
-    );
-    // 503 = daemon up but OpenCode/repo not ready yet — distinct from a hard
-    // failure so callers can retry rather than treat it as "empty".
-    if (res.status === 503) {
-      const bootPhase = res.headers.get(BOOT_PHASE_HEADER)?.trim() || undefined;
-      return { ok: false, reason: 'not_ready', ...(bootPhase ? { bootPhase } : {}) };
-    }
-    // A 401 here is NEVER transient and never the sandbox's fault: the daemon
-    // rejects every non-`/kortix/*` path without a valid X-Kortix-User-Context,
-    // and this call only carries one when `userId` was supplied. Folding that
-    // into a silent `unreachable` is what let a userId-less caller disable the
-    // opencode_sessions snapshot for three weeks unnoticed (0 of 2804 staging
-    // sessions in 2026-08). Name it in the log; the caller contract is unchanged.
-    if (!res.ok) {
-      // WHO answered. On this path the request goes to the PROVIDER EDGE
-      // (`resolveIngress` returns Platinum's `https://<port>-<id>.sbx…` with an
-      // HMAC header) — our control plane is never in it. So a 401 is either the
-      // edge rejecting the preview token or the DAEMON rejecting
-      // `X-Kortix-User-Context`, and those need opposite fixes.
-      //
-      // Five hypotheses were tested and killed against this one status code on
-      // 2026-09-28 — service-key rotation, a stale cached preview token, row/VM
-      // divergence, boot slowness, a control-plane refusal — because the
-      // responder was never recorded. Record it: `server` names the edge when
-      // the edge answers, and a short body snippet distinguishes the two.
-      const responder = res.headers.get('server')?.trim().slice(0, 40) || null;
-      const snippet = (await res.text().catch(() => ''))
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 120);
-      if (res.status === 401) {
-        appLogger.warn('[opencode-mapping] session list refused with 401', {
-          externalId,
-          hasUserId: Boolean(userId),
-          responder: responder ?? 'unnamed',
-          body: snippet,
-        });
-      }
-      return {
-        ok: false,
-        reason: 'unreachable',
-        cause: res.status === 401 ? 'unsigned_context' : `http_${res.status}`,
-        ...(responder ? { responder } : {}),
-        ...(snippet ? { detail: snippet } : {}),
-      };
-    }
-    const data = (await res.json()) as unknown;
-    const sessions = Array.isArray(data) ? (data as OpencodeSessionLite[]) : [];
-    return { ok: true, sessions };
-  } catch (err) {
-    return { ok: false, reason: 'unreachable', cause: unreachableCauseForThrow(err) };
-  }
 }
 
 /**
@@ -299,7 +207,6 @@ export interface EnsureResult {
   pin: string | null;
   changed: boolean;
   reason: EnsureReason;
-  sessions?: OpencodeSessionLite[];
   /** Daemon-reported boot phase behind a `not_ready` (opaque; compare for equality). */
   bootPhase?: string;
   /** WHY, when `reason` is `unreachable`. See `UnreachableCause`. */
@@ -313,11 +220,10 @@ export interface EnsureResult {
 }
 
 /**
- * The single authoritative writer of `opencode_session_id`. Lists the sandbox's
- * OpenCode sessions, resolves the canonical root, and persists it when it
- * differs from the stored pin. Best-effort on unreachability: returns the
- * current pin unchanged so a transient sandbox blip never clobbers a good
- * mapping.
+ * The single authoritative writer of `opencode_session_id`. Reads the root the
+ * box names on its health and persists it when it differs from the stored pin.
+ * Best-effort on unreachability: returns the current pin unchanged so a
+ * transient sandbox blip never clobbers a good mapping.
  */
 export async function ensureOpencodeSessionPin(input: {
   projectId: string;
@@ -326,58 +232,36 @@ export async function ensureOpencodeSessionPin(input: {
   externalId: string;
   userId: string | undefined;
   currentPin: string | null;
-  /** Pre-resolved daemon endpoint. When given, the session list below skips
-   *  its own (provider-hitting) resolution. */
+  /** Pre-resolved daemon endpoint. When given, the reads below skip their
+   *  own (provider-hitting) resolution. */
   endpoint?: { url: string; headers: Record<string, string> };
 }): Promise<EnsureResult> {
   const { projectId, sessionId, accountId, externalId, userId, currentPin } = input;
 
-  // A box that serves its own session log names its root on its health: no session list is read.
-  let resolving: Promise<{ url: string; headers: Record<string, string> } | null> | undefined;
-  const endpoint = () =>
-    (resolving ??= input.endpoint ? Promise.resolve(input.endpoint) : sandboxOpencodeEndpoint(externalId, userId).catch(() => null));
-  if (await runtimeServesLog(externalId, endpoint)) {
-    const ep = await endpoint();
-    const noKey: Extract<ListResult, { ok: false }> = { ok: false, reason: 'unreachable', cause: 'no_key' };
-    const named = ep ? await readRuntimeRoot(ep) : noKey;
-    if (!named.ok) {
-      return {
-        pin: currentPin,
-        changed: false,
-        reason: named.reason === 'not_ready' ? 'not_ready' : 'unreachable',
-        ...(named.cause ? { cause: named.cause } : {}),
-        ...(named.responder ? { responder: named.responder } : {}),
-        ...(named.detail ? { detail: named.detail } : {}),
-        ...(named.reason === 'not_ready' && named.bootError ? { bootError: named.bootError } : {}),
-      };
-    }
-    return healPin({ projectId, sessionId, accountId }, currentPin, named.root);
+  // The box names its root on its health (`runtime.log.v1`). A daemon that answers without that
+  // capability is below the runtime floor: it keeps its pin, and the open holds it until it runs
+  // the current daemon (session-open/runtime-floor.ts). An unanswered capability read falls
+  // through to the health read, which says why the box did not answer.
+  const endpoint = () => (input.endpoint ? Promise.resolve(input.endpoint) : sandboxOpencodeEndpoint(externalId, userId).catch(() => null));
+  const capabilities = await runtimeCapabilities(externalId, endpoint);
+  if (capabilities && !capabilities.includes(RUNTIME_LOG_CAPABILITY)) {
+    return { pin: currentPin, changed: false, reason: 'unchanged' };
   }
-
-  // The capability read above resolved the endpoint unless its memo answered.
-  const known = input.endpoint ?? (resolving ? await resolving : null);
-  const listed = await listSandboxOpencodeSessions(externalId, userId, known ? { endpoint: known } : undefined);
-  if (!listed.ok) {
+  const ep = await endpoint();
+  const noKey: Extract<ListResult, { ok: false }> = { ok: false, reason: 'unreachable', cause: 'no_key' };
+  const named = ep ? await readRuntimeRoot(ep) : noKey;
+  if (!named.ok) {
     return {
       pin: currentPin,
       changed: false,
-      reason: listed.reason === 'not_ready' ? 'not_ready' : 'unreachable',
-      ...(listed.bootPhase ? { bootPhase: listed.bootPhase } : {}),
-      // Carry the WHY to the open, which is the only place a human sees it.
-      ...(listed.cause ? { cause: listed.cause } : {}),
-      ...(listed.responder ? { responder: listed.responder } : {}),
-      ...(listed.detail ? { detail: listed.detail } : {}),
+      reason: named.reason === 'not_ready' ? 'not_ready' : 'unreachable',
+      ...(named.cause ? { cause: named.cause } : {}),
+      ...(named.responder ? { responder: named.responder } : {}),
+      ...(named.detail ? { detail: named.detail } : {}),
+      ...(named.reason === 'not_ready' && named.bootError ? { bootError: named.bootError } : {}),
     };
   }
-
-  let sessions = listed.sessions;
-  let resolved = resolveRootSessionId({ pinnedRootId: currentPin, sessions });
-
-  if (!resolved) {
-    return { pin: currentPin, changed: false, reason: 'not_ready', sessions };
-  }
-
-  return healPin({ projectId, sessionId, accountId }, currentPin, resolved, sessions);
+  return healPin({ projectId, sessionId, accountId }, currentPin, named.root);
 }
 
 /** Store `resolved` as the session's pin when it differs from `currentPin`. */
@@ -385,10 +269,9 @@ async function healPin(
   row: { projectId: string; sessionId: string; accountId: string },
   currentPin: string | null,
   resolved: string,
-  sessions?: OpencodeSessionLite[],
 ): Promise<EnsureResult> {
   if (resolved === currentPin) {
-    return { pin: resolved, changed: false, reason: 'unchanged', ...(sessions ? { sessions } : {}) };
+    return { pin: resolved, changed: false, reason: 'unchanged' };
   }
 
   await db
@@ -402,5 +285,5 @@ async function healPin(
       ),
     );
 
-  return { pin: resolved, changed: true, reason: 'healed', ...(sessions ? { sessions } : {}) };
+  return { pin: resolved, changed: true, reason: 'healed' };
 }

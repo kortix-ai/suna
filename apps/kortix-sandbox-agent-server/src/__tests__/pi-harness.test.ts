@@ -1809,6 +1809,20 @@ export default function (pi) {
     ref.current = { hasHandlers: (type: string) => type === 'before_provider_request', emitBeforeProviderRequest: async (p: object) => ({ ...p, temperature: 0 }) }
     expect(await hooks.onPayload!({ model: 'm' }, {} as never)).toEqual({ model: 'm', temperature: 0 })
   })
+
+  test('the context goes to the model as it is unless an extension handles it (pi copies it whole for one)', async () => {
+    const messages = [{ role: 'user', content: [{ type: 'image', data: 'x'.repeat(1000), mimeType: 'image/png' }], timestamp: 1 }] as never[]
+    let copies = 0
+    const ref: { current?: any } = {
+      current: { hasHandlers: () => false, emitContext: async (m: unknown[]) => (copies++, structuredClone(m)) },
+    }
+    const hooks = extensionAgentHooks(ref)
+    expect(await hooks.transformContext!(messages)).toBe(messages)
+    expect(copies).toBe(0)
+    ref.current.hasHandlers = (type: string) => type === 'context_with_system'
+    expect(await hooks.transformContext!(messages)).toEqual(messages)
+    expect(copies).toBe(1)
+  })
 })
 
 describe('pi packages', () => {

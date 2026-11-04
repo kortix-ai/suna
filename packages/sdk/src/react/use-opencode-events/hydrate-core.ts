@@ -2,31 +2,17 @@ import type { Event as OpenCodeSdkEvent } from '../../core/runtime/runtime-types
 import { activeRuntimeAction, runtimeActionPaths, type RuntimePending } from '../../core/session/runtime-actions';
 import { pendingEventsOfLogState } from './log-control';
 import type { RuntimeEvent } from './types';
-import type { useQueryClient } from '@tanstack/react-query';
-import type { reconcileSessionTail as reconcileSessionTailFromRegistry } from '../../browser/session-sync/session-sync-registry';
-import type { useRuntimePendingStore } from '../../browser/stores/opencode-pending-store';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import { logger } from '../../core/http/logger';
-import type { getClient } from '../../core/runtime/client';
-import { runtimeKeys, type SessionStatus } from '../use-opencode-sessions';
-import { releaseMessageRehydrate, reserveMessageRehydrate, shouldSkipStatusFill } from './helpers';
-import { sessionsNeedingRehydrate } from './rehydrate-targets';
+import type { SessionStatus } from '../use-opencode-sessions';
+import { shouldSkipStatusFill } from './helpers';
 import type { useEventStreamRefs } from './use-event-stream-refs';
 
 type HydrationDeps = {
-  client: ReturnType<typeof getClient>;
-  queryClient: ReturnType<typeof useQueryClient>;
-  addPermission: ReturnType<typeof useRuntimePendingStore.getState>['addPermission'];
-  addQuestion: ReturnType<typeof useRuntimePendingStore.getState>['addQuestion'];
   applySyncEvent: ReturnType<typeof useSyncStore.getState>['applyEvent'];
   reconcileMissingBusySessions: ReturnType<
     typeof useEventStreamRefs
   >['reconcileMissingBusySessions'];
-  fetchLspDiagnosticsDebounced: ReturnType<
-    typeof useEventStreamRefs
-  >['fetchLspDiagnosticsDebounced'];
-  reconcileSessionTail: typeof reconcileSessionTailFromRegistry;
-  options?: { refetchSessions?: boolean; rehydrateMessages?: boolean };
 };
 
 /**
@@ -44,7 +30,7 @@ function applyStatusSnapshot(
     // clobber an `idle` frame that arrived while it was in flight — and
     // because the object identity changed, the store restamped that
     // stale reading as the freshest observation there is. Stop and the
-    // turn shimmer came back on a finished turn, and `hydrateCore` runs
+    // turn shimmer came back on a finished turn, and the hydration runs
     // on every heartbeat-gap rehydrate, so it could land on any turn
     // boundary. While the live stream is delivering (~140ms per frame
     // for a busy session, and this runs on connect) the stream owns this
@@ -89,89 +75,9 @@ function applyStatusSnapshot(
   reconcileMissingBusySessions.current(statuses);
 }
 
-function hydrateStatuses({
-  client,
-  applySyncEvent,
-  reconcileMissingBusySessions,
-}: Pick<HydrationDeps, 'client' | 'applySyncEvent' | 'reconcileMissingBusySessions'>): void {
-  client.session
-    .status()
-    .then((res) => {
-      // This snapshot is the runtime's COMPLETE set of non-idle sessions,
-      // so it carries two facts: what each listed session is doing, and
-      // that every UNLISTED one is not busy. The second is the only repair
-      // the raw status slot has for a terminal frame this tab never saw,
-      // and the surfaces that still read that slot directly — the session
-      // panel, and the sub-agent banner for CHILD sessions, which have no
-      // Kortix session row for `GET .../turn` to answer about — depend on
-      // it. `useSessionWorking` answers for Kortix sessions; this answers
-      // for the rest.
-      applyStatusSnapshot(res.data ?? {}, { applySyncEvent, reconcileMissingBusySessions });
-    })
-    .catch((err) => {
-      logger.error('Failed to hydrate session statuses', {
-        error: String(err),
-      });
-    });
-}
-
-function hydrateTails({ reconcileSessionTail }: Pick<HydrationDeps, 'reconcileSessionTail'>): void {
-  const syncState = useSyncStore.getState();
-  // EVERY held transcript, not only the ones the status slot calls busy
-  // — see `sessionsNeedingRehydrate`. The slot is filled by the stream,
-  // so a gap wide enough to lose message frames is wide enough to lose
-  // the frame that would have marked the session busy.
-  for (const sid of sessionsNeedingRehydrate(Object.keys(syncState.messages))) {
-    if (!reserveMessageRehydrate(sid)) continue;
-    reconcileSessionTail(sid, 'sse-gap')
-      .catch(() => {})
-      .finally(() => releaseMessageRehydrate(sid));
-  }
-}
-
-export function hydrateCore(deps: HydrationDeps): void {
-  const { client, queryClient, addPermission, addQuestion, fetchLspDiagnosticsDebounced, options } =
-    deps;
-  client.permission
-    .list()
-    .then((res) => {
-      if (Array.isArray(res.data)) res.data.forEach(addPermission);
-    })
-    .catch((err) => {
-      logger.error('Failed to hydrate pending permissions', {
-        error: String(err),
-      });
-    });
-
-  client.question
-    .list()
-    .then((res) => {
-      if (Array.isArray(res.data)) res.data.forEach(addQuestion);
-    })
-    .catch((err) => {
-      logger.error('Failed to hydrate pending questions', {
-        error: String(err),
-      });
-    });
-
-  hydrateStatuses(deps);
-  // Fetch current LSP diagnostics so errors/warnings show immediately
-  // on page load (or reconnect) without waiting for agent tool output.
-  fetchLspDiagnosticsDebounced.current();
-
-  if (options?.refetchSessions) {
-    queryClient.refetchQueries({
-      queryKey: runtimeKeys.sessions(),
-      type: 'active',
-    });
-  }
-
-  if (options?.rehydrateMessages) hydrateTails(deps);
-}
-
 /**
- * A box that serves its log (`runtime.log.v1`): ONE read, `GET /kortix/runtime/pending`, in place
- * of the status, permission, question and diagnostics reads. Its statuses are a complete snapshot
+ * The stream's (re)hydration: ONE read, `GET /kortix/runtime/pending` (`runtime.log.v1`, every
+ * box past the runtime floor). Its statuses are a complete snapshot
  * (the same fill and missing-busy rules as `/session/status`; `compacting` reads as busy); its
  * records reach the pending store as the interaction events a `log.state` carrying `pending`
  * produces. No transcript tail is read: the session log re-reads its own page.

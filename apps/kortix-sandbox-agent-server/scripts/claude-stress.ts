@@ -244,7 +244,8 @@ function rssMb(pid: number): number {
 }
 
 function heap(): { rss: number; heap: number } {
-  Bun.gc(true)
+  // STRESS_NO_GC=1: measure as prod runs, with no forced collection.
+  if (!process.env.STRESS_NO_GC) Bun.gc(true)
   const usage = process.memoryUsage()
   return { rss: Math.round(usage.rss / 2 ** 20), heap: Math.round(usage.heapUsed / 2 ** 20) }
 }
@@ -293,17 +294,33 @@ const scenarios: Record<string, () => Promise<Result>> = {
     mock.delayMs = Number(process.env.STRESS_DELAY_MS) || 0
     mock.deltas = Number(process.env.STRESS_DELTAS) || 4
     thread.messages.push(user('here are the screenshots', 39))
+    // STRESS_TURN_IMAGES=n: every turn's prompt carries n new screenshots, as in the daemon e2e.
+    const turnImages = Number(process.env.STRESS_TURN_IMAGES) || 0
     for (let i = 0; i < steps; i++) {
-      thread.messages.push(user(`step ${i} TOOL`))
-      const outcome = await thread.turn(user(`go ${i}`))
+      thread.messages.push(user(process.env.BISECT_NO_TOOLS ? `step ${i}` : `step ${i} TOOL`))
+      const outcome = await thread.turn(user(`go ${i}`, turnImages))
       if (outcome.kind !== 'result') return { ok: false, detail: `step ${i} ended ${outcome.kind}` }
       if (i % 5 === 4) rss.push(heap().rss)
     }
     clearInterval(sampler)
     const child = claudePids().map(rssMb).reduce((a, b) => a + b, 0)
+    Bun.gc(true)
+    const live = process.memoryUsage()
+    await Bun.sleep(3000)
+    Bun.gc(true)
+    const settled = Math.round(process.memoryUsage().rss / 2 ** 20)
+    console.log(`settled with claude alive (GC + 3 s): ${settled} MB`)
+    if (process.env.STRESS_HEAPSTATS) {
+      const stats = require('bun:jsc').heapStats()
+      const top = (o: Record<string, number>) => Object.entries(o).sort((x, y) => y[1] - x[1]).slice(0, 8)
+      console.log('heapStats', JSON.stringify({ heapMb: Math.round(stats.heapSize / 2 ** 20), extraMb: Math.round(stats.extraMemorySize / 2 ** 20), objects: stats.objectCount, protected: stats.protectedObjectCount, protectedTop: top(stats.protectedObjectTypeCounts), top: top(stats.objectTypeCounts) }))
+    }
+    if (process.env.STRESS_SNAPSHOT) require('node:fs').writeFileSync(process.env.STRESS_SNAPSHOT, Bun.generateHeapSnapshot('v8'))
     await sessions.stopAll()
+    await Bun.sleep(3000)
+    Bun.gc(true)
     const after = heap().rss
-    return { ok: peak < 1200, detail: `daemon RSS MB every 5 steps: ${rss.join(' ')}; peak ${peak}; after stop ${after}; claude RSS ${child} MB; biggest request ${(mock.maxRequestBytes / 2 ** 20).toFixed(1)} MB; ${mock.requests} requests` }
+    return { ok: peak < 1200, detail: `with claude alive (after GC): rss ${Math.round(live.rss / 2 ** 20)} heap ${Math.round(live.heapUsed / 2 ** 20)}; daemon RSS MB every 5 steps: ${rss.join(' ')}; peak ${peak}; after stop ${after}; claude RSS ${child} MB; biggest request ${(mock.maxRequestBytes / 2 ** 20).toFixed(1)} MB; ${mock.requests} requests` }
   },
 
   /** Memory pressure while Claude waits for a tool result: recycling must not hang or spend a model call. */

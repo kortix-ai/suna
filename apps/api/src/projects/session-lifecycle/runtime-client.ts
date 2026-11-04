@@ -30,7 +30,6 @@ import { MESSAGE_READ_CODE, STEER_NO_ACTIVE_TURN_CODE } from '@kortix/api-contra
 import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 import {
   WORKSPACE,
-  runtimeServesLog,
   runtimeVerbPaths,
   sessionRuntimeFetch,
   type ResolvedSessionRuntime,
@@ -40,7 +39,7 @@ import { sendQuickQueueControl } from './quick-queue-control';
 import { clearTurnStopRequest, markTurnStopRequested } from '../session-turn-ledger';
 import { db } from '../../shared/db';
 import type { SessionLifecycleCommandRow, PromptOverridesWire, PromptPartWire } from './store';
-import { type PlacementTipMessage, parsePlacementTip } from './forwarded-placement';
+import type { PlacementTipMessage } from './forwarded-placement';
 import { newestWireIdTime } from '../wire-message-id';
 
 export const DAEMON_PORT = 8000;
@@ -99,49 +98,10 @@ export async function resolveSessionOpencodeEndpoint(
   return { endpoint, opencodeSessionId: session.opencodeSessionId, externalId };
 }
 
-/** One Kortix transcript page is at most this long (`MAX_MESSAGE_PAGE` in kortixd). */
+/** One page of the box's log is at most this long (`MAX_MESSAGE_PAGE` in kortixd). */
 const KORTIX_MESSAGE_PAGE_MAX = 200;
 /** A full read stops after this many pages (10,000 messages). */
 const KORTIX_FULL_READ_MAX_PAGES = 50;
-
-/**
- * The newest `limit` messages from the Kortix transcript route, or the whole
- * transcript paged backwards on `before` when `limit` is absent. Oldest
- * first. `null` on a refused read.
- */
-async function readKortixTranscript(
-  session: ResolvedSessionRuntime,
-  opts: { limit?: number; timeoutMs?: number },
-): Promise<unknown[] | null> {
-  const pages: unknown[][] = [];
-  let before: string | null = null;
-  for (let page = 0; page < KORTIX_FULL_READ_MAX_PAGES; page++) {
-    const limit = Math.min(opts.limit ?? KORTIX_MESSAGE_PAGE_MAX, KORTIX_MESSAGE_PAGE_MAX);
-    const res = await sessionRuntimeFetch(
-      session.endpoint,
-      'GET',
-      runtimeVerbPaths.messages(session.opencodeSessionId, { limit, before }),
-      {},
-      opts.timeoutMs,
-    );
-    if (!res.ok) return null;
-    const body = (await res.json().catch(() => null)) as {
-      messages?: unknown;
-      has_more?: unknown;
-      first_message_id?: unknown;
-    } | null;
-    if (!Array.isArray(body?.messages)) return null;
-    pages.unshift(body.messages);
-    if (opts.limit !== undefined || body.has_more !== true || typeof body.first_message_id !== 'string') break;
-    before = body.first_message_id;
-  }
-  return pages.flat();
-}
-
-/** Does this session's box serve its own session log (`runtime.log.v1`)? Then it is the transcript read. */
-function servesLog(session: ResolvedSessionRuntime): Promise<boolean> {
-  return runtimeServesLog(session.externalId, async () => session.endpoint);
-}
 
 /**
  * The newest `limit` messages of the root from the box's own session log, or the whole thread
@@ -175,7 +135,7 @@ const logTime = (iso: string | null | undefined): number | null => {
   return Number.isFinite(ms) ? ms : null;
 };
 
-/** Session-log messages as the tip the placement logic reads (what `parsePlacementTip` makes of v1 rows). */
+/** Session-log messages as the tip the placement logic reads. */
 export function placementTipOfLog(messages: readonly SessionLogMessage[]): PlacementTipMessage[] {
   return messages.flatMap((message) => {
     if (typeof message?.message_id !== 'string' || typeof message.role !== 'string') return [];
@@ -291,12 +251,8 @@ export async function readSessionMessageTip(
   session: ResolvedSessionRuntime,
   opts: { limit?: number; timeoutMs?: number } = {},
 ): Promise<PlacementTipMessage[] | null> {
-  if (await servesLog(session)) {
-    const log = await readRuntimeLogMessages(session, opts);
-    return log ? placementTipOfLog(log) : null;
-  }
-  const messages = await readKortixTranscript(session, opts);
-  return messages ? parsePlacementTip(messages) : null;
+  const log = await readRuntimeLogMessages(session, opts);
+  return log ? placementTipOfLog(log) : null;
 }
 
 /** What a retract did to one user message of the root transcript. */
@@ -505,15 +461,11 @@ export class SteerNotTaken extends Error {
 
 /**
  * One message of the session's root. `null` when the runtime answers that it does not hold it;
- * throws when it could not be asked (the landing proof's "unknown"). A box that serves its log
- * answers from it (an admitted prompt is in the log from admission there); an older box answers
- * from its transcript route.
+ * throws when it could not be asked (the landing proof's "unknown"). The box answers from its own
+ * session log, where an admitted prompt is from its admission.
  */
 export async function readRuntimeMessage(session: ResolvedSessionRuntime, messageId: string): Promise<unknown> {
-  const path = (await servesLog(session))
-    ? runtimeVerbPaths.logMessage(messageId)
-    : runtimeVerbPaths.message(session.opencodeSessionId, messageId);
-  const res = await sessionRuntimeFetch(session.endpoint, 'GET', path);
+  const res = await sessionRuntimeFetch(session.endpoint, 'GET', runtimeVerbPaths.logMessage(messageId));
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`runtime message read failed (${res.status})`);
   return res.json();

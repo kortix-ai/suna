@@ -579,24 +579,55 @@ beforeEach(() => {
     // accepted, so the harness answers for every id this session actually
     // posted; only ids never posted 404, which is what lets a test assert a
     // silently-dropped delivery.
-    const one = /\/kortix\/runtime\/messages\/[^/?]+\/([^/?]+)$/.exec(href);
+    const one = /\/kortix\/runtime\/log\/messages\/([^/?]+)$/.exec(href);
     if (one) {
       const requestedId = decodeURIComponent(one[1]!);
       landingReads.push(requestedId);
       const posted = capturedBodies.some((sent) => sent.message_id === requestedId);
       const dropped = runtimeDropsFirstDelivery && requestedId === (capturedBodies[0]?.message_id as string);
       return posted && !dropped
-        ? Response.json({ info: { id: requestedId }, parts: [] })
+        ? Response.json({ message_id: requestedId, role: 'user', status: 'complete', blocks: [] })
         : Response.json({ error: 'message not found' }, { status: 404 });
     }
-    // The re-mint and the answered check read the message list.
-    if (href.includes('/kortix/runtime/messages/')) return Response.json({ messages: transcript, has_more: false });
+    // The re-mint and the answered check read the box's log page.
+    if (href.includes('/kortix/runtime/log')) return Response.json(asLogPage({ messages: transcript, has_more: false }));
     if (href.endsWith('/kortix/health')) {
       return healthCapabilities ? Response.json({ capabilities: healthCapabilities }) : new Response(null, { status: 503 });
     }
     return Response.json({ id: OC_SESSION_ID });
   }) as typeof fetch;
 });
+
+/**
+ * The box's session-log page for message summaries written as `{ info, parts }`:
+ * `parentID` is the prompt a reply answers, an assistant without
+ * `time.completed` still streams, and each part id becomes a block id.
+ */
+function asLogPage(body: { messages: Array<Record<string, unknown>>; has_more?: boolean }) {
+  const iso = (ms: unknown) => (typeof ms === 'number' ? new Date(ms).toISOString() : null);
+  return {
+    thread_id: OC_SESSION_ID,
+    has_more: body.has_more ?? false,
+    messages: body.messages.map((entry, i) => {
+      const info = (entry.info ?? {}) as Record<string, unknown>;
+      const parts = (entry.parts ?? []) as Array<{ id?: string }>;
+      const time = (info.time ?? {}) as { created?: number; completed?: number };
+      const streaming = info.role === 'assistant' && time.completed === undefined;
+      return {
+        message_id: info.id,
+        thread_id: OC_SESSION_ID,
+        seq: i + 1,
+        role: info.role,
+        kind: 'turn',
+        reply_to: typeof info.parentID === 'string' ? info.parentID : null,
+        status: streaming ? 'streaming' : 'complete',
+        created_at: iso(time.created),
+        completed_at: streaming ? null : iso(time.completed ?? time.created),
+        blocks: parts.flatMap((part) => (typeof part.id === 'string' ? [{ type: 'text', id: part.id, text: '' }] : [])),
+      };
+    }),
+  };
+}
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
   test('delivery outcomes write the matching terminal command status and return it', async () => {
