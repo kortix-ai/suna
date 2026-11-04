@@ -134,6 +134,32 @@ export type CoeditFallback = 'too-large' | 'history-too-large' | 'unseeded' | 'f
 
 /** A read-only viewer opened a doc nobody seeded yet: it shows the file instead. */
 export class CoeditUnavailable extends Error {}
+/**
+ * The shared doc holds a root node the editor cannot bind to (y-tiptap renders
+ * only XML elements at the root): never mount on it; the host opens the file
+ * with autosave.
+ */
+export class CoeditUnrenderable extends Error {}
+
+/**
+ * Whether the editor can bind to `doc`: y-tiptap renders only XML elements at
+ * the root of the fragment and throws on anything else (a text node a raw
+ * Yjs writer put there).
+ */
+export function bindable(doc: Y.Doc): boolean {
+  return doc
+    .getXmlFragment(COEDIT_FIELD)
+    .toArray()
+    .every((child) => child instanceof Y.XmlElement);
+}
+
+/** Each live doc's session, told when an editor could not bind to the doc (`reportUnrenderable`). */
+const unrenderableHandlers = new WeakMap<Y.Doc, () => void>();
+
+/** The editor could not bind to `doc` (doc-coedit-editor.tsx): its session falls back. */
+export function reportUnrenderable(doc: Y.Doc): void {
+  unrenderableHandlers.get(doc)?.();
+}
 
 /** The editor as the leader needs it. */
 export interface CoeditEditor {
@@ -227,6 +253,8 @@ export function createDocCoedit(deps: DocCoeditDeps) {
 
   let editor: CoeditEditor | null = null;
   let leader = false;
+  /** `start` resolved: the host mounts the editor on `doc`. */
+  let started = false;
   /** Closed, or fell back: nothing runs any more. */
   let ended = false;
   let closed = false;
@@ -358,11 +386,32 @@ export function createDocCoedit(deps: DocCoeditDeps) {
       if (handle !== undefined) clock.clear(handle);
     },
   };
+  /**
+   * A pulled update left a root node the editor cannot render. `apply`
+   * throws it, so the engine treats the row as poisoned and resets the doc
+   * when this tab may (the server refuses a viewer); the next open rebuilds
+   * it from the file. A mounted tab falls back to autosave once the engine
+   * sent the reset; a tab still loading never mounts (`start`).
+   */
+  const unrenderable = () => {
+    if (started) queueMicrotask(() => fallBack('failed'));
+    return new CoeditUnrenderable('The shared doc holds a root node the editor cannot render');
+  };
   const sync = (deps.createSync ?? createArtifactDocSync)({
     projectId: deps.projectId,
     artifactId: deps.artifactId,
     holder: deps.holder,
-    apply: (update) => Y.applyUpdate(target, update, REMOTE_ORIGIN),
+    apply: (update) => {
+      // A mounted editor's binding throws on such a node too; the check is the same either way.
+      let failure: unknown = null;
+      try {
+        Y.applyUpdate(target, update, REMOTE_ORIGIN);
+      } catch (error) {
+        failure = error;
+      }
+      if (!bindable(target)) throw unrenderable();
+      if (failure) throw failure;
+    },
     merge: (updates) => Y.mergeUpdates(updates),
     onLeader: (next) => setLeader(next),
     onStatus: engineChanged,
@@ -392,6 +441,9 @@ export function createDocCoedit(deps: DocCoeditDeps) {
     return () => source.off('update', handler);
   }
   let unlisten = listen(doc);
+  /** The editor could not bind to the doc: autosave on what this tab has. */
+  const onUnrenderable = () => fallBack('failed');
+  unrenderableHandlers.set(doc, onUnrenderable);
 
   // ── Loading, and a reset ──────────────────────────────────────────────────
 
@@ -484,6 +536,15 @@ export function createDocCoedit(deps: DocCoeditDeps) {
     initial: boolean,
   ) {
     const rebuilt = loaded.base?.markdown;
+    if (fresh !== doc && !bindable(fresh)) {
+      // The rebuilt doc holds a node the editor cannot render: no rebind. The editor and its text stay
+      // for the fallback (autosave on what the person sees).
+      unlistenFresh();
+      fresh.destroy();
+      target = doc;
+      fallBack('failed');
+      return;
+    }
     if (fresh !== doc) {
       if (!initial && !deps.readOnly) {
         // The editor still shows the old doc: what the person sees now, typing during the load included.
@@ -505,6 +566,7 @@ export function createDocCoedit(deps: DocCoeditDeps) {
       doc = fresh;
       target = fresh;
       unlisten = unlistenFresh;
+      unrenderableHandlers.set(doc, onUnrenderable);
       editor = null;
       if (initial) {
         staleDoc.destroy();
@@ -822,6 +884,17 @@ export function createDocCoedit(deps: DocCoeditDeps) {
     recoveryTimer = clock.set(check, RECOVERY_SETTLE_MS);
   }
 
+  /** Send what is unsent, release the lease, stop. Idempotent. */
+  function closeSession() {
+    if (closed) return;
+    closed = true;
+    ended = true;
+    stopAll();
+    unlisten();
+    settle();
+    void sync.close();
+  }
+
   // ── The surface ───────────────────────────────────────────────────────────
 
   return {
@@ -840,8 +913,16 @@ export function createDocCoedit(deps: DocCoeditDeps) {
      * Rejects on a refusal, and with `CoeditUnavailable` for a read-only
      * viewer of an unseeded doc. A reset during the load loads again.
      */
-    start(): Promise<void> {
-      return load(true);
+    async start(): Promise<void> {
+      await load(true);
+      if (ended) return;
+      if (!bindable(doc)) {
+        // Never mount on it: the host opens the file with autosave (`stoppedFailed`). The engine sent
+        // its reset when it met the node (`apply`).
+        closeSession();
+        throw unrenderable();
+      }
+      started = true;
     },
     /**
      * The editor is mounted on `doc`: the leader's duties can run. After a
@@ -925,15 +1006,7 @@ export function createDocCoedit(deps: DocCoeditDeps) {
     /** The attached editor's Markdown now; null before `attach`. */
     markdown: (): string | null => readMarkdown(),
     /** Unmount or page hide: send what is unsent, release the lease, stop. Idempotent. */
-    close() {
-      if (closed) return;
-      closed = true;
-      ended = true;
-      stopAll();
-      unlisten();
-      settle();
-      void sync.close();
-    },
+    close: () => closeSession(),
   };
 }
 

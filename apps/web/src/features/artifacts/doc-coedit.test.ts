@@ -251,7 +251,10 @@ function setup(
     seed: (markdown) => {
       seededFrom.push(markdown);
       const scratch = new Y.Doc();
-      scratch.getXmlFragment(COEDIT_FIELD).insert(0, [new Y.XmlText(markdown)]);
+      // One element, as the editor seeds: a text node at the root is a doc no editor can render.
+      const paragraph = new Y.XmlElement('paragraph');
+      paragraph.insert(0, [new Y.XmlText(markdown)]);
+      scratch.getXmlFragment(COEDIT_FIELD).insert(0, [paragraph]);
       return Y.encodeStateAsUpdate(scratch);
     },
     write: (next, base) => file.write(next, base),
@@ -305,7 +308,7 @@ describe('starting', () => {
     expect(tab.sync.state.seeds[0].seed.markdown).toBe('# Plan\n');
     expect(tab.sync.state.seeds[0].seed.version).toBe('v1');
     // The engine applies the seed only after the server took it: the live doc holds it now.
-    expect(tab.session.doc.getXmlFragment(COEDIT_FIELD).toString()).toBe('# Plan\n');
+    expect(tab.session.doc.getXmlFragment(COEDIT_FIELD).toString()).toBe('<paragraph># Plan\n</paragraph>');
     // The seed is not pushed back: it came through the engine.
     expect(tab.sync.state.pushed).toHaveLength(0);
   });

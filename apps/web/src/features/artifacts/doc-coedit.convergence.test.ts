@@ -14,7 +14,7 @@ import { docExtensions } from '@kortix/ui/markdown/doc-editor/doc-extensions';
 import * as Y from 'yjs';
 
 import type { Known, Timers } from './doc-autosave';
-import { COEDIT_FIELD, createDocCoedit, type DocCoeditSession } from './doc-coedit';
+import { COEDIT_FIELD, CoeditUnrenderable, createDocCoedit, type DocCoeditSession } from './doc-coedit';
 import { liveBridge, liveExtensions, seedUpdate } from './doc-coedit-editor';
 
 // TipTap parses and prints HTML with the browser DOM (as doc-round-trip.test.ts).
@@ -229,6 +229,7 @@ function world(markdown: string) {
     const opened = await file.read();
     const base = docExtensions({ editable: !options.readOnly, placeholder });
     const leaders: boolean[] = [];
+    const fallbacks: string[] = [];
     let rebinds = 0;
     let rebind = () => {};
     const session: DocCoeditSession = createDocCoedit({
@@ -251,7 +252,7 @@ function world(markdown: string) {
       restores: async () => [...file.restores],
       seeded: async () => server.state.seeded,
       onStatus: () => {},
-      onFallback: () => {},
+      onFallback: (reason) => fallbacks.push(reason),
       onRebind: () => rebind(),
       onLeader: (leader) => leaders.push(leader),
       timers: clock.timers,
@@ -290,6 +291,8 @@ function world(markdown: string) {
       },
       net,
       leaders,
+      /** Why co-editing ended in this tab (`onFallback`), in order. */
+      fallbacks,
       pushed,
       rebinds: () => rebinds,
       markdown: () => liveBridge(editor).markdown(),
@@ -677,6 +680,77 @@ describe('the leader leaves', () => {
     expect(b.markdown()).toBe('Base. A B\n');
     expect(w.file.text).toBe('Base. A B\n');
     b.close();
+  });
+});
+
+describe('a root node the editor cannot render (a raw Yjs writer)', () => {
+  /** A writer that is not an editor puts a text node at the root of the shared doc: y-tiptap throws on it. */
+  async function pushRootText(w: ReturnType<typeof world>) {
+    const writer = new Y.Doc();
+    for (const row of w.server.state.rows) Y.applyUpdate(writer, row.update);
+    const before = Y.encodeStateVector(writer);
+    writer.getXmlFragment(COEDIT_FIELD).insert(0, [new Y.XmlText('hidden')]);
+    await w.server.client({ cut: false, dropFlush: false }).push('project', 'artifact', Y.encodeStateAsUpdate(writer, before));
+  }
+
+  test('a tab that opens the doc falls back to the file; its reset rebuilds the doc, and the next open works', async () => {
+    const w = world('Plan.\n');
+    // Someone seeded the doc and left (the lease is free).
+    (await w.open()).close();
+    await pushRootText(w);
+    const epoch = w.server.state.epoch;
+    // The host opens the file with autosave and the `stoppedFailed` note on this refusal (doc-editor.tsx).
+    const refused = await w.open().then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(CoeditUnrenderable);
+    // This tab may write and the lease was free: the engine reset the doc.
+    await w.clock.advance(100);
+    expect(w.server.state.epoch).not.toBe(epoch);
+    const fresh = await w.open();
+    expect(fresh.markdown()).toBe('Plan.\n');
+    expect(fresh.fallbacks).toEqual([]);
+    fresh.close();
+  });
+
+  test('a tab already open stays alive and falls back; the leader resets, and the next open works', async () => {
+    const w = world('Plan.\n');
+    const a = await w.open();
+    const viewer = await w.open({ readOnly: true });
+    typeAfter(a, 'Plan.', ' Typed');
+    await w.clock.advance(100);
+    const epoch = w.server.state.epoch;
+    await pushRootText(w);
+    await w.clock.advance(100);
+    for (const tab of [a, viewer]) {
+      expect(tab.fallbacks).toEqual(['failed']);
+      expect(tab.editor.isDestroyed).toBe(false);
+      // What the host keeps for autosave: the editor's last text.
+      expect(tab.session.markdown()).toBe('Plan. Typed\n');
+    }
+    // The leader reset the doc.
+    expect(w.server.state.epoch).not.toBe(epoch);
+    a.close();
+    viewer.close();
+    const fresh = await w.open();
+    expect(fresh.markdown()).toBe(w.file.text);
+    expect(fresh.fallbacks).toEqual([]);
+    fresh.close();
+  });
+
+  test('an editor bound straight to such a doc does not throw: it binds nothing', () => {
+    const doc = new Y.Doc();
+    doc.getXmlFragment(COEDIT_FIELD).insert(0, [new Y.XmlText('hidden')]);
+    const base = docExtensions({ editable: true, placeholder });
+    let editor: Editor | null = null;
+    expect(() => {
+      editor = new Editor({ extensions: liveExtensions(base, { doc, resolveSrc: (src) => src }) });
+    }).not.toThrow();
+    editors.push(editor!);
+    expect(editor!.state.doc.textContent).toBe('');
+    // A later change to the doc reaches no binding.
+    expect(() => doc.getXmlFragment(COEDIT_FIELD).insert(1, [new Y.XmlText('more')])).not.toThrow();
   });
 });
 

@@ -23,7 +23,7 @@
 import { createDocument, getSchema, type Editor, type Extensions } from '@tiptap/core';
 import Collaboration from '@tiptap/extension-collaboration';
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
-import { prosemirrorToYDoc } from '@tiptap/y-tiptap';
+import { prosemirrorToYDoc, ySyncPluginKey } from '@tiptap/y-tiptap';
 import { SessionDotMatrix } from '@kortix/ui/dot-matrix/session-dot-matrix';
 import {
   DocImage,
@@ -38,7 +38,7 @@ import { TextShimmer } from '@kortix/ui/text-shimmer';
 import { UsersThreeIcon } from '@phosphor-icons/react';
 import * as Y from 'yjs';
 
-import { COEDIT_FIELD, type CoeditEditor, type CoeditFallback } from './doc-coedit';
+import { COEDIT_FIELD, reportUnrenderable, type CoeditEditor, type CoeditFallback } from './doc-coedit';
 import { unionMerge } from './doc-coedit-merge';
 import { applyOutsideEdit } from './doc-outside-edit';
 
@@ -113,9 +113,38 @@ export function liveExtensions(
             ? media.video
             : extension,
     ),
-    Collaboration.configure({ document: options.doc, field: COEDIT_FIELD }),
+    GuardedCollaboration.configure({ document: options.doc, field: COEDIT_FIELD }),
   ];
 }
+
+/**
+ * Collaboration whose first render never throws out of the editor: on a doc
+ * y-tiptap cannot render (a root node that is not an element), the binding
+ * is undone, the editor stays empty and unbound, and the doc's session falls
+ * back to autosave (`reportUnrenderable`). The session refuses to mount on
+ * such a doc first (`bindable`); this is the last guard.
+ */
+const GuardedCollaboration = Collaboration.extend({
+  addProseMirrorPlugins() {
+    const plugins = this.parent?.() ?? [];
+    const document = this.options.document as Y.Doc;
+    for (const plugin of plugins) {
+      const view = plugin.spec.view;
+      if (plugin.spec.key !== ySyncPluginKey || !view) continue;
+      plugin.spec.view = (editorView) => {
+        try {
+          return view(editorView);
+        } catch {
+          // initView registered the binding's observers before the render threw.
+          (ySyncPluginKey.getState(editorView.state) as { binding?: { destroy(): void } } | undefined)?.binding?.destroy();
+          reportUnrenderable(document);
+          return {};
+        }
+      };
+    }
+    return plugins;
+  },
+});
 
 /**
  * A doc's first Yjs state: `markdown` through the editor's load path
