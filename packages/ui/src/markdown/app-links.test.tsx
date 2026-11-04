@@ -97,6 +97,8 @@ test('glues the mark to the first character of a streaming or formatted label', 
   expect(streamed.replace(/<[^>]+>/g, '')).toContain('Review the');
   expect(glued(render(<strong>Review</strong>))).toBe('R');
   expect(glued(render('変更を確認'))).toBe('変');
+  expect(glued(render('🇮🇳 India'))).toBe('🇮🇳');
+  expect(glued(render('हिन्दी'))).toBe('हि');
 });
 
 test('keeps identifier labels whole and glues titles by their first character', () => {
@@ -112,4 +114,14 @@ test('keeps identifier labels whole and glues titles by their first character', 
   expect(glued('https://linear.app/example/issue/ENG-42/readable-links')).toBe('ENG-42');
   expect(glued('https://github.com/example/project/pull/123')).toBe('PR #123');
   expect(glued('https://www.figma.com/design/abc123/Example')).toBe('E');
+});
+
+test('keeps an inline-code custom label as one chip next to the mark', () => {
+  const html = renderToStaticMarkup(
+    <IntlTestProvider locale="en" onError={() => {}}>
+      <UnifiedMarkdown trust="untrusted" content={'[`config.ts`](https://www.notion.so/Example-0123456789abcdef0123456789abcdef)'} />
+    </IntlTestProvider>,
+  );
+  expect(html.match(/<code[\s>]/g)?.length).toBe(1);
+  expect(html).toMatch(/<span class="whitespace-nowrap">.*<span class="whitespace-normal"><code[^>]*>config\.ts<\/code><\/span><\/span>/);
 });

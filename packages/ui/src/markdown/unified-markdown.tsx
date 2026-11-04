@@ -75,10 +75,22 @@ const APP_LINK_CLASS = cn(
   '[overflow-wrap:anywhere]',
 );
 
+const TEXT_WRAPPER_TAGS = new Set(['strong', 'em', 'b', 'i', 'del', 's']);
+
+/** The first user-perceived character: a flag or a vowel sign stays whole. */
+function firstGrapheme(text: string): string | undefined {
+  if (typeof Intl.Segmenter === 'function') {
+    return new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+      .segment(text)[Symbol.iterator]().next().value?.segment;
+  }
+  return Array.from(text)[0];
+}
+
 /**
  * Splits a link label after its first character: `"PR #123"` → `["P", "R #123"]`.
- * An element (a stream-word span, `**bold**`) is copied around each half, so
- * the label renders the same while it streams and after. There is no break
+ * A text wrapper (a stream-word span, `**bold**`) is copied around each half,
+ * so the label renders the same while it streams and after. Any other element
+ * (inline code) stays whole and keeps its own wrapping. There is no break
  * opportunity between the halves: whole words still wrap together, and the
  * rest still breaks anywhere. Returns null when the label opens with no text.
  */
@@ -88,15 +100,21 @@ function splitLeadingChar(label: React.ReactNode): [React.ReactNode, React.React
   let tail: React.ReactNode;
   if (typeof first === 'string' || typeof first === 'number') {
     const text = String(first);
-    const char = Array.from(text)[0];
+    const char = firstGrapheme(text);
     if (!char) return null;
     lead = char;
     tail = text.slice(char.length);
-  } else if (React.isValidElement<{ children?: React.ReactNode }>(first)) {
-    const inner = splitLeadingChar(first.props.children);
-    if (!inner) return null;
-    lead = React.cloneElement(first, { key: 'lead' }, inner[0]);
-    tail = React.cloneElement(first, { key: 'tail' }, inner[1]);
+  } else if (React.isValidElement<{ children?: React.ReactNode; className?: string; node?: { tagName?: string } }>(first)) {
+    const tag = typeof first.type === 'string' ? first.type : first.props.node?.tagName;
+    if (first.props.className === STREAM_WORD_CLASS || (tag && TEXT_WRAPPER_TAGS.has(tag))) {
+      const inner = splitLeadingChar(first.props.children);
+      if (!inner) return null;
+      lead = React.cloneElement(first, { key: 'lead' }, inner[0]);
+      tail = React.cloneElement(first, { key: 'tail' }, inner[1]);
+    } else {
+      lead = <span key="lead" className="whitespace-normal">{first}</span>;
+      tail = null;
+    }
   } else {
     return null;
   }
