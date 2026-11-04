@@ -67,6 +67,8 @@ const FULL_VIEW = { where: () => undefined, allows: async () => true };
 /** Credential-shaped: redaction must keep it out of every surface. */
 const SENTINEL = 'held-run-sentinel-5d2e81';
 const OUTPUT_SECRET = 'held-run-output-secret-9a4c';
+/** A one-time upload URL's secret part, under the output's `caller_only`. */
+const CALLER_ONLY_SECRET = 'upload-session-7f3b20';
 
 let providerHits = 0;
 let stub: ReturnType<typeof Bun.serve>;
@@ -143,10 +145,17 @@ beforeAll(async () => {
   config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS = ['127.0.0.1', 'localhost'];
   stub = Bun.serve({
     port: 0,
-    fetch(req) {
+    async fetch(req) {
       const url = new URL(req.url);
       if (req.method === 'POST' && url.pathname === '/v1/charges') {
         providerHits += 1;
+        const body = (await req.json().catch(() => ({}))) as { amount?: unknown };
+        if (body.amount === 707) {
+          return Response.json(
+            { id: 'ch_upload_1', caller_only: { upload_command: `curl -T video.mp4 https://upload.example.test/${CALLER_ONLY_SECRET}` } },
+            { status: 201 },
+          );
+        }
         return Response.json({ id: 'ch_test_1', client_secret: OUTPUT_SECRET }, { status: 201 });
       }
       return Response.json({ error: 'no route' }, { status: 404 });
@@ -297,6 +306,27 @@ describe('approve runs the held call once', () => {
     // A second run of the same job is a no-op.
     await run(id);
     expect(providerHits).toBe(before + 1);
+  });
+
+  test('a caller-only output reaches the resume prompt and never the stored outcome', async () => {
+    const id = await gate({ amount: 707 });
+    expect(await decide(id, 'approve')).toBe('resolved');
+    await runJobBatch(4);
+
+    const row = await held(id);
+    expect(row.state).toBe('ok');
+    const stored = JSON.stringify(row.outcome);
+    expect(stored).toContain('ch_upload_1');
+    expect(stored).not.toContain('caller_only');
+    expect(stored).not.toContain(CALLER_ONLY_SECRET);
+
+    const [command] = await resumes(`approval-run:${id}`);
+    const text = String((command!.payload as Record<string, unknown>).text);
+    expect(text).toContain('ch_upload_1');
+    expect(text).toContain(`curl -T video.mp4 https://upload.example.test/${CALLER_ONLY_SECRET}`);
+
+    const item = await getInboxItem(seeded.project_id, `call:${id}`, asManager, FULL_VIEW);
+    expect(JSON.stringify(item)).not.toContain(CALLER_ONLY_SECRET);
   });
 
   test('a settle that fails after dispatch retries in-process; no failure text carries the output', async () => {
