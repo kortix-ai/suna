@@ -39,6 +39,7 @@ const TEST_PORT = 8080;
 
 let mockDbSandbox: any = {
   sandboxId: TEST_SESSION_SANDBOX_ID,
+  externalId: TEST_SANDBOX_ID,
   projectId: TEST_PROJECT_ID,
   accountId: 'account-001',
   agentName: 'default',
@@ -535,6 +536,7 @@ beforeEach(() => {
   invalidateSandbox('daytona-oc-http');
   mockDbSandbox = {
     sandboxId: TEST_SESSION_SANDBOX_ID,
+    externalId: TEST_SANDBOX_ID,
     sessionId: '22222222-2222-4222-8222-222222222222',
     projectId: TEST_PROJECT_ID,
     accountId: 'account-001',
@@ -1212,6 +1214,7 @@ describe('Preview proxy: forwarding', () => {
     expect(mockWakeCalls).toEqual([TEST_SANDBOX_ID]);
     expect(mockFetchCalls.map((call) => call.url)).toEqual([
       'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/kortix/health',
       'https://preview.daytona.io/proxy-url/kortix/env',
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
     ]);
@@ -1244,6 +1247,7 @@ describe('Preview proxy: forwarding', () => {
     expect(mockWakeCalls).toEqual([TEST_SANDBOX_ID]);
     expect(mockFetchCalls.map((call) => call.url)).toEqual([
       'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/kortix/health',
       'https://preview.daytona.io/proxy-url/kortix/env',
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
     ]);
@@ -1341,6 +1345,7 @@ describe('Preview proxy: forwarding', () => {
   test('marks proxied session sandbox and owning session as active usage', async () => {
     mockFetchResponses = [{ status: 200, body: 'OK' }];
     const sandboxId = 'touch-sandbox-001';
+    mockDbSandbox = { ...mockDbSandbox, externalId: sandboxId };
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${sandboxId}/${TEST_PORT}/kortix/health`, {
       headers: { Authorization: 'Bearer test' },
