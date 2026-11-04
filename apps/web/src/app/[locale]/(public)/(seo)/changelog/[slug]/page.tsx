@@ -24,13 +24,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       siteName: 'Kortix',
       type: 'article',
       publishedTime: week.start,
-      images: [{ url: '/banner.png', width: 1200, height: 630, alt: week.headline }],
+      images: [week.media?.cover ?? { url: '/banner.png', width: 1200, height: 630, alt: week.headline }],
     },
     twitter: {
       card: 'summary_large_image',
       title: week.headline,
       description,
-      images: ['/banner.png'],
+      images: [week.media?.cover.url ?? '/banner.png'],
     },
     alternates: { canonical: url },
   };

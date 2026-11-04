@@ -8,6 +8,7 @@ import Link from 'next/link';
 
 import { ReleaseNotes } from './changelog-view';
 import { CopyLinkButton } from './copy-link-button';
+import { WeeklyCover } from './weekly-cover';
 import type { ChangelogWeekDetail } from './types';
 import { WeekSummary, weekRange } from './weekly-view';
 
@@ -75,6 +76,7 @@ export async function WeekView({ data }: { data: ChangelogWeekDetail }) {
         <h1 className="text-foreground mt-4 max-w-261 text-3xl font-medium tracking-tight text-balance sm:text-4xl lg:text-[44px] lg:leading-13">
           {week.headline}
         </h1>
+        {week.media && <div className="mt-8"><WeeklyCover media={week.media} /></div>}
         {week.summary && <WeekSummary lines={week.summary} className="mt-8 max-w-2xl" />}
         <ul className="mt-6 -ml-2 flex flex-wrap gap-1">
           {week.releases.map((release) => (

@@ -195,7 +195,8 @@ async function weekSummary(
       href: `${changelogPageHref(tagPages[release.tag_name] ?? 1)}#${release.tag_name}`,
     })),
     highlights,
-    summary: briefs[window.id] ?? null,
+    summary: briefs[window.id]?.highlights ?? null,
+    media: briefs[window.id]?.media,
     counts: { new: count('new'), improved: count('improved'), fixed: count('fixed') },
   };
 }
@@ -240,7 +241,7 @@ async function buildWeekDetail(slug: string): Promise<ChangelogWeekDetail | null
 export async function getWeeklyChangelog(): Promise<ChangelogWeekly> {
   try {
     // Bump the version when ChangelogWeekly changes shape: the data cache outlives deploys.
-    return await unstable_cache(buildWeeklyChangelog, ['changelog-weekly', 'v7'], {
+    return await unstable_cache(buildWeeklyChangelog, ['changelog-weekly', 'v8'], {
       revalidate: CHANGELOG_REVALIDATE_SECONDS,
       tags: ['changelog'],
     })();
@@ -262,7 +263,7 @@ export async function getWeeklyChangelog(): Promise<ChangelogWeekly> {
 export async function getChangelogWeek(slug: string): Promise<ChangelogWeekDetail | null> {
   const { weeks } = await getWeeklyChangelog();
   if (!weeks.some((w) => w.slug === slug)) return null;
-  return unstable_cache(() => buildWeekDetail(slug), ['changelog-week', 'v5', slug], {
+  return unstable_cache(() => buildWeekDetail(slug), ['changelog-week', 'v6', slug], {
     revalidate: CHANGELOG_REVALIDATE_SECONDS,
     tags: ['changelog'],
   })();

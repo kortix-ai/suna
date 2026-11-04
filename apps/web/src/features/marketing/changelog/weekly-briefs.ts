@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { parseWeeklyMedia, type WeeklyMedia } from './weekly-media';
+
 /**
  * The agent-written weekly summaries. Each Monday the `changelog-weekly`
  * trigger of the Kortix company project stores 1–5 highlights for every
@@ -11,12 +13,12 @@ import 'server-only';
 const REPO = 'kortix-ai/CompanyOS';
 const REF = 'kortix/changelog-weekly';
 
-/** Week id (`2026-W42`) → its highlight lines. */
-export type WeeklyBriefs = Record<string, string[]>;
+/** Week id (`2026-W42`) → highlights and optional reviewed cover media. */
+export type WeeklyBriefs = Record<string, { highlights: string[]; media?: WeeklyMedia }>;
 
 interface BriefsFile {
   version: number;
-  weeks: Record<string, { highlights?: { text?: unknown }[] }>;
+  weeks: Record<string, { highlights?: { text?: unknown }[]; media?: unknown }>;
 }
 
 /**
@@ -47,10 +49,11 @@ export async function readWeeklyBriefs(fetchImpl: typeof fetch = fetch): Promise
     if (file?.version !== 1 || typeof file.weeks !== 'object' || !file.weeks) return {};
     const briefs: WeeklyBriefs = {};
     for (const [week, brief] of Object.entries(file.weeks)) {
-      const lines = (brief?.highlights ?? [])
+      const lines = (Array.isArray(brief?.highlights) ? brief.highlights : [])
         .map((h) => (typeof h?.text === 'string' ? h.text.trim() : ''))
         .filter(Boolean);
-      if (lines.length > 0) briefs[week] = lines;
+      if (lines.length > 0)
+        briefs[week] = { highlights: lines, media: parseWeeklyMedia(brief.media) };
     }
     return briefs;
   } catch {

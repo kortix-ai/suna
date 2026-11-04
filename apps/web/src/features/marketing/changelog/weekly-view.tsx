@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { ChangelogAnchorRedirect } from './anchor-redirect';
 import { ReleaseNotes } from './changelog-view';
 import { CopyLinkButton } from './copy-link-button';
+import { WeeklyCover } from './weekly-cover';
 import { changelogPageHref } from './paging';
 import type { ChangelogWeek, ChangelogWeekly } from './types';
 
@@ -140,6 +141,7 @@ export async function WeeklyView({ data }: { data: ChangelogWeekly }) {
                     </div>
 
                     <div className="min-w-0 px-6 pb-12 lg:px-11 lg:py-20">
+                      {week.media && <WeeklyCover media={week.media} />}
                       {week.summary ? (
                         <WeekSummary lines={week.summary} />
                       ) : week.highlights.length > 0 ? (
