@@ -5,6 +5,7 @@ import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, sessionLogTurns, type SessionLog
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '../../primitives/tooltip';
 import { Disclosure } from '../../primitives/disclosure';
+import { BurstSummaryTrigger } from '../turn/burst-summary-trigger';
 import { IntlTestProvider } from '../../test-utils/intl';
 import '../tool/tools/register';
 import { SessionTurn } from './transcript';
@@ -58,8 +59,9 @@ test('an untouched live turn folds closed at completion, without a remount', asy
   expect(findBurst()).toBe(burst);
   expect(workRow().props['aria-expanded']).toBe(false);
   expect(wrapperOf(burst).props.hidden).toBe(true);
-  // The burst closed again when the turn stopped: an opened row reads as one line per burst.
-  expect(burst.findAllByType(Disclosure)[0].props.open).toBe(false);
+  // Inside the fold the burst has no summary line of its own: the fold row is the one disclosure.
+  expect(burst.findByType(BurstSummaryTrigger).props.bare).toBe(true);
+  expect(burst.findAllByType(Disclosure)[0].props.open).toBe(true);
 });
 
 test('a turn the reader touched while live settles open, its tree as the reader left it', async () => {
@@ -73,13 +75,15 @@ test('a turn the reader touched while live settles open, its tree as the reader 
   expect(burst.findAllByType(Disclosure)[0].props.open).toBe(true);
 });
 
-test('a manually collapsed burst stays collapsed after completion', async () => {
+test('a burst the reader collapsed while live shows its steps once the fold opens: no second disclosure', async () => {
   await act(async () => { mounted = create(render(true)); });
   const burst = findBurst();
   await act(async () => burst.findAllByType(Disclosure)[0].props.onOpenChange(false));
+  expect(burst.findByType(BurstSummaryTrigger).props.bare).toBe(false);
   await act(async () => mounted?.update(render(false)));
   expect(findBurst()).toBe(burst);
-  expect(burst.findAllByType(Disclosure)[0].props.open).toBe(false);
+  expect(burst.findByType(BurstSummaryTrigger).props.bare).toBe(true);
+  expect(burst.findAllByType(Disclosure)[0].props.open).toBe(true);
 });
 
 test('reloaded history paints the closed row and mounts its work on the first open', async () => {

@@ -660,9 +660,9 @@ describe('ActivityBurst', () => {
     expect(renderBurst([done('1', 'bash'), done('2', 'bash')])).toContain('Completed 2 steps');
   });
 
-  test('inside a "Worked for" fold, a burst is one closed line that names its work', () => {
-    // The fold reads like Codex: narration, one line of work, narration. The
-    // per-call rows and thoughts are one click down, not spread between sentences.
+  test('inside a "Worked for" fold, a burst has no summary line of its own: its steps show directly', () => {
+    // The fold row is the one disclosure. A second "Ran 2 commands…" line
+    // inside it nests a "worked" summary inside a "worked" summary.
     const markup = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <IntlTestProvider locale="en" onError={() => {}}>
@@ -682,10 +682,10 @@ describe('ActivityBurst', () => {
         </IntlTestProvider>
       </QueryClientProvider>,
     );
-    expect(markup).toContain('Ran 2 commands, read 1 file · 1 failed');
+    expect(markup).not.toContain('Ran 2 commands, read 1 file');
     expect(markup).not.toContain('Completed');
-    expect(markup).not.toContain('data-state="open"');
-    expect(markup).not.toContain('data-status="done"');
+    expect(markup).toContain('data-state="open"');
+    expect(markup).toContain('data-status="done"');
   });
 
   test('one ROW over three calls keeps the summary line', () => {

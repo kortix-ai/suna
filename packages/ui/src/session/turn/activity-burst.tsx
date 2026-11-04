@@ -27,7 +27,6 @@ import {
   sessionLogBurstRunning,
   sessionLogBurstSteps,
   sessionLogBurstSummary,
-  sessionLogBurstWorkLabel,
   type SessionLogBlock,
 } from '@kortix/sdk';
 import { memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -124,24 +123,23 @@ function ActivityBurstImpl({
 
   const steps = useMemo(() => sessionLogBurstSteps(blocks), [blocks]);
   const summary = useMemo(() => sessionLogBurstSummary(blocks), [blocks]);
-  // Under an opened "Worked for" row the burst sits between two sentences of
-  // the agent's narration, so its closed line names the work ("Ran 9 commands,
-  // updated 2 files · 1 failed") instead of counting steps. Thoughts and the
-  // per-call rows stay one click down. Elsewhere the summary goes through
-  // unchanged: `burstSummaryLabel` already ignores failures while running.
+  // Under an opened "Worked for" row the fold row is the one disclosure: the
+  // burst drops its own summary line and shows its steps directly. A second
+  // "Ran 9 commands…" line inside "Worked for 2m" nests one "worked" summary in
+  // another. Grouped steps ("Ran 3 commands") keep their own row and caret.
   const inFold = useContext(WorkFoldContext);
-  const title = useMemo(
-    () => (inFold ? sessionLogBurstWorkLabel(blocks) : burstSummaryLabel(summary, running)),
-    [inFold, blocks, summary, running],
-  );
+  const title = useMemo(() => burstSummaryLabel(summary, running), [summary, running]);
 
   const bare = steps.length === 1 && summary.total === 1;
+  // No summary line: one call (`bare`), or a burst inside the fold. Only `bare`
+  // also drops the row glyph; a burst in the fold keeps its step icons.
+  const headless = bare || inFold;
   if (steps.length === 0) return null;
 
   return (
     <Disclosure
-      // Bare is permanently open — there is no trigger to close it with.
-      open={bare || open}
+      // Headless is permanently open — there is no trigger to close it with.
+      open={headless || open}
       onOpenChange={(next) => {
         userToggled.current = true;
         markTouched?.();
@@ -149,7 +147,7 @@ function ActivityBurstImpl({
       }}
       className="group/burst flex-row"
     >
-      <BurstSummaryTrigger bare={bare} running={running} title={title} />
+      <BurstSummaryTrigger bare={headless} running={running} title={title} />
 
       <DisclosureContent>
         {/*
@@ -167,7 +165,7 @@ function ActivityBurstImpl({
 					    line, so it has no gap to open. A click on a row inside counts
 					    as the reader's choice: the burst then stays as they left it. */}
           <div
-            className={bare ? undefined : 'mt-3'}
+            className={headless ? undefined : 'mt-3'}
             onClickCapture={(event) => {
               if ((event.target as Element | null)?.closest?.('[aria-expanded]')) userToggled.current = true;
             }}
