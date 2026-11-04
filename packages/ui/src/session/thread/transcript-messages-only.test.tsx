@@ -7,7 +7,7 @@ import { TooltipProvider } from '../../primitives/tooltip';
 import { IntlTestProvider } from '../../test-utils/intl';
 import '../tool/tools/register';
 import { messageWorkerIds, ShowWork } from './show-work';
-import { SessionTurn } from './transcript';
+import { messageOnlySegments, SessionTurn } from './transcript';
 import { TranscriptRowsContext, type TranscriptRows } from './transcript-rows';
 
 // A space thread with `chat` on (`TranscriptRows.messagesOnly`): the thread shows
@@ -272,5 +272,17 @@ describe('Show work', () => {
     expect(html).toContain('launch-weather');
     expect(html).not.toContain('footer');
     expect(rowCount(html)).toBe(1);
+  });
+});
+
+describe('messages only: a blank text segment', () => {
+  // The router writes an empty text before a hand-off. Drawn, it was an empty
+  // element first in the message column, and the words after it took the gap.
+  test('is not drawn; the words are', () => {
+    const text = (id: string, value: string) => ({ kind: 'text' as const, block: { type: 'text', id, text: value } }) as never;
+    for (const working of [false, true]) {
+      const kept = messageOnlySegments([text('t1', '\n\n'), text('t2', 'On it.')], { working, permissions: [] });
+      expect(kept.map((segment) => (segment as { block: { text: string } }).block.text)).toEqual(['On it.']);
+    }
   });
 });

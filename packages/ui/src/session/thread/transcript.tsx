@@ -1891,7 +1891,10 @@ export function messageOnlySegments(
   const visible = segments.filter(segmentRendersSomething);
   const kept = (segment: SessionLogSegment) => {
     if (segment.kind === 'burst') return false;
-    if (segment.kind === 'text' || segment.kind === 'show-group') return true;
+    // A blank text segment (the router's empty text before a hand-off) renders an empty
+    // element, and the words after it took the column's gap: a blank line above short answers.
+    if (segment.kind === 'text') return segment.block.text.trim() !== '';
+    if (segment.kind === 'show-group') return true;
     return isNoGroupActivityTool(segment.block.name) || !!getPermissionForTool(options.permissions, segment.block.call_id);
   };
   const split = options.working ? null : splitSessionLogTurnWork(visible, { working: false });
@@ -2799,15 +2802,20 @@ function SessionTurnImpl(props: SessionTurnProps) {
             <div className="mt-0.5 space-y-2.5">
               {messagesOnly ? null : <TurnFallbackRows working={model.working} events={props.servedModel?.fallbacks} />}
               <GenuiTelemetryContext.Provider value={genuiTelemetry}>
-                <TurnToolBlocks
-                  {...props}
-                  model={model}
-                  segments={shownSegments}
-                  conversationDensity={conversationDensity}
-                  // The segments are already the message's: nothing is left to fold.
-                  fold={!messagesOnly && !answered.shouldUseInlineContent}
-                  durationMs={meta.turnDurationMs}
-                />
+                {/* Messages only, no steps: the response block draws the words, and the
+                    text segments would only leave an empty element first in the column
+                    (the column's gap then read as a blank line above the answer). */}
+                {messagesOnly && !model.hasSteps && shownSegments.every((segment) => segment.kind === 'text') ? null : (
+                  <TurnToolBlocks
+                    {...props}
+                    model={model}
+                    segments={shownSegments}
+                    conversationDensity={conversationDensity}
+                    // The segments are already the message's: nothing is left to fold.
+                    fold={!messagesOnly && !answered.shouldUseInlineContent}
+                    durationMs={meta.turnDurationMs}
+                  />
+                )}
                 <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
               </GenuiTelemetryContext.Provider>
               {/* Stopped before it said anything: one quiet line, never an empty row. */}
