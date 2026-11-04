@@ -267,9 +267,11 @@ function QuestionForYou({ projectId, goal, onChanged }: { projectId: string; goa
   const locale = useLocale();
   const now = useGoalClock();
   const doc = goal.goal;
-  const asks = goalOpenAsks(doc);
-  const question = (doc?.status === 'waiting_on_user' ? doc.waiting_on : null) ?? asks[0]?.title ?? null;
-  const otherAsks = doc?.status === 'waiting_on_user' && doc.waiting_on ? asks : asks.slice(1);
+  // Only text from GOAL.md reaches the page (see `text`).
+  const asks = goalOpenAsks(doc).filter((ask) => text(ask.title));
+  const asked = doc?.status === 'waiting_on_user' ? text(doc.waiting_on) : null;
+  const question = asked ?? asks[0]?.title ?? null;
+  const otherAsks = asked ? asks : asks.slice(1);
   return (
     <section className="flex flex-col gap-3" aria-label={t('questionForYou')} data-testid="goal-needs-you">
       <SectionTitle>
@@ -287,7 +289,7 @@ function QuestionForYou({ projectId, goal, onChanged }: { projectId: string; goa
           {otherAsks.map((ask) => (
             <li key={ask.id} className="flex items-baseline justify-between gap-3">
               <span className="text-foreground min-w-0">{ask.title}</span>
-              {ask.due ? <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{t('due', { time: formatGoalTime(ask.due, locale, now) })}</span> : null}
+              {text(ask.due) ? <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{t('due', { time: formatGoalTime(ask.due, locale, now) })}</span> : null}
             </li>
           ))}
         </ul>
