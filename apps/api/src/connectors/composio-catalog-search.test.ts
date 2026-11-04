@@ -3,6 +3,7 @@ import {
   composioCatalogSections,
   composioHiddenToolkits,
   customAuthConfigIds,
+  ownOAuthAppId,
   requiresOwnAuthConfig,
   searchComposioCatalog,
   type ComposioCatalogClient,
@@ -452,6 +453,45 @@ test('customAuthConfigIds keeps the newest enabled custom config per toolkit acr
     { toolkit_slug: 'twitter', is_composio_managed: false, show_disabled: false, limit: 100 },
     { toolkit_slug: 'twitter', is_composio_managed: false, show_disabled: false, limit: 100, cursor: 'page-2' },
   ]);
+});
+
+test('ownOAuthAppId picks the newest enabled OAUTH2 config and ignores other schemes and toolkits', async () => {
+  const queries: Array<Record<string, unknown>> = [];
+  const catalogClient: ComposioCatalogClient = {
+    toolkits: { async list() { return { items: [] }; } },
+    authConfigs: {
+      async list(query) {
+        queries.push(query);
+        return {
+          items: [
+            { id: 'ac_old_app', status: 'ENABLED', is_composio_managed: false, auth_scheme: 'OAUTH2', toolkit: { slug: 'youtube' }, created_at: '2026-11-01T00:00:00Z' },
+            { id: 'ac_new_app', status: 'ENABLED', is_composio_managed: false, auth_scheme: 'OAUTH2', toolkit: { slug: 'youtube' }, created_at: '2026-11-04T00:00:00Z' },
+            { id: 'ac_newest_key', status: 'ENABLED', is_composio_managed: false, auth_scheme: 'API_KEY', toolkit: { slug: 'youtube' }, created_at: '2026-11-05T00:00:00Z' },
+            { id: 'ac_off_app', status: 'DISABLED', is_composio_managed: false, auth_scheme: 'OAUTH2', toolkit: { slug: 'youtube' }, created_at: '2026-11-06T00:00:00Z' },
+            { id: 'ac_managed', status: 'ENABLED', is_composio_managed: true, auth_scheme: 'OAUTH2', toolkit: { slug: 'youtube' }, created_at: '2026-11-07T00:00:00Z' },
+          ],
+          next_cursor: null,
+        };
+      },
+    },
+  };
+  expect(await ownOAuthAppId({ catalogClient, toolkit: 'YouTube' })).toBe('ac_new_app');
+  expect(queries).toEqual([{ toolkit_slug: 'youtube', is_composio_managed: false, show_disabled: false, limit: 100 }]);
+  // The 4300 path keeps choosing the newest config of any scheme.
+  expect(await customAuthConfigIds({ catalogClient, toolkit: 'youtube' })).toEqual(new Map([['youtube', 'ac_newest_key']]));
+
+  const keyOnly: ComposioCatalogClient = {
+    ...catalogClient,
+    authConfigs: {
+      async list() {
+        return {
+          items: [{ id: 'ac_key', status: 'ENABLED', is_composio_managed: false, auth_scheme: 'API_KEY', toolkit: { slug: 'youtube' } }],
+          next_cursor: null,
+        };
+      },
+    },
+  };
+  expect(await ownOAuthAppId({ catalogClient: keyOnly, toolkit: 'youtube' })).toBeNull();
 });
 
 test('an expired auth config list is served at once and refreshed once in the background', async () => {

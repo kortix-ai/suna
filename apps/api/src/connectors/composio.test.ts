@@ -1277,7 +1277,7 @@ function routerNeedingTwitterConfig(calls: Array<Record<string, unknown>>, creat
 }
 
 function authConfigClient(
-  items: Array<{ id: string; status: 'ENABLED' | 'DISABLED'; is_composio_managed?: boolean; toolkit: { slug: string }; created_at?: string }>,
+  items: Array<{ id: string; status: 'ENABLED' | 'DISABLED'; is_composio_managed?: boolean; auth_scheme?: string; toolkit: { slug: string }; created_at?: string }>,
   calls: Array<Record<string, unknown>>,
   catalog: Array<Record<string, unknown>> = [],
 ): ComposioCatalogClient {
@@ -1368,6 +1368,103 @@ test('composioCatalogTools maps an invalid toolkit refusal to 422', async () => 
     }),
   ).rejects.toMatchObject({ status: 422, message: expect.stringContaining('anthropic') });
   expect(calls.some((call) => call.type === 'auth-config-list')).toBe(false);
+});
+
+const OWN_YOUTUBE_APP = {
+  id: 'ac_own_youtube',
+  status: 'ENABLED' as const,
+  is_composio_managed: false,
+  auth_scheme: 'OAUTH2',
+  toolkit: { slug: 'youtube' },
+  created_at: '2026-11-04T10:00:00Z',
+};
+
+test('composioConnectUrl signs a new account in with the operator’s own OAuth app over Composio’s managed one', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const result = await composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'youtube',
+    app: 'youtube',
+    connectionId: 'connection-yt',
+    stableUserId: 'kortix-connection:connection-yt',
+    runtime: fakeRuntime({ created: session({ toolkit: { slug: 'youtube', name: 'YouTube', isNoAuth: false } }), calls }),
+    catalogClient: authConfigClient([OWN_YOUTUBE_APP], calls),
+  });
+  expect(result).toMatchObject({ connectUrl: 'https://composio.test/connect', connected: false });
+  expect(calls.map((call) => call.type).slice(0, 2)).toEqual(['auth-config-list', 'create']);
+  expect(calls[0]).toMatchObject({ query: { toolkit_slug: 'youtube', is_composio_managed: false } });
+  expect(calls[1]).toMatchObject({
+    userId: 'kortix-connection:connection-yt',
+    config: { toolkits: ['youtube'], authConfigs: { youtube: 'ac_own_youtube' } },
+  });
+});
+
+test('composioConnectUrl keeps Composio’s managed app when the operator holds only an API-key config', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  await composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'youtube',
+    app: 'youtube',
+    connectionId: 'connection-yt-key',
+    stableUserId: 'kortix-connection:connection-yt-key',
+    runtime: fakeRuntime({ created: session({ toolkit: { slug: 'youtube', name: 'YouTube', isNoAuth: false } }), calls }),
+    catalogClient: authConfigClient([{ ...OWN_YOUTUBE_APP, id: 'ac_key', auth_scheme: 'API_KEY' }], calls),
+  });
+  const create = calls.find((call) => call.type === 'create') as { config: Record<string, unknown> };
+  expect(create.config.toolkits).toEqual(['youtube']);
+  expect(create.config.authConfigs).toBeUndefined();
+});
+
+test('composioConnectUrl connects with the managed app when the own-app lookup fails', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const failing: ComposioCatalogClient = {
+    toolkits: { async list() { return { items: [] }; } },
+    authConfigs: {
+      async list() {
+        calls.push({ type: 'auth-config-list' });
+        throw new Error('503 Service Unavailable');
+      },
+    },
+  };
+  const result = await composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'youtube',
+    app: 'youtube',
+    connectionId: 'connection-yt-down',
+    stableUserId: 'kortix-connection:connection-yt-down',
+    runtime: fakeRuntime({ created: session({ toolkit: { slug: 'youtube', name: 'YouTube', isNoAuth: false } }), calls }),
+    catalogClient: failing,
+  });
+  expect(result.connectUrl).toBe('https://composio.test/connect');
+  const create = calls.find((call) => call.type === 'create') as { config: Record<string, unknown> };
+  expect(create.config.authConfigs).toBeUndefined();
+});
+
+test('executeComposio on a stored session never looks up the own app: an account keeps the app it signed in with', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const resumed = session({
+    id: 'trs_managed',
+    toolkit: {
+      slug: 'youtube',
+      name: 'YouTube',
+      isNoAuth: false,
+      connection: { isActive: true, connectedAccount: { id: 'ca_managed', status: 'ACTIVE' } },
+    } as ToolkitItem,
+  });
+  const result = await executeComposio({
+    projectId: 'project-1',
+    connectorSlug: 'youtube',
+    connectionId: 'connection-yt-old',
+    sessionId: 'trs_managed',
+    toolkit: 'youtube',
+    toolSlug: 'YOUTUBE_LIST_CHANNELS',
+    args: {},
+    connectedAccountId: 'ca_managed',
+    runtime: fakeRuntime({ resumed, calls }),
+    catalogClient: authConfigClient([OWN_YOUTUBE_APP], calls),
+  });
+  expect(result.ok).toBe(true);
+  expect(calls.map((call) => call.type)).toEqual(['use']);
 });
 
 test('composioConnectUrl authorizes X through the operator’s auth config', async () => {
