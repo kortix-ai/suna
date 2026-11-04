@@ -403,6 +403,8 @@ interface SessionChatProps {
   headerLeadingAction?: React.ReactNode;
   /** Hide the session site header entirely */
   hideHeader?: boolean;
+  /** Paint no background: the host's surface shows through (an agent in the side panel's card). */
+  transparent?: boolean;
   /** Read-only mode — hides the chat input bar (used for sub-session modal viewer) */
   readOnly?: boolean;
   /** The composer's placeholder (a channel thread says "Reply…"). Default: the composer's own. */
@@ -482,6 +484,7 @@ export function SessionChat({
   boundAgentName,
   headerLeadingAction,
   hideHeader,
+  transparent = false,
   readOnly,
   composerPlaceholder,
   inputReplacement,
@@ -4320,7 +4323,7 @@ export function SessionChat({
     // screen, staleness is repaired in the background instead.
     if (transcriptFreshness === 'error' && !hasMessages) {
       return (
-        <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
+        <div className={cn('relative flex h-full flex-col', !transparent && 'bg-background')} data-testid="session-chat">
           <div
             className="flex flex-1 flex-col items-center justify-center gap-3 p-6"
             data-testid="session-transcript-error"
@@ -4336,7 +4339,7 @@ export function SessionChat({
       );
     }
     return (
-      <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
+      <div className={cn('relative flex h-full flex-col', !transparent && 'bg-background')} data-testid="session-chat">
         {/* `projectId`/`sessionId` are what arm the loader's restart offer
             (`canRestart`). Without them a session wedged in this state spun
             forever with no way out but a page reload. */}
@@ -4369,7 +4372,7 @@ export function SessionChat({
           // Transparent in the welcome state so the root-level full-bleed wallpaper
           // (portaled into SessionLayout) reads through; solid once real content
           // takes over. Same base color either way, so non-welcome is unchanged.
-          shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+          shouldShowWelcomeOverlay || transparent ? 'bg-transparent' : 'bg-background',
         )}
         data-testid="session-chat"
       >
@@ -4488,7 +4491,7 @@ export function SessionChat({
                   // teleport: ours restores the reader's position, then the
                   // native one nudges it again.
                   'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto] [overflow-anchor:none]',
-                  shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+                  shouldShowWelcomeOverlay || transparent ? 'bg-transparent' : 'bg-background',
                 )}
                 onMouseUp={handleChatMouseUp}
                 onMouseDown={handleChatMouseDown}
