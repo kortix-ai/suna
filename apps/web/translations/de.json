@@ -25465,5 +25465,18 @@
     "dialogTitle": "Neuen Kontext starten?",
     "dialogDescription": "Der Agent arbeitet in einem neuen Kontext weiter und durchsucht den vollen Verlauf, wenn er ein Detail braucht. Nichts wird zusammengefasst, und die Unterhaltung bleibt hier, wie sie ist.",
     "dialogAction": "Neuen Kontext starten"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Slack-Nachricht",
+    "slackConversation": "Slack-Unterhaltung",
+    "notionPage": "Notion-Seite",
+    "figmaDesign": "Figma-Design",
+    "figjamBoard": "FigJam-Board",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Google-Dokument",
+    "googleSheet": "Google-Tabelle",
+    "googleSlides": "Google Slides",
+    "pullRequest": "PR #{number}",
+    "issue": "Issue #{number}"
   }
 }
