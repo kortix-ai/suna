@@ -24538,9 +24538,9 @@
     },
     "create": {
       "title": "Направи простор",
-      "description": "Сви у овом пројекту могу да виде и користе простор.",
+      "description": "Простор организује једну област рада, као што су маркетинг, запошљавање или операције. Људи и агенти раде у његовим нитима.",
       "nameLabel": "Назив",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Маркетинг",
       "slugPlaceholder": "naziv-prostora",
       "descriptionLabel": "Опис (опционо)",
       "descriptionPlaceholder": "За шта служи овај простор",
@@ -24569,7 +24569,7 @@
     },
     "view": {
       "welcomeTitle": "Добро дошао у #{name}",
-      "welcomeEmpty": "Започни прву тему у #{name}. Свака порука започиње нову тему.",
+      "welcomeEmpty": "Простор организује једну област рада. Људи и агенти овде раде у нитима: свака порука покреће нову.",
       "welcomeStart": "Овде почиње #{name}.",
       "dmIntro": "Само ти и агент {agent} видите овај простор.",
       "today": "Данас",
@@ -25061,7 +25061,6 @@
       "dmSpaceName": "{a} и {b}",
       "heading": "Профил",
       "close": "Затвори профил",
-      "startPrivate": "Покрени приватни простор са: {name}",
       "model": "Модел",
       "modelDefault": "Подразумевани модел пројекта",
       "connectors": "Конектори",
@@ -25069,12 +25068,15 @@
       "connectorsNone": "Нема конектора",
       "projectDefault": "Подразумевани за пројекат",
       "projectDefaultYes": "Одговара на нове нити без задатог агента",
-      "defaultIn": "Подразумевани у",
-      "defaultInNone": "Још ниједан простор",
       "email": "Е-пошта",
       "sharedSpaces": "Заједнички простори",
       "yourSpaces": "Твоји простори",
-      "openPersonal": "Отвори свој простор"
+      "addTo": "Додај у {space}",
+      "addedTo": "{agent} је додат у {space}",
+      "addFailed": "Агент није могао да се дода. Покушај поново.",
+      "spacesIn": "Простори у којима је",
+      "spacesInNone": "Још ни у једном простору",
+      "default": "Подразумевани"
     }
   },
   "imageGen": {

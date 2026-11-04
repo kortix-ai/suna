@@ -70,11 +70,11 @@ describe('space identity', () => {
     expect(spacePreview([thread({ result_excerpt: 'Done @ada@example.com, see you' })])).toBe('Done @ada, see you');
   });
 
-  test('order: the personal space first, archived spaces left out', () => {
+  test('order: the personal space first; archived spaces and DMs with other agents left out', () => {
     const general = space({ space_id: 'g', is_default: true, slug: 'general', name: 'general' });
     const archived = space({ space_id: 'old', archived_at: '2026-11-01T00:00:00Z' });
     const { personal: first, others } = orderSpaces([general, archived, workerDm, personal]);
     expect(first?.space_id).toBe('dm-1');
-    expect(others.map((s) => s.space_id)).toEqual(['g', 'dm-2']);
+    expect(others.map((s) => s.space_id)).toEqual(['g']);
   });
 });

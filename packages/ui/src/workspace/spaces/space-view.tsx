@@ -54,7 +54,7 @@ import { CreateChannelDialog } from './create-channel-dialog';
 import { channelRunnableAgents, offeredChannelAgents } from './space-agents';
 import { SpaceDetailsDialog, type SpaceDetailsTab } from './space-details-dialog';
 import { SpaceDetailsPanel } from './space-details-panel';
-import { parseProfileParam, type Principal, PrincipalHover, ProfileContext, ProfilePanel, profileParam } from './principal-card';
+import { CurrentSpaceContext, parseProfileParam, type Principal, PrincipalHover, ProfileContext, ProfilePanel, profileParam } from './principal-card';
 import { SpaceAvatar } from './space-avatar';
 import { isPrivateSpace, spaceDisplayName } from './space-identity';
 import { usePersonalSpaceName } from './use-personal-space-name';
@@ -384,6 +384,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
     // timeline panel and the divider hide, and the thread panel's flex-grow
     // fills the row.
     <ProfileContext.Provider value={openProfile}>
+    <CurrentSpaceContext.Provider value={space}>
     <ResizablePanelGroup
       direction="horizontal"
       autoSaveId="kortix:space-thread-split"
@@ -460,6 +461,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
         </>
       ) : null}
     </ResizablePanelGroup>
+    </CurrentSpaceContext.Provider>
     </ProfileContext.Provider>
   );
 }

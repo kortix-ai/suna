@@ -24538,9 +24538,9 @@
     },
     "create": {
       "title": "Crear un espacio",
-      "description": "Todos en este proyecto pueden ver y usar el espacio.",
+      "description": "Un espacio organiza un área de trabajo, como Marketing, Contratación u Operaciones. Personas y agentes trabajan en sus hilos.",
       "nameLabel": "Nombre",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "nombre-del-espacio",
       "descriptionLabel": "Descripción (opcional)",
       "descriptionPlaceholder": "Para qué sirve este espacio",
@@ -24569,7 +24569,7 @@
     },
     "view": {
       "welcomeTitle": "Te damos la bienvenida a #{name}",
-      "welcomeEmpty": "Empieza el primer hilo en #{name}. Cada mensaje empieza un hilo nuevo.",
+      "welcomeEmpty": "Un espacio organiza un área de trabajo. Personas y agentes trabajan aquí en hilos: cada mensaje inicia uno.",
       "welcomeStart": "Aquí empieza #{name}.",
       "dmIntro": "Solo tú y {agent} veis este espacio.",
       "today": "Hoy",
@@ -25061,7 +25061,6 @@
       "dmSpaceName": "{a} y {b}",
       "heading": "Perfil",
       "close": "Cerrar perfil",
-      "startPrivate": "Iniciar un espacio privado con {name}",
       "model": "Modelo",
       "modelDefault": "El modelo predeterminado del proyecto",
       "connectors": "Conectores",
@@ -25069,12 +25068,15 @@
       "connectorsNone": "Ningún conector",
       "projectDefault": "Predeterminado del proyecto",
       "projectDefaultYes": "Responde los hilos nuevos sin agente asignado",
-      "defaultIn": "Predeterminado en",
-      "defaultInNone": "Aún en ningún espacio",
       "email": "Correo",
       "sharedSpaces": "Espacios en común",
       "yourSpaces": "Tus espacios",
-      "openPersonal": "Abrir tu espacio"
+      "addTo": "Añadir a {space}",
+      "addedTo": "{agent} se añadió a {space}",
+      "addFailed": "No se pudo añadir el agente. Inténtalo de nuevo.",
+      "spacesIn": "Espacios en los que está",
+      "spacesInNone": "Aún en ningún espacio",
+      "default": "Predeterminado"
     }
   },
   "imageGen": {

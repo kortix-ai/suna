@@ -24570,10 +24570,10 @@
     },
     "create": {
       "title": "Create a space",
-      "description": "Everyone in this project can see and use the space.",
+      "description": "A space organises one area of work, like Marketing, Hiring or Ops. People and agents work in its threads.",
       "nameLabel": "Name",
       "name": "Name",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "space-name",
       "descriptionLabel": "Description (optional)",
       "descriptionPlaceholder": "What this space is for",
@@ -24601,7 +24601,7 @@
     },
     "view": {
       "welcomeTitle": "Welcome to #{name}",
-      "welcomeEmpty": "Start the first thread in #{name}. Every message starts a new thread.",
+      "welcomeEmpty": "A space organises one area of work. People and agents work here in threads: every message starts one.",
       "welcomeStart": "This is the start of #{name}.",
       "dmIntro": "Only you and {agent} see this space.",
       "today": "Today",
@@ -25017,7 +25017,6 @@
       "dmSpaceName": "{a} and {b}",
       "heading": "Profile",
       "close": "Close profile",
-      "startPrivate": "Start a private space with {name}",
       "model": "Model",
       "modelDefault": "The project's default model",
       "connectors": "Connectors",
@@ -25025,12 +25024,15 @@
       "connectorsNone": "No connectors",
       "projectDefault": "Project default",
       "projectDefaultYes": "Answers new threads where no agent is set",
-      "defaultIn": "Default in",
-      "defaultInNone": "No space yet",
       "email": "Email",
       "sharedSpaces": "Spaces you share",
       "yourSpaces": "Your spaces",
-      "openPersonal": "Open your space"
+      "addTo": "Add to {space}",
+      "addedTo": "{agent} added to {space}",
+      "addFailed": "Could not add the agent. Try again.",
+      "spacesIn": "Spaces it is in",
+      "spacesInNone": "Not in a space yet",
+      "default": "Default"
     }
   },
   "imageGen": {

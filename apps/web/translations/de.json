@@ -24538,9 +24538,9 @@
     },
     "create": {
       "title": "Space erstellen",
-      "description": "Alle in diesem Projekt können den Space sehen und nutzen.",
+      "description": "Ein Space ordnet einen Arbeitsbereich, etwa Marketing, Recruiting oder Ops. Personen und Agenten arbeiten in seinen Threads.",
       "nameLabel": "Name",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "space-name",
       "descriptionLabel": "Beschreibung (optional)",
       "descriptionPlaceholder": "Wofür dieser Space da ist",
@@ -24569,7 +24569,7 @@
     },
     "view": {
       "welcomeTitle": "Willkommen in #{name}",
-      "welcomeEmpty": "Starte den ersten Thread in #{name}. Jede Nachricht startet einen neuen Thread.",
+      "welcomeEmpty": "Ein Space ordnet einen Arbeitsbereich. Personen und Agenten arbeiten hier in Threads: jede Nachricht startet einen.",
       "welcomeStart": "Hier beginnt #{name}.",
       "dmIntro": "Nur du und {agent} sehen diesen Space.",
       "today": "Heute",
@@ -25061,7 +25061,6 @@
       "dmSpaceName": "{a} und {b}",
       "heading": "Profil",
       "close": "Profil schließen",
-      "startPrivate": "Privaten Space mit {name} starten",
       "model": "Modell",
       "modelDefault": "Das Standardmodell des Projekts",
       "connectors": "Connectoren",
@@ -25069,12 +25068,15 @@
       "connectorsNone": "Keine Connectoren",
       "projectDefault": "Projektstandard",
       "projectDefaultYes": "Beantwortet neue Threads ohne festgelegten Agenten",
-      "defaultIn": "Standard in",
-      "defaultInNone": "Noch kein Space",
       "email": "E-Mail",
       "sharedSpaces": "Gemeinsame Spaces",
       "yourSpaces": "Deine Spaces",
-      "openPersonal": "Deinen Space öffnen"
+      "addTo": "Zu {space} hinzufügen",
+      "addedTo": "{agent} zu {space} hinzugefügt",
+      "addFailed": "Agent konnte nicht hinzugefügt werden. Versuch es noch einmal.",
+      "spacesIn": "In diesen Spaces",
+      "spacesInNone": "Noch in keinem Space",
+      "default": "Standard"
     }
   },
   "imageGen": {

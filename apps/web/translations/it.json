@@ -24538,9 +24538,9 @@
     },
     "create": {
       "title": "Crea uno spazio",
-      "description": "Tutti in questo progetto possono vedere e usare lo spazio.",
+      "description": "Uno spazio organizza un’area di lavoro, come Marketing, Assunzioni o Ops. Persone e agenti lavorano nei suoi thread.",
       "nameLabel": "Nome",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "nome-spazio",
       "descriptionLabel": "Descrizione (facoltativa)",
       "descriptionPlaceholder": "A cosa serve questo spazio",
@@ -24569,7 +24569,7 @@
     },
     "view": {
       "welcomeTitle": "Benvenuto in #{name}",
-      "welcomeEmpty": "Avvia il primo thread in #{name}. Ogni messaggio avvia un nuovo thread.",
+      "welcomeEmpty": "Uno spazio organizza un’area di lavoro. Persone e agenti lavorano qui nei thread: ogni messaggio ne avvia uno.",
       "welcomeStart": "Qui inizia #{name}.",
       "dmIntro": "Solo tu e {agent} vedete questo spazio.",
       "today": "Oggi",
@@ -25061,7 +25061,6 @@
       "dmSpaceName": "{a} e {b}",
       "heading": "Profilo",
       "close": "Chiudi profilo",
-      "startPrivate": "Avvia uno spazio privato con {name}",
       "model": "Modello",
       "modelDefault": "Il modello predefinito del progetto",
       "connectors": "Connettori",
@@ -25069,12 +25068,15 @@
       "connectorsNone": "Nessun connettore",
       "projectDefault": "Predefinito del progetto",
       "projectDefaultYes": "Risponde ai nuovi thread senza agente impostato",
-      "defaultIn": "Predefinito in",
-      "defaultInNone": "Ancora nessuno spazio",
       "email": "Email",
       "sharedSpaces": "Spazi in comune",
       "yourSpaces": "I tuoi spazi",
-      "openPersonal": "Apri il tuo spazio"
+      "addTo": "Aggiungi a {space}",
+      "addedTo": "{agent} aggiunto a {space}",
+      "addFailed": "Impossibile aggiungere l’agente. Riprova.",
+      "spacesIn": "Spazi di cui fa parte",
+      "spacesInNone": "Ancora in nessuno spazio",
+      "default": "Predefinito"
     }
   },
   "imageGen": {

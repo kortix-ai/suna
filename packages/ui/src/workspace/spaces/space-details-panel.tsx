@@ -21,7 +21,7 @@ import { UserAvatar } from '../../primitives/user-avatar';
 import { UiLink as Link, useUiViewer } from '../../providers/ui-provider';
 import { type Principal, PrincipalHover } from './principal-card';
 import { SpaceAvatar } from './space-avatar';
-import { isPersonalSpace, isPrivateSpace } from './space-identity';
+import { isPersonalSpace, isPrivateSpace, viewerDisplayName } from './space-identity';
 import { AddChannelMembersDialog, MemberAvatar } from './space-members';
 import { AddTabMenu, KIND_ICON, useSpaceTabs } from './space-tabs';
 import { agentLabel } from './space-timeline';
@@ -226,13 +226,13 @@ function PeopleSection({
   const t = useTranslations('spaces.panel');
   const viewer = useUiViewer();
   if (space.kind === 'dm') {
-    const fullName = viewer?.metadata?.full_name;
+    const displayName = viewerDisplayName(viewer);
     return (
       <Section title={t('people')}>
         <Row
-          avatar={<UserAvatar email={viewer?.email ?? ''} name={typeof fullName === 'string' ? fullName : undefined} size="sm" />}
+          avatar={<UserAvatar email={viewer?.email ?? ''} name={displayName} avatarUrl={typeof viewer?.metadata?.avatar_url === 'string' ? viewer.metadata.avatar_url : null} colorKey={viewer?.id} size="sm" />}
           name={t('you')}
-          card={viewer ? { projectId, principal: { kind: 'person', userId: viewer.id, name: typeof fullName === 'string' ? fullName : (viewer.email ?? '') } } : undefined}
+          card={viewer ? { projectId, principal: { kind: 'person', userId: viewer.id, name: displayName } } : undefined}
         />
       </Section>
     );

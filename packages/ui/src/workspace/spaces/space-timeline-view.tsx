@@ -51,7 +51,7 @@ import {
   type TimelineDay,
 } from './space-timeline';
 import { spaceDisplayName } from './space-identity';
-import { type Principal, PrincipalHover } from './principal-card';
+import { type Principal, PrincipalHover, useMemberIdByName } from './principal-card';
 import { usePersonalSpaceName } from './use-personal-space-name';
 
 /** What a thread waits on the viewer for: none, an answer (question or approval), or a review. */
@@ -358,7 +358,7 @@ function ThreadRow({
             />
           )
         ) : (
-          <UserAvatar email={session.owner_email ?? ''} name={name} avatarUrl={session.owner_avatar_url} size="lg" />
+          <UserAvatar email={session.owner_email ?? ''} name={name} avatarUrl={session.owner_avatar_url} colorKey={session.created_by} size="lg" />
         ),
         false,
       )}
@@ -376,7 +376,7 @@ function ThreadRow({
         </>
       }
     >
-      <ThreadPrompt session={session} onOpen={onOpen} />
+      <ThreadPrompt projectId={projectId} session={session} onOpen={onOpen} />
       {latestReply ? (
         <ThreadReplyLine projectId={projectId} session={session} space={space} needsYou={needsYou} showReply={!byKortix} onOpen={onOpen} />
       ) : (
@@ -416,7 +416,10 @@ function ThreadReplyLine({
   const agent = agentName ? agentLabel(agentName) : t('agentFallback');
   const working = threadIsWorking(session);
   const replies = session.reply_count ?? 0;
-  const reply = showReply ? session.result_excerpt?.replace(/\s+/g, ' ').trim() : null;
+  // An agent's own post: its reply line starts with the first reply.
+  const reply = showReply || replies > 0 ? session.result_excerpt?.replace(/\s+/g, ' ').trim() : null;
+  // Nothing to say yet (no reply, no work, nothing waiting): no line, as in Slack.
+  if (!needsYou && !working && !reply && replies === 0) return null;
   return (
     // The agent's tile opens its card; the rest of the line opens the thread (two controls, never one inside the other).
     <div className="-mx-1 mt-1 flex w-full max-w-2xl min-w-0 items-center gap-1 rounded-md pl-1">
@@ -439,9 +442,7 @@ function ThreadReplyLine({
           <span className="text-foreground min-w-0 truncate text-sm" title={reply}>
             {reply}
           </span>
-        ) : (
-          <span className="text-muted-foreground min-w-0 truncate text-xs">{t('openThread')}</span>
-        )}
+        ) : null}
         <span className="text-muted-foreground ml-auto shrink-0 pl-2 text-xs tabular-nums">
           {replies > 0 ? `${t('replies', { count: replies })} · ` : ''}
           <time dateTime={session.updated_at}>{relativeTime(session.updated_at, locale)}</time>
@@ -451,13 +452,33 @@ function ThreadReplyLine({
   );
 }
 
+/** A resolved @mention: its chip opens the person's or agent's card. An unresolved one stays a plain chip. */
+function MentionCard({ projectId, mention }: { projectId: string; mention: NonNullable<ReturnType<typeof postSegments>[number]['mention']> }) {
+  const chip = <MentionChip kind={mention.kind === 'person' ? 'person' : 'agent'} label={mention.label} />;
+  // A post stored before mentions carried ids: the member with that display name.
+  const byName = useMemberIdByName(projectId, mention.kind === 'person' && !mention.userId ? mention.label : null);
+  const userId = mention.userId ?? byName;
+  const principal: Principal | null =
+    mention.kind === 'agent' && mention.agent
+      ? { kind: 'agent', name: mention.agent }
+      : mention.kind === 'person' && userId
+        ? { kind: 'person', userId, name: mention.label }
+        : null;
+  if (!principal) return chip;
+  return (
+    <PrincipalHover projectId={projectId} principal={principal} className="align-baseline">
+      {chip}
+    </PrincipalHover>
+  );
+}
+
 /**
  * The thread's first prompt, clamped to 6 lines with "…". When it runs longer,
  * a quiet "Show more" unfolds it in place and "Show less" folds it back. A
  * prompt the server cut (`firstPromptTruncated`) ends in "…", and its "Show
  * more" opens the thread, whose transcript holds the whole message.
  */
-function ThreadPrompt({ session, onOpen }: { session: ProjectSession; onOpen: () => void }) {
+function ThreadPrompt({ projectId, session, onOpen }: { projectId: string; session: ProjectSession; onOpen: () => void }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const truncated = firstPromptTruncated(session);
   const text = threadMessageText(session);
@@ -487,7 +508,7 @@ function ThreadPrompt({ session, onOpen }: { session: ProjectSession; onOpen: ()
           // A space post: its resolved mentions as chips.
           postSegments(text, session.metadata?.chat_root_mentions).map((segment, i) =>
             segment.mention ? (
-              <MentionChip key={i} kind={segment.mention.kind === 'person' ? 'person' : 'agent'} label={segment.mention.label} />
+              <MentionCard key={i} projectId={projectId} mention={segment.mention} />
             ) : (
               <span key={i}>{segment.text}</span>
             ),

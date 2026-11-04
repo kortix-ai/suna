@@ -7,9 +7,10 @@ import {
   useProjectConfig,
   useProjectSpaceMembers,
   useProjectSpaces,
+  useUpdateProjectSpace,
 } from '@kortix/sdk/react';
 import { isMyKortixAgentName, spaceSlug } from '@kortix/shared';
-import { ChatCircleIcon, LockSimpleIcon } from '@phosphor-icons/react';
+import { ChatCircleIcon, PlusIcon } from '@phosphor-icons/react';
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
 
 import { useTranslations } from '../../i18n';
@@ -23,7 +24,7 @@ import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
 import { Label } from '../../primitives/label';
-import { errorToast } from '../../primitives/toast';
+import { errorToast, successToast } from '../../primitives/toast';
 import { UserAvatar } from '../../primitives/user-avatar';
 import { UiLink as Link, useUiRouter, useUiViewer, useUiViewerId } from '../../providers/ui-provider';
 import { SpaceAvatar } from './space-avatar';
@@ -57,6 +58,35 @@ export function parseProfileParam(value: string | null): Principal | null {
  */
 export const ProfileContext = createContext<((principal: Principal) => void) | null>(null);
 
+/** The space the view shows: an agent's card offers "Add to <space>". Null outside a space view. */
+export const CurrentSpaceContext = createContext<ProjectSpace | null>(null);
+
+/**
+ * "Add to <current space>": agents are members of spaces. Null when the view
+ * has no channel, the viewer may not edit its agents, or the agent is in it.
+ */
+function useAddAgentToSpace(projectId: string, agentName: string): { label: string; run: () => void; pending: boolean } | null {
+  const t = useTranslations('spaces.profile');
+  const space = useContext(CurrentSpaceContext);
+  const update = useUpdateProjectSpace(projectId);
+  if (!space || space.kind !== 'channel' || space.can_edit !== true) return null;
+  const agents = space.agents ?? [];
+  if (agents.includes(agentName)) return null;
+  const name = space.name || space.slug || '';
+  return {
+    label: t('addTo', { space: name }),
+    pending: update.isPending,
+    run: () =>
+      update.mutate(
+        { spaceId: space.space_id, input: { agents: [...agents, agentName] } },
+        {
+          onSuccess: () => successToast(t('addedTo', { agent: agentLabel(agentName), space: name })),
+          onError: () => errorToast(t('addFailed')),
+        },
+      ),
+  };
+}
+
 /** The project's people with their name, face, email and account role. Every source is a read the UI already makes. */
 function usePeopleDirectory(projectId: string) {
   const spaces = useProjectSpaces(projectId);
@@ -74,6 +104,17 @@ function usePeopleDirectory(projectId: string) {
     }
     return byId;
   }, [members.data, accountMembers.data]);
+}
+
+/** A project member's user id by their display name: a mention stored before mentions carried ids. */
+export function useMemberIdByName(projectId: string, name: string | null): string | null {
+  const spaces = useProjectSpaces(projectId);
+  const general = spaces.data?.find((space) => space.is_default)?.space_id;
+  const members = useProjectSpaceMembers(projectId, name ? general : null);
+  if (!name) return null;
+  const hits = (members.data?.members ?? []).filter((member) => member.name === name);
+  // Two people with one name: no guess.
+  return hits.length === 1 ? hits[0]!.user_id : null;
 }
 
 /** A person with every field the directory knows filled in. */
@@ -184,6 +225,7 @@ function AgentSummary({ projectId, name, onOpenProfile }: { projectId: string; n
   const t = useTranslations('spaces.profile');
   const config = useProjectConfig(projectId);
   const agent = config?.agents.find((item) => item.name === name);
+  const add = useAddAgentToSpace(projectId, name);
   return (
     <div className="space-y-3 p-4">
       <div className="flex items-start gap-3">
@@ -194,10 +236,20 @@ function AgentSummary({ projectId, name, onOpenProfile }: { projectId: string; n
         </div>
       </div>
       {agent?.description ? <p className="text-muted-foreground line-clamp-3 text-xs text-pretty">{agent.description}</p> : null}
-      {onOpenProfile ? (
-        <Button variant="outline" size="sm" className="w-full" onClick={onOpenProfile}>
-          {t('openProfile')}
-        </Button>
+      {add || onOpenProfile ? (
+        <div className="flex gap-2">
+          {add ? (
+            <Button variant="outline" size="sm" className="min-w-0 flex-1 gap-1.5" onClick={add.run} disabled={add.pending} aria-busy={add.pending || undefined}>
+              <PlusIcon className="size-3.5 shrink-0" />
+              <span className="truncate">{add.label}</span>
+            </Button>
+          ) : null}
+          {onOpenProfile ? (
+            <Button variant={add ? 'ghost' : 'outline'} size="sm" className="flex-1" onClick={onOpenProfile}>
+              {t('openProfile')}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -219,7 +271,7 @@ function PersonSummary({
   return (
     <div className="space-y-3 p-4">
       <div className="flex items-start gap-3">
-        <UserAvatar email={person.email ?? ''} name={person.name} avatarUrl={person.avatarUrl} size="lg" />
+        <UserAvatar email={person.email ?? ''} name={person.name} avatarUrl={person.avatarUrl} colorKey={principal.userId} size="lg" />
         <div className="min-w-0 flex-1 space-y-0.5">
           <p className="flex min-w-0 items-baseline gap-1.5 text-sm font-semibold">
             <span className="truncate">{person.name}</span>
@@ -251,8 +303,9 @@ function PersonSummary({
  * The Profile panel, in the right slot of a space (where a thread or the
  * Details open). A person: their face, name, role, email, the spaces both of
  * you are in, and "Message". An agent: its mark, description, model, the
- * spaces it answers first in, its connector reach, and "Start a private
- * space". Read-only besides those actions.
+ * spaces it is in (its default marked), its connector reach, and "Add to
+ * <this space>". Read-only besides those actions. Agents are members of
+ * spaces, never a space of their own.
  */
 export function ProfilePanel({ projectId, principal, onClose }: { projectId: string; principal: Principal; onClose: () => void }) {
   const t = useTranslations('spaces.profile');
@@ -295,9 +348,11 @@ function AgentProfile({ projectId, name }: { projectId: string; name: string }) 
   const personalName = usePersonalSpaceName();
   const agent = config?.agents.find((item) => item.name === name);
   const projectDefault = config?.default_agent ?? config?.open_code_default_agent ?? null;
-  const defaultIn = (spaces.data ?? []).filter(
-    (space) => !space.archived_at && (space.kind === 'dm' ? space.dm_agent_name === name : space.agents?.[0] === name),
+  // The spaces it works in: channels that list it, and the person's own space for My Kortix.
+  const memberOf = (spaces.data ?? []).filter(
+    (space) => !space.archived_at && (space.kind === 'channel' ? !!space.agents?.includes(name) : isPersonalSpace(space) && isMyKortixAgentName(name)),
   );
+  const add = useAddAgentToSpace(projectId, name);
   const connectors = agent?.scope?.connectors;
   const label = agentLabel(name);
   return (
@@ -307,13 +362,12 @@ function AgentProfile({ projectId, name }: { projectId: string; name: string }) 
         <h3 className="text-lg font-semibold">{label}</h3>
         <p className="text-muted-foreground text-sm text-pretty">{agent?.description || t('agent')}</p>
       </div>
-      <Button asChild variant="outline" size="sm" className="w-full gap-1.5">
-        {/* My Kortix's private space is the person's own space. */}
-        <Link href={isMyKortixAgentName(name) ? `${uiRoutes().project(projectId)}/chat` : uiRoutes().dm(projectId, name)}>
-          <LockSimpleIcon className="size-3.5 shrink-0" />
-          {isMyKortixAgentName(name) ? t('openPersonal') : t('startPrivate', { name: label })}
-        </Link>
-      </Button>
+      {add ? (
+        <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={add.run} disabled={add.pending} aria-busy={add.pending || undefined}>
+          <PlusIcon className="size-3.5 shrink-0" />
+          <span className="truncate">{add.label}</span>
+        </Button>
+      ) : null}
       <dl className="divide-border divide-y">
         <ProfileFact label={t('model')}>{agent?.model || t('modelDefault')}</ProfileFact>
         <ProfileFact label={t('connectors')}>
@@ -325,7 +379,14 @@ function AgentProfile({ projectId, name }: { projectId: string; name: string }) 
         </ProfileFact>
         {projectDefault === name ? <ProfileFact label={t('projectDefault')}>{t('projectDefaultYes')}</ProfileFact> : null}
       </dl>
-      <SpaceList title={t('defaultIn')} spaces={defaultIn} projectId={projectId} personalName={personalName} empty={t('defaultInNone')} />
+      <SpaceList
+        title={t('spacesIn')}
+        spaces={memberOf}
+        projectId={projectId}
+        personalName={personalName}
+        empty={t('spacesInNone')}
+        tagFor={(space) => (space.kind === 'channel' && space.agents?.[0] === name ? t('default') : null)}
+      />
     </div>
   );
 }
@@ -340,7 +401,7 @@ function PersonProfile({ projectId, principal }: { projectId: string; principal:
   return (
     <div className="space-y-5 px-5 pb-6">
       <div className="flex flex-col items-center gap-2 pt-2 text-center">
-        <UserAvatar email={person.email ?? ''} name={person.name} avatarUrl={person.avatarUrl} size="xl" />
+        <UserAvatar email={person.email ?? ''} name={person.name} avatarUrl={person.avatarUrl} colorKey={principal.userId} size="xl" />
         <h3 className="flex items-baseline gap-1.5 text-lg font-semibold">
           {person.name}
           {person.isViewer ? <span className="text-muted-foreground text-sm font-normal">{t('you')}</span> : null}
@@ -385,12 +446,15 @@ function SpaceList({
   projectId,
   personalName,
   empty,
+  tagFor,
 }: {
   title: string;
   spaces: readonly ProjectSpace[];
   projectId: string;
   personalName: string;
   empty: string;
+  /** A muted tag at the row's end ("Default"). */
+  tagFor?: (space: ProjectSpace) => string | null;
 }) {
   return (
     <section className="space-y-1">
@@ -398,19 +462,15 @@ function SpaceList({
       {spaces.length === 0 ? <p className="text-muted-foreground px-2 py-1 text-xs">{empty}</p> : null}
       <ul>
         {spaces.map((space) => (
-          <SpaceLinkRow key={space.space_id} projectId={projectId} space={space} name={spaceDisplayName(space, personalName)} />
+          <SpaceLinkRow key={space.space_id} projectId={projectId} space={space} name={spaceDisplayName(space, personalName)} tag={tagFor?.(space)} />
         ))}
       </ul>
     </section>
   );
 }
 
-function SpaceLinkRow({ projectId, space, name }: { projectId: string; space: ProjectSpace; name: string }) {
-  const href = isPersonalSpace(space)
-    ? `${uiRoutes().project(projectId)}/chat`
-    : space.kind === 'dm'
-      ? uiRoutes().dm(projectId, space.dm_agent_name ?? '')
-      : uiRoutes().channel(projectId, space.slug ?? '');
+function SpaceLinkRow({ projectId, space, name, tag }: { projectId: string; space: ProjectSpace; name: string; tag?: string | null }) {
+  const href = space.kind === 'dm' ? `${uiRoutes().project(projectId)}/chat` : uiRoutes().channel(projectId, space.slug ?? '');
   return (
     <li>
       <Link
@@ -419,6 +479,7 @@ function SpaceLinkRow({ projectId, space, name }: { projectId: string; space: Pr
       >
         <SpaceAvatar space={space} size="sm" label={name} />
         <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
+        {tag ? <span className="text-muted-foreground shrink-0 text-xs">{tag}</span> : null}
       </Link>
     </li>
   );

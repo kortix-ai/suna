@@ -146,6 +146,35 @@ export function ProjectSidebar({
     return () => window.removeEventListener('keydown', handler);
   }, [handleNewSession]);
 
+  // The connect rows and the upgrade call to action. Spaces on (`chat`), they
+  // live inside "More": the bottom of the sidebar is More and the status alerts.
+  const connectRows = (
+    <>
+              {/* Connect MCP over Connect your computer: one block, 1px seam,
+                  inner corners rounded-sm. Either row can be absent (dismissed,
+                  or a paired computer), so the corners come from the siblings
+                  that render and an empty block collapses. A plain <li>, not
+                  SidebarMenuItem: its `group/menu-item` would make hovering one
+                  row light up the other row's badge and dismiss. */}
+              <li className="not-has-[li]:hidden">
+                <SidebarMenu className="gap-px [&>li:not(:first-child)>[data-sidebar=menu-button]]:rounded-t-sm [&>li:not(:last-child)>[data-sidebar=menu-button]]:rounded-b-sm">
+                  <ProjectMcpNavItem onOpenConnect={() => setConnectMcpOpen(true)} />
+                  <ProjectComputerNavItem
+                    projectId={projectId}
+                    onOpenConnect={() => setComputerConnectOpen(true)}
+                  />
+                  {chrome ? (
+                    <ProjectChromeNavItem onOpenConnect={() => useAppsModalStore.getState().setOpen(true)} />
+                  ) : null}
+                </SidebarMenu>
+              </li>
+              {/* Last (Jay, 2026-09-03). It is the only paid call to action in
+                  this group, and above the nav rows it put a sell between the
+                  user and the links they actually use. */}
+              <SidebarUpgradeButton accountId={accountId} />
+    </>
+  );
+
   return (
     // The New agent modal mounts beside <Sidebar>, outside the mobile sheet.
     <NewAgentModalProvider projectId={projectId}>
@@ -330,7 +359,7 @@ export function ProjectSidebar({
                 <div className="min-h-0 flex-1">
                   <ProjectSpacesNav projectId={projectId} />
                 </div>
-                <SidebarMoreGroup projectId={projectId} />
+                <SidebarMoreGroup projectId={projectId} footer={<SidebarMenu className="gap-1">{connectRows}</SidebarMenu>} />
               </>
             ) : (
               <ProjectSessionList projectId={projectId} />
@@ -346,28 +375,7 @@ export function ProjectSidebar({
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectManifestIssuesAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />
-              {/* Connect MCP over Connect your computer: one block, 1px seam,
-                  inner corners rounded-sm. Either row can be absent (dismissed,
-                  or a paired computer), so the corners come from the siblings
-                  that render and an empty block collapses. A plain <li>, not
-                  SidebarMenuItem: its `group/menu-item` would make hovering one
-                  row light up the other row's badge and dismiss. */}
-              <li className="not-has-[li]:hidden">
-                <SidebarMenu className="gap-px [&>li:not(:first-child)>[data-sidebar=menu-button]]:rounded-t-sm [&>li:not(:last-child)>[data-sidebar=menu-button]]:rounded-b-sm">
-                  <ProjectMcpNavItem onOpenConnect={() => setConnectMcpOpen(true)} />
-                  <ProjectComputerNavItem
-                    projectId={projectId}
-                    onOpenConnect={() => setComputerConnectOpen(true)}
-                  />
-                  {chrome ? (
-                    <ProjectChromeNavItem onOpenConnect={() => useAppsModalStore.getState().setOpen(true)} />
-                  ) : null}
-                </SidebarMenu>
-              </li>
-              {/* Last (Jay, 2026-09-03). It is the only paid call to action in
-                  this group, and above the nav rows it put a sell between the
-                  user and the links they actually use. */}
-              <SidebarUpgradeButton accountId={accountId} />
+              {chat ? null : connectRows}
             </SidebarMenu>
           </SidebarGroup>
         </div>

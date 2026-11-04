@@ -24538,9 +24538,9 @@
     },
     "create": {
       "title": "Créer un espace",
-      "description": "Tout le monde dans ce projet peut voir et utiliser l’espace.",
+      "description": "Un espace organise un domaine de travail, comme Marketing, Recrutement ou Ops. Les personnes et les agents travaillent dans ses fils.",
       "nameLabel": "Nom",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "nom-de-l-espace",
       "descriptionLabel": "Description (facultative)",
       "descriptionPlaceholder": "À quoi sert cet espace",
@@ -24569,7 +24569,7 @@
     },
     "view": {
       "welcomeTitle": "Bienvenue dans #{name}",
-      "welcomeEmpty": "Lancez le premier fil dans #{name}. Chaque message lance un nouveau fil.",
+      "welcomeEmpty": "Un espace organise un domaine de travail. Les personnes et les agents y travaillent en fils : chaque message en démarre un.",
       "welcomeStart": "Voici le début de #{name}.",
       "dmIntro": "Seuls vous et {agent} voyez cet espace.",
       "today": "Aujourd'hui",
@@ -25061,7 +25061,6 @@
       "dmSpaceName": "{a} et {b}",
       "heading": "Profil",
       "close": "Fermer le profil",
-      "startPrivate": "Démarrer un espace privé avec {name}",
       "model": "Modèle",
       "modelDefault": "Le modèle par défaut du projet",
       "connectors": "Connecteurs",
@@ -25069,12 +25068,15 @@
       "connectorsNone": "Aucun connecteur",
       "projectDefault": "Par défaut du projet",
       "projectDefaultYes": "Répond aux nouveaux fils sans agent défini",
-      "defaultIn": "Par défaut dans",
-      "defaultInNone": "Aucun espace pour l’instant",
       "email": "E-mail",
       "sharedSpaces": "Espaces en commun",
       "yourSpaces": "Vos espaces",
-      "openPersonal": "Ouvrir votre espace"
+      "addTo": "Ajouter à {space}",
+      "addedTo": "{agent} ajouté à {space}",
+      "addFailed": "Impossible d’ajouter l’agent. Réessayez.",
+      "spacesIn": "Espaces dont il fait partie",
+      "spacesInNone": "Dans aucun espace pour l’instant",
+      "default": "Par défaut"
     }
   },
   "imageGen": {

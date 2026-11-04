@@ -149,7 +149,8 @@ export function rootPostAuthor(session: ProjectSession): string | null {
 /** One run of a post's text: plain, or a mention chip. */
 export interface PostSegment {
   text: string;
-  mention?: { kind: 'person' | 'agent'; label: string };
+  /** `userId` names a person, `agent` an agent, when the server resolved them. */
+  mention?: { kind: 'person' | 'agent'; label: string; userId?: string; agent?: string };
 }
 
 /**
@@ -159,12 +160,18 @@ export interface PostSegment {
  * a word only at the start or after whitespace.
  */
 export function postSegments(text: string, raw: unknown): PostSegment[] {
-  const mentions = new Map<string, { kind: 'person' | 'agent'; label: string }>();
+  const mentions = new Map<string, NonNullable<PostSegment['mention']>>();
   if (Array.isArray(raw)) {
     for (const item of raw as Array<Record<string, unknown>>) {
       if (!item || typeof item.token !== 'string' || typeof item.label !== 'string') continue;
       if (item.kind !== 'person' && item.kind !== 'agent') continue;
-      mentions.set(item.token.toLowerCase(), { kind: item.kind, label: item.label });
+      mentions.set(item.token.toLowerCase(), {
+        kind: item.kind,
+        label: item.label,
+        ...(typeof item.userId === 'string' ? { userId: item.userId } : {}),
+        // An agent mention's token is the agent's name.
+        ...(item.kind === 'agent' ? { agent: item.token } : {}),
+      });
     }
   }
   if (mentions.size === 0) return [{ text }];

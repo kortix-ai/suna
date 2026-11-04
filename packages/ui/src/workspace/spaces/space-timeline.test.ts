@@ -205,16 +205,16 @@ describe('thread filters', () => {
 
 describe('a space post’s mentions', () => {
   const mentions = [
-    { token: 'ana', kind: 'person', label: 'Ana Lima' },
+    { token: 'ana', kind: 'person', label: 'Ana Lima', userId: 'u-ana' },
     { token: 'researcher', kind: 'agent', label: 'researcher' },
   ];
 
-  test('each resolved @token becomes a chip with the name; others stay text', () => {
+  test('each resolved @token becomes a chip with the name and who it names; others stay text', () => {
     expect(postSegments('Done. @Ana, @researcher has the notes; mail me@example.test or @bob.', mentions)).toEqual([
       { text: 'Done. ' },
-      { text: '@Ana', mention: { kind: 'person', label: 'Ana Lima' } },
+      { text: '@Ana', mention: { kind: 'person', label: 'Ana Lima', userId: 'u-ana' } },
       { text: ', ' },
-      { text: '@researcher', mention: { kind: 'agent', label: 'researcher' } },
+      { text: '@researcher', mention: { kind: 'agent', label: 'researcher', agent: 'researcher' } },
       { text: ' has the notes; mail me@example.test or @bob.' },
     ]);
   });

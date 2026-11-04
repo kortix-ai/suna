@@ -2657,7 +2657,14 @@ function SessionTurnImpl(props: SessionTurnProps) {
                   label={sender ?? userContent.peerMessage?.from ?? ''}
                 />
               ) : (
-                <UserAvatar email={person?.email ?? ''} name={personName} avatarUrl={person?.avatarUrl} size="lg" />
+                <UserAvatar
+                  email={person?.email ?? ''}
+                  name={personName}
+                  avatarUrl={person?.avatarUrl}
+                  // A space's thread keys the colour on the user id, as the space's timeline does.
+                  colorKey={userAuthor?.kind === 'person' ? userAuthor.userId : null}
+                  size="lg"
+                />
               ),
               'avatar',
             )}

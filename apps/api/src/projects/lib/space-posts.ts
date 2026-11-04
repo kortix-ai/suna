@@ -15,7 +15,8 @@
 //
 // Who may post: only a session, for its person, where that person may post
 // themself: a channel the session can see (a private channel only from its
-// own threads, `spaceAccessFor`), or a DM the person owns, from a private
+// own threads, `spaceAccessFor`), or a private space the person owns (a
+// `dm` row: their personal space, or their private space with an agent), from a private
 // session that works only for them (`threadWorksOnlyForPerson`).
 import { projectSessions, projectSpaceMembers, projects } from '@kortix/db';
 import { isMyKortixAgentName, SPACE_POST_SUMMARY } from '@kortix/shared';
@@ -183,7 +184,7 @@ export async function postIntoSpace(input: {
   if (!canSeeSpace(space, await spaceAccessFor(projectId, person, callerSessionId))) return notFound;
   // A DM is the person's own: only a session whose prompts come from them alone writes there.
   if (space.kind === 'dm' && !(await threadWorksOnlyForPerson(projectId, thread))) {
-    return { status: 403, body: { error: 'Only a private session that works only for this person posts into their direct message', code: 'not_the_persons_chat' } };
+    return { status: 403, body: { error: 'Only a private session that works only for this person posts into their private space', code: 'not_the_persons_chat' } };
   }
   const sender = await loadPeerSession(callerSessionId);
   if (!sender) return notFound;
@@ -197,9 +198,11 @@ export async function postIntoSpace(input: {
       : null;
   const people = inSpace ? candidates.filter((c) => inSpace.has(c.userId)) : candidates;
   const mentions = resolveMentions(input.text, people, [...new Set([CHAT_AGENT, ...agents])]);
-  const place = space.kind === 'channel' ? `#${space.slug ?? space.name}` : 'your direct message';
+  // A `dm` row is the person's own space (My Kortix) or their private space with an agent: never "direct message".
+  const place = space.kind === 'channel' ? `#${space.slug ?? space.name}` : 'your space';
   const author = isMyKortixAgentName(authorAgent) ? 'Kortix' : authorAgent;
-  const wire = mentions.map(({ token, kind, label }) => ({ token, kind, label }));
+  // A person's user id rides along: the web opens their card from the chip.
+  const wire = mentions.map(({ token, kind, label, userId }) => ({ token, kind, label, ...(userId ? { userId } : {}) }));
 
   if (input.threadId) {
     const target = isUuid(input.threadId) ? await topLevelThreadIn(projectId, space.spaceId, input.threadId) : null;

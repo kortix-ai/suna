@@ -24538,9 +24538,9 @@
     },
     "create": {
       "title": "创建空间",
-      "description": "此项目中的所有人都可以查看和使用该空间。",
+      "description": "空间用于整理一个工作领域，例如市场、招聘或运营。成员和智能体在它的话题中协作。",
       "nameLabel": "名称",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "市场",
       "slugPlaceholder": "space-name",
       "descriptionLabel": "描述（可选）",
       "descriptionPlaceholder": "这个空间的用途",
@@ -24569,7 +24569,7 @@
     },
     "view": {
       "welcomeTitle": "欢迎来到 #{name}",
-      "welcomeEmpty": "在 #{name} 中开始第一个话题。每条消息都会开始一个新话题。",
+      "welcomeEmpty": "空间用于整理一个工作领域。成员和智能体在这里按话题协作：每条消息都会开启一个话题。",
       "welcomeStart": "这里是 #{name} 的开始。",
       "dmIntro": "只有你和 {agent} 能看到这个空间。",
       "today": "今天",
@@ -25061,7 +25061,6 @@
       "dmSpaceName": "{a} 和 {b}",
       "heading": "资料",
       "close": "关闭资料",
-      "startPrivate": "与 {name} 开启私密空间",
       "model": "模型",
       "modelDefault": "项目默认模型",
       "connectors": "连接器",
@@ -25069,12 +25068,15 @@
       "connectorsNone": "无连接器",
       "projectDefault": "项目默认",
       "projectDefaultYes": "回复未指定智能体的新话题",
-      "defaultIn": "默认于",
-      "defaultInNone": "暂无空间",
       "email": "邮箱",
       "sharedSpaces": "共同的空间",
       "yourSpaces": "你的空间",
-      "openPersonal": "打开你的空间"
+      "addTo": "添加到 {space}",
+      "addedTo": "已将 {agent} 添加到 {space}",
+      "addFailed": "无法添加智能体。请重试。",
+      "spacesIn": "所在空间",
+      "spacesInNone": "尚未加入任何空间",
+      "default": "默认"
     }
   },
   "imageGen": {

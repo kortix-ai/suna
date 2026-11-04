@@ -55,6 +55,7 @@ export function SpaceRosterButton({ roster, onViewAll }: { roster: Roster; onVie
                   email={person.email ?? ''}
                   name={participantLabel(person)}
                   avatarUrl={person.avatarUrl}
+                  colorKey={person.id}
                   size="xs"
                   ring
                 />
@@ -101,6 +102,7 @@ export function SpaceRosterButton({ roster, onViewAll }: { roster: Roster; onVie
                     email={person.email ?? ''}
                     name={participantLabel(person)}
                     avatarUrl={person.avatarUrl}
+                    colorKey={person.id}
                     size="md"
                   />
                   {/* The display name only: an email is not a name. */}

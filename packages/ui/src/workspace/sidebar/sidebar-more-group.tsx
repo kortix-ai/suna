@@ -1,6 +1,7 @@
 'use client';
 
 import { CaretRightIcon, DotsThreeIcon } from '@phosphor-icons/react';
+import type { ReactNode } from 'react';
 
 import { useTranslations } from '../../i18n';
 import { selectExpandedIds, useSessionExpandedStore } from '../../internal/stores/session-expanded-store';
@@ -16,11 +17,12 @@ const MORE_SECTION_ID = 'section:sidebar-more';
 /**
  * Spaces on (`chat`): one group pinned at the bottom of the sidebar that
  * holds everything that is not a space: Customize, Drive, Apps, Artifacts
- * and the session list (with its own "+", New session as before). Closed by
+ * the session list (with its own "+", New session as before), and the
+ * connect and upgrade rows (`footer`). Closed by
  * default; the choice persists per project. The header is a real button
  * (`aria-expanded`), so the keyboard opens it.
  */
-export function SidebarMoreGroup({ projectId }: { projectId: string }) {
+export function SidebarMoreGroup({ projectId, footer }: { projectId: string; /** Connect rows and the upgrade row, at the end of the group. */ footer?: ReactNode }) {
   const t = useTranslations('sidebar.spaces');
   const expanded = useSessionExpandedStore(selectExpandedIds(projectId));
   const toggleExpanded = useSessionExpandedStore((state) => state.toggleExpanded);
@@ -51,6 +53,7 @@ export function SidebarMoreGroup({ projectId }: { projectId: string }) {
           <ProjectNavItems projectId={projectId} />
         </SidebarMenu>
         <ProjectSessionList projectId={projectId} secondary />
+        {footer}
       </DisclosureContent>
     </Disclosure>
   );

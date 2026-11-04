@@ -8,7 +8,8 @@ import { agentLabel, threadMessageText } from './space-timeline';
  * model keeps `kind: 'dm'` rows, and this module draws them as private spaces.
  *
  * - The person's DM with My Kortix is their personal space: "<First>'s space".
- * - Another DM is a private space named by its agent.
+ * - A DM with any other agent is never shown: a space is never "an agent";
+ *   agents are members of spaces. Its row stays in the database.
  * - A channel is its name.
  */
 
@@ -32,6 +33,19 @@ export function viewerFirstName(metadata: Readonly<Record<string, unknown>> | un
     if (first && !first.includes('@')) return first;
   }
   return null;
+}
+
+/**
+ * The viewer as every Spaces surface draws them: the profile name, else the
+ * email's local part (the member list's rule). With `colorKey` = their user
+ * id, one person is one avatar everywhere.
+ */
+export function viewerDisplayName(viewer: { email?: string | null; metadata?: Readonly<Record<string, unknown>> } | undefined): string {
+  for (const key of ['full_name', 'name'] as const) {
+    const value = viewer?.metadata?.[key];
+    if (typeof value === 'string' && value.trim() && !value.includes('@')) return value.trim();
+  }
+  return viewer?.email?.split('@')[0] ?? '';
 }
 
 /**
@@ -81,12 +95,12 @@ export function spacePreview(sessions: readonly ProjectSession[]): string | null
 }
 
 /**
- * The Spaces list, in order: the personal space first, then every other
- * live space the person sees (channels, then their other private spaces),
- * in the server's order.
+ * The Spaces list, in order: the personal space first, then every live
+ * channel the person sees, in the server's order. DMs with other agents are
+ * left out (agents are members of spaces, not spaces).
  */
 export function orderSpaces(spaces: readonly ProjectSpace[]): { personal: ProjectSpace | null; others: ProjectSpace[] } {
   const live = spaces.filter((space) => !space.archived_at);
   const personal = live.find(isPersonalSpace) ?? null;
-  return { personal, others: live.filter((space) => space !== personal) };
+  return { personal, others: live.filter((space) => space.kind === 'channel') };
 }

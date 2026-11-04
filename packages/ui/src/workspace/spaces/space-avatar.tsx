@@ -6,7 +6,7 @@ import { AgentMark, type AgentMarkSize } from '../../internal/components/agent-m
 import { cn } from '../../lib/utils';
 import { UserAvatar } from '../../primitives/user-avatar';
 import { useUiViewer } from '../../providers/ui-provider';
-import { isPersonalSpace } from './space-identity';
+import { isPersonalSpace, viewerDisplayName } from './space-identity';
 
 /**
  * Tile edge in px and the pixel mark inside it, per density. The edges match
@@ -48,15 +48,14 @@ export function SpaceAvatar({
   const s = SIZES[size];
   if (personal || (space && isPersonalSpace(space))) {
     const meta = viewer?.metadata;
-    const name = typeof meta?.full_name === 'string' ? meta.full_name : typeof meta?.name === 'string' ? meta.name : undefined;
     const avatarUrl = typeof meta?.avatar_url === 'string' ? meta.avatar_url : null;
     return (
       <span aria-hidden data-slot="space-avatar" className={cn('inline-flex shrink-0 [&_[data-slot=avatar]]:rounded-md [&_[data-slot=avatar]]:after:rounded-md', className)}>
-        <UserAvatar email={viewer?.email ?? ''} name={name} avatarUrl={avatarUrl} size={s.person} />
+        <UserAvatar email={viewer?.email ?? ''} name={viewerDisplayName(viewer)} avatarUrl={avatarUrl} colorKey={viewer?.id} size={s.person} />
       </span>
     );
   }
-  // A DM-backed private space with one agent wears that agent's own mark.
-  const slug = space?.kind === 'dm' && space.dm_agent_name ? space.dm_agent_name : `space:${space?.space_id ?? label}`;
+  // A space wears its own mark, never an agent's: agents are its members.
+  const slug = `space:${space?.space_id ?? label}`;
   return <AgentMark slug={slug} size={s.mark} tile={s.tile} label={label} className={cn(size !== 'sm' && 'rounded-md', className)} />;
 }

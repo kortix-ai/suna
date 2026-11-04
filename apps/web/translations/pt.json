@@ -24538,9 +24538,9 @@
     },
     "create": {
       "title": "Criar um espaço",
-      "description": "Todos neste projeto podem ver e usar o espaço.",
+      "description": "Um espaço organiza uma área de trabalho, como Marketing, Contratação ou Operações. Pessoas e agentes trabalham nas suas conversas.",
       "nameLabel": "Nome",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "nome-do-espaço",
       "descriptionLabel": "Descrição (opcional)",
       "descriptionPlaceholder": "Para que serve este espaço",
@@ -24569,7 +24569,7 @@
     },
     "view": {
       "welcomeTitle": "Boas-vindas a #{name}",
-      "welcomeEmpty": "Comece o primeiro thread em #{name}. Cada mensagem começa um novo thread.",
+      "welcomeEmpty": "Um espaço organiza uma área de trabalho. Pessoas e agentes trabalham aqui em conversas: cada mensagem inicia uma.",
       "welcomeStart": "Este é o começo de #{name}.",
       "dmIntro": "Só você e {agent} veem este espaço.",
       "today": "Hoje",
@@ -25061,7 +25061,6 @@
       "dmSpaceName": "{a} e {b}",
       "heading": "Perfil",
       "close": "Fechar perfil",
-      "startPrivate": "Iniciar um espaço privado com {name}",
       "model": "Modelo",
       "modelDefault": "O modelo padrão do projeto",
       "connectors": "Conectores",
@@ -25069,12 +25068,15 @@
       "connectorsNone": "Nenhum conector",
       "projectDefault": "Padrão do projeto",
       "projectDefaultYes": "Responde novas conversas sem agente definido",
-      "defaultIn": "Padrão em",
-      "defaultInNone": "Nenhum espaço ainda",
       "email": "E-mail",
       "sharedSpaces": "Espaços em comum",
       "yourSpaces": "Seus espaços",
-      "openPersonal": "Abrir seu espaço"
+      "addTo": "Adicionar a {space}",
+      "addedTo": "{agent} adicionado a {space}",
+      "addFailed": "Não foi possível adicionar o agente. Tente de novo.",
+      "spacesIn": "Espaços em que está",
+      "spacesInNone": "Ainda em nenhum espaço",
+      "default": "Padrão"
     }
   },
   "imageGen": {

@@ -24538,9 +24538,9 @@
     },
     "create": {
       "title": "スペースを作成",
-      "description": "このプロジェクトの全員がスペースを表示して使用できます。",
+      "description": "スペースは、マーケティング、採用、運用などの 1 つの業務領域を整理します。メンバーとエージェントはそのスレッドで作業します。",
       "nameLabel": "名前",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "マーケティング",
       "slugPlaceholder": "space-name",
       "descriptionLabel": "説明（任意）",
       "descriptionPlaceholder": "このスペースの用途",
@@ -24569,7 +24569,7 @@
     },
     "view": {
       "welcomeTitle": "#{name} へようこそ",
-      "welcomeEmpty": "#{name} で最初のスレッドを始めましょう。メッセージごとに新しいスレッドが始まります。",
+      "welcomeEmpty": "スペースは 1 つの業務領域を整理する場所です。メンバーとエージェントはここでスレッドごとに作業し、各メッセージが新しいスレッドになります。",
       "welcomeStart": "ここが #{name} の始まりです。",
       "dmIntro": "このスペースを見られるのはあなたと {agent} だけです。",
       "today": "今日",
@@ -25061,7 +25061,6 @@
       "dmSpaceName": "{a} と {b}",
       "heading": "プロフィール",
       "close": "プロフィールを閉じる",
-      "startPrivate": "{name} と非公開スペースを始める",
       "model": "モデル",
       "modelDefault": "プロジェクトのデフォルトモデル",
       "connectors": "コネクタ",
@@ -25069,12 +25068,15 @@
       "connectorsNone": "コネクタなし",
       "projectDefault": "プロジェクトのデフォルト",
       "projectDefaultYes": "エージェント未指定の新しいスレッドに応答します",
-      "defaultIn": "デフォルトのスペース",
-      "defaultInNone": "まだありません",
       "email": "メール",
       "sharedSpaces": "共通のスペース",
       "yourSpaces": "あなたのスペース",
-      "openPersonal": "あなたのスペースを開く"
+      "addTo": "{space} に追加",
+      "addedTo": "{agent} を {space} に追加しました",
+      "addFailed": "エージェントを追加できませんでした。もう一度お試しください。",
+      "spacesIn": "参加しているスペース",
+      "spacesInNone": "まだどのスペースにも参加していません",
+      "default": "デフォルト"
     }
   },
   "imageGen": {

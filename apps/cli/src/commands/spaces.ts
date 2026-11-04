@@ -1,11 +1,11 @@
 /**
- * `kortix spaces` — read and change a space (a channel or a DM) of the
+ * `kortix spaces` — read and change a space (a channel or a private space) of the
  * project: its name, description, tabs, agents and members.
  *
  * Inside a session the space defaults to the one the session is filed in,
  * and the token acts for the session's person: a change goes through only
  * when that person may make it (the channel's creator or a project manager
- * renames, describes and sets agents; a member adds people; the DM's owner
+ * renames, describes and sets agents; a member adds people; the owner of a private space
  * and any agent working in the space set tabs). The API decides; this
  * command never widens it. Making a channel private stays a person's step.
  */
@@ -16,18 +16,20 @@ import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix spaces <subcommand> [<space>] [args] [options]
 
-Read and change a space of the project: a channel or a direct message. Inside
+Read and change a space of the project: a channel, your personal space or a
+private space with an agent. Inside
 a session <space> defaults to the space the session is filed in. A change goes
 through with the rights of the person the session works for: the channel's
 creator or a project manager may rename it, describe it and set its agents; a
-member may add people; the DM's owner and an agent working in the space may set
+member may add people; the owner of a private space and an agent working in the space may set
 its tabs. Anyone else gets 403. Making a channel private is a person's step
 (the web app). Needs Spaces (the \`chat\` feature flag) on the project.
 
-<space> is a space id, a channel slug (#launch or launch), or dm:<agent>.
+<space> is a space id, a channel slug (#launch or launch), or dm:<agent> for
+your private space with that agent (dm:mykortix is your personal space).
 
 Subcommands:
-  ls                                 The project's channels and your DMs.
+  ls                                 The project's channels and your private spaces.
   get [<space>]                      Name, description, agents, tabs.
   rename [<space>] <name>            Rename a channel (its slug follows).
   describe [<space>] <text>          Set a channel's description ("" clears it).
@@ -193,8 +195,13 @@ export function editTabs(tabs: readonly SpaceTab[], verb: string, args: readonly
   return `Unknown tabs verb "${verb}". Use add, rm, move or set.`;
 }
 
+/** A `dm` row as people see it: the personal space (My Kortix) or a private space with an agent. */
+function privateSpaceName(agent: string): string {
+  return agent === 'mykortix' || agent === 'meta' ? 'Your personal space' : `Private space with ${agent}`;
+}
+
 function writeSpace(space: Space): void {
-  const name = space.kind === 'channel' ? `#${space.slug ?? space.name}` : `DM with ${space.dm_agent_name ?? space.name}`;
+  const name = space.kind === 'channel' ? `#${space.slug ?? space.name}` : privateSpaceName(space.dm_agent_name ?? space.name);
   process.stdout.write(`\n  ${C.bold}${name}${C.reset}  ${C.dim}${space.space_id}${C.reset}\n`);
   if (space.kind === 'channel') process.stdout.write(`  Name         ${space.name}\n`);
   process.stdout.write(`  Description  ${space.description ?? C.dim + '(none)' + C.reset}\n`);
@@ -275,8 +282,10 @@ export async function runSpaces(argv: string[]): Promise<number> {
       const spaces = await listSpaces(client, projectId);
       if (json) return (emitJson({ spaces }), 0);
       for (const s of spaces) {
-        const label = s.kind === 'channel' ? `#${s.slug ?? s.name}` : `dm:${s.dm_agent_name ?? ''}`;
-        process.stdout.write(`  ${label.padEnd(28)} ${C.dim}${s.space_id}${C.reset}${s.description ? `  ${s.description}` : ''}\n`);
+        // A private space prints its name and, dimmed, the ref that selects it (`dm:<agent>`).
+        const label = s.kind === 'channel' ? `#${s.slug ?? s.name}` : privateSpaceName(s.dm_agent_name ?? '');
+        const ref = s.kind === 'channel' ? '' : `  ${C.dim}dm:${s.dm_agent_name ?? ''}${C.reset}`;
+        process.stdout.write(`  ${label.padEnd(28)} ${C.dim}${s.space_id}${C.reset}${ref}${s.description ? `  ${s.description}` : ''}\n`);
       }
       return 0;
     }
@@ -299,7 +308,7 @@ export async function runSpaces(argv: string[]): Promise<number> {
         ...(ask ? { ask: true } : {}),
       });
       if (json) return (emitJson(posted), 0);
-      const where = space.kind === 'channel' ? `#${space.slug ?? space.name}` : `the DM with ${space.dm_agent_name ?? space.name}`;
+      const where = space.kind === 'channel' ? `#${space.slug ?? space.name}` : privateSpaceName(space.dm_agent_name ?? space.name).toLowerCase();
       process.stdout.write(`${status.ok(posted.kind === 'thread' ? `Posted in ${where} (thread ${posted.session_id})` : `Posted in thread ${posted.session_id}`)}\n`);
       if (posted.mentions.length) process.stdout.write(`  Mentioned ${posted.mentions.map((m) => m.label).join(', ')}; ${posted.notified.length} notified.\n`);
       return 0;
