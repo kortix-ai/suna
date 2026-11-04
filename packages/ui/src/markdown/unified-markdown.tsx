@@ -227,12 +227,15 @@ export function MarkdownLink({
   // A compact app link is the app mark plus a short label, never underlined.
   // The mark is 1em and sits at -0.15em: Roobert cap height is 0.7em, so the
   // mark centers on the cap height at every text size. A label built from an
-  // identifier ("PR #123", "ENG-42") is short and never breaks. A title or
+  // identifier ("PR #123", "ENG-42", a commit) is short and never breaks. A title or
   // custom label (Notion and Figma allow 48 characters, CJK has no spaces) is
   // glued to the mark by its first character only, so the mark never ends a
   // line alone and the title still wraps inside the column.
   const label = plainText === href ? compactLabel : children;
-  const split = plainText === href && !presentation?.name
+  // Only Figma and Notion labels are titles; every other compact label is an
+  // identifier, even when `appLink` stores it as `name` (ENG-42, a commit).
+  const isTitle = presentation?.app === 'figma' || presentation?.app === 'notion';
+  const split = plainText === href && !isTitle
     ? [label, null] as const
     : splitLeadingChar(label);
   const linkContent = presentation && Mark ? (

@@ -98,3 +98,18 @@ test('glues the mark to the first character of a streaming or formatted label', 
   expect(glued(render(<strong>Review</strong>))).toBe('R');
   expect(glued(render('変更を確認'))).toBe('変');
 });
+
+test('keeps identifier labels whole and glues titles by their first character', () => {
+  const glued = (href: string) => {
+    const html = renderToStaticMarkup(
+      <IntlTestProvider locale="en" onError={() => {}}>
+        <UnifiedMarkdown trust="untrusted" content={href} />
+      </IntlTestProvider>,
+    );
+    return /<span class="whitespace-nowrap">.*?<\/svg><\/span>(?:<span class="sr-only">[^<]*<\/span>)?(.*?)<\/span>/.exec(html)?.[1]
+      ?.replace(/<[^>]+>/g, '');
+  };
+  expect(glued('https://linear.app/example/issue/ENG-42/readable-links')).toBe('ENG-42');
+  expect(glued('https://github.com/example/project/pull/123')).toBe('PR #123');
+  expect(glued('https://www.figma.com/design/abc123/Example')).toBe('E');
+});
