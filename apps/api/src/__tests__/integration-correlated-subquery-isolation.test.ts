@@ -54,9 +54,9 @@ async function insertSession(input: {
 async function insertSandbox(input: {
   project: ProjectRow;
   sessionId: string;
-  externalId: string;
+  externalId: string | null;
   status: string;
-}): Promise<void> {
+}): Promise<string> {
   const sandboxId = crypto.randomUUID();
   await db.execute(sql`
     insert into kortix.session_sandboxes
@@ -67,6 +67,7 @@ async function insertSandbox(input: {
        ${input.status}::kortix.session_sandbox_status)
   `);
   fixtures.sandboxIds.push(sandboxId);
+  return sandboxId;
 }
 
 beforeAll(async () => {
@@ -190,5 +191,32 @@ describe('correlated reads stay on their own row', () => {
     const record = await loadSandbox(`sbx_iso_shared_${run}`);
     expect(record?.sessionId).toBe(liveSession);
     expect(record?.status).toBe('active');
+  });
+});
+
+describe('sandbox proxy identity aliases', () => {
+  test('internal UUID aliases and provider IDs resolve to the same canonical record', async () => {
+    const project = projectsForTest[0];
+    if (!project) throw new Error('missing seeded project');
+    const sessionId = await insertSession({ project, agentName: `alias-${run}`, status: 'running' });
+    const externalId = `SBX_ALIAS_${run}`;
+    const sandboxId = await insertSandbox({ project, sessionId, externalId, status: 'active' });
+    for (const id of [sandboxId, sandboxId.toUpperCase(), externalId, externalId.toLowerCase()]) {
+      expect(await loadSandbox(id)).toMatchObject({ sandboxId, externalId, sessionId, agentName: `alias-${run}` });
+    }
+  });
+
+  test('unknown UUIDs and malformed IDs return no record without a UUID cast error', async () => {
+    expect(await loadSandbox(crypto.randomUUID())).toBeNull();
+    expect(await loadSandbox('not-a-uuid')).toBeNull();
+    expect(await loadSandbox('550e8400-e29b-41d4-a716-not-a-uuid')).toBeNull();
+  });
+
+  test('a sandbox without a provider ID cannot be forwarded by internal UUID', async () => {
+    const project = projectsForTest[0];
+    if (!project) throw new Error('missing seeded project');
+    const sessionId = await insertSession({ project, agentName: `pending-${run}`, status: 'running' });
+    const sandboxId = await insertSandbox({ project, sessionId, externalId: null, status: 'provisioning' });
+    expect(await loadSandbox(sandboxId)).toBeNull();
   });
 });

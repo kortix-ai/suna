@@ -27,6 +27,7 @@ import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { auditLoginFail } from '../middleware/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueUser } from './gotrue';
 import { ssoEnforcedForEmail } from '../repositories/sso';
+import { isLoopbackHost } from '../repositories/oauth-clients';
 import { canSignUp } from '../shared/access-control-cache';
 import { requestClientIp, requestClientKey } from '../middleware/client-ip';
 import { config } from '../config';
@@ -63,12 +64,26 @@ function throttled(c: Context): Response | null {
   );
 }
 
-/** `redirect_to` is handed to GoTrue, which enforces its own allow-list; we only refuse non-http(s). */
+/**
+ * `redirect_to` is a local trust boundary (CWE-601, KRTX-4024): the API enforces
+ * its own allow-list instead of relying on GoTrue's. An entry must be an
+ * absolute http(s) URL without a fragment; http is allowed only on loopback
+ * (RFC 8252 §7.3, the rules of repositories/oauth-clients.ts) and every other
+ * entry must carry exactly config.FRONTEND_URL's origin — otherwise GoTrue's
+ * own allow-list is the only thing behind an attacker-chosen origin. `undefined`
+ * drops the param for the email flows (GoTrue falls back to its SiteURL); on
+ * /sign-in/oauth it is the 400 invalid_request below.
+ */
 function safeRedirect(value: unknown): string | undefined {
   if (typeof value !== 'string' || !value.trim()) return undefined;
   try {
     const url = new URL(value.trim());
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : undefined;
+    const loopback = isLoopbackHost(url.hostname);
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.hash) return undefined;
+    if (url.protocol === 'http:' && !loopback) return undefined;
+    if (loopback) return url.toString();
+    if (url.origin !== new URL(config.FRONTEND_URL).origin) return undefined;
+    return url.toString();
   } catch {
     return undefined;
   }
@@ -358,7 +373,7 @@ headlessAuthRouter.openapi(
     if (limited) return limited;
     const body = c.req.valid('json');
     const redirectTo = safeRedirect(body.redirect_to);
-    if (!redirectTo) return c.json({ error: 'invalid_request', error_description: 'redirect_to must be an absolute http(s) URL' }, 400);
+    if (!redirectTo) return c.json({ error: 'invalid_request', error_description: 'redirect_to must be an absolute http(s) URL on the deployment web origin (or an http:// localhost)' }, 400);
     const verifierBytes = new Uint8Array(48);
     crypto.getRandomValues(verifierBytes);
     const codeVerifier = b64url(verifierBytes);
