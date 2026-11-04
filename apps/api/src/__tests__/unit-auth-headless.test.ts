@@ -205,12 +205,10 @@ describe('/v1/auth headless routes', () => {
     expect(bad.status).toBe(400);
   });
 
-  // KRTX-4024 (CWE-601): the API enforces the redirect_to trust boundary itself;
-  // GoTrue's own allow-list is not the enforcement point a caller reaches first.
-  // The safe web origin is config.FRONTEND_URL's origin (here https://app.example);
-  // an http:// loopback is the one other escape (same rules as
-  // repositories/oauth-clients.ts). Deny on every surface here uses IP 203.0.113.40
-  // so the deny matrix and the default IP's other tests never share one bucket.
+  // KRTX-4024 (CWE-601): the API enforces the redirect_to trust boundary itself.
+  // The safe web origin is FRONTEND_URL's origin (https://app.example here); the
+  // one other escape is http:// loopback. Deny tests use IP 203.0.113.40 so the
+  // matrix and the other tests never share one rate-limit bucket.
   describe('redirect_to origin allow-list (KRTX-4024)', () => {
     const post2 = (path: string, body: unknown) => post(path, body, '203.0.113.40');
 

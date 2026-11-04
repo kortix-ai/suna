@@ -60,13 +60,6 @@ function mapRow(r: typeof oauthClients.$inferSelect): OAuthClient {
 }
 
 /**
- * A redirect URI is compared byte-for-byte at /authorize and /token, so it is
- * stored exactly as given — after proving it is an absolute http(s) URL with
- * no fragment. http is allowed only on loopback (RFC 8252 §7.3) so a local dev
- * server can register `http://localhost:3200/…` while every deployed app
- * must use https.
- */
-/**
  * localhost/127.0.0.1/[::1]/*.localhost — the hosts an http:// redirect may
  * target while every deployed app must use https (RFC 8252 §7.3). Shared with
  * the headless auth redirect guard (auth/headless.ts).
@@ -75,6 +68,13 @@ export function isLoopbackHost(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname.endsWith('.localhost');
 }
 
+/**
+ * A redirect URI is compared byte-for-byte at /authorize and /token, so it is
+ * stored exactly as given — after proving it is an absolute http(s) URL with
+ * no fragment. http is allowed only on loopback (RFC 8252 §7.3) so a local dev
+ * server can register `http://localhost:3200/…` while every deployed app
+ * must use https.
+ */
 /**
  * `native` admits a private-use URI scheme (RFC 8252 §7.1), which desktop MCP
  * clients register (Cursor: `cursor://…`). Only self-registered clients pass it;
