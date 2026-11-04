@@ -13,6 +13,12 @@ import { requestAuditContext } from '../lib/serializers';
 import { SESSION_CREATE_ERROR_STATUSES, sendSessionCreateError } from '../lib/sessions';
 import { createSession } from '../session-lifecycle';
 
+/** A thread title from Kortix's message: its first line, at most 60 characters. */
+function threadTitle(text: string): string {
+  const line = text.split('\n').find((part) => part.trim())?.trim() ?? text.trim();
+  return line.length > 60 ? `${line.slice(0, 59)}…` : line;
+}
+
 const ChatThreadInputSchema = z.object({ text: z.string().trim().min(1).max(CHAT_ROOT_TEXT_MAX) });
 const ChatThreadSchema = z.object({ session_id: z.string() });
 
@@ -46,7 +52,8 @@ export function registerChatThreadRoutes(): void {
       userId: person,
       requestingPrincipalType: 'human',
       body: { agent_name: CHAT_AGENT, space_id: space.spaceId },
-      metadata: { [CHAT_ROOT_TEXT_KEY]: c.req.valid('json').text },
+      // Its title until a generated one replaces it: the start of Kortix's own message.
+      metadata: { [CHAT_ROOT_TEXT_KEY]: c.req.valid('json').text, name: threadTitle(c.req.valid('json').text) },
       visibility: 'private',
       inSession: false,
       callerSessionId: null,
