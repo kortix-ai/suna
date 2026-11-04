@@ -10,6 +10,7 @@ const KINDS = new Set((process.env.VOICE_CARDS ?? 'weather,version,price,fx,f1')
 // A primary API that has not answered in 300 ms (p90 231) is asked again: a card past its 800 ms wait loses to the web
 // search, which is slower and can be wrong ("around twenty-five degrees" against a forecast of 9 to 18).
 const get = async (u: string) => {
+  //codeql[js/file-access-to-http] Non-exploit: the host of every card URL is one of the fixed, allowlisted CARD_HOSTS (open-meteo, open-meteo geocoding, endoflife.date, npm registry, deps.dev, er-api, coingecko, jolpi) and the caller-chosen words are encodeURIComponent'd path/query text, never the request target.
   const r = await hedged((signal) => fetch(u, { headers: { 'user-agent': 'voice-agent' }, signal }), 300, undefined, false)
   if (!r.ok) throw new Error(`${r.status}`)
   return r.json() as Promise<any>

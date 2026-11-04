@@ -69,6 +69,7 @@ async function ask(jpegs: Uint8Array[], instruction: string, signal?: AbortSigna
       method: 'POST',
       signal: deadline,
       headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY ?? '' },
+      //codeql[js/file-access-to-http] Non-exploit, by design: the call's own screenshots go to the call's configured Gemini key at the fixed https://generativelanguage.googleapis.com host; nothing in the image or text chooses the request target.
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: instruction }, ...jpegs.map((j) => ({ inlineData: { mimeType: 'image/jpeg', data: data(j) } }))] }],
         generationConfig: { temperature: 0, maxOutputTokens: 300, thinkingConfig: { thinkingLevel: 'minimal' } },
