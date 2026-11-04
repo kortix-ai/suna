@@ -1,20 +1,12 @@
 'use client';
 
 /**
- * A box that serves its log (`runtime.log.v1`): the session list and session records come from
- * the session log the client already holds (its thread heads), never from the box's OpenCode
- * routes. The rows keep the compatibility `Session` shape the session hooks have always answered.
+ * The session list and session records come from the session log the client already holds (its
+ * thread heads, `runtime.log.v1`), never from the box's OpenCode routes. The rows keep the compatibility `Session` shape the session hooks have always answered.
  */
 import type { UseQueryResult } from '@tanstack/react-query';
-import { useSandboxConnectionStore } from '../../browser/stores/sandbox-connection-store';
 import type { Session } from '../../core/runtime/runtime-types';
-import { RUNTIME_LOG_CAPABILITY } from '../../core/session/runtime-actions';
 import type { SessionLogState } from '../../core/session-log/store';
-
-/** The active runtime lists `runtime.log.v1`. */
-export function useRuntimeServesLog(): boolean {
-  return useSandboxConnectionStore((state) => state.runtimeCapabilities?.includes(RUNTIME_LOG_CAPABILITY) === true);
-}
 
 const time = (iso: string | null | undefined): number => {
   const ms = iso ? Date.parse(iso) : Number.NaN;

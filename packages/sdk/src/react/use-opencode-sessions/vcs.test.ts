@@ -24,13 +24,8 @@ mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => config,
 }));
 
-let clientImpl: Record<string, unknown> = {};
-mock.module('../../core/runtime/client', () => ({
-  getClient: () => clientImpl,
-}));
-
-// The session-log action route of the active runtime: null = an older box (the default here).
-let actionImpl: (method: string, path: string) => Promise<Response | null> = async () => null;
+// The session-log action route of the active runtime.
+let actionImpl: (method: string, path: string) => Promise<Response> = async () => Response.json({ files: [] });
 const actionCalls: unknown[] = [];
 const realRuntimeActions = await import('../../core/session/runtime-actions');
 mock.module('../../core/session/runtime-actions', () => ({
@@ -50,12 +45,11 @@ type QueryConfig = {
 beforeEach(() => {
   runtimeReady = true;
   runtimeState = { sandboxId: 'sbx_1' };
-  clientImpl = {};
-  actionImpl = async () => null;
+  actionImpl = async () => Response.json({ files: [] });
   actionCalls.length = 0;
 });
 
-describe('on a box with the session-log actions', () => {
+describe('the session-log action routes', () => {
   test('the diff is the workspace diff route, keyed by path', async () => {
     actionImpl = async () =>
       Response.json({ files: [{ path: 'src/a.ts', status: 'modified', additions: 3, deletions: 1, patch: '@@' }] });
@@ -76,64 +70,10 @@ describe('on a box with the session-log actions', () => {
   });
 });
 
-test('useRuntimeWorkspace on an older box: the path and the current project', async () => {
-  clientImpl = {
-    path: { get: async () => ({ data: { home: '/root', directory: '/workspace', worktree: '/workspace', state: '', config: '' } }) },
-    project: { current: async () => ({ data: { id: 'p', worktree: '/workspace', vcs: 'git', time: { created: 0 }, sandboxes: [] } }) },
-  };
-  expect(await (useRuntimeWorkspace() as unknown as QueryConfig).queryFn()).toEqual({
-    directory: '/workspace',
-    home: '/root',
-    vcs: 'git',
-    default_branch: null,
-  });
-});
-
-/** Records what `client.vcs.diff()` was called with and answers with `body`. */
-function vcsClient(body: unknown | (() => unknown)) {
-  const calls: unknown[] = [];
-  return {
-    calls,
-    impl: {
-      vcs: {
-        diff: async (args: unknown) => {
-          calls.push(args);
-          return typeof body === 'function' ? (body as () => unknown)() : { data: body };
-        },
-      },
-    },
-  };
-}
-
 describe('useRuntimeVcsDiff', () => {
   test('defaults to branch mode — the version-vs-base set, not just the working tree', async () => {
-    const { calls, impl } = vcsClient([]);
-    clientImpl = impl;
-    const config = useRuntimeVcsDiff() as unknown as QueryConfig;
-
-    await config.queryFn();
-
-    expect(calls).toEqual([{ mode: 'branch' }]);
-  });
-
-  test('asks /vcs/diff for the requested mode and returns the file array', async () => {
-    const diffs = [
-      {
-        file: 'src/a.ts',
-        patch: 'diff --git a/src/a.ts b/src/a.ts\n',
-        additions: 3,
-        deletions: 1,
-        status: 'modified' as const,
-      },
-    ];
-    const { calls, impl } = vcsClient(diffs);
-    clientImpl = impl;
-    const config = useRuntimeVcsDiff('git') as unknown as QueryConfig;
-
-    const result = await config.queryFn();
-
-    expect(calls).toEqual([{ mode: 'git' }]);
-    expect(result).toEqual(diffs);
+    await (useRuntimeVcsDiff() as unknown as QueryConfig).queryFn();
+    expect(actionCalls).toEqual([['GET', '/kortix/runtime/workspace/diff?mode=branch']]);
   });
 
   test('the query key carries the mode and the active sandbox id', () => {
@@ -155,17 +95,10 @@ describe('useRuntimeVcsDiff', () => {
     expect(a.queryKey).toEqual(b.queryKey);
   });
 
-  test('a non-array body becomes an empty array, never undefined', async () => {
-    clientImpl = vcsClient(null).impl;
+  test('a non-array files field becomes an empty array, never undefined', async () => {
+    actionImpl = async () => Response.json({ files: null });
     const config = useRuntimeVcsDiff('branch') as unknown as QueryConfig;
     expect(await config.queryFn()).toEqual([]);
-  });
-
-  test('an SDK error is thrown, so the panel renders its error state instead of "no changes"', async () => {
-    clientImpl = vcsClient(() => ({ error: { data: { message: 'not a git repository' } } })).impl;
-    const config = useRuntimeVcsDiff('branch') as unknown as QueryConfig;
-
-    expect(config.queryFn()).rejects.toThrow('not a git repository');
   });
 
   test('disabled until the runtime is ready', () => {

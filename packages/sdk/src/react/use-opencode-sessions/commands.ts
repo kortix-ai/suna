@@ -38,14 +38,9 @@ export function useRuntimeCommands(options: UseRuntimeCommandsOptions = {}) {
     queryKey: runtimeKeys.commands(),
     queryFn: async () => {
       const listed = await activeRuntimeAction('GET', runtimeActionPaths.commands);
-      if (listed) {
-        if (!listed.ok) throw await runtimeActionError(listed, 'Listing the commands failed');
-        const body = (await listed.json()) as { commands?: unknown };
-        return asRuntimeList<NativeCommand>(body.commands).map(commandOf);
-      }
-      const client = getClient();
-      const result = await client.command.list();
-      return asRuntimeList<Command>(unwrap(result));
+      if (!listed.ok) throw await runtimeActionError(listed, 'Listing the commands failed');
+      const body = (await listed.json()) as { commands?: unknown };
+      return asRuntimeList<NativeCommand>(body.commands).map(commandOf);
     },
     select: agent
       ? (commands) => commands.filter((command) => !command.agents || command.agents.includes(agent))
@@ -121,28 +116,12 @@ export async function executeRuntimeCommand({
     ...(model ? { model } : {}),
     ...(variant ? { variant } : {}),
   });
-  if (ran) {
-    if (ran.ok) return;
-    const refusal = (await ran.clone().json().catch(() => null)) as { error?: unknown; command?: unknown; agent?: unknown } | null;
-    if (ran.status === 403 && refusal?.error === 'command_not_enabled') {
-      throw new CommandNotEnabledError(String(refusal.command ?? command), String(refusal.agent ?? agent ?? ''));
-    }
-    throw await runtimeActionError(ran, 'Running the command failed');
+  if (ran.ok) return;
+  const refusal = (await ran.clone().json().catch(() => null)) as { error?: unknown; command?: unknown; agent?: unknown } | null;
+  if (ran.status === 403 && refusal?.error === 'command_not_enabled') {
+    throw new CommandNotEnabledError(String(refusal.command ?? command), String(refusal.agent ?? agent ?? ''));
   }
-  const client = getClient();
-  const result = await client.session.command({
-    sessionID: sessionId,
-    command,
-    arguments: args || '',
-    ...(agent ? { agent } : {}),
-    ...(model ? { model } : {}),
-    ...(variant ? { variant } : {}),
-  });
-  const body = result.error as { error?: unknown; command?: unknown; agent?: unknown } | undefined;
-  if (result.response?.status === 403 && body?.error === 'command_not_enabled') {
-    throw new CommandNotEnabledError(String(body.command ?? command), String(body.agent ?? agent ?? ''));
-  }
-  unwrap(result);
+  throw await runtimeActionError(ran, 'Running the command failed');
 }
 
 export function useExecuteRuntimeCommand() {

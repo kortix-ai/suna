@@ -252,13 +252,10 @@ describe('livenessBusy: an open server turn keeps the repair running', () => {
 });
 
 // The session context modal mounts one `useSessionSync(child, { savedChild: true })` per
-// sub-agent, and "Load all" mounts the rest of them in one commit. With more than the
-// registry's 20 controllers, the first rows' retains evicted the later rows' controllers
-// before their own effects ran: on dev, 12 of 14 rows read no runtime messages and showed
-// "0 messages" over a sub-agent that had 3.
-// React's StrictMode (every `next dev` page) runs each effect, its cleanup, then the effect
-// again: the release in between must not destroy the controller the remount reads with.
-async function everySubAgentReads(strict: boolean) {
+// sub-agent, and "Load all" mounts the rest of them in one commit. The session log holds every
+// thread (`runtime.log.v1`, every box past the runtime floor), so none of them reads the box's
+// v1 transcript route, with or without React's StrictMode double effects.
+async function noSubAgentReadsTheBox(strict: boolean) {
   const ids = Array.from({ length: 25 }, (_, index) => `ses_subagent${index}`);
   const read = new Set<string>();
   const originalFetch = globalThis.fetch;
@@ -289,8 +286,7 @@ async function everySubAgentReads(strict: boolean) {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
-    expect([...read].sort()).toEqual([...ids].sort());
-    for (const id of ids) expect(useSyncStore.getState().messages[id]?.length).toBe(1);
+    expect([...read]).toEqual([]);
   } finally {
     await act(async () => renderer?.unmount());
     for (const id of ids) useSyncStore.getState().clearSession(id);
@@ -299,5 +295,5 @@ async function everySubAgentReads(strict: boolean) {
   }
 }
 
-test('every sub-agent hook mounted in one commit reads its runtime messages', () => everySubAgentReads(false));
-test('every sub-agent hook mounted in one commit reads its runtime messages under StrictMode', () => everySubAgentReads(true));
+test('no sub-agent hook mounted in one commit reads the box v1 transcript', () => noSubAgentReadsTheBox(false));
+test('no sub-agent hook mounted in one commit reads the box v1 transcript under StrictMode', () => noSubAgentReadsTheBox(true));
