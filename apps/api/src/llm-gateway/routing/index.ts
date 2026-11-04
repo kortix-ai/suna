@@ -54,6 +54,11 @@ const resolver = createGatewayRouteResolver({
   imageRoute: (principal, requestedModel) => planImageRoute(
     requestedModel,
     () => principalImageModels(principal),
+    // The project's model-access policy: a disabled model is never planned, whichever
+    // branch reads it (auto and an explicit model alike).
+    async () => principal.projectId
+      ? (await getProjectGatewayResolution(principal.projectId)).access
+      : { disabledProviders: [], disabledModels: [] },
     async () => principal.projectId
       ? (await getProjectGatewayResolution(principal.projectId)).customProviders.map((provider) => provider.id)
       : [],
