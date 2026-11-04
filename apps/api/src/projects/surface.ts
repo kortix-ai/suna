@@ -139,6 +139,7 @@ export { flushDriveSyncBeforeStop } from './reaping/stop-box';
 
 // Close the stored copy of a question a client answered (consumed by ../sandbox-proxy).
 export { clearOpenQuestions } from './lib/pending-questions';
+export { closeRepliedPermission } from './lib/pending-permissions';
 
 // A chat button answers a stored question, in the turn it blocks or as a
 // follow-up (consumed by channels/telegram).

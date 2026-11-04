@@ -53,6 +53,10 @@ export const runtimeVerbPaths = {
   steer: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/steer`,
   /** The session-log actions (`runtime.actions.v1`). */
   questionReply: (requestId: string) => `/kortix/runtime/questions/${segment(requestId)}/reply`,
+  questionReject: (requestId: string) => `/kortix/runtime/questions/${segment(requestId)}/reject`,
+  permissionReply: (requestId: string) => `/kortix/runtime/permissions/${segment(requestId)}/reply`,
+  /** Stop holding every call that waits on a person (session-asks.ts). A daemon built before parking answers 404. */
+  parkAsks: '/kortix/runtime/asks/park',
   /** The box's own session log (`runtime.log.v1`): a page of the root, newest `limit` before `before_seq`. */
   log: (opts: { limit: number; beforeSeq?: number | null }) =>
     `/kortix/runtime/log?limit=${opts.limit}${opts.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ''}`,

@@ -729,6 +729,27 @@ for an answer (`PermissionBroker.records()`, `QuestionBroker.records()`: `id`,
 flushes the journal at once, so the change reaches apps/api and the v2 stream as
 a `log.state` patch without waiting for the turn to end.
 
+### Asks park; they never hold the session
+
+A question or a permission ask (`harness/pi/interactions.ts`) is relayed to
+apps/api before anyone sees it (`relayQuestion`, `relayPermission`). apps/api
+stores it and answers how long the call may wait for a live answer
+(`live_wait_ms`: 3 minutes, 0 for a trigger, unattended or worker session).
+Past that window the ask PARKS: the call returns (`PARKED_QUESTION_RESULT`, or
+a blocked call with `PARKED_PERMISSION_REASON`), the frame `question.parked` /
+`permission.parked` drops the live card, and the turn goes on. The ask stays
+open in apps/api (`GET /projects/:id/asks`, Review) until a person decides it;
+the decision reaches the agent as a new message. A permission approved while
+parked runs on the agent's re-run of the same call: apps/api matches its
+`args_hash` and answers `approved`.
+
+Every new message parks every open ask at once (`parkOpenAsks`: a prompt, a
+steer, synthetic or not), and so does `POST /kortix/runtime/asks/park`, which
+the prompt inbox calls when a queued row waits behind a turn that holds a live
+ask. Abort and the turn end park what is left. A workflow run approval is the
+one ask that is not parkable: it resolves as dismissed and the run is not
+started.
+
 ### The session-log actions (`runtime.actions.v1`)
 
 Under `/kortix/runtime`, in session-log terms (bodies and answers:
@@ -737,6 +758,7 @@ Under `/kortix/runtime`, in session-log terms (bodies and answers:
 | Route | Does |
 | --- | --- |
 | `POST /permissions/:id/reply`, `POST /questions/:id/reply`, `POST /questions/:id/reject` | answer what `pending` lists |
+| `POST /asks/park` | park every ask that holds a call live; answers `{ parked }` |
 | `POST /sessions/:id/compact` | summarize the conversation, as a turn of its own |
 | `POST /sessions/:id/command` | run a command, prompt template or skill by name |
 | `PUT /sessions/:id/grants` | the capabilities the session uses without asking (`*`: all); `[]` clears them; a `deny` still wins |
@@ -1551,7 +1573,8 @@ agent_not_running`. Saved workflows of the checkout and the bundled
   in its card that it continues in the same session.
 - **Delivery.** A delivered message reaches a working receiver as a steer at
   its next step and starts a turn on an idle one. It carries no authority: it
-  never answers a permission request or a question.
+  never answers a permission request or a question. It parks them, so the
+  receiver reads it at once instead of after a person answers.
 - **Limits.** 16,000 characters, 30 messages per minute per sender, a duplicate
   within 60 s is dropped, a held message expires after 5 minutes, at most 100
   held, a `notify_when_idle` watch lapses after 12 hours.

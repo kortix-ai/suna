@@ -66,6 +66,8 @@ export interface HarnessTurnService {
   replyQuestion(requestId: string, answers: string[][]): Promise<HarnessTurnResponse>
   /** 200 `{ ok: true }`; 404 when no such question waits. */
   rejectQuestion(requestId: string): Promise<HarnessTurnResponse>
+  /** 200 `{ parked }`: every question and permission ask that waits on a person stops holding its call. */
+  parkAsks(): Promise<HarnessTurnResponse>
   /** 202 `{ ok: true }`: the summary runs as a turn of its own. */
   compact(runtimeSessionId: string): Promise<HarnessTurnResponse>
   /** 202 `{ message_id }`; 400 unknown command; 403 `{ error: 'command_not_enabled', command, agent }`. */

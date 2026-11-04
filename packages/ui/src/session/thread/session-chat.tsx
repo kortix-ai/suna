@@ -218,7 +218,7 @@ import {
 } from '../composer/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '../../internal/stores/tab-store';
 import { projectSessionHref } from '../../internal/lib/navigation/session-href';
-import { type Command, type QuestionRequest, getRetryInfo } from '../../internal/session-types';
+import { type Command, type PermissionRequest, type QuestionRequest, getRetryInfo } from '../../internal/session-types';
 import { useModelPricingLookup } from '../../internal/lib/model-pricing';
 import { isAbortError, latestPromptModel, SESSION_NOTICE, turnEndNotice } from '@kortix/sdk';
 import {
@@ -273,6 +273,8 @@ import {
   useSessionTurnOutcome,
   useSessionWorking,
   useSessionWorkingStore,
+  useAnswerSessionAsk,
+  useSessionNeedsYou,
 } from '@kortix/sdk/react';
 import { useStableCallback } from '../../internal/hooks/use-stable-callback';
 import { useReloadForensics } from '../status/reload-forensics';
@@ -1812,12 +1814,37 @@ export function SessionChat({
   // ---- Pending permissions & questions ----
   const allPermissions = useRuntimePendingStore((s) => s.permissions);
   const allQuestions = useRuntimePendingStore((s) => s.questions);
-  const pendingPermissions = useMemo(
+  const livePermissions = useMemo(
     () =>
       sessionState?.permissions ??
       Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
     [sessionState?.permissions, allPermissions, sessionId],
   );
+  // Asks that parked: nobody answered live, the agent went on, and the ask
+  // waits server-side (Review, "Needs you"). They render with the same cards
+  // and are decided through the asks API, which resumes the session that
+  // asked (a hidden worker's asks show here too). Live asks keep their cards.
+  const parkedAsks = useSessionNeedsYou(projectId ?? '', projectSessionId ?? '', {
+    enabled: Boolean(projectId && projectSessionId),
+  }).asks;
+  const parkedAskIdByRequest = useMemo(
+    () => new Map(parkedAsks.filter((ask) => ask.kind !== 'approval').map((ask) => [ask.request_id, ask.id])),
+    [parkedAsks],
+  );
+  const pendingPermissions = useMemo(() => {
+    const live = new Set(livePermissions.map((p) => p.id));
+    const parked = parkedAsks
+      .filter((ask) => ask.kind === 'permission' && ask.permission && !live.has(ask.request_id))
+      .map((ask): PermissionRequest => ({
+        id: ask.request_id,
+        sessionID: sessionId,
+        permission: ask.permission!.permission,
+        patterns: ask.permission!.patterns,
+        metadata: ask.permission!.args && typeof ask.permission!.args === 'object' ? (ask.permission!.args as Record<string, unknown>) : {},
+        always: ['*'],
+      }));
+    return parked.length ? [...livePermissions, ...parked] : livePermissions;
+  }, [livePermissions, parkedAsks, sessionId]);
   const suppressedQuestionIdsRef = useRef<Map<string, number>>(new Map());
   const suppressQuestionFor = useCallback((requestId: string, ms = 15000) => {
     suppressedQuestionIdsRef.current.set(requestId, Date.now() + ms);
@@ -1831,7 +1858,7 @@ export function SessionChat({
     }
     return true;
   }, []);
-  const pendingQuestions = useMemo(
+  const liveQuestions = useMemo(
     () =>
       (
         sessionState?.questions ??
@@ -1839,6 +1866,13 @@ export function SessionChat({
       ).filter((q) => !isQuestionSuppressed(q.id)),
     [sessionState?.questions, allQuestions, sessionId, isQuestionSuppressed],
   );
+  const pendingQuestions = useMemo(() => {
+    const live = new Set(liveQuestions.map((q) => q.id));
+    const parked = parkedAsks
+      .filter((ask) => ask.kind === 'question' && ask.question && !live.has(ask.request_id) && !isQuestionSuppressed(ask.request_id))
+      .map((ask): QuestionRequest => ({ id: ask.request_id, sessionID: sessionId, questions: ask.question!.questions as QuestionRequest['questions'] }));
+    return parked.length ? [...liveQuestions, ...parked] : liveQuestions;
+  }, [liveQuestions, parkedAsks, sessionId, isQuestionSuppressed]);
   /**
    * The runtime is parked on an answer only the user can give.
    *
@@ -1854,7 +1888,8 @@ export function SessionChat({
    * come back the instant the agent is running again, not a third of a second
    * later.
    */
-  const awaitingUserInput = pendingQuestions.length > 0 || pendingPermissions.length > 0;
+  // Live asks only: a parked ask no longer holds the turn.
+  const awaitingUserInput = liveQuestions.length > 0 || livePermissions.length > 0;
   const QUESTION_PROMPT_ANIMATION_MS = 320;
   const activePendingQuestion = pendingQuestions[0] ?? null;
   // A new question docks over the bottom of the transcript, and answering it
@@ -2458,8 +2493,16 @@ export function SessionChat({
   const removePermission = useRuntimePendingStore((s) => s.removePermission);
   const removeQuestion = useRuntimePendingStore((s) => s.removeQuestion);
 
+  const answerParkedAsk = useAnswerSessionAsk(projectId ?? '');
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: 'once' | 'always' | 'reject') => {
+      // A parked ask: the call no longer waits, so the decision goes through
+      // the asks API (it reaches the agent as a message).
+      const parkedAskId = livePermissions.some((p) => p.id === requestId) ? undefined : parkedAskIdByRequest.get(requestId);
+      if (parkedAskId) {
+        await answerParkedAsk.mutateAsync({ askId: parkedAskId, answer: { reply } });
+        return;
+      }
       // No optimistic remove: only drop the card once the runtime accepted the
       // reply — a failed reply must stay answerable. Rethrow so callers
       // (prompt buttons) reset their busy state and surface the error.
@@ -2470,7 +2513,7 @@ export function SessionChat({
         removePermission(requestId);
       }
     },
-    [sessionState, removePermission],
+    [sessionState, removePermission, livePermissions, parkedAskIdByRequest, answerParkedAsk],
   );
 
   const handleQuestionReply = useCallback(
@@ -2484,6 +2527,12 @@ export function SessionChat({
       suppressQuestionFor(requestId);
       // Optimistically remove the question so the textarea shows immediately
       removeQuestion(requestId);
+      const parkedAskId = liveQuestions.some((q) => q.id === requestId) ? undefined : parkedAskIdByRequest.get(requestId);
+      if (parkedAskId) {
+        // Parked: the answer reaches the agent as a message that quotes the question.
+        answerParkedAsk.mutate({ askId: parkedAskId, answer: { answers } });
+        return;
+      }
 
       // Save the answers in the optimistic cache keyed by the question call's
       // block id. This cache survives updates that may overwrite the call
@@ -2513,7 +2562,7 @@ export function SessionChat({
         // ignore — SSE "question.replied" event will also remove it
       }
     },
-    [sessionState, removeQuestion, suppressQuestionFor],
+    [sessionState, removeQuestion, suppressQuestionFor, liveQuestions, parkedAskIdByRequest, answerParkedAsk],
   );
 
   const handleQuestionReject = useCallback(
@@ -2521,6 +2570,12 @@ export function SessionChat({
       suppressQuestionFor(requestId);
       // Optimistically remove the question so the textarea shows immediately
       removeQuestion(requestId);
+      const parkedAskId = liveQuestions.some((q) => q.id === requestId) ? undefined : parkedAskIdByRequest.get(requestId);
+      if (parkedAskId) {
+        // Dismissing a parked question closes it; nothing runs, so nothing is stopped.
+        answerParkedAsk.mutate({ askId: parkedAskId, answer: { dismiss: true } });
+        return;
+      }
       try {
         if (sessionState) await sessionState.rejectQuestion(requestId);
         else await rejectQuestion(requestId);
@@ -5120,7 +5175,7 @@ export function SessionChat({
                 // Same dead-prompt guard as questions: only lock while the agent is
                 // actually paused on the decision (isBusy), so a stale card can't
                 // swallow the composer on an idle session.
-                lockForApproval={runtimePermissionLocksComposer(pendingPermissions.length, isBusy)}
+                lockForApproval={runtimePermissionLocksComposer(livePermissions.length, isBusy)}
                 onCustomAnswer={handleCustomAnswer}
                 questionButtonLabel={renderedQuestion ? questionAction.label : null}
                 questionActive={!!renderedQuestion || approvalDocked}

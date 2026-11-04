@@ -54,7 +54,7 @@ import { enabledFeatureFlags } from '@/lib/config/feature-flags'
 import type { WorkflowRunMetadata } from '@kortix/api-contract/kortix-tool-card'
 import type { WorkflowControlBody } from '@kortix/api-contract/multi-agent'
 import type { RuntimeCapability } from '@kortix/api-contract/runtime-relay'
-import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule, type SessionPermissionRule } from './interactions'
+import { PARKED, PermissionBroker, QuestionBroker, compilePermissionPolicy, type AskRelayAnswer, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule, type SessionPermissionRule } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
 import { KORTIX_PROVIDER_ID, compactionSettings, nativeModelId, promptModelId, selectId } from './model'
 import { claudeSessions } from './claude/provider'
@@ -146,6 +146,12 @@ export const ACT_BEFORE_YOU_ASK = [
   '- Do it in this conversation, never by sending the person to a screen. To connect an app, start the sign-in yourself (`kortix connectors connect <app> --owner project`, or the connectors tool) and give the person the sign-in link. To get a key or password you lack, mint a secret link (`kortix secrets request NAME`) and give them that link. Name a screen in the app only when no tool or command can do the step (for example billing), with the exact clicks.',
   '- Act only on links and messages that belong to the task the person gave you.',
 ].join('\n')
+
+/** What the model reads when a call that needs approval parked: it did not run, and the approval arrives as a message. */
+export const PARKED_PERMISSION_REASON =
+  'This call needs a person\'s approval and did not run. The request waits in their Review inbox; nobody answered it yet. ' +
+  'Continue with work that does not need this call. When they approve, you get a message: then run exactly the same call again and it runs. ' +
+  'If nothing else is left, end your turn and say in one line what you wait for. Do not retry the call before that message.'
 
 /** The system prompt's `Today's date` line, with the box's time zone. Without it an agent with no shell cannot resolve "yesterday". */
 export const todayLine = (now: number) => `Today's date: ${new Date(now).toDateString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`
@@ -269,9 +275,13 @@ export interface TurnEnd {
 export interface PiRuntimeHooks {
   onTurnBegin?: (turn: { rootId: string; messageId: string }) => void
   onTurnEnd?: (turn: TurnEnd & { rootId: string }) => void
-  onQuestionAsked?: (request: RuntimeQuestionRequest, answer: (answers: string[][]) => void) => void
-  /** A tool call waits for the user's approval (root or subagent). Report only: the reply comes over the permission routes. */
-  onPermissionAsked?: (request: RuntimePermissionRequest) => void
+  /** The agent asks a person. apps/api stores it and says how long it waits live, or releases it (`AskRelayAnswer`). */
+  onQuestionAsked?: (request: RuntimeQuestionRequest, ask: { parkable: boolean }) => Promise<AskRelayAnswer | null>
+  /**
+   * A tool call needs a person's approval (root or subagent). apps/api stores it, says how long it
+   * waits live, and releases a call a person approved while it was parked (same `argsHash`).
+   */
+  onPermissionAsked?: (request: RuntimePermissionRequest, call: { tool: string; argsHash: string }) => Promise<AskRelayAnswer | null>
   /** Every frame the runtime publishes on the event bus (the audit trail reads it). */
   onFrame?: (frame: RuntimeFrame) => void
   /** A turn read a steered message: it is on the wire and in the model's context. */
@@ -568,13 +578,13 @@ export class PiRuntime {
       this.workspace,
       (frame) => this.publish(frame),
       {},
-      (request) => this.hooks.onPermissionAsked?.(request),
+      async (request, call) => (await this.hooks.onPermissionAsked?.(request, call)) ?? null,
       pendingChanged,
     )
     this.questions = new QuestionBroker(
       this.rootId,
       (frame) => this.publish(frame),
-      (request) => this.hooks.onQuestionAsked?.(request, (answers) => void this.questions.reply(request.id, answers)),
+      async (request, ask) => (await this.hooks.onQuestionAsked?.(request, ask)) ?? null,
       pendingChanged,
     )
   }
@@ -929,7 +939,7 @@ export class PiRuntime {
       : input.agent ? nativeModelId(this.compiled?.agent?.[agentName]?.model) : null
     const selected = modelId ? this.models!.select(modelId) : this.selected!
     this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected })
-    this.dismissOpenQuestions()
+    this.parkOpenAsks()
     if (input.noReply) {
       // `noReply`: the next turn's model sees this message, and none
       // runs now. On the serial queue so it lands between turns, and persisted
@@ -1008,9 +1018,9 @@ export class PiRuntime {
       }
       this.steered.push({ messageId, input, message })
       this.agent.steer(message)
-      // Harness context (a connector that just connected) is not the user's
-      // answer: the question stays open and the turn reads the steer after it.
-      if (!input.synthetic) this.dismissOpenQuestions()
+      // The steer is read only after the running tool batch, and a call that
+      // waits on a person holds that batch: park the asks so the message is read.
+      this.parkOpenAsks()
       return 'steered' as const
     })
     this.steerChain = steered.catch(() => {})
@@ -1018,14 +1028,16 @@ export class PiRuntime {
   }
 
   /**
-   * A new user message answers no open question, so it dismisses them: the
-   * question tool resolves as dismissed, the blocked turn ends, and the new
-   * message runs. Without this, a session nobody answers (a keyed cron, a
-   * Slack thread) queues every later message behind the question forever
-   * (prod 2026-10-09: 5 days of Slack-triage fires).
+   * Stop holding every call that waits on a person: each question and
+   * permission ask resolves `PARKED`, the turn goes on, and the asks stay open
+   * in apps/api until a person answers them. A new message (a person's, a peer
+   * session's, a subagent's report, a trigger fire) and `POST
+   * /kortix/runtime/asks/park` call it, so nothing ever queues behind an ask
+   * (prod 2026-10-09: 5 days of Slack-triage fires behind one question).
+   * Returns how many asks parked.
    */
-  private dismissOpenQuestions(): void {
-    if (this.questions?.list().length) this.questions.rejectAll()
+  parkOpenAsks(): number {
+    return (this.questions?.parkAll() ?? 0) + (this.permissions?.parkAll() ?? 0)
   }
 
   /**
@@ -1221,8 +1233,7 @@ export class PiRuntime {
     this.stops += 1
     this.pi?.session.abortCompaction()
     if (!this.active) return false
-    this.permissions.rejectAll()
-    this.questions.rejectAll()
+    this.parkOpenAsks()
     this.turnRetry?.abort()
     this.active.stopRequested = true
     this.stopPi()
@@ -1364,8 +1375,7 @@ export class PiRuntime {
       this.resetProgressWatchdog = null
       this.turnRetry = null
       this.turnSystem = null
-      this.permissions.rejectAll()
-      this.questions.rejectAll()
+      this.parkOpenAsks()
       this.active = null
       this.turnParent = null
       this.runningTools = 0
@@ -1587,6 +1597,7 @@ export class PiRuntime {
     if (decided === 'deny') return { block: true, reason: `The project policy denies this ${tool} call.` }
     if (decided !== 'ask') return undefined
     const reply = await this.permissions.ask({ tool, args, ...(ref ? { ref: ref() } : {}) })
+    if (reply === PARKED) return { block: true, reason: PARKED_PERMISSION_REASON }
     return reply === 'reject' ? { block: true, reason: 'The user rejected this tool call.' } : undefined
   }
 
@@ -1885,7 +1896,11 @@ export class PiRuntime {
         return limits
       },
       // The workflow tool's run approval: the `question` card, attached to the workflow call.
-      ask: (questions, toolCallId) => this.questions.ask(questions, this.adapter?.toolRef(toolCallId)),
+      // Not parkable: an approval that arrives later as a message would start a second plan.
+      ask: async (questions, toolCallId) => {
+        const answers = await this.questions.ask(questions, this.adapter?.toolRef(toolCallId), { parkable: false })
+        return answers === PARKED ? null : answers
+      },
       sessionContext: () => {
         try {
           const parsed: unknown = JSON.parse(this.env.KORTIX_SESSION_CONTEXT ?? '')
