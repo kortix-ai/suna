@@ -55,6 +55,22 @@ function canonical(value: unknown): string {
 
 const hash = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex')
 
+/**
+ * An image's hash, once per image part: `groups` runs on the whole context several times per
+ * step, and a context of screenshots made that hundreds of MB of copies per step (prod
+ * 2026-11-04: the daemon peaked at 3.1 GB). The value equals `hash(data)` (a base64 string's
+ * JSON is the data in quotes), so stored records keep matching.
+ */
+const imageHashes = new WeakMap<object, string>()
+function imageHash(part: { data: string }): string {
+  let value = imageHashes.get(part)
+  if (value === undefined) {
+    value = createHash('sha256').update('"').update(part.data).update('"').digest('hex')
+    imageHashes.set(part, value)
+  }
+  return value
+}
+
 function visible(message: Exclude<Message, { role: 'system' }>): unknown[] {
   const out: unknown[] = []
   let text = ''
@@ -67,7 +83,7 @@ function visible(message: Exclude<Message, { role: 'system' }>): unknown[] {
       if (part.type === 'text') text += part.text
       else {
         flush()
-        out.push({ type: 'image', mimeType: part.mimeType, data: hash(part.data) })
+        out.push({ type: 'image', mimeType: part.mimeType, data: imageHash(part) })
       }
     }
     flush()
@@ -81,7 +97,7 @@ function visible(message: Exclude<Message, { role: 'system' }>): unknown[] {
     }
     if (part.type === 'thinking') continue
     flush()
-    if (part.type === 'image') out.push({ type: 'image', mimeType: part.mimeType, data: hash(part.data) })
+    if (part.type === 'image') out.push({ type: 'image', mimeType: part.mimeType, data: imageHash(part) })
     else if (part.type === 'toolCall') out.push({ type: 'tool-call', id: part.id, name: part.name, input: part.arguments })
   }
   flush()

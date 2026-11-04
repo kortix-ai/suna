@@ -21,6 +21,8 @@ const FIELDS: ReadonlyArray<readonly [string, keyof ProjectGoalDocument]> = [
   ['done_criteria', 'success_criteria'],
   ['links', 'links'],
   ['waiting_on', 'waiting_on'],
+  ['paused_at', 'paused_at'],
+  ['paused_by', 'paused_by'],
   ['heartbeat', 'heartbeat_every'],
   ['max_wakes_per_day', 'max_wakes_per_day'],
   ['max_sessions', 'max_sessions'],

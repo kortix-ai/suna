@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { ApiError } from '../http/api/errors';
-import { __resetRuntimeActionsMemo } from './runtime-actions';
 import { createRuntimeVerbs } from './runtime-verbs';
 
-beforeEach(() => __resetRuntimeActionsMemo());
 
 const RUNTIME = 'http://api.test/v1/p/sbx_1/8000';
 
@@ -14,8 +12,6 @@ function fakeRuntime(routes: Record<string, Answer | ((request: Request) => Answ
   const fetch = (async (request: Request) => {
     const url = new URL(request.url);
     const path = `${url.pathname.replace('/v1/p/sbx_1/8000', '')}${url.search}`;
-    // A box from before the session-log actions: its health lists none of them.
-    if (path === '/kortix/health' && !routes['GET /kortix/health']) return Response.json({ capabilities: ['runtime.turns.v1'] });
     const body = request.body ? JSON.parse(await request.text()) : null;
     requests.push({ method: request.method, path, body });
     const route = routes[`${request.method} ${path}`];
@@ -42,20 +38,6 @@ describe('session runtime verbs', () => {
     expect(page.messages.map((m) => m.info.id)).toEqual(['msg_1', 'msg_2']);
     expect(page.hasMore).toBe(true);
     expect(requests).toHaveLength(1);
-  });
-
-  test('messages() falls back to the pre-W3 route on a daemon without /kortix/runtime', async () => {
-    const { fetch, requests } = fakeRuntime({
-      'GET /kortix/runtime/messages/ses_root': { status: 404, body: { error: 'not found' } },
-      'GET /kortix/opencode/messages/ses_root': { body: { messages: [message('msg_1')], has_more: false } },
-    });
-    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
-    const page = await verbs.messages();
-    expect(page).toEqual({ messages: [message('msg_1')] as never, hasMore: false });
-    expect(requests.map((r) => r.path)).toEqual([
-      '/kortix/runtime/messages/ses_root',
-      '/kortix/opencode/messages/ses_root',
-    ]);
   });
 
   test('messages() pages backwards past the 200-message page for a larger limit', async () => {
@@ -106,122 +88,29 @@ describe('session runtime verbs', () => {
     expect(pending.questions).toEqual([]);
   });
 
-  test('answerPermission() and answerQuestion() post the reply; a null answer rejects the question', async () => {
-    const { fetch, requests } = fakeRuntime({
-      'POST /permission/per_1/reply': { body: true },
-      'POST /question/que_1/reply': { body: true },
-      'POST /question/que_2/reject': { body: true },
-    });
-    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
-    await verbs.answerPermission('per_1', 'always', 'fine');
-    await verbs.answerQuestion('que_1', [['Yes']]);
-    await verbs.answerQuestion('que_2', null);
-    expect(requests.map((r) => [r.method, r.path, r.body])).toEqual([
-      ['POST', '/permission/per_1/reply', { reply: 'always', message: 'fine' }],
-      ['POST', '/question/que_1/reply', { answers: [['Yes']] }],
-      ['POST', '/question/que_2/reject', null],
-    ]);
-  });
-
-  test('an unknown request id throws with the runtime message', async () => {
-    const { fetch } = fakeRuntime({
-      'POST /permission/per_x/reply': { status: 404, body: { name: 'NotFoundError', data: { message: 'no such request' } } },
-    });
-    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
-    await expect(verbs.answerPermission('per_x', 'once')).rejects.toThrow('no such request');
-  });
-
-  test.each(['busy', 'retry'])('compact() refuses a %s root before submitting compaction', async (type) => {
-    const { fetch, requests } = fakeRuntime({
-      'GET /session/status': { body: { ses_root: { type } } },
-      'POST /session/ses_root/summarize': { body: true },
-    });
-    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
-    await expect(verbs.compact({ providerID: 'kortix', modelID: 'test-model' }))
-      .rejects.toThrow('This session is busy. Wait for the current turn to finish, then run compact again.');
-    expect(requests.map((request) => request.path)).toEqual(['/session/status']);
-  });
-
-  test('compact() accepts an omitted idle root status', async () => {
-    const { fetch } = fakeRuntime({
-      'GET /session/status': { body: {} },
-      'POST /session/ses_root/summarize': { body: true },
-    });
-    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
-    expect(await verbs.compact({ providerID: 'kortix', modelID: 'test-model' }))
-      .toEqual({ providerID: 'kortix', modelID: 'test-model' });
-  });
-
-  test('compact() does not submit when reading status fails', async () => {
-    const { fetch, requests } = fakeRuntime({
-      'GET /session/status': { status: 503, body: { error: 'runtime unavailable' } },
-    });
-    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
-    await expect(verbs.compact({ providerID: 'kortix', modelID: 'test-model' }))
-      .rejects.toThrow('Reading the session status failed: runtime unavailable');
-    expect(requests.map((request) => request.path)).toEqual(['/session/status']);
-  });
-
-  test('compact() translates a raced turn timeout without replaying the summary', async () => {
-    const { fetch, requests } = fakeRuntime({
-      'GET /session/status': { body: {} },
-      'POST /session/ses_root/summarize': {
-        status: 504,
-        body: { code: 'LONG_TURN_PROXY_TIMEOUT', error: 'internal ALB prompt_async SSE diagnostic' },
-      },
-    });
-    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
-    await expect(verbs.compact({ providerID: 'kortix', modelID: 'model' })).rejects.toThrow(
-      'Compaction has not finished. Check the session status before trying again.',
-    );
-    expect(requests.filter((r) => r.method === 'POST')).toHaveLength(1);
-  });
-
-  test('compact() summarizes the root with the given model, else the model the runtime state document names', async () => {
-    const { fetch, requests } = fakeRuntime({
-      'GET /session/status': { body: { ses_root: { type: 'idle' }, ses_child: { type: 'busy' } } },
-      'POST /session/ses_root/summarize': { body: true },
-      'GET /kortix/runtime/state': { body: { schema: 'kortix.runtime.v1', config: { known: true, value: { model: 'kortix/claude-sonnet' } } } },
-    });
-    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
-    expect(await verbs.compact({ providerID: 'anthropic', modelID: 'claude' })).toEqual({ providerID: 'anthropic', modelID: 'claude' });
-    expect(await verbs.compact()).toEqual({ providerID: 'kortix', modelID: 'claude-sonnet' });
-    expect(requests.map((r) => [r.method, r.path, r.body])).toEqual([
-      ['GET', '/session/status', null],
-      ['POST', '/session/ses_root/summarize', { providerID: 'anthropic', modelID: 'claude' }],
-      ['GET', '/kortix/runtime/state', null],
-      ['GET', '/session/status', null],
-      ['POST', '/session/ses_root/summarize', { providerID: 'kortix', modelID: 'claude-sonnet' }],
-    ]);
-  });
-
   test('compact() without a model anywhere throws MODEL_REQUIRED instead of guessing', async () => {
     for (const state of [
       { body: { config: { known: true, value: { model: null } } } },
       { body: { config: { known: false, value: null } } },
       { status: 404, body: { error: 'not found' } },
     ]) {
-      const { fetch, requests } = fakeRuntime({ 'GET /session/status': { body: {} }, 'GET /kortix/runtime/state': state });
+      const { fetch, requests } = fakeRuntime({ 'GET /kortix/runtime/pending': { body: { statuses: {}, permissions: [], questions: [] } }, 'GET /kortix/runtime/state': state });
       const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
       const error = await verbs.compact().catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).code).toBe('MODEL_REQUIRED');
-      expect(requests.some((r) => r.path.endsWith('/summarize'))).toBe(false);
+      expect(requests.some((r) => r.method === 'POST')).toBe(false);
     }
   });
 });
 
-describe('session runtime verbs on a box with the session-log actions (runtime.actions.v1)', () => {
-  // Each test runs against its own runtime URL: the capability read is kept per URL.
+describe('session runtime verbs: the session-log action routes (runtime.actions.v1)', () => {
   let n = 0;
   const actionsBox = (routes: Record<string, Answer | ((request: Request) => Answer)>) => {
     const runtimeUrl = `http://api.test/v1/p/sbx_${++n}/8000`;
     const prefix = `/v1/p/sbx_${n}/8000`;
     const requests: Array<{ method: string; path: string; body: unknown }> = [];
-    const all: Record<string, Answer | ((request: Request) => Answer)> = {
-      'GET /kortix/health': { body: { capabilities: ['runtime.turns.v1', 'runtime.actions.v1', 'session.compact'] } },
-      ...routes,
-    };
+    const all: Record<string, Answer | ((request: Request) => Answer)> = routes;
     const fetch = (async (request: Request) => {
       const url = new URL(request.url);
       const path = `${url.pathname.replace(prefix, '')}${url.search}`;
@@ -237,7 +126,7 @@ describe('session runtime verbs on a box with the session-log actions (runtime.a
     return { verbs: createRuntimeVerbs({ runtimeUrl, rootId: 'ses_root', fetch }), requests, runtimeUrl, fetch };
   };
 
-  test('answers go to the action routes; the capability is read once per runtime', async () => {
+  test('answers go to the action routes; no capability is read', async () => {
     const box = actionsBox({
       'POST /kortix/runtime/permissions/perm_1/reply': { body: { ok: true } },
       'POST /kortix/runtime/questions/que_1/reply': { body: { ok: true } },
@@ -245,10 +134,8 @@ describe('session runtime verbs on a box with the session-log actions (runtime.a
     });
     await box.verbs.answerPermission('perm_1', 'always', 'fine');
     await box.verbs.answerQuestion('que_1', [['Yes']]);
-    // A second verbs object for the same runtime reads no second health.
     await createRuntimeVerbs({ runtimeUrl: box.runtimeUrl, rootId: 'ses_root', fetch: box.fetch }).answerQuestion('que_2', null);
     expect(box.requests.map((r) => [r.method, r.path, r.body])).toEqual([
-      ['GET', '/kortix/health', null],
       ['POST', '/kortix/runtime/permissions/perm_1/reply', { reply: 'always', message: 'fine' }],
       ['POST', '/kortix/runtime/questions/que_1/reply', { answers: [['Yes']] }],
       ['POST', '/kortix/runtime/questions/que_2/reject', null],
@@ -296,6 +183,29 @@ describe('session runtime verbs on a box with the session-log actions (runtime.a
     expect(box.requests.filter((r) => r.method === 'POST')).toHaveLength(1);
   });
 
+  test('compact() does not submit when reading the pending statuses fails', async () => {
+    const box = actionsBox({ 'GET /kortix/runtime/pending': { status: 503, body: { error: 'runtime unavailable' } } });
+    await expect(box.verbs.compact({ providerID: 'kortix', modelID: 'm' })).rejects.toThrow('Reading the pending requests failed: runtime unavailable');
+    expect(box.requests.some((r) => r.method === 'POST')).toBe(false);
+  });
+
+  test('compact() uses the given model, else the model the runtime state document names', async () => {
+    const box = actionsBox({
+      'GET /kortix/runtime/pending': { body: { statuses: { ses_root: 'idle' }, permissions: [], questions: [] } },
+      'POST /kortix/runtime/sessions/ses_root/compact': { status: 202, body: { ok: true } },
+      'GET /kortix/runtime/state': { body: { schema: 'kortix.runtime.v1', config: { known: true, value: { model: 'kortix/claude-sonnet' } } } },
+    });
+    expect(await box.verbs.compact({ providerID: 'anthropic', modelID: 'claude' })).toEqual({ providerID: 'anthropic', modelID: 'claude' });
+    expect(await box.verbs.compact()).toEqual({ providerID: 'kortix', modelID: 'claude-sonnet' });
+    expect(box.requests.map((r) => [r.method, r.path])).toEqual([
+      ['GET', '/kortix/runtime/pending'],
+      ['POST', '/kortix/runtime/sessions/ses_root/compact'],
+      ['GET', '/kortix/runtime/state'],
+      ['GET', '/kortix/runtime/pending'],
+      ['POST', '/kortix/runtime/sessions/ses_root/compact'],
+    ]);
+  });
+
   test.each(['busy', 'compacting'])('compact() refuses a %s root and posts nothing', async (status) => {
     const box = actionsBox({
       'GET /kortix/runtime/pending': { body: { statuses: { ses_root: status }, permissions: [], questions: [] } },
@@ -306,44 +216,16 @@ describe('session runtime verbs on a box with the session-log actions (runtime.a
   });
 });
 
-describe('pendingRequests() on a box without the session-log actions', () => {
-  test('reads the compatibility lists and answers them as pending records', async () => {
-    const { fetch } = fakeRuntime({
-      'GET /session/status': { body: { ses_root: { type: 'retry', attempt: 1, message: 'rate limited', next: 1 } } },
-      'GET /permission': { body: [{ id: 'per_1', sessionID: 'ses_root', permission: 'bash', patterns: ['ls'], metadata: { command: 'ls' }, always: ['ls *'], tool: { messageID: 'msg_1', callID: 'call_1' } }] },
-      'GET /question': { body: [{ id: 'que_1', sessionID: 'ses_child', questions: [{ question: 'Which?', header: 'Pick', options: [] }] }] },
-    });
-    const verbs = createRuntimeVerbs({ runtimeUrl: 'http://api.test/v1/p/sbx_old/8000', rootId: 'ses_root', fetch: rewrite(fetch, '/v1/p/sbx_old/8000') });
-    expect(await verbs.pendingRequests()).toEqual({
-      statuses: { ses_root: 'busy' },
-      permissions: [{ id: 'per_1', thread_id: 'ses_root', call_id: 'call_1', payload: { permission: 'bash', patterns: ['ls'], always: ['ls *'], metadata: { command: 'ls' } }, asked_at: '' }],
-      questions: [{ id: 'que_1', thread_id: 'ses_child', payload: { questions: [{ question: 'Which?', header: 'Pick', options: [] }] }, asked_at: '' }],
-    });
-  });
-});
-
-/** Serve another runtime URL's requests from a fake built for RUNTIME. */
-function rewrite(fetch: typeof globalThis.fetch, prefix: string): typeof globalThis.fetch {
-  return (async (request: Request) =>
-    fetch(new Request(request.url.replace(prefix, '/v1/p/sbx_1/8000'), request))) as typeof globalThis.fetch;
-}
-
 describe('liveLog()', () => {
-  test("a box with the session-log actions answers a page of its own log", async () => {
+  test('answers a page of the box log', async () => {
     const page = { generation: 3, thread_id: 'ses_root', messages: [{ message_id: 'msg_1', seq: 4 }], has_more: true };
     const { fetch, requests } = fakeRuntime({
-      'GET /kortix/health': { body: { capabilities: ['runtime.actions.v1'] } },
       'GET /kortix/runtime/log?thread=ses_child&before_seq=9&limit=5': { body: page },
     });
     const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
     expect(await verbs.liveLog({ thread: 'ses_child', before_seq: 9, limit: 5 })).toEqual(page as never);
-    expect(requests.map((r) => r.path)).toEqual(['/kortix/health', '/kortix/runtime/log?thread=ses_child&before_seq=9&limit=5']);
+    expect(requests.map((r) => r.path)).toEqual(['/kortix/runtime/log?thread=ses_child&before_seq=9&limit=5']);
   });
 
-  test('an older box answers null: the caller reads the stored log', async () => {
-    const { fetch, requests } = fakeRuntime({});
-    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
-    expect(await verbs.liveLog()).toBeNull();
-    expect(requests).toEqual([]);
-  });
+
 });

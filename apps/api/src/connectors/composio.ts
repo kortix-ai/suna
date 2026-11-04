@@ -11,6 +11,7 @@ import {
   NATIVE_TOOLKITS,
   composioRestClient,
   customAuthConfigIds,
+  ownOAuthAppId,
   searchComposioCatalog,
   type ComposioCatalogClient,
 } from './composio-catalog-search';
@@ -21,6 +22,7 @@ import {
   kortixComposioTool,
 } from './composio-youtube-upload';
 import type { ComposioToolLike } from './types';
+import { logger } from '../lib/logger';
 
 // Re-exported so `db-deps` reaches it through the lazily imported adapter module.
 export { composioCatalogSections } from './composio-catalog-search';
@@ -251,6 +253,10 @@ function authConfigRequired(toolkit: string): HTTPException {
  * operator configured X. Every toolkit Composio accepts keeps its managed
  * defaults, exactly as before: no auth config is listed or selected for it.
  * The lookup is not cached, so a config created a moment ago applies.
+ *
+ * `ownApp` (connect only): the operator's own OAuth app wins over Composio's
+ * managed app (`ownOAuthAppId`). A session that already holds an account keeps
+ * the app that account signed in with, so this never applies to calls.
  */
 async function createDirectSession(input: {
   runtime: ComposioRuntime;
@@ -258,8 +264,26 @@ async function createDirectSession(input: {
   toolkit: string;
   connectedAccountId?: string | null;
   catalogClient?: ComposioCatalogClient;
+  ownApp?: boolean;
 }): Promise<ComposioSessionLike> {
   const config = directSessionConfig(input.toolkit, input.connectedAccountId);
+  const ownAppId = input.ownApp ? await lookupOwnOAuthApp(input.toolkit, input.catalogClient) : null;
+  if (ownAppId) {
+    try {
+      return await createToolkitSession(input.runtime, input.userId, input.toolkit, {
+        ...config,
+        authConfigs: { [input.toolkit]: ownAppId },
+      });
+    } catch (error) {
+      // An unknown slug is the same refusal on every path: answer its 422.
+      if (error instanceof HTTPException) throw error;
+      // Composio refused the own app (removed or disabled since the lookup):
+      // connect as if it did not exist, and say so in the log.
+      logger.warn(`[composio] own OAuth app ${ownAppId} refused for ${input.toolkit}, connecting without it`, {
+        error: error instanceof Error ? error.message.split('\n')[0] : String(error),
+      });
+    }
+  }
   try {
     return await createToolkitSession(input.runtime, input.userId, input.toolkit, config);
   } catch (error) {
@@ -274,6 +298,23 @@ async function createDirectSession(input: {
       ...config,
       authConfigs: { [input.toolkit]: authConfigId },
     });
+  }
+}
+
+/**
+ * The operator's own OAuth app for a toolkit, or null. A failed lookup
+ * connects with Composio's managed app, as before this lookup existed: a
+ * Composio listing error must not block every connect.
+ */
+async function lookupOwnOAuthApp(toolkit: string, catalogClient?: ComposioCatalogClient): Promise<string | null> {
+  if (!catalogClient && !composioConfigured()) return null;
+  try {
+    return await ownOAuthAppId({ catalogClient: catalogClient ?? composioRestClient(), toolkit });
+  } catch (error) {
+    logger.warn(`[composio] own OAuth app lookup failed for ${toolkit}, connecting with the managed app`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
   }
 }
 
@@ -855,15 +896,18 @@ export async function composioConnectUrl(input: {
   catalogClient?: ComposioCatalogClient;
 }): Promise<ComposioConnectResult> {
   assertStableUserId(input.connectionId, input.stableUserId);
-  // Composio's managed app is the supported zero-setup path. Custom OAuth
-  // scopes require a verified app owned by the customer and must not be
-  // smuggled into the managed client. An operator's own auth config is used
-  // only for a toolkit Composio holds no app for (see createDirectSession).
+  // Composio's managed app is the zero-setup path. Custom OAuth scopes require
+  // a verified app owned by the operator and must not be smuggled into the
+  // managed client. The operator's own OAuth app (an enabled custom `OAUTH2`
+  // auth config) wins: the new account signs in with it and uses its quota
+  // (`ownOAuthAppId`). Other custom configs apply only to a toolkit Composio
+  // holds no app for (see createDirectSession).
   const session = await createDirectSession({
     runtime: input.runtime ?? getComposioRuntime(),
     userId: input.stableUserId,
     toolkit: input.app,
     catalogClient: input.catalogClient,
+    ownApp: true,
   });
   const state = await loadToolkitState(session, input.app);
   if (state.isNoAuth) {

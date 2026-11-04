@@ -3,11 +3,13 @@ import { projectSessions } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
-import type { OpencodeSessionLite } from '../opencode-session-resolver';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 
 /** A runtime session as the runtime lists it, or as an older writer stored it. */
-type RuntimeSessionLike = OpencodeSessionLite & {
+type RuntimeSessionLike = {
+  id: string;
+  parentID?: string | null;
+  time?: { created?: number; updated?: number; archived?: number };
   title?: string | null;
   fork_source_id?: string;
   parent_id?: string | null;
