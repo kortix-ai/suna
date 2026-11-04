@@ -13,7 +13,7 @@ const USER = '60000000-0000-4000-8000-000000000001';
 const ACCOUNT = '60000000-0000-4000-8000-000000000002';
 const PROJECT = '60000000-0000-4000-8000-000000000003';
 const actor = { userId: USER, accountId: ACCOUNT, credential: { kind: 'jwt' as const }, ctx: {} };
-let verdict: ArtifactLiveAccess = { ok: true, actor };
+let verdict: ArtifactLiveAccess = { ok: true, actor, credentialExpiresAt: null };
 
 mock.module('./live-access', () => ({
   artifactLiveActor: async () => actor,
@@ -38,7 +38,7 @@ class FakeWs {
 }
 
 async function openSocket(artifactId: string, credentialExpiresAt: number | null = T0 + 3_600_000): Promise<FakeWs> {
-  const { ticket } = mintArtifactLiveTicket({ p: PROJECT, a: artifactId, u: USER, c: ACCOUNT, k: 'jwt', t: null, s: null, m: null, g: null, x: credentialExpiresAt });
+  const { ticket } = mintArtifactLiveTicket({ p: PROJECT, a: artifactId, u: USER, c: ACCOUNT, k: 'jwt', t: null, s: null, m: null, q: 'browser_session', g: null, x: credentialExpiresAt });
   const prepared = await hub.prepareArtifactLiveUpgrade({ projectId: PROJECT, artifactId, ticket, ip: null });
   if (!prepared.ok) throw new Error(`upgrade refused: ${prepared.status} ${prepared.body.code}`);
   const ws = new FakeWs(prepared.data);
@@ -50,7 +50,7 @@ const ping = (ws: FakeWs) => hub.artifactLiveWsHandlers.message(ws as never, JSO
 
 beforeEach(() => {
   setSystemTime(new Date(T0));
-  verdict = { ok: true, actor };
+  verdict = { ok: true, actor, credentialExpiresAt: null };
 });
 afterEach(() => setSystemTime());
 
@@ -100,7 +100,7 @@ describe('the credential behind a live socket (Strix: revoked or expired session
   test('an upgrade whose credential is gone is refused with 401', async () => {
     verdict = { ok: false, status: 401, error: 'Your session ended', code: 'credential_revoked' };
     const artifactId = randomUUID();
-    const { ticket } = mintArtifactLiveTicket({ p: PROJECT, a: artifactId, u: USER, c: ACCOUNT, k: 'jwt', t: null, s: null, m: null, g: null, x: null });
+    const { ticket } = mintArtifactLiveTicket({ p: PROJECT, a: artifactId, u: USER, c: ACCOUNT, k: 'jwt', t: null, s: null, m: null, q: 'browser_session', g: null, x: null });
     const prepared = await hub.prepareArtifactLiveUpgrade({ projectId: PROJECT, artifactId, ticket, ip: null });
     expect(prepared.ok ? 101 : prepared.status).toBe(401);
   });
@@ -110,9 +110,41 @@ describe('socket caps at the upgrade (Strix: unbounded live sockets per Artifact
   test(`the ${SOCKETS_PER_ACTOR + 1}th socket of one person on one Artifact is refused with 429 before the upgrade`, async () => {
     const artifactId = randomUUID();
     for (let i = 0; i < SOCKETS_PER_ACTOR; i++) await openSocket(artifactId);
-    const { ticket } = mintArtifactLiveTicket({ p: PROJECT, a: artifactId, u: USER, c: ACCOUNT, k: 'jwt', t: null, s: null, m: null, g: null, x: null });
+    const { ticket } = mintArtifactLiveTicket({ p: PROJECT, a: artifactId, u: USER, c: ACCOUNT, k: 'jwt', t: null, s: null, m: null, q: 'browser_session', g: null, x: null });
     const prepared = await hub.prepareArtifactLiveUpgrade({ projectId: PROJECT, artifactId, ticket, ip: null });
     expect(prepared.ok).toBe(false);
     if (!prepared.ok) expect([prepared.status, prepared.body.code]).toEqual([429, 'artifact_live_too_many_sockets']);
+  });
+});
+
+describe('one Artifact, one room (Strix: case-variant spellings of the Artifact UUID)', () => {
+  test('every hex-case spelling of the Artifact and project ids shares one room and one per-person cap', async () => {
+    const artifactId = randomUUID();
+    const upper = artifactId.toUpperCase();
+    const rooms = hub.artifactLiveRoomCount();
+    for (let i = 0; i < SOCKETS_PER_ACTOR - 1; i++) await openSocket(artifactId);
+    // A ticket minted on the lower-case id opens through an upper-case URL, into the same room.
+    const { ticket } = mintArtifactLiveTicket({ p: PROJECT, a: artifactId, u: USER, c: ACCOUNT, k: 'jwt', t: null, s: null, m: null, q: 'browser_session', g: null, x: null });
+    const mixed = await hub.prepareArtifactLiveUpgrade({ projectId: PROJECT.toUpperCase(), artifactId: upper, ticket, ip: null });
+    expect(mixed.ok).toBe(true);
+    if (!mixed.ok) return;
+    expect([mixed.data.projectId, mixed.data.artifactId]).toEqual([PROJECT, artifactId]);
+    hub.artifactLiveWsHandlers.open(new FakeWs(mixed.data) as never);
+    expect(hub.artifactLiveRoomCount()).toBe(rooms + 1);
+    // The cap counts every spelling: the next socket, under yet another spelling, is refused.
+    const next = mintArtifactLiveTicket({ p: PROJECT, a: upper, u: USER, c: ACCOUNT, k: 'jwt', t: null, s: null, m: null, q: 'browser_session', g: null, x: null });
+    const refused = await hub.prepareArtifactLiveUpgrade({ projectId: PROJECT, artifactId: `${upper.slice(0, 4)}${artifactId.slice(4)}`, ticket: next.ticket, ip: null });
+    expect(refused.ok ? 101 : refused.status).toBe(429);
+  });
+
+  test('an agent signal through an upper-case URL shows in the room the viewers are in', async () => {
+    const artifactId = randomUUID();
+    const ws = await openSocket(artifactId);
+    const sessionId = randomUUID();
+    const rooms = hub.artifactLiveRoomCount();
+    await hub.signalArtifactLiveAgent({ artifactId: artifactId.toUpperCase(), projectId: PROJECT.toUpperCase() }, sessionId.toUpperCase(), { status: 'editing' });
+    // Another spelling would open a second room, which no viewer is in.
+    expect(hub.artifactLiveRoomCount()).toBe(rooms);
+    expect(ws.closed).toBeNull();
   });
 });

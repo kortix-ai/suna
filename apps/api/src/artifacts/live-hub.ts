@@ -116,7 +116,11 @@ export async function prepareArtifactLiveUpgrade(input: {
   ticket: string | null;
   ip: string | null;
 }): Promise<ArtifactLiveUpgrade> {
-  const { projectId, artifactId, ticket } = input;
+  const { ticket } = input;
+  // One key per Artifact: PostgreSQL reads a UUID in any hex case, and every
+  // spelling would otherwise open its own room and its own socket budget.
+  const projectId = input.projectId.toLowerCase();
+  const artifactId = input.artifactId.toLowerCase();
   if (!isUuid(projectId) || !isUuid(artifactId)) return { ok: false, status: 404, body: { error: 'Artifact not found', code: 'not_found' } };
   const verified = verifyArtifactLiveTicket(ticket, { projectId, artifactId });
   if (!verified || !consumeArtifactLiveTicket(verified.digest, verified.expiresAt)) {
@@ -125,10 +129,11 @@ export async function prepareArtifactLiveUpgrade(input: {
   sendArtifactLiveDelta({ k: 'used', h: verified.digest, x: verified.expiresAt });
   const { claims } = verified;
   const now = Date.now();
-  const credential: ArtifactLiveCredential = { authSessionId: claims.g, expiresAt: Math.min(claims.x ?? Infinity, now + CREDENTIAL_MAX_MS) };
+  const credential: ArtifactLiveCredential = { ref: { kind: claims.q, id: claims.g }, expiresAt: Math.min(claims.x ?? Infinity, now + CREDENTIAL_MAX_MS) };
   try {
     const access = await checkArtifactLiveAccess({ actor: await artifactLiveActor(claims, input.ip), sessionId: claims.s, projectId, artifactId, credential });
     if (!access.ok) return { ok: false, status: access.status, body: { error: access.error, code: access.code } };
+    if (typeof access.credentialExpiresAt === 'number') credential.expiresAt = Math.min(credential.expiresAt, access.credentialExpiresAt);
     const identity = await artifactLiveIdentity(access.actor, claims.s, projectId);
     // Every socket receives every presence frame: bound what one person, and one room, may hold.
     if (!rooms.canJoin(artifactId, identity.who)) {
@@ -183,7 +188,7 @@ function requestRecheck(match: (binding: Binding, artifactId: string, projectId:
 function actorKey(binding: Binding): string {
   const { actor } = binding;
   const token = 'tokenId' in actor.credential ? actor.credential.tokenId : '';
-  return `${actor.userId}|${actor.credential.kind}|${token}|${binding.sessionId ?? ''}|${binding.credential.authSessionId ?? ''}|${actor.ctx.ip ?? ''}`;
+  return `${actor.userId}|${actor.credential.kind}|${token}|${binding.sessionId ?? ''}|${binding.credential.ref.kind}:${binding.credential.ref.id ?? ''}|${actor.ctx.ip ?? ''}`;
 }
 
 type DueConn = { artifactId: string; projectId: string; id: string; meta: Binding };
@@ -197,13 +202,17 @@ async function recheckGroup(group: DueConn[]): Promise<void> {
   }
   let verdict: 'ok' | 'lost' | 'unauthorized' | 'retry' = 'retry';
   let actor: Actor | null = null;
+  let credentialExpiresAt: number | null = null;
   try {
     const access = await checkArtifactLiveAccess({
       actor: first.meta.actor, sessionId: first.meta.sessionId, projectId: first.projectId, artifactId: first.artifactId,
-      credential: { authSessionId: first.meta.credential.authSessionId, expiresAt: Math.min(...group.map((conn) => conn.meta.credential.expiresAt)) },
+      credential: { ref: first.meta.credential.ref, expiresAt: Math.min(...group.map((conn) => conn.meta.credential.expiresAt)) },
     });
     verdict = access.ok ? 'ok' : access.status === 401 ? 'unauthorized' : 'lost';
-    if (access.ok) actor = access.actor;
+    if (access.ok) {
+      actor = access.actor;
+      credentialExpiresAt = typeof access.credentialExpiresAt === 'number' ? access.credentialExpiresAt : null;
+    }
   } catch (error) {
     // A failed read keeps the socket: only a definite "no" closes it.
     logger.warn('[artifact-live] access re-check failed', { error: error instanceof Error ? error.message : String(error) });
@@ -221,6 +230,8 @@ async function recheckGroup(group: DueConn[]): Promise<void> {
       continue;
     }
     if (actor) conn.meta.actor = actor;
+    // An expiry the row moved earlier (a shortened token) ends the socket then.
+    if (credentialExpiresAt !== null) conn.meta.credential.expiresAt = Math.min(conn.meta.credential.expiresAt, credentialExpiresAt);
     again ||= conn.meta.again;
     conn.meta.nextCheckAt = conn.meta.again ? now : now + (verdict === 'ok' ? L.accessRecheckMs : RECHECK_RETRY_MS);
   }
@@ -274,7 +285,9 @@ export async function signalArtifactLiveAgent(
   }
   const agentName = await artifactLiveSessionAgent(artifact.projectId, sessionId);
   if (!agentName) throw new ArtifactLiveAgentError(404, 'Session not found', 'not_found');
-  rooms.agentSignal({ artifactId: artifact.artifactId, projectId: artifact.projectId, sessionId, agentName, signal });
+  rooms.agentSignal({
+    artifactId: artifact.artifactId.toLowerCase(), projectId: artifact.projectId.toLowerCase(), sessionId: sessionId.toLowerCase(), agentName, signal,
+  });
 }
 
 /** A delivered comment hand-off (`live-publish.ts`). */
@@ -286,12 +299,14 @@ export function artifactLiveAgentDelivered(input: {
   threadId: string;
   cursor: ArtifactLivePosition | null;
 }): void {
-  rooms.agentDelivered(input);
+  rooms.agentDelivered({
+    ...input, artifactId: input.artifactId.toLowerCase(), projectId: input.projectId.toLowerCase(), sessionId: input.sessionId.toLowerCase(),
+  });
 }
 
 /** The session replied (`live-publish.ts`). */
 export function artifactLiveAgentWrote(artifactId: string, sessionId: string): void {
-  rooms.agentWrote(artifactId, sessionId);
+  rooms.agentWrote(artifactId.toLowerCase(), sessionId.toLowerCase());
 }
 
 // ── Wiring ───────────────────────────────────────────────────────────────────
@@ -313,7 +328,7 @@ function onNotify(payload: string): void {
     return;
   }
   if (!isUuid(m.a)) return;
-  const a = m.a;
+  const a = m.a.toLowerCase();
   switch (m.k) {
     case 'ch': {
       const what = artifactLiveChangeSchema.safeParse(m.w);
@@ -343,7 +358,7 @@ function onNotify(payload: string): void {
     case 'sync':
       return rooms.remote(origin, { k: 'sync', a });
     case 'aw':
-      if (isUuid(m.s)) rooms.remote(origin, { k: 'aw', a, s: m.s });
+      if (isUuid(m.s)) rooms.remote(origin, { k: 'aw', a, s: m.s.toLowerCase() });
       return;
   }
 }
@@ -373,7 +388,8 @@ registerProjectScopedMemo({
 
 // A session's box changed (turn start or end, stop): an agent it showed here
 // leaves when a turn it was in has ended.
-onSessionChanged((sessionId) => {
+onSessionChanged((changed) => {
+  const sessionId = changed.toLowerCase();
   if (!rooms.holdsAgent(sessionId)) return;
   void import('../projects/surface')
     .then(({ sessionHoldsLiveTurn }) => sessionHoldsLiveTurn(sessionId))

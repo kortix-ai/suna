@@ -4,10 +4,10 @@
  * re-check runs on a timer, so neither has a request to read.
  *
  * First the credential, as REST checks it on every request (401 when gone):
- *   - it has not expired (the JWT's `exp`, capped at an hour per ticket);
- *   - a browser session's `auth.sessions` row still exists and its user may
- *     sign in (`authSessionLive`): sign-out, a ban or a deletion ends it;
- *   - a PAT or an agent token is still valid and bound as it was
+ *   - it has not expired (its own expiry, capped at an hour per ticket);
+ *   - it is not revoked: the read `live-credential.ts` names for its kind
+ *     (browser session, OAuth token, PAT, agent token, service account);
+ *   - a PAT or an agent token is still bound as it was
  *     (`refreshArtifactCommentActor`).
  * Then the comment routes' gate (`authorizeComments` in
  * `projects/routes/artifact-comments.ts`, read mode) over plain values:
@@ -29,20 +29,20 @@ import { authorize } from '../iam/authorize';
 import { privateChannelFoldersFor } from '../drives/service';
 import { resolveUserIdentities } from '../projects/surface';
 import { db } from '../shared/db';
-import { authSessionLive } from '../shared/jwt-liveness';
+import { inspectLiveCredential, type LiveCredentialRef } from './live-credential';
 import { ArtifactCommentAuthorityError, refreshArtifactCommentActor } from './comment-authority';
 import { clipText, type LiveIdentity } from './live-rooms';
 import type { ArtifactLiveTicketClaims } from './live-ticket';
 import { canView, getArtifact } from './service';
 
 export type ArtifactLiveAccess =
-  | { ok: true; actor: Actor }
+  | { ok: true; actor: Actor; credentialExpiresAt: number | null }
   | { ok: false; status: 401 | 403 | 404; error: string; code: string };
 
 /** What the socket knows about the credential that opened it. */
 export interface ArtifactLiveCredential {
-  /** The browser session behind a JWT, or null. */
-  authSessionId: string | null;
+  /** Its kind and row (`live-credential.ts`). */
+  ref: LiveCredentialRef;
   /** Epoch ms after which the socket must re-authenticate (4401). */
   expiresAt: number;
 }
@@ -70,8 +70,8 @@ export async function checkArtifactLiveAccess(input: {
   if (input.credential.expiresAt <= Date.now()) {
     return { ok: false, status: 401, error: 'The credential that opened this socket expired', code: 'credential_expired' };
   }
-  const { authSessionId } = input.credential;
-  if (input.actor.credential.kind === 'jwt' && authSessionId && !(await authSessionLive(input.actor.userId, authSessionId))) return revoked();
+  const state = await inspectLiveCredential(input.credential.ref, { userId: input.actor.userId, accountId: input.actor.accountId });
+  if (!state.live) return revoked();
   let actor: Actor;
   try {
     actor = await refreshArtifactCommentActor(input.actor);
@@ -103,7 +103,7 @@ export async function checkArtifactLiveAccess(input: {
   if (!member.allowed) return notFound();
   if (!read && !comment) return { ok: false, status: 403, error: 'You cannot view this Artifact', code: 'artifact_comment_forbidden' };
   if (!artifact || !canView(artifact, { userId: actor.userId, privateFolders: folders.visible, allPrivateFolders: folders.all })) return notFound();
-  return { ok: true, actor };
+  return { ok: true, actor, credentialExpiresAt: state.expiresAt };
 }
 
 /** The agent name of a session in this project, or null. */

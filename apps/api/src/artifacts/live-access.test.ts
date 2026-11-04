@@ -20,7 +20,7 @@ describe('the credential behind a live socket', () => {
   test('an expired credential → 401 credential_expired, with no session read', async () => {
     let reads = 0;
     __setSessionLivenessLoaderForTests(async () => { reads++; return { id: USER, email: '' }; });
-    const verdict = await checkArtifactLiveAccess({ ...scope, actor, credential: { authSessionId: SESSION, expiresAt: Date.now() - 1 } });
+    const verdict = await checkArtifactLiveAccess({ ...scope, actor, credential: { ref: { kind: 'browser_session', id: SESSION }, expiresAt: Date.now() - 1 } });
     expect(verdict).toMatchObject({ ok: false, status: 401, code: 'credential_expired' });
     expect(reads).toBe(0);
   });
@@ -28,14 +28,14 @@ describe('the credential behind a live socket', () => {
   test('a signed-out browser session → 401 credential_revoked', async () => {
     const asked: string[] = [];
     __setSessionLivenessLoaderForTests(async (userId, sessionId) => { asked.push(`${userId}|${sessionId}`); return null; });
-    const verdict = await checkArtifactLiveAccess({ ...scope, actor, credential: { authSessionId: SESSION, expiresAt: Date.now() + 60_000 } });
+    const verdict = await checkArtifactLiveAccess({ ...scope, actor, credential: { ref: { kind: 'browser_session', id: SESSION }, expiresAt: Date.now() + 60_000 } });
     expect(verdict).toMatchObject({ ok: false, status: 401, code: 'credential_revoked' });
     expect(asked).toEqual([`${USER}|${SESSION}`]);
   });
 
   test('a failed session read throws: the socket stays and the next re-check retries', async () => {
     __setSessionLivenessLoaderForTests(async () => { throw new Error('auth.sessions unavailable'); });
-    await expect(checkArtifactLiveAccess({ ...scope, actor, credential: { authSessionId: SESSION, expiresAt: Date.now() + 60_000 } }))
+    await expect(checkArtifactLiveAccess({ ...scope, actor, credential: { ref: { kind: 'browser_session', id: SESSION }, expiresAt: Date.now() + 60_000 } }))
       .rejects.toThrow('auth.sessions unavailable');
   });
 });

@@ -14,7 +14,9 @@ import { HTTPException } from 'hono/http-exception';
 import { ARTIFACT_LIVE_LIMITS, artifactLiveAgentSignalSchema } from '@kortix/shared/artifact-live';
 import { auth, errors, json } from '../../openapi';
 import { ArtifactLiveAgentError, signalArtifactLiveAgent } from '../../artifacts/live-hub';
+import { inspectLiveCredential, liveCredentialKind, type LiveCredentialRef } from '../../artifacts/live-credential';
 import { artifactLiveTicketClaims, mintArtifactLiveTicket } from '../../artifacts/live-ticket';
+import type { Actor } from '../../iam/actor';
 import { bearerToken } from '../../shared/bearer-token';
 import { decodeSupabaseJwtPayload } from '../../shared/jwt-verify';
 import { projectsApp } from '../lib/app';
@@ -24,20 +26,35 @@ const ArtifactParams = z.object({ projectId: z.string().uuid(), artifactId: z.st
 const notFound = (c: Context) => c.json({ error: 'Artifact not found', code: 'not_found' }, 404);
 
 /**
- * The browser session behind a Supabase JWT and the JWT's expiry. The ticket
- * carries both: the socket closes with 4401 at the expiry, and each re-check
- * asks `auth.sessions` whether the session is still live (sign-out deletes it).
- * Null for a token credential: its row is re-validated instead.
+ * The credential behind this request, as the live socket will re-check it
+ * (`artifacts/live-credential.ts`): its kind, its row, and its expiry. A
+ * browser session's expiry is the access token's `exp`; every other kind
+ * reports its row's. Null: an authType that may not open a socket.
  */
-function browserCredential(c: Context): { authSessionId: string | null; expiresAt: number | null } {
-  if (c.get('authType') !== 'supabase') return { authSessionId: null, expiresAt: null };
-  const token = bearerToken(c.req.header('authorization'));
-  const exp = token ? decodeSupabaseJwtPayload(token)?.exp : undefined;
-  const sessionId = c.get('sessionId');
-  return {
-    authSessionId: typeof sessionId === 'string' ? sessionId : null,
-    expiresAt: typeof exp === 'number' && Number.isFinite(exp) ? exp * 1000 : null,
-  };
+function liveCredential(c: Context, actor: Actor): { ref: LiveCredentialRef; tokenExpiresAt: number | null } | null {
+  const kind = liveCredentialKind(c.get('authType'), actor.credential.kind);
+  if (!kind) return null;
+  const { credential } = actor;
+  switch (kind) {
+    case 'browser_session': {
+      const token = bearerToken(c.req.header('authorization'));
+      const exp = token ? decodeSupabaseJwtPayload(token)?.exp : undefined;
+      const sessionId = c.get('sessionId');
+      return {
+        ref: { kind, id: typeof sessionId === 'string' ? sessionId : null },
+        tokenExpiresAt: typeof exp === 'number' && Number.isFinite(exp) ? exp * 1000 : null,
+      };
+    }
+    case 'oauth': {
+      const tokenId = c.get('oauthTokenId');
+      return { ref: { kind, id: typeof tokenId === 'string' ? tokenId : null }, tokenExpiresAt: null };
+    }
+    case 'pat':
+    case 'agent_session':
+      return { ref: { kind, id: 'tokenId' in credential ? credential.tokenId : null }, tokenExpiresAt: null };
+    case 'service_account':
+      return { ref: { kind, id: credential.kind === 'service_account' ? credential.serviceAccountId : null }, tokenExpiresAt: null };
+  }
 }
 
 const TicketSchema = z.object({
@@ -69,13 +86,27 @@ export function registerArtifactLiveRoutes(): void {
     description: `The ticket lives ${ARTIFACT_LIVE_LIMITS.ticketMs / 1000} s, works once, and is bound to you and this Artifact. A browser cannot send Authorization on a WebSocket, so the socket authenticates with the ticket and never with a JWT in its URL.`,
     ...auth,
     request: { params: ArtifactParams },
-    responses: { 200: json(TicketSchema, 'The ticket'), ...errors(401, 403, 404) },
+    responses: { 200: json(TicketSchema, 'The ticket'), ...errors(401, 403, 404, 503) },
   }), async (c) => {
     const { projectId, artifactId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, false);
     if (!access.ok) return access.response;
-    const claims = artifactLiveTicketClaims(access.actor, access.scope.sessionId, { projectId, artifactId }, browserCredential(c));
-    if (!claims) return c.json({ error: 'This credential cannot open live presence', code: 'artifact_live_forbidden' }, 403);
+    const forbidden = () => c.json({ error: 'This credential cannot open live presence', code: 'artifact_live_forbidden' }, 403);
+    const credential = liveCredential(c, access.actor);
+    if (!credential) return forbidden();
+    // The credential's own expiry goes into the ticket: the socket closes with 4401 then.
+    let state;
+    try {
+      state = await inspectLiveCredential(credential.ref, { userId: access.actor.userId, accountId: access.actor.accountId });
+    } catch {
+      return c.json({ error: 'Live presence is unavailable; try again shortly', code: 'artifact_live_unavailable' }, 503);
+    }
+    if (!state.live) return c.json({ error: 'The credential is no longer valid', code: 'credential_revoked' }, 401);
+    const expiries = [credential.tokenExpiresAt, state.expiresAt].filter((value): value is number => value !== null);
+    const claims = artifactLiveTicketClaims(access.actor, access.scope.sessionId, { projectId, artifactId }, {
+      ...credential.ref, expiresAt: expiries.length ? Math.min(...expiries) : null,
+    });
+    if (!claims) return forbidden();
     const { ticket, expiresAt } = mintArtifactLiveTicket(claims);
     c.header('Cache-Control', 'no-store');
     return c.json({ ticket, expires_at: new Date(expiresAt).toISOString() }, 200);

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, setSystemTime, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { ARTIFACT_LIVE_LIMITS } from '@kortix/shared/artifact-live';
 import {
+  artifactLiveTicketClaims,
   consumeArtifactLiveTicket,
   markArtifactLiveTicketUsed,
   mintArtifactLiveTicket,
@@ -14,7 +15,7 @@ const ARTIFACT = '40000000-0000-4000-8000-000000000002';
 const OTHER = '40000000-0000-4000-8000-000000000003';
 const claims: ArtifactLiveTicketClaims = {
   p: PROJECT, a: ARTIFACT, u: '40000000-0000-4000-8000-000000000004', c: '40000000-0000-4000-8000-000000000005',
-  k: 'jwt', t: null, s: null, m: 'aal1', g: '40000000-0000-4000-8000-000000000008', x: Date.parse('2026-11-04T11:00:00.000Z'),
+  k: 'jwt', t: null, s: null, m: 'aal1', q: 'browser_session', g: '40000000-0000-4000-8000-000000000008', x: Date.parse('2026-11-04T11:00:00.000Z'),
 };
 const T0 = new Date('2026-11-04T10:00:00.000Z');
 
@@ -145,5 +146,25 @@ describe('the credential behind the ticket (Strix: revoked or expired sessions)'
     setSystemTime(T0);
     const { ticket } = mintArtifactLiveTicket({ ...claims, x: T0.getTime() - 1 });
     expect(verifyArtifactLiveTicket(ticket, { projectId: PROJECT, artifactId: ARTIFACT })).toBeNull();
+  });
+});
+
+describe('one Artifact, one key (Strix: case-variant spellings of the Artifact UUID)', () => {
+  test('claims are minted on lower-case ids, and a ticket binds to the Artifact in any hex case', () => {
+    setSystemTime(T0);
+    const actor = { userId: claims.u.toUpperCase(), accountId: claims.c, credential: { kind: 'jwt' as const }, ctx: {} };
+    const minted = artifactLiveTicketClaims(actor, null, { projectId: PROJECT.toUpperCase(), artifactId: ARTIFACT.toUpperCase() }, { kind: 'browser_session', id: null, expiresAt: null })!;
+    expect([minted.p, minted.a, minted.u]).toEqual([PROJECT, ARTIFACT, claims.u]);
+    const { ticket } = mintArtifactLiveTicket(minted);
+    expect(verifyArtifactLiveTicket(ticket, { projectId: PROJECT.toUpperCase(), artifactId: ARTIFACT.toUpperCase() })?.claims.a).toBe(ARTIFACT);
+    expect(verifyArtifactLiveTicket(ticket, { projectId: PROJECT, artifactId: OTHER.toUpperCase() })).toBeNull();
+  });
+
+  test('a ticket names its credential kind; an unknown kind is refused', () => {
+    setSystemTime(T0);
+    const { ticket } = mintArtifactLiveTicket({ ...claims, q: 'oauth', g: '40000000-0000-4000-8000-000000000009' });
+    expect(verifyArtifactLiveTicket(ticket, { projectId: PROJECT, artifactId: ARTIFACT })?.claims).toMatchObject({ q: 'oauth', g: '40000000-0000-4000-8000-000000000009' });
+    const bad = mintArtifactLiveTicket({ ...claims, q: 'cookie' as never });
+    expect(verifyArtifactLiveTicket(bad.ticket, { projectId: PROJECT, artifactId: ARTIFACT })).toBeNull();
   });
 });

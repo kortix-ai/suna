@@ -53,17 +53,19 @@ function safely(what: string, run: () => void): void {
 /** Tell every viewer of the Artifact to refetch `what` through REST. */
 export function publishArtifactLiveChange(artifactId: string, what: ArtifactLiveChange, version: string | null = null): void {
   const v = typeof version === 'string' && version.length > 0 && version.length <= 512 ? version : null;
+  const a = artifactId.toLowerCase();
   safely('changed', () => {
-    sink?.changed(artifactId, what, v);
-    sendArtifactLiveDelta({ k: 'ch', a: artifactId, w: what, v });
+    sink?.changed(a, what, v);
+    sendArtifactLiveDelta({ k: 'ch', a, w: what, v });
   });
 }
 
 /** Sharing changed or the Artifact is gone: every socket on it re-checks its access now. */
 export function requestArtifactLiveRecheck(artifactId: string): void {
+  const a = artifactId.toLowerCase();
   safely('recheck', () => {
-    sink?.recheck(artifactId);
-    sendArtifactLiveDelta({ k: 'chk', a: artifactId });
+    sink?.recheck(a);
+    sendArtifactLiveDelta({ k: 'chk', a });
   });
 }
 

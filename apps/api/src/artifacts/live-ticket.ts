@@ -32,6 +32,7 @@ import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } f
 import { ARTIFACT_LIVE_LIMITS } from '@kortix/shared/artifact-live';
 import { config } from '../config';
 import type { Actor } from '../iam/actor';
+import { LIVE_CREDENTIAL_KINDS, type LiveCredentialKind } from './live-credential';
 import { isUuid } from '../shared/validate';
 
 /** The credential kinds a ticket may carry. A sandbox token never mints one. */
@@ -56,7 +57,9 @@ export interface ArtifactLiveTicketClaims {
   s: string | null;
   /** The JWT's `aal` claim, or null. */
   m: string | null;
-  /** The browser session behind a JWT (`session_id`, a row of `auth.sessions`), or null. Re-checked while the socket is open. */
+  /** The credential's kind (`live-credential.ts`): what the socket re-checks while it is open. */
+  q: LiveCredentialKind;
+  /** The credential's row: the `auth.sessions` id, the OAuth token id, the token id or the service account id. Null: none known. */
   g: string | null;
   /** When the credential that minted the ticket expires (epoch ms), or null. The socket closes with 4401 then. */
   x: number | null;
@@ -115,23 +118,34 @@ function nonceDigest(nonce: string): string {
   return createHash('sha256').update(`kortix-artifact-live-ticket:${nonce}`).digest('hex');
 }
 
-/** The claims for the actor that passed the REST view check, or null for a sandbox token. */
+/**
+ * The claims for the actor that passed the REST view check, or null for a
+ * sandbox token. Every id is lower-case: PostgreSQL reads a UUID in any hex
+ * case, so one Artifact has thousands of spellings, and rooms, caps and tickets
+ * must key on one of them.
+ */
 export function artifactLiveTicketClaims(
   actor: Actor,
   sessionId: string | null,
   scope: { projectId: string; artifactId: string },
-  credential: { authSessionId: string | null; expiresAt: number | null } = { authSessionId: null, expiresAt: null },
+  credential: { kind: LiveCredentialKind; id: string | null; expiresAt: number | null },
 ): ArtifactLiveTicketClaims | null {
   const kind = actor.credential;
   if (kind.kind === 'sandbox') return null;
-  const token = kind.kind === 'pat' || kind.kind === 'agent_session' ? kind.tokenId : null;
+  const token = kind.kind === 'pat' || kind.kind === 'agent_session' ? kind.tokenId.toLowerCase() : null;
   return {
-    p: scope.projectId, a: scope.artifactId, u: actor.userId, c: actor.accountId,
-    k: kind.kind, t: token, s: sessionId, m: actor.ctx.mfaAal ?? null,
-    g: kind.kind === 'jwt' && isUuid(credential.authSessionId) ? credential.authSessionId : null,
+    p: scope.projectId.toLowerCase(), a: scope.artifactId.toLowerCase(), u: actor.userId.toLowerCase(), c: actor.accountId.toLowerCase(),
+    k: kind.kind, t: token, s: sessionId?.toLowerCase() ?? null, m: actor.ctx.mfaAal ?? null,
+    q: credential.kind,
+    g: isUuid(credential.id) ? credential.id.toLowerCase() : null,
     x: typeof credential.expiresAt === 'number' && Number.isFinite(credential.expiresAt) ? credential.expiresAt : null,
   };
 }
+
+/** Which credential kinds may stand behind which actor kinds. */
+const KIND_FITS: Record<LiveCredentialKind, ArtifactLiveTicketKind> = {
+  browser_session: 'jwt', oauth: 'jwt', pat: 'pat', agent_session: 'agent_session', service_account: 'service_account',
+};
 
 export function mintArtifactLiveTicket(claims: ArtifactLiveTicketClaims): { ticket: string; expiresAt: number } {
   const expiresAt = Date.now() + ARTIFACT_LIVE_LIMITS.ticketMs;
@@ -151,16 +165,21 @@ export function verifyArtifactLiveTicket(
 ): { claims: ArtifactLiveTicketClaims; expiresAt: number; digest: string } | null {
   const payload = open(ticket);
   if (!payload) return null;
-  const { p, a, u, c, k, t, s, m, g, x, n, exp } = payload;
+  const { p, a, u, c, k, t, s, m, q, g, x, n, exp } = payload;
   if (typeof exp !== 'number' || !Number.isFinite(exp) || exp < Date.now()) return null;
   if (!nullableUuid(g) || (x !== null && (typeof x !== 'number' || !Number.isFinite(x) || x <= Date.now()))) return null;
-  if (p !== scope.projectId || a !== scope.artifactId || !isUuid(p) || !isUuid(a)) return null;
+  if (!LIVE_CREDENTIAL_KINDS.includes(q as LiveCredentialKind) || KIND_FITS[q as LiveCredentialKind] !== k) return null;
+  // Bound to the Artifact, whatever hex case the URL or the claim spells it in.
+  if (!isUuid(p) || !isUuid(a) || p.toLowerCase() !== scope.projectId.toLowerCase() || a.toLowerCase() !== scope.artifactId.toLowerCase()) return null;
   if (!isUuid(u) || !isUuid(c) || typeof n !== 'string' || n.length < 16) return null;
   if (!ARTIFACT_LIVE_TICKET_KINDS.includes(k as ArtifactLiveTicketKind)) return null;
   if (!nullableUuid(t) || !nullableUuid(s) || (m !== null && typeof m !== 'string')) return null;
   if ((k === 'pat' || k === 'agent_session') !== (t !== null)) return null;
   return {
-    claims: { p, a, u, c, k: k as ArtifactLiveTicketKind, t, s, m: m as string | null, g, x: x as number | null },
+    claims: {
+      p: p.toLowerCase(), a: a.toLowerCase(), u: u.toLowerCase(), c: c.toLowerCase(), k: k as ArtifactLiveTicketKind,
+      t: t?.toLowerCase() ?? null, s: s?.toLowerCase() ?? null, m: m as string | null, q: q as LiveCredentialKind, g: g?.toLowerCase() ?? null, x: x as number | null,
+    },
     expiresAt: exp,
     digest: nonceDigest(n),
   };
