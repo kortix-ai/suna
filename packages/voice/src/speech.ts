@@ -258,7 +258,11 @@ const PROMPT = new Set(VOCAB.join(' ').toLowerCase().match(/[a-z0-9']+/g))
 // Whisper's stock words for noise ("and so on.", "and more." from a noisy room, a live call), not things people said.
 // A text of nothing but them, once or repeated ("Thank you for watching! Thank you for watching!", a noisy room).
 // Punctuation and space between the words are one run, so a long "..." or a repeated phrase cannot backtrack (CodeQL js/redos).
-const HALLUCINATION = /^[\s.!]*(?:(?:thank you(?: (?:so much|very much))?(?: for watching)?|thanks for watching|so|the|you|oh|bye|uh|um|and so on|and more|and so forth|subtitles by(?: +[^.!\s]+)*)[\s.!]*)*$/i
+// A subtitle credit ("Subtitles by the Amara.org community") is cut out first: its open-ended words inside the
+// pattern could each be read as one of the words above, and that backtracked exponentially.
+const CREDIT = /subtitles by[^.!]*/gi
+const HALLUCINATION_WORDS = /^[\s.!]*(?:(?:thank you(?: (?:so much|very much))?(?: for watching)?|thanks for watching|so|the|you|oh|bye|uh|um|and so on|and more|and so forth)[\s.!]*)*$/i
+const HALLUCINATION = { test: (text: string) => HALLUCINATION_WORDS.test(text.replace(CREDIT, ' ')) }
 // The ones from video subtitles: never what a caller says to an assistant, however sure Whisper is of them.
 const SUBTITLE = /\b(for watching|subtitles|subscribe)\b/i
 const REPEATED = /^(.{4,}?[.!?])\s*\1/i // the same sentence again at once: Whisper's loop on noise
