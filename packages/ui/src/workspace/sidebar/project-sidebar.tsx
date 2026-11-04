@@ -83,8 +83,8 @@ export function ProjectSidebar({
   const [connectMcpOpen, setConnectMcpOpen] = useState(false);
 
   const accountId = useBillingAccountId();
-  // Chat (`chat`): the Chat row and the spaces list replace New session and the session list
-  // (fail-closed: off until the project answers).
+  // Chat (`chat`): the spaces list replaces New session, and the session list
+  // moves below it, closed by default (fail-closed: off until the project answers).
   const chat = useFeatureFlag(projectId, 'chat').enabled;
   // The project flag and the web app's master switch (`CHROME_UI_ENABLED`) must both be on.
   const chrome = useFeatureFlag(projectId, 'chrome').enabled && CHROME_UI_ENABLED;
@@ -320,7 +320,19 @@ export function ProjectSidebar({
           </SidebarGroup>
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            {chat ? <ProjectSpacesNav projectId={projectId} /> : <ProjectSessionList projectId={projectId} />}
+            {chat ? (
+              <>
+                {/* Channels and Direct messages are the core surface. The
+                    session list sits below them, closed by default: every
+                    session the viewer runs, threads included. */}
+                <div className="min-h-0 flex-1">
+                  <ProjectSpacesNav projectId={projectId} />
+                </div>
+                <ProjectSessionList projectId={projectId} secondary />
+              </>
+            ) : (
+              <ProjectSessionList projectId={projectId} />
+            )}
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto">

@@ -89,7 +89,8 @@ mock.module('@kortix/ui/internal/notifications/notification-bell', () => ({
   NotificationBell: () => React.createElement('div', { 'data-testid': 'notification-bell' }),
 }));
 mock.module('@kortix/ui/workspace/sidebar/project-session-list', () => ({
-  ProjectSessionList: () => React.createElement('div', { 'data-testid': 'session-list' }),
+  ProjectSessionList: ({ secondary }: { secondary?: boolean }) =>
+    React.createElement('div', { 'data-testid': 'session-list', 'data-secondary': secondary ? 'true' : 'false' }),
 }));
 mock.module('@/features/workspace/project-sidebar/workspace-switcher', () => ({
   WorkspaceSwitcher: () => React.createElement('div', { 'data-testid': 'switcher' }),
@@ -200,11 +201,12 @@ test('the mobile sheet renders no keyboard shortcut hint (KRTX-2005)', async () 
   expect(document.body.innerHTML).not.toContain('data-slot="kbd-group"');
 });
 
-test('with chat on, the spaces list replaces New session, the session list and Cmd+J; My Kortix is the first DM, no Chat row', async () => {
+test('with chat on, the spaces list replaces New session and Cmd+J, the session list sits below it as the secondary list; My Kortix is the first DM, no Chat row', async () => {
   channelsOn = true;
   await mountSidebar(1280);
   const html = container!.innerHTML;
-  expect(html).not.toContain('data-testid="session-list"');
+  expect(html).toContain('data-testid="session-list" data-secondary="true"');
+  expect(html.indexOf('data-testid="session-list"')).toBeGreaterThan(html.indexOf('spaces.directMessages'));
   expect(html).not.toContain('newSession');
   // No separate Chat row: the person's chat with Kortix is the My Kortix DM.
   expect(html).not.toContain('oneChat');
@@ -228,7 +230,7 @@ test('with chat on, the spaces list replaces New session, the session list and C
 test('with chat off, the sidebar keeps New session, the session list and Cmd+J', async () => {
   await mountSidebar(1280);
   const html = container!.innerHTML;
-  expect(html).toContain('data-testid="session-list"');
+  expect(html).toContain('data-testid="session-list" data-secondary="false"');
   expect(html).toContain('newSession');
   expect(html).not.toContain('spaces.channels');
   expect(html).not.toContain('href="/projects/synthetic-project/chat"');

@@ -137,6 +137,7 @@ import {
   FolderSimpleIcon,
   FolderSimpleMinusIcon,
   FolderSimplePlusIcon,
+  PlusIcon,
   PushPinIcon,
   PushPinSlashIcon,
   RobotIcon,
@@ -153,13 +154,19 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { useUiPathname, useUiRouter, useUiSearchParams, useUiViewerId } from '../../providers/ui-provider';
+import { UiLink, useUiPathname, useUiRouter, useUiSearchParams, useUiViewerId } from '../../providers/ui-provider';
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSessionListActions } from '../../session/actions/use-session-list-actions';
 import { Separator } from '../../primitives/separator';
 
 interface ProjectSessionListProps {
   projectId: string;
+  /**
+   * The list below Channels and Direct messages (`chat` on): closed until the
+   * viewer opens it, a quieter header, and a `+` that opens the project
+   * composer, because the sidebar has no New session row then.
+   */
+  secondary?: boolean;
 }
 
 const SESSION_RELATIVE_TIME_CLASS =
@@ -207,7 +214,7 @@ function ProjectSessionListSkeleton() {
   );
 }
 
-export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
+export function ProjectSessionList({ projectId, secondary = false }: ProjectSessionListProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
   const tPinArchive = useTranslations('sidebar.pinArchive');
@@ -401,6 +408,16 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId));
   const collapsedSectionIds = useMemo(() => new Set(collapsedSections), [collapsedSections]);
   const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
+  // Open by default: the collapsed-sections store, as Channels and Direct
+  // messages. Closed by default (`secondary`): the expanded store, as Shared
+  // and Automated. Both persist per project.
+  const listOpen = secondary
+    ? expandedIdSet.has(SESSIONS_SECTION_ID)
+    : !collapsedSectionIds.has(SESSIONS_SECTION_ID);
+  const toggleListOpen = () =>
+    secondary
+      ? toggleExpanded(projectId, SESSIONS_SECTION_ID)
+      : toggleSectionCollapsed(projectId, SESSIONS_SECTION_ID);
 
   const restartMutation = useMutation({
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
@@ -775,12 +792,19 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col space-y-px">
+    <div
+      className={cn(
+        'flex min-h-0 flex-col space-y-px',
+        // Below the spaces: the header alone while closed, an equal share of the column while open.
+        secondary ? (listOpen ? 'flex-1' : 'shrink-0') : 'h-full',
+      )}
+    >
       {/* The header collapses the whole list: Pinned, the time or status
-          sections, Shared, Automated. Open by default; the choice persists. */}
+          sections, Shared, Automated. Open by default (closed when
+          `secondary`); the choice persists. */}
       <Disclosure
-        open={!collapsedSectionIds.has(SESSIONS_SECTION_ID)}
-        onOpenChange={() => toggleSectionCollapsed(projectId, SESSIONS_SECTION_ID)}
+        open={listOpen}
+        onOpenChange={toggleListOpen}
         className="group/sessions flex min-h-0 flex-1 flex-col space-y-px"
         transition={{ duration: 0.15, ease: 'easeOut' }}
       >
@@ -790,6 +814,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           reviewCountBySession={needsYouBySession}
           onMenuOpenChange={holdPeek}
           onNewGroup={groupsEnabled ? () => setGroupCreate({ fileSessionId: null }) : undefined}
+          secondary={secondary}
         />
         <DisclosureContent className="flex min-h-0 flex-1 flex-col" contentClassName="flex min-h-0 flex-1 flex-col overflow-hidden">
           {renderBody()}
@@ -863,6 +888,7 @@ function SessionListHeader({
   reviewCountBySession,
   onMenuOpenChange,
   onNewGroup,
+  secondary,
 }: {
   projectId: string;
   sessions: ProjectSession[];
@@ -870,9 +896,18 @@ function SessionListHeader({
   onMenuOpenChange: (open: boolean) => void;
   /** Open the New group dialog; absent while `session_groups` is off. */
   onNewGroup?: () => void;
+  /** Below the spaces (`chat` on): a smaller label and a `+` to the project composer. */
+  secondary?: boolean;
 }) {
   const t = useTranslations('sidebar');
   const tGroups = useTranslations('sidebar.sessionGroups');
+  const { isMobile, setOpenMobile } = useSidebar();
+  // Secondary: the header's controls show on hover or focus only, as the Channels header's `+`.
+  const controlClass = cn(
+    SESSION_MENU_TRIGGER_CLASS,
+    secondary &&
+      'opacity-0 group-focus-within/sessions-header:opacity-100 group-hover/sessions-header:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100',
+  );
   return (
     <div
       className={cn(
@@ -881,7 +916,12 @@ function SessionListHeader({
       )}
     >
       <DisclosureTrigger>
-        <div className="text-muted-foreground group-hover/sessions-header:text-sidebar-foreground flex min-w-0 flex-1 cursor-pointer flex-row items-center gap-1 self-stretch text-sm font-medium focus-visible:outline-none">
+        <div
+          className={cn(
+            'text-muted-foreground group-hover/sessions-header:text-sidebar-foreground flex min-w-0 flex-1 cursor-pointer flex-row items-center gap-1 self-stretch focus-visible:outline-none',
+            secondary ? 'text-xs' : 'text-sm font-medium',
+          )}
+        >
           <span className="truncate">{t('sessions')}</span>
           <CaretRightIcon
             aria-hidden
@@ -889,6 +929,26 @@ function SessionListHeader({
           />
         </div>
       </DisclosureTrigger>
+      {secondary && (
+        <Hint side="top" label={t('newSession')}>
+          <Button
+            asChild
+            variant="ghost"
+            size="icon-xs"
+            className={controlClass}
+          >
+            <UiLink
+              href={uiRoutes().project(projectId)}
+              aria-label={t('newSession')}
+              onClick={() => {
+                if (isMobile) setOpenMobile(false);
+              }}
+            >
+              <PlusIcon className="size-3.5" />
+            </UiLink>
+          </Button>
+        </Hint>
+      )}
       {onNewGroup && (
         <Hint side="top" label={tGroups('newGroup')}>
           <Button
@@ -896,7 +956,7 @@ function SessionListHeader({
             size="icon-xs"
             type="button"
             aria-label={tGroups('newGroup')}
-            className={SESSION_MENU_TRIGGER_CLASS}
+            className={controlClass}
             onClick={onNewGroup}
           >
             <FolderSimplePlusIcon className="size-4" />
@@ -917,7 +977,7 @@ function SessionListHeader({
               size="icon-xs"
               type="button"
               aria-label={t('sessionViewOptions')}
-              className={SESSION_MENU_TRIGGER_CLASS}
+              className={controlClass}
             >
               <DotsThreeIcon className="size-4" />
             </Button>
