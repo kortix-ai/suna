@@ -16,11 +16,16 @@ export function parseGoalLog(markdown: string): GoalLogBlock[] {
     if (md) blocks.push({ kind: 'text', markdown: md });
     text = [];
   };
-  let fenced = false;
+  // The open fence (its run of ``` or ~~~), or null: a fenced code block is text as written, timestamps and all.
+  let fence: string | null = null;
   for (const line of markdown.replace(/^\s*# [^\n]*\n+/, '').split('\n')) {
-    // A fenced code block is text as written, timestamps and all.
-    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
-    const match = fenced || /^\s*(```|~~~)/.test(line) ? null : LOG_LINE.exec(line.trim());
+    const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    const inFence = fence !== null || !!marker;
+    // A fence closes only on the same character, at least as long (CommonMark).
+    if (marker && fence === null) fence = marker;
+    else if (marker && marker[0] === fence![0] && marker.length >= fence!.length && !line.trim().slice(marker.length).trim()) fence = null;
+    const fenced = fence !== null;
+    const match = inFence ? null : LOG_LINE.exec(line.trim());
     const last = blocks.at(-1);
     if (match && Number.isFinite(Date.parse(match[1]!))) {
       flush();

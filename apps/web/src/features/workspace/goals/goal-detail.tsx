@@ -288,7 +288,7 @@ function QuestionForYou({ projectId, goal, onChanged }: { projectId: string; goa
   return (
     // A callout, not a section: the one place the page asks the person for something.
     <section
-      className="bg-kortix-orange/15 flex flex-col gap-3 rounded-lg p-4"
+      className="bg-kortix-orange/15 flex flex-col gap-3 rounded-xl p-4"
       aria-label={t('questionForYou')}
       data-testid="goal-needs-you"
     >
@@ -528,7 +528,7 @@ function GoalLog({ markdown }: { markdown: string }) {
         block.kind === 'entry' ? (
           <div key={`${block.at}:${index}`} className="flex gap-4">
             <Hint label={exactTime(block.at, locale)} side="top" align="start" alignOffset={0} sideOffset={6}>
-              <time dateTime={block.at} className="text-muted-foreground w-32 shrink-0 leading-6 whitespace-nowrap tabular-nums">
+              <time dateTime={block.at} className="text-muted-foreground min-w-32 shrink-0 leading-6 whitespace-nowrap tabular-nums">
                 {formatLogTime(block.at, locale, now)}
               </time>
             </Hint>
@@ -618,7 +618,7 @@ function GoalRail({ projectId, goal, onShare }: { projectId: string; goal: Proje
               {t('wakesTodayCount', { count: doc.wake_day === today ? (doc.wake_count ?? 0) : 0, max: doc.max_wakes_per_day ?? 12 })}
             </Property>
           ) : null}
-          {doc?.assigned_user && doc.assigned_user !== user?.id ? (
+          {doc?.assigned_user && user && doc.assigned_user !== user.id ? (
             // Who it is for, only when that is someone else: "you" says nothing.
             <li className="flex h-8 min-w-0 items-center">
               <GoalPersonChip projectId={projectId} userId={doc.assigned_user} />
