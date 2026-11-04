@@ -7,6 +7,10 @@ import {
   type ArtifactCommentSnapshot,
   type ArtifactCommentThread,
   type ArtifactDetail,
+  type ArtifactLiveParticipant,
+  type ArtifactLivePosition,
+  type ArtifactLiveRange,
+  type ArtifactLiveStatus,
 } from '@kortix/sdk';
 import { useArtifactMutations, useArtifactText } from '@kortix/sdk/react';
 import { ARTIFACT_TEXT_QUOTE_MAX, type ArtifactTextAnchor } from '@kortix/shared/artifact-comments';
@@ -20,9 +24,10 @@ import { MENU_PANEL_STATIC, menuRow } from '@kortix/ui/menu-recipe';
 import { dismissToast, errorToast } from '@kortix/ui/toast';
 import { CardsIcon, LinkSimpleIcon } from '@phosphor-icons/react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { createPacedSender, createTypingSignal } from './artifact-live-logic';
 import { createDocSaver, pendingSave, type DocSaveStatus, type DocSaver, type Known } from './doc-autosave';
 import { captureDocComment } from './doc-comment-capture';
 import {
@@ -32,6 +37,19 @@ import {
   type DocCommentHighlights,
 } from './doc-comment-decorations';
 import { docMarkdownPositions, docSelectionAnchor } from './doc-comment-positions';
+import {
+  DOC_LIVE_CSS,
+  DocLiveDecorations,
+  docLivePeers,
+  docLivePluginKey,
+  type DocLivePresence,
+} from './doc-live-decorations';
+import {
+  cachedDocMarkdownPositions,
+  docLiveCursor,
+  docLiveRange,
+  docSourceOffset,
+} from './doc-live-positions';
 import { fileBase64, isMedia, mediaPath, mediaUrls, tooLarge } from './doc-media';
 import { SlashCommand, SlashMenu, type SlashState } from './doc-slash-menu';
 
@@ -43,6 +61,39 @@ const isConflict = (err: unknown) =>
   (err as { status?: number }).status === 409 &&
   (err as { code?: string }).code === 'version_conflict';
 const NO_COMMENTS: readonly ArtifactCommentThread[] = [];
+
+/**
+ * Live presence in the doc (KRTX-3669): the others' carets and selections,
+ * and this viewer's own, sent while the editor has focus.
+ */
+export interface DocLiveBinding {
+  /** Everyone else on the doc view, agents included; never this viewer, never a hidden one. */
+  peers: readonly ArtifactLiveParticipant[];
+  /** An agent's status in words ("Editing"). */
+  statusLabel: (status: ArtifactLiveStatus) => string;
+  /** This viewer hides their cursor ("Hide my cursor", or the tab is in the background). */
+  hidden: boolean;
+  setCursor: (at: ArtifactLivePosition | null) => void;
+  setSelection: (range: ArtifactLiveRange | null) => void;
+  /** Typing in the doc itself; false after 2 s without an edit. */
+  setTyping: (active: boolean) => void;
+}
+
+type OwnPlace = { cursor: ArtifactLivePosition | null; selection: ArtifactLiveRange | null };
+const NOWHERE: OwnPlace = { cursor: null, selection: null };
+
+/** The page's text selection lies in the editor (a read-only doc never takes focus). */
+function selectionInside(editor: Editor): boolean {
+  let root: HTMLElement;
+  try {
+    // An editor that is not mounted yet has no DOM: TipTap throws on `view.dom`.
+    root = editor.view.dom;
+  } catch {
+    return false;
+  }
+  const selection = root.ownerDocument.getSelection();
+  return !!selection && selection.rangeCount > 0 && root.contains(selection.anchorNode);
+}
 
 /**
  * A doc artifact, edited in place: its Markdown file in Files, shown with the
@@ -70,6 +121,8 @@ export function DocEditor({
   historical = false,
   readCommentSnapshot,
   commentEntryVersion,
+  live,
+  onReady,
 }: {
   projectId: string;
   artifact: ArtifactDetail;
@@ -87,6 +140,10 @@ export function DocEditor({
   historical?: boolean;
   readCommentSnapshot?: () => Promise<ArtifactCommentSnapshot>;
   commentEntryVersion?: string | null;
+  /** Live presence; absent while the Artifact's live connection is off. */
+  live?: DocLiveBinding;
+  /** The doc's text is on screen (once per editor): the viewer restores its scroll position. */
+  onReady?: () => void;
 }) {
   const t = useTranslations('artifacts');
   const editable = mayEdit && !historical;
@@ -109,6 +166,8 @@ export function DocEditor({
     readCommentSnapshot,
     canComment,
     historical,
+    live,
+    onReady,
   });
   useLayoutEffect(() => {
     latest.current = {
@@ -123,6 +182,8 @@ export function DocEditor({
       readCommentSnapshot,
       canComment,
       historical,
+      live,
+      onReady,
     };
   });
   // eslint-disable-next-line react-hooks/refs -- configure stores this callback; editor events read the ref after render.
@@ -261,6 +322,7 @@ export function DocEditor({
             node.type.name === 'codeBlock' ? '' : node.type.name === 'heading' ? t('placeholderHeading') : t('placeholder'),
         }),
         commentExtension,
+        DocLiveDecorations,
         slashExtension,
       ],
       content: loaded?.html ?? '',
@@ -356,6 +418,93 @@ export function DocEditor({
       handledFocus.current,
     );
   }, [editor, focusedThreadId, focusRevision, comments, commentEntryVersion, revision]);
+
+  // The text is on screen: once per editor.
+  useEffect(() => {
+    if (editor && loaded) latest.current.onReady?.();
+  }, [editor, loaded]);
+
+  // Live: the others' carets and selections, drawn again when a frame changes what to draw.
+  // Between frames, local edits move them with the text (the plugin maps its decorations).
+  const livePeers = live?.peers;
+  const statusLabel = live?.statusLabel;
+  const presence = useMemo(
+    () => (livePeers && statusLabel ? docLivePeers(livePeers, comments, statusLabel) : []),
+    [livePeers, comments, statusLabel],
+  );
+  const presenceKey = JSON.stringify(presence);
+  useEffect(() => {
+    if (!editor || !loaded || editor.isDestroyed) return;
+    const input: DocLivePresence = { markdown: sourceMarkdown.current, peers: presence };
+    editor.view.dispatch(editor.state.tr.setMeta(docLivePluginKey, input));
+    // `presence` is rebuilt each render; its key says whether it changed. A revision (an edit,
+    // or new text from the file) re-anchors everyone in the new Markdown.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, loaded, presenceKey, revision]);
+
+  // Live: this viewer's own caret and selection, paced, only while the editor has focus (a
+  // read-only doc: while the page's selection is in it); typing in the doc, until 2 s idle.
+  const liveOn = !!live;
+  const liveHidden = live?.hidden ?? false;
+  const ownLive = useRef<{ report: () => void } | null>(null);
+  useEffect(() => {
+    if (!editor || !loaded || !liveOn) return;
+    const sender = createPacedSender<OwnPlace>((place) => {
+      latest.current.live?.setCursor(place.cursor);
+      latest.current.live?.setSelection(place.selection);
+    });
+    const typing = createTypingSignal((active) => latest.current.live?.setTyping(active));
+    const own = (): OwnPlace => {
+      const binding = latest.current.live;
+      if (!binding || binding.hidden || editor.isDestroyed) return NOWHERE;
+      if (editable ? !editor.isFocused : !selectionInside(editor)) return NOWHERE;
+      const markdown = sourceMarkdown.current;
+      const map = cachedDocMarkdownPositions(markdown, editor.state.doc);
+      const { from, to, head, empty } = editor.state.selection;
+      // A read-only doc has no caret to show: only what the person selects.
+      const caret = editable ? docSourceOffset(map, head) : null;
+      const start = empty ? null : docSourceOffset(map, from);
+      const end = empty ? null : docSourceOffset(map, to);
+      return {
+        cursor: caret === null ? null : docLiveCursor(markdown, caret),
+        selection: start === null || end === null ? null : docLiveRange(markdown, start, end),
+      };
+    };
+    const report = () => sender.push(own());
+    const leave = () => {
+      typing.stop();
+      sender.push(NOWHERE);
+      sender.flush();
+    };
+    const onUpdate = ({ transaction }: { transaction: { docChanged: boolean } }) => {
+      if (editable && transaction.docChanged && editor.isFocused && !latest.current.live?.hidden)
+        typing.input();
+      report();
+    };
+    ownLive.current = { report };
+    editor.on('selectionUpdate', report);
+    editor.on('focus', report);
+    editor.on('blur', leave);
+    editor.on('update', onUpdate);
+    // A read-only doc never focuses: its selection leaving the doc is a page event.
+    const doc = window.document;
+    if (!editable) doc.addEventListener('selectionchange', report);
+    report();
+    return () => {
+      editor.off('selectionUpdate', report);
+      editor.off('focus', report);
+      editor.off('blur', leave);
+      editor.off('update', onUpdate);
+      doc.removeEventListener('selectionchange', report);
+      if (ownLive.current?.report === report) ownLive.current = null;
+      leave();
+      sender.dispose();
+    };
+  }, [editor, loaded, liveOn, editable]);
+  // Hiding sends "nowhere" (the server forgets a hidden caret); showing again sends the caret.
+  useEffect(() => {
+    ownLive.current?.report();
+  }, [liveHidden]);
 
   // A passage longer than a quote can hold is refused with the limit, never cut.
   const selectionError = (error: 'unmapped' | 'ambiguous' | 'too_long') =>
@@ -508,6 +657,7 @@ export function DocEditor({
   return (
     <div className="kx-doc min-h-full">
       <style>{ARTIFACT_DOC_CSS}</style>
+      {live ? <style>{DOC_LIVE_CSS}</style> : null}
       {loaded === null || !editor ? (
         // One quiet spinner while the text loads (usually cached: no wait at all).
         <div className="grid min-h-60 place-items-center">

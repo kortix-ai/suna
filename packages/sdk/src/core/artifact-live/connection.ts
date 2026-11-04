@@ -435,17 +435,19 @@ export function createArtifactLiveConnection(options: ArtifactLiveConnectionOpti
   }
 
   /**
-   * The server drops a hidden participant's cursor, selection and typing. After
-   * un-hiding, send them again as fresh frames, queued after the hide frame.
+   * The server drops a hidden participant's cursor, selection, typing and
+   * focus. After un-hiding, send them again as fresh frames, queued after the
+   * hide frame.
    */
   function resendShown() {
-    for (const kind of ['cursor', 'selection', 'typing'] as const) {
+    for (const kind of ['cursor', 'selection', 'typing', 'focus'] as const) {
       lastSent.delete(kind);
       pending.delete(kind);
     }
     if (cursor) offer('cursor');
     if (selection) offer('selection');
     if (typing?.active) offer('typing');
+    if (focus) offer('focus');
   }
 
   /** Validate, store, and offer one field. */

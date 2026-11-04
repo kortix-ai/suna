@@ -24247,7 +24247,27 @@
     "moved": "Artefakt verschoben",
     "moveFailed": "Artefakt konnte nicht verschoben werden",
     "spaceEmpty": "Noch keine Artefakte in {space}",
-    "showAll": "Alle anzeigen"
+    "showAll": "Alle anzeigen",
+    "live": {
+      "here": "Gerade hier",
+      "hereLabel": "Gerade auf diesem Artefakt: {names}",
+      "reconnecting": "Verbindung wird wiederhergestellt…",
+      "you": "Du",
+      "agents": "Agenten",
+      "agentsHere": "Agenten in diesem Thread",
+      "status": {
+        "viewing": "Ansicht",
+        "reading": "Liest",
+        "editing": "Bearbeitet",
+        "writing": "Schreibt"
+      },
+      "hideCursor": "Meinen Cursor ausblenden",
+      "hideCursorHint": "Andere sehen weiterhin deinen Avatar.",
+      "typingOne": "{name} tippt…",
+      "typingTwo": "{first} und {second} tippen…",
+      "typingMany": "{count, plural, one {# Person tippt…} other {# Personen tippen…}}",
+      "writing": "{name} schreibt…"
+    }
   },
   "emailConnect": {
     "homeTitle": "Wo das Postfach liegt",

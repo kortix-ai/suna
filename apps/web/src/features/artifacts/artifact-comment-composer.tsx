@@ -1,5 +1,6 @@
 'use client';
 
+import type { ArtifactLiveTyping } from '@kortix/sdk';
 import { cn } from '@kortix/ui';
 import { Button } from '@kortix/ui/button';
 import { Command, CommandGroup, CommandItem, CommandList } from '@kortix/ui/command';
@@ -18,6 +19,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
 import { commentEnterAction, mentionAtCaret } from './artifact-discussion-logic';
+import { useLiveTyping } from './artifact-live-presence';
 
 export interface CommentMentionOption {
   key: string;
@@ -47,6 +49,8 @@ interface Props {
   agentsUnavailable?: boolean;
   /** A shorter editor for replies and edits. */
   compact?: boolean;
+  /** Live presence: where this composer types (a thread's reply box, or a new comment). */
+  liveTyping?: ArtifactLiveTyping | null;
 }
 
 const CommentMention = MentionNode.extend({
@@ -132,6 +136,8 @@ export function ArtifactCommentComposer(props: Props) {
         .slice(0, 12)
     : [];
   const optionsRef = useRef(visible);
+  const typing = useLiveTyping(props.liveTyping ?? null);
+  const typingRef = useRef(typing);
   const listRef = useRef<HTMLDivElement | null>(null);
   const optionElementsRef = useRef(new Map<string, HTMLDivElement>());
   const syncMentionAria = useCallback(() => {
@@ -154,6 +160,7 @@ export function ArtifactCommentComposer(props: Props) {
     menuRef.current = menu;
     selectedRef.current = selected;
     optionsRef.current = visible;
+    typingRef.current = typing;
     syncMentionAria();
   });
   const choose = (option: CommentMentionOption) => {
@@ -241,8 +248,10 @@ export function ArtifactCommentComposer(props: Props) {
               !latest.current.submitDisabled &&
               latest.current.value.trim() &&
               latest.current.value.length <= 10_000
-            )
+            ) {
+              typingRef.current.stop();
               latest.current.onSubmit();
+            }
             return true;
           }
           return false;
@@ -253,9 +262,11 @@ export function ArtifactCommentComposer(props: Props) {
       },
       onUpdate: ({ editor: current }) => {
         latest.current.onChange(current.getText({ blockSeparator: '\n' }));
+        if (current.isFocused) typingRef.current.input();
         setMenu(activeMention(current));
         setSelected(0);
       },
+      onBlur: () => typingRef.current.stop(),
       onSelectionUpdate: ({ editor: current }) => {
         setMenu(activeMention(current));
         setSelected(0);
@@ -287,8 +298,10 @@ export function ArtifactCommentComposer(props: Props) {
           props.value.length <= 10_000 &&
           !props.pending &&
           !props.submitDisabled
-        )
+        ) {
+          typing.stop();
           props.onSubmit();
+        }
       }}
     >
       <Field className="gap-0">

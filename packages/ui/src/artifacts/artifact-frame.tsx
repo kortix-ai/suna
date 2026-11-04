@@ -54,9 +54,21 @@ export const ArtifactFrame = forwardRef<
       Array.from(slot.querySelectorAll('iframe')).find(
         (candidate) => candidate.dataset.frameKey === frameKey,
       ) ?? null;
-    if (interactive) claimed?.focus({ preventScroll: true });
+    // A page that reloads under the person (a new version saved by someone else) keeps the
+    // keyboard where it was: it takes it only if the page it replaces had it, and never from a
+    // field the person types in.
+    const page = artifactOf(frameKey);
+    const previous = releasedFocus.get(page);
+    releasedFocus.delete(page);
+    const reload = !!previous && Date.now() - previous.at < RELOAD_MS;
+    if (interactive && (!reload || previous.focused) && !typingElsewhere())
+      claimed?.focus({ preventScroll: true });
     latestOnFrame.current?.(claimed);
     return () => {
+      releasedFocus.set(page, {
+        at: Date.now(),
+        focused: !!claimed && claimed.ownerDocument.activeElement === claimed,
+      });
       latestOnFrame.current?.(null);
       release();
     };
@@ -76,6 +88,22 @@ export const ArtifactFrame = forwardRef<
   );
 });
 
+/** A frame claimed this soon after the same artifact's frame left is a reload in place. */
+const RELOAD_MS = 15_000;
+// One browser tab: whether each artifact's last released frame had the keyboard.
+const releasedFocus = new Map<string, { at: number; focused: boolean }>();
+/** `artifact:<id>` of a frame key (`artifact:<id>:<version>[:annotate]`). */
+const artifactOf = (frameKey: string) => frameKey.split(':').slice(0, 2).join(':');
+
+/** The keyboard is in a text field or an editor of this document. */
+function typingElsewhere(): boolean {
+  const active = typeof document === 'undefined' ? null : document.activeElement;
+  return (
+    active instanceof HTMLElement &&
+    (active.isContentEditable || active.matches('input, textarea, select'))
+  );
+}
+
 /** Create (and park) the pooled frame for an artifact page; a no-op when it exists. */
 export function ensureArtifactFrame(key: string, src: string, title: string): void {
   ensureFrame(key, src, {
@@ -83,6 +111,7 @@ export function ensureArtifactFrame(key: string, src: string, title: string): vo
     sandbox: ARTIFACT_IFRAME_SANDBOX,
     allow: ARTIFACT_FRAME_ALLOW,
     testid: 'artifact-frame',
-    referrerPolicy: 'no-referrer',
+    // The page sees this app's origin, never the path: the bridge gates the live pointer on it.
+    referrerPolicy: 'strict-origin',
   });
 }

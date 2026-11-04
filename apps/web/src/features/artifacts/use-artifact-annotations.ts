@@ -11,6 +11,7 @@ import { connectArtifactAnnotationFrame } from './artifact-annotation-channel';
 import {
   createArtifactAnnotationController,
   type ArtifactAnnotationKey,
+  type ArtifactAnnotationPagePoint,
   type ArtifactAnnotationScheduler,
   type ArtifactAnnotationSelection,
   type ArtifactAnnotationStatus,
@@ -22,6 +23,7 @@ export type {
 export type { ArtifactAnnotationCaptureResult } from './artifact-annotation-capture';
 export type {
   ArtifactAnnotationKey,
+  ArtifactAnnotationPagePoint,
   ArtifactAnnotationSelection,
 } from './artifact-annotation-controller';
 
@@ -54,6 +56,10 @@ export function useArtifactAnnotations(
     onFocus: (threadId: string) => void;
     /** The accessible name of pin `n` on the page; it must contain the number. */
     pinLabel?: (n: number) => string;
+    /** Live presence wants this viewer's pointer on the page. */
+    trackPointer?: boolean;
+    /** This viewer's pointer on the page, or null when it left (only with `trackPointer`). */
+    onPointer?: (at: ArtifactAnnotationPagePoint | null) => void;
   },
   schedule?: ArtifactAnnotationScheduler,
 ) {
@@ -91,6 +97,7 @@ export function useArtifactAnnotations(
         onThreads: setResolved,
         onViewport: setViewport,
         onRegions: setRegions,
+        onPointer: (at) => latest.current.onPointer?.(at),
         onStatus: (status) =>
           setReadiness({ frame: options.frame!, version: options.version!, status }),
       },
@@ -130,6 +137,7 @@ export function useArtifactAnnotations(
     threads,
     options.focusedThreadId,
     options.focusRevision,
+    options.trackPointer,
   ]);
   const current = readiness?.frame === options.frame && readiness?.version === options.version;
   const reset = useCallback(() => {
@@ -160,6 +168,12 @@ export function useArtifactAnnotations(
     [ownsScope],
   );
   const cancelCapture = useCallback(() => controller.current?.cancelCapture(), []);
+  /** Another viewer's page point on this viewer's frame (viewport pixels), or null. */
+  const pagePoint = useCallback(
+    (point: ArtifactAnnotationPagePoint) =>
+      ownsScope() ? (controller.current?.pagePoint(point) ?? null) : null,
+    [ownsScope],
+  );
   const isCurrentViewport = useCallback(
     (value: ArtifactAnnotationViewport) =>
       ownsScope() &&
@@ -175,6 +189,7 @@ export function useArtifactAnnotations(
     pinNumbers: options.enabled && current ? pins : NO_PINS,
     capture,
     cancelCapture,
+    pagePoint,
     regionForViewportRect,
     threads: options.enabled && options.frame && current ? resolved : threads,
     status: !options.enabled

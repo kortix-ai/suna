@@ -434,7 +434,7 @@ describe('createArtifactLiveConnection', () => {
     expect(sockets[1]!.frames()[0]).toEqual({ v: 1, t: 'hello', view: 'doc', version: 'etag-1', hidden: true });
   });
 
-  test('un-hiding sends the cursor, selection and active typing again, after the hide frame', async () => {
+  test('un-hiding sends the cursor, selection, active typing and focus again, after the hide frame', async () => {
     const { clock, socket, connection, goLive } = setup();
     await goLive();
     const range = { kind: 'doc' as const, quote: 'Churn fell', prefix: '', suffix: '.' };
@@ -448,12 +448,13 @@ describe('createArtifactLiveConnection', () => {
     const before = socket().sent.length;
     connection.setHidden(false);
     await clock.advance(1_000);
-    // The server dropped what a hidden participant showed; focus it keeps.
+    // The server dropped what a hidden participant showed, its focus included.
     expect(socket().frames().slice(before)).toEqual([
       { v: 1, t: 'hide', hidden: false },
       { v: 1, t: 'cursor', at: cursorAt(5) },
       { v: 1, t: 'selection', range },
       { v: 1, t: 'typing', where: 'doc', active: true },
+      { v: 1, t: 'focus', thread_id: THREAD },
     ]);
   });
 
@@ -467,10 +468,12 @@ describe('createArtifactLiveConnection', () => {
     connection.setCursor(cursorAt(7)); // waits for the next slot
     connection.setHidden(false);
     await clock.advance(1_000);
+    // The focus sent while hidden was dropped by the server: it goes again after the un-hide.
     expect(socket().frames().slice(before)).toEqual([
       { v: 1, t: 'focus', thread_id: THREAD },
       { v: 1, t: 'hide', hidden: false },
       { v: 1, t: 'cursor', at: cursorAt(7) },
+      { v: 1, t: 'focus', thread_id: THREAD },
     ]);
   });
 
