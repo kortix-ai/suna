@@ -1,7 +1,7 @@
 'use client';
 
 import type { SESSION_NOTICE } from '@kortix/sdk';
-import { createContext, type ReactNode } from 'react';
+import { createContext } from 'react';
 
 /**
  * Set, the transcript draws every turn as message rows (avatar, name, time,
@@ -24,15 +24,11 @@ export interface TranscriptRows {
    */
   notices?: Partial<Record<keyof typeof SESSION_NOTICE, string>>;
   /**
-   * Only the person's messages and the agent's words: no "Worked for" rows, no
-   * tool rows, no notices from other sessions. The front chat (flag `infinichat`) sets it.
+   * Only the person's messages and the words the agent sent them: no "Worked
+   * for" rows, no tool rows, no notices from other sessions, no row for a turn
+   * that said nothing. The front chat (flag `infinichat`) sets it.
    */
   messagesOnly?: boolean;
-  /**
-   * With `messagesOnly`: draws the threads an answer started (its delegating
-   * tool calls' child sessions), under the answer's words, Slack-style.
-   */
-  renderThreads?: (childSessionIds: readonly string[]) => ReactNode;
   /** The stuck-boot restart button in the host's terms ("Restart thread"). */
   labels?: {
     restart: string;

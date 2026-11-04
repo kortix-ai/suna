@@ -49,7 +49,7 @@ import {
   StopCircleIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { memo, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AfterFirstPromptContext } from './after-first-prompt';
 import { TranscriptRowsContext } from './transcript-rows';
 import { AgentBusyRow } from './thread-boot-rows';
@@ -119,7 +119,7 @@ import {
   InTranscriptTurnContext,
   RecoveredCallsContext,
 } from '../tool/shared/infrastructure';
-import { getChildSessionId, imageDigestsShownByImageGen, imagePathsShownByImageGen, sessionLogImageGenRuns, showDrawnByImageGen } from '@kortix/sdk';
+import { imageDigestsShownByImageGen, imagePathsShownByImageGen, sessionLogImageGenRuns, showDrawnByImageGen } from '@kortix/sdk';
 import { recoveredShellFailures } from '../turn/recovered-failures';
 import { type SentAttachment } from '../composer/sent-attachment-previews';
 import { cn } from '../../lib/utils';
@@ -2483,14 +2483,11 @@ function SessionTurnImpl(props: SessionTurnProps) {
             time={rowTime(userAt, locale)}
           >
             <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
-            {/* The front chat: the answer lives in threads under the message, never as a row of its own. */}
-            {rows.messagesOnly ? (
-              <MessageThreads segments={segments} render={rows.renderThreads} working={model.working} response={model.response} />
-            ) : null}
           </MessageRow>
         ) : null}
         {props.isFirstTurn ? afterFirstPrompt : null}
-        {showAnswer && !rows.messagesOnly ? (
+        {/* The front chat: an answer row only for words the agent sent the person, never for its work. */}
+        {showAnswer && (!rows.messagesOnly || (!model.working && model.response.trim() !== '')) ? (
           <MessageRow
             className="group/turn"
             avatar={<AgentMark slug={rows.agentSlug ?? DEFAULT_AGENT_SLUG} size={28} tile={36} label={rows.agent} />}
@@ -2603,39 +2600,6 @@ interface TranscriptTurnRowProps extends SessionTurnProps {
  * settled `SessionTurn` bailed out. Every prop here is a primitive or a
  * reference that holds while another turn streams.
  */
-/**
- * The front chat (`TranscriptRows.messagesOnly`): what a message got, under
- * it. The threads its answer started (each delegating call's child session,
- * once, drawn by the host); with none, the agent's own short reply as one quiet
- * line; while it decides, "Thinking…".
- */
-function MessageThreads({
-  segments,
-  render,
-  working,
-  response,
-}: {
-  segments: readonly { kind: string; blocks?: readonly unknown[]; block?: unknown }[];
-  render?: (childSessionIds: readonly string[]) => ReactNode;
-  working: boolean;
-  response: string;
-}) {
-  const ids = useMemo(() => {
-    const blocks = segments.flatMap((s) => (s.blocks ? [...s.blocks] : [s.block]));
-    const found = blocks.flatMap((block) => {
-      if ((block as { type?: unknown } | undefined)?.type !== 'tool_call') return [];
-      const id = getChildSessionId(block as Parameters<typeof getChildSessionId>[0]);
-      return id ? [id] : [];
-    });
-    return [...new Set(found)];
-  }, [segments]);
-  if (ids.length > 0 && render) return <>{render(ids)}</>;
-  const reply = response.trim();
-  if (reply && !working) return <p className="text-muted-foreground mt-1 text-sm">{reply}</p>;
-  if (working) return <p className="text-muted-foreground mt-1 text-xs">Thinking…</p>;
-  return null;
-}
-
 /** The fallback waiting row: a channel thread's agent row, or the bare line under a bubble. */
 function TurnFallbackBusyRow({ sessionId }: { sessionId: string }) {
   const rows = useContext(TranscriptRowsContext);
