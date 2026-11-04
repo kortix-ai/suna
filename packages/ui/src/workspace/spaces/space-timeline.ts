@@ -190,6 +190,47 @@ export function postSegments(text: string, raw: unknown): PostSegment[] {
   return out;
 }
 
+/** Someone a person's message may name with `@`: the token after `@` and who it is. */
+export interface MentionCandidate {
+  token: string;
+  mention: NonNullable<PostSegment['mention']>;
+}
+
+/**
+ * A person's own message split at the `@` mentions of people and agents in
+ * the space (the composer's `@` menu writes `@<email>`, `@<display name>` or
+ * `@<agent>`). The longest token wins, so `@Ana Lima` beats `@Ana`. A token
+ * matches case-insensitively at the start or after whitespace and must end
+ * at a word boundary.
+ */
+export function messageMentionSegments(text: string, candidates: readonly MentionCandidate[]): PostSegment[] {
+  const sorted = [...candidates].filter((c) => c.token).sort((a, b) => b.token.length - a.token.length);
+  if (sorted.length === 0 || !text.includes('@')) return [{ text }];
+  const lower = text.toLowerCase();
+  const out: PostSegment[] = [];
+  let last = 0;
+  let i = 0;
+  while (i < text.length) {
+    const at = text.indexOf('@', i);
+    if (at === -1) break;
+    i = at + 1;
+    if (at > 0 && !/\s/.test(text[at - 1]!)) continue;
+    const hit = sorted.find((c) => {
+      if (!lower.startsWith(c.token.toLowerCase(), at + 1)) return false;
+      const next = text[at + 1 + c.token.length];
+      return next === undefined || !/[\p{L}\p{N}_@-]/u.test(next);
+    });
+    if (!hit) continue;
+    if (at > last) out.push({ text: text.slice(last, at) });
+    out.push({ text: text.slice(at, at + 1 + hit.token.length), mention: hit.mention });
+    last = at + 1 + hit.token.length;
+    i = last;
+  }
+  if (out.length === 0) return [{ text }];
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
+
 /**
  * The server stores a thread's first prompt cut at this length
  * (`FIRST_PROMPT_MAX_CHARS` in `apps/api/src/projects/lib/project-spaces.ts`).

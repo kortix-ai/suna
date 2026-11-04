@@ -59,6 +59,54 @@ export interface MentionCandidate {
   email: string | null;
 }
 
+/**
+ * A person's own message in a channel thread (the web's `@` menu writes
+ * `@<email>` or `@<display-name-slug>`): each person it mentions who may see
+ * the thread gets one notification, keyed by the message so a retried turn
+ * writes nothing new. The author is never notified. Never throws. Called off
+ * the turn's path (`sandbox-proxy/forward/turn-start.ts`).
+ */
+export async function notifyMessageMentions(input: {
+  projectId: string;
+  sessionId: string;
+  authorId: string;
+  text: string;
+  messageKey: string;
+}): Promise<string[]> {
+  try {
+    if (!input.text.includes('@')) return [];
+    const [row] = await db
+      .select({ accountId: projects.accountId, spaceId: projectSessions.spaceId })
+      .from(projectSessions)
+      .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+      .where(and(eq(projectSessions.sessionId, input.sessionId), eq(projectSessions.projectId, input.projectId)))
+      .limit(1);
+    if (!row?.spaceId) return [];
+    const space = await findLiveSpace(input.projectId, row.spaceId);
+    if (!space || space.kind !== 'channel') return [];
+    const people = await projectMentionCandidates({ accountId: row.accountId, projectId: input.projectId });
+    const mentions = resolveMentions(input.text, people, []).filter((m) => m.kind === 'person' && m.userId !== input.authorId);
+    if (mentions.length === 0) return [];
+    const author = people.find((p) => p.userId === input.authorId);
+    return await notifyMentions({
+      accountId: row.accountId,
+      projectId: input.projectId,
+      threadSessionId: input.sessionId,
+      postKey: `message:${input.messageKey}`,
+      place: `#${space.slug ?? space.name}`,
+      author: author?.displayName?.trim() || author?.email?.split('@')[0] || 'Someone',
+      text: input.text,
+      mentions,
+    });
+  } catch (error) {
+    logger.warn('[space-posts] message mention notifications were not sent', {
+      session_id: input.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+}
+
 /** A name as one `@` token: `Ana Lima` → `ana-lima`. */
 const slug = (name: string) => name.toLowerCase().trim().replace(/[^a-z0-9._@+-]+/g, '-').replace(/^-+|-+$/g, '');
 

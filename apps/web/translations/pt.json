@@ -2123,7 +2123,8 @@
       "noCommandMatch": "Nenhum comando, arquivo ou ação correspondente",
       "commandsAndActions": "Comandos e ações",
       "toUse": "para usar",
-      "use": "Usar"
+      "use": "Usar",
+      "noOneMatches": "Ninguém corresponde"
     },
     "history": {
       "restoreTitle": "Parte do conteúdo anterior não pôde ser restaurada",
@@ -25077,6 +25078,13 @@
       "spacesIn": "Espaços em que está",
       "spacesInNone": "Ainda em nenhum espaço",
       "default": "Padrão"
+    },
+    "mentions": {
+      "people": "Pessoas",
+      "agents": "Agentes",
+      "addToSpace": "Ainda não está em {space}: mencionar adiciona",
+      "added": "{agent} adicionado a {space}",
+      "addFailed": "Não foi possível adicionar o agente. Tente de novo."
     }
   },
   "imageGen": {

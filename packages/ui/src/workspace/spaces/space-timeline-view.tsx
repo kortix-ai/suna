@@ -12,7 +12,8 @@ import {
   TimerIcon,
   WebhooksLogoIcon,
 } from '@phosphor-icons/react';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { SpaceMentionContext } from '../../session/composer/menus/space-mentions';
 
 import { useLocale, useTranslations } from '../../i18n';
 import { AgentMark } from '../../internal/components/agent-mark';
@@ -42,6 +43,8 @@ import {
   firstPromptTruncated,
   gutterTime,
   lastReplyLabel,
+  messageMentionSegments,
+  type MentionCandidate,
   kortixRootText,
   postSegments,
   rootPostAuthor,
@@ -50,7 +53,7 @@ import {
   threadStatus,
   type TimelineDay,
 } from './space-timeline';
-import { spaceDisplayName } from './space-identity';
+import { oneLineWithoutEmails, spaceDisplayName } from './space-identity';
 import { type Principal, PrincipalHover, useMemberIdByName } from './principal-card';
 import { usePersonalSpaceName } from './use-personal-space-name';
 
@@ -417,7 +420,7 @@ function ThreadReplyLine({
   const working = threadIsWorking(session);
   const replies = session.reply_count ?? 0;
   // An agent's own post: its reply line starts with the first reply.
-  const reply = showReply || replies > 0 ? session.result_excerpt?.replace(/\s+/g, ' ').trim() : null;
+  const reply = showReply || replies > 0 ? oneLineWithoutEmails(session.result_excerpt ?? '') || null : null;
   // Nothing to say yet (no reply, no work, nothing waiting): no line, as in Slack.
   if (!needsYou && !working && !reply && replies === 0) return null;
   return (
@@ -449,6 +452,33 @@ function ThreadReplyLine({
         </span>
       </button>
     </div>
+  );
+}
+
+/** A person's message text, its `@` mentions of the space's people and agents drawn as chips with cards. */
+function MessageText({ projectId, text }: { projectId: string; text: string }) {
+  const source = useContext(SpaceMentionContext);
+  const candidates = useMemo<MentionCandidate[]>(
+    () =>
+      source
+        ? [
+            ...source.people.flatMap((p) =>
+              [p.token, p.name].map((token) => ({ token, mention: { kind: 'person' as const, label: p.name, userId: p.userId } })),
+            ),
+            ...source.agents.flatMap((a) =>
+              [a.name, a.label].map((token) => ({ token, mention: { kind: 'agent' as const, label: a.label, agent: a.name } })),
+            ),
+          ]
+        : [],
+    [source],
+  );
+  const segments = useMemo(() => messageMentionSegments(text, candidates), [text, candidates]);
+  return (
+    <>
+      {segments.map((segment, i) =>
+        segment.mention ? <MentionCard key={i} projectId={projectId} mention={segment.mention} /> : <span key={i}>{segment.text}</span>,
+      )}
+    </>
   );
 }
 
@@ -513,10 +543,9 @@ function ThreadPrompt({ projectId, session, onOpen }: { projectId: string; sessi
               <span key={i}>{segment.text}</span>
             ),
           )
-        ) : truncated ? (
-          `${text}…`
         ) : (
-          text
+          // A person's message: its `@` mentions of the space's people and agents as chips.
+          <MessageText projectId={projectId} text={truncated ? `${text}…` : text} />
         )}
       </p>
       {truncated || overflows || expanded ? (

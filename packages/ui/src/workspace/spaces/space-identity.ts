@@ -77,6 +77,11 @@ export function spaceInitials(name: string): string {
   return (Array.from(words[0]!)[0]! + Array.from(words[1]!)[0]!).toUpperCase();
 }
 
+/** One line, a mention by email read as its name part: a preview never shows an address. */
+export function oneLineWithoutEmails(text: string): string {
+  return text.replace(/@([\w.+-]+)@[\w-]+(\.[\w-]+)+/g, '@$1').replace(/\s+/g, ' ').trim();
+}
+
 /**
  * The sidebar's one-line preview: the newest thread's latest reply, else its
  * first message. Null for a space with no thread.
@@ -89,8 +94,7 @@ export function spacePreview(sessions: readonly ProjectSession[]): string | null
   if (!newest) return null;
   const reply = newest.result_excerpt?.trim();
   const text = reply || threadMessageText(newest);
-  // A mention by email reads as its name part: a preview never shows an address.
-  const line = text.replace(/@([\w.+-]+)@[\w-]+(\.[\w-]+)+/g, '@$1').replace(/\s+/g, ' ').trim();
+  const line = oneLineWithoutEmails(text);
   return line || null;
 }
 

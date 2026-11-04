@@ -2123,7 +2123,8 @@
       "noCommandMatch": "没有匹配的命令、文件或操作",
       "commandsAndActions": "命令和操作",
       "toUse": "以使用",
-      "use": "使用"
+      "use": "使用",
+      "noOneMatches": "没有匹配的人"
     },
     "history": {
       "restoreTitle": "部分较早的内容无法恢复",
@@ -25077,6 +25078,13 @@
       "spacesIn": "所在空间",
       "spacesInNone": "尚未加入任何空间",
       "default": "默认"
+    },
+    "mentions": {
+      "people": "成员",
+      "agents": "智能体",
+      "addToSpace": "尚未在 {space} 中：提及即会添加",
+      "added": "已将 {agent} 添加到 {space}",
+      "addFailed": "无法添加智能体。请重试。"
     }
   },
   "imageGen": {

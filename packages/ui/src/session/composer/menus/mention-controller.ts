@@ -12,6 +12,7 @@ import type { MenuRow } from './menu-items';
 import { MenuNavState } from './menu-nav-state';
 import { menuNavigation } from './menu-navigation';
 import { mountSuggestionMenu } from './mount';
+import type { SpaceMentionSource } from './space-mentions';
 
 export const MENTION_PLUGIN_KEY = new PluginKey('mentionSuggestion');
 
@@ -19,6 +20,8 @@ export interface CreateMentionSuggestionOptions {
   getAgents: () => Agent[];
   getSessions: () => Session[];
   getCurrentSessionId: () => string | undefined;
+  /** Inside a space: People and Agents only (`space-mentions.ts`). Null elsewhere. */
+  getSpaceMentions?: () => SpaceMentionSource | null;
   /**
    * Fires ONLY on the false<->true boundary of "does at least one row exist
    * right now" — NOT "is a trigger match active". See `MenuNavState`'s own
@@ -101,6 +104,7 @@ export function createMentionSuggestion(
           agents: opts.getAgents(),
           sessions: opts.getSessions(),
           currentSessionId: opts.getCurrentSessionId(),
+          spaceMentions: opts.getSpaceMentions?.() ?? null,
           // Fixed for the lifetime of this open menu — see
           // `MentionMenuHostProps.now`'s own doc comment.
           now: Date.now(),
@@ -123,6 +127,7 @@ export function createMentionSuggestion(
         agents: opts.getAgents(),
         sessions: opts.getSessions(),
         currentSessionId: opts.getCurrentSessionId(),
+        spaceMentions: opts.getSpaceMentions?.() ?? null,
         selectedIndex: nav.getSelectedIndex(),
         onSelect,
         onHover,
@@ -147,6 +152,8 @@ export function createMentionSuggestion(
     command: ({ editor, range, props: row }) => {
       editor.chain().focus().deleteRange(range).run();
       insertMention(editor, { kind: row.kind, label: row.label, value: row.value });
+      // An agent mentioned from outside the space joins it.
+      if (row.addToSpace) opts.getSpaceMentions?.()?.onAddAgent?.(row.value);
     },
   };
 }

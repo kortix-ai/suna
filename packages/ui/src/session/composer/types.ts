@@ -40,7 +40,8 @@ export type AttachedFile =
       isImage: boolean;
     };
 
-export type MentionKind = 'file' | 'agent' | 'session';
+/** `person`: a member of a space (`@` menu inside a space only); it leaves the composer as plain `@token` text. */
+export type MentionKind = 'file' | 'agent' | 'session' | 'person';
 
 /**
  * Every kind of chip the editor document can hold.

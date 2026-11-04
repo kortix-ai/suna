@@ -3,6 +3,7 @@ import type { ProjectSession } from '@kortix/sdk';
 
 import {
   buildSpaceTimeline,
+  messageMentionSegments,
   postSegments,
   rootPostAuthor,
   dayKind,
@@ -227,5 +228,28 @@ describe('a space post’s mentions', () => {
   test('the post’s author is the agent that wrote it, when one is stored', () => {
     expect(rootPostAuthor({ metadata: { chat_root_author: 'researcher' } } as never)).toBe('researcher');
     expect(rootPostAuthor({ metadata: {} } as never)).toBeNull();
+  });
+});
+
+describe("a person's message mentions", () => {
+  const candidates = [
+    { token: 'ana@example.com', mention: { kind: 'person' as const, label: 'Ana Lima', userId: 'u-ana' } },
+    { token: 'Ana Lima', mention: { kind: 'person' as const, label: 'Ana Lima', userId: 'u-ana' } },
+    { token: 'worker', mention: { kind: 'agent' as const, label: 'Worker', agent: 'worker' } },
+  ];
+
+  test('email, a display name with a space, and an agent become chips; the longest token wins', () => {
+    expect(messageMentionSegments('@Ana Lima and @worker, ping @ana@example.com', candidates)).toEqual([
+      { text: '@Ana Lima', mention: { kind: 'person', label: 'Ana Lima', userId: 'u-ana' } },
+      { text: ' and ' },
+      { text: '@worker', mention: { kind: 'agent', label: 'Worker', agent: 'worker' } },
+      { text: ', ping ' },
+      { text: '@ana@example.com', mention: { kind: 'person', label: 'Ana Lima', userId: 'u-ana' } },
+    ]);
+  });
+
+  test('no match inside a word or past a word boundary; no candidates: one run', () => {
+    expect(messageMentionSegments('mail me@worker or @workers', candidates)).toEqual([{ text: 'mail me@worker or @workers' }]);
+    expect(messageMentionSegments('@worker hi', [])).toEqual([{ text: '@worker hi' }]);
   });
 });

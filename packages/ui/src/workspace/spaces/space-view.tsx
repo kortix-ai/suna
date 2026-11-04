@@ -56,6 +56,8 @@ import { SpaceDetailsDialog, type SpaceDetailsTab } from './space-details-dialog
 import { SpaceDetailsPanel } from './space-details-panel';
 import { CurrentSpaceContext, parseProfileParam, type Principal, PrincipalHover, ProfileContext, ProfilePanel, profileParam } from './principal-card';
 import { SpaceAvatar } from './space-avatar';
+import { useSpaceMentionSource } from './space-mention-source';
+import { SpaceMentionContext } from '../../session/composer/menus/space-mentions';
 import { isPrivateSpace, spaceDisplayName } from './space-identity';
 import { usePersonalSpaceName } from './use-personal-space-name';
 import { JoinChannelButton } from './space-members';
@@ -182,6 +184,8 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
   }, [dmAgent, spaces.data, listedDm, openDmMutate]);
 
   const threads = useSpaceThreads(projectId, space?.space_id);
+  // The `@` menu of this space's composers (and its thread's reply box): its people and agents.
+  const mentionSource = useSpaceMentionSource(projectId, space);
   const threadId = searchParams.get(THREAD_PARAM);
   const tab = openTabId(space?.tabs ?? [], searchParams.get(TAB_PARAM));
   // `push` adds a history entry, so the browser's Back walks it: a tab, and
@@ -385,6 +389,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
     // fills the row.
     <ProfileContext.Provider value={openProfile}>
     <CurrentSpaceContext.Provider value={space}>
+    <SpaceMentionContext.Provider value={mentionSource}>
     <ResizablePanelGroup
       direction="horizontal"
       autoSaveId="kortix:space-thread-split"
@@ -461,6 +466,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
         </>
       ) : null}
     </ResizablePanelGroup>
+    </SpaceMentionContext.Provider>
     </CurrentSpaceContext.Provider>
     </ProfileContext.Provider>
   );

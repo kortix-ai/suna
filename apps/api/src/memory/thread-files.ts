@@ -221,9 +221,12 @@ export async function readThreadPlace(sessionId: string): Promise<ThreadPlaceRow
   return rows[0] ?? null;
 }
 
-/** "#general" or "your DM with <agent>". */
+/** "#general", the person's personal space (My Kortix), or their private space with an agent: never "DM". */
 export function placeName(row: Pick<ThreadPlaceRow, 'space_kind' | 'space_slug' | 'space_name' | 'space_dm_agent'>): string {
-  return row.space_kind === 'channel' ? `#${row.space_slug ?? row.space_name ?? 'channel'}` : `the DM with ${row.space_dm_agent ?? 'an agent'}`;
+  if (row.space_kind === 'channel') return `#${row.space_slug ?? row.space_name ?? 'channel'}`;
+  return row.space_dm_agent && isMyKortixAgentName(row.space_dm_agent)
+    ? "the person's personal space"
+    : `the person's private space with ${row.space_dm_agent ?? 'an agent'}`;
 }
 
 /** The space's files folder in Drive (`grants` for a DM's owner folder); null when it has none. */

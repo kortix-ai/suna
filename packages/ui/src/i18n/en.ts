@@ -1502,7 +1502,8 @@ const catalog = {
       "noCommandMatch": "No matching command, file, or action",
       "commandsAndActions": "Commands and actions",
       "toUse": "to use",
-      "use": "Use"
+      "use": "Use",
+      "noOneMatches": "No one matches"
     },
     "history": {
       "restoreTitle": "Some earlier content could not be restored",
@@ -9342,6 +9343,13 @@ const catalog = {
       "spacesIn": "Spaces it is in",
       "spacesInNone": "Not in a space yet",
       "default": "Default"
+    },
+    "mentions": {
+      "people": "People",
+      "agents": "Agents",
+      "addToSpace": "Not in {space} yet: mentioning adds it",
+      "added": "{agent} added to {space}",
+      "addFailed": "Could not add the agent. Try again."
     }
   },
   "imageGen": {

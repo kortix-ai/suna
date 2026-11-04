@@ -2123,7 +2123,8 @@
       "noCommandMatch": "一致するコマンド、ファイル、アクションはありません",
       "commandsAndActions": "コマンドとアクション",
       "toUse": "使用するには",
-      "use": "使用"
+      "use": "使用",
+      "noOneMatches": "一致する人はいません"
     },
     "history": {
       "restoreTitle": "以前の内容の一部を復元できませんでした",
@@ -25077,6 +25078,13 @@
       "spacesIn": "参加しているスペース",
       "spacesInNone": "まだどのスペースにも参加していません",
       "default": "デフォルト"
+    },
+    "mentions": {
+      "people": "メンバー",
+      "agents": "エージェント",
+      "addToSpace": "まだ {space} にいません。メンションすると追加されます",
+      "added": "{agent} を {space} に追加しました",
+      "addFailed": "エージェントを追加できませんでした。もう一度お試しください。"
     }
   },
   "imageGen": {

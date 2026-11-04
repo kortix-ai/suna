@@ -45,7 +45,7 @@ import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText
 import { isMyKortixAgentName } from '@kortix/shared';
 import { logger } from '../../lib/logger';
 import { isPlatinumConfigured } from '../../shared/platinum';
-import { chatThreadBoardTurn, missingClaudeSubscription, sessionModelPin, sessionWhereTurn } from '../../projects/surface';
+import { chatThreadBoardTurn, missingClaudeSubscription, notifyMessageMentions, sessionModelPin, sessionWhereTurn } from '../../projects/surface';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -389,6 +389,8 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   // Thread files (`chat`): the person's message as a file, and every session of the thread told its folder.
   const thread = await threadFilesForTurn(req, state.requestBody);
   if (thread?.files) state.requestBody = withThreadFiles(state.requestBody, thread.files);
+  // A person's message in a channel notifies the people it @mentions, off the turn's path.
+  if (where?.space?.kind === 'channel' && req.userId && !req.sandboxAuthored) void notifyPersonMentions(req, state.requestBody);
   const put = (parts: readonly (string | null | undefined)[]) => {
     const system = turnSystemText(where?.system ?? null, [thread?.system, ...parts]);
     if (system) state.requestBody = withMemoryTurn(state.requestBody, { system });
@@ -428,6 +430,28 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
     put([]);
     logger.warn('[memory] turn start forwarded without memory', {
       session_id: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** The people a person's message @mentions get a notification (`notifyMessageMentions`); `chat` off: nothing. Never throws. */
+async function notifyPersonMentions(req: ForwardRequest, body: ArrayBuffer | undefined): Promise<void> {
+  try {
+    if (!(await memoryChannelsOn(req.record.projectId))) return;
+    const { personMessageOf } = await import('../../memory/thread-files');
+    const message = personMessageOf(body);
+    if (!message?.text.includes('@') || !req.userId) return;
+    await notifyMessageMentions({
+      projectId: req.record.projectId,
+      sessionId: req.record.sessionId,
+      authorId: req.userId,
+      text: message.text,
+      messageKey: message.id ?? `${req.record.sessionId}:${message.text.length}:${message.text.slice(0, 64)}`,
+    });
+  } catch (error) {
+    logger.warn('[space-posts] message mentions were not checked', {
+      session_id: req.record.sessionId,
       error: error instanceof Error ? error.message : String(error),
     });
   }

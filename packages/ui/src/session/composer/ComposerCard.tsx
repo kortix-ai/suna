@@ -13,7 +13,9 @@ import type {
   RefObject,
   SetStateAction,
 } from 'react';
-import { lazy, Suspense, useMemo, useRef } from 'react';
+import { lazy, Suspense, useContext, useMemo, useRef } from 'react';
+
+import { SpaceMentionContext } from './menus/space-mentions';
 import { useFeatureFlag } from '@kortix/sdk/react';
 
 import { ImagesUnsupportedBar, ModelConnectionBar } from '../models/model-connection-gate';
@@ -223,6 +225,8 @@ export function ComposerCard({
     drawing itself (`ChatInputOverridesProvider`). Off, nothing here changes.
   */
   const chatInputEnabled = useFeatureFlag(projectId ?? null, 'chat_input').enabled;
+  // Inside a space the `@` menu is its people and agents (`menus/space-mentions.ts`).
+  const spaceMentions = useContext(SpaceMentionContext);
   const chatInputOpen = agentMenuOpen || modelMenuOpen || reasoningMenuOpen;
   const chatInput = useMemo<ComposerUnderbarProps['chatInput']>(() => {
     if (!chatInputEnabled) return undefined;
@@ -429,6 +433,7 @@ export function ComposerCard({
                 agents={agents}
                 sessions={allSessions ?? []}
                 currentSessionId={sessionId}
+                spaceMentions={spaceMentions}
                 commands={commands}
                 actions={slashActions}
                 files={slashFiles}
