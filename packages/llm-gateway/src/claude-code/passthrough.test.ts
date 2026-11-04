@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setSystemTime, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import type { AuthedPrincipal } from '../domain/principal';
 import { createClaudeCodePassthrough, type ClaudeCodeHooks, type ClaudeCodeRequest } from './passthrough';
@@ -152,6 +152,45 @@ describe('Claude Code passthrough', () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ type: 'error', error: { type: 'invalid_request_error', message: 'Connect Claude to use this model. Sign in with Claude.' } });
     expect(seen).toHaveLength(0);
+  });
+
+  test('every account at its usage limit: a 429 Claude Code reads as a usage limit, with the reset time', async () => {
+    setSystemTime(new Date('2026-11-04T14:00:00Z'));
+    try {
+      const { handle, seen } = harness({
+        credentials: { error: {
+          status: 429, code: 'provider_pool_rate_limited',
+          message: 'All Claude accounts shared with this project reached their usage limit. The first resets in 33 hours.',
+          suggestion: 'Choose another model, or connect another Claude account.', restSeconds: 33 * 3600,
+        } },
+      });
+      const res = await handle(request());
+      expect(res.status).toBe(429);
+      // Claude Code prints its own usage-limit text ("You've hit your usage limit · resets …")
+      // only when these headers are present; without them it says "not your usage limit".
+      expect(res.headers.get('anthropic-ratelimit-unified-status')).toBe('rejected');
+      expect(res.headers.get('anthropic-ratelimit-unified-representative-claim')).toBe('kortix_claude_accounts');
+      expect(res.headers.get('anthropic-ratelimit-unified-reset')).toBe(String(Date.parse('2026-11-05T23:00:00Z') / 1000));
+      expect(res.headers.get('retry-after')).toBe(String(33 * 3600));
+      expect(await res.json()).toEqual({ type: 'error', error: { type: 'rate_limit_error', message: 'All Claude accounts shared with this project reached their usage limit. The first resets in 33 hours. Choose another model, or connect another Claude account.' } });
+      expect(seen).toHaveLength(0);
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  test('accounts cooling down for a minute or less: a plain 429 a client retries', async () => {
+    const { handle } = harness({
+      credentials: { error: {
+        status: 429, code: 'provider_pool_rate_limited', message: 'All Claude accounts shared with this project are cooling down.',
+        suggestion: 'Retry after the cooldown, or connect another Claude account.', retryAfterSeconds: 30, restSeconds: 30,
+      } },
+    });
+    const res = await handle(request());
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBe('30');
+    expect(res.headers.get('anthropic-ratelimit-unified-status')).toBeNull();
+    expect(res.headers.get('anthropic-ratelimit-unified-representative-claim')).toBeNull();
   });
 
   test('a missing or unknown token answers 401 before any account lookup', async () => {
