@@ -379,8 +379,8 @@ function BoardTab({ projectId, tab }: { projectId: string; tab: SpaceTab }) {
   );
 }
 
-/** A pinned App, live and interactive, filling the tab. */
-function AppTab({ projectId, slug }: { projectId: string; slug: string }) {
+/** A pinned App, live and interactive, filling the tab. `missingAction`: shown under "not in this project" (a Space's "Remove tab"). */
+export function AppTab({ projectId, slug, missingAction }: { projectId: string; slug: string; missingAction?: ReactNode }) {
   const t = useTranslations('spaces');
   const apps = useProjectApps(projectId);
   const app = apps.data?.find((candidate) => candidate.slug === slug);
@@ -390,7 +390,7 @@ function AppTab({ projectId, slug }: { projectId: string; slug: string }) {
   if (!app) {
     return (
       <Centered>
-        <EmptyState size="sm" title={t('missing.app', { slug })} />
+        <EmptyState size="sm" title={t('missing.app', { slug })} action={missingAction} />
       </Centered>
     );
   }
@@ -405,8 +405,8 @@ function AppTab({ projectId, slug }: { projectId: string; slug: string }) {
   );
 }
 
-/** A pinned Artifact, its current state in a sandboxed frame. */
-function ArtifactTab({ projectId, artifactId }: { projectId: string; artifactId: string }) {
+/** A pinned Artifact, its current state in a sandboxed frame. `missingAction`: shown under "gone" (a Space's "Remove tab"). */
+export function ArtifactTab({ projectId, artifactId, missingAction }: { projectId: string; artifactId: string; missingAction?: ReactNode }) {
   const t = useTranslations('spaces');
   const artifact = useArtifact(projectId, artifactId);
   const href = uiRoutes().artifacts(projectId);
@@ -414,7 +414,7 @@ function ArtifactTab({ projectId, artifactId }: { projectId: string; artifactId:
   if (!artifact.data) {
     return (
       <Centered>
-        <EmptyState size="sm" title={t('missing.artifact')} />
+        <EmptyState size="sm" title={t('missing.artifact')} action={missingAction} />
       </Centered>
     );
   }

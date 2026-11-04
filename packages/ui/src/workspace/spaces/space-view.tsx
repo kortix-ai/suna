@@ -13,7 +13,7 @@ import {
   useUpdateProjectSpace,
   useVisibleAgents,
 } from '@kortix/sdk/react';
-import { CaretDownIcon, SquaresFourIcon } from '@phosphor-icons/react';
+import { CaretDownIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -24,15 +24,12 @@ import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { MemoryView } from '../memory/memory-view';
 import { UsedMemoryChip } from '../memory/used-memory-chip';
 import { useIsPhone } from '../../hooks/use-mobile';
-import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
-import { type CanResult, useProjectCan, useProjectPageCans } from '../../internal/lib/use-project-can';
 import { ProjectScope } from '../../internal/project-scope';
 import { useComposerPrefillStore } from '../../internal/stores/composer-prefill-store';
 import { cn } from '../../lib/utils';
 import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
-import { EmptyArt } from '../../primitives/empty-art';
 import { EmptyState } from '../../primitives/empty-state';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../../primitives/resizable';
 import { ErrorState } from '../../primitives/error-state';
@@ -53,21 +50,13 @@ import { ChannelSetup } from './channel-setup';
 import { ChannelsIntro, GeneralChatHead } from './channels-onboarding';
 import { CreateChannelDialog } from './create-channel-dialog';
 import { channelRunnableAgents, offeredChannelAgents } from './space-agents';
-import { SpaceLinks } from './space-links';
-import { SpaceTriggers } from './space-triggers';
 import { SpaceDetailsDialog, type SpaceDetailsTab } from './space-details-dialog';
 import { ChannelGlyph } from './channel-glyph';
 import { JoinChannelButton } from './space-members';
 import { SpaceRosterButton } from './space-roster';
-import {
-  agentLabel,
-  liveReplyCount,
-  spaceRoster,
-  spaceTabFromParam,
-  spaceTabs,
-  threadIsWorking,
-  type SpaceTab,
-} from './space-timeline';
+import { agentLabel, liveReplyCount, spaceRoster, threadIsWorking } from './space-timeline';
+import { CHAT_TAB, openTabId } from './space-tab-list';
+import { AddTabMenu, StoredTabPanel, StoredTabTrigger, useSpaceTabs } from './space-tabs';
 import { SpaceTimeline, useSpaceThreads, type SpaceThreads } from './space-timeline-view';
 import { SpaceThreadsTab } from './space-threads-tab';
 
@@ -83,26 +72,27 @@ export interface SpaceViewProps {
   /** Runs first on every send. Throw to refuse it: the composer keeps the draft (apps/web checks billing here). */
   beforeSend?: () => Promise<void>;
   /**
-   * The Files tab: the host's Drive folder view for the space (apps/web
-   * passes its Drive explorer). Absent: the tab shows its empty state. The
-   * Memory tab is the space's memory pages (`MemoryView`).
+   * A folder tab: the host's Drive folder view (apps/web passes its Drive
+   * explorer). Absent: a folder tab shows its empty state.
    */
   renderFolder?: (folder: SpaceFolder) => ReactNode;
-  /** A channel's Apps tab: the host's App gallery for the channel. Absent: its empty state. */
-  renderApps?: (space: ProjectSpace) => ReactNode;
   /**
    * Chat (flag `chat`): the DM as the person's only chat with
-   * Kortix. A plain header, no tabs and no Channels intro; a thread links its
-   * full session.
+   * Kortix. A plain header and no intro; a thread links its full session.
+   * Its tab row is the same as any space's: Chat, then its own tabs.
    */
   chat?: boolean;
 }
 
-/** What a host's folder view draws: one space's Files tab. `place` is "#general" or the DM's agent. */
+/** What a host's folder view draws for a space. `place` is "#general" or the DM's agent. */
 export interface SpaceFolder {
   space: ProjectSpace;
   tab: 'files' | 'memory';
   place: string;
+  /** A folder tab: the Drive folder path it shows, instead of the space's own folder. */
+  path?: string;
+  /** A folder tab whose folder is gone: what to show instead (its "Remove tab"). */
+  missing?: ReactNode;
 }
 
 /** The query key of the open thread: it survives a reload and can be linked. */
@@ -115,26 +105,9 @@ const ARCHIVED_PARAM = 'archived';
 const ARCHIVED_LOCKED_PARAM = 'locked';
 
 /**
- * The space's tabs, less Apps and Triggers for a caller known to lack their
- * read permission: those lists would answer 403. Shown while the answer loads.
- */
-function useReadableSpaceTabs(projectId: string, kind: 'channel' | 'dm'): readonly SpaceTab[] {
-  const triggers = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_TRIGGER_READ];
-  const apps = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_READ);
-  const denied = (can: CanResult | undefined) => !!can && !can.isLoading && !can.isError && !can.allowed;
-  const hideApps = denied(apps);
-  const hideTriggers = denied(triggers);
-  return useMemo(
-    () => spaceTabs(kind).filter((tab) => !(tab === 'apps' && hideApps) && !(tab === 'triggers' && hideTriggers)),
-    [kind, hideApps, hideTriggers],
-  );
-}
-
-/**
- * A channel or DM page under `chat`: the header, the tab row
- * (Chat, Threads, and the space's files, memory, apps, links and triggers),
- * and the open thread in a panel on the right. Every message starts a new
- * thread.
+ * A channel or DM page under `chat`: the header, the tab row (Chat, then
+ * the space's own tabs, which people and Kortix arrange), and the open thread
+ * in a panel on the right. Every message starts a new thread.
  */
 export function SpaceView(props: SpaceViewProps) {
   return (
@@ -153,7 +126,7 @@ export function SpaceView(props: SpaceViewProps) {
   );
 }
 
-function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps, chat = false }: SpaceViewProps) {
+function SpaceViewBody({ projectId, target, beforeSend, renderFolder, chat = false }: SpaceViewProps) {
   const t = useTranslations('spaces.view');
   const router = useUiRouter();
   const pathname = useUiPathname();
@@ -185,9 +158,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
 
   const threads = useSpaceThreads(projectId, space?.space_id);
   const threadId = searchParams.get(THREAD_PARAM);
-  const tabs = useReadableSpaceTabs(projectId, target.kind);
-  const requestedTab = spaceTabFromParam(searchParams.get(TAB_PARAM), target.kind);
-  const tab = chat ? 'chat' : tabs.includes(requestedTab) ? requestedTab : 'chat';
+  const tab = openTabId(space?.tabs ?? [], searchParams.get(TAB_PARAM));
   // `push` adds a history entry, so the browser's Back walks it: a tab, and
   // opening the thread panel. Filters and switching threads replace the entry.
   const setParams = useCallback(
@@ -227,7 +198,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
       setParams((params) => {
         // Threads and Links share `q` and `by`: a tab starts unfiltered.
         for (const key of TAB_FILTER_PARAMS) params.delete(key);
-        if (next === 'chat') params.delete(TAB_PARAM);
+        if (next === CHAT_TAB) params.delete(TAB_PARAM);
         else params.set(TAB_PARAM, next);
       }, 'push');
     },
@@ -342,32 +313,21 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
       >
         <ComposerDropZone className="flex min-h-0 min-w-0 flex-1 flex-col">
           {header}
-          <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
-            {chat ? null : (
-              <TabsList type="underline" size="sm" className="w-full shrink-0 justify-start gap-4 overflow-x-auto px-5">
-                {tabs.map((value) => (
-                  <TabsTrigger key={value} value={value} className="w-fit flex-none">
-                    {t(`tab.${value}`)}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            )}
-            <SpaceTabs
-              projectId={projectId}
-              space={space}
-              place={place}
-              threads={threads}
-              threadId={threadId}
-              onOpenThread={openThread}
-              onOpenMembers={() => setDetails('members')}
-              beforeSend={beforeSend}
-              renderFolder={renderFolder}
-              renderApps={renderApps}
-              tabs={chat ? ['chat'] : tabs}
-              params={searchParams}
-              setParams={setParams}
-            />
-          </Tabs>
+          <SpaceTabs
+            projectId={projectId}
+            space={space}
+            place={place}
+            tab={tab}
+            setTab={setTab}
+            threads={threads}
+            threadId={threadId}
+            onOpenThread={openThread}
+            onOpenMembers={() => setDetails('members')}
+            beforeSend={beforeSend}
+            renderFolder={renderFolder}
+            params={searchParams}
+            setParams={setParams}
+          />
         </ComposerDropZone>
       </ResizablePanel>
       {threadId ? (
@@ -394,23 +354,22 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
 }
 
 /**
- * The tab panels. Chat and Threads read the space's threads; Files is the
- * host's folder view, Memory the space's memory pages, Apps the host's App
- * gallery, Links the channel's links, Triggers the triggers that post here.
- * Files without a host view draws its empty state with the action disabled.
+ * The tab row and its panels: Chat (the timeline and the composer), then the
+ * space's stored tabs in order (`space-tabs.tsx`), then "+" for a person who
+ * may edit them. Only the open tab's panel is mounted.
  */
 function SpaceTabs({
   projectId,
   space,
   place,
+  tab,
+  setTab,
   threads,
   threadId,
   onOpenThread,
   onOpenMembers,
   beforeSend,
   renderFolder,
-  renderApps,
-  tabs,
   params,
   setParams,
 }: {
@@ -418,92 +377,62 @@ function SpaceTabs({
   space: ProjectSpace;
   /** "#general", or the DM's agent. */
   place: string;
-  tabs: readonly SpaceTab[];
+  /** The open tab: `chat` or a stored tab's id. */
+  tab: string;
+  setTab: (tab: string) => void;
   threads: SpaceThreads;
   threadId: string | null;
   onOpenThread: (sessionId: string) => void;
   onOpenMembers: () => void;
   beforeSend?: () => Promise<void>;
   renderFolder?: (folder: SpaceFolder) => ReactNode;
-  renderApps?: (space: ProjectSpace) => ReactNode;
   /** The page's query: the Threads tab keeps its search and filters there. */
   params: { get(name: string): string | null };
   setParams: (change: (params: URLSearchParams) => void) => void;
 }) {
   const t = useTranslations('spaces.view');
+  const state = useSpaceTabs(projectId, space);
   return (
-    <>
-      <TabsContent value="chat" className="flex min-h-0 flex-col">
+    <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
+      <TabsList type="underline" size="sm" className="w-full shrink-0 justify-start gap-4 overflow-x-auto px-5">
+        <TabsTrigger value={CHAT_TAB} className="w-fit flex-none">
+          {t('tab.chat')}
+        </TabsTrigger>
+        {state.tabs.map((stored, index) => (
+          <StoredTabTrigger key={stored.id} tab={stored} index={index} active={stored.id === tab} state={state} />
+        ))}
+        {state.canEdit ? <AddTabMenu projectId={projectId} space={space} state={state} onAdded={setTab} /> : null}
+      </TabsList>
+      <TabsContent value={CHAT_TAB} className="flex min-h-0 flex-col">
         {space.is_default ? <GeneralChatHead projectId={projectId} /> : null}
         {space.kind === 'channel' ? <ChannelSetup projectId={projectId} space={space} onOpenMembers={onOpenMembers} /> : null}
         <SpaceTimeline projectId={projectId} space={space} threads={threads} selectedId={threadId} onOpenThread={onOpenThread} />
         <SpaceComposer projectId={projectId} space={space} onOpenThread={onOpenThread} beforeSend={beforeSend} />
       </TabsContent>
-      <TabsContent value="threads" className="flex min-h-0 flex-col">
-        <SpaceThreadsTab
-          projectId={projectId}
-          space={space}
-          threads={threads}
-          selectedId={threadId}
-          onOpenThread={onOpenThread}
-          params={params}
-          setParams={setParams}
-        />
-      </TabsContent>
-      {tabs
-        .filter((tab): tab is Exclude<SpaceTab, 'chat' | 'threads'> => tab !== 'chat' && tab !== 'threads')
-        .map((tab) =>
-          tab === 'memory' ? (
-            <TabsContent key={tab} value={tab} className="flex min-h-0 flex-col">
-              <MemoryView projectId={projectId} layerKey={space.space_id} place={place} />
-            </TabsContent>
-          ) : renderFolder && tab === 'files' ? (
-            <TabsContent key={tab} value={tab} className="flex min-h-0 flex-col">
-              {renderFolder({ space, tab, place })}
-            </TabsContent>
-          ) : tab === 'links' ? (
-            <TabsContent key={tab} value={tab} className="flex min-h-0 flex-col">
-              <SpaceLinks
+      {state.tabs.map((stored) => (
+        <TabsContent key={stored.id} value={stored.id} className="flex min-h-0 flex-col overflow-y-auto">
+          <StoredTabPanel
+            projectId={projectId}
+            space={space}
+            tab={stored}
+            place={place}
+            state={state}
+            renderFolder={renderFolder}
+            threads={
+              <SpaceThreadsTab
                 projectId={projectId}
                 space={space}
-                place={place}
+                threads={threads}
+                selectedId={threadId}
                 onOpenThread={onOpenThread}
                 params={params}
                 setParams={setParams}
               />
-            </TabsContent>
-          ) : tab === 'triggers' ? (
-            <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
-              <SpaceTriggers projectId={projectId} space={space} place={place} />
-            </TabsContent>
-          ) : tab === 'apps' ? (
-            <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
-              {renderApps?.(space) ?? (
-                <EmptyState
-                  className="min-h-full"
-                  media={<EmptyArt icon={SquaresFourIcon} />}
-                  title={t('empty.apps.title')}
-                  description={t('empty.apps.description', { place })}
-                />
-              )}
-            </TabsContent>
-          ) : (
-            <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
-              <EmptyState
-                className="min-h-full"
-                media={<EmptyArt />}
-                title={t(`empty.${tab}.title`)}
-                description={t(`empty.${tab}.description`, { place })}
-                action={
-                  <Button variant="outline" size="sm" disabled>
-                    {t(`empty.${tab}.action`)}
-                  </Button>
-                }
-              />
-            </TabsContent>
-          ),
-        )}
-    </>
+            }
+          />
+        </TabsContent>
+      ))}
+    </Tabs>
   );
 }
 
