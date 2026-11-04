@@ -23660,11 +23660,12 @@
     "details": "Dettagli",
     "scopeLabel": "Visibile a",
     "folder": "Cartella",
-    "verifiedPass": "Superato. La sessione di verifica non ha svolto alcun lavoro.",
+    "verifiedPass": "Superato. Una verifica indipendente lo ha confermato e non ha svolto alcun lavoro.",
     "verifiedReport": "La sessione di verifica ha scritto questo report.",
     "showReport": "Mostra report",
     "openInFiles": "Apri cartella in File",
-    "openFolderOf": "Apri la cartella di {file} in File"
+    "openFolderOf": "Apri la cartella di {file} in File",
+    "hideReport": "Nascondi report"
   },
   "agentEditor": {
     "manage": "Gestisci",

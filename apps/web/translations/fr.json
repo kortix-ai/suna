@@ -23660,11 +23660,12 @@
     "details": "Détails",
     "scopeLabel": "Visible par",
     "folder": "Dossier",
-    "verifiedPass": "Validé. La session de vérification n’a fait aucune partie du travail.",
+    "verifiedPass": "Validé. Une vérification indépendante l’a confirmé et n’a fait aucune partie du travail.",
     "verifiedReport": "La session de vérification a écrit ce rapport.",
     "showReport": "Afficher le rapport",
     "openInFiles": "Ouvrir le dossier dans Fichiers",
-    "openFolderOf": "Ouvrir le dossier de {file} dans Fichiers"
+    "openFolderOf": "Ouvrir le dossier de {file} dans Fichiers",
+    "hideReport": "Masquer le rapport"
   },
   "agentEditor": {
     "manage": "Gérer",

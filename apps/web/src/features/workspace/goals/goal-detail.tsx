@@ -169,6 +169,7 @@ function GoalBody({
         >
           {leadText}
         </p>
+        {waiting ? <NeedsYou projectId={projectId} goal={goal} onChanged={onChanged} /> : null}
         {doc?.summary ? (
           <p className="text-muted-foreground text-sm text-pretty">
             {doc.summary}
@@ -182,8 +183,6 @@ function GoalBody({
           {issueText(issue, goal)}
         </InfoBanner>
       ))}
-
-      {waiting ? <NeedsYou projectId={projectId} goal={goal} onChanged={onChanged} /> : null}
 
       <Section title={t('doneWhen')} testId="goal-criteria">
         {doc?.success_criteria?.length ? <CriteriaList projectId={projectId} goal={goal} /> : <p className="text-muted-foreground text-sm">{t('noCriteria')}</p>}
@@ -217,7 +216,8 @@ function GoalBody({
                 <span className="text-muted-foreground w-24 shrink-0 text-xs tabular-nums">{formatGoalTime(tr.at, locale, now)}</span>
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="text-foreground">{t(`status.${tr.to}`)}</span>
-                  {tr.reason ? <span className="text-muted-foreground line-clamp-2 text-xs">{tr.reason}</span> : null}
+                  {/* The verifier's own words live in the report above: the Done row needs no copy of them. */}
+                  {tr.reason && tr.to !== 'done' ? <span className="text-muted-foreground line-clamp-2 text-xs">{tr.reason}</span> : null}
                 </span>
               </li>
             ))}
@@ -348,7 +348,7 @@ function Verification({ report, done }: { report: string; done: boolean }) {
         <DisclosureTrigger>
           <button type="button" className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-xs">
             <CaretRightIcon className="size-3 transition-transform data-[open=true]:rotate-90" data-open={open} aria-hidden />
-            {t('showReport')}
+            {open ? t('hideReport') : t('showReport')}
           </button>
         </DisclosureTrigger>
         <DisclosureContent>
@@ -643,9 +643,10 @@ function SessionName({ projectId, sessionId }: { projectId: string; sessionId: s
 }
 
 /**
- * A `links:` entry: a URL opens as is. A path in Files shows its name, its
- * folder muted, and opens that folder. A path inside a session's sandbox
- * (`/workspace`, `/drives`) is not in Files: it shows as text.
+ * A `links:` entry: a URL opens as is. A path in Files shows its name and its
+ * folder, plus a folder action that opens that folder in Files (the same row
+ * as an evidence file). A path inside a session's sandbox (`/workspace`,
+ * `/drives`) is not in Files: it shows muted, with no action.
  */
 function LinkTarget({ link, folder, driveHref }: { link: string; folder: string; driveHref: string | null }) {
   const t = useTranslations('goals');
@@ -660,21 +661,23 @@ function LinkTarget({ link, folder, driveHref }: { link: string; folder: string;
   const path = link.startsWith('/') ? link : `${folder}/${link}`;
   const name = path.split('/').at(-1) ?? path;
   const parent = path.split('/').slice(0, -1).join('/') || '/';
-  const label = (
-    <>
-      <FileIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-      <span className="text-foreground shrink-0">{name}</span>
-      <span className="text-muted-foreground min-w-0 truncate text-xs">{link.startsWith('/') ? parent : link.split('/').slice(0, -1).join('/')}</span>
-    </>
-  );
-  if (!driveHref || /^\/(workspace|drives)\//.test(link)) return <span className="flex min-w-0 items-center gap-2">{label}</span>;
+  const inFiles = !!driveHref && !/^\/(workspace|drives)\//.test(link);
   return (
-    <Link
-      href={`${driveHref}?path=${encodeURIComponent(parent)}`}
-      className="flex min-w-0 items-center gap-2 hover:underline"
-      aria-label={t('openFolderOf', { file: name })}
-    >
-      {label}
-    </Link>
+    <span className="flex min-w-0 items-center gap-2">
+      <FileIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
+      <span className={inFiles ? 'text-foreground shrink-0' : 'text-muted-foreground shrink-0'}>{name}</span>
+      <span className="text-muted-foreground min-w-0 truncate text-xs">{link.startsWith('/') ? parent : link.split('/').slice(0, -1).join('/')}</span>
+      {inFiles ? (
+        <Hint label={t('openInFiles')}>
+          <Link
+            href={`${driveHref}?path=${encodeURIComponent(parent)}`}
+            className="text-muted-foreground hover:text-foreground shrink-0"
+            aria-label={t('openFolderOf', { file: name })}
+          >
+            <FolderOpenIcon className="size-3.5" aria-hidden />
+          </Link>
+        </Hint>
+      ) : null}
+    </span>
   );
 }

@@ -23660,11 +23660,12 @@
     "details": "Details",
     "scopeLabel": "Sichtbar für",
     "folder": "Ordner",
-    "verifiedPass": "Bestanden. Die Prüfsitzung hat nichts an der Arbeit gemacht.",
+    "verifiedPass": "Bestanden. Eine unabhängige Prüfung hat es bestätigt und nichts an der Arbeit gemacht.",
     "verifiedReport": "Die Prüfsitzung hat diesen Bericht geschrieben.",
     "showReport": "Bericht anzeigen",
     "openInFiles": "Ordner in Dateien öffnen",
-    "openFolderOf": "Ordner von {file} in Dateien öffnen"
+    "openFolderOf": "Ordner von {file} in Dateien öffnen",
+    "hideReport": "Bericht ausblenden"
   },
   "agentEditor": {
     "manage": "Verwalten",

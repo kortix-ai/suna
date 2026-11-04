@@ -429,10 +429,12 @@ export async function pauseProjectGoal(
 }
 
 /**
- * A person resumes a paused goal: GOAL.md clears `paused_at`, `log.md`
- * records it, the heartbeat is enabled again, and the owner session wakes now
- * (its turn end re-arms a heartbeat that went missing). On a goal GOAL.md
- * already records as running (a retry) it only re-enables the heartbeat.
+ * A person resumes a paused goal, in this order: the heartbeat is enabled
+ * again, GOAL.md clears `paused_at` (`log.md` records it), and the owner
+ * session wakes now (its turn end re-arms a heartbeat that went missing). A
+ * retry after a later step failed finishes the steps left: a goal GOAL.md
+ * already records as running gets its heartbeat enabled, and a wake when it
+ * has no live heartbeat.
  */
 export async function resumeProjectGoal(
   projectId: string,
@@ -441,21 +443,24 @@ export async function resumeProjectGoal(
   const { doc: current, version } = await readGoalForWrite(goal);
   if (CLOSED.has(current.status)) throw new Error(`The goal is already ${current.status}.`);
   const pausedAt = current.paused_at;
+  // 1. The heartbeat first: whatever fails after it, something still wakes the goal.
+  const heartbeatLive = goal.heartbeat?.session_id && goal.heartbeat.state !== 'done';
+  if (goal.heartbeat?.session_id && goal.heartbeat.state === 'paused') {
+    await updateSessionReminder(projectId, goal.heartbeat.session_id, goal.heartbeat.id, { enabled: true });
+  }
+  // 2. Clear the pause. Already clear: a retry after a later step failed.
   let next = current;
-  // Not paused: a retry after the heartbeat update failed. Finish that step; the heartbeat wakes it.
   if (pausedAt) {
     next = { ...current, paused_at: null, paused_by: null };
     await uploadDriveFile(goal.driveId, `${goal.folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
     await appendGoalLog(goal, `- ${new Date().toISOString()} resumed`);
   }
-  if (goal.heartbeat?.session_id && goal.heartbeat.state === 'paused') {
-    await updateSessionReminder(projectId, goal.heartbeat.session_id, goal.heartbeat.id, { enabled: true });
-  }
+  // 3. Wake the owner now: once per pause (its id names the pause, so a repeat is deduped), or
+  // on a retry when no heartbeat would ever wake it.
   const owner = ownerSessionId(current) ?? goal.coordinatorSessionId;
-  if (owner && pausedAt) {
-    // One wake per pause: its id names the pause, so a repeated request is deduped by the server.
-    await queueText(projectId, owner, `${goalWakePrompt(goalBoxFolder(goal))} A person resumed it.`, `goal-resume:${owner}:${pausedAt}`);
-  }
+  const wake = `${goalWakePrompt(goalBoxFolder(goal))} A person resumed it.`;
+  if (owner && pausedAt) await queueText(projectId, owner, wake, `goal-resume:${owner}:${pausedAt}`);
+  else if (owner && !heartbeatLive) await queueText(projectId, owner, wake);
   return next;
 }
 

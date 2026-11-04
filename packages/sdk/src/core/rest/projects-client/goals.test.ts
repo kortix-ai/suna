@@ -663,6 +663,22 @@ describe('person controls: create, pause, resume', () => {
     expect(JSON.parse(requested.find((r) => r.method === 'PATCH')!.body)).toEqual({ enabled: true });
   });
 
+  test('resume enables the heartbeat before it clears the pause, so a failed GOAL.md write leaves nothing half-done', async () => {
+    goalRoutes({ ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
+    routes[`PATCH /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: HEARTBEAT };
+    routes['PUT /drives/d1/files/content?path=/Company/Goals/bank-close/GOAL.md'] = { status: 409, body: { code: 'file_changed' } };
+    await expect(resumeProjectGoal('p1', { ...goalRef, heartbeat: { ...goalRef.heartbeat, state: 'paused' } })).rejects.toMatchObject({ status: 409 });
+    expect(requested.filter((r) => r.method !== 'GET').map((r) => r.method)).toEqual(['PATCH', 'PUT']);
+  });
+
+  test('a resume retry with no active heartbeat still wakes the owner, so the goal is never left idle', async () => {
+    goalRoutes(OPEN_DOC);
+    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
+    await resumeProjectGoal('p1', { ...goalRef, heartbeat: null });
+    expect(requested.filter((r) => r.method === 'PUT')).toEqual([]);
+    expect(JSON.parse(requested.find((r) => r.method === 'POST')!.body).parts[0].text).toContain('Goal wake: /drives/company/Goals/bank-close.');
+  });
+
   test('a paused goal is healthy: its disabled heartbeat is the pause, not a problem', () => {
     const paused = { ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z' };
     expect(goalHealth(paused, { ...HEARTBEAT, state: 'paused' }, NOW)).toEqual({ state: 'healthy', issues: [] });

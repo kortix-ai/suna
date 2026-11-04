@@ -23660,11 +23660,12 @@
     "details": "Details",
     "scopeLabel": "Visible to",
     "folder": "Folder",
-    "verifiedPass": "Passed. The verifier session did none of the work.",
+    "verifiedPass": "Passed. An independent check confirmed it and did none of the work.",
     "verifiedReport": "The verifier session wrote this report.",
     "showReport": "Show report",
     "openInFiles": "Open folder in Files",
-    "openFolderOf": "Open the folder of {file} in Files"
+    "openFolderOf": "Open the folder of {file} in Files",
+    "hideReport": "Hide report"
   },
   "agentEditor": {
     "manage": "Manage",

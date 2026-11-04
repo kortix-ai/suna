@@ -81,13 +81,13 @@ export function useGoalStateText() {
   };
 }
 
-/** Orange: a person must act (a question or a problem). Green: running. Grey: closed or paused (nothing runs). */
+/** Orange: a person must act (a question or a problem). Grey otherwise: green is kept for done (the ring). */
 export function GoalHealthDot({ goal }: { goal: Pick<ProjectGoal, 'health'> & Partial<Pick<ProjectGoal, 'goal'>> }) {
   const open = goal.health.state !== 'closed';
   const paused = open && !!goal.goal?.paused_at;
   const waiting = open && !paused && (goal.goal?.status === 'waiting_on_user' || goalOpenAsks(goal.goal ?? null).length > 0);
   const tone: StatusTone =
-    !open || paused ? 'neutral' : waiting || goal.health.state === 'attention' ? 'warning' : 'success';
+    open && !paused && (waiting || goal.health.state === 'attention') ? 'warning' : 'neutral';
   return <StatusDot tone={tone} />;
 }
 

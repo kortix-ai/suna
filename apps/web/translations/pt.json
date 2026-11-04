@@ -23660,11 +23660,12 @@
     "details": "Detalhes",
     "scopeLabel": "Visível para",
     "folder": "Pasta",
-    "verifiedPass": "Aprovada. A sessão de verificação não fez nada do trabalho.",
+    "verifiedPass": "Aprovada. Uma verificação independente confirmou e não fez nada do trabalho.",
     "verifiedReport": "A sessão de verificação escreveu este relatório.",
     "showReport": "Mostrar relatório",
     "openInFiles": "Abrir pasta em Arquivos",
-    "openFolderOf": "Abrir a pasta de {file} em Arquivos"
+    "openFolderOf": "Abrir a pasta de {file} em Arquivos",
+    "hideReport": "Ocultar relatório"
   },
   "agentEditor": {
     "manage": "Gerenciar",
