@@ -163,3 +163,12 @@ describe('createPlayback', () => {
     expect(calls).toEqual([]);
   });
 });
+
+describe("a call's length", () => {
+  test('counts from the first answer, across a reconnect', () => {
+    const live = run([{ type: 'ready', at: 1_000 }]);
+    expect(live.liveAt).toBe(1_000);
+    expect(run([{ type: 'drop' }, { type: 'ready', at: 9_000 }], live).liveAt).toBe(1_000);
+    expect(INITIAL_CALL.liveAt).toBeNull();
+  });
+});

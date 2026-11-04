@@ -843,7 +843,7 @@ const catalog = {
         },
         "voice_call": {
           "name": "Voice calls",
-          "description": "Call the session's agent from the session page and talk it through. It hears you, answers in a voice, sees a screen you share, and works in the same session, so the conversation stays in the chat."
+          "description": "Call an agent from its page (Customize → Agents) and talk it through. A call is a session of its own on that agent: it hears you, answers in a voice and sees a screen you share, and the conversation is that session's chat."
         },
         "shared_drives": {
           "name": "Shared drives",
@@ -9379,6 +9379,7 @@ const catalog = {
   "voiceCall": {
     "title": "Voice call",
     "call": "Call",
+    "calling": "Calling…",
     "start": "Start a voice call",
     "end": "End call",
     "connecting": "Connecting…",
@@ -9396,6 +9397,7 @@ const catalog = {
     "lost": "Could not reconnect the call",
     "unavailable": "This session's sandbox started before voice calls were turned on. Calls work from its next start.",
     "callAgain": "Call again",
+    "openChat": "Open the chat",
     "close": "Close"
   },
   "agentCapabilities": {

@@ -348,7 +348,9 @@ function deriveThread(input: {
     const nativeParts: unknown[] = [e, ...own, row ?? null]
 
     if (msg.role === 'user' || msg.role === 'custom' || msg.role === 'system') {
-      const m = message(threadId, id, msg.role === 'system' ? 'system' : 'user', iso(msg.timestamp || input.createdAt))
+      // A custom message's time is its entry's, an ISO string (a message's own is epoch ms): read as a number it was
+      // 0, and every extension's message was dated 1970 (a voice call's turns showed "Worked for 29895800m").
+      const m = message(threadId, id, msg.role === 'system' ? 'system' : 'user', isoOf(msg.timestamp || input.createdAt))
       if (msg.role === 'system') m.kind = 'context'
       if (msg.role === 'custom') m.origin = 'automation'
       if (input.child && msg.role === 'user' && !out.some((x) => x.message.role === 'user')) m.origin = 'subagent'

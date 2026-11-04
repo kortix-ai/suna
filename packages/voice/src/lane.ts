@@ -3,11 +3,11 @@
 // Flash-Lite 414 ms direct and the agent's session 600-2760 ms live (41k tokens of history in front of every turn).
 // The model hands the turn to the agent, which has the tools, by replying exactly "(agent)". Off with VOICE_LANE=0.
 const MODEL = process.env.VOICE_LANE_MODEL ?? 'qwen/qwen3.8-27b'
-export const laneOn = () => process.env.VOICE_LANE !== '0' && !!process.env.GROQ_API_KEY
+export const laneOn = () => process.env.VOICE_LANE !== '0' && fastOn()
 
 import { NAME } from './name'
 import { chargeTokens } from './cost'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
 
 export type Msg = { role: 'user' | 'assistant'; content: string }
 
