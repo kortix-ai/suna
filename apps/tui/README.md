@@ -343,7 +343,7 @@ is `/feedback`.
 | `/share <team\|private>` |  | Session: Let the whole project open this session, or only you. |
 | `/reload` |  | Session: Reload kortix.yaml, agents and skills into this session. |
 | `/copy` |  | Session: Copy the last reply to the clipboard. |
-| `/link` | `/id` | Session: Copy the session id and its web link. |
+| `/link` | `/id` | Session: Copy the session web link. |
 | `/export [file]` |  | Session: Save the conversation as Markdown in the current folder. |
 | `/delete` |  | Session: Delete this session. Asks first. |
 | `/projects [filter]` | `/project` | Switch: Pick another project. |

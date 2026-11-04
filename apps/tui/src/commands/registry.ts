@@ -175,7 +175,7 @@ export const COMMANDS = [
   {
     name: 'link',
     aliases: ['id'],
-    description: 'Copy the session id and its web link.',
+    description: 'Copy the session web link.',
     group: 'session',
     needs: 'session',
   },
