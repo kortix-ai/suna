@@ -2950,7 +2950,8 @@
         "notReceived": "リンクが届きませんか？",
         "confirmNotReceived": "確認メールが届きませんか？",
         "resendIn": "{seconds}秒後に再送信",
-        "resend": "再送信"
+        "resend": "再送信",
+        "checkSpam": "見つからない場合は、迷惑メールフォルダを確認してください。"
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21191,8 @@
       "text507c24b6792d": "変更リクエストが {branch} にマージされると、{agent}があなたの指示を実行します。",
       "text05ee1d6181f3": "変更リクエストがマージされると、{agent}があなたの指示を実行します。",
       "texte608495c45ce": "{branch} にマージ",
-      "text80ca527b0d55": "変更リクエストのトリガーを作成しました"
+      "text80ca527b0d55": "変更リクエストのトリガーを作成しました",
+      "authEmailAlreadySent": "このメールは1分以内に送信済みです。再送信する前に、受信トレイと迷惑メールフォルダを確認してください。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

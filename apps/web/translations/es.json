@@ -2950,7 +2950,8 @@
         "notReceived": "¿No recibiste el enlace?",
         "confirmNotReceived": "¿No recibiste el correo de confirmación?",
         "resendIn": "Reenviar en {seconds}",
-        "resend": "Reenviar"
+        "resend": "Reenviar",
+        "checkSpam": "¿No está? Revisa la carpeta de spam o correo no deseado."
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21191,8 @@
       "text507c24b6792d": "Cuando una solicitud de cambio se fusiona en {branch}, {agent} ejecuta tu instrucción.",
       "text05ee1d6181f3": "Cuando se fusiona una solicitud de cambio, {agent} ejecuta tu instrucción.",
       "texte608495c45ce": "Fusionada en {branch}",
-      "text80ca527b0d55": "Activador de solicitud de cambio creado"
+      "text80ca527b0d55": "Activador de solicitud de cambio creado",
+      "authEmailAlreadySent": "Enviamos este correo hace menos de un minuto. Revisa tu bandeja de entrada y la carpeta de spam antes de pedir otro."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

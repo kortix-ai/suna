@@ -2950,7 +2950,8 @@
         "notReceived": "Non hai ricevuto il link?",
         "confirmNotReceived": "Non hai ricevuto l'email di conferma?",
         "resendIn": "Invia di nuovo tra {seconds}",
-        "resend": "Invia di nuovo"
+        "resend": "Invia di nuovo",
+        "checkSpam": "Non c'è? Controlla la cartella spam o posta indesiderata."
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21191,8 @@
       "text507c24b6792d": "Quando una richiesta di modifica viene unita in {branch}, {agent} esegue la tua istruzione.",
       "text05ee1d6181f3": "Quando una richiesta di modifica viene unita, {agent} esegue la tua istruzione.",
       "texte608495c45ce": "Unita in {branch}",
-      "text80ca527b0d55": "Trigger della richiesta di modifica creato"
+      "text80ca527b0d55": "Trigger della richiesta di modifica creato",
+      "authEmailAlreadySent": "Abbiamo inviato questa email meno di un minuto fa. Controlla la posta in arrivo e la cartella spam prima di richiederne un'altra."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

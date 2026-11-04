@@ -2950,7 +2950,8 @@
         "notReceived": "Didn't receive the link?",
         "confirmNotReceived": "Didn't receive the confirmation email?",
         "resendIn": "Resend in {seconds}",
-        "resend": "Resend"
+        "resend": "Resend",
+        "checkSpam": "Not there? Check your spam or junk folder."
       },
       "credentials": {
         "signin": {
@@ -21235,7 +21236,8 @@
       "text507c24b6792d": "When a change request merges into {branch}, {agent} runs your instruction.",
       "text05ee1d6181f3": "When a change request merges, {agent} runs your instruction.",
       "texte608495c45ce": "Merged into {branch}",
-      "text80ca527b0d55": "Change request trigger created"
+      "text80ca527b0d55": "Change request trigger created",
+      "authEmailAlreadySent": "We sent this email less than a minute ago. Check your inbox and your spam folder before you ask for another one."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
