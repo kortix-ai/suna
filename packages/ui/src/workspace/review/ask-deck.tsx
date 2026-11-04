@@ -18,16 +18,19 @@
 import { resolveApproval, type SessionAsk } from '@kortix/sdk';
 import { qk, useAnswerSessionAsk, useSessionAsks } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { CheckIcon, ChatCircleDotsIcon, PlugIcon, ShieldWarningIcon, XIcon, ArrowDownIcon } from '@phosphor-icons/react';
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { ArrowUpIcon, CheckIcon, ShieldWarningIcon } from '@phosphor-icons/react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../internal/lib/utils';
-import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
 import { EmptyState } from '../../primitives/empty-state';
 import { Kbd } from '../../primitives/kbd';
 import { Skeleton } from '../../primitives/skeleton';
 import { errorToast, undoToast } from '../../primitives/toast';
+import type { PermissionRequest, QuestionRequest } from '../../internal/session-types';
+import { COMPOSER_INPUT_SLOT_CLASS } from '../../session/composer/composer';
+import { QuestionPrompt, type QuestionAction, type QuestionPromptHandle } from '../../session/prompts/question-prompt';
+import { SessionPermissionPrompt } from '../../session/prompts/session-permission-prompt';
 
 /** How long a decision waits for Undo before it is sent. */
 const UNDO_MS = 5_000;
@@ -64,19 +67,6 @@ export function deckOrder(asks: readonly SessionAsk[], skipped: readonly string[
   });
 }
 
-/** The answers a question card sends: the picked labels, else the typed text. Null until every question has one. */
-export function questionAnswers(
-  questions: NonNullable<SessionAsk['question']>['questions'],
-  picked: Record<number, string[]>,
-  typed: Record<number, string>,
-): string[][] | null {
-  const answers = questions.map((_, i) => {
-    const text = typed[i]?.trim();
-    return text ? [...(picked[i] ?? []), text] : (picked[i] ?? []);
-  });
-  return answers.every((a) => a.length > 0) ? answers : null;
-}
-
 export function AskDeck({ projectId, onOpenSession }: { projectId: string; onOpenSession?: (sessionId: string) => void }) {
   const t = useTranslations('hardcodedUi.askDeck');
   const queryClient = useQueryClient();
@@ -86,7 +76,11 @@ export function AskDeck({ projectId, onOpenSession }: { projectId: string; onOpe
   const staged = useRef(new Map<string, Staged>());
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
 
-  const deck = useMemo(() => deckOrder(data?.asks ?? [], skipped, hidden), [data, skipped, hidden]);
+  // Connector approvals keep the full parameter review in the inbox list below.
+  const deck = useMemo(
+    () => deckOrder((data?.asks ?? []).filter((ask) => ask.kind !== 'approval'), skipped, hidden),
+    [data, skipped, hidden],
+  );
   const current = deck[0] ?? null;
 
   const send = useCallback(
@@ -124,7 +118,9 @@ export function AskDeck({ projectId, onOpenSession }: { projectId: string; onOpe
   // render (the mutation object does), and an effect keyed on it would flush
   // every staged decision on the next render, before its Undo window.
   const sendRef = useRef(send);
-  sendRef.current = send;
+  useLayoutEffect(() => {
+    sendRef.current = send;
+  });
 
   // Leaving the deck sends every decision that still waits for its Undo window.
   useEffect(() => {
@@ -200,8 +196,12 @@ export function AskDeck({ projectId, onOpenSession }: { projectId: string; onOpe
   );
 }
 
-const KIND_ICON = { question: ChatCircleDotsIcon, permission: ShieldWarningIcon, approval: PlugIcon } as const;
-
+/**
+ * One ask, drawn exactly as the session draws it: the docked strip holds the
+ * session's own `QuestionPrompt` or `SessionPermissionPrompt`, and the card
+ * under it is the composer's answer line (`composer.tsx` / `ComposerCard`).
+ * Only the context row (where it was asked, Skip) is the deck's own.
+ */
 function AskCard({
   ask,
   onDecide,
@@ -214,40 +214,58 @@ function AskCard({
   onOpenSession?: (sessionId: string) => void;
 }) {
   const t = useTranslations('hardcodedUi.askDeck');
-  const questions = ask.question?.questions ?? [];
-  const [picked, setPicked] = useState<Record<number, string[]>>({});
-  const [typed, setTyped] = useState<Record<number, string>>({});
+  const tCommon = useTranslations('common');
+  const promptRef = useRef<QuestionPromptHandle>(null);
+  const [typed, setTyped] = useState('');
+  const [action, setAction] = useState<{ action: QuestionAction; canAct: boolean }>({ action: 'send', canAct: true });
   const [drag, setDrag] = useState(0);
   const dragStart = useRef<number | null>(null);
-  const answers = ask.kind === 'question' ? questionAnswers(questions, picked, typed) : null;
-  const canYes = ask.kind !== 'question' || answers !== null;
-  const Icon = KIND_ICON[ask.kind];
+  // Stable, and a no-op when nothing changed: `QuestionPrompt` reports from an effect keyed on it.
+  const onActionChange = useCallback((next: QuestionAction, canAct: boolean) => {
+    setAction((prev) => (prev.action === next && prev.canAct === canAct ? prev : { action: next, canAct }));
+  }, []);
+
+  const question = useMemo<QuestionRequest | null>(
+    () =>
+      ask.kind === 'question' && ask.question
+        ? { id: ask.request_id, sessionID: ask.session_id, questions: ask.question.questions as QuestionRequest['questions'] }
+        : null,
+    [ask],
+  );
+  const permission = useMemo<PermissionRequest | null>(
+    () =>
+      ask.kind === 'permission' && ask.permission
+        ? {
+            id: ask.request_id,
+            sessionID: ask.session_id,
+            permission: ask.permission.permission,
+            patterns: ask.permission.patterns,
+            metadata: ask.permission.args && typeof ask.permission.args === 'object' ? (ask.permission.args as Record<string, unknown>) : {},
+            always: ['*'],
+          }
+        : null,
+    [ask],
+  );
+
+  // The composer's send button, as the session wires it: typed text is an
+  // answer; with nothing typed it steps the question (Next) or submits it.
+  const canSend = question ? typed.trim().length > 0 || (action.action !== 'send' && action.canAct) : false;
+  const send = useCallback(() => {
+    const prompt = promptRef.current;
+    if (!prompt) return;
+    if (typed.trim()) {
+      if (!prompt.acceptsCustom) return;
+      prompt.submitCustomAnswer(typed);
+      setTyped('');
+      return;
+    }
+    if (prompt.canAct) prompt.performAction();
+  }, [typed]);
 
   const yes = useCallback(() => {
-    if (!canYes) return;
-    onDecide('yes', answers ?? undefined);
-  }, [canYes, onDecide, answers]);
-
-  const pick = useCallback(
-    (qi: number, label: string) => {
-      const q = questions[qi];
-      if (!q) return;
-      if (q.multiple) {
-        setPicked((prev) => {
-          const now = prev[qi] ?? [];
-          return { ...prev, [qi]: now.includes(label) ? now.filter((l) => l !== label) : [...now, label] };
-        });
-        return;
-      }
-      // One question with one choice: picking it is the answer.
-      if (questions.length === 1 && !typed[0]?.trim()) {
-        onDecide('yes', [[label]]);
-        return;
-      }
-      setPicked((prev) => ({ ...prev, [qi]: [label] }));
-    },
-    [questions, typed, onDecide],
-  );
+    if (permission) onDecide('yes');
+    else if (canSend) send();
+  }, [permission, onDecide, canSend, send]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -266,8 +284,7 @@ function AskCard({
   }, [yes, onDecide, onSkip]);
 
   const onPointerDown = (event: ReactPointerEvent) => {
-    if (event.pointerType !== 'touch') return;
-    dragStart.current = event.clientX;
+    if (event.pointerType === 'touch') dragStart.current = event.clientX;
   };
   const onPointerMove = (event: ReactPointerEvent) => {
     if (dragStart.current !== null) setDrag(event.clientX - dragStart.current);
@@ -275,17 +292,17 @@ function AskCard({
   const onPointerUp = () => {
     if (dragStart.current === null) return;
     dragStart.current = null;
-    if (drag > SWIPE_PX && canYes) yes();
+    if (drag > SWIPE_PX) yes();
     else if (drag < -SWIPE_PX) onDecide('no');
     setDrag(0);
   };
 
-  const subject = ask.permission?.patterns.find((p) => p && p !== '*');
   const fromWorker = ask.session_id !== ask.surface_session_id;
+  const sendLabel = action.action === 'next' ? tCommon('next') : t('send');
 
   return (
     <article
-      className="bg-card border-border flex touch-pan-y flex-col gap-4 rounded-lg border p-5 shadow-xs transition-transform duration-fast ease-out"
+      className="flex w-full touch-pan-y flex-col transition-transform duration-fast ease-out"
       style={drag ? { transform: `translateX(${drag}px) rotate(${drag / 40}deg)` } : undefined}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -295,102 +312,73 @@ function AskCard({
         setDrag(0);
       }}
     >
-      <header className="flex items-start gap-3">
-        <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
-          <Icon className="size-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" size="sm">
-              {t(`kind.${ask.kind}`)}
-            </Badge>
-            <span className="text-muted-foreground text-xs">
-              {t('askedAgo', { time: relativeTime(ask.asked_at) })}
-              {fromWorker ? ` · ${t('fromWorker')}` : ''}
-            </span>
+      {/* The docked strip, as above the session composer. */}
+      <div className={cn(COMPOSER_INPUT_SLOT_CLASS, 'bg-background ring-muted/15 ring-3 [clip-path:inset(-8px_-8px_0_-8px)]')}>
+        {question ? (
+          <QuestionPrompt
+            key={question.id}
+            ref={promptRef}
+            request={question}
+            onReply={(_id, answers) => onDecide('yes', answers)}
+            onReject={() => onDecide('no')}
+            onActionChange={onActionChange}
+          />
+        ) : permission ? (
+          <SessionPermissionPrompt
+            sessionId={ask.session_id}
+            permissions={[permission]}
+            sessionControls={false}
+            onReply={async (_id, reply) => onDecide(reply === 'reject' ? 'no' : reply === 'always' ? 'always' : 'yes')}
+          />
+        ) : null}
+      </div>
+      {/* The composer card under it: the answer line for a question, where it was asked for both. */}
+      <div className="bg-background border-border ring-muted/15 ring-3 [clip-path:inset(0_-8px_-8px_-8px)] flex w-full flex-col rounded-b-xl border">
+        {question ? (
+          <div className="flex items-end gap-2 px-3 pt-3 pb-2">
+            <textarea
+              rows={1}
+              value={typed}
+              placeholder={t('typeAnswer')}
+              aria-label={t('typeAnswer')}
+              onChange={(event) => setTyped(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  send();
+                }
+              }}
+              className="text-foreground placeholder:text-muted-foreground max-h-40 min-h-6 flex-1 resize-none bg-transparent text-sm leading-6 outline-none"
+            />
+            <Button
+              size="sm"
+              disabled={!canSend}
+              onClick={send}
+              aria-label={sendLabel}
+              className="shrink-0 rounded-full"
+            >
+              {action.action === 'next' && !typed.trim() ? sendLabel : <ArrowUpIcon weight="bold" className="size-3.5" />}
+            </Button>
           </div>
-          <h3 className="text-foreground mt-1.5 text-sm font-medium break-words">
-            {ask.kind === 'question' ? (questions[0]?.question ?? ask.title) : ask.kind === 'permission' ? t('permissionTitle', { tool: ask.permission?.tool ?? '' }) : t('approvalTitle')}
-          </h3>
+        ) : null}
+        <div className={cn('text-muted-foreground flex items-center gap-2 px-3 pb-2 text-xs', !question && 'pt-2')}>
           {ask.session_title ? (
             <button
               type="button"
-              className="text-muted-foreground hover:text-foreground mt-0.5 truncate text-xs underline-offset-2 hover:underline"
+              className="hover:text-foreground min-w-0 truncate underline-offset-2 hover:underline"
               onClick={() => onOpenSession?.(ask.surface_session_id)}
             >
-              {t('inSession', { title: ask.session_title })}
+              {ask.session_title}
             </button>
           ) : null}
-        </div>
-      </header>
-
-      {ask.kind === 'permission' ? (
-        <pre className="bg-muted text-foreground max-h-48 overflow-auto rounded-md p-3 font-mono text-xs whitespace-pre-wrap break-all">
-          {subject ?? ask.title}
-        </pre>
-      ) : null}
-      {ask.kind === 'approval' ? (
-        <pre className="bg-muted text-foreground overflow-auto rounded-md p-3 font-mono text-xs break-all">{ask.approval?.action ?? ask.title}</pre>
-      ) : null}
-      {ask.kind === 'question'
-        ? questions.map((q, qi) => (
-            <div key={qi} className="flex flex-col gap-2">
-              {qi > 0 || questions.length > 1 ? <p className="text-foreground text-sm">{q.question}</p> : null}
-              <div className="flex flex-wrap gap-2">
-                {q.options.map((option) => {
-                  const on = picked[qi]?.includes(option.label) ?? false;
-                  return (
-                    <Button
-                      key={option.label}
-                      size="sm"
-                      variant={on ? 'default' : 'outline'}
-                      title={option.description || undefined}
-                      onClick={() => pick(qi, option.label)}
-                    >
-                      {option.label}
-                    </Button>
-                  );
-                })}
-              </div>
-              {q.custom !== false ? (
-                <input
-                  className="border-border bg-background placeholder:text-muted-foreground focus-visible:ring-ring h-8 rounded-md border px-3 text-sm outline-none focus-visible:ring-2"
-                  placeholder={t('typeAnswer')}
-                  value={typed[qi] ?? ''}
-                  onChange={(event) => setTyped((prev) => ({ ...prev, [qi]: event.target.value }))}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      yes();
-                    }
-                  }}
-                />
-              ) : null}
-            </div>
-          ))
-        : null}
-
-      <footer className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" onClick={() => onDecide('no')}>
-          <XIcon className="size-3.5" />
-          {ask.kind === 'question' ? t('dismiss') : t('deny')}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onSkip}>
-          <ArrowDownIcon className="size-3.5" />
-          {t('skip')}
-        </Button>
-        <div className="ml-auto flex items-center gap-2">
-          {ask.kind === 'permission' ? (
-            <Button size="sm" variant="outline" onClick={() => onDecide('always')}>
-              {t('allowSession', { tool: ask.permission?.tool ?? '' })}
-            </Button>
-          ) : null}
-          <Button size="sm" disabled={!canYes} onClick={yes} className={cn(!canYes && 'opacity-60')}>
-            <CheckIcon className="size-3.5" />
-            {ask.kind === 'question' ? t('send') : t('approve')}
+          <span className="shrink-0">{t('askedAgo', { time: relativeTime(ask.asked_at) })}</span>
+          {fromWorker ? <span className="shrink-0">· {t('fromWorker')}</span> : null}
+          <Button size="xs" variant="ghost" className="text-muted-foreground ml-auto" onClick={onSkip}>
+            {t('skip')}
+            <Kbd className="ml-1">S</Kbd>
           </Button>
         </div>
-      </footer>
+      </div>
     </article>
   );
 }
