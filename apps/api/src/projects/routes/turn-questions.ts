@@ -490,6 +490,8 @@ export function registerTurnQuestionsRoutes(): void {
         idempotencyKey: `question:${sessionId}:${requestId}`,
         sessionId,
         text: renderAnswerPrompt(open.questions, answers),
+        // Harness context, not the person's words: the transcript draws it as the answered question.
+        parts: [{ type: 'text', text: renderAnswerPrompt(open.questions, answers), synthetic: true }],
         userId: loaded.userId,
       });
 
