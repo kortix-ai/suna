@@ -9,6 +9,7 @@ import { llmValueFields } from '../../shared/llm-value';
 import { gatewayRequestLogs, sessionTurns } from '@kortix/db';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { ttlMemo } from '../../shared/ttl-memo';
 import { kortixBilledSpendSql, providerBilledSpendSql, totalSpendSql } from '../../shared/llm-spend';
 
 export interface ServedModel {
@@ -184,7 +185,7 @@ export async function sessionModelUsage(session: {
  * answered. Grouped by the requested model, a fallback's Kortix charges read as
  * spend on the ChatGPT plan or own key that did not answer.
  */
-export async function projectSpendByModel(projectId: string, days: number) {
+async function loadProjectSpendByModel(projectId: string, days: number) {
   const rows = await db
     .select({
       ...llmValueFields,
@@ -216,3 +217,27 @@ export async function projectSpendByModel(projectId: string, days: number) {
     tokens: Number(row.tokens),
   }));
 }
+
+// The Usage page fires overview, series, breakdown and sessions together, each
+// aggregating the same project's ledger window. A heavy project's breakdown
+// reached the 25 s request deadline under that load (KRTX-4023: 503 at exactly
+// 25 s, 144-247 ms after the deadline, neighbors at 23 s). The aggregate runs
+// once per project and window, a refresh serves the last good value while it
+// reloads, and a load that outlives a request still fills the memo, so the
+// retry after a 503 is a hit. A minute of staleness is fine for a spend chart.
+const SPEND_BY_MODEL_TTL_MS = 60_000;
+
+export function createProjectSpendByModel(
+  load: typeof loadProjectSpendByModel = loadProjectSpendByModel,
+  enableInTests = false,
+) {
+  return ttlMemo({
+    ttlMs: SPEND_BY_MODEL_TTL_MS,
+    keyFn: (projectId: string, days: number) => `${projectId}|${days}`,
+    loader: load,
+    staleWhileRevalidate: true,
+    enableInTests,
+  });
+}
+
+export const projectSpendByModel = createProjectSpendByModel();
