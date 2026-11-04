@@ -7853,6 +7853,165 @@ const catalog = {
     "newGoalDescription": "Describe the outcome. An agent works it until an independent check confirms it is done.",
     "newGoalPlaceholder": "For example: our docs site is live on docs.example.com",
     "newGoalStart": "Start goal",
+    "galleryTitle": "Start a new goal",
+    "galleryDescription": "Describe an outcome, or start from a template. An agent works it until an independent check confirms it is done.",
+    "startFresh": "Start fresh",
+    "backToTemplates": "Back to templates",
+    "composerLabel": "Goal outcome",
+    "composerPlaceholder": "Describe the outcome you want",
+    "composerHint": "Enter starts the goal. Shift+Enter adds a line.",
+    "templatesLabel": "Goal templates",
+    "templates": {
+      "fixBug": {
+        "title": "Fix a bug",
+        "description": "Reproduces the bug and opens a change request with a fix and a regression test.",
+        "outcome": "An open change request contains a fix and a regression test that fails before the fix and passes after it.\n\nBug: ",
+        "start": "Reproduce bug",
+        "done": "Fix for review"
+      },
+      "shipFeature": {
+        "title": "Build a feature",
+        "description": "Builds the feature, tests its user flow and opens a change request with usage instructions.",
+        "outcome": "An open change request contains the requested feature, passing user flow tests and usage instructions.\n\nFeature: ",
+        "start": "Define scope",
+        "done": "Feature for review"
+      },
+      "speedUpPage": {
+        "title": "Speed up a page",
+        "description": "Measures page load time, fixes the bottleneck and records results in a change request.",
+        "outcome": "An open change request reduces median page load time by 20% across 5 runs under the same test conditions.\n\nPage: ",
+        "start": "Measure load",
+        "done": "Benchmark results"
+      },
+      "upgradeDependency": {
+        "title": "Upgrade a dependency",
+        "description": "Checks breaking changes, updates the dependency and tests affected flows in a change request.",
+        "outcome": "An open change request upgrades the selected dependency to the target version with passing checks for affected flows.\n\nDependency and version: ",
+        "start": "Check changes",
+        "done": "Upgrade for review"
+      },
+      "weeklyWrap": {
+        "title": "Summarize team progress",
+        "description": "Reads the selected updates and saves a summary of completed work, blockers and decisions.",
+        "outcome": "A report in Files lists completed work, blockers and decisions for the selected period, with a source link for each item.\n\nSources and period: ",
+        "start": "Read updates",
+        "done": "Report in Files"
+      },
+      "featureRequests": {
+        "title": "Rank feature requests",
+        "description": "Groups repeated requests and ranks them by request count with links to the source feedback.",
+        "outcome": "A report in Files ranks the top 5 feature requests by request count, with source links and duplicate requests grouped.\n\nFeedback source: ",
+        "start": "Collect feedback",
+        "done": "Ranked requests"
+      },
+      "competitorBrief": {
+        "title": "Compare competing products",
+        "description": "Compares public product pages and saves a sourced brief on features, pricing and limits.",
+        "outcome": "A brief in Files compares 3 products on features, pricing and limits, with dated source links and unknowns marked.\n\nProducts: ",
+        "start": "Read sources",
+        "done": "Brief in Files"
+      },
+      "metricsDashboard": {
+        "title": "Build a metrics dashboard",
+        "description": "Builds a dashboard from supplied data and checks each displayed metric against its source.",
+        "outcome": "A dashboard opens at a preview URL and displays the supplied metrics with values that match the source data.\n\nData and metrics: ",
+        "start": "Inspect data",
+        "done": "Working dashboard"
+      },
+      "vulnerabilitySweep": {
+        "title": "Patch vulnerable dependencies",
+        "description": "Scans dependencies and opens a change request with patches and before-and-after scan results.",
+        "outcome": "An open change request removes all fixable high and critical dependency findings, with remaining findings listed and checks passing.\n\nRepository: ",
+        "start": "Scan dependencies",
+        "done": "Patches for review"
+      },
+      "scanSecrets": {
+        "title": "Find exposed secrets",
+        "description": "Scans repository files and history and records secret locations without copying secret values.",
+        "outcome": "A report in Files lists secret scan findings by file and commit, without secret values, with a next action for each finding.\n\nRepository: ",
+        "start": "Scan repository",
+        "done": "Findings in Files"
+      },
+      "accessReview": {
+        "title": "Review repository access",
+        "description": "Compares repository access with the supplied policy and records exceptions with source links.",
+        "outcome": "A report in Files lists repository access that conflicts with the supplied policy, with evidence for each exception.\n\nRepository and policy: ",
+        "start": "List access",
+        "done": "Access report"
+      },
+      "reviewWorkflow": {
+        "title": "Review workflow permissions",
+        "description": "Checks GitHub workflows for excess permissions, exposed secrets and untrusted code execution.",
+        "outcome": "A report in Files lists workflow security findings with file locations, evidence and a proposed fix for each finding.\n\nRepository: ",
+        "start": "Read workflows",
+        "done": "Workflow report"
+      },
+      "supportBacklog": {
+        "title": "Triage support threads",
+        "description": "Reviews selected support threads and saves reply drafts with a next action for each thread.",
+        "outcome": "Every selected support thread has a reply draft and a next action in Files, linked to its source thread.\n\nSupport threads: ",
+        "start": "Read threads",
+        "done": "Reply drafts ready"
+      },
+      "helpArticle": {
+        "title": "Write a help article",
+        "description": "Turns a repeated support question into an article and tests each instruction in the product.",
+        "outcome": "A help article in Files answers the selected question with instructions that pass a recorded product walkthrough.\n\nQuestion: ",
+        "start": "Review question",
+        "done": "Tested article"
+      },
+      "customerFollowUps": {
+        "title": "Send support follow-ups",
+        "description": "Checks resolution evidence and sends each selected thread a follow-up with a next step.",
+        "outcome": "Each selected support thread contains a follow-up with the verified status, supporting evidence and a next step.\n\nSupport threads: ",
+        "start": "Check status",
+        "done": "Follow-ups sent"
+      },
+      "summarizeEscalation": {
+        "title": "Prepare a support escalation",
+        "description": "Collects symptoms, reproduction steps and prior attempts into an escalation brief.",
+        "outcome": "An escalation brief in Files records symptoms, reproduction steps, prior attempts and evidence links, with unknowns marked.\n\nSupport thread: ",
+        "start": "Gather evidence",
+        "done": "Escalation brief"
+      },
+      "docsSite": {
+        "title": "Build a documentation site",
+        "description": "Turns supplied documents into a searchable site and checks its pages and internal links.",
+        "outcome": "A documentation site opens at a preview URL with all supplied documents, working search and 0 broken internal links.\n\nDocuments: ",
+        "start": "Read documents",
+        "done": "Working docs site"
+      },
+      "onboardHire": {
+        "title": "Prepare an onboarding pack",
+        "description": "Assembles a role checklist, setup instructions and resource links from the supplied materials.",
+        "outcome": "An onboarding pack in Files contains a role checklist, setup instructions and checked resource links, with missing items listed.\n\nRole and materials: ",
+        "start": "Review materials",
+        "done": "Onboarding pack"
+      },
+      "projectHygiene": {
+        "title": "Triage open issues",
+        "description": "Reviews open GitHub issues, applies status labels and records a next action on each issue.",
+        "outcome": "Every issue open in the selected repository at goal start has a status label and a comment with its next action.\n\nRepository: ",
+        "start": "Review issues",
+        "done": "Issues updated"
+      },
+      "vendorReview": {
+        "title": "Compare vendor proposals",
+        "description": "Compares supplied proposals against your requirements and records costs, gaps and questions.",
+        "outcome": "A comparison in Files maps each proposal to the supplied requirements, with costs, gaps, evidence links and open questions.\n\nProposals and requirements: ",
+        "start": "Read proposals",
+        "done": "Comparison in Files"
+      }
+    },
+    "templateSteps": "{start}, then {done}",
+    "category": {
+      "featured": "Featured",
+      "engineering": "Engineering",
+      "reporting": "Reporting",
+      "security": "Security",
+      "support": "Support",
+      "operations": "Operations"
+    },
     "cancel": "Cancel",
     "forPerson": "for {person}",
     "answerInChat": "Answer in chat",
