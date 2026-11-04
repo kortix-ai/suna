@@ -3,7 +3,7 @@ import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
 import { Seal } from '@/features/marketing/kit/seal';
 import { FaqSection } from '@/features/marketing/landing-sections/faq-section';
-import { LayerTabs } from '@/features/marketing/security-page/layer-tabs';
+import { LayerTabs } from '@/features/marketing/security-page/layer-panels';
 import {
   enforcement as sourceenforcement,
   faqItems as sourcefaqItems,

@@ -15,7 +15,7 @@ import {
 import type { ComponentType, ReactNode } from 'react';
 
 import { FrameworkHero } from './framework-hero';
-import { FrameworkTabs } from './framework-tabs';
+import { FrameworkTabs } from './framework-panels';
 import { localizeMarketingContent as localizeModel } from './model';
 
 /**

@@ -18,7 +18,7 @@ import type { ComponentType, ReactNode } from 'react';
 
 import { localizeMarketingContent as localizeContent } from './content';
 import { SovereignHero } from './sovereign-hero';
-import { TopicTabs } from './topic-tabs';
+import { SovereignTopics } from './topic-panels';
 
 /**
  * `/sovereign`: open source, your infrastructure, any model, your files, in
@@ -135,7 +135,7 @@ export function SovereignPage(): ReactNode {
       />
       <SovereignHero />
       <Pillars />
-      <TopicTabs />
+      <SovereignTopics />
       <LockIn />
       <FaqSection
         title={tMarketing('text5c7379ce0dce')}

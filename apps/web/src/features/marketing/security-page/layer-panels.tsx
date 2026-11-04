@@ -1,4 +1,7 @@
+'use client';
+
 import { CodePanel } from '@/features/marketing/code-panel';
+import { TopicTabs } from '@/features/marketing/kit/topic-tabs';
 
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
@@ -188,7 +191,7 @@ function Path({ steps }: { steps: readonly { k: string; v: ReactNode }[] }) {
   );
 }
 
-export const LAYER_PANELS: Record<string, () => ReactNode> = {
+const LAYER_PANELS: Record<string, () => ReactNode> = {
   identity: () => <IdentityPanel />,
   agent: function AgentPanel() {
     const tMarketing = useTranslations('hardcodedUi.i18nComplete');
@@ -219,3 +222,18 @@ export const LAYER_PANELS: Record<string, () => ReactNode> = {
     );
   },
 };
+
+/** The how-it-works tabs, one per layer of the model. One layer at a time, never all. */
+export function LayerTabs() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { layers } = localizeModel(tMarketing);
+
+  return (
+    <TopicTabs
+      topics={layers}
+      panels={LAYER_PANELS}
+      label={tMarketing('text6fcd4c9752b5')}
+      idPrefix="layer"
+    />
+  );
+}

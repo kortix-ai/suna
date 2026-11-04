@@ -14,7 +14,7 @@ import type { ComponentType, ReactNode } from 'react';
 
 import { localizeMarketingContent as localizeModel } from './model';
 import { SelfHostedHero } from './self-hosted-hero';
-import { TopicTabs } from './topic-tabs';
+import { SelfHostedTopics } from './topic-panels';
 
 /**
  * `/self-hosted`: how to run Kortix on your own server, in the home page's
@@ -85,7 +85,7 @@ export function SelfHostedPage(): ReactNode {
       />
       <SelfHostedHero />
       <Pillars />
-      <TopicTabs />
+      <SelfHostedTopics />
       <FaqSection
         title={tMarketing('text46bdaae09ca4')}
         titleMuted="From the CLI and the docs."

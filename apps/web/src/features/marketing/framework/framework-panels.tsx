@@ -1,4 +1,7 @@
+'use client';
+
 import { YamlLine } from '@/features/marketing/code-panel';
+import { TopicTabs } from '@/features/marketing/kit/topic-tabs';
 
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
@@ -124,7 +127,7 @@ function ComputerPanel() {
   );
 }
 
-export const FRAMEWORK_PANELS: Record<string, () => ReactNode> = {
+const FRAMEWORK_PANELS: Record<string, () => ReactNode> = {
   agents: () => <AgentsPanel />,
   extensions: function ExtensionsPanel() {
     const tMarketing = useTranslations('hardcodedUi.i18nComplete');
@@ -159,3 +162,18 @@ export const FRAMEWORK_PANELS: Record<string, () => ReactNode> = {
     return <FilePanel title={tMarketing('text2e9f6a751196')} lines={uiSample} />;
   },
 };
+
+/** The how-it-works tabs, one per part of the framework. */
+export function FrameworkTabs() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { tabs } = localizeModel(tMarketing);
+
+  return (
+    <TopicTabs
+      topics={{ title: tabs.title, titleMuted: tabs.titleMuted, tabs: tabs.items }}
+      panels={FRAMEWORK_PANELS}
+      label={tMarketing('text75a6752caf95')}
+      idPrefix="framework"
+    />
+  );
+}
