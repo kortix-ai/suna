@@ -1527,6 +1527,13 @@
       "when": 1793802606647,
       "tag": "20261104143006_subscription_provider_account",
       "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1793806038841,
+      "tag": "20261104152718_self_host_signup_policy",
+      "breakpoints": true
     }
   ]
 }

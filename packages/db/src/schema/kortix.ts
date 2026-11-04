@@ -9175,3 +9175,25 @@ export const claudeSubscriptionLoginFlows = kortixSchema.table('claude_subscript
   index('idx_claude_subscription_login_flows_member').on(table.accountId, table.userId),
   check('claude_subscription_login_flows_status_check', sql`${table.status} in ('starting', 'awaiting_code', 'exchanging', 'connected', 'failed')`),
 ]).enableRLS();
+
+/**
+ * Who may create an account on a self-hosted instance by signing up. One row
+ * at most (`id` is always true). The API writes it at boot from
+ * KORTIX_SIGNUP_MODE and KORTIX_PLATFORM_ADMIN_EMAILS, and the auth service's
+ * before-user-created hook (`kortix.before_user_created_hook`) reads it. No row
+ * (Kortix cloud, or a self-host API that never booted) allows every sign-up.
+ *
+ * - `signup_mode`: `open` (anyone), `invite` (only an address with a pending
+ *   account invitation), or `closed` (nobody). An SSO sign-in is always allowed.
+ * - `reserved_emails`: the operator addresses. Nobody can claim one by signing
+ *   up; the CLI creates those accounts (`kortix self-host admin add`).
+ */
+export const selfHostSignupPolicy = kortixSchema.table('self_host_signup_policy', {
+  id: boolean('id').primaryKey().default(true),
+  signupMode: text('signup_mode').notNull(),
+  reservedEmails: text('reserved_emails').array().notNull().default(sql`'{}'::text[]`),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  check('self_host_signup_policy_singleton', sql`${table.id}`),
+  check('self_host_signup_policy_mode_check', sql`${table.signupMode} in ('open', 'invite', 'closed')`),
+]).enableRLS();

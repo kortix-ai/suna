@@ -3778,10 +3778,10 @@ curl -fsSL https://raw.githubusercontent.com/kortix-ai/CompanyOS/dev/scripts/kor
 <Step title="Answer the setup questions">
 If the bootstrap added you to the `docker` group, open a new shell first. Run `kortix self-host configure` and give your admin email. Enter keeps every other answer, including the Platinum API key the bootstrap set. Then run `kortix self-host start` to apply the answers.
 </Step>
-<Step title="Sign up as the admin">
-Open `https://kortix.example.com` and sign up with the admin email. Connect GitHub at `/admin/git`, create the team account and a project, then add a model key. See [First sign-in and setup](#first-sign-in-and-setup).
+<Step title="Create the admin account">
+Run `kortix self-host admin add you@example.com`. It creates the account and prints a one-time password. Sign in at `https://kortix.example.com/auth`, change the password, then connect GitHub at `/admin/git`, create the team account and a project, and add a model key. See [First sign-in and setup](#first-sign-in-and-setup).
 
-Do this as soon as the stack starts. Until you set `EMAIL_URL` or `DISABLE_SIGNUP=true`, anyone who reaches the instance can create a confirmed account for any address, the admin address included.
+Nobody can claim an admin address by signing up. Until you set `EMAIL_URL`, the instance accepts a sign-up only from an address with a pending invitation. See [Who can sign up](#who-can-sign-up).
 </Step>
 <Step title="Move Apps and previews to wildcard certificates">
 Run `kortix self-host tls wildcard`, add the DNS records it prints, and run it again. This keeps App and preview host names out of the public certificate logs. It needs UDP and TCP port 53 open. See [Certificates and security filters](#certificates-and-security-filters).
@@ -3981,7 +3981,7 @@ Other rules that keep a domain clear of these filters:
 
 ### First sign-in and setup
 
-1. **Sign up as the admin.** Open `https://<domain>` and sign up with an address in `KORTIX_PLATFORM_ADMIN_EMAILS`. A password, email-code or social sign-in matches that list. A SAML sign-in never does. To change the admins later, set the full comma-separated list: `kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@example.com,ops@example.com`. The value replaces the list.
+1. **Create the admin account.** Run `kortix self-host admin add you@example.com`. It creates a confirmed account, adds the address to `KORTIX_PLATFORM_ADMIN_EMAILS` when it is missing, and prints a one-time password. Sign in at `https://<domain>/auth` and change the password. A password, email-code or social sign-in matches the admin list. A SAML sign-in never does. Run the command again for each further admin. To remove an admin, set the full comma-separated list: `kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@example.com`. The value replaces the list.
 2. **Connect managed git.** Open `/admin/git`. Kortix creates and pushes every new project repository through this one GitHub identity. Pick **Create a GitHub App** (recommended), **Paste an existing App**, or **Use an access token**. Until it is set, Kortix cannot create project repositories. You can still connect an existing repository. See [Git](/docs/developers#git).
 3. **Create the team account.** Your sign-up account is personal. It cannot hold SAML SSO (`403` `sso_personal_account`), and a project cannot move to another account. The menu that creates accounts lives inside a project, so first create one project at `/new`. In it, open the project menu → **Switch Project** → **Create an account…**. Only platform admins can create accounts by default. Invite your team and set up SSO in this account.
 4. **Create a project** in the team account. After **Create an account…**, Kortix opens `/new` with the new account selected.
@@ -3993,7 +3993,24 @@ Other rules that keep a domain clear of these filters:
    ```
 
    Kortix then sends sign-in and invitation mail through it, requires email confirmation for new accounts, and adds magic-link sign-in. `EMAIL_FROM` defaults to `Kortix <noreply@<domain>>`. Other forms: `smtps://user:password@host:465`, `resend://<api-key>`, `ses://<key-id>:<secret>@<region>`, `ses://<region>`, `mailtrap://<api-token>`. Separate several with commas for a fallback chain, tried left to right.
-7. **Close sign-up.** When your team has signed up, run `kortix self-host env set DISABLE_SIGNUP=true`, then `kortix self-host start` so the auth service reads it.
+7. **Choose who can sign up.** See [Who can sign up](#who-can-sign-up).
+
+#### Who can sign up
+
+Before the auth service creates an account from a sign-up, a magic link, a social or SAML sign-in, or an invite, it asks the instance's sign-up policy. `KORTIX_SIGNUP_MODE` sets the policy:
+
+| `KORTIX_SIGNUP_MODE` | Who can create an account by signing up |
+|---|---|
+| `invite` | Only an address with a pending invitation (**Members** → **Invite**, or a SCIM user). The default on a domain or tunnel instance without `EMAIL_URL`. |
+| `open` | Anyone. The default on a laptop instance and on an instance with `EMAIL_URL`, where every new account must confirm its address. |
+| `closed` | Nobody. |
+
+Two rules apply in every mode:
+
+- An SSO (SAML) sign-in always creates the account. Your identity provider decides who that is.
+- Nobody can claim an address in `KORTIX_PLATFORM_ADMIN_EMAILS` by signing up. `kortix self-host admin add` creates those accounts.
+
+Change the mode with `kortix self-host env set KORTIX_SIGNUP_MODE=closed`. The API restarts without downtime and applies it. `DISABLE_SIGNUP=true` is stricter: the auth service then also refuses the first SSO sign-in of a new person, so use it only when every account already exists.
 
 A new instance starts with these defaults:
 
@@ -4020,12 +4037,12 @@ A new instance starts with these defaults:
 | `email-url` | `EMAIL_URL` is set but does not parse | Correct the value. |
 | `preview-origins` | Domain mode and `KORTIX_PREVIEW_BASE_DOMAIN` is empty | Point `*.p.<domain>` at the server, then `kortix self-host env set KORTIX_PREVIEW_BASE_DOMAIN=p.<domain> KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true`. |
 | `wildcard-tls` | Domain mode and an Apps or preview base still gets one certificate per host | Run `kortix self-host tls wildcard` and add the records it prints. See [Certificates and security filters](#certificates-and-security-filters). |
-| `open-sign-up` | A domain or tunnel instance has sign-up open and email confirmation off | Set `EMAIL_URL`, or set `DISABLE_SIGNUP=true` once your team is in. |
+| `open-sign-up` | A domain or tunnel instance has `KORTIX_SIGNUP_MODE=open` and email confirmation off | Set `KORTIX_SIGNUP_MODE=invite`, or set `EMAIL_URL`. |
 
 <Callout type="warning">
-A new instance confirms every sign-up without an email. Until you fix `open-sign-up`, anyone who reaches the instance can create a confirmed account for any address, an admin address included. Sign up as the admin first, then set `EMAIL_URL` or `DISABLE_SIGNUP=true`. `kortix self-host init` prints the same warning on a domain or tunnel instance.
+Without `EMAIL_URL`, an instance confirms every sign-up without an email. That is why a domain or tunnel instance without email starts with `KORTIX_SIGNUP_MODE=invite`. If you set `KORTIX_SIGNUP_MODE=open` there, anyone who reaches the instance can create a confirmed account for any address that is not an admin address, and `doctor` fails `open-sign-up`.
 
-`init --disable-signup` turns sign-up off from the first start, for an install that creates its accounts another way. While it is off, nobody can sign up, the admin included.
+`init --disable-signup` turns sign-up off from the first start, for an install that creates its accounts another way. While it is off, nobody can sign up and no new person can sign in with SSO.
 </Callout>
 
 What the stack does by itself:
@@ -4049,7 +4066,7 @@ A connector credential shows no mark: a call through it returns `credential_unde
 | SCIM `POST /Users` for that address | Creates a pending invite (`201`). No membership. A password login does not see that invite, and accepting or declining it returns `403` `email_unconfirmed`. The invite page then shows **Continue with single sign-on**. It signs in through the account's SAML provider, also for an address outside the provider's domain, and the person joins. An admin can instead click **Resend** on the pending invite: it is then an invite a person sent. |
 | **Members** → **Invite** for that address | Creates a pending invite instead of adding the login. |
 | An invite a person sent or resent (**Members** → **Invite** or **Resend**, a project invite) | The login that holds the address sees it in the project chooser and the **Switch Project** menu, and can accept it. That login is whoever signed up first with the address, so it may not be the person you invited. |
-| `KORTIX_PLATFORM_ADMIN_EMAILS` | Matches a password login with the address. Whoever signs up first with an allowlisted address is platform admin. |
+| `KORTIX_PLATFORM_ADMIN_EMAILS` | Matches a password login with the address. Sign-up never creates such a login: `kortix self-host admin add` does. |
 
 A login that is already a member of the account, and a login through the account's own SAML provider, still match inside that account. `KORTIX_PLATFORM_ADMIN_EMAILS` never matches a SAML login. Setting `EMAIL_URL` turns `ENABLE_EMAIL_AUTOCONFIRM` off and restores the matching. A login created while it was on is not confirmed again: after you add email, its address matches invites and SCIM like a confirmed one.
 
@@ -4212,6 +4229,7 @@ People see the effect of these values in [Computers](/docs/guide#computers).
 | Variable | Default | Effect |
 |---|---|---|
 | `KORTIX_APPS_BASE_DOMAIN` | `apps.<domain>` on a new domain instance | The domain [Apps](/docs/developers#apps-reference) are served on, for example `apps.kortix.example.com`. It needs a `*.apps.kortix.example.com` DNS record. `kortix self-host configure` sets it. Caddy serves Apps only when it is set. |
+| `KORTIX_SIGNUP_MODE` | `invite` on a domain or tunnel instance without `EMAIL_URL`, else `open` | Who can create an account by signing up: `open`, `invite` or `closed`. An SSO sign-in always passes, and admin addresses are never claimable. See [Who can sign up](#who-can-sign-up). |
 | `KORTIX_ACME_DNS_ZONE` | none | The zone the bundled acme-dns answers for, for example `acme.kortix.example.com`. `kortix self-host tls wildcard` sets it with `KORTIX_ACME_DNS_PUBLIC_IP` (the address in its records) and `KORTIX_ACME_DNS_LISTEN_IP` (the address port 53 binds). See [Certificates and security filters](#certificates-and-security-filters). |
 | `KORTIX_WILDCARD_TLS_BASES` | none | The Apps and preview bases on one wildcard certificate each. `kortix self-host tls wildcard` adds a base when its DNS records work. |
 | `KORTIX_APPS_RETAINED_DEPLOYMENTS` | `5` | The ready releases each App keeps as rollback targets, beside the live one. At least `1`. |
@@ -4323,6 +4341,7 @@ Every subcommand takes `--instance <name>` (default `default`).
 | `domain move <domain>` | Makes `<domain>` primary. The current domain stays as an alias. `--skip-dns-check` skips the DNS check. |
 | `tls show` | How each host gets its TLS certificate. |
 | `tls wildcard` | Moves Apps and previews to wildcard certificates. `--zone`, `--public-ip`, `--listen-ip`. |
+| `admin add <email>` | Creates a confirmed platform admin account, adds the address to `KORTIX_PLATFORM_ADMIN_EMAILS`, and prints a one-time password. The stack must be running. |
 | `uninstall` | Deletes the stack, its data and its directory. |
 | `connect-github` | Deprecated. Prints where to connect GitHub. Use `/admin/git`. |
 
