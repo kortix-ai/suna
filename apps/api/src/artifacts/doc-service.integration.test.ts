@@ -371,7 +371,7 @@ describe('epoch on every write', () => {
   });
 });
 
-describe('who wrote (pending contributors)', () => {
+describe('who wrote (pending writers: each person’s last pushed seq)', () => {
   test('two writers push, the leader flushes: the flush names both writers and the seq range, then clears the list', async () => {
     const artifactId = await newDoc();
     await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: 'one', version: 'v1', userId });
@@ -389,15 +389,36 @@ describe('who wrote (pending contributors)', () => {
     expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v0', currentVersion: 'v0', markdown: 'old' })).contributors).toEqual([]);
   });
 
-  test('a flush that does not reach the newest push keeps the pending writers for the next flush (a writer is never dropped)', async () => {
+  test('a flush that does not reach a writer’s LAST push keeps that writer pending; the flush that covers it names them once', async () => {
     const artifactId = await newDoc();
     await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: 'one', version: 'v1', userId });
     await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId: otherUserId });
     await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId: otherUserId });
     await leaseArtifactDoc(artifactId, { holder: 'tab-a', userId, release: false });
-    expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 2, version: 'v2', currentVersion: 'v2', markdown: 'two' })).contributors).toEqual([otherUserId]);
+    expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 2, version: 'v2', currentVersion: 'v2', markdown: 'two' })).contributors).toEqual([]);
     expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v3', currentVersion: 'v3', markdown: 'three' })).contributors).toEqual([otherUserId]);
     expect((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v4', currentVersion: 'v4', markdown: 'three' })).contributors).toEqual([]);
+  });
+
+  test('the lease holder flushes S = 2, 3, 4, 5 one at a time, each twice: every writer is named exactly once, and the map ends empty', async () => {
+    const artifactId = await newDoc();
+    const thirdUserId = crypto.randomUUID();
+    await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: 'one', version: 'v1', userId });
+    await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId: otherUserId }); // 2
+    await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId }); // 3
+    await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId: otherUserId }); // 4
+    await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId: thirdUserId }); // 5
+    await leaseArtifactDoc(artifactId, { holder: 'tab-a', userId, release: false });
+    const named: string[][] = [];
+    for (const seq of [2, 3, 4, 5]) {
+      for (const save of ['a', 'b']) {
+        const version = `v${seq}${save}`;
+        named.push((await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq, version, currentVersion: version, markdown: 'text' })).contributors);
+      }
+    }
+    expect(named).toEqual([[], [], [userId], [], [otherUserId], [], [thirdUserId], []]);
+    const [state] = await db.select({ pending: artifactDocState.pendingWriters }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId));
+    expect(state!.pending).toEqual({});
   });
 
   test('a merged (compacted) row names no single author', async () => {
@@ -448,12 +469,12 @@ describe('a flush is only what the file holds now (replays name nobody)', () => 
     expect((await readArtifactDoc(artifactId, { after: 3, base: true })).flushed).toEqual({ seq: 3, version: 'v3', markdown: 'two' });
   });
 
-  test('pending contributors are capped at 200, and so is one flush’s list', async () => {
+  test('the pending map holds at most 200 writers, so one flush names at most 200', async () => {
     const artifactId = await newDoc();
     await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: '', version: 'v1', userId });
     for (let i = 0; i < 205; i++) await appendArtifactDocUpdate(artifactId, { update: Buffer.from([0, 0]), userId: crypto.randomUUID() });
-    const [state] = await db.select({ pending: artifactDocState.pendingContributors }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId));
-    expect(state!.pending).toHaveLength(200);
+    const [state] = await db.select({ pending: artifactDocState.pendingWriters }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId));
+    expect(Object.keys(state!.pending)).toHaveLength(200);
     await leaseArtifactDoc(artifactId, { holder: 'tab-a', userId, release: false });
     const flushed = await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 206, version: 'v2', markdown: '', currentVersion: 'v2' });
     expect(flushed.contributors).toHaveLength(200);

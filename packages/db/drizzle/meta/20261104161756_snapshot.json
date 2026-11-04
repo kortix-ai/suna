@@ -1,5 +1,5 @@
 {
-  "id": "0413f24a-2ed7-4e4d-a717-36f8641c6c79",
+  "id": "e9235e84-badb-47c5-ae2a-7c80a0a94e0d",
   "prevId": "5f42472b-5a72-45db-942f-7eb1a1259102",
   "version": "7",
   "dialect": "postgresql",
@@ -5217,12 +5217,12 @@
           "primaryKey": false,
           "notNull": false
         },
-        "pending_contributors": {
-          "name": "pending_contributors",
-          "type": "uuid[]",
+        "pending_writers": {
+          "name": "pending_writers",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'::uuid[]"
+          "default": "'{}'::jsonb"
         },
         "next_seq": {
           "name": "next_seq",
@@ -5311,6 +5311,10 @@
         "artifact_doc_state_lease_holder_check": {
           "name": "artifact_doc_state_lease_holder_check",
           "value": "\"kortix\".\"artifact_doc_state\".\"lease_holder\" is null or char_length(\"kortix\".\"artifact_doc_state\".\"lease_holder\") between 1 and 64"
+        },
+        "artifact_doc_state_pending_writers_check": {
+          "name": "artifact_doc_state_pending_writers_check",
+          "value": "jsonb_typeof(\"kortix\".\"artifact_doc_state\".\"pending_writers\") = 'object'"
         }
       },
       "isRLSEnabled": true

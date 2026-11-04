@@ -27,7 +27,7 @@ CREATE TABLE "kortix"."artifact_doc_state" (
 	"bytes_total" bigint DEFAULT 0 NOT NULL,
 	"compaction_failed_at" timestamp with time zone,
 	"compaction_requested_at" timestamp with time zone,
-	"pending_contributors" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+	"pending_writers" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"next_seq" bigint DEFAULT 1 NOT NULL,
 	"flushed_seq" bigint DEFAULT 0 NOT NULL,
 	"flushed_version" text,
@@ -38,7 +38,8 @@ CREATE TABLE "kortix"."artifact_doc_state" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "artifact_doc_state_seq_check" CHECK ("kortix"."artifact_doc_state"."flushed_seq" >= 0 and "kortix"."artifact_doc_state"."flushed_seq" < "kortix"."artifact_doc_state"."next_seq"),
-	CONSTRAINT "artifact_doc_state_lease_holder_check" CHECK ("kortix"."artifact_doc_state"."lease_holder" is null or char_length("kortix"."artifact_doc_state"."lease_holder") between 1 and 64)
+	CONSTRAINT "artifact_doc_state_lease_holder_check" CHECK ("kortix"."artifact_doc_state"."lease_holder" is null or char_length("kortix"."artifact_doc_state"."lease_holder") between 1 and 64),
+	CONSTRAINT "artifact_doc_state_pending_writers_check" CHECK (jsonb_typeof("kortix"."artifact_doc_state"."pending_writers") = 'object')
 );
 --> statement-breakpoint
 ALTER TABLE "kortix"."artifact_doc_state" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint

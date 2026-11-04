@@ -100,8 +100,33 @@ export function decideReset(current: DocLease, request: { holder: string; userId
   return ours(current, request.holder, request.userId) || !leaseLive(current, now);
 }
 
-/** Writers one flush names at most, and the pending list holds at most. */
+/** Writers the pending map holds at most, so one flush names at most this many. */
 export const DOC_MAX_CONTRIBUTORS = 200;
+
+/** Pending writers: each person's user id → the seq of their LAST push. */
+export type DocPendingWriters = Record<string, number>;
+
+/**
+ * Who a flush from `fromSeq` (the previous flushed seq) to `toSeq` names: the
+ * writers whose last push is in (`fromSeq`, `toSeq`], oldest push first. They
+ * leave the map; a writer with a newer push stays and is named by the flush
+ * that covers that push. A push is named at most once: stepwise flushes
+ * (S = 1, 2, 3, …), a repeated flush, or a replay cannot name it again.
+ */
+export function settleWriters(
+  writers: DocPendingWriters,
+  fromSeq: number,
+  toSeq: number,
+): { named: string[]; remaining: DocPendingWriters } {
+  const named: Array<[string, number]> = [];
+  const remaining: DocPendingWriters = {};
+  for (const [writer, seq] of Object.entries(writers)) {
+    if (seq > fromSeq && seq <= toSeq) named.push([writer, seq]);
+    else remaining[writer] = seq;
+  }
+  named.sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return { named: named.map(([writer]) => writer), remaining };
+}
 
 /**
  * `POST …/doc/flushed`. Only the lease holder records a flush; a lease that

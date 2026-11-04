@@ -35,6 +35,7 @@ import {
   decideReset,
   leaseLive,
   pageCut,
+  settleWriters,
   type DocLease,
   type DocLeaseKind,
 } from './doc-rules';
@@ -212,11 +213,11 @@ export async function appendArtifactDocUpdate(
       .set({
         nextSeq: sql`${artifactDocState.nextSeq} + 1`,
         bytesTotal: sql`${artifactDocState.bytesTotal} + ${input.update.length}`,
-        // Who wrote: named by the next flush (`markArtifactDocFlushed`), one audit row each.
-        pendingContributors: sql`case when ${input.userId}::uuid = any(${artifactDocState.pendingContributors})
-            or cardinality(${artifactDocState.pendingContributors}) >= ${DOC_MAX_CONTRIBUTORS}
-          then ${artifactDocState.pendingContributors}
-          else array_append(${artifactDocState.pendingContributors}, ${input.userId}::uuid) end`,
+        // Who wrote, with this push's seq (the old next_seq): named once, by the flush that covers it (`settleWriters`).
+        pendingWriters: sql`case when (${artifactDocState.pendingWriters} -> ${input.userId}::text) is not null
+            or (select count(*) from jsonb_object_keys(${artifactDocState.pendingWriters})) < ${DOC_MAX_CONTRIBUTORS}
+          then ${artifactDocState.pendingWriters} || jsonb_build_object(${input.userId}::text, ${artifactDocState.nextSeq})
+          else ${artifactDocState.pendingWriters} end`,
         updatedAt: sql`now()`,
       })
       .where(eq(artifactDocState.artifactId, artifactId))
@@ -380,13 +381,12 @@ export interface ArtifactDocFlushResult {
  * `currentVersion`: the file's entry version now, which the caller reads
  * from Files; `version` must equal it (409 `version_mismatch` otherwise).
  *
- * Returns who wrote (`contributors`, at most `DOC_MAX_CONTRIBUTORS`): the
- * people who pushed since the last flush, for one audit row each
- * (`recordArtifactDocEdits`), only when this flush advanced past the previous
- * one: a replay or an equal seq names nobody. The list clears when this flush
- * reaches the newest push; otherwise it is kept, so a writer whose push came
- * after `seq` is named by the next flush too. A writer may be named twice; a
- * writer is never dropped.
+ * Returns who wrote (`contributors`, at most `DOC_MAX_CONTRIBUTORS`), for one
+ * audit row each (`recordArtifactDocEdits`): the writers whose LAST push is in
+ * (the previous flushed seq, `seq`] (`settleWriters`). They leave the pending
+ * map; a writer with a newer push stays and is named by the flush that covers
+ * it. A replay, an equal seq or an older seq names nobody, so stepwise flushes
+ * name each push once.
  */
 export async function markArtifactDocFlushed(
   artifactId: string,
@@ -398,7 +398,7 @@ export async function markArtifactDocFlushed(
       epoch: artifactDocState.epoch,
       nextSeq: artifactDocState.nextSeq,
       flushedSeq: artifactDocState.flushedSeq,
-      pendingContributors: artifactDocState.pendingContributors,
+      pendingWriters: artifactDocState.pendingWriters,
       holder: artifactDocState.leaseHolder,
       userId: artifactDocState.leaseUserId,
       expiresAt: artifactDocState.leaseExpiresAt,
@@ -422,16 +422,16 @@ export async function markArtifactDocFlushed(
       throw new ArtifactDocError(400, `seq ${input.seq} is past the newest update (${state.nextSeq - 1})`, 'invalid_seq');
     }
     if (!decision.apply) return { flushedSeq: state.flushedSeq, contributors: [], fromSeq: state.flushedSeq + 1, toSeq: state.flushedSeq };
-    const clear = decision.advanced && input.seq >= state.nextSeq - 1;
+    // The state row is locked FOR UPDATE: no push changes the map between this read and the write.
+    const settled = decision.advanced ? settleWriters(state.pendingWriters, state.flushedSeq, input.seq) : null;
     await tx.update(artifactDocState).set({
       flushedSeq: input.seq,
       flushedVersion: input.version,
       flushedMarkdown: input.markdown,
-      ...(clear ? { pendingContributors: sql`'{}'::uuid[]` } : {}),
+      ...(settled ? { pendingWriters: settled.remaining } : {}),
       updatedAt: sql`now()`,
     }).where(eq(artifactDocState.artifactId, artifactId));
-    const contributors = decision.advanced ? state.pendingContributors.slice(0, DOC_MAX_CONTRIBUTORS) : [];
-    return { flushedSeq: input.seq, contributors, fromSeq: state.flushedSeq + 1, toSeq: input.seq };
+    return { flushedSeq: input.seq, contributors: settled?.named ?? [], fromSeq: state.flushedSeq + 1, toSeq: input.seq };
   });
 }
 

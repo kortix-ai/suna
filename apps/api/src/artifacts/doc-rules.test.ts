@@ -10,6 +10,7 @@ import {
   decideFlush,
   decideLease,
   decideReset,
+  settleWriters,
   isIncrementalDocPull,
   DocReadAuditThrottle,
   DOC_CATCH_UP_AUDIT_MS,
@@ -255,5 +256,36 @@ describe('DocReadAuditThrottle (one catch-up pull audit row per person and Artif
     expect(throttle.size).toBeLessThanOrEqual(100);
     expect(throttle.shouldRecord('u0:a1', 2_000)).toBe(true);
     expect(throttle.shouldRecord('u999:a1', 2_000)).toBe(false);
+  });
+});
+
+describe('settleWriters (who a flush names: each writer once per push range)', () => {
+  test('a flush to S names exactly the writers whose LAST push is in (previous flushed seq, S], and removes them', () => {
+    const writers = { a: 4, b: 3, c: 7 };
+    expect(settleWriters(writers, 2, 4)).toEqual({ named: ['b', 'a'], remaining: { c: 7 } });
+  });
+
+  test('a writer with a newer push stays pending and is named by the flush that covers it', () => {
+    expect(settleWriters({ a: 5 }, 2, 3)).toEqual({ named: [], remaining: { a: 5 } });
+    expect(settleWriters({ a: 5 }, 3, 5)).toEqual({ named: ['a'], remaining: {} });
+  });
+
+  test('flushing S = 1, 2, 3, ... one at a time names each writer once; repeating a flush names nobody', () => {
+    // a pushed 2 and then 4; b pushed 3; c pushed 6.
+    let pending: Record<string, number> = { a: 4, b: 3, c: 6 };
+    const named: string[] = [];
+    for (let s = 1; s <= 7; s++) {
+      for (let replay = 0; replay < 3; replay++) {
+        const settled = settleWriters(pending, s - 1, s);
+        named.push(...settled.named);
+        pending = settled.remaining;
+      }
+    }
+    expect(named).toEqual(['b', 'a', 'c']);
+    expect(pending).toEqual({});
+  });
+
+  test('a flush that does not advance (an equal seq) names nobody and keeps every writer', () => {
+    expect(settleWriters({ a: 3, b: 4 }, 3, 3)).toEqual({ named: [], remaining: { a: 3, b: 4 } });
   });
 });

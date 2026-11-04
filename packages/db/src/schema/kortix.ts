@@ -9144,6 +9144,8 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () =>
  *   bytes_total       the stored update bytes; capped (413 doc_too_large)
  *   compaction_failed_at  the last compaction that threw or would pass the
  *                     page limit; none again for 10 min
+ *   pending_writers   who pushed since the flush that last named them, with
+ *                     the seq of each one's last push
  */
 export const artifactDocState = kortixSchema.table('artifact_doc_state', {
   artifactId: uuid('artifact_id').primaryKey(),
@@ -9152,8 +9154,12 @@ export const artifactDocState = kortixSchema.table('artifact_doc_state', {
   compactionFailedAt: timestamp('compaction_failed_at', { withTimezone: true }),
   /** A push found more rows than the compaction threshold: the worker compacts this doc (`doc-compaction.ts`). */
   compactionRequestedAt: timestamp('compaction_requested_at', { withTimezone: true }),
-  /** Everyone whose push is not yet named by a flush (distinct): the flush writes one audit row per person. */
-  pendingContributors: uuid('pending_contributors').array().default(sql`'{}'::uuid[]`).notNull(),
+  /**
+   * Writers not yet named by a flush: user id → the seq of their LAST push (at
+   * most 200). A flush to S names the writers whose last seq is in (flushed_seq,
+   * S] and removes them (`settleWriters`): one audit row per person, once per push.
+   */
+  pendingWriters: jsonb('pending_writers').$type<Record<string, number>>().default(sql`'{}'::jsonb`).notNull(),
   nextSeq: bigint('next_seq', { mode: 'number' }).default(1).notNull(),
   flushedSeq: bigint('flushed_seq', { mode: 'number' }).default(0).notNull(),
   flushedVersion: text('flushed_version'),
@@ -9167,6 +9173,7 @@ export const artifactDocState = kortixSchema.table('artifact_doc_state', {
   foreignKey({ name: 'artifact_doc_state_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
   check('artifact_doc_state_seq_check', sql`${table.flushedSeq} >= 0 and ${table.flushedSeq} < ${table.nextSeq}`),
   check('artifact_doc_state_lease_holder_check', sql`${table.leaseHolder} is null or char_length(${table.leaseHolder}) between 1 and 64`),
+  check('artifact_doc_state_pending_writers_check', sql`jsonb_typeof(${table.pendingWriters}) = 'object'`),
 ]).enableRLS();
 
 /**
