@@ -27,6 +27,16 @@ describe('unwrapWorkflowResultBlocks', () => {
     expect(unwrapWorkflowResultBlocks(`<workflow_result>${full.slice(0, full.indexOf('## Priorities'))}`)).toBe('# Growth plan\n\nOne pack. Ten pilots.');
   });
 
+  test('each block stands on its own lines: text after a json block is not swallowed into its fence', () => {
+    expect(unwrapWorkflowResultBlocks('<workflow_result>{"count":3}</workflow_result>Then the next step.')).toBe(
+      '```json\n{\n  "count": 3\n}\n```\n\nThen the next step.',
+    );
+  });
+
+  test('while streaming, a JSON block not yet readable shows nothing instead of its source', () => {
+    expect(unwrapWorkflowResultBlocks('Here it is.\n\n<workflow_result>{"stra')).toBe('Here it is.');
+  });
+
   test('text without a block is untouched', () => {
     expect(unwrapWorkflowResultBlocks('No result here.')).toBe('No result here.');
   });

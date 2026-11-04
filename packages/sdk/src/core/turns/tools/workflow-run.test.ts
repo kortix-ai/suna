@@ -210,6 +210,15 @@ describe('parseWorkflowResult — a JSON result that carries a document', () => 
     expect(parseWorkflowResult('<workflow_result>{"status":"ok"}</workflow_result>')?.kind).toBe('json');
   });
 
+  test('a cut block whose next field holds data is not a document: nothing is dropped silently', () => {
+    const full = JSON.stringify({ report: doc, count: 3, details: 'more prose\nhere' });
+    expect(parseWorkflowResult(`<workflow_result>${full.slice(0, -10)}`)?.text.startsWith('{')).toBe(true);
+  });
+
+  test('a long token or URL is data, not prose', () => {
+    expect(parseWorkflowResult(`<workflow_result>${JSON.stringify({ download_url: `https://example.com/${'a'.repeat(140)}` })}</workflow_result>`)?.kind).toBe('json');
+  });
+
   test('a result cut inside its document still reads as the document, escapes decoded', () => {
     const full = JSON.stringify({ strategy: doc });
     const cut = full.slice(0, full.indexOf('Ten paid'));

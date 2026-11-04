@@ -314,7 +314,8 @@ export function parseWorkflowResult(output: string): WorkflowResult | null {
       parsed = JSON.parse(body);
     } catch {
       // A cut block: a document inside it still reads as the document.
-      const recovered = body.startsWith('{') ? documentOf(cutStringFields(body)) : null;
+      const fields = body.startsWith('{') ? cutStringFields(body) : null;
+      const recovered = fields ? documentOf(fields) : null;
       return { kind: 'markdown', text: recovered ?? body };
     }
     const document = isRecord(parsed) ? documentOf(Object.entries(parsed)) : null;
@@ -328,9 +329,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** A string a person reads, not a value: it spans lines or runs long. */
+/** A string a person reads, not a value: it spans lines, or runs long as words (a long URL or token is data). */
 function isProse(value: string): boolean {
-  return value.includes('\n') || value.length >= 120;
+  return value.includes('\n') || (value.length >= 120 && /\s/.test(value.trim()));
 }
 
 /** `growthPlan` / `growth_plan` → `Growth plan`. */
@@ -356,14 +357,16 @@ function documentOf(fields: [string, unknown][]): string | null {
  * The `"key": "value"` pairs of a JSON object cut short, in order, with the
  * escapes decoded; the last value runs to the cut. Linear time, no regex backtracking.
  */
-function cutStringFields(body: string): [string, string][] {
+function cutStringFields(body: string): [string, string][] | null {
   const fields: [string, string][] = [];
   const pair = /\s*"((?:[^"\\]|\\.)*)"\s*:\s*"/y;
   let at = 1;
   while (at < body.length) {
     pair.lastIndex = at;
     const head = pair.exec(body);
-    if (!head) break;
+    // No `"key": "` here: either the cut fell inside the next key (fine), or the next value is data,
+    // and a document recovered without it would drop that data silently.
+    if (!head) return /^\s*(?:"(?:[^"\\]|\\.)*(?:"\s*:?\s*)?)?$/.test(body.slice(at)) ? fields : null;
     let value = '';
     let i = pair.lastIndex;
     let closed = false;
@@ -391,7 +394,7 @@ function cutStringFields(body: string): [string, string][] {
       value += ({ n: '\n', t: '\t', r: '\r', b: '\b', f: '\f' } as Record<string, string>)[next] ?? next;
       i += 2;
     }
-    fields.push([head[1]!, value]);
+    fields.push([decodeKey(head[1]!), value]);
     if (!closed) break;
     const comma = /\s*,/y;
     comma.lastIndex = i;
@@ -399,4 +402,13 @@ function cutStringFields(body: string): [string, string][] {
     at = comma.lastIndex;
   }
   return fields;
+}
+
+/** A captured JSON key with its escapes decoded, as `JSON.parse` would give it. */
+function decodeKey(raw: string): string {
+  try {
+    return JSON.parse(`"${raw}"`) as string;
+  } catch {
+    return raw;
+  }
 }

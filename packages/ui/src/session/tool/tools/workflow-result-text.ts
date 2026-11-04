@@ -12,14 +12,23 @@ export function workflowResultMarkdown(text: string): string {
   return parsed.kind === 'json' ? `\`\`\`json\n${parsed.text}\n\`\`\`` : parsed.text;
 }
 
-const RESULT_BLOCK = /<workflow_result>([\s\S]*?)(?:<\/workflow_result>|$)/g;
+const RESULT_BLOCK = /<workflow_result>([\s\S]*?)(<\/workflow_result>|$)/g;
 
 /**
  * Assistant text that carries a `<workflow_result>` block (a workflow runner's
  * last reply): the block becomes its readable result, never the tag and the JSON.
- * An unclosed block (still streaming, or cut) runs to the end of the text.
+ * Each result stands on its own lines, so text around it stays text. An unclosed
+ * block (still streaming, or cut) runs to the end of the text; while its JSON is
+ * not yet readable as a document it shows nothing rather than its source.
  */
 export function unwrapWorkflowResultBlocks(text: string): string {
   if (!text.includes('<workflow_result>')) return text;
-  return text.replace(RESULT_BLOCK, (_, body: string) => workflowResultMarkdown(`<workflow_result>${body}</workflow_result>`));
+  return text
+    .replace(RESULT_BLOCK, (_, body: string, close: string) => {
+      const readable = workflowResultMarkdown(`<workflow_result>${body}</workflow_result>`);
+      if (!close && /^\s*[{[]/.test(body) && /^[{[]/.test(readable)) return '\n\n';
+      return `\n\n${readable}\n\n`;
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
