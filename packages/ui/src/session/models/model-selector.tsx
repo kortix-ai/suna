@@ -872,9 +872,10 @@ export function ModelSelector({
           className={cn(
             'min-h-0 flex-1 rounded-none bg-transparent',
             '[&_[cmdk-group]]:px-1.5 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0',
-            '[&_[data-slot=command-input-wrapper]]:h-9 [&_[data-slot=command-input-wrapper]]:gap-2 [&_[data-slot=command-input-wrapper]]:px-3.5',
-            '[&_[data-slot=command-input]]:h-9 [&_[data-slot=command-input]]:text-sm',
-            '[&_[data-slot=command-group]]:py-1',
+            // No hairlines in a host pane: the search is a filled field, groups part by space.
+            '[&_[data-slot=command-input-wrapper]]:bg-muted [&_[data-slot=command-input-wrapper]]:mx-2 [&_[data-slot=command-input-wrapper]]:h-8 [&_[data-slot=command-input-wrapper]]:gap-2 [&_[data-slot=command-input-wrapper]]:rounded-md [&_[data-slot=command-input-wrapper]]:border-b-0 [&_[data-slot=command-input-wrapper]]:px-2.5',
+            '[&_[data-slot=command-input]]:h-8 [&_[data-slot=command-input]]:text-sm',
+            '[&_[data-slot=command-separator]]:hidden [&_[data-slot=command-group]]:py-1',
           )}
         >
           {listBody}

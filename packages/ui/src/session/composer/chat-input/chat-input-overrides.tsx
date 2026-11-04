@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import type { SessionOverrideRow } from '../../overrides/session-overrides-control';
+import type { SessionScopeDraft, SessionScopeSelectionCatalog } from '../../scope/session-scope-model';
 
 /**
  * The session-override rows (secrets, provider keys, sandbox, files) as the
@@ -25,6 +26,8 @@ export interface ChatInputOverrides {
   saveRowIds: readonly string[];
   saving: boolean;
   saveDisabled: boolean;
+  /** Save would write something: the scope draft or a provider-key draft changed. */
+  dirty: boolean;
   pendingNote?: string;
   error?: string | null;
   notice?: ReactNode;
@@ -35,6 +38,26 @@ export interface ChatInputOverrides {
    * AND save, one click; the gear's reset only edits the draft.
    */
   onResetRow: (id: string) => void;
+  /** The secrets and connectors draft, for the control's own editors. */
+  scope?: {
+    draft: SessionScopeDraft;
+    catalog: SessionScopeSelectionCatalog;
+    /** The catalog (or the session's scope) has not answered yet. */
+    loading: boolean;
+    disabled: boolean;
+    onChange: (draft: SessionScopeDraft) => void;
+  };
+  /** The provider-key pools in effect (saved plus drafts), for the control's own editor. */
+  providerKeys?: {
+    projectId: string;
+    sessionId?: string;
+    /** Provider id → the key ids in effect. A provider absent here runs on the agent default. */
+    selection: Record<string, string[]>;
+    canEdit: boolean;
+    loading: boolean;
+    /** `null` or `[]`: back to the agent default for that provider. */
+    onChange: (providerId: string, ids: string[] | null) => void;
+  };
 }
 
 interface ChatInputOverridesStore {

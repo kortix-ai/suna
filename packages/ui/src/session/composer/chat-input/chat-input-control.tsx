@@ -2,7 +2,13 @@
 
 import type { Agent, FlatModel, ProviderListResponse } from '@kortix/sdk/react';
 import { isMyKortixAgentName } from '@kortix/shared';
-import { CaretDownIcon, CheckIcon, CpuIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
+import {
+  CaretDownIcon,
+  CaretRightIcon,
+  CpuIcon,
+  MagnifyingGlassIcon,
+  PlugsConnectedIcon,
+} from '@phosphor-icons/react';
 import {
   useCallback,
   useEffect,
@@ -36,6 +42,16 @@ import {
 import { EffortIcon, effortLabel, reasoningEffortChoices } from '../reasoning-effort-selector';
 import { useChatInputOverrides } from './chat-input-overrides';
 import {
+  ChoiceRow,
+  ConnectorsPane,
+  OPTION_ATTR,
+  ProviderKeysPane,
+  SecretsPane,
+  connectorsChanged,
+  providerKeysInEffect,
+  secretsInEffect,
+} from './chat-input-panes';
+import {
   chatInputAgents,
   chatInputTriggerParts,
   modelIsOverridden,
@@ -59,8 +75,25 @@ const HOVER_REST_MS = 90;
 /** Between the panel's bottom edge and the composer card's top edge, in px. */
 const PANEL_GAP = 6;
 
-/** A radio row in the right pane (agents, efforts): the arrow keys walk them. */
-const OPTION_ATTR = 'data-chat-input-option';
+/** The panel's width: room for the list and a pane, not the whole composer. */
+const PANEL_WIDTH = 'w-[min(37rem,calc(100vw-1.5rem))]';
+
+/** The left list's "More" row: it opens the extras and has no pane of its own. */
+const MORE_ROW = '__more';
+
+/** The extra rows, in the order the list shows them. */
+const EXTRA_ORDER = ['connectors', 'secrets', 'provider-keys', 'sandbox'];
+
+/** An open dialog that is not this panel: the Models dialog, an accounts modal. */
+function foreignDialogOpen(panel: HTMLElement | null): boolean {
+  for (const dialog of document.querySelectorAll<HTMLElement>(
+    '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]',
+  )) {
+    if (!panel || (dialog !== panel && !panel.contains(dialog) && !dialog.contains(panel)))
+      return true;
+  }
+  return false;
+}
 
 export type ChatInputRowId = 'agent' | 'model' | 'effort' | (string & {});
 
@@ -101,12 +134,13 @@ interface PaneItem {
   id: ChatInputRowId;
   name: string;
   icon: ReactNode;
+  /** What the prompt carries: the agent's default, or the override. */
   value: string;
-  /** The value is a choice rather than a default: it reads in foreground. */
-  strong: boolean;
+  /** Someone chose this value: a dot marks it. */
+  overridden: boolean;
   description?: string;
   onReset?: () => void;
-  /** Secrets, provider keys, sandbox, files: the quiet group under a hairline. */
+  /** Connectors, secrets, provider keys, machine: the group under a gap. */
   extra: boolean;
 }
 
@@ -260,7 +294,7 @@ export function ChatInputControl({
       name: t('chatInputAgent'),
       icon: <AgentMark slug={displayedName ?? agentLabel} />,
       value: agentLabel,
-      strong: true,
+      overridden: false,
       description: t('chatInputAgentDescription'),
       extra: false,
     });
@@ -271,7 +305,7 @@ export function ChatInputControl({
       name: t('chatInputModel'),
       icon: <CpuIcon className="size-4" />,
       value: modelName ?? t('noModel'),
-      strong: modelOverridden,
+      overridden: modelOverridden,
       description: t('chatInputModelDescription'),
       onReset: resetModel,
       extra: false,
@@ -283,25 +317,64 @@ export function ChatInputControl({
       name: t('chatInputEffort'),
       icon: <EffortIcon value={currentEffort} className="size-4" />,
       value: currentEffort ? effortLabel(currentEffort) : t('auto'),
-      strong: !!currentEffort,
+      overridden: !!currentEffort,
       description: t('chatInputEffortDescription'),
       onReset: currentEffort ? () => onVariantChange(null) : undefined,
       extra: false,
     });
   }
-  for (const row of extraRows ?? []) {
+  const scopeData = overrides?.scope;
+  const keyData = overrides?.providerKeys;
+  const agentDefault = t('chatInputAgentDefault');
+  const sortedExtras = [...(extraRows ?? [])].sort(
+    (left, right) => EXTRA_ORDER.indexOf(left.id) - EXTRA_ORDER.indexOf(right.id),
+  );
+  for (const row of sortedExtras) {
     const overridden = row.overridden === true;
     const RowIcon: SessionOverrideRow['icon'] = row.icon;
-    items.push({
+    const item: PaneItem = {
       id: row.id,
       name: row.name,
       icon: <RowIcon className="size-4" />,
-      value: !overridden && row.inheritsFromAgent ? t('auto') : row.summary,
-      strong: overridden,
+      value: overridden ? row.summary : agentDefault,
+      overridden,
       description: row.description,
       onReset: overridden && overrides ? () => overrides.onResetRow(row.id) : undefined,
       extra: true,
-    });
+    };
+    // Each row says what the prompt will carry, in the same words.
+    if (row.id === 'connectors') {
+      const changed = scopeData ? connectorsChanged(scopeData) : null;
+      item.name = t('chatInputConnectors');
+      item.icon = <PlugsConnectedIcon className="size-4" />;
+      item.value = changed === null ? agentDefault : t('chatInputAppCount', { count: changed });
+      item.description = t('chatInputConnectorsDescription');
+    } else if (row.id === 'secrets') {
+      // No secret to send or to hold back: nothing to change here.
+      if (
+        !overridden &&
+        scopeData?.catalog.secrets.status === 'ready' &&
+        scopeData.catalog.secrets.items.length === 0
+      )
+        continue;
+      const count = scopeData ? secretsInEffect(scopeData) : null;
+      item.name = t('chatInputSecrets');
+      item.value = !overridden
+        ? count === null || count === 0
+          ? agentDefault
+          : `${agentDefault} · ${count}`
+        : t('chatInputSecretCount', { count: count ?? 0 });
+      item.description = t('chatInputSecretsDescription');
+    } else if (row.id === 'provider-keys') {
+      const count = keyData ? providerKeysInEffect(keyData) : 0;
+      item.overridden = count > 0;
+      item.value = count > 0 ? t('chatInputKeyCount', { count }) : agentDefault;
+      item.description = t('chatInputProviderKeysDescription');
+    } else if (row.id === 'sandbox') {
+      item.name = t('chatInputMachine');
+      item.description = t('chatInputMachineDescription');
+    }
+    items.push(item);
   }
 
   // The highlighted row. Each open starts on the row the `/` palette asked
@@ -310,13 +383,29 @@ export function ChatInputControl({
   // already shows it.
   const [activeId, setActiveId] = useState<ChatInputRowId | null>(null);
   const [search, setSearch] = useState('');
+  // The extras (connectors, secrets, provider keys, machine) sit behind one
+  // "More" row; each open starts with it closed, unless the `/` palette asked
+  // for one of them.
+  const [moreOpen, setMoreOpen] = useState(false);
   const [seen, setSeen] = useState({ open, initialRow });
   if (seen.open !== open || seen.initialRow !== initialRow) {
     setSeen({ open, initialRow });
-    if (open) setActiveId(initialRow);
-    else setSearch('');
+    if (open) {
+      setActiveId(initialRow);
+      setMoreOpen(items.some((item) => item.extra && item.id === initialRow));
+    } else setSearch('');
   }
-  const active = items.find((item) => item.id === activeId) ?? items[0];
+  const mainItems = items.filter((item) => !item.extra);
+  const extraItems = items.filter((item) => item.extra);
+  const extrasChanged = extraItems.filter((item) => item.overridden).length;
+  // What the left list shows, in order; `MORE_ROW` is the disclosure itself.
+  const listIds = [
+    ...mainItems.map((item) => item.id),
+    ...(extraItems.length > 0 ? [MORE_ROW] : []),
+    ...(moreOpen ? extraItems.map((item) => item.id) : []),
+  ];
+  const visible = items.filter((item) => listIds.includes(item.id));
+  const active = visible.find((item) => item.id === activeId) ?? visible[0];
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -330,17 +419,16 @@ export function ChatInputControl({
   );
 
   /*
-    The panel opens from the composer card, not from the trigger: it takes the
-    card's width and its bottom edge sits just above the card's top (or the top
-    of the strip stacked on it: the queue, a notice). Radix still anchors to
-    the trigger; the offsets below move the panel from the trigger to the card.
-    Measured on open and on resize. A composer without a card (none found)
-    keeps the trigger's position and a fixed width.
+    The panel opens from the composer card, not from the trigger: its left
+    edge is the card's left edge and its bottom edge sits just above the
+    card's top (or the top of the strip stacked on it: the queue, a notice).
+    Radix still anchors to the trigger; the offsets below move the panel from
+    the trigger to the card. Measured on open and on resize. A composer
+    without a card (none found) keeps the trigger's position.
   */
   const [placement, setPlacement] = useState<{
     sideOffset: number;
     alignOffset: number;
-    width: number;
   } | null>(null);
   useLayoutEffect(() => {
     if (!open) return;
@@ -370,13 +458,11 @@ export function ChatInputControl({
       const next = {
         sideOffset: Math.round(triggerBox.top - top) + PANEL_GAP,
         alignOffset: Math.round(box.left - triggerBox.left),
-        width: Math.round(box.width),
       };
       setPlacement((current) =>
         current &&
         current.sideOffset === next.sideOffset &&
-        current.alignOffset === next.alignOffset &&
-        current.width === next.width
+        current.alignOffset === next.alignOffset
           ? current
           : next,
       );
@@ -388,6 +474,32 @@ export function ChatInputControl({
       observer?.disconnect();
       window.removeEventListener('resize', measure);
       setPlacement(null);
+    };
+  }, [open]);
+
+  /*
+    A dialog opened from inside the panel (the Models dialog behind "+", a
+    ChatGPT accounts modal, a model-connection gate) must sit above it. The
+    panel stays mounted, so a dialog it owns keeps its state, but it hides
+    and ignores outside clicks until no other dialog is open. When the dialog
+    closes the panel shows again where it was.
+  */
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [suspended, setSuspended] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const check = () => setSuspended(foreignDialogOpen(contentRef.current));
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-state'],
+    });
+    return () => {
+      observer.disconnect();
+      setSuspended(false);
     };
   }, [open]);
 
@@ -414,12 +526,24 @@ export function ChatInputControl({
     setActiveId(id);
   };
 
+  /** Opening "More" highlights its first row; closing it while one is highlighted goes back to the first row. */
+  const toggleMore = (next = !moreOpen) => {
+    setMoreOpen(next);
+    if (next && extraItems[0]) {
+      select(extraItems[0].id);
+      requestAnimationFrame(() => focusTab(extraItems[0]!.id));
+    } else if (!next && active?.extra) {
+      select(mainItems[0]?.id ?? MORE_ROW);
+      requestAnimationFrame(() => focusTab(MORE_ROW));
+    }
+  };
+
   const onPanelKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
     const rowId = target.dataset.rowId;
     if (rowId !== undefined) {
       // The left list: up and down walk the rows, right and Enter go into the pane.
-      const ids = items.map((item) => item.id);
+      const ids = listIds;
       const index = ids.indexOf(rowId);
       let next: number | null = null;
       if (event.key === 'ArrowDown') next = (index + 1) % ids.length;
@@ -428,8 +552,19 @@ export function ChatInputControl({
       else if (event.key === 'End') next = ids.length - 1;
       if (next !== null) {
         event.preventDefault();
-        select(ids[next]!);
+        // "More" takes focus but keeps the pane on the row before it.
+        if (ids[next] !== MORE_ROW) select(ids[next]!);
         focusTab(ids[next]);
+        return;
+      }
+      if (rowId === MORE_ROW) {
+        if (event.key === 'ArrowRight' || event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          toggleMore(true);
+        } else if (event.key === 'ArrowLeft' && moreOpen) {
+          event.preventDefault();
+          toggleMore(false);
+        }
         return;
       }
       if (event.key === 'ArrowRight' || event.key === 'Enter') {
@@ -518,7 +653,8 @@ export function ChatInputControl({
   }
 
   const activeExtra = active?.extra ? extraRows?.find((row) => row.id === active.id) : undefined;
-  const showSave = !!overrides && !!activeExtra && overrides.saveRowIds.includes(activeExtra.id);
+  // The Save footer shows only while there is something to save, whichever row is highlighted.
+  const showSave = !!overrides && overrides.dirty;
   const saveAndClose = async () => {
     if (!overrides) return;
     const saved = await overrides.onSave();
@@ -528,9 +664,9 @@ export function ChatInputControl({
   let editor: ReactNode = null;
   if (active?.id === 'agent') {
     editor = (
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
+      <>
         {primaryAgents.length >= SEARCH_MIN_AGENTS ? (
-          <InputGroupSearch className="px-0.5 pb-1">
+          <InputGroupSearch className="pb-1">
             <InputGroupSearchIcon>
               <MagnifyingGlassIcon />
             </InputGroupSearchIcon>
@@ -546,22 +682,18 @@ export function ChatInputControl({
           </InputGroupSearch>
         ) : null}
         <div role="radiogroup" aria-label={t('chatInputAgent')} className="flex flex-col gap-px">
-          {filteredAgents.map((agent) => {
-            const checked = agent.name === displayedName;
-            const description = isMyKortixAgentName(agent.name)
-              ? t('myKortixRoutes')
-              : agent.description;
-            return (
-              <OptionRow
-                key={agent.name}
-                checked={checked}
-                onSelect={() => onAgentChange?.(agent.name)}
-                icon={<AgentMark slug={agent.name} size={21} tile={28} />}
-                label={label(agent.name)}
-                description={description}
-              />
-            );
-          })}
+          {filteredAgents.map((agent) => (
+            <ChoiceRow
+              key={agent.name}
+              checked={agent.name === displayedName}
+              onSelect={() => onAgentChange?.(agent.name)}
+              icon={<AgentMark slug={agent.name} size={21} tile={28} />}
+              label={label(agent.name)}
+              description={
+                isMyKortixAgentName(agent.name) ? t('myKortixRoutes') : agent.description
+              }
+            />
+          ))}
           {filteredAgents.length === 0 ? (
             <p className="text-muted-foreground px-2 py-3 text-xs">
               {tHardcodedUi.raw(
@@ -572,55 +704,40 @@ export function ChatInputControl({
             </p>
           ) : null}
         </div>
-      </div>
-    );
-  } else if (active?.id === 'model' && onModelChange) {
-    editor = (
-      <div className="border-border flex min-h-0 flex-1 flex-col border-t">
-        <ModelSelector
-          appearance="inline"
-          models={models}
-          modelsLoading={modelsLoading}
-          selectedModel={selectedModel}
-          onSelect={onModelChange}
-          providers={providers}
-          defaultControls={modelDefaultControls}
-          projectId={projectId}
-          offerProviderAccounts
-        />
-      </div>
+      </>
     );
   } else if (active?.id === 'effort' && onVariantChange) {
     editor = (
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
-        <div role="radiogroup" aria-label={t('chatInputEffort')} className="flex flex-col gap-px">
-          {[AUTO_EFFORT, ...effortChoices].map((value) => {
-            const checked = (currentEffort ?? AUTO_EFFORT) === value;
-            return (
-              <OptionRow
-                key={value}
-                checked={checked}
-                disabled={saving}
-                onSelect={() => onVariantChange(value === AUTO_EFFORT ? null : value)}
-                icon={<EffortIcon value={value} className="text-muted-foreground size-4" />}
-                label={value === AUTO_EFFORT ? t('auto') : effortLabel(value)}
-              />
-            );
-          })}
-        </div>
+      <div role="radiogroup" aria-label={t('chatInputEffort')} className="flex flex-col gap-px">
+        {[AUTO_EFFORT, ...effortChoices].map((value) => (
+          <ChoiceRow
+            key={value}
+            checked={(currentEffort ?? AUTO_EFFORT) === value}
+            disabled={saving}
+            onSelect={() => onVariantChange(value === AUTO_EFFORT ? null : value)}
+            icon={<EffortIcon value={value} className="text-foreground size-4" />}
+            label={value === AUTO_EFFORT ? t('auto') : effortLabel(value)}
+          />
+        ))}
       </div>
     );
+  } else if (active?.id === 'secrets' && scopeData) {
+    editor = <SecretsPane scope={scopeData} />;
+  } else if (active?.id === 'connectors' && scopeData) {
+    editor = <ConnectorsPane scope={scopeData} />;
+  } else if (active?.id === 'provider-keys' && keyData) {
+    editor = <ProviderKeysPane providerKeys={keyData} />;
   } else if (activeExtra) {
-    editor = (
-      <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-3">
-        {activeExtra.editor}
-        {overrides?.notice && showSave ? <div className="mt-3">{overrides.notice}</div> : null}
-      </div>
-    );
+    editor = <div className="px-2">{activeExtra.editor}</div>;
   }
+  const notice =
+    overrides?.notice && activeExtra && overrides.saveRowIds.includes(activeExtra.id) ? (
+      <div className="px-2 pt-2">{overrides.notice}</div>
+    ) : null;
 
   const tabId = (id: string) => `${baseId}-tab-${id}`;
   const paneId = `${baseId}-pane`;
+  const modelPane = active?.id === 'model' && !!onModelChange;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -657,19 +774,24 @@ export function ChatInputControl({
         </Button>
       </PopoverTrigger>
       <PopoverContent
+        ref={contentRef}
+        // While a dialog sits above, the hidden panel must not count as an open
+        // floating layer: `Modal` refuses Escape and backdrop clicks while one is
+        // open (`hasOpenFloatingLayer`), which left the dialog impossible to close.
+        {...(suspended ? { 'data-state': 'suspended' } : {})}
         aria-label={t('chatInput')}
         side="top"
         align="start"
         sideOffset={placement?.sideOffset ?? PANEL_GAP}
         alignOffset={placement?.alignOffset ?? 0}
         collisionPadding={12}
-        style={placement ? { width: placement.width } : undefined}
-        // The card's own surface and corners, at the card's width: the panel
-        // reads as the composer grown upward, not as a menu beside it.
+        // The composer card's surface and corners: the panel reads as the
+        // composer grown upward, not as a menu beside it.
         className={cn(
-          'bg-background @container overflow-hidden rounded-xl p-0',
-          'max-w-[calc(100vw-1.5rem)]',
-          !placement && 'w-[min(36rem,calc(100vw-1.5rem))]',
+          'bg-background overflow-hidden rounded-xl p-0',
+          PANEL_WIDTH,
+          // A dialog opened from inside sits above: the panel steps out of its way.
+          suspended && 'invisible',
         )}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
@@ -696,81 +818,106 @@ export function ChatInputControl({
             focusTab(active?.id);
           }
         }}
-        // The editors' selects and the provider modals open in their own portals.
-        // Radix counts those as outside, and would close this panel under the cursor.
+        // The editors' selects open in their own portals, and a dialog opened
+        // from inside is outside too. Radix would close this panel under the cursor.
         onInteractOutside={(event) => {
           const target = event.target as HTMLElement | null;
-          if (saving || target?.closest('[data-radix-popper-content-wrapper]'))
+          if (
+            saving ||
+            foreignDialogOpen(contentRef.current) ||
+            target?.closest('[data-radix-popper-content-wrapper], [role="dialog"]')
+          )
             event.preventDefault();
+        }}
+        onFocusOutside={(event) => {
+          if (foreignDialogOpen(contentRef.current)) event.preventDefault();
         }}
       >
         <div
           onKeyDown={onPanelKeyDown}
-          // A fixed height: the panel opens upward from the card, so a pane
-          // that changed height with the highlighted row would move its top
-          // edge under the cursor. Radix reports the room it has; without the
-          // cap the panel outgrows the gap above the composer on a 480px-tall window.
-          className="flex h-[min(22rem,var(--radix-popover-content-available-height,22rem))] flex-col"
+          // As tall as the list on the left, never taller than the room
+          // above the composer; the pane on the right scrolls inside that.
+          className="flex max-h-[var(--radix-popover-content-available-height,32rem)] flex-col"
         >
-          <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-[9.5rem] flex-1">
             <div
               ref={listRef}
               role="tablist"
               aria-orientation="vertical"
               aria-label={t('chatInput')}
-              className="border-border flex w-2/5 max-w-72 shrink-0 flex-col gap-px overflow-y-auto border-r p-1.5"
+              className="flex w-72 shrink-0 flex-col gap-px overflow-y-auto p-1.5"
             >
-              {items.map((item, index) => {
-                const selected = item.id === active?.id;
-                const firstExtra = item.extra && !items[index - 1]?.extra && index > 0;
-                return (
-                  <div key={item.id} className="contents">
-                    {firstExtra ? (
-                      <div role="separator" className="bg-border mx-2 my-1 h-px shrink-0" />
-                    ) : null}
+              {listIds.map((id) => {
+                if (id === MORE_ROW) {
+                  return (
                     <button
+                      key={MORE_ROW}
                       type="button"
-                      role="tab"
-                      id={tabId(item.id)}
-                      aria-selected={selected}
-                      aria-controls={paneId}
-                      tabIndex={selected ? 0 : -1}
-                      data-row-id={item.id}
-                      onClick={() => select(item.id)}
-                      onPointerEnter={() => {
-                        if (hoverTimer.current) clearTimeout(hoverTimer.current);
-                        hoverTimer.current = setTimeout(() => setActiveId(item.id), HOVER_REST_MS);
-                      }}
-                      onPointerLeave={() => {
-                        if (hoverTimer.current) clearTimeout(hoverTimer.current);
-                      }}
-                      className={cn(
-                        'focus-visible:ring-ring flex h-8 w-full min-w-0 shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm outline-none focus-visible:ring-2',
-                        selected
-                          ? 'bg-active text-foreground'
-                          : 'hover:bg-hover hover:text-foreground',
-                        !selected && (item.extra ? 'text-muted-foreground' : 'text-foreground'),
-                      )}
+                      aria-expanded={moreOpen}
+                      tabIndex={-1}
+                      data-row-id={MORE_ROW}
+                      onClick={() => toggleMore()}
+                      className="focus-visible:ring-ring hover:bg-hover text-foreground flex min-h-7 w-full min-w-0 shrink-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm outline-none focus-visible:ring-2"
                     >
-                      <span
-                        className={cn(
-                          'flex size-4 shrink-0 items-center justify-center',
-                          selected ? 'text-foreground' : 'text-muted-foreground',
-                        )}
-                      >
-                        {item.icon}
+                      <span className="flex size-4 shrink-0 items-center justify-center">
+                        <CaretRightIcon
+                          className={cn(
+                            'duration-moderate size-3.5 transition-transform ease-out motion-reduce:transition-none',
+                            moreOpen && 'rotate-90',
+                          )}
+                        />
                       </span>
-                      <span className="shrink-0 truncate font-medium">{item.name}</span>
-                      <span
-                        className={cn(
-                          'ml-auto hidden min-w-0 truncate pl-2 text-right text-xs @[30rem]:block',
-                          item.strong ? 'text-foreground' : 'text-muted-foreground',
-                        )}
-                      >
-                        {item.value}
-                      </span>
+                      <span className="shrink-0 truncate font-medium">{t('chatInputMore')}</span>
+                      {extrasChanged > 0 ? (
+                        <span className="ml-auto flex items-center gap-1.5 pl-2 text-xs tabular-nums">
+                          <span
+                            aria-hidden
+                            className="bg-foreground size-1 shrink-0 rounded-full"
+                          />
+                          {t('chatInputChangedCount', { count: extrasChanged })}
+                        </span>
+                      ) : null}
                     </button>
-                  </div>
+                  );
+                }
+                const item = items.find((candidate) => candidate.id === id)!;
+                const selected = item.id === active?.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    id={tabId(item.id)}
+                    aria-selected={selected}
+                    aria-controls={paneId}
+                    tabIndex={selected ? 0 : -1}
+                    data-row-id={item.id}
+                    onClick={() => select(item.id)}
+                    onPointerEnter={() => {
+                      if (hoverTimer.current) clearTimeout(hoverTimer.current);
+                      hoverTimer.current = setTimeout(() => setActiveId(item.id), HOVER_REST_MS);
+                    }}
+                    onPointerLeave={() => {
+                      if (hoverTimer.current) clearTimeout(hoverTimer.current);
+                    }}
+                    className={cn(
+                      'focus-visible:ring-ring text-foreground flex min-h-7 w-full min-w-0 shrink-0 items-center gap-2 rounded-md py-1 pr-2 text-left text-sm outline-none focus-visible:ring-2',
+                      // Rows under "More" step in by one icon, so they read as its children.
+                      item.extra ? 'pl-6' : 'pl-2',
+                      selected ? 'bg-active' : 'hover:bg-hover',
+                    )}
+                  >
+                    <span className="flex size-4 shrink-0 items-center justify-center">
+                      {item.icon}
+                    </span>
+                    <span className="shrink-0 truncate font-medium">{item.name}</span>
+                    <span className="ml-auto flex min-w-0 items-center gap-1.5 pl-2">
+                      {item.overridden ? (
+                        <span aria-hidden className="bg-foreground size-1 shrink-0 rounded-full" />
+                      ) : null}
+                      <span className="min-w-0 truncate text-right text-xs">{item.value}</span>
+                    </span>
+                  </button>
                 );
               })}
             </div>
@@ -780,51 +927,71 @@ export function ChatInputControl({
               id={paneId}
               role="tabpanel"
               aria-labelledby={active ? tabId(active.id) : undefined}
-              className="flex min-h-0 min-w-0 flex-1 flex-col"
+              // Out of flow: the list alone sets the panel's height.
+              className="relative min-w-0 flex-1"
             >
-              {active ? (
-                <div className="flex shrink-0 items-start gap-3 px-3.5 pt-3 pb-2.5">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-foreground text-sm font-medium text-balance">
-                      {active.name}
-                    </h3>
-                    {active.description ? (
-                      <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                        {active.description}
-                      </p>
+              <div className="absolute inset-0 flex flex-col">
+                {active ? (
+                  <div className="flex shrink-0 items-start gap-3 px-3.5 pt-2.5 pb-1.5">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-foreground text-sm font-medium">{active.name}</h3>
+                      {active.description ? (
+                        <p className="text-muted-foreground text-xs text-pretty">
+                          {active.description}
+                        </p>
+                      ) : null}
+                    </div>
+                    {active.onReset ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        disabled={saving}
+                        onClick={active.onReset}
+                        className="-mt-0.5 -mr-1.5 shrink-0"
+                      >
+                        {t('chatInputReset')}
+                      </Button>
                     ) : null}
                   </div>
-                  {active.onReset ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      disabled={saving}
-                      onClick={active.onReset}
-                      className="text-muted-foreground hover:text-foreground -mt-0.5 -mr-1.5 shrink-0"
-                    >
-                      {t('chatInputReset')}
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-              {editor}
+                ) : null}
+                {modelPane ? (
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    <ModelSelector
+                      appearance="inline"
+                      models={models}
+                      modelsLoading={modelsLoading}
+                      selectedModel={selectedModel}
+                      onSelect={onModelChange}
+                      providers={providers}
+                      defaultControls={modelDefaultControls}
+                      projectId={projectId}
+                      offerProviderAccounts
+                    />
+                  </div>
+                ) : (
+                  <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
+                    {editor}
+                    {notice}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
           {overrides?.error ? (
-            <p role="alert" className="text-destructive border-border border-t px-4 py-2 text-xs">
+            <p role="alert" className="text-destructive px-3.5 py-2 text-xs">
               {overrides.error}
             </p>
           ) : null}
           {showSave && overrides ? (
-            <div className="border-border flex shrink-0 items-center justify-between gap-3 border-t px-4 py-2">
-              <p className="text-muted-foreground text-xs text-pretty" aria-live="polite">
+            <div className="bg-muted flex shrink-0 items-center justify-between gap-3 px-3.5 py-1.5">
+              <p className="text-foreground text-xs text-pretty" aria-live="polite">
                 {overrides.pendingNote ?? tHardcodedUi.raw('i18nComplete.text26ee1166df63')}
               </p>
               <Button
                 type="button"
-                size="sm"
+                size="xs"
                 disabled={saving || overrides.saveDisabled}
                 onClick={() => void saveAndClose()}
               >
@@ -836,50 +1003,5 @@ export function ChatInputControl({
         </div>
       </PopoverContent>
     </Popover>
-  );
-}
-
-/** One radio row in the right pane: an agent or an effort. */
-function OptionRow({
-  checked,
-  disabled = false,
-  onSelect,
-  icon,
-  label,
-  description,
-}: {
-  checked: boolean;
-  disabled?: boolean;
-  onSelect: () => void;
-  icon: ReactNode;
-  label: string;
-  description?: string | null;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={checked}
-      disabled={disabled}
-      tabIndex={checked ? 0 : -1}
-      {...{ [OPTION_ATTR]: '' }}
-      onClick={onSelect}
-      className={cn(
-        'focus-visible:ring-ring flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 text-left outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50',
-        description ? 'py-1.5' : 'h-8',
-        checked ? 'bg-active' : 'hover:bg-hover',
-      )}
-    >
-      {icon}
-      <span className="min-w-0 flex-1">
-        <span className="text-foreground block truncate text-sm font-medium">{label}</span>
-        {description ? (
-          <span className="text-muted-foreground block truncate text-xs">{description}</span>
-        ) : null}
-      </span>
-      <span className="flex size-4 shrink-0 items-center justify-center">
-        {checked ? <CheckIcon className="text-foreground size-3.5" /> : null}
-      </span>
-    </button>
   );
 }
