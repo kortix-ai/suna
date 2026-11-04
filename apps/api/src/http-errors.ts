@@ -721,12 +721,22 @@ function handleUnhandledError(err: Error, c: Context): Response {
   return handleDatabaseOrUnknownError(err, c, errName, method, path);
 }
 
+// KRTX-3380: GET-only health endpoints. A write method on them answers 405 with
+// the Allow list RFC 9110 §15.5.6 requires instead of the generic 404.
+const HEALTH_PATHS = new Set(
+  ['/health', '/health/live', '/health/ready'].flatMap((p) => [p, `/v1${p}`]),
+);
+
 export function installHttpErrors(app: OpenAPIHono) {
   // === Error Handling ===
   app.onError(handleUnhandledError);
 
   // === 404 Handler ===
   app.notFound((c) => {
+    if (HEALTH_PATHS.has(c.req.path) && c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+      return c.body(null, 405, { Allow: 'GET, HEAD' });
+    }
+
     // A root-absolute link on a path-based preview (`<a href="/learn">` inside
     // /v1/p/{sandbox}/{port}/) resolves against THIS origin and lands here with
     // the prefix stripped. Put the navigation back where it belongs instead of

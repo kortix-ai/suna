@@ -166,12 +166,4 @@ app.openapi(
   healthHandler,
 );
 
-// The health endpoints are GET-only. A write method answers 405 with the Allow
-// list RFC 9110 §15.5.6 requires instead of falling through to the 404 handler.
-// Registered after the GET routes so GET/HEAD keep matching first.
-app.on(
-  ['POST', 'PUT', 'PATCH', 'DELETE'],
-  ['/health', '/v1/health', '/health/live', '/v1/health/live', '/health/ready', '/v1/health/ready'],
-  (c) => c.body(null, 405, { Allow: 'GET, HEAD' }),
-);
 }
