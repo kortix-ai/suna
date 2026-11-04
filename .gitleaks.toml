@@ -118,3 +118,13 @@ paths = [
 regexes = [
   '''"machine_key_sha256"''',
 ]
+
+[[allowlists]]
+description = "Synthetic acme-dns account record in the self-host TLS wildcard unit test (#11659). The test zone is acme.kortix.acme.com and no acme-dns server issued it. Scoped to the one file and the one literal so a real secret there still fails."
+condition = "AND"
+paths = [
+  '''^apps/cli/src/self-host/__tests__/wildcard-tls\.test\.ts$''',
+]
+regexes = [
+  '''pbAXVjlIOE01xbut7YnAbkhMQIkcwoHO0ek2j4Q0''',
+]

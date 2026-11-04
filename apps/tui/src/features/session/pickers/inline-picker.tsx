@@ -20,6 +20,7 @@
  * nothing — a group name is a label, never a choice.
  */
 
+import type { KeyEvent } from '@opentui/core';
 import { useKeyboard } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -49,6 +50,11 @@ export interface InlinePickerProps {
   /** Visible rows, excluding the border, the filter line and the rule. */
   maxRows?: number;
   hint?: string;
+  /**
+   * A row action key (`Tab`, `Ctrl+Y`) on the selected choice, read before the
+   * filter. Return true when the key was the caller's.
+   */
+  onKey?: (key: KeyEvent, item: ListItem) => boolean;
 }
 
 /** The nearest selectable row at or after `from`, searching in `step`. */
@@ -84,6 +90,7 @@ export function InlinePicker({
   width,
   maxRows = 8,
   hint = 'Enter pick · Esc close',
+  onKey,
 }: InlinePickerProps) {
   const [query, setQuery] = useState(initialQuery);
   const filtered = useMemo(() => {
@@ -134,6 +141,11 @@ export function InlinePicker({
     if (key.name === 'down' || (key.name === 'n' && key.ctrl)) {
       key.preventDefault();
       return move(1);
+    }
+    const selected = filtered[index];
+    if (onKey && selected && !headerIds.has(selected.id) && onKey(key, selected)) {
+      key.preventDefault();
+      return;
     }
     if (key.name === 'return') {
       key.preventDefault();

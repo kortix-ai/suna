@@ -599,6 +599,12 @@ test('project(id).secrets covers provider OAuth list, start, poll, and removal',
   expect(last().method).toBe('DELETE');
 });
 
+test('project(id).llmCatalogProviders reads the live provider catalogue', async () => {
+  await kortix.project('PID123').llmCatalogProviders();
+  expect(last().url.endsWith('/projects/PID123/llm-catalog/providers')).toBe(true);
+  expect(last().method).toBe('GET');
+});
+
 test('project(id).claudeSubscription covers status, sign-in, token and disconnect', async () => {
   await kortix.project('PID123').claudeSubscription.get();
   expect(last().url.endsWith('/projects/PID123/claude-subscription')).toBe(true);

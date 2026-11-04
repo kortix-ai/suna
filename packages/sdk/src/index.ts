@@ -615,6 +615,38 @@ export {
   pickerProviderList,
   type PickerProviderListInput,
 } from './core/models/provider-selection';
+/**
+ * Provider connections: the catalogue rows, how each provider connects, which
+ * providers a project's secrets connect, the list order, and who may use a new
+ * connection. The web Models page and the TUI `/providers` screen read these.
+ */
+export {
+  CODEX_AUTH_JSON_SECRET_NAME,
+  FIRST_CLASS_PROVIDER_IDS,
+  LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
+  PROVIDER_SUBSCRIPTIONS,
+  buildLlmProviderCatalog,
+  connectionAccessSummary,
+  connectionLabelOwnerName,
+  connectionNeedsReconnection,
+  connectionSharing,
+  orderProviderRows,
+  providerConnectMethod,
+  providerConnectedVia,
+  providerDisconnectPlan,
+  providerIdsWithCredentials,
+  providerKeyAccessFields,
+  supportsPooledProviderKey,
+  type ConnectionAccessChoice,
+  type ConnectionAccessSummary,
+  type LlmProviderCatalogSource,
+  type LlmProviderEntry,
+  type LlmProviderModel,
+  type LlmProviderSource,
+  type ProviderConnectMethod,
+  type ProviderConnectedVia,
+  type ProviderSubscription,
+} from './core/models/provider-connections';
 export {
   latestPromptModel,
   resolveComposerModel,

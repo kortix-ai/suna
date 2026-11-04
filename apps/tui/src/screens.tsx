@@ -18,6 +18,7 @@ import { ApprovalsScreen } from './features/approvals/index.ts';
 import { ArtifactsScreen } from './features/artifacts/index.ts';
 import { AuditScreen } from './features/audit/index.ts';
 import { CustomizeScreen } from './features/customize/index.ts';
+import { ProvidersScreen } from './features/providers/index.ts';
 import { DriveScreen } from './features/drive/index.ts';
 import { FilesScreen } from './features/files/index.ts';
 import { GoalsScreen } from './features/goals/index.ts';
@@ -40,6 +41,7 @@ export const SCREEN_TITLE: Record<ScreenRoute, string> = {
   review: 'Change requests',
   apps: 'Apps',
   customize: 'Customize',
+  providers: 'Model providers',
   account: 'Account',
   drive: 'Drive',
   repo: 'Repository',
@@ -68,9 +70,13 @@ export interface ScreenProps {
   height: number;
   /** The Kortix web origin, for screens that print a link the TUI cannot open. */
   webBaseUrl: string;
+  /** What the screen opens on: an artifact id (`artifacts`), a file path (`files`), a provider id (`providers`). */
+  target?: string | null;
   onBack(): void;
   onOpenSession(sessionId: string): void;
   onToast(message: string, kind?: ToastKind): void;
+  /** The screen holds Esc (a pane to go back from, an input open). The app then leaves Esc to it. */
+  onHoldsBack?(holds: boolean): void;
 }
 
 /**
@@ -118,6 +124,7 @@ export function Screen(props: ScreenProps) {
         <FilesScreen
           projectId={projectId}
           sessionId={sessionId}
+          reveal={props.target ?? null}
           focused={focused}
           width={width}
           height={height}
@@ -160,6 +167,20 @@ export function Screen(props: ScreenProps) {
           width={width}
           height={height}
           webBaseUrl={props.webBaseUrl}
+          onBack={onBack}
+          onToast={onToast}
+        />
+      );
+    case 'providers':
+      return (
+        <ProvidersScreen
+          projectId={projectId}
+          accountId={accountId}
+          focused={focused}
+          width={width}
+          height={height}
+          initialProviderId={props.target ?? undefined}
+          onHoldsBack={props.onHoldsBack}
           onBack={onBack}
           onToast={onToast}
         />

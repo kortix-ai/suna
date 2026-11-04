@@ -229,3 +229,44 @@ describe('refreshProjectProviderState — follow-up passes do not discard in-fli
     unsubscribe();
   });
 });
+
+// A host without `window` (the TUI on Bun, a Node script, React Native) used
+// to get the one immediate pass only: the function returned before scheduling
+// anything, so a credential saved there left the model picker on the old list.
+describe('refreshProjectProviderState — hosts without window', () => {
+  const originalWindow = (globalThis as { window?: unknown }).window;
+  const originalSetTimeout = globalThis.setTimeout;
+
+  afterEach(() => {
+    (globalThis as { window?: unknown }).window = originalWindow;
+    globalThis.setTimeout = originalSetTimeout;
+  });
+
+  test('schedules the follow-up passes on the global timer', () => {
+    delete (globalThis as { window?: unknown }).window;
+    const delays: number[] = [];
+    globalThis.setTimeout = ((fn: () => void, ms?: number) => {
+      delays.push(ms ?? 0);
+      return 0;
+    }) as unknown as typeof setTimeout;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    refreshProjectProviderState(queryClient, 'proj_1');
+
+    expect(delays).toEqual([500, 1500, 3000, 6000]);
+  });
+
+  test('polls for the expected provider on the global timer', () => {
+    delete (globalThis as { window?: unknown }).window;
+    const delays: number[] = [];
+    globalThis.setTimeout = ((fn: () => void, ms?: number) => {
+      delays.push(ms ?? 0);
+      return 0;
+    }) as unknown as typeof setTimeout;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    refreshProjectProviderState(queryClient, 'proj_1', { expectProviderId: 'anthropic' });
+
+    expect(delays).toEqual([2500]);
+  });
+});
