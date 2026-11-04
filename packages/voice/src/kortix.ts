@@ -33,10 +33,21 @@ function start(): Promise<number> {
 /** The port the box's relay listens on, starting it if no session has yet. */
 export const relayPort = (): Promise<number> => start()
 
-/** Binds one session to the box's voice: its calls, and the meta tools its agent acts on them with. */
-export function attach(pi: KortixPi, session: string): void {
+/**
+ * Binds one session to the box's voice: its calls, and the meta tools its agent acts on them with. `persisted`: the
+ * host's hook for a note the voice wrote into the session outside any turn (a turn the fast lane answered, a call's
+ * transcript); a host that publishes the session's log at a turn's end publishes it then too, so the chat has it now.
+ */
+export function attach(pi: KortixPi, session: string, o: { persisted?: () => void } = {}): void {
   let ctx: ContextLike | undefined
   const agent = fromExtension(pi, () => ctx)
+  if (o.persisted) {
+    const remember = agent.remember.bind(agent)
+    agent.remember = async (sid, note, synthetic) => {
+      await remember(sid, note, synthetic)
+      o.persisted?.()
+    }
+  }
   brain.bind(session, agent, { tools: true })
   pi.on('session_start', (_event: unknown, c: ContextLike) => {
     ctx = c
