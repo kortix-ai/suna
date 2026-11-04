@@ -6,7 +6,7 @@
  * fail-open default and the warning that explains it stay at the call site.
  */
 
-import { RUNTIME_ACTIONS_CAPABILITY, RUNTIME_LOG_CAPABILITY } from '@kortix/api-contract/runtime-relay';
+import { RUNTIME_LOG_CAPABILITY } from '@kortix/api-contract/runtime-relay';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 
 /** The directory every runtime read and write is forwarded under. */
@@ -43,10 +43,6 @@ const segment = encodeURIComponent;
 
 /** The Kortix turn routes (`routes/kortix/runtime.ts` in kortixd). */
 export const runtimeVerbPaths = {
-  messages: (sessionId: string, opts: { limit: number; before?: string | null }) =>
-    `/kortix/runtime/messages/${segment(sessionId)}?limit=${opts.limit}${opts.before ? `&before=${segment(opts.before)}` : ''}`,
-  message: (sessionId: string, messageId: string) =>
-    `/kortix/runtime/messages/${segment(sessionId)}/${segment(messageId)}`,
   /** Take back a user message no model call has read (`runtime.retract.v1`). */
   retract: (sessionId: string, messageId: string) =>
     `/kortix/runtime/messages/${segment(sessionId)}/${segment(messageId)}/retract`,
@@ -105,28 +101,6 @@ export async function runtimeCapabilities(
   } catch {
     return null;
   }
-}
-
-/**
- * Does this sandbox's daemon serve the session-log actions (`runtime.actions.v1`)?
- * A failed read answers false: the caller uses the route every daemon serves.
- */
-export async function runtimeServesActions(
-  externalId: string | undefined,
-  endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
-): Promise<boolean> {
-  return (await runtimeCapabilities(externalId, endpoint))?.includes(RUNTIME_ACTIONS_CAPABILITY) ?? false;
-}
-
-/**
- * Does the box serve its own session log (`runtime.log.v1`): whole pages, and a prompt in the log
- * from its admission? Then the log is the transcript the API reads. Same memo as above.
- */
-export async function runtimeServesLog(
-  externalId: string | undefined,
-  endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
-): Promise<boolean> {
-  return (await runtimeCapabilities(externalId, endpoint))?.includes(RUNTIME_LOG_CAPABILITY) ?? false;
 }
 
 /** Test-only. */

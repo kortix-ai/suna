@@ -80,20 +80,25 @@ const { enqueueContinueSessionCommand, markCommandForwarded } = await import(
   '../projects/session-lifecycle/store'
 );
 
-/** The transcript page: ANSWERED, then STRANDED below the assistant that
- *  answered ANSWERED. Nothing is parented on STRANDED. */
+/** One record of the box's session log page. */
+const logRecord = (id: string, role: 'user' | 'assistant', created: number, over: Record<string, unknown> = {}) => ({
+  message_id: id,
+  role,
+  kind: 'turn',
+  status: 'complete',
+  reply_to: null,
+  created_at: new Date(created).toISOString(),
+  completed_at: new Date(created).toISOString(),
+  blocks: [{ type: 'text', id: `${id}-b0`, text: '' }],
+  ...over,
+});
+
+/** The box's log page: ANSWERED, then STRANDED below the assistant that
+ *  answered ANSWERED. Nothing replies to STRANDED. */
 const TIP = [
-  { info: { id: ANSWERED, role: 'user', time: { created: T } }, parts: [{ id: 'prt_a' }] },
-  { info: { id: STRANDED, role: 'user', time: { created: T + 500 } }, parts: [{ id: 'prt_s' }] },
-  {
-    info: {
-      id: ASSISTANT,
-      role: 'assistant',
-      parentID: ANSWERED,
-      time: { created: T + 1_000, completed: T + 1_500 },
-    },
-    parts: [{ id: 'prt_r' }],
-  },
+  logRecord(ANSWERED, 'user', T),
+  logRecord(STRANDED, 'user', T + 500),
+  logRecord(ASSISTANT, 'assistant', T + 1_000, { reply_to: ANSWERED, completed_at: new Date(T + 1_500).toISOString() }),
 ];
 
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -193,7 +198,7 @@ beforeAll(async () => {
       retractedMessages.push(decodeURIComponent(new URL(url).pathname.split('/').at(-2) ?? ''));
       return Response.json({ retracted: true });
     }
-    return Response.json({ messages: TIP, has_more: false });
+    return Response.json({ thread_id: 'ses_strand', messages: TIP, has_more: false });
   };
 });
 

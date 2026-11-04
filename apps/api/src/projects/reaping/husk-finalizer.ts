@@ -56,7 +56,7 @@ import {
   encodeKortixUserContext,
 } from '../../shared/kortix-user-context';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-import { runtimeServesLog, runtimeVerbPaths } from '../session-lifecycle/runtime-fetch';
+import { runtimeVerbPaths } from '../session-lifecycle/runtime-fetch';
 
 export type HuskFinalizeOutcome = 'finalized' | 'not_husk' | 'unreadable' | 'unconfirmed';
 
@@ -207,91 +207,14 @@ function isAbortableHusk(inspection: HuskInspection): boolean {
 }
 
 /**
- * Read the tail of the root and apply the DAEMON'S open-turn predicate, byte
- * for byte (the OpenCode adapter's `opencode-turn-state.ts`, since deleted),
- * to the assistant message that answers `messageId`. A retryable error is NOT a
- * closed turn — OpenCode still owns it.
- *
- * The predicate is TARGET-scoped, and the position is reported separately.
- * Judging the root's last message alone conflates three different facts: "the
- * target is closed", "the target is no longer last", and "the root is empty".
- * Only the first is evidence about this turn, and `finalizeHuskTurn` needs the
- * other two for opposite reasons — position gates the root-scoped abort, while
- * the post-condition needs the target itself.
- */
-async function inspectRoot(
-  endpoint: { url: string; headers: Record<string, string> },
-  opencodeSessionId: string,
-  messageId: string,
-  servesLog = false,
-): Promise<HuskInspection> {
-  if (servesLog) return inspectRootLog(endpoint, messageId);
-  try {
-    const path = runtimeVerbPaths.messages(opencodeSessionId, { limit: READ_MESSAGE_LIMIT });
-    const res = await fetch(`${endpoint.url}${path}`, {
-      headers: sandboxRuntimeRequestHeaders(endpoint.headers),
-      signal: AbortSignal.timeout(READ_TIMEOUT_MS),
-    });
-    // Non-2xx (the runtime answering but unhappy — e.g. mid-restart) is a read
-    // failure, not "no messages".
-    if (!res.ok) return UNKNOWN_INSPECTION;
-    const body = (await res.json()) as { messages?: unknown } | null;
-    const messages = body?.messages as Array<{
-      info?: {
-        id?: string;
-        role?: string;
-        parentID?: string;
-        time?: { completed?: number };
-        error?: { data?: { isRetryable?: boolean } };
-      };
-    }>;
-    // An unparseable shape is also a read failure, not a genuinely empty root
-    // — only an actual `[]` counts as a confirmed-empty root (main.ts:1618-1630).
-    if (!Array.isArray(messages)) return UNKNOWN_INSPECTION;
-    if (messages.length === 0) {
-      return { ...UNKNOWN_INSPECTION, known: true };
-    }
-    const lastMessageId = messages[messages.length - 1]?.info?.id ?? null;
-    // Search from the end: a retry can leave more than one assistant under the
-    // same user message, and the newest one is the one the runtime is writing. (`findLastIndex` is ES2023; this tsconfig's lib is
-    // older, and the lib floor is not this commit's to move.)
-    let targetIndex = -1;
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const candidate = messages[i]?.info;
-      if (candidate?.role === 'assistant' && candidate?.parentID === messageId) {
-        targetIndex = i;
-        break;
-      }
-    }
-    if (targetIndex < 0) {
-      return { ...UNKNOWN_INSPECTION, known: true, lastMessageId };
-    }
-    const info = messages[targetIndex]?.info;
-    const targetOpen = Boolean(
-      !info?.time?.completed && (!info?.error || info.error.data?.isRetryable === true),
-    );
-    return {
-      known: true,
-      targetFound: true,
-      targetOpen,
-      targetIsLast: targetIndex === messages.length - 1,
-      lastMessageId,
-    };
-  } catch {
-    // Unreachable, or the read timeout fired — the same tri-state hazard the
-    // daemon's own inspectRoot exists for.
-    return UNKNOWN_INSPECTION;
-  }
-}
-
-/**
- * `inspectRoot` on a box that serves its own session log (`runtime.log.v1`): the same predicate on
- * log records. The target is the newest assistant message whose `reply_to` is `messageId`; it is
+ * Read the tail of the root and judge the assistant message that answers `messageId`, on the
+ * box's own session log (`runtime.log.v1`, every box past the runtime floor). A read failure is
+ * `known: false`: "could not tell" is never evidence. The target is the newest assistant message whose `reply_to` is `messageId`; it is
  * open while its status is `streaming`. The reaper asks only after the box reported no turn in
  * flight. pi marks a record `streaming` only while it is busy (an open tool call), and appends a
  * text message only when it ends, so on pi a husk is exactly a `streaming` record on an idle box.
  */
-async function inspectRootLog(
+async function inspectRoot(
   endpoint: { url: string; headers: Record<string, string> },
   messageId: string,
 ): Promise<HuskInspection> {
@@ -346,15 +269,13 @@ export async function finalizeHuskTurn(
   if (!messageId) return 'not_husk';
   const endpoint = await resolveDaemonEndpoint(externalId, sandboxId);
   if (!endpoint) return 'unreadable';
-  const servesLog = await runtimeServesLog(externalId, async () => endpoint);
-
-  const first = await inspectRoot(endpoint, opencodeSessionId, messageId, servesLog);
+  const first = await inspectRoot(endpoint, messageId);
   if (!first.known) return 'unreadable';
   if (!isAbortableHusk(first)) return 'not_husk';
 
   await new Promise((resolve) => setTimeout(resolve, options?.settleMs ?? HUSK_SETTLE_MS));
 
-  const second = await inspectRoot(endpoint, opencodeSessionId, messageId, servesLog);
+  const second = await inspectRoot(endpoint, messageId);
   // Never abort on the strength of the first read alone (main.ts:1667-1673).
   if (!second.known) return 'unreadable';
   if (!isAbortableHusk(second)) return 'not_husk'; // it finished, or a newer turn owns the root
@@ -390,7 +311,7 @@ export async function finalizeHuskTurn(
   // (box-reaper.ts:227) deletes the record either way, so a wrong 'finalized'
   // is never retried and the husk stays open forever — the bug this module
   // exists to fix.
-  const after = await inspectRoot(endpoint, opencodeSessionId, messageId, servesLog);
+  const after = await inspectRoot(endpoint, messageId);
   if (!after.known || !after.targetFound || after.targetOpen) return 'unconfirmed';
   console.info('[husk-finalizer] finalized orphaned turn', {
     sandboxId,
