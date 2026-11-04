@@ -67,6 +67,7 @@ import { Type } from 'typebox'
 import type { PromptOrigin } from '../prompt-origin'
 import { failure, toolReturn } from './control-plane'
 import type { WorkflowRuns } from './workflow'
+import { FRONT_THREAD_CONTEXT_KEY } from '../front'
 
 /** What the subagents extension needs from the runtime that hosts it. */
 export interface KortixHost {
@@ -120,6 +121,12 @@ export interface KortixHost {
    * would otherwise have no type to name.
    */
   anyProjectAgent?(): boolean
+  /**
+   * A talk-only front (flag `chat_front`, harness/pi/front.ts): every `agent`
+   * call starts or continues its one worker, whatever the model passed.
+   * Returns the worker's agent and name; null for every other session.
+   */
+  frontWorker?(): { agent: string; name: string } | null
   /** The agent this session runs as (its resolved name). */
   currentAgentName?(): string
   /** Every tool this session's agent may use: a child's `tools` must name only these. */
@@ -452,7 +459,12 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
       parameters,
       executionMode: 'parallel' as const,
       ...(name === 'agent' && host.codemodeOnly?.() ? { exposure: 'model-only' as const } : {}),
-      async execute(_toolCallId: string, params: SubagentParams, signal: AbortSignal | undefined, onUpdate?: (update: { content: never[]; details: unknown }) => void) {
+      async execute(_toolCallId: string, input: SubagentParams, signal: AbortSignal | undefined, onUpdate?: (update: { content: never[]; details: unknown }) => void) {
+        // A front's call always starts or continues its one worker, in the background, in its own session.
+        const front = host.frontWorker?.() ?? null
+        const params: SubagentParams = front
+          ? { description: input.description, prompt: input.prompt, subagent_type: front.agent, name: front.name, session: 'separate', run_in_background: true }
+          : input
         const spawn = resolveSpawn(params, host)
         const shape = spawnShape(params, host)
         const result = await host.spawnSession({
@@ -460,6 +472,8 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
           ...(params.session ? { session: params.session } : {}),
           ...shape,
           ...spawn,
+          // The worker knows it reports to a front: its runtime adds FRONT_WORKER_NOTE to its system prompt.
+          ...(front ? { runtimeContext: { [FRONT_THREAD_CONTEXT_KEY]: true } } : {}),
           prompt: params.prompt,
           signal,
           // The running part carries the child id at once, so the product links the child while it works.

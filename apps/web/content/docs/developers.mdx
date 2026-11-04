@@ -1019,7 +1019,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `policy` | map | — | The decision for a connector call that no rule matches. See [policy keys](#policy-keys). |
 | `policies` | list | — | Connector rules for the whole project. They run before every policy set and base rule. See [policy keys](#policy-keys). |
 | `approvals` | map | — | How long a held connector call waits for a decision. See [policy keys](#policy-keys). |
-| `spaces` | map | — | Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`. |
+| `spaces` | map | — | Spaces: channels with configured tabs. Agents join one with `agents.<name>.space`. |
 | `builtin_agents` | map | — | Built-in agents the platform adds to this project. Each is off unless set to true. |
 | `agents` | map | — | Agent name → agent block, here or in an imported file. A name is lowercase letters, digits, `-` and `_`, at most 128 characters. See [Agent keys](#agent-keys). |
 
@@ -1433,7 +1433,7 @@ A session a person started is an orchestrator: nothing it starts blocks the sess
 
 #### Workflows
 
-The `workflow` tool runs a JavaScript script that starts and coordinates many agents. The script holds the plan and the intermediate results. The model receives only the script's return value. Every session has the tool. It starts only from a person's own message: a turn that a message from another session, a room message, a trigger or a reminder started refuses it.
+The `workflow` tool runs a JavaScript script that starts and coordinates many agents. The script holds the plan and the intermediate results. The model receives only the script's return value. Every session has the tool. It starts only from a person's own message: a turn that a message from another session, a trigger or a reminder started refuses it.
 
 The call takes `script` (required), `description`, `args`, `max_agents`, `resume_run_id`, `fresh`, and `name`. To run a saved workflow by `name`, or to resume a run with its own script, the call passes `script: ""`.
 
@@ -7285,7 +7285,7 @@ Every option is optional. Pass objects with a stable identity.
 | `useViewerId` | A hook that returns the signed-in user's id. Without a viewer, a session several people write in names no sender. |
 | `useViewer` | A hook that returns the signed-in user as `{ id, email?, metadata? }`. The UI reads `name`, `full_name` and `avatar_url` from `metadata`. |
 | `updateViewerMetadata` | Saves UI preferences on the signed-in user, so they follow the user across devices. Without it, they stay in the browser. |
-| `components` | Host features the session UI opens but does not own: `ShareSessionModal` (exported by `@kortix/ui/workspace`), `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal`, `ArtifactViewer`, `RoomPanel`, `HomeAnnouncement`, `Wallpaper`. A control whose slot is missing is hidden. |
+| `components` | Host features the session UI opens but does not own: `ShareSessionModal` (exported by `@kortix/ui/workspace`), `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal`, `ArtifactViewer`, `HomeAnnouncement`, `Wallpaper`. A control whose slot is missing is hidden. |
 | `resolvePreviewUrl` | `(request) => Promise<string \| null>`. Returns the URL the session browser frames, with your host's own credentials. `null` keeps the SDK preview URL. Use it when the browser must not hold a Kortix token. |
 | `config` | Host feature switches. See the next table. |
 
@@ -7429,7 +7429,7 @@ Every URL the components link to or navigate to comes from one route table. Call
 
 - Return your own path for a page you serve at another URL.
 - Return `null` for a page you do not serve. Every link to it is hidden and no navigation goes there.
-- `project`, `session`, `channel` and `dm` cannot return `null`. The sidebar links `channel` and `dm` only while the project's `project_channels` flag is on.
+- `project`, `session`, `channel` and `dm` cannot return `null`. The sidebar links `channel` and `dm` only while the project's `chat` flag is on.
 - A host that maps `customize` and says nothing about `admin` gets the same mapping for `admin`.
 
 | Route | Arguments | Default |
@@ -7440,7 +7440,6 @@ Every URL the components link to or navigate to comes from one route table. Call
 | `files` | `projectId`, `panel?: 'proposed-changes'` | `/projects/<id>/files`, `?panel=<panel>` |
 | `drive` | `projectId` | `/projects/<id>/drive` |
 | `apps` | `projectId` | `/projects/<id>/apps` |
-| `rooms` | `projectId` | `/projects/<id>/rooms` |
 | `goals` | `projectId` | `/projects/<id>/goals` |
 | `artifacts` | `projectId` | `/projects/<id>/artifacts` |
 | `space` | `projectId`, `slug` | `/projects/<id>/spaces/<slug>` |
@@ -7907,7 +7906,6 @@ setUiRoutes({
   sessions: () => null,
   drive: () => null,
   apps: () => null,
-  rooms: () => null,
   goals: () => null,
   artifacts: () => null,
   space: () => null,

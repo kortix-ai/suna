@@ -1169,6 +1169,23 @@ export const projectSpaceKindEnum = kortixSchema.enum('project_space_kind', ['ch
 export const projectSpaceVisibilityEnum = kortixSchema.enum('project_space_visibility', ['public', 'private']);
 
 /**
+ * One stored tab of a space (`project_spaces.tabs`). The Chat tab is not
+ * stored: it is always first. `ref` names what the tab shows: a Drive file or
+ * folder path, an artifact id, an App slug or an https URL (`SpaceTabSchema`
+ * in `@kortix/api-contract` validates every write). `embeddable`: a link tab
+ * whose page the web app may frame, set by the API on write. Rows written
+ * before 2026-11-04 may hold `threads` or `memory`: the API drops those on
+ * read.
+ */
+export interface ProjectSpaceTabRecord {
+  id: string;
+  title: string;
+  kind: 'file' | 'folder' | 'artifact' | 'app' | 'link' | 'threads' | 'memory';
+  ref?: string;
+  embeddable?: boolean;
+}
+
+/**
  * A project space: a channel (product word "Channel") or a member's DM with one
  * agent. A thread is a `project_sessions` row whose `space_id` points here.
  * Named "space" in code because "channel" already means a chat integration
@@ -1200,6 +1217,8 @@ export const projectSpaces = kortixSchema.table(
     agents: text('agents').array().default(sql`'{}'::text[]`).notNull(),
     /** `private`: only the channel's members see it and its threads. `#general` and DMs are always `public` (check below). */
     visibility: projectSpaceVisibilityEnum('visibility').default('public').notNull(),
+    /** The space's tabs after Chat, in order (at most 20). People who may edit the space and its threads' agents replace the list (`PUT /spaces/:spaceId/tabs`). */
+    tabs: jsonb('tabs').$type<ProjectSpaceTabRecord[]>().default(sql`'[]'::jsonb`).notNull(),
     createdBy: uuid('created_by'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1984,7 +2003,7 @@ export const projectTriggerRuntime = kortixSchema.table(
     autoPausedReason: text('auto_paused_reason'),
     autoPauseResumedAt: timestamp('auto_pause_resumed_at', { withTimezone: true }),
     // The channel or DM (`project_spaces`) this trigger's runs post to as
-    // threads (`project_channels` flag). Account-local like the access policy,
+    // threads (`chat` flag). Account-local like the access policy,
     // so not in the manifest. null = no space: the run lands in `#general`.
     spaceId: uuid('space_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -8564,10 +8583,9 @@ export const notifications = kortixSchema.table('notifications', {
   // No FK: a soft-deleted session keeps its row; the read filter hides it.
   sessionId: text('session_id'),
   triggerSlug: text('trigger_slug'),
-  // A conversation message (`kind = 'message'`): the room it was posted in.
-  // No FK, like session_id: the read filter hides a row whose room is gone.
+  // Retired with Rooms (2026-11): no code reads room_id / room_thread_seq. Dropped by
+  // packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
   roomId: uuid('room_id'),
-  // A thread reply: the thread's root seq, so the link opens the thread.
   roomThreadSeq: bigint('room_thread_seq', { mode: 'number' }),
   artifactId: uuid('artifact_id'),
   artifactThreadId: uuid('artifact_thread_id'),
@@ -8597,7 +8615,7 @@ export const notifications = kortixSchema.table('notifications', {
   index('idx_notifications_artifact').on(table.artifactId).where(sql`${table.artifactId} IS NOT NULL`),
   index('idx_notifications_artifact_thread').on(table.artifactThreadId).where(sql`${table.artifactThreadId} IS NOT NULL`),
   index('idx_notifications_created').on(table.createdAt),
-  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message', 'artifact_comment')`),
+  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message', 'artifact_comment')`), // 'message': retired with Rooms; old rows age out
 ]);
 
 /** One record per user: partial overrides of the default notification preferences. */
@@ -8645,6 +8663,9 @@ export const triggerWatchers = kortixSchema.table('trigger_watchers', {
 ]);
 
 /**
+ * Retired with Rooms (2026-11): no code reads it. Dropped by
+ * packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
+ *
  * A room: a named, durable chat room of a project (`dev`, `platinum/dev`) that
  * agent sessions and people post in; anyone with `project.room.read` can find
  * it. `last_seq` numbers the messages; a post takes the next value under the
@@ -8668,7 +8689,12 @@ export const rooms = kortixSchema.table('rooms', {
   check('rooms_name_check', sql`${table.name} ~ '^[a-z0-9][a-z0-9._/-]{0,63}$'`),
 ]);
 
-/** One message. `sender_kind`: `member` (a person) or `session` (an agent). */
+/**
+ * Retired with Rooms (2026-11): no code reads it. Dropped by
+ * packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
+ *
+ * One message. `sender_kind`: `member` (a person) or `session` (an agent).
+ */
 export const roomMessages = kortixSchema.table('room_messages', {
   messageId: uuid('message_id').defaultRandom().primaryKey(),
   roomId: uuid('room_id').notNull(),
@@ -8689,6 +8715,9 @@ export const roomMessages = kortixSchema.table('room_messages', {
 ]);
 
 /**
+ * Retired with Rooms (2026-11): no code reads it. Dropped by
+ * packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
+ *
  * A member of a room: an agent session or a person.
  *   session: a message addressed to it steers its turn; other traffic arrives
  *            as one digest at its turn boundary (a stopped session wakes),
@@ -8726,7 +8755,10 @@ export const roomMembers = kortixSchema.table('room_members', {
 ]);
 
 /**
- * A one-shot "tell me when this session goes idle" (flag `agent_rooms`).
+ * Retired with Rooms (2026-11): no code reads it. Dropped by
+ * packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
+ *
+ * A one-shot "tell me when this session goes idle" (the removed `agent_rooms` flag).
  * When the target session's turn ends, it posts one message in `room_id`
  * @-mentioning the watcher with the outcome, and the row is deleted. A row past
  * `expires_at` is dropped unanswered.

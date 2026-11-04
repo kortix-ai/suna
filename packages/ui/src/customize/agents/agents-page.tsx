@@ -156,7 +156,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         ),
     [filtered, defaultAgent],
   );
-  // Spaces are Work in progress: with `project_channels` off, no space filter and no Space column.
+  // Spaces are Work in progress: with `chat` off, no space filter and no Space column.
   const spacesOn = useSpacesEnabled(projectId);
   const groups = useMemo(() => (spacesOn ? groupBySpace(work, config?.spaces) : []), [spacesOn, work, config?.spaces]);
   const [activeSpace, setActiveSpace] = useActiveSpace(projectId);

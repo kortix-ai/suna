@@ -37,6 +37,7 @@ import {
   sessionLogTurnSegments,
   sessionPromptActions,
   splitSessionLogTurnWork,
+  isNoGroupActivityTool,
   toolCallMetadata,
   toolKind,
 } from '@kortix/sdk';
@@ -1872,6 +1873,29 @@ function segmentRendersSomething(segment: SessionLogSegment): boolean {
   return turnSegmentKey(segment) !== null;
 }
 
+/**
+ * The segments a messages-only thread (`TranscriptRows.messagesOnly`) draws:
+ * the agent's words and the deliverables it showed on purpose (`show`,
+ * `image_gen`), plus a call that waits on the person's permission. Never a
+ * burst (tools, thinking) or another standalone call (a sub-agent card).
+ * Settled, the interim sentences are work too: only the deliverables and the
+ * final text stay, the rule of the "Worked for" fold (`splitSessionLogTurnWork`).
+ * Exported for its test.
+ */
+export function messageOnlySegments(
+  segments: TurnSegments,
+  options: { working: boolean; permissions: readonly PermissionRequest[] },
+): TurnSegments {
+  const visible = segments.filter(segmentRendersSomething);
+  const kept = (segment: SessionLogSegment) => {
+    if (segment.kind === 'burst') return false;
+    if (segment.kind === 'text' || segment.kind === 'show-group') return true;
+    return isNoGroupActivityTool(segment.block.name) || !!getPermissionForTool(options.permissions, segment.block.call_id);
+  };
+  const split = options.working ? null : splitSessionLogTurnWork(visible, { working: false });
+  return (split ? [...split.hoisted, ...split.final] : visible).filter(kept);
+}
+
 function TurnSegment({
   segment,
   isTrailing,
@@ -2143,6 +2167,8 @@ function TurnFooter(
   props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'projectId' | 'projectSessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy' | 'modelOptions'> & {
     /** The row's floating toolbar draws the action bar instead (`TranscriptRowsContext`). */
     hideActionBar?: boolean;
+    /** The busy line says only that the agent works, never which tool runs (`messagesOnly`). */
+    quietBusy?: boolean;
     model: TurnModelState;
     errors: TurnErrorState;
     answered: TurnAnsweredState;
@@ -2254,9 +2280,11 @@ function TurnBusyRow(
     retry: TurnRetryState;
     status: TurnStatusState;
     tHardcodedUi: ReturnType<typeof useTranslations>;
+    /** No tool phrase or elapsed time (`messagesOnly`). */
+    quietBusy?: boolean;
   },
 ) {
-  const { working, turnError, suppressBusyIndicator, awaitingUser, sessionId, retry, status, tHardcodedUi } = props;
+  const { working, turnError, suppressBusyIndicator, awaitingUser, sessionId, retry, status, tHardcodedUi, quietBusy } = props;
   const { retryInfo, retryMessage, retrySecondsLeft } = retry;
   const { statusPhrase, statusElapsedLabel } = status;
   return (
@@ -2278,8 +2306,8 @@ function TurnBusyRow(
         )}
         <SessionBusyIndicator
           sessionId={sessionId}
-          statusText={statusPhrase || undefined}
-          elapsedLabel={statusElapsedLabel}
+          statusText={quietBusy ? undefined : statusPhrase || undefined}
+          elapsedLabel={quietBusy ? undefined : statusElapsedLabel}
           retryLabel={
             retryInfo
               ? String(
@@ -2470,6 +2498,8 @@ function SessionTurnImpl(props: SessionTurnProps) {
     );
   }
   if (isCompaction && compactionInfo) {
+    // A messages-only thread draws no session notice; the compaction marker is one.
+    if (rows?.messagesOnly) return null;
     return (
       <TurnCompactionOutcome
         {...props}
@@ -2497,10 +2527,30 @@ function SessionTurnImpl(props: SessionTurnProps) {
       ? { name: author.name, email: author.email, avatarUrl: author.avatar_url ?? null }
       : rows.owner;
     const personName = person ? participantLabel(person) : '';
-    const showAnswer = turn.assistant.length > 0 || model.working || !!errors.turnErrorRow.text;
+    const messagesOnly = rows.messagesOnly === true;
+    // Messages only: the agent's words and deliverables, never its work.
+    const shownSegments = messagesOnly
+      ? messageOnlySegments(segments, { working: model.working, permissions })
+      : segments;
+    const showAnswer = messagesOnly
+      ? model.working ||
+        !!errors.turnErrorRow.text ||
+        (!model.hasSteps && model.response.trim() !== '') ||
+        hasCopyableResponse('', answered.inlineContentParts) ||
+        shownSegments.length > 0
+      : turn.assistant.length > 0 || model.working || !!errors.turnErrorRow.text;
+    // Messages only: a person's prompt, never a notice, a report, a peer message or a restore note.
+    const showUser = messagesOnly
+      ? userContent.hasVisibleUserContent &&
+        !userContent.sessionReport &&
+        !userContent.noticeBatch &&
+        !userContent.subagentNotice &&
+        !userContent.peerMessage &&
+        !isSessionLogRestoreNote(turn.user)
+      : userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.peerMessage || userContent.systemMessages.length > 0;
     return (
       <div className="text-factor-[2]">
-        {userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.peerMessage || userContent.systemMessages.length > 0 ? (
+        {showUser ? (
           <MessageRow
             // The first message's turn clips its toolbar's overhang: it sits inside the row.
             className={cn('group/turn', props.isFirstTurn && '[&_[data-slot=row-toolbar]]:top-0.5')}
@@ -2520,7 +2570,11 @@ function SessionTurnImpl(props: SessionTurnProps) {
             name={sender ?? (personName || rows.unknownAuthor)}
             time={rowTime(userAt, locale)}
           >
-            <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
+            {messagesOnly ? (
+              <TurnUserBubble {...props} queueTone={queueTone} userContent={userContent} />
+            ) : (
+              <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
+            )}
           </MessageRow>
         ) : null}
         {props.isFirstTurn ? afterFirstPrompt : null}
@@ -2551,19 +2605,20 @@ function SessionTurnImpl(props: SessionTurnProps) {
             }
           >
             <div className="mt-0.5 space-y-2.5">
-              <TurnFallbackRows working={model.working} events={props.servedModel?.fallbacks} />
+              {messagesOnly ? null : <TurnFallbackRows working={model.working} events={props.servedModel?.fallbacks} />}
               <GenuiTelemetryContext.Provider value={genuiTelemetry}>
                 <TurnToolBlocks
                   {...props}
                   model={model}
-                  segments={segments}
+                  segments={shownSegments}
                   conversationDensity={conversationDensity}
-                  fold={!answered.shouldUseInlineContent}
+                  // The segments are already the message's: nothing is left to fold.
+                  fold={!messagesOnly && !answered.shouldUseInlineContent}
                   durationMs={meta.turnDurationMs}
                 />
                 <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
               </GenuiTelemetryContext.Provider>
-              <TurnFooter {...props} hideActionBar model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
+              <TurnFooter {...props} hideActionBar quietBusy={messagesOnly} model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
             </div>
           </MessageRow>
         ) : null}
@@ -2653,13 +2708,14 @@ export const TranscriptTurnRow = memo(function TranscriptTurnRow({
   onLoadFullText,
   ...turnProps
 }: TranscriptTurnRowProps) {
+  const rows = useContext(TranscriptRowsContext);
   return (
     <TurnViewport
       turnId={turnId}
       className={viewportClassName}
       continues={turnProps.turn.compaction !== null || turnProps.turn.continues !== null}
     >
-      {continuedWith && (
+      {continuedWith && !rows?.messagesOnly && (
         <div className="mb-6">
           <HarnessSwitchMarker harness={continuedWith} />
         </div>

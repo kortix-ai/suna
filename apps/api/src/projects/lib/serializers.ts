@@ -21,7 +21,7 @@ import { sessionInitiatorLabel } from './session-initiator';
 import { sessionRestoreUntil } from '../session-log-purge';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
-import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
+import { buildFeatureFlagCatalog, resolveFeatureFlag, resolveFeatureFlags } from '../../feature-flags/registry';
 // The request reader `requestAuditContext` lives in `middleware/request-audit.ts`.
 // Re-exported here so every importer and mock keeps working.
 export { requestAuditContext } from '../../middleware/request-audit';
@@ -356,6 +356,8 @@ export function serializeProject(
     // `volumes` and `drives` graduated on 2026-11-02: every project has a Drive
     // where the platform stores one. Both keys stay, equal to that availability,
     // because older web, SDK, TUI and CLI builds show the Drive only while they read true.
+    // `project_channels` merged into `chat` (2026-11) and stays, equal to `chat`:
+    // released TUI, mobile and CLI builds show Channels only while they read true.
     experimental: {
       ...resolveFeatureFlags(row.metadata),
       apps: true,
@@ -369,6 +371,7 @@ export function serializeProject(
       warm_sessions: false,
       volumes: isPlatinumConfigured(),
       drives: isPlatinumConfigured(),
+      project_channels: resolveFeatureFlag(row.metadata, 'chat'),
     },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`

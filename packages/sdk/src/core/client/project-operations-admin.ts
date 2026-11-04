@@ -20,7 +20,11 @@ export function bindProjectOperationsAdmin(projectId: string) {
       removeMany: (...a: DropFirst<Parameters<typeof P.deleteSessionReminders>>) =>
         P.deleteSessionReminders(projectId, ...a),
     },
-    /** Conversations between sessions and people (flag `agent_rooms`) — see `listRooms`. */
+    /**
+     * Conversations between sessions and people (flag `agent_rooms`) — see `listRooms`.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     rooms: {
       list: (...a: DropFirst<Parameters<typeof P.listRooms>>) => P.listRooms(projectId, ...a),
       create: (...a: DropFirst<Parameters<typeof P.createRoom>>) => P.createRoom(projectId, ...a),

@@ -61,8 +61,8 @@ const API_CONTRACT = [`${apiContract}/**`, at('../../packages/api-contract/src/*
 // The SDK's import-free message-id codec, reached the same way (pi and the session-log boot mint ids with it).
 const SDK_WIRE_MESSAGE_ID_FILE = 'packages/sdk/src/core/session/wire-message-id.ts'
 const SDK_WIRE_MESSAGE_ID = [resolve(import.meta.dirname, '../..', SDK_WIRE_MESSAGE_ID_FILE).split(sep).join('/'), at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)]
-// The import-free prompt envelopes of a cross-session and a room message (pi reads a turn's origin from them).
-const PROMPT_ENVELOPE_FILES = ['packages/shared/src/peer-message-prompt.ts', 'packages/shared/src/room-prompt.ts']
+// The import-free prompt envelope of a cross-session message (pi reads a turn's origin from it).
+const PROMPT_ENVELOPE_FILES = ['packages/shared/src/peer-message-prompt.ts']
 const PROMPT_ENVELOPES = PROMPT_ENVELOPE_FILES.flatMap((file) => [resolve(import.meta.dirname, '../..', file).split(sep).join('/'), at(`../../${file}`)])
 // The voice (packages/voice): imported by the kortix-voice extension only while the project's voice_call flag is on.
 const VOICE = [`${resolve(import.meta.dirname, '../../packages/voice/src').split(sep).join('/')}/**`, at('../../packages/voice/src/**')]
@@ -136,7 +136,6 @@ const independentModules = createIndependentModules({
       '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')],
       '@kortix/sdk/wire-message-id': [at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)],
       '@kortix/shared/peer-message-prompt': [at('../../packages/shared/src/peer-message-prompt.ts')],
-      '@kortix/shared/room-prompt': [at('../../packages/shared/src/room-prompt.ts')],
       '@kortix/voice/*': [at('../../packages/voice/src/*')],
     },
   },

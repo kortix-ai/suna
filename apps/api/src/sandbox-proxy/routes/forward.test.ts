@@ -158,6 +158,8 @@ mock.module('../../projects/surface', () => ({
   // module LINK error, not a null.
   missingClaudeSubscription: async () => null,
   sessionModelPin: async () => null,
+  // The turn's origin block ("## Where you are") reads the session row here; inert in this suite.
+  sessionWhereTurn: async () => null,
 }));
 
 const { forwardToSandbox } = await import('./preview');

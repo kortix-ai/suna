@@ -6,7 +6,7 @@ import { selfHostOperatorAllowlist } from './self-host-operator';
 /**
  * Writes the self-host sign-up policy that the auth service's
  * before-user-created hook reads (kortix.before_user_created_hook, migration
- * 20261104152751990). Each API process writes it at boot, so `kortix self-host
+ * 20261104155306917). Each API process writes it at boot, so `kortix self-host
  * env set KORTIX_SIGNUP_MODE=…` or a changed KORTIX_PLATFORM_ADMIN_EMAILS takes
  * effect with the API roll. The operator addresses are reserved: nobody can
  * claim one by signing up, so an allowlisted address without an account can no

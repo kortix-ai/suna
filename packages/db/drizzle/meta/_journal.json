@@ -1531,8 +1531,15 @@
     {
       "idx": 218,
       "version": "7",
-      "when": 1793806038841,
-      "tag": "20261104152718_self_host_signup_policy",
+      "when": 1793804676095,
+      "tag": "20261104150436_project_space_tabs",
+      "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1793807577127,
+      "tag": "20261104155257_self_host_signup_policy",
       "breakpoints": true
     }
   ]

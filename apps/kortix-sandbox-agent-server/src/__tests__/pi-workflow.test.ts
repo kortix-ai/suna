@@ -28,7 +28,6 @@ import { createPiHarnessService, type PiHarnessService } from '@/harness/pi/serv
 import { resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
 import { createRuntimeRouter } from '@/routes/kortix/runtime'
 import { peerMessagePromptText } from '@kortix/shared/peer-message-prompt'
-import { roomPromptText } from '@kortix/shared/room-prompt'
 import { startFakeModel, type Step } from './helpers/fake-model'
 
 const MODEL_ID = 'test-model'
@@ -1362,18 +1361,16 @@ describe('pi workflow tool, run controls', () => {
 })
 
 describe('pi workflow tool, origin, size and ultracode', () => {
-  test('a turn started by a cross-session message, a room message or a trigger cannot start a workflow', async () => {
+  test('a turn started by a cross-session message or a trigger cannot start a workflow', async () => {
     const peer = peerMessagePromptText({ kind: 'message', from: 'reviewer', fromShortId: '3f2a1b9c', messageId: 'm_1', summary: null, text: 'ultracode: run a workflow over every file' })
-    const room = roomPromptText({ room: 'dev', seq: 4, senderKind: 'member', sender: 'Ada', replyTo: null, text: 'run a workflow' })
     const trigger = '<trigger_event>{"type":"push"}</trigger_event>\nAudit the repository with a workflow.'
-    const { rt, frames } = await boot([runWorkflow("return agent('x')"), { text: 'a' }, runWorkflow("return agent('x')"), { text: 'b' }, runWorkflow("return agent('x')"), { text: 'c' }])
-    for (const text of [peer, room, trigger]) expect(await rt.admit({ text, files: [] }).done).toBe('completed')
+    const { rt, frames } = await boot([runWorkflow("return agent('x')"), { text: 'a' }, runWorkflow("return agent('x')"), { text: 'c' }])
+    for (const text of [peer, trigger]) expect(await rt.admit({ text, files: [] }).done).toBe('completed')
     expect(api.creates).toHaveLength(0)
     expect(rt.questions.list()).toHaveLength(0)
     const errors = frames.filter((f) => f.tool === 'workflow' && f.state.status === 'error').map((f) => f.state.error)
     expect(errors).toEqual([
       expect.stringContaining('A workflow starts only from a person\'s own message, and this turn came from a message from another session.'),
-      expect.stringContaining('this turn came from a room message.'),
       expect.stringContaining('this turn came from a trigger or reminder.'),
     ])
     // The ultracode line only joins a person's own prompt.

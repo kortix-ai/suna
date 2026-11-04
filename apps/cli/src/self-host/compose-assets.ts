@@ -626,7 +626,7 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
     authEnv.GOTRUE_HOOK_SEND_EMAIL_URI = '${GOTRUE_HOOK_SEND_EMAIL_URI}';
     authEnv.GOTRUE_HOOK_SEND_EMAIL_SECRETS = '${AUTH_EMAIL_HOOK_SECRET}';
     // Sign-up policy hook. GoTrue asks kortix.before_user_created_hook (a
-    // Postgres function, migration 20261104152751990) before it creates a user
+    // Postgres function, migration 20261104155306917) before it creates a user
     // from a sign-up, a magic link, an OAuth or SAML sign-in, or an invite. The
     // function reads the policy kortix-api writes from KORTIX_SIGNUP_MODE and
     // KORTIX_PLATFORM_ADMIN_EMAILS: an SSO sign-in always passes, an operator

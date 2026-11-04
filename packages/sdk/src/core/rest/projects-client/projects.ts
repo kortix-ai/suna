@@ -102,7 +102,11 @@ export type FeatureFlagKey =
   | 'session_log_restore'
   /** @deprecated Graduated — the Kortix connectors catalog is the only connectors path. Removed in the next major. */
   | 'connectors_v2'
+  /** Chat: a Slack-style chat with Kortix. Every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces are shared with people. Experimental, off by default. */
+  | 'chat'
+  /** @deprecated Withdrawn — merged into `chat` (2026-11). The API sends it equal to `chat` and writes `chat` for it; it is not in the catalog. Read `chat`. Removed in the next major. */
   | 'project_channels'
+  /** @deprecated Withdrawn — Rooms were removed (2026-11). The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'agent_rooms'
   /** Shared Drives: an admin makes a Drive and adds agents to it. Off by default: people have only My files. */
   | 'shared_drives'
@@ -120,6 +124,10 @@ export type FeatureFlagKey =
   | 'agent_teams'
   /** Voice calls: talk with the session's agent from the session page, with screen share. Off by default. */
   | 'voice_call'
+  /** Chat input: one composer control for the agent and every session override (model, effort, secrets, provider keys, sandbox). Experimental, off by default. */
+  | 'chat_input'
+  /** Talk-only threads: with `chat` on, a new space thread's agent only talks and hands the work to one hidden My Kortix session. Experimental, off by default. */
+  | 'chat_front'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -131,6 +139,8 @@ type GraduatedFeatureFlagKey =
   | 'session_transcript_history'
   | 'agent_principal'
   | 'human_messaging'
+  | 'project_channels'
+  | 'agent_rooms'
   | 'pi_worker'
   | 'config_releases'
   | 'apps'
@@ -165,8 +175,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'event_triggers',
   'notification_center',
   'session_log_restore',
-  'project_channels',
-  'agent_rooms',
+  'chat',
   'shared_drives',
   'goals',
   'workspace_volume',
@@ -177,6 +186,8 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'chrome',
   'agent_teams',
   'voice_call',
+  'chat_input',
+  'chat_front',
 ] as const;
 
 /**

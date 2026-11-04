@@ -39,13 +39,12 @@ function isOperatorRoute(route) {
 // The actions of a feature whose flag is off by default (apps/api/src/feature-flags/registry.ts).
 // The public docs leave such a feature out until its flag is on by default.
 const FLAGGED_ACTION_PREFIXES = {
-  agent_rooms: ['project.room.', 'session.room.', 'session.idle_notice.'],
   artifacts: ['project.artifact.', 'artifact.'],
   email_channel: ['channel.email.', 'webhook.email.'],
   event_triggers: ['trigger.event_apps.', 'trigger.event_types.', 'webhook.event.'],
   notification_center: ['notification.inbox.', 'notification.web_push.', 'notification.web_push_key.', 'session.watch.'],
   pooled_provider_secrets: ['secret.account_resource.', 'session.provider_secret_pool.'],
-  project_channels: ['project.space.', 'space.'],
+  chat: ['project.space.', 'space.'],
   session_groups: ['project.session_group.', 'session.group.'],
 };
 

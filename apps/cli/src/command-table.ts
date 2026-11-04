@@ -127,22 +127,10 @@ export const TIERS: readonly CommandTier[] = [
             blurb: "Talk to a session's agent (REPL or --prompt)",
           },
           {
-            name: 'rooms',
-            args: '<subcommand>',
-            blurb: 'Chat rooms where sessions and people talk (join, send, read, next)',
-            featureFlag: 'agent_rooms',
-          },
-          {
             name: 'tasks',
             args: '[<lead>] <subcommand>',
             blurb: "An agent team's shared task list: ls, add, claim, done, update, rm",
             featureFlag: 'agent_teams',
-          },
-          {
-            name: 'peers',
-            args: '',
-            blurb: 'Sessions and people you can @-mention in a room, with session status',
-            featureFlag: 'agent_rooms',
           },
           {
             name: 'tui',

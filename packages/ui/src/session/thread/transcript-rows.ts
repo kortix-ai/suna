@@ -23,6 +23,15 @@ export interface TranscriptRows {
    * key: a channel thread says "this thread's computer", not "session".
    */
   notices?: Partial<Record<keyof typeof SESSION_NOTICE, string>>;
+  /**
+   * Only messages: the person's prompts and the agent's words, plus the
+   * deliverables it shows on purpose (`show`, `image_gen`). No "Worked for"
+   * row, no tool, thinking or sub-agent rows, no notice or peer-message rows,
+   * and no agent row for a settled turn that said nothing. While the turn
+   * works, its row is the quiet busy line. A space's thread panel sets it
+   * with the `chat` flag on; the full session still shows every step.
+   */
+  messagesOnly?: boolean;
   /** The stuck-boot restart button in the host's terms ("Restart thread"). */
   labels?: {
     restart: string;

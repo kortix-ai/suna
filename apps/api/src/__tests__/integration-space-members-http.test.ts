@@ -61,7 +61,7 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'Northwind',
     repoUrl: 'https://example.test/n.git',
-    metadata: { experimental: { project_channels: true } },
+    metadata: { experimental: { chat: true } },
   });
   for (const [id, name] of USERS) {
     await db.execute(sql`

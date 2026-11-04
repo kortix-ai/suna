@@ -139,6 +139,7 @@ import { deleteMessageLinkParams, readMessageLinkParams, resolveMessageLinkTurn 
 const MESSAGE_LINK_MOUNT_WAIT_MS = 8_000;
 import { TurnOutcomes } from '../outcomes/turn-outcomes';
 import { SessionOverridesComposer } from '../overrides/session-overrides-composer';
+import { inheritedModelFor } from '../composer/chat-input/chat-input-summary';
 import {
   type QuestionAction,
   QuestionPrompt,
@@ -5092,6 +5093,7 @@ export function SessionChat({
                 selectedModel={local.model.currentKey ?? null}
                 onModelChange={handleModelChange}
                 modelDefaultControls={chatModelDefaultControls}
+                inheritedModel={inheritedModelFor(local.model, composerAgentName)}
                 variants={local.model.variant.list}
                 selectedVariant={local.model.variant.current ?? null}
                 onVariantChange={handleVariantChange}

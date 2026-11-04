@@ -1300,10 +1300,6 @@
           "name": "セッションログからの復元",
           "description": "セッションのコンピューターが会話を失ったとき、保存されたセッションログからセッションを再構築します。Kortix がプロジェクトごとに有効にします。"
         },
-        "agent_rooms": {
-          "name": "ルーム",
-          "description": "エージェントのセッションとユーザーが投稿し、スレッドで返信できる名前付きチャットルーム。メッセージが宛てられたセッションは再開します。ルームページ、`kortix rooms`、`kortix peers` が追加されます。"
-        },
         "goals": {
           "name": "目標",
           "description": "エージェントに目標を与えると、独立したチェックが結果を確認するまでエージェントが責任を持ちます。計画し、作業し、待機し、人にフォローアップし、状態をファイルの Goals フォルダーに保存します。ボリュームとループを有効にする必要があります。"
@@ -1320,9 +1316,9 @@
           "name": "メールチャネル",
           "description": "エージェントに Resend のメール受信箱を用意します。届いたメールでセッションを開始・継続し、エージェントはその受信箱で読み、返信し、送信します。自分の Resend API キーとドメインを使います。"
         },
-        "project_channels": {
-          "name": "チャンネル",
-          "description": "作業をチャンネルで整理します。チャンネルでの新しいメッセージや、エージェントとのダイレクトメッセージはそれぞれスレッドを開始します。サイドバーのセッション一覧を置き換えます。"
+        "chat": {
+          "name": "チャット",
+          "description": "Slack のような Kortix とのチャット：各メッセージがスレッドになり、Kortix の最新の返信がその下に表示されます。Kortix もスレッドを開始でき、スペースは他の人と共有できます。サイドバーのセッション一覧を置き換えます。"
         },
         "session_groups": {
           "name": "セッショングループ",
@@ -1347,16 +1343,24 @@
         "shared_drives": {
           "name": "共有ドライブ",
           "description": "チーム全体で使えるドライブです。管理者がドライブを作成してエージェントを追加します。そのエージェントの各セッションがドライブをマウントし、いずれかのエージェントを使える人は誰でも開けます。オフのときは、各自のマイファイルだけになります。"
+        },
+        "chat_input": {
+          "name": "チャット入力",
+          "description": "入力欄の下にある 1 つのコントロールで、誰がどう答えるかを決めます。エージェントを選ぶと、他の設定はすべてそのエージェントから引き継ぐ自動のままです。行を開くと、このセッションのモデル、思考レベル、シークレット、プロバイダーキー、サンドボックスを上書きでき、1 クリックで自動に戻せます。"
+        },
+        "chat_front": {
+          "name": "会話専用スレッド",
+          "description": "チャットがオンのとき、スペースの新しいメッセージは、会話だけを行うエージェントのスレッドを開始します。エージェントはすべての依頼を、作業を行う非表示の My Kortix セッション 1 つに渡し、大事なことだけを短いメッセージで答えます。kortix.yaml で My Kortix をオンにする必要があります。"
         }
       },
       "channelsSwitch": {
-        "onTitle": "{project} でチャンネルをオンにしますか？",
-        "onBody": "このプロジェクトの全員に、セッション一覧の代わりにチャンネルとダイレクトメッセージが表示されます。既存のセッションはすべて #general に移動します。いつでもオフにでき、何も削除されません。",
-        "drive": "ドライブもオンにして、チャンネルでファイルを使えるようにする。",
+        "onTitle": "{project} でスペースをオンにしますか？",
+        "onBody": "このプロジェクトの全員に、セッション一覧の代わりにスペースとダイレクトメッセージが表示されます。既存のセッションはすべて #general に移動します。いつでもオフにでき、何も削除されません。",
+        "drive": "ドライブもオンにして、スペースでファイルを使えるようにする。",
         "turnOn": "オンにする",
         "cancel": "キャンセル",
-        "offTitle": "チャンネルをオフにしますか？",
-        "offBody": "チャンネル、メモリ、ファイル、リンクは保存されたままです。全員にセッション一覧が戻ります。",
+        "offTitle": "スペースをオフにしますか？",
+        "offBody": "スペース、メモリ、ファイル、リンクは保存されたままです。全員にセッション一覧が戻ります。",
         "turnOff": "オフにする"
       },
       "wip": "Work in progress",
@@ -1557,7 +1561,6 @@
     }
   },
   "sidebar": {
-    "rooms": "ルーム",
     "goals": "ゴール",
     "artifacts": "アーティファクト",
     "referAndEarn": "紹介して獲得",
@@ -1866,10 +1869,10 @@
     "searchApps": "アプリを検索",
     "appsNoMatches": "一致するものはありません",
     "spaces": {
-      "channels": "チャンネル",
+      "channels": "スペース",
       "directMessages": "ダイレクトメッセージ",
-      "addChannel": "チャンネルを追加",
-      "loadError": "チャンネルを読み込めませんでした。",
+      "addChannel": "新しいスペース",
+      "loadError": "スペースを読み込めませんでした。",
       "newAgent": "新しいエージェント"
     }
   },
@@ -2269,6 +2272,38 @@
     "thinkingEffort": "思考レベル",
     "sessionOverrides": "セッションの上書き",
     "auto": "自動",
+    "chatInput": "チャット入力",
+    "chatInputAgent": "エージェント",
+    "chatInputModel": "モデル",
+    "chatInputEffort": "レベル",
+    "chatInputMoreSettings": "その他の設定",
+    "chatInputOverrideCount": "{count, plural, other {# 件の上書き}}",
+    "chatInputResetToAuto": "自動に戻す",
+    "chatInputAgentDescription": "次のプロンプトに答えるエージェント。",
+    "chatInputModelDescription": "次のプロンプトでエージェントが使うモデル。",
+    "chatInputEffortDescription": "モデルが回答前に考える時間。",
+    "chatInputMore": "その他",
+    "chatInputChangedCount": "{count} 件変更",
+    "chatInputAgentDefault": "エージェントの既定",
+    "chatInputLoading": "読み込み中…",
+    "chatInputSecrets": "シークレット",
+    "chatInputSecretsDescription": "このセッションに渡すシークレット。",
+    "chatInputSecretsAll": "{count, plural, other {エージェントが使える # 件のシークレット}}",
+    "chatInputSecretsEmpty": "このエージェントのシークレットはありません。",
+    "chatInputSecretsUnavailable": "ここではシークレットを読み込めません。",
+    "chatInputSecretCount": "{count, plural, other {# 件のシークレット}}",
+    "chatInputConnectors": "コネクタ",
+    "chatInputConnectorsDescription": "このセッションで各アプリが使うアカウント。",
+    "chatInputConnectorsAll": "すべてのアプリが既定のアカウントを使用",
+    "chatInputConnectorsUnavailable": "ここではコネクタを読み込めません。",
+    "chatInputDefaultAccount": "既定",
+    "chatInputAppCount": "{count, plural, other {# 件のアプリを変更}}",
+    "chatInputProviderKeysDescription": "このセッションのモデル呼び出しに使うプロバイダーキー。",
+    "chatInputProviderKeysAll": "エージェントが現在使っているキー",
+    "chatInputProviderKeysEmpty": "選べるプロバイダーキーはありません。",
+    "chatInputKeyCount": "{count, plural, other {# 件のキー}}",
+    "chatInputMachine": "マシン",
+    "chatInputMachineDescription": "このセッションを起動するマシンテンプレート。",
     "sending": "送信中",
     "stop": "停止",
     "startingSession": "セッションを開始しています…",
@@ -2306,7 +2341,8 @@
     "submitEdit": "送信",
     "collapseQueue": "キューを折りたたむ",
     "expandQueue": "キューを展開",
-    "myKortixRoutes": "各タスクを適したエージェントへ"
+    "myKortixRoutes": "各タスクを適したエージェントへ",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {
@@ -3299,7 +3335,6 @@
       "automation_recovered": "復旧アラート",
       "capture_device_down": "Capture のコンピューターが停止",
       "capture_device_recovered": "Capture のコンピューターが復旧",
-      "message": "メッセージ",
       "artifact_comment": "アーティファクトのコメント"
     },
     "kindDescription": {
@@ -3312,7 +3347,6 @@
       "automation_recovered": "失敗していたトリガーまたはループが再び動作します。",
       "capture_device_down": "Kortix Capture のコンピューターが記録していません。Capture の管理者に送られます。",
       "capture_device_recovered": "停止していた Kortix Capture のコンピューターが再び記録しています。",
-      "message": "ルームで誰かがあなたを @ でメンションするか、あなたが投稿したスレッドに返信したとき。",
       "artifact_comment": "閲覧できるアーティファクトへのフィードバック、メンション、返信。"
     },
     "bell": {
@@ -21333,7 +21367,7 @@
     "copyFailed": "クリップボードにコピーできませんでした",
     "threads": "スレッド",
     "recentThreads": "最近のスレッド",
-    "searchChannels": "チャンネル、スレッド、コマンドを検索…"
+    "searchChannels": "スペース、スレッド、コマンドを検索…"
   },
   "personalWelcome": {
     "dismiss": "閉じる",
@@ -21554,9 +21588,9 @@
     "perDay": "1日あたり",
     "noLimit": "上限なし",
     "postTo": "投稿先",
-    "postToHint": "実行ごとにそこで新しいスレッドが始まります。チャンネルがない場合、実行は #{channel} に入ります。",
-    "postToNone": "チャンネルなし",
-    "postToUnavailable": "利用できないチャンネル",
+    "postToHint": "実行ごとにそこで新しいスレッドが始まります。スペースがない場合、実行は #{channel} に入ります。",
+    "postToNone": "スペースなし",
+    "postToUnavailable": "利用できないスペース",
     "postToPrivate": "非公開: トリガーはここに投稿できません",
     "appLabel": "アプリ",
     "appPlaceholder": "アプリを選択",
@@ -23395,103 +23429,6 @@
     "enable": "{name}を有効にする",
     "enabling": "有効化中…"
   },
-  "rooms": {
-    "title": "ルーム",
-    "memberCount": "{count, plural, other {# 人のメンバー}}",
-    "members": "メンバー",
-    "agent": "エージェント",
-    "agentSender": "エージェント {name}",
-    "empty": "参加したルームがここに表示されます",
-    "emptyHint": "ルームを作成して、ユーザーとエージェントを追加してください。",
-    "loadError": "ルームを読み込めませんでした。再試行してください。",
-    "roomLoadError": "このルームを読み込めませんでした。再試行してください。",
-    "messagesLoadError": "メッセージを読み込めませんでした。もう一度お試しください。",
-    "retry": "再試行",
-    "back": "ルームに戻る",
-    "send": "メッセージを送信",
-    "sendFailed": "メッセージを送信できませんでした",
-    "peopleLoadError": "メンバーを読み込めませんでした。もう一度お試しください。",
-    "cardRoom": "ルーム {name}",
-    "digestCount": "{count, plural, other {新着メッセージ #件}}",
-    "digestMore": "… ほか {count} 件",
-    "cardFrom": "送信者",
-    "cardMessage": "メッセージ",
-    "cardReplyTo": "返信先",
-    "addRooms": "ルームを追加",
-    "addFailed": "メンバーを追加できませんでした",
-    "addMembers": "ユーザーとエージェントを追加",
-    "addMembersDescription": "メンバーはここに投稿されたメッセージを受け取ります。エージェントセッションは次のステップでそれを読みます。",
-    "addTopic": "トピックを追加",
-    "agents": "エージェント",
-    "browseRoomsDescription": "このプロジェクトのすべてのルームです。開いて読むか参加できます。",
-    "cancel": "キャンセル",
-    "roomName": "名前",
-    "roomNameHint": "小文字、数字、. _ / - を 64 文字まで使えます。",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "メンバーを閉じる",
-    "copied": "コピーしました",
-    "copyText": "メッセージのテキストをコピー",
-    "createRoom": "ルームを作成",
-    "createRoomDescription": "ルームは 1 つのトピックについての会話を、ユーザーとエージェントのためにまとめます。",
-    "createFailed": "ルームを作成できませんでした",
-    "editTopic": "トピックを編集",
-    "inThisRoom": "このルーム内",
-    "introRoom": "#{name} ルームの始まりです。",
-    "joinRoom": "ルームに参加",
-    "joinFailed": "ルームに参加できませんでした",
-    "joined": "参加済み",
-    "jumpToLatest": "最新へ移動",
-    "leaveRoom": "ルームから退出",
-    "memberActions": "{name} の操作",
-    "memberAdded": "{name} を追加しました",
-    "memberRemoved": "メンバーを削除しました",
-    "mentionHere": "#{name} の全員",
-    "mentionSomeone": "メンションする",
-    "mentionSuggestions": "メンションの候補",
-    "messageRoom": "#{name} へのメッセージ",
-    "messages": "メッセージ",
-    "new": "新着",
-    "newLineHint": "Shift + Enter で改行",
-    "noRooms": "一致するルームはありません",
-    "noMatches": "一致する結果はありません",
-    "people": "ユーザー",
-    "pickRoom": "リストからルームを開いてください",
-    "remove": "削除",
-    "removeAgentDescription": "エージェントセッションはこのルームのメッセージを受け取らなくなります。元に戻すには、エージェントを再度追加してください。",
-    "removeFailed": "メンバーを削除できませんでした",
-    "removePersonDescription": "このメンバーはこのルームのメッセージを受け取らなくなります。元に戻すには、再度追加してください。",
-    "removeTitle": "{name} をこのルームから削除しますか?",
-    "searchRooms": "ルームを検索",
-    "searchPeopleAndAgents": "ユーザーとエージェントを検索",
-    "today": "今日",
-    "topic": "トピック",
-    "topicFailed": "トピックを保存できませんでした",
-    "topicOptional": "トピック(任意)",
-    "topicPlaceholder": "このルームの内容",
-    "viewMembers": "メンバーを表示",
-    "viewMembersCount": "{count, plural, other {# 人のメンバーを表示}}",
-    "viewingRoom": "#{name} を表示中",
-    "yesterday": "昨日",
-    "you": "{name}(あなた)",
-    "status": {
-      "running": "実行中",
-      "starting": "起動中",
-      "stopped": "停止",
-      "failed": "失敗"
-    },
-    "replyInThread": "スレッドで返信",
-    "thread": "スレッド",
-    "closeThread": "スレッドを閉じる",
-    "backToRoom": "ルームに戻る",
-    "replyPlaceholder": "返信…",
-    "replyCount": "{count, plural, other {# 件の返信}}",
-    "lastReply": "最終返信 {time}",
-    "threadLoadError": "このスレッドを読み込めませんでした。再試行してください。",
-    "join": "参加",
-    "openRoom": "開く",
-    "gateDescription": "ルームをオンにすると、このプロジェクトのエージェントセッションとメンバーが名前付きのチャットルームで会話できます。",
-    "archivedNotice": "このルームはアーカイブ済みです。メッセージは保持されますが、新規投稿はできません。"
-  },
   "goals": {
     "title": "ゴール",
     "gateDescription": "エージェントは目標を検証可能に達成するまで担当します。ゴールはファイルに保存され、毎日のハートビートで起動し、必要なものを人に催促し、独立した確認で完了します。",
@@ -24561,7 +24498,7 @@
       },
       "company": {
         "subtitle": "このプロジェクトのすべてのエージェントが知っていること。",
-        "gateDescription": "会社のメモリはチャンネルの機能です。このプロジェクトのすべてのエージェントは、チームがここに保存した内容を持ってスレッドを始めます。",
+        "gateDescription": "会社のメモリはスペースの機能です。このプロジェクトのすべてのエージェントは、チームがここに保存した内容を持ってスレッドを始めます。",
         "title": "メモリ",
         "place": "会社"
       },
@@ -24592,29 +24529,29 @@
       }
     },
     "create": {
-      "title": "チャンネルを作成",
-      "description": "このプロジェクトの全員がチャンネルを表示して使用できます。",
+      "title": "スペースを作成",
+      "description": "このプロジェクトの全員がスペースを表示して使用できます。",
       "nameLabel": "名前",
       "namePlaceholder": "marketing",
-      "slugPlaceholder": "channel-name",
+      "slugPlaceholder": "space-name",
       "descriptionLabel": "説明（任意）",
-      "descriptionPlaceholder": "このチャンネルの用途",
-      "submit": "チャンネルを作成",
-      "created": "チャンネルを作成しました",
+      "descriptionPlaceholder": "このスペースの用途",
+      "submit": "スペースを作成",
+      "created": "スペースを作成しました",
       "nameRequired": "名前を入力してください。",
       "invalidName": "名前には英字か数字を 1 文字以上含めてください。",
       "slugTaken": "<link>#{slug}</link> はすでにあります。",
-      "failed": "チャンネルを作成できませんでした。もう一度お試しください。",
-      "renameTitle": "チャンネル名を変更",
-      "renameDescription": "チャンネルのリンクは名前と一緒に変わります。",
+      "failed": "スペースを作成できませんでした。もう一度お試しください。",
+      "renameTitle": "スペース名を変更",
+      "renameDescription": "スペースのリンクは名前と一緒に変わります。",
       "save": "保存",
-      "renamed": "チャンネル名を変更しました",
-      "renameFailed": "チャンネル名を変更できませんでした。もう一度お試しください。",
-      "descriptionPrivate": "追加したメンバーだけがチャンネルを表示して使用できます。",
+      "renamed": "スペース名を変更しました",
+      "renameFailed": "スペース名を変更できませんでした。もう一度お試しください。",
+      "descriptionPrivate": "追加したメンバーだけがスペースを表示して使用できます。",
       "privateLabel": "プライベート",
       "privateHint": "招待されたメンバーだけが表示できます。",
-      "privateUnavailable": "このワークスペースではプライベートチャンネルはまだ利用できません。",
-      "privateLimits": "プライベートにすると、他の人からチャンネルが見えなくなります。コードの変更（git ブランチ）とエージェント自身のツールはプライベートになりません。",
+      "privateUnavailable": "このワークスペースではプライベートスペースはまだ利用できません。",
+      "privateLimits": "プライベートにすると、他の人からスペースが見えなくなります。コードの変更（git ブランチ）とエージェント自身のツールはプライベートになりません。",
       "name": "名前",
       "taken": "スペース #{slug} はすでに存在します。",
       "about": "説明",
@@ -24640,24 +24577,24 @@
       "messageAgent": "{agent} へのメッセージ",
       "threadsEmptyTitle": "スレッドはまだありません",
       "threadsEmpty": "始めたスレッドがここに表示されます。",
-      "loadError": "このチャンネルを読み込めませんでした。",
+      "loadError": "このスペースを読み込めませんでした。",
       "threadsLoadError": "スレッドを読み込めませんでした。",
       "retry": "もう一度試す",
-      "notFound": "このチャンネルは存在しません。",
-      "notFoundHint": "リンクが間違っているか、誰かがチャンネル名を変更した可能性があります。",
+      "notFound": "このスペースは存在しません。",
+      "notFoundHint": "リンクが間違っているか、誰かがスペース名を変更した可能性があります。",
       "openDefault": "#{name} を開く",
       "archivedTitle": "#{name} はアーカイブされています。",
       "archivedHint": "アーカイブを解除すると、ここでまたスレッドを読んだり始めたりできます。",
       "archivedLocked": "アーカイブを解除できるのは、作成者またはプロジェクト管理者のみです。",
-      "unarchive": "チャンネルのアーカイブを解除",
-      "unarchived": "チャンネルのアーカイブを解除しました",
-      "unarchiveFailed": "チャンネルのアーカイブを解除できませんでした。もう一度お試しください。",
+      "unarchive": "スペースのアーカイブを解除",
+      "unarchived": "スペースのアーカイブを解除しました",
+      "unarchiveFailed": "スペースのアーカイブを解除できませんでした。もう一度お試しください。",
       "dmFailed": "この会話を開けませんでした。",
-      "archive": "チャンネルをアーカイブ",
+      "archive": "スペースをアーカイブ",
       "archiveTitle": "#{name} をアーカイブしますか？",
-      "archiveDescription": "チャンネルはすべてのメンバーのサイドバーから消えます。スレッドは残り、作成者またはプロジェクト管理者がアーカイブを解除できます。",
-      "archived": "チャンネルをアーカイブしました",
-      "archiveFailed": "チャンネルをアーカイブできませんでした。もう一度お試しください。",
+      "archiveDescription": "スペースはすべてのメンバーのサイドバーから消えます。スレッドは残り、作成者またはプロジェクト管理者がアーカイブを解除できます。",
+      "archived": "スペースをアーカイブしました",
+      "archiveFailed": "スペースをアーカイブできませんでした。もう一度お試しください。",
       "threadTitle": "スレッド",
       "closeThread": "スレッドを閉じる",
       "sendFailed": "スレッドを開始できませんでした。もう一度お試しください。",
@@ -24689,7 +24626,7 @@
         },
         "links": {
           "title": "まだリンクはありません",
-          "description": "{place} のスレッドで共有されたリンクがここに表示されます。固定すると、チャンネルのすべてのエージェントに渡されます。"
+          "description": "{place} のスレッドで共有されたリンクがここに表示されます。固定すると、スペースのすべてのエージェントに渡されます。"
         },
         "triggers": {
           "title": "まだトリガーはありません",
@@ -24722,8 +24659,8 @@
         "titlePlaceholder": "内容",
         "invalidUrl": "example.com のような有効なリンクを入力してください。",
         "addFailed": "リンクを追加できませんでした。もう一度お試しください。",
-        "limit": "このチャンネルにはすでに 200 件の固定リンクがあります。先に 1 件の固定を解除してください。",
-        "addLimit": "このチャンネルにはすでに 200 件の追加済みリンクがあります。先に 1 件を削除してください。",
+        "limit": "このスペースにはすでに 200 件の固定リンクがあります。先に 1 件の固定を解除してください。",
+        "addLimit": "このスペースにはすでに 200 件の追加済みリンクがあります。先に 1 件を削除してください。",
         "added": "追加日",
         "remove": "リンクを削除",
         "removeTitle": "このリンクを削除しますか？",
@@ -24743,7 +24680,7 @@
         "all": "すべて",
         "sharedBy": "共有者",
         "earlier": "それ以前",
-        "pinHint": "固定します。チャンネルのすべてのエージェントが固定リンクを読みます。",
+        "pinHint": "固定します。スペースのすべてのエージェントが固定リンクを読みます。",
         "unpinHint": "固定を解除します。エージェントは読まなくなります。",
         "copyLink": "リンクをコピー",
         "linkCopied": "リンクをコピーしました",
@@ -24753,7 +24690,7 @@
       "appsLoadError": "アプリを読み込めませんでした。",
       "triggers": {
         "loadError": "トリガーを読み込めませんでした。",
-        "privateNote": "トリガーは非公開チャンネルに投稿できません。代わりにスレッドでループを設定してください。"
+        "privateNote": "トリガーは非公開スペースに投稿できません。代わりにスレッドでループを設定してください。"
       },
       "reply": "返信",
       "rosterTitlePeople": "メンバー",
@@ -24799,19 +24736,68 @@
         "rememberHint": "すべてのエージェントが読むメモ"
       },
       "allAgents": "すべてのエージェント",
-      "join": "チャンネルに参加",
+      "join": "スペースに参加",
       "joined": "#{name} に参加しました。",
-      "joinFailed": "チャンネルに参加できませんでした。もう一度お試しください。"
+      "joinFailed": "スペースに参加できませんでした。もう一度お試しください。",
+      "openFullSession": "Open full session",
+      "tabEdit": {
+        "kind": {
+          "file": "ファイル",
+          "artifact": "Artifact",
+          "app": "App",
+          "folder": "Folder",
+          "link": "Link"
+        },
+        "add": "Add tab",
+        "full": "A space holds at most {max} tabs. Remove one first.",
+        "noArtifacts": "No artifacts yet",
+        "noApps": "No Apps in this project",
+        "spaceFiles": "This space’s files",
+        "otherFolder": "Another folder…",
+        "fileItem": "ファイル…",
+        "linkItem": "Link…",
+        "linkTitle": "Add a link",
+        "linkHint": "An https page, shown inside the tab.",
+        "folderTitle": "Add a folder",
+        "folderHint": "A Drive folder, by its path.",
+        "fileTitle": "ファイルを追加",
+        "fileHint": "Drive 内の任意のファイルをパスで指定します。.html ファイルはページとして表示されます。",
+        "url": "URL",
+        "path": "Folder path",
+        "filePath": "ファイルのパス",
+        "submit": "Add tab",
+        "cancel": "Cancel",
+        "options": "Options for {name}",
+        "rename": "Rename",
+        "renameTitle": "Rename tab",
+        "name": "Tab name",
+        "save": "Save",
+        "moveLeft": "Move left",
+        "moveRight": "Move right",
+        "remove": "Remove tab",
+        "removed": "Removed {name}",
+        "undo": "Undo",
+        "saveError": "The tabs could not be saved",
+        "openLink": "Open in new tab",
+        "linkCard": {
+          "description": "{host} は他のサイトのタブ内での表示を許可していません。",
+          "open": "開く"
+        },
+        "missing": {
+          "title": "This tab’s content is gone",
+          "description": "It was deleted or renamed, or it is not shared with you."
+        }
+      }
     },
     "details": {
       "about": "概要",
       "members": "メンバー",
-      "name": "チャンネル名",
+      "name": "スペース名",
       "description": "説明",
       "noDescription": "説明を追加",
       "created": "作成日",
       "editField": "{field}を編集",
-      "archiveTitle": "このチャンネルをアーカイブ",
+      "archiveTitle": "このスペースをアーカイブ",
       "archiveHint": "すべてのメンバーのサイドバーから消えます。スレッドは残ります。",
       "archive": "アーカイブ",
       "find": "メンバーやエージェントを検索",
@@ -24835,9 +24821,9 @@
       "peopleFailed": "メンバーを更新できませんでした。もう一度お試しください。",
       "personMenu": "{person} のオプション",
       "removePerson": "#{name} から外す",
-      "leave": "チャンネルを抜ける",
+      "leave": "スペースを抜ける",
       "left": "#{name} を抜けました。",
-      "leaveTitle": "このチャンネルを抜ける",
+      "leaveTitle": "このスペースを抜ける",
       "leaveHint": "抜けた後も閲覧でき、いつでも再参加できます。",
       "visibilityPrivate": "メンバーのみ",
       "privateNote": "#{name} はメンバーだけが表示できます。",
@@ -24851,7 +24837,7 @@
       "leaveHintPrivate": "自分のスレッドを含め、スレッド、ファイル、メモリにアクセスできなくなります。再参加するにはメンバーに追加してもらう必要があります。",
       "leavePrivateTitle": "#{name} を抜けますか？",
       "addMembers": "メンバーを追加",
-      "privateLimits": "プライベートにすると、他の人からチャンネルが見えなくなります。コードの変更（git ブランチ）とエージェント自身のツールはプライベートになりません。"
+      "privateLimits": "プライベートにすると、他の人からスペースが見えなくなります。コードの変更（git ブランチ）とエージェント自身のツールはプライベートになりません。"
     },
     "folder": {
       "memory": "メモリ",
@@ -24864,17 +24850,18 @@
       }
     },
     "onboarding": {
-      "reenabled": "チャンネルがオフの間に始まったセッションはここにあります。",
+      "reenabled": "スペースがオフの間に始まったセッションはここにあります。",
       "intro": {
-        "title": "チャンネルへようこそ",
-        "channels": "チャンネルはチームごとに作業をまとめます。",
+        "title": "スペースへようこそ",
+        "channels": "スペースはチームごとに作業をまとめます。",
         "threads": "新しいメッセージごとにスレッドが始まります。",
-        "memory": "エージェントは各チャンネルで決まったことを覚えます。",
-        "gotIt": "OK"
+        "memory": "エージェントは各スペースで決まったことを覚えます。",
+        "gotIt": "OK",
+        "tabs": "Every space has its own tabs. Add, rename and reorder them, or ask Kortix to."
       },
       "getStarted": {
         "dismiss": "閉じる",
-        "channel": "チーム用のチャンネルを作成する",
+        "channel": "チーム用のスペースを作成する",
         "done": "完了"
       }
     },
@@ -24903,9 +24890,9 @@
       "noMatches": "「{query}」に一致する項目はありません。"
     },
     "privateNotIn": {
-      "row": "参加していないプライベートチャンネル",
-      "title": "参加していないプライベートチャンネル",
-      "description": "名前の変更、アーカイブ、メンバーの追加ができます。チャンネルの内容を読めるのはメンバーだけなので、自分を追加することはできません。",
+      "row": "参加していないプライベートスペース",
+      "title": "参加していないプライベートスペース",
+      "description": "名前の変更、アーカイブ、メンバーの追加ができます。スペースの内容を読めるのはメンバーだけなので、自分を追加することはできません。",
       "meta": "{count, plural, =0 {メンバーなし} other {#人のメンバー}} · 作成者: {name}",
       "metaNoCreator": "{count, plural, =0 {メンバーなし} other {#人のメンバー}}",
       "archived": "アーカイブ済み",
@@ -24929,20 +24916,15 @@
       "board": {
         "brief": "概要",
         "text": "このスペースの目的と協力の方法。",
-        "label": "ルームとボード",
+        "label": "ボードと目標",
         "description": "概要とリンクのボード、続いて目標。"
       },
       "standard": {
-        "label": "ルーム、目標、アプリ、成果物",
-        "description": "ルームと、このスペースに紐づくコンテンツ。"
-      },
-      "room": {
-        "label": "ルームのみ",
-        "description": "会話をひとつ。タブは後から追加できます。"
+        "label": "目標、アプリ、成果物",
+        "description": "このスペースに紐づくコンテンツ。"
       }
     },
     "tabs": {
-      "room": "ルーム",
       "goals": "目標",
       "apps": "アプリ",
       "artifacts": "アーティファクト",
@@ -24967,7 +24949,7 @@
       "artifacts": "このスペースに紐づく成果物がここに表示されます",
       "folder": "このフォルダーは空です",
       "board": "このボードのブロックがここに表示されます",
-      "boardHint": "My Kortix に、メモ、アプリ、ファイル、埋め込みページ、別のルームなどのブロックの追加を依頼してください。"
+      "boardHint": "My Kortix に、メモ、アプリ、ファイル、埋め込みページなどのブロックの追加を依頼してください。"
     },
     "doc": "ドキュメント",
     "page": "ページ",
@@ -25005,8 +24987,8 @@
     "cancel": "キャンセル",
     "edit": {
       "title": "タブを編集",
-      "description": "ルームは先頭に固定されます。保存すると、デフォルトブランチの kortix.yaml にタブがコミットされます。",
-      "empty": "ルームのみです。+ でタブを追加できます。",
+      "description": "保存すると、デフォルトブランチの kortix.yaml にタブがコミットされます。",
+      "empty": "まだタブがありません。+ でタブを追加できます。",
       "save": "タブを保存",
       "rename": "{name} の名前を変更",
       "moveUp": "{name} を上に移動",
@@ -25019,24 +25001,18 @@
       "unread": "{count, plural, other {未読メッセージ # 件}}"
     },
     "leave": "{name} から退出",
-    "openRooms": "ルームを開く",
-    "roomHint": "エージェントとメンバーがここに更新を投稿します。",
-    "noRoom": "ルームはまだありません。",
     "agents": "このスペースのエージェント",
     "openAgent": "{name} を開く",
-    "members": "{count, plural, other {# 人}}",
     "needsYou": "あなたの対応待ち",
     "newSession": "新しいセッション",
     "askMyKortix": "My Kortix に依頼",
     "askPrompt": "{name} スペース（kortix.yaml の `spaces.{slug}`）のタブ、ヘッダー、またはエージェントを変更したいです。何を変更するか聞いてください。",
-    "roomsOff": "このプロジェクトではルームが無効です",
-    "roomsOffHint": "プロジェクト設定でルームを有効にすると、ここでメンバーやエージェントと会話できます。",
-    "room": {
-      "introTitle": "#{name} はここから始まります",
-      "introBody": "このスペースで作業する全員のためのルームです。",
-      "introAgents": "{count, plural, other {{names} がここに更新を投稿します。}}",
-      "introNoAgents": "このスペースに追加したエージェントがここに更新を投稿します。",
-      "introMention": "@ を入力して、メンバーやエージェントにメンションできます。"
+    "intro": {
+      "title": "#{name} はここから始まります",
+      "body": "このスペースで作業する全員のための場所です。",
+      "agents": "{count, plural, other {{names} がここに更新を投稿します。}}",
+      "noAgents": "このスペースに追加したエージェントがここに更新を投稿します。",
+      "addTab": "+ でタブを追加すると、目標、アプリ、ファイル、ボードをここに固定できます。"
     },
     "filter": "スペースで絞り込み",
     "all": "すべて",

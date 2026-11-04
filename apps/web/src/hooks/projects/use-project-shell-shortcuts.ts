@@ -34,7 +34,7 @@ function hrefForTab(projectId: string, id: string) {
  * | Mod+9                 | Switch to LAST open tab             |
  *
  * Mod+T and the desktop `new-session` command call `onNewSession`. With the
- * project's `project_channels` flag on, the shell passes "open the default
+ * project's `chat` flag on, the shell passes "open the default
  * channel" instead of "new session". Without `onNewSession` they do nothing.
  *
  * `Mod` follows the user's `tabSwitchModifier` preference (Ctrl by default).

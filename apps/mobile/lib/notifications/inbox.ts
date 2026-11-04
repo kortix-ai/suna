@@ -33,6 +33,7 @@ export const KIND_LABEL: Record<InboxNotificationKind, string> = {
   automation_recovered: 'Recovery alert',
   capture_device_down: 'Capture computer stopped',
   capture_device_recovered: 'Capture computer recording again',
+  // Retired with Rooms (2026-11); the SDK type still carries the kind.
   message: 'Message',
   artifact_comment: 'Artifact comments',
 };

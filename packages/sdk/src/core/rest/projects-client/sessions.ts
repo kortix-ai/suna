@@ -73,7 +73,7 @@ export interface ProjectSession {
   space_id?: string | null;
   /** The session group it is filed in (`session_groups`); null in no group. Absent on older APIs. */
   group_id?: string | null;
-  /** The first 500 characters of the first prompt; stored for sessions created while `project_channels` is on, else null. Absent on older APIs. */
+  /** The first 500 characters of the first prompt; stored for sessions created while `chat` is on, else null. Absent on older APIs. */
   first_prompt?: string | null;
   /**
    * A channel or DM thread list only (`listProjectSessions({ spaceId })`): the
@@ -278,9 +278,10 @@ export interface CreateProjectSessionInput {
   fork_from_session_id?: string;
   /**
    * The space (channel or DM, `listProjectSpaces`) to file the session in. Needs
-   * the project's `project_channels` flag. Omitted with the flag on: `#general`.
+   * the project's `chat` flag. Omitted with the flag on: `#general`. `null`:
+   * no space, as with the flag off (the regular new-session composer).
    */
-  space_id?: string;
+  space_id?: string | null;
   base_ref?: string;
   agent_name?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */
