@@ -364,7 +364,17 @@ export interface ProjectDetail {
   project: KortixProject;
   git_connection?: ProjectGitConnection | null;
   config: ProjectConfigSummary;
+  /**
+   * @deprecated Use `listProjectFiles(projectId, { path })`. The number of
+   * repository files for a caller with `project.file.read`, else `0`. Removed
+   * in the next major.
+   */
   file_count: number;
+  /**
+   * @deprecated Use `listProjectFiles(projectId, { path })` for the files of
+   * one folder. This list holds only the first 300 paths of the repository,
+   * so on a large repository it misses files. Removed in the next major.
+   */
   files: ProjectFileEntry[];
 }
 

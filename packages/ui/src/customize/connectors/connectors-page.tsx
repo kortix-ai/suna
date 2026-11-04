@@ -6,7 +6,7 @@ import {
   useConfigureThread,
 } from '../use-configure-thread';
 import { useTranslations as useI18nTranslations } from '../../i18n';
-import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
+import { listConnectors, type AdminConnector } from '@kortix/sdk';
 import { contract, FRESHNESS, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { CaretDownIcon, MagnifyingGlassIcon, PlugsConnectedIcon, ShieldIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -337,11 +337,6 @@ export function ConnectorsPage({
     queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     ...contract(FRESHNESS.connectors),
   });
-  const projectQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-  });
 
   const connectors = useMemo(() => connectorsQuery.data?.connectors ?? [], [connectorsQuery.data]);
   const connectedKeys = useMemo(() => connectedCatalogKeys(connectors), [connectors]);
@@ -381,25 +376,23 @@ export function ConnectorsPage({
     }
   }, [authorizationQueryKeys, queryClient]);
 
-  // Both queries gate what this page can offer, so both have to be able to
-  // report a failure and both have to be retried.
+  // A failed connector list must say so and offer a retry. `settled` does not
+  // cover it: react-query drops `isLoading` once a query has exhausted its
+  // retries, so on failure the page rendered as fully loaded with the list
+  // silently gone.
   //
-  // `settled` does not save us — react-query drops `isLoading` once a query
-  // has exhausted its retries, so on failure the page rendered as fully loaded
-  // with capabilities silently gone. Naming only `connectorsQuery` here also
-  // meant the one Retry on screen refetched the query that had not failed.
-  const isError = connectorsQuery.isError || projectQuery.isError;
+  // This page used to wait on the project detail too, and read nothing from
+  // it. The detail reads the repository and can take seconds, so the
+  // Connected grid waited on git for no answer (2026-11-04).
+  const isError = connectorsQuery.isError;
   const retry = useCallback(() => {
-    if (connectorsQuery.isError) void connectorsQuery.refetch();
-    if (projectQuery.isError) void projectQuery.refetch();
-  }, [connectorsQuery, projectQuery]);
+    void connectorsQuery.refetch();
+  }, [connectorsQuery]);
 
-  // Gates the Connected grid only. Its empty state's wording depends on
-  // `projectQuery` as well as `connectorsQuery`, so it cannot say "no
-  // connectors yet" until both have landed. The TAB STRIP no longer waits on
-  // this: with a constant landing tab and no per-tab count, nothing in it is
-  // derived from a query, so making it appear a beat late bought nothing.
-  const settled = !connectorsQuery.isLoading && !projectQuery.isLoading;
+  // Gates the Connected grid only: it cannot say "no connectors yet" until
+  // the list has landed. The TAB STRIP does not wait: with a constant landing
+  // tab and no per-tab count, nothing in it is derived from a query.
+  const settled = !connectorsQuery.isLoading;
 
   // All, always — never derived from what the project already has.
   // `defaultConnectorScope` used to open a project with connectors on its own
