@@ -1961,7 +1961,7 @@ const catalog = {
       "largeHint": "This run starts more than 25 agents. You can stop any agent from its row.",
       "openRun": "Open run",
       "viewingAgent": "Viewing",
-      "startsAfter": "starts after {phase}",
+      "startsAfter": "Starts after {phase}",
       "didntFinish": "Didn’t finish",
       "retryNow": "Retry",
       "retryAgent": "Retry {label}",

@@ -3168,7 +3168,7 @@
       "largeHint": "Dieser Lauf startet mehr als 25 Agenten. Du kannst jeden Agenten in seiner Zeile stoppen.",
       "openRun": "Lauf öffnen",
       "viewingAgent": "Wird angezeigt",
-      "startsAfter": "beginnt nach {phase}",
+      "startsAfter": "Beginnt nach {phase}",
       "didntFinish": "Nicht abgeschlossen",
       "retryNow": "Erneut versuchen",
       "retryAgent": "{label} erneut versuchen",

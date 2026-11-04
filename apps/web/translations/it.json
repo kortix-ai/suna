@@ -3168,7 +3168,7 @@
       "largeHint": "Questa esecuzione avvia più di 25 agenti. Puoi interrompere ogni agente dalla sua riga.",
       "openRun": "Apri esecuzione",
       "viewingAgent": "In visualizzazione",
-      "startsAfter": "inizia dopo {phase}",
+      "startsAfter": "Inizia dopo {phase}",
       "didntFinish": "Non ha finito",
       "retryNow": "Riprova",
       "retryAgent": "Riprova {label}",
