@@ -1,4 +1,5 @@
 import { HTTPException } from 'hono/http-exception';
+import { logger } from '../../lib/logger';
 import { ingressTargetUrl } from '../../platform/providers/ingress-url';
 import {
   buildSandboxUpstreamHeaders,
@@ -331,6 +332,28 @@ async function handleUpstreamFailureStatus(
         headers: notReadyHeaders,
       });
     }
+  }
+
+  // A port exposed a moment ago (`resolveIngress` exposes on first use): the
+  // Platinum control plane caches a sandbox's route for 1 s and the edge for
+  // 200 ms, so a request in that window gets the edge's own
+  // `404 port-not-exposed`. A desktop panel opened right after the session
+  // started framed that page and kept it. The edge answered itself, so even a
+  // write is safe to send again; past the retry budget the 404 passes through.
+  if (
+    upstream.status === 404 &&
+    upstream.headers.get('x-pt-edge-verdict') === 'port-not-exposed' &&
+    attempt < MAX_RETRIES
+  ) {
+    logger.warn('[PREVIEW] edge has no route for the port yet', {
+      sandboxId,
+      port,
+      attempt: attempt + 1,
+    });
+    invalidatePreviewLink(sandboxId, port);
+    await upstream.body?.cancel().catch(() => {});
+    await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+    return 'retry';
   }
 
   if (upstream.status === 502 || upstream.status === 503) {
