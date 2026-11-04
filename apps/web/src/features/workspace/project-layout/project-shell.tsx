@@ -35,17 +35,11 @@ import { useNewProjectSession } from '@kortix/ui/internal/hooks/projects/use-new
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
-import { cn, uiRoutes } from '@kortix/ui';
+import { cn } from '@kortix/ui';
 import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProject, getProjectDetail } from '@kortix/sdk';
-import {
-  contract,
-  qk,
-  useFeatureFlag,
-  useGatewayCatalogSync,
-  useProjectSpaces,
-} from '@kortix/sdk/react';
+import { contract, qk, useGatewayCatalogSync } from '@kortix/sdk/react';
 import { SidebarGlyph as PanelLeft } from '@kortix/ui/icons';
 
 const CommandPalette = lazy(() =>
@@ -206,18 +200,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     newSession();
   }, [newSession]);
 
-  // Channels on: "New session" (Mod+T, the desktop File menu) opens the
-  // default channel and focuses its composer, where a message starts a thread.
-  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
-  const spaces = useProjectSpaces(projectId, { enabled: channels });
-  const defaultChannelSlug = spaces.data?.find((space) => space.kind === 'channel' && space.is_default)?.slug;
-  const openDefaultChannel = useCallback(() => {
-    if (!defaultChannelSlug) return;
-    router.push(uiRoutes().channel(projectId, defaultChannelSlug));
-    // Already on that channel the composer does not remount; ask it for focus.
-    window.dispatchEvent(new CustomEvent('focus-session-textarea'));
-  }, [defaultChannelSlug, projectId, router]);
-  useProjectShellShortcuts({ projectId, onNewSession: channels ? openDefaultChannel : handleNewSession });
+  useProjectShellShortcuts({ projectId, onNewSession: handleNewSession });
 
   const params = useParams<{ sessionId?: string }>();
   const activeSessionId = params?.sessionId ?? null;

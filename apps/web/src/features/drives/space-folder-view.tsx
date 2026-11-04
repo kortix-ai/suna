@@ -17,7 +17,7 @@ import {
 } from '@kortix/ui/files';
 import { createFilesStore, useFilesStore } from '@kortix/ui/internal/stores/files-store';
 import { type SpaceFolder } from '@kortix/ui/workspace';
-import { BrainIcon, FolderSimpleIcon } from '@phosphor-icons/react';
+import { FolderSimpleIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo } from 'react';
@@ -64,24 +64,18 @@ export function SpaceFolderView({
   const name = space.kind === 'channel' ? space.slug : space.dm_agent_name;
   const folders = name ? spaceDriveFolders(space.kind, name, drive.data.personalFolder, space.visibility === 'private' ? space.space_id : null) : null;
   if (!folders) return <SpaceFolderEmpty tab={tab} place={place} />;
-  const note =
-    tab === 'memory'
-      ? space.kind === 'channel'
-        ? t('folder.memoryNoteChannel', { place })
-        : t('folder.memoryNoteDm', { agent: place })
-      : null;
   return (
     <SpaceDriveFolder
-      key={folders[tab]}
+      key={folders.files}
       projectId={projectId}
       drive={drive.data}
-      path={folders[tab]}
-      label={tab === 'memory' ? t('folder.memory') : place}
+      path={folders.files}
+      label={place}
       tab={tab}
       place={place}
-      note={note}
-      // The Memory tab shows the channel's Memory folder; Files does not list it again.
-      hidden={tab === 'files' ? folders.memory : null}
+      note={null}
+      // Memory has its own Details tab: Files does not list its folder again.
+      hidden={folders.memory}
     />
   );
 }
@@ -151,7 +145,6 @@ function SpaceDriveFolder({
   }
   // Loading, or making the folder: nothing (navigation shows no skeleton).
   if (!folder.isSuccess) return null;
-  const Glyph = tab === 'memory' ? BrainIcon : FolderSimpleIcon;
   return (
     <DriveFilesProvider driveId={drive.driveId} userId={user?.id}>
       <FilesStoreProvider store={store}>
@@ -160,7 +153,7 @@ function SpaceDriveFolder({
           drive={drive}
           path={path}
           label={label}
-          icon={<Glyph />}
+          icon={<FolderSimpleIcon />}
           note={note}
           hidden={hidden}
         />

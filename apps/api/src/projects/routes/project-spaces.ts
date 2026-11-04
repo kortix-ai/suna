@@ -26,6 +26,8 @@ import {
   SpaceMembersAddInputSchema,
   SpaceSchema,
   SpaceUpdateInputSchema,
+  SessionSpaceMoveInputSchema,
+  SessionSpaceMoveResultSchema,
 } from '@kortix/api-contract';
 import type { Context } from 'hono';
 import { AppObject, appsJson } from '../../apps/serialize';
@@ -34,10 +36,10 @@ import { afterPrivateChannelChange, makeChannelFolders, makeDmFolders, moveChann
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import type { AppEnv } from '../../types';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { isUuid } from '../../shared/validate';
 import { DEFAULT_AGENT_SENTINEL, isLaunchableAgentName, loadProjectAgents } from '../agents';
-import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, loadVisibleSession, projectCapabilityAllowed } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { projectsApp } from '../lib/app';
 import {
@@ -66,6 +68,7 @@ import {
   getOrCreateDm,
   listHiddenPrivateChannels,
   listSpacesForUser,
+  moveSessionToSpace,
   serializeSpace,
   type SpaceViewer,
   updateChannel,
@@ -154,6 +157,7 @@ export function registerProjectSpacesRoutes(): void {
   registerSpaceRoutes();
   registerSpaceLinkRoutes();
   registerSpaceMemberRoutes();
+  registerSessionSpaceRoute();
   registerChannelsOnboardingRoutes();
 }
 
@@ -596,6 +600,59 @@ function registerSpaceMemberRoutes(): void {
       const result = await joinSpace(space, loaded.row, viewer);
       if ('error' in result) return c.json(result.error.body, result.error.status);
       return c.json(result.list, 200);
+    },
+  );
+}
+
+/** Moving one session into a channel or DM, or out of every space. */
+function registerSessionSpaceRoute(): void {
+  // PUT /v1/projects/:projectId/sessions/:sessionId/space — file a session somewhere else.
+  projectsApp.openapi(
+    createRoute({
+      method: 'put',
+      path: '/{projectId}/sessions/{sessionId}/space',
+      tags: ['spaces'],
+      summary: 'Move a session to a channel or DM',
+      description:
+        'Files the session in a live channel the caller may see or in the caller\'s own DM; `space_id: null` takes it out of every space. ' +
+        'Only the session\'s creator moves it (403 `session_move_not_owner`), never an agent token (403 `session_bound_caller`). ' +
+        'A session in a private channel stays there (409 `session_in_private_channel`). An unknown or hidden target is 404 `space_not_found`. ' +
+        'The session\'s sharing does not change.',
+      ...auth,
+      request: {
+        params: projectParams.extend({ sessionId: z.string() }),
+        // Lenient here, strict in the handler: a bad body answers the route's own 400 `invalid_body`.
+        body: {
+          content: {
+            'application/json': {
+              schema: lenientBody({
+                space_id: z.string().uuid().nullable().openapi({ description: 'The channel or DM to file the session in; null takes it out of every space.' }),
+              }),
+            },
+          },
+        },
+      },
+      responses: { 200: json(SessionSpaceMoveResultSchema, 'The session\'s space after the move'), ...errors(400, 403, 404, 409) },
+    }),
+    async (c) => {
+      if (callerKortixSessionId(c) !== null) return c.json(SESSION_BOUND_CALLER, 403);
+      const sessionId = c.req.param('sessionId');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      const parsed = SessionSpaceMoveInputSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: 'Body must be { "space_id": "<uuid>" | null }', code: 'invalid_body' }, 400);
+      const loaded = await loadSpacesProject(c);
+      if (loaded instanceof Response) return loaded;
+      const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, null);
+      if (!visible) return c.json({ error: 'Not found' }, 404);
+      const result = await moveSessionToSpace({
+        projectId: loaded.row.projectId,
+        accountId: loaded.row.accountId,
+        session: { sessionId, createdBy: visible.row.createdBy, spaceId: visible.row.spaceId },
+        targetSpaceId: parsed.data.space_id,
+        access: await spaceAccessFor(loaded.row.projectId, loaded.userId, null),
+      });
+      if ('error' in result) return c.json(result.error.body, result.error.status);
+      return c.json({ session_id: sessionId, space_id: result.spaceId }, 200);
     },
   );
 }

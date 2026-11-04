@@ -20,7 +20,6 @@ import { reconcileChannelConnectors } from '../connectors/sync';
 import { refreshRunningThreadNotes } from '../drives/space-folders';
 import {
   reconcileEventSubscriptionsFromCatalog,
-  recordChannelsReenabled,
   releaseProjectEventSubscriptions,
   turnOnChannels,
 } from '../projects/surface';
@@ -57,18 +56,12 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
     if (resolveFeatureFlag(metadata, 'event_triggers')) await reconcileEventSubscriptionsFromCatalog(projectId, accountId);
     else await releaseProjectEventSubscriptions(projectId);
   },
-  // On: create `#general` and file every session that has no space into it. Off: nothing is deleted.
-  // On again (off before the write, `#general` older than the write): mark the intro seen for the
-  // project's members (no intro on a second turn-on) and record the `#general` line with the count.
-  // A `#general` made after the write (a channel list in the window before this effect) is a first on.
-  // Both: running threads' /drives/README.md gains or drops its channel section (that never throws).
-  project_channels: async ({ projectId, accountId, metadata, previousMetadata, writtenAt }) => {
-    if (resolveFeatureFlag(metadata, 'project_channels')) {
-      const { generalCreatedAt, filed } = await turnOnChannels(projectId, accountId);
-      if (writtenAt && generalCreatedAt < writtenAt && !resolveFeatureFlag(previousMetadata, 'project_channels')) {
-        await recordChannelsReenabled({ accountId, projectId }, filed, writtenAt);
-      }
-    }
+  // On: create `#general` and its folders. Sessions stay where they are: a
+  // session lands in a channel only when someone puts it there. Off: nothing
+  // is deleted. Both: running sessions' /drives/README.md gains or drops its
+  // channel section (that never throws).
+  project_channels: async ({ projectId, accountId, metadata }) => {
+    if (resolveFeatureFlag(metadata, 'project_channels')) await turnOnChannels(projectId, accountId);
     await refreshRunningThreadNotes(projectId);
   },
 };
@@ -105,7 +98,7 @@ async function runWithRetry(ctx: FeatureFlagToggleContext): Promise<void> {
     } catch (second) {
       console.error(
         `[feature-flags] toggle effect failed twice for '${ctx.key}' on project ${ctx.projectId}; ` +
-          'not retried here: connectors and event subscriptions converge on their periodic sweeps; project_channels converges only if #general did not exist yet (the call that creates it files unassigned sessions), else on the next toggle',
+          'not retried here: connectors and event subscriptions converge on their periodic sweeps; project_channels converges on the next channel list (it creates #general)',
         second instanceof Error ? second.message : second,
         first instanceof Error ? `(first attempt: ${first.message})` : '',
       );

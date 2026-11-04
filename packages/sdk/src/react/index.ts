@@ -270,6 +270,7 @@ export {
   useRemoveProjectSpaceMember,
   useCreateProjectSpace,
   useMarkChannelsOnboarding,
+  useMoveProjectSessionToSpace,
   useOpenProjectDm,
   usePinProjectSpaceLink,
   useProjectSpaceApps,

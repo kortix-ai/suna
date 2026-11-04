@@ -7,10 +7,8 @@
  *   platform operators only.)
  * - First turn-on: no "turned on again" record, even when `#general` is made
  *   by a channel list before the toggle effect runs.
- * - Turn on again: sessions started while it was off are filed into
- *   `#general`, `GET /spaces` returns `general_notice`, every project member's
- *   intro is marked seen (not an account member without project access), and
- *   a retry of the effect keeps the count.
+ * - Turn on again: a session started while it was off stays in no channel,
+ *   and nothing is recorded (no `general_notice`, no `metadata.channels`).
  * - `GET /onboarding/channels` and `POST /onboarding/channels/marks`: marks
  *   and facts (a channel created, memory saved in `#general`, a DM).
  */
@@ -42,9 +40,6 @@ const PRIYA = crypto.randomUUID();
 /** Joins the account after the turn-on again: no intro mark yet. */
 const SAM = crypto.randomUUID();
 const OFF_WHILE = crypto.randomUUID();
-const RETRY_A = crypto.randomUUID();
-const RETRY_B = crypto.randomUUID();
-const FAIL_ONCE = crypto.randomUUID();
 const minted: string[] = [];
 const keys: Record<string, string> = {};
 
@@ -148,75 +143,21 @@ describe('the first turn-on', () => {
 });
 
 describe('turning Channels on again', () => {
-  test('the session started while off moves into #general, with the notice and no intro for project members', async () => {
+  test('a session started while off stays in no channel, and nothing is recorded', async () => {
     // First on: `#general` exists (made on the first channel list).
     const first = await req('GET', `${base}/spaces`, keys.priya);
     expect(first.status).toBe(200);
-    const firstBody = (await first.json()) as any;
-    expect(firstBody.general_notice).toBeUndefined();
-    const general = firstBody.spaces.find((space: any) => space.is_default);
+    expect(((await first.json()) as any).general_notice).toBeUndefined();
 
     await toggle(PROJECT, false);
     await db.insert(projectSessions).values({ sessionId: OFF_WHILE, accountId: ACCOUNT, projectId: PROJECT, branchName: 'o', createdBy: PRIYA, agentName: 'kortix' });
     await toggle(PROJECT, true);
 
-    const channels = await channelsMeta();
-    expect(channels.reenabled_count).toBe(1);
     const [session] = await db.select({ spaceId: projectSessions.spaceId }).from(projectSessions).where(eq(projectSessions.sessionId, OFF_WHILE));
-    expect(session!.spaceId).toBe(general.space_id);
-
+    expect(session!.spaceId).toBeNull();
+    expect(await channelsMeta()).toBeUndefined();
     const list = (await (await req('GET', `${base}/spaces`, keys.priya)).json()) as any;
-    expect(list.general_notice).toEqual({ kind: 'reenabled', at: channels.reenabled_at, count: 1 });
-    const onboarding = (await (await req('GET', `${base}/onboarding/channels`, keys.priya)).json()) as any;
-    expect(onboarding.intro_seen).toBe(true);
-    // Project members only: the account member without access to the project gets no mark.
-    expect(await introMarks(PROJECT)).toEqual([MANAGER, PRIYA].sort());
-  });
-
-  test('a retry of the effect keeps the count it already recorded', async () => {
-    await toggle(PROJECT, false);
-    await db.insert(projectSessions).values([
-      { sessionId: RETRY_A, accountId: ACCOUNT, projectId: PROJECT, branchName: 'a', createdBy: PRIYA, agentName: 'kortix' },
-      { sessionId: RETRY_B, accountId: ACCOUNT, projectId: PROJECT, branchName: 'b', createdBy: PRIYA, agentName: 'kortix' },
-    ]);
-    const ctx = await toggle(PROJECT, true);
-    await runFeatureFlagToggleEffects(ctx);
-    const channels = await channelsMeta();
-    expect(channels).toEqual({ reenabled_at: ctx.writtenAt.toISOString(), reenabled_count: 2 });
-  });
-
-  test('the marks insert fails once: the retry keeps the recorded count and writes the marks', async () => {
-    await toggle(PROJECT, false);
-    await db.insert(projectSessions).values({ sessionId: FAIL_ONCE, accountId: ACCOUNT, projectId: PROJECT, branchName: 'f', createdBy: PRIYA, agentName: 'kortix' });
-    await db.delete(projectUserMarks).where(eq(projectUserMarks.projectId, PROJECT));
-    // Turn on without the route, so this effect is the only one: the flag write as `writeProjectFeatureFlag` does it.
-    const [row] = await db
-      .update(projects)
-      .set({ metadata: { experimental: { project_channels: true } }, updatedAt: sql`date_trunc('milliseconds', now())` })
-      .where(eq(projects.projectId, PROJECT))
-      .returning();
-    // The first marks INSERT for this project fails once (a sequence survives the rollback).
-    const name = `kortix.onb_fail_${PROJECT.replaceAll('-', '')}`;
-    await db.execute(sql.raw(`create sequence ${name}`));
-    await db.execute(
-      sql.raw(`create function ${name}() returns trigger language plpgsql as $$ begin
-        if new.project_id = '${PROJECT}' and nextval('${name}') = 1 then raise exception 'synthetic marks failure'; end if;
-        return new; end $$`),
-    );
-    await db.execute(sql.raw(`create trigger onb_fail before insert on kortix.project_user_marks for each row execute function ${name}()`));
-    try {
-      await runFeatureFlagToggleEffects({ key: 'project_channels', projectId: PROJECT, accountId: ACCOUNT, metadata: row!.metadata, previousMetadata: OFF, writtenAt: row!.updatedAt });
-    } finally {
-      await db.execute(sql.raw(`drop trigger onb_fail on kortix.project_user_marks; drop function ${name}(); drop sequence ${name}`));
-    }
-    expect(await channelsMeta()).toEqual({ reenabled_at: row!.updatedAt.toISOString(), reenabled_count: 1 });
-    expect(await introMarks(PROJECT)).toEqual([MANAGER, PRIYA].sort());
-  });
-
-  test('a repeated "on" (on before the write too) records nothing new', async () => {
-    const before = await channelsMeta();
-    await runFeatureFlagToggleEffects({ key: 'project_channels', projectId: PROJECT, accountId: ACCOUNT, metadata: ON, previousMetadata: ON, writtenAt: new Date() });
-    expect(await channelsMeta()).toEqual(before);
+    expect(list.general_notice).toBeUndefined();
   });
 });
 

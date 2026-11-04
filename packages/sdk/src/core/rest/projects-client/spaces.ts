@@ -269,6 +269,35 @@ export async function joinProjectSpace(projectId: string, spaceId: string): Prom
   );
 }
 
+/** A session's space after `moveProjectSessionToSpace`. */
+export interface ProjectSessionSpaceMove {
+  session_id: string;
+  /** The channel or DM the session is filed in now; null when it is in none. */
+  space_id: string | null;
+}
+
+/**
+ * Files a session in a channel or the caller's own DM, or (`spaceId` null)
+ * takes it out of every space. Only the session's creator moves it: anyone
+ * else rejects with 403 `session_move_not_owner`, an agent token with 403
+ * `session_bound_caller`. A session in a private channel stays there (409
+ * `session_in_private_channel`). An unknown or hidden target is 404
+ * `space_not_found`. The session's sharing does not change.
+ */
+export async function moveProjectSessionToSpace(
+  projectId: string,
+  sessionId: string,
+  spaceId: string | null,
+): Promise<ProjectSessionSpaceMove> {
+  return unwrap(
+    await backendApi.put<ProjectSessionSpaceMove>(
+      `/projects/${projectId}/sessions/${sessionId}/space`,
+      { space_id: spaceId },
+      { showErrors: false },
+    ),
+  );
+}
+
 /** The caller leaves a channel. Its creator rejects with 403 `creator_not_removable` (only a manager removes them). */
 export async function leaveProjectSpace(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
   return removeProjectSpaceMember(projectId, spaceId, 'me');

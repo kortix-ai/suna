@@ -53,38 +53,6 @@ export async function channelsOnboarding(projectId: string, userId: string): Pro
   };
 }
 
-/**
- * Channels turned on again at `writtenAt` (the flag write's DB time): no
- * project member sees the intro, and `#general` shows the line for 7 days.
- * The line first, right after filing: a failure in the marks then leaves the
- * count recorded, and the retry re-inserts the marks (idempotent). A retry of
- * the same turn-on (same `reenabled_at`) adds to the count it already recorded
- * instead of replacing it: the retry files only what the first attempt left.
- */
-export async function recordChannelsReenabled(
-  project: { accountId: string; projectId: string },
-  filed: number,
-  writtenAt: Date,
-): Promise<void> {
-  const { projectId } = project;
-  const at = writtenAt.toISOString();
-  const channels = sql`coalesce(${projects.metadata} -> 'channels', '{}'::jsonb)`;
-  const earlier = sql`case when ${channels} ->> 'reenabled_at' = ${at} then coalesce((${channels} ->> 'reenabled_count')::int, 0) else 0 end`;
-  await db
-    .update(projects)
-    .set({
-      metadata: sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object('channels', ${channels} || jsonb_build_object('reenabled_at', ${at}::text, 'reenabled_count', ${filed}::int + ${earlier}))`,
-    })
-    .where(eq(projects.projectId, projectId));
-  const { ids } = await loadProjectRosterIds({ row: project });
-  for (let i = 0; i < ids.length; i += MARK_BATCH) {
-    await db
-      .insert(projectUserMarks)
-      .values(ids.slice(i, i + MARK_BATCH).map((userId) => ({ projectId, userId, mark: 'channels_intro' })))
-      .onConflictDoNothing();
-  }
-}
-
 /** The "turned on again" line, from `metadata.channels`: 7 days, and only when it filed a session. */
 export function generalNotice(metadata: unknown, now = Date.now()): SpaceGeneralNotice | undefined {
   const channels = isPlainObject(metadata) && isPlainObject(metadata.channels) ? metadata.channels : {};

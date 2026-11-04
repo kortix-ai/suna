@@ -6,7 +6,7 @@ import { safeHttpUrl } from '@kortix/shared';
 import { useTranslations } from '../../i18n';
 import { uiRoutes } from '../../lib/routes';
 import Hint from '../../primitives/hint';
-import { UiLink as Link, useUiPathname, useUiSearchParams } from '../../providers/ui-provider';
+import { UiLink as Link } from '../../providers/ui-provider';
 import { participantLabel } from '../../session/participants/session-participants';
 import { superscript } from './body-doc';
 
@@ -17,27 +17,13 @@ const MARK =
 /** The API's name for a person without a display name (`apps/api/src/memory/serialize.ts`). */
 const MEMBER_FALLBACK = 'A member';
 
-/** The hint of a mark that opens nothing: a person, an import, a deleted thread, an outside source without a URL. */
+/** The hint of a mark that opens nothing: a person, an import, a deleted session, an outside source without a URL. */
 const STATIC_HINT = { thread: 'threadGone', outside: 'outsideText', person: 'person', import: 'import' } as const;
 
-/**
- * Where a source thread opens: its channel or DM with `?thread=`. A thread of
- * the page the reader is on opens beside it and keeps the other params (the
- * Memory tab stays open).
- */
+/** Where a source session opens: its own page. */
 function useSourceThreadHref(projectId: string): (source: ProjectMemorySource) => string | null {
-  const pathname = useUiPathname();
-  const searchParams = useUiSearchParams();
-  return (source) => {
-    const hint = source.thread_href_hint;
-    if (!source.session_id || !hint) return null;
-    const path =
-      hint.space_kind === 'channel' ? uiRoutes().channel(projectId, hint.slug) : uiRoutes().dm(projectId, hint.agent);
-    const here = pathname.endsWith(path);
-    const params = new URLSearchParams(here ? searchParams.toString() : '');
-    params.set('thread', source.session_id);
-    return `${here ? pathname : path}?${params.toString()}`;
-  };
+  // A page saved from a session links to that session's page.
+  return (source) => (source.session_id && source.thread_href_hint ? uiRoutes().session(projectId, source.session_id) : null);
 }
 
 /** A person source's name: the display name, or the API's neutral "A member" in the reader's language. */

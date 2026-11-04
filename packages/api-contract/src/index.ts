@@ -1478,6 +1478,18 @@ export type SpaceUpdateInput = z.infer<typeof SpaceUpdateInputSchema>;
 export const SpaceDmInputSchema = z.object({ agent_name: z.string().trim().min(1).max(200) }).strict();
 export type SpaceDmInput = z.infer<typeof SpaceDmInputSchema>;
 
+/**
+ * `PUT /projects/:id/sessions/:sessionId/space`: file a session in a channel
+ * or the caller's DM, or (`null`) take it out of every space. Only the
+ * session's creator moves it. A session in a private channel stays there.
+ */
+export const SessionSpaceMoveInputSchema = z.object({ space_id: z.string().uuid().nullable() }).strict();
+export type SessionSpaceMoveInput = z.infer<typeof SessionSpaceMoveInputSchema>;
+
+/** The session's space after a move. */
+export const SessionSpaceMoveResultSchema = z.object({ session_id: z.string(), space_id: z.string().nullable() });
+export type SessionSpaceMoveResult = z.infer<typeof SessionSpaceMoveResultSchema>;
+
 /** A link pinned to a channel: `/projects/:id/spaces/:spaceId/links`. */
 export const SpaceLinkSchema = z
   .object({

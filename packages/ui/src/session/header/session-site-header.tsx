@@ -1,6 +1,8 @@
 'use client';
 
 import { uiRoutes } from '../../lib/routes';
+import { SessionSpaceCrumb } from '../../workspace/spaces/session-space-crumb';
+import { MoveSessionToSpaceMenu } from '../../workspace/spaces/move-session-menu';
 import { useTranslations } from '../../i18n';
 import { useSessionListActions } from '../actions/use-session-list-actions';
 import { useLocalizedUiCatalog } from '../../i18n/ui-catalog/use-localized-ui-catalog';
@@ -368,6 +370,9 @@ export function SessionSiteHeader({
                   'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53',
                 )}
               </DropdownMenuItem>
+              {projectId && projectSession ? (
+                <MoveSessionToSpaceMenu projectId={projectId} session={projectSession} />
+              ) : null}
               <DropdownMenuSeparator />
             </>
           )}
@@ -582,6 +587,10 @@ export function SessionSiteHeader({
                 </span>
               </>
             )}
+            {/* A root session filed in a channel or DM: the way back to it. */}
+            {!parent && projectId && projectSession?.space_id ? (
+              <SessionSpaceCrumb projectId={projectId} spaceId={projectSession.space_id} />
+            ) : null}
 
             {/* Split control: the name renames in place, the caret opens the
                 session menu. Two buttons, not one trigger, so a click on the

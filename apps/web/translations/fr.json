@@ -21321,7 +21321,7 @@
     "copyAction": "Copier {label}",
     "copied": "Copié : {label}",
     "copyFailed": "Impossible de copier dans le presse-papiers",
-    "threads": "Fils",
+    "threads": "Sessions",
     "recentThreads": "Fils récents",
     "searchChannels": "Rechercher des canaux, fils, commandes..."
   },
@@ -21544,7 +21544,7 @@
     "perDay": "Par jour",
     "noLimit": "Sans limite",
     "postTo": "Publier dans",
-    "postToHint": "Chaque exécution démarre un nouveau fil ici. Sans canal, les exécutions vont dans #{channel}.",
+    "postToHint": "Chaque exécution démarre une nouvelle session à cet endroit. Sans canal, les exécutions restent dans la liste des sessions.",
     "postToNone": "Aucun canal",
     "postToUnavailable": "Canal indisponible",
     "postToPrivate": "Privé : les déclencheurs ne peuvent pas publier ici",
@@ -24663,7 +24663,8 @@
         "memory": "Mémoire",
         "apps": "Apps",
         "links": "Liens",
-        "triggers": "Déclencheurs"
+        "triggers": "Déclencheurs",
+        "sessions": "Sessions"
       },
       "empty": {
         "files": {
@@ -24794,7 +24795,9 @@
       "allAgents": "Tous les agents",
       "join": "Rejoindre le canal",
       "joined": "Vous avez rejoint #{name}.",
-      "joinFailed": "Impossible de rejoindre le canal. Réessayez."
+      "joinFailed": "Impossible de rejoindre le canal. Réessayez.",
+      "answerFrom": "Réponse de {agent}. Ouvrir la session",
+      "dmDetails": "Détails de {agent}"
     },
     "details": {
       "about": "À propos",
@@ -24844,7 +24847,10 @@
       "leaveHintPrivate": "Vous perdez l’accès à ses fils, fichiers et mémoire, y compris vos propres fils. Un membre devra vous ajouter à nouveau.",
       "leavePrivateTitle": "Quitter #{name} ?",
       "addMembers": "Ajouter des membres",
-      "privateLimits": "Privé masque le canal aux autres personnes. Les modifications de code (branches git) et les outils propres aux agents ne sont pas privés."
+      "privateLimits": "Privé masque le canal aux autres personnes. Les modifications de code (branches git) et les outils propres aux agents ne sont pas privés.",
+      "memory": "Mémoire",
+      "links": "Liens",
+      "files": "Fichiers"
     },
     "folder": {
       "memory": "Mémoire",
@@ -25033,7 +25039,16 @@
     },
     "filter": "Filtrer par espace",
     "all": "Tous",
-    "projectWide": "À l’échelle du projet"
+    "projectWide": "À l’échelle du projet",
+    "move": {
+      "label": "Déplacer vers un canal",
+      "none": "Aucun canal",
+      "current": "Canal actuel",
+      "moved": "Déplacée vers {place}",
+      "removed": "Retirée de son canal",
+      "failed": "Impossible de déplacer la session. Réessayez.",
+      "privateStays": "Dans un canal privé : elle y reste"
+    }
   },
   "imageGen": {
     "generating": "Génération de l’image",

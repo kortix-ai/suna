@@ -13,7 +13,7 @@ import {
 } from '@kortix/sdk/react';
 import { DotsThreeIcon, MagnifyingGlassIcon, PencilSimpleIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
 import { useLocale, useTranslations } from '../../i18n';
 import { AgentMark } from '../../internal/components/agent-mark';
@@ -38,71 +38,148 @@ import { Skeleton } from '../../primitives/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { errorToast, successToast } from '../../primitives/toast';
 import { useSessionIds } from '../../providers/session-ids';
+import { useUiRouter } from '../../providers/ui-provider';
+import { uiRoutes } from '../../lib/routes';
+import { cn } from '../../lib/utils';
+import { MemoryView } from '../memory/memory-view';
+import { SpaceLinks } from './space-links';
 import { ChannelGlyph } from './channel-glyph';
 import { AddChannelMembersDialog, MemberAvatar } from './space-members';
 import { agentLabel } from './space-timeline';
 
-export type SpaceDetailsTab = 'about' | 'members';
+/** What a host's folder view draws: one space's folder. `place` is "#general" or the DM's agent. */
+export interface SpaceFolder {
+  space: ProjectSpace;
+  tab: 'files';
+  place: string;
+}
+
+export type SpaceDetailsTab = 'about' | 'members' | 'memory' | 'links' | 'files';
+
+/** The tabs that hold a whole view: the dialog widens for them. */
+const WIDE_TABS: readonly SpaceDetailsTab[] = ['memory', 'links', 'files'];
 
 /**
- * A channel's details, opened from `# name` in the header or the roster's
- * "View all members": About (name, description, default agent, who can see
- * it, when it was made, Leave, Archive) and Members (one list of its people,
- * then its agents). The pencils, Archive and the agent row menus show only
- * to the channel's creator or a project manager (`can_edit`). "Add members"
- * shows to whoever may add people (`can_add`: a member, the creator, a
- * manager) or edit the channel; its picker offers each only what they may add.
+ * A space's details. A channel's opens from `# name` in the header or the
+ * roster's "View all members"; a DM's from the info button.
+ *
+ * - About (channels): name, description, default agent, who can see it, when
+ *   it was made, Leave, Archive. The pencils, Archive and the agent row menus
+ *   show only to the channel's creator or a project manager (`can_edit`).
+ * - Members (channels): its people, then its agents. "Add members" shows to
+ *   whoever may add people (`can_add`) or edit the channel.
+ * - Memory: what the agents remember in this space (`MemoryView`).
+ * - Links (channels): the links shared and pinned here.
+ * - Files: the space's folder, when the host draws one (`renderFolder`).
  */
 export function SpaceDetailsDialog({
   space,
+  title,
   tab,
   onTabChange,
   onOpenChange,
   onEdit,
   onArchive,
+  renderFolder,
 }: {
   space: ProjectSpace;
+  /** The channel's slug, or the DM's agent label. */
+  title: string;
   /** Null: closed. */
   tab: SpaceDetailsTab | null;
   onTabChange: (tab: SpaceDetailsTab) => void;
   onOpenChange: (open: boolean) => void;
   onEdit: () => void;
   onArchive: () => void;
+  renderFolder?: (folder: SpaceFolder) => ReactNode;
 }) {
   const t = useTranslations('spaces.details');
   const { projectId } = useSessionIds();
+  const router = useUiRouter();
   const [adding, setAdding] = useState(false);
+  const isChannel = space.kind === 'channel';
+  const place = isChannel ? `#${space.slug ?? space.name}` : title;
+  const tabs: SpaceDetailsTab[] = [
+    ...(isChannel ? (['about', 'members'] as const) : []),
+    'memory',
+    ...(isChannel ? (['links'] as const) : []),
+    ...(renderFolder ? (['files'] as const) : []),
+  ];
+  const current = tab && tabs.includes(tab) ? tab : tabs[0];
+  // The links' search and filters live in the dialog, not the page's URL.
+  const [linkParams, setLinkParams] = useState(() => new URLSearchParams());
+  const changeLinkParams = useCallback(
+    (change: (params: URLSearchParams) => void) =>
+      setLinkParams((previous) => {
+        const next = new URLSearchParams(previous);
+        change(next);
+        return next;
+      }),
+    [],
+  );
+  const openSession = (sessionId: string) => {
+    if (!projectId) return;
+    onOpenChange(false);
+    router.push(uiRoutes().session(projectId, sessionId));
+  };
   return (
     <>
       <Modal open={tab !== null} onOpenChange={onOpenChange}>
-        <ModalContent className="lg:max-w-md">
+        <ModalContent className={cn('lg:max-w-md', WIDE_TABS.includes(current) && 'lg:max-w-3xl')}>
           <ModalHeader>
             <ModalTitle className="flex min-w-0 items-center gap-1">
-              <ChannelGlyph visibility={space.visibility} className="size-4 shrink-0" />
-              <span className="truncate">{space.slug}</span>
+              {isChannel ? (
+                <ChannelGlyph visibility={space.visibility} className="size-4 shrink-0" />
+              ) : space.dm_agent_name ? (
+                <AgentMark slug={space.dm_agent_name} size={14} />
+              ) : null}
+              <span className="truncate">{isChannel ? space.slug : title}</span>
             </ModalTitle>
           </ModalHeader>
-          <Tabs value={tab ?? 'about'} onValueChange={(value) => onTabChange(value as SpaceDetailsTab)} className="gap-0">
+          <Tabs value={current} onValueChange={(value) => onTabChange(value as SpaceDetailsTab)} className="gap-0">
             <TabsList type="underline" size="sm" className="w-full shrink-0 justify-start gap-4 px-5">
-              <TabsTrigger value="about" className="w-fit flex-none">
-                {t('about')}
-              </TabsTrigger>
-              <TabsTrigger value="members" className="w-fit flex-none">
-                {t('members')}
-              </TabsTrigger>
+              {tabs.map((value) => (
+                <TabsTrigger key={value} value={value} className="w-fit flex-none">
+                  {t(value)}
+                </TabsTrigger>
+              ))}
             </TabsList>
-            <TabsContent value="about">
-              <AboutPane space={space} onEdit={onEdit} onArchive={onArchive} />
+            {isChannel ? (
+              <>
+                <TabsContent value="about">
+                  <AboutPane space={space} onEdit={onEdit} onArchive={onArchive} />
+                </TabsContent>
+                <TabsContent value="members">
+                  {projectId ? (
+                    <MembersPane projectId={projectId} space={space} onAdd={() => setAdding(true)} />
+                  ) : null}
+                </TabsContent>
+                <TabsContent value="links" className="flex h-[min(36rem,70svh)] min-h-0 flex-col">
+                  {projectId ? (
+                    <SpaceLinks
+                      projectId={projectId}
+                      space={space}
+                      place={place}
+                      onOpenThread={openSession}
+                      params={linkParams}
+                      setParams={changeLinkParams}
+                    />
+                  ) : null}
+                </TabsContent>
+              </>
+            ) : null}
+            <TabsContent value="memory" className="flex h-[min(36rem,70svh)] min-h-0 flex-col">
+              {projectId ? <MemoryView projectId={projectId} layerKey={space.space_id} place={place} /> : null}
             </TabsContent>
-            <TabsContent value="members">
-              {projectId ? (
-                <MembersPane projectId={projectId} space={space} onAdd={() => setAdding(true)} />
-              ) : null}
-            </TabsContent>
+            {renderFolder ? (
+              <TabsContent value="files" className="flex h-[min(36rem,70svh)] min-h-0 flex-col">
+                {renderFolder({ space, tab: 'files', place })}
+              </TabsContent>
+            ) : null}
           </Tabs>
         </ModalContent>
       </Modal>
-      {projectId ? (
+      {projectId && isChannel ? (
         <AddChannelMembersDialog projectId={projectId} space={space} open={adding} onOpenChange={setAdding} />
       ) : null}
     </>

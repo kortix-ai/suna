@@ -21321,7 +21321,7 @@
     "copyAction": "Copia {label}",
     "copied": "Copiato: {label}",
     "copyFailed": "Impossibile copiare negli appunti",
-    "threads": "Thread",
+    "threads": "Sessioni",
     "recentThreads": "Thread recenti",
     "searchChannels": "Cerca canali, thread, comandi..."
   },
@@ -21544,7 +21544,7 @@
     "perDay": "Per giorno",
     "noLimit": "Nessun limite",
     "postTo": "Pubblica in",
-    "postToHint": "Ogni esecuzione avvia lì un nuovo thread. Senza canale, le esecuzioni vanno in #{channel}.",
+    "postToHint": "Ogni esecuzione avvia lì una nuova sessione. Senza canale, le esecuzioni restano nell’elenco delle sessioni.",
     "postToNone": "Nessun canale",
     "postToUnavailable": "Canale non disponibile",
     "postToPrivate": "Privato: i trigger non possono pubblicare qui",
@@ -24663,7 +24663,8 @@
         "memory": "Memoria",
         "apps": "App",
         "links": "Link",
-        "triggers": "Trigger"
+        "triggers": "Trigger",
+        "sessions": "Sessioni"
       },
       "empty": {
         "files": {
@@ -24794,7 +24795,9 @@
       "allAgents": "Tutti gli agenti",
       "join": "Unisciti al canale",
       "joined": "Ti sei unito a #{name}.",
-      "joinFailed": "Impossibile unirsi al canale. Riprova."
+      "joinFailed": "Impossibile unirsi al canale. Riprova.",
+      "answerFrom": "Risposta di {agent}. Apri la sessione",
+      "dmDetails": "Dettagli di {agent}"
     },
     "details": {
       "about": "Informazioni",
@@ -24844,7 +24847,10 @@
       "leaveHintPrivate": "Perdi l’accesso ai suoi thread, file e memoria, compresi i tuoi thread. Un membro dovrà aggiungerti di nuovo.",
       "leavePrivateTitle": "Uscire da #{name}?",
       "addMembers": "Aggiungi membri",
-      "privateLimits": "Privato nasconde il canale alle altre persone. Le modifiche al codice (branch git) e gli strumenti degli agenti non sono privati."
+      "privateLimits": "Privato nasconde il canale alle altre persone. Le modifiche al codice (branch git) e gli strumenti degli agenti non sono privati.",
+      "memory": "Memoria",
+      "links": "Link",
+      "files": "File"
     },
     "folder": {
       "memory": "Memoria",
@@ -25033,7 +25039,16 @@
     },
     "filter": "Filtra per spazio",
     "all": "Tutti",
-    "projectWide": "A livello di progetto"
+    "projectWide": "A livello di progetto",
+    "move": {
+      "label": "Sposta in un canale",
+      "none": "Nessun canale",
+      "current": "Canale attuale",
+      "moved": "Spostata in {place}",
+      "removed": "Rimossa dal suo canale",
+      "failed": "Impossibile spostare la sessione. Riprova.",
+      "privateStays": "In un canale privato: resta lì"
+    }
   },
   "imageGen": {
     "generating": "Generazione immagine",

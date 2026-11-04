@@ -200,12 +200,14 @@ test('the mobile sheet renders no keyboard shortcut hint (KRTX-2005)', async () 
   expect(document.body.innerHTML).not.toContain('data-slot="kbd-group"');
 });
 
-test('with project_channels on, Channels replace New session, the session list and Cmd+J', async () => {
+test('with project_channels on, Channels sit above New session, the session list and Cmd+J, which all stay', async () => {
   channelsOn = true;
   await mountSidebar(1280);
   const html = container!.innerHTML;
-  expect(html).not.toContain('data-testid="session-list"');
-  expect(html).not.toContain('newSession');
+  expect(html).toContain('data-testid="session-list"');
+  expect(html).toContain('newSession');
+  // The channel block comes before the session list in the sidebar.
+  expect(html.indexOf('spaces.channels')).toBeLessThan(html.indexOf('data-testid="session-list"'));
   // Channels: live channels only, then the add row. Direct messages: one row per agent.
   expect(html).toContain('spaces.channels');
   expect(html).toContain('href="/projects/synthetic-project/c/general"');
@@ -218,7 +220,7 @@ test('with project_channels on, Channels replace New session, the session list a
   await act(async () => {
     win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'j', metaKey: true }));
   });
-  expect(newSessionCalls).toBe(0);
+  expect(newSessionCalls).toBe(1);
 });
 
 test('with project_channels off, the sidebar keeps New session, the session list and Cmd+J', async () => {

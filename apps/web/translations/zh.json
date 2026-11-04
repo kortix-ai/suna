@@ -21321,7 +21321,7 @@
     "copyAction": "复制{label}",
     "copied": "已复制{label}",
     "copyFailed": "无法复制到剪贴板",
-    "threads": "话题",
+    "threads": "会话",
     "recentThreads": "最近的话题",
     "searchChannels": "搜索频道、话题、命令..."
   },
@@ -21544,7 +21544,7 @@
     "perDay": "每天",
     "noLimit": "不限",
     "postTo": "发布到",
-    "postToHint": "每次运行都会在那里开始一个新话题。未选择频道时，运行会进入 #{channel}。",
+    "postToHint": "每次运行都会在那里开始一个新会话。没有频道时，运行留在会话列表中。",
     "postToNone": "无频道",
     "postToUnavailable": "不可用的频道",
     "postToPrivate": "私有：触发器无法发布到这里",
@@ -24663,7 +24663,8 @@
         "memory": "记忆",
         "apps": "应用",
         "links": "链接",
-        "triggers": "触发器"
+        "triggers": "触发器",
+        "sessions": "会话"
       },
       "empty": {
         "files": {
@@ -24794,7 +24795,9 @@
       "allAgents": "所有智能体",
       "join": "加入频道",
       "joined": "你已加入 #{name}。",
-      "joinFailed": "无法加入频道，请重试。"
+      "joinFailed": "无法加入频道，请重试。",
+      "answerFrom": "{agent} 的回答。打开会话",
+      "dmDetails": "{agent} 详情"
     },
     "details": {
       "about": "关于",
@@ -24844,7 +24847,10 @@
       "leaveHintPrivate": "你将失去对其线程、文件和记忆的访问权限，包括你自己的线程。需要成员重新添加你。",
       "leavePrivateTitle": "退出 #{name}？",
       "addMembers": "添加成员",
-      "privateLimits": "私密会对其他人隐藏该频道。代码更改（git 分支）和代理自身的工具不是私密的。"
+      "privateLimits": "私密会对其他人隐藏该频道。代码更改（git 分支）和代理自身的工具不是私密的。",
+      "memory": "记忆",
+      "links": "链接",
+      "files": "文件"
     },
     "folder": {
       "memory": "记忆",
@@ -25033,7 +25039,16 @@
     },
     "filter": "按空间筛选",
     "all": "全部",
-    "projectWide": "项目范围"
+    "projectWide": "项目范围",
+    "move": {
+      "label": "移到频道",
+      "none": "无频道",
+      "current": "当前频道",
+      "moved": "已移到 {place}",
+      "removed": "已移出频道",
+      "failed": "无法移动会话，请重试。",
+      "privateStays": "在私有频道中：保留在那里"
+    }
   },
   "imageGen": {
     "generating": "正在生成图像",

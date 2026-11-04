@@ -35,7 +35,6 @@ import {
   type MemoryPage,
   type MemoryPageSummary,
   type MemoryVersion,
-  type SpaceList,
 } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
@@ -562,21 +561,15 @@ flow(
       );
       return sessionId;
     };
-    /** The toggle effect filed `sessionId` into `#general`: poll the row, at most 30 s. */
-    const filedIntoGeneral = (sessionId: string) =>
+    /** `#general` exists (the toggle effect creates it): poll the row, at most 30 s. */
+    const generalCreated = () =>
       waitFor(
         async () =>
-          (
-            await world.db.query<{ filed: boolean }>(
-              `SELECT s.space_id IS NOT NULL AND s.space_id = g.space_id AS filed
-                 FROM kortix.project_sessions s
-                 LEFT JOIN kortix.project_spaces g ON g.project_id = s.project_id AND g.is_default
-                WHERE s.session_id = $1`,
-              [sessionId],
-            )
-          ).rows[0]?.filed === true,
-        { until: Boolean, timeoutMs: 30_000, intervalMs: 250, description: 'the toggle effect to file the session into #general' },
+          (await world.db.query('SELECT 1 FROM kortix.project_spaces WHERE project_id = $1 AND is_default', [projectId])).rows.length,
+        { until: (n) => n > 0, timeoutMs: 30_000, intervalMs: 250, description: 'the toggle effect to create #general' },
       );
+    const spaceOf = async (sessionId: string) =>
+      (await world.db.query<{ space_id: string | null }>('SELECT space_id FROM kortix.project_sessions WHERE session_id = $1', [sessionId])).rows[0]?.space_id ?? null;
     const channelsMeta = async () =>
       (await world.db.query<{ channels: unknown }>("SELECT metadata->'channels' AS channels FROM kortix.projects WHERE project_id = $1", [projectId])).rows[0]?.channels ?? null;
     const introMarks = async () =>
@@ -594,9 +587,10 @@ flow(
       });
 
       const firstOff = await offSession();
-      await ctx.step('the first turn-on by the owner files the session started while off into #general, records no "turned on again" line and marks no intro', async () => {
+      await ctx.step('the first turn-on by the owner creates #general, files no session (the one started while off keeps space_id null), records no "turned on again" line and marks no intro', async () => {
         await world.setFeature('project_channels', true);
-        await filedIntoGeneral(firstOff);
+        await generalCreated();
+        if ((await spaceOf(firstOff)) !== null) fail('the first turn-on filed a session', await spaceOf(firstOff));
         (await world.owner.get(SPACES, { params })).status(200).body().schema(SpaceListSchema).has('$.general_notice', undefined);
         if ((await channelsMeta()) !== null) fail('a first turn-on recorded metadata.channels', await channelsMeta());
         if ((await introMarks()).length !== 0) fail('a first turn-on marked intros', await introMarks());
@@ -648,25 +642,18 @@ flow(
         secondOff = await offSession();
       });
 
-      await ctx.step('turned on again: the session moves into #general, GET /spaces carries general_notice {kind: reenabled, count: 1}, and the owner’s intro is marked seen', async () => {
+      await ctx.step('turned on again: the session started while off keeps space_id null, and nothing is recorded: no general_notice, no metadata.channels, the owner’s intro still unseen', async () => {
         await world.setFeature('project_channels', true);
-        await filedIntoGeneral(secondOff);
-        const owner = await waitFor(() => stateOf(world.owner), {
-          until: (s) => s.intro_seen,
-          timeoutMs: 30_000,
-          intervalMs: 250,
-          description: 'the turn-on-again effect to mark the intros',
-        });
-        if (owner.intro_seen !== true) fail('owner intro', owner);
-        const list = read<SpaceList>((await world.owner.get(SPACES, { params })).status(200), (b) => b.schema(SpaceListSchema).has('$.general_notice.kind', 'reenabled').has('$.general_notice.count', 1));
-        const recorded = (await channelsMeta()) as { reenabled_at?: string; reenabled_count?: number } | null;
-        if (recorded?.reenabled_count !== 1 || list.general_notice?.at !== recorded.reenabled_at) fail('metadata.channels', { recorded, notice: list.general_notice });
+        (await world.owner.get(ONBOARDING, { params })).status(200);
+        if ((await spaceOf(secondOff)) !== null) fail('turning on again filed a session', await spaceOf(secondOff));
+        (await world.owner.get(SPACES, { params })).status(200).body().schema(SpaceListSchema).has('$.general_notice', undefined);
+        if ((await channelsMeta()) !== null) fail('turning on again recorded metadata.channels', await channelsMeta());
+        if ((await stateOf(world.owner)).intro_seen !== false) fail('turning on again marked the owner’s intro', await stateOf(world.owner));
       });
 
-      await ctx.step('the intro is marked for project members only: the owner and the member, never the account member without project access', async () => {
+      await ctx.step('the only intro mark is the member’s own: none for the owner, none for the account member without project access', async () => {
         const marked = await introMarks();
-        for (const userId of [world.ownerUserId, member.userId!]) if (!marked.includes(userId)) fail('a project member has no intro mark', { userId, marked });
-        if (marked.includes(outsider.userId!)) fail('an account member without project access got an intro mark', marked);
+        if (marked.join(',') !== member.userId) fail('intro marks after turning on again', marked);
         (await ctx.client.as(outsider).get(ONBOARDING, { params })).status([403, 404]);
       });
     } finally {

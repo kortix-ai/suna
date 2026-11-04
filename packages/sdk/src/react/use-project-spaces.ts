@@ -7,6 +7,7 @@ import {
   joinProjectSpace,
   leaveProjectSpace,
   listProjectSpaceMembers,
+  moveProjectSessionToSpace,
   removeProjectSpaceMember,
   createProjectSpace,
   getChannelsOnboarding,
@@ -209,6 +210,20 @@ export function useRemoveProjectSpaceMember(projectId: string, spaceId: string) 
 export function useJoinProjectSpace(projectId: string, spaceId: string) {
   const invalidate = useInvalidateSpaces(projectId);
   return useMutation({ mutationFn: () => joinProjectSpace(projectId, spaceId), onSuccess: invalidate });
+}
+
+/**
+ * Files a session in a channel or the caller's DM, or (`spaceId: null`) takes
+ * it out of every space (`moveProjectSessionToSpace`). Refreshes the whole
+ * sessions family: every list scope, the channel timelines, the session row.
+ */
+export function useMoveProjectSessionToSpace(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sessionId, spaceId }: { sessionId: string; spaceId: string | null }) =>
+      moveProjectSessionToSpace(projectId, sessionId, spaceId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) }),
+  });
 }
 
 /** The caller leaves a channel. Its creator gets 403 `creator_not_removable`. */

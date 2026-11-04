@@ -120,23 +120,18 @@ async function ensureDefaultSpaceCreated(projectId: string, accountId: string): 
  */
 export async function ensureDefaultSpace(projectId: string, accountId: string): Promise<SpaceRow> {
   const general = await ensureDefaultSpaceCreated(projectId, accountId);
-  if (general.created) {
-    void spaceFolders().then((m) => m.makeChannelFolders(accountId, projectId, DEFAULT_SLUG));
-    await assignUnassignedSessions(projectId, general.space.spaceId);
-  }
+  if (general.created) void spaceFolders().then((m) => m.makeChannelFolders(accountId, projectId, DEFAULT_SLUG));
   return general.space;
 }
 
 /**
- * The turn-on step of `project_channels`: `#general` (made if missing) and every
- * session in no space filed into it. `generalCreatedAt` tells a first turn-on
- * from a turn-on again (the caller compares it with the flag write's time).
+ * The turn-on step of `project_channels`: `#general` (made if missing) and its
+ * folders. It files no session: sessions stay in the session list until
+ * someone puts one in a channel.
  */
-export async function turnOnChannels(projectId: string, accountId: string): Promise<{ generalCreatedAt: Date; filed: number }> {
+export async function turnOnChannels(projectId: string, accountId: string): Promise<void> {
   const general = await ensureDefaultSpaceCreated(projectId, accountId);
   if (general.created) void spaceFolders().then((m) => m.makeChannelFolders(accountId, projectId, DEFAULT_SLUG));
-  const filed = await assignUnassignedSessions(projectId, general.space.spaceId);
-  return { generalCreatedAt: general.space.createdAt, filed };
 }
 
 /** Live channels the caller may see (default first, then oldest first), then the caller's DMs. */
@@ -269,6 +264,70 @@ export async function findSessionSpace(projectId: string, spaceId: string, acces
     )
     .limit(1);
   return row && canSeeSpace(row, access) ? row : null;
+}
+
+/** A session in a private channel stays there: moving it out would show it to people outside the channel. */
+export const SESSION_IN_PRIVATE_CHANNEL = {
+  error: 'This session is in a private channel. It stays there, so people outside the channel never see it.',
+  code: 'session_in_private_channel',
+} as const;
+
+/** Only the session's creator files it somewhere else. */
+export const SESSION_MOVE_NOT_OWNER = {
+  error: 'Only the person who started this session can move it.',
+  code: 'session_move_not_owner',
+} as const;
+
+/**
+ * File one session in a space, or (`targetSpaceId` null) take it out of every
+ * space. The caller is a person (`access`), never a session-bound token, and
+ * the route checked they can see the session. Rules:
+ *
+ * - Only the session's creator moves it (403 `session_move_not_owner`).
+ * - The target is a live channel the caller may see, or the caller's own DM
+ *   (`findSessionSpace`); anything else is 404 `space_not_found`.
+ * - A session in a private channel stays there (409
+ *   `session_in_private_channel`): the session list hides it from
+ *   non-members only while it is filed there.
+ * - The session's sharing (`visibility`) does not change, nor its children's
+ *   spaces, nor `updated_at`: the move organizes, it does not share.
+ */
+export async function moveSessionToSpace(input: {
+  projectId: string;
+  accountId: string;
+  session: { sessionId: string; createdBy: string | null; spaceId: string | null };
+  targetSpaceId: string | null;
+  access: SpaceAccess;
+}): Promise<{ spaceId: string | null } | { error: { status: 403 | 404 | 409; body: { error: string; code: string } } }> {
+  const { projectId, session, targetSpaceId, access } = input;
+  if (session.createdBy !== access.userId) return { error: { status: 403, body: SESSION_MOVE_NOT_OWNER } };
+  if (session.spaceId === targetSpaceId) return { spaceId: targetSpaceId };
+  if (session.spaceId) {
+    const [current] = await db
+      .select({ visibility: projectSpaces.visibility })
+      .from(projectSpaces)
+      .where(eq(projectSpaces.spaceId, session.spaceId))
+      .limit(1);
+    if (current?.visibility === 'private') return { error: { status: 409, body: SESSION_IN_PRIVATE_CHANNEL } };
+  }
+  const target = targetSpaceId ? await findSessionSpace(projectId, targetSpaceId, access) : null;
+  if (targetSpaceId && !target) return { error: { status: 404, body: SPACE_NOT_FOUND } };
+  await db
+    .update(projectSessions)
+    .set({ spaceId: target?.spaceId ?? null })
+    .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.sessionId, session.sessionId)));
+  await recordAuditEvent({
+    accountId: input.accountId,
+    projectId,
+    actorUserId: access.userId,
+    action: 'session.space.changed',
+    resourceType: 'project_session',
+    resourceId: session.sessionId,
+    metadata: { from: session.spaceId, to: target?.spaceId ?? null },
+  }).catch((error: unknown) => {
+    logger.warn('[spaces] session move audit write failed', { sessionId: session.sessionId, error: error instanceof Error ? error.message : String(error) });
+  });
+  return { spaceId: target?.spaceId ?? null };
 }
 
 /**
@@ -589,27 +648,3 @@ export async function getOrCreateDm(
   return row!;
 }
 
-/**
- * File every session that has no space into `defaultSpaceId`, 1,000 rows per
- * statement so no statement holds row locks for long, until a statement files
- * none (a short batch can come from a concurrent writer). Returns the row count.
- */
-export async function assignUnassignedSessions(projectId: string, defaultSpaceId: string): Promise<number> {
-  const unassigned = and(eq(projectSessions.projectId, projectId), isNull(projectSessions.spaceId));
-  let total = 0;
-  for (;;) {
-    const batch = db
-      .select({ sessionId: projectSessions.sessionId })
-      .from(projectSessions)
-      .where(unassigned)
-      .limit(ASSIGN_BATCH);
-    const updated = await db
-      .update(projectSessions)
-      .set({ spaceId: defaultSpaceId })
-      // `unassigned` again on the outer row: a session filed concurrently keeps its space.
-      .where(and(unassigned, inArray(projectSessions.sessionId, batch)))
-      .returning({ sessionId: projectSessions.sessionId });
-    if (updated.length === 0) return total;
-    total += updated.length;
-  }
-}

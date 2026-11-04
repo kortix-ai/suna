@@ -21321,7 +21321,7 @@
     "copyAction": "Copiar {label}",
     "copied": "Copiado: {label}",
     "copyFailed": "No se pudo copiar al portapapeles",
-    "threads": "Hilos",
+    "threads": "Sesiones",
     "recentThreads": "Hilos recientes",
     "searchChannels": "Buscar canales, hilos, comandos..."
   },
@@ -21544,7 +21544,7 @@
     "perDay": "Por día",
     "noLimit": "Sin límite",
     "postTo": "Publicar en",
-    "postToHint": "Cada ejecución inicia un hilo nuevo allí. Sin canal, las ejecuciones van a #{channel}.",
+    "postToHint": "Cada ejecución inicia una sesión nueva allí. Sin canal, las ejecuciones quedan en la lista de sesiones.",
     "postToNone": "Ningún canal",
     "postToUnavailable": "Canal no disponible",
     "postToPrivate": "Privado: los disparadores no pueden publicar aquí",
@@ -24663,7 +24663,8 @@
         "memory": "Memoria",
         "apps": "Apps",
         "links": "Enlaces",
-        "triggers": "Activadores"
+        "triggers": "Activadores",
+        "sessions": "Sesiones"
       },
       "empty": {
         "files": {
@@ -24794,7 +24795,9 @@
       "allAgents": "Todos los agentes",
       "join": "Unirse al canal",
       "joined": "Te uniste a #{name}.",
-      "joinFailed": "No se pudo unir al canal. Inténtalo de nuevo."
+      "joinFailed": "No se pudo unir al canal. Inténtalo de nuevo.",
+      "answerFrom": "Respuesta de {agent}. Abrir la sesión",
+      "dmDetails": "Detalles de {agent}"
     },
     "details": {
       "about": "Información",
@@ -24844,7 +24847,10 @@
       "leaveHintPrivate": "Pierdes el acceso a sus hilos, archivos y memoria, incluidos tus propios hilos. Un miembro tendrá que volver a añadirte.",
       "leavePrivateTitle": "¿Salir de #{name}?",
       "addMembers": "Añadir miembros",
-      "privateLimits": "Privado oculta el canal a otras personas. Los cambios de código (ramas de git) y las herramientas propias de los agentes no son privados."
+      "privateLimits": "Privado oculta el canal a otras personas. Los cambios de código (ramas de git) y las herramientas propias de los agentes no son privados.",
+      "memory": "Memoria",
+      "links": "Enlaces",
+      "files": "Archivos"
     },
     "folder": {
       "memory": "Memoria",
@@ -25033,7 +25039,16 @@
     },
     "filter": "Filtrar por espacio",
     "all": "Todos",
-    "projectWide": "En todo el proyecto"
+    "projectWide": "En todo el proyecto",
+    "move": {
+      "label": "Mover a un canal",
+      "none": "Sin canal",
+      "current": "Canal actual",
+      "moved": "Movida a {place}",
+      "removed": "Quitada de su canal",
+      "failed": "No se pudo mover la sesión. Inténtalo de nuevo.",
+      "privateStays": "En un canal privado: se queda ahí"
+    }
   },
   "imageGen": {
     "generating": "Generando imagen",

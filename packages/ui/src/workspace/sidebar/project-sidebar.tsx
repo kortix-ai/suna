@@ -129,7 +129,6 @@ export function ProjectSidebar({
   }, [isMobile, setOpenMobile, onOpenSearch]);
 
   useEffect(() => {
-    if (channels) return;
     const handler = (event: KeyboardEvent) => {
       if (
         (event.metaKey || event.ctrlKey) &&
@@ -143,7 +142,7 @@ export function ProjectSidebar({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [channels, handleNewSession]);
+  }, [handleNewSession]);
 
   return (
     // The New agent modal mounts beside <Sidebar>, outside the mobile sheet.
@@ -285,44 +284,44 @@ export function ProjectSidebar({
         <div className="flex h-full min-h-0 flex-col space-y-2">
           <SidebarGroup className="py-0">
             <SidebarMenu>
-              {channels ? null : (
-                <SidebarMenuItem>
-                  {creatingSession ? (
-                    <SidebarMenuButton
-                      disabled
-                      aria-busy
-                      className="group/menu-button text-sidebar-foreground relative"
-                    >
+              {/* Sessions stay first-class with Channels on: New session is always here. */}
+              <SidebarMenuItem>
+                {creatingSession ? (
+                  <SidebarMenuButton
+                    disabled
+                    aria-busy
+                    className="group/menu-button text-sidebar-foreground relative"
+                  >
+                    {newSessionRowBody}
+                  </SidebarMenuButton>
+                ) : (
+                  <SidebarMenuButton
+                    asChild
+                    className="group/menu-button text-sidebar-foreground relative"
+                  >
+                    <Link href={uiRoutes().project(projectId)} prefetch onClick={handleNewSessionClick}>
                       {newSessionRowBody}
-                    </SidebarMenuButton>
-                  ) : (
-                    <SidebarMenuButton
-                      asChild
-                      className="group/menu-button text-sidebar-foreground relative"
-                    >
-                      <Link href={uiRoutes().project(projectId)} prefetch onClick={handleNewSessionClick}>
-                        {newSessionRowBody}
-                      </Link>
-                    </SidebarMenuButton>
-                  )}
-                </SidebarMenuItem>
-              )}
+                    </Link>
+                  </SidebarMenuButton>
+                )}
+              </SidebarMenuItem>
 
               {/* Customize, Apps, Files: order and
                   visibility come from "Customize sidebar". They moved up here
                   from the footer (Jay, 2026-10-12) to keep the footer short. */}
-              {/* Channels on: the Company memory, the first row under the new-thread slot. */}
+              {/* Channels on: the project memory, under New session. */}
               {channels ? <ProjectMemoryNavItem projectId={projectId} /> : null}
               <ProjectNavItems projectId={projectId} />
             </SidebarMenu>
           </SidebarGroup>
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            {channels ? (
-              <ProjectSpacesNav projectId={projectId} />
-            ) : (
+            {/* Channels on: Channels and Direct messages above the session list,
+                never instead of it. The channel block takes up to half the slot. */}
+            {channels ? <ProjectSpacesNav projectId={projectId} rootClassName="h-auto max-h-1/2 shrink-0" /> : null}
+            <div className="flex min-h-0 flex-1 flex-col">
               <ProjectSessionList projectId={projectId} />
-            )}
+            </div>
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto">

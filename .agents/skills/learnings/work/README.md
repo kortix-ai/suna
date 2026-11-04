@@ -18,6 +18,7 @@ planned, in flight, or parked, so another person or agent can pick it up.
 
 | Topic | Status |
 |---|---|
+| [`channels-sessions/`](channels-sessions/README.md) | planned (`channels-sessions`): Channels v2, a front agent that answers in the feed and hands work to sessions; session list back; tabs cut to two; 4 decisions open |
 | [`harness-architecture-diagram/`](harness-architecture-diagram/README.md) | designed, not built: the home-page harness diagram (mock + box copy); placement A (own section) or B (replaces the Framework tab) open |
 | [`project-repository-access/`](project-repository-access/README.md) | phase 1 on dev (#11492 partial object store, #11501 named image steps); target decided: one Platinum volume per project (git inside, external repos only a sync target); interim: box checkouts off the API, branch-scoped refreshes, shared config snapshot |
 | [`stateless-sessions/`](stateless-sessions/README.md) | target decided: a session is its workspace + transcript on its volume, the transcript file is the one source of truth, the sandbox is disposable; stage 1 on dev (#11503), the rest not started |

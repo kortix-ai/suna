@@ -105,7 +105,7 @@ export function PostToField({
       </Select>
       <p className="text-muted-foreground text-xs text-pretty">
         {/* The default channel can be renamed: name it as it is now. */}
-        {t('postToHint', { channel: list.find((space) => space.is_default)?.slug ?? 'general' })}
+        {t('postToHint')}
       </p>
     </div>
   );

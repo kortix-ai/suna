@@ -6,6 +6,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import {
+  SessionSpaceMoveResultSchema,
   SpaceLinkListSchema,
   SpaceLinkPinResultSchema,
   SpaceLinkSchema,
@@ -93,7 +94,7 @@ flow('SPACE-1', meta(Object.values(ROUTES)), async (ctx) => {
   }
 });
 
-flow('SPACE-2', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-2', meta([ROUTES.list, SESSION_ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   const sessionId = randomUUID();
@@ -129,29 +130,23 @@ flow('SPACE-2', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
       (await world.owner.get(SPACES, { params })).status(200).body().has('$.spaces[0].space_id', generalId);
     });
 
-    await ctx.step('the toggle filed the earlier session into #general (within 15 s)', async () => {
-      const deadline = Date.now() + 15_000;
-      let spaceId: string | null = null;
-      while (Date.now() < deadline) {
-        const { rows } = await world.db.query<{ space_id: string | null }>(
-          'SELECT space_id FROM kortix.project_sessions WHERE session_id = $1',
-          [sessionId],
-        );
-        spaceId = rows[0]?.space_id ?? null;
-        if (spaceId) break;
-        await Bun.sleep(250);
-      }
-      if (spaceId !== generalId) throw new Error(`session space_id is ${spaceId}, expected #general ${generalId}`);
+    await ctx.step('the toggle files no session: the earlier session keeps space_id null and ?space_id=<#general> lists none', async () => {
+      await waitForGeneralRow(world);
+      const spaceId = await sessionSpaceId(world, sessionId);
+      if (spaceId !== null) throw new Error(`the toggle filed the earlier session into ${spaceId}`);
+      const listed = await listedInSpace(world.owner, project.id, generalId);
+      if (listed.length !== 0) throw new Error(`#general lists ${listed.length} session(s): ${listed.join(',')}`);
     });
 
-    await ctx.step('turning the flag off deletes nothing: #general and the session link stay, the route → 403', async () => {
+    await ctx.step('turning the flag off deletes nothing: #general stays, the route → 403, the session is still in no space', async () => {
       await world.setFeature('project_channels', false);
       (await world.owner.get(SPACES, { params })).status(403).body().has('$.code', 'feature_disabled');
-      const { rows } = await world.db.query<{ space_id: string | null }>(
-        'SELECT s.space_id FROM kortix.project_sessions s JOIN kortix.project_spaces p ON p.space_id = s.space_id WHERE s.session_id = $1',
-        [sessionId],
+      const { rows } = await world.db.query<{ space_id: string }>(
+        'SELECT space_id FROM kortix.project_spaces WHERE project_id = $1 AND is_default',
+        [project.id],
       );
-      if (rows[0]?.space_id !== generalId) throw new Error('flag off removed #general or the session link');
+      if (rows[0]?.space_id !== generalId) throw new Error('flag off removed #general');
+      if ((await sessionSpaceId(world, sessionId)) !== null) throw new Error('flag off filed the session');
     });
   } finally {
     await world.close();
@@ -356,19 +351,28 @@ async function sessionSpaceId(world: AgentPrincipalsWorld, sessionId: string): P
 }
 
 /**
- * Turn `project_channels` on and wait for its toggle effect to finish: it
- * files `canary` (a session in no space) into `#general`. Returns `#general`'s id.
+ * Wait (at most 15 s) for the project's `#general` row: the toggle effect, or
+ * the first channel list, creates it. Returns its id.
  */
-async function enableChannelsAndSettle(world: AgentPrincipalsWorld, canary: string): Promise<string> {
-  await world.setFeature('project_channels', true);
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (await sessionSpaceId(world, canary)) break;
-    await Bun.sleep(250);
-  }
-  const generalId = await generalSpaceId(world, world.projectId);
-  if ((await sessionSpaceId(world, canary)) !== generalId) throw new Error('the toggle effect did not file the canary into #general');
-  return generalId;
+async function waitForGeneralRow(world: AgentPrincipalsWorld): Promise<string> {
+  const rows = await waitFor(
+    async () =>
+      (await world.db.query<{ space_id: string }>(
+        'SELECT space_id FROM kortix.project_spaces WHERE project_id = $1 AND is_default',
+        [world.projectId],
+      )).rows,
+    { until: (r) => r.length > 0, timeoutMs: 15_000, intervalMs: 250, description: 'the toggle effect to create #general' },
+  );
+  return rows[0]!.space_id;
+}
+
+const MOVE_ROUTE = 'PUT /v1/projects/:projectId/sessions/:sessionId/space';
+const SESSION_SPACE = '/v1/projects/:projectId/sessions/:sessionId/space';
+
+/** File a session in a space (or `null`: no space) through the product route; 200 expected. */
+async function moveSession(client: FlowContext['client'], projectId: string, sessionId: string, spaceId: string | null): Promise<void> {
+  (await client.put(SESSION_SPACE, { space_id: spaceId }, { params: { projectId, sessionId } }))
+    .status(200).body().has('$.session_id', sessionId).has('$.space_id', spaceId);
 }
 
 // SPACE-5, -6 and -8 need a 201 from the session create route, which needs a
@@ -418,20 +422,20 @@ flow('SPACE-5', createMeta([ROUTES.create, SESSION_ROUTES.create, SESSION_ROUTES
   }
 });
 
-flow('SPACE-6', createMeta([ROUTES.list, SESSION_ROUTES.create, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-6', createMeta([ROUTES.list, SESSION_ROUTES.create, SESSION_ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
   const { project, world } = await openWorld(ctx, { manifest: true });
   const params = { projectId: project.id };
   try {
     await world.setFeature('project_channels', true);
     await world.fund();
-    await ctx.step('create without space_id (flag on) → 201 in #general, private by default, first_prompt is the initial prompt', async () => {
+    await ctx.step('create without space_id (flag on) → 201 in no space (not #general), private by default, first_prompt is the initial prompt', async () => {
+      const general = await generalSpaceId(world, project.id);
       const r = await world.owner.post(SESSIONS, { initial_prompt: 'ke2e: noop' }, { params });
       r.status(201);
-      ctx.track('session', r.json<Session>().session_id, { projectId: project.id });
-      r.body()
-        .has('$.space_id', await generalSpaceId(world, project.id))
-        .has('$.visibility', 'private')
-        .has('$.first_prompt', 'ke2e: noop');
+      const sessionId = r.json<Session>().session_id;
+      ctx.track('session', sessionId, { projectId: project.id });
+      r.body().has('$.space_id', null).has('$.visibility', 'private').has('$.first_prompt', 'ke2e: noop');
+      if ((await listedInSpace(world.owner, project.id, general)).includes(sessionId)) throw new Error('#general lists the new session');
     });
   } finally {
     await world.close();
@@ -522,32 +526,38 @@ flow('SPACE-9', meta([ROUTES.list, SESSION_ROUTES.list, FEATURES_ROUTE]), async 
     });
 
     let generalId = '';
-    await ctx.step('turn the flag on → every one of them lands in #general (count before = count in #general after)', async () => {
+    await ctx.step('turn the flag on → #general is created and none of the 4 is filed: all keep space_id null', async () => {
       await world.setFeature('project_channels', true);
-      generalId = await generalSpaceId(world, project.id);
-      const deadline = Date.now() + 15_000;
-      let after = 0;
-      while (Date.now() < deadline) {
-        const { rows } = await world.db.query<{ n: number }>(
-          'SELECT count(*)::int AS n FROM kortix.project_sessions WHERE project_id = $1 AND space_id = $2',
-          [project.id, generalId],
-        );
-        after = rows[0]!.n;
-        if (after === before) break;
-        await Bun.sleep(250);
-      }
-      if (after !== before) throw new Error(`#general holds ${after} sessions, expected ${before}`);
+      generalId = await waitForGeneralRow(world);
+      (await world.owner.get(SPACES, { params })).status(200).body().has('$.spaces[0].space_id', generalId);
+      const { rows } = await world.db.query<{ session_id: string; space_id: string | null }>(
+        'SELECT session_id, space_id FROM kortix.project_sessions WHERE project_id = $1',
+        [project.id],
+      );
+      if (rows.length !== before) throw new Error(`expected ${before} sessions, found ${rows.length}`);
+      const filed = rows.filter((r) => r.space_id !== null);
+      if (filed.length !== 0) throw new Error(`the toggle filed ${filed.length} session(s): ${JSON.stringify(filed)}`);
     });
 
-    await ctx.step('?space_id=<general> keeps the visibility rules: a private session stays its owner’s alone', async () => {
+    await ctx.step('?space_id=<#general> lists none of them for the owner, member A or member B', async () => {
+      for (const [who, client] of [['owner', world.owner], ['A', ctx.client.as(memberA)], ['B', ctx.client.as(memberB)]] as const) {
+        const ids = await listedInSpace(client, project.id, generalId);
+        if (ids.length !== 0) throw new Error(`${who} lists ${ids.length} session(s) in #general: ${ids.join(',')}`);
+      }
+    });
+
+    await ctx.step('flag on, the normal list keeps the visibility rules: a private session stays its owner’s alone', async () => {
+      const normal = async (client: FlowContext['client']) =>
+        (await client.get(SESSIONS, { params })).status(200).json<Session[]>().map((s) => s.session_id);
+      const mine = (ids: string[]) => ids.filter((id) => [...ownerPrivate, aPrivate, aShared].includes(id)).sort().join(',');
       const sorted = (ids: string[]) => [...ids].sort().join(',');
-      const owner = await listedInSpace(world.owner, project.id, generalId);
-      if (sorted(owner) !== sorted([...ownerPrivate, aShared])) throw new Error(`owner lists ${owner.join(',')}`);
-      const a = await listedInSpace(ctx.client.as(memberA), project.id, generalId);
-      if (sorted(a) !== sorted([aPrivate, aShared])) throw new Error(`member A lists ${a.join(',')}`);
-      const b = await listedInSpace(ctx.client.as(memberB), project.id, generalId);
-      if (b.includes(aPrivate)) throw new Error('member B sees member A’s private session in #general');
-      if (sorted(b) !== sorted([aShared])) throw new Error(`member B lists ${b.join(',')}`);
+      const owner = await normal(world.owner);
+      if (mine(owner) !== sorted([...ownerPrivate, aShared])) throw new Error(`owner lists ${mine(owner)}`);
+      const a = await normal(ctx.client.as(memberA));
+      if (mine(a) !== sorted([aPrivate, aShared])) throw new Error(`member A lists ${mine(a)}`);
+      const b = await normal(ctx.client.as(memberB));
+      if (b.includes(aPrivate)) throw new Error('member B sees member A’s private session');
+      if (mine(b) !== sorted([aShared])) throw new Error(`member B lists ${mine(b)}`);
     });
 
     await ctx.step('flag on: a space_id that is not a UUID → 400', async () => {
@@ -632,25 +642,33 @@ flow('SPACE-10', meta([ROUTES.list, ROUTES.create, SESSION_ROUTES.list, FEATURES
   }
 });
 
-flow('SPACE-12', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-12', meta([ROUTES.list, FEATURES_ROUTE, MOVE_ROUTE, SESSION_ROUTES.list]), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   try {
-    const canary = await insertSession(world, world.ownerUserId, 'private');
-    const firstGeneral = await enableChannelsAndSettle(world, canary);
+    const filedOne = await insertSession(world, world.ownerUserId, 'private');
+    let firstGeneral = '';
+    await ctx.step('flag on (toggle settled: #general exists); the owner files a session into #general with PUT /space → 200', async () => {
+      await world.setFeature('project_channels', true);
+      firstGeneral = await waitForGeneralRow(world);
+      await moveSession(world.owner, project.id, filedOne, firstGeneral);
+      if ((await sessionSpaceId(world, filedOne)) !== firstGeneral) throw new Error('the move did not persist');
+    });
 
     // A toggle effect that failed before it created #general: no #general, sessions in no space.
     await world.db.query('DELETE FROM kortix.project_spaces WHERE space_id = $1', [firstGeneral]);
     const orphan = await insertSession(world, world.ownerUserId, 'project');
     let general = '';
 
-    await ctx.step('the GET /spaces that creates #general files every session in no space into it', async () => {
-      if ((await sessionSpaceId(world, canary)) !== null) throw new Error('deleting #general did not clear the canary space');
+    await ctx.step('the GET /spaces that recreates #general files no session: every session keeps space_id null and the new #general lists none', async () => {
+      if ((await sessionSpaceId(world, filedOne)) !== null) throw new Error('deleting #general did not clear the filed session’s space');
       general = await generalSpaceId(world, project.id);
       if (general === firstGeneral) throw new Error('#general was not recreated');
-      for (const id of [canary, orphan]) {
+      for (const id of [filedOne, orphan]) {
         const spaceId = await sessionSpaceId(world, id);
-        if (spaceId !== general) throw new Error(`session ${id} is in ${spaceId}, expected the new #general`);
+        if (spaceId !== null) throw new Error(`session ${id} is in ${spaceId}, expected no space`);
       }
+      const listed = await listedInSpace(world.owner, project.id, general);
+      if (listed.length !== 0) throw new Error(`the new #general lists ${listed.join(',')}`);
     });
   } finally {
     await world.close();
@@ -1108,10 +1126,10 @@ flow(
         if (s.metadata.trigger_name !== 'standup') throw new Error(`trigger_name is ${String(s.metadata.trigger_name)}`);
       });
 
-      await ctx.step('the channel archived → the next run lands in #general', async () => {
+      await ctx.step('the channel archived → the next run lands in no space (space_id null, not #general)', async () => {
         (await world.owner.patch(SPACE, { archived: true }, { params: { ...params, spaceId: channel } })).status(200);
         const s = await fire('standup');
-        if (s.space_id !== general) throw new Error(`the run is in ${s.space_id}, expected #general`);
+        if (s.space_id !== null) throw new Error(`the run is in ${s.space_id === general ? '#general' : s.space_id}, expected no space`);
       });
 
       await ctx.step('a DM trigger’s run lands in the DM, shared with the DM’s member only', async () => {
@@ -1527,3 +1545,137 @@ flow('SPACE-23', meta([...Object.values(MEMBER_ROUTES), ROUTES.list, ROUTES.crea
     await world.close();
   }
 });
+
+/**
+ * SPACE-30 — `PUT /sessions/:sessionId/space` files a session in a channel or
+ * the caller's own DM, or (`null`) takes it out of every space. Only the
+ * session's creator moves it; a session in a private channel stays there.
+ */
+flow(
+  'SPACE-30',
+  meta([MOVE_ROUTE, ROUTES.list, ROUTES.create, ROUTES.update, ROUTES.dm, SESSION_ROUTES.list, FEATURES_ROUTE]),
+  async (ctx) => {
+    const { team, project, world } = await openWorld(ctx, { manifest: true });
+    const params = { projectId: project.id };
+    const move = (client: FlowContext['client'], sessionId: string, body: unknown) =>
+      client.put(SESSION_SPACE, body, { params: { ...params, sessionId } });
+    /** The row's space, sharing and last activity: a move changes the space only. */
+    const row = async (sessionId: string) =>
+      (await world.db.query<{ space_id: string | null; visibility: string; updated_at: string }>(
+        'SELECT space_id, visibility, updated_at::text AS updated_at FROM kortix.project_sessions WHERE session_id = $1',
+        [sessionId],
+      )).rows[0]!;
+    try {
+      const mine = await insertSession(world, world.ownerUserId, 'project', { updatedAt: new Date(Date.now() - 3_600_000) });
+
+      await ctx.step('flag off (the default): a valid move → 403 feature_disabled, the session stays in no space', async () => {
+        (await move(world.owner, mine, { space_id: randomUUID() }))
+          .status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'project_channels');
+        (await move(world.owner, mine, { space_id: null })).status(403).body().has('$.code', 'feature_disabled');
+        if ((await row(mine)).space_id !== null) throw new Error('a refused move filed the session');
+      });
+
+      await world.setFeature('project_channels', true);
+      const member = await team.addMember('member');
+      await team.grantProjectRole(project.id, member.userId!, 'member');
+      await world.grantRun('kortix', member);
+      const asMember = ctx.client.as(member);
+      const channel = (await world.owner.post(SPACES, { name: 'Move Target' }, { params })).status(201).json<Space>().space_id;
+
+      await ctx.step('the owner moves their own session into a channel → 200 {session_id, space_id}; ?space_id=<channel> lists it; visibility and updated_at unchanged', async () => {
+        const before = await row(mine);
+        (await move(world.owner, mine, { space_id: channel }))
+          .status(200).body().schema(SessionSpaceMoveResultSchema).has('$.session_id', mine).has('$.space_id', channel);
+        const after = await row(mine);
+        if (after.space_id !== channel) throw new Error(`stored space_id is ${after.space_id}`);
+        if (after.visibility !== before.visibility) throw new Error(`visibility changed ${before.visibility} → ${after.visibility}`);
+        if (after.updated_at !== before.updated_at) throw new Error(`updated_at changed ${before.updated_at} → ${after.updated_at}`);
+        if (!(await listedInSpace(world.owner, project.id, channel)).includes(mine)) throw new Error('the channel does not list the moved session');
+        if (!(await listedInSpace(asMember, project.id, channel)).includes(mine)) throw new Error('a member does not list the project-visible session in the channel');
+      });
+
+      await ctx.step('the move wrote a session.space.changed audit event {from: null, to: <channel>} (at most 15 s)', async () => {
+        await waitFor(
+          async () =>
+            (await world.db.query<{ n: number }>(
+              `SELECT count(*)::int AS n FROM kortix.audit_events
+                WHERE account_id = $1 AND action = 'session.space.changed' AND resource_id = $2
+                  AND actor_user_id = $3 AND metadata->>'to' = $4 AND metadata->'from' = 'null'::jsonb`,
+              [world.accountId, mine, world.ownerUserId, channel],
+            )).rows[0]!.n,
+          { until: (n) => n === 1, timeoutMs: 15_000, intervalMs: 250, description: 'the session.space.changed audit event' },
+        );
+      });
+
+      await ctx.step('the same move again → 200, still in the channel', async () => {
+        await moveSession(world.owner, project.id, mine, channel);
+        if ((await row(mine)).space_id !== channel) throw new Error('a repeated move changed the space');
+      });
+
+      await ctx.step('{space_id: null} → 200 space_id null: the session is out of every space and the channel no longer lists it', async () => {
+        await moveSession(world.owner, project.id, mine, null);
+        if ((await row(mine)).space_id !== null) throw new Error('the session is still filed');
+        if ((await listedInSpace(world.owner, project.id, channel)).includes(mine)) throw new Error('the channel still lists the session');
+      });
+
+      await ctx.step('the owner moves it into their own DM → 200 and the DM lists it; then back out with null', async () => {
+        const dm = (await world.owner.post(DM, { agent_name: 'kortix' }, { params })).status(200).json<Space>().space_id;
+        await moveSession(world.owner, project.id, mine, dm);
+        if ((await row(mine)).space_id !== dm) throw new Error('the DM move did not persist');
+        if (!(await listedInSpace(world.owner, project.id, dm)).includes(mine)) throw new Error('the DM does not list the session');
+        await moveSession(world.owner, project.id, mine, null);
+      });
+
+      await ctx.step('a project member moving the owner’s project-visible session → 403 session_move_not_owner; the owner’s private session → 404; nothing moves', async () => {
+        (await move(asMember, mine, { space_id: channel })).status(403).body().has('$.code', 'session_move_not_owner');
+        (await move(asMember, mine, { space_id: null })).status(403).body().has('$.code', 'session_move_not_owner');
+        const hidden = await insertSession(world, world.ownerUserId, 'private');
+        (await move(asMember, hidden, { space_id: channel })).status(404);
+        for (const id of [mine, hidden]) if ((await row(id)).space_id !== null) throw new Error(`a refused move filed ${id}`);
+      });
+
+      await ctx.step('an unknown space id, an archived channel and another member’s DM → 404 space_not_found; the session stays in no space', async () => {
+        const archived = (await world.owner.post(SPACES, { name: 'Move Archived' }, { params })).status(201).json<Space>().space_id;
+        (await world.owner.patch(SPACE, { archived: true }, { params: { ...params, spaceId: archived } })).status(200);
+        const memberDm = (await asMember.post(DM, { agent_name: 'kortix' }, { params })).status(200).json<Space>().space_id;
+        for (const spaceId of [randomUUID(), archived, memberDm]) {
+          (await move(world.owner, mine, { space_id: spaceId })).status(404).body().has('$.code', 'space_not_found');
+        }
+        if ((await row(mine)).space_id !== null) throw new Error('a refused target filed the session');
+      });
+
+      await ctx.step('a session-bound (agent) token moving its own session → 403 session_bound_caller', async () => {
+        const agent = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER, visibility: 'project' });
+        (await move(agent.client, agent.sessionId, { space_id: channel })).status(403).body().has('$.code', 'session_bound_caller');
+        if ((await row(agent.sessionId)).space_id !== null) throw new Error('an agent token filed its session');
+      });
+
+      await ctx.step('a malformed session id → 400; an unknown session → 404', async () => {
+        (await move(world.owner, 'not-a-uuid', { space_id: channel })).status(400);
+        (await move(world.owner, randomUUID(), { space_id: channel })).status(404);
+      });
+
+      await ctx.step('a session in a private channel → 409 session_in_private_channel, to a channel and to null; it stays there', async () => {
+        const created = await world.owner.post(SPACES, { name: `move-private-${randomUUID().slice(0, 6)}`, visibility: 'private', member_ids: [member.userId] }, { params });
+        if (created.statusCode === 409 && created.json<{ code?: string }>().code === 'private_channels_unavailable') {
+          ctx.skip('private channels are off on this target (409 private_channels_unavailable): the private-channel move is unverified');
+        }
+        const privateId = created.status(201).json<Space>().space_id;
+        const inPrivate = await insertSession(world, world.ownerUserId, 'project', { spaceId: privateId });
+        for (const spaceId of [channel, null]) {
+          (await move(world.owner, inPrivate, { space_id: spaceId })).status(409).body().has('$.code', 'session_in_private_channel');
+        }
+        if ((await row(inPrivate)).space_id !== privateId) throw new Error('the private-channel session left its channel');
+      });
+      await ctx.step('a body that is not {space_id: <uuid> | null} → 400 invalid_body: {}, {space_id: "x"}, an unknown field', async () => {
+        for (const body of [{}, { space_id: 'x' }, { space_id: channel, visibility: 'project' }]) {
+          (await move(world.owner, mine, body)).status(400).body().has('$.code', 'invalid_body');
+        }
+        if ((await row(mine)).space_id !== null) throw new Error('a refused body filed the session');
+      });
+
+    } finally {
+      await world.close();
+    }
+  },
+);

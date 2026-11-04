@@ -96,7 +96,7 @@ import { mergeSessionSandboxEnv, parseSessionRuntimeContext, reservedRuntimeCont
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
-import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, forkSourceVisibility, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
+import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, findForkSourceSpace, forkSourceVisibility, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
 import { liveTriggerSpace, triggerRunSpace } from './trigger-space';
 
 import {
@@ -302,8 +302,8 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
   // A run of a repo trigger lands in the trigger's live space, read when the
   // create executes (a queued run sees the space as it is then). The space
   // was checked when it was set on the trigger: a DM was the setter's own,
-  // while the run's actor is the automation stand-in. None or archived:
-  // `#general`, as is a DM whose agent the trigger no longer runs
+  // while the run's actor is the automation stand-in. None or archived: no
+  // space, as for a DM whose agent the trigger no longer runs
   // (`triggerRunSpace`). `source` and `trigger_*` are server-set (`createSession`).
   const meta = input.metadata ?? {};
   if (typeof meta.source === 'string' && meta.source.startsWith('trigger:') && meta.trigger_kind === 'git') {
@@ -315,7 +315,7 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
   }
   if (body.space_id === undefined) {
     // A fork lands in its source's space while the caller may still post there,
-    // with its source's sharing (never wider); else in `#general`.
+    // with its source's sharing (never wider); else in its parent's space, or none.
     const fork = typeof body.fork_from_session_id === 'string'
       ? await findForkSourceSpace(project.projectId, body.fork_from_session_id, await access())
       : null;
@@ -1864,10 +1864,10 @@ export async function createProjectSession(input: {
   }
 
   const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;
-  // No space named: the spawning session's, else `#general`.
-  const spaceId = requestedSpace.filed
-    ? (requestedSpace.spaceId ?? parentSession?.spaceId ?? (await ensureDefaultSpace(projectId, accountId)).spaceId)
-    : null;
+  // No space named: the spawning session's, else none. A session lands in a
+  // channel only when someone puts it there: the session list stays the home
+  // of every other session.
+  const spaceId = requestedSpace.filed ? (requestedSpace.spaceId ?? parentSession?.spaceId ?? null) : null;
   const { initiator, metadata } = buildSessionCreateMetadata({
     input,
     projectId,
@@ -1887,7 +1887,7 @@ export async function createProjectSession(input: {
     parentSession,
     repositoryAccess,
     sandboxSlug,
-    filed: requestedSpace.filed,
+    filed: spaceId !== null,
     // Only a Platinum session box mounts it. An unrecorded open is deleted.
     workspaceVolume: providerName === 'platinum' && !isMyKortixSandboxSlug(sandboxSlug) ? workspaceVolume : null,
   });

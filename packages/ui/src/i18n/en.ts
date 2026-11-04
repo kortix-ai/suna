@@ -823,7 +823,7 @@ const catalog = {
         },
         "project_channels": {
           "name": "Channels",
-          "description": "Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar."
+          "description": "Organize work in channels and direct messages with agents. Each new message starts a session filed in that channel. The session list stays."
         },
         "session_groups": {
           "name": "Session groups",
@@ -852,12 +852,12 @@ const catalog = {
       },
       "channelsSwitch": {
         "onTitle": "Turn on Channels for {project}?",
-        "onBody": "Everyone in this project gets Channels and Direct messages instead of the session list. All existing sessions move into #general. You can turn it off any time; nothing is deleted.",
+        "onBody": "Everyone in this project gets Channels and Direct messages above the session list. Existing sessions stay where they are. You can turn it off any time; nothing is deleted.",
         "drive": "Turn on Drive too, so channels get Files.",
         "turnOn": "Turn on",
         "cancel": "Cancel",
         "offTitle": "Turn off Channels?",
-        "offBody": "Channels, memory, files and links stay saved. The session list comes back for everyone.",
+        "offBody": "Channels, memory, files and links stay saved. Sessions stay in the session list.",
         "turnOff": "Turn off"
       },
       "wip": "Work in progress",
@@ -6048,8 +6048,6 @@ const catalog = {
       "text69de76117f00": "Pick the App that sends the event.",
       "text7c0a91e5b3d2": "Unclassified tools",
       "text9d2b6f0c41ae": "Tools & rules",
-      "openThreadAction": "Open thread",
-      "untitledThread": "Untitled thread",
       "text73738b374f4b": "Project admin",
       "textc08f99e3947d": "Loops",
       "text37737d817d12": "Back to project",
@@ -6226,9 +6224,9 @@ const catalog = {
     "copyAction": "Copy {label}",
     "copied": "Copied {label}",
     "copyFailed": "Could not copy to the clipboard",
-    "threads": "Threads",
-    "recentThreads": "Recent threads",
-    "searchChannels": "Search channels, threads, commands..."
+    "threads": "Sessions",
+    "recentThreads": "Recent sessions",
+    "searchChannels": "Search channels, sessions, commands..."
   },
   "repositoryAccess": {
     "label": "Project repository access",
@@ -6445,7 +6443,7 @@ const catalog = {
     "perDay": "Per day",
     "noLimit": "No limit",
     "postTo": "Post to",
-    "postToHint": "Each run starts a new thread there. With no channel, runs go to #{channel}.",
+    "postToHint": "Each run starts a new session there. With no channel, runs stay in the session list.",
     "postToNone": "No channel",
     "postToUnavailable": "Unavailable channel",
     "postToPrivate": "Private: triggers can't post here",
@@ -8799,8 +8797,8 @@ const catalog = {
         "openCompany": "Open Company memory · {count, plural, one {# page} other {# pages}}"
       },
       "source": {
-        "thread": "Open the thread “{label}”",
-        "threadGone": "From the thread “{label}”",
+        "thread": "Open the session “{label}”",
+        "threadGone": "From the session “{label}”",
         "outside": "Open {label} in a new tab",
         "outsideText": "From {label}",
         "person": "Added by {label}",
@@ -8808,7 +8806,7 @@ const catalog = {
       },
       "used": {
         "label": "Used {places} memory · {count, plural, one {# page} other {# pages}}",
-        "title": "Pages this thread started with",
+        "title": "Pages this session started with",
         "company": "Company",
         "removed": "Removed"
       },
@@ -8819,7 +8817,7 @@ const catalog = {
       },
       "company": {
         "subtitle": "What every agent in this project knows.",
-        "gateDescription": "Company memory comes with Channels: every agent in this project starts each thread with what the team saved here.",
+        "gateDescription": "Company memory comes with Channels: every agent in this project starts each session with what the team saved here.",
         "title": "Memory",
         "place": "Company"
       },
@@ -8832,7 +8830,7 @@ const catalog = {
       "updated": "Updated {time} by {author}",
       "updatedAt": "Updated {time}",
       "sourceKind": {
-        "thread": "thread",
+        "thread": "session",
         "person": "message",
         "outside": "link",
         "import": "file"
@@ -8959,30 +8957,30 @@ const catalog = {
     },
     "view": {
       "welcomeTitle": "Welcome to #{name}",
-      "welcomeEmpty": "Start the first thread in #{name}. Every message starts a new thread.",
+      "welcomeEmpty": "Start the first session in #{name}. Every message starts a new session.",
       "welcomeStart": "This is the start of #{name}.",
       "dmIntro": "This conversation is just between you and {agent}.",
       "today": "Today",
       "yesterday": "Yesterday",
-      "openThread": "Open thread",
-      "replyInThread": "Reply in thread",
+      "openThread": "Open session",
+      "replyInThread": "Reply in the session",
       "lastReply": "Last reply {time}",
       "working": "{agent} is working…",
       "agentFallback": "Agent",
       "authorFallback": "Someone",
-      "loadEarlier": "Load earlier threads",
+      "loadEarlier": "Load earlier sessions",
       "messageChannel": "Message #{name}",
       "messageAgent": "Message {agent}",
-      "threadsEmptyTitle": "No threads yet",
-      "threadsEmpty": "Threads you start will show up here.",
+      "threadsEmptyTitle": "No sessions yet",
+      "threadsEmpty": "Sessions you start here show up in this list.",
       "loadError": "Could not load this channel.",
-      "threadsLoadError": "Could not load the threads.",
+      "threadsLoadError": "Could not load the sessions.",
       "retry": "Try again",
       "notFound": "This channel doesn't exist.",
       "notFoundHint": "The link may be wrong, or someone renamed the channel.",
       "openDefault": "Open #{name}",
       "archivedTitle": "#{name} is archived.",
-      "archivedHint": "Unarchive it to read and start threads here again.",
+      "archivedHint": "Unarchive it to read and start sessions here again.",
       "archivedLocked": "Only its creator or a project manager can unarchive it.",
       "unarchive": "Unarchive channel",
       "unarchived": "Channel unarchived",
@@ -8990,22 +8988,23 @@ const catalog = {
       "dmFailed": "Could not open this conversation.",
       "archive": "Archive channel",
       "archiveTitle": "Archive #{name}?",
-      "archiveDescription": "The channel leaves the sidebar for every member. Its threads stay, and its creator or a project manager can unarchive it.",
+      "archiveDescription": "The channel leaves the sidebar for every member. Its sessions stay, and its creator or a project manager can unarchive it.",
       "archived": "Channel archived",
       "archiveFailed": "Could not archive the channel. Try again.",
-      "threadTitle": "Thread",
-      "closeThread": "Close thread",
-      "sendFailed": "Could not start the thread. Try again.",
+      "threadTitle": "Session",
+      "closeThread": "Close session",
+      "sendFailed": "Could not start the session. Try again.",
       "replies": "{count, plural, one {# reply} other {# replies}}",
       "replyPlaceholder": "Reply…",
       "tab": {
-        "chat": "Chat",
+        "chat": "Conversation",
         "threads": "Threads",
         "files": "Files",
         "memory": "Memory",
         "apps": "Apps",
         "links": "Links",
-        "triggers": "Triggers"
+        "triggers": "Triggers",
+        "sessions": "Sessions"
       },
       "empty": {
         "files": {
@@ -9024,11 +9023,11 @@ const catalog = {
         },
         "links": {
           "title": "No links yet",
-          "description": "Links people share in {place} threads show up here. Pin one to give it to every agent in the channel."
+          "description": "Links people share in {place} sessions show up here. Pin one to give it to every agent in the channel."
         },
         "triggers": {
           "title": "No triggers yet",
-          "description": "Triggers start a thread in {place} on a schedule or an event.",
+          "description": "Triggers start a session in {place} on a schedule or an event.",
           "action": "New trigger"
         }
       },
@@ -9036,18 +9035,18 @@ const catalog = {
       "roster": "{people} · {agents}",
       "rosterPeople": "{count, plural, one {# person} other {# people}}",
       "rosterAgents": "{count, plural, one {# agent} other {# agents}}",
-      "copyLink": "Copy link to thread",
+      "copyLink": "Copy link to session",
       "linkCopied": "Link copied",
       "notice": {
-        "unreachable": "Lost contact with this thread's computer. Messages you send are queued until it reconnects.",
-        "unreachableMidTurn": "Lost contact with this thread's computer while a turn is still open. Messages you send stay queued until it answers.",
-        "stalled": "Waking this thread's computer is taking longer than usual. Messages you send are queued.",
-        "starting": "Starting this thread's computer. Your message sends automatically.",
-        "idle": "This thread's computer is asleep. Your next message wakes it up and is delivered.",
-        "waking": "Waking this thread's computer. Messages you send are queued and go out automatically."
+        "unreachable": "Lost contact with this session's computer. Messages you send are queued until it reconnects.",
+        "unreachableMidTurn": "Lost contact with this session's computer while a turn is still open. Messages you send stay queued until it answers.",
+        "stalled": "Waking this session's computer is taking longer than usual. Messages you send are queued.",
+        "starting": "Starting this session's computer. Your message sends automatically.",
+        "idle": "This session's computer is asleep. Your next message wakes it up and is delivered.",
+        "waking": "Waking this session's computer. Messages you send are queued and go out automatically."
       },
       "boot": {
-        "restart": "Restart thread"
+        "restart": "Restart session"
       },
       "links": {
         "add": "Add link",
@@ -9082,25 +9081,25 @@ const catalog = {
         "unpinHint": "Unpin it. Agents stop reading it.",
         "copyLink": "Copy link",
         "linkCopied": "Link copied",
-        "openThread": "Open thread",
+        "openThread": "Open session",
         "noMatch": "No links match"
       },
       "appsLoadError": "Could not load the apps.",
       "triggers": {
         "loadError": "Could not load the triggers.",
-        "privateNote": "Triggers can't post into a private channel. Ask an agent in a thread to set a loop instead."
+        "privateNote": "Triggers can't post into a private channel. Ask an agent in a session to set a loop instead."
       },
       "reply": "Reply",
       "rosterTitlePeople": "People",
       "rosterTitleAgents": "Agents",
       "viewAllMembers": "View all members",
-      "agentThreads": "{count, plural, one {# thread} other {# threads}}",
+      "agentThreads": "{count, plural, one {# session} other {# sessions}}",
       "threadFilter": {
-        "search": "Search threads",
+        "search": "Search sessions",
         "filter": "Filter",
         "clear": "Clear",
         "clearFilters": "Clear filters",
-        "noMatch": "No threads match",
+        "noMatch": "No sessions match",
         "noMatchHint": "Try another search, or clear the filters.",
         "remove": "Remove filter {facet}: {value}",
         "status": "Status",
@@ -9136,7 +9135,9 @@ const catalog = {
       "allAgents": "All agents",
       "join": "Join channel",
       "joined": "You joined #{name}.",
-      "joinFailed": "Could not join the channel. Try again."
+      "joinFailed": "Could not join the channel. Try again.",
+      "answerFrom": "{agent}'s answer. Open the session",
+      "dmDetails": "{agent} details"
     },
     "details": {
       "about": "About",
@@ -9147,7 +9148,7 @@ const catalog = {
       "created": "Created",
       "editField": "Edit {field}",
       "archiveTitle": "Archive this channel",
-      "archiveHint": "It leaves the sidebar for every member. Its threads stay.",
+      "archiveHint": "It leaves the sidebar for every member. Its sessions stay.",
       "archive": "Archive",
       "find": "Find people or agents",
       "search": "Search",
@@ -9178,21 +9179,24 @@ const catalog = {
       "privateNote": "Only members can see #{name}.",
       "makePrivate": "Make private",
       "makePrivateTitle": "Make #{name} private?",
-      "makePrivateWho": "Only members will see #{name}: its threads, files, memory and links. Everyone who started a thread or added a link becomes a member.",
-      "makePrivateLeave": "Everyone else loses access. A member who leaves later loses access too, to their own threads as well.",
+      "makePrivateWho": "Only members will see #{name}: its sessions, files, memory and links. Everyone who started a session or added a link becomes a member.",
+      "makePrivateLeave": "Everyone else loses access. A member who leaves later loses access too, to their own sessions as well.",
       "makePrivateFinal": "You cannot make it public again. Files copied out of it stay where they are.",
       "makePrivateTriggers": "{count, plural, one {# trigger posts here. It stops running.} other {# triggers post here. They stop running.}}",
       "madePrivate": "#{name} is now private",
-      "leaveHintPrivate": "You lose access to its threads, files and memory, your own threads included. A member must add you again.",
+      "leaveHintPrivate": "You lose access to its sessions, files and memory, your own sessions included. A member must add you again.",
       "leavePrivateTitle": "Leave #{name}?",
       "addMembers": "Add members",
-      "privateLimits": "Private hides the channel from other people. Code changes (git branches) and the agents’ own tools aren’t private."
+      "privateLimits": "Private hides the channel from other people. Code changes (git branches) and the agents’ own tools aren’t private.",
+      "memory": "Memory",
+      "links": "Links",
+      "files": "Files"
     },
     "folder": {
       "memory": "Memory",
       "loadError": "Couldn't load this folder",
-      "memoryNoteChannel": "What agents in {place} remember. Agents read this at the start of every thread.",
-      "memoryNoteDm": "What {agent} remembers from this DM. It reads this at the start of every thread.",
+      "memoryNoteChannel": "What agents in {place} remember. Agents read this at the start of every session.",
+      "memoryNoteDm": "What {agent} remembers from this DM. It reads this at the start of every session.",
       "off": {
         "title": "No Drive here",
         "description": "Files and memory for {place} live in the Drive. This Kortix stores no Drive: it needs Platinum."
@@ -9203,7 +9207,7 @@ const catalog = {
       "intro": {
         "title": "Welcome to Channels",
         "channels": "Channels group work by team.",
-        "threads": "Every new message starts a thread.",
+        "threads": "Every new message starts a session.",
         "memory": "Agents remember what each channel agrees on.",
         "gotIt": "Got it"
       },
@@ -9298,6 +9302,15 @@ const catalog = {
       "noApp": "No app selected yet.",
       "noFile": "No file yet.",
       "loadingApp": "Loading app…"
+    },
+    "move": {
+      "label": "Move to channel",
+      "none": "No channel",
+      "current": "Current channel",
+      "moved": "Moved to {place}",
+      "removed": "Removed from its channel",
+      "failed": "Could not move the session. Try again.",
+      "privateStays": "In a private channel: it stays there"
     }
   },
   "imageGen": {

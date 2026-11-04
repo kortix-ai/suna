@@ -22,6 +22,7 @@ const {
   useAddProjectSpaceMembers,
   useJoinProjectSpace,
   useLeaveProjectSpace,
+  useMoveProjectSessionToSpace,
   useProjectSpaceMembers,
   useRemoveProjectSpaceMember,
   useAddProjectSpaceLink,
@@ -92,6 +93,22 @@ describe('space mutations', () => {
     // Creating a channel or opening a DM completes a "Get started" row.
     const onboarding = [...qk.project.channelsOnboarding('P1')];
     expect(invalidated).toEqual([key, onboarding, key, key, onboarding]);
+  });
+});
+
+describe('moving a session to a space', () => {
+  test('PUTs the session’s space and refreshes every session list and the session itself', async () => {
+    const move = useMoveProjectSessionToSpace('P1') as any;
+    await move.mutationFn({ sessionId: 'SESS', spaceId: 'S1' });
+    await move.mutationFn({ sessionId: 'SESS', spaceId: null });
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      'PUT http://test.local/projects/P1/sessions/SESS/space',
+      'PUT http://test.local/projects/P1/sessions/SESS/space',
+    ]);
+    expect(calls.map((c) => c.body)).toEqual([{ space_id: 'S1' }, { space_id: null }]);
+    await move.onSuccess();
+    // The whole sessions family: every scoped list and each session's own row.
+    expect(invalidated).toEqual([[...qk.project.sessionsScope('P1')]]);
   });
 });
 

@@ -20,6 +20,7 @@ import { useSessionNeedsYouCounts, useSessionsAwaitingAnswer } from '../../inter
 import { useCopy } from '../../internal/hooks/use-copy';
 import { relativeTime } from '../../internal/lib/relative-time';
 import { cn } from '../../lib/utils';
+import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
 import { EntityAvatar } from '../../primitives/entity-avatar';
 import { ErrorState } from '../../primitives/error-state';
@@ -324,12 +325,13 @@ function ThreadRow({
       }}
       toolbar={
         <>
-          <ThreadToolbar sessionId={session.session_id} onOpen={onOpen} />
+          <ThreadToolbar projectId={session.project_id} sessionId={session.session_id} onOpen={onOpen} />
           <RememberThisButton session={session} space={space} />
         </>
       }
     >
       <ThreadPrompt session={session} onOpen={onOpen} />
+      <ThreadAnswer session={session} space={space} onOpen={onOpen} />
       <ThreadSummary session={session} space={space} needsYou={needsYou} onOpen={onOpen} />
     </MessageRow>
   );
@@ -380,6 +382,45 @@ function ThreadPrompt({ session, onOpen }: { session: ProjectSession; onOpen: ()
         </button>
       ) : null}
     </>
+  );
+}
+
+/**
+ * The agent's latest answer, under the message: the last assistant text of the
+ * session's last finished turn (`result_excerpt`, at most 280 characters,
+ * stamped at every turn end). Clamped to 4 lines; the whole answer and the
+ * work behind it are on the session page. Absent while a turn runs or before
+ * the first answer.
+ */
+function ThreadAnswer({
+  session,
+  space,
+  onOpen,
+}: {
+  session: ProjectSession;
+  space: ProjectSpace;
+  onOpen: () => void;
+}) {
+  const t = useTranslations('spaces.view');
+  const excerpt = session.result_excerpt?.trim();
+  if (!excerpt || threadIsWorking(session)) return null;
+  const agentName = session.agent_name ?? space.dm_agent_name;
+  const agent = agentName ? agentLabel(agentName) : t('agentFallback');
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={t('answerFrom', { agent })}
+      className="hover:bg-hover focus-visible:ring-ring -mx-1 mt-1.5 flex w-full max-w-2xl items-start gap-2 rounded-md px-1 py-1 text-left outline-none focus-visible:ring-2"
+    >
+      <AgentMark slug={agentName ?? DEFAULT_AGENT_SLUG} size={14} label={agent} className="mt-0.5 shrink-0" />
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground text-xs font-medium">{agent}</span>
+        <span className={cn(MESSAGE_TEXT_CLASS, 'text-muted-foreground line-clamp-4 block text-pretty whitespace-pre-wrap wrap-anywhere')}>
+          {excerpt}
+        </span>
+      </span>
+    </button>
   );
 }
 
@@ -465,15 +506,12 @@ function ThreadSummary({
   );
 }
 
-/** The row's floating actions: reply in the thread (labelled), copy the thread's link. */
-function ThreadToolbar({ sessionId, onOpen }: { sessionId: string; onOpen: () => void }) {
+/** The row's floating actions: reply on the session's page (labelled), copy the session's link. */
+function ThreadToolbar({ projectId, sessionId, onOpen }: { projectId: string; sessionId: string; onOpen: () => void }) {
   const t = useTranslations('spaces.view');
   const { copied, copy } = useCopy({ toast: false });
   const copyLink = () => {
-    const url = new URL(window.location.href);
-    url.search = '';
-    url.searchParams.set('thread', sessionId);
-    void copy(url.toString());
+    void copy(new URL(uiRoutes().session(projectId, sessionId), window.location.origin).toString());
   };
   const linkLabel = copied ? t('linkCopied') : t('copyLink');
   return (

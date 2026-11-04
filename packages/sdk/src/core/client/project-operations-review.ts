@@ -28,6 +28,8 @@ export function bindProjectOperationsReview(projectId: string) {
       update: (...a: DropFirst<Parameters<typeof P.updateProjectSpace>>) => P.updateProjectSpace(projectId, ...a),
       /** The caller's DM with an agent, created on the first call. */
       dm: (agentName: string) => P.getOrCreateProjectDm(projectId, agentName),
+      /** `moveSession(sessionId, spaceId)`: file a session in a channel or DM; `null` takes it out. Only its creator. */
+      moveSession: (...a: DropFirst<Parameters<typeof P.moveProjectSessionToSpace>>) => P.moveProjectSessionToSpace(projectId, ...a),
       /** The channel's Apps: deployed from one of its threads, only those the caller may open. */
       apps: (spaceId: string) => P.listProjectSpaceApps(projectId, spaceId),
       /** A channel's links: added ("Add link", pinned) or shared in its threads. Agents read the pinned ones. Only the creator or a project manager may remove one. */

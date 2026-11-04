@@ -18,6 +18,7 @@ import {
   listProjectSpaceLinks,
   listProjectSpaces,
   listPrivateChannelsNotIn,
+  moveProjectSessionToSpace,
   pinProjectSpaceLink,
   removeProjectSpaceLink,
   updateProjectSpace,
@@ -363,4 +364,28 @@ test('adding someone outside the project rejects with ApiError 400 not_project_m
   expect(error).toBeInstanceOf(ApiError);
   expect(error.status).toBe(400);
   expect(error.code).toBe('not_project_member');
+});
+
+test('moveProjectSessionToSpace PUTs the space id and returns the session\u2019s new space', async () => {
+  nextResponse = { status: 200, body: { session_id: 'SESS', space_id: general.space_id } };
+  const moved = await moveProjectSessionToSpace('P1', 'SESS', general.space_id);
+  expect(calls).toEqual([
+    { url: 'http://test.local/v1/projects/P1/sessions/SESS/space', method: 'PUT', body: { space_id: general.space_id } },
+  ]);
+  expect(moved).toEqual({ session_id: 'SESS', space_id: general.space_id });
+});
+
+test('moveProjectSessionToSpace sends an explicit null to take the session out of every space', async () => {
+  nextResponse = { status: 200, body: { session_id: 'SESS', space_id: null } };
+  const moved = await moveProjectSessionToSpace('P1', 'SESS', null);
+  // The key must be on the wire: the route answers an absent `space_id` with 400.
+  expect(calls[0]!.body).toEqual({ space_id: null });
+  expect(moved.space_id).toBeNull();
+});
+
+test('moveProjectSessionToSpace rejects with the API code when the session stays in its private channel', async () => {
+  nextResponse = { status: 409, body: { error: 'This session is in a private channel.', code: 'session_in_private_channel' } };
+  const error = await moveProjectSessionToSpace('P1', 'SESS', null).catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({ status: 409, code: 'session_in_private_channel' });
 });

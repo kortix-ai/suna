@@ -21321,7 +21321,7 @@
     "copyAction": "Copiar {label}",
     "copied": "Copiado: {label}",
     "copyFailed": "Não foi possível copiar para a área de transferência",
-    "threads": "Threads",
+    "threads": "Sessões",
     "recentThreads": "Threads recentes",
     "searchChannels": "Pesquisar canais, threads, comandos..."
   },
@@ -21544,7 +21544,7 @@
     "perDay": "Por dia",
     "noLimit": "Sem limite",
     "postTo": "Publicar em",
-    "postToHint": "Cada execução inicia uma nova thread ali. Sem canal, as execuções vão para #{channel}.",
+    "postToHint": "Cada execução inicia uma nova sessão ali. Sem canal, as execuções ficam na lista de sessões.",
     "postToNone": "Nenhum canal",
     "postToUnavailable": "Canal indisponível",
     "postToPrivate": "Privado: gatilhos não podem publicar aqui",
@@ -24663,7 +24663,8 @@
         "memory": "Memória",
         "apps": "Apps",
         "links": "Links",
-        "triggers": "Gatilhos"
+        "triggers": "Gatilhos",
+        "sessions": "Sessões"
       },
       "empty": {
         "files": {
@@ -24794,7 +24795,9 @@
       "allAgents": "Todos os agentes",
       "join": "Entrar no canal",
       "joined": "Você entrou em #{name}.",
-      "joinFailed": "Não foi possível entrar no canal. Tente novamente."
+      "joinFailed": "Não foi possível entrar no canal. Tente novamente.",
+      "answerFrom": "Resposta de {agent}. Abrir a sessão",
+      "dmDetails": "Detalhes de {agent}"
     },
     "details": {
       "about": "Sobre",
@@ -24844,7 +24847,10 @@
       "leaveHintPrivate": "Você perde o acesso aos threads, arquivos e memória, inclusive aos seus próprios threads. Um membro precisará adicionar você de novo.",
       "leavePrivateTitle": "Sair de #{name}?",
       "addMembers": "Adicionar membros",
-      "privateLimits": "Privado esconde o canal das outras pessoas. Mudanças de código (branches do git) e as ferramentas dos próprios agentes não são privadas."
+      "privateLimits": "Privado esconde o canal das outras pessoas. Mudanças de código (branches do git) e as ferramentas dos próprios agentes não são privadas.",
+      "memory": "Memória",
+      "links": "Links",
+      "files": "Arquivos"
     },
     "folder": {
       "memory": "Memória",
@@ -25033,7 +25039,16 @@
     },
     "filter": "Filtrar por espaço",
     "all": "Todos",
-    "projectWide": "Todo o projeto"
+    "projectWide": "Todo o projeto",
+    "move": {
+      "label": "Mover para um canal",
+      "none": "Sem canal",
+      "current": "Canal atual",
+      "moved": "Movida para {place}",
+      "removed": "Removida do canal",
+      "failed": "Não foi possível mover a sessão. Tente novamente.",
+      "privateStays": "Em um canal privado: ela fica lá"
+    }
   },
   "imageGen": {
     "generating": "Gerando imagem",

@@ -21321,7 +21321,7 @@
     "copyAction": "{label} kopieren",
     "copied": "{label} kopiert",
     "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen",
-    "threads": "Threads",
+    "threads": "Sitzungen",
     "recentThreads": "Letzte Threads",
     "searchChannels": "Kanäle, Threads, Befehle suchen..."
   },
@@ -21544,7 +21544,7 @@
     "perDay": "Pro Tag",
     "noLimit": "Kein Limit",
     "postTo": "Posten in",
-    "postToHint": "Jeder Lauf startet dort einen neuen Thread. Ohne Kanal landen Läufe in #{channel}.",
+    "postToHint": "Jeder Lauf startet dort eine neue Session. Ohne Kanal bleiben Läufe in der Session-Liste.",
     "postToNone": "Kein Kanal",
     "postToUnavailable": "Nicht verfügbarer Kanal",
     "postToPrivate": "Privat: Trigger können hier nicht posten",
@@ -24663,7 +24663,8 @@
         "memory": "Speicher",
         "apps": "Apps",
         "links": "Links",
-        "triggers": "Trigger"
+        "triggers": "Trigger",
+        "sessions": "Sitzungen"
       },
       "empty": {
         "files": {
@@ -24794,7 +24795,9 @@
       "allAgents": "Alle Agenten",
       "join": "Kanal beitreten",
       "joined": "Du bist #{name} beigetreten.",
-      "joinFailed": "Beitritt zum Kanal fehlgeschlagen. Versuche es erneut."
+      "joinFailed": "Beitritt zum Kanal fehlgeschlagen. Versuche es erneut.",
+      "answerFrom": "Antwort von {agent}. Session öffnen",
+      "dmDetails": "Details zu {agent}"
     },
     "details": {
       "about": "Info",
@@ -24844,7 +24847,10 @@
       "leaveHintPrivate": "Du verlierst den Zugriff auf seine Threads, Dateien und Erinnerungen, auch auf deine eigenen Threads. Ein Mitglied muss dich wieder hinzufügen.",
       "leavePrivateTitle": "#{name} verlassen?",
       "addMembers": "Mitglieder hinzufügen",
-      "privateLimits": "Privat verbirgt den Kanal vor anderen. Codeänderungen (Git-Branches) und die eigenen Tools der Agents sind nicht privat."
+      "privateLimits": "Privat verbirgt den Kanal vor anderen. Codeänderungen (Git-Branches) und die eigenen Tools der Agents sind nicht privat.",
+      "memory": "Speicher",
+      "links": "Links",
+      "files": "Dateien"
     },
     "folder": {
       "memory": "Speicher",
@@ -25033,7 +25039,16 @@
     },
     "filter": "Nach Bereich filtern",
     "all": "Alle",
-    "projectWide": "Projektweit"
+    "projectWide": "Projektweit",
+    "move": {
+      "label": "In Kanal verschieben",
+      "none": "Kein Kanal",
+      "current": "Aktueller Kanal",
+      "moved": "Nach {place} verschoben",
+      "removed": "Aus dem Kanal entfernt",
+      "failed": "Die Session konnte nicht verschoben werden. Versuche es erneut.",
+      "privateStays": "In einem privaten Kanal: Sie bleibt dort"
+    }
   },
   "imageGen": {
     "generating": "Bild wird erstellt",

@@ -131,11 +131,12 @@ describe('spaceRoster', () => {
 });
 
 describe('spaceTabFromParam', () => {
-  test('reads a tab the space has, and falls back to Chat for anything else', () => {
-    expect(spaceTabFromParam('files', 'channel')).toBe('files');
-    expect(spaceTabFromParam('links', 'channel')).toBe('links');
-    expect(spaceTabFromParam('links', 'dm')).toBe('chat');
-    expect(spaceTabFromParam('nope', 'channel')).toBe('chat');
+  test('reads Sessions, keeps old ?tab=threads links on Sessions, and falls back to the conversation', () => {
+    expect(spaceTabFromParam('sessions', 'channel')).toBe('sessions');
+    expect(spaceTabFromParam('threads', 'dm')).toBe('sessions');
+    // The tabs that moved to Details or to their project page open the conversation.
+    expect(spaceTabFromParam('files', 'channel')).toBe('chat');
+    expect(spaceTabFromParam('triggers', 'channel')).toBe('chat');
     expect(spaceTabFromParam(null, 'dm')).toBe('chat');
   });
 });

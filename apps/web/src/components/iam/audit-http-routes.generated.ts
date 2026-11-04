@@ -879,6 +879,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "PUT|v1|projects|:projectId|sessions|:sessionId|scope",
   "PUT|v1|projects|:projectId|sessions|:sessionId|sharing",
   "GET|v1|projects|:projectId|sessions|:sessionId|snapshot",
+  "PUT|v1|projects|:projectId|sessions|:sessionId|space",
   "POST|v1|projects|:projectId|sessions|:sessionId|start",
   "POST|v1|projects|:projectId|sessions|:sessionId|stop",
   "GET|v1|projects|:projectId|sessions|:sessionId|tasks",

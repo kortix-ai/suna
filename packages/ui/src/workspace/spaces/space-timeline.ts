@@ -176,19 +176,22 @@ export function spaceRoster(
   return { people: [...people.values()], agents: Object.keys(agentThreads), agentThreads };
 }
 
-/** A channel's tabs, in order. `?tab=` names one; Chat has no param. */
-const CHANNEL_TABS = ['chat', 'threads', 'files', 'memory', 'apps', 'links', 'triggers'] as const;
-/** A DM has no apps or links of its own. */
-const DM_TABS = ['chat', 'threads', 'files', 'memory', 'triggers'] as const;
-export type SpaceTab = (typeof CHANNEL_TABS)[number];
+/**
+ * A space's tabs, in order: the conversation and its sessions. `?tab=` names
+ * one; the conversation has no param. The space's memory, links and folder
+ * live in Details, and its triggers and Apps on their project pages.
+ */
+const SPACE_TABS = ['chat', 'sessions'] as const;
+export type SpaceTab = (typeof SPACE_TABS)[number];
 
-export function spaceTabs(kind: 'channel' | 'dm'): readonly SpaceTab[] {
-  return kind === 'dm' ? DM_TABS : CHANNEL_TABS;
+export function spaceTabs(_kind: 'channel' | 'dm'): readonly SpaceTab[] {
+  return SPACE_TABS;
 }
 
-/** The `?tab=` value as a tab of this kind of space; anything else is Chat. */
-export function spaceTabFromParam(value: string | null, kind: 'channel' | 'dm'): SpaceTab {
-  return spaceTabs(kind).find((tab) => tab === value) ?? 'chat';
+/** The `?tab=` value as a tab; the old `threads` is Sessions, anything else the conversation. */
+export function spaceTabFromParam(value: string | null, _kind: 'channel' | 'dm'): SpaceTab {
+  if (value === 'threads') return 'sessions';
+  return SPACE_TABS.find((tab) => tab === value) ?? 'chat';
 }
 
 /** The Threads tab's Status filter: the states a thread row shows. */

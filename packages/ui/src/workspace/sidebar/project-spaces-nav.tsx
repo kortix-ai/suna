@@ -35,10 +35,17 @@ function isAt(pathname: string | null, href: string): boolean {
 
 /**
  * The sidebar under the `project_channels` flag: Channels, then Direct
- * messages, in the slot the session list holds with the flag off. A section
+ * messages, above the session list (sessions stay first-class). A section
  * renders once its data arrives: no skeleton rows for navigation.
  */
-export function ProjectSpacesNav({ projectId }: { projectId: string }) {
+export function ProjectSpacesNav({
+  projectId,
+  rootClassName,
+}: {
+  projectId: string;
+  /** Sizing of the scroll root; the sidebar caps it above the session list. */
+  rootClassName?: string;
+}) {
   const t = useTranslations('sidebar');
   const pathname = useUiPathname();
   const router = useUiRouter();
@@ -52,7 +59,7 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
   const channels = spaces.data?.filter((space) => space.kind === 'channel' && !space.archived_at);
 
   return (
-    <FadedScrollArea fadeColor="from-background" className="h-full min-h-0 space-y-2">
+    <FadedScrollArea fadeColor="from-background" className="min-h-0 space-y-2" rootClassName={rootClassName}>
       {spaces.isError && !spaces.data ? (
         <div className="space-y-1.5 px-2 py-2">
           <p className="text-destructive/80 text-xs">{t('spaces.loadError')}</p>

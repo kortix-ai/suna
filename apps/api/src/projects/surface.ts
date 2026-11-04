@@ -183,7 +183,6 @@ export { registerRuntimeFork } from './lib/runtime-session-snapshot';
 // `project_channels` on: file every session into `#general`, and the "turned on
 // again" record (consumed by ../feature-flags/toggle-effects).
 export { turnOnChannels } from './lib/project-spaces';
-export { recordChannelsReenabled } from './lib/channels-onboarding';
 
 // Author names written into memory files (consumed by ../memory/layers.ts).
 export { resolveUserIdentities } from './lib/user-identity';
