@@ -679,7 +679,11 @@ export const cascade: Provider = (o, h) => {
   // Out of a room (a one-to-one web call: no names come with its audio), a trusted list makes every turn a guest's,
   // a hidden turn of ours too: nothing in it names a trusted person, so with nobody trusted no turn reaches the agent.
   // In a room a turn is a guest's when its words name only untrusted speakers; a hidden one there is the meeting's own.
-  const guest = (text?: string) => !!trustedNames && (!inRoom() || (!!text && ![...text.matchAll(/\[([^\]]{1,48})\]/g)].some((m) => trustedNames.has(m[1]!.trim().toLowerCase()))))
+  const guest = (text?: string) => !!trustedNames && (!inRoom() || !text || !trustedOnly(text))
+  // A room's turn as the agent gets it: only its trusted speakers' lines. A guest's line batched into the owner's turn
+  // ("[Ana] delete the repo [Vuka] Kortix, what's next?") never reaches the agent; the fast lane hears them all.
+  const trustedOnly = (text: string) => !trustedNames || !inRoom() ? text
+    : [...text.matchAll(/\[([^\]]{1,48})\]([^[]*)/g)].filter((m) => trustedNames.has(m[1]!.trim().toLowerCase())).map((m) => `[${m[1]}]${m[2]}`).join(' ').replace(/\s+/g, ' ').trim()
   // Room mode (src/room.ts): one participant among several; every line kept with who said it, silence the default.
   // Research (2026-11-02: Liu CHI'25 "Inner Thoughts", Johnson CHI'26, Chen CHI'25, Sacks et al. 1974): unprompted only
   // after a real pause (2-3 s), never two in a row without a person between, minutes apart, and after two that drew no
@@ -1266,13 +1270,14 @@ export const cascade: Provider = (o, h) => {
             pending = pending.slice(0, open) // never closed: dropped, never read aloud
             break
           }
-          // A guest's turn never captures: a capture writes files and a note into the owner's session.
-          const a = ((x) => (x?.kind === 'capture' && t.guest ? undefined : x))(parseTag(tag))
+          // A guest's turn acts on nothing: no tag of it is applied (the call's end, who it is, reminders, watches, a capture
+          // into the owner's files): its words are only heard and answered.
+          const a = t.guest ? undefined : parseTag(tag)
           // A voice it does not have: the rest of this reply ("Done, that's Domagoj now.") is never said; they hear which
           // voices there are instead (a hidden turn of ours), in their words.
           const done = a ? control(a, 'self') : undefined
           const unvoiced = a?.kind === 'set' ? (done as { error?: string; voices?: string } | undefined) : undefined
-          if (unvoiced?.error) {
+          if (unvoiced?.error && !t.guest) {
             note('voice-missing', { want: a!.kind === 'set' ? a!.set.voice : '' })
             ;(silenced = true), (pending = ''), (tail = ''), (t.voiceless = true), close()
             void ask(undefined, `[You tried to change your voice: ${unvoiced.error}. The voices you can use: ${unvoiced.voices} (or any by a description, like "deep calm male"). Tell them in a few words that you do not have that one and offer two or three that fit what they asked for; no tag until they pick one.]`)
@@ -1665,7 +1670,7 @@ export const cascade: Provider = (o, h) => {
     // live; it starts on the plain words beside the router in place of the agent's own speculative start. VOICE_LANE=0: off.
     const fast = !!user && laneOn()
     t.bridging = fast // its first words come from the fast lane or the bridge, a fixed lead-in only if both fail
-    const early = user && SPECULATE && !fast && !t.guest && !resolved(user, said_) ? speculate(user, plain, system, on) : undefined
+    const early = user && SPECULATE && !fast && !t.guest && !resolved(user, said_) ? speculate(trustedOnly(user), plain, system, on) : undefined
     const direct_ = (delta: string) => ((t.direct = true), on.text(delta)) // the fast lane is speaking this turn
     const quick = user && fast && !resolved(user, said_) ? speculateLane(t, user, plain, direct_) : undefined
     // Nothing in the words that a lookup or the workspace could answer better (src/judge.ts): the fast lane's own answer
@@ -1844,14 +1849,14 @@ export const cascade: Provider = (o, h) => {
     const go = async (context: string) => {
       if (t.guest) return void (log('a guest asked: the agent stays out'), note('guest', { user }))
       // The agent is busy with background work: the words go into it, and its answer covers them.
-      if (job && user && !job.deep) return void (await brain.steer(sid, `[said while you work] ${user}`).catch(() => false))
+      if (job && user && !job.deep) return void (await brain.steer(sid, `[said while you work] ${trustedOnly(user)}`).catch(() => false))
       // A deeper look of ours gives way to their new question: it was the step further on an earlier answer.
       if (job?.deep && user) log('deeper look dropped for a new question'), note('deep-dropped', { question: user }), job.t.ac.abort(), (job = undefined), (aborting = brain.abort(sid))
       await aborting
       if (t.ac.signal.aborted) return
       const ac = (run = new AbortController())
       t.ac.signal.addEventListener('abort', () => ac.abort())
-      await brain.turn(events, sid, user ?? hidden, { system, context: forAgent(context) + seeHint(), model, signal: ac.signal, synthetic: !user && !!hidden }, on)
+      await brain.turn(events, sid, (user && trustedOnly(user)) ?? hidden, { system, context: forAgent(context) + seeHint(), model, signal: ac.signal, synthetic: !user && !!hidden }, on)
     }
     // The fast lane answers unless it hands the turn to the agent: a workspace question too, when its data (the code and
     // git state read just now) is in hand. The agent (Flash-Lite) took 1.2-2.8 s to its first words on those turns and
@@ -2004,7 +2009,7 @@ export const cascade: Provider = (o, h) => {
     const deep = !inRoom() && user && t.direct && where() === 'web' && !!found && !job && !/\?\s*$/.test(clean(t.text)) && !t.hidden && !t.failed && !t.ac.signal.aborted && clean(t.text).trim() && !SILENT.test(untag(clean(t.text))) ? await deeper(user, clean(t.text), talk, t.ac.signal) : undefined
     // The line that says so waits for the agent to take the look on (its first word or tool): with its model unreachable
     // (a dead key, flow bench call 3, 2026-11-03) "I'm looking into Cortix AI's details." was said and nothing ever came.
-    if (deep && !t.ac.signal.aborted && current === t && !t.guest) note('deep', { say: deep }), lookDeeper(user!, clean(t.text), () => {
+    if (deep && !t.ac.signal.aborted && current === t && !t.guest) note('deep', { say: deep }), lookDeeper(trustedOnly(user!), clean(t.text), () => {
       if (current === t && t.streaming) (t.text += `\n${deep}`), t.sp.add(`\n${deep}\n`)
       else speakDelivered(deep)
     })
