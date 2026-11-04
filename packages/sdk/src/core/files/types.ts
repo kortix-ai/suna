@@ -90,6 +90,3 @@ export interface WriteFileResult {
   bytes: number;
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `RuntimeProjectInfo`. Removed in the next major. */
-export type OpenCodeProjectInfo = RuntimeProjectInfo;

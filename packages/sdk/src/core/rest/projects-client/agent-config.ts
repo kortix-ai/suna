@@ -49,9 +49,6 @@ export interface RuntimeAgentConfig {
   permission?: PermissionConfig;
 }
 
-/** @deprecated Renamed to `RuntimeAgentConfig`. Removed in the next major. */
-export type OpencodeAgentConfig = RuntimeAgentConfig;
-
 /** The full agent block on the wire — mirrors `AgentBlockV3` in
  *  @kortix/manifest-schema PLUS the merged `behavior` half (a wire-only
  *  convenience; kortix.yaml itself never nests it — see the module doc

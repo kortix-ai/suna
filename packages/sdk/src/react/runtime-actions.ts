@@ -3,12 +3,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import type {
-  Config,
   FileContent,
   Path as RuntimePathInfo,
   Project as RuntimeProjectInfo,
-  ProviderAuthAuthorization,
-  ProviderAuthMethod,
 } from '../core/runtime/client';
 import { getClient } from '../core/runtime/client';
 import {
@@ -68,70 +65,6 @@ export async function getRuntimePathInfo(): Promise<RuntimePathInfo> {
 
 export function readRuntimeTextFile(path: string): Promise<string | FileContent> {
   return getClient().file.read({ path }).then(unwrapRuntimeResult);
-}
-
-/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
-export function getRuntimeProviderAuthMethods(): Promise<
-  Record<string, ProviderAuthMethod[]>
-> {
-  return getClient().provider.auth().then(unwrapRuntimeResult);
-}
-
-/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
-export function authorizeRuntimeProvider(
-  providerID: string,
-  method: number,
-): Promise<ProviderAuthAuthorization> {
-  return getClient().provider.oauth.authorize({ providerID, method }).then(unwrapRuntimeResult);
-}
-
-/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
-export function completeRuntimeProviderOAuth(
-  providerID: string,
-  method?: number,
-  code?: string,
-): Promise<boolean> {
-  return getClient().provider.oauth.callback({
-    providerID,
-    method,
-    ...(code ? { code } : {}),
-  }).then(unwrapRuntimeResult);
-}
-
-/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
-export function setRuntimeProviderApiKey(
-  providerID: string,
-  key: string,
-): Promise<boolean> {
-  return getClient().auth.set({
-    providerID,
-    auth: { type: 'api', key },
-  }).then(unwrapRuntimeResult);
-}
-
-/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
-export function getRuntimeConfig(): Promise<Config> {
-  return getClient().global.config.get().then(unwrapRuntimeResult);
-}
-
-/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
-export function updateRuntimeConfig(config: Config): Promise<Config> {
-  return getClient().global.config.update({ config } as never).then(unwrapRuntimeResult);
-}
-
-/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
-export async function refreshRuntimeConfiguration(): Promise<void> {
-  unwrapRuntimeResult(await getClient().global.dispose());
-}
-
-/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
-export function logRuntimeEvent(input: {
-  service: string;
-  level: 'debug' | 'info' | 'warn' | 'error';
-  message: string;
-  extra?: Record<string, unknown>;
-}): void {
-  void getClient().app.log(input);
 }
 
 /** Opaque identity for caches that must reset when the active runtime changes. */

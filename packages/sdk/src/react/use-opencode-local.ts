@@ -186,20 +186,6 @@ export function resolvePromptModel(
   return current && !isRemovedAutoModel(current) ? current : undefined;
 }
 
-/**
- * @deprecated The Auto model was removed. Stale Auto values resolve to
- * `undefined`; concrete values pass through unchanged.
- */
-export function resolveHiddenAutoModel(
-  resolved: ModelKey | undefined,
-  _options: {
-    enableAutoModel: boolean;
-    isModelValid: (model: ModelKey) => boolean;
-  },
-): ModelKey | undefined {
-  return resolvePromptModel(resolved, undefined);
-}
-
 /** The persisted model-selection scope. `'native'` is deprecated: the LLM gateway is the only model path. */
 export type ModelProviderMode = 'native' | 'gateway';
 
@@ -725,14 +711,3 @@ export function useRuntimeLocal({
   };
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `UseRuntimeLocalOptions`. Removed in the next major. */
-export type UseOpenCodeLocalOptions = UseRuntimeLocalOptions;
-/** @deprecated Renamed to `RuntimeLocalAgent`. Removed in the next major. */
-export type OpenCodeLocalAgent = RuntimeLocalAgent;
-/** @deprecated Renamed to `RuntimeLocalModel`. Removed in the next major. */
-export type OpenCodeLocalModel = RuntimeLocalModel;
-/** @deprecated Renamed to `RuntimeLocal`. Removed in the next major. */
-export type OpenCodeLocal = RuntimeLocal;
-/** @deprecated Renamed to `useRuntimeLocal`. Removed in the next major. */
-export const useOpenCodeLocal = useRuntimeLocal;

@@ -32,10 +32,10 @@ optional Generative UI peers (`zod`, `@openuidev/lang-core`); `./genui/fence`
 loads neither. `./wire-message-id` is the message-id mint alone — it has no
 imports, so a server loads it without the root barrel; the root exports the same
 names. `./capture-rules` holds the Kortix Capture constants (also at the root).
-`./workspace-search` is isolated from the root on purpose. The 21 legacy subpaths
+`./workspace-search` is isolated from the root on purpose. The legacy subpaths
 (`@kortix/sdk/projects-client`, `/turns`, `/files`, `/session`, `/event-stream`,
-the zustand stores, …) are `@deprecated` aliases that still resolve — import from
-the root instead. That the root really does cover all of them is asserted by
+the zustand stores, `/message-queue`, …) were removed in 0.15.0 — import from
+the root instead. That the root covers every public name is asserted by
 `src/root-canonical.test.ts`, not merely claimed here. `./internal/*` backs `apps/web`'s zustand stores and is not
 reachable from `window.Kortix`; treat it as visible implementation detail, not
 designed API.

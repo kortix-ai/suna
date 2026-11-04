@@ -159,10 +159,3 @@ export function useCanonicalRuntimeSession(params: {
   };
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `CanonicalRuntimeSession`. Removed in the next major. */
-export type CanonicalOpenCodeSession = CanonicalRuntimeSession;
-/** @deprecated Renamed to `clearRuntimeEnsureGuard`. Removed in the next major. */
-export const clearOpencodeEnsureGuard = clearRuntimeEnsureGuard;
-/** @deprecated Renamed to `useCanonicalRuntimeSession`. Removed in the next major. */
-export const useCanonicalOpenCodeSession = useCanonicalRuntimeSession;

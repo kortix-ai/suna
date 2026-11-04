@@ -4537,7 +4537,7 @@ Each run creates a new session, and the session appears in the web app with the 
 - These entry points follow semver: `@kortix/sdk`, `/react`, `/server`, `/genui`, `/genui/fence`, `/genui/react`, `/wire-message-id`, `/workspace-search` and `/capture-rules`.
 - Exported names, types included, are the public contract. A renamed export keeps a `@deprecated` alias until the next major version.
 - `@kortix/sdk/internal/*` serves the Kortix web app and has no semver. It can change in any release.
-- Other subpaths, such as `@kortix/sdk/turns` and `@kortix/sdk/projects-client`, are deprecated aliases of root names. They resolve until the next major version. The list is in the [SDK reference](/docs/developers#sdk-reference).
+- 0.15.0 removed the other subpaths, such as `@kortix/sdk/turns` and `@kortix/sdk/projects-client`. Import the same names from the root. The list is in [Removed in 0.15.0](/docs/developers#removed-in-0150).
 - A runtime does not serve every session control. Check a control with `runtimeSupports` before you show it: see [Gate on runtime capabilities](/docs/developers#gate-on-runtime-capabilities).
 - Changes per release are in the [CHANGELOG](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/sdk/CHANGELOG.md). Runnable examples are in [packages/sdk/examples](https://github.com/kortix-ai/CompanyOS/tree/dev/packages/sdk/examples) on GitHub. The npm package does not include them.
 
@@ -8015,8 +8015,8 @@ Conventions in this section:
 | `@kortix/sdk/wire-message-id` | Stable | `mintWireMessageId` and `WIRE_MESSAGE_ID` in one module with no imports. The root exports the same names. |
 | `@kortix/sdk/workspace-search` | Stable | `createWorkspaceSearchClient` and its ranking helpers (see [Workspace search](#workspace-search)). |
 | `@kortix/sdk/capture-rules` | Stable | The Kortix Capture constants: `CAPTURE_LAYERS`, `CAPTURE_EXCLUSION_GROUPS`, `CAPTURE_RETENTION_LIMITS`, `CAPTURE_FRAME_INTERVALS_MS`, `CAPTURE_MAX_HEIGHTS`, `CAPTURE_DEVICE_DEFAULTS`, `normalizeCaptureAppId`, `normalizeCaptureDomain`. |
-| `@kortix/sdk/internal/*` | Internal | State stores of the Kortix web app, for example `sync-store`, `server-store`, `sandbox-connection-store`, `opencode-pending-store`, `idb-sync-cache`, `diagnostics-store`, `managed-storage`. No semver. Do not import. The first four are also deprecated. |
-| Other subpaths | Deprecated | Aliases that resolve until the next major. See [Deprecated names](#deprecated-names). |
+| `@kortix/sdk/internal/*` | Internal | State stores of the Kortix web app: `idb-sync-cache`, `diagnostics-store`, `managed-storage`. No semver. Do not import. |
+| Other subpaths | Removed | 0.15.0 removed them. See [Removed in 0.15.0](#removed-in-0150). |
 
 Stable entry points follow semver. A deep path into `dist/` has no semver.
 
@@ -8770,7 +8770,7 @@ export function standaloneCalls(thread: SessionLogThread, busy: boolean) {
 
 #### The image card
 
-What a host draws an `image_gen` call with. Pure data, exported from `@kortix/sdk` and `@kortix/sdk/turns`. An `image_gen` call is a deliverable: it is a `standalone` segment and is hoisted above the final text like `show`.
+What a host draws an `image_gen` call with. Pure data, exported from `@kortix/sdk`. An `image_gen` call is a deliverable: it is a `standalone` segment and is hoisted above the final text like `show`.
 
 | Name | What it does |
 | --- | --- |
@@ -8835,25 +8835,27 @@ Pure functions over v1 messages (`MessageWithParts`, `kortix.transcript.v1`, `KO
 
 The grouping and status functions accept the structural types `PartLike`, `MessageInfoLike`, `TurnLike`, `ToolStateLike` and `SessionStatusLike`, so your own message shapes work.
 
+### Removed in 0.15.0
+
+0.15.0 is a breaking release. It removed these subpaths and names. Every session runs pi, so nothing removed here reached a route a current box serves.
+
+| Removed | Use instead |
+| --- | --- |
+| Subpaths `/config`, `/auth`, `/api-client`, `/projects-client`, `/feature-flags`, `/fresh-sessions`, `/instance-routes`, `/platform-client`, `/event-stream`, `/files`, `/session`, `/session/url`, `/turns`, `/opencode-client`, `/opencode-errors` | The same names from the root `@kortix/sdk`. |
+| Subpaths `/sync-store`, `/server-store`, `/sandbox-connection-store`, `/opencode-pending-store`, `/idb-sync-cache` and `/internal/sync-store`, `/internal/server-store`, `/internal/sandbox-connection-store`, `/internal/opencode-pending-store` | No replacement. Read session state with `useSession`. |
+| Subpath `/message-queue` and its root names (`createSessionQueue`, `enqueue`, `claimNext`, …) | `s.send`, or `useSession().send`. Kortix orders prompts on the server. |
+| Every name that contains `OpenCode` (for example `useOpenCodeSessions`, `opencodeKeys`, `OpencodeClient`, `OpenCodeEvent`) | The same name with `Runtime` (`useRuntimeSessions`, `runtimeKeys`, `RuntimeClient`, `RuntimeEvent`). |
+| The OpenCode-only hooks: MCP (`useAddMcpServer`, `useMcpAuthStart`, …), `useShareSession`, `useUnshareSession`, `useUpdatePart`, `useDeletePart`, `useRuntimeTools`, `useUpdateRuntimeSession`, `useRuntimeSessionDiff`, `useInitSession`, `useSendRuntimeMessage`, `useRuntimeAgent`, `useUpdateRuntimeConfig`, the provider auth calls (`authorizeRuntimeProvider`, …), `getRuntimeConfig`, `updateRuntimeConfig`, `refreshRuntimeConfiguration`, `logRuntimeEvent`, the `RuntimeConfigInvalidError` helpers, `NoCompactionModelError` | No replacement: pi does not serve these routes. Send a prompt with `useSession().send`; read the diff with `useRuntimeVcsDiff`. |
+| The retired admin hooks (`use-admin-analytics`, `use-admin-feedback`, `use-system-status`, `use-admin-billing`, the per-sandbox admin hooks, `useAdminAccountSandboxes`, `useAdminSetManagedModels`, `useAdminSetEnterpriseDemo`, `useAdminSetEnterpriseEntitled`) and the tunnel permission hooks (`useTunnelPermissions`, `useTunnelAuditLogs`, …) | No replacement: the API removed the routes. |
+
 ### Deprecated names
 
-Each name below carries `@deprecated` and resolves until the next major version. Your editor flags each use. The list is not complete: your editor flags every other deprecated name too, and its `@deprecated` tag names the replacement when one exists.
-
-#### Subpaths
-
-These subpaths re-export names that the root or `@kortix/sdk/react` already exports, or wrap internal stores.
-
-| Subpaths | Use instead |
-| --- | --- |
-| `/config`, `/auth`, `/api-client`, `/projects-client`, `/feature-flags`, `/fresh-sessions`, `/instance-routes`, `/platform-client`, `/event-stream`, `/files`, `/session`, `/session/url`, `/turns` | The same names from the root `@kortix/sdk`. |
-| `/sync-store`, `/server-store`, `/sandbox-connection-store`, `/idb-sync-cache`, `/internal/sync-store`, `/internal/server-store`, `/internal/sandbox-connection-store` | No replacement. Read session state with `useSession`. |
-| `/message-queue` | `s.send`, or `useSession().send`. Kortix orders prompts on the server. |
+Each name below carries `@deprecated` and resolves until a later major version. Your editor flags each use. The list is not complete: your editor flags every other deprecated name too, and its `@deprecated` tag names the replacement when one exists.
 
 #### Names
 
 | Deprecated | Use instead |
 | --- | --- |
-| `claimNext`, `completeInFlight`, `createSessionQueue`, `editQueued`, `enqueue`, `failInFlight`, `removeQueued`, `reorderQueued`, `retryFailed`, `QueuedMessage`, `QueuedMessageInput`, `SessionQueue` | `s.send`, or `useSession().send`. |
 | `wireIdClock`, `wireIdClockAt`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf`, `newestWireIdClock`, `mintWireMessageIdAbove`, `MintWireMessageIdAboveInput`, `MintedWireMessageId`, `WIRE_ID_TIME_SCALE`, `WIRE_ID_TIME_MASK`, `WIRE_ID_CLOCK_TOLERANCE`, `WIRE_ID_BACKDATE_MS` | `mintWireMessageId` and `WIRE_MESSAGE_ID`, which stay current. Message ids are opaque. |
 | `s.runtime` | The session methods: `messages`, `pendingRequests`, `answerPermission`, `answerQuestion`, `compact`, `send`, `abort`, `rewind`. |
 | `s.transcript()` · `s.transcriptSync()` | `s.log(query)`. |

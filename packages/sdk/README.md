@@ -306,10 +306,8 @@ Install the optional peers before you use the React entry:
 npm install @kortix/sdk react @tanstack/react-query
 ```
 
-Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
-`@deprecated`. Import from the root instead — see **Entry points** below, and
-the [SDK reference](https://kortix.com/docs/#deprecated-names) for the full
-list of aliases (21 of them).
+The older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) were removed in
+0.15.0. Import from the root instead — see **Entry points** below.
 
 > **React Native / Expo:** REST works. Live streaming works with a host
 > transport: pass `configureKortix({ eventStreamTransport })` (one connection's
@@ -1347,8 +1345,8 @@ learn it once.
 
 | import | when you use it | why it is separate |
 | --- | --- | --- |
-| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
-| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` hook, `useChatTurns`/`renderParts`, the domain hooks. Its deprecated aliases are listed in the [SDK reference](https://kortix.com/docs/#deprecated-names) | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
+| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the error classes, and every domain type | — |
+| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` hook, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
 | `@kortix/sdk/genui/fence`, `@kortix/sdk/genui`, `@kortix/sdk/genui/react` | Generative UI: split `openui` blocks out of text, parse them, render them (see **Generative UI** below) | `genui` and `genui/react` need the optional peers `zod` and `@openuidev/lang-core`; `genui/fence` loads neither |
 | `@kortix/sdk/wire-message-id` | `mintWireMessageId` and `WIRE_MESSAGE_ID`: mint and validate a Kortix message id. Its clock helpers are `@deprecated` | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
@@ -1360,7 +1358,7 @@ The root really is canonical, and that is a test rather than a promise:
 `src/root-canonical.test.ts` asserts that every name exported by every other
 isomorphic subpath is also exported from `@kortix/sdk`. The only subpaths it
 permits to be missing are `react`, `server`, the three `genui` entries,
-`workspace-search` and the browser-only stores above — `zustand` is a
+`workspace-search` and the browser-only `./internal/*` modules above — `zustand` is a
 forbidden import in the root's `isomorphic-core` tier, so they cannot live
 there.
 
@@ -1369,18 +1367,15 @@ import { createKortix, classifyTurn, listFiles, openEventStream } from '@kortix/
 import { useSession } from '@kortix/sdk/react';
 ```
 
-### Legacy aliases — do not use in new code
+### Removed subpaths (0.15.0)
 
-`package.json` still declares 21 more subpaths, for example `/turns`, `/files`,
-`/session`, `/projects-client`, `/event-stream` and the un-prefixed store
-aliases. The full list is in the
-[SDK reference](https://kortix.com/docs/#deprecated-names).
-
-Twenty of them are one-line `export *` re-exports under `src/deprecated/`, and
-`/message-queue` is a deprecated module of its own. They stay only so an
-existing `npm install` does not break. **They add nothing
-the root does not already export.** They are removed at the next major; new
-code imports the root.
+0.15.0 removed 25 legacy subpaths: `/turns`, `/files`, `/session`,
+`/session/url`, `/projects-client`, `/platform-client`, `/api-client`,
+`/config`, `/auth`, `/feature-flags`, `/fresh-sessions`, `/instance-routes`,
+`/event-stream`, `/opencode-client`, `/opencode-errors`, `/idb-sync-cache`,
+`/message-queue`, the four un-prefixed store aliases and the four
+`/internal/*` session stores. Every name they exported (except the message
+queue and the stores) is exported from the root. See `CHANGELOG.md`.
 
 ## Configuration
 
