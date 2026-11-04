@@ -9138,6 +9138,8 @@ export const artifactDocUpdates = kortixSchema.table('artifact_doc_updates', {
   bytes: bytea('bytes').notNull(),
   createdBy: uuid('created_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  /** Compaction found that no Yjs reader takes this row: it is kept and served, never merged again. */
+  quarantinedAt: timestamp('quarantined_at', { withTimezone: true }),
 }, (table) => [
   primaryKey({ columns: [table.artifactId, table.seq] }),
   foreignKey({ name: 'artifact_doc_updates_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),

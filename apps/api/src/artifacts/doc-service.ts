@@ -15,7 +15,7 @@
  *
  * Callers pass plain values; the access check is the route's.
  */
-import { and, asc, eq, gt, gte, lt, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm';
 import { artifactDocState, artifactDocUpdates, artifacts } from '@kortix/db';
 import { logger } from '../lib/logger';
 import { recordAuditEvent } from '../shared/audit';
@@ -35,7 +35,7 @@ import {
   type DocLease,
   type DocLeaseKind,
 } from './doc-rules';
-import { checkDocUpdate, compactDocUpdates } from './doc-yjs';
+import { checkDocUpdate, compactDocUpdates, mergesAlone } from './doc-yjs';
 
 export class ArtifactDocError extends Error {
   constructor(
@@ -92,7 +92,7 @@ export interface ArtifactDocLeaseResult {
 }
 
 export type ArtifactDocCompaction =
-  | { done: true; fromSeq: number; toSeq: number; rows: number }
+  | { done: true; fromSeq: number; toSeq: number; rows: number; quarantined?: number[] }
   | { done: false; reason: 'busy' | 'below_threshold' | 'backoff' | 'too_large' | 'failed' };
 
 /** The database clock, in ms: every replica decides a lease on one clock. */
@@ -211,7 +211,8 @@ export async function appendArtifactDocUpdate(
       .returning({ nextSeq: artifactDocState.nextSeq });
     const seq = next!.nextSeq - 1;
     await tx.insert(artifactDocUpdates).values({ artifactId, seq, bytes: input.update, createdBy: input.userId });
-    const [count] = await tx.select({ rows: sql<number>`count(*)::int` }).from(artifactDocUpdates).where(eq(artifactDocUpdates.artifactId, artifactId));
+    const [count] = await tx.select({ rows: sql<number>`count(*)::int` }).from(artifactDocUpdates)
+      .where(and(eq(artifactDocUpdates.artifactId, artifactId), isNull(artifactDocUpdates.quarantinedAt)));
     return { seq, rows: Number(count?.rows ?? 0) };
   });
 }
@@ -221,15 +222,33 @@ async function stampCompactionFailed(artifactId: string): Promise<void> {
   await db.update(artifactDocState).set({ compactionFailedAt: sql`clock_timestamp()` }).where(eq(artifactDocState.artifactId, artifactId));
 }
 
+/** Scan every row, then merge: the merged bytes, null past the page limit, or 'failed'. */
+function mergeRows(rows: Array<{ bytes: Buffer }>): Uint8Array | null | 'failed' {
+  // Every row is scanned before Yjs reads it: a row stored before a check existed never reaches a decode.
+  if (rows.some((row) => !checkDocUpdate(new Uint8Array(row.bytes), 'seed').ok)) return 'failed';
+  try {
+    return compactDocUpdates(rows.map((row) => new Uint8Array(row.bytes)), DOC_PAGE_MAX_BYTES);
+  } catch {
+    return 'failed';
+  }
+}
+
 /**
  * Merge the oldest update rows into one row that keeps the highest of their
- * seqs (`compactionWindow`), when the Artifact holds more than the threshold.
- * `Y.mergeUpdates` only (`compactDocUpdates`): never integration. The window
- * reads at most `DOC_PAGE_MAX_BYTES`, and a merged row larger than that is
- * dropped. A merge that throws or is dropped stamps `compaction_failed_at`:
- * none runs again for 10 min, never one per push. One compaction per Artifact
- * at a time; a second one answers `busy` at once instead of waiting. Appends
- * never conflict with it: they only insert rows above every seq it touches.
+ * seqs (`compactionWindow`), when the Artifact holds more than the threshold
+ * (quarantined rows do not count). `Y.mergeUpdates` only
+ * (`compactDocUpdates`): never integration. The window reads at most
+ * `DOC_PAGE_MAX_BYTES`, and a merged row larger than that is dropped.
+ *
+ * When the merge fails, the rows no Yjs reader takes (`mergesAlone`: they fail
+ * the scan, or fail a merge with an empty update) are quarantined: they stay
+ * where they are and are still served, but no compaction reads them again, so
+ * one bad row can never stall compaction or fill the doc. The rest merge.
+ * A failure with no such row, or a merge past the page limit, stamps
+ * `compaction_failed_at`: none runs again for 10 min, never one per push.
+ * One compaction per Artifact at a time; a second one answers `busy` at once
+ * instead of waiting. Appends never conflict with it: they only insert rows
+ * above every seq it touches.
  */
 export async function compactArtifactDoc(artifactId: string): Promise<ArtifactDocCompaction> {
   const outcome = await db.transaction(async (tx): Promise<ArtifactDocCompaction> => {
@@ -240,38 +259,47 @@ export async function compactArtifactDoc(artifactId: string): Promise<ArtifactDo
     }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId));
     if (!state) return { done: false, reason: 'below_threshold' };
     if (state.backoff) return { done: false, reason: 'backoff' };
+    const live = and(eq(artifactDocUpdates.artifactId, artifactId), isNull(artifactDocUpdates.quarantinedAt));
     const sizes = await tx.select({ seq: artifactDocUpdates.seq, size: sql<number>`octet_length(${artifactDocUpdates.bytes})` })
       .from(artifactDocUpdates)
-      .where(eq(artifactDocUpdates.artifactId, artifactId))
+      .where(live)
       .orderBy(asc(artifactDocUpdates.seq));
     if (sizes.length <= DOC_COMPACT_ROWS) return { done: false, reason: 'below_threshold' };
     const plan = compactionWindow(sizes.map((row) => ({ seq: row.seq, size: Number(row.size) })));
     if (!plan) return { done: false, reason: 'too_large' };
-    const inRange = and(eq(artifactDocUpdates.artifactId, artifactId), gte(artifactDocUpdates.seq, plan.fromSeq), lte(artifactDocUpdates.seq, plan.toSeq));
-    const rows = await tx.select({ bytes: artifactDocUpdates.bytes }).from(artifactDocUpdates).where(inRange).orderBy(asc(artifactDocUpdates.seq));
-    // Every row is scanned before Yjs reads it: a row stored before a check existed never reaches a decode.
-    if (rows.some((row) => !checkDocUpdate(new Uint8Array(row.bytes), 'seed').ok)) {
-      logger.warn('[artifact-doc] compaction refused a stored row', { artifactId });
-      return { done: false, reason: 'failed' };
-    }
-    let merged: Uint8Array | null;
-    try {
-      merged = compactDocUpdates(rows.map((row) => new Uint8Array(row.bytes)), DOC_PAGE_MAX_BYTES);
-    } catch (error) {
-      logger.warn('[artifact-doc] compaction failed', { artifactId, error: error instanceof Error ? error.message : String(error) });
-      return { done: false, reason: 'failed' };
+    let rows = await tx.select({ seq: artifactDocUpdates.seq, bytes: artifactDocUpdates.bytes }).from(artifactDocUpdates)
+      .where(and(live, gte(artifactDocUpdates.seq, plan.fromSeq), lte(artifactDocUpdates.seq, plan.toSeq)))
+      .orderBy(asc(artifactDocUpdates.seq));
+    let merged = mergeRows(rows);
+    let quarantined: number[] = [];
+    if (merged === 'failed') {
+      // Bounded: each row once, on its own, within the window's byte budget.
+      quarantined = rows.filter((row) => !mergesAlone(new Uint8Array(row.bytes))).map((row) => row.seq);
+      if (quarantined.length === 0) {
+        logger.warn('[artifact-doc] compaction failed', { artifactId, fromSeq: plan.fromSeq, toSeq: plan.toSeq });
+        return { done: false, reason: 'failed' };
+      }
+      await tx.update(artifactDocUpdates).set({ quarantinedAt: sql`now()` })
+        .where(and(eq(artifactDocUpdates.artifactId, artifactId), inArray(artifactDocUpdates.seq, quarantined)));
+      logger.warn('[artifact-doc] quarantined rows no Yjs reader takes', { artifactId, seqs: quarantined });
+      rows = rows.filter((row) => !quarantined.includes(row.seq));
+      if (rows.length < 2) return { done: false, reason: 'below_threshold' };
+      merged = mergeRows(rows);
+      if (merged === 'failed') return { done: false, reason: 'failed' };
     }
     if (!merged) return { done: false, reason: 'too_large' };
+    const fromSeq = rows[0]!.seq;
+    const toSeq = rows[rows.length - 1]!.seq;
     const removed = rows.reduce((total, row) => total + row.bytes.length, 0);
     // A merged row holds several people's updates: it names none of them (who wrote is recorded at each flush).
     await tx.update(artifactDocUpdates).set({ bytes: Buffer.from(merged), createdBy: null })
-      .where(and(eq(artifactDocUpdates.artifactId, artifactId), eq(artifactDocUpdates.seq, plan.toSeq)));
+      .where(and(eq(artifactDocUpdates.artifactId, artifactId), eq(artifactDocUpdates.seq, toSeq)));
     await tx.delete(artifactDocUpdates)
-      .where(and(eq(artifactDocUpdates.artifactId, artifactId), gte(artifactDocUpdates.seq, plan.fromSeq), lt(artifactDocUpdates.seq, plan.toSeq)));
+      .where(and(live, gte(artifactDocUpdates.seq, fromSeq), lt(artifactDocUpdates.seq, toSeq)));
     await tx.update(artifactDocState)
       .set({ bytesTotal: sql`greatest(0, ${artifactDocState.bytesTotal} - ${removed} + ${merged.length})` })
       .where(eq(artifactDocState.artifactId, artifactId));
-    return { done: true, ...plan };
+    return { done: true, fromSeq, toSeq, rows: rows.length, ...(quarantined.length > 0 ? { quarantined } : {}) };
   });
   if (!outcome.done && (outcome.reason === 'failed' || outcome.reason === 'too_large')) await stampCompactionFailed(artifactId);
   return outcome;

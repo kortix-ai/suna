@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, artifactDocState, artifactDocUpdates, artifacts, drives, projects } from '@kortix/db';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import * as Y from 'yjs';
 import { db } from '../shared/db';
 import { localTestDatabaseUrl } from '../__tests__/helpers/integration-fixtures';
@@ -239,28 +239,50 @@ describe('size', () => {
 });
 
 describe('compaction failure', () => {
-  test('a compaction that throws records compaction_failed_at and none runs again for 10 min; the rows stay', async () => {
+  /** 500 empty updates after the seed, with `bad` bytes at the given seqs (rows written past the push checks). */
+  async function docWithRows(bad: Record<number, Buffer>): Promise<string> {
     const artifactId = await newDoc();
     await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: '', version: 'v1', userId });
-    // Rows written past the push checks: 500 empty updates and one that is not Yjs.
     await db.execute(sql`insert into kortix.artifact_doc_updates (artifact_id, seq, bytes)
-      select ${artifactId}::uuid, g, case when g = 300 then decode('ffffffff', 'hex') else decode('0000', 'hex') end from generate_series(2, ${DOC_COMPACT_ROWS + 1}) g`);
-    await db.update(artifactDocState).set({ nextSeq: DOC_COMPACT_ROWS + 2 }).where(eq(artifactDocState.artifactId, artifactId));
-    const failedAt = async () => (await db.select({ at: artifactDocState.compactionFailedAt }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId)))[0]!.at;
+      select ${artifactId}::uuid, g, decode('0000', 'hex') from generate_series(2, ${DOC_COMPACT_ROWS + 1}) g`);
+    for (const [seq, bytes] of Object.entries(bad)) {
+      await db.update(artifactDocUpdates).set({ bytes }).where(and(eq(artifactDocUpdates.artifactId, artifactId), eq(artifactDocUpdates.seq, Number(seq))));
+    }
+    await db.update(artifactDocState).set({
+      nextSeq: DOC_COMPACT_ROWS + 2,
+      bytesTotal: sql`(select sum(octet_length(bytes))::bigint from kortix.artifact_doc_updates where artifact_id = ${artifactId}::uuid)`,
+    }).where(eq(artifactDocState.artifactId, artifactId));
+    return artifactId;
+  }
+  const quarantined = async (artifactId: string) => (await db.select({ seq: artifactDocUpdates.seq }).from(artifactDocUpdates)
+    .where(and(eq(artifactDocUpdates.artifactId, artifactId), sql`${artifactDocUpdates.quarantinedAt} is not null`))).map((r) => r.seq).sort((x, y) => x - y);
 
-    expect(await compactArtifactDoc(artifactId)).toEqual({ done: false, reason: 'failed' });
-    const first = await failedAt();
-    expect(first).toBeInstanceOf(Date);
-    expect((await readArtifactDoc(artifactId, { after: 0, base: false })).updates).toHaveLength(DOC_COMPACT_ROWS + 1);
+  test('rows no Yjs reader takes (the review’s 7-byte Skip/Item mismatch, bytes that are not Yjs, a ContentBinary item) are quarantined, and the rest compact: one bad row never stalls compaction', async () => {
+    const skipMismatch = Buffer.from([0x01, 0x01, 0x01, 0x00, 0x4a, 0x01, 0x00]);
+    const binary = Buffer.from([1, 1, 77, 0, 3, 1, 1, 0x64, 3, 1, 2, 3, 0]);
+    expect(Y.decodeUpdate(new Uint8Array(binary)).structs).toHaveLength(1);
+    const artifactId = await docWithRows({ 250: binary, 300: skipMismatch, 450: Buffer.from([0xff, 0xff, 0xff, 0xff]) });
 
-    // Fixed, but inside the back-off: skipped without a read, and the stamp stays.
-    await db.execute(sql`update kortix.artifact_doc_updates set bytes = decode('0000', 'hex') where artifact_id = ${artifactId}::uuid and seq = 300`);
+    expect(await compactArtifactDoc(artifactId)).toEqual({ done: true, fromSeq: 1, toSeq: DOC_COMPACT_ROWS + 1, rows: DOC_COMPACT_ROWS - 2, quarantined: [250, 300, 450] });
+    expect(await quarantined(artifactId)).toEqual([250, 300, 450]);
+    // No back-off: the next push may compact again.
+    const [state] = await db.select({ at: artifactDocState.compactionFailedAt, bytes: artifactDocState.bytesTotal }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId));
+    expect(state!.at).toBeNull();
+    // A quarantined row stays where it was (it is still served; a client that cannot apply it resets the doc).
+    expect((await readArtifactDoc(artifactId, { after: 0, base: false })).updates.map((u) => u.seq)).toEqual([250, 300, 450, DOC_COMPACT_ROWS + 1]);
+    const [stored] = await db.select({ total: sql<number>`sum(octet_length(${artifactDocUpdates.bytes}))::int` }).from(artifactDocUpdates).where(eq(artifactDocUpdates.artifactId, artifactId));
+    expect(state!.bytes).toBe(Number(stored!.total));
+    // Quarantined rows do not count toward the next compaction.
+    expect(await compactArtifactDoc(artifactId)).toEqual({ done: false, reason: 'below_threshold' });
+  }, 30_000);
+
+  test('inside the 10-minute back-off nothing runs; after it, compaction runs', async () => {
+    const artifactId = await docWithRows({});
+    await db.update(artifactDocState).set({ compactionFailedAt: sql`now()` }).where(eq(artifactDocState.artifactId, artifactId));
     expect(await compactArtifactDoc(artifactId)).toEqual({ done: false, reason: 'backoff' });
-    expect((await failedAt())!.getTime()).toBe(first!.getTime());
-
+    expect((await readArtifactDoc(artifactId, { after: 0, base: false })).updates).toHaveLength(DOC_COMPACT_ROWS + 1);
     await db.update(artifactDocState).set({ compactionFailedAt: sql`now() - interval '11 minutes'` }).where(eq(artifactDocState.artifactId, artifactId));
     expect(await compactArtifactDoc(artifactId)).toEqual({ done: true, fromSeq: 1, toSeq: DOC_COMPACT_ROWS + 1, rows: DOC_COMPACT_ROWS + 1 });
-    expect((await readArtifactDoc(artifactId, { after: 0, base: false })).updates.map((u) => u.seq)).toEqual([DOC_COMPACT_ROWS + 1]);
   }, 30_000);
 });
 
@@ -346,23 +368,6 @@ describe('epoch on every write', () => {
     await mismatch(markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v2', markdown: 'two', epoch: stale }));
     expect(await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v2', markdown: 'two', epoch })).toMatchObject({ flushedSeq: 3 });
   });
-});
-
-describe('compaction scans its input', () => {
-  test('a stored row the push checks would refuse (a ContentBinary item, which Y.mergeUpdates merges) is never merged: failed, back-off, rows kept', async () => {
-    const artifactId = await newDoc();
-    await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: '', version: 'v1', userId });
-    // One ContentBinary item at the root of `d`: valid Yjs, content the editor never emits.
-    const binary = Buffer.from([1, 1, 77, 0, 3, 1, 1, 0x64, 3, 1, 2, 3, 0]);
-    expect(Y.decodeUpdate(new Uint8Array(binary)).structs).toHaveLength(1);
-    await db.execute(sql`insert into kortix.artifact_doc_updates (artifact_id, seq, bytes)
-      select ${artifactId}::uuid, g, case when g = 250 then ${binary}::bytea else decode('0000', 'hex') end from generate_series(2, ${DOC_COMPACT_ROWS + 1}) g`);
-    await db.update(artifactDocState).set({ nextSeq: DOC_COMPACT_ROWS + 2 }).where(eq(artifactDocState.artifactId, artifactId));
-    expect(await compactArtifactDoc(artifactId)).toEqual({ done: false, reason: 'failed' });
-    expect((await readArtifactDoc(artifactId, { after: 0, base: false })).updates).toHaveLength(DOC_COMPACT_ROWS + 1);
-    const [state] = await db.select({ at: artifactDocState.compactionFailedAt }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId));
-    expect(state!.at).toBeInstanceOf(Date);
-  }, 30_000);
 });
 
 describe('who wrote (pending contributors)', () => {

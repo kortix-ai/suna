@@ -44,3 +44,20 @@ export function compactDocUpdates(updates: Uint8Array[], maxBytes: number): Uint
   const result = level[0] ?? null;
   return result && result.length <= maxBytes ? result : null;
 }
+
+const EMPTY_UPDATE = new Uint8Array([0, 0]);
+
+/**
+ * A stored row some Yjs reader still takes: it passes the scan, and
+ * `Y.mergeUpdates` reads it merged with an empty update (a merge of one
+ * update returns it unread). Compaction quarantines a row that fails.
+ */
+export function mergesAlone(update: Uint8Array): boolean {
+  if (!checkDocUpdate(update, 'seed').ok) return false;
+  try {
+    mergeUpdates([update, EMPTY_UPDATE]);
+    return true;
+  } catch {
+    return false;
+  }
+}

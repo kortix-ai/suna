@@ -149,25 +149,86 @@ describe('caps, counted in the same pass', () => {
   });
 });
 
-describe('the scan never accepts what Yjs cannot decode', () => {
-  test('5,000 mutations of real updates and random buffers: every accepted one decodes', () => {
-    const real = [bytes(EDITOR_SEED), ...EDITOR_PUSHES.map((p) => bytes(p.update))];
-    let seed = 42;
-    const rand = () => {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-      return seed;
-    };
-    let accepted = 0;
-    for (let i = 0; i < 5_000; i++) {
-      const base = real[i % real.length]!;
-      const mutated = i % 5 === 4 ? new Uint8Array(Array.from({ length: 16 + (rand() % 64) }, () => rand() & 0xff)) : base.slice();
-      if (i % 5 !== 4) for (let k = 0; k < 1 + (rand() % 3); k++) mutated[rand() % mutated.length] = rand() & 0xff;
-      const check = checkDocUpdate(mutated, 'seed');
-      if (check.ok) {
-        accepted += 1;
-        expect(() => Y.decodeUpdate(mutated)).not.toThrow();
+describe('struct headers: only the forms every Yjs reader agrees on', () => {
+  test('the review’s 7 bytes (info 0x4a: a Skip to applyUpdate, an Item with content ref 10 to mergeUpdates) → refused as a push and a seed', () => {
+    const update = new Uint8Array([0x01, 0x01, 0x01, 0x00, 0x4a, 0x01, 0x00]);
+    expect(() => Y.mergeUpdates([bytes(EDITOR_SEED), update])).toThrow();
+    expect(checkDocUpdate(update, 'push')).toEqual({ ok: false, reason: 'malformed' });
+    expect(checkDocUpdate(update, 'seed')).toEqual({ ok: false, reason: 'malformed' });
+  });
+
+  test('a GC or Skip byte with any flag bit set (low bits 0 or 10, info not exactly 0 or 10) → refused', () => {
+    for (const info of [0x20, 0x40, 0x80, 0x2a, 0x8a, 0xca]) {
+      const update = new V1().uint(1).uint(1).uint(CLIENT).uint(0).byte(info).uint(1).uint(0).done();
+      expect({ info, check: checkDocUpdate(update, 'seed') }).toEqual({ info, check: { ok: false, reason: 'malformed' } });
+    }
+  });
+
+  test('a canonical GC (info 0) and Skip (info 10) still pass and merge', () => {
+    const update = new V1().uint(1).uint(3).uint(CLIENT).uint(0).byte(0).uint(2).byte(10).uint(3).byte(0).uint(1).uint(0).done();
+    expect(checkDocUpdate(update, 'push')).toEqual({ ok: true });
+    expect(() => Y.mergeUpdates([bytes(EDITOR_SEED), update])).not.toThrow();
+  });
+});
+
+describe('the scan never accepts what Yjs cannot read', () => {
+  /** Where the first struct's info byte sits: after the client count, struct count, client and clock. */
+  function firstInfoAt(update: Uint8Array): number {
+    let pos = 0;
+    for (let field = 0; field < 4; field++) while (update[pos++]! >= 0x80);
+    return pos;
+  }
+
+  test('20,000 inputs (every value of the first struct header of each recorded update, then random flips): each one accepted decodes, merges with the seed, and applies to a doc built from the seed', () => {
+    const seed = bytes(EDITOR_SEED);
+    const real = [seed, ...EDITOR_PUSHES.map((p) => bytes(p.update))];
+    const inputs: Uint8Array[] = [];
+    for (const update of real) {
+      if (update.length < 6) continue;
+      const at = firstInfoAt(update);
+      for (let value = 0; value < 256; value++) {
+        const mutated = update.slice();
+        mutated[at] = value;
+        inputs.push(mutated);
       }
     }
-    expect(accepted).toBeGreaterThan(0);
-  });
+    let state = 42;
+    const rand = () => {
+      state = (state * 1103515245 + 12345) & 0x7fffffff;
+      return state;
+    };
+    const HEADER_LIKE = [0, 10, 0x4a, 0x8a, 0x20, 0x40, 0x80, 0x84, 0x44, 0x24, 0x87, 0x88, 0x06, 0x07, 0x08, 0x01];
+    while (inputs.length < 20_000) {
+      const i = inputs.length;
+      if (i % 10 === 9) {
+        inputs.push(new Uint8Array(Array.from({ length: 8 + (rand() % 64) }, () => rand() & 0xff)));
+        continue;
+      }
+      const mutated = real[i % real.length]!.slice();
+      for (let k = 0; k < 1 + (rand() % 3); k++) {
+        const at = rand() % mutated.length;
+        mutated[at] = i % 2 === 0 ? HEADER_LIKE[rand() % HEADER_LIKE.length]! : rand() & 0xff;
+      }
+      inputs.push(mutated);
+    }
+    let accepted = 0;
+    const failures: string[] = [];
+    for (const input of inputs) {
+      if (!checkDocUpdate(input, 'seed').ok) continue;
+      accepted += 1;
+      try {
+        Y.decodeUpdate(input);
+        Y.mergeUpdates([seed, input]);
+        const doc = new Y.Doc();
+        Y.applyUpdate(doc, seed);
+        Y.applyUpdate(doc, input);
+        doc.destroy();
+      } catch (error) {
+        if (failures.length < 5) failures.push(`${Buffer.from(input).toString('base64')}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    expect(inputs.length).toBe(20_000);
+    expect(accepted).toBeGreaterThan(100);
+    expect(failures).toEqual([]);
+  }, 60_000);
 });

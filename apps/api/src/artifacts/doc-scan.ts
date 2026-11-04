@@ -197,6 +197,16 @@ function contentLength(r: Reader, ref: number): number {
   }
 }
 
+/**
+ * A struct or delete range of length 0: no Yjs encoder writes one (an empty
+ * insert is a no-op), and Yjs throws on some of them (a pending delete range
+ * of length 0 cannot be re-encoded). Refused.
+ */
+function positive(length: number): number {
+  if (length < 1) throw new Refused('malformed');
+  return length;
+}
+
 function scan(update: Uint8Array, kind: 'push' | 'seed'): void {
   const r = new Reader(update);
   const clients = r.uint();
@@ -212,9 +222,14 @@ function scan(update: Uint8Array, kind: 'push' | 'seed'): void {
     for (let s = 0; s < count; s++) {
       const info = r.u8();
       const ref = info & BITS5;
-      if (ref === 0 || ref === 10) {
-        // GC and Skip: a length.
-        clock += r.uint();
+      if (info === 0 || info === 10) {
+        // GC and Skip, only in the exact form every Yjs reader agrees on. The
+        // merge reader (`lazyStructReaderGenerator`) takes Skip only when
+        // info === 10; applyUpdate (`readClientsStructRefs`) takes any info
+        // whose low bits are 10. A byte they disagree on is refused.
+        clock += positive(r.uint());
+      } else if (ref === 0 || ref === 10) {
+        throw new Refused('malformed');
       } else {
         const own = clock;
         const pointsAt = (refClient: number, refClock: number) => {
@@ -227,7 +242,7 @@ function scan(update: Uint8Array, kind: 'push' | 'seed'): void {
           else pointsAt(r.uint(), r.uint());
           if (info & BIT6) r.string();
         }
-        clock += contentLength(r, ref);
+        clock += positive(contentLength(r, ref));
       }
       if (clock > Number.MAX_SAFE_INTEGER) throw new Refused('malformed');
     }
@@ -241,7 +256,8 @@ function scan(update: Uint8Array, kind: 'push' | 'seed'): void {
     if (ranges > DOC_MAX_DELETES) throw new Refused('too_many_deletes');
     for (let d = 0; d < count; d++) {
       r.uint();
-      r.uint();
+      // A zero-length range: Yjs never writes one, and re-encoding it as a pending delete throws (`writeDsLen`).
+      positive(r.uint());
     }
   }
   if (!r.done) throw new Refused('malformed');

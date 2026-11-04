@@ -252,6 +252,8 @@ flow('ART-10', {
       // A Yjs sub-document: decoding one builds a whole Y.Doc. Refused byte by byte, before any decode, on a push and on a seed.
       (await owner.post(UPDATES, { update: SUBDOC }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'content_not_allowed');
       (await owner.post(SEED, { update: SUBDOC, markdown: '', version: 'v9' }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'content_not_allowed');
+      // 0x4a: a Skip to applyUpdate, an Item with content ref 10 to Y.mergeUpdates. Only the forms every Yjs reader agrees on pass.
+      (await owner.post(UPDATES, { update: Buffer.from([0x01, 0x01, 0x01, 0x00, 0x4a, 0x01, 0x00]).toString('base64') }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'malformed');
       if ((await read()).latest_seq !== 3) throw new Error('a refused update was stored');
     });
 
