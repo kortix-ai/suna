@@ -1079,6 +1079,12 @@ const envSchema = z.object({
   SIGNUP_WEBHOOK_URL: optStr,
   SIGNUP_WEBHOOK_SECRET: optStr,
 
+  // ── Product analytics (PostHog, shared/product-analytics.ts) ─────────────
+  // The project key is public (the web app ships it to every browser). Unset
+  // = no server events: self-host and tests send nothing.
+  POSTHOG_PROJECT_KEY: optStr,
+  POSTHOG_HOST: z.string().optional().default('https://eu.i.posthog.com'),
+
   // ── Better Stack Observability (optional — graceful degradation) ────────
   BETTERSTACK_API_LOG_TOKEN: optStr, // Logtail source token for structured logs
   BETTERSTACK_API_LOG_HOST: optStr, // Logtail ingesting host (e.g. s1234.us-east-9.betterstackdata.com)
@@ -1765,6 +1771,10 @@ export const config = {
   SALES_RECONCILIATION_TOKEN: env.SALES_RECONCILIATION_TOKEN,
   SIGNUP_WEBHOOK_URL: env.SIGNUP_WEBHOOK_URL,
   SIGNUP_WEBHOOK_SECRET: env.SIGNUP_WEBHOOK_SECRET,
+
+  // ─── Product analytics (PostHog) ──────────────────────────────────────────
+  POSTHOG_PROJECT_KEY: env.POSTHOG_PROJECT_KEY,
+  POSTHOG_HOST: env.POSTHOG_HOST,
 
   // ─── Stray env vars (centralized from other files) ────────────────────────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,

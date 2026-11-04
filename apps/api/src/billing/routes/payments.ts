@@ -15,6 +15,7 @@ import { BillingError } from '../../errors';
 import { resolveBillingReadAccountId, resolveBillingWriteAccountId } from '../http-require-billing-write';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
 import { formatUsdAsCredits } from '@kortix/shared';
+import { captureProductEvent } from '../../shared/product-analytics';
 
 export const paymentsRouter = makeOpenApiApp<AppEnv>();
 
@@ -105,6 +106,12 @@ paymentsRouter.openapi(
       },
     });
 
+    captureProductEvent({
+      userId: c.get('userId'),
+      accountId,
+      event: 'checkout_started',
+      properties: { kind: 'credits', amount_usd: amount },
+    });
     return c.json({ checkout_url: session.url });
   },
 );

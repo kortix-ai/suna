@@ -12,7 +12,7 @@ import { Fragment, Suspense, useState, type ReactNode } from 'react';
 
 import { TERMS_LAST_UPDATED, TERMS_OF_SERVICE } from './terms-of-service';
 
-const LEGAL_LAST_UPDATED = 'September 29, 2026';
+const LEGAL_LAST_UPDATED = 'November 4, 2026';
 
 type LegalTab = 'imprint' | 'terms' | 'privacy';
 
@@ -296,12 +296,16 @@ function PrivacyPolicy() {
 
       <Section id="cookies" title={PRIVACY_TITLES['cookies']}>
         <P>
-          We use cookies that the Services need to work, such as the sign-in session. On our
-          marketing website we also use analytics (PostHog, Vercel Analytics) and, through Google
-          Tag Manager, advertising and measurement tags. A cookie banner asks for your consent
-          before we set non-essential cookies where the law requires consent, and you can change
-          your choice there at any time. We do not load advertising tags on signed-in pages of the
-          Services.
+          We use cookies that the Services need to work, such as the sign-in session. We use
+          PostHog, hosted in the European Union, for product analytics on our website and in the
+          Services: which pages and features are used, and which campaign brought a visitor to us.
+          PostHog stores an identifier in your browser only after you accept analytics in the cookie
+          banner; with that consent it may also record visits to our public pages, with form fields
+          hidden. When you are signed in it receives your account email to link your visits; it
+          never receives your prompts, messages, files or other project content. On our marketing website we also use Vercel Analytics and, through Google Tag
+          Manager, advertising and measurement tags. A cookie banner asks for your consent before we
+          set non-essential cookies where the law requires consent, and you can change your choice
+          there at any time. We do not load advertising tags on signed-in pages of the Services.
         </P>
       </Section>
 

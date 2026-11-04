@@ -62,6 +62,7 @@ import {
 } from '../lib/session-prompt-view';
 import { SessionPromptDeliverySchema } from '@kortix/api-contract';
 import { WIRE_MESSAGE_ID, isWireIdAheadOf, mintWireMessageId } from '../wire-message-id';
+import { captureProductEvent } from '../../shared/product-analytics';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
 //
@@ -462,6 +463,17 @@ export function registerSessionPromptsRoutes(): void {
         observed_at: new Date().toISOString(),
       };
       if (enqueued.deduped) return c.json(response, 200);
+
+      // A person's prompt; an agent-session credential is not a person.
+      if (!isProjectSessionPrincipal(c)) {
+        captureProductEvent({
+          userId: loaded.userId,
+          accountId: loaded.row.accountId,
+          event: 'message_sent',
+          dedupeKey: idempotencyKey,
+          properties: { project_id: projectId, session_id: sessionId },
+        });
+      }
 
       // Fire the targeted drain WITHOUT waiting on it: the response is "your
       // prompt is durable", not "your prompt has been delivered". The drain
