@@ -1497,13 +1497,15 @@ flow(
         async () => {
           const rawBody = JSON.stringify({ action: 'opened' });
           const deliveryId = `ke2e-${crypto.randomUUID()}`;
+          const ts = Math.floor(Date.now() / 1000);
           const deliver = () =>
             ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
               params: { projectId: p.id, slug: 'bp-hook' },
               raw: true,
               headers: {
                 'content-type': 'application/json',
-                'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+                'x-kortix-timestamp': String(ts),
+                'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(`${ts}.${rawBody}`).digest('hex')}`,
                 'x-kortix-delivery-id': deliveryId,
               },
             });
@@ -1641,6 +1643,11 @@ flow(
     const secret = `ke2e-hook-${crypto.randomUUID()}`;
     const rawBody = JSON.stringify({ action: 'opened' });
     const sign = (payload: string, key = secret) => `sha256=${createHmac('sha256', key).update(payload).digest('hex')}`;
+    // KRTX-4098: signature auth requires X-Kortix-Timestamp and signs `<ts>.<body>`.
+    const signed = (ts = Math.floor(Date.now() / 1000)) => ({
+      'x-kortix-timestamp': String(ts),
+      'x-kortix-signature': sign(`${ts}.${rawBody}`),
+    });
     const deliver = (headers: Record<string, string>, slug = 'hook', projectId = p.id) =>
       ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
         params: { projectId, slug },
@@ -1700,13 +1707,15 @@ flow(
 
     await ctx.step('no credential header, an unknown slug, a wrong signature → the same 401', async () => {
       await rejected({});
-      await rejected({ 'x-kortix-signature': sign(rawBody) }, 'no-such-hook');
-      await rejected({ 'x-kortix-signature': sign(rawBody, 'wrong-secret') });
+      await rejected(signed(), 'no-such-hook');
+      const ts = String(Math.floor(Date.now() / 1000));
+      await rejected({ 'x-kortix-timestamp': ts, 'x-kortix-signature': sign(`${ts}.${rawBody}`, 'wrong-secret') });
     });
 
-    await ctx.step('a valid X-Kortix-Signature or X-Hub-Signature-256 authenticates → 200 skipped (paused)', async () => {
-      await accepted({ 'x-kortix-signature': sign(rawBody) });
-      await accepted({ 'x-hub-signature-256': sign(rawBody) });
+    await ctx.step('a valid X-Kortix-Signature or X-Hub-Signature-256 with its timestamp authenticates → 200 skipped (paused)', async () => {
+      const ts = Math.floor(Date.now() / 1000);
+      await accepted(signed(ts));
+      await accepted({ 'x-kortix-timestamp': String(ts), 'x-hub-signature-256': sign(`${ts}.${rawBody}`) });
     });
 
     await ctx.step('X-Kortix-Timestamp signs <timestamp>.<body>: 1 h stale or 1 h ahead → 401, current → 200', async () => {
@@ -1715,6 +1724,16 @@ flow(
       await rejected(stamped(now - 3600));
       await rejected(stamped(now + 3600));
       await accepted(stamped(now));
+    });
+
+    await ctx.step('KRTX-4098: a captured signed delivery cannot replay — no timestamp → 401, and the old body-only signature → 401', async () => {
+      // Without a timestamp the sender's old body-only HMAC is refused outright,
+      // so a captured delivery must be re-stamped inside the window to run again.
+      await rejected({ 'x-kortix-signature': sign(rawBody) });
+      await rejected({ 'x-kortix-signature': sign(rawBody, 'wrong-secret') });
+      const ts = Math.floor(Date.now() / 1000);
+      await rejected({ 'x-kortix-timestamp': String(ts), 'x-kortix-signature': sign(rawBody) });
+      await accepted(signed(ts));
     });
 
     await ctx.step('static token: a wrong X-Kortix-Token → 401; the secret as X-Kortix-Token or Bearer → 200', async () => {
@@ -1726,7 +1745,7 @@ flow(
     await ctx.step('the secret loses connector delivery → a signed delivery is 401; PATCH → 409 webhook_secret_delivery_mismatch', async () => {
       (await owner.del('/v1/projects/:projectId/secrets/:name', { params: { ...params, name: 'HOOK_SECRET' } })).status(200);
       (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret }, { params })).status([200, 201]);
-      await rejected({ 'x-kortix-signature': sign(rawBody) });
+      await rejected(signed());
       const r = await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed hook' }, { params: { ...params, slug: 'hook' } });
       r.status(409).body().has('$.code', 'webhook_secret_delivery_mismatch');
       if ((await listed()).find((t) => t.slug === 'hook')?.name !== 'hook') throw new Error('a refused PATCH changed the trigger');
@@ -2300,7 +2319,8 @@ flow(
     const params = { projectId: p.id };
     const secret = `ke2e-hook-${crypto.randomUUID()}`;
     const rawBody = JSON.stringify({ action: 'opened', api_key: 'synthetic-not-a-key' });
-    const signature = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = `sha256=${createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex')}`;
     const addSecret = async () =>
       (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
     const runs = async (slug = 'hook') =>
@@ -2319,7 +2339,7 @@ flow(
         await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
           params: { ...params, slug: 'hook' },
           raw: true,
-          headers: { 'content-type': 'application/json', 'x-kortix-signature': signature },
+          headers: { 'content-type': 'application/json', 'x-kortix-timestamp': timestamp, 'x-kortix-signature': signature },
         })
       ).status(401);
     });
@@ -2679,12 +2699,14 @@ flow(
         ),
       );
       const rawBody = JSON.stringify({ action: 'opened' });
+      const ts = Math.floor(Date.now() / 1000);
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
         params: { ...params, slug: 'capped' },
         raw: true,
         headers: {
           'content-type': 'application/json',
-          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-timestamp': String(ts),
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(`${ts}.${rawBody}`).digest('hex')}`,
           'x-kortix-delivery-id': crypto.randomUUID(),
         },
       });
@@ -2768,12 +2790,14 @@ flow(
     type Status = { paused: boolean; paused_at: string | null; paused_by: string | null; can_change: boolean };
     const deliver = async () => {
       const rawBody = JSON.stringify({ action: 'opened' });
+      const ts = Math.floor(Date.now() / 1000);
       return ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
         params: { ...params, slug: 'hook' },
         raw: true,
         headers: {
           'content-type': 'application/json',
-          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-timestamp': String(ts),
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(`${ts}.${rawBody}`).digest('hex')}`,
           'x-kortix-delivery-id': crypto.randomUUID(),
         },
       });
@@ -2864,12 +2888,14 @@ flow(
     };
     const deliver = async (body: Record<string, unknown>) => {
       const rawBody = JSON.stringify(body);
+      const ts = Math.floor(Date.now() / 1000);
       return ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
         params: slugParams,
         raw: true,
         headers: {
           'content-type': 'application/json',
-          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-timestamp': String(ts),
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(`${ts}.${rawBody}`).digest('hex')}`,
           'x-kortix-delivery-id': crypto.randomUUID(),
         },
       });
@@ -2977,12 +3003,14 @@ flow(
     };
     const deliver = async () => {
       const rawBody = JSON.stringify({ action: 'opened' });
+      const ts = Math.floor(Date.now() / 1000);
       return ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
         params: slugParams,
         raw: true,
         headers: {
           'content-type': 'application/json',
-          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-timestamp': String(ts),
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(`${ts}.${rawBody}`).digest('hex')}`,
           'x-kortix-delivery-id': crypto.randomUUID(),
         },
       });
@@ -3077,12 +3105,14 @@ flow(
     };
     const deliver = async () => {
       const rawBody = JSON.stringify({ action: 'opened' });
+      const ts = Math.floor(Date.now() / 1000);
       return ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
         params: slugParams,
         raw: true,
         headers: {
           'content-type': 'application/json',
-          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-timestamp': String(ts),
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(`${ts}.${rawBody}`).digest('hex')}`,
           'x-kortix-delivery-id': crypto.randomUUID(),
         },
       });
