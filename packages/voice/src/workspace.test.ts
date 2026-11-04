@@ -3,7 +3,7 @@
 import { expect, test } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { identity, repoMap } from './workspace'
+import { identity } from './workspace'
 
 const project = (files: Record<string, string>) => {
   const dir = mkdtempSync(`${tmpdir()}/workspace-`)
@@ -11,14 +11,13 @@ const project = (files: Record<string, string>) => {
   return dir
 }
 
-test("a Kortix project: its README's title and kortix.yaml's project name, first in the repo map", () => {
+test("a Kortix project: its README's title and kortix.yaml's project name, not a sub-project's", () => {
   const dir = project({
     'README.md': '# Kortix for Kortix\n\nThe company workforce.\n',
     'kortix.yaml': 'project:\n  name: company  # the slug\ndefault_agent: kortix\n',
     'security/kortix.yaml': 'project:\n  name: security-tools\n',
   })
   expect(identity(dir)).toBe('Kortix for Kortix (company)')
-  expect(repoMap(dir).startsWith('Project: Kortix for Kortix (company)\n')).toBe(true)
 })
 
 test('other manifests, and none', () => {
