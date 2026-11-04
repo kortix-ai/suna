@@ -1332,7 +1332,7 @@
         },
         "voice_call": {
           "name": "Chiamate vocali",
-          "description": "Chiama l'agente della sessione dalla pagina della sessione e parlagli. Ti sente, risponde a voce, vede lo schermo che condividi e lavora nella stessa sessione, così la conversazione resta nella chat."
+          "description": "Chiama un agente dalla sua pagina (Personalizza → Agenti) e parlagli. Una chiamata è una sessione a sé di quell'agente: ti sente, risponde a voce e vede lo schermo che condividi, e la conversazione è la chat di quella sessione."
         },
         "shared_drives": {
           "name": "Drive condivisi",

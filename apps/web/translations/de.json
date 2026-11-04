@@ -1332,7 +1332,7 @@
         },
         "voice_call": {
           "name": "Sprachanrufe",
-          "description": "Ruf den Agenten der Session von der Session-Seite aus an und sprich mit ihm. Er hört dich, antwortet mit Stimme, sieht einen geteilten Bildschirm und arbeitet in derselben Session, sodass das Gespräch im Chat bleibt."
+          "description": "Ruf einen Agenten von seiner Seite aus an (Anpassen → Agenten) und sprich mit ihm. Ein Anruf ist eine eigene Session dieses Agenten: Er hört dich, antwortet mit Stimme und sieht einen geteilten Bildschirm, und das Gespräch ist der Chat dieser Session."
         },
         "shared_drives": {
           "name": "Geteilte Drives",

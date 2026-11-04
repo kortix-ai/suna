@@ -1332,7 +1332,7 @@
         },
         "voice_call": {
           "name": "Llamadas de voz",
-          "description": "Llama al agente de la sesión desde la página de la sesión y habla con él. Te escucha, responde con voz, ve la pantalla que compartes y trabaja en la misma sesión, así la conversación queda en el chat."
+          "description": "Llama a un agente desde su página (Personalizar → Agentes) y habla con él. Una llamada es una sesión propia de ese agente: te escucha, responde con voz y ve la pantalla que compartes, y la conversación es el chat de esa sesión."
         },
         "shared_drives": {
           "name": "Unidades compartidas",

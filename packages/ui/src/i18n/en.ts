@@ -843,7 +843,7 @@ const catalog = {
         },
         "voice_call": {
           "name": "Voice calls",
-          "description": "Call the session's agent from the session page and talk it through. It hears you, answers in a voice, sees a screen you share, and works in the same session, so the conversation stays in the chat."
+          "description": "Call an agent from its page (Customize → Agents) and talk it through. A call is a session of its own on that agent: it hears you, answers in a voice and sees a screen you share, and the conversation is that session's chat."
         },
         "shared_drives": {
           "name": "Shared drives",
