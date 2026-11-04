@@ -49,8 +49,14 @@ const logs = gatewayRequestLogs;
 // row is read from its own columns: `resolved_model` is a route id only on a
 // Kortix-served row (on an own key or ChatGPT plan it is the upstream's id),
 // and a fallback always left a failed attempt behind.
+// KRTX-4023: the served model is now a real column (`served_model`, written
+// from the metadata key by the gateway writer and the backfill) so the
+// breakdown's group key scans the covering index index-only — a jsonb
+// expression can never join an INCLUDE list. A NULL column (a row written
+// before the promotion) falls back to the same provider-based read the
+// metadata-absent path used before traces carried the key.
 const servedModelSql = sql<string>`coalesce(
-  ${logs.metadata}->>'servedModel',
+  ${logs.servedModel},
   case when ${logs.provider} = 'kortix' then ${logs.resolvedModel} else ${logs.requestedModel} end
 )`;
 const fallbackFromSql = sql<string | null>`case

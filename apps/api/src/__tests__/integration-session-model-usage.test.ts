@@ -61,6 +61,10 @@ async function request(input: {
     provider: input.provider, status: input.ok === false ? (input.errorCode === 'client_aborted' ? 499 : 429) : 200, ok: input.ok !== false,
     errorCode: input.errorCode ?? null,
     finalCost: String(billed), billingMode: billed > 0 ? 'credits' : 'none',
+    // KRTX-4023: mirror the real writer (gateway-trace-row.ts) — the served
+    // model rides in metadata AND its promoted column. The two raw inserts
+    // below (no column) intentionally keep the pre-promotion row shape.
+    servedModel: typeof input.metadata?.servedModel === 'string' ? input.metadata.servedModel : null,
     metadata: input.metadata ?? {}, createdAt: at(input.at),
   });
 }

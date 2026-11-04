@@ -4401,6 +4401,17 @@ export const gatewayRequestLogs = kortixSchema.table(
     request: jsonb('request').$type<Record<string, unknown>>(),
     response: jsonb('response').$type<Record<string, unknown>>(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    // KRTX-4023: the model that answered and the usage-was-estimated flag,
+    // promoted from `metadata` (`servedModel` / `usageEstimated` keys, kept
+    // in sync by the writer) into real columns so the dashboard aggregates
+    // reading them can scan the covering indexes index-only — a jsonb
+    // expression can join an index only as a btree key, and btree expression
+    // keys never serve index-only scans (verified on PG 17.6). Nullable: rows
+    // written before the promotion read NULL and the readers fall back to the
+    // metadata key (see session-model-usage.ts servedModelSql) or to
+    // not-estimated (llm-value.ts), exactly as a missing metadata key reads.
+    servedModel: text('served_model'),
+    usageEstimated: boolean('usage_estimated'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

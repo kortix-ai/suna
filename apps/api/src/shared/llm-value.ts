@@ -40,11 +40,18 @@ export function estimateLlmValue(row: {
 
 // Same rate snapshot in SQL so all reporting aggregates the same request-level
 // values, never repricing a window's token sum across a context-price boundary.
+// KRTX-4023: the usage-was-estimated gate reads the promoted `usage_estimated`
+// column (real column, written by the gateway writer + the 20261104060000000
+// backfill), not `metadata->>'usageEstimated'` — a jsonb expression cannot
+// join the covering indexes' INCLUDE lists, so reading metadata here
+// heap-fetches every aggregated row and the dashboard polls cross the 25 s
+// statement timeout as 5xx. NULL (rows written before the promotion) reads as
+// not-estimated, exactly as a missing metadata key does.
 const rate = (base: number, long: number) =>
   sql`case when ${logs.inputTokens} > 272000 then ${long}::numeric else ${base}::numeric end`;
 export const rowLlmValueSql = sql<number | null>`case when
   ${logs.provider} in ('openai', 'openai-codex') and ${logs.resolvedModel} = 'gpt-6.1-sol'
-  and ${logs.ok} and coalesce(${logs.metadata}->>'usageEstimated', 'false') <> 'true'
+  and ${logs.ok} and not coalesce(${logs.usageEstimated}, false)
   and ${logs.inputTokens} >= 0 and ${logs.outputTokens} >= 0
   and ${logs.cachedTokens} >= 0 and ${logs.cacheWriteTokens} >= 0
   and ${logs.cachedTokens} + ${logs.cacheWriteTokens} <= ${logs.inputTokens}

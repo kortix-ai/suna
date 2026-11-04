@@ -41,6 +41,25 @@ function asJson(value: unknown): Record<string, unknown> | null {
 }
 
 /**
+ * The promoted columns (KRTX-4023): the served model and the
+ * usage-was-estimated flag ride into `persistGatewayTrace` inside `metadata`
+ * (the `servedModel` key from hooks.ts, `usageEstimated` from the
+ * simple-handler emit). They are lifted into real columns here — the single
+ * write site — so the dashboard aggregates reading them can scan the covering
+ * indexes index-only (a jsonb expression cannot join an INCLUDE list, and a
+ * btree expression key never serves an index-only scan on PG 17.6). The
+ * metadata keys stay (older replicas and the backfill in
+ * 20261104060000000 read them). A missing key reads NULL, which the readers
+ * treat exactly as the missing metadata key they replaced.
+ */
+function promotedColumns(metadata: Record<string, unknown> | undefined) {
+  return {
+    servedModel: typeof metadata?.servedModel === 'string' ? metadata.servedModel : null,
+    usageEstimated: metadata?.usageEstimated === true,
+  };
+}
+
+/**
  * Build the gateway_request_logs row, scrubbing NUL characters (U+0000) from
  * every free-form payload first.
  *
@@ -82,6 +101,7 @@ export function buildGatewayTraceRow(input: GatewayTraceInput) {
     finalCost: String(input.finalCost ?? 0),
     streaming: input.streaming ?? false,
     billingMode: input.billingMode || null,
+    ...promotedColumns(input.metadata),
     request: stripNullBytesDeep(asJson(input.request)),
     response: stripNullBytesDeep(asJson(input.response)),
     metadata: stripNullBytesDeep(input.metadata ?? {}),
