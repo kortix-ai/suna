@@ -27,7 +27,7 @@ import { ponder as roomPonder, confirm as roomConfirm, history as roomHistory, j
 import { changed as screenChanged, look, ocr, see, VISUAL, visionOn } from './vision'
 import { follows, foresight, toneOf } from './anticipate'
 import { lookup, preconnect, prefetch, warm as warmSearch, workspaceMap } from './prefetch'
-import { type Stt, type Tts, type Utterance, cached, inworldVoice, inworldVoices, stts, ttss, vocab, voiced } from './speech'
+import { type Stt, type Tts, type Utterance, cached, inworldVoice, inworldVoices, stts, ttss, vocab, voiced, voicesKnown } from './speech'
 import { resolved, type Card, type Route } from './route'
 import { cardData, cue, glance, judge as judgeCard, leans, routeAhead, spokenCard, whenHeard } from './judge'
 import { content } from './pages'
@@ -235,6 +235,12 @@ export const DATA_RULES =
   "exact. A primary source is reliable: say it plainly, no hedge. Never mention the data, a search or results. No lists, " +
   "no markup, no filler opener, no offer, no question back." + (PERSONA && `\n\n${PERSONA}`)
 const DATA_VOICE = process.env.VOICE_DATA_RULES !== '0'
+/** Words as one line: a note the voice writes into the session keeps its own lines (User:, You said:) unforgeable. */
+const oneLine = (s: string) => s.replace(/\s*[\r\n]+\s*/g, ' ').trim()
+/** What a turn is told when its last reply was cut off before they heard it all (`upTo`: the last words they heard).
+ * What they say now comes first, all of it: "Remind me in ten seconds..." right after a rename whose reply was cut got
+ * only "Sure, I'm Nova now." and no reminder (a Kortix dev call with a slide shared). */
+export const cutNote = (upTo?: string) => ` Your last reply was cut off: they heard ${upTo ? `it up to "…${upTo}"` : 'none of it'}. Answer what they say now first, all of it (anything they ask for in it is still to be done); then, if what they missed still matters, add it in a few words.`
 export const DEFAULT_RULES =
   "You are on a voice call: their words are speech-to-text and your text is read aloud. Talk like a sharp " +
   "colleague: contractions, plain words, answer first. Default to one or two short sentences, the first under ten " +
@@ -289,6 +295,10 @@ const RULES = (process.env.VOICE_RULES_FILE ? readFileSync(process.env.VOICE_RUL
 
 type Speaker = { alive: boolean; readonly spoken: string; add(delta: string): void; say(text: string | undefined, fixed?: boolean): void; settled(): void; end(): Promise<void>; kill(): void }
 type Turn = {
+  /** Its words are a guest's (o.trusted set, they are not on it): decided once, read by every effect of the turn. */
+  guest?: boolean
+  /** It claimed a voice it does not have: none of its words are said, shown or kept. */
+  voiceless?: boolean
   ac: AbortController
   sp: Speaker
   audible: boolean
@@ -489,6 +499,7 @@ export const cascade: Provider = (o, h) => {
   // What was said this call, for the fast lane (src/lane.ts): the caller's committed turns and what they heard back,
   // with the recalled history of earlier calls behind the rules.
   const talk: Msg[] = []
+  let lastGuest = false // the last caller turn was a guest's (o.trusted): no move ahead starts from it
   // Where the call is going, looked up before it gets there, and each answer written then from its data (the fast lane,
   // off the caller's path): a follow-up that matches is spoken at once.
   // A forward move after an acknowledgment: the answer looked up and written ahead for where the call goes next
@@ -501,6 +512,8 @@ export const cascade: Provider = (o, h) => {
   // that ("And Belgrade itself has ..."), or (nothing). A pre-written fact said as is, after a misheard exchange, was
   // heard as random (a live call, 2026-11-01: "it needs to be natural, not random").
   const move = async (closer?: string) => {
+    // A guest's last words start nothing of the agent's, and are never written into its session.
+    if (lastGuest) return
     // Only after their acknowledgment: in a quiet moment a predicted follow-up's answer is a fact nobody asked for.
     const next = closer ? ahead.pick((l) => !repeats(l, clean(last?.text ?? ''))) : undefined
     let line = ''
@@ -510,7 +523,7 @@ export const cascade: Provider = (o, h) => {
       note('move-ahead', { q: next.q, text: line || '(not this)' })
     }
     if (current || talking) return // they went on meanwhile: the floor is theirs
-    if (line) void brain.remember(sid, `[You added this on your own ${closer ? `after they said "${closer}"` : 'in a quiet moment'}; part of this conversation]\nYou said: ${line}`).catch(() => {})
+    if (line) void brain.remember(sid, `[You added this on your own ${closer ? `after they said "${oneLine(closer).replace(/"/g, "'")}"` : 'in a quiet moment'}; part of this conversation]\nYou said: ${oneLine(line)}`).catch(() => {})
     return ask(undefined, MOVE(closer, Math.round(IDLE / 1000)), line || undefined)
   }
   // A predicted follow-up's answer, written while this answer plays: from the call with this answer in it (the live
@@ -631,34 +644,46 @@ export const cascade: Provider = (o, h) => {
   // A voice asked for at join by description ("deep calm British male") is the catalog voice it names, as later.
   if (o.voice && inworldFamily) (o.voice = inworldVoice(o.voice) || undefined), (me.voice = o.voice)
   queueMicrotask(() => note('persona', { ...me, by: 'join' })) // the page learns who it is from the start
-  function setPersona(p: Partial<Persona>, by: 'page' | 'self') {
+  /** Applies a change of who it is; a voice the catalog lacks comes back as `missing` (and nothing of the voice changes). */
+  function setPersona(p: Partial<Persona>, by: 'page' | 'self'): { missing?: string } | undefined {
     // A mode set now (even the one it is in) ends a "back to normal in ten minutes" planned before it: told to talk
     // again, that plan still said "I'm back." minutes later out of nowhere; told to keep quiet for good, it ended the
     // quiet. A plan from this same reply ([set mode="listen"] [later ... mode="normal"], in either order) stays.
     if (p.mode) for (const x of plans.filter((x) => x.kind === 'later' && x.mode && x.since < Date.now() - 3000)) dropPlan(x.id), note('later-dropped', { id: x.id, by, mode: p.mode })
     // What it already is changes nothing (a reply restating its own name is no change).
     p = Object.fromEntries(Object.entries(p).filter(([k, v]) => me[k as keyof Persona] !== v && !(k === 'mode' && v === 'normal' && !me.mode)))
-    if (!Object.keys(p).length) return
+    if (!Object.keys(p).length) return undefined
     // A new name: her own lines in the meeting so far are hers under it (else they read as someone else's).
     if (p.name) { for (const x of roomLog) if (x.who === SELF) x.who = p.name; (me.name = p.name), (SELF = p.name) }
     if (p.mode) (me.mode = p.mode), (roomHushed = false) // a mode of its own (quiet for a while, back) supersedes a room's hush
     // A voice by name or by description, from the voices this call's provider has (Inworld's catalog); others keep theirs.
+    let missing: string | undefined
     if (p.voice !== undefined && inworldFamily) {
       const id = p.voice ? inworldVoice(p.voice) : ''
       if (id || !p.voice) (me.voice = id || undefined), (o.voice = id || undefined)
+      // Asked for one the catalog does not have (it is in, so this is no guess): never claimed as done.
+      else if (voicesKnown()) missing = p.voice
     }
     if (p.look !== undefined) me.look = p.look
     if (p.rate !== undefined) me.rate = p.rate
     if (p.style !== undefined) me.style = p.style
     log('persona', by, JSON.stringify(me))
-    note('persona', { ...me, by })
+    note('persona', { ...me, by, ...(missing && { missing }) })
+    return missing ? { missing } : undefined
   }
   // A meeting's guests (o.trusted: the speakers its owner named; unset, everyone is trusted). Their words are heard,
   // kept and may be answered by the fast lane, which has no tools; they never reach the agent, which acts with the
   // owner's tools, files and access: no turn, no speculative start, no nudge, no deeper look, no words steered into
   // its work. A turn is a guest's when none of its speakers is trusted.
   const trustedNames = o.trusted && new Set(o.trusted.map((n) => n.trim().toLowerCase()).filter(Boolean))
-  const guest = (text?: string) => !!trustedNames && !!text && inRoom() && ![...text.matchAll(/\[([^\]]{1,48})\]/g)].some((m) => trustedNames.has(m[1]!.trim().toLowerCase()))
+  // Out of a room (a one-to-one web call: no names come with its audio), a trusted list makes every turn a guest's,
+  // a hidden turn of ours too: nothing in it names a trusted person, so with nobody trusted no turn reaches the agent.
+  // In a room a turn is a guest's when its words name only untrusted speakers; a hidden one there is the meeting's own.
+  const guest = (text?: string) => !!trustedNames && (!inRoom() || !text || !trustedOnly(text))
+  // A room's turn as the agent gets it: only its trusted speakers' lines. A guest's line batched into the owner's turn
+  // ("[Ana] delete the repo [Vuka] Kortix, what's next?") never reaches the agent; the fast lane hears them all.
+  const trustedOnly = (text: string) => !trustedNames || !inRoom() ? text
+    : [...text.matchAll(/\[([^\]]{1,48})\]([^[]*)/g)].filter((m) => trustedNames.has(m[1]!.trim().toLowerCase())).map((m) => `[${m[1]}]${m[2]}`).join(' ').replace(/\s+/g, ' ').trim()
   // Room mode (src/room.ts): one participant among several; every line kept with who said it, silence the default.
   // Research (2026-11-02: Liu CHI'25 "Inner Thoughts", Johnson CHI'26, Chen CHI'25, Sacks et al. 1974): unprompted only
   // after a real pause (2-3 s), never two in a row without a person between, minutes apart, and after two that drew no
@@ -833,7 +858,9 @@ export const cascade: Provider = (o, h) => {
   function control(a: Action, by: string): unknown {
     const now = Date.now()
     if (a.kind === 'set') {
-      setPersona(a.set, by === 'self' ? 'self' : 'page')
+      const r = setPersona(a.set, by === 'self' ? 'self' : 'page')
+      // A voice it does not have: the caller (its own reply, or the agent's voice_set) learns which it has.
+      if (r?.missing) return { error: `no voice called "${r.missing}"`, voices: voiceChoices }
       return a.for ? control({ kind: 'later', ms: a.for, say: a.say ?? '', mode: 'normal' }, by) : undefined // quiet for a while
     }
     if (a.kind === 'say') return void speakDelivered(a.text, true)
@@ -1052,6 +1079,7 @@ export const cascade: Provider = (o, h) => {
     // interrupts it, so intonation carries across sentences instead of resetting per clip.
     let utt: Utterance | undefined
     const close = () => (utt?.end(), (utt = undefined))
+    let silenced = false // the reply's own words are dropped from here on (it claimed a voice it does not have)
     let pending = ''
     let fenced = false // inside a code block: shown in the transcript, never read aloud ("python / def fibonacci(n): ...")
     let headed = false // the last line ended with a colon: what follows may be a list's items
@@ -1229,6 +1257,7 @@ export const cascade: Provider = (o, h) => {
         })
       },
       add(delta) {
+        if (silenced) return
         clearTimeout(settle)
         pending = (pending + delta).replace(/([a-z][.!?])([A-Z])/g, '$1 $2') // "Let me check.There are…" (the model can drop the space)
         // Its own actions on the call (src/meta.ts: [set name="..." voice="..."], [later ...], [watch ...], [cancel ...],
@@ -1241,8 +1270,20 @@ export const cascade: Provider = (o, h) => {
             pending = pending.slice(0, open) // never closed: dropped, never read aloud
             break
           }
-          const a = parseTag(tag)
-          if (a) void Promise.resolve(control(a, 'self')).then((r) => {
+          // A guest's turn acts on nothing: no tag of it is applied (the call's end, who it is, reminders, watches, a capture
+          // into the owner's files): its words are only heard and answered.
+          const a = t.guest ? undefined : parseTag(tag)
+          // A voice it does not have: the rest of this reply ("Done, that's Domagoj now.") is never said; they hear which
+          // voices there are instead (a hidden turn of ours), in their words.
+          const done = a ? control(a, 'self') : undefined
+          const unvoiced = a?.kind === 'set' ? (done as { error?: string; voices?: string } | undefined) : undefined
+          if (unvoiced?.error && !t.guest) {
+            note('voice-missing', { want: a!.kind === 'set' ? a!.set.voice : '' })
+            ;(silenced = true), (pending = ''), (tail = ''), (t.voiceless = true), close()
+            void ask(undefined, `[You tried to change your voice: ${unvoiced.error}. The voices you can use: ${unvoiced.voices} (or any by a description, like "deep calm male"). Tell them in a few words that you do not have that one and offer two or three that fit what they asked for; no tag until they pick one.]`)
+            return
+          }
+          if (a) void Promise.resolve(done).then((r) => {
             // A capture it said it took, and could not: they hear why, in their words (a hidden turn of ours).
             const why = (r as { error?: string } | undefined)?.error
             if (a.kind === 'capture' && why) note('capture-failed', { why }), void ask(undefined, `[Your capture did not work: ${why}. Tell them in a few words what they can do, e.g. share it; no tag.]`)
@@ -1294,6 +1335,7 @@ export const cascade: Provider = (o, h) => {
       },
       end() {
         clearTimeout(settle)
+        if (silenced) return (close(), (pending = ''), (tail = ''), gate.then(() => chain))
         if ((items.length > 0 || headed) && LABELED.test(pending)) items.push({ raw: pending, text: clean(pending).replace(/[.:;,]$/, '') }), (pending = '') // a list's last item
         if (!fenced && !FENCE.test(pending)) unit(pending.replace(/\[(?:set|later|watch|cancel|capture)\b[\s\S]*$/i, '')) // a tag the reply never closed is not read aloud; nor code
         flush()
@@ -1474,7 +1516,7 @@ export const cascade: Provider = (o, h) => {
       else log('listening: no turn of ours', hidden ?? '')
       return
     }
-    const t: Turn = (current = { ac: new AbortController(), sp: undefined!, audible: false, spoke: 0, informed: 0, text: '', user, streaming: true, tools: 0, hidden: !user && !!hidden, asked: user, started: performance.now(), steps: [] })
+    const t: Turn = (current = { guest: guest(user), ac: new AbortController(), sp: undefined!, audible: false, spoke: 0, informed: 0, text: '', user, streaming: true, tools: 0, hidden: !user && !!hidden, asked: user, started: performance.now(), steps: [] })
     t.clock = { end: user ? endAt : performance.now(), ...(user && stamps), ask: performance.now() }
     t.sp = speaker(t, user && is(LENGTHY, user) ? 400 : inRoom() ? ROOM_BUDGET : BUDGET)
     // While a lookup runs, the acknowledgment says so ("Let me look that up."): "Okay." then silence then
@@ -1538,7 +1580,7 @@ export const cascade: Provider = (o, h) => {
     const cut = missed && performance.now() - missed.at < 60000 ? missed : undefined
     missed = undefined
     const upTo = cut?.upTo.trim().split(/\s+/).slice(-12).join(' ')
-    const lost = cut ? ` Your last reply was cut off: they heard ${upTo ? `it up to "…${upTo}"` : 'none of it'}. If what they missed still matters to what they say now, include it in a few words.` : ''
+    const lost = cut ? cutNote(upTo) : ''
     // A quiet moment after a web answer: the pages behind it, read since, may hold the one thing worth adding.
     const pages = !user && hidden && lastWeb ? freshPages(lastWeb.query, lastWeb.at) : ''
     if (pages) (lastWeb!.at = Date.now()), log('check-in with pages', pages.length)
@@ -1628,7 +1670,7 @@ export const cascade: Provider = (o, h) => {
     // live; it starts on the plain words beside the router in place of the agent's own speculative start. VOICE_LANE=0: off.
     const fast = !!user && laneOn()
     t.bridging = fast // its first words come from the fast lane or the bridge, a fixed lead-in only if both fail
-    const early = user && SPECULATE && !fast && !guest(user) && !resolved(user, said_) ? speculate(user, plain, system, on) : undefined
+    const early = user && SPECULATE && !fast && !t.guest && !resolved(user, said_) ? speculate(trustedOnly(user), plain, system, on) : undefined
     const direct_ = (delta: string) => ((t.direct = true), on.text(delta)) // the fast lane is speaking this turn
     const quick = user && fast && !resolved(user, said_) ? speculateLane(t, user, plain, direct_) : undefined
     // Nothing in the words that a lookup or the workspace could answer better (src/judge.ts): the fast lane's own answer
@@ -1805,16 +1847,16 @@ export const cascade: Provider = (o, h) => {
       : ran(found, map))
     const turnContext = `Reply in the language of the user's last words (so far the call has been in ${NAMES.of(lang)}).${lost}${heardAs}${context}${newly}${ledger()}`
     const go = async (context: string) => {
-      if (guest(user)) return void (log('a guest asked: the agent stays out'), note('guest', { user }))
+      if (t.guest) return void (log('a guest asked: the agent stays out'), note('guest', { user }))
       // The agent is busy with background work: the words go into it, and its answer covers them.
-      if (job && user && !job.deep) return void (await brain.steer(sid, `[said while you work] ${user}`).catch(() => false))
+      if (job && user && !job.deep) return void (await brain.steer(sid, `[said while you work] ${trustedOnly(user)}`).catch(() => false))
       // A deeper look of ours gives way to their new question: it was the step further on an earlier answer.
       if (job?.deep && user) log('deeper look dropped for a new question'), note('deep-dropped', { question: user }), job.t.ac.abort(), (job = undefined), (aborting = brain.abort(sid))
       await aborting
       if (t.ac.signal.aborted) return
       const ac = (run = new AbortController())
       t.ac.signal.addEventListener('abort', () => ac.abort())
-      await brain.turn(events, sid, user ?? hidden, { system, context: forAgent(context) + seeHint(), model, signal: ac.signal, synthetic: !user && !!hidden }, on)
+      await brain.turn(events, sid, (user && trustedOnly(user)) ?? hidden, { system, context: forAgent(context) + seeHint(), model, signal: ac.signal, synthetic: !user && !!hidden }, on)
     }
     // The fast lane answers unless it hands the turn to the agent: a workspace question too, when its data (the code and
     // git state read just now) is in hand. The agent (Flash-Lite) took 1.2-2.8 s to its first words on those turns and
@@ -1929,7 +1971,7 @@ export const cascade: Provider = (o, h) => {
       t.text += '\n'
       // The fast lane has no tools: the agent takes the caller's turn itself (it has not seen it).
       if (t.direct) (t.direct = false), await go(turnContext)
-      else if (!guest(user)) await brain.turn(events, sid, NUDGE, { system, context: forAgent(turnContext), model, signal: t.ac.signal, synthetic: true }, on)
+      else if (!t.guest) await brain.turn(events, sid, NUDGE, { system, context: forAgent(turnContext), model, signal: t.ac.signal, synthetic: true }, on)
     }
     // The agent failed with nothing of its own said (a dead key, its backend down): the fast lane takes the turn after all,
     // with the turn's data or the search begun when it was handed over, never handing it over again (bench/agentdown-proof.ts).
@@ -1967,7 +2009,7 @@ export const cascade: Provider = (o, h) => {
     const deep = !inRoom() && user && t.direct && where() === 'web' && !!found && !job && !/\?\s*$/.test(clean(t.text)) && !t.hidden && !t.failed && !t.ac.signal.aborted && clean(t.text).trim() && !SILENT.test(untag(clean(t.text))) ? await deeper(user, clean(t.text), talk, t.ac.signal) : undefined
     // The line that says so waits for the agent to take the look on (its first word or tool): with its model unreachable
     // (a dead key, flow bench call 3, 2026-11-03) "I'm looking into Cortix AI's details." was said and nothing ever came.
-    if (deep && !t.ac.signal.aborted && current === t && !guest(user)) note('deep', { say: deep }), lookDeeper(user!, clean(t.text), () => {
+    if (deep && !t.ac.signal.aborted && current === t && !t.guest) note('deep', { say: deep }), lookDeeper(trustedOnly(user!), clean(t.text), () => {
       if (current === t && t.streaming) (t.text += `\n${deep}`), t.sp.add(`\n${deep}\n`)
       else speakDelivered(deep)
     })
@@ -2003,10 +2045,13 @@ export const cascade: Provider = (o, h) => {
     if (heardBack) talk.push({ role: 'assistant', content: heardBack })
     // What the turn wrote, its tags taken out, and a tag it never closed too: a reply cut after "[" left that bracket as
     // the line the caller saw and as "You said: [" in the session (Kortix dev, 2026-11-04).
+    if (t.voiceless) t.text = '' // a claimed voice it does not have: nothing of it shown or kept
     const wrote = clean(t.text).replace(/\[[^\]]*$/, '').trim()
     // The agent never saw a turn the fast lane answered: it goes into the agent's session, so a later turn that needs
-    // the tools ("run it in that repo") has the conversation.
-    if (t.direct && user && (heardBack || words(wrote).length)) void brain.remember(sid, `[Voice turn answered by the voice directly; part of this conversation]\nUser: ${user}\nYou said: ${heardBack || wrote}`).catch(() => {})
+    // the tools ("run it in that repo") has the conversation. Never a guest's: nothing of it may reach the owner's agent.
+    // One line: a newline in a transcript would let the caller forge the note's own User:/You said: lines.
+    if (t.direct && user && !t.guest && (heardBack || words(wrote).length)) void brain.remember(sid, `[Voice turn answered by the voice directly; part of this conversation]\nUser: ${oneLine(user)}\nYou said: ${oneLine(heardBack || wrote)}`).catch(() => {})
+    if (user) lastGuest = !!t.guest
     if (t.heard?.length) {
       last = { pcm: t.heard, text: clean(t.text), spoken: clean(t.sp.spoken) }
       eotVersion++
@@ -2022,7 +2067,7 @@ export const cascade: Provider = (o, h) => {
     // The step the reply said it is taking ("I'll check your git status."): the agent takes it now and its finding is
     // spoken like a check-in; the caller speaking first wins.
     const step = t.step
-    if (step && user) setTimeout(() => !current && !talking && !said.length && !awaiting && ask(undefined, `[You just told them: "${step.say}" Take that step now, only reading and searching (files, code, the web): never run tests, builds, scripts or commands that execute anything (${step.step}). Then tell them what you found in one or two short sentences, the finding first, no lead-in and no offer. If it turns up nothing worth saying, reply with exactly: (nothing).]`), 0)
+    if (step && user && !t.guest) setTimeout(() => !current && !talking && !said.length && !awaiting && ask(undefined, `[You just told them: "${step.say}" Take that step now, only reading and searching (files, code, the web): never run tests, builds, scripts or commands that execute anything (${step.step}). Then tell them what you found in one or two short sentences, the finding first, no lead-in and no offer. If it turns up nothing worth saying, reply with exactly: (nothing).]`), 0)
   }
 
   // Fixed phrases (disclosure, injections) wait until nobody is talking.
@@ -2997,9 +3042,12 @@ export const cascade: Provider = (o, h) => {
       const version = eotVersion
       let once = false
       finished(text, last?.spoken.slice(-300) ?? '', (v) => {
-        if (once || version !== eotVersion) return
+        if (once) return
         once = true
-        if (v && v !== 'done' && v !== 'more') return void act(v, text)
+        // A turn that ended meanwhile (its reply finished playing) moves the version: the words still stand, only not as an
+        // acknowledgment or goodbye judged on the reply before. Dropped, "Remind me in ten seconds..." typed while a
+        // rename's reply played got no turn at all (a Kortix dev call, and on a box relay 1 run in 2).
+        if (version === eotVersion && v && v !== 'done' && v !== 'more') return void act(v, text)
         said.push(text)
         verdicts.set(said.join(' '), 'done')
         decide(true)
@@ -3022,7 +3070,8 @@ export const cascade: Provider = (o, h) => {
       stt.close()
       for (const voice of voices.values()) voice.close()
       events.close()
-      const note = thread.note()
+      // A call with guests (a trusted list) leaves no thread note: their words would be in it.
+      const note = trustedNames ? '' : thread.note()
       if (note) return brain.remember(sid, note, true)
     },
   }

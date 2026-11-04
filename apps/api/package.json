@@ -55,6 +55,7 @@
     "nodemailer": "^10.2.1",
     "oauth4webapi": "^3.8.7",
     "postgres": "^3.4.8",
+    "posthog-node": "^5.61.2",
     "re2js": "2.8.6",
     "react": "19.2.0",
     "react-dom": "19.2.0",

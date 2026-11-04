@@ -483,12 +483,12 @@ export const inworldVoices = (): Promise<Voice[]> =>
   (voiceList ??= viaModels()
     ? fetch(voicesUrl(), { headers: modelsHeaders(), signal: AbortSignal.timeout(5000) })
         .then((r) => (r.ok ? (r.json() as Promise<{ data?: { id: string; description?: string; tags?: string[]; languages?: string[] }[] }>) : Promise.reject(Error(`voices ${r.status}`))))
-        .then((j) => (known = (j.data ?? []).map((v) => ({ id: v.id, about: `${v.description ?? ''} ${(v.tags ?? []).join(' ')} ${(v.languages ?? []).join(' ')}`.toLowerCase() }))))
+        .then((j) => (known = (j.data ?? []).map((v) => ({ id: v.id, about: `${voiceName(v.id)} ${v.description ?? ''} ${(v.tags ?? []).join(' ')} ${(v.languages ?? []).join(' ')}`.toLowerCase() }))))
         .catch(() => ((voiceList = undefined), []))
     : process.env.INWORLD_API_KEY
     ? fetch('https://api.inworld.ai/tts/v1/voices', { headers: { Authorization: `Basic ${process.env.INWORLD_API_KEY}` }, signal: AbortSignal.timeout(5000) })
         .then((r) => (r.ok ? (r.json() as Promise<{ voices?: { voiceId: string; description?: string; tags?: string[]; languages?: string[] }[] }>) : Promise.reject(Error(`voices ${r.status}`)))) // a failed fetch is tried again next time, not kept as none
-        .then((j) => (known = (j.voices ?? []).map((v) => ({ id: v.voiceId, about: `${v.description ?? ''} ${(v.tags ?? []).join(' ')} ${(v.languages ?? []).join(' ')}`.toLowerCase() }))))
+        .then((j) => (known = (j.voices ?? []).map((v) => ({ id: v.voiceId, about: `${voiceName(v.voiceId)} ${v.description ?? ''} ${(v.tags ?? []).join(' ')} ${(v.languages ?? []).join(' ')}`.toLowerCase() }))))
         .catch(() => ((voiceList = undefined), []))
     : Promise.resolve([]))
 let known: Voice[] = [] // filled by inworldVoices() (the relay calls it at start)
@@ -507,14 +507,27 @@ export function inworldVoice(want: string): string {
     const has = new Set(v.about.match(/[a-z]+/g) ?? [])
     return words.reduce((s, x) => s + (has.has(x) ? (x === 'male' || x === 'female' ? 3 : 1) : 0) - ((x === 'male' && has.has('female')) || (x === 'female' && has.has('male')) ? 4 : 0), 0)
   }
-  const best = known.map((v) => [v, score(v)] as const).sort((a, b) => b[1] - a[1])[0]
+  const best = known.filter((v) => ours(v.id)).map((v) => [v, score(v)] as const).sort((a, b) => b[1] - a[1])[0]
   return best && best[1] > 0 ? best[0].id : ''
 }
-/** A catalog voice id exactly as named (any case), else ''. What Inworld is sent: never a fuzzy match. */
+/** A voice's name as a person says it: an account's own voices are "<workspace>__<name>" ("mellow-flute-9821__domagoj"
+ * is Domagoj), the stock ones their id. */
+export const voiceName = (id: string): string => ((n) => n.charAt(0).toUpperCase() + n.slice(1))(id.includes('__') ? id.slice(id.lastIndexOf('__') + 2) : id)
+/** This deployment's own workspace in the voice catalog (INWORLD_WORKSPACE, e.g. "mellow-flute-9821"). The managed
+ * catalog lists every workspace's voices, clones of real people among them: only the stock voices and this workspace's
+ * are ever matched or offered, never another's (Strix on #11779). */
+const workspace = () => (process.env.INWORLD_WORKSPACE ?? '').trim().toLowerCase()
+export const ours = (id: string): boolean => !id.includes('__') || (!!workspace() && id.toLowerCase().startsWith(`${workspace()}__`))
+/** A catalog voice id exactly as named (any case; an account's voice by its name too), else ''. What Inworld is sent:
+ * never a fuzzy match. "Change your voice to Domagoj" set nothing while the reply said "Done": the voice is
+ * "mellow-flute-9821__domagoj" in the catalog (a Kortix dev call, 2026-11-04). */
 export function inworldId(v: string): string {
+  const w = v.trim().toLowerCase()
   if (!known.length) return /^[A-Z][a-z]{2,20}$/.test(v.trim()) ? v.trim() : ''
-  return known.find((x) => x.id.toLowerCase() === v.trim().toLowerCase())?.id ?? ''
+  return known.find((x) => ours(x.id) && x.id.toLowerCase() === w)?.id ?? known.find((x) => x.id.includes('__') && ours(x.id) && voiceName(x.id).toLowerCase() === w)?.id ?? ''
 }
+/** Whether the catalog is in (a name it lacks is then really missing, not just unknown yet). */
+export const voicesKnown = () => known.length > 0
 
 const cache = new Map<string, Promise<Uint8Array | undefined>>()
 export function cached(text: string, voice?: string, lang = 'en', via: 'xai' | 'gemini' | 'inworld' | 'mock' | 'models' = xaiSpeaks(lang) ? 'xai' : 'gemini'): Promise<Uint8Array | undefined> {

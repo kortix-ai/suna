@@ -113,42 +113,12 @@ function handleSessionDeletion(event: RuntimeEvent, ctx: HandlerContext) {
   }
 }
 function handleSessionCompaction(event: RuntimeEvent, ctx: HandlerContext) {
-  const { queryClient, stopCompaction, reconcileTail } = ctx;
+  const { stopCompaction } = ctx;
   switch (event.type) {
     case 'session.compacted': {
       const sessionID = event.properties.sessionID;
-      if (sessionID) {
-        stopCompaction(sessionID);
-        // On a box that serves its log, the compaction block arrives over the log.
-        if (ctx.logNative) break;
-        const client = getClient();
-        void reconcileTail(sessionID, 'compaction');
-        client.session
-          .get({ sessionID })
-          .then((res) => {
-            if (res.data) {
-              const session = res.data;
-              queryClient.setQueryData(runtimeKeys.runtimeSession(sessionID), session);
-              queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
-                if (!old) return old;
-                const idx = old.findIndex((s) => s.id === sessionID);
-                if (idx < 0) return old;
-                const next = [...old];
-                next[idx] = session;
-                return next;
-              });
-            } else {
-              void queryClient.invalidateQueries({
-                queryKey: runtimeKeys.runtimeSession(sessionID),
-              });
-            }
-          })
-          .catch(() => {
-            void queryClient.invalidateQueries({
-              queryKey: runtimeKeys.runtimeSession(sessionID),
-            });
-          });
-      }
+      // The compaction block arrives over the session log.
+      if (sessionID) stopCompaction(sessionID);
       break;
     }
     default:
@@ -161,20 +131,18 @@ function notifyTurnEnd(ctx: HandlerContext, runtimeId: string, notify: (sessionI
   if (id) notify(id);
 }
 function handleSessionCompletion(event: RuntimeEvent, ctx: HandlerContext, statusBeforeEvent: ReturnType<typeof useSyncStore.getState>['sessionStatus'][string] | undefined) {
-  const { reconcileTail, getSessionTitle, invalidateWorkspaceFilesAfterTurn } = ctx;
+  const { getSessionTitle, invalidateWorkspaceFilesAfterTurn } = ctx;
   switch (event.type) {
     case 'session.next.revert.committed': {
       const { sessionID } = event.properties as { sessionID?: string };
       if (sessionID && useSyncStore.getState().sessionRevertNeedsTailReconcile[sessionID]) {
         useSyncStore.getState().clearSessionRevertNeedsTailReconcile(sessionID);
-        void reconcileTail(sessionID, 'manual');
       }
       break;
     }
     case 'session.status': {
       const { sessionID, status } = event.properties;
       if (sessionID && status) {
-        if (status.type === 'idle') void reconcileTail(sessionID, 'turn-end');
         const prevStatus = statusBeforeEvent;
         if (status.type === 'idle' && prevStatus && prevStatus.type !== 'idle') {
           notifyTurnEnd(ctx, sessionID, (id) =>
@@ -188,7 +156,6 @@ function handleSessionCompletion(event: RuntimeEvent, ctx: HandlerContext, statu
     case 'session.idle': {
       const sessionID = event.properties.sessionID;
       if (sessionID) {
-        void reconcileTail(sessionID, 'turn-end');
         const prevStatus = statusBeforeEvent;
         if (prevStatus && prevStatus.type !== 'idle') {
           notifyTurnEnd(ctx, sessionID, (id) =>
@@ -204,7 +171,7 @@ function handleSessionCompletion(event: RuntimeEvent, ctx: HandlerContext, statu
   }
 }
 function handleSessionFailure(event: RuntimeEvent, ctx: HandlerContext) {
-  const { queryClient, stopCompaction, reconcileTail, getSessionTitle } = ctx;
+  const { queryClient, stopCompaction, getSessionTitle } = ctx;
   switch (event.type) {
     case 'session.error': {
       const props = event.properties;
@@ -241,16 +208,7 @@ function handleSessionFailure(event: RuntimeEvent, ctx: HandlerContext) {
           }
           return old;
         });
-        const aborted = isAbortError(error);
-        if (!aborted) {
-          reconcileTail(sessionID, 'session-error')
-            .then(() => {
-              useSyncStore.getState().clearOptimisticMessages(sessionID);
-            })
-            .catch(() => {});
-        } else {
-          useSyncStore.getState().clearOptimisticMessages(sessionID);
-        }
+        useSyncStore.getState().clearOptimisticMessages(sessionID);
       }
       break;
     }

@@ -1127,6 +1127,9 @@ const nextConfig = (): NextConfig => ({
             },
           ]
         : []),
+      // PostHog, same origin (lib/analytics/posthog-client.ts): fewer requests
+      // lost to ad blockers, no third-party host in connect-src. Static
+      // assets (recorder, surveys) come from the assets host.
       {
         source: '/ingest/static/:path*',
         destination: 'https://eu-assets.i.posthog.com/static/:path*',
@@ -1134,10 +1137,6 @@ const nextConfig = (): NextConfig => ({
       {
         source: '/ingest/:path*',
         destination: 'https://eu.i.posthog.com/:path*',
-      },
-      {
-        source: '/ingest/flags',
-        destination: 'https://eu.i.posthog.com/flags',
       },
       // /docs is a Blume static build in public/docs/. Astro writes clean URLs as
       // directories, and Next's static handler does not resolve a directory index,

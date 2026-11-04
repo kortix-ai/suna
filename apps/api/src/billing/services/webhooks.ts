@@ -19,6 +19,7 @@ import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 import { isUuid } from '../../shared/validate';
 import { handleChargeRefunded, handleDisputeClosed, handleDisputeCreated } from './refund-clawback';
 import { planKeyFromMetadata, activateSubscriptionForAccount, allowanceForSubscription } from './stripe-checkout-webhooks';
+import { captureAccountProductEvent } from './billing-analytics';
 
 export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const accountId = session.metadata?.account_id;
@@ -75,7 +76,7 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
     return;
   }
 
-  await wallet.grant({
+  const granted = await wallet.grant({
     accountId,
     amount: amountTotal,
     kind: 'purchase',
@@ -88,6 +89,15 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
   await markCreditPurchase(session, 'completed');
 
   console.log(`[Webhook] Credit purchase: $${amountTotal} for ${accountId}`);
+  // `checkout.session.completed` and `async_payment_succeeded` both land here.
+  if (!granted.replayed) {
+    captureAccountProductEvent({
+      accountId,
+      event: 'credits_purchased',
+      dedupeKey: session.id,
+      properties: { store: 'stripe', amount_usd: amountTotal },
+    });
+  }
 }
 
 export async function handleCheckoutAsyncPaymentFailed(session: Stripe.Checkout.Session) {
@@ -392,6 +402,19 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     const restored = await tryRestoreOtherActiveSubscription(accountId, subscription, account);
     if (restored) return;
     await revertToFree(accountId, subscription.id, account);
+    // A free plan's $0 subscription ends on every upgrade; only a paid plan ending is churn.
+    if (account?.tier && account.tier !== 'free') {
+      captureAccountProductEvent({
+        accountId,
+        event: 'subscription_canceled',
+        dedupeKey: subscription.id,
+        properties: {
+          store: 'stripe',
+          previous_tier: account.tier,
+          amount_usd: Number(account.planMonthlyUsd ?? 0) || null,
+        },
+      });
+    }
   });
 }
 

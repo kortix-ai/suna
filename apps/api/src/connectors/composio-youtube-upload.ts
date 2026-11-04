@@ -276,31 +276,86 @@ function header(headers: Record<string, string> | undefined, name: string): stri
   return null;
 }
 
+/**
+ * A used-up daily quota of the Google app (Cloud project) the account signed
+ * in with, from the `google.rpc.ErrorInfo` detail of a 429. Live on dev
+ * (2026-11-04), with Composio's managed app: `quota_limit:
+ * defaultVideoInsertPerDayPerProject`, `quota_limit_value: "966"`,
+ * `quota_unit: "1/d/{project}"`, `window_start_time: "1793779200"` (08:00 UTC,
+ * midnight Pacific).
+ */
+interface DailyQuota {
+  /** Uploads the app may start per day, when Google says. */
+  limit: number | null;
+  resetsAt: Date;
+}
+
+const DAY_SECONDS = 24 * 60 * 60;
+
 /** YouTube's error reason and message, from a Google API error body. */
-function googleError(data: unknown): { reason: string | null; message: string | null } {
+function googleError(data: unknown): { reason: string | null; message: string | null; quota: DailyQuota | null } {
   const error = isObject(data) && isObject(data.error) ? data.error : null;
   const first = error && Array.isArray(error.errors) && isObject(error.errors[0]) ? error.errors[0] : null;
   return {
     reason: typeof first?.reason === 'string' ? first.reason : null,
     message: typeof error?.message === 'string' ? error.message : null,
+    quota: dailyQuota(error),
   };
 }
 
+function dailyQuota(error: Record<string, unknown> | null): DailyQuota | null {
+  const details = error && Array.isArray(error.details) ? error.details : [];
+  for (const detail of details) {
+    if (!isObject(detail) || detail['@type'] !== 'type.googleapis.com/google.rpc.ErrorInfo') continue;
+    const metadata = isObject(detail.metadata) ? detail.metadata : {};
+    const unit = typeof metadata.quota_unit === 'string' ? metadata.quota_unit : '';
+    const windowStart = Number(metadata.window_start_time);
+    if (!unit.includes('/d/') || !Number.isSafeInteger(windowStart) || windowStart <= 0) continue;
+    const limit = Number(metadata.quota_limit_value);
+    return {
+      limit: Number.isSafeInteger(limit) && limit > 0 ? limit : null,
+      resetsAt: new Date((windowStart + DAY_SECONDS) * 1000),
+    };
+  }
+  return null;
+}
+
+/** Seconds until the quota resets, or undefined when the reset is not in the future. */
+function secondsUntil(quota: DailyQuota | null, now: Date): number | undefined {
+  if (!quota) return undefined;
+  const seconds = Math.ceil((quota.resetsAt.getTime() - now.getTime()) / 1000);
+  return seconds > 0 && seconds <= DAY_SECONDS ? seconds : undefined;
+}
+
 /** What the agent can do about YouTube's refusal. */
-function refusalHint(reason: string | null): string {
+function refusalHint(reason: string | null, quota: DailyQuota | null, now: Date): string {
   switch (reason) {
     case 'youtubeSignupRequired':
       return ' This Google account has no YouTube channel: create one at https://www.youtube.com/create_channel, then retry.';
-    case 'quotaExceeded':
     case 'uploadLimitExceeded':
-    case 'rateLimitExceeded':
-      return ' YouTube limits uploads per day: retry later (the daily quota resets at midnight Pacific time).';
+      return ' This channel reached YouTube\'s own daily upload limit, which counts every upload to the channel: retry in 24 hours. Another Google app does not lift it.';
+    case 'quotaExceeded':
+    case 'rateLimitExceeded': {
+      const wait = secondsUntil(quota, now);
+      if (!quota || wait === undefined) {
+        return ' YouTube limits uploads per day: retry later (the daily quota resets at midnight Pacific time).';
+      }
+      const count = quota.limit === null ? 'all its uploads' : `all ${quota.limit} of its uploads`;
+      return ` YouTube counts uploads per Google app, not per channel. The Google app this account signed in with has used ${count} for today, across every account that signs in with it. It resets at ${quota.resetsAt.toISOString()} (in ${duration(wait)}): schedule one retry then, every earlier retry fails.`;
+    }
     case 'insufficientPermissions':
     case 'forbidden':
       return ' The sign-in lacks upload permission: run `kortix connectors connect youtube` and sign in again.';
     default:
       return '';
   }
+}
+
+function duration(seconds: number): string {
+  const total = Math.ceil(seconds / 60);
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  return hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`;
 }
 
 /** A refusal status the gateway reports: the caller's mistake, a limit, or the provider. */
@@ -320,6 +375,7 @@ export async function startYoutubeUpload(
   session: YoutubeUploadSession,
   args: Record<string, unknown>,
   toolkit = 'youtube',
+  now: () => Date = () => new Date(),
 ): Promise<ExecResult> {
   const request = youtubeUploadRequest(args);
   if (typeof request === 'string') return callerError(request);
@@ -346,17 +402,21 @@ export async function startYoutubeUpload(
 
   const uploadUrl = header(response.headers, 'location');
   if (response.status < 200 || response.status >= 300 || !uploadUrl) {
-    const { reason, message } = googleError(response.data);
+    const { reason, message, quota } = googleError(response.data);
     const what = response.status >= 200 && response.status < 300 ? 'answered no upload URL' : `refused the upload (HTTP ${response.status}${reason ? `, ${reason}` : ''})`;
+    const status = refusalStatus(response.status, reason);
+    const at = now();
+    const retryAfterSeconds = status === 429 ? secondsUntil(quota, at) : undefined;
     return {
       ok: false,
-      status: refusalStatus(response.status, reason),
+      status,
       data: {
         provider: 'composio',
         sessionId: session.sessionId,
         result: response.data ?? null,
-        error: `YouTube ${what}${message ? `: ${message}` : ''}.${refusalHint(reason)}`,
+        error: `YouTube ${what}${message ? `: ${message}` : ''}.${refusalHint(reason, quota, at)}`,
       },
+      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
     };
   }
 

@@ -330,6 +330,9 @@ importers:
       postgres:
         specifier: ^3.4.8
         version: 3.4.9(patch_hash=bw5g3bgyrs6h7lakof5ye2m344)
+      posthog-node:
+        specifier: ^5.61.2
+        version: 5.61.2(@opentelemetry/api@1.9.0)
       re2js:
         specifier: 2.8.7
         version: 2.8.7
@@ -9653,8 +9656,18 @@ packages:
       '@posthog/types': 1.412.1
     dev: false
 
+  /@posthog/core@1.63.1:
+    resolution: {integrity: sha512-LcUSRUM8zoTdwQFH1kWDQDMOFwiFjJ2lVxOOtpOwp6ezcHdr94KjO84YcoEeYtMuIFVMjasDFWyrOuuMAAg52g==}
+    dependencies:
+      '@posthog/types': 1.419.0
+    dev: false
+
   /@posthog/types@1.412.1:
     resolution: {integrity: sha512-FxXsb9YOOME8bJI5K09qKeSvLjnZQ2dPV7wZpI7a8sERQtXkAuhBcPB/balCnVE7TYwhgtHj5NQss9BgQ5bAfQ==}
+    dev: false
+
+  /@posthog/types@1.419.0:
+    resolution: {integrity: sha512-XX7zRYt/vK8AzaD6V+oDquAzacZf5exJv971dja9En8Qf6g84Qvc3rpT0w6hDYYLWrjaSSkdjFfvvoXI0ouJDg==}
     dev: false
 
   /@protobufjs/aspromise@1.1.2:
@@ -28275,6 +28288,22 @@ packages:
       web-vitals-soft-navs: /web-vitals@6.2.1
     transitivePeerDependencies:
       - preact-render-to-string
+    dev: false
+
+  /posthog-node@5.61.2(@opentelemetry/api@1.9.0):
+    resolution: {integrity: sha512-6pMhzR+APW+CBreUlHce3qrxwU7l90gYp1A5eN0kf/o3rVf++Zz2KPtZQC63ct+hWkzCwi3Arm+GT8EjUBrUag==}
+    engines: {node: ^20.20.0 || >=22.22.0}
+    peerDependencies:
+      '@opentelemetry/api': 1.9.0
+      rxjs: ^7.0.0
+    peerDependenciesMeta:
+      '@opentelemetry/api':
+        optional: true
+      rxjs:
+        optional: true
+    dependencies:
+      '@opentelemetry/api': 1.9.0
+      '@posthog/core': 1.63.1
     dev: false
 
   /postject@1.0.0-alpha.6:

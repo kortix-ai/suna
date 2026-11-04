@@ -1,14 +1,15 @@
 import { describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAssistantMessageEventStream, type AssistantMessageEvent, type Message } from '@earendil-works/pi-ai'
 import runtimeVersions from '../../../../packages/shared/src/runtime-versions.json' with { type: 'json' }
-import { claudeModelFor } from '@/harness/pi/claude/provider'
+import { claudeModelFor, processDied } from '@/harness/pi/claude/provider'
 import { CLAUDE_AGENT_SDK_VERSION, CLAUDE_CODE_INTEGRITY, ensureClaudeExecutable, installedClaudeExecutable } from '@/harness/pi/claude/install'
 import { CLAUDE_GATEWAY_PLACEHOLDER_TOKEN, claudeEnv, claudeLoginKey, ClaudeLoginMissing } from '@/harness/pi/claude/sdk'
 import { ClaudeReply } from '@/harness/pi/claude/stream'
-import { catchUp, checkpoints, collectResults, decide, type SessionRecord } from '@/harness/pi/claude/sync'
+import { catchUp, checkpoints, collectResults, decide, groups, type SessionRecord } from '@/harness/pi/claude/sync'
 
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
 const user = (text: string): Message => ({ role: 'user', content: text, timestamp: 1 })
@@ -208,5 +209,32 @@ describe('Claude Code on a box whose image lacks it', () => {
     } finally {
       registry.stop(true)
     }
+  })
+})
+
+describe('a Claude Code process that died', () => {
+  test('reads as a stop the person can continue from, not the raw signal', () => {
+    const killed = processDied(new Error('Claude Code process terminated by signal SIGKILL'))
+    expect(killed?.message).toBe('Claude Code stopped unexpectedly (it was killed, most likely because the sandbox ran out of memory). Your session is intact: send a message to continue.')
+    expect(processDied(new Error('Claude Code process exited with code 1. stderr: boom'))?.message).toBe('Claude Code stopped unexpectedly. Your session is intact: send a message to continue.')
+    expect(processDied(new Error('Request was aborted'))).toBeUndefined()
+  })
+})
+
+
+describe('Claude history sync with screenshots', () => {
+  test('an image hashes as before (stored records keep matching), and once per image part', () => {
+    const data = Buffer.alloc(300_000, 7).toString('base64')
+    const part = { type: 'image' as const, data, mimeType: 'image/png' }
+    const message = { role: 'user' as const, content: [{ type: 'text' as const, text: 'look' }, part], timestamp: 1 }
+    const [group] = groups([message])
+    // The pre-cache hash: sha256 of the canonical JSON of the visible parts, the image as sha256(JSON(data)).
+    const sha = (value: string) => createHash('sha256').update(value).digest('hex')
+    const visible = `[{"text":"look","type":"text"},{"data":${JSON.stringify(sha(JSON.stringify(data)))},"mimeType":"image/png","type":"image"}]`
+    const members = [sha(visible)]
+    expect(group!.hash).toBe(sha(`{"members":${JSON.stringify(members)},"role":"user"}`))
+    const started = performance.now()
+    for (let i = 0; i < 200; i++) groups([message])
+    expect(performance.now() - started).toBeLessThan(200)
   })
 })

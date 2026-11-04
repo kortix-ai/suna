@@ -4,6 +4,7 @@ import { parse, stringify } from 'yaml';
 
 import type { DomainAliasHosts } from './domain-aliases';
 import { ACME_DNS_IMAGE, accountFileName, CADDY_ACME_DNS_DIR, WILDCARD_CADDY_IMAGE } from './wildcard-tls';
+import type { SignupMode } from './signup-policy';
 
 import kortixCompose from './assets/kortix-compose.yml' with { type: 'text' };
 import kortixCaddyfile from './assets/Caddyfile.txt' with { type: 'text' };
@@ -436,6 +437,13 @@ export interface RenderComposeOptions {
    * wildcard TLS keeps the stock Caddy image.
    */
   wildcardTlsConfigured?: boolean;
+  /**
+   * The effective sign-up policy (signupModeOf in self-host/signup-policy.ts),
+   * written into kortix-api's environment as KORTIX_SIGNUP_MODE. The API stores
+   * it for the auth service's before-user-created hook. Omitted: the API gets
+   * no policy and every sign-up passes, as before the hook existed.
+   */
+  signupMode?: SignupMode;
 }
 
 /**
@@ -617,6 +625,15 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
     authEnv.GOTRUE_HOOK_SEND_EMAIL_ENABLED = '${GOTRUE_HOOK_SEND_EMAIL_ENABLED}';
     authEnv.GOTRUE_HOOK_SEND_EMAIL_URI = '${GOTRUE_HOOK_SEND_EMAIL_URI}';
     authEnv.GOTRUE_HOOK_SEND_EMAIL_SECRETS = '${AUTH_EMAIL_HOOK_SECRET}';
+    // Sign-up policy hook. GoTrue asks kortix.before_user_created_hook (a
+    // Postgres function, migration 20261104155306917) before it creates a user
+    // from a sign-up, a magic link, an OAuth or SAML sign-in, or an invite. The
+    // function reads the policy kortix-api writes from KORTIX_SIGNUP_MODE and
+    // KORTIX_PLATFORM_ADMIN_EMAILS: an SSO sign-in always passes, an operator
+    // address is never claimable, and `invite` admits only invited addresses.
+    // A user the service key creates (`kortix self-host admin add`) skips it.
+    authEnv.GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED = 'true';
+    authEnv.GOTRUE_HOOK_BEFORE_USER_CREATED_URI = 'pg-functions://postgres/kortix/before_user_created_hook';
     auth.environment = authEnv;
   }
   for (const serviceName of ['supabase-analytics', 'supabase-storage']) {
@@ -723,6 +740,11 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
     const apiEnv = asRecord(api?.environment);
     delete apiEnv.KORTIX_CAPTURE_S3_PROXY_TARGET;
     delete apiEnv.KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET;
+  }
+
+  if (options.signupMode && services['kortix-api']) {
+    const api = services['kortix-api'];
+    api.environment = { ...asRecord(api.environment), KORTIX_SIGNUP_MODE: options.signupMode };
   }
 
   // The Cloudflare tunnel service is likewise opt-in: only present when

@@ -17,6 +17,7 @@
  * Everything that parses text is a pure function on a string so it is
  * testable on macOS, where /proc does not exist.
  */
+import { heapStats } from 'bun:jsc'
 import { readFile, readdir, statfs } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { logger } from '@/lib/log/logger'
@@ -417,6 +418,12 @@ export interface MemoryGuardOptions {
   disableProcessShedding?: boolean
   /** Extra pids to never kill, beyond the daemon and the runtime. */
   protectedPids?: () => number[]
+  /**
+   * The gentlest action, tried before any kill: free memory the harness can rebuild without
+   * ending the turn (stop model processes that are between steps; they resume on the next
+   * one). Resolves how many it released; once per elevated episode.
+   */
+  relieve?: () => Promise<number>
   /** Sheds one process at a time before falling back to `abortTurn`. Default 2. */
   maxShedAttemptsPerEpisode?: number
   /** Injectable for tests. Defaults to the real `killProcess`. */
@@ -480,6 +487,32 @@ export const DEFAULT_DISK_PATHS = ['/workspace', '/opt/kortix', '/tmp']
  * Also logs immediately when the runtime state string changes, so a
  * `starting`/`down` transition always has the box numbers next to it.
  */
+/**
+ * What the daemon's own memory is: JS heap vs memory outside it (buffers, native), and the
+ * object types holding most of the heap. Logged once per elevated episode, so a daemon that
+ * grows names what grew (prod 2026-11-04: 3.1 GB, released whenever the `claude` process was
+ * replaced, cause unknown at the time).
+ */
+export function daemonHeapBreakdown(): Record<string, unknown> {
+  try {
+    const stats = heapStats()
+    const usage = process.memoryUsage()
+    const top = Object.entries(stats.objectTypeCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12)
+    return {
+      rssMb: Math.round(usage.rss / MB),
+      heapMb: Math.round(usage.heapUsed / MB),
+      extraMb: Math.round(stats.extraMemorySize / MB),
+      arrayBuffersMb: Math.round(usage.arrayBuffers / MB),
+      objects: stats.objectCount,
+      topTypes: Object.fromEntries(top),
+    }
+  } catch (err) {
+    return { heapError: (err as Error).message }
+  }
+}
+
 export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMonitor {
   const intervalMs = opts.intervalMs ?? DEFAULT_RESOURCE_INTERVAL_MS
   const diskPaths = opts.diskPaths ?? DEFAULT_DISK_PATHS
@@ -502,6 +535,10 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
   const diskCleanup = opts.diskCleanup
   /** Sheds spent in THIS elevated episode; reset once memory clears `elevatedPct`. */
   let shedAttempts = 0
+  /** `relieve` already ran in THIS elevated episode. */
+  let relieved = false
+  /** The heap breakdown already logged in THIS elevated episode. */
+  let heapLogged = false
 
   async function runGuard(s: ResourceSnapshot): Promise<void> {
     if (!guard) return
@@ -509,6 +546,8 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
     if (pct === null) return
     if (pct < elevatedPct) {
       shedAttempts = 0
+      relieved = false
+      heapLogged = false
       if (fastTimer) {
         clearInterval(fastTimer)
         fastTimer = null
@@ -521,16 +560,42 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
       fastTimer = setInterval(() => void guardedTick('elevated'), fastIntervalMs)
       fastTimer.unref?.()
     }
+    if (!heapLogged) {
+      heapLogged = true
+      logger.warn('[resources] daemon heap at elevated memory', { pct, ...daemonHeapBreakdown() })
+    }
     if (pct < guardPct) return
     const inFlight = await guard.turnInFlight().catch(() => null)
     if (inFlight === false) return
+
+    if (guard.relieve && !relieved) {
+      relieved = true
+      const released = await guard.relieve().catch((err) => {
+        logger.warn('[resources] memory guard relieve failed', { err: (err as Error).message })
+        return 0
+      })
+      if (released > 0) {
+        logger.warn('[resources] memory guard recycled idle model processes', { pct, guardPct, released, ...formatSnapshot(s) })
+        // Re-sampled on the next fast tick: a recycle that did not help sheds next.
+        return
+      }
+    }
 
     // PREFER SHEDDING over losing the whole VM: kill the largest non-daemon,
     // non-runtime process instead of ending the turn, as long as this
     // elevated episode has not already spent its budget. `topProcesses` is
     // only populated at/above 80% (readResourceSnapshot), which is exactly
-    // where this branch runs.
-    const protectedPids = new Set<number>([process.pid, s.daemon?.pid ?? -1, s.runtime?.pid ?? -1, ...(guard.protectedPids?.() ?? [])])
+    // where this branch runs. The harness's own binaries (`runtimeProcessNames`,
+    // e.g. the `claude` process a Claude Code turn runs in) are the runtime too:
+    // shedding one ends the turn with a bare SIGKILL instead of a reason.
+    const runtimeNames = opts.runtimeProcessNames ?? []
+    const protectedPids = new Set<number>([
+      process.pid,
+      s.daemon?.pid ?? -1,
+      s.runtime?.pid ?? -1,
+      ...(s.topProcesses ?? []).filter((p) => runtimeNames.includes(p.name)).map((p) => p.pid),
+      ...(guard.protectedPids?.() ?? []),
+    ])
     const candidate = guard.disableProcessShedding
       ? null
       : shedAttempts < maxShedAttempts
