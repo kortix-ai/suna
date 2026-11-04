@@ -4139,6 +4139,25 @@ Some toolkits have no Composio-managed sign-in. Syncing one fails with `422` `co
 
 Then sync again. No restart is needed.
 
+#### Your own OAuth app for a Composio toolkit
+
+Composio's managed sign-in uses Composio's OAuth app, so its rate limits and quotas are shared with every Composio customer. An enabled auth config of your own with the `OAuth2` scheme replaces it: from then on, each new account signs in with your app and uses its quota. An API-key or other auth config does not replace the managed sign-in.
+
+- Kortix reads the auth config at each connect. No restart is needed.
+- An account that signed in before keeps the app it signed in with. To move it, remove the account and add it again.
+- When you keep more than one enabled `OAuth2` config for a toolkit, the newest wins. Disable the old one to rotate an app.
+
+YouTube needs this for regular uploads: Google gives each Google Cloud project its own daily upload quota, 100 uploads by default.
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project. Enable **YouTube Data API v3**.
+2. Configure the OAuth consent screen: user type **External**, your app name, a homepage and privacy policy on a domain you verified in Google Search Console. Add the scopes `https://www.googleapis.com/auth/youtube`, `youtube.upload`, `youtube.readonly` and `youtube.force-ssl`. Set the publishing status to **In production**: in **Testing**, Google ends every sign-in after 7 days.
+3. Create an OAuth client: **Web application**, with the redirect URI `https://backend.composio.dev/api/v1/auth-apps/add`.
+4. In the Composio dashboard, open **Auth Configs**, create one for **YouTube** with **OAuth2** and your own app, and paste the client ID and client secret. Enter the four scopes from step 2.
+5. Submit the app for Google's verification. Until Google verifies it, people see an "unverified app" screen before the consent screen, and at most 100 new users can sign in. YouTube scopes are sensitive, not restricted: verification needs a demo video and a justification per scope, but no security assessment.
+6. For more than 100 uploads a day, file the [quota extension form](https://support.google.com/youtube/contact/yt_api_form).
+
+Composio's default YouTube scopes also include `youtubepartner` and `youtube.channel-memberships.creator`. Leave them out unless you need the partner or channel-membership actions: every scope you request needs its own justification at verification.
+
 ### Updates and versions
 
 `kortix-updater` checks once a day at `KORTIX_UPDATE_TIME` (default `02:00`) in `KORTIX_UPDATE_TZ` (default `America/New_York`). Auto-update is on by default.
@@ -5989,8 +6008,11 @@ Arguments: `title` (required, at most 100 characters), `description`, `tags`, `c
 | Answer | Meaning |
 | --- | --- |
 | `400` | An argument is wrong. The message names it. |
-| `upstream_429` | YouTube's daily upload quota is used up. Retry after midnight Pacific time. |
+| `upstream_429` with `rateLimitExceeded` or `quotaExceeded` | The Google app the account signed in with has used its uploads for today. `retry_after_seconds` (and `Retry-After`) says when it resets, at midnight Pacific time. Schedule one retry then: every earlier retry fails. |
+| `upstream_429` with `uploadLimitExceeded` | The channel reached YouTube's own daily upload limit. Retry in 24 hours. Another Google app does not lift it. |
 | `upstream_502` with `youtubeSignupRequired` | The Google account has no YouTube channel. Create one at youtube.com/create_channel. |
+
+Google counts uploads per Google app (Cloud project), not per channel. Composio's managed YouTube app shares one daily quota across every Composio customer: on 2026-11-04 it allowed 966 uploads a day in total and was used up hours before the next reset. An instance that uploads often needs its own Google app: see [Your own OAuth app for a Composio toolkit](#your-own-oauth-app-for-a-composio-toolkit).
 
 `kortix connectors types --out kortix-connectors.d.ts` generates types for `run`, `call` and `paginate`. Without the file, args are any object and outputs are `unknown`.
 

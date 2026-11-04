@@ -71,6 +71,13 @@ human chose otherwise. YouTube processes the video after the upload. If
 credential for this one video: never paste it into chat, a file or a commit.
 After an approval, the resume prompt carries `caller_only`.
 
+`upstream_429` with `rateLimitExceeded` means the Google app the account
+signed in with has used its uploads for today; Google counts uploads per app,
+not per channel. Retry once after `retry_after_seconds` (the reset at midnight
+Pacific time): every earlier retry fails. Tell the human the time, and that
+YouTube Studio uploads do not count against it. `uploadLimitExceeded` is the
+channel's own daily limit: retry in 24 hours.
+
 ## GraphQL field selection
 
 Put the selected fields in `args.__select`:
