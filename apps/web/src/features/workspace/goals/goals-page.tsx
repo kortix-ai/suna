@@ -171,6 +171,34 @@ function GoalGroup({
   );
 }
 
+type GoalsT = ReturnType<typeof useTranslations<'goals'>>;
+
+/** Who a goal row says the goal is for: you, a teammate by name, else a teammate; nobody when unassigned. */
+function goalRecipient(goal: ProjectGoal, forViewer: boolean, person: string | null, t: GoalsT): string | null {
+  if (!goal.goal?.assigned_user) return null;
+  if (forViewer) return t('forYou');
+  if (person && person !== t('anotherMember')) return t('forPerson', { person });
+  return t('forMember');
+}
+
+/** What a goal row says first: its first health issue, what it waits on, how it closed, else its next wake. */
+function goalRowDetail(
+  goal: ProjectGoal,
+  t: GoalsT,
+  issueText: ReturnType<typeof useGoalIssueText>,
+  formatTime: (time: string) => string,
+): string {
+  const doc = goal.goal;
+  const issue = goal.health.issues[0];
+  if (issue) return issueText(issue, goal);
+  if (doc?.status === 'waiting_on_user' && doc.waiting_on) return t('waitingFor', { title: doc.waiting_on });
+  const ask = goalOpenAsks(doc)[0];
+  if (ask) return t('waitingFor', { title: ask.title });
+  if (goal.health.state === 'closed') return doc?.summary || t(`status.${doc?.status ?? 'done'}`);
+  if (goal.heartbeat?.next_fire_at) return t('nextWake', { time: formatTime(goal.heartbeat.next_fire_at) });
+  return t('noWake');
+}
+
 function GoalRow({ projectId, goal, space }: { projectId: string; goal: ProjectGoal; space?: string }) {
   const t = useTranslations('goals');
   const locale = useLocale();
@@ -182,31 +210,13 @@ function GoalRow({ projectId, goal, space }: { projectId: string; goal: ProjectG
   const doc = goal.goal;
   const person = personOf(doc?.assigned_user);
   const lastWake = goalLastWake(goal);
-  const forWhom = !doc?.assigned_user
-    ? null
-    : goalAssignedTo(goal, viewerId)
-      ? t('forYou')
-      : person && person !== t('anotherMember')
-        ? t('forPerson', { person })
-        : t('forMember');
   const who = [
     doc?.agent,
-    forWhom,
+    goalRecipient(goal, goalAssignedTo(goal, viewerId), person, t),
     lastWake && goal.health.state !== 'closed' ? t('lastWake', { time: formatGoalTime(lastWake, locale, now) }) : null,
   ].filter(Boolean);
   const progress = goalProgress(doc);
-  const asks = goalOpenAsks(doc);
-  const detail = goal.health.issues[0]
-    ? issueText(goal.health.issues[0], goal)
-    : doc?.status === 'waiting_on_user' && doc.waiting_on
-      ? t('waitingFor', { title: doc.waiting_on })
-      : asks[0]
-        ? t('waitingFor', { title: asks[0].title })
-      : goal.health.state === 'closed'
-        ? doc?.summary || t(`status.${doc?.status ?? 'done'}`)
-        : goal.heartbeat?.next_fire_at
-          ? t('nextWake', { time: formatGoalTime(goal.heartbeat.next_fire_at, locale, now) })
-          : t('noWake');
+  const detail = goalRowDetail(goal, t, issueText, (time) => formatGoalTime(time, locale, now));
 
   return (
     <li>

@@ -14,7 +14,7 @@ import { useRef, type ReactNode } from 'react';
 
 import { RoomComposer } from './room-composer';
 import { RoomMessageList } from './room-messages';
-import { useMentionTargets, useRoomPeople, useRoomSessions } from './use-room-directory';
+import { useRoomDirectory } from './use-room-directory';
 
 const EMPTY_MEMBERS: RoomMember[] = [];
 const EMPTY_MESSAGES: RoomMessage[] = [];
@@ -48,10 +48,7 @@ export function SpaceRoomPanel({
   const roomId = spaceRoom.data?.room_id ?? null;
   const room = useRoom(projectId, roomId);
   const messages = useRoomMessages(projectId, roomId, { top: true });
-  const sessions = useRoomSessions(projectId);
-  const people = useRoomPeople(projectId);
-  const members = room.data?.members ?? EMPTY_MEMBERS;
-  const targets = useMentionTargets(members, sessions.sessions, people.data ?? [], viewerId);
+  const directory = useRoomDirectory(projectId, room.data?.members ?? EMPTY_MEMBERS, viewerId);
   const atBottomRef = useRef(true);
   const loading = spaceRoom.isLoading || (roomId !== null && messages.isLoading);
 
@@ -108,7 +105,7 @@ export function SpaceRoomPanel({
           introAlways={!roomId}
           dayDividers={false}
           newFromSeq={null}
-          targets={targets}
+          targets={directory.targets}
           atBottomRef={atBottomRef}
         />
       )}
@@ -119,10 +116,7 @@ export function SpaceRoomPanel({
         <RoomComposer
           placeholder={t('messageRoom', { name: roomName })}
           roomName={roomName}
-          members={members}
-          sessions={sessions.sessions}
-          people={people.data ?? []}
-          viewerId={viewerId}
+          directory={directory}
           onSend={send}
         />
       )}

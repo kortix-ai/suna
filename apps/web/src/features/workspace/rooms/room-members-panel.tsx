@@ -5,7 +5,7 @@ import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import Hint from '@kortix/ui/hint';
 import { Label } from '@kortix/ui/label';
 import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTitle } from '@kortix/ui/modal';
-import { errorToast, successToast } from '@kortix/ui/toast';
+import { successToast } from '@kortix/ui/toast';
 import { AccessRow } from '@kortix/ui/access/access/access-row';
 import { useTranslations } from '@/i18n/use-translations';
 import { addRoomPerson, addRoomSession, removeRoomPerson, removeRoomSession, type RoomMember } from '@kortix/sdk';
@@ -14,9 +14,10 @@ import { UserPlusIcon, XIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
-import { PrincipalPicker, type PickedPrincipal } from './principal-picker';
+import { PrincipalPicker } from './principal-picker';
 import { ParticipantAvatar, StatusDot, sessionStatusKey } from './room-identity';
-import { sessionDisplay } from './room-text';
+import { sessionDisplay, toastError } from './room-text';
+import type { PrincipalRow } from './use-room-directory';
 
 /**
  * The room's members beside the messages: people, then agent sessions
@@ -53,17 +54,16 @@ export function RoomMembersPanel({
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: qk.project.rooms(projectId) });
 
-  const add = async (pick: PickedPrincipal) => {
-    const id = pick.kind === 'person' ? pick.user_id : pick.session_id;
-    setPendingId(id);
+  const add = async (pick: PrincipalRow) => {
+    setPendingId(pick.id);
     try {
-      if (pick.kind === 'person') await addRoomPerson(projectId, roomId, pick.user_id);
-      else await addRoomSession(projectId, roomId, pick.session_id);
+      if (pick.kind === 'person') await addRoomPerson(projectId, roomId, pick.id);
+      else await addRoomSession(projectId, roomId, pick.id);
       await refresh();
       setAdding(false);
-      successToast(t('memberAdded', { name: pick.label }));
+      successToast(t('memberAdded', { name: pick.title }));
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : t('addFailed'));
+      toastError(error, t('addFailed'));
     } finally {
       setPendingId(null);
     }
@@ -78,7 +78,7 @@ export function RoomMembersPanel({
       setRemoving(null);
       successToast(t('memberRemoved'));
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : t('removeFailed'));
+      toastError(error, t('removeFailed'));
     } finally {
       setPendingId(null);
     }

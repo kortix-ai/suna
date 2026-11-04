@@ -3,19 +3,18 @@
 import { Button } from '@kortix/ui/button';
 import Hint from '@kortix/ui/hint';
 import Loading from '@kortix/ui/loading';
-import { errorToast } from '@kortix/ui/toast';
 import { MenuCard, MenuRow, MenuSectionHeading } from '@kortix/ui/session/composer/menus/menu-shell';
 import { useTranslations } from '@/i18n/use-translations';
-import type { ProjectSession, RoomMember, RoomPerson } from '@kortix/sdk';
 import { ArrowUpIcon, AtIcon, MegaphoneSimpleIcon } from '@phosphor-icons/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import { ParticipantAvatar } from './room-identity';
-import { activeMention, MENTION_ID_CHARS, sessionDisplay } from './room-text';
-import { projectSessionTitle } from './use-room-directory';
+import { activeMention, toastError } from './room-text';
+import { useListNavigation, type PrincipalRow, type RoomDirectory } from './use-room-directory';
 
 const MAX_HEIGHT_PX = 240;
 const PER_SECTION = 6;
+const PICK_KEYS = ['Enter', 'Tab'];
 
 interface Candidate {
   key: string;
@@ -35,19 +34,13 @@ interface Candidate {
 export function RoomComposer({
   placeholder,
   roomName,
-  members,
-  sessions,
-  people,
-  viewerId,
+  directory,
   autoFocus = false,
   onSend,
 }: {
   placeholder: string;
   roomName: string;
-  members: readonly RoomMember[];
-  sessions: readonly ProjectSession[];
-  people: readonly RoomPerson[];
-  viewerId: string | null;
+  directory: RoomDirectory;
   /** The thread composer takes focus when its panel opens. */
   autoFocus?: boolean;
   onSend: (text: string) => Promise<void>;
@@ -82,54 +75,21 @@ export function RoomComposer({
   const sections = useMemo(() => {
     if (!mention) return [];
     const q = mention.query.toLowerCase();
-    const matches = (label: string, id: string) => !q || label.toLowerCase().includes(q) || id.toLowerCase().startsWith(q);
-    const taken = new Set<string>(viewerId ? [viewerId] : []);
-    const emailById = new Map(people.map((p) => [p.user_id, p.email]));
-    const inMembers: Candidate[] = [];
-    for (const m of members) {
-      const id = m.session_id ?? m.user_id;
-      if (!id || taken.has(id)) continue;
-      taken.add(id);
-      const title = m.kind === 'session' ? sessionDisplay(m.label).name : m.label;
-      if (!matches(title, id)) continue;
-      const email = m.kind === 'person' ? emailById.get(id) : null;
-      inMembers.push({
-        key: id,
-        insert: email ? `@${email}` : `@${id.slice(0, MENTION_ID_CHARS)}`,
-        title,
-        detail: m.kind === 'session' ? sessionDisplay(m.label).detail : null,
-        avatar: <ParticipantAvatar kind={m.kind} label={m.label} userId={m.user_id} size="xs" />,
-      });
-    }
-    const agents: Candidate[] = [];
-    for (const s of sessions) {
-      if (taken.has(s.session_id)) continue;
-      taken.add(s.session_id);
-      const agent = s.agent_name && s.agent_name !== 'default' ? s.agent_name : null;
-      const title = projectSessionTitle(s);
-      if (!matches(`${title} ${agent ?? ''}`, s.session_id)) continue;
-      agents.push({
-        key: s.session_id,
-        insert: `@${s.session_id.slice(0, MENTION_ID_CHARS)}`,
-        title,
-        detail: s.name ? agent : null,
-        avatar: <ParticipantAvatar kind="session" label={title} size="xs" />,
-      });
-    }
-    const persons: Candidate[] = [];
-    for (const p of people) {
-      if (taken.has(p.user_id)) continue;
-      taken.add(p.user_id);
-      const title = p.name ?? p.email ?? p.user_id.slice(0, 8);
-      if (!matches(`${title} ${p.email ?? ''}`, p.user_id)) continue;
-      persons.push({
-        key: p.user_id,
-        insert: p.email ? `@${p.email}` : `@${p.user_id.slice(0, MENTION_ID_CHARS)}`,
-        title,
-        detail: p.name ? p.email : null,
-        avatar: <ParticipantAvatar kind="person" label={title} userId={p.user_id} size="xs" />,
-      });
-    }
+    const matches = (row: PrincipalRow) => !q || row.search.toLowerCase().includes(q) || row.id.toLowerCase().startsWith(q);
+    const offered = directory.rows.filter((row) => !row.self && matches(row));
+    const candidates = (rows: PrincipalRow[]): Candidate[] =>
+      rows.map((row) => ({
+        key: row.id,
+        insert: row.insert,
+        title: row.title,
+        detail: row.detail,
+        avatar: (
+          <ParticipantAvatar kind={row.kind} label={row.avatarLabel} userId={row.kind === 'person' ? row.id : null} size="xs" />
+        ),
+      }));
+    const inMembers = candidates(offered.filter((row) => row.member));
+    const agents = candidates(offered.filter((row) => !row.member && row.kind === 'session'));
+    const persons = candidates(offered.filter((row) => !row.member && row.kind === 'person'));
     const everyone: Candidate[] =
       !q || 'here'.startsWith(q)
         ? [
@@ -154,15 +114,11 @@ export function RoomComposer({
     ]
       .filter((s) => s.items.length > 0)
       .map((s) => ({ ...s, items: s.items.map((item) => ({ ...item, index: index++ })) }));
-  }, [mention, members, sessions, people, viewerId, roomName, t]);
+  }, [mention, directory.rows, roomName, t]);
 
   const flat = useMemo(() => sections.flatMap((s) => s.items), [sections]);
   // The highlight resets to the first row whenever the `@query` changes.
   const mentionKey = mention ? `${mention.start}:${mention.query}` : '';
-  const [nav, setNav] = useState({ key: mentionKey, index: 0 });
-  const selected = nav.key === mentionKey ? nav.index : 0;
-  const setSelected = (next: number | ((i: number) => number)) =>
-    setNav({ key: mentionKey, index: typeof next === 'function' ? next(selected) : next });
 
   const pick = (candidate: Candidate) => {
     if (!mention) return;
@@ -184,28 +140,17 @@ export function RoomComposer({
       setText('');
       setCaret(0);
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : t('sendFailed'));
+      toastError(error, t('sendFailed'));
     } finally {
       setSending(false);
     }
   };
 
+  const nav = useListNavigation(flat, mentionKey, pick, PICK_KEYS);
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing) return;
-    if (menuOpen && flat.length > 0) {
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        event.preventDefault();
-        const step = event.key === 'ArrowDown' ? 1 : -1;
-        setSelected((i) => (i + step + flat.length) % flat.length);
-        return;
-      }
-      if (event.key === 'Enter' || event.key === 'Tab') {
-        event.preventDefault();
-        const candidate = flat[Math.min(selected, flat.length - 1)];
-        if (candidate) pick(candidate);
-        return;
-      }
-    }
+    if (menuOpen && nav.onKeyDown(event)) return;
     if (menuOpen && event.key === 'Escape') {
       event.preventDefault();
       setDismissedAt(mention!.start);
@@ -242,7 +187,7 @@ export function RoomComposer({
                 <div
                   role="listbox"
                   aria-label={t('mentionSuggestions')}
-                  aria-activedescendant={`room-mention-${selected}`}
+                  aria-activedescendant={`room-mention-${nav.active}`}
                   tabIndex={-1}
                   className="max-h-72 overflow-y-auto p-1.5"
                 >
@@ -253,9 +198,9 @@ export function RoomComposer({
                         <MenuRow
                           key={item.key}
                           id={`room-mention-${item.index}`}
-                          selected={item.index === selected}
+                          selected={item.index === nav.active}
                           onSelect={() => pick(item)}
-                          onHover={() => setSelected(item.index)}
+                          onHover={() => nav.setActive(item.index)}
                         >
                           {item.avatar}
                           <span className="text-foreground min-w-0 truncate text-sm">{item.title}</span>

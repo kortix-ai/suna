@@ -5,14 +5,14 @@ import Hint from '@kortix/ui/hint';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { ErrorState } from '@kortix/ui/error-state';
 import { useTranslations } from '@/i18n/use-translations';
-import type { ProjectSession, RoomMember, RoomMessage, RoomPerson } from '@kortix/sdk';
+import type { RoomMessage } from '@kortix/sdk';
 import { useRoomThread } from '@kortix/sdk/react';
 import { ArrowLeftIcon, XIcon } from '@phosphor-icons/react';
 import { useRef } from 'react';
 
 import { RoomComposer } from './room-composer';
 import { MessageRow, RoomMessageList, useTimeFormat } from './room-messages';
-import type { MentionTarget } from './room-text';
+import type { RoomDirectory } from './use-room-directory';
 
 const EMPTY: RoomMessage[] = [];
 
@@ -27,11 +27,7 @@ export function RoomThreadPanel({
   roomId,
   roomName,
   rootSeq,
-  members,
-  sessions,
-  people,
-  viewerId,
-  targets,
+  directory,
   canPost,
   onClose,
 }: {
@@ -39,11 +35,7 @@ export function RoomThreadPanel({
   roomId: string;
   roomName: string;
   rootSeq: number;
-  members: readonly RoomMember[];
-  sessions: readonly ProjectSession[];
-  people: readonly RoomPerson[];
-  viewerId: string | null;
-  targets: MentionTarget[];
+  directory: RoomDirectory;
   /** The viewer is in the room. */
   canPost: boolean;
   onClose: () => void;
@@ -109,7 +101,7 @@ export function RoomThreadPanel({
           dayDividers={false}
           intro={
             <div className="space-y-2">
-              <MessageRow projectId={projectId} message={root} format={format} targets={targets} />
+              <MessageRow projectId={projectId} message={root} format={format} targets={directory.targets} />
               {replies.length > 0 ? (
                 <div className="flex items-center gap-2 px-5 pt-1">
                   <span className="text-muted-foreground shrink-0 text-xs">{t('replyCount', { count: replies.length })}</span>
@@ -119,7 +111,7 @@ export function RoomThreadPanel({
             </div>
           }
           newFromSeq={null}
-          targets={targets}
+          targets={directory.targets}
           atBottomRef={atBottomRef}
         />
       )}
@@ -127,10 +119,7 @@ export function RoomThreadPanel({
         <RoomComposer
           placeholder={t('replyPlaceholder')}
           roomName={roomName}
-          members={members}
-          sessions={sessions}
-          people={people}
-          viewerId={viewerId}
+          directory={directory}
           autoFocus
           onSend={async (text) => {
             atBottomRef.current = true;

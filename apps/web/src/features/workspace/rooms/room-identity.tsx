@@ -12,7 +12,7 @@ import { sessionDisplay } from './room-text';
 export type ParticipantKind = 'session' | 'person';
 
 /** Session status → one dot hue (D5): running is green, a failure red, the rest idle. */
-export function sessionStatusTone(status: string | null | undefined): StatusTone {
+function sessionStatusTone(status: string | null | undefined): StatusTone {
   if (status === 'running') return 'success';
   if (status === 'failed') return 'destructive';
   return 'neutral';
@@ -71,6 +71,23 @@ export function ParticipantAvatar({
     <span className="relative inline-flex shrink-0">
       {avatar}
       <StatusDot status={status} className="ring-background absolute -right-0.5 -bottom-0.5 ring-2" />
+    </span>
+  );
+}
+
+/** Overlapping ringed avatars: the room header's members, a thread summary's repliers. */
+export function AvatarStack({
+  participants,
+}: {
+  participants: readonly { key: string; kind: ParticipantKind; label: string; userId: string | null }[];
+}) {
+  return (
+    <span className="flex shrink-0 -space-x-1">
+      {participants.map((p) => (
+        <span key={p.key} className="ring-background rounded-sm ring-2">
+          <ParticipantAvatar kind={p.kind} label={p.label} userId={p.userId} size="xs" />
+        </span>
+      ))}
     </span>
   );
 }

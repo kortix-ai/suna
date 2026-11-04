@@ -4,7 +4,7 @@
 // the real components in a happy-dom window. Only `fetch` is a fake: it
 // answers the picker's people and sessions reads as the server does.
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import type { ProjectSession, RoomMember, RoomPerson } from '@kortix/sdk';
+import type { ProjectSession, RoomMember, RoomMessage, RoomPerson } from '@kortix/sdk';
 import { configureKortix } from '@kortix/sdk';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Window } from 'happy-dom';
@@ -98,17 +98,19 @@ const PEOPLE: RoomPerson[] = [
 configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
 let pickerPeople: RoomPerson[] = PEOPLE;
 let pickerSessions: ProjectSession[] = SESSIONS;
-spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+const fakeFetch = async (input: URL | RequestInfo) => {
   const url = new URL(input instanceof Request ? input.url : String(input));
   if (url.pathname.endsWith('/rooms/people')) return Response.json({ people: pickerPeople });
   if (url.pathname.endsWith('/sessions')) return Response.json(pickerSessions);
   return Response.json({ error: 'not faked' }, { status: 404 });
-});
+};
+spyOn(globalThis, 'fetch').mockImplementation(Object.assign(fakeFetch, { preconnect: fetch.preconnect }));
 
 const { RoomComposer } = await import('./room-composer');
 const { PrincipalPicker } = await import('./principal-picker');
 const { splitMessageText } = await import('./room-text');
-const { useMentionTargets } = await import('./use-room-directory');
+const { repliersOf } = await import('./room-messages');
+const { mentionTargets, principalRows } = await import('./use-room-directory');
 
 let root: Root | null = null;
 
@@ -129,16 +131,19 @@ afterEach(async () => {
   pickerSessions = SESSIONS;
 });
 
-/** The adapter from the room's reads to the composer's props: the one place a prop change edits. */
+/** The adapter from the room's reads to the directory: the one place an API change edits. */
+function directoryOf(members: RoomMember[], sessions: ProjectSession[], people: RoomPerson[]) {
+  const rows = principalRows(members, sessions, people, VIEWER);
+  return { rows, targets: mentionTargets(rows) };
+}
+
+
 function Composer({ members, sessions, people }: { members: RoomMember[]; sessions: ProjectSession[]; people: RoomPerson[] }) {
   return (
     <RoomComposer
       placeholder="Message #general"
       roomName="general"
-      members={members}
-      sessions={sessions}
-      people={people}
-      viewerId={VIEWER}
+      directory={directoryOf(members, sessions, people)}
       onSend={async () => {}}
     />
   );
@@ -260,7 +265,7 @@ describe('PrincipalPicker', () => {
       viewerId={VIEWER}
       exclude={exclude}
       pendingId={pendingId}
-      onPick={(pick) => picks.push(`${pick.kind}:${pick.kind === 'person' ? pick.user_id : pick.session_id}:${pick.label}`)}
+      onPick={(pick) => picks.push(`${pick.kind}:${pick.id}:${pick.title}`)}
     />
   );
   const groups = () =>
@@ -298,7 +303,7 @@ describe('mention chips', () => {
   test('a chip names a member, a project session and a person, and marks the viewer', async () => {
     let chips: string[] = [];
     function Probe() {
-      const targets = useMentionTargets(MEMBERS, SESSIONS, PEOPLE, VIEWER);
+      const { targets } = directoryOf(MEMBERS, SESSIONS, PEOPLE);
       chips = splitMessageText('@eeee0000 @ffff0000 @grace@example.test @viewer@example.test @ada', targets).flatMap(
         (part) => (part.kind === 'mention' ? [`${part.label}${part.self ? ' (you)' : ''}`] : []),
       );
@@ -306,5 +311,67 @@ describe('mention chips', () => {
     }
     await render(<Probe />);
     expect(chips).toEqual(['@Fix CI', '@Deploy the docs', '@Grace Hopper', '@Viewer Person (you)']);
+  });
+});
+
+// The one change the refactor makes on purpose (KRTX-4038): a person reads the
+// same in the menu, the picker and a chip — `personName` of the profile name.
+// Outside the room's own members, their email, when that is not already their
+// title, is the row's detail.
+describe('one naming rule for a person', () => {
+  const nameless: RoomPerson = { user_id: LINUS, name: null, email: 'linus@example.test' };
+
+  test('the @ menu names a member with no profile name like their chip', async () => {
+    let chip = '';
+    function Probe() {
+      const { targets } = directoryOf([member('person', LINUS, 'linus@example.test')], [], [nameless]);
+      chip = splitMessageText('@linus@example.test', targets).flatMap((part) => (part.kind === 'mention' ? [part.label] : []))[0] ?? '';
+      return null;
+    }
+    await render(
+      <>
+        <Probe />
+        <Composer members={[member('person', LINUS, 'linus@example.test')]} sessions={[]} people={[nameless]} />
+      </>,
+    );
+    await type('@linus');
+    expect(chip).toBe('@linus');
+    expect(menu()).toEqual([['In this room', 'linus']]);
+  });
+
+  test('the picker names a person with no profile name the same way', async () => {
+    pickerPeople = [nameless];
+    pickerSessions = [];
+    await render(
+      <PrincipalPicker projectId={PROJECT} viewerId={VIEWER} pendingId={null} onPick={() => {}} />,
+    );
+    expect([...document.querySelectorAll('#room-principal-list [role="option"]')].map(rowText)).toEqual(['linus — linus@example.test']);
+  });
+});
+
+describe('thread repliers', () => {
+  const reply = (seq: number, kind: RoomMessage['sender_kind'], id: string | null, label: string): RoomMessage => ({
+    message_id: `m${seq}`,
+    room_id: 'r',
+    seq,
+    sender_kind: kind,
+    sender_user_id: kind === 'member' ? id : null,
+    sender_session_id: kind === 'session' ? id : null,
+    sender_label: label,
+    text: 'x',
+    reply_to_seq: 1,
+    reply_count: 0,
+    last_reply_at: null,
+    created_at: '2026-11-01T00:00:00.000Z',
+  });
+
+  test('a sender is who the grouping rule says it is: one session twice is one replier, a person and a session never merge', () => {
+    const repliers = repliersOf([
+      reply(2, 'session', SESSION_TITLED, 'ffff0000 "Deploy the docs"'),
+      reply(3, 'session', SESSION_TITLED, 'ffff0000 "Deploy the docs"'),
+      reply(4, 'member', null, 'builder'),
+      reply(5, 'session', null, 'builder'),
+    ]);
+    expect(repliers.map((r) => `${r.kind}:${r.label}`)).toEqual(['session:ffff0000 "Deploy the docs"', 'person:builder', 'session:builder']);
   });
 });

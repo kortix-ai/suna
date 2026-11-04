@@ -5,7 +5,6 @@ import Hint from '@kortix/ui/hint';
 import { Input } from '@kortix/ui/input';
 import Loading from '@kortix/ui/loading';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { errorToast } from '@kortix/ui/toast';
 import { ErrorState } from '@kortix/ui/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
@@ -19,12 +18,13 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import { ParticipantAvatar } from './room-identity';
+import { AvatarStack } from './room-identity';
 import { RoomComposer } from './room-composer';
 import { RoomMembersPanel } from './room-members-panel';
 import { repliersOf, RoomMessageList } from './room-messages';
+import { toastError } from './room-text';
 import { RoomThreadPanel } from './room-thread-panel';
-import { useMentionTargets, useRoomPeople, useRoomSessions } from './use-room-directory';
+import { useRoomDirectory } from './use-room-directory';
 
 const EMPTY_MEMBERS: RoomMember[] = [];
 const EMPTY_MESSAGES: RoomMessage[] = [];
@@ -50,11 +50,10 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
   const room = useRoom(projectId, roomId);
   const conversations = useRoomConversations(projectId);
   const messages = useRoomMessages(projectId, roomId, { top: true });
-  const sessions = useRoomSessions(projectId);
-  const people = useRoomPeople(projectId);
   const conversation = conversations.data?.find((c) => c.room_id === roomId) ?? null;
   const isMember = conversation !== null;
   const members = room.data?.members ?? EMPTY_MEMBERS;
+  const directory = useRoomDirectory(projectId, members, viewerId);
   const lastSeq = messages.data?.last_seq ?? 0;
   const [membersOpen, setMembersOpen] = useState(false);
   const router = useRouter();
@@ -75,7 +74,6 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
     return threadSeq !== null && replies.length > 0 ? new Map([[threadSeq, repliersOf(replies)]]) : undefined;
   }, [openThreadData.data, threadSeq]);
   const atBottomRef = useRef(true);
-  const targets = useMentionTargets(members, sessions.sessions, people.data ?? [], viewerId);
   const visible = useSyncExternalStore(
     subscribeVisibility,
     () => document.visibilityState === 'visible',
@@ -124,7 +122,7 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
       await addRoomPerson(projectId, roomId, viewerId);
       await queryClient.invalidateQueries({ queryKey: qk.project.rooms(projectId) });
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : t('joinFailed'));
+      toastError(error, t('joinFailed'));
     }
   };
 
@@ -165,7 +163,7 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
             messages={messages.data?.messages ?? EMPTY_MESSAGES}
             intro={<RoomIntro title={title} />}
             newFromSeq={newFromSeq ?? null}
-            targets={targets}
+            targets={directory.targets}
             atBottomRef={atBottomRef}
             highlightSeq={linkedSeq}
             repliers={repliers}
@@ -178,10 +176,7 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
           <RoomComposer
             placeholder={t('messageRoom', { name: title })}
             roomName={title}
-            members={members}
-            sessions={sessions.sessions}
-            people={people.data ?? []}
-            viewerId={viewerId}
+            directory={directory}
             onSend={async (text) => {
               atBottomRef.current = true;
               await messages.post.mutateAsync({ text });
@@ -196,11 +191,7 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
           roomId={roomId}
           roomName={title}
           rootSeq={threadSeq}
-          members={members}
-          sessions={sessions.sessions}
-          people={people.data ?? []}
-          viewerId={viewerId}
-          targets={targets}
+          directory={directory}
           canPost={isMember}
           onClose={() => openThread(null)}
         />
@@ -275,13 +266,7 @@ function RoomHeader({
             onClick={onToggleMembers}
             className={cn('shrink-0 gap-1.5', membersOpen && 'bg-active')}
           >
-            <span className="flex -space-x-1">
-              {stack.map((m) => (
-                <span key={m.member_id} className="ring-background rounded-sm ring-2">
-                  <ParticipantAvatar kind={m.kind} label={m.label} userId={m.user_id} size="xs" />
-                </span>
-              ))}
-            </span>
+            <AvatarStack participants={stack.map((m) => ({ key: m.member_id, kind: m.kind, label: m.label, userId: m.user_id }))} />
             <span className="tabular-nums">{members.length}</span>
           </Button>
         </Hint>
@@ -320,7 +305,7 @@ function TopicEditor({
       await queryClient.invalidateQueries({ queryKey: qk.project.rooms(projectId) });
       setDraft(null);
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : t('topicFailed'));
+      toastError(error, t('topicFailed'));
     } finally {
       setSaving(false);
     }

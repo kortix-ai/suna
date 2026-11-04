@@ -81,7 +81,7 @@ export interface WorkspacePaletteRow {
   isActive: boolean;
 }
 
-export interface WorkspacePaletteGroup {
+interface WorkspacePaletteGroup {
   accountId: string;
   accountName: string;
   rows: WorkspacePaletteRow[];
@@ -109,7 +109,7 @@ export const ROOT_WORKSPACE_RESULT_LIMIT = 5;
  * (`filterWorkspaceGroups`), so a user past 50 workspaces still has one
  * complete list, and the palette's search reaches any of them by name.
  */
-export const WORKSPACE_PAGE_RESULT_LIMIT = 50;
+const WORKSPACE_PAGE_RESULT_LIMIT = 50;
 
 /**
  * Every workspace the user can reach, flattened out of

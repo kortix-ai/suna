@@ -1,7 +1,8 @@
 import type { RoomMessage } from '@kortix/sdk';
+import { errorToast } from '@kortix/ui/toast';
 
 /** Consecutive messages from one sender within this window share one header (Slack). */
-export const GROUP_WINDOW_MS = 5 * 60_000;
+const GROUP_WINDOW_MS = 5 * 60_000;
 
 /** The server's room name rule (`ROOM_NAME` in `apps/api/src/projects/rooms/service.ts`). */
 export const ROOM_NAME_RE = /^[a-z0-9][a-z0-9._/-]{0,63}$/;
@@ -43,13 +44,13 @@ export function senderKey(message: RoomMessage): string {
     : `u:${message.sender_user_id ?? message.sender_label}`;
 }
 
-export interface MessageGroupItem {
+interface MessageGroupItem {
   message: RoomMessage;
   /** Same sender as the previous message, within `GROUP_WINDOW_MS`: no avatar or name. */
   continuation: boolean;
 }
 
-export interface MessageDay {
+interface MessageDay {
   /** Local calendar day, `YYYY-MM-DD`. */
   key: string;
   /** Local midnight of the day, epoch ms. */
@@ -109,7 +110,7 @@ function slug(name: string): string {
 }
 
 /** Resolve one `@token` the way the server does, or null when it names nobody. */
-export function resolveMention(token: string, targets: readonly MentionTarget[]): MentionTarget | null {
+function resolveMention(token: string, targets: readonly MentionTarget[]): MentionTarget | null {
   const lower = token.toLowerCase();
   for (const target of targets) {
     if (lower.length >= MENTION_ID_CHARS && target.ids.some((id) => id.toLowerCase().startsWith(lower))) return target;
@@ -163,6 +164,11 @@ export function activeMention(text: string, caret: number): { query: string; sta
   const match = /(?:^|[^\w@])@([\w.+-]{0,64})$/.exec(text.slice(0, caret));
   if (!match) return null;
   return { query: match[1]!, start: caret - match[1]!.length - 1 };
+}
+
+/** A failed room action as a toast: the error's own message, else `fallback`. */
+export function toastError(error: unknown, fallback: string) {
+  errorToast(error instanceof Error ? error.message : fallback);
 }
 
 /** The first line of a message, for a reply quote. */

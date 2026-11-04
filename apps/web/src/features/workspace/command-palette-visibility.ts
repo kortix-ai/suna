@@ -26,7 +26,7 @@ export const LEGACY_PALETTE_HIDDEN = new Set([
  * hub sections the caller may open (`useAccountHubAccess().sectionVisible`)
  * and, by row id, the verdict of the sidebar row a palette row mirrors.
  */
-export interface PaletteGates {
+interface PaletteGates {
   accountSections: Readonly<Record<string, boolean>>;
   rows: Readonly<Record<string, boolean>>;
 }

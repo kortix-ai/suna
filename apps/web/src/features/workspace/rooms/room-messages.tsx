@@ -11,11 +11,12 @@ import { ArrowDownIcon, ChatTeardropTextIcon, CheckIcon, CopyIcon } from '@phosp
 import Link from 'next/link';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 
-import { ParticipantAvatar } from './room-identity';
+import { AvatarStack, ParticipantAvatar } from './room-identity';
 import {
   groupMessages,
   personName,
   relativeTime,
+  senderKey,
   sessionDisplay,
   splitMessageText,
   type MentionTarget,
@@ -26,7 +27,7 @@ const STICK_TO_BOTTOM_PX = 120;
 /** How long a jumped-to message keeps its highlight before it fades. */
 const HIGHLIGHT_MS = 2_000;
 
-export interface SenderView {
+interface SenderView {
   name: string;
   detail: string | null;
   agent: boolean;
@@ -34,7 +35,7 @@ export interface SenderView {
 }
 
 /** `targets` names a person by their profile name, so a sender who posted with an email reads as a name. */
-export function senderView(projectId: string, message: RoomMessage, targets: readonly MentionTarget[] = []): SenderView {
+function senderView(projectId: string, message: RoomMessage, targets: readonly MentionTarget[] = []): SenderView {
   if (message.sender_kind === 'session') {
     const { name, detail } = sessionDisplay(message.sender_label);
     return {
@@ -60,7 +61,7 @@ export interface Replier {
 export function repliersOf(replies: readonly RoomMessage[]): Replier[] {
   const seen = new Map<string, Replier>();
   for (const m of replies) {
-    const key = m.sender_session_id ?? m.sender_user_id ?? m.sender_label;
+    const key = senderKey(m);
     if (!seen.has(key)) {
       seen.set(key, {
         key,
@@ -416,13 +417,7 @@ function ThreadSummary({
       className="group/thread hover:bg-popover hover:border-border -ml-1 mt-1 flex max-w-full items-center gap-2 rounded-md border border-transparent p-1 pr-2 text-left text-xs"
     >
       {repliers && repliers.length > 0 ? (
-        <span className="flex shrink-0 -space-x-1">
-          {repliers.map((r) => (
-            <span key={r.key} className="ring-background rounded-sm ring-2">
-              <ParticipantAvatar kind={r.kind} label={r.label} userId={r.userId} size="xs" />
-            </span>
-          ))}
-        </span>
+        <AvatarStack participants={repliers} />
       ) : null}
       <span className="text-kortix-base shrink-0 font-medium">{t('replyCount', { count })}</span>
       {lastReplyAt ? (

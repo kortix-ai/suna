@@ -23,7 +23,6 @@ import {
   ModalTitle,
 } from '@kortix/ui/modal';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { errorToast } from '@kortix/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
 import { addRoomPerson, createRoom, type Room } from '@kortix/sdk';
@@ -34,7 +33,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useDeferredValue, useState, type FormEvent } from 'react';
 
-import { ROOM_NAME_RE } from './room-text';
+import { ROOM_NAME_RE, toastError } from './room-text';
 
 /**
  * The one "Add rooms" surface (Slack's "Browse channels"): every room of the
@@ -167,7 +166,7 @@ function BrowseRow({
       onDone();
       router.push(href);
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : t('joinFailed'));
+      toastError(error, t('joinFailed'));
     } finally {
       setPending(false);
     }
@@ -221,7 +220,7 @@ function CreateRoom({ projectId, onBack, onDone }: { projectId: string; onBack: 
       onDone();
       router.push(`/projects/${projectId}/rooms/${room.room_id}`);
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : t('createFailed'));
+      toastError(error, t('createFailed'));
     } finally {
       setPending(false);
     }

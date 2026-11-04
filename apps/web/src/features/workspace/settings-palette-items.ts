@@ -173,7 +173,7 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   // typecheck.
 };
 
-export interface SettingsPaletteItem {
+interface SettingsPaletteItem {
   /** Stable cmdk/React key. Namespaced so it can never collide with a `menuRegistry` id. */
   id: string;
   tab: SettingsTab;
@@ -186,7 +186,7 @@ export interface SettingsPaletteItem {
   keywords: string;
 }
 
-export interface SettingsPaletteGroup {
+interface SettingsPaletteGroup {
   label: string;
   items: SettingsPaletteItem[];
 }
@@ -267,7 +267,7 @@ export function settingsPaletteSearchText(item: SettingsPaletteItem): string {
  * of that text, so typing "organization" keeps the whole Organization group —
  * the same affordance `filterRailGroups` gives the rail.
  */
-export function settingsPaletteItemMatches(item: SettingsPaletteItem, words: string[]): boolean {
+function settingsPaletteItemMatches(item: SettingsPaletteItem, words: string[]): boolean {
   const haystack = settingsPaletteSearchText(item).toLowerCase();
   return words.every((word) => haystack.includes(word));
 }
