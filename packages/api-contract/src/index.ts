@@ -210,6 +210,8 @@ export const ProjectSchema = z.object({
     volumes: z.boolean().optional(),
     /** Not a flag since 2026-11-02 (every project has a Drive); `true` wherever the platform stores a Drive (Platinum), for older SDK, CLI and hosts. */
     drives: z.boolean().optional(),
+    /** @deprecated Merged into `chat` (2026-11); equal to `chat`, for released TUI, mobile and CLI builds that show Channels only while it is true. */
+    project_channels: z.boolean().optional(),
   }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */

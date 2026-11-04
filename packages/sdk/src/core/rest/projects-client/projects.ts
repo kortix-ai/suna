@@ -104,7 +104,7 @@ export type FeatureFlagKey =
   | 'connectors_v2'
   /** Chat: a Slack-style chat with Kortix. Every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces are shared with people. Experimental, off by default. */
   | 'chat'
-  /** @deprecated Withdrawn — merged into `chat` (2026-11). The API no longer lists, resolves, or accepts it. Removed in the next major. */
+  /** @deprecated Withdrawn — merged into `chat` (2026-11). The API sends it equal to `chat` and writes `chat` for it; it is not in the catalog. Read `chat`. Removed in the next major. */
   | 'project_channels'
   /** @deprecated Withdrawn — Rooms were removed (2026-11). The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'agent_rooms'

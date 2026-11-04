@@ -19,6 +19,8 @@ export interface SessionWhereRow {
   space_dm_agent: string | null;
   /** `metadata.source`: web, cli, mobile, trigger:<slug>, system:chat-post, agent, … */
   source: string | null;
+  /** `metadata.trigger_slug`: the trigger that started the session, when one did. */
+  trigger_slug: string | null;
   person_name: string | null;
   person_full_name: string | null;
   person_email: string | null;
@@ -29,6 +31,37 @@ export interface SessionWhereRow {
 function oneLine(text: string, max: number): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+const SURFACES: Record<string, string> = {
+  ui: 'the web app',
+  web: 'the web app',
+  mobile: 'the mobile app',
+  cli: 'the CLI',
+  slack: 'Slack',
+  teams: 'Microsoft Teams',
+  telegram: 'Telegram',
+  discord: 'Discord',
+  email: 'email',
+  agent: 'another session',
+};
+
+/**
+ * `metadata.source` in words: `trigger:cron` → "a scheduled trigger (<slug>)",
+ * `system:chat-post` → Kortix itself. Null for a source this list does not
+ * know, so the block leaves the line out instead of printing a raw code.
+ */
+export function sessionSourceText(source: string | null, triggerSlug: string | null): string | null {
+  if (!source) return null;
+  if (source.startsWith('trigger:')) {
+    const kind = source.slice('trigger:'.length);
+    const slug = triggerSlug ? ` (${oneLine(triggerSlug, 60)})` : '';
+    return kind ? `a ${kind === 'cron' ? 'scheduled' : oneLine(kind, 30)} trigger${slug}` : `a trigger${slug}`;
+  }
+  if (source === 'system:chat-post') return 'Kortix (it started this thread itself)';
+  if (source === 'system' || source.startsWith('system:')) return 'Kortix (system)';
+  // Channel sources carry their bot or inbox after a colon: `telegram:<bot>`, `email:<inbox>`.
+  return SURFACES[source.split(':')[0]] ?? null;
 }
 
 /**
@@ -42,12 +75,13 @@ export function sessionWhereText(row: SessionWhereRow): string {
       ? `#${oneLine(row.space_slug ?? row.space_name ?? '', 40)}${row.space_name && row.space_name !== row.space_slug ? ` ("${oneLine(row.space_name, 60)}")` : ''}, space ${row.space_id}`
       : row.space_id && row.space_kind === 'dm'
         ? `the direct message with ${oneLine(row.space_dm_agent ?? row.space_name ?? 'an agent', 40)}, space ${row.space_id}`
-        : 'none (not filed in a space)';
+        : null;
   const name = row.person_name || row.person_full_name || row.person_email ? memberDisplayName({ displayName: row.person_name ?? row.person_full_name, email: row.person_email }) : '';
+  const from = sessionSourceText(row.source, row.trigger_slug);
   const lines = [
     '## Where you are',
-    `- Space: ${space}`,
-    `- Started from: ${oneLine(row.source || 'unknown', 60)}`,
+    ...(space ? [`- Space: ${space}`] : []),
+    ...(from ? [`- Started from: ${from}`] : []),
     `- Started by: ${name ? oneLine(name, 60) : 'no person (an automation)'}`,
     ...(row.parent_session_id ? [`- Parent session: "${oneLine(row.parent_title || 'Untitled', 80)}", id ${row.parent_session_id}`] : []),
   ];
@@ -63,6 +97,7 @@ export async function readSessionWhere(projectId: string, sessionId: string): Pr
     SELECT s.space_id,
            sp.kind::text AS space_kind, sp.slug AS space_slug, sp.name AS space_name, sp.dm_agent_name AS space_dm_agent,
            s.metadata->>'source' AS source,
+           s.metadata->>'trigger_slug' AS trigger_slug,
            u.raw_user_meta_data->>'name' AS person_name,
            u.raw_user_meta_data->>'full_name' AS person_full_name,
            u.email AS person_email,

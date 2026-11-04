@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
 import { isMyKortixAgentName } from '@kortix/shared';
 import { myKortixTurnMemory, turnSystemText } from '../../memory/turn-body';
-import { SESSION_WHERE_MAX_CHARS, type SessionWhereRow, sessionWhereText } from './session-where';
+import { SESSION_WHERE_MAX_CHARS, type SessionWhereRow, sessionSourceText, sessionWhereText } from './session-where';
 
 const SPACE = '11111111-1111-4111-8111-111111111111';
 const PARENT = '22222222-2222-4222-8222-222222222222';
@@ -13,7 +13,8 @@ const row = (over: Partial<SessionWhereRow>): SessionWhereRow => ({
   space_slug: 'eng',
   space_name: 'eng',
   space_dm_agent: null,
-  source: 'web',
+  source: 'ui',
+  trigger_slug: null,
   person_name: 'Priya Rao',
   person_full_name: null,
   person_email: 'priya@example.test',
@@ -25,7 +26,7 @@ const row = (over: Partial<SessionWhereRow>): SessionWhereRow => ({
 describe('"## Where you are"', () => {
   test('a channel thread: the channel, its id, the surface and the person by name', () => {
     expect(sessionWhereText(row({}))).toBe(
-      ['## Where you are', `- Space: #eng, space ${SPACE}`, '- Started from: web', '- Started by: Priya Rao'].join('\n'),
+      ['## Where you are', `- Space: #eng, space ${SPACE}`, '- Started from: the web app', '- Started by: Priya Rao'].join('\n'),
     );
   });
 
@@ -36,13 +37,35 @@ describe('"## Where you are"', () => {
     );
   });
 
-  test('no space, a trigger, a spawned session with its parent', () => {
+  test('no space: no Space line; a cron trigger in words with its slug; a spawned session with its parent', () => {
     const text = sessionWhereText(
-      row({ space_id: null, space_kind: null, source: 'trigger:nightly', parent_session_id: PARENT, parent_title: 'Fix the build' }),
+      row({ space_id: null, space_kind: null, source: 'trigger:cron', trigger_slug: 'daily-report', parent_session_id: PARENT, parent_title: 'Fix the build' }),
     );
-    expect(text).toContain('- Space: none (not filed in a space)');
-    expect(text).toContain('- Started from: trigger:nightly');
+    expect(text).not.toContain('- Space:');
+    expect(text).toContain('- Started from: a scheduled trigger (daily-report)');
     expect(text).toContain(`- Parent session: "Fix the build", id ${PARENT}`);
+  });
+
+  test('every source reads in words; an unknown source leaves the line out', () => {
+    const cases: Array<[string | null, string | null, string | null]> = [
+      ['ui', null, 'the web app'],
+      ['mobile', null, 'the mobile app'],
+      ['cli', null, 'the CLI'],
+      ['slack', null, 'Slack'],
+      ['teams', null, 'Microsoft Teams'],
+      ['telegram:bot-1', null, 'Telegram'],
+      ['discord:dm', null, 'Discord'],
+      ['email:inbox-1', null, 'email'],
+      ['trigger:webhook', null, 'a webhook trigger'],
+      ['trigger:webhook', 'on-deploy', 'a webhook trigger (on-deploy)'],
+      ['system:chat-post', null, 'Kortix (it started this thread itself)'],
+      ['system:subagent-finished', null, 'Kortix (system)'],
+      ['agent', null, 'another session'],
+      ['something-new', null, null],
+      [null, null, null],
+    ];
+    for (const [source, slug, words] of cases) expect([source, sessionSourceText(source, slug)]).toEqual([source, words]);
+    expect(sessionWhereText(row({ source: 'something-new' }))).not.toContain('Started from');
   });
 
   test('the person is never named by email; no person reads as an automation', () => {

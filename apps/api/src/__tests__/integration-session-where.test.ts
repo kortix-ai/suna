@@ -33,10 +33,10 @@ beforeAll(async () => {
   ]);
   const base = { accountId: ACCOUNT, projectId: PROJECT, agentName: 'mykortix', visibility: 'project' } as const;
   await db.insert(projectSessions).values([
-    { ...base, sessionId: THREAD, branchName: THREAD, createdBy: PRIYA, spaceId: ENG, metadata: { source: 'web', custom_name: 'Ship the launch page' } },
+    { ...base, sessionId: THREAD, branchName: THREAD, createdBy: PRIYA, spaceId: ENG, metadata: { source: 'ui', custom_name: 'Ship the launch page' } },
     { ...base, sessionId: CHILD, branchName: CHILD, createdBy: PRIYA, spaceId: ENG, parentSessionId: THREAD, metadata: { source: 'agent' } },
     { ...base, sessionId: DM_THREAD, branchName: DM_THREAD, createdBy: PRIYA, spaceId: DM, metadata: { source: 'cli' } },
-    { ...base, sessionId: LOOSE, branchName: LOOSE, createdBy: null, metadata: { source: 'trigger:nightly' } },
+    { ...base, sessionId: LOOSE, branchName: LOOSE, createdBy: null, metadata: { source: 'trigger:cron', trigger_slug: 'daily-report' } },
   ]);
 });
 
@@ -51,14 +51,14 @@ describe('sessionWhereTurn', () => {
     const where = await sessionWhereTurn(PROJECT, THREAD);
     expect(where!.space).toEqual({ kind: 'channel', dmAgent: null });
     expect(where!.system).toBe(
-      ['## Where you are', `- Space: #eng-${ENG.slice(0, 6)} ("Engineering"), space ${ENG}`, '- Started from: web', '- Started by: Priya Rao'].join('\n'),
+      ['## Where you are', `- Space: #eng-${ENG.slice(0, 6)} ("Engineering"), space ${ENG}`, '- Started from: the web app', '- Started by: Priya Rao'].join('\n'),
     );
     expect(where!.system).not.toContain('@');
   });
 
   test('a spawned session names its parent by title and id', async () => {
     const where = await sessionWhereTurn(PROJECT, CHILD);
-    expect(where!.system).toContain('- Started from: agent');
+    expect(where!.system).toContain('- Started from: another session');
     expect(where!.system).toContain(`- Parent session: "Ship the launch page", id ${THREAD}`);
   });
 
@@ -68,11 +68,12 @@ describe('sessionWhereTurn', () => {
     expect(where!.system).toContain(`- Space: the direct message with mykortix, space ${DM}`);
   });
 
-  test('a session in no space, started by a trigger; a session of another project is null', async () => {
+  test('a session in no space, started by a cron trigger; a session of another project is null', async () => {
     const where = await sessionWhereTurn(PROJECT, LOOSE);
     expect(where!.space).toBeNull();
-    expect(where!.system).toContain('- Space: none (not filed in a space)');
-    expect(where!.system).toContain('- Started by: no person (an automation)');
+    expect(where!.system).toBe(
+      ['## Where you are', '- Started from: a scheduled trigger (daily-report)', '- Started by: no person (an automation)'].join('\n'),
+    );
     expect(await sessionWhereTurn(crypto.randomUUID(), THREAD)).toBeNull();
   });
 });
