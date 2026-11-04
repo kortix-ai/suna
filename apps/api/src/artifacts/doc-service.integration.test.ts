@@ -347,3 +347,20 @@ describe('epoch on every write', () => {
     expect(await markArtifactDocFlushed(artifactId, { holder: 'tab-a', userId, seq: 3, version: 'v2', markdown: 'two', epoch })).toEqual({ flushedSeq: 3 });
   });
 });
+
+describe('compaction scans its input', () => {
+  test('a stored row the push checks would refuse (a ContentBinary item, which Y.mergeUpdates merges) is never merged: failed, back-off, rows kept', async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { update: Buffer.from([0, 0]), markdown: '', version: 'v1', userId });
+    // One ContentBinary item at the root of `d`: valid Yjs, content the editor never emits.
+    const binary = Buffer.from([1, 1, 77, 0, 3, 1, 1, 0x64, 3, 1, 2, 3, 0]);
+    expect(Y.decodeUpdate(new Uint8Array(binary)).structs).toHaveLength(1);
+    await db.execute(sql`insert into kortix.artifact_doc_updates (artifact_id, seq, bytes)
+      select ${artifactId}::uuid, g, case when g = 250 then ${binary}::bytea else decode('0000', 'hex') end from generate_series(2, ${DOC_COMPACT_ROWS + 1}) g`);
+    await db.update(artifactDocState).set({ nextSeq: DOC_COMPACT_ROWS + 2 }).where(eq(artifactDocState.artifactId, artifactId));
+    expect(await compactArtifactDoc(artifactId)).toEqual({ done: false, reason: 'failed' });
+    expect((await readArtifactDoc(artifactId, { after: 0, base: false })).updates).toHaveLength(DOC_COMPACT_ROWS + 1);
+    const [state] = await db.select({ at: artifactDocState.compactionFailedAt }).from(artifactDocState).where(eq(artifactDocState.artifactId, artifactId));
+    expect(state!.at).toBeInstanceOf(Date);
+  }, 30_000);
+});

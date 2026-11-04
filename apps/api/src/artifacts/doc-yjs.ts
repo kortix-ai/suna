@@ -1,50 +1,23 @@
 /**
  * The Yjs operations the server runs on a co-edited doc (KRTX-3670): check a
- * pushed update, and merge rows. Contract v2: the server NEVER integrates
- * writer bytes (no `Y.applyUpdate`, no `Y.Doc`). Integration of a crafted
- * update can take minutes and would freeze a web replica; decoding and
- * merging are linear in the bytes.
+ * pushed update, and merge rows. The server NEVER integrates writer bytes (no
+ * `Y.applyUpdate`, no `Y.Doc`), and never decodes an update it has not
+ * scanned first (`doc-scan.ts`): a decode of crafted content can allocate
+ * hundreds of megabytes. Scanning and merging are linear in the bytes.
  */
-import { Item, decodeUpdate, mergeUpdates } from 'yjs';
+import { mergeUpdates } from 'yjs';
+import { scanDocUpdate, type DocUpdateCheck } from './doc-scan';
 
-/** Structs one update may carry. */
-export const DOC_MAX_STRUCTS = 200_000;
-
-export type DocUpdateCheck = { ok: true } | { ok: false; reason: 'malformed' | 'too_many_structs' | 'many_clients' | 'self_reference' };
-
-type Id = { client: number; clock: number };
-const isId = (value: unknown): value is Id =>
-  typeof value === 'object' && value !== null && typeof (value as Id).client === 'number' && typeof (value as Id).clock === 'number';
+export { DOC_MAX_DELETES, DOC_MAX_STRUCTS, DOC_MAX_TEXT_BYTES, type DocScanReason, type DocUpdateCheck } from './doc-scan';
 
 /**
- * Structural checks, without integration:
- *   - `Y.decodeUpdate` reads it;
- *   - at most `DOC_MAX_STRUCTS` structs;
- *   - a push carries the structs of ONE client at most (a tab pushes only its
- *     own changes; a delete-only update carries none); a seed may carry many;
- *   - an item whose origin, right origin or parent names its own client names
- *     a LOWER clock: such an item points at its own future, and every client
- *     that applies it throws, on every load, for ever (the 17-byte poison).
+ * The check of a pushed update, a seed, and every row before compaction
+ * merges it: the byte-level scan (`scanDocUpdate`), with no Yjs decode.
+ * `push`: one tab's own changes (structs of one client at most); `seed`: a
+ * whole doc, or stored rows (many clients).
  */
 export function checkDocUpdate(update: Uint8Array, kind: 'push' | 'seed'): DocUpdateCheck {
-  let structs: ReturnType<typeof decodeUpdate>['structs'];
-  try {
-    structs = decodeUpdate(update).structs;
-  } catch {
-    return { ok: false, reason: 'malformed' };
-  }
-  if (structs.length > DOC_MAX_STRUCTS) return { ok: false, reason: 'too_many_structs' };
-  let client: number | null = null;
-  for (const struct of structs) {
-    const own = struct.id.client;
-    if (kind === 'push' && client !== null && own !== client) return { ok: false, reason: 'many_clients' };
-    client = own;
-    if (!(struct instanceof Item)) continue;
-    for (const ref of [struct.origin, struct.rightOrigin, struct.parent]) {
-      if (isId(ref) && ref.client === own && ref.clock >= struct.id.clock) return { ok: false, reason: 'self_reference' };
-    }
-  }
-  return { ok: true };
+  return scanDocUpdate(update, kind);
 }
 
 /** Updates merged per step: a k-way merge re-sorts its k inputs per struct run, so k stays small. */

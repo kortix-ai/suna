@@ -36,6 +36,23 @@ const POISON = 'AQGVmu86AISVmu86yAEBeAA=';
 /** The seed merged with the first edit: the structs of two clients in one push. */
 const TWO_CLIENTS = 'AgHSDwCE6QcMByBmb3IgUTMD6QcABwEHZGVmYXVsdAMJcGFyYWdyYXBoBwDpBwAGBADpBwELTGF1bmNoIHBsYW4A';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** A ContentDoc item (a Yjs sub-document): valid Yjs, content the editor never emits. */
+const SUBDOC = Buffer.from([1, 1, 77, 0, 9, 1, 0, 0, 118, 0, 0]).toString('base64');
+
+/** One Yjs text item of `size` bytes at the root of `default` (an allowed, plain seed). */
+function bigTextUpdate(size: number): string {
+  const varUint = (n: number) => {
+    const out: number[] = [];
+    while (n > 0x7f) {
+      out.push(0x80 | (n & 0x7f));
+      n = Math.floor(n / 128);
+    }
+    out.push(n);
+    return out;
+  };
+  const head = [1, 1, 77, 0, 4, 1, 7, ...Buffer.from('default'), ...varUint(size)];
+  return Buffer.concat([Buffer.from(head), Buffer.alloc(size, 0x61), Buffer.from([0])]).toString('base64');
+}
 
 type Doc = {
   seeded: boolean;
@@ -82,6 +99,10 @@ flow('ART-10', {
   const project = await team.project({ managedGit: true });
   const member = await team.addMember('member');
   await team.grantProjectRole(project.id, member.userId!, 'member');
+  // A second person who may write the doc (a manager reaches /Company in Files).
+  const writer = await team.addMember('member');
+  await team.grantProjectRole(project.id, writer.userId!, 'manager');
+  const asWriter = ctx.client.as(writer);
   const owner = ctx.client.as(ctx.P.OWNER);
   const asMember = ctx.client.as(member);
   const anon = ctx.client.as(ctx.P.ANON);
@@ -228,6 +249,9 @@ flow('ART-10', {
       // The 17-byte poison decodes, but would make every client throw for ever.
       (await owner.post(UPDATES, { update: POISON }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'self_reference');
       (await owner.post(UPDATES, { update: TWO_CLIENTS }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'many_clients');
+      // A Yjs sub-document: decoding one builds a whole Y.Doc. Refused byte by byte, before any decode, on a push and on a seed.
+      (await owner.post(UPDATES, { update: SUBDOC }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'content_not_allowed');
+      (await owner.post(SEED, { update: SUBDOC, markdown: '', version: 'v9' }, { params })).status(400).body().has('$.code', 'invalid_update').has('$.reason', 'content_not_allowed');
       if ((await read()).latest_seq !== 3) throw new Error('a refused update was stored');
     });
 
@@ -286,6 +310,14 @@ flow('ART-10', {
       (await owner.post(FLUSHED, { holder: 'tab-b', seq: 1, version: 'v3', markdown: SEED_MARKDOWN, epoch }, { params })).status(409).body().has('$.code', 'epoch_mismatch');
       (await owner.post(UPDATES, { update: EDITS[0], epoch: again.epoch }, { params })).status(200).body().has('$.seq', 2);
       if ((await read()).latest_seq !== 2) throw new Error('a stale-epoch write was stored');
+    });
+
+    await ctx.step('a seed counts against the same byte budget as pushes: four 2 MiB seeds at once from one person → a 429 among them', async () => {
+      const update = bigTextUpdate(2 * 1024 * 1024 - 32);
+      const answers = await Promise.all(Array.from({ length: 4 }, () => asWriter.post(SEED, { update, markdown: '', version: 'v9' }, { params })));
+      const statuses = answers.map((a) => a.statusCode).sort();
+      if (!statuses.includes(429) || statuses.some((s) => s !== 409 && s !== 429)) throw new Error(`seed statuses ${JSON.stringify(statuses)}, expected 409 (already seeded) and at least one 429`);
+      answers.find((a) => a.statusCode === 429)!.status(429).body().has('$.code', 'rate_limited');
     });
 
     // Last: it empties OWNER's push bucket. The rate check runs before the

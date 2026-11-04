@@ -32,7 +32,7 @@ import {
   DOC_UPDATE_MAX_BYTES,
   DocByteBudget,
 } from '../../artifacts/doc-rules';
-import { DOC_MAX_STRUCTS, checkDocUpdate } from '../../artifacts/doc-yjs';
+import { DOC_MAX_DELETES, DOC_MAX_STRUCTS, checkDocUpdate } from '../../artifacts/doc-yjs';
 import {
   ArtifactDocError,
   appendArtifactDocUpdate,
@@ -142,7 +142,7 @@ function failure(c: Context, err: unknown) {
   throw err;
 }
 
-const CHECKS = `Checked without integrating it: Yjs must decode it, at most ${DOC_MAX_STRUCTS} structs, and no item may name its own client at its own clock or later as origin, right origin or parent; otherwise 400 \`invalid_update\` with a \`reason\`.`;
+const CHECKS = `Scanned byte by byte before anything decodes it: only the content the doc editor emits (text, formats, XML elements and text, attributes; \`reason: content_not_allowed\` otherwise), at most ${DOC_MAX_STRUCTS} structs and ${DOC_MAX_DELETES} delete ranges, and no item may name its own client at its own clock or later as origin, right origin or parent; otherwise 400 \`invalid_update\` with a \`reason\`.`;
 
 export function registerArtifactDocRoutes(): void {
   limitBody('/:projectId/artifacts/:artifactId/doc/seed', 8 * MiB, 'doc_too_large');
@@ -183,7 +183,7 @@ export function registerArtifactDocRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'post', path: '/{projectId}/artifacts/{artifactId}/doc/seed', tags: ['artifacts'],
     summary: 'Seed the live document with its first update, built from the file',
-    description: `The update is the whole doc built from \`markdown\`, the file text at \`version\` (at most ${DOC_SEED_UPDATE_MAX_BYTES / MiB} MiB decoded; the Markdown at most 1 MiB). It becomes seq 1 of a new \`epoch\` and counts as flushed. It may carry several clients. ${CHECKS} 409 \`doc_seeded\` when the doc already has a live state: GET it instead.`,
+    description: `The update is the whole doc built from \`markdown\`, the file text at \`version\` (at most ${DOC_SEED_UPDATE_MAX_BYTES / MiB} MiB decoded; the Markdown at most 1 MiB). It becomes seq 1 of a new \`epoch\` and counts as flushed. It may carry several clients. ${CHECKS} 429 \`rate_limited\` past the same byte rate as pushes. 409 \`doc_seeded\` when the doc already has a live state: GET it instead.`,
     ...auth,
     request: { params: ArtifactParams, body: body(z.object({ update: Base64, markdown: z.string(), version: Version })) },
     responses: { 201: json(z.object({ seq: z.number().int(), epoch: z.string() }), 'Seeded'), ...responses },
@@ -193,7 +193,8 @@ export function registerArtifactDocRoutes(): void {
     const input = c.req.valid('json');
     const tooLarge = markdownTooLarge(c, input.markdown);
     if (tooLarge) return tooLarge;
-    const update = updateFrom(c, input.update, { max: DOC_SEED_UPDATE_MAX_BYTES, kind: 'seed' });
+    // The same byte budget as pushes: a seed is up to 2 MiB.
+    const update = updateFrom(c, input.update, { max: DOC_SEED_UPDATE_MAX_BYTES, kind: 'seed', byteKey: access.viewer.userId });
     if (!update.ok) return update.response;
     try {
       const seeded = await seedArtifactDoc(access.row.artifactId, { update: update.bytes, markdown: input.markdown, version: input.version, userId: access.viewer.userId });

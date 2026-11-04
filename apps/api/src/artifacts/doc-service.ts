@@ -34,7 +34,7 @@ import {
   type DocLease,
   type DocLeaseKind,
 } from './doc-rules';
-import { compactDocUpdates } from './doc-yjs';
+import { checkDocUpdate, compactDocUpdates } from './doc-yjs';
 
 export class ArtifactDocError extends Error {
   constructor(
@@ -244,6 +244,11 @@ export async function compactArtifactDoc(artifactId: string): Promise<ArtifactDo
     if (!plan) return { done: false, reason: 'too_large' };
     const inRange = and(eq(artifactDocUpdates.artifactId, artifactId), gte(artifactDocUpdates.seq, plan.fromSeq), lte(artifactDocUpdates.seq, plan.toSeq));
     const rows = await tx.select({ bytes: artifactDocUpdates.bytes }).from(artifactDocUpdates).where(inRange).orderBy(asc(artifactDocUpdates.seq));
+    // Every row is scanned before Yjs reads it: a row stored before a check existed never reaches a decode.
+    if (rows.some((row) => !checkDocUpdate(new Uint8Array(row.bytes), 'seed').ok)) {
+      logger.warn('[artifact-doc] compaction refused a stored row', { artifactId });
+      return { done: false, reason: 'failed' };
+    }
     let merged: Uint8Array | null;
     try {
       merged = compactDocUpdates(rows.map((row) => new Uint8Array(row.bytes)), DOC_PAGE_MAX_BYTES);
