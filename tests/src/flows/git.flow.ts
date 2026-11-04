@@ -510,10 +510,21 @@ flow(
       // The grant is written in the PRE-RENAME stored shape (`kortixCli`, not
       // `permissions`) on purpose: rows minted before 2026-09-22 carry it, and
       // the push below only succeeds if `readStoredAgentGrant` still honors it.
-      await db.query(`UPDATE kortix.account_tokens
-        SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5, user_id = $6 WHERE token_id = $1`,
-      [tokenId, project.id, sessionId,
-        JSON.stringify({ agent: 'worker', kortixCli: 'all', connectors: 'all', env: [] }), team.id, userId]);
+      // The token trigger locks the project row FOR SHARE NOWAIT and fails
+      // closed (55P03) when another writer holds it, such as the config
+      // summary build that follows project creation. Retry that contention.
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await db.query(`UPDATE kortix.account_tokens
+            SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5, user_id = $6 WHERE token_id = $1`,
+          [tokenId, project.id, sessionId,
+            JSON.stringify({ agent: 'worker', kortixCli: 'all', connectors: 'all', env: [] }), team.id, userId]);
+          break;
+        } catch (error) {
+          if ((error as { code?: string }).code !== '55P03' || attempt >= 10) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+        }
+      }
       return { secret, sessionId };
     };
     const git = async (secret: string, args: string[], expected = 0) => {
