@@ -7,6 +7,7 @@ import {
   YOUTUBE_UPLOAD_ENDPOINT,
   YOUTUBE_UPLOAD_TOOL,
   shellQuote,
+  startYoutubeUpload,
   youtubeUploadRequest,
 } from './composio-youtube-upload';
 import { callerOnlyText, heldRunResumeText, withoutCallerOnly } from './held-call-run';
@@ -247,6 +248,82 @@ describe('youtube.upload_video refusals', () => {
       { title: 'Draft' },
     );
     expect(result).toMatchObject({ ok: false, status: 429 });
+    expect(result.retryAfterSeconds).toBeUndefined();
+  });
+
+  // Google's body as dev received it on 2026-11-04 with Composio's managed
+  // app; the consumer project number is replaced with a synthetic one.
+  const SHARED_QUOTA_429 = {
+    status: 429,
+    data: {
+      error: {
+        code: 429,
+        message: "Quota exceeded for quota metric 'Video Uploads' and limit 'Video Uploads per day' of service 'youtube.googleapis.com' for consumer 'project_number:100000000001'.",
+        errors: [{ domain: 'global', reason: 'rateLimitExceeded' }],
+        status: 'RESOURCE_EXHAUSTED',
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+            reason: 'RATE_LIMIT_EXCEEDED',
+            domain: 'googleapis.com',
+            metadata: {
+              quota_metric: 'youtube.googleapis.com/video_insert',
+              window_start_time: '1793779200',
+              quota_location: 'global',
+              service: 'youtube.googleapis.com',
+              quota_limit_value: '966',
+              quota_limit: 'defaultVideoInsertPerDayPerProject',
+              consumer: 'projects/100000000001',
+              quota_unit: '1/d/{project}',
+            },
+          },
+        ],
+      },
+    },
+  };
+
+  test('a used-up Google app quota answers when it resets, as Retry-After and in words', async () => {
+    // 2026-11-04T15:10:00Z; the window opened 08:00 UTC and resets 2026-11-05T08:00:00Z.
+    const now = () => new Date('2026-11-04T15:10:00Z');
+    const result = await startYoutubeUpload(
+      youtubeSession({ proxy: async () => SHARED_QUOTA_429 }),
+      { title: 'Draft' },
+      'youtube',
+      now,
+    );
+    expect(result).toMatchObject({ ok: false, status: 429, retryAfterSeconds: 60_600 });
+    expect((result.data as { error: string }).error).toEndWith(
+      'YouTube counts uploads per Google app, not per channel. The Google app this account signed in with has used all 966 of its uploads for today, across every account that signs in with it. It resets at 2026-11-05T08:00:00.000Z (in 16 h 50 min): schedule one retry then, every earlier retry fails.',
+    );
+  });
+
+  test('a quota reset that is not ahead of the clock gives no Retry-After', async () => {
+    const result = await startYoutubeUpload(
+      youtubeSession({ proxy: async () => SHARED_QUOTA_429 }),
+      { title: 'Draft' },
+      'youtube',
+      () => new Date('2026-11-06T09:00:00Z'),
+    );
+    expect(result).toMatchObject({ ok: false, status: 429 });
+    expect(result.retryAfterSeconds).toBeUndefined();
+    expect((result.data as { error: string }).error).toEndWith(
+      'YouTube limits uploads per day: retry later (the daily quota resets at midnight Pacific time).',
+    );
+  });
+
+  test('a channel at its own daily limit is told to wait, not to switch apps', async () => {
+    const result = await upload(
+      youtubeSession({
+        proxy: async () => ({
+          status: 400,
+          data: { error: { code: 400, message: 'The user has exceeded the number of videos they may upload.', errors: [{ reason: 'uploadLimitExceeded' }] } },
+        }),
+      }),
+      { title: 'Draft' },
+    );
+    expect(result).toMatchObject({ ok: false, status: 429 });
+    expect(result.retryAfterSeconds).toBeUndefined();
+    expect((result.data as { error: string }).error).toContain('Another Google app does not lift it.');
   });
 
   test('a 2xx with no upload URL is a provider failure', async () => {

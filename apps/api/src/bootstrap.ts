@@ -192,6 +192,15 @@ async function startReplicaServices(kind: ProcessKind) {
   await import('./platform/services/managed-git-backend')
     .then((m) => m.refreshGitBackend())
     .catch(() => {});
+  // Self-host: the sign-up policy the auth service's hook reads. A failure
+  // leaves the previous policy row in force.
+  await import('./shared/self-host-signup-policy')
+    .then((m) => m.syncSelfHostSignupPolicy())
+    .catch((err) =>
+      appLogger.error('[startup] Self-host sign-up policy not written', {
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
   // Warm the maintenance config, so a fresh pod serves the stored config from
   // request #1, not the cold-cache default.
   await maintenanceSetting.refresh().catch(() => {});

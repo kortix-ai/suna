@@ -26,6 +26,8 @@ import {
 } from '../self-host/compose-assets.ts';
 import { SHARED_AUTH_DEFAULTS, SHARED_SELF_HOST_DEFAULTS } from '../self-host/shared-runtime-defaults.ts';
 import { applyEmailWiring } from '../self-host/email-wiring.ts';
+import { signupModeOf } from '../self-host/signup-policy.ts';
+import createAdminScript from '../self-host/assets/create-admin.js.txt' with { type: 'text' };
 import { deriveDomainAliasHosts, normalizeHostname, parseDomainList, planDomainMove } from '../self-host/domain-aliases.ts';
 import {
   accountFileName,
@@ -102,6 +104,8 @@ Subcommands:
   env rotate KEY|--all-generated  Regenerate a rotatable generated secret.
   domain show             The primary domain and its alias domains.
   domain move <domain>    Make <domain> primary; the current domain keeps working as an alias.
+  admin add <email>       Create a platform admin account with a one-time password. Operator
+                          addresses cannot be claimed by signing up.
   tls show                How each host gets its TLS certificate.
   tls wildcard            One wildcard certificate for all Apps and previews (keeps their
                           host names out of the public certificate logs). Prints the DNS
@@ -318,6 +322,8 @@ export async function runSelfHost(argv: string[]): Promise<number> {
       return selfHostDomain(args, flags);
     case 'tls':
       return selfHostTls(args, flags);
+    case 'admin':
+      return selfHostAdmin(args, flags);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -858,6 +864,17 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   if (converge !== 0) return converge;
   if (apiDrifted) process.stdout.write(`${C.dim}  rolled: kortix-api (configuration changed)${C.reset}\n`);
 
+  // The auth service runs one replica and reads its configuration only at
+  // start, so a version that changes it (such as the before-user-created
+  // sign-up hook) applies only after a recreate: a few seconds without sign-in.
+  // It runs after the migrations and the API roll, so the hook's function and
+  // the policy it reads exist before GoTrue first calls it.
+  if (serviceConfigDrifted(flags.instance, 'supabase-auth')) {
+    const auth = compose(flags.instance, ['up', '-d', '--no-deps', 'supabase-auth']);
+    if (auth !== 0) return auth;
+    process.stdout.write(`${C.dim}  restarted: supabase-auth (configuration changed)${C.reset}\n`);
+  }
+
   // A version that changes the Caddyfile (a new route, such as Capture's
   // `@capture` or the project snapshots' `@snapshots`) reaches the running
   // Caddy only through a reload. Compose never recreates a container for a
@@ -1100,15 +1117,18 @@ function openSignUpCheck(env: Record<string, string | undefined>): { ok: boolean
   if (reachabilityMode(env) === 'local') return null;
   const signupOpen = (env.DISABLE_SIGNUP ?? 'false').trim() !== 'true';
   const autoconfirm = (env.ENABLE_EMAIL_AUTOCONFIRM ?? 'true').trim() === 'true';
+  const mode = signupModeOf(env);
   return {
-    ok: !(signupOpen && autoconfirm),
+    ok: !(signupOpen && autoconfirm && mode === 'open'),
     detail: !signupOpen
-      ? 'self sign-up is off (DISABLE_SIGNUP=true)'
-      : !autoconfirm
-        ? 'new accounts must confirm their email'
-        : 'anyone who reaches this instance can create a confirmed account for any email address, including an admin address. '
-          + 'Configure email so new accounts must confirm it: kortix self-host env set EMAIL_URL=smtp://user:password@smtp.example.com:587 '
-          + '— or, once your team has signed up: kortix self-host env set DISABLE_SIGNUP=true',
+      ? 'self sign-up is off (DISABLE_SIGNUP=true); SSO sign-ins of new users are refused too'
+      : mode !== 'open'
+        ? `sign-up is ${mode === 'invite' ? 'by invitation only' : 'closed'} (KORTIX_SIGNUP_MODE=${mode}); SSO sign-ins pass, operator addresses are reserved for kortix self-host admin add`
+        : !autoconfirm
+          ? 'new accounts must confirm their email; operator addresses are reserved for kortix self-host admin add'
+          : 'anyone who reaches this instance can create a confirmed account for any email address. '
+            + 'Allow invited addresses only: kortix self-host env set KORTIX_SIGNUP_MODE=invite '
+            + '— or configure email so new accounts must confirm it: kortix self-host env set EMAIL_URL=smtp://user:password@smtp.example.com:587',
   };
 }
 
@@ -1941,6 +1961,74 @@ function printDelegationRecords(records: ReturnType<typeof delegationRecords>, s
  * records are missing keeps per-host certificates, so nothing ever stops
  * serving.
  */
+/**
+ * The account of a platform admin, created by the operator. Self sign-up can
+ * never claim an address in KORTIX_PLATFORM_ADMIN_EMAILS (the auth service's
+ * before-user-created hook refuses it, see self-host/signup-policy.ts), so this
+ * is how an operator account comes to exist. The account is created inside the
+ * kortix-api container through the auth admin API with the service key, which
+ * skips the hook: the key never leaves the box, and the one-time password goes
+ * over stdin, never on a command line. The address is added to
+ * KORTIX_PLATFORM_ADMIN_EMAILS when it is missing (the API rolls start-first).
+ */
+async function selfHostAdmin(args: string[], flags: GlobalFlags): Promise<number> {
+  const [action, rawEmail] = args;
+  const email = rawEmail?.trim().toLowerCase() ?? '';
+  if (action !== 'add' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    process.stderr.write(`${status.err('Usage: kortix self-host admin add <email>')}\n`);
+    return 2;
+  }
+  const env = loadEnv(flags.instance);
+  if (!env) {
+    process.stderr.write(`${status.err('No instance here. Run: kortix self-host init')}\n`);
+    return 1;
+  }
+  if (!composeHasRunningServices(flags.instance)) {
+    process.stderr.write(`${status.err('The stack is not running. Run: kortix self-host start')}\n`);
+    return 1;
+  }
+
+  const password = randomBytes(18).toString('base64url');
+  const result = spawnSync(
+    'docker',
+    ['compose', '--project-name', composeProject(flags.instance), '--env-file', envPath(flags.instance), '-f', composePath(flags.instance), 'exec', '-T', 'kortix-api', 'bun', '-e', createAdminScript],
+    { cwd: instanceDir(flags.instance), encoding: 'utf8', input: JSON.stringify({ email, password }), timeout: 60_000 },
+  );
+  let answer: { status?: number; code?: string; message?: string } = {};
+  try {
+    answer = JSON.parse((result.stdout ?? '').trim().split('\n').pop() ?? '{}');
+  } catch {
+    // Reported below.
+  }
+  const created = answer.status === 200 || answer.status === 201;
+  const exists = answer.status === 422 && /exist|registered/i.test(`${answer.code} ${answer.message}`);
+  if (!created && !exists) {
+    process.stderr.write(`${status.err(`The account was not created: ${answer.message || (result.stderr ?? '').trim() || `exit ${result.status}`}`)}\n`);
+    return 1;
+  }
+
+  const listed = (env.KORTIX_PLATFORM_ADMIN_EMAILS ?? '').split(',').map((e) => e.trim().toLowerCase()).includes(email);
+  if (!listed) {
+    env.KORTIX_PLATFORM_ADMIN_EMAILS = [env.KORTIX_PLATFORM_ADMIN_EMAILS?.trim(), email].filter(Boolean).join(',');
+    writeEnv(flags.instance, env);
+    writeCompose(flags.instance, env);
+    const code = restartServicesForKeys(flags.instance, env, ['KORTIX_PLATFORM_ADMIN_EMAILS']);
+    if (code !== 0) return code;
+  }
+
+  const signIn = `${(env.PUBLIC_URL ?? '').replace(/\/$/, '')}/auth`;
+  if (created) {
+    process.stdout.write(
+      `\n${status.ok(`Platform admin account created: ${email}`)}\n`
+        + `  ${C.dim}Sign in  ${C.reset}${signIn}\n`
+        + `  ${C.dim}Password ${C.reset}${password}  ${C.dim}(shown once; change it after the first sign-in)${C.reset}\n\n`,
+    );
+  } else {
+    process.stdout.write(`\n${status.ok(`${email} already has an account${listed ? ' and is a platform admin' : '; it is a platform admin now'}.`)}\n\n`);
+  }
+  return 0;
+}
+
 async function selfHostTls(args: string[], flags: GlobalFlags): Promise<number> {
   const action = args.shift() ?? 'show';
   const env = loadEnvWithDefaults(flags);
@@ -3209,6 +3297,7 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
       namedTunnelConfigured: namedTunnelConfigured(env),
       captureStoreExternal,
       wildcardTlsConfigured: wildcardTls,
+      signupMode: signupModeOf(env),
     }),
     { encoding: 'utf8', mode: 0o600 },
   );

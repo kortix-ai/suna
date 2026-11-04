@@ -73,6 +73,51 @@ describe('the Claude account a request uses', () => {
     await db.update(accountSecretResources).set({ needsReauthAt: null }).where(eq(accountSecretResources.secretId, OWN));
   });
 
+  test('a session stays on one account across calls, moves when its usage runs out, and a probe never moves it', async () => {
+    const usage = (percent: number, limited = false) => ({
+      windows: [{ id: 'weekly', window_minutes: 10080, used_percent: percent, resets_at: new Date(Date.now() + 86_400_000).toISOString() }],
+      limited, observed_at: new Date().toISOString(), source: 'response',
+    });
+    const setUsage = (secretId: string, value: unknown) =>
+      db.update(accountSecretResources).set({ usage: value }).where(eq(accountSecretResources.secretId, secretId));
+    const pin = async () => {
+      const [row] = await db.select({ metadata: projectSessions.metadata }).from(projectSessions).where(eq(projectSessions.sessionId, SESSION));
+      return (row?.metadata as { provider_account_pins?: Record<string, string> } | null)?.provider_account_pins?.['claude-agent'];
+    };
+    // An earlier test's call pinned this session already: start it fresh.
+    await db.update(projectSessions).set({ metadata: {} }).where(eq(projectSessions.sessionId, SESSION));
+    // Selected accounts used to rotate on every call; now the session keeps the first it got.
+    await db.insert(sessionProviderSecretPools).values({ sessionId: SESSION, providerId: 'claude-agent', secretIds: [SHARED, SELECTED], updatedAt: new Date() });
+    const session = principal(null, { sessionId: SESSION });
+    for (let call = 0; call < 4; call++) expect((await ids(session))[0]).toBe(SHARED);
+    expect(await pin()).toBe(SHARED);
+
+    // Its account nears the end of the week: the session moves to the one with room, and stays.
+    await setUsage(SHARED, usage(97));
+    expect(await ids(session)).toEqual([SELECTED, SHARED]);
+    expect(await pin()).toBe(SELECTED);
+    await setUsage(SHARED, usage(5));
+    expect((await ids(session))[0]).toBe(SELECTED);
+
+    // A probe (turn gate, picker) reads the order and never moves the session.
+    await setUsage(SELECTED, usage(40, true));
+    expect((await resolveClaudeCredentials(session, { probe: true }))[0]!.secretId).toBe(SHARED);
+    expect(await pin()).toBe(SELECTED);
+    // The next real call leaves the limited account.
+    expect((await ids(session))[0]).toBe(SHARED);
+    expect(await pin()).toBe(SHARED);
+
+    // Shared accounts of a session without a selection are sticky the same way.
+    await db.delete(sessionProviderSecretPools).where(eq(sessionProviderSecretPools.sessionId, SESSION));
+    await setUsage(SELECTED, null);
+    await setUsage(SHARED, usage(96));
+    expect((await ids(session))[0]).toBe(SELECTED);
+    await setUsage(SHARED, null);
+    expect((await ids(session))[0]).toBe(SELECTED);
+
+    await db.update(projectSessions).set({ metadata: {} }).where(eq(projectSessions.sessionId, SESSION));
+  });
+
   test('the gateway answer: tokens to try, the provider turned off, or no account', async () => {
     const found = await claudeCredentialsForGateway(principal(OWNER), 'claude-sonnet-5-5');
     expect(found).toEqual({ credentials: [{ secretId: OWN, apiKey: token('own') }] });
