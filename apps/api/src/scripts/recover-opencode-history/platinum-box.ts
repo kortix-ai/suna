@@ -144,14 +144,24 @@ async function copySidecars(externalId: string, paths: string[], localDir: strin
 
 async function release(externalId: string, boxTemp: string | null, stillParked: () => Promise<boolean>): Promise<'parked' | 'left-running'> {
   if (boxTemp) await paced(() => provider.exec(externalId, ['rm', '-rf', boxTemp], { timeoutMs: 20_000 })).catch(() => undefined);
+  // The park read and the stop are not atomic, and no Kortix writer honors a
+  // recovery claim. So read as late as possible, and when a wake claimed the row
+  // after the stop landed, start the box again: the wake owns it.
+  const giveBack = async (): Promise<'left-running'> => {
+    await paced(() => provider.start(externalId)).catch(() => undefined);
+    return 'left-running';
+  };
   if (!(await stillParked())) return 'left-running';
   // A box still booting refuses a stop (409 `starting`): let it come up, then stop it.
   const s = await state(externalId);
-  if (s === 'gone' || s === 'stopped' || s === 'archived') return 'parked';
+  if (s === 'gone' || s === 'stopped' || s === 'archived') return (await stillParked()) ? 'parked' : 'left-running';
   if (s === 'other') await waitRunning(externalId);
+  if (!(await stillParked())) return 'left-running';
   await paced(() => provider.stop(externalId));
+  if (!(await stillParked())) return giveBack();
   // Best effort: an unarchived box restarts Platinum's auto-archive clock, so archive it now.
   await paced(() => platinumJson(`/v1/sandboxes/${externalId}/archive`, { method: 'POST' })).catch(() => undefined);
+  if (!(await stillParked())) return giveBack();
   return 'parked';
 }
 

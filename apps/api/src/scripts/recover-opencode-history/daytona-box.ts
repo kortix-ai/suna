@@ -109,12 +109,21 @@ async function release(externalId: string, boxTemp: string | null, stillParked: 
   if (boxTemp) {
     await withTimeout(sandbox.process.executeCommand(`rm -rf ${boxTemp}`, undefined, undefined, 20), 50_000, 'Daytona rm').catch(() => undefined);
   }
+  // Same rule as Platinum: read as late as possible, and give a box a wake
+  // claimed after the stop back by starting it again.
+  const giveBack = async (): Promise<'left-running'> => {
+    await withTimeout(sandbox.start(START_TIMEOUT_S), (START_TIMEOUT_S + 30) * 1000, `Daytona start(${externalId})`).catch(() => undefined);
+    return 'left-running';
+  };
   if (!(await stillParked())) return 'left-running';
   const s = await state(externalId);
-  if (s === 'gone' || s === 'stopped' || s === 'archived') return 'parked';
+  if (s === 'gone' || s === 'stopped' || s === 'archived') return (await stillParked()) ? 'parked' : 'left-running';
+  if (!(await stillParked())) return 'left-running';
   await withTimeout(sandbox.stop(CALL_TIMEOUT_MS / 1000), CALL_TIMEOUT_MS + 10_000, `Daytona stop(${externalId})`);
+  if (!(await stillParked())) return giveBack();
   // Best effort: archiving frees the disk the start restored (the shared quota).
   await withTimeout(sandbox.archive(), CALL_TIMEOUT_MS, `Daytona archive(${externalId})`).catch(() => undefined);
+  if (!(await stillParked())) return giveBack();
   return 'parked';
 }
 
