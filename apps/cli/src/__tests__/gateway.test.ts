@@ -295,7 +295,7 @@ describe('kortix gateway command', () => {
     const cfg = writeConfig(startServer());
     const r = await runCli(['gateway', 'budget', '--project', PROJECT], cfg);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('PROJECT SPEND (this month)  28,000 credits · 4 req');
+    expect(r.stdout).toContain('WORKSPACE SPEND (this month)  28,000 credits · 4 req');
     expect(r.stdout).toContain('1,500 of 2,000 credits/day project (block) resets 2026-10-14T00:00:00.000Z budget_1');
     const raw = await runCli(['gateway', 'budget', '--json', '--project', PROJECT], cfg);
     expect(JSON.parse(raw.stdout).budgets[0].limit_usd).toBe(20);

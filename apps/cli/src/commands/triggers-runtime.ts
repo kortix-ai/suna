@@ -36,7 +36,7 @@ Runtime source (add):
   --on event --connector <slug> --event <TYPE> [--config <json>]
                            A connector event.
   --on app --app <slug> [--expect-event-within <dur>]
-                           An event an App of this project emits. With
+                           An event an App of this workspace emits. With
                            --expect-event-within (5m to 30d, e.g. 1h), no event
                            for that long alerts this trigger's owner once.
   --on cr-merged [--cr <id>] [--base <branch>]
@@ -175,7 +175,7 @@ export async function runRuntimeTriggers(argv: string[]): Promise<number> {
       session: takeFlagValue(rest, ['--session']),
       agent: takeFlagValue(rest, ['--agent']),
       name: takeFlagValue(rest, ['--name']),
-      project: takeFlagValue(rest, ['--project']),
+      project: takeFlagValue(rest, ['--project', '--workspace']),
       host: takeFlagValue(rest, ['--host']),
     };
     json = takeFlagBool(rest, ['--json']);
@@ -248,7 +248,7 @@ export async function runRuntimeTriggers(argv: string[]): Promise<number> {
   } catch (err) {
     const code = surfaceApiError(err);
     if ((err as { body?: { code?: unknown } })?.body?.code === 'feature_disabled') {
-      process.stderr.write(`  ${C.dim}Turn it on: kortix projects features enable reminders${C.reset}\n`);
+      process.stderr.write(`  ${C.dim}Turn it on: kortix workspaces features enable reminders${C.reset}\n`);
     }
     return code;
   }

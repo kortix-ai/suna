@@ -25,9 +25,9 @@ export interface IamPolicy {
   created_at: string;
 }
 
-/** `No <what> in this account` — the shared not-found exit for a role ref. */
+/** `No <what> in this workspace` — the shared not-found exit for a role ref. */
 export function notFound(what: string): number {
-  process.stderr.write(`${status.err(`No ${what} in this account. Try \`kortix roles ls\`.`)}\n`);
+  process.stderr.write(`${status.err(`No ${what} in this workspace. Try \`kortix roles ls\`.`)}\n`);
   return 1;
 }
 
@@ -47,7 +47,7 @@ export async function rolesAssignments(
   const roleKey = new Map(roles.map((r) => [r.role_id, r.key]));
   if (policies.length === 0) {
     process.stdout.write(
-      `  ${C.dim}No assignments${project ? ' on this project' : ''}.${C.reset}\n`,
+      `  ${C.dim}No assignments${project ? ' on this workspace' : ''}.${C.reset}\n`,
     );
     return 0;
   }
@@ -93,7 +93,7 @@ export async function rolesAssign(
   const scopeId = scopeType === 'project' ? (project ?? resolveProjectId(undefined, { hostArg })) : null;
   if (scopeType === 'project' && !scopeId) {
     return fail(
-      'Pass --project <id>, or link a project (`kortix projects link`). For an account role, pass --scope account.',
+      'Pass --workspace <id>, or link a workspace (`kortix workspaces link`). For an account role, pass --scope account.',
     );
   }
   const scope = { scopeType, scopeId };

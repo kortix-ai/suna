@@ -78,7 +78,7 @@ export function resolveLocalTemplate(
 ): { template: SandboxTemplate } | { error: string } {
   const listSlugs = () =>
     templates.length === 0
-      ? 'This project declares no `sandbox.templates` in kortix.yaml.'
+      ? 'This workspace declares no `sandbox.templates` in kortix.yaml.'
       : `Declared templates: ${templates.map((t) => t.slug).join(', ')}.`;
 
   if (slugArg) {
@@ -105,7 +105,7 @@ export function resolveLocalTemplate(
   return {
     error:
       templates.length === 0
-        ? `${listSlugs()} Nothing project-specific to build — pass \`--slug default\` to build the platform base image.`
+        ? `${listSlugs()} Nothing workspace-specific to build — pass \`--slug default\` to build the platform base image.`
         : `Ambiguous: ${templates.length} templates and no \`sandbox.default\`. Name one — ${listSlugs()}`,
   };
 }
@@ -214,7 +214,7 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
   const manifest = resolveLocalManifest(process.cwd());
   if (!manifest) {
     process.stderr.write(
-      `${status.err('No kortix.yaml here.')} ${C.dim}Run from your project root.${C.reset}\n`,
+      `${status.err('No kortix.yaml here.')} ${C.dim}Run from your workspace root.${C.reset}\n`,
     );
     return 2;
   }

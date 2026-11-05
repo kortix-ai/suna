@@ -141,7 +141,7 @@ export async function resolveUserId(
   const hit = members.find((m) => (m.email ?? '').toLowerCase() === needle);
   if (!hit) {
     process.stderr.write(
-      `${status.err(`No member with email "${who}" in this account.`)} ` +
+      `${status.err(`No member with email "${who}" in this workspace.`)} ` +
         `Invite them first, or pass a user id.\n`,
     );
     return null;
@@ -164,7 +164,7 @@ export async function resolveGroupId(
   const hit = groups.find((g) => g.name.toLowerCase() === needle);
   if (!hit) {
     process.stderr.write(
-      `${status.err(`No group named "${ref}" in this account.`)} ` +
+      `${status.err(`No group named "${ref}" in this workspace.`)} ` +
         `List them with \`kortix groups ls\`, or pass a group id.\n`,
     );
     return null;

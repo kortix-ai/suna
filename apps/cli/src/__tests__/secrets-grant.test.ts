@@ -170,7 +170,7 @@ describe('kortix secrets grant', () => {
     const r = await runCli(['secrets', 'grant', 'STRIPE_KEY', '--agent', 'billing', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('first `agents:` block');
-    expect(r.stdout).toContain('receives NO project secrets');
+    expect(r.stdout).toContain('receives NO workspace secrets');
   });
 
   test('grant --json emits the API body', async () => {

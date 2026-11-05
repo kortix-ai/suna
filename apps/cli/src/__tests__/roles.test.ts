@@ -279,7 +279,7 @@ describe('kortix roles', () => {
   test('assign without --project and no linked project fails before any write', async () => {
     const code = await runRoles(['assign', 'support_agent', '--to', 'member:user-9']);
     expect(code).toBe(2);
-    expect(stripAnsi(stderr)).toContain('--project <id>');
+    expect(stripAnsi(stderr)).toContain('--workspace <id>');
     expect(requests.some((r) => r.method === 'POST')).toBe(false);
   });
 

@@ -105,7 +105,7 @@ const DEFAULT_EMAIL_CONNECTOR = 'kortix_email';
 const EMAIL_FLAG = 'email_channel';
 
 function emailOffLine(flag: string): string {
-  return `off for this project — the ${flag} feature flag is off. Turn it on: kortix projects features enable ${flag}`;
+  return `off for this workspace — the ${flag} feature flag is off. Turn it on: kortix workspaces features enable ${flag}`;
 }
 
 const OWN_KEY_NEEDED =

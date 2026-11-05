@@ -1,4 +1,4 @@
-import { splitHelp } from '../command-argv.ts';
+import { splitHelp, fromWorkspaceAlias } from '../command-argv.ts';
 import {
   emitJson,
   resolveAccountContext,
@@ -28,11 +28,11 @@ whether it can be delegated. People, groups and service accounts get roles
 built from these leaves; agents get Kortix permissions in kortix.yaml.
 
 Subcommands:
-  ls [--scope account|project] [--json]   List the catalog.
-  show <action> [--json]                  Show one action in full.
+  ls [--scope account|workspace] [--json]  List the catalog.
+  show <action> [--json]                   Show one action in full.
 
 Options:
-  --scope <s>        account | project — only actions decided at that scope.
+  --scope <s>        account | workspace — only actions decided at that scope.
   --area <a>         Only actions in one area (e.g. customize, triggers).
                      Secret actions are in customize.
   --account <id>     Operate on this account (default: the active account).
@@ -42,7 +42,7 @@ Options:
 
 Examples:
   kortix permissions ls
-  kortix permissions ls --scope project
+  kortix permissions ls --scope workspace
   kortix permissions ls --area customize
   kortix permissions show project.secret.write
 `;
@@ -55,7 +55,7 @@ export async function runPermissions(argv: string[]): Promise<number> {
   const f: Record<string, string | undefined> = {};
   let json = false;
   try {
-    f.scope = takeFlagValue(rest, ['--scope']);
+    f.scope = fromWorkspaceAlias(takeFlagValue(rest, ['--scope']));
     f.area = takeFlagValue(rest, ['--area']);
     f.account = takeFlagValue(rest, ['--account']);
     f.host = takeFlagValue(rest, ['--host']);

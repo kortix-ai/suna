@@ -363,7 +363,7 @@ test('the goals flag gates the real CLI in a box: off hides and refuses kortix g
   expect(out(run(['--help'], 'volumes,reminders'))).not.toMatch(/^\s+goals\s/m);
   const off = run(['goals', 'ls'], 'volumes,reminders');
   expect(off.exitCode).not.toBe(0);
-  expect(out(off)).toContain('kortix projects features enable goals');
+  expect(out(off)).toContain('kortix workspaces features enable goals');
   const on = run(['goals', '--help'], 'volumes,reminders,goals');
   expect(on.exitCode).toBe(0);
   expect(out(on)).toContain('Usage: kortix goals');

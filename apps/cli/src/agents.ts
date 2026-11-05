@@ -137,9 +137,9 @@ function handleExisting(abs: string, overwrite: boolean): boolean {
   return false;
 }
 
-const AGENTS_POINTER = `# Kortix project
+const AGENTS_POINTER = `# Kortix workspace
 
-This repository is a [Kortix](https://kortix.ai) project. The manifest is
+This repository is a [Kortix](https://kortix.ai) workspace. The manifest is
 \`kortix.yaml\`: it registers the skills, tools, commands and extensions, and
 declares each agent. Agent prompts live in \`${AGENTS_DIR}/\`, skills in
 \`${SKILLS_DIR}/\`.

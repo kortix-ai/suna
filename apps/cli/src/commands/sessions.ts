@@ -76,7 +76,7 @@ import { requireConnectedModel } from './session-model-access.ts';
 
 const HELP = help`Usage: kortix sessions <subcommand> [options]
 
-Manage Kortix project sessions — each session is an isolated sandbox VM
+Manage Kortix workspace sessions — each session is an isolated sandbox VM
 on its own ephemeral branch.
 
 Subcommands:
@@ -120,7 +120,7 @@ Subcommands:
                                     already failed. While it waits, stderr
                                     names each step once, e.g.
                                     "provisioning · building the first
-                                    image for this project (0:42)". To wait for the turn,
+                                    image for this workspace (0:42)". To wait for the turn,
                                     run kortix sessions wait-for <id> (exit
                                     1 when the turn fails). --json prints
                                     the session object (capture session_id
@@ -134,7 +134,7 @@ Subcommands:
                                     --secret <id>           narrow injected
                                       secrets to these identifiers (repeatable;
                                       backend token required).
-                                    --no-secrets            inject zero project
+                                    --no-secrets            inject zero workspace
                                       secrets into the session (backend token
                                       required).
                                     --connector <alias>=<connection-id>
@@ -164,7 +164,7 @@ Subcommands:
                                     text is given.
   reachable                         The sessions this one can message:
                                     parent, children, lead, teammates
-                                    (--scope project: every live session).
+                                    (--scope workspace: every live session).
                                     --from, --json.
   inbound <session-id> [<mode>]     What a session does with messages from
                                     other sessions: accept (default), hold
@@ -233,7 +233,7 @@ Subcommands:
                                     --no-connectors, --json.
                                     Alias: access.
   share <session-id>                Who inside Kortix can open this session.
-                                    --mode private|project|members, --member
+                                    --mode private|workspace|members, --member
                                     <id|email>, --group <id>, --show, --json.
   links <session-id> [<sub>]        Public, unauthenticated links onto one
                                     preview port or one workspace file: ls
@@ -293,7 +293,7 @@ Subcommands:
   open <session-id>                 Open the dashboard URL for a session.
 
 Global options:
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>   Operate on this workspace id (default: linked).
   -h, --help         Show this help.
 `;
 
@@ -440,7 +440,7 @@ export async function runSessions(argv: string[]): Promise<number> {
     }
   }
   try {
-    projectFlag = takeFlagValue(rest, ['--project']);
+    projectFlag = takeFlagValue(rest, ['--project', '--workspace']);
     hostFlag = takeFlagValue(rest, ['--host']);
     promptFlag = takeFlagValue(rest, ['--prompt', '-p']);
     portFlag = takeFlagValue(rest, ['--port']);
@@ -574,8 +574,8 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       const hostFlag = opts.hostArg ? ` --host ${opts.hostArg}` : '';
-      process.stderr.write(`${status.err(`${ctx.defaultProject ? 'Default project' : 'Project'} "${ctx.projectId}" was not found or is no longer accessible.`)} Run ` +
-        `\`kortix projects ls${hostFlag}\`, then \`kortix projects use <id>${hostFlag}\` to select an available project.\n`);
+      process.stderr.write(`${status.err(`${ctx.defaultProject ? 'Default workspace' : 'Workspace'} "${ctx.projectId}" was not found or is no longer accessible.`)} Run ` +
+        `\`kortix workspaces ls${hostFlag}\`, then \`kortix workspaces use <id>${hostFlag}\` to select an available workspace.\n`);
       return 1;
     }
     return surfaceApiError(err);
@@ -726,7 +726,7 @@ async function sessionsNew(
   const awaitReadiness = async (): Promise<boolean> => {
     process.stderr.write(`Session ${created.session_id}: created (${created.status}); waiting for readiness…\n`);
     // One line per change of stage or image step: `provisioning · building
-    // the first image for this project (0:42)` (session-boot.ts).
+    // the first image for this workspace (0:42)` (session-boot.ts).
     const progress = startProgressTracker();
     const intervalMs = startPollIntervalMs();
     let ready = false;
@@ -1341,7 +1341,7 @@ async function sessionsRm(
         );
         if (restoreUntil) {
           process.stdout.write(
-            `  ${C.dim}Restorable until ${restoreUntil.slice(0, 10)}: kortix sessions restore ${canonicalSessionId} --project ${projectId}${host ? ` --host ${host}` : ''}${C.reset}\n`,
+            `  ${C.dim}Restorable until ${restoreUntil.slice(0, 10)}: kortix sessions restore ${canonicalSessionId} --workspace ${projectId}${host ? ` --host ${host}` : ''}${C.reset}\n`,
           );
         }
       }

@@ -30,13 +30,13 @@ import { sleep } from '@kortix/shared/guards';
 
 const HELP = help`Usage: kortix providers <subcommand> [options]
 
-Configure LLM providers for the linked Kortix project. Three paths:
+Configure LLM providers for the linked Kortix workspace. Three paths:
 
   • OAuth (zero config) — uses the upstream provider's device-code flow
     (ChatGPT Pro/Plus, an OpenCode Console account for OpenCode Zen or Go).
-    Tokens land encrypted on the project; Kortix refreshes them.
+    Tokens land encrypted on the workspace; Kortix refreshes them.
 
-  • API key — stored as an encrypted project secret. The Kortix LLM
+  • API key — stored as an encrypted workspace secret. The Kortix LLM
     gateway uses it; the key never enters a sandbox.
 
   • Custom endpoint — any OpenAI-compatible API (vLLM, LiteLLM, Ollama
@@ -48,13 +48,13 @@ Subcommands:
                                     providers).
   ls --catalog [--search <query>]    Browse the bundled provider catalog,
                                     filtered by id or name. --json supported.
-                                    env lists project secrets to configure
+                                    env lists workspace secrets to configure
                                     with \`kortix secrets set NAME=value\`.
   login <provider>                  Run the OAuth device-code flow.
                                     Providers: openai, opencode (Zen),
                                     opencode-go. Zen and Go each need
                                     their own login.
-  set <provider> [<key>]            Save an API key as a project secret.
+  set <provider> [<key>]            Save an API key as a workspace secret.
                                     Provider → env-var mapping below.
                                     With no <key>, reads from stdin.
                                     bedrock also needs --region <region>.
@@ -89,7 +89,7 @@ Subcommands:
   custom rm <id>                    Remove the endpoint and its
                                     CUSTOM_<ID>_API_KEY secret.
 
-Known API-key providers (provider → project secret(s)):
+Known API-key providers (provider → workspace secret(s)):
   anthropic       → ANTHROPIC_API_KEY
   openai          → OPENAI_API_KEY
   openrouter      → OPENROUTER_API_KEY
@@ -104,7 +104,7 @@ Known API-key providers (provider → project secret(s)):
   platinum        → PLATINUM_API_KEY (Platinum Inference; models listed live)
 
 Global options:
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>   Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --region <region>  (set bedrock) AWS region, e.g. us-east-1.
   -h, --help         Show this help.
@@ -118,12 +118,12 @@ const LOGIN_HELP = help`Usage: kortix providers login <provider> [options]
 
 Start the OAuth device-code flow for openai, opencode, or opencode-go.
 \`claude\` adds your own Claude Pro or Max subscription as a Claude account of the
-project, private to you: Claude models (claude-agent/opus, fable, sonnet, haiku)
+workspace, private to you: Claude models (claude-agent/opus, fable, sonnet, haiku)
 run through Claude Code on it. You approve on claude.com and paste the code it
-shows. Share it with the project in the web under Models → Providers → Anthropic.
+shows. Share it with the workspace in the web under Models → Providers → Anthropic.
 
 Options:
-  --project <id>      Operate on this project id (default: linked).
+  --workspace <id>    Operate on this workspace id (default: linked).
   --host <name>       Operate against a non-default Kortix host.
   --token-stdin       (claude) Read a token made with \`claude setup-token\` from stdin.
   -h, --help          Show this help without starting OAuth.
@@ -200,7 +200,7 @@ export async function runProviders(argv: string[]): Promise<number> {
   let custom: CustomFlags = { models: [], keyStdin: false };
   let tokenStdin = false;
   try {
-    projectFlag = takeFlagValue(rest, ['--project']);
+    projectFlag = takeFlagValue(rest, ['--project', '--workspace']);
     hostFlag = takeFlagValue(rest, ['--host']);
     regionFlag = takeFlagValue(rest, ['--region']);
     accountFlag = takeFlagValue(rest, ['--account']);
@@ -590,7 +590,7 @@ async function providersLogin(provider: string | undefined, opts: CtxOpts): Prom
     }
     if (resp.status === 'success') {
       process.stdout.write(
-        `\n${status.ok(`Authorized ${C.bold}${provider}${C.reset} on this project`)}\n`,
+        `\n${status.ok(`Authorized ${C.bold}${provider}${C.reset} on this workspace`)}\n`,
       );
       const exp = resp.credential.expires_in_ms;
       if (exp !== null) {
@@ -707,7 +707,7 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
     } catch (err) {
       return surfaceApiError(err);
     }
-    process.stdout.write(`${status.ok('Deleted your Claude accounts in this project')}\n  ${C.dim}Claude accounts others shared with you stay.${C.reset}\n`);
+    process.stdout.write(`${status.ok('Deleted your Claude accounts in this workspace')}\n  ${C.dim}Claude accounts others shared with you stay.${C.reset}\n`);
     return 0;
   }
 

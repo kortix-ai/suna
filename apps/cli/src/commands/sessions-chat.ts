@@ -243,7 +243,7 @@ session (or starts one with --new).
                           synchronous subagent calls).
   --new                   Start a fresh session and chat with it.
   --agent <name>          Agent to run for this turn (defaults to the session's).
-  --project <id>          Operate on this project id (default: linked).
+  --workspace <id>        Operate on this workspace id (default: linked).
   --host <name>           Operate against a non-default Kortix host.
   -h, --help              Show this help.
 
@@ -269,7 +269,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   let queue = false;
   let steer = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
     promptText = takeFlagValue(rest, ['--prompt', '-p']);
     agent = takeFlagValue(rest, ['--agent']);
@@ -624,7 +624,7 @@ session is not read live.
                     the log does not hold yet carry
                     "ext": {"kortix": {"data": {"provisional": true}}}
                     (their seq is not stored yet).
-  --project <id>    Operate on this project id (default: linked).
+  --workspace <id>  Operate on this workspace id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
 
@@ -657,7 +657,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   let json = false;
   // `--schema v2` is the only output; `--schema v1` (the OpenCode-shaped rows) is gone.
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
     limitRaw = takeFlagValue(rest, ['--limit', '-n']);
     schemaRaw = takeFlagValue(rest, ['--schema']);
@@ -1026,7 +1026,7 @@ to include stopped ones. Aliases: \`overview\`, \`ps\`.
                     stopped), attention (question, approval or null),
                     agent_handle and team_lead_session_id are the agent
                     board's fields (null on an older API).
-  --project <id>    Operate on this project id (default: linked).
+  --workspace <id>  Operate on this workspace id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
 
@@ -1063,7 +1063,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
   let all = false;
   let json = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
     all = takeFlagBool(rest, ['--all', '-a']);
     json = takeFlagBool(rest, ['--json']);

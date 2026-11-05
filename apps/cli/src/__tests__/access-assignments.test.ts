@@ -333,7 +333,7 @@ describe('kortix access grant (assignment form)', () => {
   test('--agent with --account is refused client-side: an object grant is project-scoped', async () => {
     const code = await runAccess(['grant', '--user', USER, '--agent', 'support-bot', '--account']);
     expect(code).toBe(2);
-    expect(stripAnsi(stderr)).toContain('project-scoped');
+    expect(stripAnsi(stderr)).toContain('workspace-scoped');
     expect(post()).toBeUndefined();
   });
 
@@ -399,7 +399,7 @@ describe('kortix access grant — everyone in the project, and connector account
       object_type: 'agent',
       object_id: 'support-bot',
     });
-    expect(stripAnsi(stdout)).toContain('to everyone in project');
+    expect(stripAnsi(stdout)).toContain('to everyone in workspace');
   });
 
   test.each([
@@ -448,7 +448,7 @@ describe('kortix access grant — everyone in the project, and connector account
   test('--everyone at account scope is refused: an object grant is project-scoped', async () => {
     const code = await runAccess(['grant', '--everyone', '--agent', 'support-bot', '--account']);
     expect(code).toBe(2);
-    expect(stripAnsi(stderr)).toContain('project-scoped');
+    expect(stripAnsi(stderr)).toContain('workspace-scoped');
     expect(post()).toBeUndefined();
   });
 

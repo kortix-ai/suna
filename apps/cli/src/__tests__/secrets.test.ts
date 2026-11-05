@@ -1420,7 +1420,7 @@ describe('kortix secrets — who can use a value', () => {
       identifier: 'DEEL_API_TOKEN',
       shared_with: [],
     });
-    expect(stripAnsi(stdout)).toContain('DEEL_API_TOKEN: everyone in the project');
+    expect(stripAnsi(stdout)).toContain('DEEL_API_TOKEN: everyone in the workspace');
   });
 
   test('share --user me --user <email> --group <id> resolves people and sends the exact audience', async () => {
@@ -1466,7 +1466,7 @@ describe('kortix secrets — who can use a value', () => {
     const code = await runSecrets(['share', 'NIGHTLY_REPORT_KEY', '--agent', 'nobody']);
     expect(code).toBe(1);
     expect(posts()).toHaveLength(0);
-    expect(stripAnsi(stderr)).toContain('No agent "nobody" in this project');
+    expect(stripAnsi(stderr)).toContain('No agent "nobody" in this workspace');
   });
 
   test('share refuses --everyone together with people, before any write', async () => {

@@ -191,7 +191,7 @@ describe('kortix reminders — inside a session', () => {
     const r = await runCli(['remind', 'FLAG_OFF', '--in', '1h']);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('Loops is not enabled for this project');
-    expect(r.stderr).toContain('kortix projects features enable reminders');
+    expect(r.stderr).toContain('kortix workspaces features enable reminders');
   }, 60_000);
 
   test('an env session absent from this project explains the mismatch, not a bare Not found', async () => {

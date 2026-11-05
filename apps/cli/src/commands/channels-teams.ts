@@ -117,7 +117,7 @@ export async function teamsConnect(
     // reserved for the command's own output.
     if (!mode.enabled) {
       process.stderr.write(
-        `${status.err('Microsoft Teams is not enabled for this project. Enable it in Settings → Feature flags.')}\n`,
+        `${status.err('Microsoft Teams is not enabled for this workspace. Enable it in Settings → Feature flags.')}\n`,
       );
       return 1;
     }
@@ -182,7 +182,7 @@ export async function teamsDisconnect(ctxOpts: {
     return surfaceApiError(err);
   }
   process.stdout.write(
-    `${status.ok('Disconnected')} ${C.dim}— the Teams install is removed from this project.${C.reset}\n`,
+    `${status.ok('Disconnected')} ${C.dim}— the Teams install is removed from this workspace.${C.reset}\n`,
   );
   return 0;
 }

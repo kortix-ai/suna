@@ -41,7 +41,7 @@ Built-in hosts (always exist):
 Authentication:
   login [<name>]                      Sign in to a host (browser flow or
     [--token <pat>] [--api <url>]      --token PAT). Defaults to the active
-    [--no-project]                     host; an unknown <name> is registered
+    [--no-workspace]                   host; an unknown <name> is registered
                                       and signed in (like \`add\` + login).
   logout [<name>]                     Clear a host's stored token (default:
                                       active).
@@ -73,7 +73,7 @@ Examples:
   kortix hosts use selfhost
   kortix hosts use cloud
   kortix hosts whoami
-  kortix projects ls --host selfhost
+  kortix workspaces ls --host selfhost
   kortix hosts ls
 `;
 
@@ -83,17 +83,19 @@ Authenticate a host (browser device flow or --token PAT). Defaults to
 the active host when <name> is omitted; an unknown <name> is registered
 and signed in (like \`kortix hosts add\` + login).
 
-A fresh login walks the hierarchy DOWN: host ✓ → account (auto when you
-belong to one, otherwise a prompt) → default project (prompt).
+A fresh login walks the hierarchy DOWN: host ✓ → default workspace (auto
+when you belong to one, otherwise a prompt). With no workspace yet, it
+says how to create or join one.
 
 Options:
   --token <pat>     Skip the browser flow and authenticate with a token.
   --api <url>       API base URL for the host (default: stored host URL
                     or the cloud default). Required to register a brand
                     new host with a non-default URL.
-  --account <slug>  Pick the active account non-interactively (skips the
-                    "Select your active account" prompt).
-  --no-project      Skip the default-project binding step at the end.
+  --account <slug>  Bind a workspace of this account (legacy account slug
+                    or id) instead of asking.
+  --no-workspace    Skip the default-workspace binding step at the end.
+                    --no-project is the older name.
   -h, --help        Show this help.
 
 Examples:
@@ -295,7 +297,7 @@ async function hostsLogin(args: string[]): Promise<number> {
     token = takeFlagValue(rest, ['--token']);
     api = takeFlagValue(rest, ['--api', '--url']);
     account = takeFlagValue(rest, ['--account']);
-    noProject = takeFlagBool(rest, ['--no-project']);
+    noProject = takeFlagBool(rest, ['--no-project', '--no-workspace']);
     device = takeFlagBool(rest, ['--device']);
   } catch (err) {
     return fail((err as Error).message);

@@ -680,7 +680,7 @@ describe('kortix sessions share', () => {
         body: { mode: 'project' },
       },
     ]);
-    expect(r.stdout).toContain('every project member');
+    expect(r.stdout).toContain('every workspace member');
   });
 
   test('--member accepts an email and resolves it through the member list', async () => {
@@ -718,7 +718,7 @@ describe('kortix sessions share', () => {
       config,
     );
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('No project member with email');
+    expect(r.stderr).toContain('No workspace member with email');
     // KRTX-2992: a plain member's roster lists only themselves
     // (apps/api/src/iam/directory-visibility.ts), so "not found" can mean
     // "not visible to you". The error says so and names the way out.
@@ -730,7 +730,7 @@ describe('kortix sessions share', () => {
   test('--help says an email resolves only through the members the caller can see', async () => {
     const r = await runCli(['sessions', 'share', '--help'], config);
     expect(r.code).toBe(0);
-    expect(r.stdout.replace(/\s+/g, ' ')).toContain('resolves through the project members you can see');
+    expect(r.stdout.replace(/\s+/g, ' ')).toContain('resolves through the workspace members you can see');
   });
 });
 
@@ -1399,7 +1399,7 @@ describe('kortix sessions rm (multiple ids)', () => {
     const r = await runCli(['sessions', 'rm', SESSION, ...P, '--host', 'test'], config);
     expect(r.code).toBe(0);
     const printed = r.stdout.match(/kortix sessions restore .+/)?.[0]?.trim();
-    expect(printed).toBe(`kortix sessions restore ${SESSION} --project ${PROJECT} --host test`);
+    expect(printed).toBe(`kortix sessions restore ${SESSION} --workspace ${PROJECT} --host test`);
 
     const restore = await runCli(printed!.split(/\s+/).slice(1), config);
     expect(restore.code).toBe(0);

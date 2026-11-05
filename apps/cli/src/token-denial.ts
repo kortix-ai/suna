@@ -105,7 +105,7 @@ function agentFixLine(agent: string, pending: RecordedDenial): string {
     case 'agent_session_forbidden':
       // A route that refuses every agent session outright (e.g. granting a
       // secret to an agent). No kortix_permissions entry unlocks it.
-      return 'agent sessions cannot do this — a person with project access must do this';
+      return 'agent sessions cannot do this — a person with workspace access must do this';
     case undefined:
     case 'agent_scope_insufficient':
       return (
@@ -213,8 +213,8 @@ export async function printPermissionDenialIdentity(): Promise<void> {
   if (pending.code === SESSION_REPOSITORY_ACCESS_DENIED) {
     // Two layers: the token's scopes allowed the call; the workspace policy refused it.
     if (identity.agent) lines.push(`  ${C.dim}token     ${C.reset}scopes ${formatGrantList(identity.permissions)} (not the cause)`);
-    lines.push(`  ${C.dim}workspace ${C.reset}repository access denied: this session runs without the project repository`);
-    lines.push(`  ${C.dim}fix       ${C.reset}start a session with repository access, or ask a person with project access to do this`);
+    lines.push(`  ${C.dim}workspace ${C.reset}repository access denied: this session runs without the workspace repository`);
+    lines.push(`  ${C.dim}fix       ${C.reset}start a session with repository access, or ask a person with workspace access to do this`);
   } else if (identity.agent) {
     lines.push(`  ${C.dim}granted   ${C.reset}${formatGrantList(identity.permissions)}`);
     lines.push(`  ${C.dim}fix       ${C.reset}${agentFixLine(identity.agent, pending)}`);

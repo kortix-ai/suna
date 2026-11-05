@@ -35,14 +35,14 @@ import {
 } from '@kortix/sdk';
 import { withKortixScope } from '../api/sdk.ts';
 import { ApiError as CliApiError } from '../api/client.ts';
-import { splitHelp } from '../command-argv.ts';
+import { splitHelp, fromWorkspaceAlias } from '../command-argv.ts';
 import { emitJson, fail, featureDisabledMessage, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue, takeFlagValues } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { artifactCommentAnchor } from './artifact-comment-anchor.ts';
 
 const HELP = help`Usage: kortix artifacts <subcommand> [options]
 
-An artifact is a path in the project's Files shared as one of two types:
+An artifact is a path in the workspace's Files shared as one of two types:
   doc    a Markdown file people read and edit in place (export as PDF)
   html   an HTML page, or a folder with index.html and its assets: a deck,
          a dashboard, a mockup, a tool
@@ -60,10 +60,10 @@ Subcommands:
                              goes up in several saves. Prints the link.
                              --title "<title>" (default: the doc's # heading or
                              the page's <title>), --description "<sentence>",
-                             --visibility private|project|public (default private),
+                             --visibility private|workspace|public (default private),
                              --space <slug>, --agent <name> (where it is grouped;
                              default agent: this session's agent; spaces are
-                             Work in progress, shown only with the project flag
+                             Work in progress, shown only with the workspace flag
                              \`chat\` on)
   add <path>                 Share a folder already in Files (it holds an
                              index.md or index.html; an index file stands for
@@ -83,7 +83,7 @@ Subcommands:
                              --version <id> reads an old version.
   pull <artifact> <dir>      Download its files, to edit and publish again.
   open <artifact>            Print its links (app, view, public).
-  share <artifact>           --visibility private|project|public
+  share <artifact>           --visibility private|workspace|public
                              --with <email|user-id> (repeat) shares a private
                              artifact with those people; --with "" clears.
   rename <artifact> "<title>"
@@ -117,12 +117,12 @@ Subcommands:
 <artifact> is an artifact id (or its first 8 characters from \`ls\`).
 
 Visibility:
-  private   you, and the people you --with (default)
-  project   every member of the project
-  public    anyone with the link (the "public" link from \`open\`)
+  private    you, and the people you --with (default)
+  workspace  every member of the workspace
+  public     anyone with the link (the "public" link from \`open\`)
 
 Options:
-  --project <id>     Project (default: linked, or this session's project).
+  --workspace <id>   Workspace (default: linked, or this session's workspace).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -131,8 +131,8 @@ Exit codes: 0 ok, 1 API error, 2 usage error, 3 version conflict.
 
 Examples:
   kortix artifacts publish report.md --title "Q3 churn report"
-  kortix artifacts publish ./deck --visibility project
-  kortix artifacts add /Company/Plans/roadmap.md --visibility project
+  kortix artifacts publish ./deck --visibility workspace
+  kortix artifacts add /Company/Plans/roadmap.md --visibility workspace
   kortix artifacts share 3f2a1b9c --visibility public
 `;
 
@@ -222,12 +222,12 @@ export async function runArtifacts(argv: string[]): Promise<number> {
   try {
     f = {
       json: takeFlagBool(rest, ['--json']),
-      projectArg: takeFlagValue(rest, ['--project']),
+      projectArg: takeFlagValue(rest, ['--project', '--workspace']),
       hostArg: takeFlagValue(rest, ['--host']),
       type: takeFlagValue(rest, ['--type']),
       title: takeFlagValue(rest, ['--title']),
       description: takeFlagValue(rest, ['--description']),
-      visibility: takeFlagValue(rest, ['--visibility']),
+      visibility: fromWorkspaceAlias(takeFlagValue(rest, ['--visibility'])),
       id: takeFlagValue(rest, ['--id']),
       baseVersion: takeFlagValue(rest, ['--base-version']),
       version: takeFlagValue(rest, ['--version']),
@@ -255,7 +255,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
   if (unknown) return fail(`unknown option "${unknown}". Run \`kortix artifacts --help\`.`);
   if (!KNOWN.includes(sub)) return fail(`unknown subcommand "${sub}". Run \`kortix artifacts --help\`.`);
   if (f.type && !TYPES.includes(f.type)) return fail(`--type must be doc or html.`);
-  if (f.visibility && !VISIBILITIES.includes(f.visibility)) return fail(`--visibility must be private, project or public.`);
+  if (f.visibility && !VISIBILITIES.includes(f.visibility)) return fail(`--visibility must be private, workspace or public.`);
   if (f.space !== undefined && !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(f.space)) return fail(`--space "${f.space}" is not a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).`);
   if (f.agent !== undefined && !/^[a-z0-9][a-z0-9_-]{0,127}$/.test(f.agent)) return fail(`--agent "${f.agent}" is not an agent name.`);
   if (f.all && f.resolved) return fail('Use --all or --resolved, not both.');
@@ -492,7 +492,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
               const members = await listAccountMembers(project.account_id);
               for (const email of emails) {
                 const m = members.find((x) => x.email?.toLowerCase() === email.toLowerCase());
-                if (!m) return fail(`${email} is not a member of this account.`);
+                if (!m) return fail(`${email} is not a member of this workspace.`);
                 people.push(m.user_id);
               }
             }
@@ -518,7 +518,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
           if (!id) return a0 ? 1 : missing('an artifact id');
           if (!f.clear && f.space === undefined && f.agent === undefined) return missing('--space <slug>, --agent <name> or --clear');
           const a = await updateArtifact(pid, id, f.clear ? { space: null, agent: null } : { ...(f.space ? { space: f.space } : {}), ...(f.agent ? { agent: f.agent } : {}) });
-          return out(a, status.ok(`"${a.title}" is in ${a.space ?? (a.agent ? `${a.agent}'s space` : 'no space (project-wide)')}`));
+          return out(a, status.ok(`"${a.title}" is in ${a.space ?? (a.agent ? `${a.agent}'s space` : 'no space (workspace-wide)')}`));
         }
         case 'versions': {
           const id = await resolve(a0);

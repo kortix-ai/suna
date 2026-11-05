@@ -419,7 +419,7 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.code).toBe(0);
     expect(calls).toEqual([]);
     expect(r.stdout).toContain('ownership is per account now');
-    expect(r.stdout).toContain('kortix connectors connect gmail --owner me|project');
+    expect(r.stdout).toContain('kortix connectors connect gmail --owner me|workspace');
     expect(r.stdout).toContain('kortix connectors accounts gmail');
   });
 
@@ -461,7 +461,7 @@ describe('kortix connectors — capability-page parity', () => {
       path: `/v1/connectors/projects/${PROJECT}/connectors/gmail/connect`,
       body: { owner: 'project' },
     });
-    expect(r.stdout).toContain('shared with every project member');
+    expect(r.stdout).toContain('shared with every workspace member');
   });
 
   test('connect --owner rejects anything but me|project before any request', async () => {
@@ -471,14 +471,14 @@ describe('kortix connectors — capability-page parity', () => {
       config,
     );
     expect(r.code).toBe(2);
-    expect(r.stderr).toContain('--owner must be me or project');
+    expect(r.stderr).toContain('--owner must be me or workspace');
     expect(calls).toEqual([]);
   });
 
   test.each([
     [['--mine', '--owner', 'project'], '--mine cannot be combined with --owner or --owner-id'],
-    [['--owner', 'everyone'], '--owner must be project, agent, member, subject, or external'],
-    [['--owner', 'project', '--owner-id', 'agent_1'], '--owner-id is not valid for a project connection'],
+    [['--owner', 'everyone'], '--owner must be workspace, agent, member, subject, or external'],
+    [['--owner', 'project', '--owner-id', 'agent_1'], '--owner-id is not valid for a workspace connection'],
     [['--metadata', 'not-json'], '--metadata must be valid JSON'],
   ])('connections add %p exits 2 before any request', async (flags, message) => {
     const config = writeConfig(startServer());
@@ -520,7 +520,7 @@ describe('kortix connectors — capability-page parity', () => {
       'kortix connectors call gmail <action> --account "user@example.test"',
     );
     expect(r.stdout).toContain('kortix connectors call gmail <action> --account me');
-    expect(r.stdout).toContain('kortix connectors call gmail <action> --account project');
+    expect(r.stdout).toContain('kortix connectors call gmail <action> --account workspace');
     // A default IS pinned here (Sales inbox), so no account_required warning.
     expect(r.stdout).not.toContain('No default pinned');
   });
@@ -608,7 +608,7 @@ describe('kortix connectors — capability-page parity', () => {
     expect(human.code).toBe(0);
     expect(human.stdout).toContain('No connected accounts.');
     expect(human.stdout).toContain('kortix connectors connect gmail --owner me');
-    expect(human.stdout).toContain('kortix connectors connect gmail --owner project');
+    expect(human.stdout).toContain('kortix connectors connect gmail --owner workspace');
 
     const json = await runCli(['connectors', 'accounts', 'gmail', '--project', PROJECT, '--json'], config);
     expect(json.code).toBe(0);
@@ -866,7 +866,7 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'policy', 'rm', 'never_*', '--project', PROJECT], config);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('No project rule matching "never_*"');
+    expect(r.stderr).toContain('No workspace rule matching "never_*"');
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
   });
 
@@ -887,7 +887,7 @@ describe('kortix connectors — capability-page parity', () => {
       policies: [{ match: 'send_*', action: 'require_approval' }],
       defaultMode: 'allow_all',
     });
-    expect(r.stdout).toContain('Project default mode → allow_all');
+    expect(r.stdout).toContain('Workspace default mode → allow_all');
   });
 
   test('policy set --apply rejects an invalid default mode', async () => {

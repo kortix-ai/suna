@@ -262,7 +262,7 @@ describe('permission-denial identity footer', () => {
     // No kortix_permissions entry unlocks these routes, so the manifest hint
     // would send the agent to a fix that cannot work.
     const out = await footerFor({ code: 'agent_session_forbidden' });
-    expect(out).toMatch(/a person with project access must do this/i);
+    expect(out).toMatch(/a person with workspace access must do this/i);
     expect(out).not.toContain('kortix_permissions');
   });
 

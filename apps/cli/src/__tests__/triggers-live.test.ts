@@ -285,7 +285,7 @@ describe('kortix triggers — the live (--apply) path', () => {
         timezone: 'Europe/Berlin',
       },
     });
-    expect(r.stdout).toContain('digest (cron) live on the project');
+    expect(r.stdout).toContain('digest (cron) live on the workspace');
   });
 
   test('add --apply --type event POSTs connector, event, and event_config', async () => {
@@ -324,8 +324,8 @@ describe('kortix triggers — the live (--apply) path', () => {
       event: 'GITHUB_PULL_REQUEST_EVENT',
       event_config: { draft: false, owner: 'acme' },
     });
-    expect(r.stdout).toContain('new-pr (event) added to the project');
-    expect(r.stdout).toContain('kortix connectors connect github --owner project');
+    expect(r.stdout).toContain('new-pr (event) added to the workspace');
+    expect(r.stdout).toContain('kortix connectors connect github --owner workspace');
     expect(r.stdout).toContain('A person must open the link');
   });
 

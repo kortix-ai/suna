@@ -140,7 +140,7 @@ describe('audit CLI process', () => {
     ]);
     expect(exitCode).toBe(0);
     expect(stderr).not.toContain('Unknown subcommand');
-    expect(stdout).toContain('project <project-id>');
+    expect(stdout).toContain('workspace <id>');
     expect(stdout).toContain('session <session-id>');
     expect(stdout).toContain('--cursor <c>');
     expect(stdout).toContain('--phase <p>');
@@ -445,7 +445,7 @@ describe('audit CLI process', () => {
       // `project` without an id refuses before any HTTP call.
       const noProject = await run(['audit', 'project']);
       expect(noProject.code).toBe(2);
-      expect(noProject.stderr).toContain('Missing a project id.');
+      expect(noProject.stderr).toContain('Missing a workspace id.');
       expect(requests).toHaveLength(1);
     } finally {
       server.stop(true);
