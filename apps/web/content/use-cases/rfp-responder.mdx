@@ -63,14 +63,14 @@ through whatever channel the RFP requires.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the rfp-response skill and the 15-minute
 trigger, and opens a change request for you to review. Prefer clicks? Choose
 **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up an RFP responder agent in this project.
+  code={`Set up an RFP responder agent in this workspace.
 
 1. Create the agent agents/rfp-responder.md. Its job is to draft a full response to each new RFP or proposal questionnaire. It may use the Gmail, Google Drive and Google Docs connectors.
 
@@ -92,7 +92,7 @@ trigger, and opens a change request for you to review. Prefer clicks? Choose
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect the inbox where RFPs arrive,
+Open **Connectors** in your workspace and connect the inbox where RFPs arrive,
 Google Drive and Google Docs. Credentials are brokered server-side and never
 enter the agent's machine.
 
@@ -131,7 +131,7 @@ let the schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every 15 minutes, each run in a new session on its own cloud computer. To
-change the time, edit the cron line, or open **Triggers** in the project.
+change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"
