@@ -14,7 +14,7 @@
  */
 
 import * as React from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -61,7 +61,7 @@ export function CodeCells({
   const colors = THEME[colorScheme === 'dark' ? 'dark' : 'light'];
   const [focused, setFocused] = React.useState(false);
   const active = focused ? Math.min(value.length, CODE_LENGTH - 1) : -1;
-  const inputRef = React.useRef<TextInput>(null);
+  const inputRef = React.useRef<TextInputInstance>(null);
 
   const refocus = useFieldRefocus(inputRef, editable);
 

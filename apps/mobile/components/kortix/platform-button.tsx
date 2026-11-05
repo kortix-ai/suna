@@ -253,7 +253,8 @@ export function PlatformFullWidthButton({
               spacing={0}
               modifiers={[
                 padding({ horizontal: FULL_WIDTH_INSET }),
-                frame({ maxWidth: FILL_WIDTH, height }),
+                // SDK 58 splits fixed and flexible frames: a fixed height is min = max.
+                frame({ maxWidth: FILL_WIDTH, minHeight: height, maxHeight: height }),
                 background(fill, shapes.capsule()),
                 ...(stroke
                   ? [strokeBorder({ color: stroke, style: { lineWidth: 1 }, shape: 'capsule' })]

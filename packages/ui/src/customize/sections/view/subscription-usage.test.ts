@@ -7,8 +7,12 @@ const snapshot = (observed_at: string, percent: number) => ({
 });
 
 describe('subscription usage meters', () => {
-  test('tone: plain under 90 %, near from 90 %, limited at 100 % or when the provider refuses near the top', () => {
-    expect(usageTone(window(89.9), false)).toBe('ok');
+  test('tone: normal below 80%, amber from 80%, red from 95%, and limited only when enforced', () => {
+    expect(usageTone(window(79.9), false)).toBe('ok');
+    expect(usageTone(window(80), false)).toBe('near');
+    expect(usageTone(window(94.9), false)).toBe('near');
+    expect(usageTone(window(95), false)).toBe('critical');
+    expect(usageTone(window(99.9), false)).toBe('critical');
     expect(usageTone(window(90), false)).toBe('near');
     expect(usageTone(window(100), false)).toBe('limited');
     expect(usageTone(window(95), true)).toBe('limited');

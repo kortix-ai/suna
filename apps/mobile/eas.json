@@ -9,6 +9,12 @@
       "pnpm": "8.11.0",
       "env": {
         "npm_config_engine_strict": "false"
+      },
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6"
+      },
+      "android": {
+        "resourceClass": "large"
       }
     },
     "development": {
