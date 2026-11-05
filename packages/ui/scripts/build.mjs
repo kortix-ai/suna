@@ -51,7 +51,10 @@ function fail(message) {
 // 1–3. Clean (keep the committed stylesheet), compile, fix specifiers, copy CSS.
 mkdirSync(DIST, { recursive: true });
 for (const name of readdirSync(DIST)) if (!KEEP.has(name)) rmSync(join(DIST, name), { recursive: true, force: true });
-const tsc = (bin, args) => execFileSync(join(BIN, bin), args, { cwd: PKG_DIR, stdio: 'inherit' });
+// The type-check of this package needs about 2.4 GB (Node's default heap is about 2 GB), so
+// tsc gets a 6 GB heap unless the caller sets NODE_OPTIONS (as apps/web's build does).
+const TSC_ENV = { ...process.env, NODE_OPTIONS: process.env.NODE_OPTIONS || '--max-old-space-size=6144' };
+const tsc = (bin, args) => execFileSync(join(BIN, bin), args, { cwd: PKG_DIR, stdio: 'inherit', env: TSC_ENV });
 tsc('tsc', ['-p', 'tsconfig.build.json']);
 tsc('tsc-alias', ['-p', 'tsconfig.build.json', '--resolve-full-paths']);
 mkdirSync(join(DIST, 'styles'), { recursive: true });
