@@ -120,6 +120,7 @@ describe('the composer behind the overlay does not steal focus from the shell', 
   test('SessionChat defers composer autofocus while the shell is on top', () => {
     // `useComposerFocus` reads visibility from `offsetParent`, which does not
     // notice an opaque layer on top, so the host passes `deferComposerFocus`.
-    expect(chatSource).toContain('autoFocus={deferComposerFocus ? false : undefined}');
+    // A host may also turn autofocus off (`composerAutoFocus`); deferring always wins.
+    expect(chatSource).toMatch(/autoFocus=\{deferComposerFocus(?: \|\| !?\w+)? \? false : undefined\}/);
   });
 });

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from '@/i18n/use-translations';
 import { Button } from '@kortix/ui/button';
 import { UnifiedMarkdown } from '@kortix/ui/markdown';
 
@@ -23,20 +24,19 @@ Other links stay readable: https://example.com/reference
 
 export default function MarkdownLinksPage() {
   const [streaming, setStreaming] = useState(false);
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <main className="mx-auto max-w-3xl px-6 pb-12 pt-24">
-      <h1 className="text-2xl font-semibold">Markdown links</h1>
+      <h1 className="text-2xl font-semibold">{tI18nComplete.raw('text2e914b62b832')}</h1>
       <p className="text-muted-foreground mt-2">
-        Recognised resources show an app icon and compact label. Hover to inspect the original URL.
+        {tI18nComplete.raw('text7bed093239f3')}
       </p>
-      <Button className="mt-4" variant="outline" onClick={() => setStreaming(!streaming)}>{streaming ? 'Finish streaming' : 'Show streaming'}</Button>
+      <Button className="mt-4" variant="outline" onClick={() => setStreaming(!streaming)}>{streaming ? tI18nComplete.raw('textaf4df8fff726') : tI18nComplete.raw('textc5bb2bbce674')}</Button>
       <div className="bg-card mt-8 rounded-xl border p-6">
         <UnifiedMarkdown trust="untrusted" isStreaming={streaming} content={EXAMPLE} />
       </div>
       <p className="text-muted-foreground mt-6 text-sm">
-        GitHub profiles, repositories, pull requests, issues and commits; Linear issues; Slack messages and conversations;
-        Figma designs, boards and slides; Notion pages; Google Docs, Sheets and Slides. Labels use
-        the URL only. Titles, permissions and live status are not fetched.
+        {tI18nComplete.raw('textfc19d1c660c8')}
       </p>
     </main>
   );

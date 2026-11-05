@@ -38,6 +38,9 @@ await mockGraph(
   [
     '@kortix/sdk',
     '@kortix/sdk/react',
+    // The real SDK builds its stores with zustand at load; a stub would hand it a null `create()`.
+    'zustand',
+    'zustand/middleware',
     '@tanstack/react-query',
     'components/session/tool/shared/connector-handoff-context',
     'lib/session/connector-handoff',

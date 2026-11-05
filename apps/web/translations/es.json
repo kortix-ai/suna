@@ -21240,7 +21240,15 @@
       "text05ee1d6181f3": "Cuando se fusiona una solicitud de cambio, {agent} ejecuta tu instrucción.",
       "texte608495c45ce": "Fusionada en {branch}",
       "text80ca527b0d55": "Activador de solicitud de cambio creado",
-      "authEmailAlreadySent": "Enviamos este correo hace menos de un minuto. Revisa tu bandeja de entrada y la carpeta de spam antes de pedir otro."
+      "authEmailAlreadySent": "Enviamos este correo hace menos de un minuto. Revisa tu bandeja de entrada y la carpeta de spam antes de pedir otro.",
+      "textfe0dab79db43": "Habla con Kortix en un solo chat: cada mensaje es un hilo y la respuesta más reciente de Kortix aparece debajo.",
+      "text2e914b62b832": "Enlaces Markdown",
+      "text7bed093239f3": "Los recursos reconocidos muestran un icono de la app y una etiqueta compacta. Pasa el cursor para ver la URL original.",
+      "textaf4df8fff726": "Finalizar streaming",
+      "textc5bb2bbce674": "Mostrar streaming",
+      "textfc19d1c660c8": "Perfiles, repositorios, pull requests, issues y commits de GitHub; issues de Linear; mensajes y conversaciones de Slack; diseños, tableros y diapositivas de Figma; páginas de Notion; Google Docs, Sheets y Slides. Las etiquetas usan solo la URL. No se obtienen títulos, permisos ni estado en vivo.",
+      "textba98740fde39": "Uso de la suscripción de ChatGPT",
+      "text856bf8853b69": "Uso de la suscripción de Claude"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -23786,7 +23794,671 @@
     "lastCheckAt": "Última revisión {time}",
     "neverChecked": "Aún sin revisar",
     "wakesTodayCount": "{count} de {max} activaciones hoy",
-    "filesLabel": "Archivos"
+    "filesLabel": "Archivos",
+    "roleTab": {
+      "founder": "Fundación",
+      "sales": "Ventas",
+      "marketing": "Marketing",
+      "support": "Soporte",
+      "finance": "Finanzas",
+      "operations": "Operaciones",
+      "people": "Personas",
+      "engineering": "Ingeniería"
+    },
+    "galleryTitle": "Iniciar un nuevo objetivo",
+    "galleryDescription": "Describe un resultado o parte de una plantilla. Un agente trabaja en él hasta que una verificación independiente confirma que está listo.",
+    "composerPlaceholder": "Describe el resultado que quieres",
+    "templates": {
+      "draftInvestorUpdate": {
+        "title": "Redactar una actualización para inversores",
+        "description": "Reúne las métricas de la empresa en un borrador de actualización para inversores en Files.",
+        "prompt": "Redacta nuestra actualización para inversores de [el mes pasado].\n- Métricas: [ingresos, crecimiento, burn, runway] de [Stripe y nuestra hoja de finanzas]\n- Aspectos destacados: [lanzamientos, logros, contrataciones clave]\n- Aspectos negativos y riesgos: [qué se retrasó o está en riesgo]\n- Peticiones: [presentaciones, contrataciones, consejos que necesitamos]\nCompara cada cifra con el periodo anterior.",
+        "criterion": "Files/founder/investor-update.md contiene el periodo seleccionado, métricas con fuentes, cambios respecto al periodo anterior, aspectos destacados, riesgos, peticiones y lagunas de datos señaladas.",
+        "start": "Reunir métricas",
+        "done": "Actualización redactada"
+      },
+      "compareCompetitors": {
+        "title": "Comparar con la competencia",
+        "description": "Compara competidores y guarda en Files un informe de posicionamiento con fuentes.",
+        "prompt": "Compáranos con [competidor A, competidor B, competidor C].\n- Qué vendemos: [una línea sobre el producto y quién lo compra]\n- Compara: precios, comprador objetivo, funciones clave, lanzamientos recientes\n- Fuentes: sus sitios web, páginas de precios, documentación y reseñas públicas\nTermina con 3 opciones de posicionamiento para nosotros.",
+        "criterion": "Files/founder/competitor-brief.md cubre a cada competidor indicado con enlaces a fuentes fechadas, compradores objetivo, precios o incógnitas, diferencias clave y 3 opciones de posicionamiento.",
+        "start": "Investigar competidores",
+        "done": "Informe listo"
+      },
+      "summarizeCustomerFeedback": {
+        "title": "Descubrir las prioridades de los clientes",
+        "description": "Agrupa los comentarios de clientes en un informe de prioridades ordenado en Files.",
+        "prompt": "Descubre qué piden más los clientes en [los últimos 90 días].\n- Fuentes: [tickets de soporte, notas de llamadas, comentarios de encuestas, notas de ventas]\n- Agrupa por tema y ordena por número de clientes únicos\n- Para cada tema: 2 citas, enlaces a las fuentes, ingresos en juego\nTermina con las 3 acciones que sugieres.",
+        "criterion": "Files/founder/customer-priorities.md enumera los temas ordenados por número de clientes únicos, con citas, enlaces a fuentes, impacto en el negocio, acciones sugeridas y el alcance de los comentarios.",
+        "start": "Leer comentarios",
+        "done": "Prioridades ordenadas"
+      },
+      "prepareDecisionBrief": {
+        "title": "Preparar un informe de decisión",
+        "description": "Investiga una decisión de negocio y guarda en Files las opciones con costes y compensaciones.",
+        "prompt": "Prepara un informe de decisión: [¿deberíamos subir los precios para los clientes nuevos?]\n- Fecha límite: [cuándo debemos decidir]\n- Restricciones: [presupuesto, equipo, plazos]\n- Compara al menos 3 opciones, incluida no cambiar nada\nIndica costes, riesgos y una recomendación, con una fuente para cada cifra.",
+        "criterion": "Files/founder/decision-brief.md expone la decisión, compara al menos 3 opciones incluida no cambiar nada, y enumera costes con fuentes, compensaciones, supuestos y una recomendación.",
+        "start": "Reunir evidencias",
+        "done": "Opciones comparadas"
+      },
+      "prepareBoardPack": {
+        "title": "Preparar el dossier del consejo",
+        "description": "Elabora en Files el esquema de la reunión del consejo con cifras con fuentes.",
+        "prompt": "Prepara el dossier para la reunión del consejo de [este trimestre].\n- Secciones: KPI, finanzas, producto, contrataciones, riesgos, decisiones necesarias\n- Datos: [Stripe, hoja de finanzas, CRM, roadmap]\n- Decisiones para el consejo: [lo que necesitamos que se apruebe]\nLímitalo a 12 diapositivas o menos. Indica la fuente de cada cifra.",
+        "criterion": "Files/founder/board-pack.md contiene un esquema de 12 diapositivas o menos con KPI, finanzas, producto, contrataciones, riesgos, decisiones necesarias y una fuente para cada cifra.",
+        "start": "Extraer cifras",
+        "done": "Dossier esbozado"
+      },
+      "draftQuarterlyOkrs": {
+        "title": "Redactar los OKR trimestrales",
+        "description": "Propone en Files objetivos medibles con valores de partida y responsables.",
+        "prompt": "Redacta nuestros OKR para [el próximo trimestre].\n- Foco de la empresa: [lo único que más importa]\n- Equipos: [producto, ventas, marketing]\n- Resultados del trimestre pasado: [enlace o ruta de Files]\nComo máximo 3 objetivos. Da a cada uno de 2 a 4 resultados clave medibles con un valor de partida y un rol responsable.",
+        "criterion": "Files/founder/okrs.md contiene como máximo 3 objetivos, cada uno con 2 a 4 resultados clave medibles que indican un valor de partida, una meta y un rol responsable.",
+        "start": "Revisar resultados",
+        "done": "OKR redactados"
+      },
+      "sizeMarket": {
+        "title": "Dimensionar el mercado",
+        "description": "Elabora en Files una estimación de TAM, SAM y SOM con fuentes.",
+        "prompt": "Dimensiona el mercado de [nuestro producto] en [región].\n- Comprador: [quién compra y el tamaño de su empresa]\n- Precio: [nuestro precio anual medio]\nCalcula TAM, SAM y SOM de abajo arriba y de arriba abajo. Cita una fuente fechada para cada dato de entrada.",
+        "criterion": "Files/founder/market-size.md contiene estimaciones de TAM, SAM y SOM de abajo arriba y de arriba abajo, la fórmula de cada una y una fuente fechada para cada dato de entrada.",
+        "start": "Buscar datos",
+        "done": "Mercado dimensionado"
+      },
+      "buildInvestorList": {
+        "title": "Crear una lista de inversores",
+        "description": "Ordena inversores según su encaje con una ronda y guarda en Files una lista con fuentes.",
+        "prompt": "Crea una lista de [40] inversores para nuestra ronda [semilla].\n- Sector y etapa: [software B2B, semilla]\n- Tamaño del cheque: [de 500 000 $ a 2 M$]\n- Región: [EE. UU. y Europa]\nPara cada uno: firma, socio, operaciones recientes relevantes, motivo de encaje y enlaces a fuentes.",
+        "criterion": "Files/founder/investors.csv cubre el número solicitado con firma, socio, operaciones recientes relevantes, motivo de encaje, enlaces a fuentes y prioridad según la etapa y el tamaño de cheque indicados.",
+        "start": "Investigar inversores",
+        "done": "Lista ordenada"
+      },
+      "writeTeamUpdate": {
+        "title": "Escribir la actualización del equipo",
+        "description": "Redacta en Files la actualización semanal de la empresa a partir del trabajo y las cifras reales.",
+        "prompt": "Escribe la actualización del equipo de [esta semana].\n- Entregado: de [GitHub, el gestor de incidencias]\n- Acuerdos y clientes: de [nuestro CRM]\n- Métricas: de [Stripe, analítica de producto]\n- Próxima semana: [prioridades]\nMantenla por debajo de 400 palabras. Solo borrador: no la envíes.",
+        "criterion": "Files/founder/team-update.md tiene menos de 400 palabras y contiene el trabajo entregado con enlaces, novedades de clientes y acuerdos, métricas clave con fuentes y las prioridades de la próxima semana.",
+        "start": "Recopilar novedades",
+        "done": "Actualización redactada"
+      },
+      "mapCompanyRisks": {
+        "title": "Mapear los riesgos de la empresa",
+        "description": "Enumera en Files los principales riesgos para el plan con responsables y medidas de mitigación.",
+        "prompt": "Enumera los principales riesgos para [cumplir nuestro plan de este año].\n- Áreas: runway, clientes, equipo, producto, legal, seguridad\n- Fuentes: [hoja de finanzas, CRM, roadmap, registro de incidentes]\nPara cada riesgo: probabilidad, impacto, un rol responsable y una mitigación.",
+        "criterion": "Files/founder/risk-register.md enumera al menos 8 riesgos en las áreas indicadas, cada uno con probabilidad, impacto, rol responsable, mitigación y la fuente que lo respalda.",
+        "start": "Revisar fuentes",
+        "done": "Riesgos mapeados"
+      },
+      "researchTargetAccounts": {
+        "title": "Investigar cuentas objetivo",
+        "description": "Ordena las cuentas objetivo por encaje y guarda en Files una lista de prospectos con fuentes.",
+        "prompt": "Encuentra [25] cuentas objetivo que coincidan con nuestro cliente ideal.\n- Cliente ideal: [sector, tamaño de empresa, región]\n- Señales de compra: [contrataciones, financiación, nuevas herramientas, expansión]\n- Excluye: clientes actuales y acuerdos abiertos en [nuestro CRM]\nPara cada una: empresa, sitio web, motivo de encaje, una señal con su enlace a la fuente y prioridad.",
+        "criterion": "Files/sales/target-accounts.csv cubre el número de cuentas solicitado con empresa, sitio web, motivo de encaje, señales de compra, enlaces a fuentes y prioridad según el perfil de comprador proporcionado.",
+        "start": "Investigar cuentas",
+        "done": "Prospectos ordenados"
+      },
+      "draftDealFollowups": {
+        "title": "Redactar seguimientos de acuerdos",
+        "description": "Usa el historial de los acuerdos para preparar borradores de seguimiento sin enviar en la bandeja conectada.",
+        "prompt": "Redacta seguimientos para [mis acuerdos abiertos sin respuesta en 7 días].\n- Acuerdos: [etapa del CRM o nombres de los acuerdos]\n- Tono: [breve y directo]\n- Cada borrador: el último contexto, un siguiente paso claro, una hora propuesta\nGuárdalos como borradores en la bandeja de entrada conectada. No los envíes.",
+        "criterion": "La bandeja de entrada conectada tiene un borrador sin enviar por cada acuerdo seleccionado con destinatario, contexto del acuerdo y siguiente paso; Files/sales/follow-ups.md asocia los enlaces de los acuerdos con los de los borradores.",
+        "start": "Revisar acuerdos",
+        "done": "Borradores listos"
+      },
+      "enrichSelectedLeads": {
+        "title": "Enriquecer leads seleccionados",
+        "description": "Rellena campos de leads con fuentes en el CRM conectado y guarda un registro de cambios en Files.",
+        "prompt": "Enriquece [los leads creados esta semana] en [nuestro CRM].\n- Campos: [sector, número de empleados, cargo, sitio web]\n- Rellena solo los campos vacíos. Nunca sobrescribas un valor.\nRegistra cada cambio con su fuente. Deja un campo vacío cuando ninguna fuente lo confirme.",
+        "criterion": "Files/sales/lead-enrichment.csv cubre cada lead seleccionado con su enlace del CRM, campo, valores anterior y posterior, enlace a la fuente y estado de actualizado o sin resolver.",
+        "start": "Comprobar leads",
+        "done": "Campos enriquecidos"
+      },
+      "draftSalesProposal": {
+        "title": "Redactar una propuesta comercial",
+        "description": "Convierte las notas de descubrimiento y los precios aprobados en un borrador de propuesta en Files.",
+        "prompt": "Redacta una propuesta para [empresa].\n- Notas de descubrimiento: [ruta de Files o acuerdo del CRM]\n- Alcance: [lo que compran]\n- Precios: [precio aprobado y condiciones]\n- Calendario: [fecha de inicio]\nVincula cada necesidad del comprador a una nota. Enumera las preguntas abiertas. Márcala como borrador.",
+        "criterion": "Files/sales/proposal.md contiene las necesidades del comprador vinculadas a las notas de descubrimiento, el alcance propuesto, los precios aprobados, exclusiones, calendario, preguntas abiertas y una etiqueta de borrador.",
+        "start": "Leer descubrimiento",
+        "done": "Propuesta redactada"
+      },
+      "prepareCallBrief": {
+        "title": "Preparar un informe para una llamada",
+        "description": "Reúne en Files el historial y las noticias de la cuenta en un informe de una página.",
+        "prompt": "Prepara un informe para mi llamada con [empresa].\n- Reunión: [fecha y objetivo de la llamada]\n- Reúne: historial del CRM, correos anteriores, tickets de soporte, sus noticias recientes y ofertas de empleo\nTermina con 5 preguntas que hacer y los 3 riesgos que vigilar.",
+        "criterion": "Files/sales/call-brief.md cabe en una página y contiene el historial de la cuenta, noticias recientes con enlaces a fuentes, 5 preguntas que hacer y 3 riesgos que vigilar.",
+        "start": "Leer historial",
+        "done": "Informe listo"
+      },
+      "writeOutboundSequence": {
+        "title": "Escribir una secuencia outbound",
+        "description": "Escribe en Files una secuencia breve de varios correos para un rol de comprador.",
+        "prompt": "Escribe una secuencia outbound de [4] correos para [rol del comprador].\n- Problema que resolvemos: [una línea]\n- Prueba: [un resultado de cliente o caso de éxito]\n- Llamada a la acción: [una llamada de 15 minutos]\nMantén cada correo por debajo de 120 palabras. Solo borrador.",
+        "criterion": "Files/sales/outbound-sequence.md contiene el número solicitado de correos, cada uno con menos de 120 palabras, con asunto, día de envío, la prueba indicada y una llamada a la acción.",
+        "start": "Estudiar al comprador",
+        "done": "Secuencia escrita"
+      },
+      "cleanUpPipeline": {
+        "title": "Depurar el pipeline",
+        "description": "Señala acuerdos estancados en el CRM y propone correcciones para aprobar en Files.",
+        "prompt": "Depura nuestro pipeline en [nuestro CRM].\n- Señala los acuerdos sin actividad en [30] días, con fechas de cierre vencidas, sin importe o sin responsable\n- Sugiere la siguiente acción para cada uno\nNo modifiques ningún acuerdo. Enumera los cambios propuestos para que yo los apruebe.",
+        "criterion": "Files/sales/pipeline-cleanup.csv enumera cada acuerdo señalado con su enlace del CRM, el problema, el cambio propuesto y la siguiente acción; no se modificó ningún registro del CRM.",
+        "start": "Analizar pipeline",
+        "done": "Correcciones propuestas"
+      },
+      "analyzeLostDeals": {
+        "title": "Analizar acuerdos perdidos",
+        "description": "Agrupa los acuerdos perdidos por motivo y valor y guarda las conclusiones en Files.",
+        "prompt": "Descubre por qué perdimos acuerdos en [los últimos 6 meses].\n- Fuentes: [motivos de pérdida del CRM, notas de llamadas, correos]\n- Agrupa por motivo, con número de acuerdos y valor perdido\nTermina con 3 cambios en producto, precios o procesos.",
+        "criterion": "Files/sales/lost-deals.md agrupa los acuerdos perdidos por motivo con número de acuerdos, valor perdido y enlaces a fuentes, y termina con 3 cambios recomendados.",
+        "start": "Leer acuerdos",
+        "done": "Motivos encontrados"
+      },
+      "buildBattlecard": {
+        "title": "Crear una battlecard",
+        "description": "Crea en Files una battlecard con fuentes frente a un competidor.",
+        "prompt": "Crea una battlecard de ventas frente a [competidor].\n- Incluye: sus fortalezas y debilidades, precios, objeciones habituales con nuestras respuestas y nuestras pruebas\n- Nuestras victorias frente a ellos: [nombres de acuerdos o filtro del CRM]\nCita una fuente fechada para cada afirmación sobre ellos.",
+        "criterion": "Files/sales/battlecard.md cubre fortalezas, debilidades, precios, objeciones con respuestas y pruebas, con una fuente fechada para cada afirmación sobre el competidor.",
+        "start": "Investigar al rival",
+        "done": "Battlecard lista"
+      },
+      "forecastQuarter": {
+        "title": "Pronosticar el trimestre",
+        "description": "Elabora en Files pronósticos de compromiso y mejor caso a partir del CRM.",
+        "prompt": "Prepara el pronóstico de ventas de [este trimestre].\n- Pipeline: [nuestro CRM]\n- Reglas: [compromiso = etapa avanzada, mejor caso = etapa intermedia]\n- Objetivo: [cuota]\nIndica los totales de compromiso, mejor caso y pipeline, compáralos con el objetivo y enumera los acuerdos que mueven la cifra.",
+        "criterion": "Files/sales/forecast.md expone los totales de compromiso, mejor caso y pipeline frente al objetivo, las reglas de etapa usadas y los acuerdos que mueven la cifra con enlaces al CRM.",
+        "start": "Leer pipeline",
+        "done": "Pronóstico listo"
+      },
+      "draftLaunchCampaign": {
+        "title": "Redactar una campaña de lanzamiento",
+        "description": "Convierte un brief de producto en textos de campaña y una lista de comprobación de lanzamiento en Files.",
+        "prompt": "Redacta la campaña de lanzamiento de [función o producto].\n- Brief: [ruta de Files o una descripción breve]\n- Audiencia: [a quién va dirigido]\n- Canales: [correo, blog, LinkedIn, X]\n- Fecha de lanzamiento: [fecha]\nEscribe cada pieza, enlaza una fuente para cada afirmación y añade una lista de comprobación de lanzamiento.",
+        "criterion": "Files/marketing/launch-campaign.md contiene la audiencia, el mensaje, borradores para cada canal solicitado, llamadas a la acción, enlaces a fuentes de las afirmaciones y una lista de comprobación de lanzamiento.",
+        "start": "Leer el brief",
+        "done": "Campaña redactada"
+      },
+      "findContentGaps": {
+        "title": "Encontrar huecos de contenido",
+        "description": "Compara las páginas existentes con la intención de búsqueda y guarda en Files briefs de artículos ordenados.",
+        "prompt": "Encuentra huecos de contenido en [nuestro sitio web] sobre [tema].\n- Competidores: [2 o 3 sitios web]\n- Audiencia: [quién busca esto]\nOrdena [10] temas por intención de búsqueda y encaje. Da un brief y un esquema para cada uno.",
+        "criterion": "Files/marketing/content-gaps.md contiene el número acordado de temas ordenados, la intención de la audiencia, los huecos en las páginas existentes, fuentes de búsqueda fechadas y un esquema por tema.",
+        "start": "Comparar páginas",
+        "done": "Briefs listos"
+      },
+      "rewriteLandingPage": {
+        "title": "Reescribir una landing page",
+        "description": "Revisa una landing page y guarda en Files textos revisados con afirmaciones respaldadas.",
+        "prompt": "Reescribe nuestra landing page en [URL].\n- Audiencia: [quién llega a ella]\n- Objetivo: [registros, solicitudes de demo]\n- Pruebas que podemos usar: [logos de clientes, cifras, citas]\nConserva solo las afirmaciones que podamos respaldar. Marca cada cambio y por qué.",
+        "criterion": "Files/marketing/landing-page.md contiene el texto revisado por sección, el motivo de cada cambio y una fuente para cada afirmación.",
+        "start": "Revisar la página",
+        "done": "Texto redactado"
+      },
+      "analyzeCampaignResults": {
+        "title": "Analizar resultados de campaña",
+        "description": "Revisa el gasto y las conversiones de la campaña y guarda un informe de resultados en Files.",
+        "prompt": "Elabora un informe de los resultados de [campaña].\n- Datos: [plataformas de anuncios, CRM, analítica web]\n- Periodo: [fechas]\n- Objetivo: [coste por lead o conversiones]\nIndica gasto, leads, coste por lead y conversiones por canal. Recomienda qué recortar y qué escalar.",
+        "criterion": "Files/marketing/campaign-results.md contiene gasto, leads, coste por lead y conversiones por canal para el periodo, una comparación con el objetivo, las fuentes de datos y recomendaciones.",
+        "start": "Reunir resultados",
+        "done": "Informe listo"
+      },
+      "writeBlogPost": {
+        "title": "Escribir una entrada de blog",
+        "description": "Investiga un tema y guarda en Files un borrador de entrada con fuentes.",
+        "prompt": "Escribe una entrada de blog sobre [tema].\n- Lector: [quién es y qué quiere aprender]\n- Enfoque: [nuestro punto de vista]\n- Extensión: [1200 palabras]\nEnlaza una fuente para cada dato. Añade una meta descripción y 3 opciones de título.",
+        "criterion": "Files/marketing/blog-post.md contiene un borrador cercano a la extensión solicitada, 3 opciones de título, una meta descripción de menos de 160 caracteres y un enlace a la fuente de cada dato.",
+        "start": "Investigar el tema",
+        "done": "Entrada redactada"
+      },
+      "planContentCalendar": {
+        "title": "Planificar un calendario de contenidos",
+        "description": "Planifica en Files un mes de contenidos por canal, fecha y objetivo.",
+        "prompt": "Planifica nuestro calendario de contenidos de [el próximo mes].\n- Canales: [blog, LinkedIn, newsletter]\n- Temas: [lanzamientos, historias de clientes, guías]\n- Cadencia: [publicaciones por semana]\nPara cada pieza: fecha, canal, título, rol responsable y objetivo.",
+        "criterion": "Files/marketing/content-calendar.csv cubre el mes con la cadencia indicada, con fecha, canal, título, tema, rol responsable y objetivo de cada pieza.",
+        "start": "Elegir temas",
+        "done": "Calendario planificado"
+      },
+      "draftNewsletter": {
+        "title": "Redactar una newsletter",
+        "description": "Reúne en Files las novedades de producto y de clientes en un borrador de newsletter.",
+        "prompt": "Redacta nuestra newsletter [mensual].\n- Incluye: novedades de producto de [el changelog], [una historia de cliente], próximos eventos\n- Lector: [clientes y prospectos]\nDa 3 líneas de asunto. Mantenla por debajo de 500 palabras. Solo borrador: no la envíes.",
+        "criterion": "Files/marketing/newsletter.md tiene menos de 500 palabras y contiene 3 líneas de asunto, las novedades de producto con enlaces, una historia de cliente y los próximos eventos.",
+        "start": "Recopilar noticias",
+        "done": "Newsletter redactada"
+      },
+      "repurposeContent": {
+        "title": "Reutilizar contenido",
+        "description": "Convierte en Files una pieza larga en publicaciones sociales para cada canal.",
+        "prompt": "Convierte [entrada de blog o enlace del webinar] en publicaciones sociales.\n- Canales: [LinkedIn, X]\n- Cantidad: [5 por canal]\nCada publicación se entiende por sí sola, enlaza al original y respeta el límite de longitud del canal.",
+        "criterion": "Files/marketing/social-posts.md contiene la cantidad solicitada por canal, cada una dentro del límite de longitud del canal y con enlace a la pieza original.",
+        "start": "Leer el original",
+        "done": "Publicaciones escritas"
+      },
+      "auditSeo": {
+        "title": "Realizar una auditoría SEO",
+        "description": "Revisa problemas de búsqueda en las páginas clave y ordena las correcciones en Files.",
+        "prompt": "Realiza una auditoría SEO de [nuestro sitio web].\n- Páginas clave: [inicio, precios, las 10 mejores entradas del blog]\nRevisa títulos, meta descripciones, encabezados, enlaces rotos, velocidad de página y enlaces internos. Ordena las correcciones por impacto.",
+        "criterion": "Files/marketing/seo-audit.md enumera cada página revisada con sus problemas, la evidencia de cada uno y correcciones ordenadas por impacto.",
+        "start": "Rastrear páginas",
+        "done": "Correcciones ordenadas"
+      },
+      "writeCaseStudy": {
+        "title": "Escribir un caso de éxito",
+        "description": "Convierte el material del cliente en un borrador de caso de éxito en Files.",
+        "prompt": "Escribe un caso de éxito del cliente [cliente].\n- Material de origen: [grabación de llamada, notas, métricas]\n- Estructura: reto, solución, resultados con cifras, una cita\nUsa solo hechos de las fuentes. Marca las citas que necesitan la aprobación del cliente.",
+        "criterion": "Files/marketing/case-study.md contiene reto, solución, resultados con cifras con fuentes, citas marcadas para aprobación y una fuente para cada dato.",
+        "start": "Leer las fuentes",
+        "done": "Caso de éxito redactado"
+      },
+      "draftSupportReplies": {
+        "title": "Redactar respuestas de soporte",
+        "description": "Redacta, sin enviar, respuestas a los tickets abiertos a partir del centro de ayuda.",
+        "prompt": "Redacta respuestas a [tickets abiertos de más de 24 horas].\n- Helpdesk: [el helpdesk o la bandeja de soporte conectados]\n- Tono: [amable y breve]\n- Usa el centro de ayuda y respuestas anteriores, y cítalos\nGuarda solo borradores. No envíes. Señala los tickets que no puedas responder.",
+        "criterion": "Cada ticket seleccionado tiene un borrador de respuesta sin enviar que cita un artículo de ayuda o una respuesta anterior; Files/support/reply-drafts.md enumera los enlaces de los tickets, el estado del borrador y los tickets señalados como imposibles de responder.",
+        "start": "Leer tickets",
+        "done": "Respuestas redactadas"
+      },
+      "triageSupportBacklog": {
+        "title": "Clasificar el backlog",
+        "description": "Etiqueta y prioriza los tickets abiertos y guarda la clasificación en Files.",
+        "prompt": "Clasifica nuestro backlog de soporte en [el helpdesk conectado].\n- Etiquetas: bug, pregunta, solicitud de función, facturación, urgente\n- Regla de prioridad: [primero los clientes de pago]\nAgrupa los duplicados. Enumera los 5 problemas principales por número de tickets.",
+        "criterion": "Files/support/triage.csv cubre todos los tickets abiertos con su enlace, etiqueta, prioridad y grupo de duplicados; Files/support/triage.md enumera los 5 problemas principales por número de tickets.",
+        "start": "Leer el backlog",
+        "done": "Backlog clasificado"
+      },
+      "draftHelpArticle": {
+        "title": "Redactar un artículo de ayuda",
+        "description": "Convierte tickets y comportamiento del producto en un artículo de ayuda paso a paso en Files.",
+        "prompt": "Escribe un artículo de ayuda sobre [función o pregunta].\n- Fuentes: [tickets, documentación, el producto]\n- Lector: [usuarios nuevos]\nEscribe paso a paso, con el resultado esperado de cada paso y los errores habituales.",
+        "criterion": "Files/support/help-article.md contiene pasos numerados con resultados esperados, errores habituales con soluciones y enlaces a los tickets y la documentación en los que se basa.",
+        "start": "Leer tickets",
+        "done": "Artículo redactado"
+      },
+      "flagAtRiskAccounts": {
+        "title": "Señalar cuentas en riesgo",
+        "description": "Encuentra cuentas con señales de abandono y guarda una lista ordenada en Files.",
+        "prompt": "Encuentra las cuentas con riesgo de abandono en [los próximos 60 días].\n- Señales: [uso decreciente, tickets abiertos, puntuaciones bajas en encuestas, fecha de renovación]\n- Datos: [analítica de producto, helpdesk, CRM]\nOrdena por ingresos en riesgo. Da la evidencia y una acción sugerida para cada una.",
+        "criterion": "Files/support/at-risk-accounts.md ordena las cuentas por ingresos en riesgo, con las señales, enlaces a fuentes y una acción sugerida para cada una.",
+        "start": "Comprobar señales",
+        "done": "Riesgos señalados"
+      },
+      "buildFaqFromTickets": {
+        "title": "Crear unas preguntas frecuentes",
+        "description": "Encuentra las preguntas más habituales y guarda respuestas con fuentes en Files.",
+        "prompt": "Crea unas preguntas frecuentes a partir de los tickets de [el mes pasado].\n- Cantidad: las [20] preguntas más habituales\n- Respuestas: del centro de ayuda y de respuestas anteriores\nSeñala cada pregunta que no tenga artículo de ayuda.",
+        "criterion": "Files/support/faq.md enumera el número solicitado de preguntas ordenadas por número de tickets, cada una con una respuesta, un enlace a la fuente y una marca cuando no existe artículo de ayuda.",
+        "start": "Contar preguntas",
+        "done": "Preguntas frecuentes creadas"
+      },
+      "reviewReplyQuality": {
+        "title": "Revisar la calidad de las respuestas",
+        "description": "Puntúa una muestra de respuestas de soporte y guarda notas de mejora en Files.",
+        "prompt": "Revisa la calidad de las respuestas de soporte de [la semana pasada].\n- Muestra: [30] respuestas\n- Puntuación: precisión, tono, rapidez, resolución\nDa ejemplos y 3 puntos de mejora.",
+        "criterion": "Files/support/quality-review.md puntúa cada respuesta de la muestra según los 4 criterios con enlaces a los tickets, y enumera 3 puntos de mejora con ejemplos.",
+        "start": "Muestrear respuestas",
+        "done": "Revisión hecha"
+      },
+      "writeSavedReplies": {
+        "title": "Escribir respuestas guardadas",
+        "description": "Escribe en Files respuestas reutilizables para las preguntas más habituales.",
+        "prompt": "Escribe respuestas guardadas para nuestras [10] preguntas más habituales.\n- Fuente: [el helpdesk conectado]\n- Tono: [amable y breve]\nCada respuesta enlaza el artículo de ayuda correcto y tiene un marcador de posición para el nombre del cliente.",
+        "criterion": "Files/support/saved-replies.md contiene el número solicitado de respuestas, cada una con la pregunta que responde, su número de tickets y un enlace a un artículo de ayuda.",
+        "start": "Buscar preguntas",
+        "done": "Respuestas escritas"
+      },
+      "turnBugsIntoIssues": {
+        "title": "Convertir reportes de bugs en issues",
+        "description": "Fusiona tickets de bugs en issues de ingeniería reproducibles en Files.",
+        "prompt": "Convierte los reportes de bugs de [esta semana] en issues de ingeniería.\n- Fuente: [tickets con la etiqueta bug en el helpdesk conectado]\n- Para cada uno: pasos para reproducir, número de clientes afectados, gravedad, enlaces a los tickets\nFusiona los duplicados. Guarda los issues para que yo los revise antes de registrar nada.",
+        "criterion": "Files/support/bug-issues.md contiene un issue por cada bug distinto con pasos para reproducir, número de clientes afectados, gravedad y todos los enlaces a tickets relacionados.",
+        "start": "Leer tickets de bugs",
+        "done": "Issues redactados"
+      },
+      "findOutdatedArticles": {
+        "title": "Encontrar artículos de ayuda desactualizados",
+        "description": "Compara el centro de ayuda con el producto y guarda correcciones en Files.",
+        "prompt": "Encuentra artículos desactualizados en nuestro centro de ayuda en [URL].\n- Compara con: el producto actual y [el changelog]\nPara cada afirmación desactualizada: el enlace al artículo, el texto antiguo y el texto corregido.",
+        "criterion": "Files/support/outdated-articles.md enumera cada afirmación desactualizada con el enlace al artículo, el texto antiguo, el texto corregido y la fuente de la corrección.",
+        "start": "Leer artículos",
+        "done": "Correcciones listadas"
+      },
+      "reportSupportMetrics": {
+        "title": "Informar de métricas de soporte",
+        "description": "Informa en Files del volumen, la rapidez y la satisfacción de un periodo.",
+        "prompt": "Elabora un informe del rendimiento de soporte de [el mes pasado].\n- Datos: [el helpdesk conectado]\nIndica tiempo de primera respuesta, tiempo de resolución, volumen por categoría y satisfacción. Compara cada uno con el periodo anterior.",
+        "criterion": "Files/support/metrics.md contiene tiempo de primera respuesta, tiempo de resolución, volumen por categoría y satisfacción del periodo, cada uno comparado con el periodo anterior.",
+        "start": "Extraer datos",
+        "done": "Informe listo"
+      },
+      "reconcileExpenses": {
+        "title": "Conciliar gastos",
+        "description": "Asocia en Files las transacciones con recibos y categorías.",
+        "prompt": "Concilia los gastos de [el mes pasado].\n- Cuentas: [cuentas bancarias y de tarjeta]\n- Recibos: [carpeta de Files o bandeja de entrada]\nAsocia cada transacción con un recibo y una categoría. Enumera los elementos sin asociar.",
+        "criterion": "Files/finance/expense-reconciliation.csv cubre todas las transacciones del periodo con importe, categoría, enlace al recibo asociado o estado sin asociar.",
+        "start": "Leer transacciones",
+        "done": "Gastos asociados"
+      },
+      "prepareInvoiceFollowups": {
+        "title": "Reclamar facturas vencidas",
+        "description": "Redacta recordatorios para facturas vencidas, sin enviarlos.",
+        "prompt": "Redacta recordatorios para las facturas vencidas hace más de [14 días].\n- Fuente: [Stripe o la herramienta de contabilidad]\n- Tono: [cortés, más firme pasados 30 días]\nGuarda solo borradores. No los envíes.",
+        "criterion": "La bandeja de entrada conectada tiene un borrador sin enviar por cada factura vencida; Files/finance/invoice-followups.md indica número de factura, cliente, importe, días de retraso y enlace al borrador.",
+        "start": "Buscar vencidas",
+        "done": "Recordatorios redactados"
+      },
+      "auditSubscriptionSpend": {
+        "title": "Auditar gasto en software",
+        "description": "Encuentra suscripciones duplicadas o sin uso y ordena los ahorros en Files.",
+        "prompt": "Audita nuestras suscripciones de software de [los últimos 12 meses].\n- Fuentes: [extractos de tarjeta, la herramienta de contabilidad]\nEncuentra duplicados, licencias sin usar y subidas de precio. Ordena los ahorros por importe.",
+        "criterion": "Files/finance/subscription-audit.md lista cada suscripción con coste anual, responsable, evidencia de uso y ahorros ordenados con la fuente de cada cifra.",
+        "start": "Buscar cargos",
+        "done": "Ahorros ordenados"
+      },
+      "prepareCashForecast": {
+        "title": "Preparar una previsión de caja",
+        "description": "Crea una previsión semanal de caja con tres escenarios en Files.",
+        "prompt": "Elabora una previsión de caja a [13] semanas.\n- Caja inicial: [saldo bancario o fuente]\n- Ingresos: [Stripe, facturas abiertas]\n- Gastos: [nóminas, alquiler, proveedores]\nDa un escenario base, uno bajo y uno alto. Señala las semanas en que la caja baje de [3 meses de consumo].",
+        "criterion": "Files/finance/cash-forecast.csv cubre las semanas pedidas con ingresos, gastos y caja final en los escenarios base, bajo y alto; las semanas señaladas están marcadas.",
+        "start": "Reunir saldos",
+        "done": "Previsión creada"
+      },
+      "prepareMonthEndClose": {
+        "title": "Preparar el cierre de mes",
+        "description": "Revisa cada paso del cierre y guarda en Files lo hecho y lo pendiente.",
+        "prompt": "Prepara el cierre de mes de [el mes pasado].\n- Pasos: [conciliación bancaria, devengos, ingresos diferidos, nóminas, intercompañía]\n- Herramientas: [la herramienta de contabilidad, Stripe]\nLista cada paso como hecho o pendiente, con la evidencia o lo que lo bloquea.",
+        "criterion": "Files/finance/month-end-close.md lista cada paso del cierre como hecho o pendiente, con evidencia en los hechos y el bloqueo en los pendientes.",
+        "start": "Revisar pasos",
+        "done": "Cierre preparado"
+      },
+      "explainBudgetVariance": {
+        "title": "Explicar desviaciones del presupuesto",
+        "description": "Compara lo real con el presupuesto y explica las grandes diferencias en Files.",
+        "prompt": "Compara lo real con el presupuesto de [el último trimestre].\n- Presupuesto: [ruta en Files]\n- Real: [la herramienta de contabilidad]\nExplica cada partida que se desvíe más de [10%].",
+        "criterion": "Files/finance/budget-variance.md compara lo real con el presupuesto por partida y explica cada partida que supera el umbral con las transacciones que la causan.",
+        "start": "Comparar partidas",
+        "done": "Desviación explicada"
+      },
+      "calculateUnitEconomics": {
+        "title": "Calcular la economía unitaria",
+        "description": "Calcula CAC, LTV y recuperación con fórmulas en Files.",
+        "prompt": "Calcula nuestra economía unitaria de [el último trimestre].\n- Segmentar por: [plan o segmento de clientes]\n- Datos: [Stripe, CRM, gasto publicitario]\nDa CAC, LTV, periodo de recuperación y margen bruto. Muestra cada fórmula y fuente.",
+        "criterion": "Files/finance/unit-economics.md contiene CAC, LTV, periodo de recuperación y margen bruto por segmento, con la fórmula y la fuente de datos de cada uno.",
+        "start": "Extraer datos",
+        "done": "Economía calculada"
+      },
+      "collectTaxDocuments": {
+        "title": "Reunir documentos fiscales",
+        "description": "Reúne lo que necesita el contable y lista lo que falta en Files.",
+        "prompt": "Reúne los documentos que necesita nuestro contable para [la declaración de impuestos de este año].\n- Lista de control: [la lista del contable, o una ruta en Files]\n- Fuentes: [Files, bandeja de entrada, la herramienta de contabilidad]\nEnlaza cada documento encontrado. Lista lo que falta.",
+        "criterion": "Files/finance/tax-documents.md lista cada elemento de la lista de control con un enlace al documento encontrado o el estado de faltante.",
+        "start": "Buscar archivos",
+        "done": "Documentos reunidos"
+      },
+      "reviewRenewals": {
+        "title": "Revisar próximas renovaciones",
+        "description": "Lista los contratos que se renuevan pronto, con plazos de aviso y recomendaciones en Files.",
+        "prompt": "Revisa los contratos de proveedores que se renuevan en [los próximos 90 días].\n- Contratos: [carpeta de Files o herramienta de contratos]\nPara cada uno: fecha de renovación, plazo de preaviso, precio, renovación automática y una recomendación de renovar, renegociar o cancelar.",
+        "criterion": "Files/finance/renewals.md lista cada contrato que se renueva en el periodo con fecha de renovación, plazo de preaviso, precio, renovación automática y una recomendación.",
+        "start": "Leer contratos",
+        "done": "Renovaciones revisadas"
+      },
+      "modelHiringCost": {
+        "title": "Modelar coste de contratación",
+        "description": "Modela el coste de un plan de contratación y su efecto en la autonomía financiera en Files.",
+        "prompt": "Modela el coste de [contratar 5 ingenieros el año que viene].\n- Salarios: [rangos, o haz un estudio comparativo]\n- Fechas de incorporación: [por trimestre]\n- Consumo y caja actuales: [hoja de finanzas]\nIncluye beneficios, impuestos, equipamiento y reclutamiento. Muestra el efecto en la autonomía financiera.",
+        "criterion": "Files/finance/hiring-cost.csv contiene el coste mensual por contratación con salario, beneficios, impuestos, equipamiento y reclutamiento, y la autonomía financiera resultante con y sin las contrataciones.",
+        "start": "Reunir costes",
+        "done": "Coste modelado"
+      },
+      "compareVendorQuotes": {
+        "title": "Comparar presupuestos de proveedores",
+        "description": "Compara presupuestos con los requisitos y guarda una recomendación en Files.",
+        "prompt": "Compara presupuestos para [lo que vamos a comprar].\n- Presupuestos: [carpeta de Files o hilo de correo]\n- Imprescindibles: [requisitos]\nCompara precio, condiciones, entrega y soporte. Recomienda uno.",
+        "criterion": "Files/operations/vendor-comparison.md compara cada presupuesto en precio, condiciones, entrega, soporte y cada requisito imprescindible, con una fuente por valor y una recomendación.",
+        "start": "Leer presupuestos",
+        "done": "Proveedor elegido"
+      },
+      "documentBusinessProcess": {
+        "title": "Documentar un proceso",
+        "description": "Redacta un documento paso a paso del proceso a partir de fuentes reales en Files.",
+        "prompt": "Documenta cómo [damos de alta a un nuevo cliente].\n- Fuentes: [notas, herramientas, hilos de chat]\nPara cada paso: rol responsable, herramienta, entradas, salidas y qué puede salir mal.",
+        "criterion": "Files/operations/process.md contiene pasos numerados, cada uno con rol responsable, herramienta, entradas, salidas, puntos de fallo y la fuente de la que se obtuvo.",
+        "start": "Reunir notas",
+        "done": "Proceso documentado"
+      },
+      "reconcileInventoryRecords": {
+        "title": "Conciliar inventario",
+        "description": "Compara el inventario entre dos sistemas y lista las diferencias en Files.",
+        "prompt": "Concilia el inventario entre [la tienda] y [la hoja del almacén].\n- Coincidir por: [SKU]\nLista cada diferencia con ambos recuentos y la causa probable.",
+        "criterion": "Files/operations/inventory-reconciliation.csv lista cada SKU con diferencia, ambos recuentos, la brecha y la causa probable.",
+        "start": "Comparar registros",
+        "done": "Diferencias listadas"
+      },
+      "prepareProjectHandoff": {
+        "title": "Preparar el traspaso de un proyecto",
+        "description": "Reúne el estado, los responsables y el trabajo abierto de un proyecto en un traspaso en Files.",
+        "prompt": "Prepara un traspaso para [proyecto].\n- Nuevo responsable: [rol]\n- Fuentes: [carpeta de Files, gestor de incidencias, canal de chat]\nIncluye el objetivo, el estado actual, el trabajo abierto, las decisiones tomadas, contactos por rol y riesgos.",
+        "criterion": "Files/operations/handoff.md contiene el objetivo, el estado actual, el trabajo abierto con enlaces, las decisiones tomadas, contactos por rol y riesgos.",
+        "start": "Recopilar contexto",
+        "done": "Traspaso listo"
+      },
+      "auditToolAccess": {
+        "title": "Auditar accesos a herramientas",
+        "description": "Encuentra cuentas de riesgo o sin uso en las herramientas y lista las correcciones en Files.",
+        "prompt": "Audita quién tiene acceso a [las herramientas de nuestro espacio de trabajo].\n- Herramientas: [suite de correo, alojamiento de código, chat]\n- Comparar con: [la lista actual del equipo]\nSeñala cuentas de personas que se fueron, cuentas sin uso y administradores de más. No cambies nada.",
+        "criterion": "Files/operations/access-audit.md lista cada cuenta señalada con herramienta, motivo y acción recomendada; no se cambió ningún acceso.",
+        "start": "Listar cuentas",
+        "done": "Accesos auditados"
+      },
+      "planTeamOffsite": {
+        "title": "Planificar un retiro de equipo",
+        "description": "Compara lugares y crea un presupuesto y una agenda en Files.",
+        "prompt": "Planifica nuestro retiro de equipo para [20 personas] en [ciudad, mes].\n- Presupuesto: [total]\n- Objetivos: [planificación, tiempo en equipo]\nDa 3 opciones de lugar, un presupuesto, una agenda y notas de viaje.",
+        "criterion": "Files/operations/offsite-plan.md contiene 3 opciones de lugar con precios y enlaces, un presupuesto dentro del total indicado, una agenda día a día y notas de viaje.",
+        "start": "Buscar lugares",
+        "done": "Retiro planificado"
+      },
+      "findAutomationWork": {
+        "title": "Encontrar trabajo que automatizar",
+        "description": "Encuentra tareas manuales repetidas y estima el tiempo ahorrado en Files.",
+        "prompt": "Encuentra trabajo manual que podamos automatizar en [finanzas y operaciones].\n- Fuentes: [documentos de procesos, hilos de chat, tareas recurrentes]\nPara cada tarea: frecuencia, tiempo dedicado, herramienta para automatizarla y horas ahorradas al mes.",
+        "criterion": "Files/operations/automation-candidates.md ordena las tareas por horas ahorradas al mes, cada una con frecuencia, tiempo dedicado, la herramienta propuesta y su fuente.",
+        "start": "Buscar tareas",
+        "done": "Ahorros ordenados"
+      },
+      "trackDelayedOrders": {
+        "title": "Seguir pedidos retrasados",
+        "description": "Encuentra pedidos con retraso y sus causas y los guarda en Files.",
+        "prompt": "Encuentra los pedidos retrasados más de [3 días] en [la tienda o el sistema de pedidos].\nPara cada uno: pedido, cliente, fecha prometida, estado actual y causa. Sugiere una solución para las causas principales.",
+        "criterion": "Files/operations/delayed-orders.csv lista cada pedido retrasado con fecha prometida, estado y causa; Files/operations/delayed-orders.md nombra las causas principales y las soluciones.",
+        "start": "Revisar pedidos",
+        "done": "Retrasos encontrados"
+      },
+      "prepareComplianceChecklist": {
+        "title": "Preparar una lista de cumplimiento",
+        "description": "Asocia controles con evidencias y lista las carencias en Files.",
+        "prompt": "Prepara una lista de preparación para [SOC 2].\n- Alcance: [sistemas y equipos]\n- Evidencias: [carpeta de Files, herramientas]\nPara cada control: evidencia actual, la carencia y un rol responsable.",
+        "criterion": "Files/operations/compliance-checklist.md lista cada control en alcance con evidencia enlazada o una carencia, y un rol responsable.",
+        "start": "Asociar controles",
+        "done": "Carencias listadas"
+      },
+      "writeWeeklyOpsReport": {
+        "title": "Redactar el informe de operaciones",
+        "description": "Reúne las cifras de operaciones en un informe semanal en Files.",
+        "prompt": "Redacta el informe de operaciones de [esta semana].\n- Cifras: [pedidos, tiempo de preparación, tickets, costes]\n- Fuentes: [la tienda, el servicio de ayuda, la herramienta de contabilidad]\nCompara cada cifra con la semana pasada. Nombra las 3 cosas que requieren atención.",
+        "criterion": "Files/operations/weekly-report.md contiene cada cifra pedida con su fuente y el cambio respecto a la semana pasada, y 3 puntos que requieren atención.",
+        "start": "Extraer cifras",
+        "done": "Informe redactado"
+      },
+      "draftJobDescription": {
+        "title": "Redactar una oferta de empleo",
+        "description": "Redacta una descripción del puesto con resultados y requisitos claros en Files.",
+        "prompt": "Redacta una descripción del puesto de [ingeniero backend sénior].\n- Equipo y responsable: [equipo, rol del responsable]\n- Resultados del primer año: [de qué será responsable]\n- Imprescindibles: [habilidades]\n- Ubicación y rango salarial: [detalles]\nUsa lenguaje inclusivo. Máximo 600 palabras.",
+        "criterion": "Files/people/job-description.md tiene menos de 600 palabras y contiene el resumen del puesto, los resultados del primer año, habilidades imprescindibles y deseables, ubicación y rango salarial.",
+        "start": "Definir puesto",
+        "done": "Descripción redactada"
+      },
+      "buildOnboardingPlan": {
+        "title": "Crear un plan de incorporación",
+        "description": "Crea un plan de incorporación a 30-60-90 días a partir de los documentos del equipo en Files.",
+        "prompt": "Crea un plan de incorporación a 30-60-90 días para [rol].\n- Documentos del equipo: [carpeta de Files]\n- Herramientas por aprender: [las herramientas que usará]\n- Compañero de apoyo: [rol]\nDa objetivos, tareas y un seguimiento para cada periodo.",
+        "criterion": "Files/people/onboarding-plan.md contiene objetivos, tareas y un seguimiento para los días 1-30, 31-60 y 61-90, con enlaces a los documentos que usa cada tarea.",
+        "start": "Leer documentos del equipo",
+        "done": "Plan listo"
+      },
+      "prepareInterviewKit": {
+        "title": "Preparar un kit de entrevistas",
+        "description": "Redacta preguntas de entrevista estructuradas y hojas de evaluación en Files.",
+        "prompt": "Crea un kit de entrevistas para [rol].\n- Descripción del puesto: [ruta en Files]\n- Fases: [filtro, técnica, equipo, final]\nPara cada fase: preguntas, qué muestra una buena respuesta y una hoja de evaluación del 1 al 4.",
+        "criterion": "Files/people/interview-kit.md cubre todas las fases con preguntas, señales de buena respuesta y una hoja de evaluación del 1 al 4 vinculada a la descripción del puesto.",
+        "start": "Leer puesto",
+        "done": "Kit listo"
+      },
+      "organizePeopleHandbook": {
+        "title": "Organizar el manual del empleado",
+        "description": "Reúne las políticas de personas en un manual con las carencias marcadas en Files.",
+        "prompt": "Organiza nuestro manual del empleado a partir de [carpeta de Files].\n- Secciones: tiempo libre, beneficios, gastos, trabajo remoto, conducta, seguridad\nMarca las políticas que se contradicen, faltan o están desactualizadas.",
+        "criterion": "Files/people/handbook.md contiene todas las secciones indicadas con sus documentos de origen, y marca cada política contradictoria, ausente o desactualizada.",
+        "start": "Leer políticas",
+        "done": "Manual organizado"
+      },
+      "sourceCandidates": {
+        "title": "Buscar candidatos",
+        "description": "Encuentra candidatos en fuentes públicas y los ordena por encaje en Files.",
+        "prompt": "Encuentra [20] candidatos para [rol].\n- Imprescindibles: [habilidades y experiencia]\n- Ubicación: [región o remoto]\nUsa solo fuentes públicas. Para cada uno: enlace al perfil, motivo de encaje y evidencia.",
+        "criterion": "Files/people/candidates.csv lista el número pedido con enlace al perfil público, puesto actual, motivo de encaje y evidencia de cada requisito imprescindible.",
+        "start": "Buscar perfiles",
+        "done": "Candidatos ordenados"
+      },
+      "benchmarkCompensation": {
+        "title": "Comparar salarios de mercado",
+        "description": "Compara el salario de un puesto y ubicación con datos de mercado citados en Files.",
+        "prompt": "Compara el salario de mercado para [rol] en [ubicación].\n- Nivel: [intermedio, sénior, staff]\n- Nuestro rango actual: [rango]\nDa el rango de mercado con base, bonus y acciones, y una fuente fechada para cada valor.",
+        "criterion": "Files/people/pay-benchmark.md contiene los rangos de mercado de base, bonus y acciones para el puesto, nivel y ubicación, cada uno con una fuente fechada, y una comparación con nuestro rango.",
+        "start": "Buscar datos",
+        "done": "Salarios comparados"
+      },
+      "prepareReviewCycle": {
+        "title": "Preparar un ciclo de evaluación",
+        "description": "Redacta preguntas de evaluación, una escala de valoración y un calendario en Files.",
+        "prompt": "Prepara el ciclo de evaluación del desempeño de [este semestre].\n- Equipos: [todos los equipos]\n- Formato: [autoevaluación, evaluación del responsable, feedback de compañeros]\nDa las preguntas, una escala de valoración con definiciones y un calendario con fechas.",
+        "criterion": "Files/people/review-cycle.md contiene preguntas por tipo de evaluación, una escala de valoración con una definición por nivel y un calendario con fechas.",
+        "start": "Redactar preguntas",
+        "done": "Ciclo listo"
+      },
+      "summarizeEngagementSurvey": {
+        "title": "Resumir una encuesta",
+        "description": "Agrupa las respuestas de la encuesta en temas y acciones en Files.",
+        "prompt": "Resume nuestra encuesta de compromiso de [ruta en Files].\n- Comparar con: [la encuesta anterior]\nDa las puntuaciones por pregunta y equipo, los temas principales de los comentarios y 3 acciones sugeridas. No nombres nunca a una persona.",
+        "criterion": "Files/people/survey-summary.md contiene puntuaciones por pregunta y equipo con el cambio respecto a la encuesta anterior, temas de los comentarios sin nombres y 3 acciones.",
+        "start": "Leer respuestas",
+        "done": "Temas encontrados"
+      },
+      "draftOfferLetter": {
+        "title": "Redactar una carta de oferta",
+        "description": "Redacta una carta de oferta con condiciones aprobadas para su revisión en Files.",
+        "prompt": "Redacta una carta de oferta para [rol].\n- Condiciones: [salario, acciones, fecha de inicio, ubicación]\n- Plantilla: [ruta en Files de nuestra plantilla de oferta]\nUsa solo las condiciones aprobadas. Márcala para revisión legal.",
+        "criterion": "Files/people/offer-letter.md usa únicamente la plantilla y las condiciones indicadas, lista cada condición en un solo lugar y está marcada para revisión legal.",
+        "start": "Leer plantilla",
+        "done": "Oferta redactada"
+      },
+      "planTeamTraining": {
+        "title": "Planificar formación del equipo",
+        "description": "Crea un plan de formación con sesiones y materiales en Files.",
+        "prompt": "Planifica la formación de [el equipo de ventas] sobre [tema].\n- Nivel: [nuevo o con experiencia]\n- Tiempo disponible: [horas por semana]\nDa sesiones, materiales con enlaces, ejercicios y una forma de comprobar lo aprendido.",
+        "criterion": "Files/people/training-plan.md contiene sesiones con fecha dentro del tiempo disponible, materiales con enlaces, ejercicios y una comprobación por sesión.",
+        "start": "Buscar materiales",
+        "done": "Plan listo"
+      },
+      "fixReportedBug": {
+        "title": "Corregir un error reportado",
+        "description": "Reproduce un error y prepara una corrección probada en una solicitud de cambios para revisión.",
+        "prompt": "Corrige este error: [qué ocurre y dónde].\n- Esperado: [qué debería ocurrir]\n- Pasos para reproducirlo: [pasos o enlace a un ticket]\n- Repositorio: [repositorio]\nReprodúcelo primero, añade una prueba que falle y luego corrígelo en una solicitud de cambios.",
+        "criterion": "Files/engineering/bug-fix.md enlaza la solicitud de cambios y contiene los pasos de reproducción, resultados antes y después, comandos de prueba con resultados y limitaciones pendientes.",
+        "start": "Reproducir error",
+        "done": "Corrección lista"
+      },
+      "buildScopedFeature": {
+        "title": "Crear una función acotada",
+        "description": "Crea una función pequeña con pruebas y abre una solicitud de cambios.",
+        "prompt": "Crea [función] en [repositorio].\n- Historia de usuario: [quién la necesita y por qué]\n- Aceptación: [qué debe cumplirse al terminar]\n- Fuera de alcance: [qué no construir]\nAñade pruebas para cada punto de aceptación y abre una solicitud de cambios.",
+        "criterion": "Files/engineering/feature.md enlaza la solicitud de cambios y asocia cada punto de aceptación con una prueba y su resultado exitoso.",
+        "start": "Leer alcance",
+        "done": "Función creada"
+      },
+      "improveSlowFlow": {
+        "title": "Acelerar un flujo lento",
+        "description": "Mide una página o endpoint lentos y entrega una mejora medida.",
+        "prompt": "Haz más rápido [página o endpoint].\n- Hoy: [cuán lento es, o mídelo]\n- Objetivo: [tiempo o porcentaje]\nMide antes y después con el mismo método y luego abre una solicitud de cambios.",
+        "criterion": "Files/engineering/performance.md contiene el método de medición, las cifras de antes y después, el enlace a la solicitud de cambios y si se alcanzó el objetivo.",
+        "start": "Medir flujo",
+        "done": "Velocidad mejorada"
+      },
+      "patchVulnerableDependencies": {
+        "title": "Parchear dependencias vulnerables",
+        "description": "Actualiza paquetes vulnerables y abre una solicitud de cambios probada.",
+        "prompt": "Parchea las dependencias vulnerables en [repositorio].\n- Gravedad: [alta y crítica]\nActualiza cada paquete, ejecuta las pruebas y abre una solicitud de cambios. Lista los que no pudiste actualizar y por qué.",
+        "criterion": "Files/engineering/dependency-patch.md lista cada aviso con versiones antigua y nueva, los resultados de las pruebas, el enlace a la solicitud de cambios y cada paquete pendiente con su motivo.",
+        "start": "Analizar paquetes",
+        "done": "Parches listos"
+      },
+      "addMissingTests": {
+        "title": "Añadir pruebas que faltan",
+        "description": "Cubre con pruebas un módulo sin probar y abre una solicitud de cambios.",
+        "prompt": "Añade pruebas para [módulo o flujo] en [repositorio].\n- Enfoque: [los casos que fallaron antes, casos límite]\nProbar el comportamiento a través de la interfaz pública. Abre una solicitud de cambios.",
+        "criterion": "Files/engineering/tests.md enlaza la solicitud de cambios y lista cada prueba nueva con el comportamiento que comprueba y su resultado exitoso.",
+        "start": "Leer código",
+        "done": "Pruebas añadidas"
+      },
+      "reviewChangeRequest": {
+        "title": "Revisar una solicitud de cambios",
+        "description": "Revisa un cambio en busca de errores y riesgos y guarda los hallazgos en Files.",
+        "prompt": "Revisa [enlace a la solicitud de cambios] en busca de errores y riesgos.\n- Enfoque: [corrección, seguridad, rendimiento]\nPara cada hallazgo: archivo y línea, el problema y una corrección sugerida. No apruebes ni fusiones.",
+        "criterion": "Files/engineering/review.md lista cada hallazgo con archivo y línea, gravedad, el problema y una corrección sugerida; la solicitud de cambios no fue aprobada ni fusionada.",
+        "start": "Leer diff",
+        "done": "Revisión lista"
+      },
+      "writeTechnicalSpec": {
+        "title": "Redactar una especificación técnica",
+        "description": "Redacta una especificación con opciones y compromisos a partir del código en Files.",
+        "prompt": "Redacta una especificación técnica para [función].\n- Problema: [qué no pueden hacer hoy los usuarios]\n- Restricciones: [fecha límite, sistemas que debemos usar]\nCompara al menos 2 diseños con sus compromisos. Incluye cambios de datos, cambios de API, despliegue y pruebas.",
+        "criterion": "Files/engineering/spec.md contiene el problema, al menos 2 diseños con sus compromisos, el diseño elegido, cambios de datos y de API, despliegue y un plan de pruebas.",
+        "start": "Leer código",
+        "done": "Especificación redactada"
+      },
+      "writePostmortem": {
+        "title": "Redactar un postmortem",
+        "description": "Crea la cronología de un incidente y su causa raíz a partir de registros en Files.",
+        "prompt": "Redacta un postmortem de [incidente].\n- Cuándo: [hora de inicio y fin]\n- Fuentes: [registros, alertas, hilos de chat, despliegues]\nDa una cronología, la causa raíz, el impacto y las acciones de seguimiento. No culpes a ninguna persona.",
+        "criterion": "Files/engineering/postmortem.md contiene una cronología con fuentes, la causa raíz, el impacto y acciones de seguimiento con roles responsables, y no nombra a ninguna persona como causa.",
+        "start": "Leer registros",
+        "done": "Postmortem redactado"
+      },
+      "upgradeFramework": {
+        "title": "Actualizar un framework",
+        "description": "Actualiza la versión de un framework y corrige lo que se rompa en una solicitud de cambios.",
+        "prompt": "Actualiza [framework] de [versión actual] a [versión objetivo] en [repositorio].\nSigue la guía oficial de migración. Corrige lo que se rompa, ejecuta las pruebas y abre una solicitud de cambios.",
+        "criterion": "Files/engineering/upgrade.md enlaza la solicitud de cambios y lista cada paso de migración, cada cambio incompatible corregido y los resultados de las pruebas.",
+        "start": "Leer guía",
+        "done": "Actualización lista"
+      },
+      "documentModule": {
+        "title": "Documentar un módulo",
+        "description": "Explica un servicio o módulo a nuevos ingenieros en Files.",
+        "prompt": "Documenta [servicio o módulo] para nuevos ingenieros.\n- Repositorio: [repositorio]\nExplica qué hace, sus partes principales, cómo fluyen los datos, cómo ejecutarlo y probarlo, y las trampas conocidas.",
+        "criterion": "Files/engineering/module-guide.md explica el propósito, las partes principales con enlaces a archivos, el flujo de datos, los comandos para ejecutar y probar, y las trampas conocidas.",
+        "start": "Leer código",
+        "done": "Guía redactada"
+      }
+    },
+    "templateSteps": "{start}, luego {done}",
+    "rolesLabel": "Plantillas por rol",
+    "startNoFiles": "Un objetivo se inicia a partir de texto. Quita los archivos y vuelve a enviar.",
+    "startNeedsSubject": "Sustituye la parte entre [corchetes] de la primera línea y envía.",
+    "templateFooter": "Donde aún haya una parte entre [corchetes], dedúcela de nuestras herramientas conectadas y de Files. Pregúntame solo lo que no puedas encontrar.",
+    "restart": "Reiniciar objetivo",
+    "restartReason": "Reiniciado desde la página del objetivo",
+    "restartedToast": "Objetivo reiniciado",
+    "restartError": "No se pudo reiniciar el objetivo. Inténtalo de nuevo."
   },
   "agentEditor": {
     "manage": "Gestionar",
@@ -24997,15 +25669,15 @@
         "add": "Add tab",
         "full": "A space holds at most {max} tabs. Remove one first.",
         "noArtifacts": "No artifacts yet",
-        "noApps": "No Apps in this project",
+        "noApps": "No hay Apps en este proyecto",
         "spaceFiles": "This space’s files",
         "otherFolder": "Another folder…",
         "fileItem": "Archivo…",
         "linkItem": "Link…",
         "linkTitle": "Add a link",
-        "linkHint": "An https page, shown inside the tab.",
+        "linkHint": "Una página https, que se muestra dentro de la pestaña.",
         "folderTitle": "Add a folder",
-        "folderHint": "A Drive folder, by its path.",
+        "folderHint": "Una carpeta de Drive, por su ruta.",
         "fileTitle": "Añadir un archivo",
         "fileHint": "Cualquier archivo de Drive, por su ruta. Un archivo .html se muestra como página.",
         "url": "URL",
@@ -25023,15 +25695,15 @@
         "remove": "Remove tab",
         "removed": "Removed {name}",
         "undo": "Undo",
-        "saveError": "The tabs could not be saved",
-        "openLink": "Open in new tab",
+        "saveError": "No se pudieron guardar las pestañas",
+        "openLink": "Abrir en una pestaña nueva",
         "linkCard": {
           "description": "{host} no permite que otros sitios lo muestren dentro de una pestaña.",
           "open": "Abrir"
         },
         "missing": {
-          "title": "This tab’s content is gone",
-          "description": "It was deleted or renamed, or it is not shared with you."
+          "title": "El contenido de esta pestaña ya no existe",
+          "description": "Se eliminó o cambió de nombre, o no está compartido contigo."
         }
       },
       "spaceDetails": "Detalles de {name}"
@@ -25104,7 +25776,7 @@
         "threads": "Cada mensaje nuevo inicia un hilo.",
         "memory": "Los agentes recuerdan lo que acuerda cada espacio.",
         "gotIt": "Entendido",
-        "tabs": "Every space has its own tabs. Add, rename and reorder them, or ask Kortix to."
+        "tabs": "Cada espacio tiene sus propias pestañas. Añádelas, renómbralas y reordénalas, o pídeselo a Kortix."
       },
       "getStarted": {
         "dismiss": "Descartar",
@@ -25782,8 +26454,8 @@
     "weekly": "Weekly limit",
     "weeklyModel": "Weekly · {model}",
     "reconnect": "Reconnect",
-    "disabledTitle": "Subscription usage is unavailable",
-    "disabledDescription": "Subscription connections are not enabled for this project.",
+    "disabledTitle": "El uso de la suscripción no está disponible",
+    "disabledDescription": "Las conexiones de suscripción no están habilitadas para este proyecto.",
     "text0": "Reconnect needed",
     "text1": "Inactive",
     "text2": "Refresh failed",
@@ -25793,30 +26465,30 @@
     "text6": "Usage reported",
     "text7": "Subscription",
     "text8": "used",
-    "text9": "Reset time passed · refresh for current usage",
-    "text10": "Reset time not reported",
+    "text9": "La hora de reinicio ya pasó · actualiza para ver el uso actual",
+    "text10": "Hora de reinicio no informada",
     "text11": "Checking provider usage…",
-    "text12": "No usage reported yet. Refresh after using this subscription.",
-    "text13": "Could not update. Showing last known data.",
-    "text14": "Waiting for provider data",
+    "text12": "Aún no se ha informado de ningún uso. Actualiza después de usar esta suscripción.",
+    "text13": "No se pudo actualizar. Mostrando los últimos datos conocidos.",
+    "text14": "Esperando datos del proveedor",
     "text15": "Checking…",
     "text16": "Refresh",
     "text17": "Subscription usage",
-    "text18": "Track the limits of your connected ChatGPT and Claude subscriptions.",
-    "text19": "Usage could not load",
-    "text20": "Try loading your connected subscriptions again.",
+    "text18": "Consulta los límites de tus suscripciones conectadas de ChatGPT y Claude.",
+    "text19": "No se pudo cargar el uso",
+    "text20": "Intenta cargar de nuevo tus suscripciones conectadas.",
     "text21": "Retry",
     "text22": "No connected subscriptions",
-    "text23": "Connect ChatGPT or Claude in Providers to see reported usage and reset times.",
+    "text23": "Conecta ChatGPT o Claude en Proveedores para ver el uso informado y las horas de reinicio.",
     "text24": "Connect a subscription",
-    "text25": "Usage is shared across apps that use the same subscription. Checks automatically every minute while this tab is open.",
-    "text26": "Limits vary by plan. Only windows reported by your connection appear here; missing data does not mean unlimited usage. File limits are not reported. API spend appears in Costs.",
+    "text25": "El uso se comparte entre las apps que usan la misma suscripción. Se comprueba automáticamente cada minuto mientras esta pestaña esté abierta.",
+    "text26": "Los límites varían según el plan. Aquí solo aparecen las ventanas informadas por tu conexión; la falta de datos no significa uso ilimitado. Los límites de archivos no se informan. El gasto de API aparece en Costes.",
     "resets": "Resets {time}",
     "observed": "Observed {time}",
     "meterLabel": "{label}: {percent}% used",
     "refreshLabel": "Refresh {label} usage",
-    "fiveHourNotReported": "Five-hour window not reported by this connection.",
-    "fableIncluded": "Fable usage also counts toward your overall weekly allowance.",
+    "fiveHourNotReported": "Esta conexión no informa de la ventana de cinco horas.",
+    "fableIncluded": "El uso de Fable también cuenta para tu límite semanal total.",
     "chatgptUsage": "ChatGPT subscription usage",
     "claudeUsage": "Claude subscription usage",
     "allSubscriptions": "All subscriptions"
@@ -25852,5 +26524,10 @@
     "projectDefault": "Predeterminado del proyecto · cada solicitud",
     "kortixPicks": "Kortix elige",
     "useMyOwn": "Usar los míos"
+  },
+  "sessionModelSwitch": {
+    "agentSession": "Sesión de agente · {id}",
+    "human": "Persona",
+    "listLabel": "Cambios de modelo"
   }
 }

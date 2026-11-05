@@ -9915,6 +9915,11 @@ const catalog = {
     "projectDefault": "Project default · every request",
     "kortixPicks": "Kortix picks",
     "useMyOwn": "Use my own"
+  },
+  "sessionModelSwitch": {
+    "agentSession": "Agent session · {id}",
+    "human": "Human",
+    "listLabel": "Model switches"
   }
 };
 
