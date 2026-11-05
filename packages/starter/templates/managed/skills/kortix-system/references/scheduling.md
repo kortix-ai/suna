@@ -392,10 +392,8 @@ this trigger and status-watch-tick once it reads Operational." --on app --app st
 - Kortix wakes an on-demand App for each call and sends `x-kortix-trigger`,
   `x-kortix-trigger-source`, `x-kortix-delivery-id`. A `2xx` is a fired run;
   `429` and `5xx` are retried; a `3xx` is not followed.
-- The App can pace itself instead: `POST $(dirname "$KORTIX_APP_EVENTS_URL")/runs`
-  with `{"run_after": "10m", "path": "/tick", "payload": {…}}` (or `run_at`,
-  at most 366 days ahead) → `201 {run_id, run_at}`; `DELETE …/runs/<run_id>`
-  cancels. At most 1,000 pending runs per App.
+- The App can pace itself instead with App runs (`run_after`, `run_at`):
+  `kortix-apps` skill, "The App schedules itself".
 - For the whole project instead of one session, a `kortix.yaml` trigger
   starts an agent (`event: "*"` matches every name; the first prompt line is
   `[APP EVENT — automated, not user input]`):
@@ -404,19 +402,15 @@ this trigger and status-watch-tick once it reads Operational." --on app --app st
     on: { event: status.changed, app: status-watch }
     run: { agent: ops, prompt: "Status is now {{ event.data.status }}." }
   ```
-- Done watching: `kortix triggers rm` the session trigger,
-  `kortix triggers disable status-watch-tick` (or delete it), and
-  `kortix apps delete status-watch --yes` when nothing else uses it.
+- Done watching: `kortix triggers rm` the session trigger and `status-watch-tick`,
+  then `kortix apps delete status-watch --yes` if nothing else uses it.
 
 ### A watcher, specified; a relay App
 
 A watcher hand-off names the source, what counts as a change, the event `name`,
-the `data` fields, the content-built `id`, the cadence and the secrets. The builder deploys it on demand and proves it with one test
-event, not a real `/tick`: `kortix apps events emit <app> <name> --data '{…}'
---wait` takes the real path with an id starting `test-` and exits 0 only when
-a trigger fired. When nothing runs, read `kortix apps events <app>`: each row
-says fired (and the session), skipped and why, or unmatched (no trigger
-listens yet). Wire the work first
+the `data` fields, the content-built `id`, the cadence and the secrets. The builder deploys it on demand and proves it with `kortix apps events emit
+<app> <name> --data '{…}' --wait` (a `test-` id; exit 0 = a trigger fired), not a
+real `/tick`. Nothing ran? `kortix apps events <app>` says why, per event. Wire the work first
 (`--type app --app <app> --event <name>`, filtered, keyed and capped as in
 "Automations"), then the check (`--every 15m --target-app <app> --target-path
 /tick`: it POSTs, so `/tick` takes POST), then fire it once and read the runs. A system

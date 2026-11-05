@@ -206,21 +206,16 @@ triggers:
 - `type: change_request` fires once per merged change request of the
   project. `filter.base` is the branch it must merge into (any when absent);
   other `filter` keys match the payload as on any trigger.
-- Webhook auth: `X-Kortix-Signature: sha256=<hex>` or the same format under
-  the GitHub header name `X-Hub-Signature-256` — both are HMAC-SHA256 of
-  `<timestamp>.<body>` with the secret. `X-Kortix-Timestamp` (epoch seconds,
-  within 5 minutes) is **required** and is part of what is signed, so a
-  captured delivery stops verifying 5 minutes after it was sent instead of
-  replaying. A signature sent without the header, or a body-only HMAC, is
-  refused `401` — send a fresh `X-Kortix-Timestamp` and sign
-  `<timestamp>.<body>`, or switch to the static token: the secret as
-  `X-Kortix-Token` or `Authorization: Bearer`, needs no timestamp and has no
-  body binding to replay. GitHub's own webhooks sign the bare body and send no
-  timestamp, so a plain GitHub webhook uses the static token unless something
-  in front adds the header. Answers: `202` queued, `200` skipped
-  (paused or capped), `401` for every miss before authentication (no such
-  enabled webhook trigger, bad signature, missing or stale timestamp), `402` no
-  usable model.
+- Webhook auth: `X-Kortix-Signature: sha256=<hex>` (or `X-Hub-Signature-256`)
+  = HMAC-SHA256 of `<timestamp>.<body>` with the secret, plus the
+  **required** `X-Kortix-Timestamp` (epoch seconds, within 5 minutes), so a
+  captured delivery cannot replay. A signature without the timestamp, or of
+  the bare body, is refused `401`. Or the static token: the secret as
+  `X-Kortix-Token` or `Authorization: Bearer`, no timestamp. A plain GitHub
+  webhook signs the bare body, so it uses the static token. Answers: `202`
+  queued, `200` skipped (paused or capped), `401` for every miss before
+  authentication (no such enabled webhook trigger, bad signature, missing or
+  stale timestamp), `402` no usable model.
 - `kortix triggers pause` stops every trigger of the project; `resume`
   starts them again. `enabled: false` stops one.
 
