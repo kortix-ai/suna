@@ -16,6 +16,7 @@ import { bearerToken } from '../shared/bearer-token';
 import { readJsonObject } from '../shared/http-body';
 import { appEventTokenMatches } from './events';
 import { scopedApp } from './route-access';
+import { createAppEventRateLimitMiddleware } from '../middleware/rate-limit';
 
 export const appEventsApp = makeOpenApiApp();
 
@@ -43,6 +44,13 @@ async function tokenApp(authorization: string | undefined, projectId: string, ap
 const TOKEN_ERROR = { error: 'Send the App token: Authorization: Bearer $KORTIX_APP_TOKEN', code: 'app_token_invalid' } as const;
 
 export function registerAppEventRoutes(): void {
+  // Per-App request limit on the token routes only: a person's GET of the
+  // same path (the event log, ./event-log-routes.ts) never spends it.
+  const limit = createAppEventRateLimitMiddleware();
+  appEventsApp.on('POST', '/:projectId/apps/:appId/events', limit);
+  appEventsApp.on(['POST', 'DELETE'], '/:projectId/apps/:appId/runs', limit);
+  appEventsApp.on('DELETE', '/:projectId/apps/:appId/runs/:runId', limit);
+
   appEventsApp.openapi(
     createRoute({
       method: 'post', path: '/{projectId}/apps/{appId}/events', tags: ['apps'],
@@ -50,15 +58,26 @@ export function registerAppEventRoutes(): void {
       description:
         'Fires every enabled `type: app` trigger that names this App. Send one event, or `{ "events": [...] }` (at most 50). ' +
         'Authenticate with `Authorization: Bearer $KORTIX_APP_TOKEN`; every App machine has it, with `KORTIX_APP_EVENTS_URL`. ' +
-        '`triggers` is how many triggers matched: 0 is not an error.',
+        '`triggers` is how many enabled triggers name the App. With 0, the events are kept in the App\'s event log as ' +
+        '`unmatched` (`GET` the same path), and `hint` says how to add a trigger. At most 120 requests a minute per App.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: AppEvent.or(z.object({ events: z.array(AppEvent) })) } } },
       },
       responses: {
-        202: json(z.object({ triggers: z.number(), accepted: z.number(), deduped: z.number(), suppressed: z.number() }), 'Events appended'),
-        ...errors(400, 401, 404),
+        202: json(
+          z.object({
+            triggers: z.number(),
+            accepted: z.number(),
+            deduped: z.number(),
+            suppressed: z.number(),
+            unmatched: z.number().openapi({ description: 'Events no enabled trigger listens to.' }),
+            hint: z.string().optional().openapi({ description: 'What to do about unmatched events.' }),
+          }),
+          'Events appended',
+        ),
+        ...errors(400, 401, 404, 429),
       },
     }),
     async (c) => {
@@ -81,7 +100,7 @@ export function registerAppEventRoutes(): void {
         'the trigger engine: a failed call (no answer, 429 or 5xx) is retried. At most 1000 pending runs per App. Authenticate with `$KORTIX_APP_TOKEN`.',
       ...auth,
       request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: RunRequest } } } },
-      responses: { 201: json(z.object({ run_id: z.string(), run_at: z.string() }), 'Scheduled'), ...errors(400, 401, 404, 409) },
+      responses: { 201: json(z.object({ run_id: z.string(), run_at: z.string() }), 'Scheduled'), ...errors(400, 401, 404, 409, 429) },
     }),
     async (c) => {
       const { projectId, appId } = c.req.valid('param');
@@ -109,7 +128,7 @@ export function registerAppEventRoutes(): void {
       description: 'Cancels a run this App scheduled that has not fired. Authenticate with `$KORTIX_APP_TOKEN`.',
       ...auth,
       request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), runId: z.string() }) },
-      responses: { 200: json(z.object({ cancelled: z.literal(true) }), 'Cancelled'), ...errors(401, 404) },
+      responses: { 200: json(z.object({ cancelled: z.literal(true) }), 'Cancelled'), ...errors(401, 404, 429) },
     }),
     async (c) => {
       const { projectId, appId, runId } = c.req.valid('param');

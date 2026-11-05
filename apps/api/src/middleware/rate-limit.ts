@@ -92,6 +92,7 @@ const artifactContentLimiter = new TokenBucketRateLimiter('artifact_content');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
+const appEventLimiter = new TokenBucketRateLimiter('app_event');
 const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter(
   'project_webhook_manifest_refresh',
 );
@@ -362,6 +363,34 @@ export function createProjectWebhookRateLimitMiddleware() {
 }
 
 /**
+ * Guards the routes an App calls with its own token (`POST …/apps/:appId/events`,
+ * `POST|DELETE …/apps/:appId/runs`), keyed on the App. An App in a tight loop
+ * would otherwise write up to 50 event-log rows per request without bound;
+ * past the limit it gets a 429 with `retry_after_seconds` and writes nothing.
+ */
+export function createAppEventRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const key = `${c.req.param('projectId') || 'unknown'}:${c.req.param('appId') || 'unknown'}`;
+    const result = appEventLimiter.check(key, {
+      limit: positiveInt((config as any).KORTIX_APP_EVENT_REQS_PER_MIN, 120),
+      windowMs: 60_000,
+    });
+    setHeaders(c, result);
+    if (!result.allowed) {
+      return c.json(
+        {
+          error: 'rate_limit_exceeded',
+          message: 'This App sent more than its requests per minute. Send events in batches ({ "events": [...] }, at most 50) and retry shortly.',
+          retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+        },
+        429,
+      );
+    }
+    await next();
+  };
+}
+
+/**
  * Guards the public `POST /v1/notifications/device-token/release`. Keyed on
  * client IP; a signed-out app calls it once per sign-out. The rejection path
  * writes no audit row, so a flood cannot become a database-write flood.
@@ -460,6 +489,7 @@ export function resetRateLimiters() {
   demoRequestLimiter.reset();
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();
+  appEventLimiter.reset();
   projectWebhookManifestRefreshLimiter.reset();
   projectWebhookRejectedRunLimiter.reset();
   projectSecretWriteLimiter.reset();
