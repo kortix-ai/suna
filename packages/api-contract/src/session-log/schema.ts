@@ -17,7 +17,7 @@ const count = z.number().int().nonnegative();
 const nonEmpty = str.min(1); // pass-through strings and lookup keys: any non-empty value
 const id = str.min(1); // F1: block id, unique within its message (checked on the message)
 
-export const ExtSchema = z.record(z.object({ version: str, native_id: str.optional(), data: z.unknown() }));
+export const ExtSchema = z.record(z.string(), z.object({ version: str, native_id: str.optional(), data: z.unknown().optional() }));
 export const ProducerSchema = z.object({ harness: nonEmpty, harness_version: str, adapter_version: str });
 export const ModelRefSchema = z.object({
   provider: str,
@@ -108,7 +108,7 @@ export const ToolCallBlockSchema = z.object({
       exit_code: z.number().optional(),
       synthetic: z.boolean().optional(),
       cleared_at: str.optional(),
-      details: z.unknown(),
+      details: z.unknown().optional(),
     })
     .optional(),
   title: str.optional(),

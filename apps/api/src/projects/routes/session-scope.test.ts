@@ -387,21 +387,19 @@ describe('PUT scope — secrets decision refusals', () => {
   test('a body violating the schema is rejected 400 by the OpenAPI body validator', async () => {
     const response = await putScope({ secrets: 42 });
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
-      success: false,
-      error: {
-        issues: [
-          {
-            code: 'invalid_type',
-            expected: 'array',
-            received: 'number',
-            path: ['secrets'],
-            message: 'Expected array, received number',
-          },
-        ],
-        name: 'ZodError',
+    // This bare OpenAPIHono has no defaultHook, so it answers zod-openapi's raw result: zod 4
+    // serializes a ZodError as its name and a JSON message holding the issues.
+    const body = (await response.json()) as { success: boolean; error: { name: string; message: string } };
+    expect(body.success).toBe(false);
+    expect(body.error.name).toBe('ZodError');
+    expect(JSON.parse(body.error.message)).toEqual([
+      {
+        code: 'invalid_type',
+        expected: 'array',
+        path: ['secrets'],
+        message: 'Invalid input: expected array, received number',
       },
-    });
+    ]);
   });
 });
 
