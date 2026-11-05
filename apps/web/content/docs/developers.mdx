@@ -3354,8 +3354,17 @@ fires once per trigger for 30 days), and a session trigger
 (`kortix triggers add "<text>" --on app --app <slug>`) wakes the session that
 waits, or a `kortix.yaml` trigger starts an agent. An App never starts an agent
 itself: it posts events, and a trigger decides. Deploy a watcher App unlisted
-and on demand: it belongs in the Background list. A complete example is in the
-`kortix-system` skill, `references/scheduling.md` → Watch 24/7.
+and on demand: it belongs in the Background list.
+
+`kortix apps launch --template watcher --name status-watch` writes such an App
+to `apps/status-watch/` and deploys it. You edit one function in `watch.js`:
+`check()` returns what is true now as `[{ name, data }]`. On each `POST /tick`
+the runner posts those events with ids built from their name and data, so the
+same state never fires twice. With nothing to report it posts
+`{"name":"kortix.heartbeat"}`, which keeps `expect_event_within` satisfied and
+is never stored. Names starting with `kortix.` are otherwise reserved. The
+next steps it prints add the work trigger, prove it with a test event, and add
+the check.
 
 App events and runs are REST only. They authenticate with the App token, not
 a Kortix token. An App may send 120 requests a minute; past that it gets `429`
@@ -3378,14 +3387,15 @@ so the App's real event with the same id still fires later. The prompt reads
 `kortix apps events emit <app> <name> --data '{"status":"down"}' --wait`
 waits up to 60 s for the outcome and exits `0` only when a trigger fired.
 
-**Know when a watcher stops.** Add `expect_event_within` (5m or more) to the
+**Know when a watcher stops.** Add `expect_event_within` (5m to 30d) to the
 App trigger: `on: { event: status.changed, app: status-watch }` plus
 `expect_event_within: 30m`, or `kortix triggers add … --expect-event-within
-30m`. When the App posts nothing to the trigger for that long, the trigger's
-watchers get one "automation failed" notice, with the `notification_center`
-flag on or off; the App's next post sends "recovered". Every post counts,
-including one Kortix deduplicates, so a watcher that sees no change should
-still post its content id on each check. A test event does not count.
+30m`. It watches the App, not one event name: when the App posts nothing at
+all for that long, the trigger's watchers get one "automation failed" notice,
+with the `notification_center` flag on or off; the App's next post sends
+"recovered". Every post counts, whatever its name, including one Kortix
+deduplicates and `kortix.heartbeat`, so a watcher that sees no change still
+counts as alive. A test event does not count.
 
 **Post from elsewhere.** `kortix apps events credentials <app>` (project
 admins) prints `KORTIX_APP_EVENTS_URL` and `KORTIX_APP_TOKEN` for code that

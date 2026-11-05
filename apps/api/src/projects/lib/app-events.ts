@@ -27,6 +27,14 @@ export interface AppEventInput {
 
 const EVENT_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 
+/**
+ * `kortix.heartbeat`: "this App is alive". It counts as heard for
+ * `expect_event_within` and is never stored and never fires. Every other
+ * `kortix.` name is reserved for events Kortix itself writes.
+ */
+export const HEARTBEAT_EVENT_NAME = 'kortix.heartbeat';
+const RESERVED_PREFIX = 'kortix.';
+
 /** The slug of an `unmatched` row: no trigger slug is empty. */
 export const UNMATCHED_SLUG = '';
 /** Unmatched events kept per App in a trailing hour. Past it they are counted, not stored. */
@@ -44,6 +52,9 @@ export function parseAppEventsBody(body: Record<string, unknown>): AppEventInput
     const { name, data, id } = raw as Record<string, unknown>;
     if (typeof name !== 'string' || !EVENT_NAME_RE.test(name)) {
       return { error: `${at}name must be 1-128 characters: letters, digits and . _ : / -, starting with a letter or digit` };
+    }
+    if (name.startsWith(RESERVED_PREFIX) && name !== HEARTBEAT_EVENT_NAME) {
+      return { error: `${at}name: names starting with "kortix." are reserved; an App sends only "${HEARTBEAT_EVENT_NAME}"` };
     }
     if (data !== undefined && (!data || typeof data !== 'object' || Array.isArray(data))) {
       return { error: `${at}data must be an object` };
@@ -86,6 +97,8 @@ export interface AppEventIngestResult extends MonitorIngestResult {
   triggers: number;
   /** Events no enabled trigger listens to (kept as `unmatched`, up to the hourly bound). */
   unmatched: number;
+  /** `kortix.heartbeat` events: counted as heard, never stored. */
+  heartbeats?: number;
   /** What to do when `unmatched` is not 0. */
   hint?: string;
 }
@@ -119,6 +132,16 @@ export async function ingestAppEvents(input: {
     .where(and(eq(projectTriggerRuntime.projectId, input.projectId), eq(projectTriggerRuntime.triggerType, 'app')));
   const named = rows.filter((row) => (row.scheduleSpec as { app?: string } | null)?.app === input.appSlug);
   const slugs = named.filter((row) => row.enabled !== false).map((row) => row.slug);
+  const heartbeats = input.events.filter((event) => event.name === HEARTBEAT_EVENT_NAME).length;
+  if (heartbeats > 0) {
+    const events = input.events.filter((event) => event.name !== HEARTBEAT_EVENT_NAME);
+    const rest = events.length > 0 ? await ingestAppEvents({ ...input, events }) : null;
+    if (!rest && input.test !== true && slugs.length > 0) {
+      const silent = named.filter((row) => row.enabled !== false && row.alertSource === 'silence').map((row) => row.slug);
+      await markAppTriggersHeard(input.projectId, slugs, silent, now);
+    }
+    return { ...(rest ?? { accepted: 0, deduped: 0, suppressed: 0, triggers: slugs.length, unmatched: 0 }), heartbeats };
+  }
   if (slugs.length === 0) {
     const reason = unmatchedReason(input.appSlug, named.map((row) => row.slug));
     const kept = await keepUnmatchedEvents({ ...input, test: input.test === true, now, reason });

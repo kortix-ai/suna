@@ -57,7 +57,9 @@ export function registerAppEventRoutes(): void {
         'Fires every enabled `type: app` trigger that names this App. Send one event, or `{ "events": [...] }` (at most 50). ' +
         'Authenticate with `Authorization: Bearer $KORTIX_APP_TOKEN`; every App machine has it, with `KORTIX_APP_EVENTS_URL`. ' +
         '`triggers` is how many enabled triggers name the App. With 0, the events are kept in the App\'s event log as ' +
-        '`unmatched` (`GET` the same path), and `hint` says how to add a trigger. At most 120 requests a minute per App.',
+        '`unmatched` (`GET` the same path), and `hint` says how to add a trigger. `{"name":"kortix.heartbeat"}` says the App ' +
+        'is alive (for `expect_event_within`): never stored, never fires; other `kortix.` names are reserved. At most 120 ' +
+        'requests a minute per App.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
@@ -71,6 +73,7 @@ export function registerAppEventRoutes(): void {
             deduped: z.number(),
             suppressed: z.number(),
             unmatched: z.number().openapi({ description: 'Events no enabled trigger listens to.' }),
+            heartbeats: z.number().optional().openapi({ description: '`kortix.heartbeat` events: they tell expect_event_within the App is alive, and are never stored.' }),
             hint: z.string().optional().openapi({ description: 'What to do about unmatched events.' }),
           }),
           'Events appended',

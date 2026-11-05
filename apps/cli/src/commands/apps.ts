@@ -72,8 +72,12 @@ Subcommands:
   launch --template <name>          Add a ready-made App to kortix.yaml and deploy it.
                                     Templates: convex (a self-hosted
                                     Convex backend: data on a volume, the client and
-                                    HTTP-action services, an admins-only dashboard).
-    --name <slug>                   Default: the template's default (convex: backend).
+                                    HTTP-action services, an admins-only dashboard);
+                                    watcher (a 24/7 watcher: Kortix calls its check
+                                    on a schedule; it posts App events only on a
+                                    change; edit apps/<slug>/watch.js).
+    --name <slug>                   Default: the template's default (convex: backend,
+                                    watcher: watcher).
     --no-deploy                     Write kortix.yaml only.
   deploy [path]                     Deploy a directory or .tar.gz archive. With no
                                     path and a kortix.yaml of several apps,
