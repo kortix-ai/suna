@@ -5,9 +5,11 @@
  * import the other (a `index.ts` ⇄ `json-schema.ts` cycle broke bun's
  * bundler: circular top-level `const` access threw "Cannot access before
  * initialization"). `index.ts` re-exports everything here for backward
- * compatibility with existing consumers of `@kortix/manifest-schema`. Its one
- * import, the channel descriptor, has no imports of its own.
+ * compatibility with existing consumers of `@kortix/manifest-schema`. Its two
+ * imports, the channel descriptor and the workspace action alias map, have no
+ * imports of their own.
  */
+import { toLegacyAction, toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { CHANNEL_PLATFORM_IDS, channelConnectorSlug } from '@kortix/shared/channel-descriptors';
 
 /** The slug reserved for the platform-shared default sandbox template. */
@@ -306,6 +308,21 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   // leaf exists so a CUSTOM ROLE can withhold it from humans.
   'project.credentials.issue',
 ];
+
+/**
+ * The workspace names of `GRANTABLE_KORTIX_PERMISSIONS`, one per entry, in the
+ * same order (`workspace.session.start` for `project.session.start`). The one
+ * alias map is `@kortix/shared/workspace-actions`. A `kortix_permissions` list
+ * may use either name; the grant resolves to the legacy name the engine and
+ * the stored roles compare against.
+ */
+export const GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS: readonly string[] =
+  GRANTABLE_KORTIX_PERMISSIONS.map(toWorkspaceAction);
+
+/** True when `action` is grantable to an agent under either name. */
+export function isGrantableKortixPermission(action: string): boolean {
+  return GRANTABLE_KORTIX_PERMISSIONS.includes(toLegacyAction(action));
+}
 
 /**
  * Actions removed from the enforcement catalog (IAM dead-catalog cleanup,

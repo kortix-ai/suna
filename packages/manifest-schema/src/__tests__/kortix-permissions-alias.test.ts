@@ -9,9 +9,12 @@ import { parse as parseYaml } from 'yaml';
 import {
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   GRANTABLE_KORTIX_PERMISSIONS,
+  GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS,
+  isGrantableKortixPermission,
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
   validateManifest,
 } from '../index';
+import { toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { KORTIX_JSON_SCHEMA } from '../json-schema';
 
 function summarize(input: string) {
@@ -80,5 +83,35 @@ describe('renamed constants', () => {
       'project.agent.write',
     ]);
     expect(LEGACY_TOLERATED_KORTIX_PERMISSIONS).toContain('project.schedule.read');
+  });
+});
+
+describe('kortix_permissions — workspace names (Workspaces, one scope)', () => {
+  const ajv = new Ajv2020({ strict: false, allErrors: true });
+  const validateSchema = ajv.compile(KORTIX_JSON_SCHEMA as Record<string, unknown>);
+
+  test('a workspace name validates with no warning, beside a legacy one', () => {
+    const r = summarize(doc('    kortix_permissions: [workspace.session.start, project.read]\n'));
+    expect(r.valid).toBe(true);
+    expect(r.warnings).toEqual([]);
+  });
+
+  test('an account-scoped workspace name stays ungrantable, like its legacy name', () => {
+    const r = summarize(doc('    kortix_permissions: [workspace.billing.read]\n'));
+    expect(r.valid).toBe(false);
+    expect(r.errors.map((e) => e.path)).toContain('agents.w.kortix_permissions[0]');
+  });
+
+  test('every grantable action has exactly one workspace name, in the same order', () => {
+    expect(GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS).toHaveLength(GRANTABLE_KORTIX_PERMISSIONS.length);
+    GRANTABLE_KORTIX_PERMISSIONS.forEach((legacy, i) => {
+      expect(GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS[i]).toBe(toWorkspaceAction(legacy));
+      expect(isGrantableKortixPermission(GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS[i]!)).toBe(true);
+    });
+  });
+
+  test('the published JSON Schema accepts the workspace names', () => {
+    expect(validateSchema(parseYaml(doc('    kortix_permissions: [workspace.read, workspace.gitops.push]\n')))).toBe(true);
+    expect(validateSchema(parseYaml(doc('    kortix_permissions: [workspace.not_an_action]\n')))).toBe(false);
   });
 });

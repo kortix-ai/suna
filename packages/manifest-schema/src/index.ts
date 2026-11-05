@@ -43,6 +43,7 @@ import {
   type ConnectorProvider,
   ENV_NAME_RE,
   GRANTABLE_KORTIX_PERMISSIONS,
+  isGrantableKortixPermission,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
   RETIRED_KORTIX_PERMISSIONS,
@@ -226,6 +227,8 @@ export {
   type ConnectorProvider,
   ENV_NAME_RE,
   GRANTABLE_KORTIX_PERMISSIONS,
+  GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS,
+  isGrantableKortixPermission,
   HEX_COLOR_RE_V2,
   PI_PACKAGE_NPM_RE,
   PI_PACKAGE_PATH_RE,
@@ -558,7 +561,8 @@ export function validateGrantList(
       return;
     }
     const s = item.trim();
-    if (checkAction && s !== '*' && !GRANTABLE_KORTIX_PERMISSIONS.includes(s)) {
+    // Either name is grantable: `project.session.start` or `workspace.session.start`.
+    if (checkAction && s !== '*' && !isGrantableKortixPermission(s)) {
       const renamedTo = DEPRECATED_KORTIX_PERMISSION_ALIASES[s];
       if (renamedTo) {
         // A RENAMED action, not a dead one: it still resolves to a real
@@ -588,7 +592,7 @@ export function validateGrantList(
       } else {
         issues.push({
           path: `${where}[${k}]`,
-          message: `"${s}" is not a grantable Kortix permission (allowed: project.*; account-scoped actions can never be granted to an agent).`,
+          message: `"${s}" is not a grantable Kortix permission (allowed: project.* or its workspace.* name; account-scoped actions can never be granted to an agent).`,
           severity: 'error',
         });
       }
