@@ -72,12 +72,15 @@ import {
   sessionRuntimeProjections,
   sessionSandboxes,
   sessionTurns,
+  sessionPendingPermissions,
 } from '@kortix/db';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
 import { isUuid } from '../../shared/validate';
 import { maxProjectsForAccount } from '../../shared/account-limits';
+import { blobKey, supabaseSiteStorage, type SiteStorage } from '../../apps/static-site';
+import { mapWithConcurrency } from '../../shared/map-with-concurrency';
 
 /**
  * Tables the transfer UPDATES (`account_id` → the target account) for the
@@ -113,6 +116,8 @@ export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
   sessionContentPurges,
   sessionRuntimeProjections,
   sessionPendingQuestions,
+  // A parked tool call waits in its session; a person of the project decides it.
+  sessionPendingPermissions,
   sandboxTemplates,
   projectSnapshotBuilds,
   providerTransitions,
@@ -158,6 +163,9 @@ export const PROJECT_TRANSFER_LEAVE_TABLES: Readonly<Record<string, string>> = {
   // the same rule for both audit tables.
   audit_events: 'forensic audit history — events stay where they happened',
   tunnel_audit_logs: 'audit evidence stays where the action happened',
+  // A derived rollup of audit_events (worker/jobs/audit-activity.ts): it
+  // follows the events it sums, which stay with the source account.
+  audit_activity_daily: 'derived audit rollup — recomputed from audit_events, which stay where they happened',
   // Transient device-pairing requests; they expire on their own and the
   // approver's project access is re-checked at approval time.
   tunnel_device_auth_requests: 'transient pending device auth, self-expiring',
@@ -170,6 +178,23 @@ export const PROJECT_TRANSFER_LEAVE_TABLES: Readonly<Record<string, string>> = {
   // Completed one-off migration runs — operations history, not live state.
   legacy_sandbox_migrations: 'completed ops migration run record',
   suna_account_migrations: 'completed ops migration run record',
+};
+
+/**
+ * App hosting rows that carry `account_id` but no `project_id`. They follow the
+ * project through their App: `app_volumes.app_id`, and `app_deployments.app_id`
+ * for `app_site_files` and `app_runtimes`. Left behind, a moved static App
+ * reads its files under the old account's blob prefix and the old account keeps
+ * paying its compute (faq.md "split" item 2). `app_site_blobs` is keyed
+ * `(account_id, sha256)` and shared by every App of the account, so the
+ * transfer COPIES the moved Apps' blob rows and objects to the target and
+ * leaves the source rows to `reclaimAppSiteBlobs`.
+ */
+export const PROJECT_TRANSFER_APP_TABLES: Readonly<Record<string, string>> = {
+  app_site_files: 'moved by app_deployments.app_id → apps.project_id',
+  app_runtimes: 'moved by app_deployments.app_id → apps.project_id',
+  app_volumes: 'moved by app_id → apps.project_id',
+  app_site_blobs: 'copied for the moved Apps\' sha256 set; source rows stay for reclaimAppSiteBlobs',
 };
 
 export type ProjectTransferErrorCode =
@@ -201,7 +226,7 @@ export interface TransferProjectOwnershipInput {
 const transferDeliveryError = 'Project ownership changed before Artifact comment delivery.';
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 
-async function cancelArtifactDeliveries(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], projectId: string, accountId: string) {
+async function cancelArtifactDeliveries(tx: TransferTx, projectId: string, accountId: string) {
   const owned = await tx.select({ id: artifacts.artifactId }).from(artifacts)
     .where(and(eq(artifacts.projectId, projectId), eq(artifacts.accountId, accountId))).for('update');
   const ids = owned.map((row) => row.id);
@@ -242,53 +267,153 @@ async function cancelArtifactDeliveries(tx: Parameters<Parameters<typeof db.tran
     .where(and(inArray(artifactCommentThreads.artifactId, ids), inArray(artifactCommentThreads.threadId, [...threadIds]), inArray(artifactCommentThreads.agentState, ['pending', 'sent'])));
 }
 
+export type TransferTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * The directory copy a workspace split made in the fresh target account
+ * (`workspace-split-copy.ts`): source group id → copy, source custom role id →
+ * copy. With it, the transfer REMAPS the project's group, custom-role and
+ * pending grants and keeps its secrets' member grants, instead of dropping
+ * them: every source member, group and custom role exists in the target.
+ */
+export interface SplitDirectoryMap {
+  groups: Readonly<Record<string, string>>;
+  roles: Readonly<Record<string, string>>;
+}
+
+export interface TransferProjectOwnershipOptions {
+  /** Set only by the workspace split: the target is a fresh account holding a
+   *  copy of the source directory. Skips the target project-limit check (a
+   *  split target is a new Free account). */
+  split?: SplitDirectoryMap;
+  /** Where static App blobs live. Default: the `app-sites` bucket. */
+  siteStorage?: SiteStorage;
+}
+
+/** The distinct blobs (hash, content type) the project's static App deployments name. */
+export async function projectSiteBlobs(projectId: string, accountId: string): Promise<{ sha256: string; contentType: string }[]> {
+  const rows = await db.execute<{ sha256: string; content_type: string }>(sql`
+    SELECT f.sha256, min(f.content_type) AS content_type FROM kortix.app_site_files f
+      JOIN kortix.app_deployments d ON d.deployment_id = f.deployment_id
+      JOIN kortix.apps a ON a.app_id = d.app_id
+     WHERE a.project_id = ${projectId} AND f.account_id = ${accountId}
+     GROUP BY f.sha256 ORDER BY f.sha256`);
+  return rows.map((row) => ({ sha256: row.sha256, contentType: row.content_type }));
+}
+
+/**
+ * Copy the project's static App blobs from `<from>/<sha>` to `<to>/<sha>` in
+ * site storage. Runs BEFORE the transfer transaction (object storage is not
+ * transactional): a copy is idempotent (upsert), and the source object stays
+ * for the source account's other Apps and for a rollback. Returns the copied
+ * hashes; a hash storage no longer has is skipped and counted.
+ */
+export async function copyProjectSiteBlobs(
+  input: { projectId: string; fromAccountId: string; toAccountId: string },
+  storage: SiteStorage = supabaseSiteStorage,
+): Promise<{ copied: string[]; missing: string[] }> {
+  const blobs = await projectSiteBlobs(input.projectId, input.fromAccountId);
+  const missing = new Set<string>();
+  await mapWithConcurrency(blobs, 4, async ({ sha256, contentType }) => {
+    const body = await storage.open(blobKey(input.fromAccountId, sha256));
+    if (!body) {
+      missing.add(sha256);
+      return;
+    }
+    await storage.put(blobKey(input.toAccountId, sha256), await new Response(body).blob(), contentType);
+  });
+  return { copied: blobs.map((b) => b.sha256).filter((sha) => !missing.has(sha)), missing: [...missing] };
+}
+
+/**
+ * Keep `projects.split_pending` true exactly while the account holds 2+
+ * active projects (a legacy multi-project account), false once it holds one.
+ * The 1:1 index `uq_projects_workspace_account` skips split-pending rows.
+ */
+export async function recomputeSplitPending(tx: TransferTx, accountId: string): Promise<void> {
+  await tx.execute(sql`
+    UPDATE kortix.projects p SET split_pending = sub.multi
+      FROM (SELECT count(*) > 1 AS multi FROM kortix.projects
+             WHERE account_id = ${accountId} AND status = 'active') sub
+     WHERE p.account_id = ${accountId} AND p.status = 'active' AND p.split_pending IS DISTINCT FROM sub.multi`);
+}
+
+const jsonMap = (map: Readonly<Record<string, string>>) => JSON.stringify(map);
+
 /**
  * Move `projectId` from `fromAccountId` to `toAccountId` in ONE transaction.
  *
  * Owned rows are re-pointed, preserving ids and timestamps. Account-salted
- * secrets are re-encrypted and source member grants are revoked atomically. Project-
- * scoped system role assignments follow the project; pending, custom-role
- * and group grants are removed: a group is a directory object of the source account and its
- * grant cannot be re-resolved inside the target (and keeping the row would
- * hand the source group's members access through the target's assignment).
+ * secrets are re-encrypted. App hosting rows follow by `app_id`, and the
+ * Apps' site blobs are copied to the target prefix first.
+ *
+ * A plain transfer (into an existing account): source member grants on the
+ * project's secrets are revoked; project-scoped system role assignments follow
+ * the project; pending, custom-role and group grants are removed: a group is a
+ * directory object of the source account and its grant cannot be re-resolved
+ * inside the target (and keeping the row would hand the source group's members
+ * access through the target's assignment).
+ *
+ * A split transfer (`options.split`, the target holds a copy of the source
+ * directory): every grant is kept and remapped to the copies.
  */
 export async function transferProjectOwnership(
   input: TransferProjectOwnershipInput,
+  options: TransferProjectOwnershipOptions = {},
+): Promise<{ projectId: string; accountId: string }> {
+  if (input.fromAccountId === input.toAccountId) {
+    throw new ProjectTransferError('same_account', 'Project is already in that account');
+  }
+  await copyProjectSiteBlobs(input, options.siteStorage);
+  return db.transaction((tx) => moveProjectInTransaction(tx, input, options));
+}
+
+/**
+ * The transfer's data movement inside the caller's transaction. The workspace
+ * split calls it after copying the directory in the same transaction; copy the
+ * site blobs first ({@link copyProjectSiteBlobs}).
+ */
+export async function moveProjectInTransaction(
+  tx: TransferTx,
+  input: TransferProjectOwnershipInput,
+  options: Pick<TransferProjectOwnershipOptions, 'split'> = {},
 ): Promise<{ projectId: string; accountId: string }> {
   const { projectId, fromAccountId, toAccountId } = input;
-
+  const split = options.split;
   if (fromAccountId === toAccountId) {
     throw new ProjectTransferError('same_account', 'Project is already in that account');
   }
-  return db.transaction(async (tx) => {
-    // Lock the row: the CAS against a concurrent move happens under this lock.
-    const [row] = await tx.select({ account_id: projects.accountId, status: projects.status })
-      .from(projects).where(eq(projects.projectId, projectId)).for('update');
-    if (!row) throw new ProjectTransferError('project_missing', 'Project not found');
-    if (row.status !== 'active') {
-      throw new ProjectTransferError('not_active', 'Archived projects cannot be transferred');
-    }
-    if (row.account_id === toAccountId) {
-      // The caller's loaded row was already stale — the project moved first.
-      throw new ProjectTransferError('concurrent_move', 'Project was already transferred');
-    }
-    if (row.account_id !== fromAccountId) {
-      throw new ProjectTransferError('concurrent_move', 'Project moved while the transfer was prepared');
-    }
+  // Lock the row: the CAS against a concurrent move happens under this lock.
+  const [row] = await tx.select({ account_id: projects.accountId, status: projects.status })
+    .from(projects).where(eq(projects.projectId, projectId)).for('update');
+  if (!row) throw new ProjectTransferError('project_missing', 'Project not found');
+  if (row.status !== 'active') {
+    throw new ProjectTransferError('not_active', 'Archived projects cannot be transferred');
+  }
+  if (row.account_id === toAccountId) {
+    // The caller's loaded row was already stale — the project moved first.
+    throw new ProjectTransferError('concurrent_move', 'Project was already transferred');
+  }
+  if (row.account_id !== fromAccountId) {
+    throw new ProjectTransferError('concurrent_move', 'Project moved while the transfer was prepared');
+  }
 
-    const [target] = await tx.select({ accountId: accounts.accountId }).from(accounts)
-      .where(eq(accounts.accountId, toAccountId)).for('update');
-    if (!target) throw new ProjectTransferError('target_missing', 'Target account not found');
+  const [target] = await tx.select({ accountId: accounts.accountId }).from(accounts)
+    .where(eq(accounts.accountId, toAccountId)).for('update');
+  if (!target) throw new ProjectTransferError('target_missing', 'Target account not found');
 
+  if (!split) {
     const limit = await maxProjectsForAccount(toAccountId);
     const [counted] = await tx.select({ count: sql<number>`count(*)::int` }).from(projects)
       .where(sql`${projects.accountId} = ${toAccountId} AND ${projects.status} = 'active'`);
     if ((counted?.count ?? 0) >= limit) {
       throw new ProjectTransferError('project_limit_reached', 'Target account project limit reached');
     }
+  }
 
-    await cancelArtifactDeliveries(tx, projectId, fromAccountId);
+  await cancelArtifactDeliveries(tx, projectId, fromAccountId);
 
+  if (!split) {
     // Source directory objects and invitation activation remain account-scoped.
     // Custom roles must not let source admins retain control after the move.
     await tx.execute(sql`DELETE FROM ${roleAssignments}
@@ -296,58 +421,104 @@ export async function transferProjectOwnership(
         AND (principal_type IN ('group', 'pending') OR role_id IN (
           SELECT role_id FROM ${iamRoles} WHERE account_id = ${fromAccountId}
         ))`);
+  }
 
-    // Lock credentials before reading their envelopes: concurrent refreshes must
-    // not overwrite a destination envelope with ciphertext salted by the source.
-    const secrets = await tx.select().from(accountSecretResources)
-      .where(sql`${accountSecretResources.projectId} = ${projectId} AND ${accountSecretResources.accountId} = ${fromAccountId}`)
-      .for('update');
-    for (const secret of secrets) {
-      // Member grants belong to the source directory, not the destination.
-      // Delete before changing the resource's composite FK identity.
-      await tx.delete(accountSecretGrants).where(eq(accountSecretGrants.secretId, secret.secretId));
-      await tx.update(accountSecretResources).set({
-        valueEnc: encryptAccountSecret(toAccountId, decryptAccountSecret(fromAccountId, secret.valueEnc)),
-      }).where(eq(accountSecretResources.secretId, secret.secretId));
-    }
+  // Lock credentials before reading their envelopes: concurrent refreshes must
+  // not overwrite a destination envelope with ciphertext salted by the source.
+  const secrets = await tx.select().from(accountSecretResources)
+    .where(sql`${accountSecretResources.projectId} = ${projectId} AND ${accountSecretResources.accountId} = ${fromAccountId}`)
+    .for('update');
+  const keptGrants: (typeof accountSecretGrants.$inferSelect)[] = [];
+  for (const secret of secrets) {
+    // Grants reference (secret_id, account_id): delete before changing the
+    // resource's composite FK identity. A plain transfer revokes them (member
+    // grants belong to the source directory); a split re-adds them below,
+    // since every source member is a member of the target.
+    const deleted = await tx.delete(accountSecretGrants).where(eq(accountSecretGrants.secretId, secret.secretId)).returning();
+    if (split) keptGrants.push(...deleted);
+    await tx.update(accountSecretResources).set({
+      valueEnc: encryptAccountSecret(toAccountId, decryptAccountSecret(fromAccountId, secret.valueEnc)),
+    }).where(eq(accountSecretResources.secretId, secret.secretId));
+  }
 
-    // Both ends contain account_id. Defer only this graph's tenant checks;
-    // ordinary connector writes retain immediate foreign-key enforcement.
-    await tx.execute(sql`SET CONSTRAINTS
-      kortix.connector_connections_connector_tenant_fk,
-      kortix.project_session_connector_bindings_session_tenant_fk,
-      kortix.project_session_connector_bindings_alias_tenant_fk,
-      kortix.project_session_connector_bindings_connection_tenant_fk,
-      kortix.connection_oauth_applications_connection_tenant_fk DEFERRED`);
+  // Both ends contain account_id. Defer only this graph's tenant checks;
+  // ordinary connector writes retain immediate foreign-key enforcement.
+  await tx.execute(sql`SET CONSTRAINTS
+    kortix.connector_connections_connector_tenant_fk,
+    kortix.project_session_connector_bindings_session_tenant_fk,
+    kortix.project_session_connector_bindings_alias_tenant_fk,
+    kortix.project_session_connector_bindings_connection_tenant_fk,
+    kortix.connection_oauth_applications_connection_tenant_fk DEFERRED`);
 
-    for (const table of PROJECT_TRANSFER_TABLES) {
-      await tx.execute(
-        sql`UPDATE ${table} SET account_id = ${toAccountId}
-             WHERE project_id = ${projectId} AND account_id = ${fromAccountId}`,
-      );
-    }
-
-    await tx.execute(sql`SET CONSTRAINTS
-      kortix.connector_connections_connector_tenant_fk,
-      kortix.project_session_connector_bindings_session_tenant_fk,
-      kortix.project_session_connector_bindings_alias_tenant_fk,
-      kortix.project_session_connector_bindings_connection_tenant_fk,
-      kortix.connection_oauth_applications_connection_tenant_fk IMMEDIATE`);
-
-    // Project-scoped grants follow the project; group grants die with the
-    // source account's directory (see the doc comment).
+  for (const table of PROJECT_TRANSFER_TABLES) {
     await tx.execute(
-      sql`UPDATE ${roleAssignments} SET account_id = ${toAccountId}
-           WHERE account_id = ${fromAccountId}
-             AND scope_type = 'project' AND scope_id = ${projectId}
-             AND principal_type IN ('user', 'service_account', 'project')`,
+      sql`UPDATE ${table} SET account_id = ${toAccountId}
+           WHERE project_id = ${projectId} AND account_id = ${fromAccountId}`,
     );
+  }
 
-    logger.info('[project-transfer] project moved', {
-      projectId,
-      fromAccountId,
-      toAccountId,
-    });
-    return { projectId, accountId: toAccountId };
+  await tx.execute(sql`SET CONSTRAINTS
+    kortix.connector_connections_connector_tenant_fk,
+    kortix.project_session_connector_bindings_session_tenant_fk,
+    kortix.project_session_connector_bindings_alias_tenant_fk,
+    kortix.project_session_connector_bindings_connection_tenant_fk,
+    kortix.connection_oauth_applications_connection_tenant_fk IMMEDIATE`);
+
+  await moveAppHostingRows(tx, projectId, fromAccountId, toAccountId);
+
+  if (keptGrants.length) {
+    await tx.insert(accountSecretGrants).values(keptGrants.map((grant) => ({ ...grant, accountId: toAccountId })));
+  }
+
+  // Project-scoped grants follow the project; in a plain transfer, group
+  // grants die with the source account's directory (see the doc comment).
+  await tx.execute(
+    sql`UPDATE ${roleAssignments} SET account_id = ${toAccountId}
+         WHERE account_id = ${fromAccountId}
+           AND scope_type = 'project' AND scope_id = ${projectId}
+           AND principal_type IN ('user', 'service_account', 'project')
+           AND role_id NOT IN (SELECT role_id FROM ${iamRoles} WHERE account_id = ${fromAccountId})`,
+  );
+  if (split) {
+    // Every remaining project-scoped grant: groups and custom roles point at
+    // their copies; a pending invitee keeps the grant its split invite carries.
+    await tx.execute(sql`
+      UPDATE ${roleAssignments} SET account_id = ${toAccountId},
+        principal_id = CASE WHEN principal_type = 'group'
+          THEN COALESCE((${jsonMap(split.groups)}::jsonb ->> principal_id::text)::uuid, principal_id)
+          ELSE principal_id END,
+        role_id = COALESCE((${jsonMap(split.roles)}::jsonb ->> role_id::text)::uuid, role_id),
+        updated_at = now()
+       WHERE account_id = ${fromAccountId} AND scope_type = 'project' AND scope_id = ${projectId}`);
+  }
+
+  await recomputeSplitPending(tx, fromAccountId);
+  await recomputeSplitPending(tx, toAccountId);
+
+  logger.info('[project-transfer] project moved', {
+    projectId,
+    fromAccountId,
+    toAccountId,
+    split: Boolean(split),
   });
+  return { projectId, accountId: toAccountId };
+}
+
+/** App hosting rows follow the project by `app_id` ({@link PROJECT_TRANSFER_APP_TABLES}). */
+async function moveAppHostingRows(tx: TransferTx, projectId: string, fromAccountId: string, toAccountId: string): Promise<void> {
+  const deployments = sql`SELECT d.deployment_id FROM kortix.app_deployments d
+    JOIN kortix.apps a ON a.app_id = d.app_id WHERE a.project_id = ${projectId}`;
+  await tx.execute(sql`
+    INSERT INTO kortix.app_site_blobs (account_id, sha256, size_bytes)
+    SELECT DISTINCT ON (b.sha256) ${toAccountId}::uuid, b.sha256, b.size_bytes
+      FROM kortix.app_site_blobs b
+      JOIN kortix.app_site_files f ON f.account_id = b.account_id AND f.sha256 = b.sha256
+     WHERE b.account_id = ${fromAccountId} AND f.deployment_id IN (${deployments})
+    ON CONFLICT (account_id, sha256) DO NOTHING`);
+  await tx.execute(sql`UPDATE kortix.app_site_files SET account_id = ${toAccountId}
+    WHERE account_id = ${fromAccountId} AND deployment_id IN (${deployments})`);
+  await tx.execute(sql`UPDATE kortix.app_runtimes SET account_id = ${toAccountId}
+    WHERE account_id = ${fromAccountId} AND deployment_id IN (${deployments})`);
+  await tx.execute(sql`UPDATE kortix.app_volumes SET account_id = ${toAccountId}
+    WHERE account_id = ${fromAccountId} AND app_id IN (SELECT app_id FROM kortix.apps WHERE project_id = ${projectId})`);
 }
