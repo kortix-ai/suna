@@ -3,6 +3,7 @@ import { configureKortix } from '../../http/config';
 import { formatGoalFile, parseGoalFile } from './goal-file';
 import {
   createProjectGoal,
+  defaultGoalAgent,
   getProjectGoalFiles,
   goalHealth,
   listProjectGoals,
@@ -700,5 +701,34 @@ describe('person controls: create, pause, resume', () => {
   test('paused_at and paused_by round-trip through GOAL.md', () => {
     const doc = { ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person', body: '' };
     expect(parseGoalFile(formatGoalFile(doc))).toMatchObject({ paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
+  });
+});
+
+describe('defaultGoalAgent', () => {
+  const agent = (name: string, extra: Record<string, unknown> = {}) => ({ name, description: null, mode: 'primary', ...extra });
+
+  test('the project default, when it can work a goal', () => {
+    expect(defaultGoalAgent({ default_agent: 'sales', agents: [agent('kortix'), agent('sales')] })).toBe('sales');
+  });
+
+  test('skips agents without Files (My Kortix), hidden, disabled and platform agents', () => {
+    const agents = [
+      agent('mykortix'),
+      agent('quiet', { hidden: true }),
+      agent('off', { enabled: false }),
+      agent('suna', { platform: true }),
+      agent('meta-box', { sandbox: 'meta' }),
+      agent('worker'),
+    ];
+    expect(defaultGoalAgent({ default_agent: 'mykortix', agents })).toBe('worker');
+  });
+
+  test('prefers a primary agent over a subagent', () => {
+    expect(defaultGoalAgent({ agents: [agent('helper', { mode: 'subagent' }), agent('lead')] })).toBe('lead');
+  });
+
+  test('null when no agent can work a goal', () => {
+    expect(defaultGoalAgent({ default_agent: 'mykortix', agents: [agent('mykortix')] })).toBeNull();
+    expect(defaultGoalAgent({ agents: [] })).toBeNull();
   });
 });
