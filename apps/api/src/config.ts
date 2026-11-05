@@ -268,6 +268,17 @@ const envSchema = z.object({
   // deletes nothing; `execute` runs the deletion routine; `off` stops the tick.
   // ACCOUNT_DELETION_SWEEP_PAUSED forces dry_run.
   RETENTION_ERASURE_MODE: z.enum(['off', 'dry_run', 'execute']).optional().default('dry_run'),
+  // The workspace split (workspaces/split/): splits each project of a legacy
+  // multi-project account into its own workspace. `off` stops the tick,
+  // `dry_run` writes the plan into kortix.workspace_split_runs and moves
+  // nothing, `apply` moves one project per transaction. Unset: `dry_run` on a
+  // cloud deployment (INTERNAL_KORTIX_ENV set explicitly), `off` locally and on
+  // self-host. A `workspace_split` row in kortix.platform_settings
+  // (`{"mode": "..."}`) overrides it at runtime.
+  WORKSPACE_SPLIT_MODE: z.preprocess(
+    (value) => (typeof value === 'string' ? value.trim().toLowerCase().replace('-', '_') : value),
+    z.enum(['off', 'dry_run', 'apply']).optional(),
+  ),
   RETENTION_ERASURE_AFTER_DAYS: optInt(80).refine((days) => days >= 0, {
     message: 'Must be 0 or more days: the retention backstop never erases an account before its date',
   }),
@@ -1437,6 +1448,8 @@ export const config = {
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   RETENTION_ERASURE_MODE: env.RETENTION_ERASURE_MODE,
   RETENTION_ERASURE_AFTER_DAYS: env.RETENTION_ERASURE_AFTER_DAYS,
+  WORKSPACE_SPLIT_MODE: (env.WORKSPACE_SPLIT_MODE
+    ?? (process.env.INTERNAL_KORTIX_ENV ? 'dry_run' : 'off')) as 'off' | 'dry_run' | 'apply',
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS.split(',')
     .map((host) => host.trim())

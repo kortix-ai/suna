@@ -592,6 +592,83 @@ withDb('project transfer', () => {
     }
   });
 
+  test('a parked tool-call permission follows the project', async () => {
+    const { sessionPendingPermissions } = await import('@kortix/db');
+    const [parked] = await db.insert(sessionPendingPermissions).values({
+      accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, sessionId: SESSION_ID, requestId: 'synthetic-request',
+      tool: 'bash', permission: 'bash', argsHash: 'a'.repeat(64),
+    }).returning();
+    await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
+    const [moved] = await db.select().from(sessionPendingPermissions).where(eq(sessionPendingPermissions.id, parked!.id));
+    expect(moved?.accountId).toBe(TARGET_ACCOUNT);
+  });
+
+  test('App hosting rows follow the project by app_id and the site blobs are copied to the target prefix', async () => {
+    const { apps, appDeployments, appSiteFiles, appSiteBlobs, appVolumes, appRuntimes } = await import('@kortix/db');
+    const [app] = await db.insert(apps).values({
+      accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, slug: 'transfer-site', name: 'Transfer site', routeKey: 'xfer0001',
+    }).returning();
+    const [deployment] = await db.insert(appDeployments).values({
+      appId: app!.appId, version: 1, sourceKind: 'static', hostingType: 'static', runtimeVersion: 'synthetic', createdBy: OWNER_A,
+    }).returning();
+    const sha = 'b'.repeat(64);
+    const sharedSha = 'c'.repeat(64);
+    await db.insert(appSiteBlobs).values([
+      { accountId: SOURCE_ACCOUNT, sha256: sha, sizeBytes: 5 },
+      { accountId: SOURCE_ACCOUNT, sha256: sharedSha, sizeBytes: 3 },
+    ]);
+    await db.insert(appSiteFiles).values([
+      { deploymentId: deployment!.deploymentId, accountId: SOURCE_ACCOUNT, path: 'index.html', sha256: sha, sizeBytes: 5, contentType: 'text/html' },
+      { deploymentId: deployment!.deploymentId, accountId: SOURCE_ACCOUNT, path: 'a.css', sha256: sharedSha, sizeBytes: 3, contentType: 'text/css' },
+    ]);
+    const [volume] = await db.insert(appVolumes).values({
+      appId: app!.appId, accountId: SOURCE_ACCOUNT, name: 'data', sizeGb: 1, externalId: 'synthetic-volume-xfer',
+    }).returning();
+    const [runtime] = await db.insert(appRuntimes).values({
+      deploymentId: deployment!.deploymentId, accountId: SOURCE_ACCOUNT, provider: 'platinum',
+      externalId: 'synthetic-runtime-xfer', controlTokenHash: 'h'.repeat(64),
+    }).returning();
+    const objects = new Map<string, string>([[`${SOURCE_ACCOUNT}/${sha}`, 'hello'], [`${SOURCE_ACCOUNT}/${sharedSha}`, 'css']]);
+    const storage = {
+      put: async (key: string, body: Blob) => { objects.set(key, await body.text()); },
+      open: async (key: string) => (objects.has(key) ? new Blob([objects.get(key)!]).stream() : null),
+      remove: async (keys: string[]) => { for (const key of keys) objects.delete(key); },
+    };
+    try {
+      await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT }, { siteStorage: storage });
+      const files = await db.select().from(appSiteFiles).where(eq(appSiteFiles.deploymentId, deployment!.deploymentId));
+      expect(files.map((f) => f.accountId)).toEqual([TARGET_ACCOUNT, TARGET_ACCOUNT]);
+      const [movedVolume] = await db.select().from(appVolumes).where(eq(appVolumes.volumeId, volume!.volumeId));
+      const [movedRuntime] = await db.select().from(appRuntimes).where(eq(appRuntimes.runtimeId, runtime!.runtimeId));
+      expect(movedVolume?.accountId).toBe(TARGET_ACCOUNT);
+      expect(movedRuntime?.accountId).toBe(TARGET_ACCOUNT);
+      const targetBlobs = await db.select().from(appSiteBlobs).where(eq(appSiteBlobs.accountId, TARGET_ACCOUNT));
+      expect(targetBlobs.map((b) => b.sha256).sort()).toEqual([sha, sharedSha]);
+      // The source rows and objects stay for the source's other Apps and reclaim.
+      expect(await db.select().from(appSiteBlobs).where(eq(appSiteBlobs.accountId, SOURCE_ACCOUNT))).toHaveLength(2);
+      expect(objects.get(`${TARGET_ACCOUNT}/${sha}`)).toBe('hello');
+      expect(objects.get(`${TARGET_ACCOUNT}/${sharedSha}`)).toBe('css');
+      expect(objects.get(`${SOURCE_ACCOUNT}/${sha}`)).toBe('hello');
+    } finally {
+      await db.delete(appSiteBlobs).where(sql`${appSiteBlobs.accountId} IN (${SOURCE_ACCOUNT}, ${TARGET_ACCOUNT})`);
+    }
+  });
+
+  test('split_pending follows the account shape: cleared on both sides once each holds one project', async () => {
+    const SECOND = '00000000-0000-4000-a000-00000000a121';
+    await db.update(projects).set({ splitPending: true }).where(eq(projects.projectId, PROJECT_ID));
+    await db.insert(projects).values({
+      projectId: SECOND, accountId: SOURCE_ACCOUNT, name: 'Second', repoUrl: 'https://example.invalid/second.git', splitPending: true,
+    });
+    await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
+    const rows = await db.select({ projectId: projects.projectId, accountId: projects.accountId, splitPending: projects.splitPending })
+      .from(projects).where(sql`${projects.projectId} IN (${PROJECT_ID}, ${SECOND})`).orderBy(projects.projectId);
+    expect(rows).toEqual([
+      { projectId: PROJECT_ID, accountId: TARGET_ACCOUNT, splitPending: false },
+      { projectId: SECOND, accountId: SOURCE_ACCOUNT, splitPending: false },
+    ]);
+  });
+
   test('every schema table carrying both account_id and project_id is classified', async () => {
     // The anti-drift guard: a new table that copies the owning account's id
     // next to the project id must be either moved by the transfer or kept
@@ -599,7 +676,9 @@ withDb('project transfer', () => {
     //
     // Introspected through drizzle's `is` guard: @kortix/db and apps/api
     // resolve the same drizzle copy here, so the class check holds.
-    const schema = await import('@kortix/db');
+    // The whole schema namespace, not only the names `@kortix/db` re-exports
+    // at its top level (`audit_activity_daily` is reachable only here).
+    const { schema } = await import('@kortix/db');
     const moved = new Set(PROJECT_TRANSFER_TABLES.map((t) => getTableName(t)));
     const leave = new Set(Object.keys(PROJECT_TRANSFER_LEAVE_TABLES));
     const both: string[] = [];
@@ -610,14 +689,18 @@ withDb('project transfer', () => {
       const name = getTableName(exported);
       if ('accountId' in columns && 'projectId' in columns) both.push(name);
     }
-    expect(both.length).toBeGreaterThan(30);
-    for (const name of both) {
-      expect(moved.has(name) || leave.has(name)).toBe(true);
-    }
+    // design.md §1.3 counts 56 both-id tables (45 moved + 11 left) on 2026-11-05.
+    // design.md §1.3 counts 56 both-id tables (45 moved + 11 left) on 2026-11-05.
+    expect(both.length).toBeGreaterThanOrEqual(56);
+    // Listed by name, so a failure names the table to classify.
+    expect(both.filter((name) => !moved.has(name) && !leave.has(name)).sort()).toEqual([]);
+    expect(both.filter((name) => moved.has(name) && leave.has(name))).toEqual([]);
     // No stale classifications.
     const known = new Set(both);
-    for (const name of moved) expect(known.has(name)).toBe(true);
-    for (const name of leave) expect(known.has(name)).toBe(true);
+    expect([...moved].filter((name) => !known.has(name))).toEqual([]);
+    expect([...leave].filter((name) => !known.has(name))).toEqual([]);
+    expect(moved.has('session_pending_permissions')).toBe(true);
+    expect(leave.has('audit_activity_daily')).toBe(true);
     // The projects table itself moves.
     expect(moved.has('projects')).toBe(true);
     // The ledgers stay.
