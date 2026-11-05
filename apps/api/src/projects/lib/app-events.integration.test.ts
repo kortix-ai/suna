@@ -159,3 +159,24 @@ test('a test event takes the real path with a test- id, carries event.test, gets
   const real = await listAppEventLog({ projectId: project.project_id, appId: APP_ID, limit: 10, eventId: 'msg-7' });
   expect(real.events.map((e) => [e.id, e.test])).toEqual([['msg-7', false]]);
 });
+
+test('a drained test event leaves last_event_at alone: only the App\'s own posts tell the silence check it is alive', async () => {
+  const appId = crypto.randomUUID();
+  const old = new Date(Date.now() - 30 * 60_000);
+  // A filter that never matches: the drain skips the event without starting a session, and still records it was heard.
+  await db.insert(projectTriggerRuntime).values({
+    projectId: project.project_id, slug: 'quiet-check', triggerType: 'app', enabled: true, scheduleRevision: 'b'.repeat(64),
+    scheduleSpec: { ...spec('quiet-check', 'quiet-watch'), filter: { 'event.name': 'never.sent' } }, lastEventAt: old,
+  });
+  const heard = async () => (await db.select({ at: projectTriggerRuntime.lastEventAt }).from(projectTriggerRuntime)
+    .where(and(eq(projectTriggerRuntime.projectId, project.project_id), eq(projectTriggerRuntime.slug, 'quiet-check'))))[0]!.at;
+
+  await ingestAppEvents({ projectId: project.project_id, appId, appSlug: 'quiet-watch', events: [{ name: 'status.changed', id: 'test-q1' }], test: true });
+  await drainMonitorEvents();
+  expect((await rows(appId)).map((r) => r.status)).toEqual(['skipped']);
+  expect((await heard())?.getTime()).toBe(old.getTime());
+
+  await ingestAppEvents({ projectId: project.project_id, appId, appSlug: 'quiet-watch', events: [{ name: 'status.changed', id: 'q1' }] });
+  await drainMonitorEvents();
+  expect((await heard())!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+});
