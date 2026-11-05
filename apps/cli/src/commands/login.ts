@@ -21,7 +21,7 @@ import {
 import type { AccountMembership, MeResponse } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
-import { NO_WORKSPACE_CODE, NO_WORKSPACE_LINE } from '../api/no-workspace.ts';
+import { NO_WORKSPACE_CODE, NO_WORKSPACE_LINE, noWorkspaceLoginLine } from '../api/no-workspace.ts';
 import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import { C, help, status } from '../style.ts';
 import { deriveFrontendFromApiBase } from '../web-url.ts';
@@ -335,9 +335,17 @@ async function deviceLogin(apiBase: string, dashboardUrl?: string): Promise<stri
     const expires = Math.min(deadline, Date.now() + Math.min(600, grant.expires_in) * 1000);
     while (Date.now() + interval < expires) {
       await new Promise(resolve => setTimeout(resolve, interval));
-      const result = await cliDeviceRequest<{ token?: string; error?: string }>(apiBase, 'poll', { device_code: grant.device_code }, signal);
+      let result: { token?: string; error?: string };
+      try {
+        result = await cliDeviceRequest<{ token?: string; error?: string }>(apiBase, 'poll', { device_code: grant.device_code }, signal);
+      } catch (err) {
+        // A 409 no_workspace: the approver has no workspace, so no key exists
+        // yet and `kortix workspaces create` cannot run. Point at the web.
+        if ((err as Error).message === NO_WORKSPACE_LINE) throw new Error(noWorkspaceLoginLine(dash));
+        throw err;
+      }
       if (result.token) return result.token;
-      if (result.error === NO_WORKSPACE_CODE) throw new Error(NO_WORKSPACE_LINE);
+      if (result.error === NO_WORKSPACE_CODE) throw new Error(noWorkspaceLoginLine(dash));
       if (result.error === 'slow_down') interval += 5000;
       else if (result.error !== 'authorization_pending') throw new Error(result.error || 'Invalid device login response');
     }

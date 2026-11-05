@@ -10,3 +10,11 @@ export const NO_WORKSPACE_LINE =
 
 /** The API's error code for "this needs a workspace and the caller has none". */
 export const NO_WORKSPACE_CODE = 'no_workspace';
+
+/**
+ * The same fact at sign-in, where `kortix workspaces create` cannot run yet:
+ * the CLI holds no key until a workspace exists, so the fix is the web.
+ */
+export function noWorkspaceLoginLine(webBase: string): string {
+  return `No workspace yet. Create one at ${webBase.replace(/\/+$/, '')}/new, or accept an invite, then run kortix login again.`;
+}
