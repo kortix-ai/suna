@@ -119,6 +119,8 @@ export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
  * check runs once a minute; a shorter window would alert on ordinary jitter.
  */
 export const TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
+/** Ceiling for `expect_event_within`: 30 days. A watcher quiet that long is not a watcher. */
+export const TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS = 30 * 86_400;
 /**
  * A trigger starts at most this many runs in any 60 minutes when its
  * `max_runs_per_hour` is unset (KRTX-1721). Twice the busiest production

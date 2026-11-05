@@ -50,6 +50,7 @@ import {
   reservedEnvNameReason,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
   TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS,
   DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
   RESERVED_SANDBOX_SLUG,
@@ -243,6 +244,7 @@ export {
   RESERVED_SLUG_PROVIDERS,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
   TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS,
   DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
   DURATION_RE,
@@ -1467,7 +1469,10 @@ export function validateTriggers(rawNode: unknown, path: string, issues: Manifes
     // The silence alert: app triggers only, a duration of at least 5m.
     if (entry.expect_event_within !== undefined) {
       if (type === 'app') {
-        validateMonitorDuration(entry.expect_event_within, `${where}.expect_event_within`, TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS, issues);
+        const seconds = validateMonitorDuration(entry.expect_event_within, `${where}.expect_event_within`, TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS, issues);
+        if (seconds !== null && seconds > TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS) {
+          issues.push({ path: `${where}.expect_event_within`, message: 'must be at most 30d.', severity: 'error' });
+        }
       } else {
         issues.push({ path: `${where}.expect_event_within`, message: 'expect_event_within is only valid on an app trigger.', severity: 'error' });
       }

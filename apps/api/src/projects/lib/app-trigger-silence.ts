@@ -50,16 +50,18 @@ export async function checkAppTriggerSilence(now = new Date(), force = false): P
   lastCheckAt = now.getTime();
   const result = await db.execute(sql`
     select r.project_id, p.account_id, r.slug, r.schedule_spec->>'app' as app,
-           (r.schedule_spec->>'expectEventWithinSeconds')::int as window_seconds,
+           (r.schedule_spec->>'expectEventWithinSeconds')::bigint as window_seconds,
            coalesce(r.last_event_at, r.updated_at) as heard_at
       from kortix.project_trigger_runtime r
       join kortix.projects p on p.project_id = r.project_id and p.status = 'active'
      where r.trigger_type = 'app'
        and r.enabled is not false
        and r.alert_failing_since is null
-       and (r.schedule_spec->>'expectEventWithinSeconds') is not null
+       -- Only a whole number of seconds up to 30 days: a stored value the parser
+       -- would refuse (an older server, a hand edit) must not fail the whole pass.
+       and (r.schedule_spec->>'expectEventWithinSeconds') ~ '^[0-9]{1,7}$'
        and coalesce(r.last_event_at, r.updated_at)
-           < ${now.toISOString()}::timestamptz - make_interval(secs => (r.schedule_spec->>'expectEventWithinSeconds')::int)
+           < ${now.toISOString()}::timestamptz - make_interval(secs => (r.schedule_spec->>'expectEventWithinSeconds')::bigint::double precision)
      limit ${SILENCE_CHECK_LIMIT}
   `);
   const rows = ((result as unknown as { rows?: SilentTrigger[] }).rows ?? (result as unknown as SilentTrigger[]));

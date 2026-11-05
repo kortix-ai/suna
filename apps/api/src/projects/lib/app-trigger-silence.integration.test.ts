@@ -67,6 +67,8 @@ beforeAll(async () => {
   await seed('never-heard', { expect: 3600, heardMinutesAgo: null });
   await seed('off', { expect: 600, heardMinutesAgo: 25, enabled: false });
   await seed('no-window', { heardMinutesAgo: 600 });
+  // A window the parser would refuse (stored by an older server or a hand edit): never alerts, never fails the pass.
+  await seed('huge', { expect: 100_000_000_000_000, heardMinutesAgo: 600 });
 });
 
 afterAll(async () => {
@@ -85,7 +87,7 @@ test('only an enabled trigger past its window is alerted, once, with the flag of
   expect(first?.raised).toBe(2); // quiet (25 min > 10 min), never-heard (120 min since written > 60 min)
   expect((await runtime('quiet')).alertSource).toBe('silence');
   expect((await runtime('never-heard')).alertSource).toBe('silence');
-  for (const slug of ['lively', 'off', 'no-window']) expect((await runtime(slug)).alertFailingSince).toBeNull();
+  for (const slug of ['lively', 'off', 'no-window', 'huge']) expect((await runtime(slug)).alertFailingSince).toBeNull();
   const rows = await inbox('quiet');
   expect(rows.map((r) => r.kind)).toEqual(['automation_failed']);
   expect(rows[0]!.body).toContain('App "status-watch" sent no event for 25m; this trigger expects one within 10m.');

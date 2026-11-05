@@ -3,6 +3,7 @@ import {
   EVENT_FORBIDDEN_KEYS,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
   TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS,
   formatDurationSeconds,
   normalizeTriggerList,
   parseChangeRequestFilter,
@@ -155,7 +156,7 @@ export function parseMaxLateness(
 /**
  * An app trigger's `expect_event_within`: the silence alert. Absent → `{}`, so
  * a spec without it keeps its shape and schedule revision. Mirrors
- * `@kortix/manifest-schema`: app only, at least 5m.
+ * `@kortix/manifest-schema`: app only, 5m to 30d.
  */
 export function parseExpectEventWithin(
   row: Record<string, unknown>,
@@ -165,7 +166,9 @@ export function parseExpectEventWithin(
   if (raw === undefined || raw === null) return {};
   if (type !== 'app') return { error: 'expect_event_within is only valid on an app trigger' };
   const parsed = parseMonitorDuration(raw, 'expect_event_within', TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS);
-  return 'error' in parsed ? parsed : { expectEventWithinSeconds: parsed.seconds };
+  if ('error' in parsed) return parsed;
+  if (parsed.seconds > TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS) return { error: 'expect_event_within must be at most 30d' };
+  return { expectEventWithinSeconds: parsed.seconds };
 }
 
 /**
