@@ -20,7 +20,7 @@ import { useAppAccess } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useIsFocused } from 'expo-router';
 import { useColorScheme } from 'nativewind';
-import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AppState, Pressable, View, type ListViewToken } from 'react-native';
 import { WebView } from 'react-native-webview';
 

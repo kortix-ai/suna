@@ -239,6 +239,7 @@ export function SessionFixtureBench() {
   const [phase, setPhase] = useState<'seeding' | 'settling' | 'ready' | 'running' | 'done'>('seeding');
   const [result, setResult] = useState<BenchResult | null>(null);
   const profile = useRef({ active: false, commits: 0, renderMs: 0 });
+  const stopReplay = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     setTarget(seed(messageCount));
@@ -246,6 +247,7 @@ export function SessionFixtureBench() {
     const timer = setTimeout(() => setPhase('ready'), SETTLE_MS);
     return () => {
       clearTimeout(timer);
+      stopReplay.current?.();
       useSessionStateStore.getState().clearSession(SESSION_ID);
     };
   }, [messageCount]);
@@ -258,6 +260,7 @@ export function SessionFixtureBench() {
 
   const run = useCallback(() => {
     if (!target) return;
+    stopReplay.current?.();
     setPhase('running');
     const settledHeap = heapMb();
     const longTasks: PerformanceEntry[] = [];
@@ -287,6 +290,8 @@ export function SessionFixtureBench() {
     useSessionStateStore.getState().setStatus(SESSION_ID, BUSY);
     const started = performance.now();
     const frames = { slow: 0, jank: 0, last: started, on: true };
+    let frameId: number;
+    let completionTimer: ReturnType<typeof setTimeout> | undefined;
     const tick = (now: number) => {
       const delta = now - frames.last;
       if (delta > 1000 / 60 + 1) {
@@ -294,9 +299,9 @@ export function SessionFixtureBench() {
         frames.jank += delta - 1000 / 60;
       }
       frames.last = now;
-      if (frames.on) requestAnimationFrame(tick);
+      if (frames.on) frameId = requestAnimationFrame(tick);
     };
-    requestAnimationFrame(tick);
+    frameId = requestAnimationFrame(tick);
     const chunk = Math.max(1, Math.ceil(STREAM_SCRIPT.length / deltaCount));
     let sent = 0;
     const timer = setInterval(() => {
@@ -308,7 +313,7 @@ export function SessionFixtureBench() {
         (window as unknown as { __benchCounting?: boolean }).__benchCounting = false;
         useSessionStateStore.getState().setStatus(SESSION_ID, IDLE);
         setStreaming(false);
-        setTimeout(() => {
+        completionTimer = setTimeout(() => {
           const wallMs = performance.now() - started;
           profile.current.active = false;
           settledRenders.active = false;
@@ -350,6 +355,16 @@ export function SessionFixtureBench() {
         .applyPartDelta(SESSION_ID, target.messageId, target.partId, 'text', text, `evt_bench_${sent}`);
       sent += 1;
     }, DELTA_INTERVAL_MS);
+    stopReplay.current = () => {
+      clearInterval(timer);
+      clearTimeout(completionTimer);
+      frames.on = false;
+      cancelAnimationFrame(frameId);
+      for (const observer of observers) observer.disconnect();
+      profile.current.active = false;
+      settledRenders.active = false;
+      win.__benchCounting = false;
+    };
   }, [target, deltaCount, messageCount, memoRows, withSession, realChat]);
 
   useEffect(() => {

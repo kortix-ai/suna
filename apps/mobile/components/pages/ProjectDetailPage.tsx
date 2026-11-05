@@ -3,7 +3,7 @@
  * Ported from web's /projects/[id]/page.tsx.
  */
 
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Pressable,

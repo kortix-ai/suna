@@ -7,7 +7,6 @@
  * `PlatformButton` as before (the native SwiftUI `secondary` circle on older
  * iOS, the design-system secondary button on Android).
  */
-import * as React from 'react';
 
 import { HEADER_BUTTON_SIZE, HEADER_ICON_SIZE } from '@/components/kortix/header-button';
 import { GlassButtons, LIQUID_GLASS_AVAILABLE } from '@/components/kortix/liquid-glass';

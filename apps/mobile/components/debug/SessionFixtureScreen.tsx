@@ -13,7 +13,7 @@
  * mounted. Open it in a dev build with `kortix://session-fixture`.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colorScheme as nativewindColorScheme, useColorScheme } from 'nativewind';
