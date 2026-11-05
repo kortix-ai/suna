@@ -494,18 +494,41 @@ const NO_FILES_SANDBOXES = new Set(['mykortix', 'meta']);
  * if it can. Omitted: the project's default agent, else the first enabled,
  * visible agent that can. Throws when none can.
  */
+type GoalAgentCandidate = Pick<ProjectConfigSummary['agents'][number], 'name' | 'mode' | 'enabled' | 'hidden' | 'platform' | 'sandbox'>;
+
+/** The project config fields that decide which agent works a goal. */
+export interface GoalAgentConfig {
+  default_agent?: string | null;
+  agents?: readonly GoalAgentCandidate[];
+}
+
+function goalAgents(config: GoalAgentConfig): GoalAgentCandidate[] {
+  return (config.agents ?? []).filter(
+    (a) => a.enabled !== false && !a.hidden && !a.platform && !NO_FILES_SANDBOXES.has(a.sandbox ?? '') && !NO_FILES_SANDBOXES.has(a.name),
+  );
+}
+
+/**
+ * The agent a new goal runs when none is named: the project's default agent
+ * if it can work a goal, else the first primary agent that can, else the
+ * first that can. Null when none can (no agent with Files). A composer that
+ * starts goals opens its agent picker on this agent.
+ */
+export function defaultGoalAgent(config: GoalAgentConfig): string | null {
+  const agents = goalAgents(config);
+  const pick = agents.find((a) => a.name === config.default_agent) ?? agents.find((a) => a.mode !== 'subagent') ?? agents[0];
+  return pick?.name ?? null;
+}
+
 async function resolveGoalAgent(projectId: string, requested: string | null | undefined): Promise<string> {
   const { config } = await getProjectDetail(projectId);
-  const canWork = (a: ProjectConfigSummary['agents'][number]) =>
-    a.enabled !== false && !a.hidden && !a.platform && !NO_FILES_SANDBOXES.has(a.sandbox ?? '') && !NO_FILES_SANDBOXES.has(a.name);
-  const agents = (config.agents ?? []).filter(canWork);
   if (requested) {
-    if (!agents.some((a) => a.name === requested)) throw new Error(`${requested} cannot work a goal: it has no Files. Pick another agent.`);
+    if (!goalAgents(config).some((a) => a.name === requested)) throw new Error(`${requested} cannot work a goal: it has no Files. Pick another agent.`);
     return requested;
   }
-  const pick = agents.find((a) => a.name === config.default_agent) ?? agents.find((a) => a.mode !== 'subagent') ?? agents[0];
+  const pick = defaultGoalAgent(config);
   if (!pick) throw new Error('This project has no agent that can work a goal. Add an agent, then try again.');
-  return pick.name;
+  return pick;
 }
 
 export interface CreateProjectGoalInput {
