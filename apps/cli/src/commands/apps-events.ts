@@ -139,9 +139,9 @@ async function emitCommand(rest: string[], options: ContextOptions, json: boolea
   if (!wait) {
     if (json) emitJson(sent);
     else {
-      process.stdout.write(`\n  Sent ${name} (${testId}) to ${app.slug}: ${sent.triggers} trigger(s) listen.\n`);
-      if (sent.hint) process.stdout.write(`  ${C.yellow}${sent.hint}${C.reset}\n`);
-      process.stdout.write(`  ${dim(`Outcome: kortix apps events ${app.slug} --id ${testId}`)}\n\n`);
+      process.stdout.write(`\n  Sent ${name} (${printable(testId)}) to ${app.slug}: ${sent.triggers} trigger(s) listen.\n`);
+      if (sent.hint) process.stdout.write(`  ${C.yellow}${printable(sent.hint)}${C.reset}\n`);
+      process.stdout.write(`  ${dim(`Outcome: kortix apps events ${app.slug} --id ${printable(testId)}`)}\n\n`);
     }
     return 0;
   }
@@ -158,9 +158,9 @@ async function emitCommand(rest: string[], options: ContextOptions, json: boolea
   if (json) {
     emitJson({ ...sent, events: rows, fired, pending });
   } else {
-    process.stdout.write(`\n  Sent ${name} (${testId}) to ${app.slug}.\n`);
+    process.stdout.write(`\n  Sent ${name} (${printable(testId)}) to ${app.slug}.\n`);
     for (const row of rows) {
-      process.stdout.write(`  ${pad(row.trigger ?? '-', 24)}${outcome(row, 12)}${detail(row)}\n`);
+      process.stdout.write(`  ${pad(printable(row.trigger ?? '-'), 24)}${outcome(row, 12)}${detail(row)}\n`);
     }
     if (pending) process.stdout.write(`  ${dim(`Still pending after ${wait} s: Kortix has not drained it yet. Check again: kortix apps events ${app.slug} --id ${testId}`)}\n`);
     process.stdout.write('\n');
