@@ -164,7 +164,7 @@ export function runValidate(argv: string[]): number {
       // A broken file or import: fix what can be read, and let validation report the rest.
     }
     for (const path of paths) {
-      const { text, fixed } = fixManifestText(readFileSync(path, 'utf8'));
+      const { text, fixed } = fixManifestText(readFileSync(path, 'utf8'), { canonical: true });
       if (fixed.length === 0) continue;
       writeFileSync(path, text, 'utf8');
       if (!flags.json) {

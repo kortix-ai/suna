@@ -554,7 +554,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'chat_front',
     name: 'Spaces-Router',
     description:
-      'With Spaces on, the agent you chat with in a thread is a router: it hands the work to your agents and writes back like a person, in short messages with the result, a link or the decision you need to make. Your agents share the thread through its files, so the router passes file paths, not retyped text. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml.',
+      'With Spaces on, the agent you chat with in a thread is a router: it does quick work itself (an answer, a short text, a look at the thread files) and hands longer work to the Space\'s agents. It writes back like a person, in short messages. An agent saves its full result as a file in the thread, and the router links that file instead of retyping it. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml.',
     stability: 'experimental',
     wip: true,
     available: () => true,
@@ -565,9 +565,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(no parent, no fork, no session caller) gets the reserved runtime_context key `kortix.front` and the server-managed ' +
       'metadata `kortix_front` (projects/lib/front-thread.ts); a request body cannot set either. Only such a front may start ' +
       'a My Kortix worker, an exception to META_AGENT_RECURSION; a worker of any other project agent is a normal hand-off. ' +
-      'BOX: kortixd gives a front only `agent`, `send_message` and `task_stop` (harness/pi/front.ts); each `agent` call ' +
-      'starts or continues one named background worker as the project agent the front picks from the roster it reads ' +
-      'from `/detail` each turn, else My Kortix. KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 so a worker keeps its own ' +
+      'BOX: a front keeps its agent\'s own tools for quick work plus `agent`, `send_message` and `task_stop` (harness/pi/front.ts); ' +
+      'each `agent` call starts or continues one named background worker as an agent of the thread\'s space (the API sends ' +
+      '`space_agents`; a spawn outside it is 400 AGENT_NOT_IN_SPACE), else the project\'s agents from `/detail`. A worker writes ' +
+      'its full result to the thread\'s results/<name>-<n>.md and reports the path; the front links it. KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 so a worker keeps its own ' +
       'subagents (projects/lib/feature-flag-env.ts). Each worker prompt ends with a "Context files" block (the thread ' +
       'folder, the newest message file, context.md, the worker\'s work/<name>/ folder) from the prompt body\'s ' +
       '`thread_files`, which only the API sets (memory/thread-files.ts, with `chat`). WEB: a front thread\'s "Open full ' +

@@ -94,7 +94,7 @@ import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext, reservedRuntimeContextRefusal } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { FRONT_THREAD_CONTEXT_KEY, FRONT_THREAD_METADATA_KEY, sessionIsFrontThread, startsFrontThread } from './front-thread';
+import { FRONT_THREAD_CONTEXT_KEY, FRONT_THREAD_METADATA_KEY, sessionIsFrontThread, sessionSpaceAgents, spaceRosterAllows, startsFrontThread } from './front-thread';
 import { SPACE_WATCHER_SOURCE, WATCHER_CONTEXT_KEY } from './space-watch/keys';
 import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
@@ -625,12 +625,29 @@ async function resolveSessionAgent(params: {
     isWorkflowRunnerContext(body.runtime_context) &&
     !(await sessionIsWorkflowRunner(input.callerSessionId!));
   // A router (flag `chat_front`, front-thread.ts) only talks: it may start My Kortix workers.
-  const frontWorker =
-    platformMetaAgent &&
+  const callerIsFront =
     callerIsMeta &&
     !myKortixWorkflowRunner &&
     resolveFeatureFlag(input.project.metadata, 'chat_front') &&
     (await sessionIsFrontThread(input.callerSessionId!));
+  const frontWorker = platformMetaAgent && callerIsFront;
+  // A space's agents are a boundary: a router's worker runs only an agent of its space.
+  if (callerIsFront) {
+    const spaceAgents = await sessionSpaceAgents(input.callerSessionId!);
+    const check = spaceAgents ? spaceRosterAllows(spaceAgents, projectDefaultAgent, agentName) : null;
+    if (check && !check.allowed) {
+      return {
+        error: {
+          status: 400,
+          body: {
+            error: `"${agentName}" is not an agent of this space. Pick one of: ${check.roster.join(', ')}.`,
+            code: 'AGENT_NOT_IN_SPACE',
+            roster: check.roster,
+          },
+        },
+      };
+    }
+  }
   if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner && !frontWorker) {
     return {
       error: {

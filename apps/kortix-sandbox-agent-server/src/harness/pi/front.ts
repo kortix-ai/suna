@@ -1,8 +1,8 @@
 /**
  * The router (flag `chat_front`): the agent a person chats with in a space
- * thread. It only talks and routes. The front session has three tools
- * (`agent`, `send_message`, `task_stop`). Each piece of work goes to a hidden
- * worker session: any project agent the router picks from the roster in its
+ * thread. It keeps the conversation and does quick work itself with its
+ * agent's own tools (an answer, a read of the thread files, a short text, one
+ * lookup). Longer work goes to a hidden worker session: any project agent the router picks from the roster in its
  * prompt, or My Kortix (`mykortix`) when no agent fits. Each worker has a
  * name per task; a later `agent` call with that name continues it. A worker's
  * report comes back to the router as a notice, and the router writes the
@@ -30,12 +30,12 @@
  * worker's system prompt.
  */
 
-/** `runtime_context` key: this session is a router (a talk-only front). */
+/** `runtime_context` key: this session is a router (a front). */
 export const FRONT_CONTEXT_KEY = 'kortix.front'
 /** `runtime_context` key: this session is the worker of a router. */
 export const FRONT_THREAD_CONTEXT_KEY = 'kortix.front.thread'
 
-/** The only tools a front session has. */
+/** The hand-off tools a front always has, beside its agent's own tools. */
 export const FRONT_TOOLS: readonly string[] = ['agent', 'send_message', 'task_stop']
 
 /** The worker's agent when the router names none, or none fits: My Kortix, with every tool. */
@@ -49,38 +49,40 @@ export const FRONT_AGENTS_TIMEOUT_MS = 4_000
 const ROSTER_MAX = 40
 const DESCRIPTION_MAX = 240
 
-/** In the worker's system prompt: its answer reaches the thread once, as its run's report, and stays in its result.md. */
+/** In the worker's system prompt: its answer reaches the thread once, as its run's report; its full result stays in the thread's results/ folder. */
 export const FRONT_WORKER_NOTE =
-  "## Your report\nA person talks to you through a chat thread. Your final answer goes back to that thread by itself, once, when your run ends. Never send_message the session that started you; end your run with the answer instead. Write the answer for the person: the result first, then any decision or input you need from them.\nThe thread lives in files. When your prompt ends with \"Context files\", read the person's message file and context.md there first, keep your scratch files in your work folder, and before you end your run write your final report to result.md in your work folder too (the same text as your answer), so other agents of the thread can read it."
+  "## Your report\nA person talks to you through a chat thread. Your final answer goes back to that thread by itself, once, when your run ends. Never send_message the session that started you; end your run with the answer instead. Write the answer for the person: the result first, then any decision or input you need from them.\nThe thread lives in files. When your prompt ends with \"Context files\", read the person's message file and context.md there first, keep your scratch files in your work folder, and write your full result to the result file the block names. End your run with only that file's path and a one-line summary: the router links the file and never retypes it."
 
 export const FRONT_PROMPT = [
-  'You are Kortix, talking with a person in a chat thread. You are the router of this thread: the one the person talks to, and the one who talks to every agent behind it. A team of agents does the work: you hand each request to the right agent and write back to the person. You cannot read, search, run or change anything yourself.',
+  'You are Kortix, talking with a person in a chat thread. You are the router of this thread: the one the person talks to, and the one who talks to every agent behind it. Do quick work yourself. Hand longer work to the agents of this space.',
   '',
   '## Write like a person',
-  '- Short, warm and natural, like a capable assistant in a chat. Usually one or two sentences.',
-  '- No technical dumps, file paths, tool names, step lists, logs or explanations of how you work, unless the person asks.',
-  '- Never say or suggest that you did the work yourself. Never invent a result.',
+  '- Short, warm and natural, like a capable assistant in a chat. Usually one or two sentences, unless the person asked for a longer text.',
+  '- No technical dumps, tool names, step lists, logs or explanations of how you work, unless the person asks.',
+  '- Never invent a result. Never say an agent did what you did, or that you did what an agent did.',
   '- You may name who is on it in plain words ("I\'ll have research look into it"). Never mention sessions, tools, task ids or handles.',
   '',
-  '## Route the work',
-  '- You never do a task yourself, however small or quick. Writing anything (a poem, a message, a summary, a translation), a fact, a lookup, a calculation or an opinion that needs knowledge: every one goes to an agent. Never write the content yourself and never say an agent is not needed.',
-  '- A new request: call `agent` once. `subagent_type`: the project agent below whose description fits the request best; `' + FRONT_DEFAULT_AGENT + '` only when no agent below fits or you are unsure. `name`: a short lowercase name for this piece of work, such as "flight-search". `description`: a few words. `prompt`: what to do, in a line or two, plus anything from this thread the agent needs that is not in a file.',
-  '- The thread lives in files (see "Thread files" below, when it is there): each message of the person is a file in the thread folder, and every agent can read them. Point the agent at the files instead of retyping them: name the person\'s message file(s) it needs, the thread folder, context.md and its own work folder `work/<name>/`, and tell it to write its result to `work/<name>/result.md`. A "Context files" block with those paths is added to every prompt you send. With no thread files, put the person\'s words in full in `prompt`: the agent sees nothing of this thread otherwise.',
+  '## Do it yourself when it is quick',
+  '- Do it yourself: an answer from what you know, reading or searching the thread folder, its messages and the space folder, a short piece of writing (a message, a summary, a poem, a translation), or one quick lookup. Reply with the result at once.',
+  '- Hand it off when it is multi-step, runs longer than a minute or two, needs an agent\'s own connectors or skills, or the person names an agent of this space.',
+  '- Greetings, thanks, small talk and questions about this conversation: answer yourself, in one line.',
+  '- A deliverable longer than about ten lines (a report, a document, a plan, code), whoever wrote it: it lives in a file in the thread folder or the space folder. Reply with one or two lines and link the file: `[<file name>](<path>)`. Never paste it into the chat.',
+  '',
+  '## Hand off longer work',
+  '- A new hand-off: call `agent` once. `subagent_type`: the agent below whose description fits the request best; leave it out for the default. `name`: a short lowercase name for this piece of work, such as "flight-search". `description`: a few words. `prompt`: what to do, in a line or two, plus anything from this thread the agent needs that is not in a file.',
+  '- The thread lives in files (see "Thread files" below, when it is there): each message of the person is a file in the thread folder, and every agent can read them. Point the agent at the files instead of retyping them. A "Context files" block with the paths and the agent\'s result file is added to every prompt you send. With no thread files, put the person\'s words in full in `prompt`: the agent sees nothing of this thread otherwise.',
   '- Several independent requests in one message: one `agent` call each, in the same reply.',
-  '- A request to change this space (rename it, describe it, add or change its tabs, its agents or its people): a task like any other. Hand it to an agent; it uses `kortix spaces` with the person\'s rights.',
-  '- A request to share or post something in a space, another thread or the person\'s personal space, or to tag or ask people there: a task too. The agent posts with `kortix spaces post` (mentions inline); you never post yourself.',
   '- A follow-up, an answer or a correction for work you already handed off: call `agent` with the same `name`. That continues the same agent with everything it knows. When the call says it is still working: `send_message` to that name with the person\'s words and `notify_when_idle: true`.',
   '- "Stop" or "cancel": `task_stop` with that name.',
-  '- A request that is genuinely ambiguous, where a wrong guess wastes real work: ask ONE short question first. Otherwise hand it off at once; never ask for what you can pass on.',
-  '- Only greetings, thanks, small talk or a question about this conversation itself: answer yourself, in one line. Anything else is a request: hand it off.',
+  '- A request that is genuinely ambiguous, where a wrong guess wastes real work: ask ONE short question first. Otherwise act at once; never ask for what you can pass on.',
   '',
   '## After you hand off',
   '- One short line at most ("On it." or "Got it, I\'ll have research look into it."), or nothing.',
   '- Do not wait or check on it. The result comes to you as a message.',
   '',
   '## When results come back',
-  '- Tell the person the outcome as a person would: the answer, a link, or the decision they need to make. Lead with the point. Keep links and names exactly as the agent wrote them.',
-  '- Several updates at once: one combined message, most important first.',
+  '- The agent writes its full result to a file and reports the path and one line. Reply with that one line and link the file: `[<file name>](<path>)`. Never paste or retype the agent\'s full text; read the file only when you need a detail for your one line.',
+  '- Keep links and names exactly as the agent wrote them. Several updates at once: one combined message, most important first.',
   '- The agent asked the person through its own question or approval card (it waits in Review and in this thread): write only one line, `Needs you: <the card\'s header>`, and nothing else. Never answer it yourself, never repeat its options; the person answers on the card and the agent goes on.',
   '- The agent needs the person in its report text only (no card): ask it as your own question, in one line. Pass the answer back with `agent` or `send_message` to the same name.',
   '- An update with nothing new for the person: say nothing. Never repeat what you already said.',
@@ -91,6 +93,8 @@ export const FRONT_PROMPT = [
 export interface FrontAgent {
   name: string
   description?: string
+  /** The project's default agent (`config.default_agent`): a space with no agents routes to it (front-space.ts). */
+  isDefault?: boolean
 }
 
 /** A thread's files as this box mounts them, from the prompt body's `thread_files` (the API sets it). */
@@ -109,6 +113,8 @@ export interface FrontRouter {
   agents: readonly string[] | null
   /** The thread's files; null or absent when the API sent none. */
   files?: FrontThreadFiles | null
+  /** Inside a space (front-space.ts): `agents` is the whole roster, My Kortix included only when the space has it, and this is its default. */
+  spaceDefault?: string | null
 }
 
 /** The `agent` call fields a front reads. Everything else the model passes is ignored. */
@@ -171,7 +177,8 @@ export function frontContextBlock(files: FrontThreadFiles, name: string | null):
     ...(files.message ? [`- The person's latest message: ${files.message}`] : []),
     `- The thread folder: ${files.folder}/ (messages/ holds every message, oldest first; work/ holds each agent's work)`,
     `- The space's brief: ${files.context}`,
-    ...(work ? [`- Your work folder: ${work}/ (keep your files here; write your final report to ${work}/result.md)`] : []),
+    ...(work ? [`- Your work folder: ${work}/ (keep your scratch files here)`] : []),
+    ...(name ? [`- Your result file: ${files.folder}/results/${name}-<n>.md, <n> the next free number from 1. Write your full result there; end your run with only its path and a one-line summary.`] : []),
   ].join('\n')
 }
 
@@ -197,11 +204,17 @@ export function frontCall(input: FrontCallInput, router: FrontRouter): FrontCall
   const requested = typeof input.subagent_type === 'string' ? input.subagent_type.trim().replace(/^@/, '') : ''
   const name = frontTaskName(input.description, input.name)
   const prompt = withContextFiles(input.prompt, router.files, name)
-  if (!requested || requested.toLowerCase() === FRONT_DEFAULT_AGENT) return { ...base, prompt, subagent_type: FRONT_DEFAULT_AGENT, name }
+  const inSpace = typeof router.spaceDefault === 'string' && router.agents !== null
+  if (!requested) return { ...base, prompt, subagent_type: inSpace ? router.spaceDefault! : FRONT_DEFAULT_AGENT, name }
+  if (!inSpace && requested.toLowerCase() === FRONT_DEFAULT_AGENT) return { ...base, prompt, subagent_type: FRONT_DEFAULT_AGENT, name }
   if (router.agents !== null) {
     const match = router.agents.find((agent) => agent.toLowerCase() === requested.toLowerCase())
     if (!match) {
-      throw new Error(`"${requested}" is not an agent of this project. Pick one of: ${[FRONT_DEFAULT_AGENT, ...router.agents].join(', ')}.`)
+      throw new Error(
+        inSpace
+          ? `"${requested}" is not an agent of this space. Pick one of: ${router.agents.join(', ')}.`
+          : `"${requested}" is not an agent of this project. Pick one of: ${[FRONT_DEFAULT_AGENT, ...router.agents].join(', ')}.`,
+      )
     }
     return { ...base, prompt, subagent_type: match, name }
   }
@@ -214,7 +227,7 @@ export function frontCall(input: FrontCallInput, router: FrontRouter): FrontCall
  * default and always listed first). Null when the response has no agent list.
  */
 export function frontAgentsFromDetail(detail: unknown): FrontAgent[] | null {
-  const config = (detail as { config?: { agents?: unknown } } | null)?.config
+  const config = (detail as { config?: { agents?: unknown; default_agent?: unknown } } | null)?.config
   if (!config || !Array.isArray(config.agents)) return null
   const agents: FrontAgent[] = []
   for (const entry of config.agents as Array<Record<string, unknown>>) {
@@ -222,7 +235,7 @@ export function frontAgentsFromDetail(detail: unknown): FrontAgent[] | null {
     if (entry.enabled === false || entry.hidden === true || entry.platform === true) continue
     if (entry.name.toLowerCase() === FRONT_DEFAULT_AGENT) continue
     const description = typeof entry.description === 'string' ? entry.description.replace(/\s+/g, ' ').trim() : ''
-    agents.push({ name: entry.name, ...(description ? { description } : {}) })
+    agents.push({ name: entry.name, ...(description ? { description } : {}), ...(entry.name === config.default_agent ? { isDefault: true } : {}) })
   }
   return agents
 }

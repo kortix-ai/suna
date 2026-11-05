@@ -857,7 +857,7 @@ const catalog = {
         },
         "chat_front": {
           "name": "Spaces-Router",
-          "description": "With Spaces on, the agent you chat with in a thread is a router: it hands the work to your agents and writes back like a person, in short messages with the result, a link or the decision you need to make. Your agents share the thread through its files, so the router passes file paths, not retyped text. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml."
+          "description": "With Spaces on, the agent you chat with in a thread is a router: it does quick work itself (an answer, a short text, a look at the thread files) and hands longer work to the Space's agents. It writes back like a person, in short messages. An agent saves its full result as a file in the thread, and the router links that file instead of retyping it. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml."
         },
         "spaces_proactive": {
           "name": "Spaces-Proactive",
@@ -9183,7 +9183,8 @@ const catalog = {
       "leaveHintPrivate": "You lose access to its threads, files and memory, your own threads included. A member must add you again.",
       "leavePrivateTitle": "Leave #{name}?",
       "addMembers": "Add members",
-      "privateLimits": "Private hides the space from other people. Code changes (git branches) and the agents’ own tools aren’t private."
+      "privateLimits": "Private hides the space from other people. Code changes (git branches) and the agents’ own tools aren’t private.",
+      "agentAdded": "{agent} added to #{name}."
     },
     "folder": {
       "memory": "Memory",
@@ -9315,7 +9316,8 @@ const catalog = {
       "proactiveBriefHint": "A short summary at 9:00 on days with news.",
       "proactiveFailed": "The setting was not saved. Try again.",
       "allSettings": "All settings",
-      "askHint": "You can also ask in chat: \"add an agent here\", \"pin the launch doc as a tab\"."
+      "askHint": "You can also ask in chat: \"add an agent here\", \"pin the launch doc as a tab\".",
+      "noAgentsToAdd": "Every project agent is in this space."
     },
     "profile": {
       "viewProfile": "Show the profile of {name}",
@@ -9348,9 +9350,14 @@ const catalog = {
     "mentions": {
       "people": "People",
       "agents": "Agents",
-      "addToSpace": "Not in {space} yet: mentioning adds it",
+      "addToSpace": "Not in {space}: ask to add",
       "added": "{agent} added to {space}",
-      "addFailed": "Could not add the agent. Try again."
+      "addFailed": "Could not add the agent. Try again.",
+      "askAdd": "Add {agent} to {space}?",
+      "askAddConfirm": "Add",
+      "askNotNow": "Not now",
+      "askAdmin": "{agent} isn't in {space}. Ask a Space admin to add it.",
+      "dismiss": "Dismiss"
     }
   },
   "imageGen": {

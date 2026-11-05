@@ -1,4 +1,4 @@
-import { createContext } from 'react';
+import { createContext, type ReactNode } from 'react';
 
 import type { MentionSection, MenuRow } from './menu-items';
 
@@ -28,16 +28,20 @@ export interface SpaceMentionAgent {
   /** The display name ("My Kortix"). */
   label: string;
   description?: string | null;
-  /** False: not in this space yet; picking it adds it (`onAddAgent`). */
+  /** False: not in this space. Naming it does not add it: the composer asks after the send (`renderOutsideAsk`). */
   inSpace: boolean;
 }
 
 export interface SpaceMentionSource {
   people: SpaceMentionPerson[];
   agents: SpaceMentionAgent[];
-  /** Adds an agent to the space when it is mentioned from outside it. Absent: such agents are not offered. */
-  onAddAgent?: (name: string) => void;
-  /** Group headings and the "Add to space" line, in the host's words. */
+  /**
+   * The ask shown above the composer after a send named an agent from outside
+   * the space: "Add it?" for a person who may edit the space, else who to ask.
+   * `done` dismisses it. Absent: agents outside the space are not offered.
+   */
+  renderOutsideAsk?: (agent: string, done: () => void) => ReactNode;
+  /** Group headings and the "Not in #space" line, in the host's words. */
   labels: { people: string; agents: string; addToSpace: string };
 }
 
@@ -98,7 +102,7 @@ export function buildSpaceMentionSections(source: SpaceMentionSource, query: str
       ),
     });
   }
-  const offered = source.agents.filter((a) => a.inSpace || !!source.onAddAgent);
+  const offered = source.agents.filter((a) => a.inSpace || !!source.renderOutsideAsk);
   // The space's own agents first among equal matches; a miss stays a miss.
   const agents = ranked(offered, (a) => {
     const score = mentionScore(query, [a.label, a.name]);
@@ -122,4 +126,19 @@ export function buildSpaceMentionSections(source: SpaceMentionSource, query: str
     });
   }
   return sections;
+}
+
+/**
+ * The agents outside the space that `text` names (`@name`, the token a mention
+ * chip sends), in order, each once. The router never hands work to them.
+ */
+export function outsideAgentMentions(source: SpaceMentionSource, text: string): string[] {
+  if (!source.renderOutsideAsk) return [];
+  const outside = new Map(source.agents.filter((a) => !a.inSpace).map((a) => [a.name.toLowerCase(), a.name]));
+  const found: string[] = [];
+  for (const match of text.matchAll(/(?:^|[^\w@])@([\w.+-]+)/g)) {
+    const name = outside.get(match[1]!.replace(/[.]+$/, '').toLowerCase());
+    if (name && !found.includes(name)) found.push(name);
+  }
+  return found;
 }

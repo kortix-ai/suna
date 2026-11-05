@@ -1346,7 +1346,7 @@
         },
         "chat_front": {
           "name": "Spaces-Router",
-          "description": "Con gli Spazi attivi, l'agente con cui chatti in un thread è un router: affida il lavoro ai tuoi agenti e ti risponde come una persona, con messaggi brevi con il risultato, un link o la decisione da prendere. I tuoi agenti condividono il thread tramite i suoi file, quindi il router passa percorsi di file, non testo ricopiato. «Mostra lavoro» sotto un messaggio apre il lavoro che c'è dietro. Richiede My Kortix attivo in kortix.yaml."
+          "description": "Con Spaces attivo, l’agente con cui chatti in un thread è un router: svolge da sé il lavoro rapido (una risposta, un testo breve, uno sguardo ai file del thread) e passa il lavoro più lungo agli agenti dello spazio. Risponde come una persona, con messaggi brevi. Un agente salva il risultato completo come file nel thread, e il router collega quel file invece di riscriverlo. «Mostra lavoro» sotto un messaggio apre il lavoro dietro. Richiede My Kortix attivo in kortix.yaml."
         },
         "spaces_proactive": {
           "name": "Spaces-Proactive",
@@ -25756,7 +25756,8 @@
       "leaveHintPrivate": "Perdi l’accesso ai suoi thread, file e memoria, compresi i tuoi thread. Un membro dovrà aggiungerti di nuovo.",
       "leavePrivateTitle": "Uscire da #{name}?",
       "addMembers": "Aggiungi membri",
-      "privateLimits": "Privato nasconde lo spazio alle altre persone. Le modifiche al codice (branch git) e gli strumenti degli agenti non sono privati."
+      "privateLimits": "Privato nasconde lo spazio alle altre persone. Le modifiche al codice (branch git) e gli strumenti degli agenti non sono privati.",
+      "agentAdded": "{agent} aggiunto a #{name}."
     },
     "folder": {
       "memory": "Memoria",
@@ -25964,7 +25965,8 @@
       "proactiveBriefHint": "Un breve riepilogo alle 9:00 nei giorni con novità.",
       "proactiveFailed": "L'impostazione non è stata salvata. Riprova.",
       "allSettings": "Tutte le impostazioni",
-      "askHint": "Puoi anche chiederlo in chat: «aggiungi un agente qui», «fissa il documento del lancio come scheda»."
+      "askHint": "Puoi anche chiederlo in chat: «aggiungi un agente qui», «fissa il documento del lancio come scheda».",
+      "noAgentsToAdd": "Tutti gli agenti del progetto sono già in questo spazio."
     },
     "profile": {
       "viewProfile": "Mostra il profilo di {name}",
@@ -25997,9 +25999,14 @@
     "mentions": {
       "people": "Persone",
       "agents": "Agenti",
-      "addToSpace": "Non ancora in {space}: menzionarlo lo aggiunge",
+      "addToSpace": "Non è in {space}: chiedi di aggiungerlo",
       "added": "{agent} aggiunto a {space}",
-      "addFailed": "Impossibile aggiungere l’agente. Riprova."
+      "addFailed": "Impossibile aggiungere l’agente. Riprova.",
+      "askAdd": "Aggiungere {agent} a {space}?",
+      "askAddConfirm": "Aggiungi",
+      "askNotNow": "Non ora",
+      "askAdmin": "{agent} non è in {space}. Chiedi a un admin dello spazio di aggiungerlo.",
+      "dismiss": "Chiudi"
     }
   },
   "imageGen": {

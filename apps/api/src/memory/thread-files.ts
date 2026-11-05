@@ -8,7 +8,7 @@
  * | `context.md`                                        | the space's brief, made with a heading on first use |
  * | `threads/<slug>-<short id>/messages/NNNN-<author>.md` | one file per message: front matter (author, time, session id, prompt id), then the text |
  * | `threads/<…>/work/<worker name>/`                   | a worker's scratch folder             |
- * | `threads/<…>/work/<worker name>/result.md`          | the worker's final report             |
+ * | `threads/<…>/results/<worker name>-<n>.md`          | a worker's full result: the router links it, never retypes it |
  *
  * The space folder is `spaceDriveFolders(...).files`: `/Company/Channels/<slug>`,
  * `/Channels/<space_id>` (private), or `<person>/Agents/<agent>` (a DM). Every
@@ -282,10 +282,10 @@ export function threadFilesSection(input: {
   return [
     '## Thread files',
     `This thread lives in files, shared by every agent that works on it. Read a file by its path instead of asking for its text again.`,
-    `- Thread folder: ${input.folder}/ (messages/ holds one file per message, oldest first; work/<name>/ is each agent's work, its report in work/<name>/result.md)`,
+    `- Thread folder: ${input.folder}/ (messages/ holds one file per message, oldest first; work/<name>/ is each agent's scratch; results/ holds each agent's full result)`,
     ...(input.context ? [`- Brief of ${oneLine(input.place)}: ${input.context} (what every thread here should know; add to it when you learn something lasting)`] : []),
     ...(input.message ? [`- This message: ${input.message}`] : []),
-    ...(input.workFolder ? [`- Your work folder: ${input.workFolder}/ (write your final report to ${input.workFolder}/result.md as well)`] : []),
+    ...(input.workFolder ? [`- Your work folder: ${input.workFolder}/ (scratch files; your full result goes to ${input.folder}/results/${input.workFolder.split('/').pop()}-<n>.md, <n> the next free number from 1)`] : []),
   ].join('\n');
 }
 
