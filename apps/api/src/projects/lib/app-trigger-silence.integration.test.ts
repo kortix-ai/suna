@@ -51,8 +51,11 @@ async function runtime(slug: string) {
 
 async function inbox(slug: string) {
   await settleTriggerAlerts();
+  // Ordered: without ORDER BY, Postgres returns heap order, and the notifier's later UPDATE of a row moves it
+  // (a failed then a recovered alert came back swapped in 1 of 4 combined runs).
   return db.select({ kind: notifications.kind, body: notifications.body }).from(notifications)
-    .where(and(eq(notifications.projectId, project.project_id), eq(notifications.triggerSlug, slug)));
+    .where(and(eq(notifications.projectId, project.project_id), eq(notifications.triggerSlug, slug)))
+    .orderBy(notifications.createdAt);
 }
 
 beforeAll(async () => {

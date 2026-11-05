@@ -154,7 +154,7 @@ export async function processMonitorEvent(
 
   if (!triggerFilterMatches(spec, payload)) {
     await skip('filter did not match');
-    await touchMonitorLastEvent(row.projectId, row.slug, row.emittedAt, now);
+    await touchMonitorLastEvent(row, now);
     return 'skipped';
   }
   const renderedPrompt = `${appEventPromptPreamble(row.line)}${renderPromptTemplate(spec.promptTemplate, payload)}`;
@@ -176,7 +176,7 @@ export async function processMonitorEvent(
       // when it dead-letters (failMonitorEvent).
       await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source, spec, payload, ...triggerRunFromFire(result), now });
       await markMonitorEvent(row.eventId, 'fired', now, { sessionId: result.sessionId ?? null });
-      await touchMonitorLastEvent(row.projectId, row.slug, row.emittedAt, now);
+      await touchMonitorLastEvent(row, now);
       // The trigger's last_fired_at / last_status, as every other source stamps
       // them; it also clears a failed fire recorded below. Display state only:
       // a failed stamp must not send this fired event back to `pending`.
@@ -224,12 +224,10 @@ async function failMonitorEvent(
   return 'failed';
 }
 
-async function touchMonitorLastEvent(
-  projectId: string,
-  slug: string,
-  emittedAt: Date,
-  now: Date,
-): Promise<void> {
+async function touchMonitorLastEvent(row: MonitorEventRow, now: Date): Promise<void> {
+  // A test event checks the wiring: it never tells the silence check the App is alive (ingest skips it too).
+  if ((row.line as { test?: unknown } | null)?.test === true) return;
+  const { projectId, slug, emittedAt } = row;
   await db
     .update(projectTriggerRuntime)
     // Ingest stamps the time an App posted (app-events.ts); never move it back.

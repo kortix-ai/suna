@@ -311,6 +311,8 @@ describe('kortix_schedules follow-through', () => {
     const missing = await run('kortix_schedules', { at: '2026-11-04T08:00:00Z', id: 'sticker-quote-check', in: '4d', action: 'follow_up' })
     expect(missing.error?.kind).toBe('invalid')
     expect(missing.error?.message).toStartWith('Missing `text`')
+    // A model whose long field was dropped in transit retried 5 times on dev: the error names the way out.
+    expect(missing.error?.message).toContain('send this call from codemode')
     // The example is a whole call the model can copy.
     const example = missing.error!.message.slice(missing.error!.message.indexOf('{'))
     expect(JSON.parse(example)).toMatchObject({ action: 'follow_up', in: '4d' })
