@@ -11,6 +11,7 @@ import { EntityAvatar } from '../../../primitives/entity-avatar';
 import type { GlyphSelection } from '../../../primitives/glyph-picker';
 import { glyphFace as glyphDrawing } from '../../../primitives/glyph-face';
 import { glyphForeground, glyphStyle, glyphTint, glyphTintHover } from '../../../primitives/glyph-tint';
+import { useFullBleedGlyph } from '../../../primitives/kortix-glyphs';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../primitives/popover';
 import { preloadProjectIconPicker, ProjectIconPicker } from '../../../primitives/project-icon-picker';
 import { cn } from '../../../internal/lib/utils';
@@ -154,6 +155,8 @@ export function ProjectIconField({
   const emoji = value && 'emoji' in value ? value.emoji : null;
   const glyph = value && 'glyph' in value ? value.glyph : null;
   const glyphFace = resolveGlyphFace(glyph);
+  // An Enterprise brand icon fills the whole tile, edge to edge.
+  const fullBleed = useFullBleedGlyph(glyphFace?.name);
   // The face the trigger shows and the identity the cross-fade re-keys on —
   // one derivation for both, so they cannot drift apart. Keyed on colour too,
   // not just name: recolouring the same glyph is still a visible change the
@@ -264,6 +267,7 @@ export function ProjectIconField({
             triggerClassName,
             emoji && [emojiTint(emoji), emojiTintHover(emoji), 'hover:brightness-110'],
             glyphFace && [glyphTint(glyphFace.color), glyphTintHover(glyphFace.color), 'hover:brightness-110'],
+            fullBleed && 'overflow-hidden p-0',
           )}
           style={glyphFace ? glyphStyle(glyphFace.color) : undefined}
         >
@@ -297,7 +301,7 @@ export function ProjectIconField({
                   // role, but the sizing/colour treatment matches on purpose.
                   <glyphFace.GlyphComponent
                     weight="fill"
-                    className={cn('size-1/2', glyphForeground(glyphFace.color))}
+                    className={cn(fullBleed ? 'size-full' : 'size-1/2', glyphForeground(glyphFace.color))}
                   />
                 ) : emoji ? (
                   // Named by the button's aria-label, so the glyph itself stays

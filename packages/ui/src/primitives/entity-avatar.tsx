@@ -5,6 +5,7 @@ import { Hint } from './hint';
 import { emojiTint } from './emoji-tint';
 import { glyphFace } from './glyph-face';
 import { glyphForeground, glyphStyle, glyphTint } from './glyph-tint';
+import { useFullBleedGlyph } from './kortix-glyphs';
 import type { Icon } from './kortix-icons';
 import { cn } from '../lib/utils';
 import { chalkColors } from '@kortix/shared';
@@ -102,6 +103,8 @@ export function EntityAvatar({
   const initial = (label?.trim()?.charAt(0) || '?').toUpperCase();
   const chalk = chalkColors(`${label?.trim()}` || initial);
   const resolvedGlyph = resolveGlyph(glyph);
+  // An Enterprise brand icon fills the whole tile, edge to edge.
+  const fullBleed = useFullBleedGlyph(resolvedGlyph ? glyph?.name : undefined);
 
   const tile = (
     <span
@@ -126,6 +129,7 @@ export function EntityAvatar({
       className={cn(
         'inline-flex shrink-0 items-center justify-center border font-semibold',
         sizes.box,
+        fullBleed && 'overflow-hidden',
         // After `sizes.box`, so tailwind-merge resolves `sizes.emoji` over the
         // initial's text size — and so `border-0` resolves over the base
         // `border`, which is what stops a neutral hairline being drawn OUTSIDE
@@ -162,7 +166,7 @@ export function EntityAvatar({
         // emoji grapheme.
         <resolvedGlyph.GlyphComponent
           weight="fill"
-          className={cn(sizes.icon, glyphForeground(resolvedGlyph.color))}
+          className={cn(fullBleed ? 'size-full' : sizes.icon, glyphForeground(resolvedGlyph.color))}
         />
       ) : emoji ? (
         // The tile always sits beside the name it belongs to, so the glyph is

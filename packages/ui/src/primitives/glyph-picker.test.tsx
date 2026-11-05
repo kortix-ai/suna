@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { GlyphPicker, matchesSearch } from './glyph-picker';
 import { glyphFace } from './glyph-face';
 import { UiProvider } from '../providers/ui-provider';
+import { EntityAvatar } from './entity-avatar';
 
 describe('matchesSearch', () => {
   test('an empty query matches everything', () => {
@@ -87,6 +88,18 @@ describe('GlyphPicker — Enterprise brand icon', () => {
     expect(glyphs.slice(0, 4)).toEqual(['KortixMark', 'KortixPixel', 'KortixDither', 'BrandIcon']);
     expect(html).toContain('>Acme</h3>');
     expect(html).toContain('src="data:image/svg+xml,acme"');
+  });
+
+  test('a project tile wearing the brand icon shows the image full bleed, with no padding', () => {
+    const html = renderToStaticMarkup(
+      <UiProvider useBrand={useBrand}>
+        <EntityAvatar label="Demo" glyph={{ name: 'BrandIcon', color: 'lime' }} size="lg" />
+      </UiProvider>,
+    );
+    expect(html).toMatch(/data-slot="entity-avatar" class="[^"]*overflow-hidden/);
+    expect(html).toMatch(/data-brand-icon="" class="[^"]*size-full/);
+    expect(html).toContain('object-cover');
+    expect(html).not.toMatch(/data-brand-icon="" [^>]*style="width/);
   });
 
   test('the brand icon falls back to the Kortix mark when the account has no branding', () => {

@@ -148,6 +148,10 @@ const KortixDither = forwardRef<SVGSVGElement, IconProps>((props, ref) => {
 }) as Icon;
 KortixDither.displayName = 'KortixDitherGlyph';
 
+/** The glyph name of the Enterprise brand icon. A host draws it edge to edge
+ *  (no padding) when the brand image is present: see `isFullBleedGlyph`. */
+export const BRAND_GLYPH = 'BrandIcon';
+
 /** The square brand image an Enterprise account set, light and dark, or null. */
 export function brandIconSources(brand: UiBrand | null): { light: string; dark: string | null } | null {
   const light = brand?.icon_url ?? brand?.logo_url ?? null;
@@ -166,28 +170,36 @@ export function brandIconSources(brand: UiBrand | null): { light: string; dark: 
 const BrandIcon = forwardRef<SVGSVGElement, IconProps>((props, ref) => {
   const sources = brandIconSources(useUiBrand());
   if (!sources) return createElement(KortixMark, { ...props, ref });
-  const { size = '1em', className, style } = props;
+  const { size, className, style } = props;
   const img = (src: string, extra: string) =>
-    // eslint-disable-next-line @next/next/no-img-element
     createElement('img', {
       src,
       alt: '',
       draggable: false,
-      className: cn('size-full object-contain select-none', extra),
+      className: cn('size-full object-cover select-none', extra),
     });
   return createElement(
     'span',
     {
       'aria-hidden': true,
       'data-brand-icon': '',
-      className: cn('inline-flex shrink-0 items-center justify-center', className),
-      style: { width: size, height: size, ...style },
+      // A class, not an inline size, so the host's `size-*` (e.g. `size-full`
+      // for a full-bleed tile) wins; an explicit `size` prop still applies.
+      className: cn('inline-flex size-[1em] shrink-0 items-center justify-center', className),
+      style: size != null ? { width: size, height: size, ...style } : style,
     },
     img(sources.light, sources.dark ? 'dark:hidden' : ''),
     sources.dark ? img(sources.dark, 'hidden dark:block') : null,
   );
 }) as Icon;
 BrandIcon.displayName = 'BrandIconGlyph';
+
+/** True when this glyph is the brand icon AND the account has a brand image:
+ *  the tile then shows the image full bleed instead of a padded icon. */
+export function useFullBleedGlyph(name: string | undefined): boolean {
+  const brand = useUiBrand();
+  return name === BRAND_GLYPH && brandIconSources(brand) !== null;
+}
 
 /** Glyphs drawn by their own component rather than one generated path. */
 export const KORTIX_GLYPH_COMPONENTS: Readonly<Record<string, Icon>> = {
