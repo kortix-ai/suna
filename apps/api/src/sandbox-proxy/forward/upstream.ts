@@ -23,6 +23,7 @@ import { canAccessSandboxSession } from '../../shared/preview-ownership';
 import { sessionStreamAccessCheck } from '../../shared/space-access';
 import { endStreamOnRevoke } from '../../shared/stream-access-recheck';
 import type { ForwardRequest, ForwardState } from './context';
+import { upstreamOrigin } from './upstream-origin';
 
 // The upstream hop itself: the request headers sent to the box, the bounded
 // fetch, and the response handed back to the client.
@@ -113,7 +114,9 @@ export function buildUpstreamRequestHeaders(
   // origin makes this proxy transparent to ANY framework — no per-project config.
   const upstreamUrl = new URL(previewUrl);
   if (headers.has('origin')) {
-    headers.set('origin', upstreamUrl.origin);
+    const origin = upstreamOrigin(port, previewUrl);
+    if (origin) headers.set('origin', origin);
+    else headers.delete('origin');
   }
   headers.set('x-forwarded-host', upstreamUrl.host);
 
