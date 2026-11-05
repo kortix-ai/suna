@@ -304,7 +304,9 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
             logger.warn('[apps] always-on App supervisor is down and its restart budget is spent', { appId: app.appId, runtimeId: runtime.runtimeId });
             return;
           }
-          await hosting.ensureRunning(provider, runtime.externalId).then(
+          // Only the supervisor: a VM that stopped meanwhile refuses it, and the
+          // next pass starts that VM through the wake gate.
+          await hosting.startSupervisor(provider, runtime.externalId).then(
             () => { revived += 1; },
             (error) => logger.warn('[apps] always-on App supervisor could not be started', { appId: app.appId, error: String(error) }),
           );

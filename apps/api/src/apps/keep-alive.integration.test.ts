@@ -34,7 +34,7 @@ mock.module('./hosting', () => ({
       if (answer === 'down') throw new Error('connect ECONNREFUSED');
       return answer ?? { status: 'running', ready: true };
     }
-    async ensureRunning(_provider: string, externalId: string) { revivals.push(externalId); }
+    async startSupervisor(_provider: string, externalId: string) { revivals.push(externalId); }
   },
 }));
 // The wake gate is real: a start runs assertAppComputeAllowed first.
