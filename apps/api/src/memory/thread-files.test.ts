@@ -142,7 +142,7 @@ describe('message files', () => {
     expect(section).toContain('- Thread folder: /drives/general/threads/poem-1a2b3c4d/ (messages/');
     expect(section).toContain('- Brief of #general: /drives/general/context.md');
     expect(section).toContain('- This message: /drives/general/threads/poem-1a2b3c4d/messages/0001-ana.md');
-    expect(section).toContain('- Your work folder: /drives/general/threads/poem-1a2b3c4d/work/poem/ (write your final report to /drives/general/threads/poem-1a2b3c4d/work/poem/result.md as well)');
+    expect(section).toContain('- Your work folder: /drives/general/threads/poem-1a2b3c4d/work/poem/ (scratch files; your full result goes to /drives/general/threads/poem-1a2b3c4d/results/poem-<n>.md, <n> the next free number from 1)');
     expect(threadFilesSection({ place: '#general', folder: null, context: null, message: null, workFolder: null, driveFolder: '/Company/Channels/general/threads/t' })).toBe(
       "## Thread files\nThis thread's files are in Drive at /Company/Channels/general/threads/t/, which is not mounted in this session.",
     );

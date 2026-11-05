@@ -2310,7 +2310,9 @@ describe('pi subagents extension', () => {
           KORTIX_META_AGENT: '1',
         },
       })
-      expect((await toolIds(r)).sort()).toEqual(['agent', 'send_message', 'task_stop'])
+      // The router works too: its agent's own tools, plus the hand-off tools it always keeps.
+      const ids = await toolIds(r)
+      expect(ids).toEqual(expect.arrayContaining(['agent', 'send_message', 'task_stop', 'read', 'bash']))
       const sentBefore = gateway.sent.length
       await promptAndSettle(r, 'find flights to Lisbon and draft the invite')
       expect(creates).toHaveLength(2)
@@ -2332,8 +2334,10 @@ describe('pi subagents extension', () => {
       // The roster is read once (boot warm-up and first turn share the read) and is cached across the turn.
       expect(detailReads).toBe(1)
       const systems = gateway.sent.slice(sentBefore).map(systemSent)
-      // The router's own prompt replaces the agent's: it only talks and routes.
+      // The router's own prompt replaces the agent's: quick work itself, longer work handed off.
       expect(systems.every((system) => system.startsWith('You are Kortix, talking with a person in a chat thread.'))).toBe(true)
+      expect(systems[0]).toContain('## Do it yourself when it is quick')
+      expect(systems[0]).toContain('Never paste or retype the agent\'s full text')
       expect(systems[0]).toContain('## Agents you can hand work to\n- mykortix (the default)')
       expect(systems[0]).toContain('- researcher: Finds facts on the web and cites sources.')
       expect(systems[0]).not.toContain('retired')
@@ -2382,7 +2386,8 @@ describe('pi subagents extension', () => {
       const prompt = creates[0]!.initial_prompt as string
       expect(prompt.startsWith('Write the poem the person asked for.\n\n## Context files\n')).toBe(true)
       expect(prompt).toContain("- The person's latest message: /drives/general/threads/a-poem-1a2b3c4d/messages/0001-ana.md")
-      expect(prompt).toContain('- Your work folder: /drives/general/threads/a-poem-1a2b3c4d/work/poem/ (keep your files here; write your final report to /drives/general/threads/a-poem-1a2b3c4d/work/poem/result.md)')
+      expect(prompt).toContain('- Your work folder: /drives/general/threads/a-poem-1a2b3c4d/work/poem/ (keep your scratch files here)')
+      expect(prompt).toContain('- Your result file: /drives/general/threads/a-poem-1a2b3c4d/results/poem-<n>.md')
       // A notice turn carries the folder but no message: the newest message file stays.
       const notice = { folder: files.folder, context: files.context }
       const again = await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'worker done', synthetic: true }], thread_files: notice }) })
@@ -2390,7 +2395,7 @@ describe('pi subagents extension', () => {
       await waitFor(() => !r.service.runtime()!.busy())
       expect(creates).toHaveLength(2)
       expect(creates[1]!.initial_prompt).toContain("- The person's latest message: /drives/general/threads/a-poem-1a2b3c4d/messages/0001-ana.md")
-      expect(creates[1]!.initial_prompt).toContain('/work/poem-short/result.md')
+      expect(creates[1]!.initial_prompt).toContain('/results/poem-short-<n>.md')
     } finally {
       server.stop(true)
     }

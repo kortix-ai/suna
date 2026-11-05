@@ -40,6 +40,7 @@ import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './e
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import { SUBAGENT_SPEC_REQUIRED, TASK_STOP_TOOL, type KortixHost, type SpawnSessionInput, type SpawnSessionResult } from './extensions/subagents'
 import { FRONT_AGENTS_TTL_MS, FRONT_PROMPT, FRONT_TOOLS, FRONT_WORKER_NOTE, fetchFrontAgents, frontAgentsSection, frontThreadFilesFrom, type FrontAgent, type FrontThreadFiles } from './front'
+import { frontSpaceAgentsFrom, frontSpaceRoster, frontSpaceRosterSection } from './front-space'
 import { cloudChildReport, cloudChildToolDetails, cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import type { ControlPlane } from './extensions/control-plane'
 import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
@@ -182,6 +183,8 @@ export interface PromptInput {
   system?: string
   /** The thread's files in this box (`thread_files`, set only by the API): a router's worker prompts name them (front.ts). */
   threadFiles?: FrontThreadFiles
+  /** The thread's space agents (`space_agents`, set only by the API): a router routes only to them (front-space.ts). */
+  spaceAgents?: string[]
   /** `noReply`: the message joins the conversation, no turn runs. */
   noReply?: boolean
   /**
@@ -248,6 +251,7 @@ export function parsePromptBody(raw: unknown): PromptInput {
   if (text.join('').trim().length === 0 && files.length === 0) throw new PromptRejected('prompt has no content')
   // Malformed thread files are dropped, never a refusal: they only add paths to a router's hand-offs.
   const threadFiles = frontThreadFilesFrom(body.thread_files)
+  const spaceAgents = frontSpaceAgentsFrom(body.space_agents)
   return {
     ...(typeof body.messageID === 'string' ? { messageID: body.messageID } : {}),
     text: text.join(''),
@@ -258,6 +262,7 @@ export function parsePromptBody(raw: unknown): PromptInput {
     ...(typeof body.variant === 'string' ? { variant: body.variant } : {}),
     ...(typeof body.system === 'string' ? { system: body.system } : {}),
     ...(threadFiles ? { threadFiles } : {}),
+    ...(spaceAgents ? { spaceAgents } : {}),
     ...(body.noReply === true ? { noReply: true } : {}),
   }
 }
@@ -486,6 +491,8 @@ export class PiRuntime {
   private frontAgents: FrontAgent[] | null = null
   /** The thread's files, from the newest prompt that carried them: a notice turn keeps the last. */
   private threadFiles: FrontThreadFiles | null = null
+  /** The thread's space agents, from the newest prompt that carried them; null outside a space or from an older API. */
+  private spaceAgents: string[] | null = null
   /** When the roster was last read (ms, `now()`); 0 = never. */
   private frontAgentsReadAt = 0
   /** The roster read in flight, if any. */
@@ -1371,6 +1378,8 @@ export class PiRuntime {
         // A turn with no message of the person (a worker's notice) keeps the folder and the newest message file.
         this.threadFiles = { ...turn.input.threadFiles, ...(turn.input.threadFiles.message ? {} : this.threadFiles?.message ? { message: this.threadFiles.message } : {}) }
       }
+      // A worker's notice carries none: the space's list stays the one of the person's last message.
+      if (turn.input.spaceAgents) this.spaceAgents = turn.input.spaceAgents
       if (this.subagentContext.front) await this.refreshFrontAgents()
       // pi's prompt path: `input` and `before_agent_start` handlers, extension commands, `/skill:` and templates.
       const images = await this.images(turn.input)
@@ -1755,7 +1764,7 @@ export class PiRuntime {
             event.systemPrompt,
             todayLine(this.now()),
             // A router reads its roster each turn: agents change without a reboot.
-            this.subagentContext.front ? frontAgentsSection(this.frontAgents) : null,
+            this.subagentContext.front ? this.frontRosterSection() : null,
             this.turnSystem,
             this.ultracodeLine(),
           ].filter(Boolean).join('\n\n'),
@@ -1916,7 +1925,13 @@ export class PiRuntime {
       // My Kortix's box (the coordinator): its config declares only itself, and every hand-off names a project agent.
       anyProjectAgent: () => this.env.KORTIX_META_AGENT === '1',
       // The router (front.ts): every `agent` call reaches one named worker, as an agent of its roster.
-      frontRouter: () => (this.subagentContext.front ? { agents: this.frontAgents?.map((agent) => agent.name) ?? null, files: this.threadFiles } : null),
+      frontRouter: () => {
+        if (!this.subagentContext.front) return null
+        // Inside a space, only its agents (front-space.ts); else the project's roster.
+        const space = frontSpaceRoster(this.frontAgents, this.spaceAgents)
+        if (space) return { agents: space.agents.map((agent) => agent.name), files: this.threadFiles, spaceDefault: space.defaultAgent }
+        return { agents: this.frontAgents?.map((agent) => agent.name) ?? null, files: this.threadFiles }
+      },
       currentAgentName: () => this.agentName,
       toolNames: () => this.ownToolNames(),
       spawnSession: (input) => this.resolveSpawn(input),
@@ -2020,7 +2035,7 @@ export class PiRuntime {
    * Undefined = this agent is not narrowed at all.
    */
   private cloudParent(): Pick<CloudSubagentApi, 'parentAgent' | 'toolAllowlist'> {
-    // A front's worker gets every tool of its own agent: the front itself only talks.
+    // A front's worker gets every tool of its own agent, never narrowed to the front's.
     if (this.subagentContext.front) return { parentAgent: undefined, toolAllowlist: undefined }
     const coordinator = this.env.KORTIX_META_AGENT === '1'
     const declared = Object.prototype.hasOwnProperty.call(this.compiled?.agent ?? {}, this.agentName)
@@ -2049,8 +2064,8 @@ export class PiRuntime {
    * (`kortix.subagent.tools` in KORTIX_SESSION_CONTEXT). Only ever narrows.
    */
   private rootToolAllowed(name: string): boolean {
-    // A router has only its three messaging tools (front.ts).
-    if (this.subagentContext.front) return FRONT_TOOLS.includes(name)
+    // A router does quick work with its agent's own tools and always keeps its hand-off tools (front.ts).
+    if (this.subagentContext.front && FRONT_TOOLS.includes(name)) return true
     // A workflow runs `agent` calls, and the multi-agent tools talk to the sessions it starts: they follow the
     // agent tool's grant, unless the agent's `tools` names them.
     if (DELEGATION_TOOLS.includes(name) && !Object.hasOwn(this.compiledAgent()?.tools ?? {}, name)) {
@@ -2496,8 +2511,9 @@ export class PiRuntime {
   private systemPrompt(
     child?: { base: string; tools: AgentTool<any, any>[]; policy: PermissionPolicy; interactive: false; codemode?: CodemodeMode },
   ): string {
-    if (!child && this.subagentContext.front) return this.frontSystemPrompt()
-    const parts = [child?.base || this.compiledAgent()?.prompt?.trim() || DEFAULT_SYSTEM_PROMPT]
+    // A router's own prompt leads; its agent's instructions, skills and capabilities follow, since it now works too.
+    const front = !child && this.subagentContext.front
+    const parts = [front ? FRONT_PROMPT : child?.base || this.compiledAgent()?.prompt?.trim() || DEFAULT_SYSTEM_PROMPT]
     // pi's own context-file format. pi's own loader stays off (`noContextFiles`): it reads `/workspace` and its ancestors, for the root only.
     if (this.instructions) parts.push(`<project_instructions path="${this.instructions.name}">\n${this.instructions.text}\n</project_instructions>`)
     // pi appends the working directory (and package skills) to the root's prompt.
@@ -2544,6 +2560,12 @@ export class PiRuntime {
    * read is bounded (FRONT_AGENTS_TIMEOUT_MS); a failed read keeps the last
    * roster and tries again next turn.
    */
+  /** The router's roster section: the space's agents inside a space, else the project's. */
+  private frontRosterSection(): string {
+    const space = frontSpaceRoster(this.frontAgents, this.spaceAgents)
+    return space ? frontSpaceRosterSection(space) : frontAgentsSection(this.frontAgents)
+  }
+
   private refreshFrontAgents(): Promise<void> {
     if (this.frontAgentsReadAt && this.now() - this.frontAgentsReadAt < FRONT_AGENTS_TTL_MS) return Promise.resolve()
     const cloud = this.cloudTarget()
@@ -2562,12 +2584,6 @@ export class PiRuntime {
         this.frontAgentsRead = null
       })
     return this.frontAgentsRead
-  }
-
-  /** A front's prompt: no project instructions or skills, since it has no tool that uses them. */
-  private frontSystemPrompt(): string {
-    const tools = (this.agent?.state.tools ?? this.baseTools).map((t) => t.name)
-    return [FRONT_PROMPT, `## Runtime capabilities\nRegistered tools: ${tools.join(', ')}.`].join('\n\n')
   }
 
   /** The root AGENTS.md of the checkout the running config decides: the release, the working tree, or none (the image default). */

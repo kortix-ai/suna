@@ -1346,7 +1346,7 @@
         },
         "chat_front": {
           "name": "Spaces-Router",
-          "description": "Avec les Espaces activés, l’agent avec qui vous discutez dans un fil est un routeur : il confie le travail à vos agents et vous répond comme une personne, en messages courts avec le résultat, un lien ou la décision à prendre. Vos agents partagent le fil par ses fichiers : le routeur transmet des chemins de fichiers, pas du texte recopié. « Voir le travail » sous un message ouvre le travail derrière. Nécessite My Kortix activé dans kortix.yaml."
+          "description": "Avec Spaces activé, l’agent avec qui vous discutez dans un fil est un routeur : il fait lui-même le travail rapide (une réponse, un texte court, un coup d’œil aux fichiers du fil) et confie le travail plus long aux agents de l’espace. Il répond comme une personne, en messages courts. Un agent enregistre son résultat complet dans un fichier du fil, et le routeur met un lien vers ce fichier au lieu de le recopier. « Voir le travail » sous un message ouvre le travail derrière. Nécessite My Kortix activé dans kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -25752,7 +25752,8 @@
       "leaveHintPrivate": "Vous perdez l’accès à ses fils, fichiers et mémoire, y compris vos propres fils. Un membre devra vous ajouter à nouveau.",
       "leavePrivateTitle": "Quitter #{name} ?",
       "addMembers": "Ajouter des membres",
-      "privateLimits": "Privé masque l’espace aux autres personnes. Les modifications de code (branches git) et les outils propres aux agents ne sont pas privés."
+      "privateLimits": "Privé masque l’espace aux autres personnes. Les modifications de code (branches git) et les outils propres aux agents ne sont pas privés.",
+      "agentAdded": "{agent} ajouté à #{name}."
     },
     "folder": {
       "memory": "Mémoire",
@@ -25954,7 +25955,8 @@
       "addRoutine": "Ajouter une routine",
       "routinesPrivate": "Un espace privé n’accepte pas encore de routines.",
       "allSettings": "Tous les réglages",
-      "askHint": "Vous pouvez aussi le demander dans le chat : « ajoute un agent ici », « épingle le document du lancement en onglet »."
+      "askHint": "Vous pouvez aussi le demander dans le chat : « ajoute un agent ici », « épingle le document du lancement en onglet ».",
+      "noAgentsToAdd": "Tous les agents du projet sont déjà dans cet espace."
     },
     "profile": {
       "viewProfile": "Afficher le profil de {name}",
@@ -25987,9 +25989,14 @@
     "mentions": {
       "people": "Personnes",
       "agents": "Agents",
-      "addToSpace": "Pas encore dans {space} : le mentionner l’ajoute",
+      "addToSpace": "Pas dans {space} : demander l’ajout",
       "added": "{agent} ajouté à {space}",
-      "addFailed": "Impossible d’ajouter l’agent. Réessayez."
+      "addFailed": "Impossible d’ajouter l’agent. Réessayez.",
+      "askAdd": "Ajouter {agent} à {space} ?",
+      "askAddConfirm": "Ajouter",
+      "askNotNow": "Pas maintenant",
+      "askAdmin": "{agent} n’est pas dans {space}. Demandez à un admin de l’espace de l’ajouter.",
+      "dismiss": "Fermer"
     }
   },
   "imageGen": {

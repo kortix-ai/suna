@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildSpaceMentionSections, mentionScore, type SpaceMentionSource } from './space-mentions';
+import { buildSpaceMentionSections, mentionScore, outsideAgentMentions, type SpaceMentionSource } from './space-mentions';
 
 const source: SpaceMentionSource = {
   people: [
@@ -11,12 +11,12 @@ const source: SpaceMentionSource = {
     { name: 'mykortix', label: 'My Kortix', description: 'Routes each task', inSpace: true },
     { name: 'worker', label: 'Worker', description: 'General-purpose', inSpace: false },
   ],
-  onAddAgent: () => undefined,
-  labels: { people: 'People', agents: 'Agents', addToSpace: 'Not in Launch yet' },
+  renderOutsideAsk: () => null,
+  labels: { people: 'People', agents: 'Agents', addToSpace: 'Not in #launch: ask to add' },
 };
 
 describe("a space's @ menu", () => {
-  test('People, then Agents; display names, no slugs; an outside agent says it joins', () => {
+  test('People, then Agents; display names, no slugs; an outside agent says to ask', () => {
     const sections = buildSpaceMentionSections(source, '');
     expect(sections.map((s) => s.heading)).toEqual(['People', 'Agents']);
     expect(sections[0]!.items.map((r) => [r.label, r.value, r.kind])).toEqual([
@@ -25,7 +25,7 @@ describe("a space's @ menu", () => {
     ]);
     expect(sections[1]!.items.map((r) => [r.label, r.value, r.addToSpace, r.description])).toEqual([
       ['My Kortix', 'mykortix', false, 'Routes each task'],
-      ['Worker', 'worker', true, 'Not in Launch yet'],
+      ['Worker', 'worker', true, 'Not in #launch: ask to add'],
     ]);
     expect(sections.flatMap((s) => s.items).map((r) => r.index)).toEqual([0, 1, 2, 3]);
   });
@@ -37,9 +37,16 @@ describe("a space's @ menu", () => {
     expect(buildSpaceMentionSections(source, 'zzz')).toEqual([]);
   });
 
-  test('no add callback: agents outside the space are not offered', () => {
-    const sections = buildSpaceMentionSections({ ...source, onAddAgent: undefined }, '');
+  test('no ask (a DM): agents outside the space are not offered', () => {
+    const sections = buildSpaceMentionSections({ ...source, renderOutsideAsk: undefined }, '');
     expect(sections[1]!.items.map((r) => r.value)).toEqual(['mykortix']);
+  });
+
+  test('a sent message names agents outside the space: each once, in order, never an in-space agent or an email', () => {
+    expect(outsideAgentMentions(source, '@mykortix ask @worker, then @Worker. again')).toEqual(['worker']);
+    expect(outsideAgentMentions(source, 'mail ana@worker.com')).toEqual([]);
+    expect(outsideAgentMentions(source, '@worker.')).toEqual(['worker']);
+    expect(outsideAgentMentions({ ...source, renderOutsideAsk: undefined }, '@worker')).toEqual([]);
   });
 
   test('a prefix ranks above a substring, which ranks above letters in order', () => {

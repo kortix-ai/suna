@@ -30,6 +30,11 @@ export interface RuntimePromptInput {
    * a router names them in its worker prompts (harness/pi/front.ts).
    */
   threadFiles?: unknown
+  /**
+   * The thread's space agents (`space_agents`, `chat`): the API sets it; a
+   * router routes only to them (harness/pi/front-space.ts).
+   */
+  spaceAgents?: unknown
 }
 
 /** The HTTP answer a verb produced; the route sends it as it is. */
