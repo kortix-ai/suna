@@ -1,9 +1,9 @@
 'use client';
 
 import { useLocale, useTranslations } from '../../../i18n';
-import type { AccountSecretResource, SubscriptionUsage } from '@kortix/sdk';
+import type { AccountSecretResource, SubscriptionConnection, SubscriptionUsage } from '@kortix/sdk';
 import {
-  useAccountSecretResources,
+  useSubscriptionConnections,
   useSubscriptionUsage,
 } from '@kortix/sdk/react';
 import { ArrowClockwiseIcon, ChartBarIcon } from '@phosphor-icons/react';
@@ -229,14 +229,18 @@ export function SubscriptionUsageCard({
 
 function ConnectedSubscription({
   accountId,
+  projectId,
   secret,
   onConnect,
 }: {
   accountId: string;
-  secret: AccountSecretResource;
+  projectId: string;
+  secret: SubscriptionConnection;
   onConnect: () => void;
 }) {
   const live = useSubscriptionUsage(accountId, secret.secret_id, {
+    projectId,
+    storage: secret.storage,
     enabled:
       secret.can_use &&
       secret.active &&
@@ -276,8 +280,8 @@ export function SubscriptionUsageTab({
       ? requestedProvider
       : null;
   const pooled = usePooledProviderIds(projectId, true);
-  const resources = useAccountSecretResources(pooled.accountId, projectId);
-  const subscriptions = (resources.data?.secrets ?? []).filter(
+  const resources = useSubscriptionConnections(pooled.accountId, projectId);
+  const subscriptions = (resources.data?.subscriptions ?? []).filter(
     (secret) =>
       secret.can_use &&
       isSubscriptionLogin(secret) &&
@@ -347,7 +351,8 @@ export function SubscriptionUsageTab({
         <div className="grid grid-flow-dense grid-cols-1 @3xl:grid-cols-2 items-start gap-4">
           {subscriptions.map((secret) => (
             <ConnectedSubscription
-              key={secret.secret_id}
+              projectId={projectId}
+              key={`${secret.storage}:${secret.secret_id}`}
               accountId={pooled.accountId!}
               secret={secret}
               onConnect={onConnect}
