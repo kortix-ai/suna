@@ -10,6 +10,16 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-11-05
+
+### D38 "Workspace" is the one container noun; "project", "account" and "organization" leave the copy
+- **Date:** 2026-11-05
+- **Decision:** A workspace is a company's place in Kortix: its people, agents, sessions, connectors, files and billing. One workspace = one company, each one independent, the Slack model. It is the only top-level noun in every surface: the web app, mobile, the CLI help, the docs and marketing. "Project", "account" (as the container) and "organization" (as the container) move to the Never column of the noun table in [voice-and-tone.md](verbal/voice-and-tone.md). The copy follows four rules: (1) "Slack workspace", "Teams tenant" and "GitHub organization" stay, always qualified; (2) "your Kortix account" stays for a person's sign-in identity only (sign in, profile, delete my account); (3) the session's machine is a "sandbox", never a "workspace"; (4) a code name stays exact and in mono (`kortix projects use`, `--project`, `KORTIX_PROJECT_ID`, `/v1/projects`, `project.gitops.merge`, ICU placeholder names such as `{project}`). In the two-level access copy, the owner, admin and member role is the "workspace role", and the Manager, Editor and Viewer grant is the "access role" ("workspace access"). Positioning keeps the repo: "A Kortix workspace is backed by a git repo, and that repo is the company."
+- **Why:** founder, 2026-11-05: "can we somehow rename projects into workspaces? ... unify one organization and one project just into one primitive called a workspace", then "'Project' disappears from the UI, CLI and docs ... Hardcore treat everything 100% like SLACK Workspace, each being independent & all is per Workspace". Users read "project" as a small unit of work and asked whether a new task needs a new project. The data already has the Slack shape: 95.3% of accounts that have a project have exactly one (prod aggregates, 2026-11-05). Before this entry, "workspace" meant four things in `apps/web/translations/en.json`: the account, the project, a Slack workspace and the sandbox.
+- **Where:** [voice-and-tone.md](verbal/voice-and-tone.md) (the noun table and the three rules after it), [claims.md](verbal/claims.md) (the price, secrets, channels and audience rows), [positioning.md](verbal/positioning.md), [concepts.md](verbal/concepts.md), `apps/web/translations/en.json`, `packages/ui/src/i18n/en.ts`, `apps/web/content/docs/`, `apps/web/src/i18n/workspace-vocabulary.test.ts` (the ratchet). The plan and the UX contract: `.agents/skills/learnings/work/workspaces/`.
+- **Supersedes:** the `project` and `account` rows of the product noun table, and the rule that wrote "project" exactly as the code names it.
+- **Source:** the `workspaces` branch (sub-branch `workspaces-ws-copy`).
+
 ## 2026-11-02
 
 ### D37 The home hero subhead merges the positioning line with "Hand it an outcome"
