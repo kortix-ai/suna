@@ -202,6 +202,48 @@ describe('scripts/secrets-envs-separation.py', () => {
     expect(r.out).not.toMatch(/DEV_DB/);
   });
 
+  // Strix finding af9fd5cc: an entry was audited for "equals a prod value", so it must not
+  // waive a prod host or a LIVE key it was never reviewed for.
+  it('an allowlisted key still fails a prod host and a LIVE key (KRTX-4108 item 3)', () => {
+    const r = run(
+      {
+        prod: { BETTERSTACK_CLICKHOUSE_HOST: 'shared' },
+        nonProd: nonProd({
+          BETTERSTACK_CLICKHOUSE_HOST: 'postgres://u:p@api.kortix.com:5432/x',
+          BETTERSTACK_MCP_URL: 'sk_live_abc',
+        }),
+      },
+      'BETTERSTACK_CLICKHOUSE_HOST same Better Stack source\nBETTERSTACK_MCP_URL one MCP endpoint\n',
+    );
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toMatch(/✗ local +BETTERSTACK_CLICKHOUSE_HOST +names api\.kortix\.com — split it$/m);
+    expect(r.out).toMatch(/✗ local +BETTERSTACK_MCP_URL +names a LIVE Stripe key/);
+  });
+
+  // Strix finding 407a920a: a prod host is any label under the apex, not three literal
+  // names, and a client's spelling of the same host does not launder it.
+  it('names every label under the prod apex, and keeps dev, staging and internal (KRTX-4108 item 4)', () => {
+    const r = run({
+      prod: {},
+      nonProd: nonProd({
+        SUPABASE_URL: 'postgres://u:p@supa.kortix.com:5432/db',
+        KORTIX_GATEWAY_URL: 'postgres://u:p@gateway.kortix.com:6543/db',
+        DATABASE_URL: 'postgres://u:p@API.KORTIX.COM.:5432/db',
+        PIPEDREAM: 'postgres://u:p@api-ecs-fargate.kortix.com:5432/db|postgres://u:p@dev.kortix.com:5432/db',
+        DEV_DB: 'postgres://u:p@dev-api.kortix.com:5432/db',
+        STAGE_DB: 'postgres://u:p@staging.kortix.com:5432/db',
+        LOCAL_DB: 'postgres://u:p@db.kortix.internal:5432/db',
+        FRONTEND_URL: 'https://kortix.com/pricing',
+      }),
+    });
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toMatch(/✗ local +SUPABASE_URL +names supa\.kortix\.com/);
+    expect(r.out).toMatch(/✗ local +KORTIX_GATEWAY_URL +names gateway\.kortix\.com/);
+    expect(r.out).toMatch(/✗ local +DATABASE_URL +names api\.kortix\.com/);
+    expect(r.out).toMatch(/✗ local +PIPEDREAM +names api-ecs-fargate\.kortix\.com/);
+    expect(r.out).not.toMatch(/DEV_DB|STAGE_DB|LOCAL_DB|FRONTEND_URL/);
+  });
+
   // KRTX-4108 review item 2: a green run must prove prod decrypted. A ciphertext prod
   // value can never equal a plaintext non-prod one, so the value track would pass vacuously.
   it('fails instead of passing when the prod profile did not decrypt (KRTX-4108 item 2)', () => {

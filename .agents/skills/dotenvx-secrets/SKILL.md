@@ -60,9 +60,12 @@ There are **four environments**, each a separate encrypted file with its **own k
   VALUE decides, never the key name, because `DATABASE_URL`, `SUPABASE_URL` and
   `KORTIX_URL` carry production reach with no KEY/SECRET/TOKEN in the name. A
   bare host (`CLOUDFLARE_ZONE_NAME=kortix.com`) or a sender address does not
-  reach prod; `scripts/secrets-shared-with-prod.allowlist` lists the
+  reach prod, and a prod host is any label under `kortix.com` (only dev,
+  staging and `*.kortix.internal` are their own stacks);
+  `scripts/secrets-shared-with-prod.allowlist` lists the
   remaining shared vendor keys with the reason and the rotation that removes
-  each line. Do not add to that file to make the test pass — split the
+  each line. An entry waives only the shared-value match, never a prod host
+  or a LIVE key. Do not add to that file to make the test pass — split the
   credential.
 - **`.env.dev`**: the `Kortix DEV` Supabase project holds signups from
   dev.kortix.com (2,793 users on 2026-08-26). The owner classifies them as

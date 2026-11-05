@@ -4,7 +4,7 @@ apps/api/.env.prod value, a credential DSN that points at a production host, or 
 Stripe key.
 
 Called by scripts/e2e-secrets-envs.sh (pnpm test:envs). Tracked exceptions live in
-scripts/secrets-shared-with-prod.allowlist — every entry is a debt with a reason.
+scripts/secrets-shared-with-prod.allowlist — an entry waives the shared-value class only.
 
 The key name never decides. `DATABASE_URL`, `SUPABASE_URL` and `KORTIX_URL` carry
 production reach with no KEY/SECRET/TOKEN in the name. So every key in a non-prod profile
@@ -24,10 +24,15 @@ ROOT = Path(__file__).resolve().parent.parent
 DX = sys.argv[1] if len(sys.argv) > 1 else "dotenvx"
 PROFILES = [("local", "apps/api/.env"), ("dev", "apps/api/.env.dev"), ("stage", "apps/api/.env.staging")]
 PROD = "apps/api/.env.prod"
+# A credential DSN names its deployment's host: the userinfo carries a password.
+DSN_RE = re.compile(r"^[a-z][a-z0-9+.-]*://[^/@\s]*:[^/@\s]+@")
 
-# Hosts that ARE the production stack, checked only in a credential DSN (see prod_origin).
-# dev.kortix.com and dev-api.kortix.com are their own environments, so only an exact match.
-PROD_HOSTS = ("kortix.com", "www.kortix.com", "api.kortix.com")
+# Every host under the production apex IS the production stack (supa., gateway., prod-fe-ecs.,
+# ...), whatever the label. These are their own environments despite the apex, and a local
+# *.kortix.internal name is neither.
+PROD_APEX = "kortix.com"
+NON_PROD_HOSTS = ("dev.kortix.com", "dev-api.kortix.com", "staging.kortix.com", "staging-api.kortix.com")
+NON_PROD_SUFFIXES = (".kortix.internal",)
 
 
 def load(rel: str) -> dict | None:
@@ -68,31 +73,31 @@ def prod_origin(value: str) -> str:
     at: that connection authenticates against the prod database. A bare host name
     (CLOUDFLARE_ZONE_NAME=kortix.com), a sender address (hi@kortix.com) and an origin
     list (CORS_ALLOWED_ORIGINS, no user:pass@) name the prod brand, not prod data, and
-    dev legitimately serves them.
+    dev legitimately serves them. The host is read the way a URL client reads it, and an
+    unknown label under the apex is prod: a new supa.kortix.com fails until it is listed.
     """
     if value.startswith(("sk_live_", "pk_live_")):
         return "a LIVE Stripe key"
-    for token in re.split(r"[\s,;]+", value):
-        if len(token) > 2048:
-            token = token[:2048]
-        # Credential DSN: userinfo with a password (`user:pw@`, `:pw@`), not a bare host.
-        if not re.match(r"^[a-z][a-z0-9+.-]*://[^/@\s]*:[^/@\s]+@", token):
+    for token in re.split(r"[\s,;|]+", value[:2048]):
+        if not DSN_RE.match(token):
             continue
-        host = (urlsplit(token).hostname or "").lower()
-        if host in PROD_HOSTS:
+        host = (urlsplit(token).hostname or "").lower().rstrip(".")
+        if host in NON_PROD_HOSTS or host.endswith(NON_PROD_SUFFIXES):
+            continue
+        if host == PROD_APEX or host.endswith("." + PROD_APEX):
             return host
     return ""
 
 
-def classify(value: str, prod: set) -> str:
-    """'' when the value keeps to its own environment, else the reason it reaches prod."""
+def classify(value: str, prod: set) -> tuple[str, str]:
+    """('', '') when the value keeps to its own environment, else (class, reason) it reaches prod."""
     host = prod_origin(value)
     if host:
-        return f"names {host}"
+        return "prod-reach", f"names {host}"
     for other in prod:
         if value == other:
-            return "== prod value"
-    return ""
+            return "shared-value", "== prod value"
+    return "", ""
 
 
 def main() -> int:
@@ -116,15 +121,19 @@ def main() -> int:
             value = str(raw)
             if not value or key.startswith("DOTENV_PUBLIC_KEY"):
                 continue
-            why = classify(value, prod)
+            cls, why = classify(value, prod)
             if not why:
                 continue
-            if key in allow:
+            # An allowlist entry waives ONLY the class it was granted for: a value shared with
+            # prod. Naming a prod host or carrying a LIVE key is never waived, so no entry can
+            # silently authorise the classes it was not reviewed for.
+            if cls == "shared-value" and key in allow:
                 allowed += 1
                 print(f"  ~ {label:5} {key:28} {why} (allowlisted: {allow[key]})")
             else:
                 bad += 1
-                print(f"  ✗ {label:5} {key:28} {why} — split it, or add it to scripts/secrets-shared-with-prod.allowlist with a reason")
+                hint = "split it" if cls == "prod-reach" else "split it, or add it to scripts/secrets-shared-with-prod.allowlist with a reason"
+                print(f"  ✗ {label:5} {key:28} {why} — {hint}")
         print(f"  {'✓' if bad == 0 else '✗'} {label:5} {bad} unallowed, {allowed} allowlisted matches with prod\n")
         failed += bad
     return 1 if failed else 0
