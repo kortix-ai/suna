@@ -140,3 +140,20 @@ test('watcher runner: nothing to report sends a heartbeat; 429 is retried; a fai
   expect(String(out.body.error)).toContain('Kortix refused the events: 400');
   expect(refused.posted).toHaveLength(1);
 });
+
+test('watcher check: back to "All Systems Operational" after an incident is a new event, not a repeat of the first one', async () => {
+  const source = watcher.files!('w')['apps/w/watch.js']!;
+  const pages = [
+    { status: { indicator: 'none', description: 'All Systems Operational' }, page: { updated_at: '2026-11-01T10:00:00.000Z' } },
+    { status: { indicator: 'minor', description: 'Minor Service Outage' }, page: { updated_at: '2026-11-02T10:00:00.000Z' } },
+    { status: { indicator: 'none', description: 'All Systems Operational' }, page: { updated_at: '2026-11-02T12:00:00.000Z' } },
+  ];
+  const module = { exports: {} as { check: () => Promise<Array<{ name: string; data: unknown }>> } };
+  let page = pages[0];
+  new Function('module', 'process', 'fetch', source)(module, { env: {} }, async () => ({ ok: true, status: 200, json: async () => page }));
+  const seen: string[] = [];
+  for (page of pages) seen.push(JSON.stringify(await module.exports.check()));
+  expect(seen[2]).not.toBe(seen[0]);
+  // Unchanged page: the same event, so the same content id fires nothing.
+  expect(JSON.stringify(await module.exports.check())).toBe(seen[2]);
+});

@@ -203,8 +203,12 @@ export const WATCHER_CHECK = String.raw`// What this watcher checks. Edit check(
 // fires an id once (30 days): an unchanged state starts nothing, a change
 // starts the trigger that listens for the name.
 //
-// - Put only what the next step needs in data. Never a time or a counter:
-//   they change on every check and would start work every time.
+// - Put only what the next step needs in data. Never the time of your check
+//   or a counter: they change on every check and would start work every time.
+// - A return to an earlier state (back to normal after an incident) is the
+//   same content, and Kortix fires an id once in 30 days. When the return
+//   matters, add what makes it new: the source's own change stamp or version
+//   (page.updated_at below), or the id of the incident that just ended.
 // - Many things: one event per thing, e.g. { name: 'invoice.overdue', data: { id, amount } }.
 // - Nothing to report: return []. The runner posts a heartbeat instead.
 // - Throw when the source fails: the tick fails, Kortix retries it, and the
@@ -216,7 +220,8 @@ async function check() {
   const response = await fetch(WATCH_URL, { headers: { accept: 'application/json' } });
   if (!response.ok) throw new Error('GET ' + WATCH_URL + ' answered ' + response.status);
   const body = await response.json();
-  return [{ name: 'status.changed', data: { url: WATCH_URL, status: body.status.description } }];
+  // page.updated_at moves only when the page itself changes: back to normal after an incident is a new event.
+  return [{ name: 'status.changed', data: { url: WATCH_URL, status: body.status.description, changed_at: body.page.updated_at } }];
 }
 
 module.exports = { check };
