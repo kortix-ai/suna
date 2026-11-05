@@ -12,7 +12,6 @@ import { Skeleton } from '../../../primitives/skeleton';
 import { errorToast, successToast } from '../../../primitives/toast';
 import { TypeToConfirmDialog } from '../../../primitives/type-to-confirm-dialog';
 import { ErrorState } from '../../../primitives/error-state';
-import { buildProjectEditPatch } from './project-edit-patch';
 import {
   ProjectIconField,
   type ProjectIconValue,
@@ -407,35 +406,48 @@ function GeneralWorkspaceCard({
   // comment.
   // The picker stays open while you try icons and colours, so the trigger
   // shows a local draft at once and the PATCH waits for a 400 ms pause: a
-  // colour drag sends one request, not one per pointer move. The draft drops
-  // once the last save settles and the server value takes over.
+  // colour drag sends one request, not one per pointer move.
+  //
+  // Each save sends the chosen icon outright rather than a diff against
+  // `project`: while an earlier PATCH is in flight `project` is stale, and a
+  // diff would skip going back to the stored icon. Saves chain, so they reach
+  // the server in pick order. Leaving the page sends a pending save at once
+  // instead of dropping it. The draft drops when the last save settles.
   const [draftIcon, setDraftIcon] = useState<ProjectIconValue | undefined>(undefined);
   const iconSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (iconSaveTimer.current) clearTimeout(iconSaveTimer.current);
-    },
-    [],
-  );
+  const pendingIcon = useRef<ProjectIconValue | undefined>(undefined);
+  const iconSaveChain = useRef<Promise<unknown>>(Promise.resolve());
+  const flushIcon = () => {
+    if (iconSaveTimer.current) clearTimeout(iconSaveTimer.current);
+    iconSaveTimer.current = null;
+    const next = pendingIcon.current;
+    if (next === undefined) return;
+    pendingIcon.current = undefined;
+    const patch: Partial<ProjectInput> =
+      next === null
+        ? { icon: null, icon_glyph: null }
+        : 'glyph' in next
+          ? { icon_glyph: next.glyph }
+          : { icon: next.emoji };
+    iconSaveChain.current = iconSaveChain.current
+      .catch(() => undefined)
+      .then(() => iconMutation.mutateAsync(patch))
+      // The mutation's own onError already toasts the failure.
+      .catch(() => undefined)
+      .finally(() => {
+        if (pendingIcon.current === undefined) setDraftIcon(undefined);
+      });
+  };
+  const flushIconRef = useRef(flushIcon);
+  useEffect(() => {
+    flushIconRef.current = flushIcon;
+  });
+  useEffect(() => () => flushIconRef.current(), []);
   const applyIcon = (nextIcon: ProjectIconValue) => {
     setDraftIcon(nextIcon);
+    pendingIcon.current = nextIcon;
     if (iconSaveTimer.current) clearTimeout(iconSaveTimer.current);
-    iconSaveTimer.current = setTimeout(() => {
-      iconSaveTimer.current = null;
-      const edit = buildProjectEditPatch(
-        { name: project.name, icon: project.icon, icon_glyph: project.icon_glyph },
-        { name: project.name, icon: nextIcon },
-      );
-      if (edit.status !== 'ready') {
-        setDraftIcon(undefined);
-        return;
-      }
-      iconMutation.mutate(edit.patch, {
-        onSettled: () => {
-          if (!iconSaveTimer.current) setDraftIcon(undefined);
-        },
-      });
-    }, 400);
+    iconSaveTimer.current = setTimeout(() => flushIconRef.current(), 400);
   };
 
   const saving = isDebouncing || isRenamePending;
