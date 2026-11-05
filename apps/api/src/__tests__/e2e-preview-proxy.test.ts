@@ -876,6 +876,37 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchReturned[0]!.bodyUsed).toBe(true);
   });
 
+  // A port the API exposed a moment ago: Platinum's routes lag the expose by up
+  // to ~1.2 s, and its edge answers `404 port-not-exposed` meanwhile. The edge
+  // answered itself, so the request is sent again, and a write is safe to send.
+  test('an edge port-not-exposed 404 right after the expose is sent again', async () => {
+    mockFetchResponses = [
+      { status: 404, body: 'This sandbox URL is not active.', headers: { 'x-pt-edge-verdict': 'port-not-exposed' } },
+      { status: 200, body: 'ok' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test', Accept: 'text/html' },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+    expect(mockFetchReturned[0]!.bodyUsed).toBe(true);
+  });
+
+  test('a 404 the app served itself passes through, never sent again', async () => {
+    mockFetchResponses = [
+      { status: 404, body: 'no such page', headers: { 'x-pt-edge-served': '1' } },
+      { status: 200, body: 'ok' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/missing`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe('no such page');
+    expect(mockFetchCalls).toHaveLength(1);
+  });
+
   test('a browser that gets the port-unreachable page leaves no upstream body unreleased', async () => {
     mockFetchResponses = [{ status: 502, body: 'bad gateway' }];
     const app = createProxyTestApp();

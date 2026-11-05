@@ -6,6 +6,7 @@
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { spaceDriveFolders } from '@kortix/shared';
 import { and, eq } from 'drizzle-orm';
+import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
@@ -93,7 +94,8 @@ export async function makeDmFolders(accountId: string, projectId: string, userId
  * `drives` flag: a rename while Drive is off still moves the folder, so Drive
  * turned back on finds it. A channel that never had a folder moves nothing.
  * Then the channel's running threads get notes that name the new path, off
- * the response path: their mounts did not change, so nothing else rewrites them.
+ * the response path. With `chat` on, their boxes also remount the folder at
+ * its new path (they mount it by path, `sessionSpaceFolder`).
  */
 export async function moveChannelFolder(
   projectId: string,
@@ -109,6 +111,16 @@ export async function moveChannelFolder(
       const to = spaceDriveFolders('channel', toSlug, null)!.files;
       await moveDriveFolder(drive, from, to, () => undefined);
       noteDriveWrite(drive.driveId);
+      // With `chat` on, the channel's threads mount its folder by path
+      // (`sessionSpaceFolder`), not through a grant: their running boxes
+      // remount it at its new path. Off the response path.
+      if (await projectFeatureFlagEnabled(projectId, 'chat')) {
+        void enforceProjectMounts(drive).catch((err: unknown) =>
+          logger.warn(`[drives] the threads of #${toSlug} in project ${projectId} did not remount the moved folder`, {
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
     }
   } catch (err) {
     if (!(err instanceof DriveStorageError && err.status === 404)) {

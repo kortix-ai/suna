@@ -265,6 +265,11 @@ export interface SessionDrive {
   /** `me`: the session owner's own folder, their desktop. */
   role?: 'me' | 'drive';
   openConflicts?: number;
+  /**
+   * When the newest of `openConflicts` was detected (ISO 8601), null with none.
+   * Absent from an API older than 2026-11-04.
+   */
+  latestConflictAt?: string | null;
 }
 
 export interface SessionDrives {

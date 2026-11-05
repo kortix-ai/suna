@@ -300,9 +300,9 @@ function PrivacyPolicy() {
           PostHog, hosted in the European Union, for product analytics on our website and in the
           Services: which pages and features are used, and which campaign brought a visitor to us.
           PostHog stores an identifier in your browser only after you accept analytics in the cookie
-          banner; with that consent it may also record visits to our public pages, with form fields
-          hidden. When you are signed in it receives your account email to link your visits; it
-          never receives your prompts, messages, files or other project content. On our marketing website we also use Vercel Analytics and, through Google Tag
+          banner. It receives a random account identifier, never your name or email address, and
+          never your prompts, messages, files or other project content, and it does not record your
+          screen. On our marketing website we also use Vercel Analytics and, through Google Tag
           Manager, advertising and measurement tags. A cookie banner asks for your consent before we
           set non-essential cookies where the law requires consent, and you can change your choice
           there at any time. We do not load advertising tags on signed-in pages of the Services.
@@ -566,24 +566,50 @@ function LegalContent() {
     window.history.replaceState(null, '', `${pathname}?${params.toString()}`);
   };
 
-  const documents: Record<LegalTab, { label: string; heading: string; updated: string | null; contents: string[][]; body: ReactNode }> = {
+  const documents: Record<
+    LegalTab,
+    {
+      label: string;
+      heading: string;
+      updated: string | null;
+      contents: string[][];
+      body: ReactNode;
+    }
+  > = {
     imprint: {
-      label: t.raw('i18nComplete.textd198ed30d09b'), heading: 'Imprint', updated: null,
+      label: t.raw('i18nComplete.textd198ed30d09b'),
+      heading: 'Imprint',
+      updated: null,
       contents: [
-          ['company-information', t.raw('appLegalPage.line97JsxTextCompanyInformation')],
-          ['imprint-contact', t.raw('i18nComplete.text2b5c3d26721a')],
-          ['responsible-for-content', t.raw('appLegalPage.line136JsxTextResponsibleForContent')],
-          ['disclaimer', t.raw('i18nComplete.text129c678fce59')],
-        ],
-      body: <Imprint /> },
-    terms: { label: t.raw('i18nComplete.text4afa55bf7aec'), heading: t.raw('i18nComplete.text4afa55bf7aec'), updated: TERMS_LAST_UPDATED,
-      contents: TERMS.sections.map((section) => [section.id, section.title]), body: <TermsOfService /> },
-    privacy: { label: t.raw('appLegalPage.line79JsxTextPrivacyPolicy'), heading: t.raw('appLegalPage.line1531JsxTextPrivacyPolicy'), updated: LEGAL_LAST_UPDATED,
-      contents: Object.entries(PRIVACY_TITLES), body: <PrivacyPolicy /> },
+        ['company-information', t.raw('appLegalPage.line97JsxTextCompanyInformation')],
+        ['imprint-contact', t.raw('i18nComplete.text2b5c3d26721a')],
+        ['responsible-for-content', t.raw('appLegalPage.line136JsxTextResponsibleForContent')],
+        ['disclaimer', t.raw('i18nComplete.text129c678fce59')],
+      ],
+      body: <Imprint />,
+    },
+    terms: {
+      label: t.raw('i18nComplete.text4afa55bf7aec'),
+      heading: t.raw('i18nComplete.text4afa55bf7aec'),
+      updated: TERMS_LAST_UPDATED,
+      contents: TERMS.sections.map((section) => [section.id, section.title]),
+      body: <TermsOfService />,
+    },
+    privacy: {
+      label: t.raw('appLegalPage.line79JsxTextPrivacyPolicy'),
+      heading: t.raw('appLegalPage.line1531JsxTextPrivacyPolicy'),
+      updated: LEGAL_LAST_UPDATED,
+      contents: Object.entries(PRIVACY_TITLES),
+      body: <PrivacyPolicy />,
+    },
   };
   const selected = documents[activeTab];
   const tabs: LegalTab[] = ['imprint', 'terms', 'privacy'];
-  const toc: TocItem[] = selected.contents.map(([id, title]) => ({ title, url: `#${id}`, depth: 2 }));
+  const toc: TocItem[] = selected.contents.map(([id, title]) => ({
+    title,
+    url: `#${id}`,
+    depth: 2,
+  }));
 
   return (
     <PageFrame>
@@ -626,8 +652,7 @@ function LegalContent() {
                 </h2>
                 {selected.updated === null ? null : (
                   <p className="text-muted-foreground mt-2 text-sm tabular-nums">
-                    {t.raw('appLegalPage.line1534JsxTextLastUpdated')}{' '}
-                    {selected.updated}
+                    {t.raw('appLegalPage.line1534JsxTextLastUpdated')} {selected.updated}
                   </p>
                 )}
               </div>

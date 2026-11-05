@@ -22,7 +22,7 @@ RUN apt-get update \\
     && rm -rf /var/lib/apt/lists/* \\
     && (command -v fd >/dev/null || ln -s "$(command -v fdfind)" /usr/local/bin/fd) && (command -v bat >/dev/null || ln -s "$(command -v batcat)" /usr/local/bin/bat) && rg --version >/dev/null && fd --version >/dev/null && bat --version >/dev/null && jq --version >/dev/null && fzf --version >/dev/null
 
-RUN useradd --create-home --shell /bin/bash --user-group kortix \\
+RUN if [ "$(getent passwd 1000 | cut -d: -f1)" = ubuntu ]; then userdel --remove ubuntu; fi && if [ "$(getent group 1000 | cut -d: -f1)" = ubuntu ]; then groupdel ubuntu; fi && useradd $(getent passwd 1000 >/dev/null || echo --uid 1000) --create-home --shell /bin/bash --user-group kortix \\
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\
     && chmod 0440 /etc/sudoers.d/kortix \\
     && mkdir -p /workspace /opt/kortix \\
@@ -220,7 +220,7 @@ RUN apt-get update \\
     && rm -rf /var/lib/apt/lists/* \\
     && (command -v fd >/dev/null || ln -s "$(command -v fdfind)" /usr/local/bin/fd) && (command -v bat >/dev/null || ln -s "$(command -v batcat)" /usr/local/bin/bat) && rg --version >/dev/null && fd --version >/dev/null && bat --version >/dev/null && jq --version >/dev/null && fzf --version >/dev/null
 
-RUN useradd --create-home --shell /bin/bash --user-group kortix \\
+RUN if [ "$(getent passwd 1000 | cut -d: -f1)" = ubuntu ]; then userdel --remove ubuntu; fi && if [ "$(getent group 1000 | cut -d: -f1)" = ubuntu ]; then groupdel ubuntu; fi && useradd $(getent passwd 1000 >/dev/null || echo --uid 1000) --create-home --shell /bin/bash --user-group kortix \\
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\
     && chmod 0440 /etc/sudoers.d/kortix \\
     && mkdir -p /workspace /opt/kortix \\

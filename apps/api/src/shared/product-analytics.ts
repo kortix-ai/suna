@@ -24,25 +24,64 @@ import { PostHog } from 'posthog-node';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 
+/**
+ * The event contract. Names and properties follow the dashboards in
+ * infra/posthog/dashboards.tf: change an event here, change the insight there.
+ */
 export type ProductEvent =
-  /** A personal account was created for a new user: the sign-up. */
-  | 'account_created'
-  /** A project was created or linked. `source`: provision | link. */
+  // Acquisition and activation
+  /** A personal account was created for a new user. `method`: auth provider. */
+  | 'user_signed_up'
+  /** A CLI or device login completed. `method`. */
+  | 'user_logged_in'
+  /** A project was created. `origin`: blank | template | marketplace | github_import. */
   | 'project_created'
-  /** A person started a session. `source`: ui | mobile | cli | … */
+  /** A person created a session (not a trigger, channel or agent). `source`. */
   | 'session_created'
-  /** A person sent a prompt to a session. */
-  | 'message_sent'
-  /** A Stripe checkout session was created. `kind`: subscription | credits. */
+  /** A session's sandbox started for a person. `provider`, `boot_ms`, `stage`. */
+  | 'session_started'
+  /** A person restarted a session. `provider`. */
+  | 'session_restarted'
+  /** A session's sandbox stopped. `reason`, `active_ms`. */
+  | 'session_stopped'
+  /** A person sent a prompt. `model`, `attachment_count`, `source`. */
+  | 'prompt_sent'
+  /** An agent turn ended. `status`: ok | error | aborted, `end_reason`, `duration_ms`. */
+  | 'turn_completed'
+  // Setup and adoption
+  /** A project secret was saved. `name_kind`: provider | other. Never the name or value. */
+  | 'secret_created'
+  /** An LLM provider was connected. `provider`, `method`: api_key | oauth | subscription. */
+  | 'provider_configured'
+  /** A provider credential was checked. `provider`, `state`. */
+  | 'provider_verified'
+  /** A person switched a session's model. `from`, `to`. */
+  | 'model_changed'
+  /** A connector was added to a project. `provider`, `slug` (the app, e.g. gmail). */
+  | 'connector_added'
+  /** A connector finished connecting. `slug`, `method`: credential | oauth. */
+  | 'connector_connected'
+  /** A trigger was created. */
+  | 'trigger_created'
+  /** A trigger fired. `fire_source`: manual | cron | webhook, `deduped`. */
+  | 'trigger_fired'
+  /** An app was deployed. `app_kind`, `hosting_provider`. */
+  | 'app_deployed'
+  /** A project feature flag was toggled. `key`, `enabled`. */
+  | 'feature_flag_toggled'
+  /** A user joined an account by invite. `via`, `role`. */
+  | 'member_joined'
+  // Revenue
+  /** A request was refused for billing. `reason`, `where`. */
+  | 'billing_gate_hit'
+  /** A Stripe checkout was created. `kind`: subscription | credits, `tier`, `amount_usd`. */
   | 'checkout_started'
-  /** A paid subscription became active. `amount_usd` per month, `store`. */
-  | 'subscription_started'
-  /** A paid subscription ended and the account is back on free. */
-  | 'subscription_canceled'
+  /** A paid plan became active. `tier`, `amount_usd` per month, `store`, `via`. */
+  | 'subscription_activated'
+  /** A paid plan ended. `store`, `previous_tier`, `amount_usd`. */
+  | 'subscription_cancelled'
   /** A one-off credit purchase was paid. `amount_usd`, `store`. */
-  | 'credits_purchased'
-  /** A user joined an account through an invite. */
-  | 'member_joined';
+  | 'credits_topped_up';
 
 export type ProductEventProperties = Record<string, string | number | boolean | null | undefined>;
 

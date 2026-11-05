@@ -127,6 +127,24 @@ describe('Claude Code passthrough', () => {
     expect(calls.usage).toEqual([['acc-1', 100, true], ['acc-2', 25, false]]);
   });
 
+  // The usage read runs after the upstream answered, and here with no catch
+  // around it: an unrepresentable reset once threw RangeError out of the whole
+  // request instead of relaying the served answer.
+  test('a served answer with an unrepresentable reset time is relayed unchanged', async () => {
+    const { handle, calls, seen } = harness({
+      credentials: { credentials: [{ secretId: 'acc-1', apiKey: 'sk-ant-oat01-first' }] },
+      upstream: () => new Response('{"id":"msg"}', {
+        headers: {
+          'anthropic-ratelimit-unified-5h-utilization': '0.25',
+          'anthropic-ratelimit-unified-5h-reset': '1e15',
+        },
+      }),
+    });
+    expect((await handle(request())).status).toBe(200);
+    expect(seen).toHaveLength(1);
+    expect(calls.usage).toEqual([['acc-1', 25, false]]);
+  });
+
   test('a 429 without retry-after rests the account 60 s; the last account answers the 429', async () => {
     const { handle, calls } = harness({
       credentials: { credentials: [{ secretId: 'acc-1', apiKey: 'sk-ant-oat01-first' }] },

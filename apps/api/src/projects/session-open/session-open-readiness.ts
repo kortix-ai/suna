@@ -27,6 +27,7 @@ import {
   hasRuntimeReadinessClock,
   readinessValue,
   runtimeReadyWaitPatch,
+  runtimeBootEpochMs,
   runtimeProvenThisBoot,
   servesThroughProbeMiss,
   shouldWarnRuntimeUnreachable,
@@ -43,6 +44,7 @@ import {
   serializeSandboxRow,
   sessionRuntimeUrlPath,
 } from './stopped-wake-result';
+import { captureProductEvent } from '../../shared/product-analytics';
 
 // A provider-running box normally binds the daemon within seconds. A daemon
 // that remains unreachable for 30 seconds needs an explicit restart, not five
@@ -123,13 +125,19 @@ export async function markRuntimeReadyWaitStarted(
   }
 }
 
-/** The daemon answered ready: drop the boot clocks and prove this boot, in one write when either is due. */
+/**
+ * The daemon answered ready: drop the boot clocks and prove this boot, in one
+ * write when either is due. `firstProof`: this call proved the boot (once per
+ * boot), with the boot duration when the boot clock is known.
+ */
 async function markRuntimeAnswered(
   row: typeof sessionSandboxes.$inferSelect,
-): Promise<void> {
+): Promise<{ firstProof: boolean; bootEpochMs: number | null; bootMs: number | null }> {
   const metadata = sandboxMetadata(row);
   const proven = runtimeProvenThisBoot(metadata);
-  if (!hasRuntimeReadinessClock(metadata) && proven) return;
+  const bootEpochMs = runtimeBootEpochMs(metadata);
+  const answer = { firstProof: false, bootEpochMs, bootMs: null as number | null };
+  if (!hasRuntimeReadinessClock(metadata) && proven) return answer;
   try {
     await db
       .update(sessionSandboxes)
@@ -146,9 +154,14 @@ async function markRuntimeAnswered(
         updatedAt: new Date(),
       })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+    if (!proven) {
+      answer.firstProof = true;
+      answer.bootMs = bootEpochMs === null ? null : Math.max(0, Date.now() - bootEpochMs);
+    }
   } catch (err) {
     console.warn(`[start] failed to record the runtime answer for ${row.sandboxId}:`, err);
   }
+  return answer;
 }
 
 /**
@@ -465,7 +478,23 @@ export async function judgeBootBudget(
       ensured.bootPhase,
     );
   } else {
-    await markRuntimeAnswered(row);
+    const answered = await markRuntimeAnswered(row);
+    if (answered.firstProof) {
+      // Once per boot: the runtime of this session answered for the first time.
+      captureProductEvent({
+        userId: loaded.userId,
+        accountId: loaded.row.accountId,
+        event: 'session_started',
+        dedupeKey: `${row.sandboxId}:${answered.bootEpochMs ?? 'unknown'}`,
+        properties: {
+          project_id: projectId,
+          session_id: sessionId,
+          provider: visible.row.sandboxProvider,
+          boot_ms: answered.bootMs,
+          stage: 'ready',
+        },
+      });
+    }
   }
   return null;
 }

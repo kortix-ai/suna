@@ -2,6 +2,8 @@ export type AppLinkKind =
   | 'pullRequest'
   | 'issue'
   | 'commit'
+  | 'githubUser'
+  | 'githubRepo'
   | 'linearIssue'
   | 'slackMessage'
   | 'slackConversation'
@@ -18,6 +20,19 @@ export interface AppLink {
   number?: string;
   name?: string;
 }
+
+// First path segments that are GitHub pages, not an account.
+const GITHUB_RESERVED = new Set([
+  'about', 'accelerator', 'account', 'apps', 'blog', 'business', 'codespaces',
+  'collections', 'community', 'contact', 'copilot', 'customer-stories', 'dashboard',
+  'discussions', 'edu', 'education', 'enterprise', 'events', 'explore', 'features',
+  'git-guides', 'github-copilot', 'home', 'issues', 'join', 'login', 'logout',
+  'marketplace', 'mobile', 'new', 'nonprofit', 'notifications', 'open-source',
+  'organizations', 'orgs', 'partners', 'premium-support', 'pricing', 'pulls',
+  'readme', 'resources', 'search', 'security', 'services', 'sessions', 'settings',
+  'signup', 'site', 'sitemap', 'solutions', 'sponsors', 'stars', 'team', 'topics',
+  'trending', 'trust-center', 'watching', 'why-github',
+]);
 
 /** Public URL structure only. No metadata requests or inferred live status. */
 export function appLink(href: string): AppLink | null {
@@ -44,6 +59,13 @@ export function appLink(href: string): AppLink | null {
     const commit = /^\/[^/]+\/[^/]+\/commit\/([a-f0-9]{7,40})\/?$/.exec(path);
     if (commit)
       return { app: 'github', kind: 'commit', name: commit[1].slice(0, 7) };
+    const owner = /^\/([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38}))(?:\/([a-zA-Z0-9._-]{1,100}))?\/?$/.exec(path);
+    if (owner && !GITHUB_RESERVED.has(owner[1].toLowerCase())) {
+      const repo = owner[2];
+      if (!repo) return { app: 'github', kind: 'githubUser', name: owner[1] };
+      if (repo !== '.' && repo !== '..')
+        return { app: 'github', kind: 'githubRepo', name: `${owner[1]}/${repo}` };
+    }
   }
   if (url.hostname === 'linear.app') {
     const issue =

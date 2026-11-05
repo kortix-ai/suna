@@ -52,6 +52,7 @@ import {
   isApprovalExpiredError,
   itemDeepLink,
 } from '../../../workspace/review/review-actions';
+import { AskDeck } from '../../../workspace/review/ask-deck';
 import { ReviewCenter } from '../../../workspace/review/review-center';
 
 /**
@@ -288,8 +289,23 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
     return res.results;
   }
 
+  function openSession(sessionId: string) {
+    // "See progress" only VIEWS the session — feedback delivery goes through
+    // the backend now. Clear any stale queued prompt so navigating can't
+    // auto-send a leftover message (e.g. from an earlier client-side attempt).
+    const href = itemDeepLink(projectId, sessionId);
+    if (!href) return;
+    clearStartStash(sessionId);
+    closeCustomize();
+    // nav-contract: prefetch-only — the shared inbox hands back only a
+    // sessionId through `onOpenSession`, so the control is a button there.
+    // The effect above has already warmed this href.
+    router.push(href);
+  }
+
   return (
     <ReviewCenter
+      needsYouDeck={projectId ? <AskDeck projectId={projectId} onOpenSession={openSession} /> : null}
       initialItems={items}
       segment={segment}
       onSegmentChange={setSegment}
@@ -314,19 +330,7 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
       onRefresh={() => void refetch()}
       recoveringCrId={startingCrId}
       onRecoverChange={recoverChange}
-      onOpenSession={(sessionId) => {
-        // "See progress" only VIEWS the session — feedback delivery goes through
-        // the backend now. Clear any stale queued prompt so navigating can't
-        // auto-send a leftover message (e.g. from an earlier client-side attempt).
-        const href = itemDeepLink(projectId, sessionId);
-        if (!href) return;
-        clearStartStash(sessionId);
-        closeCustomize();
-        // nav-contract: prefetch-only — the shared inbox hands back only a
-        // sessionId through `onOpenSession`, so the control is a button there.
-        // The effect above has already warmed this href.
-        router.push(href);
-      }}
+      onOpenSession={openSession}
     />
   );
 }

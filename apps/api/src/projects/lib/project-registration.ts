@@ -151,7 +151,7 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
     accountId: input.accountId,
     event: 'project_created',
     dedupeKey: row.projectId,
-    properties: { project_id: row.projectId, source: 'link', git_auth: input.auth.kind },
+    properties: { project_id: row.projectId, origin: 'github_import', git_auth: input.auth.kind },
   });
   return row;
 }

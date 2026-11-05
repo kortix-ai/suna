@@ -5,6 +5,7 @@ import { db, withDbTransaction } from '../shared/db';
 import { createAccountToken } from '../repositories/account-tokens';
 import { actorForUser, type Actor } from '../iam/actor';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
+import { captureProductEvent } from '../shared/product-analytics';
 
 export const CLI_GRANT_TTL = 600;
 export const CLI_POLL_INTERVAL = 5;
@@ -57,6 +58,13 @@ export async function pollCliGrant(deviceCode: string) {
     });
     await db.update(cliDeviceGrants).set({ status: 'consumed' })
       .where(eq(cliDeviceGrants.deviceCodeHash, grant.deviceCodeHash));
+    captureProductEvent({
+      userId: grant.userId,
+      accountId: grant.accountId,
+      event: 'user_logged_in',
+      dedupeKey: grant.deviceCodeHash,
+      properties: { method: 'cli_device', source: 'cli' },
+    });
     return { token: token.secretKey };
   });
 }

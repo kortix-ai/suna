@@ -6,10 +6,10 @@
  * fetched.
  *
  * No remote code. The `no-external` build never injects a script from
- * PostHog: not the remote-config `config.js`, not site apps. The two
- * extensions we use, surveys and the session recorder, ship in our own
- * bundle. Whoever administers the PostHog project cannot run code on
- * kortix.com (GTM stays off signed-in pages for the same reason).
+ * PostHog: not the remote-config `config.js`, not site apps. The one
+ * extension we use, surveys, ships in our own bundle. Whoever administers the
+ * PostHog project cannot run code on kortix.com (GTM stays off signed-in
+ * pages for the same reason).
  *
  * Consent decides storage, not collection. Until the CookieYes banner grants
  * analytics, ids live in memory only: nothing in cookies or local storage.
@@ -19,10 +19,10 @@
  * A grant moves the client to `localStorage+cookie`, which is what links an ad
  * click on a landing page to the sign-up minutes later.
  *
- * Replays record only with consent, only outside the desktop app, and only on
- * public pages (`isReplayAllowedPath`). Inputs are always masked. Autocapture
- * keeps element text on public pages and masks it on private ones; the
- * `before_send` scrubber removes what masking does not cover.
+ * No session replay (decision 2026-11-04): the replay extension is not
+ * bundled and never starts. Autocapture keeps element text on public pages and
+ * masks it on private ones; the `before_send` scrubber removes what masking
+ * does not cover.
  */
 
 import { isDesktop } from '@kortix/ui/internal/lib/desktop';
@@ -30,7 +30,6 @@ import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 import {
   type AnalyticsConsent,
   isPrivatePath,
-  isReplayAllowedPath,
   POSTHOG_API_HOST,
   POSTHOG_UI_HOST,
   posthogProjectForHost,
@@ -46,7 +45,6 @@ const clientReady = new Promise<PostHog | null>((resolve) => {
 });
 let started = false;
 let consent: AnalyticsConsent = 'unknown';
-let recorderLoaded: Promise<unknown> | null = null;
 
 /** The client once `startPostHog` ran, or null on hosts that do not report. */
 export function getPostHog(): Promise<PostHog | null> {
@@ -107,13 +105,7 @@ async function start(userId: string | null): Promise<PostHog | null> {
     // Sentry owns errors; Vercel Speed Insights owns web vitals.
     capture_exceptions: false,
     capture_performance: false,
-    // Replays start per page in syncPostHogPage, never by default.
     disable_session_recording: true,
-    session_recording: {
-      maskAllInputs: true,
-      recordHeaders: false,
-      recordBody: false,
-    },
     // Kortix hosts drop bot traffic. A local run keeps it, tagged
     // `$browser_type: bot`, so a scripted browser can verify events.
     opt_out_useragent_filter: project.environment === 'local',
@@ -144,23 +136,8 @@ async function start(userId: string | null): Promise<PostHog | null> {
   return posthog;
 }
 
-/**
- * Apply the per-page rules after a navigation: text masking for autocapture,
- * and whether a replay may record here.
- */
+/** Apply the per-page rules after a navigation: text masking for autocapture. */
 export function syncPostHogPage(posthog: PostHog, pathname: string): void {
   const privatePage = isPrivatePath(pathname);
   posthog.set_config({ mask_all_text: privatePage, mask_all_element_attributes: privatePage });
-
-  const mayRecord = consent === 'granted' && !isDesktop() && isReplayAllowedPath(pathname);
-  if (!mayRecord) {
-    if (posthog.sessionRecordingStarted()) posthog.stopSessionRecording();
-    return;
-  }
-  recorderLoaded ??= import('posthog-js/dist/recorder');
-  void recorderLoaded.then(() => {
-    // The visitor may have navigated to a private page while it loaded.
-    if (!isReplayAllowedPath(window.location.pathname)) return;
-    if (!posthog.sessionRecordingStarted()) posthog.startSessionRecording();
-  });
 }

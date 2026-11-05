@@ -337,6 +337,8 @@ export interface ProjectTrigger {
   prompt_template: string;
   /** 'fresh' (default) mints a new session per fire; 'reuse' re-prompts one persistent session. */
   session_mode: 'fresh' | 'reuse';
+  /** App triggers: the silence alert window in seconds; null when unset. Older servers send null for every type. */
+  expect_event_within_seconds?: number | null;
   /** Runs it may start in any 60 minutes; null = unset (the default, 60). Older servers omit it. */
   max_runs_per_hour?: number | null;
   /** Runs it may start in a UTC day; null = no daily cap. Older servers omit it. */

@@ -7,7 +7,7 @@ import { getTier, paidMonthlyUsd } from './tiers';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
-import { captureAccountProductEvent } from './billing-analytics';
+import { captureAccountProductEvent } from '../../iam/account-analytics';
 
 export function planKeyFromMetadata(
   metadata: Stripe.Metadata | null | undefined,
@@ -136,11 +136,12 @@ export async function activateSubscriptionForAccount(params: {
   if (firstActivation) {
     captureAccountProductEvent({
       accountId,
-      event: 'subscription_started',
+      event: 'subscription_activated',
       dedupeKey: subscriptionId,
       properties: {
         store: 'stripe',
-        plan: tierKey,
+        via: 'stripe_webhook',
+        tier: tierKey,
         amount_usd: monthlyUsd,
         billing_period: isYearly ? 'yearly' : 'monthly',
         previous_tier: existingAccount?.tier ?? null,

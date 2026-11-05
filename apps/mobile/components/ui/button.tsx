@@ -1,3 +1,5 @@
+import * as React from 'react';
+import { GlassButtonContext } from '@/components/kortix/glass-button-context';
 import { TextClassContext } from '@/components/ui/text';
 import { cn } from '@/lib/utils/index';
 import { defaultButtonHitSlop } from '@/lib/ui/hit-target';
@@ -99,17 +101,26 @@ const buttonTextVariants = cva(
 
 type ButtonProps = React.ComponentProps<typeof Pressable> & React.RefAttributes<typeof Pressable> & VariantProps<typeof buttonVariants>;
 
-function Button({ className, variant, size, hitSlop, ...props }: ButtonProps) {
+function Button({ className, variant, size, hitSlop, children, ...props }: ButtonProps) {
+  // Kortix delta: inside `GlassButtons` (iOS 26 Liquid Glass) the content sits
+  // in the glass, and the glass draws the press instead of the pressed fill.
+  const glass = React.useContext(GlassButtonContext);
   return (
     <TextClassContext.Provider value={buttonTextVariants({ variant, size })}>
       <Pressable
-        className={cn(props.disabled && 'opacity-50', buttonVariants({ variant, size }), className)}
+        className={cn(
+          props.disabled && 'opacity-50',
+          buttonVariants({ variant, size }),
+          className,
+          glass && 'active:bg-transparent dark:active:bg-transparent'
+        )}
         role="button"
         // Kortix delta: sizes under 44pt grow their touch area to 44pt unless
         // the caller passes its own `hitSlop` (lib/ui/hit-target.ts).
         hitSlop={hitSlop ?? defaultButtonHitSlop(size)}
-        {...props}
-      />
+        {...props}>
+        {glass && typeof children !== 'function' ? glass(children, size) : children}
+      </Pressable>
     </TextClassContext.Provider>
   );
 }

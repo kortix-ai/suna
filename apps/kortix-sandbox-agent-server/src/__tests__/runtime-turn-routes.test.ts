@@ -27,6 +27,15 @@ describe('parseRuntimePromptBody', () => {
   })
 })
 
+describe('thread_files', () => {
+  test('the prompt route passes thread_files on (the API sets it; the router reads it); a non-object is dropped', () => {
+    const parts = [{ type: 'text', text: 'hi' }]
+    const files = { folder: '/drives/general/threads/t-1a2b3c4d', context: '/drives/general/context.md', message: '/drives/general/threads/t-1a2b3c4d/messages/0001-a.md' }
+    expect(parseRuntimePromptBody({ parts, thread_files: files })).toEqual({ parts, threadFiles: files })
+    expect(parseRuntimePromptBody({ parts, thread_files: 'x' })).toEqual({ parts })
+  })
+})
+
 describe('the turn system text', () => {
   test('the steer route drops a system field; the prompt route passes it on', async () => {
     const seen: Array<[string, RuntimePromptInput]> = []

@@ -135,9 +135,10 @@ An App never starts an agent itself. It posts an **App event**; a trigger in
 can call a URL), (2) a connector event, (3) a schedule (an hourly or daily
 check is enough). Build a watcher App when none fits: the source sends
 nothing and must be watched around the clock, code must decide what deserves
-an agent, or the watch needs a connection that stays open. A complete
-watcher (App, poll, App event, session wake-up): `kortix-system` →
-`references/scheduling.md` → Watch 24/7.
+an agent, or the watch needs a connection that stays open. Start it with
+`kortix apps launch --template watcher --name <slug>` and edit
+`apps/<slug>/watch.js`: `check()` returns what is true now. The whole recipe:
+`kortix-system` → `references/scheduling.md` → Watch 24/7.
 
 1. Post one event `{name, data?, id?}` or `{events: [...]}` (at most 50):
    ```bash
@@ -161,9 +162,25 @@ watcher (App, poll, App event, session wake-up): `kortix-system` →
 3. Emit only what deserves a session: one summary event, not one per item.
    Each trigger takes at most 60 events an hour and 30 a minute. Past that it
    is suppressed for 10 minutes; 3 suppressions in 24 hours disable it.
-4. To test from your machine, a project admin reads the credentials:
-   `GET /v1/projects/<project_id>/apps/<app_id>/events/credentials` →
-   `{token, url}`.
+4. Prove the wiring with a test event, never with a real check (a real id
+   fires once):
+   ```bash
+   kortix apps events emit inbox-poller reply.received --data '{"subject":"Test"}' --wait
+   ```
+   It takes the real path with an id starting `test-` (the prompt reads
+   `event.test` as true) and exits 0 only when a trigger fired.
+5. See what came of every event: `kortix apps events inbox-poller` lists the
+   last 30 days, one row per trigger: `fired` with the session, `skipped` with
+   the reason, `suppressed`, `failed`, `pending`, or `unmatched` (no enabled
+   trigger listens; the App's POST answer says so in `hint`). Read it before
+   you guess why nothing ran.
+6. Know when the watcher stops: add `expect_event_within: 30m` (5m to 30d)
+   to the work trigger, or `--expect-event-within 30m`. No post from the App
+   (any name, a deduplicated one or `kortix.heartbeat` too) for that long
+   tells the trigger's watchers once; the App's next post clears it.
+7. Code outside the App (your machine while you build it) gets the URL and
+   token from `kortix apps events credentials <app>` (project admins). The
+   token posts as that App: keep it out of chat, files and commits.
 
 **Have Kortix call the App.** A poller does not need to run 24/7: deploy it
 `--on-demand` and add a schedule that calls it.

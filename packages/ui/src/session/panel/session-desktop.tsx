@@ -22,6 +22,10 @@
  * that booted an image built before it had one) says so; the header does not offer the panel there. The
  * control bar appears only once the desktop answers, never over the proxy's
  * "not answering" page.
+ *
+ * The frame loads behind a loader until the probe says the desktop answers,
+ * and loads again at that moment. A panel opened the instant a session starts
+ * can frame a page from before the desktop was up; the user never sees it.
  */
 
 import { useTranslations } from '../../i18n';
@@ -160,15 +164,22 @@ export function SessionDesktop({
           ) : (
             <>
               <iframe
+                // A new frame once the desktop answers: it loads the desktop fresh.
+                key={live ? 'live' : 'waiting'}
                 ref={frameRef}
                 src={src}
                 title={t('title')}
-                className="h-full w-full border-0"
+                className={cn('h-full w-full border-0', !live && 'invisible')}
                 sandbox={framePolicy('app', src).sandbox}
                 allow="clipboard-read; clipboard-write; autoplay; fullscreen"
                 tabIndex={control ? 0 : -1}
               />
-              {!control && (
+              {!live && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Loading className="size-4" />
+                </div>
+              )}
+              {live && !control && (
                 <button
                   type="button"
                   aria-label={t('takeOver')}

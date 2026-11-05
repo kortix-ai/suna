@@ -82,11 +82,21 @@ flow(
 );
 
 // ── AUTH-4: magic link + OTP verify ──────────────────────────────────────────
-flow("AUTH-4", { domain: "auth", tags: ["deployed"], routes: ["POST /v1/auth/sign-in/magic-link", "POST /v1/auth/verify-otp"] }, async (ctx) => {
+flow("AUTH-4", { domain: "auth", tags: ["deployed"], routes: ["POST /v1/auth/sign-in/magic-link", "POST /v1/auth/verify-otp", "POST /v1/access/check-email"] }, async (ctx) => {
   const email = `${ctx.fixtures.name("magic")}@example.test`.toLowerCase();
   await ctx.step("magic link → 200 sent (creates the user)", async () => {
     const r = await ctx.client.as(ctx.P.ANON).post("/v1/auth/sign-in/magic-link", { email, redirect_to: "https://app.example.test/cb" });
     r.status(200).body().has("$.sent", true);
+  });
+  // One auth email per address per minute (apps/api/src/auth/email-cooldown.ts):
+  // a click-happy visitor must not get one email per click.
+  await ctx.step("cooldown: check-email reports the seconds left; a second send inside the minute → 429, no email", async () => {
+    const check = await ctx.client.as(ctx.P.ANON).post("/v1/access/check-email", { email });
+    check.status(200).body().has("$.mode", "signin");
+    const left = check.json<any>().email_retry_after_seconds;
+    if (!(typeof left === "number" && left > 0 && left <= 60)) throw new Error(`email_retry_after_seconds = ${left}`);
+    const again = await ctx.client.as(ctx.P.ANON).post("/v1/auth/sign-in/magic-link", { email, redirect_to: "https://app.example.test/cb" });
+    again.status(429).body().has("$.error", "over_email_send_rate_limit");
   });
   await ctx.step("verify-otp: a bogus code → 4xx with GoTrue's error; a non-http redirect is ignored, not fatal", async () => {
     const r = await ctx.client.as(ctx.P.ANON).post("/v1/auth/verify-otp", { email, token: "000000", type: "magiclink" });

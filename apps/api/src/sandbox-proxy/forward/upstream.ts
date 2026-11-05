@@ -257,7 +257,7 @@ export async function respondFromUpstream(
     // second header — see that module's doc for why.
     recordTurnStageMarks(summary.marks);
   }
-  await closeAnsweredQuestion(req, upstream);
+  await closeAnsweredAsk(req, state, upstream);
   // A HUMAN IS USING THIS BOX'S PREVIEW. The turn-start observation already
   // happened before the forward (see above); this is the other
   // control-plane-observed signal: an authenticated account member driving
@@ -397,24 +397,43 @@ export async function respondFromUpstream(
 }
 
 /**
- * A client answered or dismissed an agent question (web, mobile, SDK and CLI
- * all reply through this proxy). The runtime no longer waits on it, so its
- * stored copy stops counting as waiting on a person (KRTX-1739). A 404 means
- * the runtime holds no such question any more: that wait is over too. Awaited
- * before the client hears the answer, so its next needs-input read is current.
+ * A client answered or dismissed an agent ask (web, mobile, SDK and CLI all
+ * reply through this proxy). The runtime no longer waits on it, so its stored
+ * copy stops counting as waiting on a person (KRTX-1739). Awaited before the
+ * client hears the answer, so its next needs-input read is current.
+ *
+ * A 404 means the runtime holds no such request any more. For an older
+ * question that wait is over. A parked ask (session-asks.ts) is still open:
+ * the person answers it from its stored card, so a 404 leaves it.
  */
-async function closeAnsweredQuestion(req: ForwardRequest, upstream: Response): Promise<void> {
+async function closeAnsweredAsk(req: ForwardRequest, state: ForwardState, upstream: Response): Promise<void> {
   if (!(upstream.ok || upstream.status === 404) || !carriesSessionData(req.upstreamPort)) return;
   const answered = classifyRuntimeRequest(req.method, req.remainingPath);
-  if (answered.kind !== 'question-answer') return;
   try {
-    const { clearOpenQuestions } = await import('../../projects/surface');
-    await clearOpenQuestions(req.record.sessionId, { requestId: answered.requestId });
+    if (answered.kind === 'question-answer') {
+      const { clearOpenQuestions } = await import('../../projects/surface');
+      await clearOpenQuestions(req.record.sessionId, { requestId: answered.requestId, keepParked: !upstream.ok });
+    } else if (answered.kind === 'permission-reply' && upstream.ok) {
+      const reply = permissionReplyOf(state.requestBody);
+      if (!reply) return;
+      const { closeRepliedPermission } = await import('../../projects/surface');
+      await closeRepliedPermission({ sessionId: req.record.sessionId, requestId: answered.requestId, reply, decidedBy: req.userId || null });
+    }
   } catch (err) {
-    logger.warn('[turn-question] answered question not closed', {
+    logger.warn('[turn-question] answered ask not closed', {
       session_id: req.record.sessionId,
       error: err instanceof Error ? err.message : String(err),
     });
+  }
+}
+
+function permissionReplyOf(body: ArrayBuffer | undefined): 'once' | 'always' | 'reject' | null {
+  if (!body) return null;
+  try {
+    const reply = (JSON.parse(new TextDecoder().decode(body)) as { reply?: unknown }).reply;
+    return reply === 'once' || reply === 'always' || reply === 'reject' ? reply : null;
+  } catch {
+    return null;
   }
 }
 
