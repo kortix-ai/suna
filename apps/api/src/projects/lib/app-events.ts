@@ -84,7 +84,10 @@ export function asTestEvents(events: readonly AppEventInput[]): AppEventInput[] 
 
 /** The stored line of one event; a test event carries `test: true` (the prompt reads it as `event.test`). */
 function eventLine(event: AppEventInput, test: boolean): Record<string, unknown> {
-  return truncateMonitorLine({ name: event.name, data: event.data ?? {}, ...(event.id ? { id: event.id } : {}), ...(test ? { test: true } : {}) });
+  const line = truncateMonitorLine({ name: event.name, data: event.data ?? {}, ...(event.id ? { id: event.id } : {}), ...(test ? { test: true } : {}) });
+  // A truncated line is `{raw, truncated}`: a test event keeps its mark (the TEST preamble, the log and the
+  // silence check read it). It fits the envelope room truncateMonitorLine reserves.
+  return test ? { ...line, test: true } : line;
 }
 
 /** A dedup key from the App's event id: 52 bits, so it fits the bigint `seq` as a JS number. */
