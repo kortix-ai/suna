@@ -55,8 +55,9 @@ const st = {
   h1: { margin: `0 0 ${L.gap.title_after}px`, color: C.ink, fontFamily: EMAIL_FONT_SANS, fontSize: T.title, lineHeight: L.lineHeight.title, fontWeight: W.title, letterSpacing: L.letterSpacing.title, textAlign: 'left', textWrap: 'balance' },
   footer: { padding: '32px 0 16px', textAlign: 'left' },
   slogan: { ...small, fontSize: T.label, margin: '0 0 16px' },
+  // A table cell, not link padding: Outlook desktop ignores padding on <a>.
   // Right padding only, so the first icon sits on the footer's left edge.
-  socialLink: { display: 'inline-block', padding: '0 16px 0 0', verticalAlign: 'middle' },
+  socialCell: { padding: '0 16px 0 0', verticalAlign: 'middle' },
   small,
   smallLink: { color: C.inkMuted, textDecoration: 'underline' },
   button: { display: 'inline-block', backgroundColor: C.ink, color: C.canvas, padding: L.buttonPadding, borderRadius: L.buttonRadius, fontFamily: EMAIL_FONT_SANS, fontSize: T.body, lineHeight: '20px', fontWeight: W.strong, textDecoration: 'none', textAlign: 'center' },
@@ -97,13 +98,19 @@ function Shell(props: { title: string; body: string; preview: string }) {
 
             <Section style={st.footer}>
               <Text style={st.slogan}>{BRAND_FOOTER}</Text>
-              <Section style={{ marginBottom: 16, textAlign: 'left' }}>
-                {SOCIALS.map((s) => (
-                  <Link key={s.alt} href={s.href} style={st.socialLink}>
-                    <Img src={`${site}/email/${s.icon}`} alt={s.alt} width={16} height={16} style={{ display: 'block' }} />
-                  </Link>
-                ))}
-              </Section>
+              <table role="presentation" cellPadding={0} cellSpacing={0} border={0} style={{ marginBottom: 16 }}>
+                <tbody>
+                  <tr>
+                    {SOCIALS.map((s) => (
+                      <td key={s.alt} style={st.socialCell}>
+                        <Link href={s.href}>
+                          <Img src={`${site}/email/${s.icon}`} alt={s.alt} width={16} height={16} style={{ display: 'block' }} />
+                        </Link>
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
               <Text style={st.small}>
                 <Link href="https://kortix.com" style={st.smallLink}>
                   kortix.com
