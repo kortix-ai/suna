@@ -183,12 +183,13 @@ function clearDefaults() {
   writeFileSync(configFile, JSON.stringify(config));
 }
 
-test('first ship without a saved default ignores session project and uses the configured account', async () => {
+test('first ship without a saved default ignores session project and creates a new workspace', async () => {
   clearDefaults();
   const result = await cli(ship);
   expect(result.code).toBe(0);
-  expect(result.stdout).toContain('new project');
-  expect(hits).toEqual([{ path: '/v1/accounts/me', auth: 'Bearer tok_workspace' }]);
+  expect(result.stdout).toContain('new workspace');
+  // A managed first ship sends `new_workspace: true`: no account lookup.
+  expect(hits).toEqual([]);
 });
 test('refused creation names the existing-project link recovery command', async () => {
   clearDefaults();
@@ -196,7 +197,7 @@ test('refused creation names the existing-project link recovery command', async 
   const result = await cli(['ship', '--no-verify', '--no-env', '--no-connect', '--origin', 'managed', '-y']);
   expect(result.code).toBe(1);
   expect(result.stderr).toContain('HTTP 403');
-  expect(result.stderr).toContain('kortix projects link <project_id>');
+  expect(result.stderr).toContain('kortix workspaces link <project_id>');
   expect(provisionBodies).toHaveLength(1);
 });
 
@@ -209,7 +210,7 @@ test('ship refuses a foreign workspace link before any request unless a project 
   link();
   const result = await cli([...ship, '--host', 'other']);
   expect(result.code).toBe(1);
-  expect(result.stderr).toContain('--project');
+  expect(result.stderr).toContain('--workspace');
   expect(hits).toEqual([]);
 });
 test('ship does not fall back to session auth for an unknown host', async () => {
@@ -276,11 +277,10 @@ test.each([false, true])('first ship dismisses onboarding without failing a push
   expect(result.code).toBe(0);
   expect(onboardingBodies).toEqual([{ completed: true }]);
   expect(provisionBodies).toEqual([
-    { name: 'synthetic-workspace', account_id: 'account_workspace', seed_starter: false },
+    { name: 'synthetic-workspace', new_workspace: true, seed_starter: false },
   ]);
   expect(hits.every((hit) => hit.auth === 'Bearer tok_other')).toBe(true);
   expect(hits.map((hit) => hit.path)).toEqual([
-    '/v1/accounts/me',
     '/v1/projects/provision',
     '/v1/projects/created_workspace/onboarding',
     '/v1/connectors/projects/created_workspace/connectors/sync',
@@ -376,7 +376,7 @@ exec ${JSON.stringify(realGit)} "$@"
   }
   const result = await cli(['ship', '--host', 'workspace', '--no-verify', '--no-env', '--no-connect', '-y'], extraEnv);
   expect(result.code).toBe(1);
-  expect(result.stderr).toContain('kortix projects clone workspace_project');
+  expect(result.stderr).toContain('kortix workspaces clone workspace_project');
   expect(result.stderr).toContain('Copy your local files');
   expect(result.stderr).toContain('not .git');
   expect(git('--git-dir', bareRepo, 'rev-parse', 'main')).toBe(seed);
@@ -394,7 +394,6 @@ test('creation dismisses onboarding even if credential resolution fails before t
   expect(result.stderr).toContain('credential refused');
   expect(onboardingBodies).toEqual([{ completed: true }]);
   expect(hits.map((hit) => hit.path)).toEqual([
-    '/v1/accounts/me',
     '/v1/projects/provision',
     '/v1/projects/created_workspace/onboarding',
     '/v1/projects/created_workspace/git-token',

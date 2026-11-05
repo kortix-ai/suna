@@ -341,7 +341,7 @@ describe('ship refuses a project with no manifest', () => {
     expect(body).not.toContain('if (!manifest) return { ok: true, env: empty };');
     // Absence is now fatal.
     expect(body).toContain('if (!manifest) {');
-    expect(body).toContain('refusing to ship a project with no manifest');
+    expect(body).toContain('refusing to ship a workspace with no manifest');
 
     // --no-verify waives VALIDATION of a manifest, never its existence: the
     // missing-manifest branch must not be gated on the flag.
@@ -431,7 +431,7 @@ describe('runShip guards before any network call', () => {
   test('a folder with no Kortix manifest refuses to ship', async () => {
     const exit = await runShip([]);
     expect(exit).toBe(1);
-    expect(stderr).toContain('Not a Kortix project — no .kortix/ or kortix.yaml in');
+    expect(stderr).toContain('Not a Kortix workspace — no .kortix/ or kortix.yaml in');
     expect(stderr).toContain('kortix init');
     expect(stdout).toBe('');
   });
