@@ -36,8 +36,15 @@ const ts: typeof TS = createRequire(join(REPO, 'apps/api/package.json'))('typesc
  *   connectors.flow.ts — /v1/connectors/projects/:id
  *   secrets.flow.ts    — /v1/projects/:id, /v1/accounts/:id/secret-resources
  *   retired.flow.ts    — the retired 410 routes, which exist under the legacy name only
+ *   workspace-routes.flow.ts — WS-ROUTE-*, which calls both names on purpose
  */
-export const KEEP_LEGACY = new Set(['accounts.flow.ts', 'connectors.flow.ts', 'secrets.flow.ts', 'retired.flow.ts']);
+export const KEEP_LEGACY = new Set([
+  'accounts.flow.ts',
+  'connectors.flow.ts',
+  'secrets.flow.ts',
+  'retired.flow.ts',
+  'workspace-routes.flow.ts',
+]);
 
 const CLIENT_METHODS: Record<string, string | null> = { get: 'GET', post: 'POST', put: 'PUT', patch: 'PATCH', del: 'DELETE' };
 const LEGACY_PREFIX = /^\/(v1\/projects|v1\/accounts\/|v1\/account-invites|v1\/connectors\/projects\/|scim\/v2\/accounts\/)/;
