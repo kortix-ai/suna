@@ -159,7 +159,7 @@ export function SubscriptionUsageCard({
                   indicatorClassName={
                     expired
                       ? 'bg-muted-foreground'
-                      : tone === 'limited'
+                      : tone === 'limited' || tone === 'critical'
                         ? 'bg-kortix-red'
                         : tone === 'near'
                           ? 'bg-kortix-orange'
