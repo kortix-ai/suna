@@ -5,7 +5,9 @@
 import { flow } from "../core/flow";
 import { withDb } from "../fixtures/chat";
 
-type Listed = { triggers: Array<{ slug: string; type: string; app?: string | null; expect_event_within_seconds?: number | null }> };
+type Listed = {
+  triggers: Array<{ slug: string; type: string; app?: string | null; expect_event_within_seconds?: number | null; last_event_at?: string | null; silent_since?: string | null }>;
+};
 type EventLog = {
   events: Array<{ name: string | null; id: string | null; test: boolean; trigger: string | null; status: string; reason: string | null; data: Record<string, unknown> | null }>;
   next_cursor: string | null;
@@ -59,6 +61,7 @@ flow(
       const listed = (await owner.get("/v1/projects/:projectId/triggers", { params })).status(200).json<Listed>();
       const trigger = listed.triggers.find((t) => t.slug === slug);
       if (trigger?.type !== "app" || trigger.app !== appSlug) throw new Error(`listing: ${JSON.stringify(trigger)}`);
+      if (trigger.last_event_at !== null || trigger.silent_since !== null) throw new Error(`no event yet: ${JSON.stringify(trigger)}`);
     });
 
     await ctx.step("expect_event_within: 10m on the app trigger is listed as 600 s; 1m, a cron trigger and a bad value are 400", async () => {
@@ -90,10 +93,15 @@ flow(
       (await emit({ events: Array.from({ length: 51 }, () => ({ name: "x" })) })).status(400);
     });
 
-    await ctx.step("a valid event → 202 triggers 1 accepted 1; the same id again is deduped", async () => {
+    await ctx.step("a valid event → 202 triggers 1 accepted 1; the same id again is deduped; the listing has last_event_at", async () => {
       const event = { name: "reply.received", id: "msg-1", data: { subject: "Term sheet" } };
+      const before = Date.now();
       (await emit(event)).status(202).body().has("$.triggers", 1).has("$.accepted", 1);
       (await emit({ events: [event] })).status(202).body().has("$.deduped", 1).has("$.accepted", 0);
+      const listed = (await owner.get("/v1/projects/:projectId/triggers", { params })).status(200).json<Listed>();
+      const trigger = listed.triggers.find((t) => t.slug === slug);
+      const heard = Date.parse(trigger?.last_event_at ?? "");
+      if (!(heard >= before - 5_000) || trigger?.silent_since !== null) throw new Error(`last_event_at: ${JSON.stringify(trigger)}`);
     });
 
     await ctx.step("the App's event log lists the event under its trigger, pending; a bad limit or cursor is 400; ANON gets 401", async () => {

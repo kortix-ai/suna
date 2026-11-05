@@ -203,6 +203,7 @@ export {
   appDeploymentsKey,
   appDeploymentKey,
   useAppEvents,
+  useSendAppTestEvent,
   appEventsKey,
 } from './use-project-apps';
 

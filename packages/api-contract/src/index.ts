@@ -1987,8 +1987,12 @@ export const TriggerSchema = z.object({
   mode: z.enum(['poll', 'stream']).nullable(),
   /** For mode=poll only — the poll period, in whole seconds. */
   interval_seconds: z.number().nullable(),
-  /** For type=monitor only — the silence watchdog, in whole seconds. */
+  /** For type=app only — the silence alert (`expect_event_within`), in whole seconds. Null otherwise. */
   expect_event_within_seconds: z.number().nullable(),
+  /** For type=app only — when its App last posted to it (a deduplicated post and a heartbeat count). */
+  last_event_at: z.string().nullable().optional(),
+  /** Set while the App has been silent past `expect_event_within`: when the silence alert started. */
+  silent_since: z.string().nullable().optional(),
   /** For type=app only — the slug of the App whose emitted events fire the trigger. */
   app: z.string().nullable().optional(),
   /** A fire calls this App (method path) instead of running an agent. Null: an agent run. */

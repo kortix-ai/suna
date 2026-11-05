@@ -23,6 +23,7 @@ import {
   getAppDeployment,
   listAppDeployments,
   listAppEvents,
+  sendAppTestEvent,
   listApps,
   rollbackApp,
   startApp,
@@ -112,6 +113,24 @@ export function useAppEvents(
     enabled: !!projectId && !!appId && options.enabled !== false,
     ...contract('inventory'),
     refetchInterval: 10_000,
+  });
+}
+
+/**
+ * Send a test event as if the App posted it (`sendAppTestEvent`): it takes the
+ * real path, with an id starting `test-`. Refreshes the App's event log.
+ */
+export function useSendAppTestEvent(
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof sendAppTestEvent>[2]) =>
+      sendAppTestEvent(projectId as string, appId as string, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: appEventsKey(projectId, appId) });
+    },
   });
 }
 

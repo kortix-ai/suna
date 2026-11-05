@@ -11,7 +11,7 @@ mock.module('@tanstack/react-query', () => ({
   }),
 }));
 
-const { appDeploymentKey, appDeploymentsKey, appEventsKey, projectAppsKey, useAppAccess, useAppDeployment, useAppDeployments, useAppEvents, useProjectApps } =
+const { appDeploymentKey, appDeploymentsKey, appEventsKey, projectAppsKey, useAppAccess, useAppDeployment, useAppDeployments, useAppEvents, useProjectApps, useSendAppTestEvent } =
   await import('./use-project-apps');
 
 beforeEach(() => {
@@ -49,6 +49,13 @@ describe('Kortix Apps React Query bindings', () => {
     expect((useAppEvents('project-1', null) as any).enabled).toBe(false);
     // A viewer without the operations view gets 403: the hook stays off.
     expect((useAppEvents('project-1', 'app-1', { enabled: false }) as any).enabled).toBe(false);
+  });
+
+  test('a test event refreshes the App event log', () => {
+    const send = useSendAppTestEvent('project-1', 'app-1') as any;
+    expect(typeof send.mutationFn).toBe('function');
+    send.onSuccess();
+    expect(invalidated).toEqual([appEventsKey('project-1', 'app-1')]);
   });
 
   test('App mutations invalidate the App list and deployment history', () => {
