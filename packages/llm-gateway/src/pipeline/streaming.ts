@@ -453,7 +453,8 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
     async cancel(reason) {
       // A client that closes after the relayed `[DONE]` got the whole answer: the OpenAI SDK
       // (pi's model client) closes on `[DONE]`, often before the upstream's end of body arrives.
-      if (!scanner.hasExplicitDone || scanner.error) clientStop ??= { message: 'client cancelled response', code: 'client_aborted' };
+      // A close after `finish_reason` but before `[DONE]` is still a stop: the usage chunk may not have arrived.
+      if (!scanner.sawDoneSentinel || scanner.error) clientStop ??= { message: 'client cancelled response', code: 'client_aborted' };
       await reader.cancel(reason).catch(() => undefined);
       await settle(clientStop);
     },

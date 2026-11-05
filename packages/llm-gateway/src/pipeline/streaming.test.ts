@@ -208,6 +208,27 @@ describe('relayStream', () => {
     });
   });
 
+  test('a client that closes after finish_reason but before [DONE] is still a client stop', async () => {
+    const settlements: Array<{ error: unknown; observed: unknown }> = [];
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Paris"},"finish_reason":"stop"}]}\n\n'));
+      },
+    });
+    const reader = relayStream({
+      upstreamBody: upstream,
+      requestId: 'req_finish_then_close',
+      logger: console,
+      settle: async (_usage, error, observed) => {
+        settlements.push({ error, observed });
+      },
+    }).getReader();
+    await reader.read();
+    await reader.cancel();
+    expect(settlements).toHaveLength(1);
+    expect(settlements[0]).toMatchObject({ error: { code: 'client_aborted' }, observed: { clientStopped: true } });
+  });
+
   function upstreamOf(bytes: Uint8Array | null): ReadableStream<Uint8Array> {
     return new ReadableStream({
       start(controller) {
