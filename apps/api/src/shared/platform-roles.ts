@@ -31,8 +31,11 @@ export async function getPlatformRole(accountId: string): Promise<PlatformRole> 
   }
 
   // Env allowlist wins — a self-host operator listed here is always admin even
-  // before any platform_user_roles row exists. Personal account id == auth user
-  // id, so the email lives in auth.users under the same id.
+  // before any platform_user_roles row exists. Callers pass the PERSON's id
+  // (requireAdmin, /v1/user-roles, account creation): the email lives in
+  // auth.users under it. A person needs no account whose id equals theirs
+  // (Workspaces: no account at sign-up); new-workspace.integration.test.ts
+  // proves an allowlisted admin with only a randomly-keyed account.
   const allowlist = selfHostOperatorAllowlist();
   if (allowlist.length > 0) {
     try {

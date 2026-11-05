@@ -1,5 +1,6 @@
 import { accountMemberships, accounts } from '@kortix/db';
 
+import { claimFirstWorkspaceFreeCredits } from '../../billing/services/free-credit-claims';
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
 import { config } from '../../config';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
@@ -21,8 +22,10 @@ export type CreatedAccountRow = typeof accounts.$inferSelect;
  *      (`role_assignments`, what the engine reads). `SYSTEM_ACTOR`: nobody
  *      holds a permission in an account that did not exist a statement ago,
  *      so creating it is the authorization;
- *   3. the free tier, when internal billing is on. Best effort: the billing
- *      gates repair a missing wallet on first use (`ensureFreeTierAccountReady`);
+ *   3. the free tier, when internal billing is on: the free signup credits
+ *      only on the person's first workspace (`claimFirstWorkspaceFreeCredits`),
+ *      else Free with 0 credits. Best effort: the billing gates repair a
+ *      missing wallet row on first use (`ensureFreeTierAccountReady`);
  *   4. the creator's Mailtrap contact, fire-and-forget. The sync is an
  *      idempotent upsert, so a second workspace re-syncs the same contact.
  */
@@ -49,7 +52,9 @@ export async function createOwnedAccount(input: {
 
   if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
     try {
-      await initializeFreeTierAccount(account.accountId);
+      // One free grant per person: only their first workspace gets credits.
+      const freeCredits = await claimFirstWorkspaceFreeCredits(userId, account.accountId);
+      await initializeFreeTierAccount(account.accountId, { freeCredits });
     } catch (err) {
       logger.warn('[accounts] Failed to initialize free tier', {
         accountId: account.accountId,

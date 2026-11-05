@@ -4719,6 +4719,11 @@ export const creditAccounts = kortixSchema.table(
     trialStartedAt: timestamp('trial_started_at', { withTimezone: true, mode: 'string' }),
     trialEndsAt: timestamp('trial_ends_at', { withTimezone: true, mode: 'string' }),
     isGrandfatheredFree: boolean('is_grandfathered_free').default(false),
+    // Workspaces (2026-11-05): the free signup grant and its monthly rotation
+    // belong to the first workspace a person creates. A further workspace starts
+    // on Free with 0 credits and this false. Every row that existed before is
+    // true (the default), so no account loses credits.
+    freeCreditsEligible: boolean('free_credits_eligible').default(true).notNull(),
     lastProcessedInvoiceId: varchar('last_processed_invoice_id', { length: 255 }),
     commitmentType: varchar('commitment_type', { length: 50 }),
     commitmentStartDate: timestamp('commitment_start_date', { withTimezone: true, mode: 'string' }),
@@ -5647,6 +5652,18 @@ export const creditUsage = kortixSchema.table('credit_usage', {
   subscriptionTier: text('subscription_tier'),
   metadata: jsonb().default({}),
 });
+
+/**
+ * One free credit grant per person (Workspaces, 2026-11-05). The row records
+ * which account got the person's free signup grant. It outlives that account
+ * (no foreign key), so deleting a workspace and creating another never grants
+ * twice. `user_id` is the auth user id.
+ */
+export const freeCreditClaims = kortixSchema.table('free_credit_claims', {
+  userId: uuid('user_id').primaryKey().notNull(),
+  accountId: uuid('account_id').notNull(),
+  claimedAt: timestamp('claimed_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}).enableRLS();
 
 export const accountDeletionRequests = kortixSchema.table(
   'account_deletion_requests',

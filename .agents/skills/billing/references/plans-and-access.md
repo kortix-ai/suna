@@ -50,6 +50,26 @@ it is not a fleet-wide quota and does not retry failed money operations.
 `credit_accounts.tier` is the billing plan: `free` or `credits` (legacy keys
 resolve to `credits`). Stripe owns it. `tier='enterprise'` no longer exists.
 
+### Free credits: once per person
+
+The Free plan's credits (the signup grant and the monthly rotation) belong to
+the first workspace a person creates (Workspaces, 2026-11-05).
+
+- `kortix.free_credit_claims` holds one row per person (`user_id` primary
+  key, no foreign key): the account that got the grant. A deleted workspace
+  keeps its claim, so a new one never grants twice.
+- A person who already owned an account before the rule (their sign-up
+  personal account held the grant) writes no claim; their new workspaces get 0.
+- A further workspace starts on Free with 0 credits and
+  `credit_accounts.free_credits_eligible = false`. The rotation
+  (`getFreeAccountsDueForRotation`) and the signup repair
+  (`ensureFreeTierAccountReady`) skip it. Its first session gets the usual
+  402 `insufficient_credits`, `billing_state: no_subscription`.
+- Every row that existed before is `free_credits_eligible = true`: no account
+  loses credits. Billing off (self-host) never runs any of this.
+- Code: `billing/services/free-credit-claims.ts`, called by
+  `createOwnedAccount` (`accounts/core/create-account.ts`).
+
 Compute is billed at Platinum's list rates at 1× on every plan
 (`platform/providers/compute-rates.ts`).
 
