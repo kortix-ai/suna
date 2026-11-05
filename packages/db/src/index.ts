@@ -32,6 +32,10 @@ export {
   accountRoleEnum,
   accountsRelations,
   accountGithubInstallationsRelations,
+  // Workspaces (one account + its one active project)
+  workspaces,
+  workspaceNameBackups,
+  workspaceSplitRuns,
   auditEvents,
   auditEventsAll,
   auditArchiveChunks,
