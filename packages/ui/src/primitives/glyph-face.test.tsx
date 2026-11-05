@@ -5,7 +5,7 @@ import { IconContext } from '@phosphor-icons/react';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { glyphFace } from './glyph-face';
+import { glyphFace, glyphPathData, loadGlyphPaths } from './glyph-face';
 import { GLYPH_PATHS, GLYPH_PATHS_WEIGHT } from './glyph-paths.generated';
 import { GLYPH_WEIGHT, renderGlyphPathsModule } from './glyph-paths-source';
 import { GLYPH_COMPONENTS, glyphComponent } from './glyph-registry';
@@ -22,18 +22,28 @@ function markup(component: React.ComponentType<Record<string, unknown>>, props: 
 }
 
 describe('glyphFace', () => {
-  test('draws every Phosphor catalogue glyph exactly as its component does in the solid weight', () => {
-    const names = PHOSPHOR_NAMES;
-    expect(names.length).toBeGreaterThan(200);
-    for (const name of names) {
-      const props = { className: 'size-4 text-glyph-blue' };
-      expect(markup(glyphFace(name)!, props), name).toBe(markup(glyphComponent(name)!, props));
+  test('after loading, every Phosphor glyph draws exactly the path its component draws solid', async () => {
+    await loadGlyphPaths();
+    expect(PHOSPHOR_NAMES.length).toBeGreaterThan(900);
+    for (const name of PHOSPHOR_NAMES) {
+      const d = markup(glyphComponent(name)!, {}).match(/<path d="([^"]+)"/)?.[1];
+      expect(glyphPathData(name), name).toBe(d);
     }
   });
 
-  test('honours an explicit size, colour and mirroring like the component', () => {
-    const props = { size: 20, color: 'red', mirrored: true };
-    expect(markup(glyphFace('Rocket')!, props)).toBe(markup(glyphComponent('Rocket')!, props));
+  test('the server renders the same svg shell as the component, with the path left empty', () => {
+    // The path module loads on the client; the server never inlines it, so
+    // server and client markup agree at hydration.
+    const props = { size: 20, color: 'red', mirrored: true, className: 'size-4' };
+    const face = markup(glyphFace('Rocket')!, props);
+    const component = markup(glyphComponent('Rocket')!, props);
+    expect(face).toBe(component.replace(/<path d="[^"]+"><\/path>/, '<path d=""></path>'));
+  });
+
+  test('the path module is loaded on demand, never imported statically', () => {
+    const source = readFileSync(join(import.meta.dir, 'glyph-face.tsx'), 'utf8');
+    expect(source).toContain("import('./glyph-paths.generated')");
+    expect(source).not.toMatch(/^import [^;]*glyph-paths\.generated/m);
   });
 
   test('the three Kortix marks resolve to their own components', () => {
