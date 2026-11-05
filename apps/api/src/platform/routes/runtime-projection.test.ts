@@ -52,8 +52,8 @@ const PROJECTION = {
   seq: 41,
   built_at: '2026-08-26T22:43:49.919Z',
   identity: {
-    opencode_session_id: 'ses_fc5a',
-    opencode_version: '1.18.23',
+    runtime_session_id: 'ses_fc5a',
+    harness_version: '1.18.23',
     daemon_build: 1756240000,
     agent_config_etag: 'ff8a8b4f',
     head_seq: { ses_fc5a: 2016 },

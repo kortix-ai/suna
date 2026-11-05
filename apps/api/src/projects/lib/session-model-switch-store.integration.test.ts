@@ -18,7 +18,7 @@ test('concurrent retry stores one continuation and refuses a changed payload', a
     expect(results.filter((result) => result.kind === 'stored' && result.deduped)).toHaveLength(1);
     expect(await storeSessionModelSwitch({ ...input, prompt: 'Changed request' })).toEqual({ kind: 'conflict' });
     const [session] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId));
-    expect(session?.metadata?.opencode_model).toBe(input.model);
+    expect(session?.metadata?.model).toBe(input.model);
     expect(session?.metadata?.model_switches).toMatchObject([{ to: input.model, prompt: input.prompt, actor_session_id: sessionId }]);
     const rows = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, sessionId));
     expect(rows).toHaveLength(1);
@@ -33,7 +33,7 @@ test('concurrent retry stores one continuation and refuses a changed payload', a
     const retry = await storeSessionModelSwitch(input);
     expect(retry).toMatchObject({ kind: 'stored', deduped: true, model: human.model, needsPush: false });
     const [latest] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId));
-    expect(latest?.metadata?.opencode_model).toBe(human.model);
+    expect(latest?.metadata?.model).toBe(human.model);
     const [plain] = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.idempotencyKey, `model-switch:${sessionId}:human-set`));
     expect(plain?.status).toBe('succeeded');
     await db.update(projectSessions).set({ status: 'running' }).where(eq(projectSessions.sessionId, sessionId));
@@ -41,7 +41,7 @@ test('concurrent retry stores one continuation and refuses a changed payload', a
       push: async () => { throw new Error('synthetic transport failure'); } });
     expect(failedPush).toMatchObject({ kind: 'stored', push: { applied: false } });
     const [afterError] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId));
-    expect(afterError?.metadata?.opencode_model).toBe('kortix/after-error');
+    expect(afterError?.metadata?.model).toBe('kortix/after-error');
 
   } finally {
     await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, sessionId));

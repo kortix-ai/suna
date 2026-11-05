@@ -4511,7 +4511,7 @@ export function SessionChat({
           />
         )}
 
-        <ModelSwitchHistory history={projectSessionRow?.metadata?.model_switches} current={projectSessionRow?.metadata?.opencode_model} />
+        <ModelSwitchHistory history={projectSessionRow?.metadata?.model_switches} current={projectSessionRow?.metadata?.model} />
 
         {/* Context modal — triple-click the session title area to open */}
         <SessionContextModal

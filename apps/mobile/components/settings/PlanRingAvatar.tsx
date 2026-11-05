@@ -15,7 +15,6 @@
  * the full size. Ring 2pt, then a 2pt gap of `gapColor` (the surface behind),
  * then the photo: the whole control stays `size` points.
  */
-import * as React from 'react';
 import { View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';

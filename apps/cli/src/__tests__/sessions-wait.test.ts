@@ -176,7 +176,7 @@ function sessionRow() {
     sandbox_provider: 'daytona',
     sandbox_id: sessionId,
     sandbox_url: null,
-    opencode_session_id: OPENCODE_SESSION_ID,
+    runtime_session_id: OPENCODE_SESSION_ID,
     name: 'SDK wait',
     custom_name: null,
     agent_name: 'default',
@@ -257,7 +257,7 @@ describe('wait-for carries a failed turn out through the exit code', () => {
             agent_name: 'default',
             retriable: false,
             sandbox: { external_id: externalId },
-            opencode_session_id: OPENCODE_SESSION_ID,
+            runtime_session_id: OPENCODE_SESSION_ID,
           });
         }
         if (

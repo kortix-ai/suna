@@ -227,19 +227,14 @@ describe('resolveFeatureFlag — explicit override wins', () => {
   });
 
 
-  test('session_log_restore follows the deployment default while a stored project value wins', () => {
-    const previous = config.SESSION_LOG_RESTORE_DEFAULT_ENABLED;
-    try {
-      config.SESSION_LOG_RESTORE_DEFAULT_ENABLED = false;
-      expect(resolveFeatureFlag({}, 'session_log_restore')).toBe(false);
-      expect(resolveFeatureFlag({ experimental: { session_log_restore: true } }, 'session_log_restore')).toBe(true);
-
-      config.SESSION_LOG_RESTORE_DEFAULT_ENABLED = true;
-      expect(resolveFeatureFlag({}, 'session_log_restore')).toBe(true);
-      expect(resolveFeatureFlag({ experimental: { session_log_restore: false } }, 'session_log_restore')).toBe(false);
-    } finally {
-      config.SESSION_LOG_RESTORE_DEFAULT_ENABLED = previous;
-    }
+  test('session_log_restore graduated (2026-11-05): every box restores from the log when behind, and a stored override is inert', () => {
+    // A project an operator turned off keeps `experimental.session_log_restore: false` in metadata.
+    // It must not resurface as a key, a catalog row, or a deployment default.
+    expect(isFeatureFlagKey('session_log_restore')).toBe(false);
+    const metadata = { experimental: { session_log_restore: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('session_log_restore');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('session_log_restore');
+    expect(config).not.toHaveProperty('SESSION_LOG_RESTORE_DEFAULT_ENABLED');
   });
 
   test('non-boolean stored values are treated as "no override"', () => {
@@ -315,21 +310,16 @@ describe('buildFeatureFlagCatalog', () => {
  * break (d) and take the operator lever with it.
  */
 describe('catalogHidden', () => {
-  test('only internal-only surfaces are hidden: session_log_restore (the boot restore from the session log) and workspace_volume (stateless sandboxes)', () => {
-    // `apps` graduated (2026-10-14), `session_log` (2026-10-22) and `meta_agent` was removed (2026-11-02): none is a flag.
-    expect(HIDDEN_KEYS).toEqual(['session_log_restore', 'workspace_volume']);
+  test('only internal-only surfaces are hidden: workspace_volume (stateless sandboxes)', () => {
+    // `apps` graduated (2026-10-14), `session_log` (2026-10-22), `session_log_restore` (2026-11-05) and
+    // `meta_agent` was removed (2026-11-02): none is a flag.
+    expect(HIDDEN_KEYS).toEqual(['workspace_volume']);
   });
 
   test('workspace_volume is a behavioral flag that defaults off and needs Platinum', () => {
     const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'workspace_volume');
     expect(def?.enforcement).toBe('behavioral');
     expect(resolveFeatureFlag({}, 'workspace_volume')).toBe(false);
-  });
-
-  test('session_log_restore is a behavioral flag that defaults on', () => {
-    const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'session_log_restore');
-    expect(def?.enforcement).toBe('behavioral');
-    expect(resolveFeatureFlag({}, 'session_log_restore')).toBe(true);
   });
 
   for (const key of HIDDEN_KEYS) {

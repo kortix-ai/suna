@@ -1296,17 +1296,13 @@
           "name": "Disparadores de eventos de Composio",
           "description": "Inicia un agente cuando ocurre algo en una app conectada: un correo nuevo, un pull request, un evento del calendario. Los eventos vienen de Composio. Kortix también revisa por sí mismo tus apps conectadas."
         },
-        "session_log_restore": {
-          "name": "Restauración del registro de sesión",
-          "description": "Reconstruye una sesión a partir de su registro de sesión guardado cuando su ordenador perdió la conversación. Kortix lo activa por espacio de trabajo."
-        },
         "goals": {
           "name": "Objetivos",
           "description": "Asigna a un agente un objetivo del que se encarga hasta que una comprobación independiente confirme el resultado. Planifica, trabaja, espera, hace seguimiento con las personas y guarda su estado en una carpeta Goals en Archivos. Requiere Volúmenes y Bucles activados."
         },
         "workspace_volume": {
-          "name": "Volumen de workspace",
-          "description": "Guarda el /workspace de cada nueva sesión en su propio volumen, para que un sandbox detenido pueda eliminarse y el siguiente arranque con los mismos archivos y la misma conversación. Kortix lo activa por espacio de trabajo."
+          "name": "Sandboxes sin estado",
+          "description": "Cada sesión conserva solo /workspace, en su propio volumen. Un sandbox detenido durante una hora se elimina, y la siguiente apertura inicia uno nuevo con los mismos archivos y la misma conversación. Los programas del sandbox anterior ya no se ejecutan. Kortix lo activa por espacio de trabajo."
         },
         "artifacts": {
           "name": "Artefactos",

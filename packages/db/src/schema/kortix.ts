@@ -1421,7 +1421,7 @@ export const projectSessions = kortixSchema.table(
     sandboxProvider: sandboxProviderEnum('sandbox_provider').default('daytona').notNull(),
     sandboxId: text('sandbox_id'),
     sandboxUrl: text('sandbox_url'),
-    runtimeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('runtime_session_id'),
     agentName: text('agent_name').default('default').notNull(),
     status: projectSessionStatusEnum('status').default('queued').notNull(),
     error: text('error'),
@@ -2468,7 +2468,7 @@ export const chatChannelBindings = kortixSchema.table(
     // default. Sessions started from this channel inherit these so different
     // channels bound to the same project can run different agents/models.
     agentName: varchar('agent_name', { length: 128 }),
-    model: varchar('opencode_model', { length: 128 }),
+    model: varchar('model', { length: 128 }),
     // How Slack users may participate in sessions started from this channel.
     // Default is project-wide sharing: linked project members can join the
     // Slack thread. Teams can opt into owner approval or owner-only.
@@ -2490,7 +2490,7 @@ export const chatChannelBindings = kortixSchema.table(
 // Thread → session mapping. First Slack/Telegram message in a thread spawns
 // a Kortix session and writes a row here. Follow-up messages in the same
 // thread look up the existing session and deliver the prompt as a follow-up
-// to opencode — same sandbox, same conversation, no fresh boot.
+// to the runtime — same sandbox, same conversation, no fresh boot.
 export const chatThreads = kortixSchema.table(
   'chat_threads',
   {
@@ -2880,9 +2880,9 @@ export const sessionTurns = kortixSchema.table(
     sandboxId: uuid('sandbox_id').notNull(),
     projectId: uuid('project_id').notNull(),
     accountId: uuid('account_id').notNull(),
-    // OpenCode root this turn runs in. Null until the daemon reports it.
-    runtimeSessionId: text('opencode_session_id'),
-    // Client-minted OpenCode user message id. Null for command turns.
+    // The runtime session this turn runs in. Null until the daemon reports it.
+    runtimeSessionId: text('runtime_session_id'),
+    // Client-minted user message id. Null for command turns.
     messageId: text('message_id'),
     state: varchar('state', { length: 16 }).default('delivering').notNull(),
     endReason: text('end_reason'),
@@ -2905,7 +2905,7 @@ export const sessionTurns = kortixSchema.table(
       'session_turns_end_reason_check',
       // Every value here is written by a real call site: 'completed' by a
       // daemon-confirmed end, 'failed' by a terminal model error, 'abandoned'
-      // by a delivery that never reached OpenCode, 'runtime_gone' by the stop
+      // by a delivery that never reached the runtime, 'runtime_gone' by the stop
       // writer and by the reaper's deadline expiry, 'unknown' by an observer
       // that proved the turn is over but could not say how. A value no caller
       // writes teaches a reader a distinction the data does not carry.
@@ -3129,7 +3129,7 @@ export const accountSubscriptionEnds = kortixSchema.table(
 );
 
 /**
- * The RUNTIME PROJECTION — the daemon's `/kortix/opencode/state` document,
+ * The RUNTIME PROJECTION — the daemon's `/kortix/runtime/state` document,
  * stored server-side so a session open answers "which agents, which commands,
  * what config, what is pending" from Postgres instead of from the box.
  *
@@ -3143,8 +3143,8 @@ export const accountSubscriptionEnds = kortixSchema.table(
  * IT IS A CACHE OF A FACT, NOT A FACT. One row per Kortix session, no history,
  * last write wins. Nothing may be *decided* from this row that the live
  * runtime would answer differently — which is why every identity the live read
- * would produce travels WITH the projection (`opencode_session_id`,
- * `opencode_version`, `agent_config_etag`) and the serving side refuses to
+ * would produce travels WITH the projection (`runtime_session_id`,
+ * `harness_version`, `agent_config_etag`) and the serving side refuses to
  * present a projection whose identity no longer matches. That is
  * `session-transcript-mirror.ts`'s ghost rule (a cached record whose id the
  * live read will not also produce is a ghost) applied to config state.
@@ -3164,21 +3164,21 @@ export const sessionRuntimeProjections = kortixSchema.table(
     // ── identity (the freshness check reads these, never the jsonb) ──────────
     /** The document format, `kortix.runtime.v1`. Null on a row a pre-W5 daemon wrote. */
     schema: text('schema'),
-    /** `opencode` or `pi`. Null on a row a pre-W5 daemon wrote. */
+    /** The harness id: `pi` (`opencode` on a row an OpenCode box wrote). Null on a row a pre-W5 daemon wrote. */
     harness: text('harness'),
-    runtimeSessionId: text('opencode_session_id'),
-    harnessVersion: text('opencode_version'),
+    runtimeSessionId: text('runtime_session_id'),
+    harnessVersion: text('harness_version'),
     agentConfigEtag: text('agent_config_etag'),
     daemonBuild: bigint('daemon_build', { mode: 'number' }),
     /** Daemon boot id. `seq` is meaningless outside it. */
     epoch: text('epoch'),
     /** Daemon stream watermark at capture — the client's starting cursor. */
     seq: bigint('seq', { mode: 'number' }),
-    /** OpenCode's OWN durable cursor per aggregate (`event_sequence.seq`). */
+    /** The runtime's own durable cursor per aggregate. pi sends null. */
     headSeq: jsonb('head_seq').$type<Record<string, number>>(),
     /** sha256 of the canonically serialized projection. A repeat push is a no-op. */
     projectionEtag: text('projection_etag').notNull(),
-    /** The `/kortix/opencode/state` document, verbatim. */
+    /** The `/kortix/runtime/state` document, verbatim. */
     projection: jsonb('projection').$type<Record<string, unknown>>().notNull(),
     /** Who wrote this row: the daemon pushed it, or the API pulled it through. */
     source: text('source').notNull(),
@@ -4069,7 +4069,7 @@ function auditEventColumns() {
     accountId: uuid('account_id'),
     projectId: uuid('project_id'),
     sessionId: text('session_id'),
-    runtimeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('runtime_session_id'),
     turnId: text('turn_id'),
     messageId: text('message_id'),
     toolCallId: text('tool_call_id'),
@@ -4876,7 +4876,7 @@ export const creditAccounts = kortixSchema.table(
  * calls, so it earns no deadline extension and its box is parked on schedule —
  * correct, and the invariant that only a control-plane observation may extend a
  * box depends on it. What was wrong is that parking DESTROYED the question:
- * opencode restarts cold, so the user came back to a session that had silently
+ * the runtime restarts cold, so the user came back to a session that had silently
  * forgotten what it asked.
  *
  * Keeping the question here lets the box die on time and the conversation
@@ -4890,10 +4890,10 @@ export const sessionPendingQuestions = kortixSchema.table(
     projectId: uuid('project_id').notNull(),
     /** `project_sessions.session_id`. Text, matching that table's PK. */
     sessionId: text('session_id').notNull(),
-    /** opencode's `question.asked` request id — the dedupe key with sessionId. */
+    /** The runtime's question request id — the dedupe key with sessionId. */
     requestId: text('request_id').notNull(),
     /** The runtime session that asked; survives a runtime restart changing it. */
-    runtimeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('runtime_session_id'),
     /** RuntimeQuestion[] (`@kortix/api-contract/transcript`), as `/turn-question` coerced it. */
     questions: jsonb().notNull(),
     askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),

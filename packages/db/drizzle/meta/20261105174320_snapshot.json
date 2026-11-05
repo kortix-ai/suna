@@ -1,5 +1,5 @@
 {
-  "id": "3da3f31a-869f-4085-9de6-9865fff41d7c",
+  "id": "302c7b7c-6bed-48af-b419-eb92fde170cb",
   "prevId": "61c40216-ba76-4b5a-bec8-2795716ffa78",
   "version": "7",
   "dialect": "postgresql",
@@ -6188,8 +6188,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "opencode_session_id": {
-          "name": "opencode_session_id",
+        "runtime_session_id": {
+          "name": "runtime_session_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -8384,8 +8384,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "opencode_model": {
-          "name": "opencode_model",
+        "model": {
+          "name": "model",
           "type": "varchar(128)",
           "primaryKey": false,
           "notNull": false
@@ -12844,13 +12844,6 @@
           "notNull": false,
           "default": false
         },
-        "free_credits_eligible": {
-          "name": "free_credits_eligible",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
         "last_processed_invoice_id": {
           "name": "last_processed_invoice_id",
           "type": "varchar(255)",
@@ -14753,38 +14746,6 @@
         }
       },
       "isRLSEnabled": false
-    },
-    "kortix.free_credit_claims": {
-      "name": "free_credit_claims",
-      "schema": "kortix",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "claimed_at": {
-          "name": "claimed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": true
     },
     "kortix.gateway_api_keys": {
       "name": "gateway_api_keys",
@@ -20995,8 +20956,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "opencode_session_id": {
-          "name": "opencode_session_id",
+        "runtime_session_id": {
+          "name": "runtime_session_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -28912,8 +28873,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "opencode_session_id": {
-          "name": "opencode_session_id",
+        "runtime_session_id": {
+          "name": "runtime_session_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -29206,14 +29167,14 @@
           "primaryKey": false,
           "notNull": false
         },
-        "opencode_session_id": {
-          "name": "opencode_session_id",
+        "runtime_session_id": {
+          "name": "runtime_session_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "opencode_version": {
-          "name": "opencode_version",
+        "harness_version": {
+          "name": "harness_version",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -29998,8 +29959,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "opencode_session_id": {
-          "name": "opencode_session_id",
+        "runtime_session_id": {
+          "name": "runtime_session_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -34048,8 +34009,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "opencode_session_id": {
-          "name": "opencode_session_id",
+        "runtime_session_id": {
+          "name": "runtime_session_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false

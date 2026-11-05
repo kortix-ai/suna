@@ -13,13 +13,6 @@ export interface Author {
   /** Used by <UserAvatar> for initials + image lookup. */
   email: string;
   avatarUrl?: string;
-  /**
-   * This author is Kortix itself, not a person — `<PostAuthorAvatar>` renders
-   * the Kortix symbol instead of initials. A flag rather than a check on
-   * `role`, because `role` is display copy: rewording it must not silently
-   * change which mark renders.
-   */
-  isKortix?: boolean;
 }
 
 // Author registry. A post references one of these keys (`author: 'marko'`);
@@ -34,7 +27,6 @@ export const AUTHORS: Record<string, Author> = {
     name: 'The Kortix Team',
     role: 'Kortix',
     email: 'team@kortix.ai',
-    isKortix: true,
   },
 };
 

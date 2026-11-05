@@ -19,7 +19,6 @@ import { useCans } from '@kortix/sdk/react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArchiveIcon as Archive, FolderOpenIcon as FolderOpen } from '@/lib/icons';
 
-import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { Avatar } from '@/components/kortix/avatar';
 import { Sheet, useCloseThen, type SheetRef } from '@/components/kortix/sheet';

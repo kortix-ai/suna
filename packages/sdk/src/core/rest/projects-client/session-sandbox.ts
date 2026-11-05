@@ -104,8 +104,6 @@ export interface SessionStartResult {
   sandbox: ProjectSessionSandbox | null;
   /** Canonical runtime root pin, resolved server-side once the box is up. Served by APIs since W4. */
   runtime_session_id?: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: string | null;
   /** Stable terminal failure. Provider-specific diagnostics stay internal. */
   failure?: SessionStartFailure | null;
   /**
@@ -191,11 +189,11 @@ export function projectSessionStartSeed(
     !session.sandbox_id ||
     !session.sandbox_provider ||
     !session.sandbox_url ||
-    !(session.runtime_session_id ?? session.opencode_session_id)
+    !session.runtime_session_id
   ) {
     return null;
   }
-  const runtimeSessionId = session.runtime_session_id ?? session.opencode_session_id;
+  const runtimeSessionId = session.runtime_session_id;
   const externalId = session.sandbox_url.match(/\/p\/([^/]+)\//)?.[1];
   if (!externalId) return null;
   return {
@@ -218,7 +216,6 @@ export function projectSessionStartSeed(
       updated_at: session.updated_at,
     },
     runtime_session_id: runtimeSessionId,
-    opencode_session_id: runtimeSessionId,
     runtime_url: session.sandbox_url,
   };
 }
@@ -349,7 +346,7 @@ function recordReadyRuntime(projectId: string, sessionId: string, result: Sessio
   // `kortix.session(pid, sid)` created for a one-off poll, e.g. — can then
   // adopt this entry instead of throwing SessionNotReadyError or re-POSTing.
   const externalId = result.sandbox?.external_id;
-  const runtimeSessionId = result.runtime_session_id ?? result.opencode_session_id;
+  const runtimeSessionId = result.runtime_session_id;
   if (result.stage === "ready" && externalId && runtimeSessionId) {
     setSessionRuntime(projectId, sessionId, {
       runtimeSessionId,

@@ -50,7 +50,7 @@ export async function screenshotTargetCapability(projectId: string, sessionId?: 
   const [session] = await db.select({ metadata: projectSessions.metadata }).from(projectSessions).where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.sessionId, sessionId)));
   const explicit = modelOverride?.providerID && modelOverride.modelID ? { model: { providerID: modelOverride.providerID, modelID: modelOverride.modelID } } : undefined;
   const inherited = await continuationOverrides(sessionId, explicit);
-  const model = promptWireModel(inherited?.model, session?.metadata?.opencode_model);
+  const model = promptWireModel(inherited?.model, session?.metadata?.model);
   const vision = modelReadsImages(projectId, model);
   return { known: !!model, vision, mayNeedImages: !model || vision };
 }

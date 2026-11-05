@@ -1296,17 +1296,13 @@
           "name": "Déclencheurs d’événements Composio",
           "description": "Démarrez un agent quand quelque chose se passe dans une app connectée : un nouvel e-mail, une pull request, un événement de calendrier. Les événements viennent de Composio. Kortix vérifie aussi lui-même vos apps connectées."
         },
-        "session_log_restore": {
-          "name": "Restauration du journal de session",
-          "description": "Reconstruit une session à partir de son journal de session enregistré quand son ordinateur a perdu la conversation. Kortix l’active par espace de travail."
-        },
         "goals": {
           "name": "Objectifs",
           "description": "Confiez à un agent un objectif dont il reste responsable jusqu’à ce qu’une vérification indépendante confirme le résultat. Il planifie, travaille, attend, relance les personnes et conserve son état dans un dossier Goals dans Fichiers. Nécessite Volumes et Boucles activés."
         },
         "workspace_volume": {
-          "name": "Volume de workspace",
-          "description": "Conserve le /workspace de chaque nouvelle session sur son propre volume : une sandbox arrêtée peut être supprimée et la suivante démarre avec les mêmes fichiers et la même conversation. Kortix l'active par espace de travail."
+          "name": "Sandboxes sans état",
+          "description": "Chaque session ne garde que /workspace, sur son propre volume. Une sandbox arrêtée depuis une heure est supprimée, et la prochaine ouverture en démarre une nouvelle avec les mêmes fichiers et la même conversation. Les programmes de l'ancienne sandbox ne tournent plus. Kortix l'active par espace de travail."
         },
         "artifacts": {
           "name": "Artefacts",

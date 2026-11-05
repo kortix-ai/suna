@@ -50,8 +50,6 @@ import {
   TrashIcon as Trash2,
   PlusIcon as Plus,
   MinusIcon as Minus,
-  XIcon as X,
-  CheckIcon as Check,
   CaretDownIcon as ChevronDown,
   CaretUpIcon as ChevronUp,
   CaretLeftIcon as ChevronLeft,

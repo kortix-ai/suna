@@ -43,7 +43,7 @@ import {
 } from '../shared/infrastructure';
 import { RawPatchDiffView } from '../shared/patch-helpers';
 import { ToolRegistry } from '../shared/registry';
-import { TURN_SPACE, TURN_TYPE, monoFont, muted, useTurnPalette } from '../shared/styles';
+import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
 export function EditTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {

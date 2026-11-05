@@ -39,7 +39,7 @@ const RUNNING: SessionTurnStatus = {
       turn_token: 'T1',
       state: 'active',
       message_id: 'm1',
-      opencode_session_id: 'oc1',
+      runtime_session_id: 'oc1',
       started_at: null,
       accepted_at: null,
     },

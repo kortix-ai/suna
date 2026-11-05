@@ -1296,17 +1296,13 @@
           "name": "Composio 事件触发器",
           "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。事件来自 Composio。Kortix 也会自行检查你已连接的应用。"
         },
-        "session_log_restore": {
-          "name": "会话日志恢复",
-          "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按工作区启用。"
-        },
         "goals": {
           "name": "目标",
           "description": "给代理一个目标，它会一直负责，直到独立检查确认结果。它会规划、执行、等待、跟进相关人员，并把状态保存在“文件”中的 Goals 文件夹里。需要开启卷和循环。"
         },
         "workspace_volume": {
-          "name": "工作区卷",
-          "description": "将每个新会话的 /workspace 保存在独立的卷上，因此已停止的沙盒可以删除，下次打开时会用相同的文件和对话启动新沙盒。由 Kortix 按工作区启用。"
+          "name": "无状态沙盒",
+          "description": "每个会话只保留 /workspace，存放在独立的卷上。停止一小时的沙盒会被删除，下次打开时会用相同的文件和对话启动新沙盒。旧沙盒中运行的程序不会继续运行。由 Kortix 按工作区启用。"
         },
         "artifacts": {
           "name": "工件",

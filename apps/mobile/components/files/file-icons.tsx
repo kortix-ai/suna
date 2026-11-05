@@ -3,7 +3,6 @@
  * foreground (Jay, 2026-09-22): each web language has its own glyph, the
  * Kortix files carry the Kortix symbol, git's dotfiles the git glyph.
  */
-import * as React from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 

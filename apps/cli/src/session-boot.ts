@@ -45,7 +45,7 @@ export interface SessionStartPayload {
   stage: SessionStartStage;
   agent_name?: string;
   retriable?: boolean;
-  opencode_session_id?: string | null;
+  runtime_session_id?: string | null;
   reason?: string;
   /** The server clock of this answer: elapsed times count from it, not from the local clock. */
   observed_at?: string;

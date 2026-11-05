@@ -101,37 +101,37 @@ afterAll(async () => {
 
 describe('session model fallback', () => {
   test('the first fallback switches the session, records what it stood in for, and audits once', async () => {
-    const sessionId = await seedSession({ opencode_model: GLM, opencode_model_source: 'default', name: 'kept' }, SOL);
+    const sessionId = await seedSession({ model: GLM, model_source: 'default', name: 'kept' }, SOL);
 
     expect(await switchSessionToFallback(change(sessionId), 1_000)).toBe(true);
     const metadata = await metadataOf(sessionId);
     expect(metadata).toMatchObject({
       name: 'kept',
-      opencode_model: DEEPSEEK,
-      opencode_model_source: 'fallback',
-      opencode_model_fallback_from: SOL,
+      model: DEEPSEEK,
+      model_source: 'fallback',
+      model_fallback_from: SOL,
       // The prompt picked Sol over the GLM default pin: Sol comes back as a pick.
-      opencode_model_fallback_from_source: 'explicit',
-      opencode_model_fallback_reason: 'provider_pool_rate_limited',
-      opencode_model_fallback_at: 1_000,
-      opencode_model_fallback_until: 601_000,
+      model_fallback_from_source: 'explicit',
+      model_fallback_reason: 'provider_pool_rate_limited',
+      model_fallback_at: 1_000,
+      model_fallback_until: 601_000,
     });
 
     // A later `resolve` failure (another gateway task's own hold): no second
     // switch and no second audit, but `at` moves so the revert waits for it.
     expect(await switchSessionToFallback(change(sessionId), 2_000)).toBe(false);
     expect(await metadataOf(sessionId)).toMatchObject({
-      opencode_model: DEEPSEEK,
-      opencode_model_fallback_from: SOL,
-      opencode_model_fallback_from_source: 'explicit',
-      opencode_model_fallback_at: 2_000,
-      opencode_model_fallback_until: 602_000,
+      model: DEEPSEEK,
+      model_fallback_from: SOL,
+      model_fallback_from_source: 'explicit',
+      model_fallback_at: 2_000,
+      model_fallback_until: 602_000,
     });
     expect(await auditCount(sessionId, 'SESSION_MODEL_FALLBACK')).toBe(1);
   });
 
   test('a second fallback keeps the original model as the one to return to', async () => {
-    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
+    const sessionId = await seedSession({ model: SOL, model_source: 'explicit' }, SOL);
     await switchSessionToFallback(change(sessionId), 1_000);
     // The next prompt carries the fallback; it fails over again.
     await db.update(sessionLifecycleCommands)
@@ -139,42 +139,42 @@ describe('session model fallback', () => {
       .where(eq(sessionLifecycleCommands.sessionId, sessionId));
     expect(await switchSessionToFallback(change(sessionId, DEEPSEEK, GLM), 2_000)).toBe(true);
     expect(await metadataOf(sessionId)).toMatchObject({
-      opencode_model: GLM,
-      opencode_model_fallback_from: SOL,
-      opencode_model_fallback_from_source: 'explicit',
+      model: GLM,
+      model_fallback_from: SOL,
+      model_fallback_from_source: 'explicit',
     });
   });
 
   test("a request for another model than the session's prompt does not switch it", async () => {
-    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, GLM);
+    const sessionId = await seedSession({ model: SOL, model_source: 'explicit' }, GLM);
     expect(await switchSessionToFallback(change(sessionId), 1_000)).toBe(false);
-    expect((await metadataOf(sessionId)).opencode_model).toBe(SOL);
+    expect((await metadataOf(sessionId)).model).toBe(SOL);
   });
 
   test('with no prompt model, only a session pinned to the failing model switches', async () => {
-    const pinned = await seedSession({ opencode_model: SOL });
-    const other = await seedSession({ opencode_model: GLM });
+    const pinned = await seedSession({ model: SOL });
+    const other = await seedSession({ model: GLM });
     expect(await switchSessionToFallback(change(pinned), 1_000)).toBe(true);
     expect(await switchSessionToFallback(change(other), 1_000)).toBe(false);
   });
 
   test('at a turn end the session stays while the original cannot serve, then moves back once', async () => {
-    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
+    const sessionId = await seedSession({ model: SOL, model_source: 'explicit' }, SOL);
     await switchSessionToFallback(change(sessionId), 1_000);
 
     servable = false;
     probes.length = 0;
     expect(await revertSessionModelFallback(sessionId)).toBeNull();
     expect(probes).toEqual([{ model: SOL, restingIsServable: false }]);
-    expect((await metadataOf(sessionId)).opencode_model).toBe(DEEPSEEK);
+    expect((await metadataOf(sessionId)).model).toBe(DEEPSEEK);
 
     servable = true;
     expect(await revertSessionModelFallback(sessionId)).toBe(SOL);
     const metadata = await metadataOf(sessionId);
-    expect(metadata.opencode_model).toBe(SOL);
-    expect(metadata.opencode_model_source).toBe('explicit');
-    expect(metadata.opencode_model_restored).toBe(true);
-    for (const key of ['opencode_model_fallback_from', 'opencode_model_fallback_from_source', 'opencode_model_fallback_reason', 'opencode_model_fallback_at', 'opencode_model_fallback_until']) {
+    expect(metadata.model).toBe(SOL);
+    expect(metadata.model_source).toBe('explicit');
+    expect(metadata.model_restored).toBe(true);
+    for (const key of ['model_fallback_from', 'model_fallback_from_source', 'model_fallback_reason', 'model_fallback_at', 'model_fallback_until']) {
       expect(metadata[key]).toBeUndefined();
     }
     expect(await revertSessionModelFallback(sessionId)).toBeNull();
@@ -185,31 +185,31 @@ describe('session model fallback', () => {
   });
 
   test('a default pin moves back with its own source, marked restored until the next prompt runs on it', async () => {
-    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'project' }, SOL);
+    const sessionId = await seedSession({ model: SOL, model_source: 'project' }, SOL);
     await switchSessionToFallback(change(sessionId), 1_000);
     servable = true;
     expect(await revertSessionModelFallback(sessionId)).toBe(SOL);
-    expect(await metadataOf(sessionId)).toMatchObject({ opencode_model: SOL, opencode_model_source: 'project', opencode_model_restored: true });
+    expect(await metadataOf(sessionId)).toMatchObject({ model: SOL, model_source: 'project', model_restored: true });
 
     // The next prompt carries the pin: the marker goes, the source stays.
     await clearRestoredModelPin(sessionId);
     const metadata = await metadataOf(sessionId);
-    expect(metadata.opencode_model_restored).toBeUndefined();
-    expect(metadata).toMatchObject({ opencode_model: SOL, opencode_model_source: 'project' });
+    expect(metadata.model_restored).toBeUndefined();
+    expect(metadata).toMatchObject({ model: SOL, model_source: 'project' });
   });
 
   test('a pin with no source moves back with no source', async () => {
-    const sessionId = await seedSession({ opencode_model: SOL });
+    const sessionId = await seedSession({ model: SOL });
     await switchSessionToFallback(change(sessionId), 1_000);
     servable = true;
     expect(await revertSessionModelFallback(sessionId)).toBe(SOL);
     const metadata = await metadataOf(sessionId);
-    expect(metadata.opencode_model).toBe(SOL);
-    expect(metadata.opencode_model_source).toBeUndefined();
+    expect(metadata.model).toBe(SOL);
+    expect(metadata.model_source).toBeUndefined();
   });
 
   test("a resting pool moves back when the gateway's hold ends: the pool's reset when it is shorter than 10 min", async () => {
-    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
+    const sessionId = await seedSession({ model: SOL, model_source: 'explicit' }, SOL);
     await switchSessionToFallback(change(sessionId, SOL, DEEPSEEK, 'provider_pool_rate_limited', 120), 1_000_000);
     servable = true;
     expect(await revertSessionModelFallback(sessionId, 1_000_000 + 119_000)).toBeNull();
@@ -220,7 +220,7 @@ describe('session model fallback', () => {
     // The gateway holds a resting route up to MAX_HOLD_SECONDS from the switch
     // (pipeline/route-memory.ts) and answers the original model with the
     // fallback until then: moving back earlier shows a model that does not answer.
-    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
+    const sessionId = await seedSession({ model: SOL, model_source: 'explicit' }, SOL);
     await switchSessionToFallback(change(sessionId), 1_000_000);
     servable = true;
     probes.length = 0;
@@ -233,7 +233,7 @@ describe('session model fallback', () => {
   });
 
   test('a login that needs reconnecting moves back after its 60 s hold, not the 10 min one', async () => {
-    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
+    const sessionId = await seedSession({ model: SOL, model_source: 'explicit' }, SOL);
     await switchSessionToFallback(change(sessionId, SOL, DEEPSEEK, 'provider_reauth_required', 60), 1_000_000);
     servable = true;
     expect(await revertSessionModelFallback(sessionId, 1_000_000 + 59_000)).toBeNull();
@@ -241,7 +241,7 @@ describe('session model fallback', () => {
   });
 
   test('a session no fallback took over is left alone', async () => {
-    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' });
+    const sessionId = await seedSession({ model: SOL, model_source: 'explicit' });
     servable = true;
     probes.length = 0;
     expect(await revertSessionModelFallback(sessionId)).toBeNull();
@@ -249,9 +249,9 @@ describe('session model fallback', () => {
   });
 
   test('the idle sweep moves back a live idle session, never a busy or a stopped one', async () => {
-    const idle = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL, 'running');
-    const busy = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL, 'running');
-    const stopped = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL, 'stopped');
+    const idle = await seedSession({ model: SOL, model_source: 'explicit' }, SOL, 'running');
+    const busy = await seedSession({ model: SOL, model_source: 'explicit' }, SOL, 'running');
+    const stopped = await seedSession({ model: SOL, model_source: 'explicit' }, SOL, 'stopped');
     for (const sessionId of [idle, busy, stopped]) await switchSessionToFallback(change(sessionId), 1_000);
     await db.insert(sessionSandboxes).values({
       sandboxId: crypto.randomUUID(),
@@ -262,28 +262,28 @@ describe('session model fallback', () => {
     });
     servable = true;
     await revertIdleSessionFallbacks();
-    expect((await metadataOf(idle)).opencode_model).toBe(SOL);
-    expect((await metadataOf(busy)).opencode_model).toBe(DEEPSEEK);
-    expect((await metadataOf(stopped)).opencode_model).toBe(DEEPSEEK);
+    expect((await metadataOf(idle)).model).toBe(SOL);
+    expect((await metadataOf(busy)).model).toBe(DEEPSEEK);
+    expect((await metadataOf(stopped)).model).toBe(DEEPSEEK);
   });
 
   test('a person who picks a model while the failing request runs keeps the pick', async () => {
     // The request started at 1_000 on Sol; the person picked GLM at 1_500,
     // before the late trace switched the session.
-    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
+    const sessionId = await seedSession({ model: SOL, model_source: 'explicit' }, SOL);
     await db.update(projectSessions)
       .set({ metadata: pickedModelMetadata(await metadataOf(sessionId), GLM, 1_500) })
       .where(eq(projectSessions.sessionId, sessionId));
     expect(await switchSessionToFallback({ ...change(sessionId), startedAtMs: 1_000 }, 2_000)).toBe(false);
-    expect(await metadataOf(sessionId)).toMatchObject({ opencode_model: GLM, opencode_model_source: 'explicit' });
+    expect(await metadataOf(sessionId)).toMatchObject({ model: GLM, model_source: 'explicit' });
 
     // A pick made before the request started does not block the switch.
     expect(await switchSessionToFallback({ ...change(sessionId), startedAtMs: 1_600 }, 2_000)).toBe(true);
-    expect(await metadataOf(sessionId)).toMatchObject({ opencode_model: DEEPSEEK, opencode_model_fallback_from_source: 'explicit' });
+    expect(await metadataOf(sessionId)).toMatchObject({ model: DEEPSEEK, model_fallback_from_source: 'explicit' });
   });
 
   test('a pick drops a fallback record and the restored marker, so no revert undoes it', async () => {
-    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
+    const sessionId = await seedSession({ model: SOL, model_source: 'explicit' }, SOL);
     await switchSessionToFallback(change(sessionId), 1_000);
     await db.update(projectSessions)
       .set({ metadata: pickedModelMetadata(await metadataOf(sessionId), GLM, 2_000) })
@@ -291,16 +291,16 @@ describe('session model fallback', () => {
     servable = true;
     expect(await revertSessionModelFallback(sessionId, 10_000_000)).toBeNull();
     const metadata = await metadataOf(sessionId);
-    expect(metadata).toMatchObject({ opencode_model: GLM, opencode_model_source: 'explicit' });
-    expect(metadata.opencode_model_fallback_from).toBeUndefined();
-    expect(metadata.opencode_model_restored).toBeUndefined();
+    expect(metadata).toMatchObject({ model: GLM, model_source: 'explicit' });
+    expect(metadata.model_fallback_from).toBeUndefined();
+    expect(metadata.model_restored).toBeUndefined();
   });
 
   test('the idle sweep skips a session still held and probes the latest hold to end first', async () => {
     const now = 50_000_000;
-    const held = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL, 'running');
-    const older = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL, 'running');
-    const newer = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL, 'running');
+    const held = await seedSession({ model: SOL, model_source: 'explicit' }, SOL, 'running');
+    const older = await seedSession({ model: SOL, model_source: 'explicit' }, SOL, 'running');
+    const newer = await seedSession({ model: SOL, model_source: 'explicit' }, SOL, 'running');
     await switchSessionToFallback(change(held), now - 1_000);
     await switchSessionToFallback(change(older), now - 900_000);
     await switchSessionToFallback(change(newer), now - 700_000);

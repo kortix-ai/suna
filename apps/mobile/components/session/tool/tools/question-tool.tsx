@@ -44,7 +44,7 @@ import {
   useToolRowVariant,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
-import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, fg, mutedStrong, useTurnPalette } from '../shared/styles';
+import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 import { ToolScroll } from '../shared/surface';
 

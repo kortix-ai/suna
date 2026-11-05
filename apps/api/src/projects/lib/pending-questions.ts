@@ -33,7 +33,7 @@ export interface PendingQuestion {
   id: string;
   session_id: string;
   request_id: string;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
   questions: RuntimeQuestion[];
   asked_at: string;
 }
@@ -95,7 +95,7 @@ export async function recordPendingQuestion(input: {
     id: row.id,
     session_id: row.sessionId,
     request_id: row.requestId,
-    opencode_session_id: row.opencodeSessionId,
+    runtime_session_id: row.opencodeSessionId,
     // `jsonb`; only /turn-question writes it, after coercing to RuntimeQuestion[].
     questions: row.questions as RuntimeQuestion[],
     asked_at: row.askedAt,
@@ -133,7 +133,7 @@ export async function getOpenQuestion(sessionId: string): Promise<PendingQuestio
     id: row.id,
     session_id: row.sessionId,
     request_id: row.requestId,
-    opencode_session_id: row.opencodeSessionId,
+    runtime_session_id: row.opencodeSessionId,
     // `jsonb`; only /turn-question writes it, after coercing to RuntimeQuestion[].
     questions: row.questions as RuntimeQuestion[],
     asked_at: row.askedAt,

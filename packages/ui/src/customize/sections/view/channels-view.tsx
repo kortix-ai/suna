@@ -453,7 +453,7 @@ function ChannelBindingsDialog({
   const needle = query.trim().toLowerCase();
   const visible = needle
     ? inTab.filter(({ binding, name, scope }) =>
-        [name, scope, binding.agentName ?? '', binding.opencodeModel ?? '']
+        [name, scope, binding.agentName ?? '', binding.model ?? '']
           .join(' ')
           .toLowerCase()
           .includes(needle),
@@ -565,10 +565,10 @@ function BindingOverrides({
   policies: Array<{ value: ChannelBinding['conversationPolicy']; label: string }>;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const modelUnavailable = binding.opencodeModel !== null && binding.effectiveModel.source !== 'explicit';
+  const modelUnavailable = binding.model !== null && binding.effectiveModel.source !== 'explicit';
   const overrides = [
     binding.agentName,
-    binding.opencodeModel ? stripGatewayNamespace(binding.opencodeModel) : null,
+    binding.model ? stripGatewayNamespace(binding.model) : null,
     binding.conversationPolicy === 'project_open'
       ? null
       : (policies.find((p) => p.value === binding.conversationPolicy)?.label ?? binding.conversationPolicy),
@@ -626,8 +626,8 @@ function stripGatewayNamespace(model: string): string {
  * `effectiveModel.source` surfaces as something other than `'explicit'`.
  */
 function describeEffectiveModel(binding: ChannelBinding): string {
-  if (binding.opencodeModel) {
-    const label = stripGatewayNamespace(binding.opencodeModel);
+  if (binding.model) {
+    const label = stripGatewayNamespace(binding.model);
     return binding.effectiveModel.source === 'explicit'
       ? label
       : `${label} (unavailable — using default)`;
@@ -705,8 +705,8 @@ function ChannelSettingsModalContent({
     () => flattenModels(providers, { providerMode: modelProviderMode(providers) }),
     [providers],
   );
-  const boundModel: ChannelModelKey = binding.opencodeModel
-    ? modelRefToKey(binding.opencodeModel)
+  const boundModel: ChannelModelKey = binding.model
+    ? modelRefToKey(binding.model)
     : null;
 
   const [agentDraft, setAgentDraft] = useState<string | null | undefined>(undefined);
@@ -792,7 +792,7 @@ function ChannelSettingsModalContent({
                 {/* What the unset or refused pin runs instead, when it is known. */}
                 {modelDraft === undefined &&
                 binding.effectiveModel.source !== 'explicit' &&
-                (binding.opencodeModel || binding.effectiveModel.model)
+                (binding.model || binding.effectiveModel.model)
                   ? `${describeEffectiveModel(binding)}. `
                   : null}
                 {tI18nComplete.raw('text9116af1ce384')}

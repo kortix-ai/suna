@@ -58,7 +58,6 @@ import {
   getProjectDetail,
   getProjectSession,
   getModelDefaults,
-  getProjectLlmCatalog,
   getProjectModelPicker,
   getProjectCommitDiff,
   getProjectFileHistory,

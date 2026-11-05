@@ -198,7 +198,7 @@ describe('stoppedWakeResult — a stamped failure is a cooldown, not a dead end'
       stage: 'failed',
       retriable: false,
       reason: 'runtime_identity_unavailable',
-      opencode_session_id: null,
+      runtime_session_id: null,
       runtime_url: '/p/i000000synthetic0box1/8000',
     });
     expect(result?.sandbox?.metadata).toMatchObject({ runtimeIdentityState: 'unavailable' });

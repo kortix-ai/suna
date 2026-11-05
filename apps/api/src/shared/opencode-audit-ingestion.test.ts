@@ -13,7 +13,7 @@ function event(overrides: Record<string, unknown> = {}) {
     source_revision: 'a7100000-0000-4000-a000-000000000001',
     type: 'tool.execute.after',
     occurred_at: '2026-08-07T16:00:00.000Z',
-    opencode_session_id: 'ses_test',
+    runtime_session_id: 'ses_test',
     message_id: 'msg_test',
     tool_call_id: 'call_test',
     execution_id: 'call_test',
@@ -113,7 +113,7 @@ describe('parseOpenCodeAuditBatch', () => {
       {
         events: [
           event({
-            opencode_session_id: 'ses_forged',
+            runtime_session_id: 'ses_forged',
             agent_id: 'forged-agent',
             initiator_actor_id: 'forged-user',
             correlation_id: 'forged-correlation',
@@ -153,7 +153,7 @@ describe('parseOpenCodeAuditBatch', () => {
       {
         events: [
           event({
-            opencode_session_id: 'ses_forged',
+            runtime_session_id: 'ses_forged',
             agent_id: 'ceo-agent',
             agent_name: 'ceo-agent',
             initiator_actor_type: 'human',
@@ -178,7 +178,6 @@ describe('parseOpenCodeAuditBatch', () => {
       delegationDepth: 0,
       metadata: {
         provenance_trust: 'sandbox_reported',
-        // A pre-W3 daemon's `opencode_session_id` is stored under the neutral key.
         reported_provenance: {
           runtime_session_id: 'ses_forged',
           agent_id: 'ceo-agent',

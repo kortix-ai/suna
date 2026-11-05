@@ -222,7 +222,7 @@ describe('patchKortixSessionTitleMirrors', () => {
   const pagedKey = qk.project.sessionsPaged('proj_1');
   const row = (id: string, extra: Record<string, unknown> = {}) => ({
     session_id: id,
-    opencode_session_id: `ses_${id}`,
+    runtime_session_id: `ses_${id}`,
     name: null,
     custom_name: null,
     ...extra,
@@ -257,7 +257,7 @@ describe('patchKortixSessionTitleMirrors', () => {
 
   test('leaves the prompt inbox and other per-session entries untouched', () => {
     const client = new QueryClient();
-    const prompts = [{ prompt_id: 'p1', opencode_session_id: 'ses_a', name: 'queued' }];
+    const prompts = [{ prompt_id: 'p1', runtime_session_id: 'ses_a', name: 'queued' }];
     client.setQueryData(qk.project.sessionPrompts('proj_1', 'a'), prompts);
 
     patchKortixSessionTitleMirrors(client, 'proj_1', 'ses_a', 'Runtime title');

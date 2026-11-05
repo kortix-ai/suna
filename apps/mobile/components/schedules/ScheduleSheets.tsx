@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
@@ -7,7 +7,6 @@ import {
   ClockIcon as Clock,
   PlayIcon as Play,
   PauseIcon as Pause,
-  TimerIcon as Timer,
   TrashIcon as Trash2,
   CaretRightIcon as ChevronRight,
   CheckIcon as Check,
