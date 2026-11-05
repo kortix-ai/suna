@@ -135,6 +135,7 @@ The classification test in `project-transfer.integration.test.ts` must cover all
   3. Codemod 2, run last: rename the Drizzle *properties* on the 102 tables with `project_id`, `projectId` → `workspaceId` (column name unchanged), plus the chat `platformTeamId` collision.
      - tsc catches every miss.
      - `KORTIX_SQL_TRACE` diffs prove the SQL is byte-identical (CLAUDE.md "SQL trace").
+     - Status 2026-11-05: `scripts/codemods/workspace-drizzle-properties.ts` landed. The collision stage ran (`captureTenants`, chat `platformTeamId`); its SQL-trace diff over 10 flows and the chat and capture DB suites was empty. The `projectId` stage is behind `--project-id`: on 113 tables it rewrote 608 files and left 1,551 tsc errors, ~315 of them hand-written row mirrors (`GitBackedProject`, `ArtifactScope`, `Pick<…, 'projectId'>`). Move it one module at a time under the ratchet.
   4. A ratchet test: the count of `projectId` in `apps/api/src` can only go down.
 - **Keeping the diff reviewable:** every codemod is a committed, re-runnable script. After each dev merge, re-run the script instead of resolving conflicts by hand. Each codemod lands as its own commit with no behavior change in it.
 
