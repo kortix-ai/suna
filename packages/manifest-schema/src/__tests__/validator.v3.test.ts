@@ -387,6 +387,14 @@ describe('"*" is the canonical "every" value; `all` stays its alias', () => {
     }
   });
 
+  test('a list with "*" and other names warns that the other names do nothing', () => {
+    const tools = check(swap('    tools: all\n', '    tools: [bash, "*"]\n')).warnings.find((i) => i.path === 'agents.assistant.tools');
+    expect(tools?.message).toBe('"*" grants every name, so the other entries do nothing: bash. Write `"*"` alone.');
+    const skills = check(swap('    skills: all\n', '    skills: ["*", typo]\n')).warnings.find((i) => i.path === 'agents.assistant.skills');
+    expect(skills?.message).toBe('"*" grants every name, so the other entries do nothing: typo. Write `"*"` alone.');
+    expect(check(swap('    skills: all\n', '    skills: ["*"]\n')).warnings.filter((i) => i.path === 'agents.assistant.skills')).toEqual([]);
+  });
+
   test('a wrong tools value names "*" first', () => {
     const issue = check(swap('    tools: all\n', '    tools: everything\n')).errors.find((i) => i.path === 'agents.assistant.tools');
     expect(issue?.message).toBe('tools must be `"*"` (every tool), `none`, a list of tool names, or `{ exclude: [names] }`.');

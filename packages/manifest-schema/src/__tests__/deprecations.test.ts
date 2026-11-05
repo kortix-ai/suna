@@ -108,6 +108,13 @@ describe('every-grant-star', () => {
     expect(fixManifestText(text)).toEqual({ text, fixed: [] });
   });
 
+  test('keeps a trailing comment and an anchor on the rewritten value', () => {
+    expect(fixManifestText('agents:\n  a:\n    prompt: x\n    tools: all # every tool\n').text).toBe('agents:\n  a:\n    prompt: x\n    tools: "*" # every tool\n');
+    const anchored = fixManifestText('agents:\n  a:\n    prompt: x\n    tools: &every all\n    skills: *every\n');
+    expect(anchored.text).toBe('agents:\n  a:\n    prompt: x\n    tools: &every "*"\n    skills: *every\n');
+    expect((parseManifestText(anchored.text).agents as Record<string, Record<string, unknown>>).a!.skills).toBe('*');
+  });
+
   test('validate does not warn about `all`, and a reader keeps it', () => {
     expect(validateManifest(old).issues.filter((i) => i.fix === 'every-grant-star')).toEqual([]);
     expect((parseManifestText(old).agents as Record<string, Record<string, unknown>>).a!.tools).toBe('all');

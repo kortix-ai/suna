@@ -767,7 +767,7 @@ function validateNamedGrantV3(value: unknown, where: string, label: string, know
   }
   if (!Array.isArray(names)) return;
   // A list that holds `"*"` grants every name (`resolveGrantSet`): nothing to look up.
-  if (names === value && isEveryGrant(names)) return;
+  if (names === value && isEveryGrant(names)) return warnRedundantNames(names, where, issues);
   const trimmed = names.map((item) => String(item).trim());
   // A retired Kortix skill (its feature is gone) grants nothing: a warning, never a failed parse.
   const retired = label === 'skills' ? trimmed.filter((item) => RETIRED_KORTIX_SKILL_NAMES.includes(item)) : [];
@@ -786,6 +786,15 @@ function validateNamedGrantV3(value: unknown, where: string, label: string, know
   }
 }
 
+/** A list that holds `"*"` and other names: the other names grant nothing more. */
+function warnRedundantNames(value: unknown, where: string, issues: ManifestIssue[]): void {
+  if (!Array.isArray(value)) return;
+  const others = value.map((item) => String(item).trim()).filter((item) => item !== '*');
+  if (others.length > 0) {
+    issues.push({ path: where, message: `"*" grants every name, so the other entries do nothing: ${others.join(', ')}. Write \`"*"\` alone.`, severity: 'warning' });
+  }
+}
+
 /** `tools`: `"*"` (alias `all`) | `none` | a list | `{ exclude: [...] }`; each name a harness, Kortix or registered tool. */
 function validateToolGrantV3(value: unknown, where: string, known: Set<string>, issues: ManifestIssue[]): void {
   if (value === undefined) {
@@ -793,7 +802,7 @@ function validateToolGrantV3(value: unknown, where: string, known: Set<string>, 
     return;
   }
   // `"*"`, `all` and a list that holds `"*"` are every tool.
-  if (value === 'none' || isEveryGrant(value)) return;
+  if (value === 'none' || isEveryGrant(value)) return warnRedundantNames(value, where, issues);
   let names: unknown = value;
   if (isTable(value)) {
     if (Object.keys(value).length !== 1 || !Array.isArray(value.exclude)) {

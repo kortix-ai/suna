@@ -22,7 +22,7 @@
 
 import { isDeepStrictEqual } from 'node:util';
 import { type Document, isMap, isScalar, isSeq, type Node, type Pair, parseDocument, Scalar, type YAMLMap } from 'yaml';
-import { DEPRECATED_KORTIX_PERMISSION_ALIASES, EVERY_GRANT_KEYS, LEGACY_SANDBOX_KEYS, RETIRED_KORTIX_TOOLS } from './constants';
+import { DEPRECATED_KORTIX_PERMISSION_ALIASES, EVERY_GRANT, EVERY_GRANT_KEYS, LEGACY_SANDBOX_KEYS, RETIRED_KORTIX_TOOLS } from './constants';
 
 export interface Deprecation {
   /** Stable id, shown as `fix: <id>`. Never reused. */
@@ -285,7 +285,9 @@ export const CANONICAL_REWRITES: readonly Deprecation[] = [
         EVERY_GRANT_KEYS.flatMap((key) => {
           const value = block.get(key, true);
           if (!isScalar(value) || typeof value.value !== 'string' || value.value.trim().toLowerCase() !== 'all') return [];
-          block.set(key, everyScalar());
+          // In place, so the line keeps its anchor and its trailing comment.
+          value.value = EVERY_GRANT;
+          value.type = Scalar.QUOTE_DOUBLE;
           return [`agents.${name}.${key}`];
         }),
       ),
