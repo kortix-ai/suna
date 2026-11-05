@@ -233,11 +233,11 @@ export function realRuntimeTitle(value: unknown): string | null {
 
 /**
  * Mirror a runtime title change straight into the cached Kortix session reads
- * (`name` on the row whose `opencode_session_id` matches), so the sidebar and
+ * (`name` on the row whose `runtime_session_id` matches), so the sidebar and
  * tab converge with the header the moment the title event arrives.
  *
  * The durable owner is the API read (`serializeSession` prefers the
- * `opencode_sessions` snapshot root title) — but that snapshot is written
+ * `runtime_sessions` snapshot root title) — but that snapshot is written
  * ~20s after the prompt, so the refetch `refetchKortixSessionMirrors` fires
  * alongside this can beat it and come back with the pre-title name. This
  * write closes that gap; the next server read reconciles.
@@ -259,7 +259,7 @@ export function patchKortixSessionTitleMirrors(
   updateCachedProjectSessions(queryClient, projectId, (rows) => {
     let changed = false;
     const next = rows.map((row) => {
-      if ((row.runtime_session_id ?? row.opencode_session_id) !== nativeSessionId) return row;
+      if (row.runtime_session_id !== nativeSessionId) return row;
       if (typeof row.custom_name === 'string' && row.custom_name.trim()) return row;
       if (row.name === title) return row;
       changed = true;
@@ -311,7 +311,7 @@ export function notificationSessionId(
     ? findCachedProjectSession(
         queryClient,
         projectId,
-        (session) => (session.runtime_session_id ?? session.opencode_session_id) === runtimeId,
+        (session) => session.runtime_session_id === runtimeId,
       )
     : undefined;
   if (row) return row.session_id;

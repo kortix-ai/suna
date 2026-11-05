@@ -1022,7 +1022,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
                 stage: "ready",
                 agent_name: "kortix",
                 retriable: false,
-                opencode_session_id: rootId,
+                runtime_session_id: rootId,
                 sandbox: {
                   sandbox_id: sessionId,
                   session_id: sessionId,

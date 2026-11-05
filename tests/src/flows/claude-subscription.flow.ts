@@ -289,7 +289,7 @@ flow(
       await ctx.step("the holder's private session on claude-agent/opus gets its sandbox credential", async () => {
         sessionId = await createDatabaseSession(ctx.env, {
           projectId: project.id, accountId: team.id, userId: holder.userId!, visibility: 'private',
-          metadata: { opencode_model: 'claude-agent/opus', opencode_model_source: 'explicit' },
+          metadata: { model: 'claude-agent/opus', model_source: 'explicit' },
         });
         const minted = (await asHolder.post('/v1/accounts/tokens', { name: 'Claude session', account_id: team.id })).status(201)
           .json<{ token_id: string; secret_key: string }>();
@@ -309,13 +309,13 @@ flow(
         if (received.at(-1) !== 'm1') throw new Error(`the stub received ${JSON.stringify(received)}`);
         const metadata = await waitFor(async () => (await asHolder.get('/v1/projects/:projectId/sessions/:sessionId', { params: { ...params, sessionId } }))
           .status(200).json<{ metadata?: Record<string, unknown> }>().metadata ?? {}, {
-          until: (value) => value.opencode_model_source === 'fallback',
+          until: (value) => value.model_source === 'fallback',
           timeoutMs: 10_000,
           intervalMs: 250,
           description: 'the session moves to the fallback model',
         });
-        if (metadata.opencode_model !== `kortix/${fallback}` || metadata.opencode_model_fallback_from !== 'claude-agent/opus'
-          || metadata.opencode_model_fallback_reason !== 'provider_pool_rate_limited') {
+        if (metadata.model !== `kortix/${fallback}` || metadata.model_fallback_from !== 'claude-agent/opus'
+          || metadata.model_fallback_reason !== 'provider_pool_rate_limited') {
           throw new Error(`session model after the fallback: ${JSON.stringify(metadata)}`);
         }
       });

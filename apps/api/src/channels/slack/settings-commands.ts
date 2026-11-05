@@ -303,7 +303,7 @@ export async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
       accountId: gate.accountId,
       projectId: gate.projectId,
       agentName: selection?.agentName ?? null,
-      explicit: selection?.opencodeModel ?? null,
+      explicit: selection?.sessionModel ?? null,
       freeModelsOnly: gate.freeManagedOnly,
     });
     const label = eff.model ? labelForModelRef(eff.model) : 'No model configured';

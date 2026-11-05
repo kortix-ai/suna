@@ -132,12 +132,12 @@ export function patchForFile(file: Pick<ChangedFile, 'path' | 'patch'>): string 
 /** Is the sheet's session the thread on screen? The tab store keys a thread by
  *  its runtime session id; ProjectScreen resolves a row by either id, so this does too. */
 export function isOpenThreadSession(
-  session: { session_id: string; runtime_session_id?: string | null; opencode_session_id: string | null },
+  session: { session_id: string; runtime_session_id?: string | null },
   activeSessionId: string | null,
 ): boolean {
   if (!activeSessionId) return false;
   return (
-    (session.runtime_session_id ?? session.opencode_session_id) === activeSessionId ||
+    session.runtime_session_id === activeSessionId ||
     session.session_id === activeSessionId
   );
 }

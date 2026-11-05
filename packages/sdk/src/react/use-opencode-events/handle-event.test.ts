@@ -833,7 +833,7 @@ describe('session stream notifications carry the project of the stream', () => {
 // ============================================================================
 // Kortix session-title mirroring — a runtime title change lands in the cached
 // Kortix session reads immediately, without waiting for the server-side
-// opencode_sessions snapshot (~20s) to make the next refetch carry it.
+// runtime_sessions snapshot (~20s) to make the next refetch carry it.
 // ============================================================================
 
 describe('kortix session title mirroring', () => {
@@ -843,7 +843,7 @@ describe('kortix session title mirroring', () => {
   function kortixRow(overrides: Record<string, unknown> = {}) {
     return {
       session_id: PROJECT_SESSION_ID,
-      opencode_session_id: 'ses_a',
+      runtime_session_id: 'ses_a',
       name: 'Generated Title',
       custom_name: null,
       ...overrides,
@@ -888,7 +888,7 @@ describe('kortix session title mirroring', () => {
     const renamed = kortixRow({ custom_name: 'Mine', name: 'Mine' });
     const other = kortixRow({
       session_id: '99999999-8888-4777-8666-555555555555',
-      opencode_session_id: 'ses_other',
+      runtime_session_id: 'ses_other',
       name: 'Other Session',
     });
     queryClient.setQueryData(qk.project.sessions(PROJECT_ID), [renamed, other]);

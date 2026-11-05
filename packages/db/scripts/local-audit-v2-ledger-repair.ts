@@ -26,7 +26,7 @@ const AUDIT_EVENT_COLUMNS = [
   'integrity_hash',
   'integrity_previous_hash',
   'message_id',
-  'opencode_session_id',
+  'runtime_session_id',
   'output_sha256',
   'output_summary',
   'parent_event_id',

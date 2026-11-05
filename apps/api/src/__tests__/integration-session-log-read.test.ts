@@ -304,7 +304,7 @@ describe('GET .../log', () => {
 test('inventory reports the durable project-default turn model instead of the creation pin', async () => {
   const id = await seedSession(project, OWNER);
   await storeInLog(id, 1);
-  await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'platform' } }).where(eq(projectSessions.sessionId, id));
+  await db.update(projectSessions).set({ metadata: { model: 'kortix/deepseek-v4.1-flash', model_source: 'platform' } }).where(eq(projectSessions.sessionId, id));
   await db.update(sessionLogs).set({ record: sql`jsonb_set(${sessionLogs.record}, '{selection}', ${JSON.stringify({ agent: null, model: { provider: 'kortix', model: 'glm-5.3-flash' } })}::jsonb)` }).where(eq(sessionLogs.sessionId, id));
   const response = await get(`/v1/projects/${project.project_id}/sessions`);
   expect(response.status).toBe(200);
@@ -319,12 +319,12 @@ test('inventory reports the durable project-default turn model instead of the cr
       const bundle = await get(`${base(id)}/${route}?transcript=${transcript}`);
       expect(bundle.status).toBe(200);
       expect(await bundle.json()).toMatchObject({
-        session: { model: 'kortix/glm-5.3-flash', metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } },
+        session: { model: 'kortix/glm-5.3-flash', metadata: { model: 'kortix/deepseek-v4.1-flash' } },
       });
     }
   }
   expect(rows.find((row) => row.session_id === id)).toMatchObject({
     model: 'kortix/glm-5.3-flash',
-    metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' },
+    metadata: { model: 'kortix/deepseek-v4.1-flash' },
   });
 });

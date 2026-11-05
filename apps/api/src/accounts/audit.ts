@@ -359,7 +359,7 @@ const CSV_HEADERS = [
   'account_id',
   'project_id',
   'session_id',
-  'opencode_session_id',
+  'runtime_session_id',
   'turn_id',
   'message_id',
   'tool_call_id',

@@ -186,7 +186,7 @@ export async function deleteAccountModelPreference(params: {
  */
 export async function getSessionAgentContext(
   sessionId: string,
-): Promise<{ agentName: string; opencodeModel: string | null; projectDefaultAgent: string | null } | null> {
+): Promise<{ agentName: string; sessionModel: string | null; projectDefaultAgent: string | null } | null> {
   const [row] = await db
     .select({
       agentName: projectSessions.agentName,
@@ -199,12 +199,12 @@ export async function getSessionAgentContext(
     .limit(1);
   if (!row) return null;
   const metadata = row.metadata as Record<string, unknown> | null;
-  const opencodeModel =
-    metadata && typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null;
+  const sessionModel =
+    metadata && typeof metadata.model === 'string' ? metadata.model : null;
   const projectMetadata = row.projectMetadata as Record<string, unknown> | null;
   const projectDefaultAgent =
     projectMetadata && typeof projectMetadata.default_agent === 'string' && projectMetadata.default_agent.trim()
       ? projectMetadata.default_agent.trim()
       : null;
-  return { agentName: row.agentName, opencodeModel, projectDefaultAgent };
+  return { agentName: row.agentName, sessionModel, projectDefaultAgent };
 }

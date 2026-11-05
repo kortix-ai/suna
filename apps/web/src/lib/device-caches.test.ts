@@ -88,7 +88,7 @@ function envelope(): SessionTranscriptSyncEnvelope {
     source: 'mirror',
     complete: true,
     captured_at: '2026-10-06T00:00:00.000Z',
-    opencode_session_id: 'ses_root',
+    runtime_session_id: 'ses_root',
     message_count: 1,
     messages: [
       {
@@ -112,7 +112,6 @@ function sessionRow(n: number) {
     sandbox_id: id,
     sandbox_url: null,
     runtime_session_id: `ses_${'r'.repeat(26)}`,
-    opencode_session_id: `ses_${'r'.repeat(26)}`,
     name: 'Fix the flaky upload test in the billing worker',
     custom_name: null,
     labels: [],
@@ -121,7 +120,6 @@ function sessionRow(n: number) {
     error: null,
     metadata: { name: 'Fix the flaky upload test in the billing worker', model: 'kortix/default' },
     runtime_sessions: [{ id: `ses_${'r'.repeat(26)}`, title: 'Fix the flaky upload test', parent_id: null }],
-    opencode_sessions: [{ id: `ses_${'r'.repeat(26)}`, title: 'Fix the flaky upload test', parent_id: null }],
     created_by: '00000000-0000-4000-8000-000000000003',
     parent_session_id: null,
     child_count: 0,

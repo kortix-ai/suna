@@ -34,6 +34,22 @@ entry points, 152 value names and 241 type names, and gained none.
   `use-admin-billing`, the per-sandbox admin hooks and their types, `useAdminAccountSandboxes`,
   `useAdminSetManagedModels`, `useAdminSetEnterpriseDemo`, `useAdminSetEnterpriseEntitled`) and
   the tunnel permission and audit hooks (`useCreateTunnelConnection`, `useTunnelPermissions`, …).
+- The OpenCode-era field aliases. Each one had a neutral twin with the same value; only the
+  twin remains. `src/no-opencode-fields.test.ts` fails to typecheck while a listed type keeps one.
+  - `opencode_session_id` → `runtime_session_id` on `ProjectSession`, `SessionStartResult`,
+    `SessionTurn`, `SessionTranscript`, `SessionTranscriptSyncEnvelope`,
+    `PublicSessionTranscript`, `AuditEvent` and the session-open runtime `identity`;
+  - `opencode_sessions` → `runtime_sessions` on `ProjectSession`;
+  - `opencode_version` → `harness_version` on the session-open runtime `identity`;
+  - `opencode_model` → `model` on `CreateProjectSessionInput` and `SessionModelChangeResult`;
+  - `opencode_reload` → `runtime_reload` on `SessionReloadResult`;
+  - `opencodeModel` → `model` on `ChannelBinding` and `UpdateChannelBindingInput`.
+- `ProjectSession.metadata` keys. The API writes the session model under `model`,
+  `model_source`, `model_picked_at`, `model_restored`, `model_repointed_from` and
+  `model_fallback_{from,from_source,reason,at,until}`, and the runtime conversation list under
+  `runtime_sessions`; a migration renamed the `opencode_model*` and `opencode_sessions` keys of
+  every stored session. `sessionModelFallback`, `sessionPickStands` and `resolveComposerModel`
+  read the new keys.
 
 ### Deprecated (project detail file list)
 - `ProjectDetail.files` and `ProjectDetail.file_count` are marked `@deprecated`. `files` holds

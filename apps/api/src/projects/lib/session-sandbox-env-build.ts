@@ -112,7 +112,7 @@ type SessionSandboxEnvInput = {
   repoUrl: string;
   baseRef: string;
   agentName: string;
-  opencodeModel?: string | null;
+  sessionModel?: string | null;
   /** New session (brand-new branch == base, no remote commits). Lets the
    *  daemon create the session branch LOCALLY instead of a redundant network
    *  fetch of a branch that's identical to base — that fetch cost up to ~10s
@@ -376,7 +376,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       return { sessionPolicyRow, secretsPrincipalUserId };
     }),
   );
-  const managedModelsRead = input.opencodeModel ? started(accountMayUseManagedModels(input.accountId)) : null;
+  const managedModelsRead = input.sessionModel ? started(accountMayUseManagedModels(input.accountId)) : null;
 
   // A session's stored model pin outlives any single boot — the runtime
   // managed lineup can rotate past it while the session sits open. Re-point
@@ -386,11 +386,11 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // llm-gateway/resolution/session-model-repoint.ts.
   const modelRead = started(
     Promise.all([agentConfigRead, policyRead]).then(async ([, { sessionPolicyRow, secretsPrincipalUserId }]) => {
-      const opencodeModel = input.opencodeModel ?? null;
-      if (!opencodeModel) return null;
+      const sessionModel = input.sessionModel ?? null;
+      if (!sessionModel) return null;
       const freeModelsOnly = !(await managedModelsRead);
       return tl.span('model-repoint', () =>
-        repointRetiredSessionModel(opencodeModel, {
+        repointRetiredSessionModel(sessionModel, {
           projectId: input.projectId,
           accountId: input.accountId,
           sessionId: input.sessionId,
@@ -454,7 +454,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   const { compiledAgentConfig, manifestPackages, manifestCodemode, manifestContext } = await agentConfigRead;
   const piPackagesBundle = await piPackagesRead;
   await policyRead;
-  const opencodeModel = await modelRead;
+  const sessionModel = await modelRead;
   const runtimeSecrets = await secretsRead;
   const configRelease = await configReleaseRead;
   if (compiledAgentConfig && !fitsInEnvString(COMPILED_AGENT_CONFIG_ENV, compiledAgentConfig)) {
@@ -506,7 +506,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       // platform resolution — re-pointed above when the runtime lineup
       // retired it. The sandbox uses it for the first OpenCode turn and as
       // the session's OpenCode config default.
-      opencodeModel,
+      sessionModel,
       compiledAgentConfig,
       piPackages: manifestPackages,
       piCodemode: manifestCodemode,

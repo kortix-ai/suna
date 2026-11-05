@@ -546,7 +546,7 @@ export async function handleTelegramEvent(
           visibility: 'project',
           body: {
             agent_name: start.agentName,
-            ...(start.model ? { opencode_model: start.model } : {}),
+            ...(start.model ? { model: start.model } : {}),
             ...(start.pools ? { provider_secret_pools: start.pools } : {}),
             title_source: text || null,
           },

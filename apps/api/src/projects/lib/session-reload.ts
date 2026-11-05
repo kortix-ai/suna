@@ -204,7 +204,7 @@ export interface SessionReloadResult {
    * `null` means the box did not say (a daemon older than the verified swap, or
    * no reload was needed) — never "it worked".
    */
-  opencode_reload: 'disposed' | 'restarted' | 'kept-old' | null;
+  runtime_reload: 'disposed' | 'restarted' | 'kept-old' | null;
   /**
    * Did the reload stop a turn the user was waiting on?
    *
@@ -749,7 +749,7 @@ export async function reloadSessionConfig(input: {
       repo_refreshed: false,
       commit_sha: null,
       agent_files: 'unknown',
-      opencode_reload: null,
+      runtime_reload: null,
       turn_ended: null,
       reason: 'no reachable sandbox',
     };
@@ -790,7 +790,7 @@ export async function reloadSessionConfig(input: {
       repo_refreshed: false,
       commit_sha: before.commitSha,
       agent_files: 'unknown',
-      opencode_reload: null,
+      runtime_reload: null,
       turn_ended: null,
       reason:
         before.turnInFlight === true
@@ -832,7 +832,7 @@ export async function reloadSessionConfig(input: {
         repo_refreshed: repoRefreshed,
         commit_sha: commitSha,
         agent_files: 'unknown',
-        opencode_reload: null,
+        runtime_reload: null,
         turn_ended: null,
         reason: 'the sandbox did not answer the config convergence',
         ...releaseFields(releaseBefore, null),
@@ -905,7 +905,7 @@ export async function reloadSessionConfig(input: {
         repo_refreshed: repoRefreshed,
         commit_sha: commitSha,
         agent_files: agentFiles,
-        opencode_reload: null,
+        runtime_reload: null,
         turn_ended: null,
         reason: 'already current',
         ...releaseFields(null, null),
@@ -946,7 +946,7 @@ export async function reloadSessionConfig(input: {
     repo_refreshed: repoRefreshed,
     commit_sha: commitSha,
     agent_files: agentFiles,
-    opencode_reload: opencodeReload ?? null,
+    runtime_reload: opencodeReload ?? null,
     turn_ended: push.opencodeTurnEnded ?? (daemonReload ? (refreshed.configReload?.turnEnded ?? null) : null),
     ...(applied || daemonReload === 'kept-old'
       ? opencodeReload === 'kept-old'
@@ -973,7 +973,7 @@ export function convergeToReloadResult(
     previous_etag: etags.previousEtag,
     etag: converged.outcome === 'applied' ? (etags.etagAfter ?? etags.previousEtag) : etags.previousEtag,
     // Null for a runtime that applies a release in place (pi): nothing restarted.
-    opencode_reload: reloaded ? ('restarted' as const) : null,
+    runtime_reload: reloaded ? ('restarted' as const) : null,
     turn_ended: converged.reload?.turn_ended ?? null,
   };
   const failedId = converged.config.failed_release_id?.slice(0, 12);
@@ -987,7 +987,7 @@ export function convergeToReloadResult(
         ...common,
         applied: false,
         agent_files: 'unknown',
-        opencode_reload: 'kept-old',
+        runtime_reload: 'kept-old',
         reason:
           converged.reason ??
           converged.config.fallback_reason ??

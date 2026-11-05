@@ -548,7 +548,7 @@ const modelPin = (value: unknown) => (typeof value === 'string' && value.trim() 
 // ponytail: the agent is the request's, else the project's mirrored default (`metadata.default_agent`);
 // createSession reads the manifest's first. Upgrade: pass the manifest default when a channel names none.
 async function startModel(plan: ChannelSessionPlan, userId: string): Promise<string | null> {
-  const requested = modelPin(plan.body.opencode_model);
+  const requested = modelPin(plan.body.model);
   if (requested) return requested;
   const { accountId, projectId } = plan.project;
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId).catch(() => false));
@@ -620,7 +620,7 @@ async function sessionImageTurn(projectId: string, sessionId: string, model: str
     accountId: row.accountId,
     visibility: row.visibility,
     userId: row.createdBy ?? (await lifecycle.resolveProjectAutomationActor(row.accountId)),
-    currentModel: model ?? modelPin((row.metadata as Record<string, unknown> | null)?.opencode_model),
+    currentModel: model ?? modelPin((row.metadata as Record<string, unknown> | null)?.model),
   };
 }
 

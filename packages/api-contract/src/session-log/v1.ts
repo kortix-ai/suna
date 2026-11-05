@@ -11,7 +11,7 @@
  * gets the builder's output alone.
  *
  * Decisions beyond the plain mapping:
- * - Threads. `thread_id` is the runtime session id (`opencode_session_id`), as the OpenCode
+ * - Threads. `thread_id` is the runtime session id (`runtime_session_id`), as the OpenCode
  *   adapter exports it. A runtime session other than the root is a child thread when a tool
  *   call names it (`state.metadata.sessionId`, else any mention in the call's state: the
  *   capture's `childSessionIdOf` rules all put the id there). `spawned_by` is that call.
@@ -92,7 +92,7 @@ import {
 
 /** One `session_transcript_messages` row. The other columns are derived from `info` by the capture. */
 export type V1Row = { runtime_session_id: string | null; info: KortixMessageInfo; parts: KortixPart[] };
-/** One session's v1 mirror. `root_id` is `session_transcript_mirrors.opencode_session_id`. */
+/** One session's v1 mirror. `root_id` is `session_transcript_mirrors.runtime_session_id`. */
 export type V1Transcript = { session_id: string; root_id: string | null; rows: V1Row[] };
 /** A stored attachment object: `ref` names it, `bytes` is its size. */
 export type V1Attachment = { ref: string; bytes: number; sha256?: string };

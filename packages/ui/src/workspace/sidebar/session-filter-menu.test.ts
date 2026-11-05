@@ -23,7 +23,7 @@ function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
     name: null,
     branch_name: null,
     metadata: null,
-    opencode_sessions: [],
+    runtime_sessions: [],
     ...overrides,
   } as unknown as ProjectSession;
 }
