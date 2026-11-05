@@ -47,9 +47,11 @@ export interface BoxReader {
  * Copies `opencode.db` and its `-wal` into a temp folder in one moment (so the
  * pair is consistent) and prints `found|<temp>|<home>|<pinned root>`. The homes
  * OpenCode used: `/home/kortix` from 2026-07-26, `/opt/kortix/home` before.
- * `auth.json` beside the store is never read.
+ * `auth.json` beside the store is never read. It first removes the copy an
+ * earlier attempt left when the box was stopped before `release` ran.
  */
 export const COPY_SCRIPT = `set -e
+rm -rf /tmp/kortix-recover.*
 for h in /home/kortix /opt/kortix/home /root; do
   d="$h/.local/share/opencode"
   if [ -f "$d/opencode.db" ]; then

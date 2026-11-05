@@ -32,6 +32,15 @@ const DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
 /** Platinum's worst observed restore from archive is ~546 s. */
 const START_BUDGET_MS = 10 * 60_000;
 const START_POLL_MS = 2_000;
+/**
+ * `provider.start` returns once the box is booting, so a box that is parked or
+ * parking after this grace was stopped by another writer. Dev, 2026-11-05: 8 of
+ * 782 boxes went `stopping` 7 s to minutes after the start. One such writer is
+ * Kortix's row-VM divergence sweep, which stops a running box whose row says
+ * `stopped` (`projects/reaping/row-vm-divergence.ts`). The session gets `retry`.
+ */
+const STOPPED_AFTER_START_GRACE_MS = 30_000;
+const PARKING_STATES = new Set(['stopped', 'stopping', 'archived', 'archiving']);
 
 const provider = new PlatinumProvider();
 
@@ -72,15 +81,31 @@ async function state(externalId: string): Promise<BoxState> {
   }
 }
 
+/** Waits for `running` after `provider.start` returned. */
 async function waitRunning(externalId: string): Promise<void> {
-  const deadline = Date.now() + START_BUDGET_MS;
+  const startedAt = Date.now();
+  const deadline = startedAt + START_BUDGET_MS;
   for (;;) {
     const s = await rawState(externalId);
     if (s === 'running') return;
     if (s === 'deleted' || s === 'failed' || s === 'failed-start' || s === 'lost') {
       throw new RecoverableBoxError(`box went ${s} while starting`, false);
     }
+    if (PARKING_STATES.has(s) && Date.now() - startedAt >= STOPPED_AFTER_START_GRACE_MS) {
+      throw new RecoverableBoxError(`box ${s} after the start: another writer stopped it`, true);
+    }
     if (Date.now() >= deadline) throw new RecoverableBoxError(`box still ${s || 'unknown'} after ${START_BUDGET_MS / 1000}s`, true);
+    await Bun.sleep(START_POLL_MS);
+  }
+}
+
+/** Waits until the box is running, parked or gone: a stop refuses a box still `starting`. */
+async function waitSettled(externalId: string): Promise<BoxState> {
+  const deadline = Date.now() + START_BUDGET_MS;
+  for (;;) {
+    const s = await state(externalId);
+    if (s !== 'other') return s;
+    if (Date.now() >= deadline) throw new RecoverableBoxError(`box not settled after ${START_BUDGET_MS / 1000}s`, true);
     await Bun.sleep(START_POLL_MS);
   }
 }
@@ -152,10 +177,10 @@ async function release(externalId: string, boxTemp: string | null, stillParked: 
     return 'left-running';
   };
   if (!(await stillParked())) return 'left-running';
-  // A box still booting refuses a stop (409 `starting`): let it come up, then stop it.
-  const s = await state(externalId);
+  // A box still booting refuses a stop (409 `starting`), and one another writer is
+  // stopping goes to `stopped` by itself: wait for either, then act on the result.
+  const s = await waitSettled(externalId);
   if (s === 'gone' || s === 'stopped' || s === 'archived') return (await stillParked()) ? 'parked' : 'left-running';
-  if (s === 'other') await waitRunning(externalId);
   if (!(await stillParked())) return 'left-running';
   await paced(() => provider.stop(externalId));
   if (!(await stillParked())) return giveBack();
