@@ -31,7 +31,7 @@ describe('parse/serialize round-trip', () => {
 
   test('a deprecated shape reads as the latest shape', () => {
     expect(parseManifestText('kortix_version: 3\nagents:\n  a:\n    prompt: x\n    disable: true\n')).toEqual({
-      agents: { a: { prompt: 'x', tools: 'all', enabled: false } },
+      agents: { a: { prompt: 'x', tools: '*', enabled: false } },
     });
   });
 
@@ -54,6 +54,18 @@ describe('parseManifestText on text that is not YAML', () => {
     expect(isManifestSyntaxError(thrown)).toBe(true);
     expect(thrown).toMatchObject({ code: 'manifest_invalid', line: 4, column: 3 });
     expect((thrown as Error).message).toContain('Map keys must be unique');
+  });
+
+  test('a bare * throws with the quoted fix: YAML reads it as an alias', () => {
+    let thrown: unknown;
+    try {
+      parseManifestText('agents:\n  a:\n    prompt: x\n    tools: *\n');
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toMatchObject({ code: 'manifest_invalid', line: 4, column: 12 });
+    expect((thrown as Error).message).toBe('Alias cannot be an empty string at line 4, column 12: YAML reads a bare `*` as an alias. Quote it: `tools: "*"`');
+    expect(() => parseManifestText('agents:\n  a:\n    skills: [*]\n')).toThrow('Quote it: `skills: ["*"]`');
   });
 
   test('isManifestSyntaxError is false for any other error', () => {

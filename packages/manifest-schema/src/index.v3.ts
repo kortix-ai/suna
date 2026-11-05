@@ -64,8 +64,10 @@ import {
   type GrantSetV2,
   type PermissionConfigV2,
   type PiPackageEntryV2,
+  isEveryGrant,
   resolveGrantSet,
   resolveProjectRepository,
+  TOOLS_SHAPE_ERROR,
   TOOLS_UNSET_WARNING,
   validateAgentMdFrontmatter,
   validateAppGrantList,
@@ -81,8 +83,8 @@ import { BUILTIN_AGENT_KEYS, BUILTIN_AGENTS, LEGACY_MY_KORTIX_AGENT_NAME, type B
 export type CodemodeV3 = (typeof CODEMODE_VALUES)[number];
 export type ContextV3 = (typeof CONTEXT_VALUES)[number];
 
-/** `agents.<name>.tools`: `all` (default), `none`, a list, or `{ exclude: [...] }`. */
-export type AgentToolsV3 = 'all' | 'none' | string[] | { exclude: string[] };
+/** `agents.<name>.tools`: `"*"` (default; alias `all`), `none`, a list, or `{ exclude: [...] }`. Read it with `isEveryGrant`. */
+export type AgentToolsV3 = '*' | 'all' | 'none' | string[] | { exclude: string[] };
 
 /**
  * `agents.<name>.skills` and `.extensions`: a grant set, or `{ exclude: [...] }`,
@@ -116,7 +118,7 @@ export function excludedNamesV3(value: unknown): string[] | null {
 }
 
 /**
- * The names a v3 grant selects from `universe`: `all` is every name,
+ * The names a v3 grant selects from `universe`: `"*"` / `all` is every name,
  * `{ exclude }` every name but the listed ones, a list as written, and an
  * omitted or `none` grant none.
  */
@@ -747,14 +749,14 @@ function validateAgentBlockV3(
 }
 
 /**
- * A grant of registered names: `all`, `none`, or a list where each name is
+ * A grant of registered names: `"*"` (alias `all`), `none`, or a list where each name is
  * registered. `excludable` also takes `{ exclude: [names] }`.
  */
 function validateNamedGrantV3(value: unknown, where: string, label: string, known: Set<string>, issues: ManifestIssue[], excludable = false): void {
   let names: unknown = value;
   if (excludable && isTable(value)) {
     if (Object.keys(value).length !== 1 || !Array.isArray(value.exclude) || value.exclude.some((name) => typeof name !== 'string' || !name.trim())) {
-      issues.push({ path: where, message: `${label} must be \`all\`, \`none\`, a list of names, or \`{ exclude: [names] }\`.`, severity: 'error' });
+      issues.push({ path: where, message: `${label} must be \`"*"\` (every name), \`none\`, a list of names, or \`{ exclude: [names] }\`.`, severity: 'error' });
       return;
     }
     names = value.exclude;
@@ -764,6 +766,8 @@ function validateNamedGrantV3(value: unknown, where: string, label: string, know
     if (issues.length !== before) return;
   }
   if (!Array.isArray(names)) return;
+  // A list that holds `"*"` grants every name (`resolveGrantSet`): nothing to look up.
+  if (names === value && isEveryGrant(names)) return;
   const trimmed = names.map((item) => String(item).trim());
   // A retired Kortix skill (its feature is gone) grants nothing: a warning, never a failed parse.
   const retired = label === 'skills' ? trimmed.filter((item) => RETIRED_KORTIX_SKILL_NAMES.includes(item)) : [];
@@ -782,23 +786,24 @@ function validateNamedGrantV3(value: unknown, where: string, label: string, know
   }
 }
 
-/** `tools`: `all` | `none` | a list | `{ exclude: [...] }`; each name a harness, Kortix or registered tool. */
+/** `tools`: `"*"` (alias `all`) | `none` | a list | `{ exclude: [...] }`; each name a harness, Kortix or registered tool. */
 function validateToolGrantV3(value: unknown, where: string, known: Set<string>, issues: ManifestIssue[]): void {
   if (value === undefined) {
     issues.push({ path: where, message: TOOLS_UNSET_WARNING, severity: 'warning' });
     return;
   }
-  if (value === 'all' || value === 'none') return;
+  // `"*"`, `all` and a list that holds `"*"` are every tool.
+  if (value === 'none' || isEveryGrant(value)) return;
   let names: unknown = value;
   if (isTable(value)) {
     if (Object.keys(value).length !== 1 || !Array.isArray(value.exclude)) {
-      issues.push({ path: where, message: 'tools must be `all`, `none`, a list of tool names, or `{ exclude: [names] }`.', severity: 'error' });
+      issues.push({ path: where, message: TOOLS_SHAPE_ERROR, severity: 'error' });
       return;
     }
     names = value.exclude;
   }
   if (!Array.isArray(names) || names.some((name) => typeof name !== 'string' || !name.trim())) {
-    issues.push({ path: where, message: 'tools must be `all`, `none`, a list of tool names, or `{ exclude: [names] }`.', severity: 'error' });
+    issues.push({ path: where, message: TOOLS_SHAPE_ERROR, severity: 'error' });
     return;
   }
   const missing = (names as string[]).map((name) => name.trim()).filter((name) => !known.has(name) && !name.startsWith('pty_'));

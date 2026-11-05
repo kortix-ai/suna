@@ -10,7 +10,7 @@ import { DEPRECATIONS, fixManifestText, parseManifestText, validateManifest } fr
 /** id → [old file, path of the warning, the latest shape it reads as]. */
 const CASES: Record<string, [string, string, Record<string, unknown>]> = {
   'drop-kortix-version': ['# keep me\nkortix_version: 3\nproject:\n  name: p\n', 'kortix_version', { project: { name: 'p' } }],
-  'tools-explicit': ['agents:\n  a:\n    prompt: x\n', 'agents.a.tools', { agents: { a: { prompt: 'x', tools: 'all' } } }],
+  'tools-explicit': ['agents:\n  a:\n    prompt: x\n', 'agents.a.tools', { agents: { a: { prompt: 'x', tools: '*' } } }],
   'agent-disable': ['agents:\n  a:\n    prompt: x\n    tools: all\n    # keep me\n    disable: true\n', 'agents.a.disable', { agents: { a: { prompt: 'x', tools: 'all', enabled: false } } }],
   'agent-env': ['agents:\n  a:\n    prompt: x\n    tools: all\n    env: all\n', 'agents.a.env', { agents: { a: { prompt: 'x', tools: 'all', secrets: 'all' } } }],
   'agent-kortix-cli': ['agents:\n  a:\n    prompt: x\n    tools: all\n    kortix_cli: [project.file.read]\n', 'agents.a.kortix_cli', { agents: { a: { prompt: 'x', tools: 'all', kortix_permissions: ['project.file.read'] } } }],
@@ -53,6 +53,11 @@ describe.each(Object.entries(CASES))('%s', (id, [old, path, latest]) => {
     for (const comment of old.match(/# .*/g) ?? []) expect(text).toContain(comment);
     expect(fixManifestText(text).text).toBe(text);
   });
+});
+
+test('tools-explicit writes the canonical, double-quoted `tools: "*"`', () => {
+  expect(fixManifestText('agents:\n  a:\n    prompt: x\n').text).toBe('agents:\n  a:\n    prompt: x\n    tools: "*"\n');
+  expect(DEPRECATIONS.find((d) => d.id === 'tools-explicit')?.summary).toContain('Write `tools: "*"`');
 });
 
 test('--fix changes only the lines a deprecation changes: no folding, padding, spacing or indent changes', () => {

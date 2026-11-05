@@ -69,7 +69,7 @@ export function createAgentPrompt(input: {
   return (
     `Create a new agent named "${input.name}" in kortix.yaml. What it does: ${desc || 'ask me.'} ` +
     `Write its instructions and give it only the tools, skills, connectors, secrets and permissions this work needs. ` +
-    `Always write its \`tools:\` key: a list of the tools it needs, or \`all\`. ${review}`
+    `Always write its \`tools:\` key: a list of the tools it needs, or \`"*"\` (quoted) for every tool. ${review}`
   );
 }
 

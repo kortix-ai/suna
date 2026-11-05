@@ -317,7 +317,12 @@ export {
   type AppBlockV2,
   type AppResourcesV2,
   type PiPackageEntryV2,
+  EVERY_GRANT,
+  isEveryGrant,
+  normalizePermissionAction,
+  normalizePermissionConfig,
   resolveGrantSet,
+  TOOLS_SHAPE_ERROR,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
 } from './index.v2';
@@ -506,7 +511,7 @@ function listSectionHint(key: string): string {
 // ─── Section validators ───────────────────────────────────────────────────
 
 /**
- * Validate a `connectors` / `kortix_permissions` grant value (array | "all" | "none").
+ * Validate a `connectors` / `kortix_permissions` grant value (array | "*" | "all" | "none").
  *
  * `version` only changes how a `kortix_permissions` entry from
  * `LEGACY_TOLERATED_KORTIX_PERMISSIONS` is treated (only reachable when
@@ -534,7 +539,7 @@ export function validateGrantList(
     if (v !== '' && v !== 'all' && v !== '*' && v !== 'none') {
       issues.push({
         path: where,
-        message: `${label} string must be "all", "*" or "none" (or an array of names).`,
+        message: `${label} must be "*" (every name; alias all), "none", or a list of names.`,
         severity: 'error',
       });
     }
@@ -543,7 +548,7 @@ export function validateGrantList(
   if (!Array.isArray(value)) {
     issues.push({
       path: where,
-      message: `${label} must be an array of strings, "all", or "none".`,
+      message: `${label} must be "*" (every name; alias all), "none", or a list of names.`,
       severity: 'error',
     });
     return;

@@ -8,8 +8,8 @@ const KORTIX_YAML = `default_agent: kortix
 agents:
   kortix:
     prompt_file: agents/kortix.md
-    connectors: all
-    skills: all
+    connectors: "*"
+    skills: "*"
 
 triggers:
   - slug: weekly-report

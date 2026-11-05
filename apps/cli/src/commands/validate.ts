@@ -18,7 +18,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, relative, resolve } from 'node:path';
-import { DEPRECATED_KORTIX_PERMISSION_ALIASES, fixManifestText, GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
+import { DEPRECATED_KORTIX_PERMISSION_ALIASES, fixManifestText, GRANTABLE_KORTIX_PERMISSIONS, isEveryGrant } from '@kortix/manifest-schema';
 import { type FileIssue, formatIssueLine, validateManifestFile } from '../manifest.ts';
 import { resolveLocalManifestImports } from '../manifest-imports.ts';
 import { applyLocalLegacy, convertLocalLegacy, localManifestFile, readLegacyManifest } from '../manifest-legacy.ts';
@@ -61,7 +61,7 @@ function describeAgents(parsed: Record<string, unknown> | null): string {
   const agents = parsed?.agents;
   if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return '';
   const show = (v: unknown): string =>
-    v === 'all' ? 'all' : Array.isArray(v) ? v.join(', ') || 'none' : 'none (default-deny)';
+    isEveryGrant(v) ? '* (every)' : Array.isArray(v) ? v.join(', ') || 'none' : 'none (default-deny)';
   const keys = ['skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets'];
   const lines = Object.entries(agents as Record<string, Record<string, unknown> | null>).map(
     ([name, block]) => `  ${C.cyan}${name}${C.reset}  ${keys.map((key) => `${key}=[${show(block?.[key])}]`).join('  ')}`,

@@ -10,6 +10,23 @@
  */
 import { CHANNEL_PLATFORM_IDS, channelConnectorSlug } from '@kortix/shared/channel-descriptors';
 
+/** The canonical spelling of "every name" in kortix.yaml. `all` is its accepted alias. */
+export const EVERY_GRANT = '*';
+
+/**
+ * True when a grant value means "every name": `"*"` (canonical), `all` in any
+ * case (alias), or a list that holds `"*"`. The one test for it: code that
+ * reads a grant from kortix.yaml calls this, never `=== 'all'`. `{ exclude }`
+ * is not this form (it names what is left out); `excludedNamesV3` reads it.
+ */
+export function isEveryGrant(value: unknown): boolean {
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    return v === '*' || v === 'all';
+  }
+  return Array.isArray(value) && value.some((item) => typeof item === 'string' && item.trim() === '*');
+}
+
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
 

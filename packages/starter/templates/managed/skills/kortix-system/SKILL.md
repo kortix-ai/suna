@@ -107,6 +107,7 @@ state. Use `git` and the file tools for files and commits.
 | Agents and models | `kortix agents ls\|default\|config\|scope`, `kortix models ls\|default <model-id>` |
 | Tools, feature flags | `kortix tools ls\|eject <name>`, `kortix projects features [enable <flag>]` |
 | The manifest | `kortix validate [--scopes]`, `kortix schema` |
+| Kortix itself is broken, confusing or missing something | `kortix feedback "<what happened, what you expected>" --kind bug\|friction\|idea`: it reaches the Kortix team with this session's id. File it when it happens, once per problem, then continue with a workaround |
 </cli>
 
 <credentials>
@@ -227,12 +228,12 @@ agents:
     prompt_file: agents/kortix.md         # or prompt: "…"
     permission: { bash: { "git push --force *": ask, "*": allow } }
     workspace: { project_repository: true }
-    tools: all
-    skills: all                           # omitted = none, Kortix skills too
+    tools: "*"                            # "*" is every name; `all` is the same
+    skills: "*"                           # omitted = none, Kortix skills too
     subagents: [researcher]
     commands: [standup]
     extensions: [audit]
-    connectors: all
+    connectors: "*"
     secrets: [ORDERS_API_KEY]
     kortix_permissions: [project.read, project.gitops.push]
   researcher:

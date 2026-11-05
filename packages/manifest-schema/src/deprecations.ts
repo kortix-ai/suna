@@ -97,6 +97,13 @@ function renameAgentKey(doc: Document, from: string, to: string, map: (value: un
   return paths;
 }
 
+/** `"*"`, the canonical "every name", as a double-quoted scalar: a bare `*` is a YAML alias. */
+export function everyScalar(): Scalar<string> {
+  const node = new Scalar('*');
+  node.type = Scalar.QUOTE_DOUBLE;
+  return node;
+}
+
 export const DEPRECATIONS: readonly Deprecation[] = [
   {
     id: 'drop-kortix-version',
@@ -111,11 +118,11 @@ export const DEPRECATIONS: readonly Deprecation[] = [
   {
     id: 'tools-explicit',
     since: '2026-10-27',
-    summary: 'an agent without `tools` gets every tool. Write `tools: all` (same meaning), or list the tools it needs.',
+    summary: 'an agent without `tools` gets every tool. Write `tools: "*"` (same meaning), or list the tools it needs.',
     apply: (doc) =>
       agentBlocks(doc).flatMap(([name, block]) => {
         if (block.has('tools')) return [];
-        block.set('tools', 'all');
+        block.set('tools', everyScalar());
         return [`agents.${name}.tools`];
       }),
   },
