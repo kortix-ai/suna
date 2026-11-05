@@ -9,7 +9,7 @@ scripts/secrets-shared-with-prod.allowlist — an entry waives the shared-value 
 The key name never decides. `DATABASE_URL`, `SUPABASE_URL` and `KORTIX_URL` carry
 production reach with no KEY/SECRET/TOKEN in the name. So every key in a non-prod profile
 is compared by VALUE against prod, whether or not prod defines that key. A green run
-proves the comparison happened: an undecrypted prod file fails instead of passing.
+proves the comparison happened: an undecrypted profile fails instead of passing.
 
 Only a credential DSN reaches prod: a scheme://user:pass@host value authenticates against
 the deployment it points at. The host value rule fires there and nowhere else. A bare host
@@ -130,8 +130,16 @@ def main() -> int:
     print("SEPARATION — no value in a non-prod profile may equal or name the prod stack:\n")
     failed = 0
     for label, rel in PROFILES:
+        # A profile that did not decrypt is ciphertext: comparing against it compares
+        # against nothing and reports a green separation it never proved. Refuse it the
+        # way the prod refusal above does, so a green run proves every profile compared.
+        env = load(rel)
+        if env is None:
+            print(f"  ✗ {label:5} {rel} did not decrypt — the value comparison cannot run")
+            failed += 1
+            continue
         bad = allowed = 0
-        for key, raw in sorted((load(rel) or {}).items()):
+        for key, raw in sorted(env.items()):
             value = str(raw)
             if not value or key.startswith("DOTENV_PUBLIC_KEY"):
                 continue

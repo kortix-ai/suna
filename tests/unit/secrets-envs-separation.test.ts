@@ -33,14 +33,16 @@ type Profiles = {
   prod: Record<string, string>;
   nonProd: Record<string, Record<string, string>>;
   rawProd?: string;
+  rawDev?: string;
 };
 
 // The script resolves ROOT from its own path, so a temp dir holding scripts/ and
 // apps/api/.env* is a whole workspace for a black-box run of the real file.
 // `rawProd` writes apps/api/.env.prod verbatim; its stub then fails to decrypt it, the way
-// a missing DOTENV_PRIVATE_KEY_PROD leaves every value as ciphertext.
+// a missing DOTENV_PRIVATE_KEY_PROD leaves every value as ciphertext. `rawDev` is its
+// non-prod twin for apps/api/.env.dev.
 function run(
-  { prod, nonProd, rawProd }: Profiles,
+  { prod, nonProd, rawProd, rawDev }: Profiles,
   allowlist = '',
 ): { code: number | null; out: string } {
   const dir = mkdtempSync(join(tmpdir(), 'secrets-separation-'));
@@ -62,8 +64,14 @@ function run(
       }\n`;
     writeFileSync(join(dir, 'apps', 'api', '.env.prod'), rawProd ?? lines(prod));
     if (rawProd) writeFileSync(join(dir, 'apps', 'api', '.env.prod.nokey'), '');
-    for (const [file, vars] of Object.entries(nonProd))
+    if (rawDev) {
+      writeFileSync(join(dir, 'apps', 'api', '.env.dev'), rawDev);
+      writeFileSync(join(dir, 'apps', 'api', '.env.dev.nokey'), '');
+    }
+    for (const [file, vars] of Object.entries(nonProd)) {
+      if (rawDev && file === '.env.dev') continue;
       writeFileSync(join(dir, 'apps', 'api', file), lines(vars));
+    }
     const r = spawnSync('python3', [join(dir, 'scripts', 'secrets-envs-separation.py'), stub], {
       encoding: 'utf8',
     });
@@ -340,6 +348,18 @@ describe('scripts/secrets-envs-separation.py', () => {
     });
     expect(r.code, r.out).toBe(1);
     expect(r.out).toMatch(/prod did not decrypt/);
+  });
+
+  // The same refusal covers a non-prod profile: an undecrypted dev profile compares against
+  // nothing and would report `✓ dev 0 unallowed` it never earned, so the run fails there too.
+  it('fails instead of passing when a non-prod profile did not decrypt (KRTX-4108 item 2)', () => {
+    const r = run({
+      prod: { DATABASE_URL: 'postgres://prod-db/everyone' },
+      rawDev: 'DATABASE_URL=encrypted:GJROHNCe\n',
+      nonProd: nonProd({ KORTIX_X: 'local' }),
+    });
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toMatch(/\.env\.dev did not decrypt — the value comparison cannot run/);
   });
 
   // The committed profiles are the ones `pnpm test:envs` reads on a host that can decrypt
