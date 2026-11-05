@@ -17,17 +17,12 @@ import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ProjectIconField } from '@kortix/ui/workspace/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
 import { AccountTopBar } from '@/features/workspace/account-top-bar';
-import { AccountPicker } from '@kortix/ui/workspace/new/account-picker';
 import { AdvancedFields } from '@kortix/ui/workspace/new/advanced-fields';
 import {
   INITIAL_FORM_STATE,
-  isForeignAccountList,
   isSubmittable,
-  resolveDefaultCreatableAccountId,
-  shouldShowAccountLine,
   type NewWorkspaceFormState,
 } from '@kortix/ui/workspace/new/new-workspace-form';
-import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
 import { useCreateWorkspace } from '@kortix/ui/workspace/new/use-create-workspace';
 import { useProjectQuota } from '@kortix/ui/workspace/new/use-project-quota';
 import { WorkspaceHandoff } from '@kortix/ui/workspace/new/workspace-handoff';
@@ -36,9 +31,11 @@ import {
   suggestWorkspaceName,
   validateWorkspaceName,
 } from '@kortix/ui/workspace/new/workspace-name';
-import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
+import { useWorkspaceDirectory } from '@kortix/ui/workspace/sidebar/use-workspace-directory';
+import { canCreateWorkspace } from '@kortix/ui/workspace/project-selector/project-selector-model';
+import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { isBillingEnabled } from '@/lib/config';
+import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
 import { cn } from '@kortix/ui';
 import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
 
@@ -85,50 +82,31 @@ const ICON_WIDTH = '2.8rem';
 /**
  * Create a workspace.
  *
- * This page issues no MUTATING request on mount. Visiting `/new` never
- * creates anything — the only write it ever fires is the one the submit
- * button drives, routed through `useCreateWorkspace` (`use-create-workspace.ts`),
- * which POSTs `/projects/provision` with a stable `idempotency_key`. A page
- * that creates something because you looked at it is a page nobody can link
- * to safely.
+ * ONE form: the name, the icon, and Advanced (the repository source). No
+ * account picker: a workspace is one account and its project (Workspaces
+ * D3), so Create makes the whole workspace. The managed source sends
+ * `new_workspace: true` and the server reuses the caller's newest owned empty
+ * account (a plan or credits already there stay) or creates one. The GitHub
+ * sources act in that same empty account, because their installations are
+ * account-scoped; with no such account Advanced offers the managed source
+ * only, and GitHub connects later in Workspace settings › Git repo.
  *
- * It DOES read the account list on mount (`useAccountsList()`) — an
- * idempotent GET, needed to know whether there is anything to disambiguate
- * (`AccountPicker`) and to gate submission on the REAL account count instead
- * of a placeholder. That hook is the exact
- * cache entry `WorkspaceSwitcher` and `AccountSwitcher` already use, so a user
- * who reaches `/new` from either menu (the common path) hits a warm cache,
- * not a second request. That list is filtered to `creatableAccounts` (owner
- * or admin — `POST /provision` 403s on anything else, same predicate as
- * `create-account-selection.ts`) before it reaches either the picker or the
- * submit gate, so a user can never pick, or implicitly submit into, an
- * account that would fail.
+ * This page issues no MUTATING request on mount. The only write is the one
+ * the submit button drives, through `useCreateWorkspace`, with a stable
+ * `idempotency_key`. It reads the workspace directory (the same queries the
+ * chooser and the switcher read) for that empty account.
  *
- * Layout: one centered column. The icon leads at `size-12` on its own line —
- * it is the only thing here you can express something with, and inline beside
- * the input it read as an adornment on the field rather than a choice. Then the
- * name, then the account, then Advanced, which stays hidden until the workspace
- * has a name: it is a second decision about a thing that does not exist yet.
+ * Self-host with account creation restricted (`KORTIX_RESTRICT_ACCOUNT_CREATION`)
+ * lets a non-admin create only when an empty account of theirs exists; else
+ * the form says to ask an admin for an invite.
  *
- * No bordered card. A single question does not need a surface to group it — the
- * border drew a box around one field on an otherwise empty page, which reads as
- * chrome rather than structure. The primary button is still a sibling below the
- * field group at full width, so the fields read as "the thing you fill in" and
- * the button as "the thing you press".
- *
- * There is no slug or URL field. `POST /provision` derives the repo slug as
- * `${baseSlug}-${projectId}` precisely so two workspaces can share a name —
- * there is no uniqueness constraint to validate against and no availability
- * check to run. This component holds no validation rules of its own; both the
- * charset/length check and the submit gate come from the shared form model.
- *
- * A user must never be trapped here. The web row links back to `/projects`;
- * the desktop shell shows its root `DesktopBackButton`. The create-into account
- * picker stays in the form, and Log out remains available on both surfaces.
+ * Layout: one centered column, no card. A user must never be trapped here:
+ * the web row links back to `/projects`, the desktop shell shows its close
+ * button, and Log out stays in the account menu.
  */
 export function NewWorkspacePage() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('newWorkspace');
+  const tWorkspaces = useTranslations('workspaces.create');
   const { user, isLoading: authLoading } = useAuth();
   const searchParams = useSearchParams();
   const cloneItemId = readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''));
@@ -143,19 +121,15 @@ export function NewWorkspacePage() {
   // change never fights the user's own Select.
   const initialSource = readSourceParam(new URLSearchParams(searchParams?.toString() ?? ''));
 
-  // `?account=` is how "the account you just created" survives the navigation
-  // here (`readAccountParam`). Initial state only, like `?source=` above: this
-  // page's own default resolves to the user's PERSONAL account
-  // (`resolveDefaultCreatableAccountId`), so without the seed a brand-new
-  // account would land here with the wrong account preselected and quietly
-  // create its first workspace somewhere else.
-  const initialAccountId = readAccountParam(new URLSearchParams(searchParams?.toString() ?? ''));
+  // `?account=` survives the round trip to `/github/setup` (`readAccountParam`).
+  // It only ever names the empty account this create fills; any other id is
+  // ignored below (`effectiveAccountId`).
+  const returnedAccountId = readAccountParam(new URLSearchParams(searchParams?.toString() ?? ''));
 
   const [state, setState] = useState<NewWorkspaceFormState>(() => ({
     ...INITIAL_FORM_STATE,
     templateId: cloneItemId,
     ...(initialSource ? { source: initialSource } : {}),
-    ...(initialAccountId ? { accountId: initialAccountId } : {}),
   }));
   const [touched, setTouched] = useState(false);
   // Seed a friendly default name once, after mount — not in the `useState`
@@ -205,109 +179,38 @@ export function NewWorkspacePage() {
     return t('validation.nameCharacters');
   }, [state.name, t, touched]);
 
-  // Same user-scoped cache entry `WorkspaceSwitcher`/`AccountSwitcher` read —
-  // one shared query, not a page-local duplicate. `useAccountsList` is also
-  // what makes the stale-list instance of symptom 3 unreachable here: the key
-  // carries the signed-in user, so a previous user's list is not addressable
-  // from this page at all.
-  const accountsQuery = useAccountsList();
-  const accounts = accountsQuery.data ?? [];
-
-  // `filterCreatableAccounts` (`new-workspace-form.ts`) matches
-  // `create-account-selection.ts`'s predicate exactly, so the two never
-  // disagree about who can create a workspace while both exist. Called ONCE
-  // here; the result feeds both `AccountPicker` and `isSubmittable` below —
-  // never the raw list to one and this to the other, which would let "what
-  // the user can pick" and "what gates submit" disagree.
-  const creatableAccounts = useCreatableAccounts(accounts);
-
-  // `user?.id` is `string | undefined`; the identity helpers below require an
-  // explicit `string | null` — an omitted/undefined argument used to compile
-  // clean and silently degrade to "cannot establish identity", which failed
-  // closed for the wrong reason (an accident, not a decision, G4). Normalized
-  // once here and reused for every identity-aware call on this page.
   const userId = user?.id ?? null;
+  // The owned empty account the create fills, if any. The managed source lets
+  // the server pick it; the GitHub sources act in it (`AdvancedFields`).
+  const directory = useWorkspaceDirectory();
+  const reusableAccountId = directory.reusableAccount?.account_id ?? null;
+  const effectiveAccountId =
+    returnedAccountId && returnedAccountId !== reusableAccountId ? null : reusableAccountId;
+  const effectiveState: NewWorkspaceFormState = { ...state, accountId: effectiveAccountId };
 
-  // A creatableAccounts list the signed-in user's identity cannot be
-  // anchored to (Task 2, G2 fail-closed) — see `isForeignAccountList`'s own
-  // doc comment for exactly which shape this is, why a SOLE foreign account
-  // (the ordinary invited-admin case) is deliberately excluded, and why the
-  // stale single-account instance of symptom 3 is closed by the user-scoped
-  // `qk.accounts.list(userId)` key above rather than here. This check is
-  // still live and still required: it covers a 2+-account list with no anchor
-  // to the viewer, a shape the key cannot rule out.
-  const foreignAccountList = isForeignAccountList(creatableAccounts, userId);
+  const { data: adminRole } = useAdminRole();
+  const restrictedOut = !canCreateWorkspace({
+    restricted: isAccountCreationRestricted(),
+    isPlatformAdmin: Boolean(adminRole?.isAdmin),
+    reusableAccount: directory.reusableAccount,
+  });
 
-  // Whether `AccountPicker` should reveal any account-specific info beyond
-  // bare identity (Task 2 controller addendum A2.2 / item 2). `AccountPicker`
-  // always gets the REAL `creatableAccounts` below — never a shrunk stand-in
-  // — so `accounts` keeps meaning "the accounts the user can create in" and
-  // this flag is the sole, explicit place suppression is decided.
-  const showAccountLine = shouldShowAccountLine(creatableAccounts, userId);
-
-  // Pre-select the personal / identity-matching account when the user has not
-  // picked yet. Derived, not Effect-written — the signed-out guard above is the
-  // only Effect this page is allowed, and no Effect here may perform a WRITE.
-  // `isSubmittable` and submit both read the effective id so multi-account users
-  // are not blocked on "Choose an account" when a clear default exists. `null`
-  // outright for a FOREIGN list — nothing in it can be trusted enough to
-  // pre-fill or submit.
-  const defaultAccountId = foreignAccountList
-    ? null
-    : resolveDefaultCreatableAccountId(creatableAccounts, userId);
-  const effectiveAccountId = foreignAccountList ? null : (state.accountId ?? defaultAccountId);
-  const effectiveState: NewWorkspaceFormState = {
-    ...state,
-    accountId: effectiveAccountId,
-  };
-
-  // The target account's project-cap state, read once on load. When the plan
-  // caps the account, the form shows the cap reason and the Upgrade affordance
-  // up front (KRTX-2495) and Create cannot submit — the same information a
-  // denied submit would have taught, without the failed attempt first. Gated
-  // on `!accountsQuery.isLoading` so the pre-check never fires for an account
-  // the create would not target (the effective id is still unresolved during
-  // the load window), and on `userId` so a signed-out render reads nothing.
+  // The plan cap of the account the create fills, read once on load
+  // (KRTX-2495). A fresh account starts on the free plan with no workspace,
+  // so there is nothing to pre-check without one.
   const quotaQuery = useProjectQuota(effectiveAccountId, {
-    enabled: !accountsQuery.isLoading && Boolean(userId),
+    enabled: !directory.loading && Boolean(userId) && Boolean(effectiveAccountId),
   });
   const capState = quotaQuery.data?.capped ? quotaQuery.data : null;
 
-  // `accountsQuery.isLoading` is checked here AS WELL AS inside
-  // `isSubmittable`'s own `accountCount < 1` floor. Belt and braces on
-  // purpose, not redundant: during the loading window `creatableAccounts` is
-  // `[]` for every user, no matter how many accounts they really have.
-  // `isSubmittable`'s floor already blocks a submit at that `0` — so a
-  // multi-account user could not slip through even without this line. What
-  // this line adds is making the REASON legible at the call site: without it,
-  // a reader sees the button disabled and has no way to tell "no creatable
-  // accounts yet" apart from "accounts still loading". The bug this whole
-  // gate exists to prevent — a multi-account user submitting with no
-  // `account_id`, and the server silently defaulting the workspace into the
-  // wrong account — is exactly what a stale reading of that count during the
-  // loading window would let through.
-  //
-  // The source-specific part of the gate lives in `isSubmittable`
-  // (`githubSourceReady`), not here. It used to be a flat
-  // `state.source === 'managed'` on this line, because `useCreateWorkspace`
-  // only knew how to POST `/projects/provision` — so the two GitHub sources
-  // were unreachable and their Select options were rendered `disabled`. Both
-  // now have their own route (`/projects/create-repo`,
-  // `/projects/link-repository`) and their own inputs, so what blocks submit
-  // is a MISSING input, the same as an empty name — never the choice itself.
+  // What blocks submit is a missing input (`isSubmittable`), the directory
+  // still loading, an in-flight create, the plan cap, or a restricted instance.
   const canSubmit =
-    isSubmittable(effectiveState, creatableAccounts.length) &&
-    !accountsQuery.isLoading &&
+    isSubmittable(effectiveState) &&
+    !directory.loading &&
     !submitting &&
-    // The account is at its plan cap (the quota pre-check said so): a create
-    // can only fail with the 403 the cap block on screen already explains.
     !capState &&
-    // Belt and braces on top of `effectiveAccountId` already being forced
-    // null above for a FOREIGN list — `isSubmittable`'s own
-    // `accountCount > 1 && !accountId` check already fails on that null, but
-    // naming the condition here directly means a future edit to either
-    // function cannot silently reopen the disclosure by accident.
-    !foreignAccountList;
+    !restrictedOut;
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center gap-6 px-6 py-16">
@@ -370,9 +273,9 @@ export function NewWorkspacePage() {
           >
             <header className="flex flex-col gap-2 text-center">
               <h1 className="text-foreground text-2xl font-medium tracking-tight">
-                {t('title')}
+                {tWorkspaces('title')}
               </h1>
-              <p className="text-muted-foreground text-sm text-balance">{t('description')}</p>
+              <p className="text-muted-foreground text-sm text-balance">{tWorkspaces('description')}</p>
             </header>
 
             <form
@@ -495,69 +398,15 @@ export function NewWorkspacePage() {
                   </p>
                 ) : null}
 
-                {/* `isSubmittable`'s `accountCount < 1` floor already disables
-                      the button here — this note is what stops that disabled
-                      button from being unexplained. Gated on
-                      `!accountsQuery.isLoading` so it cannot flash true during
-                      the load window, when `creatableAccounts` is `[]` for
-                      every user regardless of their real access. Plain muted
-                      text in the field group's own flow, same treatment as
-                      `AdvancedFields`' GitHub-source note — no `InfoBanner`, no
-                      second card. Account picking itself lives in the top bar. */}
-                {!accountsQuery.isLoading && creatableAccounts.length === 0 ? (
+                {!directory.loading && restrictedOut ? (
                   <p className="text-muted-foreground text-xs">
-                    {t('permissions.noCreatableAccount')}
+                    {tWorkspaces('restricted', { email: user?.email ?? '' })}
                   </p>
                 ) : null}
 
-                {/* The `isForeignAccountList` case (`new-workspace-form.ts`) —
-                      2+ creatable accounts, none of them this user's own. Its
-                      only reachable trigger today is a LEGITIMATE user with no
-                      personal account (SAML JIT or a direct invite acceptance
-                      that bypassed the personal-account bootstrap gate), not a
-                      caching defect — see that function's own doc comment. Before
-                      this note the page went silent here: no picker (the top
-                      bar collapses to bare identity text), no "Create in" line,
-                      and a permanently disabled submit with nothing explaining
-                      why. Same treatment as the sibling message above —
-                      gated on `!accountsQuery.isLoading` for the same reason. */}
-                {!accountsQuery.isLoading && foreignAccountList ? (
-                  <p className="text-muted-foreground text-xs">
-                    {t('permissions.unknownAccountPrefix')}{' '}
-                    <a
-                      href="mailto:support@kortix.ai"
-                      className="text-foreground underline underline-offset-2"
-                    >
-                      {tI18nComplete.raw('textb18f581a06eb')}
-                    </a>{' '}
-                    {t('permissions.unknownAccountSuffix')}
-                  </p>
-                ) : null}
-
-                {/* `effectiveAccountId`, not `state.accountId`: the GitHub
-                      queries inside are account-scoped, and `state.accountId`
-                      is legitimately null for a single-account user (the
-                      picker hides itself below two accounts). Passing the raw
-                      value would leave those queries permanently disabled for
-                      exactly the users who have nothing to pick. */}
-                {/* Create-into account, as a field IN the form — it decides where
-                  the project lands and which GitHub connections the Git
-                  account below can offer, so it belongs next to them, not in
-                  the page's far corner. One account collapses to the muted
-                  identity line (`AccountPicker` owns that rule); two or more
-                  open a Select. */}
-                {showAccountLine ? (
-                  <div className="flex flex-col space-y-3">
-                    <Label htmlFor="workspace-account">{t('account.label')}</Label>
-                    <AccountPicker
-                      accounts={creatableAccounts}
-                      value={effectiveAccountId}
-                      onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
-                      fallbackLabel={user?.email}
-                      showAccountLine={showAccountLine}
-                    />
-                  </div>
-                ) : null}
+                {/* `effectiveAccountId`: the empty account the create fills.
+                    Null hides the GitHub sources (their installations are
+                    account-scoped); managed needs no account. */}
                 <AdvancedFields
                   connectComputer={connectComputer}
                   state={state}
@@ -567,7 +416,7 @@ export function NewWorkspacePage() {
               </div>
 
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
-                {t('actions.create')}
+                {tWorkspaces('submit')}
               </Button>
               {/* The plan cap, known BEFORE any submit (KRTX-2495): the quota
                   pre-check answered `capped` for the target account, so the
