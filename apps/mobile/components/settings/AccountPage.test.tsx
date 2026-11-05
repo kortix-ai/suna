@@ -19,6 +19,7 @@ mock.module('expo-router', () => ({ useRouter: () => ({ push: none, replace: non
 mock.module('expo-constants', () => ({ default: { expoConfig: { version: '0.0.0' } } }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 mock.module('@/lib/icons', () => ({
+  UsersIcon: none,
   BellIcon: none,
   BookOpenIcon: none,
   CaretRightIcon: none,

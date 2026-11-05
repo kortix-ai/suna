@@ -1,19 +1,19 @@
 /**
  * Create on the web, come back to the result (KRTX-246). Mobile runs no
- * project create, no account create, and no GitHub connect or import: every
- * create entry point (the Projects page's New, the switcher's `+` and "New
- * account", first-run `/new`) opens web's page for it in an in-app auth
- * session (`newProjectWebUrl` / `newAccountWebUrl`,
- * `lib/projects/web-project-links.ts`).
+ * workspace create and no GitHub connect or import: every create entry point
+ * (the Workspaces page's New, the switcher's `+` and "Create workspace",
+ * first-run `/new`) opens web `/new` in an in-app auth session
+ * (`newWorkspaceWebUrl`, `lib/projects/web-project-links.ts`).
  *
  * `open(url)` is `createWebCreateRunner` (`lib/projects/web-create.ts`,
  * bun-tested) wired to React Query and `expo-web-browser`: snapshot every
  * account's projects while the browser opens, wait for the user to close it,
  * invalidate accounts + projects, fetch fresh lists and diff. It resolves to
- * the project that did not exist before (the newest, if the user made
- * several), the account that did not exist before, and the fresh lists
- * (`after`, for first run). The caller opens the project; a new account with
- * no project is only selected. `pending` is true for the whole round trip.
+ * the project (the workspace) that did not exist before (the newest, if the
+ * user made several), the account that did not exist before, and the fresh
+ * lists (`after`, for first run). The caller opens the workspace. A new
+ * account with no project is not a workspace: callers ignore it.
+ * `pending` is true for the whole round trip.
  */
 
 import { useCallback, useMemo, useState } from 'react';
