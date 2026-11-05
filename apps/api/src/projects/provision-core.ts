@@ -58,6 +58,7 @@ import {
   upsertProjectGitConnection,
 } from './lib/git';
 import { metadataMerge } from './lib/metadata-merge';
+import { renameAccountOfSoleProject } from './lib/workspace-name';
 import {
   buildCachedFastBootGitHint,
   resolveFastBootGitHintWithCache,
@@ -82,6 +83,11 @@ import { setContextField } from '../lib/request-context';
 import { kickProjectTemplatePrebuilds } from '../snapshots/builder';
 import type { AccountRole, ProjectRole } from './access';
 import { captureProductEvent } from '../shared/product-analytics';
+import {
+  type NewWorkspaceCaller,
+  newWorkspaceConflict,
+  resolveNewWorkspaceAccount,
+} from './new-workspace';
 
 export const PROVISION_PHASES = [
   'validating',
@@ -145,6 +151,36 @@ export function createRepoFailureResult(error: unknown): ProvisionResult {
 export interface ProvisionContext {
   body: Record<string, unknown>;
   scope: { userId: string; accountId: string; accountRole: AccountRole };
+  /** The request checks, when the route already ran them (a new workspace validates before it picks an account). */
+  validated?: ProvisionRequest;
+  /** `new_workspace: true`: the account is this project's workspace, and takes its name. */
+  newWorkspace?: boolean;
+}
+
+/**
+ * The context for `new_workspace: true`. The request checks run FIRST, so an
+ * invalid name never creates an account; then the account is picked or
+ * created (`./new-workspace.ts`). The caller is that account's owner.
+ */
+export async function buildNewWorkspaceProvisionContext(
+  body: Record<string, unknown>,
+  caller: NewWorkspaceCaller,
+): Promise<{ result: ProvisionResult } | { ctx: ProvisionContext }> {
+  const conflict = newWorkspaceConflict(body);
+  if (conflict) return { result: conflict };
+  const validated = await validateProvisionRequest(body);
+  if ('result' in validated) return validated;
+  const account = await resolveNewWorkspaceAccount(caller, validated.request.name, validated.request.idempotencyKey);
+  if (!account.ok) return { result: account.result };
+  setContextField('accountId', account.accountId);
+  return {
+    ctx: {
+      body,
+      scope: { userId: caller.userId, accountId: account.accountId, accountRole: 'owner' },
+      validated: validated.request,
+      newWorkspace: true,
+    },
+  };
 }
 
 /**
@@ -180,7 +216,7 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   emit('validating');
   const { body, scope } = ctx;
 
-  const validated = await validateProvisionRequest(body);
+  const validated = ctx.validated ? { request: ctx.validated } : await validateProvisionRequest(body);
   if ('result' in validated) return validated.result;
   const { request } = validated;
   const { provider, backend, name, sourceItemId, starterTemplate } = request;
@@ -329,6 +365,11 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
       { accountId: scope.accountId, source: 'project-create' },
     );
   }
+
+  // Workspace name = account name = project name. A reused empty account
+  // still carries its old name ("Ada's workspace"); the new workspace's
+  // account takes the project's.
+  if (ctx.newWorkspace) await renameAccountOfSoleProject(row, row.name);
 
   captureProductEvent({
     userId: scope.userId,

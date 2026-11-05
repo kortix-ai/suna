@@ -13,6 +13,7 @@ import { isPlatformAdmin } from "../../shared/platform-roles";
 import { effectiveBranding } from '../branding';
 import { sortAccountsForListing } from "./account-order";
 import { accountNameError } from "./account-name";
+import { renameSoleProjectOfAccount } from "../../projects/surface";
 import { createOwnedAccount } from "./create-account";
 import { reportSignupWithoutWorkspace } from "./signup-event";
 import {
@@ -296,7 +297,7 @@ export function registerAccountRoutes(): void {
       },
       responses: {
         200: json(AccountSummarySchema, 'The updated account'),
-        ...errors(400, 401, 403, 404),
+        ...errors(400, 401, 403, 404, 409),
       },
     }),
     async (c) => {
@@ -311,6 +312,12 @@ export function registerAccountRoutes(): void {
       const name = normalizeString(body.name);
       const nameError = accountNameError(name);
       if (nameError || !name) return c.json({ error: nameError }, 400);
+
+      // Workspace name = account name = project name: the account's only
+      // project is renamed first (its name lives in kortix.yaml), so a refused
+      // commit renames neither row.
+      const project = await renameSoleProjectOfAccount(accountId, name);
+      if (!project.ok) return c.json({ error: project.error, code: project.code }, project.status);
 
       const [row] = await db
         .update(accounts)

@@ -12,7 +12,13 @@ import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager } from '../access';
 import { getBackend, hasBackend } from '../git-backends';
-import { runProvision, type ProvisionContext } from '../provision-core';
+import {
+  buildNewWorkspaceProvisionContext,
+  runProvision,
+  type ProvisionContext,
+  type ProvisionResult,
+} from '../provision-core';
+import { wantsNewWorkspace } from '../new-workspace';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { projects } from '@kortix/db';
@@ -42,11 +48,29 @@ import { isNoWorkspaceError } from '../../shared/no-workspace';
  * `PROJECT_CREATE` authorization check. Kept out of `runProvision` itself so
  * a caller (either route) can still 403 before any provisioning work starts.
  */
-async function buildProvisionContext(c: Context): Promise<ProvisionContext> {
+async function buildProvisionContext(c: Context): Promise<{ result: ProvisionResult } | { ctx: ProvisionContext }> {
   const body = await readJsonObject(c);
+  // `new_workspace: true`: the server picks or creates the account
+  // (../new-workspace.ts). The caller sends no account_id.
+  if (wantsNewWorkspace(body)) {
+    const built = await buildNewWorkspaceProvisionContext(body, {
+      userId: c.get('userId') as string,
+      email: (c.get('userEmail') as string | undefined) || null,
+      authType: c.get('authType') as string | undefined,
+      scopedCredential: Boolean(c.get('tokenProjectId') || c.get('sessionId') || c.get('agentGrant')),
+    });
+    if ('ctx' in built) c.set('accountId', built.ctx.scope.accountId);
+    return built;
+  }
   const scope = await resolveProjectAccount(c, body);
-  return { body, scope };
+  return { ctx: { body, scope } };
 }
+
+/** `new_workspace` on the two provision routes. */
+const NEW_WORKSPACE_FIELD = z.boolean().optional().openapi({
+  description:
+    'Create a whole workspace: the server reuses your newest owned account with no active project, else creates an account named after the project, then provisions into it. Excludes account_id (400 new_workspace_with_account_id). 403 account_creation_restricted where the deployment restricts account creation.',
+});
 
 export function registerProjectsRoutes(): void {
   projectsApp.use('/*', supabaseAuth);
@@ -328,6 +352,7 @@ export function registerProjectsRoutes(): void {
               seed_starter: z.boolean().optional().openapi({ description: 'Set false when the client makes the first commit itself.' }),
               marketplace_items: z.array(z.any()).optional().openapi({ description: 'Marketplace items to install into the new project.' }),
               account_id: z.string().optional().openapi({ description: 'Account to create the project in. Defaults to the caller\'s account.' }),
+              new_workspace: NEW_WORKSPACE_FIELD,
             }) } } },
         },
       responses: {
@@ -336,7 +361,9 @@ export function registerProjectsRoutes(): void {
       },
     }),
     async (c) => {
-    const ctx = await buildProvisionContext(c);
+    const built = await buildProvisionContext(c);
+    if ('result' in built) return c.json(built.result.body, built.result.status, built.result.headers);
+    const { ctx } = built;
     if (!(await authorize(await actorOf(c, ctx.scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
       return c.json({ error: 'Owner or admin role required' }, 403);
     }
@@ -383,6 +410,7 @@ export function registerProjectsRoutes(): void {
               seed_starter: z.boolean().optional().openapi({ description: 'Set false when the client makes the first commit itself.' }),
               marketplace_items: z.array(z.any()).optional().openapi({ description: 'Marketplace items to install into the new project.' }),
               account_id: z.string().optional().openapi({ description: 'Account to create the project in. Defaults to the caller\'s account.' }),
+              new_workspace: NEW_WORKSPACE_FIELD,
             }) } } },
         },
       responses: {
@@ -392,11 +420,15 @@ export function registerProjectsRoutes(): void {
               '`done` or `error` frame — never a bare close.',
             content: { 'text/event-stream': { schema: z.any() } },
           },
-          ...errors(403),
+          ...errors(400, 403, 503),
       },
     }),
     async (c) => {
-    const ctx = await buildProvisionContext(c);
+    const built = await buildProvisionContext(c);
+    // A refusal decided before the stream opens (a new workspace's request
+    // checks, its account choice) is a plain JSON response, never a 200 SSE.
+    if ('result' in built) return c.json(built.result.body, built.result.status as 400 | 403 | 503, built.result.headers);
+    const { ctx } = built;
     // Same gate as POST /provision, and it MUST run before the stream opens. An
     // unauthorized caller gets a normal JSON 403 — never a 200 SSE stream that
     // then carries an error frame; a 200 status has to mean "authorized", or
