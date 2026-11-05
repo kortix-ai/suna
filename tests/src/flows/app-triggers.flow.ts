@@ -6,6 +6,10 @@ import { flow } from "../core/flow";
 import { withDb } from "../fixtures/chat";
 
 type Listed = { triggers: Array<{ slug: string; type: string; app?: string | null }> };
+type EventLog = {
+  events: Array<{ name: string | null; id: string | null; trigger: string | null; status: string; reason: string | null; data: Record<string, unknown> | null }>;
+  next_cursor: string | null;
+};
 
 flow(
   "TRG-40",
@@ -19,6 +23,7 @@ flow(
       "PATCH /v1/projects/:projectId/triggers/:slug",
       "DELETE /v1/projects/:projectId/triggers/:slug",
       "GET /v1/projects/:projectId/apps/:appId/events/credentials",
+      "GET /v1/projects/:projectId/apps/:appId/events",
       "POST /v1/projects/:projectId/apps/:appId/events",
       "POST /v1/projects/:projectId/apps/:appId/runs",
       "DELETE /v1/projects/:projectId/apps/:appId/runs/:runId",
@@ -80,6 +85,18 @@ flow(
       (await emit({ events: [event] })).status(202).body().has("$.deduped", 1).has("$.accepted", 0);
     });
 
+    await ctx.step("the App's event log lists the event under its trigger, pending; a bad limit or cursor is 400; ANON gets 401", async () => {
+      const log = (query: Record<string, string> = {}) => owner.get(eventsPath, { params: { ...params, appId }, query });
+      const listed = (await log()).status(200).json<EventLog>();
+      const [entry] = listed.events;
+      if (listed.events.length !== 1 || entry?.name !== "reply.received" || entry.id !== "msg-1" || entry.trigger !== slug || entry.status !== "pending" || entry.data?.subject !== "Term sheet") {
+        throw new Error(`event log: ${JSON.stringify(listed)}`);
+      }
+      (await log({ limit: "0" })).status(400);
+      (await log({ cursor: "not-a-cursor" })).status(400);
+      (await anon.get(eventsPath, { params: { ...params, appId } })).status(401);
+    });
+
     await ctx.step("the event waits in the trigger's event log for the drain: one pending row per trigger", async () => {
       // The local profile runs no scheduler (KORTIX_TRIGGER_SCHEDULER_ENABLED=false), so the
       // drain that fires it is covered by apps/api/src/projects/lib/app-events.integration.test.ts.
@@ -111,9 +128,15 @@ flow(
       (await cancel()).status(404);
     });
 
-    await ctx.step("a disabled app trigger matches no event: triggers 0", async () => {
+    await ctx.step("a disabled app trigger matches no event: triggers 0, unmatched 1, and the log keeps it with the reason", async () => {
       (await owner.patch("/v1/projects/:projectId/triggers/:slug", { enabled: false }, { params: { ...params, slug } })).status(200);
-      (await emit({ name: "reply.received", id: "msg-2" })).status(202).body().has("$.triggers", 0);
+      const reason = `every trigger on App "${appSlug}" is disabled (${slug}): enable one to run it`;
+      (await emit({ name: "reply.received", id: "msg-2" })).status(202).body().has("$.triggers", 0).has("$.unmatched", 1).has("$.hint", reason);
+      const unmatched = (await owner.get(eventsPath, { params: { ...params, appId }, query: { status: "unmatched" } })).status(200).json<EventLog>();
+      const [entry] = unmatched.events;
+      if (unmatched.events.length !== 1 || entry?.id !== "msg-2" || entry.trigger !== null || entry.reason !== reason) {
+        throw new Error(`unmatched: ${JSON.stringify(unmatched)}`);
+      }
     });
 
     await ctx.step("cleanup: delete the trigger and the App", async () => {

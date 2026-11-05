@@ -42,6 +42,10 @@ export function bindProjectAccessResources(projectId: string) {
         remove: (...a: DropFirst<Parameters<typeof P.deleteAppDeployment>>) =>
           P.deleteAppDeployment(projectId, ...a),
       },
+      /** The App's event log: what it posted and what came of each event. */
+      events: {
+        list: (...a: DropFirst<Parameters<typeof P.listAppEvents>>) => P.listAppEvents(projectId, ...a),
+      },
       start: (appId: string) => P.startApp(projectId, appId),
       stop: (appId: string) => P.stopApp(projectId, appId),
       rollback: (...a: DropFirst<Parameters<typeof P.rollbackApp>>) =>

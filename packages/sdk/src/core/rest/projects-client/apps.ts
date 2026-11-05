@@ -752,6 +752,69 @@ export async function getAppDeploymentLogs(
   );
 }
 
+/** What came of one App event on one trigger. `unmatched`: no enabled trigger listened. */
+export type AppEventStatus = 'pending' | 'fired' | 'skipped' | 'suppressed' | 'failed' | 'unmatched';
+
+/** One row of an App's event log: one event as one trigger saw it, or an unmatched event. */
+export interface AppEvent {
+  /** The log row's id. */
+  log_id: string;
+  name: string | null;
+  /** The App's own id for the event. The same id fires a trigger once. */
+  id: string | null;
+  data: Record<string, unknown> | null;
+  /** The event was over 8 KiB: `data` is null and `raw` holds its head. */
+  truncated: boolean;
+  raw: string | null;
+  /** The trigger this row belongs to; null when no trigger listened. */
+  trigger: string | null;
+  status: AppEventStatus;
+  /** Why it was skipped, suppressed, failed or unmatched. */
+  reason: string | null;
+  /** The session the event started or continued. */
+  session_id: string | null;
+  attempts: number;
+  emitted_at: string;
+  received_at: string;
+  fired_at: string | null;
+}
+
+export interface AppEventList {
+  events: AppEvent[];
+  /** Pass as `cursor` for the next, older page; null on the last page. */
+  next_cursor: string | null;
+}
+
+export interface ListAppEventsOptions {
+  /** 1-200, default 50. */
+  limit?: number;
+  cursor?: string;
+  status?: AppEventStatus;
+  /** One trigger slug. */
+  trigger?: string;
+}
+
+/**
+ * The App's event log, newest first: what the App posted in the last 30 days
+ * and what came of each event. Needs project.app.deploy.
+ */
+export async function listAppEvents(
+  projectId: string,
+  appId: string,
+  options: ListAppEventsOptions = {},
+): Promise<AppEventList> {
+  const query = new URLSearchParams();
+  if (options.limit !== undefined) query.set('limit', String(options.limit));
+  if (options.cursor) query.set('cursor', options.cursor);
+  if (options.status) query.set('status', options.status);
+  if (options.trigger) query.set('trigger', options.trigger);
+  const suffix = query.size ? `?${query.toString()}` : '';
+  return unwrap(
+    await backendApi.get<AppEventList>(`/projects/${projectId}/apps/${appId}/events${suffix}`),
+    'Failed to load App events',
+  );
+}
+
 export async function startApp(projectId: string, appId: string): Promise<App> {
   return unwrap(
     await backendApi.post<App>(`/projects/${projectId}/apps/${appId}/start`, {}),
