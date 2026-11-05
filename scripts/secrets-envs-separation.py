@@ -108,9 +108,8 @@ def classify(value: str, prod: set) -> tuple[str, str]:
     host = prod_origin(value)
     if host:
         return "prod-reach", f"names {host}"
-    for other in prod:
-        if value == other:
-            return "shared-value", "== prod value"
+    if value in prod:
+        return "shared-value", "== prod value"
     return "", ""
 
 
