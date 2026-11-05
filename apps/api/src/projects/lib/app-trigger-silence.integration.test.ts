@@ -112,3 +112,25 @@ test('a test event does not count as heard; the App\'s own deduplicated post doe
   // A disabled trigger is not stamped and keeps no alert.
   expect((await runtime('off')).alertFailingSince).toBeNull();
 });
+
+test('kortix.heartbeat counts as heard and ends the alert, but is never stored; other kortix. names are refused', async () => {
+  const { parseAppEventsBody } = await import('./app-events');
+  const { projectMonitorEvents } = await import('@kortix/db');
+  expect(parseAppEventsBody({ name: 'kortix.heartbeat' })).toEqual([{ name: 'kortix.heartbeat' }]);
+  expect(parseAppEventsBody({ name: 'kortix.app.silent' })).toEqual({
+    error: 'name: names starting with "kortix." are reserved; an App sends only "kortix.heartbeat"',
+  });
+
+  await db.update(projectTriggerRuntime).set({ lastEventAt: new Date(Date.now() - 30 * MIN) })
+    .where(and(eq(projectTriggerRuntime.projectId, project.project_id), eq(projectTriggerRuntime.slug, 'quiet')));
+  await checkAppTriggerSilence(new Date(), true);
+  expect((await runtime('quiet')).alertSource).toBe('silence');
+
+  const before = await db.select().from(projectMonitorEvents).where(eq(projectMonitorEvents.projectId, project.project_id));
+  const answer = await ingestAppEvents({ projectId: project.project_id, appId: APP_ID, appSlug: 'status-watch', events: [{ name: 'kortix.heartbeat' }] });
+  expect(answer).toMatchObject({ heartbeats: 1, accepted: 0, unmatched: 0 });
+  const after = await db.select().from(projectMonitorEvents).where(eq(projectMonitorEvents.projectId, project.project_id));
+  expect(after).toHaveLength(before.length);
+  expect((await runtime('quiet')).alertFailingSince).toBeNull();
+  expect((await inbox('quiet')).map((r) => r.kind)).toEqual(['automation_failed', 'automation_recovered', 'automation_failed', 'automation_recovered']);
+});
