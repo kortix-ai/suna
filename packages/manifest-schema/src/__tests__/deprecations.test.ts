@@ -99,18 +99,18 @@ describe('every-grant-star', () => {
   });
 
   test('--fix writes "*" for every `all` grant, keeps comments, lists, `mode` and an existing "*"', () => {
-    const { text, fixed } = fixManifestText(old);
+    const { text, fixed } = fixManifestText(old, { canonical: true });
     expect(text).toBe('agents:\n  a:\n    prompt: x\n    # keep me\n    tools: "*"\n    skills: "*"\n    connectors: [gh]\n    mode: all\n    secrets: "*"\n');
     expect(fixed).toEqual([
       { id: 'every-grant-star', path: 'agents.a.tools' },
       { id: 'every-grant-star', path: 'agents.a.skills' },
     ]);
-    expect(fixManifestText(text)).toEqual({ text, fixed: [] });
+    expect(fixManifestText(text, { canonical: true })).toEqual({ text, fixed: [] });
   });
 
   test('keeps a trailing comment and an anchor on the rewritten value', () => {
-    expect(fixManifestText('agents:\n  a:\n    prompt: x\n    tools: all # every tool\n').text).toBe('agents:\n  a:\n    prompt: x\n    tools: "*" # every tool\n');
-    const anchored = fixManifestText('agents:\n  a:\n    prompt: x\n    tools: &every all\n    skills: *every\n');
+    expect(fixManifestText('agents:\n  a:\n    prompt: x\n    tools: all # every tool\n', { canonical: true }).text).toBe('agents:\n  a:\n    prompt: x\n    tools: "*" # every tool\n');
+    const anchored = fixManifestText('agents:\n  a:\n    prompt: x\n    tools: &every all\n    skills: *every\n', { canonical: true });
     expect(anchored.text).toBe('agents:\n  a:\n    prompt: x\n    tools: &every "*"\n    skills: *every\n');
     expect((parseManifestText(anchored.text).agents as Record<string, Record<string, unknown>>).a!.skills).toBe('*');
   });
@@ -126,5 +126,9 @@ describe('every-grant-star', () => {
     const text = rewriteManifestText(old, desired);
     expect(text).toContain('    tools: all\n');
     expect(text).toContain('    prompt: y\n');
+  });
+
+  test('an ordinary write keeps `all`; only --fix rewrites it', () => {
+    expect(fixManifestText(old)).toEqual({ text: old, fixed: [] });
   });
 });

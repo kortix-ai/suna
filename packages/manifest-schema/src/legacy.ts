@@ -459,7 +459,7 @@ export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: s
   );
   const target = manifestPath.replace(/\.(toml|ya?ml)$/i, '.yaml');
   // A deprecated shape the file kept (an agent's `env`, `runtime`) is rewritten like any other file's.
-  const content = fixManifestText(renderManifest(next)).text;
+  const content = fixManifestText(renderManifest(next), { canonical: true }).text;
   changes.unshift({ path: target, action: 'rewrite', note: `the kortix_version ${from} manifest in the current shape`, content });
   if (target !== manifestPath) changes.push({ path: manifestPath, action: 'delete', note: `replaced by ${target}` });
   return { from, raw: parseManifestText(content), changes, overlay, dropped };

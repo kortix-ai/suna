@@ -190,6 +190,8 @@ const ignoredPathParts = [
   '/src/features/marketing/landing-sections/content.ts',
   '/src/features/marketing/landing-sections/faq-section.tsx',
   '/src/features/marketing/landing-sections/how-it-works-tabs.tsx',
+  // Stashed from the home page by founder call (2026-10-27); the component stays.
+  '/src/features/marketing/landing-sections/problem-solution.tsx',
   '/src/features/marketing/landing-sections/trust-band.tsx',
   '/src/features/marketing/landing-sections/use-case-teams.ts',
   '/src/features/marketing/landing-sections/works-with-strip.tsx',
