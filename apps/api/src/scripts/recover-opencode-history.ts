@@ -201,7 +201,11 @@ async function recoverOne(box: BoxReader, c: Candidate, apply: boolean): Promise
       const rootId = c.root ?? copied.pinnedRoot;
       const { log, blobs, messages } = recoverSessionLog({ sessionId: c.session_id, rootId, store, sidecars });
       const counts = { messages, threads: log.threads.length, blobs: blobs.size, bytes: copied.bytes };
-      if (messages === 0) result = { outcome: 'empty_store', ...counts };
+      // `fromV1` merges every root into the session's thread, so 0 means no row parsed:
+      // an empty store, or rows in a format the reader does not know.
+      if (messages === 0 && store.messages.length > 0) {
+        result = { outcome: 'unsupported_store', detail: `${store.messages.length} message rows, none parsed`, ...counts };
+      } else if (messages === 0) result = { outcome: 'empty_store', detail: 'store_messages=0', ...counts };
       else if (!apply) result = { outcome: 'converted', ...counts };
       else {
         const written = await writeRecoveredLog({ sessionId: c.session_id, projectId: c.project_id, accountId: c.account_id }, log, blobs);
