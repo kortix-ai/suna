@@ -6,7 +6,7 @@ import { useProjectConfig } from '@kortix/sdk/react';
 import { cn, useIsMobile } from '@kortix/ui';
 import { InfoBanner } from '@kortix/ui/info-banner';
 import { ComposerChatInput } from '@kortix/ui/session/composer/composer-chat-input';
-import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import { errorToast } from '@kortix/ui/toast';
 import { ArrowRightIcon } from '@phosphor-icons/react';
 import { useRef, useState } from 'react';
@@ -36,7 +36,8 @@ const ACCENT: Record<GoalTemplateAccent, string> = {
  * goal. A template writes its opening ("Research these accounts: ") into the
  * composer, and the person names the subject: the goal is named from those
  * first words. While the text still opens with the template's opening, the
- * template's done criterion goes with the start, so the agent does not write one.
+ * template's done criterion goes with the start, so the agent does not write one;
+ * the goal page shows it under Done when.
  */
 export function GoalStarter({
   projectId,
@@ -127,14 +128,6 @@ export function GoalStarter({
           // The home's composer, at the gallery's width: it lines up with the tabs and the cards.
           parentClassName="max-w-none px-0"
         />
-        {criterion ? (
-          <p
-            className="text-muted-foreground px-1 text-xs text-pretty"
-            data-testid="goal-composer-criterion"
-          >
-            {t('templateCriterion', { criterion })}
-          </p>
-        ) : null}
         {start.isError ? (
           <InfoBanner tone="destructive" title={t('startError')} role="alert">
             {start.error instanceof Error ? start.error.message : null}
@@ -149,17 +142,13 @@ export function GoalStarter({
       >
         {/* Eight roles outgrow a phone: the row scrolls sideways. */}
         <div className="-m-1 [scrollbar-width:none] overflow-x-auto p-1">
-          <TabsListCompact aria-label={t('rolesLabel')} className="w-max">
+          <TabsList aria-label={t('rolesLabel')} className="w-max">
             {GOAL_TEMPLATE_ROLES.map((value) => (
-              <TabsTriggerCompact
-                key={value}
-                value={value}
-                data-testid={`goal-templates-tab-${value}`}
-              >
+              <TabsTrigger key={value} value={value} data-testid={`goal-templates-tab-${value}`}>
                 {t(`roleTab.${value}`)}
-              </TabsTriggerCompact>
+              </TabsTrigger>
             ))}
-          </TabsListCompact>
+          </TabsList>
         </div>
         {GOAL_TEMPLATE_ROLES.map((value) => (
           <TabsContent key={value} value={value} className="mt-0">

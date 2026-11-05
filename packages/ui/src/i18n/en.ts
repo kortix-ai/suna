@@ -8177,7 +8177,6 @@ const catalog = {
       }
     },
     "templateSteps": "{start}, then {done}",
-    "templateCriterion": "Done when: {criterion}",
     "cancel": "Cancel",
     "forPerson": "for {person}",
     "answerInChat": "Answer in chat",
