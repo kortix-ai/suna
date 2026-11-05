@@ -229,3 +229,23 @@ describe('ProfileTabView — no security section', () => {
     expect(out).not.toContain('No second factor enrolled');
   });
 });
+
+describe('ProfileTabView — a person with no workspace', () => {
+  test('offers "Delete my login", never the scheduled account deletion', () => {
+    const html = renderToStaticMarkup(
+      <ProfileTabView
+        accountDeletionSupported
+        isDeletionStatusError={false}
+        loginOnly={{
+          label: 'Delete my login',
+          description: 'Deletes your Kortix login. You belong to no workspace, so nothing else is deleted.',
+          title: 'Delete your login?',
+          warning: 'This deletes your login right away. This cannot be undone.',
+        }}
+      />,
+    );
+    expect(html).toContain('Delete my login');
+    expect(html).toContain('You belong to no workspace');
+    expect(html).not.toContain('Delete account');
+  });
+});

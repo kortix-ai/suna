@@ -26614,6 +26614,12 @@
       "setDefaultTitle": "Set as the workspace default model",
       "setDefaultAria": "Set {model} as the default model for this workspace",
       "setWorkspaceDefault": "Set as workspace default"
+    },
+    "profile": {
+      "deleteLogin": "Delete my login",
+      "deleteLoginDescription": "Deletes your Kortix login. You belong to no workspace, so nothing else is deleted.",
+      "deleteLoginTitle": "Delete your login?",
+      "deleteLoginWarning": "This deletes your login right away. This cannot be undone."
     }
   }
 }

@@ -25950,6 +25950,12 @@
       "setDefaultTitle": "Imposta come modello predefinito del workspace",
       "setDefaultAria": "Imposta {model} come modello predefinito di questo workspace",
       "setWorkspaceDefault": "Imposta come predefinito del workspace"
+    },
+    "profile": {
+      "deleteLogin": "Elimina il mio accesso",
+      "deleteLoginDescription": "Elimina il tuo accesso a Kortix. Non appartieni a nessun workspace, quindi non viene eliminato nient'altro.",
+      "deleteLoginTitle": "Eliminare il tuo accesso?",
+      "deleteLoginWarning": "Il tuo accesso viene eliminato subito. Non si può annullare."
     }
   }
 }

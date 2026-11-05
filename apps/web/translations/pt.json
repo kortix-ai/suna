@@ -25950,6 +25950,12 @@
       "setDefaultTitle": "Definir como modelo padrão do espaço de trabalho",
       "setDefaultAria": "Definir {model} como modelo padrão deste espaço de trabalho",
       "setWorkspaceDefault": "Definir como padrão do espaço de trabalho"
+    },
+    "profile": {
+      "deleteLogin": "Excluir meu login",
+      "deleteLoginDescription": "Exclui seu login do Kortix. Você não pertence a nenhum espaço de trabalho, então nada mais é excluído.",
+      "deleteLoginTitle": "Excluir seu login?",
+      "deleteLoginWarning": "Seu login é excluído imediatamente. Isso não pode ser desfeito."
     }
   }
 }

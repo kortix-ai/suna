@@ -25950,6 +25950,12 @@
       "setDefaultTitle": "ワークスペースの既定モデルに設定",
       "setDefaultAria": "{model} をこのワークスペースの既定モデルに設定",
       "setWorkspaceDefault": "ワークスペースの既定に設定"
+    },
+    "profile": {
+      "deleteLogin": "ログインを削除",
+      "deleteLoginDescription": "Kortix のログインを削除します。どのワークスペースにも属していないため、他には何も削除されません。",
+      "deleteLoginTitle": "ログインを削除しますか？",
+      "deleteLoginWarning": "ログインはすぐに削除されます。元に戻すことはできません。"
     }
   }
 }

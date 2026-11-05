@@ -25950,6 +25950,12 @@
       "setDefaultTitle": "Als Standardmodell des Workspace festlegen",
       "setDefaultAria": "{model} als Standardmodell dieses Workspace festlegen",
       "setWorkspaceDefault": "Als Workspace-Standard festlegen"
+    },
+    "profile": {
+      "deleteLogin": "Mein Login löschen",
+      "deleteLoginDescription": "Löscht deinen Kortix-Login. Du gehörst zu keinem Workspace, daher wird nichts anderes gelöscht.",
+      "deleteLoginTitle": "Login löschen?",
+      "deleteLoginWarning": "Dein Login wird sofort gelöscht. Das kann nicht rückgängig gemacht werden."
     }
   }
 }

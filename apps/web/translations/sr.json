@@ -25950,6 +25950,12 @@
       "setDefaultTitle": "Postavi kao podrazumevani model radnog prostora",
       "setDefaultAria": "Postavi {model} kao podrazumevani model ovog radnog prostora",
       "setWorkspaceDefault": "Postavi kao podrazumevano za radni prostor"
+    },
+    "profile": {
+      "deleteLogin": "Obriši moju prijavu",
+      "deleteLoginDescription": "Briše vašu Kortix prijavu. Ne pripadate nijednom radnom prostoru, pa se ništa drugo ne briše.",
+      "deleteLoginTitle": "Obrisati vašu prijavu?",
+      "deleteLoginWarning": "Vaša prijava se odmah briše. Ovo se ne može poništiti."
     }
   }
 }

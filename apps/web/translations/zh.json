@@ -25950,6 +25950,12 @@
       "setDefaultTitle": "设为工作区默认模型",
       "setDefaultAria": "将 {model} 设为此工作区的默认模型",
       "setWorkspaceDefault": "设为工作区默认"
+    },
+    "profile": {
+      "deleteLogin": "删除我的登录",
+      "deleteLoginDescription": "删除你的 Kortix 登录。你不属于任何工作区，因此不会删除其他内容。",
+      "deleteLoginTitle": "删除你的登录？",
+      "deleteLoginWarning": "你的登录将立即删除。此操作无法撤销。"
     }
   }
 }
