@@ -139,6 +139,8 @@ export type PermissionProbeInput = { action: string } & (
 
 export interface PermissionProbeResult {
   action: string;
+  /** The same action's workspace name (`workspace.read` for `project.read`). Sent by API versions with Workspaces. */
+  workspace_action?: string;
   resource_type: ResourceType;
   resource_id: string | null;
   allowed: boolean;
