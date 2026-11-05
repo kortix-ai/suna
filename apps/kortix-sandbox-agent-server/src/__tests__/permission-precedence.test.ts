@@ -60,6 +60,21 @@ describe('bashCommands reads heredocs and comments', () => {
     expect(resolvePolicyRule(compilePermissionPolicy({ bash: { '*': 'allow', 'rm *': 'deny' } }), 'bash', { command: line }, '/workspace')).toBe('deny')
   })
 
+  // A body on an interpreter's stdin is code (Strix, PR #11850): it stays
+  // commands, so `rm *: deny` still denies it.
+  test.each([
+    ['sh', "sh <<'EOF'\nrm -rf /\nEOF"],
+    ['bash -s', "bash -s <<'EOF'\nrm -rf /\nEOF"],
+    ['sudo bash <<-', "sudo bash <<-'EOF'\n\trm -rf /\n\tEOF"],
+    ['| bash after the heredoc', "cat <<'EOF' | bash\nrm -rf /\nEOF"],
+    ['/bin/sh', "/bin/sh <<'EOF'\nrm -rf /\nEOF"],
+    ['env python3.12', "env python3.12 <<'EOF'\nrm -rf /\nEOF"],
+    ['ssh', "ssh box <<'EOF'\nrm -rf /\nEOF"],
+    ['source /dev/stdin', ". /dev/stdin <<'EOF'\nrm -rf /\nEOF"],
+  ])('a heredoc on the stdin of %s is decided as commands', (_name, line) => {
+    expect(resolvePolicyRule(compilePermissionPolicy({ bash: { '*': 'allow', 'rm *': 'deny' } }), 'bash', { command: line }, '/workspace')).toBe('deny')
+  })
+
   test.each([
     ['a heredoc with no delimiter line', "cat <<'EOF'\nit's"],
     ['an unbalanced quote', "echo 'it"],

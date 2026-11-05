@@ -131,6 +131,24 @@ function heredocBodiesEnd(line: string, from: number, heredocs: Heredoc[]): numb
   return at - 1
 }
 
+/** Commands that run their stdin as a program, or send it to one (`ssh`, `source /dev/stdin`). */
+const STDIN_INTERPRETERS = new Set([
+  'sh', 'bash', 'zsh', 'dash', 'ksh', 'mksh', 'ash', 'busybox', 'csh', 'tcsh', 'fish', 'ssh', 'su', 'source', '.',
+  'python', 'pypy', 'perl', 'ruby', 'node', 'nodejs', 'deno', 'bun', 'php', 'lua', 'tclsh', 'awk', 'gawk', 'mawk', 'nawk',
+])
+
+/**
+ * Whether a heredoc's line names a command that runs the body: the command
+ * that declares it (`sh`, `sudo bash -s`, `/usr/bin/python3.12`) or one it is
+ * piped to (`cat <<'EOF' | bash`). Word based, so it errs towards reading a
+ * body as commands.
+ */
+function readsStdinAsCode(text: string): boolean {
+  return text
+    .split(/[\s;|&()<>]+/)
+    .some((word) => !!word && !/^['"$]/.test(word) && STDIN_INTERPRETERS.has(word.split('/').pop()!.replace(/[\d.]+$/, '') || word))
+}
+
 const RESERVED_PREFIX = /^(?:(?:if|then|elif|else|do|while|until|time|!|\{)\s+)+/
 const RESERVED_ALONE = new Set(['fi', 'done', 'esac', '}'])
 
@@ -140,8 +158,9 @@ const RESERVED_ALONE = new Set(['fi', 'done', 'esac', '}'])
  * `|&` too), and every `$(…)`, `` `…` ``, `<(…)`, `>(…)` and `( … )` body is
  * read as commands of its own. A command keeps its substitutions' text.
  * A `#` comment is skipped. A heredoc body is data and is skipped, except an
- * unquoted one that runs `$(…)` or `` `…` ``: bash expands those, so that body
- * is read as commands. `null` when the quotes or brackets do not balance.
+ * unquoted one that runs `$(…)` or `` `…` `` (bash expands those) and one on
+ * the stdin of an interpreter (`sh <<EOF`, `cat <<EOF | bash`): those bodies
+ * are read as commands. `null` when the quotes or brackets do not balance.
  * ponytail: not a bash grammar — `case` arms read as unbalanced or as extra
  * commands, so they fail closed. Use tree-sitter-bash when a manifest needs
  * them exact.
@@ -153,6 +172,7 @@ export function bashCommands(line: string): string[] | null {
     let piece = ''
     let quote = ''
     let heredocs: Heredoc[] = []
+    let lineStart = start
     const flush = () => {
       const command = piece.trim().replace(RESERVED_PREFIX, '')
       // A `( … )` group is not a command: its body was read on its own.
@@ -204,7 +224,7 @@ export function bashCommands(line: string): string[] | null {
         continue
       }
       if (!quote && ch === '\n' && heredocs.length > 0) {
-        const end = heredocBodiesEnd(line, i + 1, heredocs)
+        const end = readsStdinAsCode(line.slice(lineStart, i)) ? -1 : heredocBodiesEnd(line, i + 1, heredocs)
         heredocs = []
         if (end >= 0) {
           flush()
@@ -212,6 +232,7 @@ export function bashCommands(line: string): string[] | null {
           continue
         }
       }
+      if (ch === '\n') lineStart = i + 1
       // `2>&1`, `&>file` and `>|file` are redirections, not separators.
       const redirect = line[i - 1] === '>' || line[i - 1] === '<' || (ch === '&' && line[i + 1] === '>')
       if (!quote && (ch === ';' || ch === '\n' || ((ch === '&' || ch === '|') && !redirect))) {
