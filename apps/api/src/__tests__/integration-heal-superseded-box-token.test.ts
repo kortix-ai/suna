@@ -21,7 +21,7 @@ import { removeSeeded, seedProject, type SeededProject } from './helpers/integra
 
 mock.module('../projects/session-open', () => ({
   ...realShared,
-  openSession: async () => ({ stage: 'starting', sandbox: null, opencode_session_id: null, retriable: true }),
+  openSession: async () => ({ stage: 'starting', sandbox: null, runtime_session_id: null, retriable: true }),
 }));
 
 const { healSupersededSessionToken } = await import('../projects/lib/heal-session-token');

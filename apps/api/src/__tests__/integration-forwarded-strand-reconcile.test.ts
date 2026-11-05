@@ -134,7 +134,7 @@ async function forwardedPrompt(payloadPatch: Record<string, unknown> = {}): Prom
   // The ledger row the forward opened, still open at turn end.
   await db.execute(sql`
     INSERT INTO kortix.session_turns
-      (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state)
+      (turn_token, session_id, sandbox_id, project_id, account_id, runtime_session_id, message_id, state)
     VALUES (${`tok-${row.commandId}`}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
             ${ACCOUNT_ID}::uuid, ${OPENCODE_SESSION}, ${STRANDED}, 'active')`);
   return row.commandId;
@@ -169,7 +169,7 @@ beforeAll(async () => {
     VALUES (${PROJECT_ID}::uuid, ${ACCOUNT_ID}::uuid, 'strand-reconcile-it', 'https://example.invalid/r.git')`);
   await db.execute(sql`
     INSERT INTO kortix.project_sessions
-      (session_id, account_id, project_id, branch_name, status, opencode_session_id)
+      (session_id, account_id, project_id, branch_name, status, runtime_session_id)
     VALUES (${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid, ${`br-${SESSION_ID}`}, 'running',
             ${OPENCODE_SESSION})`);
   await db.execute(sql`

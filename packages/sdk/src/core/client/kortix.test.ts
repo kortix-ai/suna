@@ -1113,7 +1113,7 @@ function sessionStartPayload(externalId: string, opencodeSessionId: string) {
     agent_name: 'agent',
     retriable: false,
     sandbox: { external_id: externalId },
-    opencode_session_id: opencodeSessionId,
+    runtime_session_id: opencodeSessionId,
   };
 }
 
@@ -1149,7 +1149,6 @@ test('ensureReady names the runtime session from runtime_session_id first', asyn
       return jsonResponse({
         ...sessionStartPayload('sb-neutral', ''),
         runtime_session_id: 'rs-neutral',
-        opencode_session_id: null,
       });
     }
     return jsonResponse({ ok: true });
@@ -1171,7 +1170,6 @@ function runningSessionRow(sessionId: string, overrides: Record<string, unknown>
     sandbox_provider: 'platinum',
     sandbox_url: 'http://test.local/v1/p/sbx-row/8000',
     runtime_session_id: 'rs-row',
-    opencode_session_id: 'rs-row',
     metadata: {},
     created_at: '2026-10-13T00:00:00.000Z',
     updated_at: '2026-10-13T00:00:00.000Z',
@@ -1269,7 +1267,7 @@ test('send applies persisted session defaults when the OpenCode pin came from a 
       return jsonResponse({
         session_id: 'SESS-INHERITED',
         agent_name: 'kortix',
-        metadata: { opencode_model: 'kortix/glm-5.3-flash' },
+        metadata: { model: 'kortix/glm-5.3-flash' },
       });
     }
     return jsonResponse({ ok: true });
@@ -1310,9 +1308,9 @@ test('changeModel invalidates the persisted default before the next send', async
       return jsonResponse(sessionStartPayload('sb-model-change', 'shared-snapshot-pin'));
     }
     if (url.endsWith('/projects/PROJ/sessions/SESS-MODEL-CHANGE/model')) {
-      persistedModel = body.opencode_model;
+      persistedModel = body.model;
       return jsonResponse({
-        opencode_model: persistedModel,
+        model: persistedModel,
         applied_live: true,
       });
     }
@@ -1320,7 +1318,7 @@ test('changeModel invalidates the persisted default before the next send', async
       return jsonResponse({
         session_id: 'SESS-MODEL-CHANGE',
         agent_name: 'kortix',
-        metadata: { opencode_model: persistedModel },
+        metadata: { model: persistedModel },
       });
     }
     return jsonResponse({ ok: true });
@@ -1349,7 +1347,7 @@ test('changeModel surfaces push_failed so a half-applied change is not read as s
     const url = requestUrl(input);
     if (url.endsWith('/projects/PROJ/sessions/SESS-HALF/model')) {
       return jsonResponse({
-        opencode_model: 'kortix/deepseek-v4-flash',
+        model: 'kortix/deepseek-v4-flash',
         applied_live: false,
         push_failed: true,
         detail: 'stored, but not pushed: env sync failed: 502 upstream-closed-before-headers',
@@ -1383,7 +1381,7 @@ test('per-call and handle prompt choices override persisted session defaults', a
       return jsonResponse({
         session_id: 'SESS-OVERRIDES',
         agent_name: 'persisted-agent',
-        metadata: { opencode_model: 'persisted/model' },
+        metadata: { model: 'persisted/model' },
       });
     }
     return jsonResponse({ ok: true });
@@ -1439,7 +1437,7 @@ test('a failed persisted-default read is retried by the next send', async () => 
       return jsonResponse({
         session_id: 'SESS-DEFAULT-RETRY',
         agent_name: 'persisted-agent',
-        metadata: { opencode_model: 'persisted/model' },
+        metadata: { model: 'persisted/model' },
       });
     }
     return jsonResponse({ ok: true });
@@ -1724,7 +1722,7 @@ test('ensureReady() clears the in-flight entry on failure, so a retry issues a f
           stage: 'failed',
           retriable: true,
           sandbox: null,
-          opencode_session_id: null,
+          runtime_session_id: null,
           agent_name: 'agent',
         });
       return jsonResponse(sessionStartPayload('sb-retry', 'ocs-retry'));
@@ -1821,7 +1819,7 @@ test('ensureReady() polls through provisioning/starting until the runtime report
         agent_name: 'default',
         retriable: !ready,
         sandbox: ready ? { external_id: 'sb-poll' } : null,
-        opencode_session_id: ready ? 'ocs-poll' : null,
+        runtime_session_id: ready ? 'ocs-poll' : null,
       });
     }
     return jsonResponse({ ok: true });
@@ -1844,7 +1842,7 @@ test('ensureReady() throws RUNTIME_UNAVAILABLE when the runtime never becomes re
         agent_name: 'default',
         retriable: true,
         sandbox: null,
-        opencode_session_id: null,
+        runtime_session_id: null,
       });
     }
     return jsonResponse({ ok: true });
@@ -1872,7 +1870,7 @@ test('ensureReady() surfaces the concrete failure reason from a terminal stage:"
         agent_name: 'heartbeat-probe',
         retriable: false,
         sandbox: null,
-        opencode_session_id: null,
+        runtime_session_id: null,
         reason: 'runtime_boot_failed',
         failure: {
           category: 'sandbox-provider',
@@ -1925,7 +1923,7 @@ test('ensureReady() treats a transient null /start result as retriable and resol
         agent_name: 'default',
         retriable: false,
         sandbox: { external_id: 'sb-transient' },
-        opencode_session_id: 'ocs-transient',
+        runtime_session_id: 'ocs-transient',
       });
     }
     return jsonResponse({ ok: true });
@@ -1953,7 +1951,7 @@ test('ensureReady() caps each /start long-poll to the remaining deadline budget'
           agent_name: 'default',
           retriable: true,
           sandbox: null,
-          opencode_session_id: null,
+          runtime_session_id: null,
         });
       }
       return jsonResponse({
@@ -1961,7 +1959,7 @@ test('ensureReady() caps each /start long-poll to the remaining deadline budget'
         agent_name: 'default',
         retriable: false,
         sandbox: { external_id: 'sb-cap' },
-        opencode_session_id: 'ocs-cap',
+        runtime_session_id: 'ocs-cap',
       });
     }
     return jsonResponse({ ok: true });

@@ -75,7 +75,7 @@ function envelope(rootId: string, count: number, capturedAt = '2026-09-25T00:00:
     source: 'mirror',
     complete: true,
     captured_at: capturedAt,
-    opencode_session_id: rootId,
+    runtime_session_id: rootId,
     message_count: count,
     messages: Array.from({ length: count }, (_, i) => message(rootId, i + 1)),
   } as unknown as SessionTranscriptSyncEnvelope;

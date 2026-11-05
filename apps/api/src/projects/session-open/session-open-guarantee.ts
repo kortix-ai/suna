@@ -82,7 +82,7 @@ export async function enforceRuntimeGuarantee(
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(row),
-        opencode_session_id: null,
+        runtime_session_id: null,
         runtime_url: sessionRuntimeUrlPath(runningExternalId),
         reason: 'runtime_updating',
       };
@@ -123,7 +123,7 @@ export async function enforceRuntimeGuarantee(
         agent_name: visible.row.agentName ?? 'default',
         retriable: false,
         sandbox: serializeSandboxRow(row),
-        opencode_session_id: null,
+        runtime_session_id: null,
         runtime_url: sessionRuntimeUrlPath(runningExternalId),
         reason: 'runtime_update_blocked',
         failure: {
@@ -153,7 +153,7 @@ export async function enforceRuntimeGuarantee(
         // than treat this as a dead end.
         retriable: true,
         sandbox: serializeSandboxRow(row),
-        opencode_session_id: null,
+        runtime_session_id: null,
         runtime_url: sessionRuntimeUrlPath(runningExternalId),
         reason: 'runtime_update_exhausted',
         failure: {

@@ -287,8 +287,8 @@ export async function readStoredTranscriptWindow(input: WindowInput): Promise<Mi
     : nativeRows(records.flatMap((r) => toRows([r])), anchor?.inclusive ? input.before : null).reverse();
   const kept = rows.slice(0, input.limit);
   return {
-    opencode_session_id: target,
-    root_opencode_session_id: rootId,
+    runtime_session_id: target,
+    root_runtime_session_id: rootId,
     captured_at: new Date(Math.max(new Date(log.updatedAt).getTime(), Math.floor(totals.writtenMs ?? 0))).toISOString(),
     total: totals.total,
     head_complete: true,

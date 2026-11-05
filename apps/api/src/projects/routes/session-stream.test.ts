@@ -799,7 +799,7 @@ describe('R5.2: a runtime turn end reaches the reconciler at once', () => {
           // The daemon had already sequenced 5 frames when this stream attached.
           'event: kortix.hello\ndata: {"type":"kortix.hello","epoch":"ep-turn","head_seq":5,"first_seq":1,"since":3,"at":1}\n\n',
           // Replay: an old turn end. It must not end a newer turn.
-          'event: kortix.turn\nid: 4\ndata: {"seq":4,"type":"kortix.turn","at":2,"payload":{"opencode_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
+          'event: kortix.turn\nid: 4\ndata: {"seq":4,"type":"kortix.turn","at":2,"payload":{"runtime_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
           // Live: pi names `runtime_session_id`.
           'event: kortix.turn\nid: 6\ndata: {"seq":6,"type":"kortix.turn","at":3,"payload":{"runtime_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
         ],

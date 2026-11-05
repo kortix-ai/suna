@@ -22,7 +22,7 @@ export const PLACEHOLDER_TITLE_SQL_PATTERN = '^new (session|agent)([^[:alnum:]_]
 
 /**
  * The runtime's own title for a session's canonical ROOT conversation, read
- * from the `metadata.opencode_sessions` snapshot (`writeRuntimeSessionList`).
+ * from the `metadata.runtime_sessions` snapshot (`writeRuntimeSessionList`).
  *
  * This is a READ-time preference, not a second title writer: `metadata.name`
  * stays owned solely by session-title-generate.ts. The snapshot mirrors what
@@ -30,7 +30,7 @@ export const PLACEHOLDER_TITLE_SQL_PATTERN = '^new (session|agent)([^[:alnum:]_]
  * already shows live — so session reads resolve the same title the header
  * does instead of drifting to the first-prompt-derived generated name.
  *
- * The root entry is matched by the pinned root id first (`opencode_session_id`),
+ * The root entry is matched by the pinned root id first (`runtime_session_id`),
  * then by the parentless entry of the scoped tree. Placeholder and blank titles
  * read as absent so callers fall through to the generated name.
  */

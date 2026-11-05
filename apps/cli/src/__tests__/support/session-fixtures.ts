@@ -21,7 +21,7 @@ export const session: ProjectSession = {
   sandbox_provider: 'platinum',
   sandbox_id: 'sb-1',
   sandbox_url: null,
-  opencode_session_id: 'ses_opencode',
+  runtime_session_id: 'ses_opencode',
   name: 'Fix the thing',
   custom_name: null,
   agent_name: 'default',

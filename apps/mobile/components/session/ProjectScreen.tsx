@@ -285,7 +285,7 @@ export function ProjectScreen() {
   // later (KRTX-2316), and that thread then reads its runtime title. A row
   // with no pin yet decides by the snapshot.
   const activeRootRuntimeId = activeProjectSession
-    ? (activeProjectSession.runtime_session_id ?? activeProjectSession.opencode_session_id)
+    ? activeProjectSession.runtime_session_id
     : null;
   const activeSubsession = useMemo(
     () =>
@@ -458,7 +458,7 @@ export function ProjectScreen() {
       });
       if (move === 'open') {
         // A sub-session row: open its parent, then show the sub-session.
-        const rootId = ps.runtime_session_id ?? ps.opencode_session_id;
+        const rootId = ps.runtime_session_id;
         const focus = targetRuntimeId && targetRuntimeId !== rootId ? targetRuntimeId : undefined;
         handleOpenProjectSession(ps, focus);
         return;
@@ -473,7 +473,7 @@ export function ProjectScreen() {
     [handleOpenProjectSession, navigateToSession]
   );
   const openSessionFromDrawer = useCallback(
-    (ps: ProjectSession) => openThreadFromDrawer(ps, ps.runtime_session_id ?? ps.opencode_session_id ?? null),
+    (ps: ProjectSession) => openThreadFromDrawer(ps, ps.runtime_session_id ?? null),
     [openThreadFromDrawer]
   );
   const openSubsessionFromDrawer = useCallback(
@@ -589,7 +589,7 @@ export function ProjectScreen() {
     : connectingProjectSessionId
       ? {
           sessionId: connectingProjectSessionId,
-          rootId: connectingRow?.runtime_session_id ?? connectingRow?.opencode_session_id ?? null,
+          rootId: connectingRow?.runtime_session_id ?? null,
           child: false,
         }
       : activeProjectSession && activeSessionId

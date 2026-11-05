@@ -1042,10 +1042,8 @@ export const SessionCreateInputSchema = z
     // rendered envelope (channel scaffolding, a coordinator's session
     // contract, a --with-file manifest) rather than the user's own words.
     title_source: z.string().optional(),
-    /** The session's `provider/model` pin. Wins over `opencode_model`. */
+    /** The session's `provider/model` pin. Wins over `model`. */
     model: z.string().min(1).optional(),
-    /** @deprecated The pre-W4 name of `model`. */
-    opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     labels: SessionLabelsSchema.optional(),
     /**
@@ -1100,7 +1098,6 @@ export const SessionCreateInputSchema = z
     sandboxSlug: z.string().min(1).optional(),
     initialPrompt: z.string().optional(),
     initialContext: z.string().min(1).max(SESSION_INITIAL_CONTEXT_MAX_CHARS).optional(),
-    opencodeModel: z.string().min(1).optional(),
     sessionId: z
       .string()
       .regex(
@@ -1190,8 +1187,6 @@ export const ProjectSessionSchema = z.object({
   sandbox_url: z.string().nullable(),
   /** The session's root conversation in its runtime (OpenCode or pi). */
   runtime_session_id: z.string().nullable(),
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: z.string().nullable(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
   /** The user-set override alone, so clients can tell it apart from the auto title. */
@@ -1203,8 +1198,6 @@ export const ProjectSessionSchema = z.object({
   metadata: JsonObjectSchema,
   /** The runtime's conversation tree snapshot; `[]` for a caller who cannot open the session. */
   runtime_sessions: z.array(RuntimeSessionSnapshotSchema),
-  /** @deprecated The pre-W4 name of `runtime_sessions`. Same value. */
-  opencode_sessions: z.array(RuntimeSessionSnapshotSchema),
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
   owner_name: z.string().nullable().optional(),
@@ -1891,9 +1884,7 @@ export const SessionStartResultSchema = z.object({
   /** Serialized session_sandboxes row, or null while none is usable. */
   sandbox: ProjectSessionSandboxSchema.nullable(),
   /** Canonical runtime root pin, resolved server-side once the box is up. */
-  runtime_session_id: z.string().nullable().optional(),
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: z.string().nullable(),
+  runtime_session_id: z.string().nullable(),
   /** Stable terminal failure. Raw provider text remains in sandbox metadata. */
   failure: SessionStartFailureSchema.nullable().optional(),
   /** Server-selected OpenCode REST transport. */
@@ -2215,8 +2206,6 @@ const SessionTranscriptHeadShape = {
   /** When the mirror was last written. Null for a live read. */
   captured_at: z.string().nullable(),
   runtime_session_id: z.string().nullable(),
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: z.string().nullable(),
   /** Messages in THIS window. */
   message_count: z.number(),
 };
@@ -2264,8 +2253,6 @@ export const SessionTurnSchema = z.object({
   state: SessionTurnStateSchema,
   message_id: z.string().nullable(),
   runtime_session_id: z.string().nullable(),
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: z.string().nullable(),
   started_at: z.string().nullable(),
   accepted_at: z.string().nullable(),
 });
@@ -2456,10 +2443,6 @@ export const RuntimeProjectionIdentitySchema = z.object({
   harness: z.string().nullable(),
   runtime_session_id: z.string().nullable(),
   harness_version: z.string().nullable(),
-  /** @deprecated The pre-W5 name of `runtime_session_id`. */
-  opencode_session_id: z.string().nullable(),
-  /** @deprecated The pre-W5 name of `harness_version`. */
-  opencode_version: z.string().nullable(),
   daemon_build: z.number().nullable(),
   agent_config_etag: z.string().nullable(),
   head_seq: z.record(z.string(), z.number()).nullable(),

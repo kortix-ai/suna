@@ -166,7 +166,7 @@ describe('createdSessionListRow', () => {
     status: 'queued',
     created_at: '2026-09-26T12:00:00Z',
     updated_at: '2026-09-26T12:00:00Z',
-    opencode_sessions: [],
+    runtime_sessions: [],
     metadata: { name: 'Title', initial_prompt: 'the prompt text', session_start_timeline: {} },
   };
 

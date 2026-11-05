@@ -119,7 +119,7 @@ function candidateFilter(args: Args) {
       AND ss.status IN ('stopped', 'error')
       AND coalesce(ss.metadata->>'runtimeIdentityState', '') <> 'unavailable'
       AND NOT ss.metadata ?| array['runtimeWakeId', 'runtimeRestartId', 'runtimeRecoveryLeaseId']
-      AND (ps.opencode_session_id IS NULL OR ps.opencode_session_id NOT LIKE 'ses_pi%')
+      AND (ps.runtime_session_id IS NULL OR ps.runtime_session_id NOT LIKE 'ses_pi%')
       AND (ss.metadata ? 'lastTurnAt' OR EXISTS (SELECT 1 FROM kortix.session_turns t WHERE t.session_id = ps.session_id))
       AND NOT EXISTS (
         SELECT 1 FROM kortix.account_deletion_requests d
@@ -136,7 +136,7 @@ function candidateFilter(args: Args) {
 
 async function candidates(args: Args, limit: number, exclude: Set<string>): Promise<Candidate[]> {
   const rows = await db.execute<Candidate>(sql`
-    SELECT ps.session_id, ps.project_id::text, ps.account_id::text, ps.opencode_session_id AS root, ps.origin::text,
+    SELECT ps.session_id, ps.project_id::text, ps.account_id::text, ps.runtime_session_id AS root, ps.origin::text,
            ss.sandbox_id::text, ss.external_id,
            coalesce((ss.metadata->${RECOVERY_KEY}->>'attempts')::int, 0) AS attempts
     ${candidateFilter(args)}
@@ -151,7 +151,7 @@ async function plan(args: Args): Promise<void> {
            count(*) FILTER (WHERE ps.origin = 'user')::int AS by_user,
            count(*) FILTER (WHERE p.status = 'active')::int AS active_projects,
            count(*) FILTER (WHERE ss.metadata ? ${RECOVERY_KEY})::int AS retries,
-           count(*) FILTER (WHERE ps.opencode_session_id IS NULL)::int AS no_root
+           count(*) FILTER (WHERE ps.runtime_session_id IS NULL)::int AS no_root
     ${candidateFilter(args)}`);
   const done = await db.execute<{ outcome: string; n: number }>(sql`
     SELECT ss.metadata->${RECOVERY_KEY}->>'outcome' AS outcome, count(*)::int AS n

@@ -233,7 +233,7 @@ describe('getSessionAgentContext', () => {
       { agentName: 'default', metadata: {}, projectMetadata: { default_agent: 'kortix' } },
     ];
     const ctx = await getSessionAgentContext('s1');
-    expect(ctx).toEqual({ agentName: 'default', opencodeModel: null, projectDefaultAgent: 'kortix' });
+    expect(ctx).toEqual({ agentName: 'default', sessionModel: null, projectDefaultAgent: 'kortix' });
   });
 
   test('project metadata with no default_agent → projectDefaultAgent null', async () => {
@@ -254,18 +254,18 @@ describe('getSessionAgentContext', () => {
     expect(ctx?.projectDefaultAgent).toBeNull();
   });
 
-  test('still surfaces the session-level opencode_model override unchanged', async () => {
+  test('still surfaces the session-level model override unchanged', async () => {
     selectRows = [
       {
         agentName: 'release-bot',
-        metadata: { opencode_model: 'anthropic/claude-opus-4.8' },
+        metadata: { model: 'anthropic/claude-opus-4.8' },
         projectMetadata: { default_agent: 'kortix' },
       },
     ];
     const ctx = await getSessionAgentContext('s1');
     expect(ctx).toEqual({
       agentName: 'release-bot',
-      opencodeModel: 'anthropic/claude-opus-4.8',
+      sessionModel: 'anthropic/claude-opus-4.8',
       projectDefaultAgent: 'kortix',
     });
   });

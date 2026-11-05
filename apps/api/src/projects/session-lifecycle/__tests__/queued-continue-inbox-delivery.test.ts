@@ -207,7 +207,7 @@ mock.module('../../session-open', () => ({
     return {
       stage: 'ready',
       sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' },
-      opencode_session_id: OC_SESSION_ID,
+      runtime_session_id: OC_SESSION_ID,
     };
   },
 }));
@@ -736,7 +736,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       url: 'https://sandbox.test/kortix/abort/after-tool',
       method: 'POST',
       // W3 name and the pre-W3 name, for a daemon built before W3.
-      body: { prompt_id: 'cmd-1', runtime_session_id: OC_SESSION_ID, opencode_session_id: OC_SESSION_ID,
+      body: { prompt_id: 'cmd-1', runtime_session_id: OC_SESSION_ID, 
         turn_message_id: 'msg_other' },
     }]);
     expect(capturedBodies).toHaveLength(0);

@@ -151,7 +151,7 @@ function promptActivityMs(session: ProjectSession): number | null {
  *  when the session carries no usable snapshot. */
 function conversationActivityMs(session: ProjectSession): number | null {
   let latest: number | null = null;
-  for (const runtimeSession of session.runtime_sessions ?? session.opencode_sessions ?? []) {
+  for (const runtimeSession of session.runtime_sessions ?? []) {
     const parsed = activityMs(runtimeSession.updated_at);
     if (parsed === null) continue;
     latest = latest === null ? parsed : Math.max(latest, parsed);

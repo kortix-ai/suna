@@ -23,7 +23,7 @@ import {
   relayContent,
   settleTurnEnd,
 } from './turn-stream-handlers';
-import { normalizeRuntimeRelayBody, TurnStreamRelayBodySchema } from '@kortix/api-contract/runtime-relay';
+import { TurnStreamRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './turn-stream-kind';
 
 export function registerTurnStreamRoutes(): void {
@@ -59,8 +59,7 @@ export function registerTurnStreamRoutes(): void {
       const projectId = c.req.param('projectId');
       let body: TurnStreamBody;
       try {
-        // A daemon built before W3 sends `opencode_session_id` and kind `opencode_session`.
-        body = normalizeRuntimeRelayBody((await c.req.json()) as TurnStreamBody);
+        body = (await c.req.json()) as TurnStreamBody;
       } catch {
         return c.json({ error: 'Invalid JSON body' }, 400);
       }

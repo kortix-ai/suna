@@ -56,7 +56,7 @@ async function seedSessionWithModel(model: string): Promise<string> {
     projectId: project.project_id,
     branchName: `session/${sessionId}`,
     agentName: 'default',
-    metadata: { opencode_model: model },
+    metadata: { model: model },
   });
   return sessionId;
 }
@@ -87,7 +87,7 @@ describe('repointRetiredSessionModel', () => {
       userId: crypto.randomUUID(),
       agentName: 'default',
       freeModelsOnly: false,
-      metadata: { opencode_model: 'kortix/deepseek-v4-flash-0731' },
+      metadata: { model: 'kortix/deepseek-v4-flash-0731' },
     });
     expect(nextRef).toBe('kortix/glm-5.3-flash');
 
@@ -97,9 +97,9 @@ describe('repointRetiredSessionModel', () => {
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     const metadata = (row?.metadata ?? {}) as Record<string, unknown>;
-    expect(metadata.opencode_model).toBe('kortix/glm-5.3-flash');
-    expect(metadata.opencode_model_source).toBe('repointed');
-    expect(metadata.opencode_model_repointed_from).toBe('deepseek-v4-flash-0731');
+    expect(metadata.model).toBe('kortix/glm-5.3-flash');
+    expect(metadata.model_source).toBe('repointed');
+    expect(metadata.model_repointed_from).toBe('deepseek-v4-flash-0731');
 
     const [audit] = await db
       .select()
@@ -120,7 +120,7 @@ describe('repointRetiredSessionModel', () => {
       userId: crypto.randomUUID(),
       agentName: 'default',
       freeModelsOnly: false,
-      metadata: { opencode_model: 'kortix/grok-4.6' },
+      metadata: { model: 'kortix/grok-4.6' },
     });
     expect(nextRef).toBe('kortix/glm-5.3-flash');
 
@@ -130,7 +130,7 @@ describe('repointRetiredSessionModel', () => {
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     const metadata = (row?.metadata ?? {}) as Record<string, unknown>;
-    expect(metadata.opencode_model_source).toBe('repointed');
+    expect(metadata.model_source).toBe('repointed');
   });
 
   // REVERSED DELIBERATELY, 2026-09-28. This test previously asserted that a
@@ -146,8 +146,8 @@ describe('repointRetiredSessionModel', () => {
   // failure and not their choice.
   //
   // The substitution is NOT silent, which is what makes it acceptable: the write
-  // records `opencode_model_source: 'repointed'` and
-  // `opencode_model_repointed_from`, both already returned by the session read
+  // records `model_source: 'repointed'` and
+  // `model_repointed_from`, both already returned by the session read
   // routes, plus an audit event naming `platform_default` as the reason.
   test('a retired id with no successor falls back to the PLATFORM default', async () => {
     projectDefaultModel = null;
@@ -160,7 +160,7 @@ describe('repointRetiredSessionModel', () => {
       userId: crypto.randomUUID(),
       agentName: 'default',
       freeModelsOnly: false,
-      metadata: { opencode_model: 'kortix/grok-4.6' },
+      metadata: { model: 'kortix/grok-4.6' },
     });
     // Whatever the platform default is, the session must not stay on a model
     // that cannot serve a turn.
@@ -172,8 +172,8 @@ describe('repointRetiredSessionModel', () => {
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     const metadata = (row?.metadata ?? {}) as Record<string, unknown>;
-    expect(metadata.opencode_model_source).toBe('repointed');
-    expect(metadata.opencode_model_repointed_from).toBe('grok-4.6');
+    expect(metadata.model_source).toBe('repointed');
+    expect(metadata.model_repointed_from).toBe('grok-4.6');
     projectDefaultModel = 'glm-5.3-flash';
   });
 
@@ -192,7 +192,7 @@ describe('repointRetiredSessionModel', () => {
       userId: crypto.randomUUID(),
       agentName: 'default',
       freeModelsOnly: false,
-      metadata: { opencode_model: 'kortix/glm-5.3-flash' },
+      metadata: { model: 'kortix/glm-5.3-flash' },
     });
     expect(nextRef).toBe('kortix/glm-5.3-flash');
 
@@ -221,7 +221,7 @@ describe('buildSessionSandboxEnvVars — session open re-points a retired pin be
       repoUrl: 'https://example.test/model-repoint.git',
       baseRef: 'main',
       agentName: 'default',
-      opencodeModel: 'kortix/deepseek-v4-flash-0731',
+      sessionModel: 'kortix/deepseek-v4-flash-0731',
     });
 
     expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.3-flash');
