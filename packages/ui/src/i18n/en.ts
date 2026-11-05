@@ -10026,7 +10026,10 @@ const catalog = {
     "meterLabel": "{label}: {percent}% used",
     "refreshLabel": "Refresh {label} usage",
     "fiveHourNotReported": "Five-hour window not reported by this connection.",
-    "fableIncluded": "Fable usage also counts toward your overall weekly allowance."
+    "fableIncluded": "Fable usage also counts toward your overall weekly allowance.",
+    "chatgptUsage": "ChatGPT subscription usage",
+    "claudeUsage": "Claude subscription usage",
+    "allSubscriptions": "All subscriptions"
   }
 };
 

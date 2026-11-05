@@ -12,6 +12,11 @@ import { Button } from '../../../primitives/button';
 import { Badge } from '../../../primitives/badge';
 import { EmptyState } from '../../../primitives/empty-state';
 import Loading from '../../../primitives/loading';
+import {
+  useUiPathname,
+  useUiSearchParams,
+  useUiShallowNavigate,
+} from '../../../providers/ui-provider';
 import { ProviderLogo } from '../../../internal/lib/provider-branding';
 import { Progress } from '../../../primitives/progress';
 import {
@@ -262,15 +267,45 @@ export function SubscriptionUsageTab({
   onConnect: () => void;
 }) {
   const t = useTranslations('subscriptionUsage');
+  const searchParams = useUiSearchParams();
+  const pathname = useUiPathname();
+  const navigate = useUiShallowNavigate();
+  const requestedProvider = searchParams.get('provider');
+  const provider =
+    requestedProvider === 'codex' || requestedProvider === 'claude-agent'
+      ? requestedProvider
+      : null;
   const pooled = usePooledProviderIds(projectId, true);
   const resources = useAccountSecretResources(pooled.accountId, projectId);
   const subscriptions = (resources.data?.secrets ?? []).filter(
-    (secret) => secret.can_use && isSubscriptionLogin(secret),
+    (secret) =>
+      secret.can_use &&
+      isSubscriptionLogin(secret) &&
+      (!provider || secret.provider_id === provider),
   );
   return (
     <section className="@container space-y-6 pb-6">
       <div className="space-y-1">
-        <h2 className="text-lg font-medium">{t('text17')}</h2>
+        <h2 className="text-lg font-medium">
+          {provider === 'codex'
+            ? t('chatgptUsage')
+            : provider === 'claude-agent'
+              ? t('claudeUsage')
+              : t('text17')}
+        </h2>
+        {provider && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const params = new URLSearchParams(searchParams.toString());
+              params.delete('provider');
+              navigate(`${pathname}?${params}`, { replace: true });
+            }}
+          >
+            {t('allSubscriptions')}
+          </Button>
+        )}
         <p className="text-sm text-muted-foreground">{t('text18')}</p>
       </div>
       {pooled.isLoading || (pooled.accountId && resources.isLoading) ? (
