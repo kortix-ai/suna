@@ -68,7 +68,11 @@ desktop() {
       startxfce4 &
       # ponytail: voxl restarts on exit; Xvfb or XFCE dying needs `kortix-desktop stop && kortix-desktop start`.
       while :; do
-        voxl --port="${DESKTOP_PORT}" --enable-resize=true --files-root="${HOME}" || true
+        # The Kortix proxy authenticates every viewer and rewrites Host to
+        # localhost while passing the browser's Origin through, so voxl's own
+        # login and Host/Origin checks stay off.
+        voxl --port="${DESKTOP_PORT}" --enable-resize=true --files-root="${HOME}" \
+          --enable-basic-auth=false --allowed-hosts='*' --allowed-origins='*' || true
         sleep 1
       done
       ;;
