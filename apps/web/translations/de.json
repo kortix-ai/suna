@@ -25822,24 +25822,18 @@
     "allSubscriptions": "All subscriptions"
   },
   "gatewayRouting": {
-    "allRequests": "Alle Anfragen",
-    "images": "Bilder",
     "exceptions": "Ausnahmen",
-    "ifFails": "Wenn <model></model> ausfällt, <mode></mode>",
     "modeLabel": "Wenn ein Modell ausfällt",
-    "modeCustom": "Ersatzmodelle versuchen",
+    "modeCustom": "Meine Ersatzmodelle nutzen",
     "modeInherit": "Kortix wählen lassen",
     "modeDisabled": "Fehler anzeigen",
-    "kortixTries": "Kortix versucht",
     "stopNote": "Der Fehler wird sofort angezeigt.",
-    "onlyOn": "Nur bei <condition></condition>",
     "addBackups": "Ersatzmodelle hinzufügen",
     "add": "Hinzufügen",
-    "noBackups": "Keine Ersatzmodelle. Der Fehler wird angezeigt.",
+    "noBackups": "Keine Ersatzmodelle · der Fehler wird angezeigt",
     "sendImages": "Bilder an <model></model> senden",
     "autoModel": "Auto ({model})",
     "sameModels": "Dieselben Modelle",
-    "exceptionIf": "Wenn <model></model> ausfällt, versuche",
     "chooseModel": "Modell wählen",
     "addException": "Ausnahme hinzufügen",
     "removeException": "Ausnahme entfernen",
@@ -25851,6 +25845,12 @@
     "removeModel": "{model} entfernen",
     "unsaved": "Ungespeicherte Änderungen",
     "discard": "Verwerfen",
-    "save": "Speichern"
+    "save": "Speichern",
+    "ifThisFails": "Wenn das ausfällt",
+    "tryInOrder": "Der Reihe nach versuchen",
+    "onlyOnHeader": "Nur bei",
+    "projectDefault": "Projektstandard · jede Anfrage",
+    "kortixPicks": "Kortix wählt",
+    "useMyOwn": "Eigene nutzen"
   }
 }

@@ -25822,24 +25822,18 @@
     "allSubscriptions": "All subscriptions"
   },
   "gatewayRouting": {
-    "allRequests": "Todas las solicitudes",
-    "images": "Imágenes",
     "exceptions": "Excepciones",
-    "ifFails": "Si <model></model> falla, <mode></mode>",
     "modeLabel": "Cuando un modelo falla",
-    "modeCustom": "probar respaldos",
-    "modeInherit": "dejar que Kortix elija",
-    "modeDisabled": "mostrar el error",
-    "kortixTries": "Kortix prueba",
+    "modeCustom": "Usar mis respaldos",
+    "modeInherit": "Dejar que Kortix elija",
+    "modeDisabled": "Mostrar el error",
     "stopNote": "El error se muestra de inmediato.",
-    "onlyOn": "Solo con <condition></condition>",
     "addBackups": "Añadir respaldos",
     "add": "Añadir",
-    "noBackups": "Sin respaldos. Se muestra el error.",
+    "noBackups": "Sin respaldos · se muestra el error",
     "sendImages": "Enviar imágenes a <model></model>",
     "autoModel": "Auto ({model})",
     "sameModels": "Los mismos modelos",
-    "exceptionIf": "Si <model></model> falla, probar",
     "chooseModel": "Elegir modelo",
     "addException": "Añadir excepción",
     "removeException": "Quitar excepción",
@@ -25851,6 +25845,12 @@
     "removeModel": "Quitar {model}",
     "unsaved": "Cambios sin guardar",
     "discard": "Descartar",
-    "save": "Guardar"
+    "save": "Guardar",
+    "ifThisFails": "Si esto falla",
+    "tryInOrder": "Probar en orden",
+    "onlyOnHeader": "Solo con",
+    "projectDefault": "Predeterminado del proyecto · cada solicitud",
+    "kortixPicks": "Kortix elige",
+    "useMyOwn": "Usar los míos"
   }
 }

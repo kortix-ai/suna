@@ -25822,24 +25822,18 @@
     "allSubscriptions": "All subscriptions"
   },
   "gatewayRouting": {
-    "allRequests": "所有请求",
-    "images": "图片",
     "exceptions": "例外",
-    "ifFails": "如果 <model></model> 失败，<mode></mode>",
     "modeLabel": "模型失败时",
-    "modeCustom": "尝试备用模型",
+    "modeCustom": "使用我的备用模型",
     "modeInherit": "让 Kortix 选择",
     "modeDisabled": "显示错误",
-    "kortixTries": "Kortix 会尝试",
     "stopNote": "错误会立即显示。",
-    "onlyOn": "仅在 <condition></condition> 时",
     "addBackups": "添加备用模型",
     "add": "添加",
-    "noBackups": "没有备用模型，将显示错误。",
+    "noBackups": "没有备用模型 · 将显示错误",
     "sendImages": "图片发送到 <model></model>",
     "autoModel": "自动（{model}）",
     "sameModels": "相同的模型",
-    "exceptionIf": "如果 <model></model> 失败，尝试",
     "chooseModel": "选择模型",
     "addException": "添加例外",
     "removeException": "移除例外",
@@ -25851,6 +25845,12 @@
     "removeModel": "移除 {model}",
     "unsaved": "未保存的更改",
     "discard": "放弃",
-    "save": "保存"
+    "save": "保存",
+    "ifThisFails": "如果失败",
+    "tryInOrder": "依次尝试",
+    "onlyOnHeader": "仅在",
+    "projectDefault": "项目默认 · 所有请求",
+    "kortixPicks": "Kortix 选择",
+    "useMyOwn": "使用我的"
   }
 }

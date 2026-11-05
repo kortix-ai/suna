@@ -78,6 +78,8 @@ export interface RoutingLayoutProps {
   primaryModel: string;
   /** The platform route this project inherits: primary first. */
   inheritedRoute: string[];
+  /** The condition the inherited route switches on. */
+  inheritedFallbackOn: GatewayFallbackChain['fallbackOn'];
   effectiveVisionModel: string | null;
   /** Generation controls for the primary model, rendered by the host. */
   generationControls: ReactNode;

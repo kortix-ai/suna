@@ -9885,24 +9885,18 @@ const catalog = {
     "allSubscriptions": "All subscriptions"
   },
   "gatewayRouting": {
-    "allRequests": "All requests",
-    "images": "Images",
     "exceptions": "Exceptions",
-    "ifFails": "If <model></model> fails, <mode></mode>",
     "modeLabel": "When a model fails",
-    "modeCustom": "try backups",
-    "modeInherit": "let Kortix pick",
-    "modeDisabled": "show the error",
-    "kortixTries": "Kortix tries",
+    "modeCustom": "Use my backups",
+    "modeInherit": "Let Kortix pick",
+    "modeDisabled": "Show the error",
     "stopNote": "The error is shown right away.",
-    "onlyOn": "Only on <condition></condition>",
     "addBackups": "Add backups",
     "add": "Add",
-    "noBackups": "No backups. The error is shown.",
+    "noBackups": "No backups · the error is shown",
     "sendImages": "Send images to <model></model>",
     "autoModel": "Auto ({model})",
     "sameModels": "The same models",
-    "exceptionIf": "If <model></model> fails, try",
     "chooseModel": "Choose model",
     "addException": "Add an exception",
     "removeException": "Remove exception",
@@ -9914,7 +9908,13 @@ const catalog = {
     "removeModel": "Remove {model}",
     "unsaved": "Unsaved changes",
     "discard": "Discard",
-    "save": "Save"
+    "save": "Save",
+    "ifThisFails": "If this fails",
+    "tryInOrder": "Try in order",
+    "onlyOnHeader": "Only on",
+    "projectDefault": "Project default · every request",
+    "kortixPicks": "Kortix picks",
+    "useMyOwn": "Use my own"
   }
 };
 

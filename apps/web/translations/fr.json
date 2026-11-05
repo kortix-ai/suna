@@ -25822,24 +25822,18 @@
     "allSubscriptions": "All subscriptions"
   },
   "gatewayRouting": {
-    "allRequests": "Toutes les requêtes",
-    "images": "Images",
     "exceptions": "Exceptions",
-    "ifFails": "Si <model></model> échoue, <mode></mode>",
     "modeLabel": "Quand un modèle échoue",
-    "modeCustom": "essayer les secours",
-    "modeInherit": "laisser Kortix choisir",
-    "modeDisabled": "afficher l’erreur",
-    "kortixTries": "Kortix essaie",
+    "modeCustom": "Utiliser mes secours",
+    "modeInherit": "Laisser Kortix choisir",
+    "modeDisabled": "Afficher l’erreur",
     "stopNote": "L’erreur s’affiche immédiatement.",
-    "onlyOn": "Seulement en cas de <condition></condition>",
     "addBackups": "Ajouter des secours",
     "add": "Ajouter",
-    "noBackups": "Aucun secours. L’erreur s’affiche.",
+    "noBackups": "Aucun secours · l’erreur s’affiche",
     "sendImages": "Envoyer les images à <model></model>",
     "autoModel": "Auto ({model})",
     "sameModels": "Les mêmes modèles",
-    "exceptionIf": "Si <model></model> échoue, essayer",
     "chooseModel": "Choisir un modèle",
     "addException": "Ajouter une exception",
     "removeException": "Retirer l’exception",
@@ -25851,6 +25845,12 @@
     "removeModel": "Retirer {model}",
     "unsaved": "Modifications non enregistrées",
     "discard": "Annuler",
-    "save": "Enregistrer"
+    "save": "Enregistrer",
+    "ifThisFails": "Si cela échoue",
+    "tryInOrder": "Essayer dans l’ordre",
+    "onlyOnHeader": "Seulement en cas de",
+    "projectDefault": "Défaut du projet · chaque requête",
+    "kortixPicks": "Kortix choisit",
+    "useMyOwn": "Utiliser les miens"
   }
 }

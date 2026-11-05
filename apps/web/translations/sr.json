@@ -25822,24 +25822,18 @@
     "allSubscriptions": "All subscriptions"
   },
   "gatewayRouting": {
-    "allRequests": "Svi zahtevi",
-    "images": "Slike",
     "exceptions": "Izuzeci",
-    "ifFails": "Ako <model></model> ne uspe, <mode></mode>",
     "modeLabel": "Kada model ne uspe",
-    "modeCustom": "probaj rezervne",
-    "modeInherit": "neka Kortix izabere",
-    "modeDisabled": "prikaži grešku",
-    "kortixTries": "Kortix probava",
+    "modeCustom": "Koristi moje rezervne",
+    "modeInherit": "Neka Kortix izabere",
+    "modeDisabled": "Prikaži grešku",
     "stopNote": "Greška se odmah prikazuje.",
-    "onlyOn": "Samo kod <condition></condition>",
     "addBackups": "Dodaj rezervne",
     "add": "Dodaj",
-    "noBackups": "Nema rezervnih. Prikazuje se greška.",
+    "noBackups": "Nema rezervnih · prikazuje se greška",
     "sendImages": "Šalji slike na <model></model>",
     "autoModel": "Auto ({model})",
     "sameModels": "Isti modeli",
-    "exceptionIf": "Ako <model></model> ne uspe, probaj",
     "chooseModel": "Izaberi model",
     "addException": "Dodaj izuzetak",
     "removeException": "Ukloni izuzetak",
@@ -25851,6 +25845,12 @@
     "removeModel": "Ukloni {model}",
     "unsaved": "Nesačuvane izmene",
     "discard": "Odbaci",
-    "save": "Sačuvaj"
+    "save": "Sačuvaj",
+    "ifThisFails": "Ako ovo ne uspe",
+    "tryInOrder": "Probaj redom",
+    "onlyOnHeader": "Samo kod",
+    "projectDefault": "Podrazumevano za projekat · svaki zahtev",
+    "kortixPicks": "Kortix bira",
+    "useMyOwn": "Koristi svoje"
   }
 }

@@ -442,6 +442,7 @@ export function GatewayRouting({
     availability,
     primaryModel,
     inheritedRoute,
+    inheritedFallbackOn: routing.data.effective.defaultFallback.fallbackOn,
     // What "Auto" resolves to: the inherited model, not this project's own
     // override (choosing Auto clears that override).
     effectiveVisionModel:

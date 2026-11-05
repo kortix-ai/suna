@@ -25822,24 +25822,18 @@
     "allSubscriptions": "All subscriptions"
   },
   "gatewayRouting": {
-    "allRequests": "すべてのリクエスト",
-    "images": "画像",
     "exceptions": "例外",
-    "ifFails": "<model></model> が失敗したら、<mode></mode>",
     "modeLabel": "モデルが失敗したとき",
-    "modeCustom": "予備を試す",
+    "modeCustom": "自分の予備を使う",
     "modeInherit": "Kortix に任せる",
     "modeDisabled": "エラーを表示",
-    "kortixTries": "Kortix が試す順",
     "stopNote": "エラーはすぐに表示されます。",
-    "onlyOn": "<condition></condition> のときのみ",
     "addBackups": "予備を追加",
     "add": "追加",
-    "noBackups": "予備なし。エラーが表示されます。",
+    "noBackups": "予備なし · エラーが表示されます",
     "sendImages": "画像は <model></model> に送る",
     "autoModel": "自動（{model}）",
     "sameModels": "同じモデル",
-    "exceptionIf": "<model></model> が失敗したら次を試す",
     "chooseModel": "モデルを選択",
     "addException": "例外を追加",
     "removeException": "例外を削除",
@@ -25851,6 +25845,12 @@
     "removeModel": "{model} を削除",
     "unsaved": "未保存の変更",
     "discard": "破棄",
-    "save": "保存"
+    "save": "保存",
+    "ifThisFails": "失敗したとき",
+    "tryInOrder": "順番に試す",
+    "onlyOnHeader": "対象",
+    "projectDefault": "プロジェクトの既定 · すべてのリクエスト",
+    "kortixPicks": "Kortix が選択",
+    "useMyOwn": "自分で選ぶ"
   }
 }
