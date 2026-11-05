@@ -476,7 +476,7 @@ export const ttss: Record<string, (lang?: string, model?: string) => Tts> = {
   }),
   eleven: httpTts((text, voice, signal) => {
     chargeTts(process.env.ELEVEN_TTS_MODEL ?? 'eleven_flash_v2_5', text)
-    return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice ?? 'EXAVITQu4vr4xnSDxMaL'}/stream?output_format=pcm_24000&optimize_streaming_latency=3`, {
+    return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice ?? 'EXAVITQu4vr4xnSDxMaL')}/stream?output_format=pcm_24000&optimize_streaming_latency=3`, {
       method: 'POST',
       signal,
       headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY!, 'content-type': 'application/json' },

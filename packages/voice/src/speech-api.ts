@@ -92,7 +92,11 @@ export async function speak(ask: { text?: unknown; voice?: unknown; format?: unk
     await inworldVoices() // the catalog, for a voice asked for by description
     voice = inworldVoice(asked) || undefined
     if (!voice) return bad(`no voice like "${asked}": name one of the call's voices (voice_state lists some) or describe one ("deep calm male")`)
-  } else if (asked) voice = asked
+  } else if (asked) {
+    // Another vendor's voice is an id, never a path or a query (ElevenLabs puts it in its URL).
+    if (!/^[\w-]{1,80}$/.test(asked)) return bad('`voice` is a voice id here: letters, digits, - and _')
+    voice = asked
+  }
   const signal = AbortSignal.any([...(o.signal ? [o.signal] : []), AbortSignal.timeout(120_000)])
   const engine = format === 'mp3' ? undefined : ttss[tts]?.()
   if (format === 'wav' && !engine) return bad(`no voice "${tts}" (VOICE_TTS)`, 500)

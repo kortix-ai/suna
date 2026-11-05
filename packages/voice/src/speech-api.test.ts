@@ -120,6 +120,19 @@ test('speak refuses what it cannot do, with what to do instead', async () => {
   }
 })
 
+test('no page reaches it: text/plain and any request with Origin are refused, a vendor voice is never a path', async () => {
+  const n = got.length
+  const plain = await fetch(`http://127.0.0.1:${relay.port}/speech`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ speak: { text: 'From a page.' } }) })
+  expect(plain.status).toBe(415)
+  const page = await fetch(`http://127.0.0.1:${relay.port}/speech`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example' }, body: JSON.stringify({ transcribe: { file: '/etc/hosts.mp3' } }) })
+  expect(page.status).toBe(403)
+  expect((await fetch(`http://127.0.0.1:${relay.port}/call`, { headers: { origin: 'https://evil.example' } })).status).toBe(403)
+  expect(got.length).toBe(n)
+  const path = await post({ speak: { text: 'Hm.', voice: '../../user/subscription', format: 'wav' } })
+  expect(path.status).toBe(400)
+  expect(path.body.error).toContain('voice id')
+})
+
 test('transcribe: a Telegram voice note goes up as Ogg, only the words Whisper believes, Serbian in Latin', async () => {
   const note = join(dir, 'voice_message.oga')
   writeFileSync(note, Buffer.alloc(2048, 7))
