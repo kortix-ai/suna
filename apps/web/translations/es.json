@@ -1345,11 +1345,11 @@
           "description": "Unidades que todo el equipo puede usar: un admin crea una unidad y le añade agentes. Cada sesión de esos agentes la monta, y quien pueda usar uno de ellos puede abrirla. Desactivado, cada persona solo tiene Mis archivos."
         },
         "chat_input": {
-          "name": "Entrada de chat",
+          "name": "Spaces-ChatInput",
           "description": "Un solo control bajo el editor para quién responde y cómo: elige el agente y todos los demás ajustes quedan en Automático, heredados de ese agente. Abre una fila para sobrescribir el modelo, el esfuerzo de razonamiento, los secretos, las claves de proveedor o el sandbox de esta sesión, y vuelve a Automático con un clic."
         },
         "chat_front": {
-          "name": "Enrutador",
+          "name": "Spaces-Router",
           "description": "Con Espacios activado, el agente con el que conversas en un hilo es un enrutador: pasa el trabajo a tus agentes y te responde como una persona, con mensajes breves con el resultado, un enlace o la decisión que debes tomar. Tus agentes comparten el hilo a través de sus archivos, así que el enrutador pasa rutas de archivo, no texto copiado. «Ver trabajo» bajo un mensaje abre el trabajo que hay detrás. Requiere My Kortix activado en kortix.yaml."
         }
       },
