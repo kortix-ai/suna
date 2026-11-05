@@ -4,6 +4,10 @@ export function bindAccounts() {
     list: P.listAccounts,
     get: P.getAccount,
     create: P.createAccount,
+    subscriptions: {
+      list: P.listSubscriptionConnections,
+      usage: P.refreshSubscriptionConnectionUsage,
+    },
     secretResources: {
       list: P.listAccountSecretResources,
       create: P.createAccountSecretResource,

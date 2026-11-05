@@ -135,7 +135,7 @@ export {
   type UseProjectsOptions,
 } from './use-accounts';
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
-export { useAccountSecretResources, useSessionProviderSecretPools, useSubscriptionUsage } from './use-provider-secrets';
+export { useAccountSecretResources, useSessionProviderSecretPools, useSubscriptionUsage, useSubscriptionConnections } from './use-provider-secrets';
 export {
   useProjectTriggers,
   projectTriggersKey,

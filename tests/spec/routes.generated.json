@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1038,
+  "count": 1040,
   "routes": [
     {
       "method": "GET",
@@ -737,6 +737,14 @@
     {
       "method": "PUT",
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/value"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/subscription-connections"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/subscription-connections/:secretId/usage"
     },
     {
       "method": "POST",
