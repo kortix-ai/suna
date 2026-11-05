@@ -1346,7 +1346,7 @@
         },
         "chat_front": {
           "name": "Spaces-Router",
-          "description": "开启空间后，你在话题中对话的智能体是一个路由器：它把工作交给你的智能体，并像人一样回复，用简短消息告诉你结果、链接或需要你做的决定。你的智能体通过话题的文件共享内容，所以路由器传递文件路径，而不是重写的文本。消息下方的「查看过程」可展开其背后的工作。需要在 kortix.yaml 中开启 My Kortix。"
+          "description": "开启 Spaces 后，你在话题中对话的智能体是一个路由器：快速的工作它自己完成（一个回答、一段短文、查看话题文件），较长的工作交给空间的智能体。它像人一样用简短消息回复。智能体把完整结果保存为话题中的文件，路由器链接该文件，而不是重新输入。消息下方的“查看工作”会打开背后的工作。需要在 kortix.yaml 中开启 My Kortix。"
         }
       },
       "channelsSwitch": {
@@ -25080,7 +25080,8 @@
       "leaveHintPrivate": "你将失去对其线程、文件和记忆的访问权限，包括你自己的线程。需要成员重新添加你。",
       "leavePrivateTitle": "退出 #{name}？",
       "addMembers": "添加成员",
-      "privateLimits": "私密会对其他人隐藏该空间。代码更改（git 分支）和代理自身的工具不是私密的。"
+      "privateLimits": "私密会对其他人隐藏该空间。代码更改（git 分支）和代理自身的工具不是私密的。",
+      "agentAdded": "已将 {agent} 添加到 #{name}。"
     },
     "folder": {
       "memory": "记忆",
@@ -25282,7 +25283,8 @@
       "addRoutine": "添加例行任务",
       "routinesPrivate": "私密空间暂不支持例行任务。",
       "allSettings": "所有设置",
-      "askHint": "你也可以在聊天中直接说：“在这里添加一个智能体”、“把发布文档固定为标签页”。"
+      "askHint": "你也可以在聊天中直接说：“在这里添加一个智能体”、“把发布文档固定为标签页”。",
+      "noAgentsToAdd": "项目的所有智能体都已在此空间中。"
     },
     "profile": {
       "viewProfile": "查看 {name} 的资料",
@@ -25315,9 +25317,14 @@
     "mentions": {
       "people": "成员",
       "agents": "智能体",
-      "addToSpace": "尚未在 {space} 中：提及即会添加",
+      "addToSpace": "不在 {space} 中：请求添加",
       "added": "已将 {agent} 添加到 {space}",
-      "addFailed": "无法添加智能体。请重试。"
+      "addFailed": "无法添加智能体。请重试。",
+      "askAdd": "将 {agent} 添加到 {space}？",
+      "askAddConfirm": "添加",
+      "askNotNow": "暂不",
+      "askAdmin": "{agent} 不在 {space} 中。请让空间管理员添加。",
+      "dismiss": "关闭"
     }
   },
   "imageGen": {

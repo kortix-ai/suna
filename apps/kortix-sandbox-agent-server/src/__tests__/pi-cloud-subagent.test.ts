@@ -593,7 +593,7 @@ describe('cloudStopChild — task_stop', () => {
 describe('the router (front.ts) — routing', () => {
   const roster = { agents: ['researcher', 'Writer'] }
 
-  test('a router has exactly three tools', () => {
+  test('a router always keeps the three hand-off tools', () => {
     expect([...FRONT_TOOLS].sort()).toEqual(['agent', 'send_message', 'task_stop'])
   })
 
@@ -633,11 +633,12 @@ describe('the router (front.ts) — routing', () => {
         "- The person's latest message: /drives/general/threads/plan-a-trip-1a2b3c4d/messages/0001-ana.md",
         "- The thread folder: /drives/general/threads/plan-a-trip-1a2b3c4d/ (messages/ holds every message, oldest first; work/ holds each agent's work)",
         "- The space's brief: /drives/general/context.md",
-        '- Your work folder: /drives/general/threads/plan-a-trip-1a2b3c4d/work/flights/ (keep your files here; write your final report to /drives/general/threads/plan-a-trip-1a2b3c4d/work/flights/result.md)',
+        '- Your work folder: /drives/general/threads/plan-a-trip-1a2b3c4d/work/flights/ (keep your scratch files here)',
+        '- Your result file: /drives/general/threads/plan-a-trip-1a2b3c4d/results/flights-<n>.md, <n> the next free number from 1. Write your full result there; end your run with only its path and a one-line summary.',
       ].join('\n'),
     )
-    // The block is added even when the model forgets the paths; a follow-up by task_id gets it too, its work folder only when named.
-    expect(frontCall({ description: 'd', prompt: 'more', task_id: 's1', name: 'flights' }, { ...roster, files }).prompt).toContain('/work/flights/result.md')
+    // The block is added even when the model forgets the paths; a follow-up by task_id gets it too, its work folder and result file only when named.
+    expect(frontCall({ description: 'd', prompt: 'more', task_id: 's1', name: 'flights' }, { ...roster, files }).prompt).toContain('/results/flights-<n>.md')
     expect(frontCall({ description: 'd', prompt: 'more', task_id: 's1' }, { ...roster, files }).prompt).not.toContain('Your work folder')
     // No thread files (an older API, no Drive): the prompt goes as written.
     expect(frontCall({ description: 'd', prompt: 'p', name: 'n' }, { ...roster, files: null }).prompt).toBe('p')

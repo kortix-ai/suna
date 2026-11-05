@@ -1346,7 +1346,7 @@
         },
         "chat_front": {
           "name": "Spaces-Router",
-          "description": "Kada su Prostori uključeni, agent sa kojim razgovarate u niti je ruter: prosleđuje posao vašim agentima i odgovara kao čovek, kratkim porukama sa rezultatom, linkom ili odlukom koju treba da donesete. Vaši agenti dele nit kroz njene fajlove, pa ruter prosleđuje putanje fajlova, a ne prepisan tekst. „Prikaži rad“ ispod poruke otvara rad iza nje. Zahteva uključen My Kortix u kortix.yaml."
+          "description": "Када су Spaces укључени, агент са којим разговараш у нити је рутер: брзе послове ради сам (одговор, кратак текст, поглед у фајлове нити), а дуже послове предаје агентима простора. Одговара као особа, кратким порукама. Агент чува цео резултат као фајл у нити, а рутер линкује тај фајл уместо да га преписује. „Прикажи рад“ испод поруке отвара рад иза ње. Потребан је укључен My Kortix у kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -25080,7 +25080,8 @@
       "leaveHintPrivate": "Губиш приступ његовим нитима, фајловима и меморији, укључујући и своје нити. Члан мора поново да те дода.",
       "leavePrivateTitle": "Напустити #{name}?",
       "addMembers": "Додај чланове",
-      "privateLimits": "Приватно сакрива простор од других људи. Измене кода (git гране) и сопствени алати агената нису приватни."
+      "privateLimits": "Приватно сакрива простор од других људи. Измене кода (git гране) и сопствени алати агената нису приватни.",
+      "agentAdded": "{agent} додат у #{name}."
     },
     "folder": {
       "memory": "Меморија",
@@ -25282,7 +25283,8 @@
       "addRoutine": "Додај рутину",
       "routinesPrivate": "Приватни простор још не прима рутине.",
       "allSettings": "Сва подешавања",
-      "askHint": "Можеш и да питаш у ћаскању: „додај агента овде“, „закачи документ за лансирање као картицу“."
+      "askHint": "Можеш и да питаш у ћаскању: „додај агента овде“, „закачи документ за лансирање као картицу“.",
+      "noAgentsToAdd": "Сви агенти пројекта су већ у овом простору."
     },
     "profile": {
       "viewProfile": "Прикажи профил: {name}",
@@ -25315,9 +25317,14 @@
     "mentions": {
       "people": "Људи",
       "agents": "Агенти",
-      "addToSpace": "Још није у {space}: помињање га додаје",
-      "added": "{agent} је додат у {space}",
-      "addFailed": "Агент није могао да се дода. Покушај поново."
+      "addToSpace": "Није у {space}: затражи додавање",
+      "added": "{agent} додат у {space}",
+      "addFailed": "Агент није могао да се дода. Покушај поново.",
+      "askAdd": "Додати {agent} у {space}?",
+      "askAddConfirm": "Додај",
+      "askNotNow": "Не сада",
+      "askAdmin": "{agent} није у {space}. Затражи од администратора простора да га дода.",
+      "dismiss": "Затвори"
     }
   },
   "imageGen": {

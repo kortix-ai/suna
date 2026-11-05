@@ -1346,7 +1346,7 @@
         },
         "chat_front": {
           "name": "Spaces-Router",
-          "description": "Mit Spaces ist der Agent, mit dem Sie in einem Thread chatten, ein Router: Er gibt die Arbeit an Ihre Agenten weiter und schreibt zurück wie ein Mensch, in kurzen Nachrichten mit dem Ergebnis, einem Link oder der Entscheidung, die Sie treffen müssen. Ihre Agenten teilen den Thread über seine Dateien, daher gibt der Router Dateipfade weiter statt abgetippten Text. „Arbeit anzeigen“ unter einer Nachricht öffnet die Arbeit dahinter. Benötigt My Kortix in kortix.yaml."
+          "description": "Mit Spaces ist der Agent, mit dem du in einem Thread chattest, ein Router: Kurze Aufgaben erledigt er selbst (eine Antwort, ein kurzer Text, ein Blick in die Thread-Dateien), längere gibt er an die Agents des Space ab. Er antwortet wie ein Mensch, in kurzen Nachrichten. Ein Agent speichert sein vollständiges Ergebnis als Datei im Thread, und der Router verlinkt diese Datei, statt sie abzutippen. „Arbeit anzeigen“ unter einer Nachricht öffnet die Arbeit dahinter. Braucht My Kortix in kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -25080,7 +25080,8 @@
       "leaveHintPrivate": "Du verlierst den Zugriff auf seine Threads, Dateien und Erinnerungen, auch auf deine eigenen Threads. Ein Mitglied muss dich wieder hinzufügen.",
       "leavePrivateTitle": "#{name} verlassen?",
       "addMembers": "Mitglieder hinzufügen",
-      "privateLimits": "Privat verbirgt den Space vor anderen. Codeänderungen (Git-Branches) und die eigenen Tools der Agents sind nicht privat."
+      "privateLimits": "Privat verbirgt den Space vor anderen. Codeänderungen (Git-Branches) und die eigenen Tools der Agents sind nicht privat.",
+      "agentAdded": "{agent} zu #{name} hinzugefügt."
     },
     "folder": {
       "memory": "Speicher",
@@ -25282,7 +25283,8 @@
       "addRoutine": "Routine hinzufügen",
       "routinesPrivate": "Ein privater Space nimmt noch keine Routinen an.",
       "allSettings": "Alle Einstellungen",
-      "askHint": "Du kannst auch im Chat fragen: „füge hier einen Agenten hinzu“, „heft das Launch-Dokument als Tab an“."
+      "askHint": "Du kannst auch im Chat fragen: „füge hier einen Agenten hinzu“, „heft das Launch-Dokument als Tab an“.",
+      "noAgentsToAdd": "Jeder Agent des Projekts ist schon in diesem Space."
     },
     "profile": {
       "viewProfile": "Profil von {name} anzeigen",
@@ -25315,9 +25317,14 @@
     "mentions": {
       "people": "Personen",
       "agents": "Agenten",
-      "addToSpace": "Noch nicht in {space}: Erwähnen fügt ihn hinzu",
+      "addToSpace": "Nicht in {space}: Hinzufügen anfragen",
       "added": "{agent} zu {space} hinzugefügt",
-      "addFailed": "Agent konnte nicht hinzugefügt werden. Versuch es noch einmal."
+      "addFailed": "Agent konnte nicht hinzugefügt werden. Versuch es noch einmal.",
+      "askAdd": "{agent} zu {space} hinzufügen?",
+      "askAddConfirm": "Hinzufügen",
+      "askNotNow": "Nicht jetzt",
+      "askAdmin": "{agent} ist nicht in {space}. Bitte einen Space-Admin, ihn hinzuzufügen.",
+      "dismiss": "Schließen"
     }
   },
   "imageGen": {

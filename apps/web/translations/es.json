@@ -1346,7 +1346,7 @@
         },
         "chat_front": {
           "name": "Spaces-Router",
-          "description": "Con Espacios activado, el agente con el que conversas en un hilo es un enrutador: pasa el trabajo a tus agentes y te responde como una persona, con mensajes breves con el resultado, un enlace o la decisión que debes tomar. Tus agentes comparten el hilo a través de sus archivos, así que el enrutador pasa rutas de archivo, no texto copiado. «Ver trabajo» bajo un mensaje abre el trabajo que hay detrás. Requiere My Kortix activado en kortix.yaml."
+          "description": "Con Spaces activado, el agente con el que hablas en un hilo es un enrutador: hace él mismo el trabajo rápido (una respuesta, un texto corto, mirar los archivos del hilo) y pasa el trabajo largo a los agentes del espacio. Responde como una persona, en mensajes cortos. Un agente guarda su resultado completo como archivo en el hilo, y el enrutador enlaza ese archivo en vez de reescribirlo. «Ver trabajo» bajo un mensaje abre el trabajo detrás. Requiere My Kortix activado en kortix.yaml."
         }
       },
       "channelsSwitch": {
@@ -25080,7 +25080,8 @@
       "leaveHintPrivate": "Pierdes el acceso a sus hilos, archivos y memoria, incluidos tus propios hilos. Un miembro tendrá que volver a añadirte.",
       "leavePrivateTitle": "¿Salir de #{name}?",
       "addMembers": "Añadir miembros",
-      "privateLimits": "Privado oculta el espacio a otras personas. Los cambios de código (ramas de git) y las herramientas propias de los agentes no son privados."
+      "privateLimits": "Privado oculta el espacio a otras personas. Los cambios de código (ramas de git) y las herramientas propias de los agentes no son privados.",
+      "agentAdded": "{agent} añadido a #{name}."
     },
     "folder": {
       "memory": "Memoria",
@@ -25282,7 +25283,8 @@
       "addRoutine": "Añadir rutina",
       "routinesPrivate": "Un espacio privado aún no admite rutinas.",
       "allSettings": "Todos los ajustes",
-      "askHint": "También puedes pedirlo en el chat: «añade un agente aquí», «fija el documento del lanzamiento como pestaña»."
+      "askHint": "También puedes pedirlo en el chat: «añade un agente aquí», «fija el documento del lanzamiento como pestaña».",
+      "noAgentsToAdd": "Todos los agentes del proyecto ya están en este espacio."
     },
     "profile": {
       "viewProfile": "Ver el perfil de {name}",
@@ -25315,9 +25317,14 @@
     "mentions": {
       "people": "Personas",
       "agents": "Agentes",
-      "addToSpace": "Aún no está en {space}: mencionarlo lo añade",
-      "added": "{agent} se añadió a {space}",
-      "addFailed": "No se pudo añadir el agente. Inténtalo de nuevo."
+      "addToSpace": "No está en {space}: pide que lo añadan",
+      "added": "{agent} añadido a {space}",
+      "addFailed": "No se pudo añadir el agente. Inténtalo de nuevo.",
+      "askAdd": "¿Añadir {agent} a {space}?",
+      "askAddConfirm": "Añadir",
+      "askNotNow": "Ahora no",
+      "askAdmin": "{agent} no está en {space}. Pide a un admin del espacio que lo añada.",
+      "dismiss": "Cerrar"
     }
   },
   "imageGen": {

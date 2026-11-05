@@ -41,11 +41,11 @@ import {
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
 import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
-import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText, withMemoryTurn, withThreadFiles, withoutClientSystem } from '../../memory/turn-body';
+import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText, withMemoryTurn, withSpaceAgents, withThreadFiles, withoutClientSystem } from '../../memory/turn-body';
 import { isMyKortixAgentName } from '@kortix/shared';
 import { logger } from '../../lib/logger';
 import { isPlatinumConfigured } from '../../shared/platinum';
-import { chatThreadBoardTurn, missingClaudeSubscription, notifyMessageMentions, sessionModelPin, sessionWhereTurn } from '../../projects/surface';
+import { chatThreadBoardTurn, missingClaudeSubscription, notifyMessageMentions, sessionModelPin, sessionSpaceAgents, sessionWhereTurn } from '../../projects/surface';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -389,6 +389,14 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   // Thread files (`chat`): the person's message as a file, and every session of the thread told its folder.
   const thread = await threadFilesForTurn(req, state.requestBody);
   if (thread?.files) state.requestBody = withThreadFiles(state.requestBody, thread.files);
+  // A space's agents are a boundary: the router of a thread routes only to them (kortixd front-space.ts).
+  if (where?.space) {
+    const spaceAgents = await sessionSpaceAgents(sessionId).catch((error: unknown) => {
+      logger.warn('[turn] turn start forwarded without its space agents', { session_id: sessionId, error: error instanceof Error ? error.message : String(error) });
+      return null;
+    });
+    if (spaceAgents) state.requestBody = withSpaceAgents(state.requestBody, spaceAgents);
+  }
   // A person's message in a channel notifies the people it @mentions, off the turn's path.
   if (where?.space?.kind === 'channel' && req.userId && !req.sandboxAuthored) void notifyPersonMentions(req, state.requestBody);
   const put = (parts: readonly (string | null | undefined)[]) => {
