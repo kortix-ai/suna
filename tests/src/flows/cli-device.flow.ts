@@ -21,7 +21,7 @@ flow(
   "AUTH-8",
   {
     domain: "auth",
-    routes: ["POST /v1/cli/device/start", "POST /v1/cli/device/poll", "POST /v1/cli/device/decide", "GET /v1/accounts/me", "DELETE /v1/accounts/tokens/:tokenId", "POST /v1/accounts", "GET /v1/accounts/tokens"],
+    routes: ["POST /v1/cli/device/start", "POST /v1/cli/device/poll", "POST /v1/cli/device/decide", "GET /v1/me", "DELETE /v1/accounts/tokens/:tokenId", "POST /v1/accounts", "GET /v1/accounts/tokens"],
   },
   async (ctx) => {
     const anon = ctx.client.as(ctx.P.ANON);
@@ -76,7 +76,7 @@ flow(
       const r = await poll(approved.device_code);
       r.status(200).body().exists("$.token");
       cliToken = r.json<{ token: string }>().token;
-      const me = await ctx.client.withBearer(cliToken, "cli-device-token").get("/v1/accounts/me");
+      const me = await ctx.client.withBearer(cliToken, "cli-device-token").get("/v1/me");
       me.status(200).body().has("$.user_id", ctx.P.OWNER.userId).exists("$.token_context.token_id");
       cliTokenId = me.json<{ token_context: { token_id: string } }>().token_context.token_id;
       (await poll(approved.device_code)).status(200).body().has("$.error", "invalid_grant");
@@ -97,7 +97,7 @@ flow(
       const r = await poll(chosen.device_code);
       r.status(200).body().exists("$.token");
       const token = r.json<{ token: string }>().token;
-      const me = await ctx.client.withBearer(token, "cli-device-chosen").get("/v1/accounts/me");
+      const me = await ctx.client.withBearer(token, "cli-device-chosen").get("/v1/me");
       const tokenId = me.json<{ token_context: { token_id: string } }>().token_context.token_id;
       const listed = await owner.get(`/v1/accounts/tokens?account_id=${secondId}&mine=true`);
       listed.status(200);
@@ -118,7 +118,7 @@ flow(
     await ctx.step("cleanup: OWNER revokes the CLI token → it no longer authenticates", async () => {
       if (!cliTokenId) return;
       (await owner.del(`/v1/accounts/tokens/${cliTokenId}`)).status(200);
-      (await ctx.client.withBearer(cliToken, "cli-device-token").get("/v1/accounts/me")).status(401);
+      (await ctx.client.withBearer(cliToken, "cli-device-token").get("/v1/me")).status(401);
     });
   },
 );

@@ -820,7 +820,7 @@ flow(
     global: true,
     requires: ['database'],
     timeoutMs: 120_000,
-    routes: ['POST /v1/projects/:projectId/sessions/:sessionId/prompts'],
+    routes: ['POST /v1/workspaces/:projectId/sessions/:sessionId/prompts'],
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
@@ -863,7 +863,7 @@ flow(
       );
       const project = await team.project({ managedGit: true });
       const params = { projectId: project.id, sessionId };
-      const promptPath = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+      const promptPath = '/v1/workspaces/:projectId/sessions/:sessionId/prompts';
       await db.query(
         `INSERT INTO kortix.project_sessions
          (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)

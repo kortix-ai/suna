@@ -47,7 +47,7 @@ async function slackWorld(ctx: FlowContext): Promise<SlackWorld> {
   const r = await ctx.client
     .as(ctx.P.OWNER)
     .post(
-      "/v1/projects/:projectId/secrets",
+      "/v1/workspaces/:projectId/secrets",
       { name: "SLACK_SIGNING_SECRET", value: world.secret, strategy: "broker", consumer: "connector" },
       { params: { projectId: p.id } },
     );

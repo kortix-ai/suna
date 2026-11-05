@@ -52,12 +52,12 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 
 // Path templates passed to the client (.get/.post take a path, not a key).
-const EFFECTIVE = '/v1/accounts/:accountId/iam/members/:userId/effective';
-const EFFECTIVE_BATCH = '/v1/accounts/:accountId/iam/members/:userId/effective:batch';
-const SUPER_ADMIN = '/v1/accounts/:accountId/iam/members/:userId/super-admin';
-const GROUPS = '/v1/accounts/:accountId/iam/groups';
-const GROUP_MEMBERS = '/v1/accounts/:accountId/iam/groups/:groupId/members';
-const PROJECT_GRANTS = '/v1/projects/:projectId/group-grants';
+const EFFECTIVE = '/v1/workspaces/:accountId/iam/members/:userId/effective';
+const EFFECTIVE_BATCH = '/v1/workspaces/:accountId/iam/members/:userId/effective:batch';
+const SUPER_ADMIN = '/v1/workspaces/:accountId/iam/members/:userId/super-admin';
+const GROUPS = '/v1/workspaces/:accountId/iam/groups';
+const GROUP_MEMBERS = '/v1/workspaces/:accountId/iam/groups/:groupId/members';
+const PROJECT_GRANTS = '/v1/workspaces/:projectId/group-grants';
 
 // Coverage keys for `meta.routes` — must be `METHOD PATH`, matching the
 // route manifest (spec/routes.generated.json) exactly.

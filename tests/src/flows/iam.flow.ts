@@ -25,7 +25,7 @@ flow(
   'IAM-1',
   {
     domain: 'iam',
-    routes: ['GET /v1/accounts/:accountId/iam/groups', 'POST /v1/accounts/:accountId/iam/groups'],
+    routes: ['GET /v1/workspaces/:accountId/iam/groups', 'POST /v1/workspaces/:accountId/iam/groups'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -38,14 +38,14 @@ flow(
     await ctx.step('OWNER lists groups → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/groups', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/groups', { params: { accountId: team.id } });
       r.status(200).body().exists('$.groups');
     });
     await ctx.step('OWNER creates a group → 201', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/groups',
+          '/v1/workspaces/:accountId/iam/groups',
           { name: ctx.fixtures.name('grp'), description: 'e2e' },
           { params: { accountId: team.id } },
         );
@@ -54,14 +54,14 @@ flow(
     await ctx.step('missing name → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/accounts/:accountId/iam/groups', {}, { params: { accountId: team.id } });
+        .post('/v1/workspaces/:accountId/iam/groups', {}, { params: { accountId: team.id } });
       r.status(400);
     });
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          '/v1/accounts/:accountId/iam/groups',
+          '/v1/workspaces/:accountId/iam/groups',
           { name: 'nope' },
           { params: { accountId: team.id } },
         );
@@ -75,9 +75,9 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/groups/:groupId',
-      'PATCH /v1/accounts/:accountId/iam/groups/:groupId',
-      'DELETE /v1/accounts/:accountId/iam/groups/:groupId',
+      'GET /v1/workspaces/:accountId/iam/groups/:groupId',
+      'PATCH /v1/workspaces/:accountId/iam/groups/:groupId',
+      'DELETE /v1/workspaces/:accountId/iam/groups/:groupId',
     ],
   },
   async (ctx) => {
@@ -93,7 +93,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/groups',
+          '/v1/workspaces/:accountId/iam/groups',
           { name: ctx.fixtures.name('grp') },
           { params: { accountId: team.id } },
         );
@@ -103,7 +103,7 @@ flow(
     await ctx.step('GET group → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/groups/:groupId', {
+        .get('/v1/workspaces/:accountId/iam/groups/:groupId', {
           params: { accountId: team.id, groupId },
         });
       r.status(200).body().has('$.group_id', groupId);
@@ -112,7 +112,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/groups/:groupId',
+          '/v1/workspaces/:accountId/iam/groups/:groupId',
           { name: ctx.fixtures.name('grp-renamed') },
           { params: { accountId: team.id, groupId } },
         );
@@ -121,7 +121,7 @@ flow(
     await ctx.step('GET unknown group → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/groups/:groupId', {
+        .get('/v1/workspaces/:accountId/iam/groups/:groupId', {
           params: { accountId: team.id, groupId: '00000000-0000-0000-0000-000000000000' },
         });
       r.status(404);
@@ -129,7 +129,7 @@ flow(
     await ctx.step('NONMEMBER cannot read → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/groups/:groupId', {
+        .get('/v1/workspaces/:accountId/iam/groups/:groupId', {
           params: { accountId: team.id, groupId },
         });
       r.status(403);
@@ -137,7 +137,7 @@ flow(
     await ctx.step('DELETE group → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/groups/:groupId', {
+        .del('/v1/workspaces/:accountId/iam/groups/:groupId', {
           params: { accountId: team.id, groupId },
         });
       r.status(200).body().has('$.deleted', true);
@@ -150,9 +150,9 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
-      'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
-      'DELETE /v1/accounts/:accountId/iam/groups/:groupId/members/:userId',
+      'GET /v1/workspaces/:accountId/iam/groups/:groupId/members',
+      'POST /v1/workspaces/:accountId/iam/groups/:groupId/members',
+      'DELETE /v1/workspaces/:accountId/iam/groups/:groupId/members/:userId',
     ],
   },
   async (ctx) => {
@@ -169,7 +169,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/groups',
+          '/v1/workspaces/:accountId/iam/groups',
           { name: ctx.fixtures.name('grp') },
           { params: { accountId: team.id } },
         );
@@ -179,7 +179,7 @@ flow(
     await ctx.step('list members (empty) → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/groups/:groupId/members', {
+        .get('/v1/workspaces/:accountId/iam/groups/:groupId/members', {
           params: { accountId: team.id, groupId },
         });
       r.status(200).body().exists('$.members');
@@ -188,7 +188,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/groups/:groupId/members',
+          '/v1/workspaces/:accountId/iam/groups/:groupId/members',
           { userIds: [member.userId!] },
           { params: { accountId: team.id, groupId } },
         );
@@ -198,7 +198,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/groups/:groupId/members',
+          '/v1/workspaces/:accountId/iam/groups/:groupId/members',
           {},
           { params: { accountId: team.id, groupId } },
         );
@@ -208,7 +208,7 @@ flow(
       const r = await ctx.client
         .as(member)
         .post(
-          '/v1/accounts/:accountId/iam/groups/:groupId/members',
+          '/v1/workspaces/:accountId/iam/groups/:groupId/members',
           { userIds: [member.userId!] },
           { params: { accountId: team.id, groupId } },
         );
@@ -217,7 +217,7 @@ flow(
     await ctx.step('remove member → 200 removed', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/groups/:groupId/members/:userId', {
+        .del('/v1/workspaces/:accountId/iam/groups/:groupId/members/:userId', {
           params: { accountId: team.id, groupId, userId: member.userId! },
         });
       r.status(200).body().has('$.removed', true);
@@ -225,7 +225,7 @@ flow(
     await ctx.step('remove non-member → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/groups/:groupId/members/:userId', {
+        .del('/v1/workspaces/:accountId/iam/groups/:groupId/members/:userId', {
           params: { accountId: team.id, groupId, userId: member.userId! },
         });
       r.status(404);
@@ -237,7 +237,7 @@ flow(
   'IAM-14',
   {
     domain: 'iam',
-    routes: ['GET /v1/accounts/:accountId/iam/groups/:groupId/project-grants'],
+    routes: ['GET /v1/workspaces/:accountId/iam/groups/:groupId/project-grants'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -252,7 +252,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/groups',
+          '/v1/workspaces/:accountId/iam/groups',
           { name: ctx.fixtures.name('grp') },
           { params: { accountId: team.id } },
         );
@@ -262,7 +262,7 @@ flow(
     await ctx.step('list project-grants (empty) → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', {
+        .get('/v1/workspaces/:accountId/iam/groups/:groupId/project-grants', {
           params: { accountId: team.id, groupId },
         });
       r.status(200).body().exists('$.grants');
@@ -270,7 +270,7 @@ flow(
     await ctx.step('unknown group → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', {
+        .get('/v1/workspaces/:accountId/iam/groups/:groupId/project-grants', {
           params: { accountId: team.id, groupId: '00000000-0000-0000-0000-000000000000' },
         });
       r.status(404);
@@ -278,7 +278,7 @@ flow(
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', {
+        .get('/v1/workspaces/:accountId/iam/groups/:groupId/project-grants', {
           params: { accountId: team.id, groupId },
         });
       r.status(403);
@@ -292,7 +292,7 @@ flow(
   'IAM-7',
   {
     domain: 'iam',
-    routes: ['PATCH /v1/accounts/:accountId/iam/members/:userId/super-admin'],
+    routes: ['PATCH /v1/workspaces/:accountId/iam/members/:userId/super-admin'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -302,7 +302,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/members/:userId/super-admin',
+          '/v1/workspaces/:accountId/iam/members/:userId/super-admin',
           { is_super_admin: true },
           { params: { accountId: team.id, userId: member.userId! } },
         );
@@ -312,7 +312,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/members/:userId/super-admin',
+          '/v1/workspaces/:accountId/iam/members/:userId/super-admin',
           { is_super_admin: false },
           { params: { accountId: team.id, userId: member.userId! } },
         );
@@ -322,7 +322,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/members/:userId/super-admin',
+          '/v1/workspaces/:accountId/iam/members/:userId/super-admin',
           {},
           { params: { accountId: team.id, userId: member.userId! } },
         );
@@ -332,7 +332,7 @@ flow(
       const r = await ctx.client
         .as(admin)
         .patch(
-          '/v1/accounts/:accountId/iam/members/:userId/super-admin',
+          '/v1/workspaces/:accountId/iam/members/:userId/super-admin',
           { is_super_admin: true },
           { params: { accountId: team.id, userId: member.userId! } },
         );
@@ -348,8 +348,8 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/members/:userId/groups',
-      'GET /v1/accounts/:accountId/iam/members/:userId/effective',
+      'GET /v1/workspaces/:accountId/iam/members/:userId/groups',
+      'GET /v1/workspaces/:accountId/iam/members/:userId/effective',
     ],
   },
   async (ctx) => {
@@ -358,7 +358,7 @@ flow(
     await ctx.step("OWNER reads member's groups → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/members/:userId/groups', {
+        .get('/v1/workspaces/:accountId/iam/members/:userId/groups', {
           params: { accountId: team.id, userId: member.userId! },
         });
       r.status(200).body().exists('$.groups');
@@ -366,7 +366,7 @@ flow(
     await ctx.step('effective probe (action query) → 200 allowed flag', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/members/:userId/effective?action=account.read', {
+        .get('/v1/workspaces/:accountId/iam/members/:userId/effective?action=account.read', {
           params: { accountId: team.id, userId: member.userId! },
         });
       r.status(200).body().exists('$.allowed');
@@ -374,7 +374,7 @@ flow(
     await ctx.step('effective without action query → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/members/:userId/effective', {
+        .get('/v1/workspaces/:accountId/iam/members/:userId/effective', {
           params: { accountId: team.id, userId: member.userId! },
         });
       r.status(400);
@@ -382,7 +382,7 @@ flow(
     await ctx.step('NONMEMBER probing another member → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/members/:userId/effective?action=account.read', {
+        .get('/v1/workspaces/:accountId/iam/members/:userId/effective?action=account.read', {
           params: { accountId: team.id, userId: member.userId! },
         });
       r.status(403);
@@ -394,7 +394,7 @@ flow(
   'IAM-15',
   {
     domain: 'iam',
-    routes: ['POST /v1/accounts/:accountId/iam/members/:userId/effective:batch'],
+    routes: ['POST /v1/workspaces/:accountId/iam/members/:userId/effective:batch'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -403,7 +403,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/members/:userId/effective:batch',
+          '/v1/workspaces/:accountId/iam/members/:userId/effective:batch',
           { probes: [{ action: 'account.read' }, { action: 'account.write' }] },
           { params: { accountId: team.id, userId: member.userId! } },
         );
@@ -413,7 +413,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/members/:userId/effective:batch',
+          '/v1/workspaces/:accountId/iam/members/:userId/effective:batch',
           { probes: 'nope' },
           { params: { accountId: team.id, userId: member.userId! } },
         );
@@ -423,7 +423,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/members/:userId/effective:batch',
+          '/v1/workspaces/:accountId/iam/members/:userId/effective:batch',
           { probes: [] },
           { params: { accountId: team.id, userId: member.userId! } },
         );
@@ -436,7 +436,7 @@ flow(
   'IAM-16',
   {
     domain: 'iam',
-    routes: ['GET /v1/accounts/:accountId/iam/members/:userId/project-access'],
+    routes: ['GET /v1/workspaces/:accountId/iam/members/:userId/project-access'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -444,7 +444,7 @@ flow(
     await ctx.step('OWNER reads member project-access → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/members/:userId/project-access', {
+        .get('/v1/workspaces/:accountId/iam/members/:userId/project-access', {
           params: { accountId: team.id, userId: member.userId! },
         });
       r.status(200).body().exists('$.projects');
@@ -452,7 +452,7 @@ flow(
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/members/:userId/project-access', {
+        .get('/v1/workspaces/:accountId/iam/members/:userId/project-access', {
           params: { accountId: team.id, userId: member.userId! },
         });
       r.status(403);
@@ -467,9 +467,9 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/mfa-required',
-      'GET /v1/accounts/:accountId/iam/mfa-required/preview',
-      'PATCH /v1/accounts/:accountId/iam/mfa-required',
+      'GET /v1/workspaces/:accountId/iam/mfa-required',
+      'GET /v1/workspaces/:accountId/iam/mfa-required/preview',
+      'PATCH /v1/workspaces/:accountId/iam/mfa-required',
     ],
   },
   async (ctx) => {
@@ -477,13 +477,13 @@ flow(
     await ctx.step('GET status → 200 enabled flag', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/mfa-required', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/mfa-required', { params: { accountId: team.id } });
       r.status(200).body().exists('$.enabled');
     });
     await ctx.step('GET preview → 200 lockout report', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/mfa-required/preview', {
+        .get('/v1/workspaces/:accountId/iam/mfa-required/preview', {
           params: { accountId: team.id },
         });
       r.status(200).body().exists('$.losers');
@@ -497,7 +497,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .patch(
-            '/v1/accounts/:accountId/iam/mfa-required',
+            '/v1/workspaces/:accountId/iam/mfa-required',
             { enabled: true },
             { params: { accountId: team.id } },
           );
@@ -508,7 +508,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/mfa-required',
+          '/v1/workspaces/:accountId/iam/mfa-required',
           { enabled: false },
           { params: { accountId: team.id } },
         );
@@ -517,7 +517,7 @@ flow(
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/mfa-required', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/mfa-required', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -530,8 +530,8 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/pat-policy',
-      'PATCH /v1/accounts/:accountId/iam/pat-policy',
+      'GET /v1/workspaces/:accountId/iam/pat-policy',
+      'PATCH /v1/workspaces/:accountId/iam/pat-policy',
     ],
   },
   async (ctx) => {
@@ -539,14 +539,14 @@ flow(
     await ctx.step('GET pat-policy → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/pat-policy', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/pat-policy', { params: { accountId: team.id } });
       r.status(200).body().exists('$.require_expiry');
     });
     await ctx.step('PATCH valid values → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/pat-policy',
+          '/v1/workspaces/:accountId/iam/pat-policy',
           { max_lifetime_days: 90, require_expiry: true },
           { params: { accountId: team.id } },
         );
@@ -556,7 +556,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/pat-policy',
+          '/v1/workspaces/:accountId/iam/pat-policy',
           { max_lifetime_days: 999999 },
           { params: { accountId: team.id } },
         );
@@ -566,7 +566,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/pat-policy',
+          '/v1/workspaces/:accountId/iam/pat-policy',
           { max_lifetime_days: null, require_expiry: false },
           { params: { accountId: team.id } },
         );
@@ -575,7 +575,7 @@ flow(
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/pat-policy', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/pat-policy', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -588,8 +588,8 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/session-policy',
-      'PATCH /v1/accounts/:accountId/iam/session-policy',
+      'GET /v1/workspaces/:accountId/iam/session-policy',
+      'PATCH /v1/workspaces/:accountId/iam/session-policy',
     ],
   },
   async (ctx) => {
@@ -597,7 +597,7 @@ flow(
     await ctx.step('GET session-policy → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/session-policy', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/session-policy', { params: { accountId: team.id } });
       // Fresh account has no policy set → max_lifetime_minutes is null until PATCHed.
       r.status(200);
     });
@@ -605,7 +605,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/session-policy',
+          '/v1/workspaces/:accountId/iam/session-policy',
           { max_lifetime_minutes: 1440, idle_timeout_minutes: 60 },
           { params: { accountId: team.id } },
         );
@@ -615,7 +615,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/session-policy',
+          '/v1/workspaces/:accountId/iam/session-policy',
           { max_lifetime_minutes: 999999 },
           { params: { accountId: team.id } },
         );
@@ -625,7 +625,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/session-policy',
+          '/v1/workspaces/:accountId/iam/session-policy',
           { max_lifetime_minutes: null, idle_timeout_minutes: null },
           { params: { accountId: team.id } },
         );
@@ -634,7 +634,7 @@ flow(
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/session-policy', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/session-policy', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -647,8 +647,8 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/sessions',
-      'POST /v1/accounts/:accountId/iam/sessions/:sessionId/revoke',
+      'GET /v1/workspaces/:accountId/iam/sessions',
+      'POST /v1/workspaces/:accountId/iam/sessions/:sessionId/revoke',
     ],
   },
   async (ctx) => {
@@ -656,14 +656,14 @@ flow(
     await ctx.step('list sessions → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/sessions', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/sessions', { params: { accountId: team.id } });
       r.status(200).body().exists('$.sessions');
     });
     await ctx.step('revoke unknown session → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/sessions/:sessionId/revoke',
+          '/v1/workspaces/:accountId/iam/sessions/:sessionId/revoke',
           {},
           { params: { accountId: team.id, sessionId: '00000000-0000-0000-0000-000000000000' } },
         );
@@ -672,7 +672,7 @@ flow(
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/sessions', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/sessions', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -685,9 +685,9 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/scim/tokens',
-      'POST /v1/accounts/:accountId/iam/scim/tokens',
-      'DELETE /v1/accounts/:accountId/iam/scim/tokens/:tokenId',
+      'GET /v1/workspaces/:accountId/iam/scim/tokens',
+      'POST /v1/workspaces/:accountId/iam/scim/tokens',
+      'DELETE /v1/workspaces/:accountId/iam/scim/tokens/:tokenId',
     ],
   },
   async (ctx) => {
@@ -703,7 +703,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/scim/tokens',
+          '/v1/workspaces/:accountId/iam/scim/tokens',
           { name: ctx.fixtures.name('scim') },
           { params: { accountId: team.id } },
         );
@@ -713,19 +713,19 @@ flow(
     await ctx.step('missing name → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/accounts/:accountId/iam/scim/tokens', {}, { params: { accountId: team.id } });
+        .post('/v1/workspaces/:accountId/iam/scim/tokens', {}, { params: { accountId: team.id } });
       r.status(400);
     });
     await ctx.step('list does not expose secret → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/scim/tokens', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/scim/tokens', { params: { accountId: team.id } });
       r.status(200).body().exists('$.tokens');
     });
     await ctx.step('revoke token → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/scim/tokens/:tokenId', {
+        .del('/v1/workspaces/:accountId/iam/scim/tokens/:tokenId', {
           params: { accountId: team.id, tokenId },
         });
       r.status(200).body().has('$.revoked', true);
@@ -733,7 +733,7 @@ flow(
     await ctx.step('revoke again → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/scim/tokens/:tokenId', {
+        .del('/v1/workspaces/:accountId/iam/scim/tokens/:tokenId', {
           params: { accountId: team.id, tokenId },
         });
       r.status(404);
@@ -741,7 +741,7 @@ flow(
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/scim/tokens', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/scim/tokens', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -754,10 +754,10 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/service-accounts',
-      'POST /v1/accounts/:accountId/iam/service-accounts',
-      'POST /v1/accounts/:accountId/iam/service-accounts/:saId/disable',
-      'DELETE /v1/accounts/:accountId/iam/service-accounts/:saId',
+      'GET /v1/workspaces/:accountId/iam/service-accounts',
+      'POST /v1/workspaces/:accountId/iam/service-accounts',
+      'POST /v1/workspaces/:accountId/iam/service-accounts/:saId/disable',
+      'DELETE /v1/workspaces/:accountId/iam/service-accounts/:saId',
     ],
   },
   async (ctx) => {
@@ -767,7 +767,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/service-accounts',
+          '/v1/workspaces/:accountId/iam/service-accounts',
           { name: ctx.fixtures.name('sa'), description: 'e2e' },
           { params: { accountId: team.id } },
         );
@@ -778,7 +778,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/service-accounts',
+          '/v1/workspaces/:accountId/iam/service-accounts',
           {},
           { params: { accountId: team.id } },
         );
@@ -787,14 +787,14 @@ flow(
     await ctx.step('list service accounts → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/service-accounts', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/service-accounts', { params: { accountId: team.id } });
       r.status(200).body().exists('$.service_accounts');
     });
     await ctx.step('disable service account → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/service-accounts/:saId/disable',
+          '/v1/workspaces/:accountId/iam/service-accounts/:saId/disable',
           {},
           { params: { accountId: team.id, saId } },
         );
@@ -804,7 +804,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/service-accounts/:saId/disable',
+          '/v1/workspaces/:accountId/iam/service-accounts/:saId/disable',
           {},
           { params: { accountId: team.id, saId } },
         );
@@ -813,7 +813,7 @@ flow(
     await ctx.step('delete service account → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/service-accounts/:saId', {
+        .del('/v1/workspaces/:accountId/iam/service-accounts/:saId', {
           params: { accountId: team.id, saId },
         });
       r.status(200).body().has('$.deleted', true);
@@ -822,7 +822,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/service-accounts/:saId/disable',
+          '/v1/workspaces/:accountId/iam/service-accounts/:saId/disable',
           {},
           { params: { accountId: team.id, saId: '00000000-0000-0000-0000-000000000000' } },
         );
@@ -831,7 +831,7 @@ flow(
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/service-accounts', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/service-accounts', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -844,9 +844,9 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/sso/provider',
-      'PUT /v1/accounts/:accountId/iam/sso/provider',
-      'DELETE /v1/accounts/:accountId/iam/sso/provider',
+      'GET /v1/workspaces/:accountId/iam/sso/provider',
+      'PUT /v1/workspaces/:accountId/iam/sso/provider',
+      'DELETE /v1/workspaces/:accountId/iam/sso/provider',
     ],
   },
   async (ctx) => {
@@ -862,14 +862,14 @@ flow(
     await ctx.step('GET provider (none configured) → 200 null', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/sso/provider', { params: { accountId: team.id } });
       r.status(200).body().has('$.provider', null);
     });
     await ctx.step('PUT invalid supabase id → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/accounts/:accountId/iam/sso/provider',
+          '/v1/workspaces/:accountId/iam/sso/provider',
           { supabase_sso_provider_id: 'not-a-uuid', name: 'Okta', primary_domain: 'acme.com' },
           { params: { accountId: team.id } },
         );
@@ -877,7 +877,7 @@ flow(
     });
     await ctx.step('PUT invalid domain → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).put(
-        '/v1/accounts/:accountId/iam/sso/provider',
+        '/v1/workspaces/:accountId/iam/sso/provider',
         {
           supabase_sso_provider_id: supabaseProviderId,
           name: 'Okta',
@@ -889,7 +889,7 @@ flow(
     });
     await ctx.step('PUT valid → 200 provider', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).put(
-        '/v1/accounts/:accountId/iam/sso/provider',
+        '/v1/workspaces/:accountId/iam/sso/provider',
         {
           supabase_sso_provider_id: supabaseProviderId,
           name: 'Okta',
@@ -902,19 +902,19 @@ flow(
     await ctx.step('DELETE provider → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: team.id } });
+        .del('/v1/workspaces/:accountId/iam/sso/provider', { params: { accountId: team.id } });
       r.status(200).body().has('$.deleted', true);
     });
     await ctx.step('DELETE again (none) → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: team.id } });
+        .del('/v1/workspaces/:accountId/iam/sso/provider', { params: { accountId: team.id } });
       r.status(404);
     });
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/sso/provider', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -925,9 +925,9 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/sso/mappings',
-      'POST /v1/accounts/:accountId/iam/sso/mappings',
-      'DELETE /v1/accounts/:accountId/iam/sso/mappings/:mappingId',
+      'GET /v1/workspaces/:accountId/iam/sso/mappings',
+      'POST /v1/workspaces/:accountId/iam/sso/mappings',
+      'DELETE /v1/workspaces/:accountId/iam/sso/mappings/:mappingId',
     ],
   },
   async (ctx) => {
@@ -945,7 +945,7 @@ flow(
     await ctx.step('list mappings (empty) → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/sso/mappings', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/sso/mappings', { params: { accountId: team.id } });
       r.status(200).body().exists('$.mappings');
     });
     await ctx.step('POST mapping with no SSO provider → 409', async () => {
@@ -954,7 +954,7 @@ flow(
       const g = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/groups',
+          '/v1/workspaces/:accountId/iam/groups',
           { name: ctx.fixtures.name('grp') },
           { params: { accountId: team.id } },
         );
@@ -963,7 +963,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/sso/mappings',
+          '/v1/workspaces/:accountId/iam/sso/mappings',
           { claim_value: 'engineers', group_id: groupId },
           { params: { accountId: team.id } },
         );
@@ -973,7 +973,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/sso/mappings',
+          '/v1/workspaces/:accountId/iam/sso/mappings',
           { claim_value: 'engineers', group_id: 'not-a-uuid' },
           { params: { accountId: team.id } },
         );
@@ -983,7 +983,7 @@ flow(
       // Configure a provider so the mapping create can succeed, then
       // exercise POST 201 and DELETE 200.
       const prov = await ctx.client.as(ctx.P.OWNER).put(
-        '/v1/accounts/:accountId/iam/sso/provider',
+        '/v1/workspaces/:accountId/iam/sso/provider',
         {
           supabase_sso_provider_id: supabaseProviderId,
           name: 'Okta',
@@ -995,7 +995,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/sso/mappings',
+          '/v1/workspaces/:accountId/iam/sso/mappings',
           { claim_value: ctx.fixtures.name('claim'), group_id: groupId },
           { params: { accountId: team.id } },
         );
@@ -1004,7 +1004,7 @@ flow(
       // A mapping names its group: a plain member lists none (MEM-8).
       const member = await team.addMember('member');
       const listed = async (who: typeof member) =>
-        (await ctx.client.as(who).get('/v1/accounts/:accountId/iam/sso/mappings', { params: { accountId: team.id } }))
+        (await ctx.client.as(who).get('/v1/workspaces/:accountId/iam/sso/mappings', { params: { accountId: team.id } }))
           .status(200)
           .json<{ mappings: Array<{ mapping_id: string }> }>()
           .mappings.map((m) => m.mapping_id);
@@ -1013,7 +1013,7 @@ flow(
       if (seen.length !== 0) throw new Error(`a plain member listed SSO mappings: ${JSON.stringify(seen)}`);
       const del = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/sso/mappings/:mappingId', {
+        .del('/v1/workspaces/:accountId/iam/sso/mappings/:mappingId', {
           params: { accountId: team.id, mappingId },
         });
       del.status(200).body().has('$.deleted', true);
@@ -1021,7 +1021,7 @@ flow(
     await ctx.step('DELETE unknown mapping → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/sso/mappings/:mappingId', {
+        .del('/v1/workspaces/:accountId/iam/sso/mappings/:mappingId', {
           params: { accountId: team.id, mappingId: '00000000-0000-0000-0000-000000000000' },
         });
       r.status(404);
@@ -1029,7 +1029,7 @@ flow(
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/sso/mappings', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/sso/mappings', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -1042,14 +1042,14 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/actions',
-      'GET /v1/accounts/:accountId/iam/roles',
-      'POST /v1/accounts/:accountId/iam/roles',
-      'GET /v1/accounts/:accountId/iam/roles/:roleId/permissions',
-      'PUT /v1/accounts/:accountId/iam/roles/:roleId/permissions',
-      'GET /v1/accounts/:accountId/iam/roles/:roleId/usage',
-      'PATCH /v1/accounts/:accountId/iam/roles/:roleId',
-      'DELETE /v1/accounts/:accountId/iam/roles/:roleId',
+      'GET /v1/workspaces/:accountId/iam/actions',
+      'GET /v1/workspaces/:accountId/iam/roles',
+      'POST /v1/workspaces/:accountId/iam/roles',
+      'GET /v1/workspaces/:accountId/iam/roles/:roleId/permissions',
+      'PUT /v1/workspaces/:accountId/iam/roles/:roleId/permissions',
+      'GET /v1/workspaces/:accountId/iam/roles/:roleId/usage',
+      'PATCH /v1/workspaces/:accountId/iam/roles/:roleId',
+      'DELETE /v1/workspaces/:accountId/iam/roles/:roleId',
     ],
   },
   async (ctx) => {
@@ -1067,20 +1067,20 @@ flow(
     await ctx.step('OWNER reads the action catalog → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/actions', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/actions', { params: { accountId: team.id } });
       r.status(200).body().exists('$.actions');
     });
 
     await ctx.step('OWNER lists built-in + custom roles → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/roles', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/roles', { params: { accountId: team.id } });
       r.status(200).body().exists('$.roles');
     });
 
     await ctx.step('OWNER creates a project-scoped custom review role → 201', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/iam/roles',
+        '/v1/workspaces/:accountId/iam/roles',
         {
           key: roleKey,
           name: 'Review triager',
@@ -1098,7 +1098,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/roles',
+          '/v1/workspaces/:accountId/iam/roles',
           { key: 'bad key', name: 'Bad', resourceType: 'project', actions: [] },
           { params: { accountId: team.id } },
         );
@@ -1108,7 +1108,7 @@ flow(
     await ctx.step('role permissions can be read and replaced', async () => {
       const before = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/roles/:roleId/permissions', {
+        .get('/v1/workspaces/:accountId/iam/roles/:roleId/permissions', {
           params: { accountId: team.id, roleId },
         });
       before.status(200).body().has('$.role_id', roleId).exists('$.actions');
@@ -1116,7 +1116,7 @@ flow(
       const updated = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/accounts/:accountId/iam/roles/:roleId/permissions',
+          '/v1/workspaces/:accountId/iam/roles/:roleId/permissions',
           { actions: ['project.review.read', 'project.review.submit'] },
           { params: { accountId: team.id, roleId } },
         );
@@ -1127,7 +1127,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/accounts/:accountId/iam/roles/:roleId/permissions',
+          '/v1/workspaces/:accountId/iam/roles/:roleId/permissions',
           { actions: ['project.review.read'] },
           { params: { accountId: team.id, roleId: 'builtin:manager' } },
         );
@@ -1137,7 +1137,7 @@ flow(
     await ctx.step('role usage starts at zero → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/roles/:roleId/usage', {
+        .get('/v1/workspaces/:accountId/iam/roles/:roleId/usage', {
           params: { accountId: team.id, roleId },
         });
       r.status(200).body().has('$.role_id', roleId).has('$.policy_count', 0);
@@ -1147,7 +1147,7 @@ flow(
       const patched = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/roles/:roleId',
+          '/v1/workspaces/:accountId/iam/roles/:roleId',
           { name: 'Review intake triager' },
           { params: { accountId: team.id, roleId } },
         );
@@ -1155,14 +1155,14 @@ flow(
 
       const deleted = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/roles/:roleId', {
+        .del('/v1/workspaces/:accountId/iam/roles/:roleId', {
           params: { accountId: team.id, roleId },
         });
       deleted.status(200).body().has('$.deleted', true);
     });
 
     await ctx.step('deleting an unknown role → 404', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/iam/roles/:roleId', {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/workspaces/:accountId/iam/roles/:roleId', {
         params: { accountId: team.id, roleId },
       });
       r.status(404);
@@ -1175,13 +1175,13 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/policies',
-      'GET /v1/accounts/:accountId/iam/agent-identities',
-      'POST /v1/accounts/:accountId/iam/policies',
-      'PATCH /v1/accounts/:accountId/iam/policies/:policyId',
-      'DELETE /v1/accounts/:accountId/iam/policies/:policyId',
-      'POST /v1/accounts/:accountId/iam/policies:bulk-delete',
-      'POST /v1/accounts/:accountId/iam/policies:bulk-import',
+      'GET /v1/workspaces/:accountId/iam/policies',
+      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'POST /v1/workspaces/:accountId/iam/policies',
+      'PATCH /v1/workspaces/:accountId/iam/policies/:policyId',
+      'DELETE /v1/workspaces/:accountId/iam/policies/:policyId',
+      'POST /v1/workspaces/:accountId/iam/policies:bulk-delete',
+      'POST /v1/workspaces/:accountId/iam/policies:bulk-import',
     ],
   },
   async (ctx) => {
@@ -1201,7 +1201,7 @@ flow(
 
     await ctx.step('create a project custom role for policies', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/iam/roles',
+        '/v1/workspaces/:accountId/iam/roles',
         {
           key: roleKey,
           name: 'Project review submitter',
@@ -1217,18 +1217,18 @@ flow(
     await ctx.step('OWNER lists policies and agent identities → 200', async () => {
       const policies = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/policies', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/policies', { params: { accountId: team.id } });
       policies.status(200).body().exists('$.policies');
 
       const agents = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/agent-identities', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/agent-identities', { params: { accountId: team.id } });
       agents.status(200).body().exists('$.agents');
     });
 
     await ctx.step('OWNER binds a member to the custom role on one project → 201', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/iam/policies',
+        '/v1/workspaces/:accountId/iam/policies',
         {
           principalType: 'member',
           principalId: member.userId,
@@ -1244,7 +1244,7 @@ flow(
 
     await ctx.step('built-in role policies are rejected → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/iam/policies',
+        '/v1/workspaces/:accountId/iam/policies',
         {
           principalType: 'member',
           principalId: member.userId,
@@ -1261,7 +1261,7 @@ flow(
       const patched = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/iam/policies/:policyId',
+          '/v1/workspaces/:accountId/iam/policies/:policyId',
           { roleId, scopeType: 'project', scopeId: project.id },
           { params: { accountId: team.id, policyId } },
         );
@@ -1269,7 +1269,7 @@ flow(
 
       const deleted = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/policies/:policyId', {
+        .del('/v1/workspaces/:accountId/iam/policies/:policyId', {
           params: { accountId: team.id, policyId },
         });
       deleted.status(200).body().has('$.deleted', true);
@@ -1277,7 +1277,7 @@ flow(
 
     await ctx.step('bulk-delete removes matching policy ids', async () => {
       const created = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/iam/policies',
+        '/v1/workspaces/:accountId/iam/policies',
         {
           principalType: 'member',
           principalId: member.userId,
@@ -1291,7 +1291,7 @@ flow(
       const bulk = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/policies:bulk-delete',
+          '/v1/workspaces/:accountId/iam/policies:bulk-delete',
           { policy_ids: [created.json<any>().policy_id] },
           { params: { accountId: team.id } },
         );
@@ -1300,7 +1300,7 @@ flow(
 
     await ctx.step('bulk-import creates portable role-key policy rows', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/iam/policies:bulk-import',
+        '/v1/workspaces/:accountId/iam/policies:bulk-import',
         {
           policies: [
             {
@@ -1321,7 +1321,7 @@ flow(
     await ctx.step('NONMEMBER cannot read policies → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/policies', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/policies', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -1334,8 +1334,8 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/assignments',
-      'POST /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/workspaces/:accountId/iam/assignments',
+      'POST /v1/workspaces/:accountId/iam/assignments',
     ],
   },
   async (ctx) => {
@@ -1348,7 +1348,7 @@ flow(
     await ctx.step('the mirrored membership is visible as an account-scope assignment', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/assignments', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/assignments', { params: { accountId: team.id } });
       r.status(200).body().exists('$.assignments');
       const rows = r.json<any>().assignments as any[];
       const own = rows.find((a) => a.principal_id === member.userId && a.scope_type === 'account');
@@ -1358,7 +1358,7 @@ flow(
     });
 
     await ctx.step('half a principal filter is a 400 — it would widen the answer', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/assignments', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/iam/assignments', {
         params: { accountId: team.id },
         query: { principal_id: member.userId },
       });
@@ -1368,7 +1368,7 @@ flow(
     await ctx.step('OWNER grants a project role → 201, and it is an upsert', async () => {
       const grant = () =>
         ctx.client.as(ctx.P.OWNER).post(
-          '/v1/accounts/:accountId/iam/assignments',
+          '/v1/workspaces/:accountId/iam/assignments',
           {
             principal_type: 'user',
             principal_id: member.userId,
@@ -1398,7 +1398,7 @@ flow(
       // asserted with a principal who holds no project role at all.
       const bystander = await team.addMember('member');
       const r = await ctx.client.as(bystander).post(
-        '/v1/accounts/:accountId/iam/assignments',
+        '/v1/workspaces/:accountId/iam/assignments',
         {
           principal_type: 'user',
           principal_id: bystander.userId,
@@ -1413,7 +1413,7 @@ flow(
 
     await ctx.step('a malformed id is a 400 naming the field, never a 500', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/iam/assignments',
+        '/v1/workspaces/:accountId/iam/assignments',
         {
           principal_type: 'user',
           principal_id: 'not-a-uuid',
@@ -1430,7 +1430,7 @@ flow(
       const ghost = '00000000-0000-4000-8000-0000000000ff';
       for (const principalType of ['user', 'group', 'service_account']) {
         const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/accounts/:accountId/iam/assignments',
+          '/v1/workspaces/:accountId/iam/assignments',
           {
             principal_type: principalType,
             principal_id: ghost,
@@ -1446,7 +1446,7 @@ flow(
 
     await ctx.step('object_type and object_id must arrive together → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/iam/assignments',
+        '/v1/workspaces/:accountId/iam/assignments',
         {
           principal_type: 'user',
           principal_id: member.userId,
@@ -1463,13 +1463,13 @@ flow(
     await ctx.step('ADMIN cannot grant owner — not to themselves, not to anyone → 403', async () => {
       for (const principalId of [admin.userId, member.userId]) {
         const r = await ctx.client.as(admin).post(
-          '/v1/accounts/:accountId/iam/assignments',
+          '/v1/workspaces/:accountId/iam/assignments',
           { principal_type: 'user', principal_id: principalId, role_key: 'owner', scope_type: 'account' },
           { params: { accountId: team.id } },
         );
         r.status(403);
       }
-      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/assignments', {
+      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/iam/assignments', {
         params: { accountId: team.id },
         query: { scope_type: 'account' },
       });
@@ -1487,7 +1487,7 @@ flow(
       const g = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/groups',
+          '/v1/workspaces/:accountId/iam/groups',
           { name: ctx.fixtures.name('acct-role-grp') },
           { params: { accountId: team.id } },
         );
@@ -1495,7 +1495,7 @@ flow(
       const groupId = g.json<any>().group_id;
       for (const roleKey of ['owner', 'admin', 'member']) {
         const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/accounts/:accountId/iam/assignments',
+          '/v1/workspaces/:accountId/iam/assignments',
           { principal_type: 'group', principal_id: groupId, role_key: roleKey, scope_type: 'account' },
           { params: { accountId: team.id } },
         );
@@ -1506,7 +1506,7 @@ flow(
     await ctx.step('NONMEMBER cannot read assignments → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/assignments', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/assignments', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -1516,7 +1516,7 @@ flow(
   'IAM-36',
   {
     domain: 'iam',
-    routes: ['DELETE /v1/accounts/:accountId/iam/assignments/:assignmentId'],
+    routes: ['DELETE /v1/workspaces/:accountId/iam/assignments/:assignmentId'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -1527,7 +1527,7 @@ flow(
 
     await ctx.step('grant a project role to revoke', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/iam/assignments',
+        '/v1/workspaces/:accountId/iam/assignments',
         {
           principal_type: 'user',
           principal_id: member.userId,
@@ -1544,7 +1544,7 @@ flow(
     await ctx.step('the grant is visible on the project access read model', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/access', { params: { projectId: project.id } });
       r.status(200);
       const row = (r.json<any>().members as any[]).find((m) => m.user_id === member.userId);
       if (!row || row.project_role !== 'manager') {
@@ -1555,14 +1555,14 @@ flow(
     await ctx.step('DELETE revokes it, and a second DELETE is 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+        .del('/v1/workspaces/:accountId/iam/assignments/:assignmentId', {
           params: { accountId: team.id, assignmentId },
         });
       r.status(200).body().has('$.revoked', true);
 
       const again = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+        .del('/v1/workspaces/:accountId/iam/assignments/:assignmentId', {
           params: { accountId: team.id, assignmentId },
         });
       again.status(404);
@@ -1571,7 +1571,7 @@ flow(
     await ctx.step('the revoke is gone from the read model too', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/access', { params: { projectId: project.id } });
       r.status(200);
       const row = (r.json<any>().members as any[]).find((m) => m.user_id === member.userId);
       if (row && row.project_role !== null) {
@@ -1580,7 +1580,7 @@ flow(
     });
 
     await ctx.step("a principal's ONLY account role is not revocable here → 409", async () => {
-      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/assignments', {
+      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/iam/assignments', {
         params: { accountId: team.id },
         query: { principal_type: 'user', principal_id: member.userId, scope_type: 'account' },
       });
@@ -1591,14 +1591,14 @@ flow(
       }
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+        .del('/v1/workspaces/:accountId/iam/assignments/:assignmentId', {
           params: { accountId: team.id, assignmentId: rows[0].assignment_id },
         });
       r.status(409);
     });
 
     await ctx.step("ADMIN cannot revoke an owner's owner assignment → 403", async () => {
-      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/assignments', {
+      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/iam/assignments', {
         params: { accountId: team.id },
         query: { principal_type: 'user', principal_id: ctx.P.OWNER.userId!, scope_type: 'account' },
       });
@@ -1607,7 +1607,7 @@ flow(
       if (!ownerRow) throw new Error('expected the OWNER to hold an owner assignment');
       const r = await ctx.client
         .as(admin)
-        .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+        .del('/v1/workspaces/:accountId/iam/assignments/:assignmentId', {
           params: { accountId: team.id, assignmentId: ownerRow.assignment_id },
         });
       r.status(403);
@@ -1616,7 +1616,7 @@ flow(
     await ctx.step('a malformed assignment id is a 404, never a 500', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+        .del('/v1/workspaces/:accountId/iam/assignments/:assignmentId', {
           params: { accountId: team.id, assignmentId: 'not-a-uuid' },
         });
       r.status(404);
@@ -1626,7 +1626,7 @@ flow(
 
 flow(
   'IAM-37',
-  { domain: 'iam', routes: ['GET /v1/accounts/:accountId/iam/permissions'] },
+  { domain: 'iam', routes: ['GET /v1/workspaces/:accountId/iam/permissions'] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
@@ -1634,7 +1634,7 @@ flow(
     await ctx.step('the catalog carries scope, delegability and a real description', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/permissions', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/permissions', { params: { accountId: team.id } });
       r.status(200).body().exists('$.permissions');
       const rows = r.json<any>().permissions as any[];
       if (rows.length < 60) throw new Error(`expected the full catalog, got ${rows.length} rows`);
@@ -1659,7 +1659,7 @@ flow(
     });
 
     await ctx.step('scope_type narrows it', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/permissions', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/iam/permissions', {
         params: { accountId: team.id },
         query: { scope_type: 'account' },
       });
@@ -1673,7 +1673,7 @@ flow(
     await ctx.step('a plain MEMBER cannot read the catalog → 403', async () => {
       const r = await ctx.client
         .as(member)
-        .get('/v1/accounts/:accountId/iam/permissions', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/permissions', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -1684,8 +1684,8 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/roles',
-      'GET /v1/accounts/:accountId/iam/roles/:roleId/permissions',
+      'GET /v1/workspaces/:accountId/iam/roles',
+      'GET /v1/workspaces/:accountId/iam/roles/:roleId/permissions',
     ],
   },
   async (ctx) => {
@@ -1696,7 +1696,7 @@ flow(
     await ctx.step('system roles come from the seeded DB rows, all six of them', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/roles', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/roles', { params: { accountId: team.id } });
       r.status(200).body().exists('$.roles');
       const system = (r.json<any>().roles as any[]).filter((role) => role.is_system);
       const seen = system.map((role) => `${role.resource_type}:${role.key}`).sort().join(',');
@@ -1719,12 +1719,12 @@ flow(
     await ctx.step('the advertised key is the key POST /iam/assignments accepts', async () => {
       const roles = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/roles', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/roles', { params: { accountId: team.id } });
       const key = (roles.json<any>().roles as any[]).find(
         (role) => role.is_system && role.resource_type === 'project' && role.key === 'member',
       ).key;
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/iam/assignments',
+        '/v1/workspaces/:accountId/iam/assignments',
         {
           principal_type: 'user',
           principal_id: member.userId,
@@ -1740,7 +1740,7 @@ flow(
     await ctx.step("a system role's permissions come from role_permissions", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/roles/:roleId/permissions', {
+        .get('/v1/workspaces/:accountId/iam/roles/:roleId/permissions', {
           params: { accountId: team.id, roleId: 'builtin:user' },
         });
       r.status(200).body().has('$.key', 'member');
@@ -1753,7 +1753,7 @@ flow(
     await ctx.step('the object-grant marker is a system role and is not deletable', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/roles/:roleId', {
+        .del('/v1/workspaces/:accountId/iam/roles/:roleId', {
           params: { accountId: team.id, roleId: 'builtin:agent-user' },
         });
       r.status(400);
@@ -1766,10 +1766,10 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/resource-grants',
-      'GET /v1/projects/:projectId/resource-grants',
-      'GET /v1/projects/:projectId/access',
-      'GET /v1/accounts/:accountId/iam/members/:userId/project-access',
+      'GET /v1/workspaces/:accountId/iam/resource-grants',
+      'GET /v1/workspaces/:projectId/resource-grants',
+      'GET /v1/workspaces/:projectId/access',
+      'GET /v1/workspaces/:accountId/iam/members/:userId/project-access',
     ],
   },
   async (ctx) => {
@@ -1779,7 +1779,7 @@ flow(
 
     await ctx.step('grant a project role through the canonical write path', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/iam/assignments',
+        '/v1/workspaces/:accountId/iam/assignments',
         {
           principal_type: 'user',
           principal_id: member.userId,
@@ -1795,7 +1795,7 @@ flow(
     await ctx.step('every read model reports the same grant', async () => {
       const access = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/access', { params: { projectId: project.id } });
       access.status(200).body().has('$.project_id', project.id).exists('$.group_access');
       const row = (access.json<any>().members as any[]).find((m) => m.user_id === member.userId);
       if (!row || row.project_role !== 'manager' || row.effective_project_role !== 'manager') {
@@ -1807,7 +1807,7 @@ flow(
 
       const projectAccess = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/members/:userId/project-access', {
+        .get('/v1/workspaces/:accountId/iam/members/:userId/project-access', {
           params: { accountId: team.id, userId: member.userId! },
         });
       projectAccess.status(200);
@@ -1820,7 +1820,7 @@ flow(
 
       const directory = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/members', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/members', { params: { accountId: team.id } });
       directory.status(200);
       const dirRow = (directory.json<any>() as any[]).find((m) => m.user_id === member.userId);
       if (!dirRow || dirRow.account_role !== 'member' || dirRow.explicit_project_count !== 1) {
@@ -1834,19 +1834,19 @@ flow(
     await ctx.step('resource-grant read models answer for an unscoped project', async () => {
       const perProject = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/resource-grants', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/resource-grants', { params: { projectId: project.id } });
       perProject.status(200).body().exists('$.grants');
 
       const accountWide = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/resource-grants', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/resource-grants', { params: { accountId: team.id } });
       accountWide.status(200).body().exists('$.grants');
     });
 
     await ctx.step('NONMEMBER cannot read the account-wide footprint → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/resource-grants', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/iam/resource-grants', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -1877,11 +1877,11 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/session-oversight',
-      'PATCH /v1/accounts/:accountId/iam/session-oversight',
-      'GET /v1/projects/:projectId/sessions',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
-      'GET /v1/accounts/:accountId/audit',
+      'GET /v1/workspaces/:accountId/iam/session-oversight',
+      'PATCH /v1/workspaces/:accountId/iam/session-oversight',
+      'GET /v1/workspaces/:projectId/sessions',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
+      'GET /v1/workspaces/:accountId/audit',
     ],
     timeoutMs: 240_000,
   },
@@ -1909,11 +1909,11 @@ flow(
     });
 
     const readSession = (as: typeof owner) =>
-      as.get('/v1/projects/:projectId/sessions/:sessionId', {
+      as.get('/v1/workspaces/:projectId/sessions/:sessionId', {
         params: { projectId: project.id, sessionId: privateSessionId },
       });
     const inventoryIds = async (as: typeof owner, scope?: 'project') => {
-      const r = await as.get('/v1/projects/:projectId/sessions', {
+      const r = await as.get('/v1/workspaces/:projectId/sessions', {
         params: { projectId: project.id },
         ...(scope ? { query: { scope } } : {}),
       });
@@ -1943,11 +1943,11 @@ flow(
     let oversightOnAt = 0;
 
     await ctx.step('the policy is off by default; only the owner may change it', async () => {
-      const asOwner = await owner.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
+      const asOwner = await owner.get('/v1/workspaces/:accountId/iam/session-oversight', { params: accountParams });
       asOwner.status(200).body().has('$.enabled', false).has('$.can_change', true);
-      const asAdminRead = await asAdmin.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
+      const asAdminRead = await asAdmin.get('/v1/workspaces/:accountId/iam/session-oversight', { params: accountParams });
       asAdminRead.status(200).body().has('$.enabled', false).has('$.can_change', false);
-      const asMemberRead = await asBystander.get('/v1/accounts/:accountId/iam/session-oversight', {
+      const asMemberRead = await asBystander.get('/v1/workspaces/:accountId/iam/session-oversight', {
         params: accountParams,
       });
       asMemberRead.status(200).body().has('$.enabled', false).has('$.can_change', false);
@@ -1961,35 +1961,35 @@ flow(
     });
 
     await ctx.step('an admin cannot turn the policy on for themselves (403 account_owner_required)', async () => {
-      const r = await asAdmin.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: true }, {
+      const r = await asAdmin.patch('/v1/workspaces/:accountId/iam/session-oversight', { enabled: true }, {
         params: accountParams,
       });
       r.status(403).body().has('$.code', 'account_owner_required');
-      const readBack = await owner.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
+      const readBack = await owner.get('/v1/workspaces/:accountId/iam/session-oversight', { params: accountParams });
       readBack.status(200).body().has('$.enabled', false);
     });
 
     await ctx.step('a plain member cannot change the policy (403)', async () => {
-      const r = await asBystander.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: true }, {
+      const r = await asBystander.patch('/v1/workspaces/:accountId/iam/session-oversight', { enabled: true }, {
         params: accountParams,
       });
       r.status(403);
     });
 
     await ctx.step('a PATCH without an explicit boolean is refused (400) and changes nothing', async () => {
-      const r = await owner.patch('/v1/accounts/:accountId/iam/session-oversight', {}, { params: accountParams });
+      const r = await owner.patch('/v1/workspaces/:accountId/iam/session-oversight', {}, { params: accountParams });
       r.status(400);
-      const readBack = await owner.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
+      const readBack = await owner.get('/v1/workspaces/:accountId/iam/session-oversight', { params: accountParams });
       readBack.status(200).body().has('$.enabled', false);
     });
 
     await ctx.step('the owner turns the policy on; read-back reports it on', async () => {
-      const r = await owner.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: true }, {
+      const r = await owner.patch('/v1/workspaces/:accountId/iam/session-oversight', { enabled: true }, {
         params: accountParams,
       });
       r.status(200).body().has('$.enabled', true);
       oversightOnAt = Date.now();
-      const readBack = await asBystander.get('/v1/accounts/:accountId/iam/session-oversight', {
+      const readBack = await asBystander.get('/v1/workspaces/:accountId/iam/session-oversight', {
         params: accountParams,
       });
       readBack.status(200).body().has('$.enabled', true);
@@ -2017,7 +2017,7 @@ flow(
 
     await ctx.step('the audit log records the flip and the oversight read', async () => {
       const actions = async () => {
-        const r = await owner.get('/v1/accounts/:accountId/audit', {
+        const r = await owner.get('/v1/workspaces/:accountId/audit', {
           params: accountParams,
           query: { limit: '200' },
         });
@@ -2034,7 +2034,7 @@ flow(
     });
 
     await ctx.step('the owner turns the policy off; the admin loses access again', async () => {
-      const r = await owner.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: false }, {
+      const r = await owner.patch('/v1/workspaces/:accountId/iam/session-oversight', { enabled: false }, {
         params: accountParams,
       });
       r.status(200).body().has('$.enabled', false);
@@ -2058,9 +2058,9 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'POST /v1/accounts/:accountId/iam/assignments',
-      'GET /v1/accounts/:accountId/iam/assignments',
-      'GET /v1/projects/:projectId',
+      'POST /v1/workspaces/:accountId/iam/assignments',
+      'GET /v1/workspaces/:accountId/iam/assignments',
+      'GET /v1/workspaces/:projectId',
     ],
   },
   async (ctx) => {
@@ -2072,7 +2072,7 @@ flow(
 
     await ctx.step('an owner of one account cannot write a project role for a project of another account → 404', async () => {
       const r = await ctx.client.as(outsider).post(
-        '/v1/accounts/:accountId/iam/assignments',
+        '/v1/workspaces/:accountId/iam/assignments',
         {
           principal_type: 'user',
           principal_id: outsider.userId,
@@ -2087,7 +2087,7 @@ flow(
 
     await ctx.step('nor an object grant on that project → 404', async () => {
       const r = await ctx.client.as(outsider).post(
-        '/v1/accounts/:accountId/iam/assignments',
+        '/v1/workspaces/:accountId/iam/assignments',
         {
           principal_type: 'user',
           principal_id: outsider.userId,
@@ -2103,7 +2103,7 @@ flow(
     });
 
     await ctx.step('read-back: no row landed in either account and the outsider still has no project access', async () => {
-      const own = await ctx.client.as(outsider).get('/v1/accounts/:accountId/iam/assignments', {
+      const own = await ctx.client.as(outsider).get('/v1/workspaces/:accountId/iam/assignments', {
         params: ownAccount,
         query: { scope_type: 'project' },
       });
@@ -2111,14 +2111,14 @@ flow(
       if ((own.json<any>().assignments as any[]).some((a) => a.scope_id === project.id)) {
         throw new Error('a project-scoped row for a foreign project was stored');
       }
-      (await ctx.client.as(outsider).get('/v1/projects/:projectId', { params: { projectId: project.id } }))
+      (await ctx.client.as(outsider).get('/v1/workspaces/:projectId', { params: { projectId: project.id } }))
         .status([403, 404]);
     });
 
     await ctx.step("the project's own account still grants roles on it → 201", async () => {
       const member = await team.addMember('member');
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/iam/assignments',
+        '/v1/workspaces/:accountId/iam/assignments',
         {
           principal_type: 'user',
           principal_id: member.userId,
@@ -2138,10 +2138,10 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'PATCH /v1/accounts/:accountId/members/:userId',
-      'PATCH /v1/accounts/:accountId/iam/members/:userId/super-admin',
-      'GET /v1/accounts/:accountId/members',
-      'POST /v1/accounts/:accountId/iam/assignments',
+      'PATCH /v1/workspaces/:accountId/members/:userId',
+      'PATCH /v1/workspaces/:accountId/iam/members/:userId/super-admin',
+      'GET /v1/workspaces/:accountId/members',
+      'POST /v1/workspaces/:accountId/iam/assignments',
     ],
   },
   async (ctx) => {
@@ -2150,7 +2150,7 @@ flow(
     const cofounder = await team.addMember('admin');
     const owner = ctx.client.as(ctx.P.OWNER);
     const superAdminFlag = async () => {
-      const r = await owner.get('/v1/accounts/:accountId/members', { params });
+      const r = await owner.get('/v1/workspaces/:accountId/members', { params });
       r.status(200);
       const row = (r.json<any[]>()).find((m) => m.user_id === cofounder.userId);
       if (!row) throw new Error('co-founder missing from the member list');
@@ -2158,10 +2158,10 @@ flow(
     };
 
     await ctx.step('the owner makes a co-founder owner and super-admin', async () => {
-      (await owner.patch('/v1/accounts/:accountId/members/:userId', { role: 'owner' }, {
+      (await owner.patch('/v1/workspaces/:accountId/members/:userId', { role: 'owner' }, {
         params: { ...params, userId: cofounder.userId! },
       })).status(200).body().has('$.account_role', 'owner');
-      (await owner.patch('/v1/accounts/:accountId/iam/members/:userId/super-admin', { isSuperAdmin: true }, {
+      (await owner.patch('/v1/workspaces/:accountId/iam/members/:userId/super-admin', { isSuperAdmin: true }, {
         params: { ...params, userId: cofounder.userId! },
       })).status(200).body().has('$.is_super_admin', true);
       const state = await superAdminFlag();
@@ -2169,7 +2169,7 @@ flow(
     });
 
     await ctx.step('demoting that owner to member also clears super-admin', async () => {
-      (await owner.patch('/v1/accounts/:accountId/members/:userId', { role: 'member' }, {
+      (await owner.patch('/v1/workspaces/:accountId/members/:userId', { role: 'member' }, {
         params: { ...params, userId: cofounder.userId! },
       })).status(200).body().has('$.account_role', 'member');
       const state = await superAdminFlag();
@@ -2180,7 +2180,7 @@ flow(
 
     await ctx.step('the demoted member cannot grant themselves owner again → 403', async () => {
       const r = await ctx.client.as(cofounder).post(
-        '/v1/accounts/:accountId/iam/assignments',
+        '/v1/workspaces/:accountId/iam/assignments',
         { principal_type: 'user', principal_id: cofounder.userId, role_key: 'owner', scope_type: 'account' },
         { params },
       );
@@ -2190,10 +2190,10 @@ flow(
     });
 
     await ctx.step('a super-admin grant made while not an owner survives a role change that removes no owner role', async () => {
-      (await owner.patch('/v1/accounts/:accountId/iam/members/:userId/super-admin', { isSuperAdmin: true }, {
+      (await owner.patch('/v1/workspaces/:accountId/iam/members/:userId/super-admin', { isSuperAdmin: true }, {
         params: { ...params, userId: cofounder.userId! },
       })).status(200);
-      (await owner.patch('/v1/accounts/:accountId/members/:userId', { role: 'admin' }, {
+      (await owner.patch('/v1/workspaces/:accountId/members/:userId', { role: 'admin' }, {
         params: { ...params, userId: cofounder.userId! },
       })).status(200);
       const state = await superAdminFlag();
@@ -2209,12 +2209,12 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'POST /v1/accounts/:accountId/iam/assignments',
-      'GET /v1/projects/:projectId',
-      'GET /v1/projects/:projectId/detail',
-      'GET /v1/projects/:projectId/resource-grants',
-      'GET /v1/projects/:projectId/access',
-      'DELETE /v1/projects/:projectId/resource-grants/:grantId',
+      'POST /v1/workspaces/:accountId/iam/assignments',
+      'GET /v1/workspaces/:projectId',
+      'GET /v1/workspaces/:projectId/detail',
+      'GET /v1/workspaces/:projectId/resource-grants',
+      'GET /v1/workspaces/:projectId/access',
+      'DELETE /v1/workspaces/:projectId/resource-grants/:grantId',
     ],
   },
   async (ctx) => {
@@ -2237,7 +2237,7 @@ flow(
 
     // `/detail` narrows `config.agents` to the agents the caller may use.
     const visibleAgents = async (who: typeof member): Promise<string[]> => {
-      const r = await ctx.client.as(who).get('/v1/projects/:projectId/detail', {
+      const r = await ctx.client.as(who).get('/v1/workspaces/:projectId/detail', {
         params: { projectId: project.id },
       });
       r.status(200);
@@ -2278,7 +2278,7 @@ flow(
       ]) {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .post('/v1/accounts/:accountId/iam/assignments', body, { params: accountParams });
+          .post('/v1/workspaces/:accountId/iam/assignments', body, { params: accountParams });
         r.status(400);
       }
     });
@@ -2286,7 +2286,7 @@ flow(
     await ctx.step('a plain member cannot grant an agent to everyone → 403', async () => {
       const r = await ctx.client
         .as(member)
-        .post('/v1/accounts/:accountId/iam/assignments', everyone, { params: accountParams });
+        .post('/v1/workspaces/:accountId/iam/assignments', everyone, { params: accountParams });
       r.status(403);
     });
 
@@ -2294,7 +2294,7 @@ flow(
     await ctx.step('the owner grants the agent to everyone in the project → 201', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/accounts/:accountId/iam/assignments', everyone, { params: accountParams });
+        .post('/v1/workspaces/:accountId/iam/assignments', everyone, { params: accountParams });
       r.status(201)
         .body()
         .has('$.principal_type', 'project')
@@ -2313,14 +2313,14 @@ flow(
         expected: AGENT,
         actual: agents,
       });
-      const r = await ctx.client.as(outsider).get('/v1/projects/:projectId', {
+      const r = await ctx.client.as(outsider).get('/v1/workspaces/:projectId', {
         params: { projectId: project.id },
       });
       r.status([403, 404]);
     });
 
     await ctx.step('the resource-grants list shows the grant as everyone, labelled with the project name', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/resource-grants', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/resource-grants', {
         params: { projectId: project.id },
       });
       r.status(200);
@@ -2335,7 +2335,7 @@ flow(
     });
 
     await ctx.step('the access screen folds it onto every member as source "project", never as a group', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/access', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/access', {
         params: { projectId: project.id },
       });
       r.status(200);
@@ -2362,7 +2362,7 @@ flow(
     await ctx.step('deleting the grant closes the agent to the member again', async () => {
       const del = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/projects/:projectId/resource-grants/:grantId', {
+        .del('/v1/workspaces/:projectId/resource-grants/:grantId', {
           params: { projectId: project.id, grantId },
         });
       del.status(200);
@@ -2393,15 +2393,15 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'POST /v1/accounts/:accountId/iam/roles',
-      'POST /v1/accounts/:accountId/iam/policies',
-      'POST /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
-      'POST /v1/projects/:projectId/apps/artifacts',
-      'POST /v1/projects/:projectId/apps',
-      'POST /v1/projects/:projectId/secrets',
-      'GET /v1/projects/:projectId/secrets',
-      'DELETE /v1/projects/:projectId/secrets/:name',
+      'POST /v1/workspaces/:accountId/iam/roles',
+      'POST /v1/workspaces/:accountId/iam/policies',
+      'POST /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
+      'POST /v1/workspaces/:projectId/apps/artifacts',
+      'POST /v1/workspaces/:projectId/apps',
+      'POST /v1/workspaces/:projectId/secrets',
+      'GET /v1/workspaces/:projectId/secrets',
+      'DELETE /v1/workspaces/:projectId/secrets/:name',
     ],
   },
   async (ctx) => {
@@ -2418,14 +2418,14 @@ flow(
       const who = await team.addMember('member');
       const key = `${slug}_${Date.now().toString(36)}`;
       const role = await owner.post(
-        '/v1/accounts/:accountId/iam/roles',
+        '/v1/workspaces/:accountId/iam/roles',
         { key, name: key, resourceType: 'project', actions: ['project.read', ...actions] },
         { params: accountParams },
       );
       const roleId = role.status(201).json<{ role_id: string }>().role_id;
       (
         await owner.post(
-          '/v1/accounts/:accountId/iam/policies',
+          '/v1/workspaces/:accountId/iam/policies',
           { principalType: 'member', principalId: who.userId, roleId, scopeType: 'project', scopeId: project.id },
           { params: accountParams },
         )
@@ -2441,11 +2441,11 @@ flow(
       async () => {
         const author = await leafHolder('trigger_author', ['project.trigger.read', 'project.trigger.create']);
         const trigger = { name: 'Leaf Only', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'noop' };
-        (await once(() => author.post('/v1/projects/:projectId/triggers', trigger, { params }), 'trigger create'))
+        (await once(() => author.post('/v1/workspaces/:projectId/triggers', trigger, { params }), 'trigger create'))
           .status(201);
-        (await author.patch('/v1/projects/:projectId/triggers/:slug', { prompt_template: 'x' }, { params: { ...params, slug: 'leaf-only' } }))
+        (await author.patch('/v1/workspaces/:projectId/triggers/:slug', { prompt_template: 'x' }, { params: { ...params, slug: 'leaf-only' } }))
           .status(403);
-        (await asFloor.post('/v1/projects/:projectId/triggers', { ...trigger, name: 'Floor' }, { params })).status(403);
+        (await asFloor.post('/v1/workspaces/:projectId/triggers', { ...trigger, name: 'Floor' }, { params })).status(403);
       },
     );
 
@@ -2454,12 +2454,12 @@ flow(
       async () => {
         const deployer = await leafHolder('app_deployer', ['project.app.read', 'project.app.deploy']);
         const artifact = { kind: 'oci_image', image: 'docker.io/library/nginx:alpine' };
-        (await once(() => deployer.post('/v1/projects/:projectId/apps/artifacts', artifact, { params }), 'artifact register'))
+        (await once(() => deployer.post('/v1/workspaces/:projectId/apps/artifacts', artifact, { params }), 'artifact register'))
           .status(201)
           .body()
           .exists('$.artifact.artifact_id');
-        (await deployer.post('/v1/projects/:projectId/apps', { slug: 'leaf-only', name: 'Leaf only' }, { params })).status(403);
-        (await asFloor.post('/v1/projects/:projectId/apps/artifacts', artifact, { params })).status(403);
+        (await deployer.post('/v1/workspaces/:projectId/apps', { slug: 'leaf-only', name: 'Leaf only' }, { params })).status(403);
+        (await asFloor.post('/v1/workspaces/:projectId/apps/artifacts', artifact, { params })).status(403);
       },
     );
 
@@ -2467,11 +2467,11 @@ flow(
       'a custom role with project.secret.write (+ project.read, project.secret.read) writes, lists with can_manage: true and deletes a shared secret; a floor member → 403',
       async () => {
         const writer = await leafHolder('secret_writer', ['project.secret.read', 'project.secret.write']);
-        (await once(() => writer.post('/v1/projects/:projectId/secrets', { name: 'LEAF_ONLY', value: 'v1' }, { params }), 'secret write'))
+        (await once(() => writer.post('/v1/workspaces/:projectId/secrets', { name: 'LEAF_ONLY', value: 'v1' }, { params }), 'secret write'))
           .status([200, 201]);
-        (await writer.get('/v1/projects/:projectId/secrets', { params })).status(200).body().has('$.can_manage', true);
-        (await writer.del('/v1/projects/:projectId/secrets/:name', { params: { ...params, name: 'LEAF_ONLY' } })).status(200);
-        (await asFloor.post('/v1/projects/:projectId/secrets', { name: 'FLOOR_TRY', value: 'v1' }, { params })).status(403);
+        (await writer.get('/v1/workspaces/:projectId/secrets', { params })).status(200).body().has('$.can_manage', true);
+        (await writer.del('/v1/workspaces/:projectId/secrets/:name', { params: { ...params, name: 'LEAF_ONLY' } })).status(200);
+        (await asFloor.post('/v1/workspaces/:projectId/secrets', { name: 'FLOOR_TRY', value: 'v1' }, { params })).status(403);
       },
     );
   },

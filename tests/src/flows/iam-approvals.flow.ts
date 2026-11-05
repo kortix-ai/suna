@@ -25,8 +25,8 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'POST /v1/projects/:projectId/access-requests',
-      'GET /v1/projects/:projectId/access-requests',
+      'POST /v1/workspaces/:projectId/access-requests',
+      'GET /v1/workspaces/:projectId/access-requests',
     ],
   },
   async (ctx) => {
@@ -39,7 +39,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.NONMEMBER)
           .post(
-            '/v1/projects/:projectId/access-requests',
+            '/v1/workspaces/:projectId/access-requests',
             { message: 'please add me' },
             { params: { projectId: project.id } },
           );
@@ -50,7 +50,7 @@ flow(
     await ctx.step('re-requesting while pending is idempotent → 200 pending', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post('/v1/projects/:projectId/access-requests', {}, { params: { projectId: project.id } });
+        .post('/v1/workspaces/:projectId/access-requests', {}, { params: { projectId: project.id } });
       r.status(200).body().has('$.status', 'pending');
     });
 
@@ -64,7 +64,7 @@ flow(
         const p = await team.project();
         const r = await ctx.client
           .as(spammer)
-          .post('/v1/projects/:projectId/access-requests', {}, { params: { projectId: p.id } });
+          .post('/v1/workspaces/:projectId/access-requests', {}, { params: { projectId: p.id } });
         if (i < 10) r.status(201);
         else if (exact) r.status(429);
         else r.status([201, 429]);
@@ -74,7 +74,7 @@ flow(
     await ctx.step('a project manager lists pending access requests → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access-requests', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/access-requests', { params: { projectId: project.id } });
       r.status(200).body().exists('$.requests').exists('$.requests[0].request_id');
     });
 
@@ -84,7 +84,7 @@ flow(
         const bare = await team.addMember('member');
         const r = await ctx.client
           .as(bare)
-          .get('/v1/projects/:projectId/access-requests', { params: { projectId: project.id } });
+          .get('/v1/workspaces/:projectId/access-requests', { params: { projectId: project.id } });
         r.status(403);
       },
     );
@@ -93,7 +93,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access-requests',
+          '/v1/workspaces/:projectId/access-requests',
           {},
           { params: { projectId: UNKNOWN_UUID } },
         );
@@ -107,8 +107,8 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'POST /v1/projects/:projectId/access-requests/:requestId/approve',
-      'POST /v1/projects/:projectId/access-requests/:requestId/reject',
+      'POST /v1/workspaces/:projectId/access-requests/:requestId/approve',
+      'POST /v1/workspaces/:projectId/access-requests/:requestId/reject',
     ],
   },
   async (ctx) => {
@@ -122,13 +122,13 @@ flow(
     await ctx.step('seed two pending access requests', async () => {
       const a = await ctx.client
         .as(requesterA)
-        .post('/v1/projects/:projectId/access-requests', {}, { params: { projectId: project.id } });
+        .post('/v1/workspaces/:projectId/access-requests', {}, { params: { projectId: project.id } });
       a.status(201);
       approveRequestId = a.json<any>().request.request_id;
 
       const b = await ctx.client
         .as(requesterB)
-        .post('/v1/projects/:projectId/access-requests', {}, { params: { projectId: project.id } });
+        .post('/v1/workspaces/:projectId/access-requests', {}, { params: { projectId: project.id } });
       b.status(201);
       rejectRequestId = b.json<any>().request.request_id;
     });
@@ -139,7 +139,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(
-            '/v1/projects/:projectId/access-requests/:requestId/approve',
+            '/v1/workspaces/:projectId/access-requests/:requestId/approve',
             { role: 'manager' },
             { params: { projectId: project.id, requestId: approveRequestId } },
           );
@@ -154,7 +154,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access-requests/:requestId/approve',
+          '/v1/workspaces/:projectId/access-requests/:requestId/approve',
           {},
           { params: { projectId: project.id, requestId: approveRequestId } },
         );
@@ -165,7 +165,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access-requests/:requestId/approve',
+          '/v1/workspaces/:projectId/access-requests/:requestId/approve',
           { role: 'wizard' },
           { params: { projectId: project.id, requestId: rejectRequestId } },
         );
@@ -176,7 +176,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access-requests/:requestId/reject',
+          '/v1/workspaces/:projectId/access-requests/:requestId/reject',
           {},
           { params: { projectId: project.id, requestId: rejectRequestId } },
         );
@@ -187,7 +187,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access-requests/:requestId/reject',
+          '/v1/workspaces/:projectId/access-requests/:requestId/reject',
           {},
           { params: { projectId: project.id, requestId: rejectRequestId } },
         );
@@ -198,7 +198,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access-requests/:requestId/approve',
+          '/v1/workspaces/:projectId/access-requests/:requestId/approve',
           {},
           { params: { projectId: project.id, requestId: UNKNOWN_UUID } },
         );
@@ -214,7 +214,7 @@ flow(
         const seeded = await ctx.client
           .as(requesterC)
           .post(
-            '/v1/projects/:projectId/access-requests',
+            '/v1/workspaces/:projectId/access-requests',
             {},
             { params: { projectId: project.id } },
           );
@@ -223,7 +223,7 @@ flow(
         const r = await ctx.client
           .as(editorOnly)
           .post(
-            '/v1/projects/:projectId/access-requests/:requestId/approve',
+            '/v1/workspaces/:projectId/access-requests/:requestId/approve',
             {},
             { params: { projectId: project.id, requestId: seeded.json<any>().request.request_id } },
           );
@@ -240,8 +240,8 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/projects/:projectId/approvals',
-      'GET /v1/projects/:projectId/approvals/needs-input',
+      'GET /v1/workspaces/:projectId/approvals',
+      'GET /v1/workspaces/:projectId/approvals/needs-input',
     ],
   },
   async (ctx) => {
@@ -253,14 +253,14 @@ flow(
     await ctx.step('a project manager reads the (empty) approval inbox → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/approvals', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/approvals', { params: { projectId: project.id } });
       r.status(200).body().has('$.count', 0).exists('$.approvals');
     });
 
     await ctx.step('out-of-range limit → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/approvals?limit=0', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/approvals?limit=0', { params: { projectId: project.id } });
       r.status(400);
     });
 
@@ -270,7 +270,7 @@ flow(
         const bare = await team.addMember('member');
         const r = await ctx.client
           .as(bare)
-          .get('/v1/projects/:projectId/approvals', { params: { projectId: project.id } });
+          .get('/v1/workspaces/:projectId/approvals', { params: { projectId: project.id } });
         r.status(403);
         deepStrictEqual(r.json(), {
           error: true,
@@ -283,7 +283,7 @@ flow(
     );
 
     await ctx.step('an unknown project returns the project-param 404 envelope', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/approvals', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/approvals', {
         params: { projectId: UNKNOWN_UUID },
       });
       r.status(404);
@@ -293,7 +293,7 @@ flow(
     await ctx.step(
       'a granted (non-manager) project member sees their own needs-input → 200',
       async () => {
-        const r = await ctx.client.as(viewer).get('/v1/projects/:projectId/approvals/needs-input', {
+        const r = await ctx.client.as(viewer).get('/v1/workspaces/:projectId/approvals/needs-input', {
           params: { projectId: project.id },
         });
         r.status(200);
@@ -304,7 +304,7 @@ flow(
     await ctx.step('a project manager sees needs-input project-wide → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/approvals/needs-input', {
+        .get('/v1/workspaces/:projectId/approvals/needs-input', {
           params: { projectId: project.id },
         });
       r.status(200).body().has('$.total', 0);
@@ -313,7 +313,7 @@ flow(
     await ctx.step('a non-project-member has no visibility into needs-input → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/approvals/needs-input', {
+        .get('/v1/workspaces/:projectId/approvals/needs-input', {
           params: { projectId: project.id },
         });
       r.status(403);
@@ -325,7 +325,7 @@ flow(
   'IAM-30',
   {
     domain: 'iam',
-    routes: ['POST /v1/projects/:projectId/approvals/:executionId'],
+    routes: ['POST /v1/workspaces/:projectId/approvals/:executionId'],
   },
   async (ctx) => {
     // The happy-path resolve (approve/deny a REAL pending_approval execution)
@@ -340,7 +340,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/approvals/:executionId',
+          '/v1/workspaces/:projectId/approvals/:executionId',
           { decision: 'approve' },
           { params: { projectId: project.id, executionId: 'not-a-uuid' } },
         );
@@ -351,7 +351,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/approvals/:executionId',
+          '/v1/workspaces/:projectId/approvals/:executionId',
           { decision: 'maybe' },
           { params: { projectId: project.id, executionId: UNKNOWN_UUID } },
         );
@@ -362,7 +362,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/approvals/:executionId',
+          '/v1/workspaces/:projectId/approvals/:executionId',
           { decision: 'approve' },
           { params: { projectId: project.id, executionId: UNKNOWN_UUID } },
         );
@@ -375,7 +375,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.NONMEMBER)
           .post(
-            '/v1/projects/:projectId/approvals/:executionId',
+            '/v1/workspaces/:projectId/approvals/:executionId',
             { decision: 'approve' },
             { params: { projectId: project.id, executionId: UNKNOWN_UUID } },
           );
@@ -391,7 +391,7 @@ flow(
   'IAM-31',
   {
     domain: 'iam',
-    routes: ['PUT /v1/projects/:projectId/agents/:agentName/scope'],
+    routes: ['PUT /v1/workspaces/:projectId/agents/:agentName/scope'],
   },
   async (ctx) => {
     // The happy path (scoping a REAL declared agents: entry) needs a
@@ -405,7 +405,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/agents/:agentName/scope',
+          '/v1/workspaces/:projectId/agents/:agentName/scope',
           {},
           { params: { projectId: project.id, agentName: 'nope' } },
         );
@@ -416,7 +416,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/agents/:agentName/scope',
+          '/v1/workspaces/:projectId/agents/:agentName/scope',
           { env: 123 },
           { params: { projectId: project.id, agentName: 'nope' } },
         );
@@ -427,7 +427,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/agents/:agentName/scope',
+          '/v1/workspaces/:projectId/agents/:agentName/scope',
           { env: [] },
           { params: { projectId: project.id, agentName: 'does-not-exist' } },
         );
@@ -439,7 +439,7 @@ flow(
       const r = await ctx.client
         .as(bare)
         .put(
-          '/v1/projects/:projectId/agents/:agentName/scope',
+          '/v1/workspaces/:projectId/agents/:agentName/scope',
           { env: [] },
           { params: { projectId: project.id, agentName: 'does-not-exist' } },
         );
@@ -457,9 +457,9 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/accounts/:accountId/iam/enterprise-demo',
-      'PUT /v1/accounts/:accountId/iam/enterprise-demo',
-      'POST /v1/accounts/:accountId/iam/sso/provider/from-metadata',
+      'GET /v1/workspaces/:accountId/iam/enterprise-demo',
+      'PUT /v1/workspaces/:accountId/iam/enterprise-demo',
+      'POST /v1/workspaces/:accountId/iam/sso/provider/from-metadata',
     ],
   },
   async (ctx) => {
@@ -469,13 +469,13 @@ flow(
       ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
+          '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
           { name: 'Acme', primary_domain: 'acme-e2e-iam32.com', metadata_xml: '<x/>' },
           { params: { accountId: team.id } },
         );
 
     await ctx.step('a fresh account reads Enterprise off, and an SSO write is a clean 402 upsell', async () => {
-      const g = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
+      const g = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
       g.status(200).body().has('$.enabled', false).has('$.state', 'off');
       (await sso()).status(402).body().has('$.code', 'entitlement_required').has('$.entitlement', 'sso');
     });
@@ -483,14 +483,14 @@ flow(
     await ctx.step('a member without billing.write cannot turn the Enterprise demo on → 403', async () => {
       const r = await ctx.client
         .as(member)
-        .put('/v1/accounts/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId: team.id } });
+        .put('/v1/workspaces/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId: team.id } });
       r.status(403);
     });
 
     await ctx.step('the OWNER turns the Enterprise demo on itself → state demo, and the same SSO write is no longer a 402', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put('/v1/accounts/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId: team.id } });
+        .put('/v1/workspaces/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId: team.id } });
       r.status(200).body().has('$.enabled', true).has('$.state', 'demo');
       const after = await sso();
       if (after.statusCode === 402) throw new Error(`still gated after the Enterprise demo: ${after.text()}`);
@@ -499,7 +499,7 @@ flow(
     await ctx.step('turning it off gates SSO again', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put('/v1/accounts/:accountId/iam/enterprise-demo', { enabled: false }, { params: { accountId: team.id } });
+        .put('/v1/workspaces/:accountId/iam/enterprise-demo', { enabled: false }, { params: { accountId: team.id } });
       r.status(200).body().has('$.enabled', false).has('$.state', 'off');
       (await sso()).status(402);
     });
@@ -512,7 +512,7 @@ flow(
   'IAM-33',
   {
     domain: 'iam',
-    routes: ['POST /v1/accounts/:accountId/iam/sso/provider/from-metadata'],
+    routes: ['POST /v1/workspaces/:accountId/iam/sso/provider/from-metadata'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -523,7 +523,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(
-            '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
+            '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
             { name: 'Acme', primary_domain: 'acme-e2e-iam33.com', metadata_xml: '<x/>' },
             { params: { accountId: team.id } },
           );
@@ -542,7 +542,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
+          '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
           { primary_domain: 'acme-e2e-iam33.com', metadata_xml: '<x/>' },
           { params: { accountId: team.id } },
         );
@@ -553,7 +553,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
+          '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
           { name: 'Acme', primary_domain: 'not a domain', metadata_xml: '<x/>' },
           { params: { accountId: team.id } },
         );
@@ -566,7 +566,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(
-            '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
+            '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
             { name: 'Acme', primary_domain: 'acme-e2e-iam33.com' },
             { params: { accountId: team.id } },
           );
@@ -580,7 +580,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
+          '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
           { name: 'Acme', primary_domain: 'acme-e2e-iam33.com', metadata_xml: '<x/>' },
           { params: { accountId: team.id } },
         );

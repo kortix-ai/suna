@@ -16,12 +16,12 @@ import type { FlowContext } from '../core/types';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
 import { withDb } from '../fixtures/chat';
 
-const ARTIFACT = '/v1/projects/:projectId/artifacts/:artifactId';
+const ARTIFACT = '/v1/workspaces/:projectId/artifacts/:artifactId';
 const LIVE = `${ARTIFACT}/live`;
 const TICKET = `${LIVE}/ticket`;
 const AGENT = `${LIVE}/agent`;
 const COMMENTS = `${ARTIFACT}/comments`;
-const FEATURES = '/v1/projects/:projectId/features';
+const FEATURES = '/v1/workspaces/:projectId/features';
 
 const AGENTS = [
   'project:',

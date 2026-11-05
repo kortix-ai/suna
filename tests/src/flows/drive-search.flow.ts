@@ -39,13 +39,13 @@ flow(
     requires: ['database'],
     timeoutMs: 180_000,
     routes: [
-      'GET /v1/projects/:projectId/search',
+      'GET /v1/workspaces/:projectId/search',
       'GET /v1/drives',
       'PUT /v1/drives/:driveId/access',
       'POST /v1/accounts/tokens',
-      'GET /v1/projects/:projectId/resource-grants',
-      'POST /v1/projects/:projectId/resource-grants',
-      'PATCH /v1/projects/:projectId/features',
+      'GET /v1/workspaces/:projectId/resource-grants',
+      'POST /v1/workspaces/:projectId/resource-grants',
+      'PATCH /v1/workspaces/:projectId/features',
     ],
   },
   async (ctx) => {
@@ -59,7 +59,7 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const asMember = ctx.client.as(member);
     const params = { projectId: project.id };
-    const search = (as: { get: typeof owner.get }, query: Record<string, string>) => as.get('/v1/projects/:projectId/search', { params, query });
+    const search = (as: { get: typeof owner.get }, query: Record<string, string>) => as.get('/v1/workspaces/:projectId/search', { params, query });
     const paths = (r: { json<T>(): T }) => r.json<Page>().hits.map((h) => h.path).sort();
     // One word nothing else in the drive holds.
     const word = `zephyrine${randomUUID().slice(0, 6)}`;
@@ -73,7 +73,7 @@ flow(
 
     try {
       await ctx.step('ANON searches → 401', async () => {
-        (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/search', { params, query: { q: word } })).status(401);
+        (await ctx.client.as(ctx.P.ANON).get('/v1/workspaces/:projectId/search', { params, query: { q: word } })).status(401);
       });
 
       await ctx.step('OWNER and the member open Files → 200: one drive, each with their own folder', async () => {
@@ -88,7 +88,7 @@ flow(
       });
 
       await ctx.step('OWNER turns shared_drives on, adds the agent to /Sales (write) and the nine team Drives (read) → 200; a share with a person or the project → 400', async () => {
-        (await owner.patch('/v1/projects/:projectId/features', { feature: 'shared_drives', enabled: true }, { params })).status(200);
+        (await owner.patch('/v1/workspaces/:projectId/features', { feature: 'shared_drives', enabled: true }, { params })).status(200);
         (await owner.put('/v1/drives/:driveId/access', { path: AGENT_DRIVE, principalType: 'agent', principalId: AGENT, level: 'write' }, { params: { driveId } })).status(200);
         (await owner.put('/v1/drives/:driveId/access', { path: '/Shared', principalType: 'user', principalId: member.userId, level: 'read' }, { params: { driveId } })).status(400);
         (await owner.put('/v1/drives/:driveId/access', { path: '/Shared', principalType: 'project', level: 'read' }, { params: { driveId } })).status(400);
@@ -99,7 +99,7 @@ flow(
 
       await ctx.step('OWNER lets the member use the agent → 201; every API process sees it within 45 s', async () => {
         (await owner.post(
-          '/v1/projects/:projectId/resource-grants',
+          '/v1/workspaces/:projectId/resource-grants',
           { resource_type: 'agent', resource_id: AGENT, principal_type: 'member', principal_id: member.userId },
           { params },
         )).status(201);

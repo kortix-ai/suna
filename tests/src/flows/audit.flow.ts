@@ -18,16 +18,16 @@ interface AuditWebhookBody {
 }
 
 // ── AUD-1: list audit events ─────────────────────────────────────────────────
-flow('AUD-1', { domain: 'audit', routes: ['GET /v1/accounts/:accountId/audit'] }, async (ctx) => {
+flow('AUD-1', { domain: 'audit', routes: ['GET /v1/workspaces/:accountId/audit'] }, async (ctx) => {
   const team = await ctx.fixtures.team({ enterprise: true });
   await ctx.step('OWNER lists audit events → 200 with events array', async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
-      .get('/v1/accounts/:accountId/audit', { params: { accountId: team.id } });
+      .get('/v1/workspaces/:accountId/audit', { params: { accountId: team.id } });
     r.status(200).body().exists('$.events');
   });
   await ctx.step('limit/action filter honored → 200', async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+    const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
       params: { accountId: team.id },
       query: { limit: '5', action: 'iam.' },
     });
@@ -36,7 +36,7 @@ flow('AUD-1', { domain: 'audit', routes: ['GET /v1/accounts/:accountId/audit'] }
   await ctx.step('NONMEMBER → 403', async () => {
     const r = await ctx.client
       .as(ctx.P.NONMEMBER)
-      .get('/v1/accounts/:accountId/audit', { params: { accountId: team.id } });
+      .get('/v1/workspaces/:accountId/audit', { params: { accountId: team.id } });
     r.status(403);
   });
 });
@@ -44,24 +44,24 @@ flow('AUD-1', { domain: 'audit', routes: ['GET /v1/accounts/:accountId/audit'] }
 // ── AUD-2: export ────────────────────────────────────────────────────────────
 flow(
   'AUD-2',
-  { domain: 'audit', routes: ['GET /v1/accounts/:accountId/audit/export'] },
+  { domain: 'audit', routes: ['GET /v1/workspaces/:accountId/audit/export'] },
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
     await ctx.step('export defaults to CSV → 200 text/csv', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/audit/export', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/audit/export', { params: { accountId: team.id } });
       r.status(200).headerEquals('content-type', /csv/);
     });
     await ctx.step('export format=jsonl → 200 ndjson', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit/export', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit/export', {
         params: { accountId: team.id },
         query: { format: 'jsonl' },
       });
       r.status(200).headerEquals('content-type', /ndjson/);
     });
     await ctx.step('invalid format → 400', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit/export', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit/export', {
         params: { accountId: team.id },
         query: { format: 'xlsx' },
       });
@@ -70,7 +70,7 @@ flow(
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/audit/export', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/audit/export', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -79,19 +79,19 @@ flow(
 // ── AUD-3: list webhooks + authz boundary ────────────────────────────────────
 flow(
   'AUD-3',
-  { domain: 'audit', routes: ['GET /v1/accounts/:accountId/audit/webhooks'] },
+  { domain: 'audit', routes: ['GET /v1/workspaces/:accountId/audit/webhooks'] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     await ctx.step('OWNER lists webhooks → 200 with webhooks array', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/audit/webhooks', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/audit/webhooks', { params: { accountId: team.id } });
       r.status(200).body().exists('$.webhooks');
     });
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/audit/webhooks', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/audit/webhooks', { params: { accountId: team.id } });
       r.status(403);
     });
   },
@@ -103,9 +103,9 @@ flow(
   {
     domain: 'audit',
     routes: [
-      'POST /v1/accounts/:accountId/audit/webhooks',
-      'PATCH /v1/accounts/:accountId/audit/webhooks/:webhookId',
-      'DELETE /v1/accounts/:accountId/audit/webhooks/:webhookId',
+      'POST /v1/workspaces/:accountId/audit/webhooks',
+      'PATCH /v1/workspaces/:accountId/audit/webhooks/:webhookId',
+      'DELETE /v1/workspaces/:accountId/audit/webhooks/:webhookId',
     ],
   },
   async (ctx) => {
@@ -116,7 +116,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/audit/webhooks',
+          '/v1/workspaces/:accountId/audit/webhooks',
           { name: ctx.fixtures.name('hook'), url: 'https://example.com/ke2e-audit' },
           { params: { accountId: team.id } },
         );
@@ -128,7 +128,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/audit/webhooks',
+          '/v1/workspaces/:accountId/audit/webhooks',
           { name: ctx.fixtures.name('hook') },
           { params: { accountId: team.id } },
         );
@@ -139,7 +139,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/audit/webhooks',
+          '/v1/workspaces/:accountId/audit/webhooks',
           { name: ctx.fixtures.name('hook'), url: 'ftp://example.com/x' },
           { params: { accountId: team.id } },
         );
@@ -150,7 +150,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          '/v1/accounts/:accountId/audit/webhooks',
+          '/v1/workspaces/:accountId/audit/webhooks',
           { name: 'nope', url: 'https://example.com/x' },
           { params: { accountId: team.id } },
         );
@@ -161,7 +161,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/audit/webhooks/:webhookId',
+          '/v1/workspaces/:accountId/audit/webhooks/:webhookId',
           { enabled: false },
           { params: { accountId: team.id, webhookId } },
         );
@@ -172,7 +172,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/audit/webhooks/:webhookId',
+          '/v1/workspaces/:accountId/audit/webhooks/:webhookId',
           { enabled: true },
           { params: { accountId: team.id, webhookId: '00000000-0000-0000-0000-000000000000' } },
         );
@@ -182,7 +182,7 @@ flow(
     await ctx.step('delete webhook → 200 deleted', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/audit/webhooks/:webhookId', {
+        .del('/v1/workspaces/:accountId/audit/webhooks/:webhookId', {
           params: { accountId: team.id, webhookId },
         });
       r.status(200).body().has('$.deleted', true);
@@ -191,7 +191,7 @@ flow(
     await ctx.step('delete already-deleted webhook → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/audit/webhooks/:webhookId', {
+        .del('/v1/workspaces/:accountId/audit/webhooks/:webhookId', {
           params: { accountId: team.id, webhookId },
         });
       r.status(404);
@@ -223,12 +223,12 @@ flow(
   {
     domain: 'audit',
     routes: [
-      'GET /v1/accounts/:accountId/audit',
-      'GET /v1/accounts/:accountId/audit/export',
-      'GET /v1/accounts/:accountId/audit/webhooks',
-      'POST /v1/accounts/:accountId/audit/webhooks',
-      'PATCH /v1/accounts/:accountId/audit/webhooks/:webhookId',
-      'DELETE /v1/accounts/:accountId/audit/webhooks/:webhookId',
+      'GET /v1/workspaces/:accountId/audit',
+      'GET /v1/workspaces/:accountId/audit/export',
+      'GET /v1/workspaces/:accountId/audit/webhooks',
+      'POST /v1/workspaces/:accountId/audit/webhooks',
+      'PATCH /v1/workspaces/:accountId/audit/webhooks/:webhookId',
+      'DELETE /v1/workspaces/:accountId/audit/webhooks/:webhookId',
     ],
     // 26 steps over an enterprise-team fixture, and every audit list/export
     // query scans a table that now grows with each API request (centralized
@@ -244,26 +244,26 @@ flow(
     await ctx.step('ANON list events → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/accounts/:accountId/audit', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/audit', { params: { accountId: team.id } });
       r.status(401);
     });
     await ctx.step('ANON export → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/accounts/:accountId/audit/export', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/audit/export', { params: { accountId: team.id } });
       r.status(401);
     });
     await ctx.step('ANON list webhooks → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/accounts/:accountId/audit/webhooks', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/audit/webhooks', { params: { accountId: team.id } });
       r.status(401);
     });
     await ctx.step('ANON create webhook → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
-          '/v1/accounts/:accountId/audit/webhooks',
+          '/v1/workspaces/:accountId/audit/webhooks',
           { name: 'x', url: 'https://example.com/x' },
           { params: { accountId: team.id } },
         );
@@ -275,26 +275,26 @@ flow(
     // exercises the role-permission leaf (member baseline has no audit.read
     // and no account.write), not just the membership check.
     await ctx.step('MEMBER list events → 403 (no audit.read)', async () => {
-      const r = await asMember.get('/v1/accounts/:accountId/audit', {
+      const r = await asMember.get('/v1/workspaces/:accountId/audit', {
         params: { accountId: team.id },
       });
       r.status(403);
     });
     await ctx.step('MEMBER export → 403', async () => {
-      const r = await asMember.get('/v1/accounts/:accountId/audit/export', {
+      const r = await asMember.get('/v1/workspaces/:accountId/audit/export', {
         params: { accountId: team.id },
       });
       r.status(403);
     });
     await ctx.step('MEMBER list webhooks → 403 (no account.write)', async () => {
-      const r = await asMember.get('/v1/accounts/:accountId/audit/webhooks', {
+      const r = await asMember.get('/v1/workspaces/:accountId/audit/webhooks', {
         params: { accountId: team.id },
       });
       r.status(403);
     });
     await ctx.step('MEMBER create webhook → 403', async () => {
       const r = await asMember.post(
-        '/v1/accounts/:accountId/audit/webhooks',
+        '/v1/workspaces/:accountId/audit/webhooks',
         { name: 'x', url: 'https://example.com/x' },
         { params: { accountId: team.id } },
       );
@@ -303,28 +303,28 @@ flow(
 
     // ── strict limit validation ──────────────────────────────────────────
     await ctx.step('limit=0 → 400', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         params: { accountId: team.id },
         query: { limit: '0' },
       });
       r.status(400);
     });
     await ctx.step('limit=-5 → 400', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         params: { accountId: team.id },
         query: { limit: '-5' },
       });
       r.status(400);
     });
     await ctx.step('limit=abc → 400', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         params: { accountId: team.id },
         query: { limit: 'abc' },
       });
       r.status(400);
     });
     await ctx.step('limit=99999 → 400', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         params: { accountId: team.id },
         query: { limit: '99999' },
       });
@@ -336,7 +336,7 @@ flow(
     // two pages must not overlap (distinct event_ids). Skips gracefully when
     // there's no second page (account has 0–1 events).
     await ctx.step('cursor pagination → no overlap between pages', async () => {
-      const p1 = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const p1 = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         params: { accountId: team.id },
         query: { limit: '1' },
       });
@@ -344,7 +344,7 @@ flow(
       const p1body = p1.json<AuditPageBody>();
       const cursor = p1body.next_cursor;
       if (typeof cursor !== 'string') return; // no second page — nothing to overlap-check
-      const p2 = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const p2 = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         params: { accountId: team.id },
         query: { limit: '1', cursor },
       });
@@ -359,13 +359,13 @@ flow(
     await ctx.step('export CSV → X-Audit-Row-Count + Content-Disposition headers', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/audit/export', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/audit/export', { params: { accountId: team.id } });
       r.status(200).headerExists('x-audit-row-count').headerExists('content-disposition');
     });
     await ctx.step(
       'export format=CSV (uppercase) → 400 (schema accepts lowercase csv|jsonl)',
       async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit/export', {
+        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit/export', {
           params: { accountId: team.id },
           query: { format: 'CSV' },
         });
@@ -378,7 +378,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/audit/webhooks',
+          '/v1/workspaces/:accountId/audit/webhooks',
           { url: 'https://example.com/x' },
           { params: { accountId: team.id } },
         );
@@ -388,7 +388,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/audit/webhooks',
+          '/v1/workspaces/:accountId/audit/webhooks',
           { name: 'x'.repeat(129), url: 'https://example.com/x' },
           { params: { accountId: team.id } },
         );
@@ -398,7 +398,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/audit/webhooks',
+          '/v1/workspaces/:accountId/audit/webhooks',
           { name: 'bad', url: 'not-a-url' },
           { params: { accountId: team.id } },
         );
@@ -408,7 +408,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/audit/webhooks',
+          '/v1/workspaces/:accountId/audit/webhooks',
           { name: 'ssrf', url: 'https://169.254.169.254/latest/meta-data' },
           { params: { accountId: team.id } },
         );
@@ -424,7 +424,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/audit/webhooks',
+          '/v1/workspaces/:accountId/audit/webhooks',
           { name: ctx.fixtures.name('hook'), url: 'https://example.com/ke2e-aud5' },
           { params: { accountId: team.id } },
         );
@@ -434,7 +434,7 @@ flow(
     await ctx.step('subsequent GET list does NOT reveal secret', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/audit/webhooks', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/audit/webhooks', { params: { accountId: team.id } });
       r.status(200).body().exists('$.webhooks');
       const hooks = r.json<{ webhooks: AuditWebhookBody[] }>().webhooks;
       const mine = hooks.find((h) => h.webhook_id === webhookId);
@@ -446,7 +446,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/audit/webhooks/:webhookId',
+          '/v1/workspaces/:accountId/audit/webhooks/:webhookId',
           { enabled: false },
           { params: { accountId: team.id, webhookId } },
         );
@@ -466,7 +466,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/accounts/:accountId/audit/webhooks/:webhookId',
+          '/v1/workspaces/:accountId/audit/webhooks/:webhookId',
           { enabled: true },
           { params: { accountId: teamB.id, webhookId } },
         );
@@ -475,7 +475,7 @@ flow(
     await ctx.step('cross-account DELETE (teamA hook via teamB path) → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/audit/webhooks/:webhookId', {
+        .del('/v1/workspaces/:accountId/audit/webhooks/:webhookId', {
           params: { accountId: teamB.id, webhookId },
         });
       r.status(404);
@@ -485,7 +485,7 @@ flow(
     await ctx.step('teamA webhook still exists after cross-account no-ops', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/audit/webhooks', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/audit/webhooks', { params: { accountId: team.id } });
       r.status(200);
       const hooks = r.json<{ webhooks: AuditWebhookBody[] }>().webhooks;
       if (!hooks.some((h) => h.webhook_id === webhookId))
@@ -501,7 +501,7 @@ flow(
   'AUD-FILTER',
   {
     domain: 'audit',
-    routes: ['GET /v1/accounts/:accountId/audit', 'GET /v1/projects/:projectId'],
+    routes: ['GET /v1/workspaces/:accountId/audit', 'GET /v1/workspaces/:projectId'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
@@ -510,7 +510,7 @@ flow(
     const correlationId = ctx.fixtures.name('audit-reconstruction');
 
     await ctx.step('a spoofed client header changes nothing: the row records the credential', async () => {
-      const action = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId', {
+      const action = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId', {
         params: { projectId: project.id },
         headers: {
           'x-correlation-id': correlationId,
@@ -528,7 +528,7 @@ flow(
       // assertions below are unchanged. Never make audit writes synchronous.
       const r = await waitFor(
         async () =>
-          ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+          ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
             ...base,
             query: {
               project_id: project.id,
@@ -572,7 +572,7 @@ flow(
     });
 
     await ctx.step('a credential_kind filter that matches no row returns none', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         ...base,
         query: { project_id: project.id, credential_kind: 'scim_token', correlation_id: correlationId },
       });
@@ -583,7 +583,7 @@ flow(
     });
 
     await ctx.step('session filter accepts an exact session identifier', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         ...base,
         query: { session_id: '00000000-0000-4000-a000-000000000000' },
       });
@@ -593,7 +593,7 @@ flow(
     await ctx.step('invalid structured filters → 400', async () => {
       const projectResponse = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/audit', {
+        .get('/v1/workspaces/:accountId/audit', {
           ...base,
           query: { project_id: 'not-a-uuid' },
         });
@@ -601,7 +601,7 @@ flow(
 
       const actorTypeResponse = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/audit', {
+        .get('/v1/workspaces/:accountId/audit', {
           ...base,
           query: { actor_type: 'robot' },
         });
@@ -609,28 +609,28 @@ flow(
     });
 
     await ctx.step('actor filter (uuid) → 200 with events envelope', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         ...base,
         query: { actor: '00000000-0000-4000-a000-000000000000' },
       });
       r.status(200).body().exists('$.events');
     });
     await ctx.step('resource_type prefix filter → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         ...base,
         query: { resource_type: 'project' },
       });
       r.status(200).body().exists('$.events');
     });
     await ctx.step('since + until date-range window → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         ...base,
         query: { since: '2020-01-01T00:00:00Z', until: '2020-01-02T00:00:00Z' },
       });
       r.status(200).body().exists('$.events');
     });
     await ctx.step('q search substring → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         ...base,
         query: { q: 'iam' },
       });
@@ -638,35 +638,35 @@ flow(
     });
     await ctx.step('cursor pagination param accepted → 200', async () => {
       // A well-formed cursor "<iso>|<uuid>" is accepted.
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         ...base,
         query: { cursor: '2020-01-01T00:00:00Z|00000000-0000-4000-a000-000000000000' },
       });
       r.status(200).body().exists('$.events');
     });
     await ctx.step('limit=0 is rejected → 400', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         ...base,
         query: { limit: '0' },
       });
       r.status(400);
     });
     await ctx.step('limit=99999 is rejected → 400', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         ...base,
         query: { limit: '99999' },
       });
       r.status(400);
     });
     await ctx.step('malformed since date is rejected → 400', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         ...base,
         query: { since: 'not-a-date' },
       });
       r.status(400);
     });
     await ctx.step('combined filters (actor + resource_type + q + window) → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         ...base,
         query: {
           actor: '00000000-0000-4000-a000-000000000000',
@@ -690,12 +690,12 @@ flow(
     domain: 'audit',
     routes: [
       'GET /v1/projects/:projectId/audit',
-      'POST /v1/accounts/:accountId/audit/reconcile',
-      'GET /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries',
-      'POST /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay',
-      'POST /v1/projects/:projectId/sessions/:sessionId/audit/events',
-      'POST /v1/accounts/:accountId/audit/webhooks',
-      'DELETE /v1/accounts/:accountId/audit/webhooks/:webhookId',
+      'POST /v1/workspaces/:accountId/audit/reconcile',
+      'GET /v1/workspaces/:accountId/audit/webhooks/:webhookId/deliveries',
+      'POST /v1/workspaces/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/audit/events',
+      'POST /v1/workspaces/:accountId/audit/webhooks',
+      'DELETE /v1/workspaces/:accountId/audit/webhooks/:webhookId',
     ],
   },
   async (ctx) => {
@@ -715,7 +715,7 @@ flow(
 
     await ctx.step('create a webhook scoped to reconciliation events', async () => {
       const r = await owner.post(
-        '/v1/accounts/:accountId/audit/webhooks',
+        '/v1/workspaces/:accountId/audit/webhooks',
         {
           name: ctx.fixtures.name('audit-v2'),
           url: 'https://example.com/ke2e-audit-v2',
@@ -728,7 +728,7 @@ flow(
     });
 
     await ctx.step('bounded reconciliation → 200 idempotent result', async () => {
-      const r = await owner.post('/v1/accounts/:accountId/audit/reconcile', undefined, {
+      const r = await owner.post('/v1/workspaces/:accountId/audit/reconcile', undefined, {
         params: { accountId: team.id },
         query: { limit: '100' },
       });
@@ -740,7 +740,7 @@ flow(
       // delivery row comes from the audit_events insert trigger, so poll.
       const deliveries = await waitFor(
         async () => {
-          const r = await owner.get('/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries', {
+          const r = await owner.get('/v1/workspaces/:accountId/audit/webhooks/:webhookId/deliveries', {
             params: { accountId: team.id, webhookId },
           });
           r.status(200).body().exists('$.deliveries');
@@ -755,7 +755,7 @@ flow(
 
     await ctx.step('manual delivery replay returns replayed=true', async () => {
       const r = await owner.post(
-        '/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay',
+        '/v1/workspaces/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay',
         undefined,
         { params: { accountId: team.id, webhookId, deliveryId } },
       );
@@ -764,7 +764,7 @@ flow(
 
     await ctx.step('human auth cannot ingest sandbox OpenCode events → 403', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/audit/events',
+        '/v1/workspaces/:projectId/sessions/:sessionId/audit/events',
         { events: [] },
         {
           params: {
@@ -777,7 +777,7 @@ flow(
     });
 
     await ctx.step('delete the test webhook', async () => {
-      const r = await owner.del('/v1/accounts/:accountId/audit/webhooks/:webhookId', {
+      const r = await owner.del('/v1/workspaces/:accountId/audit/webhooks/:webhookId', {
         params: { accountId: team.id, webhookId },
       });
       r.status(200).body().has('$.deleted', true);
@@ -795,10 +795,10 @@ interface AuditActivityBody {
 
 flow(
   'AUD-9',
-  { domain: 'audit', routes: ['GET /v1/accounts/:accountId/audit/activity'] },
+  { domain: 'audit', routes: ['GET /v1/workspaces/:accountId/audit/activity'] },
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
-    const path = '/v1/accounts/:accountId/audit/activity';
+    const path = '/v1/workspaces/:accountId/audit/activity';
     await ctx.step('OWNER reads activity with no window → 200, the 28 UTC days ending today', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get(path, { params: { accountId: team.id } });
       r.status(200).body().exists('$.actors');

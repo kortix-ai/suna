@@ -28,12 +28,12 @@ const SESSION_ROUTES = {
   list: 'GET /v1/projects/:projectId/sessions',
   read: 'GET /v1/projects/:projectId/sessions/:sessionId',
 };
-const GROUPS = '/v1/projects/:projectId/session-groups';
-const GROUP = '/v1/projects/:projectId/session-groups/:groupId';
-const ORDER = '/v1/projects/:projectId/session-groups/order';
-const ASSIGN = '/v1/projects/:projectId/sessions/:sessionId/group';
-const SESSIONS = '/v1/projects/:projectId/sessions';
-const SESSION = '/v1/projects/:projectId/sessions/:sessionId';
+const GROUPS = '/v1/workspaces/:projectId/session-groups';
+const GROUP = '/v1/workspaces/:projectId/session-groups/:groupId';
+const ORDER = '/v1/workspaces/:projectId/session-groups/order';
+const ASSIGN = '/v1/workspaces/:projectId/sessions/:sessionId/group';
+const SESSIONS = '/v1/workspaces/:projectId/sessions';
+const SESSION = '/v1/workspaces/:projectId/sessions/:sessionId';
 
 type Group = { group_id: string; name: string; position: number };
 type Session = { session_id: string; group_id: string | null; updated_at: string };

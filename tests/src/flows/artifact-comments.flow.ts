@@ -4,7 +4,7 @@ import { waitFor } from '../core/poll';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
 import { withDb } from '../fixtures/chat';
 
-const ARTIFACTS = '/v1/projects/:projectId/artifacts';
+const ARTIFACTS = '/v1/workspaces/:projectId/artifacts';
 const ARTIFACT = `${ARTIFACTS}/:artifactId`;
 const COMMENTS = `${ARTIFACT}/comments`;
 const THREAD = `${COMMENTS}/:threadId`;
@@ -13,9 +13,9 @@ const COMMENT = `${THREAD}/:commentId`;
 const SCREENSHOT = `${COMMENTS}/:commentId/screenshot`;
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAE0lEQVQImWP4z8DwnwGM/zMwAAAf7gP9qS/A4gAAAABJRU5ErkJggg==';
 const WEBP = 'UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoCAAIAAUAmJaACdLoB+AADsAD+8ut//NgVzXPv9//S4P0uD9Lg/9KQAAA=';
-const FEATURES = '/v1/projects/:projectId/features';
-const ROLES = '/v1/accounts/:accountId/iam/roles';
-const POLICIES = '/v1/accounts/:accountId/iam/policies';
+const FEATURES = '/v1/workspaces/:projectId/features';
+const ROLES = '/v1/workspaces/:accountId/iam/roles';
+const POLICIES = '/v1/workspaces/:accountId/iam/policies';
 
 type Comment = {
   comment_id: string;
@@ -62,7 +62,7 @@ flow('ART-4', {
   routes: [
     `PATCH ${FEATURES}`, `GET ${COMMENTS}`, `POST ${COMMENTS}`,
     `POST ${REPLIES}`, `PATCH ${THREAD}`, `PATCH ${COMMENT}`, `DELETE ${COMMENT}`,
-    `GET ${ARTIFACTS}`, `GET ${SCREENSHOT}`, `PATCH ${ARTIFACT}`, `DELETE /v1/projects/:projectId`, `DELETE ${ARTIFACT}`, `POST ${ROLES}`, `POST ${POLICIES}`,
+    `GET ${ARTIFACTS}`, `GET ${SCREENSHOT}`, `PATCH ${ARTIFACT}`, `DELETE /v1/workspaces/:projectId`, `DELETE ${ARTIFACT}`, `POST ${ROLES}`, `POST ${POLICIES}`,
   ],
 }, async (ctx) => {
   const team = await ctx.fixtures.team({ enterprise: true });
@@ -393,7 +393,7 @@ flow('ART-4', {
       const purgeParams = { projectId: purge.id, artifactId: id };
       const picture = (await owner.post(COMMENTS, { anchor: region, body: 'Erase this screenshot with the project.', marks, screenshot_base64: PNG }, { params: purgeParams })).status(201).json<{ thread: Thread }>().thread.comments[0]!;
       const key = rememberScreenshot(picture);
-      (await owner.del('/v1/projects/:projectId', { params: { projectId: purge.id } })).status(200);
+      (await owner.del('/v1/workspaces/:projectId', { params: { projectId: purge.id } })).status(200);
       (await owner.get(SCREENSHOT, { params: { ...purgeParams, commentId: picture.comment_id } })).status(404);
       await objectAbsent(key);
     });

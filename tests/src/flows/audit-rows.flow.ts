@@ -45,8 +45,8 @@ flow(
       'GET /v1/git/:project/info/refs',
       'POST /v1/git/:project/git-upload-pack',
       'POST /v1/git/:project/git-receive-pack',
-      'GET /v1/projects/:projectId',
-      'GET /v1/accounts/:accountId/audit',
+      'GET /v1/workspaces/:projectId',
+      'GET /v1/workspaces/:accountId/audit',
     ],
   },
   async (ctx) => {
@@ -110,7 +110,7 @@ flow(
       waitFor(
         async () => {
           if (send) await send();
-          return ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+          return ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
             params: { accountId: team.id },
             query: { project_id: project.id, limit: '50', ...query },
           });
@@ -241,7 +241,7 @@ flow(
         const rows = await auditRows(
           { actor_type: 'anonymous', correlation_id: correlationId },
           'the anonymous probe row',
-          () => ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId', {
+          () => ctx.client.as(ctx.P.ANON).get('/v1/workspaces/:projectId', {
             params: { projectId: project.id },
             headers: { 'x-correlation-id': correlationId },
           }),
@@ -260,15 +260,16 @@ flow(
           }, 'anonymous probe');
           // The auth middleware refuses before the handler runs, and the row
           // still names the endpoint the request asked for: its label, and
-          // its template in `metadata.http`. Never the raw path.
-          if (row.action !== 'project.read' || row.metadata.http !== 'GET /v1/projects/:projectId') {
+          // its template in `metadata.http` (the canonical name it was called
+          // by, params named `:workspaceId` since 2026-11-05). Never the raw path.
+          if (row.action !== 'project.read' || row.metadata.http !== 'GET /v1/workspaces/:workspaceId') {
             throw new Error(`anonymous probe: expected project.read, got ${JSON.stringify(row)}`);
           }
         }
       });
 
       await ctx.step('the actor_type filter still refuses an unknown type → 400', async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
           params: { accountId: team.id },
           query: { actor_type: 'robot' },
         });
@@ -301,10 +302,10 @@ flow(
   {
     domain: 'audit',
     routes: [
-      'GET /v1/projects/:projectId',
-      'POST /v1/accounts/:accountId/iam/groups',
-      'DELETE /v1/accounts/:accountId/iam/groups/:groupId',
-      'GET /v1/accounts/:accountId/audit',
+      'GET /v1/workspaces/:projectId',
+      'POST /v1/workspaces/:accountId/iam/groups',
+      'DELETE /v1/workspaces/:accountId/iam/groups/:groupId',
+      'GET /v1/workspaces/:accountId/audit',
     ],
   },
   async (ctx) => {
@@ -316,7 +317,7 @@ flow(
     let forwardedGroupId: string | null = null;
     const auditRows = (query: Record<string, string>, description: string) =>
       waitFor(
-        () => owner.get('/v1/accounts/:accountId/audit', { params, query: { limit: '50', ...query } }),
+        () => owner.get('/v1/workspaces/:accountId/audit', { params, query: { limit: '50', ...query } }),
         {
           until: (res) => res.statusCode === 200 && (res.json<{ events?: unknown[] }>().events?.length ?? 0) > 0,
           timeoutMs: 20_000,
@@ -331,12 +332,12 @@ flow(
 
     try {
       await ctx.step('the owner reads the project; its row is `project.read`, with the route in metadata.http', async () => {
-        const read = await owner.get('/v1/projects/:projectId', { params: { projectId: project.id } });
+        const read = await owner.get('/v1/workspaces/:projectId', { params: { projectId: project.id } });
         read.status(200);
         const requestId = required(read.header('x-request-id'), 'the request id header');
         const rows = await auditRows({ request_id: requestId }, 'the project read row');
         const row = rows[0];
-        if (!row || row.action !== 'project.read' || row.metadata.http !== 'GET /v1/projects/:projectId') {
+        if (!row || row.action !== 'project.read' || row.metadata.http !== 'GET /v1/workspaces/:workspaceId') {
           throw new Error(`expected project.read with its HTTP identity, got ${JSON.stringify(rows)}`);
         }
         if (JSON.stringify(row.metadata).includes(project.id)) {
@@ -352,7 +353,7 @@ flow(
 
       await ctx.step("creating a group writes one row: the handler's own `iam.group.create` event", async () => {
         const created = await owner.post(
-          '/v1/accounts/:accountId/iam/groups',
+          '/v1/workspaces/:accountId/iam/groups',
           { name: ctx.fixtures.name('aud8-group') },
           { params },
         );
@@ -383,7 +384,7 @@ flow(
           };
 
           const created = await owner.post(
-            '/v1/accounts/:accountId/iam/groups',
+            '/v1/workspaces/:accountId/iam/groups',
             { name: ctx.fixtures.name('aud8-xff') },
             { params, headers: forwarded },
           );
@@ -393,7 +394,7 @@ flow(
           const createRows = await auditRows({ request_id: createId }, 'the forwarded group create row');
           expectIp(createRows.find((row) => row.action === 'iam.group.create'), 'iam.group.create');
 
-          const read = await owner.get('/v1/projects/:projectId', {
+          const read = await owner.get('/v1/workspaces/:projectId', {
             params: { projectId: project.id },
             headers: forwarded,
           });
@@ -422,7 +423,7 @@ flow(
     } finally {
       for (const id of [groupId, forwardedGroupId]) {
         if (!id) continue;
-        await owner.del('/v1/accounts/:accountId/iam/groups/:groupId', {
+        await owner.del('/v1/workspaces/:accountId/iam/groups/:groupId', {
           params: { ...params, groupId: id },
         });
       }
@@ -440,8 +441,8 @@ flow(
   {
     domain: 'audit',
     routes: [
-      'GET /v1/projects/:projectId',
-      'GET /v1/accounts/:accountId/audit',
+      'GET /v1/workspaces/:projectId',
+      'GET /v1/workspaces/:accountId/audit',
       'POST /v1/accounts/tokens',
     ],
   },
@@ -460,7 +461,7 @@ flow(
       (await send(correlationId)).status(200);
       const r = await waitFor(
         async () =>
-          ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+          ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
             params: { accountId: team.id },
             query: { project_id: project.id, correlation_id: correlationId, action: 'project.read' },
           }),
@@ -490,7 +491,7 @@ flow(
 
     await ctx.step('browser JWT → credential_kind browser_session, no reported client', async () => {
       const row = await readAndFind('jwt', (correlationId) =>
-        ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId', {
+        ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId', {
           params: { projectId: project.id },
           headers: { 'x-correlation-id': correlationId },
         }),
@@ -502,7 +503,7 @@ flow(
 
     await ctx.step('PAT → credential_kind personal_access_token with the token id and name', async () => {
       const row = await readAndFind('pat', (correlationId) =>
-        ctx.client.withBearer(patSecret, 'PAT').get(`/v1/projects/${project.id}`, {
+        ctx.client.withBearer(patSecret, 'PAT').get(`/v1/workspaces/${project.id}`, {
           headers: { 'x-correlation-id': correlationId },
         }),
       );
@@ -518,7 +519,7 @@ flow(
 
     await ctx.step('PAT that sends X-Kortix-Client: web is still a personal_access_token', async () => {
       const row = await readAndFind('spoof', (correlationId) =>
-        ctx.client.withBearer(patSecret, 'PAT').get(`/v1/projects/${project.id}`, {
+        ctx.client.withBearer(patSecret, 'PAT').get(`/v1/workspaces/${project.id}`, {
           headers: { 'x-correlation-id': correlationId, 'x-kortix-client': 'web' },
         }),
       );
@@ -532,7 +533,7 @@ flow(
     });
 
     await ctx.step('credential_kind filter selects the PAT rows only', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         params: { accountId: team.id },
         query: { project_id: project.id, action: 'project.read', credential_kind: 'personal_access_token' },
       });

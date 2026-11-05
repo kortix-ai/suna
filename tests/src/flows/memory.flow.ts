@@ -69,16 +69,16 @@ const DRIVE_WRITE = 'PUT /v1/drives/:driveId/files/content';
 const STORAGE_PROBE = ['GET /v1/drives', 'POST /v1/drives/:driveId/files/mkdir', 'DELETE /v1/drives/:driveId/files'];
 const RESOURCE_GRANTS = 'POST /v1/projects/:projectId/resource-grants';
 
-const LAYER = '/v1/projects/:projectId/memory/layers/:layerKey';
-const PAGES = '/v1/projects/:projectId/memory/layers/:layerKey/pages';
-const NOTES = '/v1/projects/:projectId/memory/layers/:layerKey/notes';
-const PAGE = '/v1/projects/:projectId/memory/pages/:pageId';
-const HISTORY = '/v1/projects/:projectId/memory/pages/:pageId/history';
-const SEARCH = '/v1/projects/:projectId/memory/search';
-const USAGE = '/v1/projects/:projectId/sessions/:sessionId/memory-usage';
-const SPACES = '/v1/projects/:projectId/spaces';
-const SPACE = '/v1/projects/:projectId/spaces/:spaceId';
-const DM = '/v1/projects/:projectId/spaces/dm';
+const LAYER = '/v1/workspaces/:projectId/memory/layers/:layerKey';
+const PAGES = '/v1/workspaces/:projectId/memory/layers/:layerKey/pages';
+const NOTES = '/v1/workspaces/:projectId/memory/layers/:layerKey/notes';
+const PAGE = '/v1/workspaces/:projectId/memory/pages/:pageId';
+const HISTORY = '/v1/workspaces/:projectId/memory/pages/:pageId/history';
+const SEARCH = '/v1/workspaces/:projectId/memory/search';
+const USAGE = '/v1/workspaces/:projectId/sessions/:sessionId/memory-usage';
+const SPACES = '/v1/workspaces/:projectId/spaces';
+const SPACE = '/v1/workspaces/:projectId/spaces/:spaceId';
+const DM = '/v1/workspaces/:projectId/spaces/dm';
 /** Routes the files model removed: each answers 404 (no handler). */
 const REMOVED = [
   ['POST', '/v1/projects/:projectId/memory/remember'],
@@ -135,7 +135,7 @@ async function thread(
      VALUES ($1::uuid, $1, $2, $3, 'active')`,
     [sessionId, world.accountId, world.projectId],
   );
-  const minted = (await world.owner.post('/v1/projects/:projectId/cli-token', { name: ctx.fixtures.name('memory') }, { params: { projectId: world.projectId } }))
+  const minted = (await world.owner.post('/v1/workspaces/:projectId/cli-token', { name: ctx.fixtures.name('memory') }, { params: { projectId: world.projectId } }))
     .status(201)
     .json<{ token_id: string; secret_key: string }>();
   world.tokens.push(minted.token_id);
@@ -523,9 +523,9 @@ flow('MEMORY-12', meta([R.usage, FEATURES, SPACE_CREATE, TOKEN_MINT]), async (ct
   }
 });
 
-const FEATURES_PATH = '/v1/projects/:projectId/features';
-const ONBOARDING = '/v1/projects/:projectId/onboarding/channels';
-const MARKS = '/v1/projects/:projectId/onboarding/channels/marks';
+const FEATURES_PATH = '/v1/workspaces/:projectId/features';
+const ONBOARDING = '/v1/workspaces/:projectId/onboarding/channels';
+const MARKS = '/v1/workspaces/:projectId/onboarding/channels/marks';
 const ONBOARDING_ROUTES = ['GET /v1/projects/:projectId/onboarding/channels', 'POST /v1/projects/:projectId/onboarding/channels/marks'];
 const SPACE_LIST = 'GET /v1/projects/:projectId/spaces';
 
@@ -681,8 +681,8 @@ const MINE = {
   save: 'PUT /v1/projects/:projectId/memory/me/agent/:agent/pages/:name',
   forget: 'DELETE /v1/projects/:projectId/memory/me/agent/:agent/pages/:name',
 } as const;
-const MINE_INDEX = '/v1/projects/:projectId/memory/me/agent/:agent';
-const MINE_PAGE = '/v1/projects/:projectId/memory/me/agent/:agent/pages/:name';
+const MINE_INDEX = '/v1/workspaces/:projectId/memory/me/agent/:agent';
+const MINE_PAGE = '/v1/workspaces/:projectId/memory/me/agent/:agent/pages/:name';
 const FACT = { description: 'Wants replies of one to three sentences', type: 'feedback', body: 'Keep replies short.\n\n**Why:** reads on a phone.\n\n**How to apply:** one to three sentences.' };
 
 flow('MEMORY-17', meta([...Object.values(MINE), FEATURES, TOKEN_MINT, ...STORAGE_PROBE]), async (ctx) => {

@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { flow } from '../core/flow';
 import { AgentPrincipalsWorld, type AgentSession } from '../fixtures/agent-principals';
 
-const ARTIFACTS = '/v1/projects/:projectId/artifacts';
+const ARTIFACTS = '/v1/workspaces/:projectId/artifacts';
 const ONE = `${ARTIFACTS}/:artifactId`;
 const COMMENTS = `${ONE}/comments`;
 const CONTEXT = `${COMMENTS}/context`;
 const COMMENT = `${COMMENTS}/:threadId/:commentId`;
 const SEND = `${COMMENTS}/send`;
-const FEATURES = '/v1/projects/:projectId/features';
+const FEATURES = '/v1/workspaces/:projectId/features';
 type Artifact = { artifact_id: string; entry_version: string };
 type Thread = { thread_id: string; can_reply: boolean; can_resolve: boolean; position: { start: number; end: number } | null;
   comments: Array<{ comment_id: string; can_edit: boolean; can_delete: boolean; mentions: Array<{ kind: string; session_id?: string; user_id?: string; token?: string }> }> };
