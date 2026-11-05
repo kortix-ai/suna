@@ -1,11 +1,9 @@
 // The voice's agent, whichever backend runs it (src/agent.ts is the seam; src/cascade.ts and src/server.ts call only
-// this module). VOICE_AGENT picks the backend:
-// - `wire` (default): the OpenCode-shaped HTTP+SSE wire of kortixd or `opencode serve` (src/agents/wire.ts),
-// - `pi`: pi or omp in this process, through its SDK's AgentSession (src/agents/pi.ts; the SDK is loaded only then).
+// this module). The backend is pi or omp: in this process through its SDK's AgentSession (src/agents/pi.ts; the SDK
+// is loaded only then), or the session of the pi host the relay runs inside.
 // A pi host that runs the relay inside itself binds the session it runs in with `use()` (pi/extension.ts).
 import type { Agent, SendExtra, TurnEvents, TurnOptions } from './agent'
 import * as pi from './agents/pi'
-import * as wire from './agents/wire'
 export type { Agent, Bus, Recall, SendExtra, TurnEvents, TurnOptions } from './agent'
 
 let standalone: Agent | undefined
@@ -15,12 +13,12 @@ let bound: Agent | undefined
 const sessions = new Map<string, Agent>()
 // The sessions whose host gave the agent the voice's tools (src/voice-tools.ts): it acts on its call with them.
 const withTools = new Set<string>()
-const backends: Record<string, () => Agent> = { wire: () => wire, pi: () => (standalone ??= pi.standalone()) }
+const backends: Record<string, () => Agent> = { pi: () => (standalone ??= pi.standalone()) }
 
 /** The agent every call uses: the one bound with `use`, else VOICE_AGENT's. */
 export function agent(): Agent {
   if (bound) return bound
-  const kind = process.env.VOICE_AGENT || 'wire'
+  const kind = process.env.VOICE_AGENT || 'pi'
   const pick = backends[kind]
   if (!pick) throw new Error(`VOICE_AGENT=${kind}: expected one of ${Object.keys(backends).join(', ')}`)
   return pick()
