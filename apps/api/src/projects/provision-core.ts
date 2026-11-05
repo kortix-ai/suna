@@ -85,6 +85,7 @@ import type { AccountRole, ProjectRole } from './access';
 import { captureProductEvent } from '../shared/product-analytics';
 import {
   type NewWorkspaceCaller,
+  newWorkspaceCallerDenial,
   newWorkspaceConflict,
   resolveNewWorkspaceAccount,
 } from './new-workspace';
@@ -166,6 +167,8 @@ export async function buildNewWorkspaceProvisionContext(
   body: Record<string, unknown>,
   caller: NewWorkspaceCaller,
 ): Promise<{ result: ProvisionResult } | { ctx: ProvisionContext }> {
+  const denial = newWorkspaceCallerDenial(caller);
+  if (denial) return { result: denial };
   const conflict = newWorkspaceConflict(body);
   if (conflict) return { result: conflict };
   const validated = await validateProvisionRequest(body);

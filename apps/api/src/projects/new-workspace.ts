@@ -144,18 +144,36 @@ async function chooseOrCreate(
  * Pick or create the account a new workspace provisions into. `name` is the
  * already-validated project name; `idempotencyKey` the parsed key or null.
  */
+/**
+ * Who may create a workspace: a person (a browser JWT or an unscoped PAT),
+ * never an API key, a service account, a project/session/agent token or an
+ * impersonating operator. `null` when the caller may. Runs before the request
+ * checks: authorization is decided before input validation.
+ */
+export function newWorkspaceCallerDenial(caller: NewWorkspaceCaller): ProvisionResult | null {
+  if (impersonatedAccountFor(caller.userId)) {
+    return { status: 403, body: { error: 'Impersonated requests cannot create a workspace', code: 'impersonation_invalid' } };
+  }
+  const person = caller.authType === 'supabase' || caller.authType === 'pat';
+  if (!person || caller.scopedCredential) {
+    return {
+      status: 403,
+      body: {
+        error: 'Only a person creates a workspace: sign in, or use an unscoped personal access token',
+        code: 'new_workspace_requires_person',
+      },
+    };
+  }
+  return null;
+}
+
 export async function resolveNewWorkspaceAccount(
   caller: NewWorkspaceCaller,
   name: string,
   idempotencyKey: string | null,
 ): Promise<NewWorkspaceAccount> {
-  if (impersonatedAccountFor(caller.userId)) {
-    return refuse(403, 'Impersonated requests cannot create a workspace', 'impersonation_invalid');
-  }
-  const person = caller.authType === 'supabase' || caller.authType === 'pat';
-  if (!person || caller.scopedCredential) {
-    return refuse(403, 'Only a person creates a workspace: sign in, or use an unscoped personal access token', 'new_workspace_requires_person');
-  }
+  const denial = newWorkspaceCallerDenial(caller);
+  if (denial) return { ok: false, result: denial };
 
   // Without a key there is no "same create" to converge on: no lock, and two
   // submits make two workspaces (each its own account), never two projects

@@ -19,6 +19,7 @@ import {
   type ProvisionResult,
 } from '../provision-core';
 import { wantsNewWorkspace } from '../new-workspace';
+import { isProjectSessionPrincipal } from '../../middleware/agent-scope';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { projects } from '@kortix/db';
@@ -57,7 +58,9 @@ async function buildProvisionContext(c: Context): Promise<{ result: ProvisionRes
       userId: c.get('userId') as string,
       email: (c.get('userEmail') as string | undefined) || null,
       authType: c.get('authType') as string | undefined,
-      scopedCredential: Boolean(c.get('tokenProjectId') || c.get('sessionId') || c.get('agentGrant')),
+      // A browser JWT's `sessionId` is its Supabase login session, not a
+      // Kortix session (middleware/caller-session.ts): never a scoped credential.
+      scopedCredential: Boolean(c.get('tokenProjectId')) || isProjectSessionPrincipal(c),
     });
     if ('ctx' in built) c.set('accountId', built.ctx.scope.accountId);
     return built;
