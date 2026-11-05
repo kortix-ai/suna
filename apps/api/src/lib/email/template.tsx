@@ -71,6 +71,9 @@ const SOCIALS = [
   { href: 'https://github.com/kortix-ai/CompanyOS', icon: 'social-github.png', alt: 'GitHub' },
 ];
 
+// The web app's /download/<platform> route redirects to the App Store and
+// Google Play listings (apps/web/src/app/(utility)/download/[platform]/route.ts).
+
 function Shell(props: { title: string; body: string; preview: string }) {
   const site = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
   return (
@@ -112,8 +115,12 @@ function Shell(props: { title: string; body: string; preview: string }) {
                 </tbody>
               </table>
               <Text style={st.small}>
-                <Link href="https://kortix.com" style={st.smallLink}>
-                  kortix.com
+                <Link href={`${site}/download/ios`} style={st.smallLink}>
+                  iOS app
+                </Link>
+                {' · '}
+                <Link href={`${site}/download/android`} style={st.smallLink}>
+                  Android app
                 </Link>
               </Text>
             </Section>

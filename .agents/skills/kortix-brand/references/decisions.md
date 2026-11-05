@@ -12,12 +12,12 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-11-05
 
-### D38 The email footer sits on the left edge
+### D38 The email footer sits on the left edge and links the mobile apps
 - **Date:** 2026-11-05
-- **Decision:** The email footer (tagline, social icons, `kortix.com`) is left-aligned on the frame edge, the same edge as the header symbol and the card. The first social icon has no left padding, so it starts on that edge; the icons are 16 px apart.
-- **Why:** founder, 2026-11-05: the logo, the body and the footer must share one alignment. A centered footer under a left-aligned header and card "looks a bit weird" and breaks the hierarchy.
+- **Decision:** The email footer (tagline, social icons, app links) is left-aligned on the frame edge, the same edge as the header symbol and the card. The first social icon has no left padding, so it starts on that edge; the icons are 16 px apart. The last footer line links "iOS app" and "Android app" (`/download/ios`, `/download/android` on the deployment's own host); the `kortix.com` link is gone.
+- **Why:** founder, 2026-11-05: the logo, the body and the footer must share one alignment. A centered footer under a left-aligned header and card "looks a bit weird" and breaks the hierarchy. The same day the founder asked to replace `kortix.com` with download links for the iOS and Android apps.
 - **Where:** `apps/api/src/lib/email/template.tsx`.
-- **Supersedes:** the last sentence of D26 ("The footer is centered"). The rest of D26 stands.
+- **Supersedes:** the last sentence of D26 ("The footer is centered: tagline, social icons, `kortix.com`"). The rest of D26 stands.
 - **Source:** the `email-footer-left` branch.
 
 ## 2026-11-02
