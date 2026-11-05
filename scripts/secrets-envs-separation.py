@@ -15,6 +15,8 @@ Only a credential DSN reaches prod: a scheme://user:pass@host value authenticate
 the deployment it points at. The host value rule fires there and nowhere else. A bare host
 name is not a reach into prod, so CLOUDFLARE_ZONE_NAME=kortix.com, hi@kortix.com and a CORS
 origin list in a dev profile do not fail: the value track still compares them to prod.
+A bare boolean (true/false) is also exempt: every environment's flag holds the same string
+and no credential can be one.
 """
 import json, os, re, subprocess, sys
 from pathlib import Path
@@ -24,8 +26,10 @@ ROOT = Path(__file__).resolve().parent.parent
 DX = sys.argv[1] if len(sys.argv) > 1 else "dotenvx"
 PROFILES = [("local", "apps/api/.env"), ("dev", "apps/api/.env.dev"), ("stage", "apps/api/.env.staging")]
 PROD = "apps/api/.env.prod"
-# A credential DSN names its deployment's host: the userinfo carries a password.
-DSN_RE = re.compile(r"^[a-z][a-z0-9+.-]*://[^/@\s]*:[^/@\s]+@")
+# A credential DSN names its deployment's host: the userinfo carries a password. The scheme
+# is case-insensitive (a POSTGRES:// token is the same credential) and the password may
+# hold any non-space, non-slash character, quotes included.
+DSN_RE = re.compile(r"^[a-z][a-z0-9+.-]*://[^/@\s]*:[^/@\s]+@", re.IGNORECASE)
 
 # Every host under the production apex IS the production stack (supa., gateway., prod-fe-ecs.,
 # ...), whatever the label. These are their own environments despite the apex, and a local
@@ -78,7 +82,11 @@ def prod_origin(value: str) -> str:
     """
     if value.startswith(("sk_live_", "pk_live_")):
         return "a LIVE Stripe key"
-    for token in re.split(r"[\s,;|]+", value[:2048]):
+    # Scan the whole value, truncated never: a DSN at the tail of a long value is denied
+    # nowhere else. Tokens split on whitespace, `;` and `|`; a comma splits only when it is
+    # followed by a scheme://, so a password holding a raw comma stays inside its own token.
+    for token in re.split(r"[\s;|]+|,(?=[a-zA-Z][a-zA-Z0-9+.-]*://)", value):
+        token = token.strip(" \"'")
         if not DSN_RE.match(token):
             continue
         host = (urlsplit(token).hostname or "").lower().rstrip(".")
@@ -91,6 +99,12 @@ def prod_origin(value: str) -> str:
 
 def classify(value: str, prod: set) -> tuple[str, str]:
     """('', '') when the value keeps to its own environment, else (class, reason) it reaches prod."""
+    if value in ("true", "false"):
+        # A bare boolean is the same string in every environment and carries no credential
+        # channel; comparing it would flag every feature flag prod and a non-prod profile
+        # share. It is a value-class exemption, not a key-name one: a 'true' can never
+        # reach a prod host either.
+        return "", ""
     host = prod_origin(value)
     if host:
         return "prod-reach", f"names {host}"

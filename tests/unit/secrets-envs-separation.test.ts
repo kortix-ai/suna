@@ -129,6 +129,32 @@ describe('scripts/secrets-envs-separation.py', () => {
     expect(r.out).not.toMatch(/LANGFUSE_HOST/);
   });
 
+  it('reads a uppercase-scheme DSN, one past 2048 chars, quoted and comma-listed (self-review B)', () => {
+    const long = `x=${'p'.repeat(2100)};`;
+    const r = run({
+      prod: {},
+      nonProd: nonProd({
+        A: 'POSTGRES://user:pw@api.kortix.com:5432/kortix',
+        B: `${long}postgres://user:pw@gateway.kortix.com:5432/k`,
+        C: '"postgres://user:pw@supa.kortix.com:5432/k"',
+        D: `postgres://user:pw@dev-db.kortix.internal:5432/k,POSTGRES://user:pw@api-ecs-fargate.kortix.com:5432/k`,
+      }),
+    });
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toMatch(/A +names api\.kortix\.com[^\n]*\n[^\n]*B +names gateway\.kortix\.com[^\n]*\n[^\n]*C +names supa\.kortix\.com/);
+    expect(r.out).toMatch(/D +names api-ecs-fargate\.kortix\.com/);
+    expect(r.out).not.toMatch(/dev-db\.kortix\.internal/);
+  });
+
+  it('never matches a bare boolean against a prod one (self-review B)', () => {
+    const r = run({
+      prod: { KORTIX_X_ENABLED: 'true', KORTIX_Y_ENABLED: 'false' },
+      nonProd: nonProd({ KORTIX_X_ENABLED: 'true', KORTIX_Y_ENABLED: 'false', DATABASE_URL: 'postgres://local-db/main' }),
+    });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).not.toMatch(/KORTIX_X_ENABLED|KORTIX_Y_ENABLED/);
+  });
+
   it('names the prod host for a credential DSN and keeps a plain URL out of it', () => {
     const r = run({
       prod: {},
