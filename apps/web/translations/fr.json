@@ -286,7 +286,7 @@
     "handoff": {
       "validating": "Validation",
       "creating_repository": "Création du dépôt",
-      "registering": "Enregistrement du projet",
+      "registering": "Enregistrement de l’espace de travail",
       "seeding": "Préparation des fichiers de démarrage"
     },
     "templateSeed": "Cet espace de travail sera initialisé à partir du modèle choisi.",
@@ -1923,7 +1923,7 @@
         "Tes désirs sont des ordres",
         "C'est quoi le programme ?",
         "Attache ta ceinture ! On va où ?",
-        "Un jour de plus, un projet de plus",
+        "Un jour de plus, un build de plus",
         "Qu'est-ce qui te trotte dans la tête ?",
         "Allez, on y va !"
       ]
@@ -6030,7 +6030,7 @@
       "line328JsxTextNoAccess": "Aucun accès"
     },
     "appProjectsIdCustomizeSecretsPage": {
-      "line104JsxTextProjectSecrets": "Secrets du projet",
+      "line104JsxTextProjectSecrets": "Variables d’environnement",
       "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "Variables d'environnement injectées dans chaque nouvelle session.",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "manifeste. Les valeurs sont chiffrées au repos.",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "Les sessions peuvent toujours démarrer, mais l’agent échouera probablement tant que ces valeurs ne seront pas définies.",
@@ -6117,7 +6117,7 @@
       "line236JsxTextNewProject": "Nouvel espace de travail",
       "line252JsxAttrTitleFailedToLoadProjects": "Impossible de charger les espaces de travail",
       "line265JsxAttrTitleCreateYourFirstProject": "Créez votre premier espace de travail",
-      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "Un projet est un espace de travail pour une entreprise ou une idée. Nous le configurerons en quelques secondes, sans compte Git requis.",
+      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "Un espace dédié à une entreprise, un produit ou une idée.",
       "line275JsxTextNewProject": "Nouvel espace de travail",
       "line288JsxAttrDescriptionTryADifferentSearchTerm": "Essayez un autre terme de recherche."
     },
@@ -9446,7 +9446,7 @@
     "autoAppPublicMarketingDevelopersPageJsxAttrTabGitLog7b106744": "journal git --graph",
     "autoAppPublicMarketingDevelopersPageJsxTextTriage14Tickets9e98fe81": "trier 14 billets",
     "autoAppPublicMarketingDevelopersPageJsxTextBuildBoardDeck30c6ad92": "construire un plateau de planches",
-    "autoAppPublicMarketingDevelopersPageJsxTextDraftOutreach8bd3b2aa": "projet de sensibilisation",
+    "autoAppPublicMarketingDevelopersPageJsxTextDraftOutreach8bd3b2aa": "brouillon de prospection",
     "autoAppPublicMarketingDevelopersPageJsxTextMillionsOfBranchesd3dbd3cb": "… des millions de succursales, une source de vérité",
     "autoAppPublicMarketingDevelopersPageJsxTextEveryToolBehindf2d74753": "Chaque outil, derrière une seule interface",
     "autoAppPublicMarketingDevelopersPageJsxTextKortixConnectorsPut284659af": "Les connecteurs Kortix placent plus de 3 000 applications — ainsi que tout point de terminaison MCP, OpenAPI, GraphQL ou HTTP brut — derrière une seule interface Connector que vos agents calent.",
@@ -10523,7 +10523,7 @@
       "text05f82c79bce3": "Aucun élément ne correspond à \"{value0}\".",
       "text05fa2e3b0a10": "Numéro de page",
       "text05fb96e3f84d": "Page des paramètres de l’application avec l’onglet Sign On sélectionné",
-      "text05fe4f848b83": "      du projet. Examine l’historique git, les demandes",
+      "text05fe4f848b83": "      de l’espace de travail. Examine l’historique git, les demandes",
       "text0602544ab665": "Un déclencheur enregistre un nom de fuseau horaire IANA, et non un décalage, avec UTC par défaut. Définissez America/Los_Angeles : l’heure reste à 09:00 locale lors du passage à l’heure d’été. Une abréviation comme PST est rejetée plutôt que devinée.",
       "text06029fe800d0": "Autoriser, demander ou bloquer.",
       "text0603deca4fcb": "7 derniers jours",
@@ -11144,7 +11144,7 @@
       "text18a4e711991b": "Enrichit les prospects depuis le CRM, analyse chaque compte et rédige une approche personnalisée.",
       "text18a59ffd5fa8": "un agent OpenCode par fichier",
       "text18ab46abb07f": "grep toute l’entreprise, comparez n’importe quel changement et annulez n’importe quelle partie",
-      "text18c99d7a5ce2": "du projet, et non de cette page.",
+      "text18c99d7a5ce2": "de l’espace de travail, et non de cette page.",
       "text18c9e5d44e37": "lastName",
       "text18cf674c5f32": "Échec de la réinitialisation de la marque",
       "text18d270539067": "À vous de décider",
@@ -12186,7 +12186,7 @@
       "text380efe8cc760": "Effacez un filtre ou sélectionnez une période plus large.",
       "text381195b0a9b3": "Plus de 3 000 applications en un clic, avec MCP, OpenAPI, Postman, GraphQL et HTTP brut",
       "text3822b0412ed7": "Aucun secours",
-      "text382584f2456e": "s du projet.",
+      "text382584f2456e": "s de l’espace de travail.",
       "text382a05b25490": "product/feedback-2026-w31.md",
       "text382d329c7bac": "Les approbations en attente apparaissent ici. L’accès à l’historique d’audit nécessite l’offre Enterprise.",
       "text3835b7065fba": "J’ai affecté des utilisateurs à l’application",

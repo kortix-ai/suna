@@ -286,7 +286,7 @@
     "handoff": {
       "validating": "Wird überprüft",
       "creating_repository": "Repository wird erstellt",
-      "registering": "Projekt wird registriert",
+      "registering": "Workspace wird registriert",
       "seeding": "Starterdateien werden eingerichtet"
     },
     "templateSeed": "Dieser Workspace wird mit der ausgewählten Vorlage eingerichtet.",
@@ -924,7 +924,7 @@
       "manifestFile": "Manifestdatei",
       "manifestDescription": "Die Datei im Repository, die Kortix sagt, wie dieser Workspace ausgeführt wird.",
       "learnMore": "Mehr erfahren",
-      "localTitle": "Lokal an diesem Projekt arbeiten",
+      "localTitle": "Lokal in diesem Workspace arbeiten",
       "localDescription": "Kopiere diesen Workspace auf deinen Computer und bearbeite ihn in deinem Editor.",
       "installTitle": "Kortix-Befehlszeile installieren",
       "installHint": "Einmalige Einrichtung unter macOS oder Linux. Überspringe diesen Schritt, falls sie bereits installiert ist.",
@@ -1923,7 +1923,7 @@
         "Dein Wunsch ist mir Befehl",
         "Was steht auf dem Plan?",
         "Anschnallen! Wohin geht die Reise?",
-        "Ein neuer Tag, ein neues Projekt",
+        "Ein neuer Tag, ein neuer Build",
         "Was beschäftigt dich?",
         "Los geht's!"
       ]
@@ -6030,7 +6030,7 @@
       "line328JsxTextNoAccess": "Kein Zugriff"
     },
     "appProjectsIdCustomizeSecretsPage": {
-      "line104JsxTextProjectSecrets": "Projekt-Secrets",
+      "line104JsxTextProjectSecrets": "Umgebungsvariablen",
       "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "Umgebungsvariablen, die in jede neue Sitzung injiziert werden.",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "Manifest. Werte werden ruhend verschlüsselt.",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "Sitzungen können weiterhin starten, aber der Agent wird wahrscheinlich fehlschlagen, bis diese festgelegt sind.",
@@ -6117,7 +6117,7 @@
       "line236JsxTextNewProject": "Neuer Workspace",
       "line252JsxAttrTitleFailedToLoadProjects": "Workspaces konnten nicht geladen werden",
       "line265JsxAttrTitleCreateYourFirstProject": "Erstelle deinen ersten Workspace",
-      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "Ein Projekt ist ein Workspace für ein Unternehmen oder eine Idee. Wir richten es in Sekunden ein – kein Git-Konto erforderlich.",
+      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "Ein eigener Bereich für ein Unternehmen, ein Produkt oder eine Idee.",
       "line275JsxTextNewProject": "Neuer Workspace",
       "line288JsxAttrDescriptionTryADifferentSearchTerm": "Versuche es mit einem anderen Suchbegriff."
     },
@@ -11144,7 +11144,7 @@
       "text18a4e711991b": "Reichert Leads aus dem CRM an, recherchiert jedes Konto und erstellt maßgeschneiderte Kontaktaufnahmen.",
       "text18a59ffd5fa8": "eine OpenCode-Agentendatei pro Agent",
       "text18ab46abb07f": "Durchsuche das ganze Unternehmen mit grep, vergleiche jede Änderung als Diff und rolle jeden Teil zurück",
-      "text18c99d7a5ce2": "des Projekts, nicht aus irgendetwas auf dieser Seite.",
+      "text18c99d7a5ce2": "des Workspace, nicht aus irgendetwas auf dieser Seite.",
       "text18c9e5d44e37": "lastName",
       "text18cf674c5f32": "Branding konnte nicht zurückgesetzt werden",
       "text18d270539067": "Du hast die Wahl",
@@ -12186,7 +12186,7 @@
       "text380efe8cc760": "Löschen Sie einen Filter oder wählen Sie einen größeren Zeitraum.",
       "text381195b0a9b3": "3.000+ Apps mit einem Klick sowie MCP, OpenAPI, Postman, GraphQL und rohes HTTP",
       "text3822b0412ed7": "Kein Fallback",
-      "text382584f2456e": "s dieses Projekts zu geben.",
+      "text382584f2456e": "s dieses Workspace zu geben.",
       "text382a05b25490": "product/feedback-2026-w31.md",
       "text382d329c7bac": "Ausstehende Genehmigungen erscheinen hier. Der Zugriff auf historische Audits erfordert Enterprise.",
       "text3835b7065fba": "Ich habe Benutzer der Anwendung zugewiesen",

@@ -286,7 +286,7 @@
     "handoff": {
       "validating": "検証中",
       "creating_repository": "リポジトリを作成中",
-      "registering": "プロジェクトを登録中",
+      "registering": "ワークスペースを登録中",
       "seeding": "スターターファイルを準備中"
     },
     "templateSeed": "このワークスペースは選択したテンプレートからセットアップされます。",
@@ -4549,7 +4549,7 @@
       "splitBuildersPointThree": "レビュー、ロールバック、競合はGitで管理",
       "differentScreenEyebrow": "すべての作業面",
       "differentScreenSectionTitle": "チャット、Slack、Teams、または自社プロダクト。",
-      "differentScreenSectionDescription": "ブラウザ、スマホ、Slack、ターミナル、パイプラインからエージェントに仕事を渡せます。出荷される内容をレビューし、あなたの確認待ちを把握し、次の実行前にプロジェクトに必要なものを見つけられます。",
+      "differentScreenSectionDescription": "チームは、すっきりしたウェブ／モバイルのワークスペース、SlackやMicrosoft Teams、またはAPI経由でご自身のアプリ内から、エージェントに話しかけられます。同じエージェント、同じガードレールを、あらゆる画面で。",
       "surfaceWebWorkspace": "Webワークスペース",
       "surfaceMobileApp": "モバイルアプリ",
       "surfaceSlack": "Slack",
@@ -6030,7 +6030,7 @@
       "line328JsxTextNoAccess": "アクセスなし"
     },
     "appProjectsIdCustomizeSecretsPage": {
-      "line104JsxTextProjectSecrets": "プロジェクトシークレット",
+      "line104JsxTextProjectSecrets": "環境変数",
       "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "各新規セッションに注入される環境変数。",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "manifest。値は保存時に暗号化されます。",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "セッションは引き続き開始できますが、これらが設定されるまでエージェントは失敗する可能性があります。",
@@ -6117,7 +6117,7 @@
       "line236JsxTextNewProject": "新しいワークスペース",
       "line252JsxAttrTitleFailedToLoadProjects": "ワークスペースを読み込めませんでした",
       "line265JsxAttrTitleCreateYourFirstProject": "最初のワークスペースを作成",
-      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "プロジェクトは、1つの会社やアイデアのためのワークスペースです。Git アカウントなしで、数秒でセットアップできます。",
+      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "1つの会社、プロダクト、またはアイデアのための専用スペース。Git アカウントなしで、数秒でセットアップできます。",
       "line275JsxTextNewProject": "新しいワークスペース",
       "line288JsxAttrDescriptionTryADifferentSearchTerm": "別の検索語を試してください。"
     },
@@ -13649,7 +13649,7 @@
       "text61ad990902e7": "アクティブなセッション",
       "text61affed06dc6": "3件合格",
       "text61b19fcf49fe": "データと分析",
-      "text61c922500051": "。プロジェクトの全員が対象です。Kortix はコピーを保存しないため、元に戻すにはキーが再度必要です。",
+      "text61c922500051": "。ワークスペースの全員が対象です。Kortix はコピーを保存しないため、元に戻すにはキーが再度必要です。",
       "text61d1181a82c3": "enterpriseAccordionIsolationTitle",
       "text61d439ffe0eb": "# git にあります。認証情報は含まれません。",
       "text61dac62928db": "スケジュール済み：",

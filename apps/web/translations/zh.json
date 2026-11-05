@@ -286,7 +286,7 @@
     "handoff": {
       "validating": "正在验证",
       "creating_repository": "正在创建仓库",
-      "registering": "正在注册项目",
+      "registering": "正在注册工作区",
       "seeding": "正在准备初始文件"
     },
     "templateSeed": "此工作区将使用您选择的模板进行初始化。",
@@ -977,7 +977,7 @@
       "deleteWorkspace": "删除工作区",
       "deleteDescription": "为所有成员删除此工作区及其中的所有内容。此操作无法撤销。",
       "deleteTitle": "删除工作区？",
-      "deleteDialog": "这会为所有有权访问 {name} 的人删除该项目。此操作无法撤销。",
+      "deleteDialog": "这会为所有有权访问 {name} 的人删除该工作区。此操作无法撤销。",
       "consequencesTitle": "你将立即失去：",
       "consequences": {
         "sessions": "此工作区中的每个会话及其文件、历史记录和输出",
@@ -1923,7 +1923,7 @@
         "你的愿望就是我的命令",
         "有什么计划？",
         "系好安全带！去哪里？",
-        "新的一天，新的项目",
+        "新的一天，新的构建",
         "在想什么？",
         "出发吧！"
       ]
@@ -4549,7 +4549,7 @@
       "splitBuildersPointThree": "由 Git 处理审查、回滚和冲突",
       "differentScreenEyebrow": "每个界面",
       "differentScreenSectionTitle": "聊天、Slack、Teams，或你自己的产品。",
-      "differentScreenSectionDescription": "从浏览器、手机、Slack、终端或流水线把工作交给智能体。审查即将发布的内容，查看等待你处理的事项，并在下一次运行前发现项目还缺什么。",
+      "differentScreenSectionDescription": "你的团队可以通过简洁的网页和移动端工作区、Slack 或 Microsoft Teams，或通过 API 直接在你自己的应用中与智能体对话。同样的智能体，同样的护栏，所有界面一致。",
       "surfaceWebWorkspace": "网页工作空间",
       "surfaceMobileApp": "移动应用",
       "surfaceSlack": "Slack",
@@ -6030,7 +6030,7 @@
       "line328JsxTextNoAccess": "无访问权限"
     },
     "appProjectsIdCustomizeSecretsPage": {
-      "line104JsxTextProjectSecrets": "项目密钥",
+      "line104JsxTextProjectSecrets": "环境变量",
       "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "注入每个新会话的环境变量。",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "manifest。值会进行静态加密。",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "会话仍可启动，但在设置这些值之前，代理很可能会失败。",
@@ -6117,7 +6117,7 @@
       "line236JsxTextNewProject": "新建工作区",
       "line252JsxAttrTitleFailedToLoadProjects": "无法加载工作区",
       "line265JsxAttrTitleCreateYourFirstProject": "创建你的第一个工作区",
-      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "项目是用于一个公司或一个想法的工作区。我们会在数秒内完成设置，无需 Git 账号。",
+      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "为一家公司、一个产品或一个想法打造的专属空间。我们会在数秒内完成设置，无需 Git 账号。",
       "line275JsxTextNewProject": "新建工作区",
       "line288JsxAttrDescriptionTryADifferentSearchTerm": "请尝试其他搜索词。"
     },
@@ -13649,7 +13649,7 @@
       "text61ad990902e7": "活跃会话",
       "text61affed06dc6": "3 项通过",
       "text61b19fcf49fe": "数据与分析",
-      "text61c922500051": "，项目中的所有人都无法使用。Kortix 不会保留副本——你需要再次提供密钥才能恢复。",
+      "text61c922500051": "，工作区中的所有人都无法使用。Kortix 不会保留副本——你需要再次提供密钥才能恢复。",
       "text61d1181a82c3": "enterpriseAccordionIsolationTitle",
       "text61d439ffe0eb": "# git 中。凭据永远不会位于其中。",
       "text61dac62928db": "已计划：",
@@ -17015,7 +17015,7 @@
       "textc21ead0614e7": "已关闭",
       "textc21f6265f30c": "标题使用粗体 (700)",
       "textc229fa075816": "CardButton",
-      "textc22bea667103": "为第二个业务部门派生一份。创建分支尝试不同的代理组合。将整个项目交给新团队，他们会连同技能、记忆和授权一起获得。",
+      "textc22bea667103": "为第二个业务部门派生一份。创建分支尝试不同的代理组合。将整个工作区交给新团队，他们会连同技能、记忆和授权一起获得。",
       "textc22e35419e83": "更新演示失败",
       "textc22e9b2269f5": "我们会将其保存为工作区密钥，并在 webhook 创建后提供网页地址。",
       "textc233da98c824": "每个工具均设置为 {action}",

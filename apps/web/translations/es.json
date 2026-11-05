@@ -286,7 +286,7 @@
     "handoff": {
       "validating": "Validando",
       "creating_repository": "Creando el repositorio",
-      "registering": "Registrando el proyecto",
+      "registering": "Registrando el espacio de trabajo",
       "seeding": "Preparando los archivos iniciales"
     },
     "templateSeed": "Este espacio de trabajo se iniciará con la plantilla que elegiste.",
@@ -1923,7 +1923,7 @@
         "Tus deseos son órdenes",
         "¿Cuál es el plan?",
         "¡Abróchate el cinturón! ¿A dónde vamos?",
-        "Otro día, otro proyecto",
+        "Otro día, otro build",
         "¿Qué tienes en mente?",
         "¡Vamos al lío!"
       ]
@@ -5444,7 +5444,7 @@
       "invitedYouToAProject": "te invitó a un espacio de trabajo",
       "youHaveBeenInvitedToAProject": "Te han invitado a un espacio de trabajo.",
       "joinProjectDescription": "Te unirás a {projectName} como {roleLabel}.",
-      "roleManager": "administrador del proyecto",
+      "roleManager": "un administrador",
       "signOutAndContinue": "Cerrar sesión y continuar",
       "ssoTitle": "Inicia sesión con inicio de sesión único",
       "ssoDescription": "El directorio de tu organización te añadió a este espacio de trabajo. Inicia sesión con el inicio de sesión único de tu organización para unirte. Si no puedes, pide a un administrador del espacio de trabajo que reenvíe la invitación.",
@@ -6030,7 +6030,7 @@
       "line328JsxTextNoAccess": "Sin acceso"
     },
     "appProjectsIdCustomizeSecretsPage": {
-      "line104JsxTextProjectSecrets": "Secretos del proyecto",
+      "line104JsxTextProjectSecrets": "Variables de entorno",
       "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "Variables de entorno inyectadas en cada nueva sesión.",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "manifiesto. Los valores se cifran en reposo.",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "Las sesiones aún pueden iniciarse, pero el agente probablemente fallará hasta que se establezcan.",
@@ -6117,7 +6117,7 @@
       "line236JsxTextNewProject": "Nuevo espacio de trabajo",
       "line252JsxAttrTitleFailedToLoadProjects": "No se pudieron cargar los espacios de trabajo",
       "line265JsxAttrTitleCreateYourFirstProject": "Crea tu primer espacio de trabajo",
-      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "Un proyecto es un espacio de trabajo para una empresa o una idea. Lo configuraremos en segundos, sin necesidad de una cuenta de Git.",
+      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "Un espacio dedicado a una empresa, un producto o una idea.",
       "line275JsxTextNewProject": "Nuevo espacio de trabajo",
       "line288JsxAttrDescriptionTryADifferentSearchTerm": "Prueba con otro término de búsqueda."
     },
@@ -10523,7 +10523,7 @@
       "text05f82c79bce3": "Ningún elemento coincide con \"{value0}\".",
       "text05fa2e3b0a10": "Número de página",
       "text05fb96e3f84d": "Página de configuración de la aplicación con la pestaña Sign On seleccionada",
-      "text05fe4f848b83": "      actividad del proyecto. Revisa el historial de git, las solicitudes",
+      "text05fe4f848b83": "      actividad del espacio de trabajo. Revisa el historial de git, las solicitudes",
       "text0602544ab665": "Un activador almacena un nombre de zona horaria IANA, no un desplazamiento, y usa UTC de forma predeterminada. Configura America/Los_Angeles y se mantendrá a las 09:00 locales incluso con el cambio al horario de verano. Una abreviatura como PST se rechaza en lugar de adivinar.",
       "text06029fe800d0": "Permitir, preguntar o bloquear.",
       "text0603deca4fcb": "Últimos 7 días",
@@ -12186,7 +12186,7 @@
       "text380efe8cc760": "Borra un filtro o selecciona un intervalo de tiempo más amplio.",
       "text381195b0a9b3": "Más de 3.000 apps con un clic, además de MCP, OpenAPI, Postman, GraphQL y HTTP sin procesar",
       "text3822b0412ed7": "Sin alternativa",
-      "text382584f2456e": "s de este proyecto.",
+      "text382584f2456e": "s de este espacio de trabajo.",
       "text382a05b25490": "product/feedback-2026-w31.md",
       "text382d329c7bac": "Las aprobaciones pendientes aparecen aquí. El acceso al historial de auditoría requiere Enterprise.",
       "text3835b7065fba": "He asignado usuarios a la aplicación",

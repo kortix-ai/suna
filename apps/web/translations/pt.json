@@ -286,7 +286,7 @@
     "handoff": {
       "validating": "A validar",
       "creating_repository": "A criar o repositório",
-      "registering": "A registar o projeto",
+      "registering": "A registar o espaço de trabalho",
       "seeding": "A preparar os ficheiros iniciais"
     },
     "templateSeed": "Este espaço de trabalho será iniciado com o modelo escolhido.",
@@ -1923,7 +1923,7 @@
         "Teus desejos são ordens",
         "Qual é o plano?",
         "Aperta o cinto! Para onde vamos?",
-        "Mais um dia, mais um projeto",
+        "Mais um dia, mais um build",
         "O que tens em mente?",
         "Bora lá!"
       ]
@@ -6030,7 +6030,7 @@
       "line328JsxTextNoAccess": "Sem acesso"
     },
     "appProjectsIdCustomizeSecretsPage": {
-      "line104JsxTextProjectSecrets": "Segredos do projeto",
+      "line104JsxTextProjectSecrets": "Variáveis de ambiente",
       "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "Variáveis de ambiente injetadas em cada nova sessão.",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "manifest. Os valores são criptografados em repouso.",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "As sessões ainda podem ser iniciadas, mas o agente provavelmente falhará até que esses valores sejam definidos.",
@@ -6117,7 +6117,7 @@
       "line236JsxTextNewProject": "Novo espaço de trabalho",
       "line252JsxAttrTitleFailedToLoadProjects": "Não foi possível carregar os espaços de trabalho",
       "line265JsxAttrTitleCreateYourFirstProject": "Crie seu primeiro espaço de trabalho",
-      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "Um projeto é um workspace para uma empresa ou ideia. Vamos configurá-lo em segundos, sem precisar de uma conta Git.",
+      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "Um espaço dedicado a uma empresa, produto ou ideia.",
       "line275JsxTextNewProject": "Novo espaço de trabalho",
       "line288JsxAttrDescriptionTryADifferentSearchTerm": "Tente outro termo de busca."
     },
@@ -10523,7 +10523,7 @@
       "text05f82c79bce3": "Nenhum item corresponde a \"{value0}\".",
       "text05fa2e3b0a10": "Número da página",
       "text05fb96e3f84d": "Página de configurações do aplicativo com a aba Sign On selecionada",
-      "text05fe4f848b83": "      atividade do projeto. Revise o histórico do git, as solicitações",
+      "text05fe4f848b83": "      atividade do espaço de trabalho. Revise o histórico do git, as solicitações",
       "text0602544ab665": "Um gatilho armazena um nome de fuso horário IANA, não um deslocamento, e usa UTC por padrão. Defina America/Los_Angeles e ele permanecerá às 09:00 locais mesmo durante uma mudança para o horário de verão. Uma abreviação como PST é rejeitada em vez de ser presumida.",
       "text06029fe800d0": "Permitir, perguntar ou bloquear.",
       "text0603deca4fcb": "Últimos 7 dias",

@@ -286,7 +286,7 @@
     "handoff": {
       "validating": "Validazione",
       "creating_repository": "Creazione del repository",
-      "registering": "Registrazione del progetto",
+      "registering": "Registrazione del workspace",
       "seeding": "Preparazione dei file iniziali"
     },
     "templateSeed": "Questo workspace verrà inizializzato dal modello scelto.",
@@ -1923,7 +1923,7 @@
         "I tuoi desideri sono ordini",
         "Qual è il piano?",
         "Allaccia le cinture! Dove andiamo?",
-        "Un altro giorno, un altro progetto",
+        "Un altro giorno, un'altra build",
         "A cosa stai pensando?",
         "Partiamo!"
       ]
@@ -6030,7 +6030,7 @@
       "line328JsxTextNoAccess": "Nessun accesso"
     },
     "appProjectsIdCustomizeSecretsPage": {
-      "line104JsxTextProjectSecrets": "Segreti del progetto",
+      "line104JsxTextProjectSecrets": "Variabili d'ambiente",
       "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "Variabili d'ambiente iniettate in ogni nuova sessione.",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "manifest. I valori sono crittografati a riposo.",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "Le sessioni possono comunque avviarsi, ma l’agente probabilmente non funzionerà finché questi valori non saranno impostati.",
@@ -6117,7 +6117,7 @@
       "line236JsxTextNewProject": "Nuovo workspace",
       "line252JsxAttrTitleFailedToLoadProjects": "Impossibile caricare i workspace",
       "line265JsxAttrTitleCreateYourFirstProject": "Crea il tuo primo workspace",
-      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "Un progetto è un workspace per un'azienda o un'idea. Lo configureremo in pochi secondi, senza bisogno di un account Git.",
+      "line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany": "Uno spazio dedicato a un'azienda, un prodotto o un'idea.",
       "line275JsxTextNewProject": "Nuovo workspace",
       "line288JsxAttrDescriptionTryADifferentSearchTerm": "Prova con un termine di ricerca diverso."
     },
@@ -9446,7 +9446,7 @@
     "autoAppPublicMarketingDevelopersPageJsxAttrTabGitLog7b106744": "git log --grafico",
     "autoAppPublicMarketingDevelopersPageJsxTextTriage14Tickets9e98fe81": "triage 14 biglietti",
     "autoAppPublicMarketingDevelopersPageJsxTextBuildBoardDeck30c6ad92": "costruire un mazzo di carte",
-    "autoAppPublicMarketingDevelopersPageJsxTextDraftOutreach8bd3b2aa": "progetto di sensibilizzazione",
+    "autoAppPublicMarketingDevelopersPageJsxTextDraftOutreach8bd3b2aa": "bozza di outreach",
     "autoAppPublicMarketingDevelopersPageJsxTextMillionsOfBranchesd3dbd3cb": "…milioni di rami, un’unica fonte di verità",
     "autoAppPublicMarketingDevelopersPageJsxTextEveryToolBehindf2d74753": "Ogni strumento, dietro un'unica interfaccia",
     "autoAppPublicMarketingDevelopersPageJsxTextKortixConnectorsPut284659af": "I connettori Kortix mettono oltre 3.000 app, oltre a qualsiasi MCP, OpenAPI, GraphQL o endpoint HTTP non elaborato, dietro un'unica interfaccia Connector cal",
@@ -9578,7 +9578,7 @@
     "autoAppPresentationSlidesEngJsxAttrTitleThreeUseCases88bd381c": "Tre casi d'uso: personalizzati per ciascun target.",
     "autoAppPresentationSlidesEngJsxAttrLeadEachAgentHasa063247e": "Ogni agente ha la propria identità, autorizzazioni e competenze, configurate per il modo in cui il team lavora effettivamente.",
     "autoAppPresentationSlidesEngJsxAttrTitleASalesAgentb126b58b": "Un agente di vendita",
-    "autoAppPresentationSlidesEngJsxAttrBodyResearchesAccountsDrafts1e3ad491": "Esegue ricerche sugli account, elabora progetti di sensibilizzazione personalizzati e mantiene aggiornato il CRM, quindi attende l'approvazione prima che venga pubblicato qualsiasi cosa.",
+    "autoAppPresentationSlidesEngJsxAttrBodyResearchesAccountsDrafts1e3ad491": "Fa ricerca sugli account, redige bozze di outreach personalizzate e tiene aggiornato il CRM, poi attende l'approvazione prima che qualcosa venga inviato.",
     "autoAppPresentationSlidesEngJsxAttrTitleAFinanceAgentb10006e4": "Un agente finanziario",
     "autoAppPresentationSlidesEngJsxAttrBodyReconcilesTransactionsFlags3fe87d2a": "Riconcilia le transazioni, segnala le eccezioni e chiude il mese: ogni passaggio viene registrato in una traccia di controllo.",
     "autoAppPresentationSlidesEngJsxAttrTitleAnHRAgentc69f4dae": "Un agente delle risorse umane",
@@ -10523,7 +10523,7 @@
       "text05f82c79bce3": "Nessun elemento corrisponde a \"{value0}\".",
       "text05fa2e3b0a10": "Numero di pagina",
       "text05fb96e3f84d": "Pagina delle impostazioni dell'applicazione con la scheda Sign On selezionata",
-      "text05fe4f848b83": "      del progetto. Esamina la cronologia git, le richieste",
+      "text05fe4f848b83": "      del workspace. Esamina la cronologia git, le richieste",
       "text0602544ab665": "Un trigger memorizza il nome di un fuso orario IANA, non un offset, e usa UTC per impostazione predefinita. Imposta America/Los_Angeles e resterà alle 09:00 locali anche durante il passaggio all’ora legale. Un’abbreviazione come PST viene rifiutata, non interpretata arbitrariamente.",
       "text06029fe800d0": "Consenti, chiedi o blocca.",
       "text0603deca4fcb": "Ultimi 7 giorni",
