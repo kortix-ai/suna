@@ -44,13 +44,22 @@ export function SubscriptionUsageCard({
   const reconnect = Boolean(
     secret.needs_reauth_at || secret.status === 'undecryptable',
   );
-  const exhausted = Boolean(
-    usage?.windows.some(
-      (w) =>
-        w.used_percent >= 100 &&
-        (!w.resets_at || Date.parse(w.resets_at) > now),
+  // A rejection in a snapshot whose reset has passed is no current limit.
+  const rejectionIsCurrent = Boolean(
+    usage?.limited &&
+    !usage.windows.some(
+      (window) => window.resets_at && Date.parse(window.resets_at) <= now,
     ),
   );
+  const exhausted =
+    rejectionIsCurrent ||
+    Boolean(
+      usage?.windows.some(
+        (w) =>
+          w.used_percent >= 100 &&
+          (!w.resets_at || Date.parse(w.resets_at) > now),
+      ),
+    );
   const stale = Boolean(
     usage && now - Date.parse(usage.observed_at) > 10 * 60_000,
   );

@@ -68,13 +68,53 @@ test('an expired full window plus a future partial window does not claim a curre
 });
 
 test('a weekly-only subscription says five-hour usage is unreported, without inventing a meter', () => {
- const html = render(secret, { ...usage, windows: [{ id: 'weekly', window_minutes: 10080, used_percent: 20, resets_at: null }] });
- expect(html).toContain('Five-hour window not reported');
- expect((html.match(/role="progressbar"/g) ?? []).length).toBe(1);
+  const html = render(secret, {
+    ...usage,
+    windows: [
+      {
+        id: 'weekly',
+        window_minutes: 10080,
+        used_percent: 20,
+        resets_at: null,
+      },
+    ],
+  });
+  expect(html).toContain('Five-hour window not reported');
+  expect((html.match(/role="progressbar"/g) ?? []).length).toBe(1);
 });
 test('Fable has a separate weekly meter and explains the shared weekly allowance', () => {
- const html = render({ ...secret, provider_id: 'claude-agent' }, { ...usage, windows: [{ id: 'seven_day_fable', window_minutes: null, used_percent: 64, resets_at: null }] });
- expect(html).toContain('Weekly · Fable');
- expect(html).toContain('64%');
- expect(html).toContain('Fable usage also counts');
+  const html = render(
+    { ...secret, provider_id: 'claude-agent' },
+    {
+      ...usage,
+      windows: [
+        {
+          id: 'seven_day_fable',
+          window_minutes: null,
+          used_percent: 64,
+          resets_at: null,
+        },
+      ],
+    },
+  );
+  expect(html).toContain('Weekly · Fable');
+  expect(html).toContain('64%');
+  expect(html).toContain('Fable usage also counts');
+});
+
+test('a provider rejection below 100 percent marks a current limit as reached', () => {
+  const html = render(secret, {
+    ...usage,
+    limited: true,
+    windows: [
+      {
+        id: 'five_hour',
+        window_minutes: 300,
+        used_percent: 95,
+        resets_at: '2099-01-01T00:00:00Z',
+      },
+    ],
+  });
+  expect(html).toContain('Limit reached');
+  expect(html).not.toContain('Usage reported');
 });
