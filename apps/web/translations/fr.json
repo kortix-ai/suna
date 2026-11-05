@@ -1345,11 +1345,11 @@
           "description": "Des Drives pour toute l'équipe : un admin crée un Drive et y ajoute des agents. Chaque session de ces agents le monte, et toute personne autorisée à utiliser l'un d'eux peut l'ouvrir. Désactivé, chaque personne n'a que Mes fichiers."
         },
         "chat_input": {
-          "name": "Saisie du chat",
+          "name": "Spaces-ChatInput",
           "description": "Un seul contrôle sous la zone de saisie pour qui répond et comment : choisissez l’agent, et tous les autres réglages restent sur Automatique, hérités de cet agent. Ouvrez une ligne pour remplacer le modèle, l’effort de raisonnement, les secrets, les clés de fournisseur ou la sandbox de cette session, et revenez à Automatique en un clic."
         },
         "chat_front": {
-          "name": "Routeur",
+          "name": "Spaces-Router",
           "description": "Avec les Espaces activés, l’agent avec qui vous discutez dans un fil est un routeur : il confie le travail à vos agents et vous répond comme une personne, en messages courts avec le résultat, un lien ou la décision à prendre. Vos agents partagent le fil par ses fichiers : le routeur transmet des chemins de fichiers, pas du texte recopié. « Voir le travail » sous un message ouvre le travail derrière. Nécessite My Kortix activé dans kortix.yaml."
         }
       },

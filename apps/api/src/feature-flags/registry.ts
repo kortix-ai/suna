@@ -551,7 +551,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'chat_input',
-    name: 'Chat input',
+    name: 'Spaces-ChatInput',
     description:
       'One control under the composer for who answers and how: pick the agent, and every other setting stays on Auto, inherited from that agent. Open a row to override the model, thinking effort, secrets, provider keys or sandbox for this session, and reset it to Auto in one click.',
     stability: 'experimental',
@@ -567,7 +567,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'chat_front',
-    name: 'Router',
+    name: 'Spaces-Router',
     description:
       'With Spaces on, the agent you chat with in a thread is a router: it hands the work to your agents and writes back like a person, in short messages with the result, a link or the decision you need to make. Your agents share the thread through its files, so the router passes file paths, not retyped text. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml.',
     stability: 'experimental',
