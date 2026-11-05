@@ -84,7 +84,7 @@ export function GoalStarter({
       throw new Error(t('startNoFiles'));
     }
     const opening = pickedId ? templateOpening(t(`templates.${pickedId}.prompt`)) : null;
-    if (opening !== null && /\[[^\]]*\]/.test(outcome.split('\n')[0] ?? '')) {
+    if (opening !== null && hasPlaceholder(outcome.split('\n')[0] ?? '')) {
       errorToast(t('startNeedsSubject'));
       throw new Error(t('startNeedsSubject'));
     }
@@ -179,6 +179,12 @@ function templateOpening(prompt: string): string {
   const first = prompt.split('\n')[0] ?? '';
   const slot = first.indexOf('[');
   return (slot === -1 ? first : first.slice(0, slot)).trim();
+}
+
+/** The line still holds an unfilled `[slot]`: a `[` with a `]` after it. Two scans, not `/\[[^\]]*\]/`, which backtracks quadratically on many `[`. */
+function hasPlaceholder(line: string): boolean {
+  const open = line.indexOf('[');
+  return open !== -1 && line.indexOf(']', open + 1) !== -1;
 }
 
 /** One template: its glyph, name, what the agent does, then the first step → what proves it done. */
