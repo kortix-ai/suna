@@ -262,7 +262,7 @@ export function SecretsTabView({
         onSelectedChange={setCursorId}
         maxRows={Math.max(height - (confirming ? 4 : 1) - (busyMessage ? 1 : 0), 1)}
         width={width}
-        emptyText="No secrets in this project yet."
+        emptyText="No secrets in this workspace yet."
       />
       {busyMessage ? <text fg={theme.faint}>{busyMessage}</text> : null}
       <text fg={theme.faint}>{hints}</text>

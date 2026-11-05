@@ -293,8 +293,8 @@ export function detailLines(item: ReviewItem, width: number, now: number): Detai
         if (action.canResolve === false) {
           push(
             action.resolvers === 'managers'
-              ? 'Only a project manager can decide this call.'
-              : 'Only a project manager or the session launcher can decide this call.',
+              ? 'Only a person who manages this workspace can decide this call.'
+              : 'Only a person who manages this workspace or the session launcher can decide this call.',
             'danger',
           );
         }

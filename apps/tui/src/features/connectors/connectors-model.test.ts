@@ -100,7 +100,7 @@ describe('connectorsRows', () => {
 describe('an account row', () => {
   test('says who can use it in the web’s words', () => {
     expect(accountAudience(account(), 'u-1')).toBe('Only you');
-    expect(accountAudience(account({ owner_type: 'project', owner_id: null, shared_with: [] }), 'u-1')).toBe('Everyone in project');
+    expect(accountAudience(account({ owner_type: 'project', owner_id: null, shared_with: [] }), 'u-1')).toBe('Everyone in workspace');
     const narrowed = account({
       owner_type: 'project',
       owner_id: null,

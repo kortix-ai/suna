@@ -112,9 +112,9 @@ export function unavailableReason(input: {
   flagLoading: boolean;
   flagEnabled: boolean;
 }): string | null {
-  if (!input.projectId) return 'No project selected. Pick a project to see its artifacts.';
+  if (!input.projectId) return 'No workspace open. Type /workspaces to pick one and see its artifacts.';
   if (input.flagLoading) return null;
   if (!input.flagEnabled)
-    return 'Artifacts are off for this project. Turn on the `artifacts` flag.';
+    return 'Artifacts are off for this workspace. Turn on the `artifacts` flag.';
   return null;
 }

@@ -147,7 +147,7 @@ export function InfoPanel({
       />
       <Section
         label="Model"
-        lines={[clip(model?.modelName ?? used?.model ?? 'project default', inner)]}
+        lines={[clip(model?.modelName ?? used?.model ?? 'workspace default', inner)]}
       />
       <Section
         label="Session"

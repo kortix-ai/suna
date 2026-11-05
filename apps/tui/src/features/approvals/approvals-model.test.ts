@@ -202,7 +202,7 @@ describe('detailLines', () => {
       NOW,
     );
     expect(lines.some((l) => l.text.startsWith('You may not see the arguments'))).toBe(true);
-    expect(lines.some((l) => l.text.startsWith('Only a project manager'))).toBe(true);
+    expect(lines.some((l) => l.text.startsWith('Only a person who manages this workspace'))).toBe(true);
   });
 
   test('a decision numbers its options with the recommended one first', () => {

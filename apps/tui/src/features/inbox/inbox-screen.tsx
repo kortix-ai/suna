@@ -110,7 +110,7 @@ export function InboxScreen({
   if (!projectId) {
     return (
       <box flexDirection="column" width={width}>
-        <text fg={theme.faint}>No project selected.</text>
+        <text fg={theme.faint}>No workspace open. Type /workspaces to pick one.</text>
       </box>
     );
   }
@@ -118,7 +118,7 @@ export function InboxScreen({
     return (
       <box flexDirection="column" width={width}>
         <text fg={theme.faint}>
-          The inbox is off for this project (flag `notification_center`).
+          The inbox is off for this workspace (flag `notification_center`).
         </text>
       </box>
     );

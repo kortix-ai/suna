@@ -358,12 +358,12 @@ export function DriveScreen({
   );
 
   const notice = useMemo<DriveNotice | null>(() => {
-    if (!projectId) return { tone: 'info', message: 'No project selected.', hint: 'Esc back' };
+    if (!projectId) return { tone: 'info', message: 'No workspace open.', hint: 'Esc back' };
     if (availability.isLoading) return { tone: 'loading', message: 'checking Drive' };
     if (!availability.enabled) {
       return {
         tone: 'info',
-        message: 'Drive is off for this project. Turn on Volumes in Feature flags.',
+        message: 'Drive is off for this workspace. Turn on Volumes in Feature flags.',
         hint: 'o open Feature flags in the web app · Esc back',
       };
     }

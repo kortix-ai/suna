@@ -425,7 +425,7 @@ describe('<Transcript/> boot readout', () => {
     const { captureCharFrame, flush, renderer } = await render(session);
     await flush();
     const frame = captureCharFrame();
-    expect(frame).toMatch(/Building the first image for this project \(0:4\d\)/);
+    expect(frame).toMatch(/Building the first image for this workspace \(0:4\d\)/);
     expect(frame).not.toContain('Reserving your computer');
     renderer.destroy();
   });
