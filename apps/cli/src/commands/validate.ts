@@ -49,7 +49,8 @@ each agent .md keeps only its prompt).
 
 Options:
   --file <path>          Validate this file instead of ./kortix.yaml (or kortix.toml).
-  --fix                  Rewrite deprecated shapes to the latest shape first.
+  --fix                  Rewrite deprecated shapes to the latest shape, and
+                         \`all\` grants to \`"*"\`, first.
   --no-dockerfile-lint   Skip the sandbox Dockerfile checks (manifest only).
   --json                 Emit a machine-readable JSON report (no color).
   --scopes               Print the full grantable kortix_permissions enum and exit.

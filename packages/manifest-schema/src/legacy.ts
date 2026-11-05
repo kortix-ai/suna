@@ -15,7 +15,7 @@
 
 import { parse as parseToml } from 'smol-toml';
 import { parse as parseYaml } from 'yaml';
-import { EVERY_GRANT, isEveryGrant, KORTIX_TOOL_NAMES, kortixToolRef, REGISTRY_NAME_RE, selectedKortixTools } from './constants';
+import { EVERY_GRANT, EVERY_GRANT_KEYS, isEveryGrant, KORTIX_TOOL_NAMES, kortixToolRef, REGISTRY_NAME_RE, selectedKortixTools } from './constants';
 import { fixManifestText } from './deprecations';
 import { parseManifestText, serializeManifestObject } from './format';
 import { AGENTS_DIR, safeAgentFile, safeRepoPath, SKILLS_DIR } from './layout';
@@ -175,9 +175,6 @@ function toolsGrant(value: unknown, removed: string[]): unknown {
   const exclude = list(table(grant)?.exclude).map(String);
   return { exclude: [...exclude, ...removed.filter((name) => !exclude.includes(name))] };
 }
-
-/** The agent keys whose value may be "every name". */
-const EVERY_GRANT_KEYS = ['tools', 'skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets', 'apps', 'kortix_permissions'] as const;
 
 /** `permission.task` as a `subagents` grant: undefined (none) when it denies every agent. */
 function subagentsGrant(task: unknown): unknown {

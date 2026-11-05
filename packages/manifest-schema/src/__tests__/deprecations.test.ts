@@ -5,7 +5,7 @@
  * without a case here fails the first test.
  */
 import { describe, expect, test } from 'bun:test';
-import { DEPRECATIONS, fixManifestText, parseManifestText, validateManifest } from '../index.ts';
+import { CANONICAL_REWRITES, DEPRECATIONS, fixManifestText, parseManifestText, rewriteManifestText, validateManifest } from '../index.ts';
 
 /** id → [old file, path of the warning, the latest shape it reads as]. */
 const CASES: Record<string, [string, string, Record<string, unknown>]> = {
@@ -82,4 +82,42 @@ test('--fix changes only the lines a deprecation changes: no folding, padding, s
 test('a conflict is not rewritten: it stays an error', () => {
   const result = validateManifest('agents:\n  a:\n    prompt: x\n    tools: all\n    kortix_cli: [project.file.read]\n    kortix_permissions: [project.read]\n');
   expect(result.issues.filter((i) => i.severity === 'error').map((i) => i.path)).toContain('agents.a.kortix_cli');
+});
+
+/**
+ * `kortix validate --fix` also updates a valid file to the canonical
+ * spelling: `all` on a grant becomes `"*"`. `all` stays valid, so validate
+ * does not warn, a reader keeps the file's value, and an API save does not
+ * rewrite a line it did not change.
+ */
+describe('every-grant-star', () => {
+  const old = 'agents:\n  a:\n    prompt: x\n    # keep me\n    tools: all\n    skills: ALL\n    connectors: [gh]\n    mode: all\n    secrets: "*"\n';
+
+  test('is a canonical rewrite, not a deprecation', () => {
+    expect(CANONICAL_REWRITES.map((r) => r.id)).toEqual(['every-grant-star']);
+    expect(DEPRECATIONS.map((d) => d.id)).not.toContain('every-grant-star');
+  });
+
+  test('--fix writes "*" for every `all` grant, keeps comments, lists, `mode` and an existing "*"', () => {
+    const { text, fixed } = fixManifestText(old);
+    expect(text).toBe('agents:\n  a:\n    prompt: x\n    # keep me\n    tools: "*"\n    skills: "*"\n    connectors: [gh]\n    mode: all\n    secrets: "*"\n');
+    expect(fixed).toEqual([
+      { id: 'every-grant-star', path: 'agents.a.tools' },
+      { id: 'every-grant-star', path: 'agents.a.skills' },
+    ]);
+    expect(fixManifestText(text)).toEqual({ text, fixed: [] });
+  });
+
+  test('validate does not warn about `all`, and a reader keeps it', () => {
+    expect(validateManifest(old).issues.filter((i) => i.fix === 'every-grant-star')).toEqual([]);
+    expect((parseManifestText(old).agents as Record<string, Record<string, unknown>>).a!.tools).toBe('all');
+  });
+
+  test('an API save that does not change the grant keeps its line', () => {
+    const desired = parseManifestText(old);
+    (desired.agents as Record<string, Record<string, unknown>>).a!.prompt = 'y';
+    const text = rewriteManifestText(old, desired);
+    expect(text).toContain('    tools: all\n');
+    expect(text).toContain('    prompt: y\n');
+  });
 });

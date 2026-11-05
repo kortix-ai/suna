@@ -13,6 +13,9 @@ import { CHANNEL_PLATFORM_IDS, channelConnectorSlug } from '@kortix/shared/chann
 /** The canonical spelling of "every name" in kortix.yaml. `all` is its accepted alias. */
 export const EVERY_GRANT = '*';
 
+/** The `agents.<name>` keys whose value may be "every name". */
+export const EVERY_GRANT_KEYS = ['tools', 'skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets', 'apps', 'kortix_permissions'] as const;
+
 /**
  * True when a grant value means "every name": `"*"` (canonical), `all` in any
  * case (alias), or a list that holds `"*"`. The one test for it: code that
