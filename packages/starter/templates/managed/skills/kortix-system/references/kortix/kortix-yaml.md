@@ -39,15 +39,20 @@ defaults keep today's behavior, so a valid file stays valid.
 | `model`, `variant` | Model id and reasoning tier. Omitted: the project default. |
 | `temperature`, `top_p`, `steps` | Sampling, and the most model steps in one turn. |
 | `hidden` | `true` hides the agent from pickers. (`color` and `options` validate; pi ignores them.) |
-| `permission` | Tool rules (`../pi.md` → Permissions). Omitted: `allow`. No `skill` or `task` key. |
+| `permission` | Tool rules (`../pi.md` → Permissions): `allow`, `ask` or `deny`; `"*"` and `all` also mean `allow`. Omitted: `allow`. No `skill` or `task` key. |
 | `enabled` | `false`: no session can start with this agent. Default `true`. |
 | `codemode` | `on` (default), `only`, `off`. |
-| `tools` | `all`, `none`, a list, or `{ exclude: [names] }`. Set it on every agent: omitted is every tool, with a warning. |
-| `skills`, `extensions` | `all`, `none` (default), registered names, or `{ exclude: [names] }`: every one but those. Kortix skills count as registered. |
-| `subagents`, `commands` | `all`, `none` (default) or registered names. `subagents` is who this agent may call with the `agent` tool. |
-| `connectors`, `secrets`, `apps` | `all`, `none` (default) or names. |
+| `tools` | `"*"`, `none`, a list, or `{ exclude: [names] }`. Set it on every agent: omitted is every tool, with a warning. |
+| `skills`, `extensions` | `"*"`, `none` (default), registered names, or `{ exclude: [names] }`: every one but those. Kortix skills count as registered. |
+| `subagents`, `commands` | `"*"`, `none` (default) or registered names. `subagents` is who this agent may call with the `agent` tool. |
+| `connectors`, `secrets`, `apps` | `"*"`, `none` (default) or names. |
 | `policy_sets` | Connector slug → policy set name for this agent. |
-| `kortix_permissions` | `all`, `none` (default) or a list of `project.*` values. |
+| `kortix_permissions` | `"*"`, `none` (default) or a list of `project.*` values. |
+
+`"*"` is every name, on every grant above. Quote it: a bare `*` is a YAML
+alias, so `tools: *` does not parse and `kortix validate` prints the quoted
+line. `all` is the accepted alias, and a list that holds `"*"` is every name
+too.
 | `workspace` | `{ project_repository: true }` checks out the repository in `/workspace`. Default `false`. |
 | `sandbox` | A template slug, or `default`. |
 | `space` | Work in progress: the space the agent works in. Grouping only, never a grant. |
@@ -55,20 +60,20 @@ defaults keep today's behavior, so a valid file stays valid.
 
 ## spaces (work in progress)
 
-A space is a channel for one area of work: a room, then configured tabs
+A space is a channel for one area of work, with configured tabs
 (`goals`, `apps`, `artifacts`, `files`, `app`, `artifact`, `link`, `board`).
 It grants nothing. Spaces show only while the project flag
-`project_channels` is on; it is off by default, and while it is off the
-keys are kept but have no effect. A space's room needs `agent_rooms` (off
-by default); a Goals tab needs `goals` (off by default). Do not build a space
+`chat` is on; it is off by default, and while it is off the
+keys are kept but have no effect. A Goals tab needs `goals` (off by
+default). Do not build a space
 unless the user asks and `kortix projects features` lists
-`project_channels` on.
+`chat` on.
 
 ```yaml
 spaces:
   sales: { label: Sales, order: 1, tabs: [{ type: apps }, { type: files, path: sales }] }
 agents:
-  closer: { space: sales, prompt: You run the sales pipeline., tools: all }
+  closer: { space: sales, prompt: You run the sales pipeline., tools: "*" }
 ```
 
 ## Registries
@@ -88,8 +93,8 @@ agents:
 
 What an agent may do to the project through the CLI, the API and Git.
 
-- `kortix validate --scopes` prints every grantable value. `all` or `"*"`
-  is every value. Account actions (`member.*`, `billing.*`) are never
+- `kortix validate --scopes` prints every grantable value. `"*"` (alias
+  `all`) is every value. Account actions (`member.*`, `billing.*`) are never
   grantable.
 - Your effective grant is your `kortix_permissions` within your ceiling role.
   `project.read` in your own project is always granted.
@@ -206,13 +211,16 @@ triggers:
 - `type: change_request` fires once per merged change request of the
   project. `filter.base` is the branch it must merge into (any when absent);
   other `filter` keys match the payload as on any trigger.
-- Webhook auth: `X-Kortix-Signature: sha256=<hex>` or GitHub's
-  `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the secret), or the
-  secret as `X-Kortix-Token` or `Authorization: Bearer`. Add
-  `X-Kortix-Timestamp` (epoch seconds, within 5 minutes) and sign
-  `<timestamp>.<body>` to stop replay. Answers: `202` queued, `200` skipped
-  (paused or capped), `401` for every miss before authentication (no such
-  enabled webhook trigger, bad signature), `402` no usable model.
+- Webhook auth: `X-Kortix-Signature: sha256=<hex>` (or `X-Hub-Signature-256`)
+  = HMAC-SHA256 of `<timestamp>.<body>` with the secret, plus the
+  **required** `X-Kortix-Timestamp` (epoch seconds, within 5 minutes), so a
+  captured delivery cannot replay. A signature without the timestamp, or of
+  the bare body, is refused `401`. Or the static token: the secret as
+  `X-Kortix-Token` or `Authorization: Bearer`, no timestamp. A plain GitHub
+  webhook signs the bare body, so it uses the static token. Answers: `202`
+  queued, `200` skipped (paused or capped), `401` for every miss before
+  authentication (no such enabled webhook trigger, bad signature, missing or
+  stale timestamp), `402` no usable model.
 - `kortix triggers pause` stops every trigger of the project; `resume`
   starts them again. `enabled: false` stops one.
 

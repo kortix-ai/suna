@@ -108,7 +108,13 @@ export function refreshProjectProviderState(
   }
   invalidateProviderQueries(queryClient, projectId, true);
 
-  if (typeof window === 'undefined') return;
+  // `window`'s timer when there is one (the tests fake it), the global timer
+  // otherwise: a TUI, a Node script or React Native needs the follow-up
+  // passes as much as a browser tab does.
+  const schedule = (fn: () => void, ms: number): void => {
+    if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') window.setTimeout(fn, ms);
+    else globalThis.setTimeout(fn, ms);
+  };
 
   // Saving provider credentials hot-pushes env vars into active sandboxes and
   // restarts OpenCode; the secret write itself can also land after the save
@@ -121,7 +127,7 @@ export function refreshProjectProviderState(
   const expected = opts.expectProviderId;
   if (!expected) {
     for (const delay of [500, 1500, 3000, 6000]) {
-      window.setTimeout(() => invalidateProviderQueries(queryClient, projectId, false), delay);
+      schedule(() => invalidateProviderQueries(queryClient, projectId, false), delay);
     }
     return;
   }
@@ -152,7 +158,7 @@ export function refreshProjectProviderState(
       return;
     }
     if (Date.now() - startedAt >= CONVERGE_DEADLINE_MS) return;
-    window.setTimeout(() => void poll(), CONVERGE_POLL_MS);
+    schedule(() => void poll(), CONVERGE_POLL_MS);
   };
-  window.setTimeout(() => void poll(), CONVERGE_POLL_MS);
+  schedule(() => void poll(), CONVERGE_POLL_MS);
 }

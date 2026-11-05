@@ -71,24 +71,22 @@ mock.module('../../browser/stores/opencode-compaction-store', () => ({
 }));
 
 // The session-log action route of the active runtime: null = an older box (the default here).
-let actionImpl: (method: string, path: string, body?: unknown) => Promise<Response | null> = async () => null;
+let actionImpl: (method: string, path: string, body?: unknown) => Promise<Response> = async () => Response.json({ ok: true }, { status: 202 });
 const realRuntimeActions = await import('../../core/session/runtime-actions');
 mock.module('../../core/session/runtime-actions', () => ({
   ...realRuntimeActions,
   activeRuntimeAction: (method: string, path: string, body?: unknown) => actionImpl(method, path, body),
 }));
 
-const { useSummarizeRuntimeSession, useInitSession, useForkSession } = await import('./sessions');
-const { runtimeKeys } = await import('./keys');
-const { NoCompactionModelError } = await import('./no-compaction-model-error');
+const { useSummarizeRuntimeSession, useForkSession } = await import('./sessions');
 
 beforeEach(() => {
   fakeQueryClient = makeFakeQueryClient();
   clientImpl = {};
-  actionImpl = async () => null;
+  actionImpl = async () => Response.json({ ok: true }, { status: 202 });
 });
 
-describe('useSummarizeRuntimeSession on a box with the session-log actions', () => {
+describe('useSummarizeRuntimeSession: the compact action route', () => {
   test('posts the compact route of the session: no model, no history read, no compatibility call', async () => {
     const calls: unknown[] = [];
     actionImpl = async (method, path, body) => (calls.push([method, path, body]), Response.json({ ok: true }, { status: 202 }));
@@ -110,81 +108,10 @@ describe('useSummarizeRuntimeSession on a box with the session-log actions', () 
 });
 
 // ============================================================================
-// useSummarizeRuntimeSession — the model to summarize with: the one passed,
-// else the model of the session's last assistant message.
+// useSummarizeRuntimeSession — the compaction store around the send.
 // ============================================================================
 
-describe('useSummarizeRuntimeSession — the model it summarizes with', () => {
-  const history = (providerID: string, modelID: string) => async () => ({
-    data: [{ info: { role: 'user' } }, { info: { role: 'assistant', providerID, modelID } }],
-  });
-
-  test("uses the session's last assistant message model when none is given", async () => {
-    let summarizeArgs: unknown;
-    clientImpl = {
-      session: {
-        messages: history('kortix', 'glm-5.3-flash'),
-        summarize: async (args: unknown) => {
-          summarizeArgs = args;
-          return { data: {} };
-        },
-      },
-    };
-    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
-    };
-    expect(await mutationFn({ sessionId: 'ses_1' })).toBe('ses_1');
-    expect(summarizeArgs).toEqual({ sessionID: 'ses_1', providerID: 'kortix', modelID: 'glm-5.3-flash' });
-  });
-
-  test('never asks the runtime for a config or a provider list', async () => {
-    const asked: string[] = [];
-    clientImpl = {
-      global: { config: { get: async () => (asked.push('config'), { data: { model: 'anthropic/claude' } }) } },
-      provider: { list: async () => (asked.push('providers'), { data: {} }) },
-      session: { messages: history('kortix', 'glm-5.3-flash'), summarize: async () => ({ data: {} }) },
-    };
-    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
-    };
-    await mutationFn({ sessionId: 'ses_1' });
-    expect(asked).toEqual([]);
-  });
-
-  test('an explicitly-passed providerID/modelID skips the history read', async () => {
-    let summarizeArgs: unknown;
-    let historyRead = false;
-    clientImpl = {
-      session: {
-        messages: async () => ((historyRead = true), { data: [] }),
-        summarize: async (args: unknown) => {
-          summarizeArgs = args;
-          return { data: {} };
-        },
-      },
-    };
-    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
-      mutationFn: (args: { sessionId: string; providerID?: string; modelID?: string }) => Promise<string>;
-    };
-    await mutationFn({ sessionId: 'ses_1', providerID: 'anthropic', modelID: 'claude-haiku' });
-    expect(historyRead).toBe(false);
-    expect(summarizeArgs).toEqual({ sessionID: 'ses_1', providerID: 'anthropic', modelID: 'claude-haiku' });
-  });
-
-  test('throws NoCompactionModelError when the history names no model', async () => {
-    clientImpl = { session: { messages: async () => ({ data: [] }) } };
-    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
-    };
-    // The expected "no model" state throws the sentinel-marked
-    // `NoCompactionModelError` (not a plain `Error`) so the Sentry telemetry
-    // gate can `instanceof`-match it and drop it instead of paging Better Stack.
-    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow(
-      'No model available for compaction. Please configure a model in settings.',
-    );
-    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toBeInstanceOf(NoCompactionModelError);
-  });
-
+describe('useSummarizeRuntimeSession — the compaction store', () => {
   test('onMutate/onError toggle the compaction store around the send', () => {
     clientImpl = { session: { messages: async () => ({ data: [] }) } };
     const hook = useSummarizeRuntimeSession() as unknown as {
@@ -207,52 +134,6 @@ describe('useSummarizeRuntimeSession — the model it summarizes with', () => {
 // ============================================================================
 // useInitSession — /init command error duck-typing + refetch-on-success.
 // ============================================================================
-
-describe('useInitSession', () => {
-  test('resolves with the sessionId on success and refetches its messages', async () => {
-    clientImpl = { session: { command: async () => ({}) } };
-    const hook = useInitSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
-      onSuccess: (sessionId: string) => void;
-    };
-    const result = await hook.mutationFn({ sessionId: 'ses_1' });
-    expect(result).toBe('ses_1');
-
-    hook.onSuccess('ses_1');
-    expect(fakeQueryClient.refetchCalls).toEqual([
-      { queryKey: runtimeKeys.runtimeMessages('ses_1') },
-    ]);
-  });
-
-  test('extracts a NotFoundError-shaped error message (`.data.message`)', async () => {
-    clientImpl = {
-      session: {
-        command: async () => ({
-          error: {
-            name: 'NotFoundError',
-            data: { message: 'no such session' },
-          },
-        }),
-      },
-    };
-    const { mutationFn } = useInitSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
-    };
-    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow('no such session');
-  });
-
-  test('falls back to a default message for a BadRequest-shaped error (no message field)', async () => {
-    clientImpl = {
-      session: { command: async () => ({ error: { _tag: 'BadRequest' } }) },
-    };
-    const { mutationFn } = useInitSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
-    };
-    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow(
-      'Failed to initialize project',
-    );
-  });
-});
 
 // ============================================================================
 // useForkSession — the runtime's own fork (`POST /session/{id}/fork`).

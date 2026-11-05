@@ -862,8 +862,8 @@ async function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: s
     const runtimeSessionId =
       typeof payload.runtime_session_id === 'string'
         ? payload.runtime_session_id
-        : typeof payload.opencode_session_id === 'string'
-          ? payload.opencode_session_id
+        : typeof payload.runtime_session_id === 'string'
+          ? payload.runtime_session_id
           : null;
     if (runtimeSessionId) args.onRuntimeTurnEnd(runtimeSessionId);
   }

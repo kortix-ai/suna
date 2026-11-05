@@ -752,6 +752,130 @@ export async function getAppDeploymentLogs(
   );
 }
 
+/** What came of one App event on one trigger. `unmatched`: no enabled trigger listened. */
+export type AppEventStatus = 'pending' | 'fired' | 'skipped' | 'suppressed' | 'failed' | 'unmatched';
+
+/** One row of an App's event log: one event as one trigger saw it, or an unmatched event. */
+export interface AppEvent {
+  /** The log row's id. */
+  log_id: string;
+  name: string | null;
+  /** The App's own id for the event. The same id fires a trigger once. */
+  id: string | null;
+  data: Record<string, unknown> | null;
+  /** The event was over 8 KiB: `data` is null and `raw` holds its head. */
+  truncated: boolean;
+  raw: string | null;
+  /** Sent through the test route by a person or agent, not by the App. */
+  test: boolean;
+  /** The trigger this row belongs to; null when no trigger listened. */
+  trigger: string | null;
+  status: AppEventStatus;
+  /** Why it was skipped, suppressed, failed or unmatched. */
+  reason: string | null;
+  /** The session the event started or continued. */
+  session_id: string | null;
+  attempts: number;
+  emitted_at: string;
+  received_at: string;
+  fired_at: string | null;
+}
+
+export interface AppEventList {
+  events: AppEvent[];
+  /** Pass as `cursor` for the next, older page; null on the last page. */
+  next_cursor: string | null;
+}
+
+export interface ListAppEventsOptions {
+  /** 1-200, default 50. */
+  limit?: number;
+  cursor?: string;
+  status?: AppEventStatus;
+  /** One trigger slug. */
+  trigger?: string;
+  /** One event id, as the App sent it (a test event's starts with `test-`). */
+  id?: string;
+}
+
+/**
+ * The App's event log, newest first: what the App posted in the last 30 days
+ * and what came of each event. Needs project.app.deploy.
+ */
+export async function listAppEvents(
+  projectId: string,
+  appId: string,
+  options: ListAppEventsOptions = {},
+): Promise<AppEventList> {
+  const query = new URLSearchParams();
+  if (options.limit !== undefined) query.set('limit', String(options.limit));
+  if (options.cursor) query.set('cursor', options.cursor);
+  if (options.status) query.set('status', options.status);
+  if (options.trigger) query.set('trigger', options.trigger);
+  if (options.id) query.set('id', options.id);
+  const suffix = query.size ? `?${query.toString()}` : '';
+  return unwrap(
+    await backendApi.get<AppEventList>(`/projects/${projectId}/apps/${appId}/events${suffix}`),
+    'Failed to load App events',
+  );
+}
+
+/** One App event: what an App posts, and what a test sends. */
+export interface AppEventInput {
+  /** 1-128 letters, digits and `. _ : / -`, starting with a letter or digit. */
+  name: string;
+  data?: Record<string, unknown>;
+  /** The same id fires a trigger once. */
+  id?: string;
+}
+
+/** What Kortix did with the events: how many triggers matched, and per event. */
+export interface AppEventIngestResult {
+  triggers: number;
+  accepted: number;
+  deduped: number;
+  suppressed: number;
+  /** Events no enabled trigger listens to; `hint` says what to do. */
+  unmatched: number;
+  hint?: string;
+}
+
+export interface AppTestEventResult extends AppEventIngestResult {
+  /** The test ids (each starts with `test-`), in the order sent. Look them up with `listAppEvents({ id })`. */
+  ids: string[];
+}
+
+/**
+ * Send events as if the App posted them, through the same log, limits and
+ * triggers, to prove the wiring. Every id starts with `test-`, so a real event
+ * with the same id still fires later. Needs project.app.deploy.
+ */
+export async function sendAppTestEvent(
+  projectId: string,
+  appId: string,
+  input: AppEventInput | { events: AppEventInput[] },
+): Promise<AppTestEventResult> {
+  return unwrap(
+    await backendApi.post<AppTestEventResult>(`/projects/${projectId}/apps/${appId}/events/test`, input),
+    'Failed to send the test event',
+  );
+}
+
+export interface AppEventCredentials {
+  /** `KORTIX_APP_EVENTS_URL`: where the App posts. */
+  url: string;
+  /** `KORTIX_APP_TOKEN`: a secret that posts events as this App. */
+  token: string;
+}
+
+/** The URL and token an App posts events with, for code that runs outside the App. Needs project.app.admin. */
+export async function getAppEventCredentials(projectId: string, appId: string): Promise<AppEventCredentials> {
+  return unwrap(
+    await backendApi.get<AppEventCredentials>(`/projects/${projectId}/apps/${appId}/events/credentials`),
+    'Failed to read the App event credentials',
+  );
+}
+
 export async function startApp(projectId: string, appId: string): Promise<App> {
   return unwrap(
     await backendApi.post<App>(`/projects/${projectId}/apps/${appId}/start`, {}),

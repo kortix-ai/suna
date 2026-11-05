@@ -231,7 +231,7 @@ test('the password form still offers the email link as an explicit choice', asyn
     await goToPasswordForm(root);
     // The entry send armed the per-address cooldown that the password form's
     // link button now honors; let it lapse before the explicit choice.
-    await cooldownElapsed(root, 30);
+    await cooldownElapsed(root, 60);
     const linkButton = buttonByLabel(root, 'Email me a link instead');
     expect(linkButton).toBeDefined();
     if (!linkButton) throw new Error('Email-link button did not render');
@@ -259,7 +259,7 @@ test('a non-rate-limit send failure stays visible and the retry stays available'
     await goToPasswordForm(root);
     // The entry send armed the per-address cooldown; let it lapse so the
     // click under test is the first send from this step.
-    await cooldownElapsed(root, 30);
+    await cooldownElapsed(root, 60);
     expect(linkButton().props.disabled).toBe(false);
     emailFailure = 'Could not send the link';
     emailFailureStatus = 400;
@@ -300,7 +300,7 @@ test('a rate-limited send cools the password form link button down', async () =>
     await goToPasswordForm(root);
     // The entry send armed the same per-address cooldown; let it lapse so the
     // click under test is the first send from this step.
-    await cooldownElapsed(root, 30);
+    await cooldownElapsed(root, 60);
     expect(linkButton().props.disabled).toBe(false);
 
     emailFailure = 'Email rate limit exceeded. Try again later.';
@@ -315,10 +315,10 @@ test('a rate-limited send cools the password form link button down', async () =>
     expect(JSON.stringify(root.toJSON())).toContain('Resend in');
 
     // The countdown ticks while the visitor stays on the password form.
-    await cooldownElapsed(root, 15);
+    await cooldownElapsed(root, 30);
     expect(JSON.stringify(root.toJSON())).toContain('Resend in');
     expect(linkButton().props.disabled).toBe(true);
-    await cooldownElapsed(root, 15);
+    await cooldownElapsed(root, 30);
     expect(JSON.stringify(root.toJSON())).not.toContain('Resend in');
     expect(linkButton().props.disabled).toBe(false);
 

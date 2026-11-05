@@ -49,6 +49,13 @@ export interface UserAvatarProps {
   variant?: 'default' | 'primary';
   /** Shows on hover, through `Hint`: usually the person's name or email. */
   hint?: React.ReactNode;
+  /**
+   * What the fill colour is keyed on, when a surface knows the person's user
+   * id but not always their email (Spaces: every surface passes the id, so
+   * one person is one colour in the sidebar, the header, the timeline and the
+   * member lists). Default: the email, else the name.
+   */
+  colorKey?: string | null;
 }
 
 export function UserAvatar({
@@ -60,6 +67,7 @@ export function UserAvatar({
   variant = 'default',
   className,
   ring = false,
+  colorKey,
 }: UserAvatarProps) {
   const sizes = SIZE_MAP[size] ?? SIZE_MAP.md;
   const initials = React.useMemo(
@@ -67,7 +75,7 @@ export function UserAvatar({
     [name, email, sizes.initials],
   );
   // Avatar v2: a solid fill keyed on the email, so a rename keeps the colour.
-  const fill = avatarFill(email || name || '');
+  const fill = avatarFill(colorKey || email || name || '');
 
   const avatar = (
     <Avatar

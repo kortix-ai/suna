@@ -43,6 +43,18 @@ export interface QuickViewTarget {
   changes?: boolean;
 }
 
+/** An agent's session the side panel opens: the child session and what the chat row calls it. */
+export interface FocusedAgent {
+  sessionId: string;
+  title: string;
+  /** The agent's handle, for its pixel mark. */
+  handle: string;
+  /** What it works on: the chat row's muted line. */
+  task?: string;
+  /** Why it did not finish, when the chat row knows (the raw platform text). */
+  failure?: string;
+}
+
 interface KortixComputerState {
   // Panel state. NOT per-session: every session change lands with both right
   // surfaces closed — see `setActiveSession`.
@@ -132,6 +144,10 @@ interface KortixComputerState {
   // correct regardless of ordering.
   focusedToolCallId: string | null;
 
+  // An agent row clicked in the chat: the side panel opens that agent's
+  // session (its face, name, state, transcript). One-shot, like the tool focus.
+  focusedAgent: FocusedAgent | null;
+
   // W1 — the deliverable announces itself while the panel is closed.
   readyChip: ReadyChipState | null;
   // Chip tap → open the panel WITH the primary deliverable already open.
@@ -180,6 +196,10 @@ interface KortixComputerState {
   focusToolCall: (callId: string) => void;
   // Clear the focus request after the panel has jumped to it.
   clearFocusedToolCall: () => void;
+
+  // Open the side panel on an agent's session.
+  focusAgent: (agent: FocusedAgent) => void;
+  clearFocusedAgent: () => void;
 
   // Panel control
   clearShouldOpenPanel: () => void;
@@ -294,6 +314,7 @@ const initialState = {
   skipNextExpandAnimation: false,
   pendingToolNavIndex: null as number | null,
   focusedToolCallId: null as string | null,
+  focusedAgent: null as FocusedAgent | null,
   readyChip: null as ReadyChipState | null,
   pendingPrimaryOpenSessionId: null as string | null,
   pendingQuickView: null as {
@@ -385,6 +406,16 @@ export const useKortixComputerStore = create<KortixComputerState>()(
 
       clearFocusedToolCall: () => {
         set({ focusedToolCallId: null });
+      },
+
+      focusAgent: (agent: FocusedAgent) => {
+        const update: Partial<KortixComputerState> = { focusedAgent: agent, isSidePanelOpen: true };
+        clearSessionChip(update, get().readyChip, get()._activeSessionId);
+        set(update);
+      },
+
+      clearFocusedAgent: () => {
+        set({ focusedAgent: null });
       },
 
       clearShouldOpenPanel: () => {
@@ -590,6 +621,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           // the entire point of it.)
           shouldOpenPanel: false,
           focusedToolCallId: null,
+          focusedAgent: null,
           pendingToolNavIndex: null,
           // A tool drawer belonging to the session the user just left.
           mobileToolView: null,
@@ -776,6 +808,9 @@ export const useFocusedToolCallId = () =>
 
 export const useClearFocusedToolCall = () =>
   useKortixComputerStore((state) => state.clearFocusedToolCall);
+
+// An agent row clicked in chat: the agent the panel should open.
+export const useFocusedAgent = () => useKortixComputerStore((state) => state.focusedAgent);
 
 // Side panel state selectors
 export const useIsSidePanelOpen = () => useKortixComputerStore((state) => state.isSidePanelOpen);

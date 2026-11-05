@@ -3,12 +3,14 @@
 import {
   readArtifactCommentSnapshot,
   type ArtifactCommentAnchor,
+  type ArtifactLivePosition,
   type ArtifactVersion,
 } from '@kortix/sdk';
 import {
   useArtifact,
   useArtifactCommentContext,
   useArtifactComments,
+  useArtifactLive,
   useArtifactMutations,
   useArtifactVersions,
   useFeatureFlag,
@@ -27,7 +29,7 @@ import {
 import { Button } from '@kortix/ui/button';
 import { ButtonGroup } from '@kortix/ui/button-group';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
-import { CountBadge } from '@kortix/ui/count-badge';
+import { BellMark } from '@kortix/ui/internal/notifications/notification-bell';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -76,7 +78,16 @@ import {
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import { drivePathToParam } from '@kortix/ui/files';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -89,11 +100,25 @@ import {
   ArtifactDiscussionSidebar,
   useArtifactDiscussionState,
 } from './artifact-discussion-sidebar';
+import { artifactDiscussionStorage } from './artifact-discussion-storage';
 import type { DrawingStroke } from './artifact-drawing';
 import { ArtifactDrawingCanvas } from './artifact-drawing-canvas';
 import { prepareDrawingDraft, type ArtifactDrawingDraft } from './artifact-drawing-draft';
 import { ArtifactDrawingLayer } from './artifact-drawing-layer';
+import { ArtifactLiveAvatars } from './artifact-live-avatars';
+import {
+  createPacedSender,
+  createTypingOwner,
+  groupLiveMembers,
+  remotePeers,
+} from './artifact-live-logic';
+import {
+  ArtifactLiveContext,
+  useLiveStatusLabel,
+  type ArtifactLiveContextValue,
+} from './artifact-live-presence';
 import { VISIBILITY_ICON, relativeTime } from './artifact-meta';
+import { ArtifactPageCursors } from './artifact-page-cursors';
 import {
   ArtifactSelectionChip,
   isCommentShortcut,
@@ -101,7 +126,8 @@ import {
   selectionOfferKey,
 } from './artifact-selection-chip';
 import { AskAgentSheet } from './ask-agent-sheet';
-import { DocEditor, type DocSaveStatus } from './doc-editor';
+import { createDocPings } from './doc-coedit';
+import { DocEditor, type DocLiveBinding, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
 import {
   useArtifactAnnotations,
@@ -135,6 +161,16 @@ function userActivated(): boolean {
     .userActivation;
   return activation ? activation.isActive : true;
 }
+
+/** The tab is in the background: live presence hides this viewer's cursor meanwhile. */
+const subscribeVisibility = (onChange: () => void) => {
+  document.addEventListener('visibilitychange', onChange);
+  return () => document.removeEventListener('visibilitychange', onChange);
+};
+const tabHiddenNow = () => document.visibilityState === 'hidden';
+const tabHiddenOnServer = () => false;
+/** "Hide my cursor", per viewer, in this browser. */
+const HIDE_CURSOR_KEY = 'live-hide-cursor';
 
 /** Saves closer than this show as one row of the history: an editing burst. */
 const BURST_MS = 5 * 60_000;
@@ -204,6 +240,18 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const clearSelection = selection.clear;
   const query = useArtifact(projectId, artifactId, version);
   const artifact = query.data;
+  useLayoutEffect(() => {
+    if (embedded || !artifact?.title) return;
+    const title = artifact.title;
+    const syncTitle = () => {
+      if (document.title !== title) document.title = title;
+    };
+    syncTitle();
+    // Streamed route metadata can arrive after the artifact query resolves.
+    const observer = new MutationObserver(syncTitle);
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [embedded, artifact?.title]);
   const mutations = useArtifactMutations(projectId);
   const frame = useRef<HTMLDivElement>(null);
   const [claimedFrame, setClaimedFrame] = useState<HTMLIFrameElement | null>(null);
@@ -264,10 +312,31 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const viewingOld = !!artifact?.version.id;
   const canEdit = !!artifact?.can_edit && !viewingOld;
   const isDoc = artifact?.type === 'doc';
-  const sidebar = useOptionalSidebar();
   const commentsFlag = useFeatureFlag(projectId, 'artifact_comments').enabled;
   const artifactsFlag = useFeatureFlag(projectId, 'artifacts').enabled;
   const discussionEnabled = commentsFlag && artifactsFlag;
+  // Live co-editing (KRTX-3670) of the current version: `changed doc` pings reach the editor.
+  const [docPings] = useState(createDocPings);
+  const coedit = discussionEnabled && !version ? docPings : undefined;
+  // A read-only doc opens a new editor per file version, unless it may be co-edited: that editor
+  // shows new text in place.
+  const docKey = artifact
+    ? `${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}${canEdit || viewingOld || coedit ? '' : `:${artifact.entry_version}`}`
+    : '';
+  // A new editor (a read-only doc's new version, a Reload) opens where the person was reading.
+  // The scroll position is kept only while an editor shows its text: the empty editor's collapse
+  // to the top is not a place the person chose.
+  const docScroller = useRef<HTMLDivElement>(null);
+  const docScroll = useRef({ top: 0, ready: false });
+  useLayoutEffect(() => {
+    docScroll.current.ready = false;
+  }, [docKey]);
+  const restoreDocScroll = useCallback(() => {
+    const scroller = docScroller.current;
+    if (scroller && docScroll.current.top > 0) scroller.scrollTop = docScroll.current.top;
+    docScroll.current.ready = true;
+  }, []);
+  const sidebar = useOptionalSidebar();
   const comments = useArtifactComments(projectId, artifactId, {
     status: 'all',
     version,
@@ -368,6 +437,79 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   };
   const focusSoon = (target: HTMLElement | null) =>
     requestAnimationFrame(() => target?.focus({ preventScroll: true }));
+
+  // Live presence (KRTX-3669): who is here, their cursors and typing, and a refetch when
+  // comments, activity or content change. This viewer renders only inside the signed-in app; a
+  // public link is the server page /share/artifact/[id], which opens no live connection. An old
+  // version is read-only history: no presence there.
+  const storedCursorHidden = useMemo(
+    () => artifactDiscussionStorage(viewerId).getItem(HIDE_CURSOR_KEY) === '1',
+    [viewerId],
+  );
+  const [cursorHiddenChoice, setCursorHiddenChoice] = useState<boolean | null>(null);
+  const cursorHidden = cursorHiddenChoice ?? storedCursorHidden;
+  const changeCursorHidden = (next: boolean) => {
+    setCursorHiddenChoice(next);
+    artifactDiscussionStorage(viewerId).setItem(HIDE_CURSOR_KEY, next ? '1' : '0');
+  };
+  const tabHidden = useSyncExternalStore(subscribeVisibility, tabHiddenNow, tabHiddenOnServer);
+  const liveHidden = cursorHidden || tabHidden;
+  const liveEnabled = discussionEnabled && !!artifact && !version;
+  const live = useArtifactLive(projectId, artifactId, {
+    enabled: liveEnabled,
+    view: isDoc ? 'doc' : 'page',
+    version: artifact?.entry_version ?? null,
+    hidden: liveHidden,
+    onDoc: docPings.emit,
+  });
+  const liveOn = liveEnabled && live.status !== 'closed' && live.status !== 'access_lost';
+  const { setTyping: liveSetTyping, setCursor: liveSetCursor, setSelection: liveSetSelection, setFocus: liveSetFocus } = live;
+  const setLiveTyping = useMemo(() => createTypingOwner(liveSetTyping), [liveSetTyping]);
+  const liveMembers = groupLiveMembers(live.participants, live.you, viewerId);
+  const liveContext = useMemo<ArtifactLiveContextValue | null>(
+    () =>
+      liveOn
+        ? {
+            participants: live.participants,
+            you: live.you,
+            viewerId: viewerId ?? null,
+            setTyping: setLiveTyping,
+          }
+        : null,
+    [liveOn, live.participants, live.you, viewerId, setLiveTyping],
+  );
+  const liveStatusLabel = useLiveStatusLabel();
+  const docPeers = useMemo(
+    () => remotePeers(live.participants, live.you, viewerId, 'doc'),
+    [live.participants, live.you, viewerId],
+  );
+  const pagePeers = useMemo(
+    () => remotePeers(live.participants, live.you, viewerId, 'page'),
+    [live.participants, live.you, viewerId],
+  );
+  const docLive: DocLiveBinding | undefined =
+    liveOn && isDoc
+      ? {
+          peers: docPeers,
+          statusLabel: liveStatusLabel,
+          hidden: liveHidden,
+          setCursor: liveSetCursor,
+          setSelection: liveSetSelection,
+          setTyping: (active) => setLiveTyping('doc', active),
+        }
+      : undefined;
+  // The page reports this viewer's pointer; it goes out paced, as a selector and fractions.
+  const pagePointer = useMemo(
+    () => createPacedSender<ArtifactLivePosition | null>((at) => liveSetCursor(at)),
+    [liveSetCursor],
+  );
+  useEffect(() => () => pagePointer.dispose(), [pagePointer]);
+  // The thread this viewer has open. The connection replays it after a reconnect.
+  const openThread = discussionOpen ? focusedThreadId : null;
+  useEffect(() => {
+    if (live.status === 'live') liveSetFocus(openThread);
+  }, [openThread, live.status, liveSetFocus]);
+
   const htmlAnnotations = useArtifactAnnotations({
     enabled: annotationEnabled,
     frame: claimedFrame,
@@ -403,7 +545,21 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     onFocus: focusThread,
     // The page hears "Comment 3": one UI word and the number, never the comment.
     pinLabel: (n) => t('discussion.pagePinLabel', { number: String(n) }),
+    // Live: the page reports this viewer's pointer while others can see it.
+    trackPointer: liveOn && !isDoc && !liveHidden,
+    onPointer: (at) => pagePointer.push(at ? { kind: 'page', ...at } : null),
   });
+  // A save (an agent, another person) moved the page: the annotated frame follows the comment
+  // context's commit, so read it again and the frame reloads on the new version.
+  const entryVersion = artifact?.entry_version;
+  const seenEntryVersion = useRef(entryVersion);
+  const refetchContext = context.refetch;
+  useEffect(() => {
+    const previous = seenEntryVersion.current;
+    seenEntryVersion.current = entryVersion;
+    if (previous && entryVersion && previous !== entryVersion && annotationEnabled && !version)
+      void refetchContext();
+  }, [entryVersion, annotationEnabled, version, refetchContext]);
   const clearCommentSelection = (expected?: ArtifactCommentAnchor) => {
     selection.clear(expected);
     setPendingDrawing((current) => (!expected || current?.anchor === expected ? null : current));
@@ -666,6 +822,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
       : null;
 
   return (
+    <ArtifactLiveContext.Provider value={liveContext}>
     <div
       className={
         embedded
@@ -714,6 +871,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     className="text-foreground min-w-0 flex-1 bg-transparent font-medium outline-none"
                     onBlur={() => setRenaming(false)}
                     onKeyDown={async (e) => {
+                      if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
                       if (e.key === 'Escape') setRenaming(false);
                       if (e.key === 'Enter') {
                         const title = e.currentTarget.value.trim();
@@ -741,7 +899,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 )
               ) : null}
               {artifact && VisIcon ? (
-                <Hint label={t(`visibility.${artifact.visibility}`)}>
+                <Hint label={t(`visibility.${artifact.visibility}`)} side="bottom">
                   <span
                     className="text-muted-foreground flex shrink-0"
                     aria-label={t(`visibility.${artifact.visibility}`)}
@@ -751,7 +909,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 </Hint>
               ) : null}
               {artifact?.pinned ? (
-                <Hint label={t('pinned')}>
+                <Hint label={t('pinned')} side="bottom">
                   <span className="text-muted-foreground flex shrink-0" aria-label={t('pinned')}>
                     <PushPinIcon weight="fill" className="size-3.5" aria-hidden />
                   </span>
@@ -770,8 +928,9 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             ) : statusText ? (
               <span className="text-muted-foreground px-2 text-xs">{statusText}</span>
             ) : null}
-            {/* Who can open it, for every viewer, as the session header shows its people. */}
-            {people ? (
+            {/* Who can open it, for every viewer, as the session header shows its people. While
+                others are here live, the live faces take this place: one row of faces, not two. */}
+            {people && !(liveOn && liveMembers.others.length > 0) ? (
               <SessionParticipantStack
                 participants={people}
                 label={t('peopleWithAccess', {
@@ -779,10 +938,20 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 })}
               />
             ) : null}
+            {/* Who is here now, people and agents, in their live colors. */}
+            {liveOn ? (
+              <ArtifactLiveAvatars
+                members={liveMembers}
+                status={live.status}
+                compact={compact}
+                cursorHidden={cursorHidden}
+                onCursorHiddenChange={changeCursorHidden}
+              />
+            ) : null}
             {/* Two groups: the artifact's history and Ask AI; then Share and More. */}
             <ButtonGroup>
               <DropdownMenu open={historyOpen} onOpenChange={setHistoryOpen}>
-                <Hint label={t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })}>
+                <Hint label={t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })} side="bottom">
                   <DropdownMenuTrigger asChild>
                     <Button size="icon-sm" variant="secondary" aria-label={t('history')}>
                       <ClockCounterClockwiseIcon className="size-3.5" />
@@ -842,7 +1011,8 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   variant="secondary"
                   onClick={() => setAsking((open) => !open)}
                   aria-expanded={asking}
-                  className="aria-expanded:bg-accent hidden sm:inline-flex"
+                  // `rounded-md`: the radius of its icon neighbour, so the group's outer corners match.
+                  className="aria-expanded:bg-accent hidden rounded-md sm:inline-flex"
                 >
                   <SparkleIcon weight="fill" className="size-3.5" aria-hidden /> {t('askAgent')}
                 </Button>
@@ -853,7 +1023,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             {discussionEnabled ? (
               <ButtonGroup>
                 {annotationControls && !compact ? (
-                  <Hint label={pinHint}>
+                  <Hint label={pinHint} side="bottom">
                     <Button
                       ref={pinButton}
                       size="icon-sm"
@@ -876,7 +1046,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   </Hint>
                 ) : null}
                 {annotationControls && !compact ? (
-                  <Hint label={drawHint}>
+                  <Hint label={drawHint} side="bottom">
                     <Button
                       ref={drawButton}
                       size="icon-sm"
@@ -894,20 +1064,17 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     </Button>
                   </Hint>
                 ) : null}
-                <Hint label={commentsLabel}>
+                <Hint label={commentsLabel} side="bottom">
                   <Button
                     ref={commentsButton}
-                    size={openComments > 0 ? 'xs' : 'icon-sm'}
+                    size="icon-sm"
                     variant="secondary"
                     aria-label={commentsLabel}
                     aria-expanded={discussionOpen}
                     aria-controls={discussionOpen ? panelId : undefined}
                     onClick={() => changeDiscussionOpen(!discussionOpen)}
                   >
-                    <ChatCircleIcon className="size-3.5" aria-hidden />
-                    {openComments > 0 ? (
-                      <CountBadge count={openComments} tone="waiting" aria-hidden />
-                    ) : null}
+                    <BellMark count={openComments} needsYou={false} icon={ChatCircleIcon} />
                   </Button>
                 </Hint>
               </ButtonGroup>
@@ -915,7 +1082,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             <ButtonGroup>
               {artifact.can_manage ? (
                 compact ? (
-                  <Hint label={t('share')}>
+                  <Hint label={t('share')} side="bottom">
                     <Button
                       size="icon-sm"
                       variant="secondary"
@@ -926,7 +1093,13 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     </Button>
                   </Hint>
                 ) : (
-                  <Button size="xs" variant="secondary" onClick={() => setSharing(true)}>
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    // `rounded-md`: the radius of the ⋯ beside it, so the group's outer corners match.
+                    className="rounded-md"
+                    onClick={() => setSharing(true)}
+                  >
                     <ShareNetworkIcon className="size-3.5" aria-hidden /> {t('share')}
                   </Button>
                 )
@@ -1028,14 +1201,14 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         {embedded ? (
           <div className="flex shrink-0 items-center">
             {/* `data-no-panel`: the session's link interceptor would reopen it in this panel. */}
-            <Hint label={t('openFullPage')}>
+            <Hint label={t('openFullPage')} side="bottom">
               <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} asChild>
                 <Link href={`/projects/${projectId}/artifacts/${artifactId}`} data-no-panel>
                   <ArrowsOutSimpleIcon className="size-3.5" />
                 </Link>
               </Button>
             </Hint>
-            <Hint label={t('close')}>
+            <Hint label={t('close')} side="bottom">
               <Button size="icon-sm" variant="ghost" aria-label={t('close')} onClick={onClose}>
                 <XIcon className="size-3.5" />
               </Button>
@@ -1102,10 +1275,16 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 <Loading className="size-4" />
               </div>
             ) : isDoc ? (
-              <div className="bg-background min-w-0 flex-1 overflow-y-auto">
+              <div
+                ref={docScroller}
+                className="bg-background min-w-0 flex-1 overflow-y-auto"
+                onScroll={(event) => {
+                  if (docScroll.current.ready) docScroll.current.top = event.currentTarget.scrollTop;
+                }}
+              >
                 <DocEditor
                   // Read-only: a new file version opens a new editor (an editable one takes it in place).
-                  key={`${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}${canEdit || viewingOld ? '' : `:${artifact.entry_version}`}`}
+                  key={docKey}
                   projectId={projectId}
                   artifact={artifact}
                   editable={canEdit}
@@ -1128,6 +1307,9 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     changeDiscussionOpen(true);
                   }}
                   readCommentSnapshot={discussionEnabled ? readCommentSnapshot : undefined}
+                  live={docLive}
+                  onReady={restoreDocScroll}
+                  coedit={coedit}
                 />
               </div>
             ) : (
@@ -1167,6 +1349,13 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     regions={htmlAnnotations.regions}
                     threads={htmlAnnotations.threads}
                     focusedThreadId={focusedThreadId}
+                  />
+                ) : null}
+                {liveOn && annotationEnabled ? (
+                  <ArtifactPageCursors
+                    peers={pagePeers}
+                    viewport={htmlAnnotations.viewport}
+                    pagePoint={htmlAnnotations.pagePoint}
                   />
                 ) : null}
                 {drawingOpen && drawingViewport ? (
@@ -1283,5 +1472,6 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         }}
       />
     </div>
+    </ArtifactLiveContext.Provider>
   );
 }

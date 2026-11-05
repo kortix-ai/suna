@@ -68,8 +68,15 @@ export function applyImageWindow(
   if (max === 0 || total <= max) return { total, dropped: 0 };
 
   const keep = Math.min(max, Math.max(0, Math.trunc(options.keepOnOverflow)));
-  const dropped = total - keep;
-  const notice = `[image omitted by gateway: ${dropped} older image${dropped === 1 ? '' : 's'} removed; the ${keep} most recent are kept]`;
+  // Stateless hysteresis: a client re-sends its whole history every request, so the cut
+  // moves in steps of `max - keep` images and every request until the next step drops the
+  // same images with the same notice; the provider's prompt cache keeps its prefix. (Dropping
+  // `total - keep` moved the cut, and the notice's count, on every new image.) Between
+  // `keep + 1` and `max` images survive.
+  const step = max - keep;
+  const dropped = step > 0 ? Math.ceil((total - max) / step) * step : total - keep;
+  // No count: a dropped image reads the same at every step, so the prefix before the cut stays cached.
+  const notice = '[image omitted by gateway: an older image was removed; the most recent are kept]';
   for (let i = 0; i < dropped; i += 1) {
     const slot = slots[i];
     slot.content[slot.index] = { type: 'text', text: notice };

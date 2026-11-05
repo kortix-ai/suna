@@ -39,6 +39,7 @@ const TEST_PORT = 8080;
 
 let mockDbSandbox: any = {
   sandboxId: TEST_SESSION_SANDBOX_ID,
+  externalId: TEST_SANDBOX_ID,
   projectId: TEST_PROJECT_ID,
   accountId: 'account-001',
   agentName: 'default',
@@ -535,6 +536,7 @@ beforeEach(() => {
   invalidateSandbox('daytona-oc-http');
   mockDbSandbox = {
     sandboxId: TEST_SESSION_SANDBOX_ID,
+    externalId: TEST_SANDBOX_ID,
     sessionId: '22222222-2222-4222-8222-222222222222',
     projectId: TEST_PROJECT_ID,
     accountId: 'account-001',
@@ -872,6 +874,37 @@ describe('Preview proxy: forwarding', () => {
     expect(await res.text()).toBe('ok');
     expect(mockFetchReturned[0]!.status).toBe(502);
     expect(mockFetchReturned[0]!.bodyUsed).toBe(true);
+  });
+
+  // A port the API exposed a moment ago: Platinum's routes lag the expose by up
+  // to ~1.2 s, and its edge answers `404 port-not-exposed` meanwhile. The edge
+  // answered itself, so the request is sent again, and a write is safe to send.
+  test('an edge port-not-exposed 404 right after the expose is sent again', async () => {
+    mockFetchResponses = [
+      { status: 404, body: 'This sandbox URL is not active.', headers: { 'x-pt-edge-verdict': 'port-not-exposed' } },
+      { status: 200, body: 'ok' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test', Accept: 'text/html' },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+    expect(mockFetchReturned[0]!.bodyUsed).toBe(true);
+  });
+
+  test('a 404 the app served itself passes through, never sent again', async () => {
+    mockFetchResponses = [
+      { status: 404, body: 'no such page', headers: { 'x-pt-edge-served': '1' } },
+      { status: 200, body: 'ok' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/missing`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe('no such page');
+    expect(mockFetchCalls).toHaveLength(1);
   });
 
   test('a browser that gets the port-unreachable page leaves no upstream body unreleased', async () => {
@@ -1212,6 +1245,7 @@ describe('Preview proxy: forwarding', () => {
     expect(mockWakeCalls).toEqual([TEST_SANDBOX_ID]);
     expect(mockFetchCalls.map((call) => call.url)).toEqual([
       'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/kortix/health',
       'https://preview.daytona.io/proxy-url/kortix/env',
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
     ]);
@@ -1244,6 +1278,7 @@ describe('Preview proxy: forwarding', () => {
     expect(mockWakeCalls).toEqual([TEST_SANDBOX_ID]);
     expect(mockFetchCalls.map((call) => call.url)).toEqual([
       'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/kortix/health',
       'https://preview.daytona.io/proxy-url/kortix/env',
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
     ]);
@@ -1341,6 +1376,7 @@ describe('Preview proxy: forwarding', () => {
   test('marks proxied session sandbox and owning session as active usage', async () => {
     mockFetchResponses = [{ status: 200, body: 'OK' }];
     const sandboxId = 'touch-sandbox-001';
+    mockDbSandbox = { ...mockDbSandbox, externalId: sandboxId };
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${sandboxId}/${TEST_PORT}/kortix/health`, {
       headers: { Authorization: 'Bearer test' },

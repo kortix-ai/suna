@@ -109,6 +109,130 @@ ENV BACKEND=${name}
 COPY start.js /kortix/start.js
 `;
 
+/** Node 22 for watcher Apps (2026-10-22). */
+const WATCHER_NODE = 'node:22.23.4-alpine3.24@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914';
+
+/**
+ * `apps/<name>/runner.js`: the watcher's server. Kortix calls POST /tick on a
+ * schedule; the runner asks `check()` (watch.js) what is true now and posts it
+ * as App events. String.raw keeps it verbatim: no backticks, no `${`.
+ */
+export const WATCHER_RUNNER = String.raw`// Kortix watcher runner: edit watch.js, not this file.
+//
+// Kortix calls POST /tick on a schedule (an "every" trigger that targets this
+// App). Each tick runs check() from watch.js. check() returns what is true NOW
+// as App events. The runner gives each event an id built from its name and
+// data, and posts them all to Kortix. Kortix fires each id once (30 days), so
+// an unchanged state starts nothing and a change starts the work. Every post,
+// a deduplicated one too, tells Kortix the watcher is alive
+// (expect_event_within); with nothing to report the runner sends a heartbeat.
+const http = require('node:http');
+const crypto = require('node:crypto');
+const watch = require('./watch.js');
+
+const PORT = Number(process.env.PORT || 3000);
+const BATCH = 50;
+const ATTEMPTS = 4;
+const HEARTBEAT = { name: 'kortix.heartbeat' };
+
+function contentId(event) {
+  const text = event.name + '\n' + JSON.stringify(event.data === undefined ? {} : event.data);
+  return crypto.createHash('sha256').update(text).digest('hex').slice(0, 32);
+}
+
+function sleep(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+async function post(events) {
+  let last = '';
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+    const response = await fetch(process.env.KORTIX_APP_EVENTS_URL, {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + process.env.KORTIX_APP_TOKEN, 'content-type': 'application/json' },
+      body: JSON.stringify({ events: events }),
+    });
+    if (response.ok) return response.json();
+    last = response.status + ' ' + (await response.text()).slice(0, 300);
+    if (response.status !== 429 && response.status < 500) break;
+    const wait = Number(response.headers.get('retry-after')) || attempt * 2;
+    await sleep(Math.min(wait, 30) * 1000);
+  }
+  throw new Error('Kortix refused the events: ' + last);
+}
+
+async function tick() {
+  const found = await watch.check();
+  const events = (Array.isArray(found) ? found : []).map(function (event) {
+    if (!event || typeof event.name !== 'string') throw new Error('check() must return [{ name, data }]');
+    return { name: event.name, data: event.data === undefined ? {} : event.data, id: event.id || contentId(event) };
+  });
+  const batches = events.length > 0 ? events : [HEARTBEAT];
+  const totals = { events: events.length, triggers: 0, accepted: 0, deduped: 0, suppressed: 0, unmatched: 0 };
+  for (let i = 0; i < batches.length; i += BATCH) {
+    const answer = await post(batches.slice(i, i + BATCH));
+    for (const key of ['accepted', 'deduped', 'suppressed', 'unmatched']) totals[key] += answer[key] || 0;
+    totals.triggers = answer.triggers || 0;
+    if (answer.hint) totals.hint = answer.hint;
+  }
+  return totals;
+}
+
+http.createServer(async function (request, response) {
+  function send(status, body) {
+    response.writeHead(status, { 'content-type': 'application/json' });
+    response.end(JSON.stringify(body));
+  }
+  const path = (request.url || '/').split('?')[0];
+  if (path === '/health') return send(200, { ok: true });
+  if (path === '/tick' && request.method === 'POST') {
+    try {
+      return send(200, await tick());
+    } catch (error) {
+      console.error('[watcher] tick failed:', error);
+      return send(502, { error: String((error && error.message) || error) });
+    }
+  }
+  return send(404, { error: 'not found' });
+}).listen(PORT, function () { console.log('[watcher] listening on ' + PORT); });
+`;
+
+/** `apps/<name>/watch.js`: the one function an agent edits. A working example. */
+export const WATCHER_CHECK = String.raw`// What this watcher checks. Edit check(): return what is true NOW, as App
+// events { name, data }. Kortix builds each id from the name and data and
+// fires an id once (30 days): an unchanged state starts nothing, a change
+// starts the trigger that listens for the name.
+//
+// - Put only what the next step needs in data. Never the time of your check
+//   or a counter: they change on every check and would start work every time.
+// - A return to an earlier state (back to normal after an incident) is the
+//   same content, and Kortix fires an id once in 30 days. When the return
+//   matters, add what makes it new: the source's own change stamp or version
+//   (page.updated_at below), or the id of the incident that just ended.
+// - Many things: one event per thing, e.g. { name: 'invoice.overdue', data: { id, amount } }.
+// - Nothing to report: return []. The runner posts a heartbeat instead.
+// - Throw when the source fails: the tick fails, Kortix retries it, and the
+//   check trigger alerts its watchers when it keeps failing.
+// - Secrets: kortix.yaml apps.<slug>.secrets, then read process.env.<NAME>.
+const WATCH_URL = process.env.WATCH_URL || 'https://www.githubstatus.com/api/v2/status.json';
+
+async function check() {
+  const response = await fetch(WATCH_URL, { headers: { accept: 'application/json' } });
+  if (!response.ok) throw new Error('GET ' + WATCH_URL + ' answered ' + response.status);
+  const body = await response.json();
+  // page.updated_at moves only when the page itself changes: back to normal after an incident is a new event.
+  return [{ name: 'status.changed', data: { url: WATCH_URL, status: body.status.description, changed_at: body.page.updated_at } }];
+}
+
+module.exports = { check };
+`;
+
+const watcherDockerfile = (name: string) => `# The ${name} watcher: Kortix calls POST /tick on a schedule. Edit watch.js.
+FROM ${WATCHER_NODE}
+WORKDIR /app
+COPY runner.js watch.js ./
+`;
+
 export const APP_TEMPLATES: Record<string, AppTemplate> = {
   convex: {
     name: 'convex',
@@ -162,6 +286,41 @@ export const APP_TEMPLATES: Record<string, AppTemplate> = {
       `Apps tab → ${name} → Dashboard   # the Convex dashboard, signed in (project admins)`,
     ],
   },
+};
+
+APP_TEMPLATES.watcher = {
+  name: 'watcher',
+  defaultName: 'watcher',
+  summary: 'A 24/7 watcher: Kortix calls its check on a schedule, and it posts App events only when something changed.',
+  blocks: (name) => ({
+    [name]: {
+      path: `apps/${name}`,
+      type: 'dockerfile',
+      command: ['node', 'runner.js'],
+      labels: ['watcher'],
+      // A background App: no card, an overview in the Background list.
+      display: { preview: 'none' },
+      // On demand: it runs only while a check runs.
+      always_on: false,
+      idle_timeout_seconds: 120,
+      vm: { cpu: 1, memory_gb: 1, disk_gb: 1 },
+      http_service: { internal_port: 3000, access: 'app', checks: [{ type: 'http', path: '/health' }] },
+    },
+  }),
+  files: (name) => ({
+    [`apps/${name}/Dockerfile`]: watcherDockerfile(name),
+    [`apps/${name}/runner.js`]: WATCHER_RUNNER,
+    [`apps/${name}/watch.js`]: WATCHER_CHECK,
+  }),
+  deployOrder: (name) => [name],
+  nextSteps: (name) => [
+    `apps/${name}/watch.js   # edit check(): what to watch; it returns what is true now`,
+    `kortix apps deploy apps/${name}   # after each edit`,
+    `kortix triggers add ${name}-work --type app --app ${name} --event status.changed --expect-event-within 30m --prompt "…" --apply   # the work, first`,
+    `kortix apps events emit ${name} status.changed --data '{"status":"Test"}' --wait   # prove the work runs (a test- id)`,
+    `kortix triggers add ${name}-check --every 5m --target-app ${name} --target-path /tick --apply   # then the check: no session, no model`,
+    `kortix apps events ${name}   # what each check posted and what came of it`,
+  ],
 };
 
 export function appTemplate(name: string): AppTemplate | null {

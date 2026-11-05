@@ -75,7 +75,7 @@ export function useProjectStack(
   // Back to project home from any project route: reset the store, then pop a
   // covering route. popTo keeps home's params and, when home is not in the
   // stack (a deep link straight to a covering route), replaces the top with it.
-  // The view's `beforeRemove` also resets the store; running goHome twice is
+  // The view's `state` listener also resets the store; running goHome twice is
   // harmless.
   const returnHome = useCallback(() => {
     goHome();

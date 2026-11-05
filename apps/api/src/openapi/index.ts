@@ -91,17 +91,19 @@ const RESPONSE_ISSUE_BYTES = 16 * 1024;
 
 /**
  * Zod nests a failing union branch's WHOLE issue list in one `invalid_union`
- * issue (`unionErrors`), so a union over an array kept every element error in
- * a single issue. Each branch becomes `{ issues: <first 3>, issue_count }`.
+ * issue (zod 4: `errors`, one issue list per branch), so a union over an array
+ * kept every element error in a single issue. Each branch becomes
+ * `{ issues: <first 3>, issue_count }` under `union_errors`.
  */
 function compactIssue(issue: unknown): unknown {
-  if (!issue || typeof issue !== 'object' || !('unionErrors' in issue)) return issue;
-  const { unionErrors, ...rest } = issue as { unionErrors?: unknown };
-  const branches = Array.isArray(unionErrors) ? unionErrors : [];
+  if (!issue || typeof issue !== 'object') return issue;
+  const record = issue as { code?: unknown; errors?: unknown };
+  if (record.code !== 'invalid_union' || !Array.isArray(record.errors)) return issue;
+  const { errors: branches, ...rest } = record;
   return {
     ...rest,
-    union_errors: branches.map((branch) =>
-      boundedIssues((branch as { issues?: unknown[] })?.issues, UNION_BRANCH_ISSUE_LIMIT),
+    union_errors: (branches as unknown[]).map((branch) =>
+      boundedIssues(Array.isArray(branch) ? branch : [], UNION_BRANCH_ISSUE_LIMIT),
     ),
   };
 }

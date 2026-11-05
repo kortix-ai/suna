@@ -100,6 +100,35 @@ afterAll(() => {
   globalThis.fetch = realFetch;
 });
 
+/**
+ * The box's session-log page for message summaries written as `{ info, parts }`:
+ * `parentID` is the prompt a reply answers, an assistant without
+ * `time.completed` still streams, and each part id becomes a block id.
+ */
+function asLogPage(body: { messages: Array<{ info: Record<string, unknown>; parts?: Array<{ id?: string }> }>; has_more?: boolean }) {
+  const iso = (ms: unknown) => (typeof ms === 'number' ? new Date(ms).toISOString() : null);
+  return {
+    thread_id: 'ses_root',
+    has_more: body.has_more ?? false,
+    messages: body.messages.map(({ info, parts = [] }, i) => {
+      const time = (info.time ?? {}) as { created?: number; completed?: number };
+      const streaming = info.role === 'assistant' && time.completed === undefined;
+      return {
+        message_id: info.id,
+        thread_id: 'ses_root',
+        seq: i + 1,
+        role: info.role,
+        kind: 'turn',
+        reply_to: typeof info.parentID === 'string' ? info.parentID : null,
+        status: streaming ? 'streaming' : 'complete',
+        created_at: iso(time.created),
+        completed_at: streaming ? null : iso(time.completed ?? time.created),
+        blocks: parts.flatMap((part) => (typeof part.id === 'string' ? [{ type: 'text', id: part.id, text: '' }] : [])),
+      };
+    }),
+  };
+}
+
 describe('cancelForwardedPrompt — the tip read and its failure ladder', () => {
   test('an unresolved endpoint is unreachable', async () => {
     sessionRow = null;
@@ -143,7 +172,7 @@ describe('cancelForwardedPrompt — the tip read and its failure ladder', () => 
     };
     globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
       if ((init?.method ?? 'GET') !== 'GET') throw new Error('must not retract an answered prompt');
-      return Response.json(tipBody);
+      return Response.json(asLogPage(tipBody));
     }) as unknown as typeof fetch;
     expect(await cancelForwardedPrompt(SESSION_ID, PROMPT_ID)).toEqual({ outcome: 'answered' });
   });
@@ -170,7 +199,7 @@ describe('cancelForwardedPrompt — a steer pi has not read (R10)', () => {
         retracted.push(decodeURIComponent(String(url)));
         return retract();
       }
-      return Response.json(tipBody);
+      return Response.json(asLogPage(tipBody));
     }) as unknown as typeof fetch;
   }
   const verb = (status: number, body: unknown) =>
@@ -219,7 +248,7 @@ describe('cancelForwardedPrompt — the runtime retract (R7.1)', () => {
       const method = init?.method ?? 'GET';
       if (method !== 'GET') calls.push(`${method} ${target.replace(`https://box.test/p/${EXTERNAL_ID}/8000`, '')}`);
       if (target.endsWith('/retract')) return retract();
-      return Response.json(tipBody);
+      return Response.json(asLogPage(tipBody));
     }) as unknown as typeof fetch;
   }
   const verb = (status: number, body: unknown) =>

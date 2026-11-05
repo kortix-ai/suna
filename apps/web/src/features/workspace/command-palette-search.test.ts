@@ -546,3 +546,22 @@ describe('terminal themes are searchable', () => {
     expect(themeHits('iceberg dark')).toEqual(['nav:theme-iceberg-dark']);
   });
 });
+
+
+describe('subscription usage destinations', () => {
+  for (const query of ['ChatGPT subscription usage', 'codex usage', 'openai usage']) {
+    test(`${query} finds ChatGPT usage`, () => { expect(hits(query)).toEqual(['nav:proj-chatgpt-usage']); });
+  }
+  for (const query of ['Anthropic usage', 'Claude usage', 'Claude Code usage', 'Fable usage']) {
+    test(`${query} finds Claude usage`, () => { expect(hits(query)).toEqual(['nav:proj-claude-usage']); });
+  }
+  test('usage offers both subscription destinations', () => {
+    expect(hits('usage')).toContain('nav:proj-chatgpt-usage');
+    expect(hits('usage')).toContain('nav:proj-claude-usage');
+  });
+  test('subscription results select the Usage tab and matching provider', () => {
+    const items = getItemsForSurface('commandPalette');
+    expect(items.find(item => item.id === 'proj-chatgpt-usage')?.href).toBe('/projects/{projectId}/admin/models?tab=usage&provider=codex');
+    expect(items.find(item => item.id === 'proj-claude-usage')?.href).toBe('/projects/{projectId}/admin/models?tab=usage&provider=claude-agent');
+  });
+});

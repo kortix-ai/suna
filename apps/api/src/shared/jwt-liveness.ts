@@ -96,6 +96,17 @@ export async function confirmJwtLive(token: string, claims: SessionClaims): Prom
   return goTrueLoader(token);
 }
 
+/**
+ * Is a browser session (`auth.sessions` row) still live for `userId`? The same
+ * read as `confirmJwtLive`, for a holder that kept the session id but not the
+ * token: an Artifact live socket re-checks it every 60 s. Throws when the read
+ * fails, so the caller keeps what it has and asks again.
+ */
+export async function authSessionLive(userId: string, sessionId: string): Promise<boolean> {
+  if (!isUuid(userId) || !isUuid(sessionId)) return false;
+  return (await sessionLoader(userId, sessionId)) !== null;
+}
+
 /** Test seam: replace the GoTrue loader (null restores it). */
 export function __setJwtLivenessLoaderForTests(next: GoTrueLoader | null): void {
   goTrueLoader = next ?? askGoTrue;

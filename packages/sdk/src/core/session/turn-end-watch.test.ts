@@ -19,7 +19,7 @@ const OPEN: SessionTurnStatus = {
       turn_token: 'T1',
       state: 'active',
       message_id: 'm1',
-      opencode_session_id: 'oc1',
+      runtime_session_id: 'oc1',
       started_at: '2026-10-16T09:00:00.000Z',
       accepted_at: '2026-10-16T09:00:01.000Z',
     },

@@ -23,8 +23,10 @@ import {
   setArtifactPinned,
   setArtifactCommentStatus,
   shareArtifactPath,
+  signalArtifactLiveAgent,
   updateArtifact,
   type Artifact,
+  type ArtifactLiveAgentSignal,
   type ArtifactFileInput,
   type ArtifactListScope,
   type ArtifactType,
@@ -34,7 +36,7 @@ import {
 import { withKortixScope } from '../api/sdk.ts';
 import { ApiError as CliApiError } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, fail, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue, takeFlagValues } from '../command-helpers.ts';
+import { emitJson, fail, featureDisabledMessage, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue, takeFlagValues } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { artifactCommentAnchor } from './artifact-comment-anchor.ts';
 
@@ -62,7 +64,7 @@ Subcommands:
                              --space <slug>, --agent <name> (where it is grouped;
                              default agent: this session's agent; spaces are
                              Work in progress, shown only with the project flag
-                             \`project_channels\` on)
+                             \`chat\` on)
   add <path>                 Share a folder already in Files (it holds an
                              index.md or index.html; an index file stands for
                              its folder). Same options.
@@ -75,7 +77,7 @@ Subcommands:
                              --mine, --shared (others shared), --pinned,
                              --type doc|html, --search "<text>",
                              --space <slug> (bound to that space; flag
-                             \`project_channels\`)
+                             \`chat\`)
   info <artifact>            Title, type, path in Files, files, links.
   cat <artifact> [<path>]    Print one file (default the entry).
                              --version <id> reads an old version.
@@ -103,6 +105,12 @@ Subcommands:
   resolve <thread-id> / reopen <thread-id>
                              Resolve a thread or open it again.
   activity <artifact>        Events and saves, newest first. --limit 1–100.
+  focus <artifact>           Agent sessions only: show the people viewing the
+                             artifact where you work. --thread <thread-id> (a
+                             thread you answer) or --quote "<text>" (a passage
+                             you change, up to 500 characters).
+                             --status reading|editing|writing|idle
+                             (default editing; idle removes you).
   pin <artifact> / unpin <artifact>
   rm <artifact>              Stop sharing it. Its files stay in Files.
 
@@ -130,7 +138,9 @@ Examples:
 
 const TYPES = ['doc', 'html'];
 const VISIBILITIES = ['private', 'project', 'public'];
-const KNOWN = ['types', 'publish', 'add', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'bind', 'versions', 'restore', 'comments', 'comment', 'reply', 'resolve', 'reopen', 'activity', 'pin', 'unpin', 'rm', 'delete'];
+const KNOWN = ['types', 'publish', 'add', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'bind', 'versions', 'restore', 'comments', 'comment', 'reply', 'resolve', 'reopen', 'activity', 'focus', 'pin', 'unpin', 'rm', 'delete'];
+const FOCUS_STATUSES = ['reading', 'editing', 'writing', 'idle'];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The files to publish: a folder's tree, or one file as `index.md` / `index.html`. */
 async function collectFiles(path: string): Promise<Record<string, ArtifactFileInput>> {
@@ -207,6 +217,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
     with: string[]; mine: boolean; shared: boolean; pinned: boolean; starter: boolean;
     space?: string; agent?: string; clear: boolean;
     quote?: string; selector?: string; all: boolean; resolved: boolean; limit?: string;
+    thread?: string; focusStatus?: string;
   };
   try {
     f = {
@@ -234,6 +245,8 @@ export async function runArtifacts(argv: string[]): Promise<number> {
       all: takeFlagBool(rest, ['--all']),
       resolved: takeFlagBool(rest, ['--resolved']),
       limit: takeFlagValue(rest, ['--limit']),
+      thread: takeFlagValue(rest, ['--thread']),
+      focusStatus: takeFlagValue(rest, ['--status']),
     };
   } catch (err) {
     return fail((err as Error).message);
@@ -248,6 +261,12 @@ export async function runArtifacts(argv: string[]): Promise<number> {
   if (f.all && f.resolved) return fail('Use --all or --resolved, not both.');
   if (f.quote !== undefined && f.selector !== undefined) return fail('Use --quote or --selector, not both.');
   if (f.limit !== undefined && (!/^\d+$/.test(f.limit) || Number(f.limit) < 1 || Number(f.limit) > 100)) return fail('--limit must be an integer from 1 to 100.');
+  if (sub === 'focus') {
+    if (f.focusStatus !== undefined && !FOCUS_STATUSES.includes(f.focusStatus)) return fail('--status must be reading, editing, writing or idle.');
+    if (f.thread !== undefined && !UUID.test(f.thread)) return fail(`--thread "${f.thread}" is not a thread id. Pass the full id from \`kortix artifacts comments\`.`);
+    if (f.thread !== undefined && f.quote !== undefined) return fail('Use --thread or --quote, not both.');
+    if (f.quote !== undefined && (f.quote.length > 500 || f.quote.includes('\u0000'))) return fail('--quote takes 1 to 500 characters.');
+  }
 
   const ctx = await resolveProjectContext({ projectArg: f.projectArg, hostArg: f.hostArg });
   if (!ctx) return 1;
@@ -334,6 +353,29 @@ export async function runArtifacts(argv: string[]): Promise<number> {
           if (!page.items.length) process.stdout.write('No activity yet.\n');
           if (page.older_versions) process.stdout.write('Older saves may be unavailable in this history.\n');
           return 0;
+        }
+        case 'focus': {
+          const id = await resolve(a0);
+          if (!id) return a0 ? 1 : missing('an artifact id');
+          const signal: ArtifactLiveAgentSignal = {
+            status: (f.focusStatus ?? 'editing') as ArtifactLiveAgentSignal['status'],
+            ...(f.thread ? { thread_id: f.thread } : {}),
+            ...(f.quote !== undefined ? { quote: f.quote } : {}),
+          };
+          try {
+            await signalArtifactLiveAgent(pid, id, signal);
+          } catch (err) {
+            // The route answers 403 to every token that is not bound to a session.
+            if (err instanceof SdkApiError && err.status === 403 && !featureDisabledMessage(err)) {
+              process.stderr.write(`${status.err('kortix artifacts focus is for agent sessions: run it inside a Kortix session. This token belongs to a person.')}\n`);
+              return 1;
+            }
+            throw err;
+          }
+          const quote = signal.quote && signal.quote.length > 40 ? `${signal.quote.slice(0, 39)}…` : signal.quote;
+          const where = signal.thread_id ? ` · thread ${signal.thread_id}` : quote ? ` · "${quote}"` : '';
+          const line = signal.status === 'idle' ? `Left ${short(id)}` : `Focus ${signal.status} on ${short(id)}${where}`;
+          return out({ artifact_id: id, ...signal }, status.ok(line));
         }
         case 'types': {
           const types = await listArtifactTypes(pid);
@@ -515,7 +557,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
       process.stderr.write(`${status.err((err as Error).message)}\n`);
       return 3;
     }
-    if (err instanceof SdkApiError && typeof err.status === 'number' && ['comments', 'comment', 'reply', 'resolve', 'reopen', 'activity'].includes(sub)) {
+    if (err instanceof SdkApiError && typeof err.status === 'number' && ['comments', 'comment', 'reply', 'resolve', 'reopen', 'activity', 'focus'].includes(sub)) {
       const message = err.status === 403 ? `HTTP 403: ${err.message}` : err.message;
       return surfaceApiError(new CliApiError(err.status, message, err.details));
     }

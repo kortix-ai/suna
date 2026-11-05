@@ -35,7 +35,10 @@ Runtime source (add):
                            A signed HTTP call. POST to the printed webhook_url.
   --on event --connector <slug> --event <TYPE> [--config <json>]
                            A connector event.
-  --on app --app <slug>    An event an App of this project emits.
+  --on app --app <slug> [--expect-event-within <dur>]
+                           An event an App of this project emits. With
+                           --expect-event-within (5m to 30d, e.g. 1h), no event
+                           for that long alerts this trigger's owner once.
   --on cr-merged [--cr <id>] [--base <branch>]
                            A merged change request: one (--cr), any into a
                            branch (--base), or any.
@@ -116,6 +119,7 @@ export function printRuntimeTriggers(rows: UnifiedTrigger[]): void {
 /** The source of `add`, or an error. A schedule flag alone means the schedule source. */
 function sourceOf(flags: Record<string, string | undefined>): CreateRuntimeTriggerInput['source'] | string {
   const on = flags.on ?? 'schedule';
+  if (flags.expectEventWithin && on !== 'app') return '--expect-event-within only with --on app';
   if (on === 'schedule') {
     const schedule: Record<string, string> = {};
     for (const key of ['every', 'cron', 'at', 'in', 'timezone'] as const) if (flags[key] !== undefined) schedule[key] = flags[key]!;
@@ -135,7 +139,10 @@ function sourceOf(flags: Record<string, string | undefined>): CreateRuntimeTrigg
     }
     return { type: 'event', connector: flags.connector, event: flags.event, ...(config ? { config } : {}) };
   }
-  if (on === 'app') return flags.app ? { type: 'app', app: flags.app } : '--app <slug> for --on app';
+  if (on === 'app') {
+    if (!flags.app) return '--app <slug> for --on app';
+    return { type: 'app', app: flags.app, ...(flags.expectEventWithin ? { expect_event_within: flags.expectEventWithin } : {}) };
+  }
   if (on === 'cr-merged' || on === 'change_request') {
     return { type: 'change_request', ...(flags.cr ? { cr_id: flags.cr } : {}), ...(flags.base ? { base: flags.base } : {}) };
   }
@@ -162,6 +169,7 @@ export async function runRuntimeTriggers(argv: string[]): Promise<number> {
       event: takeFlagValue(rest, ['--event']),
       config: takeFlagValue(rest, ['--config']),
       app: takeFlagValue(rest, ['--app']),
+      expectEventWithin: takeFlagValue(rest, ['--expect-event-within']),
       cr: takeFlagValue(rest, ['--cr']),
       base: takeFlagValue(rest, ['--base']),
       session: takeFlagValue(rest, ['--session']),

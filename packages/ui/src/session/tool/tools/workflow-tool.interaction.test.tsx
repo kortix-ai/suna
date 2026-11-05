@@ -106,50 +106,20 @@ const tenAgents: Agent[] = Array.from({ length: 10 }, (_, i) => ({
   sessionId: `ses_m${i + 1}`,
 }));
 
-describe('WorkflowTool — the status filter', () => {
-  test('a filter tab narrows the rows to its status; `f` cycles the filter from a row, as in Claude Code', async () => {
-    const { host, unmount } = await mount(runDoc(tenAgents));
-    expect(rowLabels(host)).toHaveLength(10);
-
-    // Radix Tabs activates a tab on mousedown.
-    await act(async () => void mouse(byText(host, '[role="tab"]', 'Running'), 'mousedown'));
-    expect(rowLabels(host)).toEqual(['Market 7', 'Market 8', 'Market 9']);
-
-    // From a row, `f` moves to the next filter: Failed.
-    await key(host.querySelector('button[aria-label="Open Market 7"]')!, 'f');
-    expect(rowLabels(host)).toEqual(['Market 10']);
-    expect(byText(host, '[role="tab"]', 'Failed').getAttribute('aria-selected')).toBe('true');
-
-    // Done, then back to All.
-    await key(host.querySelector('button[aria-label="Open Market 10"]')!, 'f');
-    expect(rowLabels(host)).toHaveLength(6);
-    await key(host.querySelector('button[aria-label="Open Market 1"]')!, 'f');
-    expect(rowLabels(host)).toHaveLength(10);
-    await unmount();
-  });
-
-  test('a filter with no match says so in one line', async () => {
-    const { host, unmount } = await mount(runDoc(tenAgents.map((a) => ({ ...a, status: 'done' }))));
-    await act(async () => void mouse(byText(host, '[role="tab"]', 'Failed'), 'mousedown'));
-    expect(rowLabels(host)).toEqual([]);
-    expect(host.textContent).toContain('No agent failed.');
-    await unmount();
-  });
-});
-
 describe('WorkflowTool — keyboard and folds', () => {
   test('↓ and ↑ move focus between rows', async () => {
     const { host, unmount } = await mount(runDoc(tenAgents.slice(0, 3)));
-    const first = host.querySelector<HTMLElement>('button[aria-label="Open Market 1"]')!;
-    first.focus();
-    await key(first, 'ArrowDown');
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('Open Market 2');
+    // Rows sort by status, so walk them in the order the card draws them.
+    const rows = Array.from(host.querySelectorAll<HTMLElement>('[data-workflow-row]'));
+    rows[0]!.focus();
+    await key(rows[0]!, 'ArrowDown');
+    expect(document.activeElement as unknown).toBe(rows[1]);
     await key(document.activeElement!, 'ArrowUp');
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('Open Market 1');
+    expect(document.activeElement as unknown).toBe(rows[0]);
     await unmount();
   });
 
-  test('a phase header folds its agents away and opens them again', async () => {
+  test('a phase opens in place onto its agents, nested on the trunk, and closes again', async () => {
     const agents = [
       { id: 'a1', label: 'Read docs', phase: 'Research', status: 'done', sessionId: 'ses_1' },
       { id: 'a2', label: 'Draft', phase: 'Write', status: 'running', sessionId: 'ses_2' },
@@ -157,12 +127,15 @@ describe('WorkflowTool — keyboard and folds', () => {
     const { host, unmount } = await mount(
       runDoc(agents, { phases: [{ title: 'Research', status: 'done' }, { title: 'Write', status: 'running' }] }),
     );
-    const research = byText(host, 'button[aria-expanded]', 'Research');
-    expect(research.getAttribute('aria-expanded')).toBe('true');
-    await click(research);
-    expect(rowLabels(host)).toEqual(['Draft']);
-    await click(research);
-    expect(rowLabels(host)).toEqual(['Read docs', 'Draft']);
+    // Every phase starts closed: no agent row yet.
+    expect(rowLabels(host)).toEqual([]);
+    const write = host.querySelector<HTMLElement>('[data-workflow-phase="Write"] button[aria-expanded]')!;
+    expect(write.getAttribute('aria-expanded')).toBe('false');
+    await act(async () => write.click());
+    expect(write.getAttribute('aria-expanded')).toBe('true');
+    expect(rowLabels(host)).toEqual(['Draft, Running']);
+    await act(async () => write.click());
+    expect(rowLabels(host)).toEqual([]);
     await unmount();
   });
 
@@ -175,24 +148,12 @@ describe('WorkflowTool — keyboard and folds', () => {
     await unmount();
   });
 
-  test('a structured answer opens to its formatted JSON', async () => {
-    const agents = [{ id: 'a1', label: 'List files', status: 'done', sessionId: 'ses_1', structured: true, summary: '{"files":["a.ts"],"total":1}' }];
-    const { host, unmount } = await mount(runDoc(agents));
-    const toggle = byText(host, 'button[aria-expanded]', 'JSON · 2 keys');
-    expect(host.querySelector('pre')).toBeNull();
-    await click(toggle);
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(host.querySelector('pre')?.textContent).toBe('{\n  "files": [\n    "a.ts"\n  ],\n  "total": 1\n}');
-    await unmount();
-  });
-
   test('the result fold opens onto the script\'s result as Markdown, without the raw tags', async () => {
     const agents = [{ id: 'a1', label: 'Read docs', status: 'done', sessionId: 'ses_1' }];
     const output = '<workflow_result>\n**Three** competitors cut prices.\n</workflow_result>\nagents: 1 (1 done)';
     const { host, unmount } = await mount(runDoc(agents, { status: 'done', endedAt: 1_790_000_060_000 }), { status: 'completed', output });
-    // A finished run stays closed: open the card, then the fold.
-    await click(host.querySelector('[data-component="tool-trigger"]')!);
-    const fold = byText(host, '[role="button"][aria-expanded]', 'Result');
+    // The result opens from the card header's "Result", inside the card.
+    const fold = byText(host, 'button[aria-expanded]', 'Result');
     await click(fold);
     expect(host.querySelector('strong')?.textContent).toBe('Three');
     expect(host.textContent).toContain('competitors cut prices.');
@@ -201,17 +162,3 @@ describe('WorkflowTool — keyboard and folds', () => {
   });
 });
 
-describe('WorkflowTool — Stop', () => {
-  test('Stop on a running row stops that agent\'s session through the SDK and shows the stop in flight', async () => {
-    stopCalls.length = 0;
-    const { host, unmount } = await mount(runDoc(tenAgents.slice(5, 8)));
-    expect(host.querySelector('button[aria-label="Stop Market 6"]')).toBeNull();
-    const stop = host.querySelector('button[aria-label="Stop Market 7"]')!;
-    await click(stop);
-    expect(stopCalls).toEqual([['proj_1', 'ses_m7']]);
-    // Until the run reports the agent stopped, its slot holds a spinner, not a second Stop.
-    expect(host.querySelector('button[aria-label="Stop Market 7"]')).toBeNull();
-    expect(host.querySelector('button[aria-label="Stop Market 8"]')).not.toBeNull();
-    await unmount();
-  });
-});

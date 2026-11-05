@@ -257,7 +257,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
           retriable: true,
           runtime_transport: 'rest',
           runtime_url: `/p/${externalId}/8000`,
-          opencode_session_id: `runtime-${sessionId}`,
+          runtime_session_id: `runtime-${sessionId}`,
           sandbox: {
             sandbox_id: sessionId,
             session_id: sessionId,

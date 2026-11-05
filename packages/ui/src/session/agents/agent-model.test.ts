@@ -16,14 +16,14 @@ function session(id: string, overrides: Partial<ProjectSession> = {}): ProjectSe
     sandbox_provider: null,
     sandbox_id: null,
     sandbox_url: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     name: null,
     custom_name: null,
     agent_name: 'researcher',
     status: 'running',
     error: null,
     metadata: {},
-    opencode_sessions: [],
+    runtime_sessions: [],
     created_at: '2026-10-30T11:50:00.000Z',
     updated_at: '2026-10-30T11:59:00.000Z',
     ...overrides,
@@ -165,3 +165,11 @@ describe('counts and the line', () => {
     expect(shortElapsed(2 * 60 * 60_000 + 5)).toBe('2h');
   });
 });
+
+describe('boardStateOf — a session that failed to start', () => {
+  test('a failed session whose first prompt still waits reads failed, not working', () => {
+    const session = { session_id: 's', status: 'failed', board_state: 'working', working: { state: 'working', pending_delivery: true } } as never;
+    expect(boardStateOf(session)).toBe('failed');
+  });
+});
+

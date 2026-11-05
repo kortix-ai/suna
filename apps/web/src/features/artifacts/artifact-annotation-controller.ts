@@ -28,7 +28,30 @@ type Config = {
   pinLabel?: (n: number) => string;
   /** The parent's drawing layer covers the page and handles its own Escape: page keys are dropped. */
   drawing?: boolean;
+  /** Live presence wants this viewer's pointer: the page reports it (`track`). */
+  trackPointer?: boolean;
 };
+/** A page point that every viewer can find: an element's selector and fractions of its box. */
+export type ArtifactAnnotationPagePoint = { selector: string; x: number; y: number };
+/** The longest selector a live page cursor carries (`artifactLivePositionSchema`). */
+const POINTER_SELECTOR_MAX = 512;
+type LayoutElement = ArtifactAnnotationInventory['elements'][number];
+const lookups = new WeakMap<
+  ArtifactAnnotationInventory,
+  { byNumber: Map<number, LayoutElement>; bySelector: Map<string, LayoutElement> }
+>();
+function lookup(inventory: ArtifactAnnotationInventory) {
+  let found = lookups.get(inventory);
+  if (!found) {
+    found = { byNumber: new Map(), bySelector: new Map() };
+    for (const element of inventory.elements) {
+      found.byNumber.set(element.n, element);
+      if (!found.bySelector.has(element.selector)) found.bySelector.set(element.selector, element);
+    }
+    lookups.set(inventory, found);
+  }
+  return found;
+}
 const envelope = { kortix: 'annotate', v: 1 } as const;
 export type ArtifactAnnotationStatus = 'loading' | 'ready' | 'unavailable';
 /** A text selection the page offers: its box in frame viewport coordinates, when the page measured one. */
@@ -74,6 +97,8 @@ export function createArtifactAnnotationController(
     onRegions?: (regions: Readonly<Record<string, ArtifactAnnotationRect>>) => void;
     /** thread_id → the number of its pin on the page, for every pin the page draws. */
     onPins?: (pins: ReadonlyMap<string, number>) => void;
+    /** Live presence: this viewer's pointer on the page, or null when it left (only with `trackPointer`). */
+    onPointer?: (at: ArtifactAnnotationPagePoint | null) => void;
   },
   schedule: ArtifactAnnotationScheduler = scheduleDeadline,
 ) {
@@ -129,9 +154,15 @@ export function createArtifactAnnotationController(
       if (!disposed && generation === attempt) readiness('unavailable');
     }, 15000);
   };
+  const postTracking = () => {
+    if (config && !disposed)
+      callbacks.post({ ...envelope, type: 'track', pointer: config.trackPointer === true });
+  };
   const handshake = () => {
     if (!config) return;
     postMode();
+    // A new page starts untracked: only a viewer who wants the pointer says so.
+    if (config.trackPointer) postTracking();
     callbacks.post({ ...envelope, type: 'request_layout' });
   };
   const redraw = () => {
@@ -310,10 +341,15 @@ export function createArtifactAnnotationController(
       }
       const modeChanged =
         !config || config.canComment !== next.canComment || config.mode !== next.mode;
+      const trackingChanged = (config?.trackPointer === true) !== (next.trackPointer === true);
       if (!next.canComment) capture.cancel();
       config = next;
       if (changedVersion) loading(true);
       if (modeChanged) postMode();
+      if (trackingChanged) {
+        postTracking();
+        if (!next.trackPointer) callbacks.onPointer?.(null);
+      }
       if (changedVersion || modeChanged) select(null);
       redraw();
     },
@@ -429,9 +465,39 @@ export function createArtifactAnnotationController(
         if (sendable) callbacks.onKey?.(message.key);
         return;
       }
+      if (message.type === 'pointer') {
+        if (!config.trackPointer) return;
+        if (!message.at) {
+          callbacks.onPointer?.(null);
+          return;
+        }
+        // Element numbers belong to one layout: a pointer from another revision is stale.
+        if (!inventory?.complete || message.revision !== inventory.revision) return;
+        const element = lookup(inventory).byNumber.get(message.at.n);
+        callbacks.onPointer?.(
+          element && element.selector.length <= POINTER_SELECTOR_MAX
+            ? { selector: element.selector, x: message.at.x, y: message.at.y }
+            : null,
+        );
+        return;
+      }
       if (message.type !== 'focus') return;
       const id = sent.get(message.n);
       if (id) callbacks.onFocus(id);
+    },
+    /**
+     * Where a point another viewer reported is on this viewer's page, in frame
+     * viewport pixels, or null when the element is not in this layout. The
+     * page itself never hears the point.
+     */
+    pagePoint(point: ArtifactAnnotationPagePoint): { x: number; y: number } | null {
+      if (status !== 'ready' || !inventory?.complete) return null;
+      const element = lookup(inventory).bySelector.get(point.selector);
+      if (!element) return null;
+      return {
+        x: element.rect.x + point.x * element.rect.width - inventory.viewport.scroll.x,
+        y: element.rect.y + point.y * element.rect.height - inventory.viewport.scroll.y,
+      };
     },
     dispose() {
       capture.cancel();

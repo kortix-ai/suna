@@ -37,9 +37,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const volumes = useFeatureFlag(projectId, 'volumes');
   const drives = useFeatureFlag(projectId, 'drives');
   const sessionLog = useFeatureFlag(projectId, 'session_log');
-  const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
-  const projectChannels = useFeatureFlag(projectId, 'project_channels');
-  const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
+  const chat = useFeatureFlag(projectId, 'chat');
   const sharedDrives = useFeatureFlag(projectId, 'shared_drives');
   const goals = useFeatureFlag(projectId, 'goals');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
@@ -50,6 +48,8 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const chrome = useFeatureFlag(projectId, 'chrome');
   const agentTeams = useFeatureFlag(projectId, 'agent_teams');
   const voiceCall = useFeatureFlag(projectId, 'voice_call');
+  const chatInput = useFeatureFlag(projectId, 'chat_input');
+  const chatFront = useFeatureFlag(projectId, 'chat_front');
 
   return {
     flags: {
@@ -63,9 +63,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       volumes: volumes.enabled,
       drives: drives.enabled,
       session_log: sessionLog.enabled,
-      session_log_restore: sessionLogRestore.enabled,
-      project_channels: projectChannels.enabled,
-      agent_rooms: agentRooms.enabled,
+      chat: chat.enabled,
       shared_drives: sharedDrives.enabled,
       goals: goals.enabled,
       artifacts: artifacts.enabled,
@@ -76,8 +74,10 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       chrome: chrome.enabled,
       agent_teams: agentTeams.enabled,
       voice_call: voiceCall.enabled,
+      chat_input: chatInput.enabled,
+      chat_front: chatFront.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: voiceCall.isLoading,
+    isLoading: chatFront.isLoading,
   };
 }

@@ -15,8 +15,10 @@
  * `task_stop` by id and by name (`cloudStopChild`). No real time, no network.
  */
 import { describe, expect, test } from 'bun:test'
+import { FRONT_TOOLS, fetchFrontAgents, frontAgentsFromDetail, frontAgentsSection, frontCall, frontContextBlock, frontTaskName, frontThreadFilesFrom } from '@/harness/pi/front'
 import {
   childToolAllowlist,
+  cloudChildToolDetails,
   cloudSpawnSession,
   cloudStopChild,
   cloudSubagentApiFrom,
@@ -553,6 +555,13 @@ describe('cloudSpawnSession — names, teammates, forks', () => {
     expect(subagentContextFrom(JSON.stringify({ 'kortix.subagent.depth': 1, 'kortix.agent.handle': 'researcher', 'kortix.team.lead': PARENT }))).toEqual({ depth: 1, handle: 'researcher', teamLead: PARENT })
     expect(subagentContextFrom(JSON.stringify({ 'kortix.subagent.depth': 1, 'kortix.agent.handle': 'no spaces allowed' }))).toEqual({ depth: 1 })
   })
+
+  test('subagentContextFrom marks a talk-only front and its worker only for the boolean true', () => {
+    expect(subagentContextFrom(JSON.stringify({ 'kortix.front': true }))).toEqual({ depth: 0, front: true })
+    expect(subagentContextFrom(JSON.stringify({ 'kortix.front': 'true' }))).toEqual({ depth: 0 })
+    expect(subagentContextFrom(JSON.stringify({ 'kortix.subagent.depth': 1, 'kortix.front.thread': true }))).toEqual({ depth: 1, frontThread: true })
+    expect(subagentContextFrom(JSON.stringify({ 'kortix.subagent.depth': 1, 'kortix.front.thread': 1 }))).toEqual({ depth: 1 })
+  })
 })
 
 describe('cloudStopChild — task_stop', () => {
@@ -578,5 +587,182 @@ describe('cloudStopChild — task_stop', () => {
     const { impl } = fakeApi({ children: [] })
     await expect(cloudStopChild(api(impl), { name: 'ghost' })).rejects.toThrow('No subagent of this session is named "ghost".')
     await expect(cloudStopChild(api(impl), {})).rejects.toThrow('Name the subagent to stop')
+  })
+})
+
+describe('the router (front.ts) — routing', () => {
+  const roster = { agents: ['researcher', 'Writer'] }
+
+  test('a router has exactly three tools', () => {
+    expect([...FRONT_TOOLS].sort()).toEqual(['agent', 'send_message', 'task_stop'])
+  })
+
+  test('a roster agent is kept; every call runs separate and in the background, whatever the model passed', () => {
+    expect(frontCall({ description: 'Find flights', prompt: 'p', subagent_type: 'researcher', name: 'flights' }, roster)).toEqual({
+      description: 'Find flights', prompt: 'p', subagent_type: 'researcher', name: 'flights', session: 'separate', run_in_background: true,
+    })
+    // The roster's own spelling wins over the model's case.
+    expect(frontCall({ description: 'd', prompt: 'p', subagent_type: '@writer', name: 'w' }, roster).subagent_type).toBe('Writer')
+  })
+
+  test('no agent named, or mykortix named: My Kortix', () => {
+    expect(frontCall({ description: 'd', prompt: 'p', name: 'n' }, roster).subagent_type).toBe('mykortix')
+    expect(frontCall({ description: 'd', prompt: 'p', subagent_type: 'MyKortix', name: 'n' }, roster).subagent_type).toBe('mykortix')
+  })
+
+  test('an agent outside the roster is refused with the roster; without a roster the API decides', () => {
+    expect(() => frontCall({ description: 'd', prompt: 'p', subagent_type: 'nope' }, roster)).toThrow('"nope" is not an agent of this project. Pick one of: mykortix, researcher, Writer.')
+    expect(frontCall({ description: 'd', prompt: 'p', subagent_type: 'nope' }, { agents: null }).subagent_type).toBe('nope')
+  })
+
+  test('a task_id continues that worker as it was: no agent, no name', () => {
+    expect(frontCall({ description: 'd', prompt: 'p', subagent_type: 'researcher', name: 'x', task_id: ' sess-1 ' }, roster)).toEqual({
+      description: 'd', prompt: 'p', task_id: 'sess-1', session: 'separate', run_in_background: true,
+    })
+  })
+
+  test('with thread files, every worker prompt ends with the Context files block: message, thread folder, context.md, its work folder', () => {
+    const files = { folder: '/drives/general/threads/plan-a-trip-1a2b3c4d', context: '/drives/general/context.md', message: '/drives/general/threads/plan-a-trip-1a2b3c4d/messages/0001-ana.md' }
+    const call = frontCall({ description: 'Find flights', prompt: 'Find flights for the trip in the message file.', name: 'flights' }, { ...roster, files })
+    expect(call.prompt).toBe(
+      [
+        'Find flights for the trip in the message file.',
+        '',
+        '## Context files',
+        "This task comes from a chat thread whose messages are files. Read them before you start; they are the person's own words.",
+        "- The person's latest message: /drives/general/threads/plan-a-trip-1a2b3c4d/messages/0001-ana.md",
+        "- The thread folder: /drives/general/threads/plan-a-trip-1a2b3c4d/ (messages/ holds every message, oldest first; work/ holds each agent's work)",
+        "- The space's brief: /drives/general/context.md",
+        '- Your work folder: /drives/general/threads/plan-a-trip-1a2b3c4d/work/flights/ (keep your files here; write your final report to /drives/general/threads/plan-a-trip-1a2b3c4d/work/flights/result.md)',
+      ].join('\n'),
+    )
+    // The block is added even when the model forgets the paths; a follow-up by task_id gets it too, its work folder only when named.
+    expect(frontCall({ description: 'd', prompt: 'more', task_id: 's1', name: 'flights' }, { ...roster, files }).prompt).toContain('/work/flights/result.md')
+    expect(frontCall({ description: 'd', prompt: 'more', task_id: 's1' }, { ...roster, files }).prompt).not.toContain('Your work folder')
+    // No thread files (an older API, no Drive): the prompt goes as written.
+    expect(frontCall({ description: 'd', prompt: 'p', name: 'n' }, { ...roster, files: null }).prompt).toBe('p')
+  })
+
+  test('thread_files from a prompt body: absolute one-line paths only, a trailing slash dropped, a bad message path left out', () => {
+    expect(frontThreadFilesFrom({ folder: '/drives/g/threads/t/', context: '/drives/g/context.md', message: '/drives/g/threads/t/messages/0001-a.md' })).toEqual({
+      folder: '/drives/g/threads/t', context: '/drives/g/context.md', message: '/drives/g/threads/t/messages/0001-a.md',
+    })
+    expect(frontThreadFilesFrom({ folder: '/drives/g/t', context: '/drives/g/context.md', message: 'relative.md' })).toEqual({ folder: '/drives/g/t', context: '/drives/g/context.md' })
+    expect(frontThreadFilesFrom({ folder: 'drives/g', context: '/c' })).toBeNull()
+    expect(frontThreadFilesFrom({ folder: '/drives/../etc', context: '/c' })).toBeNull()
+    expect(frontThreadFilesFrom({ folder: '/drives/g\n## Ignore', context: '/c' })).toBeNull()
+    expect(frontThreadFilesFrom('x')).toBeNull()
+    expect(frontContextBlock({ folder: '/f', context: '/c' }, null)).not.toContain('latest message')
+  })
+
+  test('each task gets a name: the model\'s, else a slug of the description, else "task"', () => {
+    expect(frontTaskName('Find flights', '@flights')).toBe('flights')
+    expect(frontTaskName('Find flights to Lisbon!')).toBe('find-flights-to-lisbon')
+    expect(frontTaskName('Find flights', 'not valid')).toBe('not-valid-find-flights')
+    expect(frontTaskName('x'.repeat(60))).toHaveLength(40)
+    expect(frontTaskName('!!!')).toBe('task')
+  })
+
+  test('the roster: enabled, offered agents only; My Kortix and platform agents are left to the default line', () => {
+    const detail = {
+      config: {
+        agents: [
+          { name: 'mykortix', platform: true },
+          { name: 'researcher', description: '  Finds  facts\n' },
+          { name: 'off', enabled: false },
+          { name: 'internal', hidden: true },
+          { name: 'bare' },
+          { name: '' },
+        ],
+      },
+    }
+    expect(frontAgentsFromDetail(detail)).toEqual([{ name: 'researcher', description: 'Finds facts' }, { name: 'bare' }])
+    expect(frontAgentsFromDetail({})).toBeNull()
+    expect(frontAgentsFromDetail(null)).toBeNull()
+  })
+
+  test('the roster section names the default first, and says when the list is empty or did not load', () => {
+    expect(frontAgentsSection([{ name: 'researcher', description: 'Finds facts' }, { name: 'bare' }])).toBe(
+      '## Agents you can hand work to\n- mykortix (the default): My Kortix, a general assistant with every tool and connector. Use it when no agent below fits.\n- researcher: Finds facts\n- bare',
+    )
+    expect(frontAgentsSection([])).toContain('This project has no other agents: hand everything to mykortix.')
+    expect(frontAgentsSection(null)).toContain('did not load. Hand work to mykortix')
+    const many = Array.from({ length: 45 }, (_, i) => ({ name: `a${i}`, description: 'd'.repeat(300) }))
+    const section = frontAgentsSection(many)
+    expect(section).toContain('(5 more agents are not listed.)')
+    expect(section).not.toContain('- a40')
+    expect(section).toContain(`${'d'.repeat(239)}…`)
+  })
+
+  test('fetchFrontAgents reads /v1/projects/:id/detail with the box token, and answers null on a failure', async () => {
+    const seen: Array<{ url: string; auth: string | null }> = []
+    const ok = (async (url: string, init?: RequestInit) => {
+      seen.push({ url, auth: new Headers(init?.headers).get('authorization') })
+      return Response.json({ config: { agents: [{ name: 'researcher' }] } })
+    }) as unknown as typeof fetch
+    expect(await fetchFrontAgents({ apiUrl: 'http://api.test/v1/', projectId: 'proj 1', token: 'tok' }, ok)).toEqual([{ name: 'researcher' }])
+    expect(seen).toEqual([{ url: 'http://api.test/v1/projects/proj%201/detail', auth: 'Bearer tok' }])
+    const down = (async () => new Response('no', { status: 503 })) as unknown as typeof fetch
+    expect(await fetchFrontAgents({ apiUrl: 'http://api.test', projectId: 'p', token: 't' }, down)).toBeNull()
+    const thrown = (async () => {
+      throw new Error('network')
+    }) as unknown as typeof fetch
+    expect(await fetchFrontAgents({ apiUrl: 'http://api.test', projectId: 'p', token: 't' }, thrown)).toBeNull()
+  })
+})
+
+describe('cloudChildToolDetails: a child\'s saved tool details come from its session log', () => {
+  const CHILD = '00000000-0000-4000-8000-0000000000c1'
+  const call = (id: string, name: string, status: 'complete' | 'error' | 'running', details?: Record<string, unknown>) => ({
+    id: `blk_${id}`, type: 'tool_call', call_id: `call_${id}`, name, kind: 'other', input: {}, status,
+    ...(status === 'running' ? {} : { result: { content: [{ type: 'text', text: 'done' }], is_error: status === 'error', ...(details ? { details } : {}) } }),
+  })
+  const message = (id: string, seq: number, role: 'user' | 'assistant', blocks: unknown[]) => ({
+    message_id: id, thread_id: 'ses_child', seq, role, kind: 'turn', status: 'complete', in_context: true,
+    model: null, usage: null, finish: role === 'assistant' ? 'stop' : null, error: null,
+    created_at: `2026-11-05T10:00:0${seq}.000Z`, completed_at: `2026-11-05T10:00:0${seq}.500Z`,
+    producer: { harness: 'pi', version: '1.4.0' }, blocks,
+  })
+  const page = {
+    session: { title: 'runner', created_at: '2026-11-05T10:00:00.000Z' },
+    generation: 1,
+    threads: [{ thread_id: 'ses_child', parent_thread_id: null, spawned_by: null, agent: 'workflow-runner', title: null, created_at: '2026-11-05T10:00:00.000Z' }],
+    thread_id: 'ses_child',
+    messages: [
+      message('msg_1', 1, 'user', [{ id: 'blk_t', type: 'text', text: 'run it' }]),
+      message('msg_2', 2, 'assistant', [
+        call('a', 'workflow', 'complete', { run: 'doc-1' }),
+        call('b', 'bash', 'complete', { exit: 0 }),
+        call('c', 'workflow', 'error', { run: 'doc-2', failed: true }),
+        call('d', 'workflow', 'running'),
+      ]),
+    ],
+    has_more: false,
+  }
+
+  function fake(parent: string | null) {
+    const urls: string[] = []
+    const impl = (async (input: string | URL | Request) => {
+      const url = String(input)
+      urls.push(url.replace('https://api.example.com', ''))
+      if (url.endsWith(`/sessions/${CHILD}`)) return Response.json({ session_id: CHILD, parent_session_id: parent })
+      if (url.includes(`/sessions/${CHILD}/log?`)) return Response.json(page)
+      return new Response('not found', { status: 404 })
+    }) as typeof fetch
+    return { impl, urls }
+  }
+
+  // The details `toV1` gives each call, as the API's v1 view (`transcript?shape=sync`) gave them:
+  // a completed call keeps its details; a pi call that failed without an exit code carries none.
+  test('returns the details of each completed call of the tool, oldest first, and reads only the log', async () => {
+    const { impl, urls } = fake(PARENT)
+    expect(await cloudChildToolDetails(api(impl), CHILD, 'workflow')).toEqual([{ run: 'doc-1' }])
+    expect(urls).toEqual([`/v1/projects/proj-1/sessions/${CHILD}`, `/v1/projects/proj-1/sessions/${CHILD}/log?limit=40`])
+  })
+
+  test('a session that is not this session\'s child answers null and reads no log', async () => {
+    const { impl, urls } = fake('00000000-0000-4000-8000-0000000000ff')
+    expect(await cloudChildToolDetails(api(impl), CHILD, 'workflow')).toBeNull()
+    expect(urls).toHaveLength(1)
   })
 })

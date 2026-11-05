@@ -33,7 +33,7 @@ export interface PendingQuestion {
   id: string;
   session_id: string;
   request_id: string;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
   questions: RuntimeQuestion[];
   asked_at: string;
 }
@@ -52,6 +52,10 @@ export async function recordPendingQuestion(input: {
   requestId: string;
   opencodeSessionId?: string | null;
   questions: RuntimeQuestion[];
+  /** The runtime parks it when nobody answers live; it stays open past the turn (session-asks.ts). */
+  parkable?: boolean;
+  surfaceSessionId?: string | null;
+  expiresAt?: string | null;
 }): Promise<(PendingQuestion & { inserted: boolean }) | null> {
   const [row] = await db
     .insert(sessionPendingQuestions)
@@ -62,6 +66,9 @@ export async function recordPendingQuestion(input: {
       requestId: input.requestId,
       runtimeSessionId: input.opencodeSessionId ?? null,
       questions: input.questions as never,
+      parkable: input.parkable === true,
+      surfaceSessionId: input.surfaceSessionId ?? null,
+      expiresAt: input.expiresAt ?? null,
     })
     .onConflictDoUpdate({
       target: [sessionPendingQuestions.sessionId, sessionPendingQuestions.requestId],
@@ -88,7 +95,7 @@ export async function recordPendingQuestion(input: {
     id: row.id,
     session_id: row.sessionId,
     request_id: row.requestId,
-    opencode_session_id: row.opencodeSessionId,
+    runtime_session_id: row.opencodeSessionId,
     // `jsonb`; only /turn-question writes it, after coercing to RuntimeQuestion[].
     questions: row.questions as RuntimeQuestion[],
     asked_at: row.askedAt,
@@ -126,7 +133,7 @@ export async function getOpenQuestion(sessionId: string): Promise<PendingQuestio
     id: row.id,
     session_id: row.sessionId,
     request_id: row.requestId,
-    opencode_session_id: row.opencodeSessionId,
+    runtime_session_id: row.opencodeSessionId,
     // `jsonb`; only /turn-question writes it, after coercing to RuntimeQuestion[].
     questions: row.questions as RuntimeQuestion[],
     asked_at: row.askedAt,
@@ -158,6 +165,29 @@ export async function getPendingQuestion(
     .where(and(eq(sessionPendingQuestions.id, id), eq(sessionPendingQuestions.projectId, projectId)))
     .limit(1);
   return row ? { ...row, questions: row.questions as RuntimeQuestion[] } : null;
+}
+
+/** An open question by its row id, in its project (`POST /asks/:askId/answer`). */
+export async function getPendingQuestionById(
+  projectId: string,
+  id: string,
+): Promise<{ sessionId: string; surfaceSessionId: string | null; requestId: string; questions: RuntimeQuestion[] } | null> {
+  const [row] = await db
+    .select({
+      sessionId: sessionPendingQuestions.sessionId,
+      surfaceSessionId: sessionPendingQuestions.surfaceSessionId,
+      requestId: sessionPendingQuestions.requestId,
+      questions: sessionPendingQuestions.questions,
+    })
+    .from(sessionPendingQuestions)
+    .where(and(eq(sessionPendingQuestions.id, id), eq(sessionPendingQuestions.projectId, projectId)))
+    .limit(1);
+  return row ? { ...row, questions: row.questions as RuntimeQuestion[] } : null;
+}
+
+/** A person dismissed the question: close it unanswered. False: it was already closed. */
+export async function dismissPendingQuestion(sessionId: string, requestId: string): Promise<boolean> {
+  return (await clearOpenQuestions(sessionId, { requestId })) > 0;
 }
 
 /**
@@ -232,10 +262,22 @@ export async function resolvePendingQuestion(input: {
  *   sent (`askedBefore`, session-lifecycle/queued-continue-delivery.ts);
  * - the runtime answered `requestId`: a person replied or dismissed it through
  *   the session proxy, or the server released a Slack/Teams question.
+ *
+ * A parkable question outlives the first two (`keepParked`): the runtime parked
+ * it, and it closes only when a person answers or dismisses it, or it expires.
  */
 export async function clearOpenQuestions(
   sessionId: string,
-  scope: { requestId?: string; askedBefore?: Date } = {},
+  scope: {
+    requestId?: string;
+    askedBefore?: Date;
+    /**
+     * Leave parkable questions open: the runtime parked them, and they wait
+     * for a person past the turn end and past later prompts (session-asks.ts).
+     * The turn end, a delivered prompt, and a runtime 404 pass it.
+     */
+    keepParked?: boolean;
+  } = {},
 ): Promise<number> {
   const rows = await db
     .update(sessionPendingQuestions)
@@ -246,6 +288,7 @@ export async function clearOpenQuestions(
         isNull(sessionPendingQuestions.answeredAt),
         scope.requestId ? eq(sessionPendingQuestions.requestId, scope.requestId) : undefined,
         scope.askedBefore ? lt(sessionPendingQuestions.askedAt, scope.askedBefore.toISOString()) : undefined,
+        scope.keepParked ? eq(sessionPendingQuestions.parkable, false) : undefined,
       ),
     )
     .returning({ id: sessionPendingQuestions.id });
@@ -272,18 +315,26 @@ export function renderAnswerPrompt(questions: unknown, answers: unknown): string
   const asked = Array.isArray(questions) ? questions.map(questionText) : [];
   const given = Array.isArray(answers) ? answers.map(answerText) : [];
   if (asked.length > 1) {
-    return `You asked:\n${asked.map((q, i) => [...(q ? [`> ${q}`] : []), given[i] ?? '(no answer given)'].join('\n')).join('\n\n')}`;
+    return `You asked:\n${asked.map((q, i) => [...(q ? [quote(q)] : []), given[i] ?? '(no answer given)'].join('\n')).join('\n\n')}`;
   }
 
   const lines: string[] = [];
   if (asked[0]) {
     lines.push('You asked:');
-    lines.push(`> ${asked[0]}`);
+    lines.push(quote(asked[0]));
     lines.push('');
   }
   const said = given.filter((t): t is string => t !== null);
   lines.push(said.length > 0 ? said.join('\n') : '(no answer given)');
   return lines.join('\n');
+}
+
+/** Every line of a question quoted, so a reader (the agent, the transcript) sees where it ends. */
+function quote(question: string): string {
+  return question
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
 }
 
 function questionText(q: unknown): string | null {

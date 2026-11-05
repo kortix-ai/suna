@@ -51,7 +51,8 @@ permission:
 ```
 
 - A rule is `allow`, `ask` or `deny`, or a map of glob pattern to one of
-  them. The most specific (longest) matching pattern wins, in any key order.
+  them. `"*"` and `all` as a rule also mean `allow`. The most specific
+  (longest) matching pattern wins, in any key order.
 - `bash` patterns match each command of the line. pi splits on `;`, `&`,
   `|` and newlines and reads `$(…)` and backtick bodies. The strictest
   answer wins.
@@ -120,8 +121,8 @@ extensions:
     pi: { source: "npm:pi-mcp-adapter@2.36.0", extensions: ["extensions/*.ts"], skills: [] }
 agents:
   kortix:
-    tools: all
-    extensions: [word-count, web-access]          # all | none | names; omitted = none
+    tools: "*"
+    extensions: [word-count, web-access]          # "*" | none | names; omitted = none
 ```
 
 ```ts

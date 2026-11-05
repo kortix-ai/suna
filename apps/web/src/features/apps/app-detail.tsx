@@ -349,10 +349,12 @@ export function AppDetailModal({
               />
             ) : showOverview ? (
               <AppOverview
+                projectId={projectId}
                 app={app}
                 triggers={triggers.data?.triggers ?? []}
                 latest={latest}
                 onVersions={canDeploy && status.deployed ? () => setVersionsOpen(true) : undefined}
+                canDeploy={canDeploy}
               />
             ) : preview || app.external_url ? (
               <AppPreview

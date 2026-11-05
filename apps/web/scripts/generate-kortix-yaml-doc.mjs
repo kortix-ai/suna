@@ -54,7 +54,8 @@ function row(key, node, required, table) {
   const textDefault = /\s*Default: (.+)\.$/.exec(described);
   const type = table.types?.[key] ?? typeOf(node);
   if (!type) throw new Error(`${key} (${table.heading}) has no type: give it one in that table's types`);
-  const fallback = node.default !== undefined ? code(node.default) : (textDefault?.[1] ?? '—');
+  // A YAML `*` must be quoted (a bare one is an alias): show the default as it is written.
+  const fallback = node.default !== undefined ? code(node.default === '*' ? '"*"' : node.default) : (textDefault?.[1] ?? '—');
   const description = [textDefault ? described.slice(0, textDefault.index) : described, table.see?.[key]].filter(Boolean).join(' ');
   return `| ${cell(code(key))} | ${cell(type)} | ${cell(required ? 'required' : fallback)} | ${cell(description)} |`;
 }

@@ -155,6 +155,100 @@
           }
         }
       }
+    },
+    "machine": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "What the computer is made of, for support. Every field is optional and null when the OS does not give it cheaply. Refreshed at most hourly. Holds no names.",
+      "properties": {
+        "os_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The OS as it names itself: `Windows 11 Pro 24H2`, `macOS 26.0`, `Ubuntu 24.04.1 LTS`."
+        },
+        "os_build": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Windows `26200.9448` (build.UBR), macOS `25A354`, Linux the kernel release."
+        },
+        "cpu": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cpu_cores": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Logical cores."
+        },
+        "memory_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Installed memory."
+        },
+        "disk_free_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Free space on the volume of the local library."
+        },
+        "disk_total_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "gpus": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Display adapters (Windows). Empty on macOS and Linux."
+        },
+        "booted_at_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "When the computer started, to the minute."
+        },
+        "timezone": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "IANA name (`Europe/Berlin`); Windows: its time zone key (`W. Europe Standard Time`)."
+        },
+        "utc_offset": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "`+01:00`."
+        },
+        "locale": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "BCP 47 tag of the person's locale: `de-DE`."
+        }
+      }
     }
   }
 }

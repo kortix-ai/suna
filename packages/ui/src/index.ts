@@ -218,7 +218,15 @@ export { useMediaQuery } from './hooks/use-media-query';
 export { useSlashFocus } from './internal/hooks/use-slash-focus';
 export { faviconUrlForHostname } from './lib/favicon';
 export { setUiHostEnv } from './lib/host-env';
-export { decodeSpaceSegment, defaultUiRoutes, setUiRoutes, uiRoutes, type UiRoutes } from './lib/routes';
+export {
+  decodeSpaceSegment,
+  defaultUiRoutes,
+  isNewSessionRequested,
+  newSessionHref,
+  setUiRoutes,
+  uiRoutes,
+  type UiRoutes,
+} from './lib/routes';
 export { DEFAULT_ICON_WEIGHT, ICON_WEIGHTS, SHIPPED_ICON_WEIGHTS } from './lib/icon-config';
 export { lazyClient } from './lib/lazy-client';
 export { spring } from './lib/springs';

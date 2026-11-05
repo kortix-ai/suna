@@ -9,7 +9,7 @@
  */
 
 import { useKeyboard } from '@opentui/react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { relativeAge } from '../../lib/relative-time.ts';
 import { glyph as GLYPH, theme } from '../../theme.ts';
@@ -56,6 +56,8 @@ export interface ArtifactsViewProps {
   onOpenSession(sessionId: string): void;
   /** Esc with nothing open. */
   onBack(): void;
+  /** Open on this artifact's details (`/shown` → Ctrl+O). The caller fetches them. */
+  initialId?: string | null;
 }
 
 type Mode = 'browse' | 'details' | 'filter' | 'rename' | 'confirm-delete';
@@ -99,11 +101,12 @@ export function ArtifactsView({
   onDelete,
   onOpenSession,
   onBack,
+  initialId = null,
 }: ArtifactsViewProps) {
-  const [mode, setMode] = useState<Mode>('browse');
+  const [mode, setMode] = useState<Mode>(initialId ? 'details' : 'browse');
   const [filter, setFilter] = useState('');
   const [draft, setDraft] = useState('');
-  const [cursorId, setCursorId] = useState<string | null>(null);
+  const [cursorId, setCursorId] = useState<string | null>(initialId);
   const [textOffset, setTextOffset] = useState(0);
 
   const rows = useMemo(() => filterArtifactRows(allRows, filter), [allRows, filter]);
@@ -112,6 +115,13 @@ export function ArtifactsView({
     return found >= 0 ? found : 0;
   }, [rows, cursorId]);
   const current = rows[cursorIndex] ?? null;
+
+  // Opened on an artifact the list does not hold (another project, gone): the
+  // list, not the details of whichever row happens to be first.
+  const missingInitial = Boolean(initialId) && !loading && !allRows.some((row) => row.id === initialId);
+  useEffect(() => {
+    if (missingInitial) setMode((value) => (value === 'details' ? 'browse' : value));
+  }, [missingInitial]);
 
   const moveTo = useCallback(
     (index: number) => {
@@ -227,7 +237,7 @@ export function ArtifactsView({
     );
   }
 
-  if (mode === 'details' && current) {
+  if (mode === 'details' && current && !(initialId && cursorId === initialId && current.id !== initialId)) {
     const updated = relativeAge(current.updatedMs, now);
     const body = detail?.text
       ? detail.text

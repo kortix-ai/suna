@@ -1,6 +1,7 @@
 'use client';
 
 
+import { ModelSwitchHistory } from '../panel/model-switch-event';
 import { uiRoutes } from '../../lib/routes';
 import { isQuestionTool } from '@kortix/sdk';
 import { SessionApprovalPrompt } from '../prompts/session-approval-prompt';
@@ -74,6 +75,8 @@ import {
 } from '../turn/message-author';
 import { stopRefusalMessage } from '../status/stop-refusal';
 import { QueuedPromptList } from '../composer/queued-prompt-list';
+import { ComposerAutoFocusContext } from '../composer/composer-focus-context';
+import { ChatQueueLines } from '../composer/chat-queue-lines';
 import { runtimePermissionLocksComposer } from '../composer/send-blockers';
 import { SessionPrintHeader } from '../print/session-print-header';
 import { useSessionPrint } from '../print/use-session-print';
@@ -125,7 +128,6 @@ import {
 } from './first-prompt-handover';
 import { CompactModal } from '../header/compact-modal';
 import { SessionSiteHeader } from '../header/session-site-header';
-import { VoiceCallSlot } from '../voice/voice-call';
 import { claimFirstTurnRow } from '../composer/inbox-row-claims';
 import { type ModelDefaultControls } from '../models/model-selector';
 import { OptimisticTurn } from './optimistic-turn';
@@ -133,8 +135,13 @@ import { inboxHoldsLivePrompt } from '../composer/inbox-live-prompt';
 import { type TurnSpan } from '../outcomes/anchor-outcomes';
 import type { Outcome } from '../../internal/outcomes/outcome-types';
 import { SessionOutcomesProvider } from '../outcomes/session-outcomes-provider';
+import { deleteMessageLinkParams, readMessageLinkParams, resolveMessageLinkTurn } from '../../internal/lib/navigation/message-link';
+
+/** How long a message link waits for the transcript's turns to mount before it jumps anyway. */
+const MESSAGE_LINK_MOUNT_WAIT_MS = 8_000;
 import { TurnOutcomes } from '../outcomes/turn-outcomes';
 import { SessionOverridesComposer } from '../overrides/session-overrides-composer';
+import { inheritedModelFor } from '../composer/chat-input/chat-input-summary';
 import {
   type QuestionAction,
   QuestionPrompt,
@@ -171,6 +178,7 @@ import type { DraftScope } from '../composer/draft/composer-draft';
 import { usePlanInChat } from './plan-surface';
 import { SessionStartingLoader } from '../status/session-starting-loader';
 import { ToolActivateContext } from '../tool/tool-renderers';
+import { AgentActivateContext } from '../tool/shared/infrastructure-contexts';
 import { ReadOnlySessionContext } from '../tool/shared/infrastructure-contexts';
 import {
   firstPromptAttachments,
@@ -212,7 +220,7 @@ import {
 } from '../composer/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '../../internal/stores/tab-store';
 import { projectSessionHref } from '../../internal/lib/navigation/session-href';
-import { type Command, type QuestionRequest, getRetryInfo } from '../../internal/session-types';
+import { type Command, type PermissionRequest, type QuestionRequest, getRetryInfo } from '../../internal/session-types';
 import { useModelPricingLookup } from '../../internal/lib/model-pricing';
 import { isAbortError, latestPromptModel, SESSION_NOTICE, turnEndNotice } from '@kortix/sdk';
 import {
@@ -267,6 +275,8 @@ import {
   useSessionTurnOutcome,
   useSessionWorking,
   useSessionWorkingStore,
+  useAnswerSessionAsk,
+  useSessionNeedsYou,
 } from '@kortix/sdk/react';
 import { useStableCallback } from '../../internal/hooks/use-stable-callback';
 import { useReloadForensics } from '../status/reload-forensics';
@@ -397,6 +407,8 @@ interface SessionChatProps {
   headerLeadingAction?: React.ReactNode;
   /** Hide the session site header entirely */
   hideHeader?: boolean;
+  /** Paint no background: the host's surface shows through (an agent in the side panel's card). */
+  transparent?: boolean;
   /** Read-only mode — hides the chat input bar (used for sub-session modal viewer) */
   readOnly?: boolean;
   /** The composer's placeholder (a channel thread says "Reply…"). Default: the composer's own. */
@@ -476,6 +488,7 @@ export function SessionChat({
   boundAgentName,
   headerLeadingAction,
   hideHeader,
+  transparent = false,
   readOnly,
   composerPlaceholder,
   inputReplacement,
@@ -488,6 +501,7 @@ export function SessionChat({
   const tHardcodedUi = useTranslations('hardcodedUi');
   // A channel's thread panel: turns are message rows, full width, end-anchored.
   const rowsContext = useContext(TranscriptRowsContext);
+  const composerAutoFocus = useContext(ComposerAutoFocusContext);
   const transcriptRows = rowsContext !== null;
   const isMobile = useIsMobile();
   const isPhone = useIsPhone();
@@ -532,6 +546,20 @@ export function SessionChat({
     [sessionId, setSidePanelView, focusToolCall],
   );
   const toolActivate = readOnly || disableToolNavigation ? null : handleToolActivate;
+
+  // Clicking an agent (a sub-agent row, its finish notice, a workflow agent, the
+  // agents line) opens that agent's session in the side panel, beside the chat.
+  const focusAgent = useKortixComputerStore((s) => s.focusAgent);
+  const handleAgentActivate = useCallback(
+    (agent: { sessionId: string; title: string; handle: string; task?: string; failure?: string }) => {
+      const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;
+      setSidePanelView(sessionId, 'actions');
+      focusAgent(agent);
+      if (!wasOpen) track('panel_opened', { source: 'chat_agent' });
+    },
+    [sessionId, setSidePanelView, focusAgent],
+  );
+  const agentActivate = readOnly || disableToolNavigation ? null : handleAgentActivate;
 
   // ---- Context modal ----
   const [contextModalOpen, setContextModalOpen] = useState(false);
@@ -1789,12 +1817,37 @@ export function SessionChat({
   // ---- Pending permissions & questions ----
   const allPermissions = useRuntimePendingStore((s) => s.permissions);
   const allQuestions = useRuntimePendingStore((s) => s.questions);
-  const pendingPermissions = useMemo(
+  const livePermissions = useMemo(
     () =>
       sessionState?.permissions ??
       Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
     [sessionState?.permissions, allPermissions, sessionId],
   );
+  // Asks that parked: nobody answered live, the agent went on, and the ask
+  // waits server-side (Review, "Needs you"). They render with the same cards
+  // and are decided through the asks API, which resumes the session that
+  // asked (a hidden worker's asks show here too). Live asks keep their cards.
+  const parkedAsks = useSessionNeedsYou(projectId ?? '', projectSessionId ?? '', {
+    enabled: Boolean(projectId && projectSessionId),
+  }).asks;
+  const parkedAskIdByRequest = useMemo(
+    () => new Map(parkedAsks.filter((ask) => ask.kind !== 'approval').map((ask) => [ask.request_id, ask.id])),
+    [parkedAsks],
+  );
+  const pendingPermissions = useMemo(() => {
+    const live = new Set(livePermissions.map((p) => p.id));
+    const parked = parkedAsks
+      .filter((ask) => ask.kind === 'permission' && ask.permission && !live.has(ask.request_id))
+      .map((ask): PermissionRequest => ({
+        id: ask.request_id,
+        sessionID: sessionId,
+        permission: ask.permission!.permission,
+        patterns: ask.permission!.patterns,
+        metadata: ask.permission!.args && typeof ask.permission!.args === 'object' ? (ask.permission!.args as Record<string, unknown>) : {},
+        always: ['*'],
+      }));
+    return parked.length ? [...livePermissions, ...parked] : livePermissions;
+  }, [livePermissions, parkedAsks, sessionId]);
   const suppressedQuestionIdsRef = useRef<Map<string, number>>(new Map());
   const suppressQuestionFor = useCallback((requestId: string, ms = 15000) => {
     suppressedQuestionIdsRef.current.set(requestId, Date.now() + ms);
@@ -1808,7 +1861,7 @@ export function SessionChat({
     }
     return true;
   }, []);
-  const pendingQuestions = useMemo(
+  const liveQuestions = useMemo(
     () =>
       (
         sessionState?.questions ??
@@ -1816,6 +1869,13 @@ export function SessionChat({
       ).filter((q) => !isQuestionSuppressed(q.id)),
     [sessionState?.questions, allQuestions, sessionId, isQuestionSuppressed],
   );
+  const pendingQuestions = useMemo(() => {
+    const live = new Set(liveQuestions.map((q) => q.id));
+    const parked = parkedAsks
+      .filter((ask) => ask.kind === 'question' && ask.question && !live.has(ask.request_id) && !isQuestionSuppressed(ask.request_id))
+      .map((ask): QuestionRequest => ({ id: ask.request_id, sessionID: sessionId, questions: ask.question!.questions as QuestionRequest['questions'] }));
+    return parked.length ? [...liveQuestions, ...parked] : liveQuestions;
+  }, [liveQuestions, parkedAsks, sessionId, isQuestionSuppressed]);
   /**
    * The runtime is parked on an answer only the user can give.
    *
@@ -1831,7 +1891,8 @@ export function SessionChat({
    * come back the instant the agent is running again, not a third of a second
    * later.
    */
-  const awaitingUserInput = pendingQuestions.length > 0 || pendingPermissions.length > 0;
+  // Live asks only: a parked ask no longer holds the turn.
+  const awaitingUserInput = liveQuestions.length > 0 || livePermissions.length > 0;
   const QUESTION_PROMPT_ANIMATION_MS = 320;
   const activePendingQuestion = pendingQuestions[0] ?? null;
   // A new question docks over the bottom of the transcript, and answering it
@@ -2435,8 +2496,16 @@ export function SessionChat({
   const removePermission = useRuntimePendingStore((s) => s.removePermission);
   const removeQuestion = useRuntimePendingStore((s) => s.removeQuestion);
 
+  const answerParkedAsk = useAnswerSessionAsk(projectId ?? '');
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: 'once' | 'always' | 'reject') => {
+      // A parked ask: the call no longer waits, so the decision goes through
+      // the asks API (it reaches the agent as a message).
+      const parkedAskId = livePermissions.some((p) => p.id === requestId) ? undefined : parkedAskIdByRequest.get(requestId);
+      if (parkedAskId) {
+        await answerParkedAsk.mutateAsync({ askId: parkedAskId, answer: { reply } });
+        return;
+      }
       // No optimistic remove: only drop the card once the runtime accepted the
       // reply — a failed reply must stay answerable. Rethrow so callers
       // (prompt buttons) reset their busy state and surface the error.
@@ -2447,7 +2516,7 @@ export function SessionChat({
         removePermission(requestId);
       }
     },
-    [sessionState, removePermission],
+    [sessionState, removePermission, livePermissions, parkedAskIdByRequest, answerParkedAsk],
   );
 
   const handleQuestionReply = useCallback(
@@ -2461,6 +2530,12 @@ export function SessionChat({
       suppressQuestionFor(requestId);
       // Optimistically remove the question so the textarea shows immediately
       removeQuestion(requestId);
+      const parkedAskId = liveQuestions.some((q) => q.id === requestId) ? undefined : parkedAskIdByRequest.get(requestId);
+      if (parkedAskId) {
+        // Parked: the answer reaches the agent as a message that quotes the question.
+        answerParkedAsk.mutate({ askId: parkedAskId, answer: { answers } });
+        return;
+      }
 
       // Save the answers in the optimistic cache keyed by the question call's
       // block id. This cache survives updates that may overwrite the call
@@ -2490,7 +2565,7 @@ export function SessionChat({
         // ignore — SSE "question.replied" event will also remove it
       }
     },
-    [sessionState, removeQuestion, suppressQuestionFor],
+    [sessionState, removeQuestion, suppressQuestionFor, liveQuestions, parkedAskIdByRequest, answerParkedAsk],
   );
 
   const handleQuestionReject = useCallback(
@@ -2498,6 +2573,12 @@ export function SessionChat({
       suppressQuestionFor(requestId);
       // Optimistically remove the question so the textarea shows immediately
       removeQuestion(requestId);
+      const parkedAskId = liveQuestions.some((q) => q.id === requestId) ? undefined : parkedAskIdByRequest.get(requestId);
+      if (parkedAskId) {
+        // Dismissing a parked question closes it; nothing runs, so nothing is stopped.
+        answerParkedAsk.mutate({ askId: parkedAskId, answer: { dismiss: true } });
+        return;
+      }
       try {
         if (sessionState) await sessionState.rejectQuestion(requestId);
         else await rejectQuestion(requestId);
@@ -2559,7 +2640,8 @@ export function SessionChat({
   useEffect(() => {
     outcomeJumpRef.current = { sessionId, hasOlder, isLoadingOlder, loadOlder };
   }, [sessionId, hasOlder, isLoadingOlder, loadOlder]);
-  const handleJumpToOutcome = useCallback(async (resolveTurn: () => string | undefined, createdAt: number) => {
+  // `quiet`: a jump the reader did not click (a `?m=` link) fails silently, without the change-request toasts.
+  const handleJumpToOutcome = useCallback(async (resolveTurn: () => string | undefined, createdAt: number, quiet = false) => {
     if (jumpingToOutcome) return;
     setJumpingToOutcome(true);
     const currentSession = sessionId;
@@ -2575,9 +2657,11 @@ export function SessionChat({
           settle,
         },
         resolve: () => outcomeJumpRef.current.sessionId === currentSession ? resolveTurn() : undefined,
-        loadError: () => errorToast(tChangeRequests('loadError')),
+        loadError: () => {
+          if (!quiet) errorToast(tChangeRequests('loadError'));
+        },
         unavailable: () => {
-          if (outcomeJumpRef.current.sessionId === currentSession) errorToast(tChangeRequests('unavailable'));
+          if (!quiet && outcomeJumpRef.current.sessionId === currentSession) errorToast(tChangeRequests('unavailable'));
         },
         scroll: async (key) => {
           if (mobileChangeRequests) {
@@ -2604,7 +2688,7 @@ export function SessionChat({
         },
       });
     } catch {
-      errorToast(tChangeRequests('loadError'));
+      if (!quiet) errorToast(tChangeRequests('loadError'));
     } finally {
       setJumpingToOutcome(false);
     }
@@ -3940,13 +4024,51 @@ export function SessionChat({
     [projectId, projectSessionId, agentsLineCompact],
   );
 
+  // A space's thread lists only the queue's live messages in its card: failed
+  // ones and a Stop hold read as calm lines (`ChatQueueLines`), reports wait behind Resume.
+  const calmRest = useMemo(
+    () => [...queueRows.rows, ...heldCommandRows(heldCommands)].filter((row) => row.state !== 'failed' && !row.synthetic),
+    [queueRows.rows, heldCommands],
+  );
   // The queued messages and the one Resume while a Stop holds the queue: their
-  // own full-width card above the composer stack, not inside the strip. A live
-  // voice call is the card above them (nothing unless a call is open).
+  // own full-width card above the composer stack, not inside the strip.
   const chatAboveSlot = useMemo(
     () => (
       <>
-        <VoiceCallSlot sessionId={projectSessionId} />
+        {rowsContext?.messagesOnly ? (
+          // A space's thread: calm lines ("Not sent · Retry", "Stopped · Resume"), the card only for queued messages.
+          <ChatQueueLines
+            rows={queueRows.rows}
+            heldCount={queueRows.heldCount}
+            resumePending={resumePending}
+            onResume={() => void handleResumeQueue()}
+            onRetry={handleRetryQueuedMessage}
+          >
+            {calmRest.length > 0 ? (
+          <QueuedPromptList
+            rows={calmRest}
+            heldCount={0}
+            resumePending={resumePending}
+            onResume={() => void handleResumeQueue()}
+            onEdit={(id) => {
+              queueEdit.takeBack(id);
+            }}
+            onRemove={(id) => {
+              if (id.startsWith(HELD_COMMAND_ROW_PREFIX)) {
+                const heldId = id.slice(HELD_COMMAND_ROW_PREFIX.length);
+                setHeldCommands((held) => held.filter((entry) => entry.id !== heldId));
+                return;
+              }
+              void handleRemoveQueuedMessage(id);
+            }}
+            onRetry={handleRetryQueuedMessage}
+            onStopAndSend={effectiveBusy && canStop ? handleStopAndSendQueuedMessage : undefined}
+            editing={queueEdit.editing}
+            onCancelEdit={queueEdit.cancel}
+          />
+            ) : null}
+          </ChatQueueLines>
+        ) : (
         <QueuedPromptList
           rows={heldCommands.length > 0 ? [...queueRows.rows, ...heldCommandRows(heldCommands)] : queueRows.rows}
           heldCount={queueRows.heldCount}
@@ -3968,10 +4090,12 @@ export function SessionChat({
           editing={queueEdit.editing}
           onCancelEdit={queueEdit.cancel}
         />
+        )}
       </>
     ),
     [
-      projectSessionId,
+      rowsContext?.messagesOnly,
+      calmRest,
       heldCommands,
       queueEdit.editing,
       queueEdit.cancel,
@@ -4213,6 +4337,61 @@ export function SessionChat({
   useEffect(() => {
     if (crParam) setOpenCrIdState(crParam);
   }, [crParam]);
+
+  // ---- Message link: `?m=<message_id>&at=<ms>` (the gateway request log's "Open in session") ----
+  // Once per link, after the transcript first paints: page back until the turn
+  // is loaded, scroll to it, flash it, then drop `m`/`at` so a reload stays put.
+  const messageLink = readOnly ? null : readMessageLinkParams(searchParams);
+  const messageLinkKey = messageLink ? `${sessionId}|${messageLink.messageId ?? ''}|${messageLink.at ?? ''}` : null;
+  const linkTurnsRef = useRef(turns);
+  useEffect(() => {
+    linkTurnsRef.current = turns;
+  }, [turns]);
+  const jumpedLinkRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!messageLink || !messageLinkKey || isDataLoading || turns.length === 0) return;
+    if (jumpedLinkRef.current === messageLinkKey) return;
+    jumpedLinkRef.current = messageLinkKey;
+    const resolve = () => resolveMessageLinkTurn(linkTurnsRef.current, messageLink);
+    // An in-app navigation has the transcript cached: `turns` exist frames before
+    // their `[data-turn-id]` nodes mount, and the first paint scrolls to the
+    // bottom. Jump only once the turns are in the DOM and that scroll has run,
+    // else the scroll finds no node and the link lands at the bottom.
+    let cancelled = false;
+    let jumped = false;
+    const startedAt = Date.now();
+    const jump = () => {
+      jumped = true;
+      // Already on screen: no history to load. Else `at`, or NaN (load it all) for an id alone.
+      const createdAt = resolve() ? Number.MAX_SAFE_INTEGER : (messageLink.at ?? Number.NaN);
+      void handleJumpToOutcome(resolve, createdAt, true).finally(() => {
+        const params = new URLSearchParams(searchParams?.toString());
+        deleteMessageLinkParams(params);
+        const qs = params.toString();
+        shallowNavigate(qs ? `${pathname}?${qs}` : pathname, { replace: true });
+      });
+    };
+    const waitForTurns = () => {
+      if (cancelled) return;
+      const mounted = !!contentRef.current?.querySelector('[data-turn-id]');
+      if (!mounted && Date.now() - startedAt < MESSAGE_LINK_MOUNT_WAIT_MS) {
+        window.setTimeout(waitForTurns, 100);
+        return;
+      }
+      // Two frames: the first paint's bottom scroll lands before the jump, never after it.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!cancelled) jump();
+      }));
+    };
+    waitForTurns();
+    return () => {
+      cancelled = true;
+      // A wait cancelled before it jumped runs again on the next pass; a jump in flight is not repeated.
+      if (!jumped && jumpedLinkRef.current === messageLinkKey) jumpedLinkRef.current = null;
+    };
+    // `messageLinkKey` stands for `messageLink`, which is a new object every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageLinkKey, isDataLoading, turns.length, handleJumpToOutcome, searchParams, pathname, shallowNavigate, contentRef]);
   const handleOpenOutcome = useCallback(
     (outcome: Outcome) => {
       // Change requests are the only kind a turn produces. `external` exists on
@@ -4245,7 +4424,7 @@ export function SessionChat({
     // screen, staleness is repaired in the background instead.
     if (transcriptFreshness === 'error' && !hasMessages) {
       return (
-        <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
+        <div className={cn('relative flex h-full flex-col', !transparent && 'bg-background')} data-testid="session-chat">
           <div
             className="flex flex-1 flex-col items-center justify-center gap-3 p-6"
             data-testid="session-transcript-error"
@@ -4261,7 +4440,7 @@ export function SessionChat({
       );
     }
     return (
-      <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
+      <div className={cn('relative flex h-full flex-col', !transparent && 'bg-background')} data-testid="session-chat">
         {/* `projectId`/`sessionId` are what arm the loader's restart offer
             (`canRestart`). Without them a session wedged in this state spun
             forever with no way out but a page reload. */}
@@ -4276,6 +4455,7 @@ export function SessionChat({
   return (
     // A read-only view (the sub-session modal) offers no fix inside a tool card.
     <ReadOnlySessionContext.Provider value={!!readOnly}>
+    <AgentActivateContext.Provider value={agentActivate}>
     <SessionPromptContext.Provider value={readOnly ? null : sendSessionPrompt}>
     {/* Outcomes' cache coherence and the shareable `?cr=` link both hinge on
         ONE `ProjectFilesProvider`: `useChangeRequests` inside
@@ -4293,7 +4473,7 @@ export function SessionChat({
           // Transparent in the welcome state so the root-level full-bleed wallpaper
           // (portaled into SessionLayout) reads through; solid once real content
           // takes over. Same base color either way, so non-welcome is unchanged.
-          shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+          shouldShowWelcomeOverlay || transparent ? 'bg-transparent' : 'bg-background',
         )}
         data-testid="session-chat"
       >
@@ -4330,6 +4510,8 @@ export function SessionChat({
             parent={parentCrumb}
           />
         )}
+
+        <ModelSwitchHistory history={projectSessionRow?.metadata?.model_switches} current={projectSessionRow?.metadata?.model} />
 
         {/* Context modal — triple-click the session title area to open */}
         <SessionContextModal
@@ -4410,7 +4592,7 @@ export function SessionChat({
                   // teleport: ours restores the reader's position, then the
                   // native one nudges it again.
                   'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto] [overflow-anchor:none]',
-                  shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+                  shouldShowWelcomeOverlay || transparent ? 'bg-transparent' : 'bg-background',
                 )}
                 onMouseUp={handleChatMouseUp}
                 onMouseDown={handleChatMouseDown}
@@ -4955,7 +5137,8 @@ export function SessionChat({
                 // `undefined`, not `true`, once released: the composer's own
                 // viewport rule (>= 640px) still decides, so this never forces
                 // focus onto a phone keyboard.
-                autoFocus={deferComposerFocus ? false : undefined}
+                // A thread a space's chat opened by itself does not take the focus (`ComposerAutoFocusContext`).
+                autoFocus={deferComposerFocus || !composerAutoFocus ? false : undefined}
                 onSend={async (text, files, mentions, attachments, placement) => {
                   if (await queueEdit.save(text)) return;
                   // Enter while a turn runs steers it (D9.1); Cmd/Ctrl+Enter is Queue List.
@@ -5015,6 +5198,7 @@ export function SessionChat({
                 selectedModel={local.model.currentKey ?? null}
                 onModelChange={handleModelChange}
                 modelDefaultControls={chatModelDefaultControls}
+                inheritedModel={inheritedModelFor(local.model, composerAgentName)}
                 variants={local.model.variant.list}
                 selectedVariant={local.model.variant.current ?? null}
                 onVariantChange={handleVariantChange}
@@ -5038,7 +5222,7 @@ export function SessionChat({
                 // Same dead-prompt guard as questions: only lock while the agent is
                 // actually paused on the decision (isBusy), so a stale card can't
                 // swallow the composer on an idle session.
-                lockForApproval={runtimePermissionLocksComposer(pendingPermissions.length, isBusy)}
+                lockForApproval={runtimePermissionLocksComposer(livePermissions.length, isBusy)}
                 onCustomAnswer={handleCustomAnswer}
                 questionButtonLabel={renderedQuestion ? questionAction.label : null}
                 questionActive={!!renderedQuestion || approvalDocked}
@@ -5078,6 +5262,7 @@ export function SessionChat({
       </ComposerDropZone>
     </ProjectFilesProvider>
     </SessionPromptContext.Provider>
+    </AgentActivateContext.Provider>
     </ReadOnlySessionContext.Provider>
   );
 }

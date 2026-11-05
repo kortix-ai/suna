@@ -18,6 +18,8 @@ import { kickStartupPreBuild } from '../../snapshots/builder';
 import type { Job } from '../runtime/job';
 import { startAccountDeletionSchedule, stopAccountDeletionSchedule } from './account-deletion';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './active-turn-renewal';
+import { startArtifactDocCompaction, stopArtifactDocCompaction } from './artifact-doc-compaction';
+import { startArtifactDocGc, stopArtifactDocGc } from './artifact-doc-gc';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './app-deployment';
 import { startAppIdleReaper, stopAppIdleReaper } from './app-idle-reaper';
 import { startApprovalExpirySweeper, stopApprovalExpirySweeper } from './approval-expiry';
@@ -39,6 +41,7 @@ import { startProjectMaintenance, stopProjectMaintenance } from './project-maint
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './project-snapshot';
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './provider-transition';
 import { startResidentialProxyBillingWorker, stopResidentialProxyBillingWorker } from './residential-proxy-billing';
+import { startRetentionErasureWorker, stopRetentionErasureWorker } from './retention-erasure';
 import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './session-log-purge';
 import { startStorageBillingWorker, stopStorageBillingWorker } from './storage-billing';
 import { startSessionModelFallbackWorker, stopSessionModelFallbackWorker } from './session-model-fallback';
@@ -109,6 +112,10 @@ export const JOBS: readonly Job[] = [
   // Close Slack/Teams live cards whose run ended without a reply.
   { ticks: { 'slack-turn-gc': 20 * MIN }, start: startSlackTurnGc, stop: stopSlackTurnGc },
   { ticks: { 'teams-turn-gc': 20 * MIN }, start: startTeamsTurnGc, stop: stopTeamsTurnGc },
+  // Live states of co-edited doc Artifacts idle 10 min and fully flushed (KRTX-3670).
+  { ticks: { 'artifact-doc-gc': 20 * MIN }, start: startArtifactDocGc, stop: stopArtifactDocGc },
+  // Live docs past the row threshold, one small window at a time, inside a time budget (KRTX-3670).
+  { ticks: { 'artifact-doc-compaction': 10 * MIN }, start: startArtifactDocCompaction, stop: stopArtifactDocCompaction },
   // The Discord Gateway: the one connection that delivers the bot's messages (channels/discord/gateway.ts).
   { ticks: { 'discord-gateway': 10 * MIN }, start: startDiscordGateway, stop: stopDiscordGateway },
   // Scheduled account deletions past their 14-day grace; the first tick drains the backlog.
@@ -117,6 +124,8 @@ export const JOBS: readonly Job[] = [
   { ticks: { 'notification-digest': 10 * MIN }, start: startNotificationWorker, stop: stopNotificationWorker },
   // Retention purge of session content.
   { ticks: { 'session-log-purge': 3 * HOUR }, start: startSessionLogPurgeWorker, stop: stopSessionLogPurgeWorker },
+  // The 90-day retention backstop: closures still open 80 days after their date. Daily; a minute apart while a backlog lasts.
+  { ticks: { 'retention-erasure': 26 * HOUR }, start: startRetentionErasureWorker, stop: stopRetentionErasureWorker },
   // Idle sessions off a fallback model once their own model serves again.
   { ticks: { 'session-model-fallback': 10 * MIN }, start: startSessionModelFallbackWorker, stop: stopSessionModelFallbackWorker },
   // Closed pending days of the gateway spend running total.

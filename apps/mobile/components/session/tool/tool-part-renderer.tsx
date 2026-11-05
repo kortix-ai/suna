@@ -16,7 +16,7 @@
 
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
-import { getToolInfo, partOutcome, sessionLogOpenCall, stripAnsi, type ToolCallBlock } from '@kortix/sdk';
+import { getChildSessionId, getToolInfo, parseWorkflowRun, partOutcome, sessionLogOpenCall, stripAnsi, toolKind, type ToolCallBlock } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import type { PermissionRequest } from '@/lib/session/types';
 import { usePendingPermissions } from '@/lib/session/session-store';
@@ -42,7 +42,7 @@ import {
 } from './shared/infrastructure';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from './shared/styles';
 import { getToolIconByName } from './shared/tool-icons';
-import { partError, partInput, partRawOutput, partStatus } from '@/lib/session/tool-part-accessors';
+import { partError, partInput, partMetadata, partRawOutput, partStatus } from '@/lib/session/tool-part-accessors';
 import { ToolError } from './tool-error';
 import { ToolRegistry } from './shared/registry';
 export type PermissionReply = 'once' | 'always' | 'reject';
@@ -190,8 +190,14 @@ function ToolPartRendererImpl({
 
   if (call.name === 'todoread') return null;
 
-  // The image card draws its own failure and a stop in place of the image.
-  if (partStatus(call) === 'error' && call.name !== 'image_gen') {
+  // The image card draws its own failure and a stop in place of the image. As on web
+  // (`drawsOwnError`), an agent call with a child session keeps its row (Open, why it did not
+  // finish), and a failed workflow keeps its agents' rows.
+  const drawsOwnError =
+    call.name === 'image_gen' ||
+    (toolKind(call.name) === 'task' && Boolean(getChildSessionId(call))) ||
+    (call.name === 'workflow' && parseWorkflowRun(partMetadata(call)) !== null);
+  if (partStatus(call) === 'error' && !drawsOwnError) {
     const { display, server } = toolDisplayName(call.name);
     return (
       <RowAmbient running={false} stale={false} turnLive={turnLive} outcome={outcome} durationMs={durationMs}>

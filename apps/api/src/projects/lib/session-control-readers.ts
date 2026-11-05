@@ -194,6 +194,6 @@ export async function readSessionControlState(sessionId: string): Promise<Sessio
     known: true,
     title: named(metadata.custom_name) ?? named(metadata.name),
     secrets_rev: secretsRev,
-    model_rev: `${String(metadata.opencode_model ?? '')}:${String(metadata.opencode_model_source ?? '')}:${String(metadata.opencode_model_fallback_at ?? '')}`,
+    model_rev: `${String(metadata.model ?? '')}:${String(metadata.model_source ?? '')}:${String(metadata.model_fallback_at ?? '')}`,
   };
 }

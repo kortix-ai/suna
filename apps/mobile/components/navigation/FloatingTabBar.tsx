@@ -43,8 +43,8 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 import { FLOATING_BAR_HEIGHT } from '@/components/navigation/tab-bar-layout';
 import {
   LIQUID_GLASS_AVAILABLE,
-  LiquidGlassCapsule,
-} from '@/components/kortix/liquid-glass-capsule';
+  LiquidGlass,
+} from '@/components/kortix/liquid-glass';
 
 // House motion tokens: the house ease-out-quint family, shortened for a
 // small on-screen move; press curves match the house press-scale values.
@@ -128,7 +128,8 @@ export interface FloatingTabItem {
  * 2026-09-23) — one look everywhere.
  *
  * `glass` (KRTX-2928): on iOS 26+ the capsule is Liquid Glass
- * (`LiquidGlassCapsule`) instead of the opaque `background`/`card` fill, its
+ * (`LiquidGlass`, the system material wrapped around the capsule, so it
+ * responds to touch) instead of the opaque `background`/`card` fill, its
  * shadow and its border. Android and older iOS keep the opaque capsule. The
  * switcher sheets (account/project, agent/model) and Review's segment bar pass it.
  */
@@ -228,14 +229,13 @@ export function FloatingTabCapsule({
 
   const glassy = glass && LIQUID_GLASS_AVAILABLE;
   const surface = glassy ? '' : isDark ? 'border border-border bg-card' : 'bg-background';
-  return (
+  const capsule = (
     <View
       className={`rounded-full p-1 ${surface}`}
       style={{
         height: FLOATING_BAR_HEIGHT,
         boxShadow: glassy || isDark ? undefined : LIGHT_SHADOW,
       }}>
-      {glassy ? <LiquidGlassCapsule /> : null}
       <GestureDetector gesture={pan}>
         <View
           className="relative h-full flex-row"
@@ -261,4 +261,5 @@ export function FloatingTabCapsule({
       </GestureDetector>
     </View>
   );
+  return glassy ? <LiquidGlass>{capsule}</LiquidGlass> : capsule;
 }

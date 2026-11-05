@@ -151,7 +151,7 @@ describe('useSession negotiates the session log without its chat engine', () => 
     serveLog = true;
     // A ready box (a fresh ready answer is served from cache): the runtime stream joins, and carries the log.
     queryClient.setQueryData(sessionStartKey(PROJECT_ID, SESSION_ID), {
-      stage: 'ready', agent_name: 'default', retriable: false, reason: 'unchanged', opencode_session_id: 'ses_log_host', runtime_url: '/p/sbx_log/8000',
+      stage: 'ready', agent_name: 'default', retriable: false, reason: 'unchanged', runtime_session_id: 'ses_log_host', runtime_url: '/p/sbx_log/8000',
       sandbox: { sandbox_id: SESSION_ID, session_id: SESSION_ID, project_id: PROJECT_ID, account_id: 'acct', provider: 'platinum', external_id: 'sbx_log', base_url: null, status: 'active', config: {}, metadata: {}, last_used_at: null, created_at: '2026-10-14T00:00:00Z', updated_at: '2026-10-14T00:00:00Z' },
     } as unknown as SessionStartResult);
     const seen: { thread: SessionLogThread | null } = { thread: null };
@@ -342,11 +342,13 @@ describe('useSession with its chat engine: the session log owns the history once
       expect(reads.filter((r) => !r.startsWith('/kortix/'))).toEqual([]);
     });
 
-    test('control: the same open on a box without runtime.log.v1 still reads the v1 routes', async () => {
+    // The API hands out no box below the runtime floor, so an answer without the list is no
+    // reason to fall back: the open reads the box log and no v1 route.
+    test('a ready answer whose capability list lacks runtime.log.v1 reads the same, and no v1 route', async () => {
       await open(['session.log.v2', 'runtime.actions.v1']);
       const reads = boxReads();
-      expect(reads).not.toContain('/kortix/runtime/log');
-      expect(reads.filter((r) => !r.startsWith('/kortix/')).length).toBeGreaterThan(0);
+      expect(reads).toContain('/kortix/runtime/log');
+      expect(reads.filter((r) => !r.startsWith('/kortix/'))).toEqual([]);
     });
   });
 });

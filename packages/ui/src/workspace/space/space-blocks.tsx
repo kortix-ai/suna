@@ -20,7 +20,6 @@ import Loading from '../../primitives/loading';
 import { useFilePreviewStore } from '../../internal/stores/file-preview-store';
 import { framePolicy } from '../../files/viewer/preview-policy';
 import { cn } from '../../lib/utils';
-import { SpaceRoom } from './space-room';
 
 /**
  * A space's board tab, rendered as a simple responsive grid of blocks.
@@ -40,7 +39,9 @@ import { SpaceRoom } from './space-room';
  *
  * Block renderers: `text` is markdown, `iframe` a sandboxed frame, `artifact`
  * opens the Files viewer, `app` the live pooled `AppPreview` for the resolved
- * slug, `chat` the project room named `room` (`SpaceRoom`, flag `agent_rooms`).
+ * slug. A `chat` block (a project room) renders nothing: Rooms were removed
+ * (2026-11), and the manifest still accepts the block so an old kortix.yaml
+ * stays valid.
  */
 export function SpaceBlocks({
   projectId,
@@ -52,9 +53,9 @@ export function SpaceBlocks({
   if (!blocks.length) return null;
   return (
     <div className="grid w-full gap-4 sm:grid-cols-2">
-      {blocks.map((block, index) => (
-        <SpaceBlockCard key={index} projectId={projectId} block={block} />
-      ))}
+      {blocks.map((block, index) =>
+        block.type === 'chat' ? null : <SpaceBlockCard key={index} projectId={projectId} block={block} />,
+      )}
     </div>
   );
 }
@@ -83,20 +84,6 @@ function SpaceBlockCard({ projectId, block }: { projectId: string; block: SpaceB
   const Icon = TYPE_ICON[block.type];
   const label = block.label?.trim() || TYPE_FALLBACK_LABEL[block.type];
   const t = useTranslations('spaces');
-
-  // A chat block is a room: the host's room panel draws its own frame.
-  if (block.type === 'chat') {
-    return block.room?.trim() ? (
-      <SpaceRoom projectId={projectId} roomName={block.room.trim()} className="min-w-0" />
-    ) : (
-      <div className={PANEL}>
-        <div className="flex items-center gap-2 px-4 py-2.5">
-          <BlockTitle icon={Icon} label={label} />
-        </div>
-        <EmptyLine>{t('noRoom')}</EmptyLine>
-      </div>
-    );
-  }
 
   // A clickable artifact is its own `<button>` (whole card opens the file), so
   // the header is shared by the rest and skipped there.

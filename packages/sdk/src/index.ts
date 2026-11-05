@@ -86,29 +86,6 @@ export type * from './core/files/types';
 export { generateSessionId } from './platform/session-id';
 
 /**
- * The framework-free outbound message queue — a host's "type while the agent is
- * still working" buffer, as pure reducers over a `SessionQueue` value (no
- * store, no React, no timers). Previously reachable ONLY from
- * `@kortix/sdk/message-queue`, which made the queue a fourth entry point you
- * had to know existed. Re-exported here so the root really is canonical; the
- * subpath keeps working as an alias.
- */
-export {
-  claimNext,
-  completeInFlight,
-  createSessionQueue,
-  editQueued,
-  enqueue,
-  failInFlight,
-  removeQueued,
-  reorderQueued,
-  retryFailed,
-  type QueuedMessage,
-  type QueuedMessageInput,
-  type SessionQueue,
-} from './core/session/message-queue';
-
-/**
  * Session transcript formatting — pure `SessionInfo`/`MessageWithParts` →
  * Markdown, zero DOM deps, so any host (web, mobile, CLI) exports a transcript
  * the same way.
@@ -126,7 +103,7 @@ export {
  * A session's runtime surface — proxy/preview/web-proxy URL building + the
  * `/kortix/health` liveness probe. The host reaches these through the session
  * handle (`createKortix(...).session(pid, sid).health()/.previewUrl()/.proxyUrl()`);
- * stateless helpers live at `@kortix/sdk/session`. "Sandbox" never appears in the
+ * the stateless helpers are exported here too. "Sandbox" never appears in the
  * public surface — a session owns its runtime.
  */
 export type { RuntimeCapability, SessionHealthResponse, SessionHealthResult } from './core/session/health';
@@ -225,8 +202,7 @@ export {
  * of a message and normalizes its `info.error` into a `TurnError`, so a host
  * doesn't have to special-case "assistant message with zero parts but a
  * failure" as silent nothingness. `toolInfo` is a zero-icon tool-name ->
- * {label, category} registry a host maps to its own icon set. Also available
- * from `@kortix/sdk/turns`.
+ * {label, category} registry a host maps to its own icon set.
  */
 export {
   type ClassifiedAgentPart,
@@ -259,7 +235,7 @@ export {
  * down to the ~12 events a product chat UI needs (message/part updates,
  * session status/idle/error, question asked/answered, permission
  * asked/replied, todo updated, connection, heartbeat-gap), reshaped into
- * purpose-built payloads. Also available from `@kortix/sdk/event-stream`.
+ * purpose-built payloads.
  */
 export {
   heartbeatGapEvent,
@@ -272,6 +248,7 @@ export {
   type KortixChatEventPartRemoved,
   type KortixChatEventPartUpdated,
   type KortixChatEventPermissionAsked,
+  type KortixChatEventPermissionParked,
   type KortixChatEventPermissionReplied,
   type KortixChatEventQuestionAnswered,
   type KortixChatEventQuestionAsked,
@@ -288,7 +265,7 @@ export {
  * Domain result types from the REST facade (`kortix.project(id).*` /
  * `kortix.session(...)` / `kortix.accounts.*` / `kortix.billing.*`), re-exported
  * type-only so a consumer can name what a facade call returns without a
- * second import from `@kortix/sdk/projects-client`. Additive — no runtime
+ * second import. Additive — no runtime
  * cost, and every name here already lives in `./platform/projects-client`
  * (this is a convenience re-export, not a new surface).
  */
@@ -327,7 +304,6 @@ export type {
   DiscoveredAuthScheme,
   // Sessions
   ProjectSession,
-  ProjectOpenCodeSession,
   SessionPublicShare,
   SessionAudit,
   SessionTranscript,
@@ -468,7 +444,7 @@ export { stripTrailingSlashes } from './platform/strings';
  * output body carries `success: false` or a top-level `error` — the shape
  * router/connector tools like `web_search` commonly return on failure — now
  * classifies as `status: 'error'` instead of rendering as a success with raw
- * JSON inside). Also available from `@kortix/sdk/turns`.
+ * JSON inside).
  */
 export {
   type DiffLine,
@@ -541,6 +517,10 @@ export { getSandboxUrlForExternalId } from './core/session/server-store/url-help
 /** How this deployment addresses previews (`GET /v1/p/config`), cached per backend. */
 export { loadPreviewUrlTemplate } from './core/session/preview-config';
 export * from './core/stream/event-stream';
+/** Live presence on an Artifact: who is here, their cursors, and change pings. */
+export * from './core/artifact-live';
+/** Live co-editing of an Artifact doc: the byte-based sync engine over the doc REST calls. */
+export * from './core/artifact-doc';
 export * from './core/stream/fetch-sse';
 export * from './core/turns';
 export * from './transcript';
@@ -598,7 +578,6 @@ export {
  */
 export {
   composerSelectableAgents,
-  projectConfigAgentsToOpenCodeAgents,
   projectConfigAgentsToRuntimeAgents,
   resolveComposerAgent,
   type ComposerAgentReason,
@@ -615,6 +594,102 @@ export {
   pickerProviderList,
   type PickerProviderListInput,
 } from './core/models/provider-selection';
+/**
+ * Provider connections: the catalogue rows, how each provider connects, which
+ * providers a project's secrets connect, the list order, and who may use a new
+ * connection. The web Models page and the TUI `/providers` screen read these.
+ */
+export {
+  CODEX_AUTH_JSON_SECRET_NAME,
+  FIRST_CLASS_PROVIDER_IDS,
+  LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
+  PROVIDER_SUBSCRIPTIONS,
+  buildLlmProviderCatalog,
+  connectionAccessSummary,
+  connectionLabelOwnerName,
+  connectionNeedsReconnection,
+  connectionSharing,
+  orderProviderRows,
+  providerConnectMethod,
+  providerConnectedVia,
+  providerDisconnectPlan,
+  providerIdsWithCredentials,
+  providerKeyAccessFields,
+  supportsPooledProviderKey,
+  type ConnectionAccessChoice,
+  type ConnectionAccessSummary,
+  type LlmProviderCatalogSource,
+  type LlmProviderEntry,
+  type LlmProviderModel,
+  type LlmProviderSource,
+  type ProviderConnectMethod,
+  type ProviderConnectedVia,
+  type ProviderSubscription,
+} from './core/models/provider-connections';
+/**
+ * Connectors: a connector's status and provider label, its accounts and who may
+ * use each one, the Add account draft, sharing an account, the managed Connect
+ * Link poll, and one-click OAuth for direct servers. The web connectors pages
+ * and the TUI `/connectors` screen read these.
+ */
+export {
+  connectorDerivedState,
+  connectorDisplayName,
+  connectorProviderLabel,
+  connectorSetupStatus,
+  connectorStatusTone,
+  connectorUsable,
+  isConnectorAuthChallenge,
+  isManagedConnectorProvider,
+  type ConnectorDerivedState,
+  type ConnectorSetupStatus,
+  type ConnectorStatusTone,
+} from './core/connectors/connector-status';
+export {
+  connectionSharedWithEveryoneAfter,
+  connectorAccountNeedsSignIn,
+  connectorAccountVisibility,
+  connectorAudienceVisibility,
+  connectorConnectionRows,
+  emptyProjectConnectionSlot,
+  grantConnectionAccess,
+  listedConnectorAccounts,
+  newConnectorAccountAudienceFor,
+  newConnectorAccountGrantees,
+  newConnectorAccountLabelTaken,
+  newConnectorAccountReady,
+  planConnectionShare,
+  planPrivateConnectionShare,
+  proposeConnectorAccountLabel,
+  type ConnectionAudienceSelection,
+  type ConnectionSharePlan,
+  type ConnectorAccountVisibility,
+  type NewConnectorAccountAudience,
+  type NewConnectorAccountDraft,
+} from './core/connectors/connector-accounts';
+export {
+  CONNECT_LINK_POLL_INTERVAL_MS,
+  CONNECT_LINK_TIMEOUT_MS,
+  DEFAULT_PROJECT_CONNECTION_LABEL,
+  connectLinkTimeoutMessage,
+  connectLinkUrl,
+  isSharedDefaultConnectConflict,
+  pollConnectLinkFinalize,
+  projectConnectionConnectRestDeps,
+  projectConnectionConnectSteps,
+  type ConnectLinkPollOptions,
+  type ProjectConnectRoute,
+  type ProjectConnectionConnectDeps,
+} from './core/connectors/connect-link';
+export {
+  buildOAuth2ClientRegistrationInput,
+  oauth2AutoConnectPlan,
+  startConnectionOAuth2SignIn,
+  waitForConnectionOAuth2,
+  type ConnectionOAuth2SignInDeps,
+  type ConnectionOAuth2SignInStart,
+  type OAuth2AutoConnectPlan,
+} from './core/connectors/connector-oauth2-sign-in';
 export {
   latestPromptModel,
   resolveComposerModel,

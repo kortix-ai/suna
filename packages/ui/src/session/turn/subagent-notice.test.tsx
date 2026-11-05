@@ -12,6 +12,7 @@ import '../tool/tools/register';
 import { SessionTurn } from '../thread/transcript';
 import { parseSubagentNotice } from './subagent-notice';
 import { SubagentNoticeRow } from './subagent-notice-row';
+import { AgentActivateContext } from '../tool/shared/infrastructure-contexts';
 
 // Synthetic values only. The notice is the text `subagentNoticeText` in
 // apps/api/src/projects/subagent-notice.ts writes.
@@ -66,62 +67,82 @@ const textOf = (html: string) =>
   html.replace(/<[^>]*>/g, '').replaceAll('&#x27;', "'").replaceAll('&quot;', '"').replaceAll('&amp;', '&');
 
 describe('SubagentNoticeRow', () => {
+  test('a workflow result returned as JSON reads as its document: no braces, no escapes, a real first line', () => {
+    const doc = '# Growth plan\n\nOne pack. Ten pilots.\n\n## Priorities\n\n1. **Prove it.**';
+    const html = render(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('completed', JSON.stringify({ strategy: doc })))!} />);
+    const text = textOf(html);
+    expect(text).toContain('Growth plan');
+    expect(text).not.toContain('"strategy"');
+    expect(text).not.toContain('\\n');
+    expect(html).toContain('title="Growth plan"');
+  });
+
   // The row is product chrome: it draws its state with the glyph every tool row
   // uses, never an emoji. Emoji status labels belong to the agent's own words
   // (brand D31), and the reply under the row often starts with one.
-  test('a finished child is one tool row: a check mark, its name, the first line of its result', () => {
-    const html = render(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('completed', REPORT))!} />);
-    const text = textOf(html);
+  test('a finished child is one agent row: its face, its name, the report\'s first line, Finished; a button, never a fold', () => {
+    const notice = parseSubagentNotice(noticeText('completed', REPORT))!;
+    const html = render(<SubagentNoticeRow notice={notice} defaultOpen />);
     expect(html).toContain('data-testid="subagent-notice"');
     expect(html).toContain('data-notice-status="completed"');
-    expect(html).toContain('data-notice-mark="completed"');
+    expect(html).toContain('data-tone="agent"');
+    expect(html).toContain('data-agent-status="done"');
+    expect(html).toContain('role="button"');
+    expect(html).not.toContain('aria-expanded');
+    expect(html).not.toContain('data-testid="notice-result"');
+    const text = textOf(html);
     expect(text).not.toContain('✅');
-    expect(text).toContain('Draft the launch post finished');
+    expect(text).toContain('Finished');
     expect(text).toContain('Draft ready');
-    // Closed: the rest of the report stays folded.
     expect(text).not.toContain('600 words');
-    expect(html).toContain('aria-expanded="false"');
-    expect(text).toContain('View');
+    expect(html).not.toContain('text-kortix-red');
   });
 
-  test('a first line that only says it is done adds nothing to "finished" and is left out', () => {
-    const text = textOf(render(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('completed', 'Done.\nWrote poem.md.'))!} />));
-    expect(text).toContain('Draft the launch post finished');
-    expect(text).not.toContain('Done.');
+  test('a workflow report reads without its result tag: the row shows its real first line', () => {
+    const report = '<workflow_result>\nCompleted the full strategy.\n\nThe plan has three bets.\n</workflow_result>';
+    const text = textOf(render(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('completed', report))!} defaultOpen />));
+    expect(text).toContain('Completed the full strategy.');
+    expect(text).not.toContain('workflow_result');
+    expect(text).not.toContain('workflowresult');
   });
 
-  test('a failed child says it did not finish, with the warning mark, never a done mark', () => {
-    const html = render(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('failed', '', 'The model ran out of room.'))!} />);
-    expect(html).toContain('data-notice-mark="failed"');
-    expect(textOf(html)).toContain('Draft the launch post didn’t finish');
-    expect(textOf(html)).not.toContain('⚠️');
+  test('a first line that only says it is done does not stand in for the subtitle', () => {
+    const html = render(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('completed', 'Done.\nWrote poem.md.'))!} />);
+    expect(html).toContain('data-agent-status="done"');
+    expect(textOf(html)).not.toContain('Done.');
   });
 
-  test('a stopped child takes the neutral stop mark', () => {
-    const html = render(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('stopped', '', 'The subagent was stopped.'))!} />);
-    expect(html).toContain('data-notice-mark="stopped"');
-    expect(textOf(html)).toContain('Draft the launch post was stopped');
-  });
+  test('a failed child reads Didn’t finish, no red word; a click opens it beside the chat with its raw error', async () => {
+    const notice = parseSubagentNotice(noticeText('failed', '', 'The model ran out of room.'))!;
+    const html = render(<SubagentNoticeRow notice={notice} />);
+    expect(html).toContain('data-notice-status="failed"');
+    expect(html).toContain('data-agent-status="failed"');
+    const text = textOf(html);
+    expect(text).toContain('Didn’t finish');
+    expect(text).not.toContain('The model ran out of room.');
+    expect(text).not.toContain('⚠️');
+    expect(html).not.toContain('text-kortix-red');
 
-  test('the row opens in place to the whole result', async () => {
-    // The "Open session" hint's tooltip listens on `document`.
-    const dom = new Window();
-    const globals = globalThis as unknown as Record<string, unknown>;
-    const saved = { window: globals.window, document: globals.document };
-    globals.window = dom;
-    globals.document = dom.document;
+    const opened: unknown[] = [];
     let tree: ReturnType<typeof create> | undefined;
+    // Mounted, the row's hooks read `window`: a DOM for this one render.
+    const dom = new Window();
+    Object.defineProperty(globalThis, 'window', { value: dom, configurable: true, writable: true });
     await act(async () => {
-      tree = create(wrap(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('completed', REPORT))!} />));
+      tree = create(wrap(<AgentActivateContext.Provider value={(agent) => void opened.push(agent)}><SubagentNoticeRow notice={notice} /></AgentActivateContext.Provider>));
     });
-    const disclosure = () => tree!.root.findAll((node) => typeof node.type === 'string' && node.props['aria-expanded'] !== undefined)[0]!;
-    await act(async () => disclosure().props.onClick());
-    expect(disclosure().props['aria-expanded']).toBe(true);
-    expect(JSON.stringify(tree!.toJSON())).toContain('600 words');
+    const row = tree!.root.find((node) => node.props['data-component'] === 'tool-trigger');
+    await act(async () => row.props.onClick({ stopPropagation() {} }));
+    expect(opened).toEqual([expect.objectContaining({ sessionId: CHILD, failure: 'The model ran out of room.' })]);
     await act(async () => tree!.unmount());
-    globals.window = saved.window;
-    globals.document = saved.document;
-    await dom.happyDOM.close();
+    Reflect.deleteProperty(globalThis, 'window');
+    dom.happyDOM.abort();
+  });
+
+  test('a stopped child reads Stopped, never failed or done', () => {
+    const html = render(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('stopped', '', 'The subagent was stopped.'))!} />);
+    expect(html).toContain('data-agent-status="stopped"');
+    expect(textOf(html)).toContain('Stopped');
   });
 });
 
@@ -135,7 +156,7 @@ describe('in the transcript', () => {
     };
   }
 
-  test('a notice turn draws the compact row, not the "Worker complete" card or a user bubble', () => {
+  test('a notice turn draws one agent row, not the "Worker complete" card or a user bubble', () => {
     const turns = sessionLogTurns({
       schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, thread_id: 'synthetic', parent_thread_id: null, spawned_by: null,
       agent: null, title: null, created_at: '', messages: [
@@ -153,9 +174,9 @@ describe('in the transcript', () => {
         />,
       ),
     );
-    expect(html).toContain('data-testid="subagent-notice"');
+    expect(html.match(/data-testid="subagent-notice"/g)).toHaveLength(1);
+    expect(html).toContain('data-agent-status="done"');
     const text = textOf(html);
-    expect(text).toContain('Draft the launch post finished');
     expect(text).not.toContain('Worker complete');
     expect(text).not.toContain('A background subagent you started has finished');
     expect(text).toContain('The writer finished the draft.');

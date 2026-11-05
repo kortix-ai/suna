@@ -162,7 +162,7 @@ export function SessionPublicShareRows({ projectId, session, onConfirm }: Sessio
   );
 
   // The transcript is the session log's root thread (the runtime session's rows on v1).
-  const runtimeSessionId = session.runtime_session_id ?? session.opencode_session_id;
+  const runtimeSessionId = session.runtime_session_id;
   const source = React.useMemo(
     () => ({ projectId, sessionId: session.session_id, runtimeSessionId: runtimeSessionId ?? null }),
     [projectId, session.session_id, runtimeSessionId],

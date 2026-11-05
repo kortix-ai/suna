@@ -54,6 +54,7 @@ import {
   type CommentFilter,
 } from './artifact-discussion-logic';
 import type { ArtifactDrawingDraft } from './artifact-drawing-draft';
+import { LiveTypingLine } from './artifact-live-presence';
 
 const EMPTY_THREADS: ArtifactCommentThread[] = [];
 
@@ -216,7 +217,7 @@ export function ArtifactDiscussionSidebar({
   const setDraft = (kind: string, value: string, id = '') =>
     setDrafts((current) => ({ ...current, [draftKey(kind, id)]: value }));
   const threads = displayThreads ?? comments.data ?? EMPTY_THREADS;
-  const grouped = groupCommentThreads(threads, filter);
+  const grouped = groupCommentThreads(threads, filter, focusedThreadId);
   // The viewer header counts `comments.data`; the tab and the filter count the same list.
   const counts = threadCounts(comments.data ?? threads);
   const readableVersion = context?.version.commit_id ?? context?.version.entry_version;
@@ -297,13 +298,7 @@ export function ArtifactDiscussionSidebar({
     const thread = threads.find((thread) => thread.thread_id === focusedThreadId);
     if (!thread) return;
     setTab('comments');
-    setFilter((current) =>
-      threadDeleted(thread)
-        ? 'all'
-        : current === 'all' || current === thread.status
-          ? current
-          : thread.status,
-    );
+    setFilter(thread.status);
     const frame = requestAnimationFrame(() => {
       focusedRef.current = signature;
       const article = document.getElementById(`artifact-thread-${focusedThreadId}`);
@@ -341,14 +336,7 @@ export function ArtifactDiscussionSidebar({
   const focusThread = (threadId: string) => {
     const thread = threads.find((thread) => thread.thread_id === threadId);
     setTab('comments');
-    if (thread)
-      setFilter((current) =>
-        threadDeleted(thread)
-          ? 'all'
-          : current === 'all' || current === thread.status
-            ? current
-            : thread.status,
-      );
+    if (thread) setFilter(thread.status);
     onFocusThread(threadId);
   };
   const perform = async <T,>(
@@ -634,7 +622,16 @@ export function ArtifactDiscussionSidebar({
       <div aria-live="polite" className="sr-only">
         {announcement}
       </div>
-      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-0">
+      {/* One row of views: the two thread statuses, each with its count, and Activity. */}
+      <Tabs
+        value={tab === 'activity' ? 'activity' : filter}
+        onValueChange={(value) => {
+          if (value === 'activity') return setTab('activity');
+          setTab('comments');
+          setFilter(value as CommentFilter);
+        }}
+        className="flex min-h-0 flex-1 flex-col gap-0"
+      >
         <div data-artifact-discussion-header className="shrink-0">
           <div className="border-border flex h-11 items-center gap-2 border-b px-4">
             <h2 ref={heading} tabIndex={-1} className="sr-only outline-none">
@@ -646,15 +643,21 @@ export function ArtifactDiscussionSidebar({
               aria-label={t('panelTitle')}
               className="h-full gap-5 border-b-0"
             >
-              <TabsTriggerCompact value="comments" className="w-fit flex-none gap-1.5 px-0">
-                {t('comments')}
-                {counts.open > 0 ? <CountBadge count={counts.open} /> : null}
-              </TabsTriggerCompact>
+              {(['open', 'resolved'] as const).map((value) => (
+                <TabsTriggerCompact
+                  key={value}
+                  value={value}
+                  className="w-fit flex-none gap-1.5 px-0"
+                >
+                  {t(value)}
+                  {counts[value] > 0 ? <CountBadge count={counts[value]} /> : null}
+                </TabsTriggerCompact>
+              ))}
               <TabsTriggerCompact value="activity" className="w-fit flex-none px-0">
                 {t('activity')}
               </TabsTriggerCompact>
             </TabsListCompact>
-            <div className="ml-auto flex shrink-0 items-center gap-1">
+            <div className="ml-auto flex shrink-0 items-center gap-0.5">
               {canComment ? (
                 <Hint label={t('newComment')} side="bottom" sideOffset={4}>
                   <Button
@@ -684,29 +687,10 @@ export function ArtifactDiscussionSidebar({
               ) : null}
             </div>
           </div>
-          {tab === 'comments' ? (
-            <div className="px-4 pt-3 pb-2">
-              <Tabs value={filter} onValueChange={(value) => setFilter(value as CommentFilter)}>
-                <TabsListCompact aria-label={t('filterLabel')} className="w-full">
-                  <TabsTriggerCompact value="open" className="flex-1 gap-1.5">
-                    {t('open')}
-                    {counts.open > 0 ? <CountBadge count={counts.open} /> : null}
-                  </TabsTriggerCompact>
-                  <TabsTriggerCompact value="resolved" className="flex-1 gap-1.5">
-                    {t('resolved')}
-                    {counts.resolved > 0 ? <CountBadge count={counts.resolved} /> : null}
-                  </TabsTriggerCompact>
-                  <TabsTriggerCompact value="all" className="flex-1">
-                    {t('all')}
-                  </TabsTriggerCompact>
-                </TabsListCompact>
-              </Tabs>
-            </div>
-          ) : null}
         </div>
-        <TabsContent value="comments" className="m-0 min-h-0 flex-1 overflow-y-auto">
+        <TabsContent value={filter} className="m-0 min-h-0 flex-1 overflow-y-auto py-1">
           {readOnly || contextError || (!context && !contextLoading) ? (
-            <div className="space-y-3 px-4 pb-3">
+            <div className="space-y-3 px-4 py-3">
               {readOnly ? (
                 <p className="text-muted-foreground text-xs">{t('historicalReadOnly')}</p>
               ) : null}
@@ -723,10 +707,12 @@ export function ArtifactDiscussionSidebar({
               ) : null}
             </div>
           ) : null}
+          {/* Live: someone else writes a new comment. */}
+          <LiveTypingLine where="new" className="px-4 pb-2" />
           {composerOpen ? (
             <section
               aria-label={t('newComment')}
-              className="border-border space-y-2.5 border-b px-4 pt-1 pb-3"
+              className="border-border space-y-2.5 border-b px-4 py-3"
             >
               {selectionCapture !== 'idle' ? (
                 <div className="flex items-start gap-2">
@@ -789,6 +775,7 @@ export function ArtifactDiscussionSidebar({
                 pending={!!pending.new}
                 submitDisabled={selectionCapture !== 'idle'}
                 error={errors.new}
+                liveTyping="new"
                 autoFocus={composerAutoFocus}
                 focusKey={`${focusRevision}:${composerFocus}:${JSON.stringify(pendingAnchor)}`}
               />
@@ -820,13 +807,7 @@ export function ArtifactDiscussionSidebar({
             <EmptyState
               size="sm"
               media={<EmptyArt icon={ChatCircleIcon} />}
-              title={t(
-                filter === 'resolved'
-                  ? 'noResolved'
-                  : filter === 'all'
-                    ? 'noAllComments'
-                    : 'noComments',
-              )}
+              title={t(filter === 'resolved' ? 'noResolved' : 'noComments')}
               description={t(filter === 'resolved' ? 'noResolvedHint' : 'noCommentsHint')}
             />
           ) : null}

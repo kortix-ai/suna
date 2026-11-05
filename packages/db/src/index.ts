@@ -145,6 +145,7 @@ export {
   creditLedger,
   creditUsage,
   accountDeletionRequests,
+  retentionErasures,
   creditPurchases,
   // Mobile push notification device tokens
   pushDeviceTokens,
@@ -179,6 +180,10 @@ export {
   artifactCommentScreenshotObjects,
   artifactCommentWriteLimits,
   artifactEvents,
+  artifactDocState,
+  artifactDocUpdates,
+  artifactDocRoots,
+  artifactDocClients,
   driveCommitAuthors,
   sessionSandboxIdentities,
   claudeSubscriptionLogins,
@@ -205,6 +210,7 @@ export {
   appSiteBlobs,
   appDeploymentEvents,
   sessionPendingQuestions,
+  sessionPendingPermissions,
   yoloMemberTokens,
   stripeWebhookEventsProcessed,
   // Tunnel
@@ -330,6 +336,7 @@ export {
   connectorPoliciesRelations,
   connectorProjectPoliciesRelations,
   connectorProjectSettingsRelations,
+  selfHostSignupPolicy,
 } from './schema/kortix';
 export type { AgentGrant, StoredAgentGrant, ArtifactCommentMention } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';

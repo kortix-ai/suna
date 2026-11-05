@@ -1,5 +1,7 @@
 # RFC: Claude Code harness parity — durable + cloud-first
 
+> 2026-11-04: Rooms were removed (flag `agent_rooms` withdrawn, every `/rooms` route deleted). The rooms references below are history.
+
 Status: draft for review (Marko). Authored 2026-10-24 from four parallel
 read-only investigations (subagent-as-session, continuation primitives,
 spaces-as-channels, rooms deletion). Implemented so far: the Pillar 2

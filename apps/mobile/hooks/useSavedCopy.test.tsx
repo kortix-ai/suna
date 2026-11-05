@@ -51,7 +51,7 @@ function copy(rootId: string, count: number, fields: Record<string, unknown> = {
     source: 'mirror',
     complete: true,
     captured_at: '2026-09-26T10:00:00Z',
-    opencode_session_id: rootId,
+    runtime_session_id: rootId,
     message_count: count,
     messages: Array.from({ length: count }, (_, i) => ({
       info: { id: `msg_${rootId}_${i + 1}`, sessionID: rootId, role: 'assistant', time: { created: i + 1, completed: i + 2 } },
@@ -233,7 +233,7 @@ describe('connect → thread: the window is downloaded once per open (KRTX-189)'
       if (url.includes('/snapshot')) {
         return {
           observed_at: '2026-09-26T10:00:01Z',
-          session: { session_id: sessionId, runtime_session_id: OPEN_ROOT, opencode_session_id: OPEN_ROOT },
+          session: { session_id: sessionId, runtime_session_id: OPEN_ROOT },
           turn: { known: false, reason: 'test' },
           queue: { known: false, reason: 'test' },
           transcript: url.includes('transcript=0')

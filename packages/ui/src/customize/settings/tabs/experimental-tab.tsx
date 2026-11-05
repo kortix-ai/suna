@@ -488,7 +488,7 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
 
   // the Channels switch changes the sidebar for everyone, so only a
   // viewer who may flip it sees it (hidden while that answer loads).
-  const visible = canEdit ? withPending : withPending.filter((f) => f.key !== 'project_channels');
+  const visible = canEdit ? withPending : withPending.filter((f) => f.key !== 'chat');
   const features = filterFeatures(visible, query);
 
   const apply = (key: string, next: boolean) => {
@@ -498,7 +498,7 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
   // Channels asks first: the dialog says what changes for everyone.
   const [channelsTarget, setChannelsTarget] = useState<boolean | null>(null);
   const handleToggle = (key: string, next: boolean) => {
-    if (key === 'project_channels') setChannelsTarget(next);
+    if (key === 'chat') setChannelsTarget(next);
     else apply(key, next);
   };
 
@@ -512,7 +512,7 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
         onConfirm={() => {
           const target = channelsTarget === true;
           setChannelsTarget(null);
-          apply('project_channels', target);
+          apply('chat', target);
         }}
       />
       <ExperimentalTabView

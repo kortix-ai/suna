@@ -62,6 +62,7 @@ import {
 } from '../lib/session-prompt-view';
 import { SessionPromptDeliverySchema } from '@kortix/api-contract';
 import { WIRE_MESSAGE_ID, isWireIdAheadOf, mintWireMessageId } from '../wire-message-id';
+import { capturePersonEvent } from './product-events';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
 //
@@ -332,7 +333,7 @@ export function registerSessionPromptsRoutes(): void {
           projectId,
           sessionId,
           userId: loaded.userId,
-          model: promptModelRef(overrides.model) ?? (typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null),
+          model: promptModelRef(overrides.model) ?? (typeof metadata.model === 'string' ? metadata.model : null),
         });
         if (missing) return c.json(claudeSubscriptionRequiredBody(missing), 409);
       }
@@ -340,6 +341,11 @@ export function registerSessionPromptsRoutes(): void {
       // Same gate as start/wake: a prompt spends compute.
       const billing = await checkBillingAdmission(loaded.row.accountId);
       if (!billing.ok) {
+        capturePersonEvent(c, loaded, projectId, 'billing_gate_hit', {
+          reason: billing.reason,
+          where: 'prompt',
+          session_id: sessionId,
+        });
         return c.json(
           {
             error: billing.message,
@@ -417,7 +423,7 @@ export function registerSessionPromptsRoutes(): void {
         sendState.then((state) => state.held),
       );
       // This prompt runs on the pin the revert restored: drop the marker.
-      if ((visible.row.metadata as Record<string, unknown> | null)?.opencode_model_restored === true) {
+      if ((visible.row.metadata as Record<string, unknown> | null)?.model_restored === true) {
         void clearRestoredModelPin(sessionId);
       }
 
@@ -431,7 +437,7 @@ export function registerSessionPromptsRoutes(): void {
         );
       }
 
-      // A person's links join the Links tab of the thread's channel (`project_channels`).
+      // A person's links join the Links tab of the thread's channel (`chat`).
       if (!enqueued.deduped) {
         collectMessageLinksInBackground({
           projectId,
@@ -462,6 +468,24 @@ export function registerSessionPromptsRoutes(): void {
         observed_at: new Date().toISOString(),
       };
       if (enqueued.deduped) return c.json(response, 200);
+
+      // A person's prompt; an agent's session token or an API key is not a person.
+      capturePersonEvent(
+        c,
+        loaded,
+        projectId,
+        'prompt_sent',
+        {
+          session_id: sessionId,
+          model:
+            promptModelRef(overrides.model) ??
+            (typeof (visible.row.metadata as Record<string, unknown> | null)?.model === 'string'
+              ? ((visible.row.metadata as Record<string, unknown>).model as string)
+              : 'default'),
+          attachment_count: parts.filter((part) => (part as { type?: unknown }).type === 'file').length,
+        },
+        idempotencyKey,
+      );
 
       // Fire the targeted drain WITHOUT waiting on it: the response is "your
       // prompt is durable", not "your prompt has been delivered". The drain

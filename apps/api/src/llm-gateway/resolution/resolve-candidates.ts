@@ -1,4 +1,5 @@
 import { isClaudeAgentModelRef } from './claude-agent';
+import { resolveClaudeCredentials } from '../../claude-subscription/accounts';
 import { getProjectGatewayResolution, type getProjectModelAccess } from '../../repositories/project-model-access';
 import {
   resolveDefaultCodexAccountSecret,
@@ -169,6 +170,7 @@ async function codexSharedCandidates(context: Context): Promise<UpstreamDescript
     accountId: principal.accountId, projectId: principal.projectId!,
     userId: principal.userId, grantUserId: principal.keyId ? null : personalUserId,
     providerId: 'codex', name: 'CODEX_AUTH_JSON',
+    sessionId: principal.sessionId, probe: context.options?.probe,
   });
   if (shared.secrets.length) {
     const { candidates, failed } = await codexAccountCandidates(context, shared.secrets);
@@ -537,13 +539,29 @@ export async function resolveCandidates(
     );
   }
 
-  // Only a daemon from before Claude subscription models sends one here: a current
-  // one runs them through Claude Code in the box. A new session boots the current image.
+  // Chat completion callers (including the sessionless playground) cannot run
+  // Claude Code. Reaching this resolver says nothing about a runtime's age.
   if (isClaudeAgentModelRef(effectiveModel)) {
+    // pi sends a Claude step here when every Claude account of the session is at
+    // its limit (harness/pi/claude/provider.ts). A resting pool starts the
+    // project's Routing chain with its own rest, so the session's fallback holds
+    // until the plan resets. Any other refusal stays `model_not_found` below,
+    // which starts the chain too. So does a short per-minute 429 on an account
+    // with room: the fallback serves that step and the revert moves the session
+    // back at its next check.
+    if (principal.projectId && principal.sessionId) {
+      await resolveClaudeCredentials({
+        accountId: principal.accountId, projectId: principal.projectId, userId: principal.userId,
+        sessionId: principal.sessionId, keyId: principal.keyId, personalUserId,
+      }, { probe: true }).catch((err: unknown) => {
+        // A resting pool starts the chain with its own reason; another typed refusal falls through.
+        if (!(err instanceof GatewayResolutionError) || err.code === 'provider_pool_rate_limited') throw err;
+      });
+    }
     throw new GatewayResolutionError(
       'model_not_found',
-      `"${effectiveModel}" runs through Claude Code, and this session's computer runs an older Kortix runtime.`,
-      'Start a new session to use Claude models, or pick another model here.',
+      `"${effectiveModel}" runs through Claude Code inside sessions only. Test it by starting a session with this model; the gateway playground and chat completions cannot execute it.`,
+      'Start a session with this model, or choose a gateway-compatible model for this request.',
     );
   }
   throw new GatewayResolutionError(

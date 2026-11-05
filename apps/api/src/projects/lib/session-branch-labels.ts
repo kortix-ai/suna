@@ -78,7 +78,7 @@ export async function withSessionLabels(
         runtimeSessionId: projectSessions.runtimeSessionId,
         customName: sql<unknown>`${projectSessions.metadata} -> 'custom_name'`,
         name: sql<unknown>`${projectSessions.metadata} -> 'name'`,
-        snapshot: sql<unknown>`${projectSessions.metadata} -> 'opencode_sessions'`,
+        snapshot: sql<unknown>`${projectSessions.metadata} -> 'runtime_sessions'`,
         deleted: sql<boolean>`(${projectSessions.metadata} ? 'deletedAt') is true`,
       })
       .from(projectSessions)

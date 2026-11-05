@@ -3,7 +3,7 @@
 // file's header comment, a markdown section). Measured on the real harness (16 workspace questions, research notes
 // 2026-10-28): with the map and the best chunks injected, 0/16 turns ran tools and the first text came at 1.22 s p50,
 // against 10/16 and 2.83 s with grep lines; answers as good or better. Built in ~60 ms, queried in <1 ms.
-import { readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 
 type Chunk = { file: string; line: number; text: string; toks: string[]; syms: Set<string>; evaluation: boolean }
 const STOP = new Set('the and you can what whats does did how who when where which that this there are was were for with about tell please could would right now just know want ask like okay hey yeah well into from out get got your our its his her their them they then than also some any much many more most very really sure think going have should only been will here show explain need actually thing things work works working handle handled handles codebase project inside exactly part kind mean able each other same make made code file files repo system real done use used using we'.split(' '))
@@ -14,6 +14,59 @@ const MAX_FILES = 2000
 const EVALUATION_PATH = /(?:^|\/)(?:bench|tests?|__tests__|fixtures)(?:\/|$)|\.(?:test|spec)\.[^/]+$/
 const EVALUATION_QUERY = /\b(?:bench\w*|tests?|testing|eval\w*|fixtures?|personas?|specs?)\b/i
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// What the project calls itself: its README's title and its root manifest's name (package.json, kortix.yaml's project,
+// pyproject.toml, Cargo.toml, go.mod). Its folder's name is not that: a Kortix box's workspace is /workspace, a project
+// there is agents, skills and memory, and "What is this project called?" was answered "security-tools", a sub-project
+// named in a chunk. Line by line, no pattern over a whole file. '' when none says.
+export function identity(root: string): string {
+  const read = (f: string) => { try { return readFileSync(`${root}/${f}`, 'utf8').slice(0, 50_000) } catch { return '' } }
+  const unquote = (v: string) => v.split(' #')[0]!.trim().replace(/^["']|["']$/g, '').trim()
+  // The first `name` under a top-level key ("project:" in YAML, "[package]" in TOML).
+  const under = (text: string, section: string, sep: string) => {
+    let inside = false
+    for (const l of text.split('\n')) {
+      if (l.trim() === section) { inside = true; continue }
+      if (inside && l && !/^\s/.test(l) && sep === ':') break
+      if (inside && l.startsWith('[') && sep === '=') break
+      const t = l.trim()
+      if (inside && t.startsWith('name') && t.slice(4).trimStart().startsWith(sep)) return unquote(t.slice(4).trimStart().slice(1))
+    }
+    return ''
+  }
+  let name = ''
+  try { const n = (JSON.parse(read('package.json') || '{}') as { name?: unknown }).name; if (typeof n === 'string') name = n } catch {}
+  name ||= under(read('kortix.yaml'), 'project:', ':') || under(read('pyproject.toml'), '[project]', '=') || under(read('Cargo.toml'), '[package]', '=') ||
+    (read('go.mod').split('\n').find((l) => l.startsWith('module ')) ?? '').slice(7).trim()
+  const title = (read('README.md').split('\n').find((l) => l.startsWith('# ')) ?? '').slice(2).trim().slice(0, 80)
+  return title && name && title.toLowerCase() !== name.toLowerCase() ? `${title} (${name})` : title || name
+}
+
+/** What the project says it is (kortix.yaml's project description, else package.json's) and the folders at its root
+ * (a Kortix project's agents, skills and memory notes among them): the router's picture of what a workspace question
+ * can be about, and the names of its memory notes (memory/*.md). '' for each when none. */
+export function outline(root: string): { about: string; folders: string; notes: string } {
+  const read = (f: string) => { try { return readFileSync(`${root}/${f}`, 'utf8').slice(0, 50_000) } catch { return '' } }
+  let about = ''
+  try { const d = (JSON.parse(read('package.json') || '{}') as { description?: unknown }).description; if (typeof d === 'string') about = d } catch {}
+  if (!about) {
+    let inside = false
+    for (const l of read('kortix.yaml').split('\n')) {
+      if (l.trim() === 'project:') { inside = true; continue }
+      if (inside && l && !/^\s/.test(l)) break
+      const t = l.trim()
+      if (inside && t.startsWith('description:')) { about = t.slice(12).trim().replace(/^["']|["']$/g, ''); break }
+    }
+  }
+  let folders = ''
+  try {
+    folders = readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.') && d.name !== 'node_modules').map((d) => d.name).sort().slice(0, 16).join(', ')
+  } catch {}
+  // A Kortix project's memory is notes in memory/ (team, infra, product, ...): their names tell a question on them.
+  let notes = ''
+  try { notes = readdirSync(`${root}/memory`).filter((f) => f.endsWith('.md') && f !== 'MEMORY.md').map((f) => f.slice(0, -3)).sort().slice(0, 24).join(', ') } catch {}
+  return { about: about.slice(0, 160), folders, notes }
+}
 
 function build(root: string) {
   const list = Bun.spawnSync(['rg', '--files', root]).stdout.toString().split('\n').filter(Boolean).map((f) => f.slice(root.length + 1)).sort().slice(0, MAX_FILES)
@@ -79,7 +132,9 @@ function build(root: string) {
       .slice(0, k)
       .map((x) => x.c)
   }
-  const map = list
+  // Escaped for the data envelope the map goes in: a README title cannot close it.
+  const named = identity(root).replace(/"/g, "'").replace(/[<>]/g, '')
+  const map = (named ? `Project: ${named}\n` : '') + list
     .slice(0, 300)
     .map((f) => {
       const t = lines.get(f)?.join('\n') ?? ''

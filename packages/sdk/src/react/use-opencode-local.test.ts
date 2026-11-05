@@ -7,7 +7,6 @@ import {
   modelProviderMode,
   parseModelKey,
   resolveCurrentAgentName,
-  resolveHiddenAutoModel,
   resolvePromptModel,
   scopedModelSelectionKey,
 } from './use-opencode-local';
@@ -97,21 +96,6 @@ describe('OpenCode local model selection scoping', () => {
     expect(
       resolvePromptModel(undefined, { providerID: 'kortix', modelID: 'auto' }),
     ).toBeUndefined();
-  });
-
-  test('keeps the deprecated Auto resolver ABI while failing stale Auto closed', () => {
-    expect(
-      resolveHiddenAutoModel(
-        { providerID: 'kortix', modelID: 'auto' },
-        { enableAutoModel: true, isModelValid: () => true },
-      ),
-    ).toBeUndefined();
-    expect(
-      resolveHiddenAutoModel(
-        { providerID: 'kortix', modelID: 'glm-5.3-flash' },
-        { enableAutoModel: false, isModelValid: () => false },
-      ),
-    ).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
   });
 
   test('project sessions prefer the server-bound agent over global last-used agent', () => {

@@ -26,7 +26,7 @@
  * then follows the rule its own surface already applies: a resource row
  * follows `capabilityAccess` (the Customize rule), a settings row follows
  * `isCustomizeSectionVisible` (the Settings page rule). Nothing renders until
- * those probes, the `drives` flag and the project detail (Members needs its
+ * those probes, the `drives` flag and the project row (Members needs its
  * account) answer, so a row never appears and then leaves.
  *
  * The page's `SettingsNav` catches `navigate(tab)` calls from a pane. A pane
@@ -42,7 +42,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, type ComponentType, ty
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type Icon } from '@phosphor-icons/react';
 
-import { getProjectDetail } from '@kortix/sdk';
+import { getProject } from '@kortix/sdk';
 import { contract, invalidatePermissionProbes, qk, useFeatureFlag } from '@kortix/sdk/react';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
@@ -203,13 +203,16 @@ export function ProjectAdminDashboard({
   const router = useUiRouter();
   const queryClient = useQueryClient();
 
-  const detail = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+  // The project row (`GET /projects/:id`, one database read) for the account
+  // id. Not the detail: it reads the repository, and every Customize tab
+  // waited on it for this one field (2026-11-04).
+  const project = useQuery({
+    queryKey: qk.project.summary(projectId),
+    queryFn: () => getProject(projectId),
     enabled: !!projectId,
     ...contract('config'),
   });
-  const accountId = detail.data?.project?.account_id;
+  const accountId = project.data?.account_id;
 
   // One batch for the page gate, the resource rows and Members: the same
   // `PROJECT_PAGE_ACTIONS` batch the sidebar has usually cached already.
@@ -230,8 +233,8 @@ export function ProjectAdminDashboard({
     resources.settled &&
     settingsAnswered &&
     !drives.isLoading &&
-    // Members needs the account id: wait for the detail so it never pops in.
-    detail.isFetched;
+    // Members needs the account id: wait for the project so it never pops in.
+    project.isFetched;
 
   // `resources.tabs` is a fresh array each render; its contents are the key.
   const allowedTabs = resources.tabs.join(',');
@@ -310,7 +313,7 @@ export function ProjectAdminDashboard({
       <AdminAccessCheckFailed
         onRetry={() => {
           void invalidatePermissionProbes(queryClient, { accountId });
-          void queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+          void queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
         }}
       />
     );

@@ -18,7 +18,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, relative, resolve } from 'node:path';
-import { DEPRECATED_KORTIX_PERMISSION_ALIASES, fixManifestText, GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
+import { DEPRECATED_KORTIX_PERMISSION_ALIASES, fixManifestText, GRANTABLE_KORTIX_PERMISSIONS, isEveryGrant } from '@kortix/manifest-schema';
 import { type FileIssue, formatIssueLine, validateManifestFile } from '../manifest.ts';
 import { resolveLocalManifestImports } from '../manifest-imports.ts';
 import { applyLocalLegacy, convertLocalLegacy, localManifestFile, readLegacyManifest } from '../manifest-legacy.ts';
@@ -49,7 +49,8 @@ each agent .md keeps only its prompt).
 
 Options:
   --file <path>          Validate this file instead of ./kortix.yaml (or kortix.toml).
-  --fix                  Rewrite deprecated shapes to the latest shape first.
+  --fix                  Rewrite deprecated shapes to the latest shape, and
+                         \`all\` grants to \`"*"\`, first.
   --no-dockerfile-lint   Skip the sandbox Dockerfile checks (manifest only).
   --json                 Emit a machine-readable JSON report (no color).
   --scopes               Print the full grantable kortix_permissions enum and exit.
@@ -61,7 +62,7 @@ function describeAgents(parsed: Record<string, unknown> | null): string {
   const agents = parsed?.agents;
   if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return '';
   const show = (v: unknown): string =>
-    v === 'all' ? 'all' : Array.isArray(v) ? v.join(', ') || 'none' : 'none (default-deny)';
+    isEveryGrant(v) ? '* (every)' : Array.isArray(v) ? v.join(', ') || 'none' : 'none (default-deny)';
   const keys = ['skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets'];
   const lines = Object.entries(agents as Record<string, Record<string, unknown> | null>).map(
     ([name, block]) => `  ${C.cyan}${name}${C.reset}  ${keys.map((key) => `${key}=[${show(block?.[key])}]`).join('  ')}`,

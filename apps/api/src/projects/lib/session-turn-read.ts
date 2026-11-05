@@ -116,7 +116,6 @@ function projectLiveTurns(
           state: turn.state,
           message_id: turn.messageId ?? row?.messageId ?? null,
           runtime_session_id: runtimeSessionId,
-          opencode_session_id: runtimeSessionId,
           started_at: startedAt ? startedAt.toISOString() : null,
           accepted_at: row?.acceptedAt ? row.acceptedAt.toISOString() : null,
         },

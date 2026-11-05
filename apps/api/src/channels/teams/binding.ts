@@ -246,8 +246,8 @@ export interface TeamsConversationSession {
   createdAt: Date | null;
   /** The session's creator: the user its turns run as. */
   createdBy: string | null;
-  /** The model the session was pinned to at start (`metadata.opencode_model`). */
-  opencodeModel: string | null;
+  /** The model the session was pinned to at start (`metadata.model`). */
+  sessionModel: string | null;
   /** The join policy frozen on the session at start (`metadata.teams.conversation_policy`). */
   conversationPolicy: string | null;
 }
@@ -275,7 +275,7 @@ export async function conversationSession(
       agentName: projectSessions.agentName,
       createdAt: projectSessions.createdAt,
       createdBy: projectSessions.createdBy,
-      opencodeModel: sql<string | null>`${projectSessions.metadata}->>'opencode_model'`,
+      sessionModel: sql<string | null>`${projectSessions.metadata}->>'model'`,
       conversationPolicy: sql<string | null>`${projectSessions.metadata}->'teams'->>'conversation_policy'`,
     })
     .from(projectSessions)
@@ -287,7 +287,7 @@ export async function conversationSession(
     agentName: row?.agentName ?? null,
     createdAt: row?.createdAt ?? null,
     createdBy: row?.createdBy ?? null,
-    opencodeModel: row?.opencodeModel?.trim() || null,
+    sessionModel: row?.sessionModel?.trim() || null,
     conversationPolicy: row?.conversationPolicy ?? null,
   };
 }

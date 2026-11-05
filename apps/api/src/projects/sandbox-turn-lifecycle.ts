@@ -200,7 +200,7 @@ export async function beginSandboxTurn(
       sql`WITH granted AS (${grant}), ledger AS (
             INSERT INTO kortix.session_turns
               (turn_token, session_id, sandbox_id, project_id, account_id,
-               opencode_session_id, message_id, state, started_at, created_at, updated_at)
+               runtime_session_id, message_id, state, started_at, created_at, updated_at)
             SELECT ${turn.token}, granted.session_id, granted.sandbox_id,
                    granted.project_id, granted.account_id,
                    ${turn.runtimeSessionId || null}, ${turn.messageId}, 'delivering',
@@ -377,7 +377,7 @@ export async function acceptSandboxTurn(
     sql`WITH accepted AS (${promote}), ledger AS (
           INSERT INTO kortix.session_turns
             (turn_token, session_id, sandbox_id, project_id, account_id,
-             opencode_session_id, message_id, state, started_at, accepted_at, created_at, updated_at)
+             runtime_session_id, message_id, state, started_at, accepted_at, created_at, updated_at)
           SELECT ${token}, accepted.session_id, accepted.sandbox_id,
                  accepted.project_id, accepted.account_id,
                  ${identity?.runtimeSessionId ?? null}, ${identity?.messageId ?? null},
@@ -389,7 +389,7 @@ export async function acceptSandboxTurn(
           ON CONFLICT (turn_token) DO UPDATE SET
                 state = 'active',
                 accepted_at = coalesce(kortix.session_turns.accepted_at, now()),
-                opencode_session_id = coalesce(EXCLUDED.opencode_session_id, kortix.session_turns.opencode_session_id),
+                runtime_session_id = coalesce(EXCLUDED.runtime_session_id, kortix.session_turns.runtime_session_id),
                 message_id = coalesce(EXCLUDED.message_id, kortix.session_turns.message_id),
                 updated_at = now()
           WHERE kortix.session_turns.state <> 'ended')
@@ -686,6 +686,10 @@ export async function completeSandboxTurn(
       endedTurnLedger(owner, turns, endReason, endError),
       `complete ${turns.map((turn) => turn.token).join(',')} (${endReason})`,
     );
+    // Lazy like `../shared/db` above: this module loads without a database.
+    void import('./turn-analytics')
+      .then((m) => m.reportTurnsCompleted(owner, turns, status, error?.name, ABORT_END_ERROR_NAMES))
+      .catch(() => undefined);
     // The backstop for an acceptance that never landed: `completed`/`failed`
     // both mean the turn RAN, so the prompt it carried is consumed either way.
     // The never-ran reasons (`abandoned`, `runtime_gone`, `unknown`) cannot

@@ -38,6 +38,7 @@ import {
   resolveSessionAgentName,
 } from '../../projects/surface';
 import { db } from '../../shared/db';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { type ImageTurn, imageTurnModel, NO_VISION_NOTE, promptModelOverride } from '../vision-model';
 import type { RuntimeQuestion, TurnErrorCode } from '@kortix/api-contract/transcript';
 import type { ConnectorPrincipal } from '../../connectors/router-contract';
@@ -480,11 +481,14 @@ async function waitForThreadSession(thread: ChatThreadKey): Promise<{ sessionId:
 
 type PromptPart = NonNullable<Parameters<typeof deliverThroughQueue>[0]['parts']>[number]; // PromptPartWire is not on projects/surface.ts
 type Prompt = Pick<Parameters<typeof deliverThroughQueue>[0], 'text' | 'parts' | 'overrides'>;
-interface MessageFiles { parts: PromptPart[]; notes: string[]; hasImage: boolean; hasAudio: boolean }
+/** `voiceTools`: the project's `voice_call` flag is on, so its agent has `voice_transcribe` (packages/voice). */
+interface MessageFiles { parts: PromptPart[]; notes: string[]; hasImage: boolean; hasAudio: boolean; voiceTools?: boolean }
 
 const CAP_MB = CHANNEL_FILES_MAX_BYTES / (1024 * 1024);
 /** Nothing in the sandbox image or the gateway turns speech into text; an agent can install a tool for one turn. */
 const NO_SPEECH_NOTE = 'A recording is attached. No speech-to-text tool is preinstalled: transcribe it with one you install (for example faster-whisper), or tell the sender you cannot listen to it and ask them to type the message.';
+/** With voice calls on, the session's agent has the voice's speech-to-text as a tool; a box started before the flag has not. */
+const VOICE_SPEECH_NOTE = 'A recording is attached: transcribe it with your voice_transcribe tool. Without that tool, install one (for example faster-whisper), or tell the sender you cannot listen to it and ask them to type the message.';
 
 /**
  * The types Kortix passes on, each with its extension for a file whose name has none. Telegram reports
@@ -544,7 +548,7 @@ const modelPin = (value: unknown) => (typeof value === 'string' && value.trim() 
 // ponytail: the agent is the request's, else the project's mirrored default (`metadata.default_agent`);
 // createSession reads the manifest's first. Upgrade: pass the manifest default when a channel names none.
 async function startModel(plan: ChannelSessionPlan, userId: string): Promise<string | null> {
-  const requested = modelPin(plan.body.opencode_model);
+  const requested = modelPin(plan.body.model);
   if (requested) return requested;
   const { accountId, projectId } = plan.project;
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId).catch(() => false));
@@ -590,6 +594,7 @@ async function readMessageFiles(target: ChannelTarget, files: readonly ChannelFi
     read.hasImage ||= mime.startsWith('image/') && isModelNativeAttachmentMime(mime);
     read.hasAudio ||= mime.startsWith('audio/');
   }
+  if (read.hasAudio) read.voiceTools = await projectFeatureFlagEnabled(target.projectId, 'voice_call').catch(() => false);
   return read;
 }
 
@@ -615,7 +620,7 @@ async function sessionImageTurn(projectId: string, sessionId: string, model: str
     accountId: row.accountId,
     visibility: row.visibility,
     userId: row.createdBy ?? (await lifecycle.resolveProjectAutomationActor(row.accountId)),
-    currentModel: model ?? modelPin((row.metadata as Record<string, unknown> | null)?.opencode_model),
+    currentModel: model ?? modelPin((row.metadata as Record<string, unknown> | null)?.model),
   };
 }
 
@@ -628,7 +633,7 @@ async function sessionImageTurn(projectId: string, sessionId: string, model: str
 async function withFiles(text: string, files: MessageFiles, turn: () => Promise<ImageTurn | null>, model: string | null = null): Promise<Prompt> {
   let overrides: Prompt['overrides'] = model ? { model: promptModelOverride(model) } : undefined;
   if (!files.parts.length && !files.notes.length) return overrides ? { text, overrides } : { text };
-  const lines = [...files.notes, ...(files.hasAudio ? [NO_SPEECH_NOTE] : [])].map((note) => `- ${note}`);
+  const lines = [...files.notes, ...(files.hasAudio ? [files.voiceTools ? VOICE_SPEECH_NOTE : NO_SPEECH_NOTE] : [])].map((note) => `- ${note}`);
   if (files.hasImage) {
     const imageTurn = await turn();
     const pick = imageTurn ? await lifecycle.imageTurnModel(imageTurn) : { model: null, blind: false };

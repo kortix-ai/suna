@@ -3,7 +3,7 @@
  * pin is a daemon-only durable write (KRTX-1607).
  *
  * `POST /v1/projects/:projectId/turn-stream` with `kind: 'runtime_session'`
- * overwrites `project_sessions.opencode_session_id` — the session's durable
+ * overwrites `project_sessions.runtime_session_id` — the session's durable
  * root-conversation pin consumed by the daemon resume path, the transcript
  * mirror and the channel relays. Only the session's own sandbox credential may
  * pin it. A plain project member reaches the route's human branch (project
@@ -121,17 +121,6 @@ describe('POST /v1/projects/:projectId/turn-stream — runtime_session pin autho
     const res = await turnStream(await mint(MEMBER), {
       kind: 'runtime_session',
       runtime_session_id: 'oc_member_chosen',
-    });
-    // A member who cannot see the session is told it does not exist, as on GET.
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: 'Not found' });
-    expect(await pinOf()).toBeNull();
-  });
-
-  test('the pre-W3 alias kind opencode_session is refused for a member too', async () => {
-    const res = await turnStream(await mint(MEMBER), {
-      kind: 'opencode_session',
-      opencode_session_id: 'oc_member_chosen_alias',
     });
     // A member who cannot see the session is told it does not exist, as on GET.
     expect(res.status).toBe(404);

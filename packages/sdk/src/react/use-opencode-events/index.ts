@@ -2,10 +2,7 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  noteSessionSyncEvent,
-  reconcileSessionTail as reconcileSessionTailFromRegistry,
-} from '../../browser/session-sync/session-sync-registry';
+import { noteSessionSyncEvent } from '../../browser/session-sync/session-sync-registry';
 import { useDiagnosticsStore } from '../../browser/stores/diagnostics-store';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useRuntimePendingStore } from '../../browser/stores/opencode-pending-store';
@@ -25,11 +22,10 @@ import { openSessionStream, sessionStreamEventClient } from '../../core/session/
 const SESSION_STREAM_WATCHDOG_OFF_MS = 24 * 60 * 60_000;
 import { useKortixRouteProjectId } from '../route-project';
 import { useCurrentRuntime } from '../use-current-runtime';
-import { clearConfigOverrides } from '../use-opencode-config';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
 import { resolveClientEvictionUrl } from './helpers';
-import { hydrateCore, hydrateFromPending } from './hydrate-core';
+import { hydrateFromPending } from './hydrate-core';
 import { emitRuntimeStreamSignal, shouldReconnectOnHostSignal } from './runtime-stream-signals';
 import { createStreamRevival } from './stream-revival';
 import { useEventStreamRefs } from './use-event-stream-refs';
@@ -49,7 +45,7 @@ export { subscribeRuntimeStream, type RuntimeStreamSignal } from './runtime-stre
  * lives in `state/event-stream.ts`'s `openEventStream()`. Everything here is
  * either genuinely React-only (effect lifecycle, store subscriptions) or
  * needs the React Query `QueryClient` (cache reads/writes, which
- * `createEventHandler` and `hydrateCore` below perform).
+ * `createEventHandler` and `hydrateFromPending` below perform).
  */
 export function useRuntimeEventStream(
   options: {
@@ -61,8 +57,9 @@ export function useRuntimeEventStream(
     projectId?: string;
     sessionId?: string;
     /**
-     * The session's box serves its log (`runtime.log.v1`): a connect or a resync reads only
-     * `GET /kortix/runtime/pending`, and no frame re-reads a transcript tail or a session record.
+     * @deprecated Ignored. Every box past the runtime floor serves its log (`runtime.log.v1`): a
+     * connect or a resync reads only `GET /kortix/runtime/pending`, and no frame re-reads a
+     * transcript tail or a session record.
      */
     logNative?: boolean;
   } = {},
@@ -154,7 +151,6 @@ export function useRuntimeEventStream(
     if (evictUrl) dropClientForUrl(evictUrl);
 
     if (isFirstMount || isServerSwitch) {
-      clearConfigOverrides();
       clearPending();
       // NOTE: we intentionally do NOT wipe the sync store or the opencode
       // query cache here anymore. Those are now scoped per-sandbox (see
@@ -207,39 +203,24 @@ export function useRuntimeEventStream(
       normalizeDiagnosticPaths,
       markSessionAbortedLocally,
       fetchLspDiagnosticsDebounced,
-      reconcileSessionTail: reconcileSessionTailFromRegistry,
       projectId,
       notificationProjectId: options.projectId ?? projectId,
       sessionId: options.projectId && options.sessionId ? options.sessionId : null,
-      logNative: options.logNative === true,
       startCompaction,
     });
 
     const logSessionId = options.sessionId;
-    const hydrate = (hydrateOptions?: { refetchSessions?: boolean; rehydrateMessages?: boolean }) =>
-      options.logNative
-        ? hydrateFromPending({
-            applySyncEvent,
-            reconcileMissingBusySessions,
-            threads: () => Object.keys((logSessionId && useSyncStore.getState().sessionLogs[logSessionId]?.threads) || {}),
-            dispatch: (event) => handleEvent(event),
-          })
-        : hydrateCore({
-        client,
-        queryClient,
-        addPermission,
-        addQuestion,
+    const hydrate = () =>
+      hydrateFromPending({
         applySyncEvent,
         reconcileMissingBusySessions,
-        fetchLspDiagnosticsDebounced,
-        reconcileSessionTail: reconcileSessionTailFromRegistry,
-        options: hydrateOptions,
+        threads: () => Object.keys((logSessionId && useSyncStore.getState().sessionLogs[logSessionId]?.threads) || {}),
+        dispatch: (event) => handleEvent(event),
       });
 
-    // A revived handle has no record of the previous handle's outage. Re-read
-    // the held transcripts so a response completed during the park appears
-    // without requiring a page refresh.
-    hydrate({ rehydrateMessages: streamGeneration > 0 });
+    // A revived handle has no record of the previous handle's outage: read
+    // what waits now. The session log re-reads its own page.
+    hydrate();
 
     // Set up SSE via the framework-free event-stream machine. The
     // connect/reconnect/backoff loop, heartbeat watchdog, and event
@@ -259,7 +240,7 @@ export function useRuntimeEventStream(
         ? openSessionStream({
             projectId: options.projectId,
             sessionId: options.sessionId,
-            onRuntimeResync: () => hydrate({ rehydrateMessages: true }),
+            onRuntimeResync: () => hydrate(),
           })
         : null;
     const handle = openEventStream({
@@ -288,7 +269,7 @@ export function useRuntimeEventStream(
       },
       onConnectionChange: (state) => emitRuntimeStreamSignal({ type: state }),
       onGapRehydrate: () => {
-        if (!sessionStream) hydrate({ rehydrateMessages: true });
+        if (!sessionStream) hydrate();
       },
     });
 
@@ -314,7 +295,6 @@ export function useRuntimeEventStream(
     sandboxStatus,
     runtimeHealthy,
     options.enabled,
-    options.logNative,
     options.projectId,
     options.sessionId,
     applySyncEvent,
@@ -339,8 +319,3 @@ export function RuntimeEventStreamProvider() {
   return null;
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `RuntimeEventStreamProvider`. Removed in the next major. */
-export const OpenCodeEventStreamProvider = RuntimeEventStreamProvider;
-/** @deprecated Renamed to `useRuntimeEventStream`. Removed in the next major. */
-export const useOpenCodeEventStream = useRuntimeEventStream;

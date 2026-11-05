@@ -45,9 +45,12 @@ import {
   GRANTABLE_KORTIX_PERMISSIONS,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
+  RETIRED_KORTIX_PERMISSIONS,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   reservedEnvNameReason,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
+  TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS,
   DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
   RESERVED_SANDBOX_SLUG,
@@ -141,7 +144,7 @@ export {
   renderManifest,
   splitFrontmatter,
 } from './legacy';
-export { type AppliedFix, type Deprecation, DEPRECATIONS, applyDeprecations, fixManifestText, rewriteManifestText } from './deprecations';
+export { type AppliedFix, CANONICAL_REWRITES, type Deprecation, DEPRECATIONS, applyDeprecations, fixManifestText, rewriteManifestText } from './deprecations';
 export {
   type PolicyArgCondition,
   FORBIDDEN_ARG_SEGMENTS,
@@ -228,6 +231,7 @@ export {
   PI_PACKAGE_PATH_RE,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
+  RETIRED_KORTIX_PERMISSIONS,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   isReservedEnvName,
   NEVER_DELIVERED_ENV_NAMES,
@@ -239,6 +243,8 @@ export {
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
+  TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS,
   DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
   DURATION_RE,
@@ -311,7 +317,12 @@ export {
   type AppBlockV2,
   type AppResourcesV2,
   type PiPackageEntryV2,
+  EVERY_GRANT,
+  isEveryGrant,
+  normalizePermissionAction,
+  normalizePermissionConfig,
   resolveGrantSet,
+  TOOLS_SHAPE_ERROR,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
 } from './index.v2';
@@ -500,7 +511,7 @@ function listSectionHint(key: string): string {
 // ─── Section validators ───────────────────────────────────────────────────
 
 /**
- * Validate a `connectors` / `kortix_permissions` grant value (array | "all" | "none").
+ * Validate a `connectors` / `kortix_permissions` grant value (array | "*" | "all" | "none").
  *
  * `version` only changes how a `kortix_permissions` entry from
  * `LEGACY_TOLERATED_KORTIX_PERMISSIONS` is treated (only reachable when
@@ -528,7 +539,7 @@ export function validateGrantList(
     if (v !== '' && v !== 'all' && v !== '*' && v !== 'none') {
       issues.push({
         path: where,
-        message: `${label} string must be "all", "*" or "none" (or an array of names).`,
+        message: `${label} must be "*" (every name; alias all), "none", or a list of names.`,
         severity: 'error',
       });
     }
@@ -537,7 +548,7 @@ export function validateGrantList(
   if (!Array.isArray(value)) {
     issues.push({
       path: where,
-      message: `${label} must be an array of strings, "all", or "none".`,
+      message: `${label} must be "*" (every name; alias all), "none", or a list of names.`,
       severity: 'error',
     });
     return;
@@ -564,6 +575,13 @@ export function validateGrantList(
         issues.push({
           path: `${where}[${k}]`,
           message: `"${s}" was renamed to "${renamedTo.join('", "')}" — the grant still applies, but update the manifest.`,
+          severity: 'warning',
+        });
+      } else if (RETIRED_KORTIX_PERMISSIONS.includes(s)) {
+        // Its feature is gone: the grant holds nothing, so a warning, never a failed parse.
+        issues.push({
+          path: `${where}[${k}]`,
+          message: `"${s}" belongs to a removed feature and grants nothing. Remove it from the manifest.`,
           severity: 'warning',
         });
       } else if (LEGACY_TOLERATED_KORTIX_PERMISSIONS.includes(s)) {
@@ -1197,7 +1215,7 @@ export function validateAppsV2(node: unknown, path: string, issues: ManifestIssu
 }
 
 /**
- * A duration-literal field on a monitor (`interval`, `expect_event_within`).
+ * A duration-literal field (`every`, `max_lateness`, an app trigger's `expect_event_within`).
  * Returns the parsed seconds, or null when the value is absent/rejected.
  */
 function validateMonitorDuration(
@@ -1451,6 +1469,17 @@ export function validateTriggers(rawNode: unknown, path: string, issues: Manifes
         validateMonitorDuration(entry.max_lateness, `${where}.max_lateness`, TRIGGER_MIN_MAX_LATENESS_SECONDS, issues);
       } else {
         issues.push({ path: `${where}.max_lateness`, message: 'max_lateness is only valid on a cron trigger.', severity: 'error' });
+      }
+    }
+    // The silence alert: app triggers only, a duration of at least 5m.
+    if (entry.expect_event_within !== undefined) {
+      if (type === 'app') {
+        const seconds = validateMonitorDuration(entry.expect_event_within, `${where}.expect_event_within`, TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS, issues);
+        if (seconds !== null && seconds > TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS) {
+          issues.push({ path: `${where}.expect_event_within`, message: 'must be at most 30d.', severity: 'error' });
+        }
+      } else {
+        issues.push({ path: `${where}.expect_event_within`, message: 'expect_event_within is only valid on an app trigger.', severity: 'error' });
       }
     }
     if (type === 'cron') {

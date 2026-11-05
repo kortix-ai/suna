@@ -63,16 +63,19 @@ await mock.module('../../agents/subagent-view', () => ({
     open,
     sessionId,
     title,
+    failure,
   }: {
     open: boolean;
     sessionId: string;
     title?: string;
+    failure?: string;
   }) => (
     <div
       data-subagent-dialog
       data-open={String(open)}
       data-session-id={sessionId}
       data-title={title}
+      data-failure={failure}
     />
   ),
 }));
@@ -157,227 +160,73 @@ function render(
   );
 }
 
-describe('TaskTool — the row expands in place', () => {
-  test('a task with a child session is a disclosure, not a row that opens a modal on click', () => {
-    childMessages = CHILD_MESSAGES;
-    const markup = render(taskPart({}));
+const { ToolRegistry } = await import('../shared/registry');
 
-    // The discriminator: only the disclosure reports an open state.
-    expect(markup).toContain('aria-expanded="false"');
-    // Collapsed: the sub-agent's steps are off screen.
-    // (`Searched` / `pattern=TODO` is how the child grep step draws itself —
-    // see the expanded test below, which asserts the same strings present.)
-    expect(markup).not.toContain('Searched');
-    expect(markup).not.toContain('pattern=TODO');
-    // The full-view action is NOT off screen: it lives on the trigger now, so a
-    // collapsed row still offers it. See the trigger-action test below.
-    expect(markup).toContain('aria-label="Open full view"');
-    // The modal is mounted but closed — nothing opens itself.
+describe('TaskTool — one agent row that opens the agent', () => {
+  test('a call with a child session is one button row: the agent face, its name, what it was asked, its state; no inline body', () => {
+    childMessages = CHILD_MESSAGES;
+    const markup = render(taskPart({}), { open: true });
+    expect(markup).toContain('data-tone="agent"');
+    expect(markup).toContain('>Explorer</span>');
+    expect(markup).toContain('>Find the bug</span>');
+    expect(markup).toContain('data-agent-status="done"');
+    expect(markup).toContain('>Done</span>');
+    expect(markup).toContain('role="button"');
+    expect(markup).not.toContain('aria-expanded');
+    expect(markup).toContain('data-slot="agent-row-caret"');
+    // Its steps and answer are the agent's own conversation, in the side panel: never folded into the chat.
+    expect(markup).not.toContain('TODO');
+    expect(markup).not.toContain('**/*.ts');
+    expect(markup).toContain(`data-session-id="${CHILD_SESSION_ID}"`);
+    expect(markup).not.toContain('text-kortix-red');
+  });
+
+  test('a bound side-panel context does not turn the agent row into a tool row of the panel: the agent opens', () => {
+    childMessages = undefined;
+    const markup = render(taskPart({}), { activatable: true });
+    expect(markup).toContain('role="button"');
+    expect(markup).not.toContain('aria-expanded');
     expect(markup).toContain('data-open="false"');
   });
 
-  test('the trigger keeps its title, live subtitle and step badge', () => {
-    childMessages = CHILD_MESSAGES;
-    const markup = render(taskPart({}));
-    // Anchored to the trigger's own elements, never to bare text: the modal
-    // stub carries `data-title="Agent · explorer: Find the bug"` in this same
-    // markup, so a loose `toContain('Agent · explorer')` passes with the whole
-    // trigger deleted.
-    expect(markup).toContain('>Agent · explorer</span>');
-    expect(markup).toContain('title="Find the bug">Find the bug</span>');
-    // A settled call counts its steps; the badge is inline-suppressed by the
-    // shell, so the panel surface is where it is visible. Task 16 REWRITE: the
-    // panel title is the disclosure row's own `span`, not the old page
-    // header's `h3` — the panel stopped being a page for one call.
-    const panelMarkup = render(taskPart({}), { panel: true });
-    expect(panelMarkup).toContain('>Agent · explorer</span>');
-    expect(panelMarkup).not.toContain('<h3');
-    expect(panelMarkup).toContain('>2 steps</span>');
-  });
-
-  test('while it runs the subtitle is the sub-agent last step, not the description', () => {
+  test('a running call reads Working', () => {
     childMessages = CHILD_MESSAGES;
     const markup = render(taskPart({ status: 'running' }));
-    // Asserted on the trigger's own subtitle attribute, not on the whole
-    // markup: the description also travels to the modal's title.
-    expect(markup).toContain('title="Glob · **/*.ts"');
-    expect(markup).not.toContain('title="Find the bug"');
+    expect(markup).toContain('data-agent-status="running"');
+    expect(markup).toContain('>Working</span>');
   });
 
-  test('expanding shows the sub-agent activity in place', () => {
-    childMessages = CHILD_MESSAGES;
-    const markup = render(taskPart({}), { open: true });
-    // Both child steps render through the real sub-agent activity list — each
-    // one drawn by its own registered renderer, not by a summary line.
-    expect(markup).toContain('Searched');
-    expect(markup).toContain('pattern=TODO');
-    expect(markup).toContain('pattern: **/*.ts');
-  });
-
-  test('the sub-agent list clears the chain rail by taking the tool indent', () => {
-    // The break this pins: the list rendered flush at the body's left margin,
-    // so its child rows sat in the SAME 16px icon gutter the parent row uses —
-    // and `ChainOfThoughtStep` draws its hairline down the centre of that
-    // gutter (`left-2`). The rail struck through every child glyph, and a
-    // child row landed at the exact x of the `Agent · …` row that owns it.
-    //
-    // `useToolIndent()` is the repo-wide answer for "a payload under a tool
-    // row", and this list is the one payload that never took it. Asserted as
-    // the class, not as a pixel: the value travels in `--tool-indent`, which
-    // the chain overrides to 1.75rem (`turn/activity-step.tsx`).
-    childMessages = CHILD_MESSAGES;
-    const markup = render(taskPart({}), { open: true });
-    expect(markup).toContain('ml-[var(--tool-indent,1.375rem)]');
-
-    // Panel surface has no icon gutter and no rail, so it takes no indent —
-    // `useToolIndent` returns nothing there and the row body's own inset is the
-    // only offset.
-    const panelMarkup = render(taskPart({}), { panel: true, open: true });
-    expect(panelMarkup).not.toContain('ml-[var(--tool-indent,1.375rem)]');
-  });
-
-  test('the full view is an action on the trigger, not a row at the foot of the body', () => {
-    // It used to be a ghost button at the BOTTOM of the disclosure body, which
-    // put it in the chain's icon gutter (so it read as one more sub-agent step)
-    // and behind a click (so a just-started agent's only view was hidden).
-    // Now it is pinned to the right edge of the trigger and is present whether
-    // or not the row is open — the collapsed assertion lives in the first test.
-    childMessages = CHILD_MESSAGES;
-    const markup = render(taskPart({}), { open: true });
-
-    // A span with a button role, never a real <button>: this node is cloned
-    // into `DisclosureTrigger`'s own role="button" element, and nesting one
-    // button inside another is invalid HTML.
-    expect(markup).toContain('aria-label="Open full view"');
-    expect(markup).not.toContain('<button aria-label="Open full view"');
-    // Visible label is the short form; the accessible name contains it, so
-    // WCAG 2.5.3 (Label in Name) holds.
-    expect(markup).toContain('>View</span>');
-
-    // What the action opens: the modal is wired to THIS call's child session
-    // and carries the row's own title, and it starts closed.
-    expect(markup).toContain(`data-session-id="${CHILD_SESSION_ID}"`);
-    expect(markup).toContain('data-title="Agent · explorer: Find the bug"');
-    expect(markup).toContain('data-open="false"');
-  });
-
-  test('the sub-agent list draws NO rail of its own — the chain owns the line', () => {
-    // A rail's lane is the icon column of the row it hangs from; that is what
-    // `left-2` means in `ChainOfThoughtStep`. A hairline down the left of this
-    // list would sit in the CONTENT lane, anchored to nothing — and with a
-    // single sub-agent it drew a second bar 20px inside a chain rail that
-    // already said the same thing.
-    //
-    // The line that binds these steps to their agent is drawn by the chain, in
-    // the agent row's own icon lane. See `a group draws one rail per member` in
-    // `turn/activity-burst.test.tsx` for the several-agents half.
-    childMessages = CHILD_MESSAGES;
-    const markup = render(taskPart({}), { open: true });
-    expect(markup).not.toContain('bg-muted-foreground/15');
-    // The indent stays: it is what keeps the rows out of the rail's lane.
-    expect(markup).toContain('space-y-1 ml-[var(--tool-indent,1.375rem)]');
-  });
-
-  test('a child session with no steps is a plain button onto the full view, not a dead disclosure', () => {
-    // The reported bug: clicking `Agent · general` did nothing. A child
-    // session's transcript is only resident while the parent streamed it, and
-    // `pruneDetachedSessions` evicts the older ones — so in a turn with three
-    // agents the first two rows had no body, yet still rendered as a
-    // disclosure that answered a click by toggling nothing.
-    childMessages = [];
-    const markup = render(taskPart({ status: 'running' }), { open: true });
-
-    // No open state to report: this is `ClickableToolRow`, not a disclosure.
-    expect(markup).not.toContain('aria-expanded');
-    // But the ROW itself is still activatable. Anchored to the row element,
-    // never to a bare `role="button"` — the `View` action is a
-    // `span role="button"` in this same markup, so the loose form passes with
-    // the row's own handler deleted.
-    expect(markup).toContain('<div data-component="tool-trigger" role="button"');
-    expect(markup).toContain('aria-label="Open full view"');
-    // Nothing inline to show, so no list and no rail.
-    expect(markup).not.toContain('ml-[var(--tool-indent,1.375rem)]');
-  });
-
-  test('no child session — no body, no action, no modal, and no button role at all', () => {
+  test('no child session: nothing to open, no dialog', () => {
     childMessages = undefined;
-    const markup = render(taskPart({ childSessionId: null }), { open: true });
-    expect(markup).toContain('Agent · explorer');
-    expect(markup).not.toContain('Open full view');
-    expect(markup).not.toContain('>View</span>');
+    const markup = render(taskPart({ childSessionId: null }));
+    expect(markup).not.toContain('<button');
+    expect(markup).not.toContain('>Open</span>');
     expect(markup).not.toContain('data-subagent-dialog');
-    // Nothing to open and nowhere to go, so the row makes no promise: no
-    // trigger, no `role="button"`, no `aria-expanded`, no tab stop. It used to
-    // carry all four and do nothing with them.
-    expect(markup).toContain('<div data-component="tool-trigger" class=');
-    expect(markup).not.toContain('role="button"');
-    expect(markup).not.toContain('aria-expanded');
-    expect(markup).not.toContain('tabindex');
   });
 
-  test('forceOpen and locked reach the shell — a pending prompt keeps the row open', () => {
-    // `BasicTool` hands a row to `ActivatableToolRow` (click leaves for the side
-    // panel) when an activate context is bound and the row is neither locked nor
-    // forced open. `ToolPartRenderer` sets both flags for a call that is waiting
-    // on a permission or a question, and this component used to accept only
-    // `forceOpen` — so `locked` was dropped and a prompted row could be routed
-    // away from its own prompt. Each flag alone must hold the disclosure.
-    childMessages = CHILD_MESSAGES;
-
-    // Control: neither flag → the shell routes the click to the side panel, and
-    // there is no open state to report.
-    expect(render(taskPart({}), { activatable: true })).not.toContain('aria-expanded');
-
-    expect(render(taskPart({}), { activatable: true, forceOpen: true })).toContain('aria-expanded');
-    expect(render(taskPart({}), { activatable: true, locked: true })).toContain('aria-expanded');
+  test('a failed agent reads Didn’t finish, no red word; the raw error goes to the agent view, never the chat', () => {
+    childMessages = undefined;
+    const failed = taskPart({ status: 'error' }) as ToolPart & { state: { error?: string } };
+    failed.state.error = 'Subagent failed: This model does not support assistant message prefill.';
+    const markup = render(failed as ToolPart, { open: true });
+    expect(markup).toContain('data-agent-status="failed"');
+    expect(markup).toContain('>Didn’t finish</span>');
+    expect(markup).toContain('data-failure="Subagent failed: This model does not support assistant message prefill."');
+    expect(markup.replace(/data-failure="[^"]*"/, '')).not.toContain('assistant message prefill');
+    expect(markup).not.toContain('text-kortix-red');
   });
 
-  test('the panel surface is a disclosure row too — closed, then the same activity and action', () => {
-    // Task 16 REWRITE: the panel branch used to render the body outright, so
-    // this test only had to check the body survived the surface. Now the panel
-    // is a row that obeys `defaultOpen` like the inline one, so BOTH states are
-    // pinned: closed hides the sub-agent's steps, open shows exactly what the
-    // old always-expanded panel showed.
-    childMessages = CHILD_MESSAGES;
-
-    const closed = render(taskPart({}), { panel: true });
-    expect(closed).toContain('aria-expanded="false"');
-    expect(closed).not.toContain('pattern=TODO');
-    // The full-view action rides the trigger on BOTH surfaces, so a closed
-    // panel row keeps it — same as the closed inline row.
-    expect(closed).toContain('aria-label="Open full view"');
-
-    const open = render(taskPart({}), { panel: true, open: true });
-    expect(open).toContain('aria-expanded="true"');
-    expect(open).toContain('Searched');
-    expect(open).toContain('pattern=TODO');
-    expect(open).toContain('aria-label="Open full view"');
+  test('a failed call that never got a session keeps its failure in place: one sentence, the raw error behind Details', () => {
+    childMessages = undefined;
+    const failed = taskPart({ status: 'error', childSessionId: null }) as ToolPart & { state: { error?: string } };
+    failed.state.error = 'The provider refused the request.';
+    const markup = render(failed as ToolPart, { open: true });
+    expect(markup).toContain('The agent stopped before it finished.');
+    expect(markup).toMatch(/aria-expanded="false"[^>]*>(<svg[\s\S]*?<\/svg>)?Details<\/button>/);
+    expect(markup).not.toContain('The provider refused the request.');
+    expect(markup).not.toContain('data-subagent-dialog');
   });
 });
-
-// ── KRTX-1746: the errored part keeps its row — the failure reason travels ──
-//
-// The renderer used to collapse an errored dispatch into its generic error
-// card, and TaskTool never drew `state.error`, so the fix routes errored task
-// parts back here AND draws the error. Both halves are pinned.
-test('a failed dispatch draws the error and keeps the view affordance', () => {
-  childMessages = undefined; // the child transcript need not be resident
-  const failed = taskPart({ status: 'error' }) as ToolPart & {
-    state: { error?: string };
-  };
-  failed.state.error =
-    'Subagent failed (task_id: ses_ee95c107bffe49S04KWqZ5tjcc): This model does not support assistant message prefill. The conversation must end with a user message.';
-  const markup = render(failed as ToolPart, { open: true });
-  expect(markup).toContain('aria-label="Open full view"');
-  expect(markup).toContain('assistant message prefill');
-});
-
-// ── pi's `agent` tool: the same row as its deprecated alias `task` ──────────
-//
-// pi registers its subagent tool as `agent`. It had no row of its own: its kind
-// was `other`, so the SDK read no child session from it and the call drew as
-// the generic card. It reaches TaskTool through `toolKind('agent') === 'task'`.
-const { ToolRegistry } = await import('../shared/registry');
 
 describe('TaskTool — pi agent tool', () => {
   function agentPart(state: Record<string, unknown>): ToolPart {
@@ -394,26 +243,23 @@ describe('TaskTool — pi agent tool', () => {
     } as unknown as ToolPart;
   }
 
-  test('`agent` resolves to the task row and opens its child session', () => {
+  test('`agent` resolves to the agent row and opens its child session', () => {
     expect(ToolRegistry.get('agent')).toBe(TaskTool);
     childMessages = undefined;
     const markup = render(agentPart({ status: 'completed', metadata: { sessionId: CHILD_SESSION_ID } }));
-    expect(markup).toContain('>Agent · researcher</span>');
-    expect(markup).toContain('aria-label="Open full view"');
+    expect(markup).toContain('>Read the market report</span>');
+    expect(markup).toContain('>Researcher</span>');
     expect(markup).toContain(`data-session-id="${CHILD_SESSION_ID}"`);
-    expect(markup).not.toContain('background');
   });
 
-  test('a background hand-off says its agent works in the background, with no spinner', () => {
+  test('a background hand-off whose child still works reads Working, with nothing shimmering', () => {
     childMessages = undefined;
     const markup = render(agentPart({ status: 'completed', metadata: { sessionId: CHILD_SESSION_ID, background: true } }));
-    expect(markup).toContain('Working in the background');
-    expect(markup).toContain('aria-label="Open full view"');
-    // The call is over: nothing on the row shimmers.
+    expect(markup).toContain('>Working</span>');
     expect(markup).not.toContain('data-kx-text-shimmer');
   });
 
-  test('once the child replied, the row says it ran in its own session', () => {
+  test('once the background child replied, it reads Done', () => {
     childMessages = [
       {
         info: { id: 'm1', role: 'assistant', sessionID: CHILD_SESSION_ID, time: { created: 1, completed: 2 } },
@@ -421,7 +267,6 @@ describe('TaskTool — pi agent tool', () => {
       },
     ] as unknown as MessageWithParts[];
     const markup = render(agentPart({ status: 'completed', metadata: { sessionId: CHILD_SESSION_ID, background: true } }));
-    expect(markup).toContain('In its own session');
-    expect(markup).not.toContain('Working in the background');
+    expect(markup).toContain('>Done</span>');
   });
 });

@@ -24,7 +24,7 @@ export function channelSettingsPatch(
   const patch: UpdateChannelBindingInput = {};
   if (next.agentName !== bound.agentName) patch.agentName = next.agentName;
   if (next.model?.providerID !== bound.model?.providerID || next.model?.modelID !== bound.model?.modelID) {
-    patch.opencodeModel = next.model ? modelKeyToWire(next.model) : null;
+    patch.model = next.model ? modelKeyToWire(next.model) : null;
   }
   if (next.conversationPolicy !== bound.conversationPolicy) {
     patch.conversationPolicy = next.conversationPolicy;

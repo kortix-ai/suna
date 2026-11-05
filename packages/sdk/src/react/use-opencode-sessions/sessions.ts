@@ -4,7 +4,6 @@ import { qk } from '../query-keys';
 import { activeRuntimeAction, runtimeActionError, runtimeActionPaths } from '../../core/session/runtime-actions';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import { isRuntimeConfigInvalidError } from '../../core/http/runtime-errors';
 import { markSessionFresh } from '../../core/http/fresh-sessions';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useCurrentRuntime } from '../use-current-runtime';
@@ -12,21 +11,18 @@ import { useRuntimeSupports } from '../use-runtime-supports';
 import type { Session } from '../../core/runtime/runtime-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap, canQueryRuntimeSession } from './shared';
-import { NoCompactionModelError } from './no-compaction-model-error';
-import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-controller';
 import { useMemo } from 'react';
 import { useSyncStore } from '../../browser/stores/sync-store';
-import { logSessionRows, settledFromLog, useRuntimeServesLog } from './log-sessions';
+import { logSessionRows, settledFromLog } from './log-sessions';
 
 // ============================================================================
 // Session Hooks
 // ============================================================================
 
-/** The held session logs' threads on a box that serves its log; null on any other box. */
+/** The held session logs' threads (`runtime.log.v1`, every box past the runtime floor). */
 function useLogSessionRows(): Session[] | null {
-  const servesLog = useRuntimeServesLog();
   const logs = useSyncStore((state) => state.sessionLogs);
-  return useMemo(() => (servesLog ? logSessionRows(logs) : null), [servesLog, logs]);
+  return useMemo(() => logSessionRows(logs), [logs]);
 }
 
 /** The runtime's sessions. A box that serves its log answers them from the session log: no box read. */
@@ -57,7 +53,7 @@ export function useRuntimeSessions(enabled = true) {
     // the first success in <300ms instead of mid-400ms-window; exponential tail
     // (cap 10s) covers the rare genuinely-stuck case. The old 8x400ms backoff
     // (~3.2s) was the entire 'opencode-listed' wall in the browser trace.
-    retry: (failureCount, error) => !isRuntimeConfigInvalidError(error) && failureCount < 16,
+    retry: (failureCount) => failureCount < 16,
     retryDelay: (attempt) =>
       attempt < 16 ? 150 : Math.min(150 * Math.pow(2, attempt - 16), 10000),
   });
@@ -83,7 +79,7 @@ export function useRuntimeSession(sessionId: string) {
     // Retry transient failures (sandbox still warming, brief network blip) so a
     // single failed lookup doesn't settle as "not found" and flash the
     // not-accessible error. The query stays in its loading state across retries.
-    retry: (failureCount, error) => !isRuntimeConfigInvalidError(error) && failureCount < 3,
+    retry: (failureCount) => failureCount < 3,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
     placeholderData: () => {
       const sessions = queryClient.getQueryData<Session[]>(runtimeKeys.sessions());
@@ -146,73 +142,6 @@ export function useCreateRuntimeSession() {
   });
 }
 
-/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
-export function useDeleteOpenCodeSession() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (sessionId: string) => {
-      const client = getClient();
-      const result = await client.session.delete({ sessionID: sessionId });
-      unwrap(result);
-      return sessionId;
-    },
-    onSuccess: (sessionId) => {
-      // Surgically remove from cache — SSE session.deleted will also fire
-      queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
-        if (!old) return old;
-        return old.filter((s) => s.id !== sessionId);
-      });
-      queryClient.removeQueries({
-        queryKey: runtimeKeys.runtimeSession(sessionId),
-      });
-      queryClient.removeQueries({
-        queryKey: runtimeKeys.runtimeMessages(sessionId),
-      });
-    },
-  });
-}
-
-/** @deprecated Rename with `updateProjectSession` (`name`). Removed in the next major. */
-export function useUpdateRuntimeSession() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      sessionId,
-      title,
-      archived,
-    }: {
-      sessionId: string;
-      title?: string;
-      archived?: boolean;
-    }) => {
-      const client = getClient();
-      const body: { title?: string; time?: { archived?: number } } = {};
-      if (title !== undefined) body.title = title;
-      if (archived !== undefined) body.time = { archived: archived ? Date.now() : 0 };
-      const result = await client.session.update({
-        sessionID: sessionId,
-        ...body,
-      });
-      return unwrap(result);
-    },
-    onSuccess: (updatedSession) => {
-      // Surgically update cache — SSE session.updated will also fire
-      const session = updatedSession as Session;
-      queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
-        if (!old) return old;
-        const idx = old.findIndex((s) => s.id === session.id);
-        if (idx < 0) return old;
-        const next = [...old];
-        next[idx] = session;
-        return next.sort((a, b) => b.time.updated - a.time.updated);
-      });
-      queryClient.setQueryData(runtimeKeys.runtimeSession(session.id), session);
-    },
-  });
-}
-
 /** Fork the conversation at `sessionId` (the runtime's `POST /session/{id}/fork`):
  *  a new session in the same sandbox that carries the copied history up to
  *  `messageID` (every message when absent), titled `"<title> (fork #N)"`. The
@@ -248,22 +177,6 @@ export function useForkSession() {
         predicate: (query) => qk.project.scope('').slice(0, 2).every((part, index) => query.queryKey[index] === part),
       });
     },
-  });
-}
-
-/** @deprecated Use `useRuntimeVcsDiff`. Removed in the next major. */
-export function useRuntimeSessionDiff(sessionId: string) {
-  const runtimeReady = useRuntimeReady();
-  const canQuerySession = canQueryRuntimeSession(sessionId);
-  return useQuery({
-    queryKey: ['opencode', 'session-diff', sessionId],
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.session.diff({ sessionID: sessionId });
-      return unwrap(result);
-    },
-    enabled: runtimeReady && canQuerySession,
-    staleTime: Infinity,
   });
 }
 
@@ -303,55 +216,9 @@ export function useSummarizeRuntimeSession() {
       providerID?: string;
       modelID?: string;
     }) => {
-      // A box with the session-log actions compacts with the model it runs.
+      // The box compacts with the model it runs (`runtime.actions.v1`).
       const compacted = await activeRuntimeAction('POST', runtimeActionPaths.compact(params.sessionId));
-      if (compacted) {
-        if (!compacted.ok) throw await runtimeActionError(compacted, 'Compacting the session failed');
-        return params.sessionId;
-      }
-      const client = getClient();
-
-      let { providerID, modelID } = params;
-
-      // The model of the session's last assistant message. pi summarizes with
-      // the model it runs; the request still names one for the wire.
-      if (!providerID || !modelID) {
-        try {
-          const msgs = await client.session.messages({
-            sessionID: params.sessionId,
-            limit: SESSION_SYNC_PAGE_SIZE,
-          });
-          const allMsgs = (msgs.data ?? []) as Array<{
-            info: { role: string; providerID?: string; modelID?: string };
-          }>;
-          for (let i = allMsgs.length - 1; i >= 0; i--) {
-            const m = allMsgs[i].info;
-            if (m.role === 'assistant' && m.providerID && m.modelID) {
-              providerID = providerID || m.providerID;
-              modelID = modelID || m.modelID;
-              break;
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      if (!providerID || !modelID) {
-        // Expected user-facing config state (no model configured anywhere):
-        // the host toast already tells the user to configure a model. Throw a
-        // sentinel-marked class so the Sentry telemetry gate can drop it
-        // across every capture path instead of paging Better Stack for an
-        // expected configuration outcome. See `NoCompactionModelError`.
-        throw new NoCompactionModelError();
-      }
-
-      const result = await client.session.summarize({
-        sessionID: params.sessionId,
-        providerID,
-        modelID,
-      });
-      unwrap(result);
+      if (!compacted.ok) throw await runtimeActionError(compacted, 'Compacting the session failed');
       return params.sessionId;
     },
     onMutate: ({ sessionId }) => {
@@ -372,61 +239,3 @@ export function useSummarizeRuntimeSession() {
 // Init Hook — analyze project and create AGENTS.md (via /init command)
 // ============================================================================
 
-/** @deprecated Use `useExecuteRuntimeCommand` with `command: 'init'`. Removed in the next major. */
-export function useInitSession() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ sessionId }: { sessionId: string }) => {
-      const client = getClient();
-      const result = await client.session.command({
-        sessionID: sessionId,
-        command: 'init',
-        arguments: '',
-      });
-      if (result.error) {
-        // The error union here (`BadRequest | InvalidRequestError |
-        // NotFoundError`) doesn't share a `.message`/`.data.message` shape
-        // across all members — duck-type defensively rather than assume one.
-        const err = result.error;
-        const errRec =
-          err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
-        const dataRec =
-          errRec?.data && typeof errRec.data === 'object'
-            ? (errRec.data as Record<string, unknown>)
-            : undefined;
-        const message = dataRec?.message ?? errRec?.message;
-        throw new Error(typeof message === 'string' ? message : 'Failed to initialize project');
-      }
-      return sessionId;
-    },
-    onSuccess: (sessionId) => {
-      // SSE events handle session updates. Just refetch messages for this session
-      // since /init creates new messages.
-      queryClient.refetchQueries({
-        queryKey: runtimeKeys.runtimeMessages(sessionId),
-      });
-    },
-    // Suppress global error handler — caller handles errors via onError callback
-    onError: () => {},
-    // Same rationale as useExecuteRuntimeCommand — /command blocks until done,
-    // retrying on timeout would duplicate execution.
-    retry: false,
-  });
-}
-
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `useRuntimeSessions`. Removed in the next major. */
-export const useOpenCodeSessions = useRuntimeSessions;
-/** @deprecated Renamed to `useRuntimeSession`. Removed in the next major. */
-export const useOpenCodeSession = useRuntimeSession;
-/** @deprecated Renamed to `useCreateRuntimeSession`. Removed in the next major. */
-export const useCreateOpenCodeSession = useCreateRuntimeSession;
-/** @deprecated Renamed to `useUpdateRuntimeSession`. Removed in the next major. */
-export const useUpdateOpenCodeSession = useUpdateRuntimeSession;
-/** @deprecated Renamed to `useRuntimeSessionDiff`. Removed in the next major. */
-export const useOpenCodeSessionDiff = useRuntimeSessionDiff;
-/** @deprecated Renamed to `useRuntimeSessionTodo`. Removed in the next major. */
-export const useOpenCodeSessionTodo = useRuntimeSessionTodo;
-/** @deprecated Renamed to `useSummarizeRuntimeSession`. Removed in the next major. */
-export const useSummarizeOpenCodeSession = useSummarizeRuntimeSession;

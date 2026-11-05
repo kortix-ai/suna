@@ -429,7 +429,7 @@ export function registerSessionLogRoutes(): void {
       const { to } = c.req.valid('json');
       const gate = await sessionReadGate(c, projectId, sessionId);
       if (gate.denied) return gate.denied as never;
-      const report = await sessionLogSwitchPreflight({ sessionId, projectMetadata: gate.projectMetadata, to });
+      const report = await sessionLogSwitchPreflight({ sessionId, to });
       if (!report) return c.json({ error: 'No session log for this session' }, 404);
       return c.json(report, 200);
     },

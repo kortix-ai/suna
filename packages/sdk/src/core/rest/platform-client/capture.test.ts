@@ -357,3 +357,45 @@ test('fleet health: the devices answer carries the summary, and a device lands i
   expect(captureHealthBucket(health('attention'))).toBe('attention');
   expect(captureHealthBucket(health('not_recording'))).toBe('not_recording');
 });
+
+test('device diagnostics: the devices answer carries one typed diagnostics object per device, and a failed update is a health reason', async () => {
+  const diagnostics: Capture.CaptureDeviceDiagnostics = {
+    os: { family: 'windows', name: 'Windows 11 Pro 24H2', version: '10.0.26200.9448', build: '26200.9448', arch: 'x86_64' },
+    hostname: 'fixture-pc',
+    computer_name: 'Fixture PC',
+    member_email: 'person@example.com',
+    app_version: '0.1.0',
+    update: {
+      status: 'failed',
+      installed: '0.1.0',
+      channel: 'stable',
+      latest: '0.1.1',
+      last_check_at: '2026-11-04T10:00:00.000Z',
+      last_check: 'no update: 0.1.1 is marked bad on this computer',
+      updating_to: null,
+      last_result: { at: '2026-11-04T09:00:00.000Z', from: '0.1.0', to: '0.1.1', outcome: 'rolled_back', detail: 'session 2: no_new_frame' },
+      skipped: [{ version: '0.1.1', failed_at: '2026-11-04T09:00:00.000Z', retry_at: '2026-11-11T09:00:00.000Z' }],
+    },
+    recording: {
+      state: 'recording', reason: null, last_error: null, missing_permissions: [], last_frame_at: null, paused_until: null, awake_since: null,
+      interval_ms: 1000, max_height: 1080, audio_enabled: false, actions_recording: true, displays: 1,
+    },
+    sync: { state: 'ok', pending: 0, error_class: null, last_upload_at: null },
+    policy: null,
+    machine: {
+      cpu: 'Synthetic CPU', cpu_cores: 8, memory_bytes: 17179869184, disk_free_bytes: 1, disk_total_bytes: 2, gpus: ['Synthetic GPU'],
+      booted_at: null, timezone: 'Europe/Berlin', utc_offset: '+01:00', locale: 'de-DE',
+    },
+    encrypted: false,
+    managed: true,
+    described_at: null,
+    reported_at: null,
+    last_credentials_at: null,
+    created_at: '2026-11-01T00:00:00.000Z',
+  };
+  const reason: Capture.CaptureHealthReason = 'update_failed';
+  nextBody = { devices: [{ device_id: 'd1', diagnostics, health: { state: 'attention', idle: false, reasons: [reason], since: null, latest_version: null } }], health: {} };
+  const [device] = (await listCaptureDevices('a1', { scope: 'account' })).devices;
+  expect(device?.diagnostics?.update?.last_result?.detail).toBe('session 2: no_new_frame');
+  expect(device?.health.reasons).toEqual(['update_failed']);
+});

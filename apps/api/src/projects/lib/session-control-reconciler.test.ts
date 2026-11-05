@@ -687,7 +687,6 @@ describe('R5.2: the server owns session state', () => {
     state: 'active',
     message_id: null,
     runtime_session_id: 'ses_root',
-    opencode_session_id: 'ses_root',
     started_at: '2026-10-06T10:00:00.000Z',
     accepted_at: null,
   };

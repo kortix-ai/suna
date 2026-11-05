@@ -28,7 +28,7 @@ import { useReducedMotion } from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
 
 import { Composer } from '@/components/kortix/composer';
-import { LIQUID_GLASS_AVAILABLE } from '@/components/kortix/liquid-glass-capsule';
+import { LIQUID_GLASS_AVAILABLE } from '@/components/kortix/liquid-glass';
 import { useToast } from '@/components/kortix/toast-provider';
 import { FloatingTabCapsule } from '@/components/navigation/FloatingTabBar';
 import { Button } from '@/components/ui/button';

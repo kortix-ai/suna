@@ -1,6 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
+import { redactUrlSecrets } from './lib/redact-url-secrets';
 import { prettyJSON } from 'hono/pretty-json';
 import { config } from './config';
 import { logger as appLogger } from './lib/logger';
@@ -24,13 +25,14 @@ import { compressResponse } from './middleware/compress';
 import { protectResponseCache } from './middleware/cache-control';
 import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline } from './middleware/request-deadline';
+import { rejectOutdatedCli } from './middleware/cli-min-version';
 import { createPublicEdgeRateLimitMiddleware } from './middleware/public-edge-rate-limit';
 import { shouldSuppressRequestLog } from './sandbox-proxy/request-log-suppression';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from './sandbox-proxy/proxy-hop';
 import { upstreamTiming } from './middleware/upstream-timing';
 import { auditApiRequest } from './middleware/audit';
 import { isUuid } from './shared/validate';
-import { aliasCorsOrigins, aliasForHost, DOMAIN_ALIAS_CONTEXT_FIELD } from './shared/domain-aliases';
+import { aliasForHost, configuredCorsOrigins, DOMAIN_ALIAS_CONTEXT_FIELD } from './shared/domain-aliases';
 
 // The global middleware chain, in the registration order the request sees it.
 // Every line inside installHttpMiddleware is moved verbatim from the former
@@ -88,15 +90,8 @@ app.use("*", protectResponseCache);
 // kilobyte of the body, never by buffering it. See middleware/compress.ts.
 app.use('*', compressResponse);
 
-const extraOrigins = [
-  ...(config.CORS_ALLOWED_ORIGINS
-    ? config.CORS_ALLOWED_ORIGINS.split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : []),
-  // Self-host alias domains serve the same web app (shared/domain-aliases.ts).
-  ...aliasCorsOrigins(),
-];
+// `CORS_ALLOWED_ORIGINS` and the self-host alias domains (shared/domain-aliases.ts).
+const extraOrigins = configuredCorsOrigins();
 
 app.use(
   '*',
@@ -183,7 +178,9 @@ app.use('*', upstreamTiming);
 installFetchTiming(config.SUPABASE_URL);
 
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
-app.use('*', logger());
+// The access line prints the path WITH its query: a credential in it (an
+// Artifact live socket's `?ticket=`) is redacted before it is written.
+app.use('*', logger((message, ...rest) => void process.stdout.write(`${[redactUrlSecrets(message), ...rest].join(' ')}\n`)));
 
 /**
  * `X-Kortix-Upstream-Status` as a number, or null when the header is absent,
@@ -338,6 +335,10 @@ app.use('*', auditApiRequest);
 
 // Before route validation and authentication; inside request logging and audit.
 app.use('/v1/*', createPublicEdgeRateLimitMiddleware());
+
+// A CLI below CLI_MIN_VERSION reads routes this server no longer serves: tell it
+// to update before auth, so a stale token does not hide the reason.
+app.use('/v1/*', rejectOutdatedCli);
 
 // Wall-clock deadline for non-streaming requests — returns 503 before the 30s
 // client abort instead of hanging. Streaming/proxy/WS surfaces are exempted

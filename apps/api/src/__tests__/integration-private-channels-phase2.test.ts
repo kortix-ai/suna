@@ -124,7 +124,7 @@ const CONV_SLUG = `conv-${P.slice(0, 6)}`;
 const P_THREAD = crypto.randomUUID();
 const GENERAL_THREAD = crypto.randomUUID();
 const WORD = `zebracorn${P.slice(0, 6)}`;
-const metadata = { experimental: { project_channels: true, drives: true, artifacts: true, shared_drives: true } };
+const metadata = { experimental: { chat: true, drives: true, artifacts: true, shared_drives: true } };
 /** Turn the project's `shared_drives` flag on or off, the other flags unchanged. */
 const setSharedDrives = (on: boolean) =>
   db.update(projects).set({ metadata: { experimental: { ...metadata.experimental, shared_drives: on } } }).where(eq(projects.projectId, PROJECT));

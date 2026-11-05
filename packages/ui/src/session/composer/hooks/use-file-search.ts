@@ -24,7 +24,7 @@ const UNBOUND_SERVER = 'unbound';
  * `server` is the discriminator that keeps this cache from bleeding across
  * sandboxes. TanStack's cache is process-wide, but `searchWorkspaceFiles`
  * itself is not scoped by composer — it resolves whatever sandbox is
- * currently active (`getRuntimeCacheKey()` → `getActiveOpenCodeUrl()`) at
+ * currently active (`getRuntimeCacheKey()` → `getActiveRuntimeUrl()`) at
  * call time. Two composers both searching "config" on different sandboxes
  * must land in different cache entries, and a composer that stays mounted
  * across a session switch must stop reusing its pre-switch entry the moment

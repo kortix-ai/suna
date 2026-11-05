@@ -11,6 +11,10 @@ export interface MenuRow {
   label: string;
   value: string;
   description?: string;
+  /** A space's `@` menu: the row's face (a person round, an agent its mark). */
+  avatar?: { kind: 'person' | 'agent'; key: string; name: string; url: string | null };
+  /** A space's `@` menu: an agent not in the space yet; picking it adds it. */
+  addToSpace?: boolean;
 }
 
 export interface MentionSection {

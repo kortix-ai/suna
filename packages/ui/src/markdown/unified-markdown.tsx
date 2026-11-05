@@ -1,5 +1,10 @@
 'use client';
 
+import { appLink } from './app-links';
+import { Github } from '../internal/icons/github';
+import { SlackLogoIcon } from '@phosphor-icons/react';
+import { LinearMark, FigmaMark, NotionMark, GoogleDocsMark, GoogleSheetsMark, GoogleSlidesMark } from './app-link-icons';
+
 import { toSandboxAbsolutePath } from '@kortix/sdk';
 
 import { useTranslations } from '../i18n';
@@ -52,12 +57,71 @@ import { useUiLink } from '../providers/ui-provider';
 import React, { useCallback, useContext, useMemo, useState } from 'react';
 import { parseMarkdownIntoBlocks, Streamdown } from 'streamdown';
 
+function SlackMark({ className }: { className?: string }) {
+  return <SlackLogoIcon weight="fill" className={className} />;
+}
+
 const LINK_CLASS = cn(
   'font-medium text-kortix-blue',
   'underline decoration-kortix-blue/40 decoration-[1px] underline-offset-[3px]',
   'transition-colors hover:decoration-kortix-blue',
   '[overflow-wrap:anywhere]',
 );
+
+// No underline at rest: the app mark is the link affordance. Hover underlines
+// the label only. The mark is inline-block, so the underline skips it, and its
+// color stays fixed.
+const APP_LINK_CLASS = cn(
+  'font-medium text-kortix-blue no-underline',
+  'decoration-kortix-blue decoration-[1px] underline-offset-[3px] hover:underline',
+  '[overflow-wrap:anywhere]',
+);
+
+const TEXT_WRAPPER_TAGS = new Set(['strong', 'em', 'b', 'i', 'del', 's']);
+
+/** The first user-perceived character: a flag or a vowel sign stays whole. */
+function firstGrapheme(text: string): string | undefined {
+  if (typeof Intl.Segmenter === 'function') {
+    return new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+      .segment(text)[Symbol.iterator]().next().value?.segment;
+  }
+  return Array.from(text)[0];
+}
+
+/**
+ * Splits a link label after its first character: `"PR #123"` → `["P", "R #123"]`.
+ * A text wrapper (a stream-word span, `**bold**`) is copied around each half,
+ * so the label renders the same while it streams and after. Any other element
+ * (inline code) stays whole and keeps its own wrapping. There is no break
+ * opportunity between the halves: whole words still wrap together, and the
+ * rest still breaks anywhere. Returns null when the label opens with no text.
+ */
+function splitLeadingChar(label: React.ReactNode): [React.ReactNode, React.ReactNode] | null {
+  const [first, ...others] = React.Children.toArray(label);
+  let lead: React.ReactNode;
+  let tail: React.ReactNode;
+  if (typeof first === 'string' || typeof first === 'number') {
+    const text = String(first);
+    const char = firstGrapheme(text);
+    if (!char) return null;
+    lead = char;
+    tail = text.slice(char.length);
+  } else if (React.isValidElement<{ children?: React.ReactNode; className?: string; node?: { tagName?: string } }>(first)) {
+    const tag = typeof first.type === 'string' ? first.type : first.props.node?.tagName;
+    if (first.props.className === STREAM_WORD_CLASS || (tag && TEXT_WRAPPER_TAGS.has(tag))) {
+      const inner = splitLeadingChar(first.props.children);
+      if (!inner) return null;
+      lead = React.cloneElement(first, { key: 'lead' }, inner[0]);
+      tail = React.cloneElement(first, { key: 'tail' }, inner[1]);
+    } else {
+      lead = <span key="lead" className="whitespace-normal">{first}</span>;
+      tail = null;
+    }
+  } else {
+    return null;
+  }
+  return [lead, <>{tail}{others}</>];
+}
 
 function handleHashClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
   if (!href.startsWith('#')) return;
@@ -88,7 +152,28 @@ const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
   genui: false,
 });
 
-export function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
+/** Only streaming word wrappers are transparent; formatting remains custom content. */
+function bareLinkText(children: React.ReactNode): string | null {
+  let text = '';
+  for (const child of React.Children.toArray(children)) {
+    if (typeof child === 'string') { text += child; continue; }
+    if (!React.isValidElement<{ className?: string; children?: React.ReactNode }>(child) ||
+        child.props.className !== STREAM_WORD_CLASS) return null;
+    const word = bareLinkText(child.props.children);
+    if (word === null) return null;
+    text += word;
+  }
+  return text;
+}
+
+export function MarkdownLink({
+  href,
+  children,
+}: {
+  href?: string;
+  children?: React.ReactNode;
+}) {
+  const tAppLink = useTranslations('markdownAppLinks');
   const Link = useUiLink();
   const { proxy, policy, variant } = useContext(MarkdownRenderContext);
   const openPreview = useOpenPreviewLink();
@@ -105,7 +190,9 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
 
   // A setup link whose URL is still streaming: the card it will
   // become, with nothing to click yet (see `holdPendingSetupLink`).
-  const pendingSetupLink = policy.setupLinks ? parsePendingSetupLinkHref(href) : null;
+  const pendingSetupLink = policy.setupLinks
+    ? parsePendingSetupLinkHref(href)
+    : null;
   if (pendingSetupLink) {
     return (
       <SetupLinkButton kind={pendingSetupLink} token={null}>
@@ -117,13 +204,15 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
   // A file in the session's workspace opens the file preview, the same
   // as a path in prose (see `remarkWorkspaceFileLinks`).
   const decodedFilePath = policy.fileLinks ? parseFileLinkHref(href) : null;
-  const filePath = policy.fileLinks ? parseFileLinkHref(href, variant === 'document') : null;
+  const filePath = policy.fileLinks
+    ? parseFileLinkHref(href, variant === 'document')
+    : null;
   if (decodedFilePath && !filePath) {
-    return <span className={LINK_CLASS}>{children}</span>;
+    return <span className={cn(LINK_CLASS, 'group')}>{children}</span>;
   }
   if (filePath) {
     return (
-      <ClickablePath filePath={filePath} className={LINK_CLASS}>
+      <ClickablePath filePath={filePath} className={cn(LINK_CLASS, 'group')}>
         {children}
       </ClickablePath>
     );
@@ -132,10 +221,58 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
   // The URL is still streaming: show the label in link style, with
   // nothing to click until the real href arrives.
   if (isStreamingLinkPlaceholder(href)) {
-    return <span className={LINK_CLASS}>{children}</span>;
+    return <span className={cn(LINK_CLASS, 'group')}>{children}</span>;
   }
 
   const resolvedHref = proxy(href) ?? href ?? '#';
+  const presentation = href === resolvedHref ? appLink(resolvedHref) : null;
+  const Mark = presentation
+    ? {
+        github: Github,
+        slack: SlackMark,
+        linear: LinearMark,
+        figma: FigmaMark,
+        notion: NotionMark,
+        google: presentation.kind === 'googleDoc' ? GoogleDocsMark : presentation.kind === 'googleSheet' ? GoogleSheetsMark : GoogleSlidesMark,
+      }[presentation.app]
+    : null;
+  const plainText = bareLinkText(children);
+  const compactLabel = presentation?.name ?? (presentation &&
+    presentation.kind !== 'commit' && presentation.kind !== 'linearIssue'
+      ? tAppLink(presentation.kind, { number: presentation.number ?? '' }) : '');
+  const appName = presentation ? {
+    github: 'GitHub', linear: 'Linear', slack: 'Slack', figma: 'Figma', notion: 'Notion', google: 'Google',
+  }[presentation.app] : '';
+  const labelNamesApp = plainText === href && !presentation?.name && presentation && ['slack', 'notion', 'figma', 'google'].includes(presentation.app);
+  // A compact app link is the app mark plus a short label, never underlined.
+  // The mark is 1em and sits at -0.15em: Roobert cap height is 0.7em, so the
+  // mark centers on the cap height at every text size. A label built from an
+  // identifier ("PR #123", "ENG-42", a commit) is short and never breaks. A title or
+  // custom label (Notion and Figma allow 48 characters, CJK has no spaces) is
+  // glued to the mark by its first character only, so the mark never ends a
+  // line alone and the title still wraps inside the column.
+  const label = plainText === href ? compactLabel : children;
+  // Figma, Notion and GitHub account labels are titles; every other compact label is an
+  // identifier, even when `appLink` stores it as `name` (ENG-42, a commit).
+  // GitHub account and repo names (up to 39 and 140 characters) wrap like titles.
+  const isTitle = presentation?.app === 'figma' || presentation?.app === 'notion' ||
+    presentation?.kind === 'githubUser' || presentation?.kind === 'githubRepo';
+  const split = plainText === href && !isTitle
+    ? [label, null] as const
+    : splitLeadingChar(label);
+  const linkContent = presentation && Mark ? (
+    <>
+      <span className="whitespace-nowrap">
+        <span aria-hidden="true" className="pointer-events-none mr-1 inline-block size-[1em] align-[-0.15em] text-muted-foreground">
+          <Mark className="block size-full" />
+        </span>
+        {!labelNamesApp && <span className="sr-only">{appName}: </span>}
+        {split ? split[0] : null}
+      </span>
+      {split ? split[1] : label}
+    </>
+  ) : children;
+  const anchorClass = presentation && Mark ? APP_LINK_CLASS : LINK_CLASS;
   const isHash = resolvedHref.startsWith('#');
   const isExternal = !isInternalUrl(resolvedHref);
   // A sandbox address under a host preview resolver: the proxied href would
@@ -144,12 +281,15 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
     return (
       <a
         href={href}
-        className={LINK_CLASS}
+        className={anchorClass}
+        title={presentation ? resolvedHref : undefined}
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e) => openPreview(e, href, resolvedHref)}
       >
-        <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+        <InsideLinkContext.Provider value={true}>
+          {linkContent}
+        </InsideLinkContext.Provider>
       </a>
     );
   }
@@ -162,10 +302,13 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
     return (
       <a
         href={resolvedHref}
-        className={LINK_CLASS}
+        className={anchorClass}
+        title={presentation ? resolvedHref : undefined}
         {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
       >
-        <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+        <InsideLinkContext.Provider value={true}>
+          {linkContent}
+        </InsideLinkContext.Provider>
       </a>
     );
   }
@@ -174,10 +317,13 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
     <Link
       href={resolvedHref}
       onClick={isHash ? (e) => handleHashClick(e, resolvedHref) : undefined}
-      className={LINK_CLASS}
+      className={anchorClass}
+      title={presentation ? resolvedHref : undefined}
       {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
     >
-      <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+      <InsideLinkContext.Provider value={true}>
+        {linkContent}
+      </InsideLinkContext.Provider>
     </Link>
   );
 }

@@ -54,7 +54,8 @@ export {
   type SessionWorkspaceProps,
 } from './session-workspace';
 export { ProjectSessionsView } from './sessions/project-sessions-view';
-export { SpaceView, type SpaceFolder, type SpaceTarget, type SpaceViewProps } from './spaces/space-view';
+export { SpaceView, type SpaceFile, type SpaceFolder, type SpaceTarget, type SpaceViewProps } from './spaces/space-view';
+export { isHtmlPath } from './spaces/space-tab-list';
 export { ChannelGlyph } from './spaces/channel-glyph';
 export { agentLabel } from './spaces/space-timeline';
 export { MemoryView, type MemoryViewProps } from './memory/memory-view';
@@ -74,6 +75,14 @@ export {
   useGoalPerson,
   useStartGoal,
   goalOpenAsks,
+  goalPaused,
+  GoalCriteriaProgress,
+  GoalPersonChip,
+  GoalStatusIcon,
+  goalIconState,
+  goalStatusIconState,
+  type GoalIconState,
+  useGoalStateText,
   goalProgress,
   GoalStatusBadge,
   useGoalClock,

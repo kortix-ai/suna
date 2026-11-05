@@ -243,14 +243,14 @@ export async function collectMessageLinks(input: {
 
 /**
  * `collectMessageLinks` after a person's prompt is accepted, without waiting
- * and never failing the send: only with `project_channels` on and a person
+ * and never failing the send: only with `chat` on and a person
  * (`userId` null for an agent, a trigger or a service account).
  */
 export function collectMessageLinksInBackground(
   input: Omit<Parameters<typeof collectMessageLinks>[0], 'userId'> & { userId: string | null; projectMetadata: unknown },
 ): void {
   const { userId, projectMetadata, ...rest } = input;
-  if (!userId || !rest.spaceId || !resolveFeatureFlag(projectMetadata, 'project_channels')) return;
+  if (!userId || !rest.spaceId || !resolveFeatureFlag(projectMetadata, 'chat')) return;
   // After the handler returns its response: the extraction never delays the send.
   setImmediate(() => {
     collectMessageLinks({ ...rest, userId }).catch((err) =>

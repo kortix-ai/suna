@@ -3,7 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import { ProjectHome } from '@kortix/ui/workspace';
-import { uiRoutes } from '@kortix/ui';
+import { isNewSessionRequested, uiRoutes } from '@kortix/ui';
 import { useAccountState } from '@kortix/ui/internal/billing/index';
 import {
   billingDialogArgs,
@@ -14,7 +14,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { useComposerPrefillStore } from '@kortix/ui/internal/stores/composer-prefill-store';
 import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
 import { getProject } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag, useProjectSpaces } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef } from 'react';
@@ -45,17 +45,15 @@ export default function ProjectIndexPage() {
   // ProjectHome). This gate runs first and refuses a send the account cannot run.
   const beforeSend = useProjectSendGate(projectId);
 
-  // Channels on: home is the default channel (`resolveHomeLanding`).
-  const channels = useFeatureFlag(projectId, 'project_channels');
-  const spaces = useProjectSpaces(projectId, { enabled: channels.enabled });
+  // Spaces on: home is the person's own space (`resolveHomeLanding`), unless
+  // the person asked for a new session (`?new=1`, `newSessionHref`).
+  const channels = useFeatureFlag(projectId, 'chat');
   const landing = resolveHomeLanding({
     flagLoading: channels.isLoading,
     channelsOn: channels.enabled,
-    spacesLoaded: !!spaces.data,
-    spacesFailed: spaces.isError,
-    defaultSlug: spaces.data?.find((space) => space.kind === 'channel' && space.is_default)?.slug,
+    newSessionRequested: isNewSessionRequested(searchParams),
   });
-  const channelHref = landing.kind === 'channel' ? uiRoutes().channel(projectId, landing.slug) : null;
+  const channelHref = landing.kind === 'space' ? `${uiRoutes().project(projectId)}/chat` : null;
 
   // One-time "you're on Free" onboarding pitch. Keyed off the SAME resolved
   // billing state every other surface uses — the old `tier_key === 'free'`

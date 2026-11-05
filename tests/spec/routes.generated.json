@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1036,
+  "count": 1040,
   "routes": [
     {
       "method": "GET",
@@ -69,6 +69,10 @@
     {
       "method": "POST",
       "path": "/internal/gateway/pool-rate-limit"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/pool-usage"
     },
     {
       "method": "POST",
@@ -727,8 +731,20 @@
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/retry"
     },
     {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/usage"
+    },
+    {
       "method": "PUT",
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/value"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/subscription-connections"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/subscription-connections/:secretId/usage"
     },
     {
       "method": "POST",
@@ -2031,12 +2047,20 @@
       "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/events"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/events"
     },
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/events/credentials"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/events/test"
     },
     {
       "method": "POST",
@@ -2203,6 +2227,42 @@
       "path": "/v1/projects/:projectId/artifacts/:artifactId/content"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/doc"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/doc/flushed"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/doc/lease"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/doc/reset"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/doc/seed"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/doc/updates"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/live"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/live/agent"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/live/ticket"
+    },
+    {
       "method": "DELETE",
       "path": "/v1/projects/:projectId/artifacts/:artifactId/pin"
     },
@@ -2225,6 +2285,14 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/artifacts/types"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/asks"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/asks/:askId/answer"
     },
     {
       "method": "POST",
@@ -2507,6 +2575,10 @@
       "path": "/v1/projects/:projectId/channels/telegram/users/:user_id/photo"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/chat/threads"
+    },
+    {
       "method": "DELETE",
       "path": "/v1/projects/:projectId/claude-subscription"
     },
@@ -2764,6 +2836,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/logs/facets"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/gateway/overview"
     },
     {
@@ -3012,54 +3088,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/rooms"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/rooms"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/rooms/:roomId"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/rooms/:roomId"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/rooms/:roomId/members/people/:userId"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/rooms/:roomId/members/people/:userId"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/rooms/:roomId/members/sessions/:sessionId"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/rooms/:roomId/members/sessions/:sessionId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/rooms/:roomId/messages"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/rooms/:roomId/messages"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/rooms/:roomId/read"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/rooms/people"
-    },
-    {
-      "method": "GET",
       "path": "/v1/projects/:projectId/runtime/prompt-attachments/:attachmentId"
     },
     {
@@ -3275,10 +3303,6 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/group"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/idle-notice"
-    },
-    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/sessions/:sessionId/inbound"
     },
@@ -3464,22 +3488,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms/:roomId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms/:roomId/messages"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms/:roomId/messages"
-    },
-    {
-      "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/scope"
     },
     {
@@ -3629,6 +3637,14 @@
     {
       "method": "DELETE",
       "path": "/v1/projects/:projectId/spaces/:spaceId/members/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/posts"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/tabs"
     },
     {
       "method": "POST",

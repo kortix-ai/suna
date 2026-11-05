@@ -17,7 +17,7 @@ const NONE = 'none';
 
 /**
  * "Post to": the channel or DM each run starts a thread in. Shown only while
- * the project's `project_channels` flag is on. A private channel shows
+ * the project's `chat` flag is on. A private channel shows
  * disabled with its lock and why: the API refuses a trigger into one (a saved
  * trigger already posting there stays selectable). A channel shares later runs
  * with the project unless the person chose other sharing; a DM shares them
@@ -38,7 +38,7 @@ export function PostToField({
 }) {
   const t = useTranslations('triggerComposer');
   const viewerId = useUiViewerId();
-  const channelsOn = useFeatureFlag(projectId, 'project_channels').enabled === true;
+  const channelsOn = useFeatureFlag(projectId, 'chat').enabled === true;
   const spaces = useProjectSpaces(projectId, { enabled: channelsOn });
   if (!channelsOn) return null;
   const list = spaces.data ?? [];

@@ -62,7 +62,7 @@ describe('buildSessionRuntimeEnv — KORTIX_HARNESS', () => {
     expect(buildSessionRuntimeEnv(BASE_INPUT).KORTIX_HARNESS).toBe('pi');
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      opencodeModel: 'kortix/claude-sonnet-5',
+      sessionModel: 'kortix/claude-sonnet-5',
       compiledAgentConfig: JSON.stringify({ agent: { build: { prompt: 'x' } } }),
     });
     expect(env.KORTIX_HARNESS).toBe('pi');
@@ -136,7 +136,7 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       compiledAgentConfig: compiled,
-      opencodeModel: 'anthropic/claude-opus-4-8',
+      sessionModel: 'anthropic/claude-opus-4-8',
     });
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);

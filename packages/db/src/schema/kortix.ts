@@ -1091,6 +1091,15 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
    *  rejected, or a login that cannot be read). The account stays usable and
    *  in its pools; a successful refresh or a reconnect clears it. */
   needsReauthAt: timestamp('needs_reauth_at', { withTimezone: true }),
+  /** The plan usage of a subscription login (ChatGPT, Claude): windows, limit
+   *  state and when it was observed. The gateway writes it from each response's
+   *  headers; the usage route refreshes it from the provider. NULL until seen. */
+  usage: jsonb('usage'),
+  /** The last refresh from the provider's usage API: at most one call a minute per login. */
+  usageCheckedAt: timestamp('usage_checked_at', { withTimezone: true }),
+  /** Who the stored login signs in as, when the provider says: `{ email, plan }`.
+   *  Claude's profile API fills it on a usage refresh; a ChatGPT login carries it in its token. */
+  providerAccount: jsonb('provider_account'),
   createdBy: uuid('created_by').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1160,6 +1169,23 @@ export const projectSpaceKindEnum = kortixSchema.enum('project_space_kind', ['ch
 export const projectSpaceVisibilityEnum = kortixSchema.enum('project_space_visibility', ['public', 'private']);
 
 /**
+ * One stored tab of a space (`project_spaces.tabs`). The Chat tab is not
+ * stored: it is always first. `ref` names what the tab shows: a Drive file or
+ * folder path, an artifact id, an App slug or an https URL (`SpaceTabSchema`
+ * in `@kortix/api-contract` validates every write). `embeddable`: a link tab
+ * whose page the web app may frame, set by the API on write. Rows written
+ * before 2026-11-04 may hold `threads` or `memory`: the API drops those on
+ * read.
+ */
+export interface ProjectSpaceTabRecord {
+  id: string;
+  title: string;
+  kind: 'file' | 'folder' | 'artifact' | 'app' | 'link' | 'threads' | 'memory';
+  ref?: string;
+  embeddable?: boolean;
+}
+
+/**
  * A project space: a channel (product word "Channel") or a member's DM with one
  * agent. A thread is a `project_sessions` row whose `space_id` points here.
  * Named "space" in code because "channel" already means a chat integration
@@ -1191,6 +1217,8 @@ export const projectSpaces = kortixSchema.table(
     agents: text('agents').array().default(sql`'{}'::text[]`).notNull(),
     /** `private`: only the channel's members see it and its threads. `#general` and DMs are always `public` (check below). */
     visibility: projectSpaceVisibilityEnum('visibility').default('public').notNull(),
+    /** The space's tabs after Chat, in order (at most 20). People who may edit the space and its threads' agents replace the list (`PUT /spaces/:spaceId/tabs`). */
+    tabs: jsonb('tabs').$type<ProjectSpaceTabRecord[]>().default(sql`'[]'::jsonb`).notNull(),
     createdBy: uuid('created_by'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1393,7 +1421,7 @@ export const projectSessions = kortixSchema.table(
     sandboxProvider: sandboxProviderEnum('sandbox_provider').default('daytona').notNull(),
     sandboxId: text('sandbox_id'),
     sandboxUrl: text('sandbox_url'),
-    runtimeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('runtime_session_id'),
     agentName: text('agent_name').default('default').notNull(),
     status: projectSessionStatusEnum('status').default('queued').notNull(),
     error: text('error'),
@@ -1975,7 +2003,7 @@ export const projectTriggerRuntime = kortixSchema.table(
     autoPausedReason: text('auto_paused_reason'),
     autoPauseResumedAt: timestamp('auto_pause_resumed_at', { withTimezone: true }),
     // The channel or DM (`project_spaces`) this trigger's runs post to as
-    // threads (`project_channels` flag). Account-local like the access policy,
+    // threads (`chat` flag). Account-local like the access policy,
     // so not in the manifest. null = no space: the run lands in `#general`.
     spaceId: uuid('space_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -2440,7 +2468,7 @@ export const chatChannelBindings = kortixSchema.table(
     // default. Sessions started from this channel inherit these so different
     // channels bound to the same project can run different agents/models.
     agentName: varchar('agent_name', { length: 128 }),
-    model: varchar('opencode_model', { length: 128 }),
+    model: varchar('model', { length: 128 }),
     // How Slack users may participate in sessions started from this channel.
     // Default is project-wide sharing: linked project members can join the
     // Slack thread. Teams can opt into owner approval or owner-only.
@@ -2462,7 +2490,7 @@ export const chatChannelBindings = kortixSchema.table(
 // Thread → session mapping. First Slack/Telegram message in a thread spawns
 // a Kortix session and writes a row here. Follow-up messages in the same
 // thread look up the existing session and deliver the prompt as a follow-up
-// to opencode — same sandbox, same conversation, no fresh boot.
+// to the runtime — same sandbox, same conversation, no fresh boot.
 export const chatThreads = kortixSchema.table(
   'chat_threads',
   {
@@ -2852,9 +2880,9 @@ export const sessionTurns = kortixSchema.table(
     sandboxId: uuid('sandbox_id').notNull(),
     projectId: uuid('project_id').notNull(),
     accountId: uuid('account_id').notNull(),
-    // OpenCode root this turn runs in. Null until the daemon reports it.
-    runtimeSessionId: text('opencode_session_id'),
-    // Client-minted OpenCode user message id. Null for command turns.
+    // The runtime session this turn runs in. Null until the daemon reports it.
+    runtimeSessionId: text('runtime_session_id'),
+    // Client-minted user message id. Null for command turns.
     messageId: text('message_id'),
     state: varchar('state', { length: 16 }).default('delivering').notNull(),
     endReason: text('end_reason'),
@@ -2877,7 +2905,7 @@ export const sessionTurns = kortixSchema.table(
       'session_turns_end_reason_check',
       // Every value here is written by a real call site: 'completed' by a
       // daemon-confirmed end, 'failed' by a terminal model error, 'abandoned'
-      // by a delivery that never reached OpenCode, 'runtime_gone' by the stop
+      // by a delivery that never reached the runtime, 'runtime_gone' by the stop
       // writer and by the reaper's deadline expiry, 'unknown' by an observer
       // that proved the turn is over but could not say how. A value no caller
       // writes teaches a reader a distinction the data does not carry.
@@ -3101,7 +3129,7 @@ export const accountSubscriptionEnds = kortixSchema.table(
 );
 
 /**
- * The RUNTIME PROJECTION — the daemon's `/kortix/opencode/state` document,
+ * The RUNTIME PROJECTION — the daemon's `/kortix/runtime/state` document,
  * stored server-side so a session open answers "which agents, which commands,
  * what config, what is pending" from Postgres instead of from the box.
  *
@@ -3115,8 +3143,8 @@ export const accountSubscriptionEnds = kortixSchema.table(
  * IT IS A CACHE OF A FACT, NOT A FACT. One row per Kortix session, no history,
  * last write wins. Nothing may be *decided* from this row that the live
  * runtime would answer differently — which is why every identity the live read
- * would produce travels WITH the projection (`opencode_session_id`,
- * `opencode_version`, `agent_config_etag`) and the serving side refuses to
+ * would produce travels WITH the projection (`runtime_session_id`,
+ * `harness_version`, `agent_config_etag`) and the serving side refuses to
  * present a projection whose identity no longer matches. That is
  * `session-transcript-mirror.ts`'s ghost rule (a cached record whose id the
  * live read will not also produce is a ghost) applied to config state.
@@ -3136,21 +3164,21 @@ export const sessionRuntimeProjections = kortixSchema.table(
     // ── identity (the freshness check reads these, never the jsonb) ──────────
     /** The document format, `kortix.runtime.v1`. Null on a row a pre-W5 daemon wrote. */
     schema: text('schema'),
-    /** `opencode` or `pi`. Null on a row a pre-W5 daemon wrote. */
+    /** The harness id: `pi` (`opencode` on a row an OpenCode box wrote). Null on a row a pre-W5 daemon wrote. */
     harness: text('harness'),
-    runtimeSessionId: text('opencode_session_id'),
-    harnessVersion: text('opencode_version'),
+    runtimeSessionId: text('runtime_session_id'),
+    harnessVersion: text('harness_version'),
     agentConfigEtag: text('agent_config_etag'),
     daemonBuild: bigint('daemon_build', { mode: 'number' }),
     /** Daemon boot id. `seq` is meaningless outside it. */
     epoch: text('epoch'),
     /** Daemon stream watermark at capture — the client's starting cursor. */
     seq: bigint('seq', { mode: 'number' }),
-    /** OpenCode's OWN durable cursor per aggregate (`event_sequence.seq`). */
+    /** The runtime's own durable cursor per aggregate. pi sends null. */
     headSeq: jsonb('head_seq').$type<Record<string, number>>(),
     /** sha256 of the canonically serialized projection. A repeat push is a no-op. */
     projectionEtag: text('projection_etag').notNull(),
-    /** The `/kortix/opencode/state` document, verbatim. */
+    /** The `/kortix/runtime/state` document, verbatim. */
     projection: jsonb('projection').$type<Record<string, unknown>>().notNull(),
     /** Who wrote this row: the daemon pushed it, or the API pulled it through. */
     source: text('source').notNull(),
@@ -4041,7 +4069,7 @@ function auditEventColumns() {
     accountId: uuid('account_id'),
     projectId: uuid('project_id'),
     sessionId: text('session_id'),
-    runtimeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('runtime_session_id'),
     turnId: text('turn_id'),
     messageId: text('message_id'),
     toolCallId: text('tool_call_id'),
@@ -4843,7 +4871,7 @@ export const creditAccounts = kortixSchema.table(
  * calls, so it earns no deadline extension and its box is parked on schedule —
  * correct, and the invariant that only a control-plane observation may extend a
  * box depends on it. What was wrong is that parking DESTROYED the question:
- * opencode restarts cold, so the user came back to a session that had silently
+ * the runtime restarts cold, so the user came back to a session that had silently
  * forgotten what it asked.
  *
  * Keeping the question here lets the box die on time and the conversation
@@ -4857,10 +4885,10 @@ export const sessionPendingQuestions = kortixSchema.table(
     projectId: uuid('project_id').notNull(),
     /** `project_sessions.session_id`. Text, matching that table's PK. */
     sessionId: text('session_id').notNull(),
-    /** opencode's `question.asked` request id — the dedupe key with sessionId. */
+    /** The runtime's question request id — the dedupe key with sessionId. */
     requestId: text('request_id').notNull(),
     /** The runtime session that asked; survives a runtime restart changing it. */
-    runtimeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('runtime_session_id'),
     /** RuntimeQuestion[] (`@kortix/api-contract/transcript`), as `/turn-question` coerced it. */
     questions: jsonb().notNull(),
     askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -4873,6 +4901,21 @@ export const sessionPendingQuestions = kortixSchema.table(
      * Written only by compare-and-set on its previous value.
      */
     chatSteps: jsonb('chat_steps'),
+    /**
+     * The runtime parks this ask instead of holding the turn (api
+     * projects/lib/session-asks.ts): it stays open past the turn end and past
+     * later prompts until a person answers or dismisses it, or `expires_at`.
+     * False: the old contract, closed with the turn (a workflow run approval).
+     */
+    parkable: boolean().default(false).notNull(),
+    /**
+     * The session a person sees for this ask: the nearest ancestor of a hidden
+     * worker (`spawned_by_session`), else the session itself. Review and the
+     * "Needs you" state key on it. Null on rows written before it existed.
+     */
+    surfaceSessionId: text('surface_session_id'),
+    /** A parkable ask closes as expired at this time. Null: never. */
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'string' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
@@ -4894,6 +4937,62 @@ export const sessionPendingQuestions = kortixSchema.table(
       .where(sql`answered_at IS NULL`),
   ],
 );
+
+/**
+ * A tool call the permission policy sent to a person (`ask`), kept beyond the
+ * sandbox (api projects/lib/pending-permissions.ts). The runtime parks the call
+ * instead of holding the turn; a person decides it later from Review or the
+ * session. An approval is consumed by the agent's re-run of the same call
+ * (`args_hash`), on any box of the session.
+ */
+export const sessionPendingPermissions = kortixSchema.table(
+  'session_pending_permissions',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    /** `project_sessions.session_id` of the session whose call waits. */
+    sessionId: text('session_id').notNull(),
+    /** As `session_pending_questions.surface_session_id`. */
+    surfaceSessionId: text('surface_session_id'),
+    /** The runtime's `permission.asked` request id: the dedupe key with sessionId. */
+    requestId: text('request_id').notNull(),
+    runtimeSessionId: text('runtime_session_id'),
+    /** The tool the call runs (`bash`, `edit`, a hosted tool). */
+    tool: text().notNull(),
+    /** The capability an "always" reply grants (`toolCapability`). */
+    permission: text().notNull(),
+    /** What the call touches: the command or the path. */
+    patterns: jsonb().default([]).notNull(),
+    /** The call's arguments, size-capped by the relay. */
+    args: jsonb(),
+    /** sha256 of the call's tool and canonical arguments: matches the re-run. */
+    argsHash: text('args_hash').notNull(),
+    askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'string' }),
+    /** Null while open. */
+    decidedAt: timestamp('decided_at', { withTimezone: true, mode: 'string' }),
+    /** once | always | reject | expired | withdrawn. */
+    decision: text(),
+    decidedBy: uuid('decided_by'),
+    /** An approval the agent's re-run used, or the live call it released. */
+    consumedAt: timestamp('consumed_at', { withTimezone: true, mode: 'string' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('session_pending_permissions_session_request_uniq').on(table.sessionId, table.requestId),
+    index('session_pending_permissions_open_idx').on(table.projectId).where(sql`decided_at IS NULL`),
+    index('session_pending_permissions_approved_idx')
+      .on(table.sessionId, table.argsHash)
+      .where(sql`consumed_at IS NULL AND decision IN ('once', 'always')`),
+    foreignKey({
+      name: 'session_pending_permissions_session_fk',
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+    }).onDelete('cascade'),
+  ],
+).enableRLS();
 
 export const sandboxComputeSessions = kortixSchema.table(
   'sandbox_compute_sessions',
@@ -5577,7 +5676,41 @@ export const accountDeletionRequests = kortixSchema.table(
   ],
 );
 
-export const creditPurchases = kortixSchema.table('credit_purchases', {
+/**
+ * The retention backstop's evidence: one row per closed account, UTC day and
+ * mode the backstop decided about it (`billing/services/retention-erasure.ts`).
+ * Ids, dates and an outcome only, no personal data. No foreign key: the row
+ * outlives the account it proves erased.
+ */
+export const retentionErasures = kortixSchema.table(
+  'retention_erasures',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    requestId: uuid('request_id').notNull(),
+    /** When the customer asked to close the account. */
+    requestedAt: timestamp('requested_at', { withTimezone: true }),
+    /** The termination date: the request's `scheduled_for` (end of the 14-day grace). */
+    closedAt: timestamp('closed_at', { withTimezone: true }).notNull(),
+    runOn: date('run_on', { mode: 'string' }).notNull(),
+    mode: text('mode').notNull(),
+    outcome: text('outcome').notNull(),
+    /** The failed step's message, truncated; null unless `outcome = 'failed'`. */
+    error: text('error'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('retention_erasures_account_day_mode_key').on(table.accountId, table.runOn, table.mode),
+    index('retention_erasures_run_on_idx').on(table.runOn),
+    check('retention_erasures_mode_check', sql`${table.mode} IN ('dry_run', 'execute')`),
+    check(
+      'retention_erasures_outcome_check',
+      sql`${table.outcome} IN ('would_erase', 'erased', 'failed', 'skipped_live')`,
+    ),
+  ],
+);
+
+export const creditPurchases =kortixSchema.table('credit_purchases', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   accountId: uuid('account_id').notNull(),
   amountDollars: numeric('amount_dollars', { precision: 10, scale: 2 }).notNull(),
@@ -8521,10 +8654,9 @@ export const notifications = kortixSchema.table('notifications', {
   // No FK: a soft-deleted session keeps its row; the read filter hides it.
   sessionId: text('session_id'),
   triggerSlug: text('trigger_slug'),
-  // A conversation message (`kind = 'message'`): the room it was posted in.
-  // No FK, like session_id: the read filter hides a row whose room is gone.
+  // Retired with Rooms (2026-11): no code reads room_id / room_thread_seq. Dropped by
+  // packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
   roomId: uuid('room_id'),
-  // A thread reply: the thread's root seq, so the link opens the thread.
   roomThreadSeq: bigint('room_thread_seq', { mode: 'number' }),
   artifactId: uuid('artifact_id'),
   artifactThreadId: uuid('artifact_thread_id'),
@@ -8554,7 +8686,7 @@ export const notifications = kortixSchema.table('notifications', {
   index('idx_notifications_artifact').on(table.artifactId).where(sql`${table.artifactId} IS NOT NULL`),
   index('idx_notifications_artifact_thread').on(table.artifactThreadId).where(sql`${table.artifactThreadId} IS NOT NULL`),
   index('idx_notifications_created').on(table.createdAt),
-  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message', 'artifact_comment')`),
+  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message', 'artifact_comment')`), // 'message': retired with Rooms; old rows age out
 ]);
 
 /** One record per user: partial overrides of the default notification preferences. */
@@ -8602,6 +8734,9 @@ export const triggerWatchers = kortixSchema.table('trigger_watchers', {
 ]);
 
 /**
+ * Retired with Rooms (2026-11): no code reads it. Dropped by
+ * packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
+ *
  * A room: a named, durable chat room of a project (`dev`, `platinum/dev`) that
  * agent sessions and people post in; anyone with `project.room.read` can find
  * it. `last_seq` numbers the messages; a post takes the next value under the
@@ -8625,7 +8760,12 @@ export const rooms = kortixSchema.table('rooms', {
   check('rooms_name_check', sql`${table.name} ~ '^[a-z0-9][a-z0-9._/-]{0,63}$'`),
 ]);
 
-/** One message. `sender_kind`: `member` (a person) or `session` (an agent). */
+/**
+ * Retired with Rooms (2026-11): no code reads it. Dropped by
+ * packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
+ *
+ * One message. `sender_kind`: `member` (a person) or `session` (an agent).
+ */
 export const roomMessages = kortixSchema.table('room_messages', {
   messageId: uuid('message_id').defaultRandom().primaryKey(),
   roomId: uuid('room_id').notNull(),
@@ -8646,6 +8786,9 @@ export const roomMessages = kortixSchema.table('room_messages', {
 ]);
 
 /**
+ * Retired with Rooms (2026-11): no code reads it. Dropped by
+ * packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
+ *
  * A member of a room: an agent session or a person.
  *   session: a message addressed to it steers its turn; other traffic arrives
  *            as one digest at its turn boundary (a stopped session wakes),
@@ -8683,7 +8826,10 @@ export const roomMembers = kortixSchema.table('room_members', {
 ]);
 
 /**
- * A one-shot "tell me when this session goes idle" (flag `agent_rooms`).
+ * Retired with Rooms (2026-11): no code reads it. Dropped by
+ * packages/db/migrations-pending/20261104040701000_drop_rooms.sql.pending.
+ *
+ * A one-shot "tell me when this session goes idle" (the removed `agent_rooms` flag).
  * When the target session's turn ends, it posts one message in `room_id`
  * @-mentioning the watcher with the outcome, and the row is deleted. A row past
  * `expires_at` is dropped unanswered.
@@ -9051,6 +9197,125 @@ export const artifactEvents = kortixSchema.table('artifact_events', {
   check('artifact_events_actor_check', sql`${table.actorUserId} is null or ${table.actorSessionId} is null`),
 ]).enableRLS();
 
+/** Raw bytes: postgres-js reads and writes a `bytea` as a Buffer. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
+
+/**
+ * Live co-editing of a doc Artifact (KRTX-3670): one row per Artifact that has
+ * a shared Yjs document. The server keeps the Yjs bytes opaque. The Markdown
+ * file in Files stays the truth; one browser tab (the lease holder) writes it.
+ *   next_seq          the seq the next update gets
+ *   flushed_seq       every update with seq <= it is in the file
+ *   flushed_version   the entry version that flush produced (or the seed's)
+ *   flushed_markdown  the file text the doc was last made equal to
+ *   lease_*           the tab that writes the file: an opaque client id, its
+ *                     person, and when the lease ends (TTL 15 s)
+ *   epoch             new on every seed: a client that sees another epoch
+ *                     rebuilds its doc (a reset or the GC job deleted the state)
+ *   bytes_total       what the doc stores: each update row's bytes plus a
+ *                     fixed row cost, and a fixed cost per root and client
+ *                     index row (apps/api/src/artifacts/doc-rules.ts);
+ *                     capped (413 doc_too_large)
+ *   compaction_failed_at  the last compaction that threw or would pass the
+ *                     page limit; none again for 10 min
+ *   pending_writers   who pushed since the flush that last named them, with
+ *                     the seq of each one's last push
+ */
+export const artifactDocState = kortixSchema.table('artifact_doc_state', {
+  artifactId: uuid('artifact_id').primaryKey(),
+  epoch: uuid('epoch').defaultRandom().notNull(),
+  bytesTotal: bigint('bytes_total', { mode: 'number' }).default(0).notNull(),
+  /** Rows of `artifact_doc_roots` for this doc (capped; each charged to `bytes_total`). */
+  rootRows: integer('root_rows').default(0).notNull(),
+  /** Rows of `artifact_doc_clients` for this doc (capped; each charged to `bytes_total`). */
+  clientRows: integer('client_rows').default(0).notNull(),
+  compactionFailedAt: timestamp('compaction_failed_at', { withTimezone: true }),
+  /** A push found more rows than the compaction threshold: the worker compacts this doc (`doc-compaction.ts`). */
+  compactionRequestedAt: timestamp('compaction_requested_at', { withTimezone: true }),
+  /**
+   * Writers not yet named by a flush: user id → the seq of their LAST push (at
+   * most 200). A flush to S names the writers whose last seq is in (flushed_seq,
+   * S] and removes them (`settleWriters`): one audit row per person, once per push.
+   */
+  pendingWriters: jsonb('pending_writers').$type<Record<string, number>>().default(sql`'{}'::jsonb`).notNull(),
+  nextSeq: bigint('next_seq', { mode: 'number' }).default(1).notNull(),
+  flushedSeq: bigint('flushed_seq', { mode: 'number' }).default(0).notNull(),
+  flushedVersion: text('flushed_version'),
+  flushedMarkdown: text('flushed_markdown').notNull(),
+  leaseHolder: text('lease_holder'),
+  leaseUserId: uuid('lease_user_id'),
+  leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'artifact_doc_state_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
+  check('artifact_doc_state_seq_check', sql`${table.flushedSeq} >= 0 and ${table.flushedSeq} < ${table.nextSeq}`),
+  check('artifact_doc_state_lease_holder_check', sql`${table.leaseHolder} is null or char_length(${table.leaseHolder}) between 1 and 64`),
+  check('artifact_doc_state_pending_writers_check', sql`jsonb_typeof(${table.pendingWriters}) = 'object'`),
+  check('artifact_doc_state_index_rows_check', sql`${table.rootRows} >= 0 and ${table.clientRows} >= 0`),
+  // The target of `artifact_doc_updates`' (artifact_id, epoch) foreign key.
+  unique('artifact_doc_state_artifact_epoch_key').on(table.artifactId, table.epoch),
+]).enableRLS();
+
+/**
+ * The Yjs updates of a co-edited doc, one row per push, in `seq` order.
+ * Compaction merges the oldest rows into one row that keeps the highest of
+ * their seqs, so a client that asks for `seq > k` still gets every update it
+ * lacks. The column is `bytes`, not `update` (a reserved word in SQL).
+ * Every row names the epoch of the state it belongs to: a foreign key on
+ * (artifact_id, epoch) deletes it with that state, and a background write
+ * (compaction) filters on the epoch it planned against, so it can never reach
+ * the rows of a later epoch that reuses the same seqs.
+ */
+export const artifactDocUpdates = kortixSchema.table('artifact_doc_updates', {
+  artifactId: uuid('artifact_id').notNull(),
+  seq: bigint('seq', { mode: 'number' }).notNull(),
+  epoch: uuid('epoch').notNull(),
+  bytes: bytea('bytes').notNull(),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  /** Compaction found that no Yjs reader takes this row: it is kept and served, never merged again. */
+  quarantinedAt: timestamp('quarantined_at', { withTimezone: true }),
+  /** Structs a client integrates when it applies this row (the scan's count): a page and a compaction window count them. */
+  structs: integer('structs').default(0).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.artifactId, table.seq] }),
+  foreignKey({ name: 'artifact_doc_updates_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
+  foreignKey({ name: 'artifact_doc_updates_epoch_fk', columns: [table.artifactId, table.epoch], foreignColumns: [artifactDocState.artifactId, artifactDocState.epoch] }).onDelete('cascade'),
+]).enableRLS();
+
+/**
+ * The root-level items of a co-edited doc: every item whose parent is the
+ * root fragment `default`, named in the item or taken from its origin or
+ * right origin (`apps/api/src/artifacts/doc-roots.ts`). Each is an XML
+ * element, so one ID is one clock. A push names an origin; the service looks
+ * it up here to know whether the new item lands at the root. Written in the
+ * transaction that stores the update; a reset or the GC job deletes the state
+ * row, and these rows with it.
+ */
+export const artifactDocRoots = kortixSchema.table('artifact_doc_roots', {
+  artifactId: uuid('artifact_id').notNull(),
+  client: bigint('client', { mode: 'number' }).notNull(),
+  clock: bigint('clock', { mode: 'number' }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.artifactId, table.client, table.clock] }),
+  foreignKey({ name: 'artifact_doc_roots_state_fk', columns: [table.artifactId], foreignColumns: [artifactDocState.artifactId] }).onDelete('cascade'),
+]).enableRLS();
+
+/**
+ * Per Yjs client of a co-edited doc, the clock after its last stored struct.
+ * An origin at a lower clock is a stored item; a push starts at or before it
+ * (a client's structs stay contiguous). Same lifetime as `artifact_doc_roots`.
+ */
+export const artifactDocClients = kortixSchema.table('artifact_doc_clients', {
+  artifactId: uuid('artifact_id').notNull(),
+  client: bigint('client', { mode: 'number' }).notNull(),
+  nextClock: bigint('next_clock', { mode: 'number' }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.artifactId, table.client] }),
+  foreignKey({ name: 'artifact_doc_clients_state_fk', columns: [table.artifactId], foreignColumns: [artifactDocState.artifactId] }).onDelete('cascade'),
+]).enableRLS();
+
 export const driveCommitAuthors = kortixSchema.table('drive_commit_authors', {
   driveId: uuid('drive_id').notNull(),
   commitId: text('commit_id').notNull(),
@@ -9131,4 +9396,26 @@ export const claudeSubscriptionLoginFlows = kortixSchema.table('claude_subscript
   foreignKey({ name: 'claude_subscription_login_flows_member_fk', columns: [table.userId, table.accountId], foreignColumns: [accountMemberships.userId, accountMemberships.accountId] }).onDelete('cascade'),
   index('idx_claude_subscription_login_flows_member').on(table.accountId, table.userId),
   check('claude_subscription_login_flows_status_check', sql`${table.status} in ('starting', 'awaiting_code', 'exchanging', 'connected', 'failed')`),
+]).enableRLS();
+
+/**
+ * Who may create an account on a self-hosted instance by signing up. One row
+ * at most (`id` is always true). The API writes it at boot from
+ * KORTIX_SIGNUP_MODE and KORTIX_PLATFORM_ADMIN_EMAILS, and the auth service's
+ * before-user-created hook (`kortix.before_user_created_hook`) reads it. No row
+ * (Kortix cloud, or a self-host API that never booted) allows every sign-up.
+ *
+ * - `signup_mode`: `open` (anyone), `invite` (only an address with a pending
+ *   account invitation), or `closed` (nobody). An SSO sign-in is always allowed.
+ * - `reserved_emails`: the operator addresses. Nobody can claim one by signing
+ *   up; the CLI creates those accounts (`kortix self-host admin add`).
+ */
+export const selfHostSignupPolicy = kortixSchema.table('self_host_signup_policy', {
+  id: boolean('id').primaryKey().default(true),
+  signupMode: text('signup_mode').notNull(),
+  reservedEmails: text('reserved_emails').array().notNull().default(sql`'{}'::text[]`),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  check('self_host_signup_policy_singleton', sql`${table.id}`),
+  check('self_host_signup_policy_mode_check', sql`${table.signupMode} in ('open', 'invite', 'closed')`),
 ]).enableRLS();

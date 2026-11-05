@@ -253,6 +253,15 @@
   --color-glyph-ring-blue: light-dark(hsl(212 46% 50%), hsl(212 46% 59%));
   --color-glyph-ring-purple: light-dark(hsl(275 34% 56%), hsl(275 34% 61%));
   --color-glyph-ring-magenta: light-dark(hsl(318 40% 52%), hsl(318 40% 61%));
+  /* Project glyph SOLID colour: the icon itself and the base of its tile wash (glyph-tint.ts mixes it at 14% light / 20% dark). Brighter than the ring tokens so a solid icon reads on its own wash with no border. */
+  --color-glyph-solid-grey: var(--glyph-solid-grey);
+  --color-glyph-solid-red: var(--glyph-solid-red);
+  --color-glyph-solid-orange: var(--glyph-solid-orange);
+  --color-glyph-solid-yellow: var(--glyph-solid-yellow);
+  --color-glyph-solid-lime: var(--glyph-solid-lime);
+  --color-glyph-solid-blue: var(--glyph-solid-blue);
+  --color-glyph-solid-purple: var(--glyph-solid-purple);
+  --color-glyph-solid-magenta: var(--glyph-solid-magenta);
   /* Motion. Tailwind 4 reads duration utilities from --transition-duration-*. */
   --transition-duration-fast: var(--duration-fast, 100ms);
   --transition-duration-normal: var(--duration-normal, 150ms);
@@ -1057,4 +1066,21 @@
 
 @utility px-mobile {
   @apply px-6 xl:px-0;
+}
+
+/* Project glyph solid colours as REAL custom properties. The @theme block above is
+   `inline reference`, so its tokens compile into utilities and never exist at
+   runtime; glyph-tint.ts sets `--glyph: var(--glyph-solid-<name>)`, which needs
+   them on :root. light-dark() follows the color-scheme set in tokens.css. */
+@layer base {
+  :root {
+    --glyph-solid-grey: light-dark(hsl(220 6% 45%), hsl(220 6% 66%));
+    --glyph-solid-red: light-dark(hsl(359 72% 58%), hsl(0 78% 63%));
+    --glyph-solid-orange: light-dark(hsl(28 80% 50%), hsl(28 87% 62%));
+    --glyph-solid-yellow: light-dark(hsl(45 94% 41%), hsl(45 87% 62%));
+    --glyph-solid-lime: light-dark(hsl(142 54% 40%), hsl(140 40% 55%));
+    --glyph-solid-blue: light-dark(hsl(213 74% 53%), hsl(213 83% 66%));
+    --glyph-solid-purple: light-dark(hsl(256 76% 63%), hsl(260 81% 72%));
+    --glyph-solid-magenta: light-dark(hsl(322 62% 54%), hsl(320 69% 67%));
+  }
 }

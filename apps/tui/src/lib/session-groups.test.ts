@@ -44,7 +44,7 @@ describe('sessionActivityMs', () => {
     const row: SessionLike = {
       session_id: 's',
       metadata: { last_activity_at: '2026-09-17T10:00:00.000Z' },
-      opencode_sessions: [{ updated_at: snapshot }, { updated_at: null }],
+      runtime_sessions: [{ updated_at: snapshot }, { updated_at: null }],
     };
     expect(sessionActivityMs(row)).toBe(snapshot);
   });

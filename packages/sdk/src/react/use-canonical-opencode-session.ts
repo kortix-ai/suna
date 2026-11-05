@@ -107,7 +107,6 @@ export function useCanonicalRuntimeSession(params: {
   });
   const networkPin =
     projectSessionQuery.data?.runtime_session_id ??
-    projectSessionQuery.data?.opencode_session_id ??
     null;
 
   // T6 — a synchronous local mirror of the persisted pin, so a cold
@@ -159,10 +158,3 @@ export function useCanonicalRuntimeSession(params: {
   };
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `CanonicalRuntimeSession`. Removed in the next major. */
-export type CanonicalOpenCodeSession = CanonicalRuntimeSession;
-/** @deprecated Renamed to `clearRuntimeEnsureGuard`. Removed in the next major. */
-export const clearOpencodeEnsureGuard = clearRuntimeEnsureGuard;
-/** @deprecated Renamed to `useCanonicalRuntimeSession`. Removed in the next major. */
-export const useCanonicalOpenCodeSession = useCanonicalRuntimeSession;

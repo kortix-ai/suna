@@ -174,11 +174,8 @@ export interface ProjectSession {
   sandbox_provider: string;
   sandbox_id: string;
   sandbox_url: string | null;
-  /** Served by a W4 API; read it before `opencode_session_id`. */
   runtime_session_id?: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. */
-  opencode_session_id: string | null;
-  /** The runtime's conversation tree (a W4 API); older APIs only have `metadata.opencode_sessions`. */
+  /** The runtime's conversation tree. */
   runtime_sessions?: unknown[];
   /** Resolved display name: user-set custom_name, else the auto runtime title. */
   name: string | null;
@@ -337,6 +334,8 @@ export interface ProjectTrigger {
   prompt_template: string;
   /** 'fresh' (default) mints a new session per fire; 'reuse' re-prompts one persistent session. */
   session_mode: 'fresh' | 'reuse';
+  /** App triggers: the silence alert window in seconds; null when unset. Older servers send null for every type. */
+  expect_event_within_seconds?: number | null;
   /** Runs it may start in any 60 minutes; null = unset (the default, 60). Older servers omit it. */
   max_runs_per_hour?: number | null;
   /** Runs it may start in a UTC day; null = no daily cap. Older servers omit it. */

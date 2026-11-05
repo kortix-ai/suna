@@ -48,6 +48,7 @@ import {
   readPublicProjectTransitionState,
   ProviderTransitionError,
 } from '../provider-transition/provider-transition-service';
+import { capturePersonEvent } from './product-events';
 
 // PATCH /v1/projects/:projectId/onboarding
 // Persist whether the project's guided onboarding wizard has been completed
@@ -120,7 +121,9 @@ const patchFeatureFlagHandler = async (c: any) => {
   if (!isPlainObject(body)) {
     return c.json({ error: 'Request body must be a JSON object' }, 400);
   }
-  const feature = body.feature;
+  // `project_channels` merged into `chat` (2026-11): released TUI, mobile and
+  // CLI builds still toggle Channels by the old key, so it writes `chat`.
+  const feature = body.feature === 'project_channels' ? 'chat' : body.feature;
   const enabled = body.enabled;
   // Floor 'read' (membership); project.settings.write is the gate below.
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -138,7 +141,7 @@ const patchFeatureFlagHandler = async (c: any) => {
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  // An internal-only flag (`session_log_restore`) changes what
+  // An internal-only flag (`workspace_volume`) changes what
   // the platform records, so Kortix decides it: only a platform operator
   // writes it, never a project admin and never an agent session. An operator
   // acting in a customer project through impersonation passes (`userId`
@@ -158,6 +161,10 @@ const patchFeatureFlagHandler = async (c: any) => {
   }
   const row = await writeProjectFeatureFlag(projectId, feature, enabled);
   if (!row) return c.json({ error: 'Not found' }, 404);
+  capturePersonEvent(c, loaded, projectId, 'feature_flag_toggled', {
+    key: String(feature),
+    enabled: enabled === null ? 'default' : enabled,
+  });
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 };
 

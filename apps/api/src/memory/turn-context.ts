@@ -4,7 +4,7 @@
  * memory files this thread reads, which the harness appends to that turn's
  * system prompt. Titles come from file names (no file is read), at the
  * thread's mount paths. The agent reads and writes the files through its
- * mounts. Null when `project_channels` is off, the thread is in no space, or
+ * mounts. Null when `chat` is off, the thread is in no space, or
  * the project has no Drive: the body is then forwarded byte for byte.
  */
 import { MEMORY_TURN_SYSTEM_MAX_CHARS, type MemoryPageType } from '@kortix/api-contract';

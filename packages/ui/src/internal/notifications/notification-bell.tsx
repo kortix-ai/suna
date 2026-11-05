@@ -63,7 +63,10 @@ const solid = (Icon: PhosphorIcon): KindIcon =>
   };
 
 /** The glyph names the kind by shape; the hue reports the state (color.md, D5). */
-const KIND_MARK: Record<InboxNotificationKind, { icon: KindIcon; className: string }> = {
+// `message` (Rooms) is retired: the API hides its stored rows.
+type LiveKind = Exclude<InboxNotificationKind, 'message'>;
+
+const KIND_MARK: Record<LiveKind, { icon: KindIcon; className: string }> = {
   turn_done: { icon: SolidCheckIcon, className: 'text-kortix-green' },
   turn_error: { icon: solid(XCircleIcon), className: 'text-kortix-red' },
   question: { icon: solid(QuestionIcon), className: 'text-kortix-yellow' },
@@ -73,7 +76,6 @@ const KIND_MARK: Record<InboxNotificationKind, { icon: KindIcon; className: stri
   automation_recovered: { icon: SolidCheckIcon, className: 'text-kortix-green' },
   capture_device_down: { icon: solid(WarningIcon), className: 'text-kortix-red' },
   capture_device_recovered: { icon: SolidCheckIcon, className: 'text-kortix-green' },
-  message: { icon: solid(ChatCircleIcon), className: 'text-muted-foreground' },
   artifact_comment: { icon: solid(ChatCircleIcon), className: 'text-muted-foreground' },
 };
 
@@ -157,7 +159,7 @@ export function NotificationPanel({
       ) : (
         <ul className="max-h-96 space-y-0.5 overflow-y-auto p-1.5">
           {visible.map((row) => {
-            const mark = KIND_MARK[row.kind];
+            const mark = KIND_MARK[row.kind as LiveKind] ?? KIND_MARK.shared;
             const unread = !row.read;
             return (
               <li key={row.id}>

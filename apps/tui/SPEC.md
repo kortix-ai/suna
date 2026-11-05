@@ -5,7 +5,7 @@ rendered with OpenTUI (`@opentui/core` + `@opentui/react`), and runs on Bun.
 It is session-first: one session on screen, every action a slash command in
 its input, the sidebar optional (§4). It covers the web's session product and
 its project surfaces: Drive, repository, artifacts, inbox, approvals, goals,
-memory, spaces, rooms, loops, audit, files, review, apps, customize, account.
+memory, spaces, loops, audit, files, review, apps, customize, account.
 
 Status: **experimental**. Not in the release CLI bundle. Run from the repo.
 

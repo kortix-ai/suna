@@ -21,6 +21,8 @@ export type Opts = {
   think?: string // reasoning level, where the vendor has one
   manual?: boolean // the client marks turns with turn(); vendor VAD is off
   session?: string // the agent session, for providers that talk to it directly
+  agentTools?: boolean // that session's agent has the voice's tools (its host gave them): it acts with them, not tags
+  trusted?: string[] // in a meeting, the speakers whose words may reach the agent (unset: everyone's); the rest are its guests
   instructions: string
   thread?: ThreadSeed // factual routing memory from the same native session
   tools: Tool[]

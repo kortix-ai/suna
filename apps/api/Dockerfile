@@ -58,7 +58,6 @@ RUN bun install --frozen-lockfile
 
 COPY packages/api-contract /repo/packages/api-contract
 COPY packages/shared/src/peer-message-prompt.ts /repo/packages/shared/src/peer-message-prompt.ts
-COPY packages/shared/src/room-prompt.ts /repo/packages/shared/src/room-prompt.ts
 COPY packages/shared/src/ssrf-guard.ts /repo/packages/shared/src/ssrf-guard.ts
 COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
 COPY packages/voice/src /repo/packages/voice/src

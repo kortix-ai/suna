@@ -46,8 +46,6 @@ export const DENY_COMMANDS: Record<string, Denial> = {
 export const DENY_SUBCOMMANDS: { path: [string, string]; denial: Denial }[] = [
   { path: ['env', 'pull'], denial: { reason: 'it writes a local file', use: '`secrets ls` and `secrets set`' } },
   { path: ['env', 'push'], denial: { reason: 'it reads a local file', use: '`secrets set KEY=value`' } },
-  { path: ['rooms', 'watch'], denial: { reason: 'it streams a room until interrupted', use: '`rooms read <room>`, or `rooms next <room> --timeout <s>`' } },
-  { path: ['rooms', 'chat'], denial: { reason: 'it is an interactive terminal chat', use: '`rooms send <room> "<text>"` and `rooms read <room>`' } },
   { path: ['drive', 'put'], denial: { reason: 'it uploads a local file, and this server has none', use: 'run_command in a session sandbox, where the file lives: `kortix drive put <file> <path>` there' } },
   { path: ['artifacts', 'publish'], denial: { reason: 'it uploads a local file or folder, and this server has none', use: 'run_command in a session sandbox, where the file lives: `kortix artifacts publish <file|dir>` there' } },
   { path: ['artifacts', 'pull'], denial: { reason: 'it writes files to a local folder, and this server has none', use: '`kortix artifacts cat <artifact> [<path>]` prints one file here; pull in a session sandbox' } },
@@ -64,7 +62,7 @@ export const CLI_ALLOWED = [
   'whoami', 'doctor', 'validate', 'schema', 'accounts', 'members', 'groups', 'tokens', 'billing', 'projects',
   'sessions', 'session', 'chat', 'files', 'cr', 'review', 'triggers', 'automations', 'tasks', 'loops', 'loop', 'reminders', 'remind', 'connectors',
   'secrets', 'providers', 'env', 'gateway', 'apps', 'channels', 'sandboxes', 'marketplace', 'system-skills',
-  'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'perms', 'audit', 'grants', 'feedback', 'drive', 'search', 'rooms', 'peers', 'artifacts', 'help', 'version',
+  'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'perms', 'audit', 'grants', 'feedback', 'drive', 'search', 'artifacts', 'spaces', 'help', 'version',
 ];
 
 export function denial(args: string[]): Denial | null {

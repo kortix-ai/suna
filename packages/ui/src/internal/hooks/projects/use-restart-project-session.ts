@@ -13,7 +13,6 @@ export function restartPendingStartSeed() {
     retriable: true,
     sandbox: null,
     runtime_session_id: null,
-    opencode_session_id: null,
     reason: 'restart_requested',
   };
 }

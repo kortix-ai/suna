@@ -83,6 +83,7 @@ export async function forwardToSandbox(
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
+  sandboxId = record.externalId;
   bindSandboxRequestContext(record, sandboxId);
   const userId = principalUserId(access);
   const callerSessionId = access.kind === 'principal' ? access.callerSessionId : null;

@@ -99,10 +99,15 @@ export type FeatureFlagKey =
   | 'ephemeral_sandboxes'
   /** Not a flag since P8.2 (2026-10-22): the session log is every session's saved history, and the API sends `true` for every project. Absent from {@link FEATURE_FLAG_KEYS}. */
   | 'session_log'
+  /** @deprecated Graduated 2026-11-05 — every box restores the conversation from the session log when its own copy is missing or behind. The API sends `true` for every project. Removed in the next major. */
   | 'session_log_restore'
   /** @deprecated Graduated — the Kortix connectors catalog is the only connectors path. Removed in the next major. */
   | 'connectors_v2'
+  /** Chat: a Slack-style chat with Kortix. Every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces are shared with people. Experimental, off by default. */
+  | 'chat'
+  /** @deprecated Withdrawn — merged into `chat` (2026-11). The API sends it equal to `chat` and writes `chat` for it; it is not in the catalog. Read `chat`. Removed in the next major. */
   | 'project_channels'
+  /** @deprecated Withdrawn — Rooms were removed (2026-11). The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'agent_rooms'
   /** Shared Drives: an admin makes a Drive and adds agents to it. Off by default: people have only My files. */
   | 'shared_drives'
@@ -120,10 +125,14 @@ export type FeatureFlagKey =
   | 'agent_teams'
   /** Voice calls: talk with the session's agent from the session page, with screen share. Off by default. */
   | 'voice_call'
+  /** Chat input: one composer control for the agent and every session override (model, effort, secrets, provider keys, sandbox). Experimental, off by default. */
+  | 'chat_input'
+  /** Talk-only threads: with `chat` on, a new space thread's agent only talks and hands the work to one hidden My Kortix session. Experimental, off by default. */
+  | 'chat_front'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`, `genui`, `meta_agent`) sends a constant `true`, or (`volumes`, `drives`) sends whether the platform stores a Drive. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `session_log_restore`, `pi_harness`, `genui`, `meta_agent`) sends a constant `true`, or (`volumes`, `drives`) sends whether the platform stores a Drive. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -131,6 +140,8 @@ type GraduatedFeatureFlagKey =
   | 'session_transcript_history'
   | 'agent_principal'
   | 'human_messaging'
+  | 'project_channels'
+  | 'agent_rooms'
   | 'pi_worker'
   | 'config_releases'
   | 'apps'
@@ -138,6 +149,7 @@ type GraduatedFeatureFlagKey =
   | 'stateless_sessions'
   | 'ephemeral_sandboxes'
   | 'session_log'
+  | 'session_log_restore'
   | 'pi_harness'
   | 'genui'
   | 'agentmail_email'
@@ -164,9 +176,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'us_region',
   'event_triggers',
   'notification_center',
-  'session_log_restore',
-  'project_channels',
-  'agent_rooms',
+  'chat',
   'shared_drives',
   'goals',
   'workspace_volume',
@@ -177,6 +187,8 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'chrome',
   'agent_teams',
   'voice_call',
+  'chat_input',
+  'chat_front',
 ] as const;
 
 /**
@@ -199,8 +211,7 @@ export interface FeatureFlagView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
   /**
-   * True for an internal-only flag (`session_log`, `session_log_restore`,
-   * `workspace_volume`). The
+   * True for an internal-only flag (`workspace_volume`). The
    * catalog lists one only while it is on, so agents and people can see it.
    * Only a Kortix platform operator can change it: `PATCH /features` answers
    * `403` with `feature_operator_only`. Absent on servers older than this field.
@@ -364,7 +375,17 @@ export interface ProjectDetail {
   project: KortixProject;
   git_connection?: ProjectGitConnection | null;
   config: ProjectConfigSummary;
+  /**
+   * @deprecated Use `listProjectFiles(projectId, { path })`. The number of
+   * repository files for a caller with `project.file.read`, else `0`. Removed
+   * in the next major.
+   */
   file_count: number;
+  /**
+   * @deprecated Use `listProjectFiles(projectId, { path })` for the files of
+   * one folder. This list holds only the first 300 paths of the repository,
+   * so on a large repository it misses files. Removed in the next major.
+   */
   files: ProjectFileEntry[];
 }
 

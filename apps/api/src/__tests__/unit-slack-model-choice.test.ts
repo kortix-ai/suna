@@ -101,7 +101,7 @@ beforeEach(() => {
   gate = { projectId: 'proj', accountId: 'acct', ownerUserId: 'owner', freeManagedOnly: false };
   actor = { userId: 'ivan' };
   actorLookups.length = 0;
-  selection = { projectId: 'proj', agentName: null, opencodeModel: null };
+  selection = { projectId: 'proj', agentName: null, sessionModel: null };
   stored.length = 0;
   bound = true;
   checks.length = 0;
@@ -141,7 +141,7 @@ describe('/kortix models — what this person may run here', () => {
 
   test('a short list: one button per model, each saying how it is paid for', async () => {
     catalog = few;
-    selection = { projectId: 'proj', agentName: null, opencodeModel: 'kortix/anthropic/claude-opus-4-8' };
+    selection = { projectId: 'proj', agentName: null, sessionModel: 'kortix/anthropic/claude-opus-4-8' };
     currentKeys = keysOf;
     const resp = await buildSlackModelsResponse(dm);
     const all = text(resp);
@@ -168,7 +168,7 @@ describe('/kortix models — what this person may run here', () => {
       })),
       ...few,
     ];
-    selection = { projectId: 'proj', agentName: null, opencodeModel: 'kortix/glm-5.3-flash' };
+    selection = { projectId: 'proj', agentName: null, sessionModel: 'kortix/glm-5.3-flash' };
     const resp = await buildSlackModelsResponse(dm);
     const select = findAccessory(resp, 'static_select')!;
     expect(select.action_id).toBe('set_model_select');

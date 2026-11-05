@@ -84,6 +84,7 @@ import {
   sessionLogMessages,
   sessionLogs,
   sessionLogThreads,
+  sessionPendingPermissions,
   sessionPendingQuestions,
   sessionPeerMessages,
   sessionTasks,
@@ -147,9 +148,11 @@ const CLOSING = sql`
 /**
  * A closing account that still acts as a live customer: a paid tier whose payment is
  * not cancelled, or any session created, or any turn started, after the close. The
- * backstop leaves it for a person, like the account-deletion worker does.
+ * backstop leaves it for a person, like the account-deletion worker does. The
+ * account retention backstop (`billing/services/retention-erasure.ts`) reads `LIVE`
+ * too, so the two backstops skip the same accounts.
  */
-const LIVE = (k: string) => sql.raw(`(
+export const LIVE = (k: string) => sql.raw(`(
   exists (select 1 from kortix.credit_accounts c
     where c.account_id = ${k}.account_id and coalesce(c.tier, 'free') <> 'free'
       and coalesce(c.payment_status, '') not in ('canceled', 'cancelled', 'deleted'))
@@ -248,6 +251,8 @@ async function purgeRows(row: DueSession, now: Date): Promise<void> {
     await tx.delete(sessionLogs).where(eq(sessionLogs.sessionId, id));
     await tx.delete(voiceCallTurns).where(eq(voiceCallTurns.sessionId, id));
     await tx.delete(sessionPendingQuestions).where(eq(sessionPendingQuestions.sessionId, id));
+    // A permission ask carries the tool call's arguments: content, gone with the questions.
+    await tx.delete(sessionPendingPermissions).where(eq(sessionPendingPermissions.sessionId, id));
     // Cross-session messages it sent or received, and its team's task list: words, gone with the rest.
     await tx.delete(sessionPeerMessages).where(or(eq(sessionPeerMessages.fromSessionId, id), eq(sessionPeerMessages.toSessionId, id)));
     await tx.delete(sessionTasks).where(eq(sessionTasks.leadSessionId, id));

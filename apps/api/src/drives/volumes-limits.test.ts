@@ -1,7 +1,9 @@
 // Platinum's limit refusals (#2422) reach the caller as typed refusals with
 // their numbers, never as "storage unavailable": 413 file_too_large, 422
 // sub_path_too_large (at a write and at a mount), 429 transfer_limit_exceeded
-// (re-sent after Retry-After, then answered 429), 403 quota_exceeded.
+// (re-sent after Retry-After, then answered 429), 429 rate_limited (the org's
+// per-second write budget, seen on the notes-write exec: KRTX-4020) re-sent
+// the same way, 403 quota_exceeded.
 import { afterAll, afterEach, expect, mock, spyOn, test } from 'bun:test';
 
 type Scripted = { status: number; body: Record<string, unknown>; headers?: Record<string, string> };
@@ -16,7 +18,7 @@ mock.module('../shared/platinum', () => ({
     return Response.json(next.body, { status: next.status, headers: next.headers ?? {} });
   },
 }));
-const { DriveStorageError, writeVolumeFile, attachSandboxVolume } = await import('./volumes');
+const { DriveStorageError, writeVolumeFile, attachSandboxVolume, execInSandbox } = await import('./volumes');
 const VOLUME = { name: 'kd-synthetic', region: null, unfenced: true as const };
 const sleep = spyOn(Bun, 'sleep').mockResolvedValue(undefined);
 afterEach(() => {
@@ -67,6 +69,29 @@ test('429 transfer_limit_exceeded is re-sent after Retry-After and lands', async
   expect(written.size).toBe(4);
   expect(calls).toBe(3);
   expect(sleep).toHaveBeenCalledWith(1_000);
+});
+
+test('429 rate_limited on the exec is re-sent and the notes write lands', async () => {
+  const busy = { status: 429, body: { error: 'busy', code: 'rate_limited' }, headers: { 'retry-after': '1' } };
+  script = [busy, { status: 200, body: { result: { exit_code: 0 } } }];
+  await execInSandbox('sbx', 'echo hi');
+  expect(calls).toBe(2);
+  expect(sleep).toHaveBeenCalledWith(1_000);
+});
+
+test('429 rate_limited that persists still answers as the typed 429 behind the exec refusal', async () => {
+  const busy = { status: 429, body: { error: 'busy', code: 'rate_limited' } };
+  script = [busy, busy, busy, busy];
+  const err = (await execInSandbox('sbx', 'echo hi').catch((e: unknown) => e)) as Error;
+  expect(calls).toBe(4);
+  expect(err.message).toBe('exec refused: 429 rate_limited');
+});
+
+test('a 429 with an unexpected code is not re-sent', async () => {
+  script = [{ status: 429, body: { error: '?', code: 'seen_limit' }, headers: { 'retry-after': '1' } }];
+  const err = (await execInSandbox('sbx', 'echo hi').catch((e: unknown) => e)) as Error;
+  expect(calls).toBe(1);
+  expect(err.message).toBe('exec refused: 429 seen_limit');
 });
 
 test('429 that persists ⇒ 429 with Retry-After, never "storage unavailable"', async () => {

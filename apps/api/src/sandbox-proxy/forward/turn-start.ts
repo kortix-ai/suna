@@ -41,11 +41,11 @@ import {
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
 import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
-import { isMemoryTurnRoute, memoryChannelsOn, withMemoryTurn, withoutClientSystem } from '../../memory/turn-body';
+import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText, withMemoryTurn, withThreadFiles, withoutClientSystem } from '../../memory/turn-body';
 import { isMyKortixAgentName } from '@kortix/shared';
 import { logger } from '../../lib/logger';
 import { isPlatinumConfigured } from '../../shared/platinum';
-import { missingClaudeSubscription, sessionModelPin } from '../../projects/surface';
+import { chatThreadBoardTurn, missingClaudeSubscription, notifyMessageMentions, sessionModelPin, sessionWhereTurn } from '../../projects/surface';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -185,7 +185,7 @@ export function claimPromptDeliveryOnce(input: {
     // cannot dedupe is still the user acting on this session. Past the claim,
     // so a re-sent prompt cannot double-count, and outside the retry loop
     // below, so a wake retry cannot either. This is the sidebar's authoritative
-    // "last activity" — unlike the opencode_sessions snapshot scheduled further
+    // "last activity" — unlike the runtime_sessions snapshot scheduled further
     // down, it needs no sandbox round-trip, so a session stays correctly dated
     // even when the box is unreachable. See projects/session-activity.ts.
     void recordSessionActivity({
@@ -360,12 +360,18 @@ export async function syncEnvBeforeTurnStart(
 }
 
 /**
- * `system` on a Kortix prompt body (`project_channels`): the list of the
- * memory files the thread reads, at its mount paths, for the turn's system
- * prompt. The first turn records the list ("Used memory"). A `system` the
- * client sent is always dropped: only the API sets it. Flag off, no space, or
- * any failure: the body goes on without memory. `/steer` never passes here
- * (the API posts it to the box directly and never sets `system`).
+ * `system` on a Kortix prompt body: first "## Where you are" (every session,
+ * any agent: its space, the surface it started from, who started it, its
+ * parent session; `sessionWhereTurn`, one read), then the memory the turn
+ * lists. My Kortix in the person's DM with it, or in no space: the person's
+ * own index (`myKortixMemoryTurn`) and, under `chat`, the board of the chat's
+ * other threads. Any other thread filed in a space, My Kortix in a channel
+ * included: that space's memory layers (`memoryTurnContext`); a My Kortix
+ * channel thread also gets the board. The first turn records the list
+ * ("Used memory"). A `system` the client sent is always dropped: only the API
+ * sets it. The total stays under MEMORY_TURN_SYSTEM_MAX_CHARS, cut from the
+ * memory list. Any failure: the body goes on with what was built.
+ * `/steer` never passes here (the API posts it to the box directly).
  */
 async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Promise<void> {
   // Once per request: a retry attempt keeps the body the first attempt built.
@@ -373,22 +379,43 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   state.memoryLayersChecked = true;
   state.requestBody = withoutClientSystem(state.requestBody);
   const sessionId = req.record.sessionId;
+  const where = await sessionWhereTurn(req.record.projectId, sessionId).catch((error: unknown) => {
+    logger.warn('[turn] turn start forwarded without its origin block', {
+      session_id: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  });
+  // Thread files (`chat`): the person's message as a file, and every session of the thread told its folder.
+  const thread = await threadFilesForTurn(req, state.requestBody);
+  if (thread?.files) state.requestBody = withThreadFiles(state.requestBody, thread.files);
+  // A person's message in a channel notifies the people it @mentions, off the turn's path.
+  if (where?.space?.kind === 'channel' && req.userId && !req.sandboxAuthored) void notifyPersonMentions(req, state.requestBody);
+  const put = (parts: readonly (string | null | undefined)[]) => {
+    const system = turnSystemText(where?.system ?? null, [thread?.system, ...parts]);
+    if (system) state.requestBody = withMemoryTurn(state.requestBody, { system });
+  };
   try {
-    // My Kortix: the prompter's own memory index (kortix_memory), every turn, with Files on.
-    if (isMyKortixAgentName(req.record.agentName)) {
-      if (!isPlatinumConfigured()) return;
-      const { myKortixMemoryTurn } = await import('../../memory/my-memory');
-      const turn = await myKortixMemoryTurn(req.record.projectId, sessionId, req.userId);
-      if (turn) state.requestBody = withMemoryTurn(state.requestBody, turn);
+    const myKortix = isMyKortixAgentName(req.record.agentName);
+    if (myKortix && myKortixTurnMemory(where?.space ?? null, isMyKortixAgentName) === 'personal') {
+      const [memory, board] = await Promise.all([
+        isPlatinumConfigured()
+          ? import('../../memory/my-memory').then(({ myKortixMemoryTurn }) => myKortixMemoryTurn(req.record.projectId, sessionId, req.userId))
+          : null,
+        chatThreadBoardTurn(req.record.projectId, sessionId, req.userId),
+      ]);
+      // The board before the memory list: the end is what gets cut.
+      put([board, memory?.system]);
       return;
     }
+    const board = myKortix ? await chatThreadBoardTurn(req.record.projectId, sessionId, req.userId) : null;
     // Flag off: the memory and drives services are never loaded on this path.
-    if (!(await memoryChannelsOn(req.record.projectId))) return;
+    if (!(await memoryChannelsOn(req.record.projectId))) return put([board]);
     const { memoryTurnContext } = await import('../../memory/turn-context');
     // The prompter decides whether the thread's personal layer is listed (its owner only).
     const turn = await memoryTurnContext(req.record.projectId, sessionId, req.userId);
+    put([board, turn?.system]);
     if (!turn) return;
-    state.requestBody = withMemoryTurn(state.requestBody, turn);
     // "Used memory" is the first turn's list, recorded only when the list went out.
     // ponytail: recorded before delivery; a refused prompt or a daemon older than the `system` field still records it.
     if (!turn.firstTurn || turn.system.length > MEMORY_TURN_SYSTEM_MAX_CHARS) return;
@@ -400,10 +427,48 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
       }),
     );
   } catch (error) {
+    put([]);
     logger.warn('[memory] turn start forwarded without memory', {
       session_id: sessionId,
       error: error instanceof Error ? error.message : String(error),
     });
+  }
+}
+
+/** The people a person's message @mentions get a notification (`notifyMessageMentions`); `chat` off: nothing. Never throws. */
+async function notifyPersonMentions(req: ForwardRequest, body: ArrayBuffer | undefined): Promise<void> {
+  try {
+    if (!(await memoryChannelsOn(req.record.projectId))) return;
+    const { personMessageOf } = await import('../../memory/thread-files');
+    const message = personMessageOf(body);
+    if (!message?.text.includes('@') || !req.userId) return;
+    await notifyMessageMentions({
+      projectId: req.record.projectId,
+      sessionId: req.record.sessionId,
+      authorId: req.userId,
+      text: message.text,
+      messageKey: message.id ?? `${req.record.sessionId}:${message.text.length}:${message.text.slice(0, 64)}`,
+    });
+  } catch (error) {
+    logger.warn('[space-posts] message mentions were not checked', {
+      session_id: req.record.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** The thread-files turn of a session in a space (`memory/thread-files.ts`), or null: `chat` off, no space, any failure. */
+async function threadFilesForTurn(req: ForwardRequest, body: ArrayBuffer | undefined) {
+  try {
+    if (!(await memoryChannelsOn(req.record.projectId))) return null;
+    const [{ threadFilesTurn }, { authorName }] = await Promise.all([import('../../memory/thread-files'), import('../../memory/layers')]);
+    return await threadFilesTurn({ sessionId: req.record.sessionId, userId: req.sandboxAuthored ? null : req.userId ?? null, body, authorName });
+  } catch (error) {
+    logger.warn('[thread-files] turn start forwarded without thread files', {
+      session_id: req.record.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
   }
 }
 

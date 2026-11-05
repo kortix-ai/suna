@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { accountMembers, projects, projectSessions } from '@kortix/db';
-import { mentionTokens, mentionsMember } from '../projects/rooms/envelope';
+import { mentionTokens, mentionsMember } from '../projects/lib/mentions';
 
 let reads = 0;
 let manifests = 0;

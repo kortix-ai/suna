@@ -106,6 +106,16 @@
     "access": "アクセス",
     "actions": "アクション",
     "coolingDown": "クールダウン中",
+    "usageFiveHour": "5時間",
+    "usageWeekly": "週間",
+    "usageWeeklyModel": "週間 · {model}",
+    "usagePercent": "{percent}% 使用",
+    "usagePercentResets": "{percent}% · {time} にリセット",
+    "usageLimitReached": "上限に達しました",
+    "usageLimitResets": "上限に達しました · {time} にリセット",
+    "usageNotSeen": "最初のリクエスト後に使用量が表示されます",
+    "usageObserved": "{time} に更新",
+    "usageAriaLabel": "{window}: {percent}% 使用",
     "member": "メンバー",
     "members": "人のメンバー",
     "actionsFor": "{label} の操作",
@@ -683,7 +693,7 @@
       "threadsDeleted": "すべてのセッションとメッセージが削除されます",
       "credentialsDeleted": "すべての資格情報とシークレットが削除されます",
       "subscriptionCancelled": "サブスクリプションがキャンセルされました",
-      "billingHistoryRemoved": "請求履歴は削除されます",
+      "billingRecordsKept": "請求記録は法律で定められた期間保管されます",
       "chooseWhen": "いつ選択するか",
       "gracePeriodLabel": "猶予期間",
       "gracePeriodDescription": "予定日に削除されます。それまではいつでもキャンセルできます。",
@@ -1286,21 +1296,13 @@
           "name": "Composio イベントトリガー",
           "description": "連携したアプリで何かが起きたときにエージェントを起動します。新しいメール、プルリクエスト、カレンダーの予定など。イベントは Composio から届きます。Kortix が連携済みアプリを自分でも確認します。"
         },
-        "session_log_restore": {
-          "name": "セッションログからの復元",
-          "description": "セッションのコンピューターが会話を失ったとき、保存されたセッションログからセッションを再構築します。Kortix がプロジェクトごとに有効にします。"
-        },
-        "agent_rooms": {
-          "name": "ルーム",
-          "description": "エージェントのセッションとユーザーが投稿し、スレッドで返信できる名前付きチャットルーム。メッセージが宛てられたセッションは再開します。ルームページ、`kortix rooms`、`kortix peers` が追加されます。"
-        },
         "goals": {
           "name": "目標",
           "description": "エージェントに目標を与えると、独立したチェックが結果を確認するまでエージェントが責任を持ちます。計画し、作業し、待機し、人にフォローアップし、状態をファイルの Goals フォルダーに保存します。ボリュームとループを有効にする必要があります。"
         },
         "workspace_volume": {
-          "name": "ワークスペースボリューム",
-          "description": "新しいセッションごとに /workspace を専用のボリュームに保存します。停止したサンドボックスは削除でき、次回は同じファイルと会話で新しいサンドボックスが起動します。Kortix がプロジェクトごとに有効にします。"
+          "name": "ステートレスサンドボックス",
+          "description": "各セッションは /workspace だけを専用のボリュームに保持します。1 時間停止したサンドボックスは削除され、次に開くと同じファイルと会話で新しいサンドボックスが起動します。以前のサンドボックスで動いていたプログラムは実行されていません。Kortix がプロジェクトごとに有効にします。"
         },
         "artifacts": {
           "name": "アーティファクト",
@@ -1310,9 +1312,9 @@
           "name": "メールチャネル",
           "description": "エージェントに Resend のメール受信箱を用意します。届いたメールでセッションを開始・継続し、エージェントはその受信箱で読み、返信し、送信します。自分の Resend API キーとドメインを使います。"
         },
-        "project_channels": {
-          "name": "チャンネル",
-          "description": "作業をチャンネルで整理します。チャンネルでの新しいメッセージや、エージェントとのダイレクトメッセージはそれぞれスレッドを開始します。サイドバーのセッション一覧を置き換えます。"
+        "chat": {
+          "name": "スペース",
+          "description": "Slack のような Kortix とのスペース：各メッセージがスレッドになり、Kortix の最新の返信がその下に表示されます。Kortix もスレッドを開始でき、スペースは他の人と共有できます。サイドバーのセッション一覧を置き換えます。"
         },
         "session_groups": {
           "name": "セッショングループ",
@@ -1332,21 +1334,29 @@
         },
         "voice_call": {
           "name": "音声通話",
-          "description": "セッションページからセッションのエージェントに電話して話せます。あなたの声を聞き、音声で答え、共有した画面を見て、同じセッションで作業するので、会話はチャットに残ります。"
+          "description": "エージェントのページ（カスタマイズ → エージェント）から電話して話せます。通話はそのエージェントの独立したセッションで、あなたの声を聞き、音声で答え、共有した画面を見ます。会話はそのセッションのチャットになります。"
         },
         "shared_drives": {
           "name": "共有ドライブ",
           "description": "チーム全体で使えるドライブです。管理者がドライブを作成してエージェントを追加します。そのエージェントの各セッションがドライブをマウントし、いずれかのエージェントを使える人は誰でも開けます。オフのときは、各自のマイファイルだけになります。"
+        },
+        "chat_input": {
+          "name": "Spaces-ChatInput",
+          "description": "入力欄の下にある 1 つのコントロールで、誰がどう答えるかを決めます。エージェントを選ぶと、他の設定はすべてそのエージェントから引き継ぐ自動のままです。行を開くと、このセッションのモデル、思考レベル、シークレット、プロバイダーキー、サンドボックスを上書きでき、1 クリックで自動に戻せます。"
+        },
+        "chat_front": {
+          "name": "Spaces-Router",
+          "description": "スペースがオンのとき、スレッドで話すエージェントはルーターです：作業をあなたのエージェントに渡し、人のように返信します。結果、リンク、または必要な判断を短いメッセージで伝えます。エージェントはスレッドのファイルを通じて内容を共有するため、ルーターは本文を書き直さずファイルパスを渡します。メッセージの下の「作業を表示」でその裏の作業を開けます。kortix.yaml で My Kortix をオンにする必要があります。"
         }
       },
       "channelsSwitch": {
-        "onTitle": "{project} でチャンネルをオンにしますか？",
-        "onBody": "このプロジェクトの全員に、セッション一覧の代わりにチャンネルとダイレクトメッセージが表示されます。既存のセッションはすべて #general に移動します。いつでもオフにでき、何も削除されません。",
-        "drive": "ドライブもオンにして、チャンネルでファイルを使えるようにする。",
+        "onTitle": "{project} でスペースをオンにしますか？",
+        "onBody": "このプロジェクトの全員に、セッション一覧の代わりにスペースが表示されます。既存のセッションはすべて #general に移動します。いつでもオフにでき、何も削除されません。",
+        "drive": "ドライブもオンにして、スペースでファイルを使えるようにする。",
         "turnOn": "オンにする",
         "cancel": "キャンセル",
-        "offTitle": "チャンネルをオフにしますか？",
-        "offBody": "チャンネル、メモリ、ファイル、リンクは保存されたままです。全員にセッション一覧が戻ります。",
+        "offTitle": "スペースをオフにしますか？",
+        "offBody": "スペース、メモリ、ファイル、リンクは保存されたままです。全員にセッション一覧が戻ります。",
         "turnOff": "オフにする"
       },
       "wip": "Work in progress",
@@ -1547,7 +1557,6 @@
     }
   },
   "sidebar": {
-    "rooms": "ルーム",
     "goals": "ゴール",
     "artifacts": "アーティファクト",
     "referAndEarn": "紹介して獲得",
@@ -1839,7 +1848,7 @@
       "moved": "セッションを移動しました",
       "noGroup": "グループなし",
       "moveFailed": "セッションを移動できませんでした",
-      "empty": "ここに移動したセッションはここに表示されます。",
+      "empty": "ここにセッションをドラッグ",
       "groupOptions": "グループのオプション"
     },
     "recentlyDeleted": {
@@ -1856,11 +1865,16 @@
     "searchApps": "アプリを検索",
     "appsNoMatches": "一致するものはありません",
     "spaces": {
-      "channels": "チャンネル",
-      "directMessages": "ダイレクトメッセージ",
-      "addChannel": "チャンネルを追加",
-      "loadError": "チャンネルを読み込めませんでした。",
-      "newAgent": "新しいエージェント"
+      "channels": "スペース",
+      "addChannel": "新しいスペース",
+      "loadError": "スペースを読み込めませんでした。",
+      "newAgent": "新しいエージェント",
+      "review": "レビュー",
+      "personal": "あなたのスペース",
+      "personalNamed": "{name} のスペース",
+      "private": "非公開",
+      "noMessages": "まだメッセージはありません",
+      "more": "その他"
     }
   },
   "dashboard": {
@@ -2105,7 +2119,8 @@
       "noCommandMatch": "一致するコマンド、ファイル、アクションはありません",
       "commandsAndActions": "コマンドとアクション",
       "toUse": "使用するには",
-      "use": "使用"
+      "use": "使用",
+      "noOneMatches": "一致する人はいません"
     },
     "history": {
       "restoreTitle": "以前の内容の一部を復元できませんでした",
@@ -2129,7 +2144,23 @@
       "fullTextRetry": "再試行"
     },
     "turn": {
-      "autoRetried": "Kortix はこの失敗の前にモデルを自動で {count, plural, other {# 回}}再試行しました。"
+      "autoRetried": "Kortix はこの失敗の前にモデルを自動で {count, plural, other {# 回}}再試行しました。",
+      "typing": "{name} が入力中…",
+      "showWork": "作業を表示",
+      "hideWork": "作業を隠す",
+      "starting": "起動中…",
+      "workingFor": "作業中 · {time}",
+      "agentWorking": "が作業中",
+      "agentWorkingFor": "が作業中 · {time}",
+      "stopped": "停止しました",
+      "agentWorkingOn": "が {task} に取り組み中",
+      "agentWorkingOnFor": "が {task} に取り組み中 · {time}",
+      "somethingWrong": "問題が発生しました",
+      "notSent": "未送信",
+      "retry": "再試行",
+      "resume": "再開",
+      "agentIsWorking": "{agent} が作業中",
+      "needsYouOn": "あなたの対応が必要: {header}"
     }
   },
   "agents": {
@@ -2259,6 +2290,38 @@
     "thinkingEffort": "思考レベル",
     "sessionOverrides": "セッションの上書き",
     "auto": "自動",
+    "chatInput": "チャット入力",
+    "chatInputAgent": "エージェント",
+    "chatInputModel": "モデル",
+    "chatInputEffort": "レベル",
+    "chatInputMoreSettings": "その他の設定",
+    "chatInputOverrideCount": "{count, plural, other {# 件の上書き}}",
+    "chatInputResetToAuto": "自動に戻す",
+    "chatInputAgentDescription": "次のプロンプトに答えるエージェント。",
+    "chatInputModelDescription": "次のプロンプトでエージェントが使うモデル。",
+    "chatInputEffortDescription": "モデルが回答前に考える時間。",
+    "chatInputMore": "その他",
+    "chatInputChangedCount": "{count} 件変更",
+    "chatInputAgentDefault": "エージェントの既定",
+    "chatInputLoading": "読み込み中…",
+    "chatInputSecrets": "シークレット",
+    "chatInputSecretsDescription": "このセッションに渡すシークレット。",
+    "chatInputSecretsAll": "{count, plural, other {エージェントが使える # 件のシークレット}}",
+    "chatInputSecretsEmpty": "このエージェントのシークレットはありません。",
+    "chatInputSecretsUnavailable": "ここではシークレットを読み込めません。",
+    "chatInputSecretCount": "{count, plural, other {# 件のシークレット}}",
+    "chatInputConnectors": "コネクタ",
+    "chatInputConnectorsDescription": "このセッションで各アプリが使うアカウント。",
+    "chatInputConnectorsAll": "すべてのアプリが既定のアカウントを使用",
+    "chatInputConnectorsUnavailable": "ここではコネクタを読み込めません。",
+    "chatInputDefaultAccount": "既定",
+    "chatInputAppCount": "{count, plural, other {# 件のアプリを変更}}",
+    "chatInputProviderKeysDescription": "このセッションのモデル呼び出しに使うプロバイダーキー。",
+    "chatInputProviderKeysAll": "エージェントが現在使っているキー",
+    "chatInputProviderKeysEmpty": "選べるプロバイダーキーはありません。",
+    "chatInputKeyCount": "{count, plural, other {# 件のキー}}",
+    "chatInputMachine": "マシン",
+    "chatInputMachineDescription": "このセッションを起動するマシンテンプレート。",
     "sending": "送信中",
     "stop": "停止",
     "startingSession": "セッションを開始しています…",
@@ -2296,7 +2359,8 @@
     "submitEdit": "送信",
     "collapseQueue": "キューを折りたたむ",
     "expandQueue": "キューを展開",
-    "myKortixRoutes": "各タスクを適したエージェントへ"
+    "myKortixRoutes": "各タスクを適したエージェントへ",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {
@@ -2904,7 +2968,8 @@
         "notReceived": "リンクが届きませんか？",
         "confirmNotReceived": "確認メールが届きませんか？",
         "resendIn": "{seconds}秒後に再送信",
-        "resend": "再送信"
+        "resend": "再送信",
+        "checkSpam": "見つからない場合は、迷惑メールフォルダを確認してください。"
       },
       "credentials": {
         "signin": {
@@ -3167,6 +3232,13 @@
       "large": "大規模な実行",
       "largeHint": "この実行は 25 個を超えるエージェントを起動します。各エージェントは行から停止できます。",
       "openRun": "実行を開く",
+      "viewingAgent": "表示中",
+      "startsAfter": "{phase} の後に開始",
+      "didntFinish": "完了しませんでした",
+      "retryNow": "再試行",
+      "retryAgent": "{label} を再試行",
+      "waitsFor": "あと {count} 件を待機中",
+      "phaseProgress": "{phase} {total} 件中 {done} 件完了",
       "openRunLabel": "実行のセッションを開く",
       "backgroundIdle": "専用のセッションで実行",
       "savedName": "保存済みワークフロー {name}",
@@ -3194,11 +3266,23 @@
       "stopFailed": "{label} を停止できませんでした",
       "json": "JSON",
       "jsonKeys": "{count, plural, other {JSON · # 個のキー}}",
-      "jsonItems": "{count, plural, other {JSON · # 個の項目}}"
+      "jsonItems": "{count, plural, other {JSON · # 個の項目}}",
+      "failedSentence": "ワークフローは完了前に停止しました。",
+      "runningCount": "{count} 件実行中"
     },
     "agent": {
       "backgroundWorking": "バックグラウンドで作業中",
-      "backgroundSession": "専用のセッションで実行"
+      "backgroundSession": "専用のセッションで実行",
+      "open": "開く",
+      "openAgent": "{name} を開く",
+      "state": {
+        "working": "作業中",
+        "needs_input": "対応が必要",
+        "idle": "完了",
+        "completed": "完了",
+        "failed": "完了しませんでした",
+        "stopped": "停止"
+      }
     }
   },
   "agentRunLimit": {
@@ -3270,7 +3354,6 @@
       "automation_recovered": "復旧アラート",
       "capture_device_down": "Capture のコンピューターが停止",
       "capture_device_recovered": "Capture のコンピューターが復旧",
-      "message": "メッセージ",
       "artifact_comment": "アーティファクトのコメント"
     },
     "kindDescription": {
@@ -3283,7 +3366,6 @@
       "automation_recovered": "失敗していたトリガーまたはループが再び動作します。",
       "capture_device_down": "Kortix Capture のコンピューターが記録していません。Capture の管理者に送られます。",
       "capture_device_recovered": "停止していた Kortix Capture のコンピューターが再び記録しています。",
-      "message": "ルームで誰かがあなたを @ でメンションするか、あなたが投稿したスレッドに返信したとき。",
       "artifact_comment": "閲覧できるアーティファクトへのフィードバック、メンション、返信。"
     },
     "bell": {
@@ -16339,6 +16421,30 @@
       "textb1fa39a2b442": "金曜17:00",
       "textb1fb183269ba": "セッションを開始できるユーザーを制限",
       "textb205bb47f81a": "セッションを開く",
+      "text76456efd96b6": "作業を開始",
+      "textd5a6dc64b5d4": "保留",
+      "text95d2f57f8fa4": "開始できませんでした",
+      "text6119feb6e4f5": "トリガーなし",
+      "text7b5f87420cb2": "{value0} 以降イベントなし",
+      "textadb85cf22bfc": "まだありません",
+      "text8d14f6e72de8": "イベント",
+      "textc235cb1df45b": "このAppが過去30日間に送信したイベントと、それぞれの結果です。",
+      "textbcd7586101a4": "テストイベントを送信",
+      "textb31f231088c9": "Appのイベントを読み込めませんでした。",
+      "text863f2373ad58": "このAppが送信したイベントがここに表示されます",
+      "text4b97770f1f09": "テストイベントを送信して接続を確認するか、AppからKORTIX_APP_EVENTS_URLにイベントを送信してください。",
+      "text66a6b0caa7b8": "過去24時間で{value0}件 · {value1}件が作業を開始",
+      "text4e18ffd436f1": "トリガーの上限を超えました：1時間に60件、1分に30件。",
+      "text532eaabd9574": "テスト",
+      "text119ec5b50a07": "データはJSONオブジェクトである必要があります。",
+      "text07aaf9c9f315": "テストイベントを送信しました",
+      "text72b8a74d4eee": "テストイベントを送信できませんでした",
+      "text028284e97d7d": "テストイベントを送信",
+      "text568b8fae25a4": "Appからのイベントと同じ経路を通ります。IDはtest-で始まるため、同じIDを持つApp自身のイベントも後で実行されます。",
+      "text25bc9efedfb7": "イベント名",
+      "text0760ef976f73": "データ（JSON）",
+      "texta76d8716b0ff": "最終イベント",
+      "textba1daad907a0": "最終イベント {value0}",
       "textb205c515d0be": "ホストURLが手元にない場合は、「Manual configuration」に切り替え、SSO → More Actions → SAML MetadataのXMLを貼り付けます。同じメタデータです。",
       "textb205e3c57a77": "オープンソース · 任意のmodel、あなたのkey · Self-host、VPC、またはon-prem",
       "textb20e428d9c27": "グループを送信するには、アプリの「Provisioning」タブの「Entitlements」で「Refresh」をクリックしてKortixのグループを読み込みます。次に「Rules」タブでRuleを追加します。条件（例：OneLogin Roleのメンバー）とアクション「Set Groups in Kortix」→対象グループを設定します。",
@@ -19711,6 +19817,8 @@
       "text7a84bdb22767": "Kortix App のデプロイを表示しました",
       "text516e80d9f8dc": "Kortix App のデプロイを削除しました",
       "text2d430c4c81a2": "Kortix App のデプロイログを表示しました",
+      "text567cd42b6a31": "Kortix App のイベントを表示しました",
+      "textcd413277c842": "Kortix App のテストイベントを送信しました",
       "textea0b84c2ddf0": "Kortix システムスキルを表示しました",
       "text16faff6ae525": "Kortix システムスキルのファイルを表示しました",
       "text04a6fbab3598": "LLM カタログを表示しました",
@@ -21127,7 +21235,16 @@
       "text507c24b6792d": "変更リクエストが {branch} にマージされると、{agent}があなたの指示を実行します。",
       "text05ee1d6181f3": "変更リクエストがマージされると、{agent}があなたの指示を実行します。",
       "texte608495c45ce": "{branch} にマージ",
-      "text80ca527b0d55": "変更リクエストのトリガーを作成しました"
+      "text80ca527b0d55": "変更リクエストのトリガーを作成しました",
+      "authEmailAlreadySent": "このメールは1分以内に送信済みです。再送信する前に、受信トレイと迷惑メールフォルダを確認してください。",
+      "textfe0dab79db43": "1つのチャットでKortixと会話できます。メッセージはすべてスレッドになり、Kortixの最新の返信がその下に表示されます。",
+      "text2e914b62b832": "Markdownリンク",
+      "text7bed093239f3": "認識されたリソースにはアプリアイコンと簡易ラベルが表示されます。ホバーすると元のURLを確認できます。",
+      "textaf4df8fff726": "ストリーミングを完了",
+      "textc5bb2bbce674": "ストリーミングを表示",
+      "textfc19d1c660c8": "GitHubのプロフィール、リポジトリ、プルリクエスト、Issue、コミット、Linearの Issue、Slackのメッセージと会話、Figmaのデザイン、ボード、スライド、Notionのページ、Google Docs、Sheets、Slidesに対応しています。ラベルはURLのみから生成され、タイトル、権限、ライブステータスは取得されません。",
+      "textba98740fde39": "ChatGPTサブスクリプションの使用量",
+      "text856bf8853b69": "Claudeサブスクリプションの使用量"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -21217,6 +21334,39 @@
       "prCommitsBy": "{author} による {count, plural, other {# 件のコミット}}",
       "prDraft": "ドラフトのプルリクエスト"
     },
+    "askDeck": {
+      "label": "あなたの対応待ち",
+      "remaining": "{count, plural, other {# 件が対応待ち}}",
+      "yes": "はい",
+      "no": "いいえ",
+      "skip": "スキップ",
+      "send": "回答を送信",
+      "approve": "承認",
+      "deny": "拒否",
+      "dismiss": "却下",
+      "undo": "元に戻す",
+      "allowSession": "このセッションで {tool} を許可",
+      "typeAnswer": "または回答を入力",
+      "answered": "回答を送信しました",
+      "dismissed": "質問を却下しました",
+      "approved": "承認しました",
+      "denied": "拒否しました",
+      "failed": "決定を反映できませんでした",
+      "askedAgo": "{time} 前に質問",
+      "fromWorker": "ワーカーセッションから",
+      "inSession": "{title} 内",
+      "permissionTitle": "{tool} を実行しますか？",
+      "approvalTitle": "このコネクタ呼び出しを実行しますか？",
+      "emptyTitle": "対応待ちはありません",
+      "emptyDescription": "エージェントからの質問と承認はここに表示されます。",
+      "loadFailed": "対応待ちを読み込めませんでした",
+      "retry": "再試行",
+      "kind": {
+        "question": "質問",
+        "permission": "権限",
+        "approval": "コネクタ承認"
+      }
+    },
     "reviewBulk": {
       "approve": "承認",
       "deny": "拒否",
@@ -21285,7 +21435,8 @@
       "aboutDescription": "この説明について",
       "senderUnavailable": "送信アカウントを読み込めませんでした。差出人の行を確認してください。",
       "quoted": "「{text}」"
-    }
+    },
+    "promptHistory": "履歴 {index}/{total}"
   },
   "commandPalette": {
     "title": "コマンドパレット",
@@ -21303,7 +21454,7 @@
     "copyFailed": "クリップボードにコピーできませんでした",
     "threads": "スレッド",
     "recentThreads": "最近のスレッド",
-    "searchChannels": "チャンネル、スレッド、コマンドを検索…"
+    "searchChannels": "スペース、スレッド、コマンドを検索…"
   },
   "personalWelcome": {
     "dismiss": "閉じる",
@@ -21419,11 +21570,11 @@
     "getAKey": "キーを取得"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "モデル、プロバイダー、エラーを検索",
+    "searchPlaceholder": "モデル、プロバイダー、エラー、ID を検索",
     "requestsLabel": "{count, plural, other {件のリクエスト}}",
     "errorsLabel": "{count, plural, other {件のエラー}}",
     "medianLatency": "レイテンシ中央値",
-    "noMatch": "読み込まれたリクエストに「{query}」に一致するものはありません",
+    "noMatch": "“{query}” に一致するリクエストはありません",
     "histogram": "時間ごとのリクエスト",
     "close": "閉じる",
     "now": "現在",
@@ -21431,7 +21582,33 @@
     "topModel": "最多のモデル",
     "noRequests": "リクエストなし",
     "cardErrors": "エラー",
-    "cardMedianLatency": "レイテンシ中央値"
+    "cardMedianLatency": "レイテンシ中央値",
+    "noFilterMatch": "このフィルターに一致するリクエストはありません",
+    "sessionColumn": "セッション",
+    "untitledSession": "無題のセッション",
+    "openInSession": "セッションで開く",
+    "openMessage": "このメッセージで開く",
+    "onlyThisSession": "このセッションのみ",
+    "noSession": "セッションからではありません",
+    "fromGatewayKey": "セッションではなくゲートウェイキーで送信",
+    "messageLabel": "メッセージ",
+    "turnLabel": "ターン",
+    "threadLabel": "サブエージェントのスレッド",
+    "sessionIdLabel": "セッション ID",
+    "byTimeHint": "セッションがメッセージに名前を付ける前に送信されました。リンクはその時刻に実行中だったターンを開きます。",
+    "filter": "フィルター",
+    "filterTime": "期間",
+    "filterModel": "モデル",
+    "filterProvider": "プロバイダー",
+    "filterError": "エラー",
+    "clearFilters": "フィルターをクリア",
+    "facetEmptyDay": "過去 24 時間にはありません",
+    "facetEmptyWeek": "過去 7 日間にはありません",
+    "windowAny": "すべての期間",
+    "window15m": "過去 15 分",
+    "window1h": "過去 1 時間",
+    "window24h": "過去 24 時間",
+    "window7d": "過去 7 日間"
   },
   "modelsList": {
     "onCount": "{total} 件中 {on} 件オン",
@@ -21498,9 +21675,9 @@
     "perDay": "1日あたり",
     "noLimit": "上限なし",
     "postTo": "投稿先",
-    "postToHint": "実行ごとにそこで新しいスレッドが始まります。チャンネルがない場合、実行は #{channel} に入ります。",
-    "postToNone": "チャンネルなし",
-    "postToUnavailable": "利用できないチャンネル",
+    "postToHint": "実行ごとにそこで新しいスレッドが始まります。スペースがない場合、実行は #{channel} に入ります。",
+    "postToNone": "スペースなし",
+    "postToUnavailable": "利用できないスペース",
     "postToPrivate": "非公開: トリガーはここに投稿できません",
     "appLabel": "アプリ",
     "appPlaceholder": "アプリを選択",
@@ -22968,7 +23145,8 @@
         "status": "ステータス",
         "lastFrame": "最終記録",
         "layers": "記録内容",
-        "actions": "アクション"
+        "actions": "アクション",
+        "version": "バージョン"
       },
       "layer": {
         "screen": "画面",
@@ -23009,7 +23187,86 @@
         "sync_error": "アップロードに失敗しています",
         "backlog": "{count, plural, other {アップロード待ち # 件}}",
         "behind_version": "{current} から {version} に更新してください",
-        "asleep": "スリープ中または電源オフ。最後に確認: {time}"
+        "asleep": "スリープ中または電源オフ。最後に確認: {time}",
+        "update_failed": "{version} への更新に失敗しました"
+      },
+      "version": {
+        "current": "最新",
+        "behind": "更新あり",
+        "failed": "更新に失敗",
+        "updating": "更新中",
+        "disabled": "更新オフ"
+      },
+      "details": {
+        "open": "デバイスの詳細",
+        "title": "{name}",
+        "description": "このコンピューターが Kortix に送っている情報です。サポート依頼にコピーしてください。",
+        "capture": "Capture",
+        "version": "バージョン",
+        "channel": "チャネル",
+        "latest": "最新リリース",
+        "lastCheck": "最後の更新確認",
+        "lastCheckSaid": "最後の確認結果",
+        "noUpdater": "このコンピューターには更新サービスがありません",
+        "lastResult": "最後の更新",
+        "reason": "理由",
+        "skipped": "スキップしたバージョン",
+        "skippedUntil": "{version}、{time} に再試行",
+        "none": "なし",
+        "machine": "マシン",
+        "os": "オペレーティングシステム",
+        "build": "ビルド",
+        "hostname": "ホスト名",
+        "cpu": "プロセッサー",
+        "cpuCores": "{cpu} · {count, plural, other {# コア}}",
+        "memory": "メモリ",
+        "disk": "空きディスク",
+        "diskOf": "{total} 中 {free} 空き",
+        "gpus": "グラフィックス",
+        "booted": "起動",
+        "timezone": "タイムゾーン",
+        "locale": "ロケール",
+        "recordingSync": "記録と同期",
+        "status": "状態",
+        "lastFrame": "最後のフレーム",
+        "permissions": "不足している権限",
+        "sync": "同期",
+        "syncError": "同期エラー",
+        "recordingError": "録画エラー",
+        "lastUpload": "最後のアップロード",
+        "reported": "最後のレポート",
+        "policy": "ポリシー",
+        "policySource": "ポリシーファイル",
+        "noPolicy": "アカウントのポリシーなし",
+        "policyRead": "ポリシーの読み込み",
+        "enrolled": "設定者",
+        "managed": "IT による展開",
+        "personal": "本人がサインイン",
+        "encrypted": "暗号化されたアップロード",
+        "yes": "はい",
+        "no": "いいえ",
+        "lastCredentials": "最後の認証情報",
+        "deviceId": "デバイス ID",
+        "notReported": "未報告",
+        "close": "閉じる",
+        "copy": "診断情報をコピー",
+        "copied": "コピーしました",
+        "copiedToast": "診断情報をコピーしました",
+        "copyFailed": "診断情報をコピーできませんでした",
+        "outcome": {
+          "updated": "{from} から {to} に更新しました",
+          "rolled_back": "{to} がヘルスチェックに失敗したため {from} に戻しました",
+          "failed": "{to} がヘルスチェックに失敗し、元に戻せませんでした",
+          "install_failed": "{to} のインストーラーが実行されませんでした",
+          "other": "{from} から {to}"
+        },
+        "syncState": {
+          "ok": "最新",
+          "queued": "{count, plural, other {# 件が待機中}}",
+          "error": "失敗中",
+          "off": "オフ",
+          "other": "不明"
+        }
       }
     },
     "settings": {
@@ -23339,103 +23596,6 @@
     "enable": "{name}を有効にする",
     "enabling": "有効化中…"
   },
-  "rooms": {
-    "title": "ルーム",
-    "memberCount": "{count, plural, other {# 人のメンバー}}",
-    "members": "メンバー",
-    "agent": "エージェント",
-    "agentSender": "エージェント {name}",
-    "empty": "参加したルームがここに表示されます",
-    "emptyHint": "ルームを作成して、ユーザーとエージェントを追加してください。",
-    "loadError": "ルームを読み込めませんでした。再試行してください。",
-    "roomLoadError": "このルームを読み込めませんでした。再試行してください。",
-    "messagesLoadError": "メッセージを読み込めませんでした。もう一度お試しください。",
-    "retry": "再試行",
-    "back": "ルームに戻る",
-    "send": "メッセージを送信",
-    "sendFailed": "メッセージを送信できませんでした",
-    "peopleLoadError": "メンバーを読み込めませんでした。もう一度お試しください。",
-    "cardRoom": "ルーム {name}",
-    "digestCount": "{count, plural, other {新着メッセージ #件}}",
-    "digestMore": "… ほか {count} 件",
-    "cardFrom": "送信者",
-    "cardMessage": "メッセージ",
-    "cardReplyTo": "返信先",
-    "addRooms": "ルームを追加",
-    "addFailed": "メンバーを追加できませんでした",
-    "addMembers": "ユーザーとエージェントを追加",
-    "addMembersDescription": "メンバーはここに投稿されたメッセージを受け取ります。エージェントセッションは次のステップでそれを読みます。",
-    "addTopic": "トピックを追加",
-    "agents": "エージェント",
-    "browseRoomsDescription": "このプロジェクトのすべてのルームです。開いて読むか参加できます。",
-    "cancel": "キャンセル",
-    "roomName": "名前",
-    "roomNameHint": "小文字、数字、. _ / - を 64 文字まで使えます。",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "メンバーを閉じる",
-    "copied": "コピーしました",
-    "copyText": "メッセージのテキストをコピー",
-    "createRoom": "ルームを作成",
-    "createRoomDescription": "ルームは 1 つのトピックについての会話を、ユーザーとエージェントのためにまとめます。",
-    "createFailed": "ルームを作成できませんでした",
-    "editTopic": "トピックを編集",
-    "inThisRoom": "このルーム内",
-    "introRoom": "#{name} ルームの始まりです。",
-    "joinRoom": "ルームに参加",
-    "joinFailed": "ルームに参加できませんでした",
-    "joined": "参加済み",
-    "jumpToLatest": "最新へ移動",
-    "leaveRoom": "ルームから退出",
-    "memberActions": "{name} の操作",
-    "memberAdded": "{name} を追加しました",
-    "memberRemoved": "メンバーを削除しました",
-    "mentionHere": "#{name} の全員",
-    "mentionSomeone": "メンションする",
-    "mentionSuggestions": "メンションの候補",
-    "messageRoom": "#{name} へのメッセージ",
-    "messages": "メッセージ",
-    "new": "新着",
-    "newLineHint": "Shift + Enter で改行",
-    "noRooms": "一致するルームはありません",
-    "noMatches": "一致する結果はありません",
-    "people": "ユーザー",
-    "pickRoom": "リストからルームを開いてください",
-    "remove": "削除",
-    "removeAgentDescription": "エージェントセッションはこのルームのメッセージを受け取らなくなります。元に戻すには、エージェントを再度追加してください。",
-    "removeFailed": "メンバーを削除できませんでした",
-    "removePersonDescription": "このメンバーはこのルームのメッセージを受け取らなくなります。元に戻すには、再度追加してください。",
-    "removeTitle": "{name} をこのルームから削除しますか?",
-    "searchRooms": "ルームを検索",
-    "searchPeopleAndAgents": "ユーザーとエージェントを検索",
-    "today": "今日",
-    "topic": "トピック",
-    "topicFailed": "トピックを保存できませんでした",
-    "topicOptional": "トピック(任意)",
-    "topicPlaceholder": "このルームの内容",
-    "viewMembers": "メンバーを表示",
-    "viewMembersCount": "{count, plural, other {# 人のメンバーを表示}}",
-    "viewingRoom": "#{name} を表示中",
-    "yesterday": "昨日",
-    "you": "{name}(あなた)",
-    "status": {
-      "running": "実行中",
-      "starting": "起動中",
-      "stopped": "停止",
-      "failed": "失敗"
-    },
-    "replyInThread": "スレッドで返信",
-    "thread": "スレッド",
-    "closeThread": "スレッドを閉じる",
-    "backToRoom": "ルームに戻る",
-    "replyPlaceholder": "返信…",
-    "replyCount": "{count, plural, other {# 件の返信}}",
-    "lastReply": "最終返信 {time}",
-    "threadLoadError": "このスレッドを読み込めませんでした。再試行してください。",
-    "join": "参加",
-    "openRoom": "開く",
-    "gateDescription": "ルームをオンにすると、このプロジェクトのエージェントセッションとメンバーが名前付きのチャットルームで会話できます。",
-    "archivedNotice": "このルームはアーカイブ済みです。メッセージは保持されますが、新規投稿はできません。"
-  },
   "goals": {
     "title": "ゴール",
     "gateDescription": "エージェントは目標を検証可能に達成するまで担当します。ゴールはファイルに保存され、毎日のハートビートで起動し、必要なものを人に催促し、独立した確認で完了します。",
@@ -23544,10 +23704,6 @@
     "stopError": "ゴールを停止できませんでした。もう一度お試しください。",
     "needsAttention": "要対応",
     "newGoal": "新しいゴール",
-    "newGoalTitle": "新しいゴール",
-    "newGoalDescription": "達成したい結果を書いてください。エージェントがゴールと完了条件を書き、確認で完了が確かめられるまで取り組みます。",
-    "newGoalPlaceholder": "例: ドキュメントサイトが docs.example.com で公開されている",
-    "newGoalStart": "ゴールを開始",
     "cancel": "キャンセル",
     "forPerson": "{person} 向け",
     "answerInChat": "チャットで回答",
@@ -23555,7 +23711,750 @@
     "forMember": "チームメンバー向け",
     "spaceEmpty": "{space} に目標はまだありません",
     "showAll": "すべて表示",
-    "spaceScope": "{space} · {scope}"
+    "spaceScope": "{space} · {scope}",
+    "working": "進行中",
+    "pausedGroup": "一時停止中",
+    "paused": "一時停止中",
+    "criteriaMet": "完了条件 {total} 件中 {met} 件を達成",
+    "state": {
+      "done": "完了。独立した確認ですべての条件が確かめられました。",
+      "stopped": "停止済み。今後起動しません。",
+      "abandoned": "中止済み。",
+      "paused": "{time}に一時停止。再開するまで起動しません。",
+      "waitingOn": "回答待ち。",
+      "verifying": "独立した確認が結果を検証しています。",
+      "draft": "開始中: エージェントが計画を書いています。",
+      "working": "進行中。次の確認は{time}。",
+      "workingNoWake": "進行中。"
+    },
+    "startedToast": "ゴールを開始しました",
+    "startError": "ゴールを開始できませんでした。もう一度お試しください。",
+    "updated": "{time}に更新",
+    "attentionTitle": "対応が必要",
+    "doneWhen": "完了条件",
+    "results": "成果",
+    "activity": "アクティビティ",
+    "answerSentToast": "回答を送信しました",
+    "answerError": "回答を送信できませんでした。もう一度お試しください。",
+    "answerPlaceholder": "回答を入力",
+    "answerLabel": "あなたの回答",
+    "answerSent": "回答を送信しました。エージェントがすぐに受け取ります。",
+    "sendAnswer": "回答を送信",
+    "resume": "ゴールを再開",
+    "resumedToast": "ゴールを再開しました",
+    "resumeError": "ゴールを再開できませんでした。もう一度お試しください。",
+    "pause": "ゴールを一時停止",
+    "pauseReason": "ゴールのページから一時停止",
+    "pausedToast": "ゴールを一時停止しました",
+    "pauseError": "ゴールを一時停止できませんでした。もう一度お試しください。",
+    "moreActions": "ゴールのその他の操作",
+    "shareTitle": "ゴールを共有",
+    "scopeLabel": "表示できる人",
+    "showReport": "レポートを表示",
+    "openInFiles": "ファイルでフォルダを開く",
+    "openFolderOf": "{file} のフォルダをファイルで開く",
+    "hideReport": "レポートを隠す",
+    "questionForYou": "あなたへの質問",
+    "messagePlaceholder": "エージェントへのメモを残す…",
+    "messageLabel": "エージェントへのメモ",
+    "messageSentToast": "メモを送信しました",
+    "messageError": "メモを送信できませんでした。もう一度お試しください。",
+    "messageSent": "メモを送信しました。エージェントがすぐに受け取ります。",
+    "sendMessage": "メモを送信",
+    "send": "送信",
+    "agentLog": "エージェントログ",
+    "shareAccessLabel": "アクセスできるユーザー",
+    "shareOwner": "オーナー",
+    "shareAdminsRole": "開ける",
+    "shareLoadError": "アクセスできるユーザーを読み込めませんでした。",
+    "shareVisibility": "公開範囲: {scope}。ゴールを共有",
+    "copyLink": "リンクをコピー",
+    "linkCopied": "リンクをコピーしました",
+    "linkCopyError": "リンクをコピーできませんでした",
+    "properties": "プロパティ",
+    "stateLabel": "状態",
+    "nextCheck": "次の確認",
+    "lastCheck": "前回の確認",
+    "feed": {
+      "created": "ゴールを作成",
+      "moved": "{status}に移動",
+      "update": "最新の状況",
+      "paused": "一時停止",
+      "movedPrefix": "移動先:"
+    },
+    "showMore": "もっと見る",
+    "showLess": "閉じる",
+    "noAgent": "エージェントなし",
+    "nextCheckAt": "次の確認 {time}",
+    "noCheck": "確認の予定なし",
+    "lastCheckAt": "前回の確認 {time}",
+    "neverChecked": "まだ確認していません",
+    "wakesTodayCount": "今日の起動 {count}/{max}",
+    "filesLabel": "ファイル",
+    "roleTab": {
+      "founder": "創業者",
+      "sales": "営業",
+      "marketing": "マーケティング",
+      "support": "サポート",
+      "finance": "財務",
+      "operations": "オペレーション",
+      "people": "人事",
+      "engineering": "エンジニアリング"
+    },
+    "galleryTitle": "新しいゴールを始める",
+    "galleryDescription": "達成したい成果を記述するか、テンプレートから始めましょう。独立した確認で完了が認められるまで、エージェントが取り組みます。",
+    "composerPlaceholder": "達成したい成果を記述してください",
+    "templates": {
+      "draftInvestorUpdate": {
+        "title": "投資家向けアップデートを作成",
+        "description": "会社の指標をまとめ、投資家向けアップデートの下書きをFilesに作成します。",
+        "prompt": "[先月]の投資家向けアップデートを作成してください。\n- 指標:[Stripeと財務シート]から[売上、成長率、バーンレート、ランウェイ]\n- ハイライト:[リリース、成果、主要な採用]\n- 課題とリスク:[遅れているもの、リスクのあるもの]\n- お願い事項:[紹介、採用、必要なアドバイス]\nすべての数値を前期と比較してください。",
+        "criterion": "Files/founder/investor-update.md に、対象期間、出典付きの指標、前期からの変化、ハイライト、リスク、お願い事項、データの不足箇所が記載されている。",
+        "start": "指標を収集",
+        "done": "アップデート作成済み"
+      },
+      "compareCompetitors": {
+        "title": "競合を比較",
+        "description": "競合を比較し、出典付きのポジショニング資料をFilesに保存します。",
+        "prompt": "自社を[競合A、競合B、競合C]と比較してください。\n- 自社の商品:[製品と購入者を1行で]\n- 比較項目:価格、ターゲット購入者、主な機能、最近のリリース\n- 情報源:各社のウェブサイト、料金ページ、ドキュメント、公開レビュー\n最後に自社のポジショニング案を3つ提示してください。",
+        "criterion": "Files/founder/competitor-brief.md が、指定された各競合について、日付付きの出典リンク、ターゲット購入者、価格(不明な場合はその旨)、主な違い、3つのポジショニング案を網羅している。",
+        "start": "競合を調査",
+        "done": "資料の準備完了"
+      },
+      "summarizeCustomerFeedback": {
+        "title": "顧客の優先事項を把握",
+        "description": "顧客フィードバックをグループ化し、優先順位付きの資料をFilesに作成します。",
+        "prompt": "[過去90日間]に顧客から最も多く寄せられた要望を調べてください。\n- 情報源:[サポートチケット、通話メモ、アンケートのコメント、営業メモ]\n- テーマ別にグループ化し、ユニーク顧客数で順位付け\n- 各テーマについて:引用2件、出典リンク、影響する売上\n最後に推奨するアクションを3つ提示してください。",
+        "criterion": "Files/founder/customer-priorities.md に、ユニーク顧客数順のテーマ、引用、出典リンク、事業への影響、推奨アクション、フィードバックの対象範囲が記載されている。",
+        "start": "フィードバックを確認",
+        "done": "優先順位付け完了"
+      },
+      "prepareDecisionBrief": {
+        "title": "意思決定資料を準備",
+        "description": "経営判断について調査し、コストとトレードオフを含む選択肢をFilesに保存します。",
+        "prompt": "意思決定資料を準備してください:[新規顧客向けに価格を引き上げるべきか?]\n- 期限:[決定が必要な時期]\n- 制約:[予算、チーム、タイミング]\n- 現状維持を含め、少なくとも3つの選択肢を比較\nコスト、リスク、推奨案を示し、すべての数値に出典を付けてください。",
+        "criterion": "Files/founder/decision-brief.md に、意思決定の内容、現状維持を含む3つ以上の選択肢の比較、出典付きのコスト、トレードオフ、前提条件、推奨案が記載されている。",
+        "start": "根拠を収集",
+        "done": "選択肢の比較完了"
+      },
+      "prepareBoardPack": {
+        "title": "取締役会資料を準備",
+        "description": "出典付きの数値を含む取締役会のアウトラインをFilesに作成します。",
+        "prompt": "[今四半期]の取締役会資料を準備してください。\n- セクション:KPI、財務、プロダクト、採用、リスク、必要な意思決定\n- データ:[Stripe、財務シート、CRM、ロードマップ]\n- 取締役会への付議事項:[承認が必要なこと]\nスライドは12枚以内にしてください。すべての数値に出典を明記してください。",
+        "criterion": "Files/founder/board-pack.md に、KPI、財務、プロダクト、採用、リスク、必要な意思決定を含む12枚以内のスライドのアウトラインがあり、すべての数値に出典がある。",
+        "start": "数値を収集",
+        "done": "アウトライン作成済み"
+      },
+      "draftQuarterlyOkrs": {
+        "title": "四半期OKRを作成",
+        "description": "ベースラインと担当者を含む測定可能な目標をFilesに提案します。",
+        "prompt": "[来四半期]のOKRを作成してください。\n- 会社の重点:[最も重要なこと1つ]\n- チーム:[プロダクト、営業、マーケティング]\n- 前四半期の結果:[リンクまたはFilesのパス]\n目標は最大3つ。各目標に、ベースラインと担当ロールを含む測定可能な主要成果を2〜4個設定してください。",
+        "criterion": "Files/founder/okrs.md に、最大3つの目標があり、各目標にベースライン、目標値、担当ロールを示した測定可能な主要成果が2〜4個ある。",
+        "start": "結果を確認",
+        "done": "OKR作成済み"
+      },
+      "sizeMarket": {
+        "title": "市場規模を算出",
+        "description": "出典付きのTAM・SAM・SOM推計をFilesに作成します。",
+        "prompt": "[地域]における[自社製品]の市場規模を算出してください。\n- 購入者:[購入者と企業規模]\n- 価格:[自社の平均年間価格]\nTAM、SAM、SOMをボトムアップとトップダウンの両方で算出し、すべての入力値に日付付きの出典を示してください。",
+        "criterion": "Files/founder/market-size.md に、ボトムアップとトップダウン両方のTAM・SAM・SOM推計、それぞれの計算式、すべての入力値の日付付き出典が記載されている。",
+        "start": "データを検索",
+        "done": "市場規模算出済み"
+      },
+      "buildInvestorList": {
+        "title": "投資家リストを作成",
+        "description": "ラウンドへの適合度で投資家を順位付けし、出典付きリストをFilesに保存します。",
+        "prompt": "[シード]ラウンド向けに[40]社の投資家リストを作成してください。\n- 分野とステージ:[B2Bソフトウェア、シード]\n- 投資額:[50万〜200万ドル]\n- 地域:[米国と欧州]\n各投資家について:ファーム名、パートナー、関連する最近の案件、適合理由、出典リンクを記載してください。",
+        "criterion": "Files/founder/investors.csv が、指定数の投資家について、ファーム名、パートナー、関連する最近の案件、適合理由、出典リンク、指定されたステージと投資額に対する優先度を網羅している。",
+        "start": "投資家を調査",
+        "done": "リスト順位付け完了"
+      },
+      "writeTeamUpdate": {
+        "title": "チーム向けアップデートを作成",
+        "description": "実際の業務と数値から週次の社内アップデートの下書きをFilesに作成します。",
+        "prompt": "[今週]のチーム向けアップデートを作成してください。\n- リリース済み:[GitHub、課題管理ツール]から\n- 案件と顧客:[CRM]から\n- 指標:[Stripe、プロダクト分析]から\n- 来週:[優先事項]\n400語以内にしてください。下書きのみで、送信はしないでください。",
+        "criterion": "Files/founder/team-update.md が400語以内で、リンク付きのリリース内容、顧客・案件のニュース、出典付きの主要指標、来週の優先事項が記載されている。",
+        "start": "更新情報を収集",
+        "done": "アップデート作成済み"
+      },
+      "mapCompanyRisks": {
+        "title": "会社のリスクを整理",
+        "description": "計画に対する主なリスクを担当者と対策付きでFilesに一覧化します。",
+        "prompt": "[今年の計画達成]に対する主なリスクを挙げてください。\n- 領域:ランウェイ、顧客、チーム、プロダクト、法務、セキュリティ\n- 情報源:[財務シート、CRM、ロードマップ、インシデントログ]\n各リスクについて:発生可能性、影響度、担当ロール、対策を記載してください。",
+        "criterion": "Files/founder/risk-register.md に、指定された領域にわたる8件以上のリスクが、発生可能性、影響度、担当ロール、対策、裏付けとなる情報源とともに記載されている。",
+        "start": "情報源を確認",
+        "done": "リスク整理済み"
+      },
+      "researchTargetAccounts": {
+        "title": "ターゲット企業を調査",
+        "description": "適合度でターゲット企業を順位付けし、出典付きの見込み客リストをFilesに保存します。",
+        "prompt": "理想の顧客像に合うターゲット企業を[25]社見つけてください。\n- 理想の顧客:[業種、企業規模、地域]\n- 購買シグナル:[採用、資金調達、新ツール導入、事業拡大]\n- 除外:[CRM]の既存顧客と進行中の案件\n各企業について:社名、ウェブサイト、適合理由、出典リンク付きのシグナル、優先度を記載してください。",
+        "criterion": "Files/sales/target-accounts.csv が、指定数の企業について、社名、ウェブサイト、適合理由、購買シグナル、出典リンク、提示された購入者像に対する優先度を網羅している。",
+        "start": "企業を調査",
+        "done": "見込み客順位付け完了"
+      },
+      "draftDealFollowups": {
+        "title": "案件のフォローアップを作成",
+        "description": "案件履歴をもとに、連携した受信トレイに未送信のフォローアップ下書きを用意します。",
+        "prompt": "[7日間返信のない自分の進行中の案件]のフォローアップを作成してください。\n- 案件:[CRMのステージまたは案件名]\n- トーン:[短く簡潔に]\n- 各下書きに含める内容:直近の経緯、明確な次のステップ1つ、提案する日時\n連携した受信トレイに下書きとして保存してください。送信はしないでください。",
+        "criterion": "連携した受信トレイに、選択した案件ごとに宛先、案件の経緯、次のステップを含む未送信の下書きがあり、Files/sales/follow-ups.md が案件リンクと下書きリンクを対応付けている。",
+        "start": "案件を確認",
+        "done": "下書き準備完了"
+      },
+      "enrichSelectedLeads": {
+        "title": "選択したリードを拡充",
+        "description": "連携したCRMに出典付きのリード項目を入力し、変更ログをFilesに保存します。",
+        "prompt": "[[CRM]で今週作成されたリード]を拡充してください。\n- 項目:[業種、従業員数、役職、ウェブサイト]\n- 空の項目のみ入力してください。既存の値は決して上書きしないでください。\nすべての変更を出典とともに記録してください。出典で確認できない項目は空のままにしてください。",
+        "criterion": "Files/sales/lead-enrichment.csv が、選択した各リードについて、CRMリンク、項目、変更前後の値、出典リンク、更新済みまたは未解決のステータスを網羅している。",
+        "start": "リードを確認",
+        "done": "項目拡充済み"
+      },
+      "draftSalesProposal": {
+        "title": "営業提案書を作成",
+        "description": "ヒアリングメモと承認済み価格から提案書の下書きをFilesに作成します。",
+        "prompt": "[会社名]向けの提案書を作成してください。\n- ヒアリングメモ:[Filesのパスまたは CRMの案件]\n- スコープ:[購入内容]\n- 価格:[承認済みの価格と条件]\n- スケジュール:[開始日]\n購入者のニーズをそれぞれメモに紐付け、未解決の質問を挙げ、下書きであることを明記してください。",
+        "criterion": "Files/sales/proposal.md に、ヒアリングメモに紐付けた購入者のニーズ、提案スコープ、承認済み価格、対象外事項、スケジュール、未解決の質問、下書きの表示が記載されている。",
+        "start": "ヒアリング内容を確認",
+        "done": "提案書作成済み"
+      },
+      "prepareCallBrief": {
+        "title": "商談前ブリーフを準備",
+        "description": "取引先の履歴とニュースを1ページのブリーフにまとめてFilesに保存します。",
+        "prompt": "[会社名]との商談用ブリーフを準備してください。\n- 会議:[日時と商談の目的]\n- 収集対象:CRM履歴、過去のメール、サポートチケット、最近のニュースと求人情報\n最後に、聞くべき質問5つと注意すべきリスク3つを挙げてください。",
+        "criterion": "Files/sales/call-brief.md が1ページに収まり、取引先の履歴、出典リンク付きの最近のニュース、聞くべき質問5つ、注意すべきリスク3つが記載されている。",
+        "start": "履歴を確認",
+        "done": "ブリーフ準備完了"
+      },
+      "writeOutboundSequence": {
+        "title": "アウトバウンドシーケンスを作成",
+        "description": "特定の購入者ロール向けの短い複数ステップのメールシーケンスをFilesに作成します。",
+        "prompt": "[購入者ロール]向けに[4]ステップのアウトバウンドメールシーケンスを作成してください。\n- 解決する課題:[1行で]\n- 実績:[顧客の成果または導入事例]\n- 行動喚起:[15分の通話]\n各メールは120語以内にしてください。下書きのみです。",
+        "criterion": "Files/sales/outbound-sequence.md に、指定された数のメールがあり、それぞれ120語以内で、件名、送信日、指定された実績、1つの行動喚起を含んでいる。",
+        "start": "購入者を調査",
+        "done": "シーケンス作成済み"
+      },
+      "cleanUpPipeline": {
+        "title": "パイプラインを整理",
+        "description": "CRMの停滞案件にフラグを付け、承認用の修正案をFilesに提案します。",
+        "prompt": "[CRM]のパイプラインを整理してください。\n- [30]日間活動のない案件、クローズ予定日を過ぎた案件、金額または担当者が未入力の案件にフラグを付ける\n- それぞれに次のアクションを提案する\n案件は一切変更しないでください。承認用に変更案を一覧にしてください。",
+        "criterion": "Files/sales/pipeline-cleanup.csv に、フラグを付けた各案件について、CRMリンク、問題点、変更案、次のアクションが記載されており、CRMのレコードは変更されていない。",
+        "start": "パイプラインをスキャン",
+        "done": "修正案提示済み"
+      },
+      "analyzeLostDeals": {
+        "title": "失注案件を分析",
+        "description": "失注案件を理由と金額でグループ化し、結果をFilesに保存します。",
+        "prompt": "[過去6か月間]に案件を失った理由を調べてください。\n- 情報源:[CRMの失注理由、通話メモ、メール]\n- 理由別にグループ化し、案件数と失注金額を示す\n最後に、プロダクト、価格、プロセスに関する変更案を3つ挙げてください。",
+        "criterion": "Files/sales/lost-deals.md が、失注案件を理由別に、案件数、失注金額、出典リンクとともにグループ化し、最後に推奨する変更を3つ挙げている。",
+        "start": "案件を確認",
+        "done": "理由を特定済み"
+      },
+      "buildBattlecard": {
+        "title": "バトルカードを作成",
+        "description": "特定の競合に対する出典付きバトルカードをFilesに作成します。",
+        "prompt": "[競合]に対する営業用バトルカードを作成してください。\n- 内容:相手の強みと弱み、価格、よくある反論と自社の回答、自社の実績\n- 相手に勝った案件:[案件名またはCRMのフィルター]\n相手に関するすべての主張に、日付付きの出典を示してください。",
+        "criterion": "Files/sales/battlecard.md が、強み、弱み、価格、回答付きの反論、実績を網羅し、競合に関するすべての主張に日付付きの出典がある。",
+        "start": "競合を調査",
+        "done": "バトルカード準備完了"
+      },
+      "forecastQuarter": {
+        "title": "四半期を予測",
+        "description": "CRMからコミットとベストケースの予測をFilesに作成します。",
+        "prompt": "[今四半期]の売上予測を準備してください。\n- パイプライン:[CRM]\n- ルール:[コミット=後期ステージ、ベストケース=中期ステージ]\n- 目標:[ノルマ]\nコミット、ベストケース、パイプラインの合計を示して目標と比較し、数値を左右する案件を挙げてください。",
+        "criterion": "Files/sales/forecast.md に、目標に対するコミット、ベストケース、パイプラインの合計、使用したステージのルール、数値を左右する案件(CRMリンク付き)が記載されている。",
+        "start": "パイプラインを確認",
+        "done": "予測準備完了"
+      },
+      "draftLaunchCampaign": {
+        "title": "ローンチキャンペーンを作成",
+        "description": "プロダクト概要からキャンペーン文面とローンチチェックリストをFilesに作成します。",
+        "prompt": "[機能または製品]のローンチキャンペーンを作成してください。\n- 概要:[Filesのパスまたは短い説明]\n- 対象:[誰向けか]\n- チャネル:[メール、ブログ、LinkedIn、X]\n- ローンチ日:[日付]\n各コンテンツを作成し、すべての主張に出典リンクを付け、ローンチチェックリストを追加してください。",
+        "criterion": "Files/marketing/launch-campaign.md に、対象、メッセージ、指定された各チャネルの下書き、行動喚起、主張の出典リンク、ローンチチェックリストが記載されている。",
+        "start": "概要を確認",
+        "done": "キャンペーン作成済み"
+      },
+      "findContentGaps": {
+        "title": "コンテンツの不足を発見",
+        "description": "既存ページと検索意図を比較し、順位付きの記事ブリーフをFilesに保存します。",
+        "prompt": "[自社ウェブサイト]の[トピック]に関するコンテンツの不足を見つけてください。\n- 競合:[2〜3サイト]\n- 対象読者:[誰が検索するか]\n検索意図と適合度で[10]件のトピックを順位付けし、それぞれにブリーフとアウトラインを作成してください。",
+        "criterion": "Files/marketing/content-gaps.md に、合意した数の順位付きトピック、対象読者の意図、既存ページの不足点、日付付きの検索データの出典、トピックごとのアウトラインが記載されている。",
+        "start": "ページを比較",
+        "done": "ブリーフ準備完了"
+      },
+      "rewriteLandingPage": {
+        "title": "ランディングページを書き直す",
+        "description": "ランディングページを確認し、裏付けのある主張で改訂した文面をFilesに保存します。",
+        "prompt": "[URL]の自社ランディングページを書き直してください。\n- 対象:[訪問者は誰か]\n- 目標:[サインアップ、デモ依頼]\n- 使える実績:[顧客ロゴ、数値、引用]\n裏付けのある主張のみ残してください。変更箇所とその理由を明記してください。",
+        "criterion": "Files/marketing/landing-page.md に、セクションごとの改訂文面、各変更の理由、すべての主張の出典が記載されている。",
+        "start": "ページを確認",
+        "done": "文面作成済み"
+      },
+      "analyzeCampaignResults": {
+        "title": "キャンペーン結果を分析",
+        "description": "キャンペーンの費用とコンバージョンを確認し、結果レポートをFilesに保存します。",
+        "prompt": "[キャンペーン]の結果をレポートしてください。\n- データ:[広告プラットフォーム、CRM、ウェブ分析]\n- 期間:[日付]\n- 目標:[リード単価またはコンバージョン数]\nチャネル別に費用、リード数、リード単価、コンバージョン数を示し、削減すべき施策と拡大すべき施策を提案してください。",
+        "criterion": "Files/marketing/campaign-results.md に、期間中のチャネル別の費用、リード数、リード単価、コンバージョン数、目標との比較、データの出典、提案が記載されている。",
+        "start": "結果を収集",
+        "done": "レポート準備完了"
+      },
+      "writeBlogPost": {
+        "title": "ブログ記事を書く",
+        "description": "トピックを調査し、出典付きの記事の下書きをFilesに保存します。",
+        "prompt": "[トピック]についてのブログ記事を書いてください。\n- 読者:[誰で、何を知りたいか]\n- 切り口:[自社の視点]\n- 長さ:[1,200語]\nすべての事実に出典リンクを付け、メタディスクリプションとタイトル案を3つ追加してください。",
+        "criterion": "Files/marketing/blog-post.md に、指定の長さに近い下書き、タイトル案3つ、160文字未満のメタディスクリプション、すべての事実への出典リンクが含まれている。",
+        "start": "トピックを調査",
+        "done": "記事作成済み"
+      },
+      "planContentCalendar": {
+        "title": "コンテンツカレンダーを計画",
+        "description": "1か月分のコンテンツをチャネル、日付、目的別にFilesで計画します。",
+        "prompt": "[来月]のコンテンツカレンダーを計画してください。\n- チャネル:[ブログ、LinkedIn、ニュースレター]\n- テーマ:[リリース、顧客事例、ガイド]\n- 頻度:[週あたりの投稿数]\n各コンテンツについて:日付、チャネル、タイトル、担当ロール、目的を記載してください。",
+        "criterion": "Files/marketing/content-calendar.csv が、指定された頻度で1か月分を網羅し、各コンテンツに日付、チャネル、タイトル、テーマ、担当ロール、目的が記載されている。",
+        "start": "テーマを選定",
+        "done": "カレンダー計画済み"
+      },
+      "draftNewsletter": {
+        "title": "ニュースレターを作成",
+        "description": "プロダクトと顧客のニュースをまとめ、ニュースレターの下書きをFilesに作成します。",
+        "prompt": "[月次]ニュースレターを作成してください。\n- 含める内容:[変更履歴]からのプロダクトアップデート、[顧客事例1件]、今後のイベント\n- 読者:[顧客と見込み客]\n件名案を3つ提示し、500語以内にしてください。下書きのみで、送信はしないでください。",
+        "criterion": "Files/marketing/newsletter.md が500語以内で、件名案3つ、リンク付きのプロダクトアップデート、顧客事例、今後のイベントを含んでいる。",
+        "start": "ニュースを収集",
+        "done": "ニュースレター作成済み"
+      },
+      "repurposeContent": {
+        "title": "コンテンツを再利用",
+        "description": "1つの長文コンテンツを各チャネル向けのソーシャル投稿にしてFilesに保存します。",
+        "prompt": "[ブログ記事またはウェビナーのリンク]をソーシャル投稿に変換してください。\n- チャネル:[LinkedIn、X]\n- 件数:[チャネルごとに5件]\n各投稿は単独で成立し、元コンテンツへのリンクを含み、チャネルの文字数制限に収めてください。",
+        "criterion": "Files/marketing/social-posts.md に、チャネルごとに指定された件数の投稿があり、それぞれチャネルの文字数制限内で、元コンテンツへのリンクを含んでいる。",
+        "start": "元コンテンツを確認",
+        "done": "投稿作成済み"
+      },
+      "auditSeo": {
+        "title": "SEO監査を実行",
+        "description": "主要ページの検索上の問題を確認し、修正の優先順位をFilesに保存します。",
+        "prompt": "[自社ウェブサイト]のSEO監査を実行してください。\n- 対象ページ:[ホーム、料金、人気ブログ記事上位10件]\nタイトル、メタディスクリプション、見出し、リンク切れ、ページ速度、内部リンクを確認し、修正を影響度順に並べてください。",
+        "criterion": "Files/marketing/seo-audit.md に、確認した各ページの問題点、それぞれの根拠、影響度順の修正が記載されている。",
+        "start": "ページをクロール",
+        "done": "修正の順位付け完了"
+      },
+      "writeCaseStudy": {
+        "title": "導入事例を書く",
+        "description": "顧客の資料から導入事例の下書きをFilesに作成します。",
+        "prompt": "[顧客]の導入事例を書いてください。\n- 元資料:[通話録音、メモ、指標]\n- 構成:課題、解決策、数値を含む成果、顧客の声\n情報源にある事実のみを使用してください。顧客の承認が必要な引用には印を付けてください。",
+        "criterion": "Files/marketing/case-study.md に、課題、解決策、出典付きの数値を含む成果、承認が必要と印を付けた引用、すべての事実の出典が記載されている。",
+        "start": "資料を確認",
+        "done": "導入事例作成済み"
+      },
+      "draftSupportReplies": {
+        "title": "サポート返信を作成",
+        "description": "ヘルプセンターの情報から未対応チケットへの回答を未送信の下書きとして作成します。",
+        "prompt": "[24時間以上経過した未対応チケット]への返信を作成してください。\n- ヘルプデスク:[連携済みのヘルプデスクまたはサポート受信トレイ]\n- トーン:[親しみやすく簡潔に]\n- ヘルプセンターと過去の回答を使用し、出典を示す\n下書きの保存のみにして、送信はしないでください。回答できないチケットにはフラグを付けてください。",
+        "criterion": "選択した各チケットに、ヘルプ記事または過去の回答を引用した未送信の返信下書きがあり、Files/support/reply-drafts.md にチケットリンク、下書きのステータス、回答不能としてフラグを付けたチケットが一覧化されている。",
+        "start": "チケットを確認",
+        "done": "返信作成済み"
+      },
+      "triageSupportBacklog": {
+        "title": "バックログをトリアージ",
+        "description": "未対応チケットにラベルと優先度を付け、トリアージ結果をFilesに保存します。",
+        "prompt": "[連携済みのヘルプデスク]のサポートバックログをトリアージしてください。\n- ラベル:バグ、質問、機能要望、請求、緊急\n- 優先度ルール:[有料顧客を優先]\n重複をグループ化し、チケット数の多い上位5件の問題を挙げてください。",
+        "criterion": "Files/support/triage.csv がすべての未対応チケットについて、リンク、ラベル、優先度、重複グループを網羅し、Files/support/triage.md にチケット数の多い上位5件の問題が一覧化されている。",
+        "start": "バックログを確認",
+        "done": "トリアージ完了"
+      },
+      "draftHelpArticle": {
+        "title": "ヘルプ記事を作成",
+        "description": "チケットとプロダクトの挙動から、手順付きのヘルプ記事をFilesに作成します。",
+        "prompt": "[機能または質問]についてのヘルプ記事を書いてください。\n- 情報源:[チケット、ドキュメント、プロダクト]\n- 読者:[新規ユーザー]\n手順ごとに、各手順の期待される結果とよくあるエラーを示してください。",
+        "criterion": "Files/support/help-article.md に、期待される結果付きの番号付き手順、対処法付きのよくあるエラー、元にしたチケットとドキュメントへのリンクが記載されている。",
+        "start": "チケットを確認",
+        "done": "記事作成済み"
+      },
+      "flagAtRiskAccounts": {
+        "title": "リスクのあるアカウントを検出",
+        "description": "解約の兆候があるアカウントを見つけ、順位付きリストをFilesに保存します。",
+        "prompt": "[今後60日間]に解約リスクのあるアカウントを見つけてください。\n- シグナル:[利用の減少、未対応チケット、低いアンケート評価、更新日]\n- データ:[プロダクト分析、ヘルプデスク、CRM]\n危険にさらされている売上順に並べ、それぞれに根拠と推奨アクションを示してください。",
+        "criterion": "Files/support/at-risk-accounts.md が、危険にさらされている売上順にアカウントを並べ、それぞれにシグナル、出典リンク、推奨アクションを記載している。",
+        "start": "シグナルを確認",
+        "done": "リスク検出済み"
+      },
+      "buildFaqFromTickets": {
+        "title": "FAQを作成",
+        "description": "最も多い質問を見つけ、出典付きの回答をFilesに保存します。",
+        "prompt": "[先月]のチケットからFAQを作成してください。\n- 件数:最も多い質問[20]件\n- 回答:ヘルプセンターと過去の返信から\nヘルプ記事がない質問にはフラグを付けてください。",
+        "criterion": "Files/support/faq.md に、チケット数順に並べた指定数の質問があり、それぞれに回答、出典リンク、ヘルプ記事がない場合のフラグが付いている。",
+        "start": "質問を集計",
+        "done": "FAQ作成済み"
+      },
+      "reviewReplyQuality": {
+        "title": "返信の品質をレビュー",
+        "description": "サポート返信のサンプルを採点し、コーチング用メモをFilesに保存します。",
+        "prompt": "[先週]のサポート返信の品質をレビューしてください。\n- サンプル:[30]件の返信\n- 採点項目:正確さ、トーン、速さ、解決度\n具体例と3つのコーチングポイントを示してください。",
+        "criterion": "Files/support/quality-review.md が、サンプルの各返信を4つの基準で採点してチケットリンクを付け、例付きのコーチングポイントを3つ挙げている。",
+        "start": "返信をサンプリング",
+        "done": "レビュー完了"
+      },
+      "writeSavedReplies": {
+        "title": "定型返信を作成",
+        "description": "最も多い質問向けの再利用可能な返信をFilesに作成します。",
+        "prompt": "最も多い質問[10]件に対する定型返信を作成してください。\n- 情報源:[連携済みのヘルプデスク]\n- トーン:[親しみやすく簡潔に]\n各返信には適切なヘルプ記事へのリンクを含め、顧客名のプレースホルダーを入れてください。",
+        "criterion": "Files/support/saved-replies.md に、指定数の返信があり、それぞれが回答する質問、チケット数、ヘルプ記事へのリンクが記載されている。",
+        "start": "質問を検索",
+        "done": "返信作成済み"
+      },
+      "turnBugsIntoIssues": {
+        "title": "バグ報告をIssueに変換",
+        "description": "バグのチケットを統合し、再現可能なエンジニアリングIssueとしてFilesに作成します。",
+        "prompt": "[今週]のバグ報告をエンジニアリングのIssueに変換してください。\n- 情報源:[連携済みのヘルプデスクでバグのタグが付いたチケット]\n- 各Issueに:再現手順、影響を受けた顧客数、重大度、チケットリンク\n重複は統合してください。起票する前に私がレビューできるよう、Issueを保存してください。",
+        "criterion": "Files/support/bug-issues.md に、個別のバグごとに1つのIssueがあり、再現手順、影響を受けた顧客数、重大度、関連するすべてのチケットリンクが記載されている。",
+        "start": "バグチケットを確認",
+        "done": "Issue作成済み"
+      },
+      "findOutdatedArticles": {
+        "title": "古いヘルプ記事を発見",
+        "description": "ヘルプセンターとプロダクトを比較し、修正内容をFilesに保存します。",
+        "prompt": "[URL]の自社ヘルプセンターから古い記事を見つけてください。\n- 比較対象:現在のプロダクトと[変更履歴]\n古くなった記述ごとに、記事リンク、旧テキスト、修正後のテキストを示してください。",
+        "criterion": "Files/support/outdated-articles.md に、古くなった各記述について、記事リンク、旧テキスト、修正後のテキスト、修正の根拠となる情報源が一覧化されている。",
+        "start": "記事を確認",
+        "done": "修正を一覧化済み"
+      },
+      "reportSupportMetrics": {
+        "title": "サポート指標をレポート",
+        "description": "期間中の件数、対応速度、満足度をFilesにレポートします。",
+        "prompt": "[先月]のサポート実績をレポートしてください。\n- データ:[連携済みのヘルプデスク]\n初回応答時間、解決時間、カテゴリ別の件数、満足度を示し、それぞれを前期と比較してください。",
+        "criterion": "Files/support/metrics.md に、期間中の初回応答時間、解決時間、カテゴリ別の件数、満足度が記載され、それぞれ前期と比較されている。",
+        "start": "データを取得",
+        "done": "レポート準備完了"
+      },
+      "reconcileExpenses": {
+        "title": "経費を突合",
+        "description": "取引を領収書とカテゴリに照合し、結果をFilesに保存します。",
+        "prompt": "[先月]の経費を突合してください。\n- 口座:[銀行口座とカード口座]\n- 領収書:[Filesのフォルダまたは受信トレイ]\n各取引を領収書とカテゴリに対応付け、一致しなかった項目を一覧にしてください。",
+        "criterion": "Files/finance/expense-reconciliation.csv が、期間中のすべての取引について、金額、カテゴリ、一致した領収書へのリンクまたは未一致のステータスを網羅している。",
+        "start": "取引を確認",
+        "done": "経費照合済み"
+      },
+      "prepareInvoiceFollowups": {
+        "title": "期限超過の請求書を督促",
+        "description": "支払期限を過ぎた請求書のリマインドを下書きします。送信はしません。",
+        "prompt": "[14日]を超えて支払期限を過ぎている請求書のリマインドを下書きしてください。\n- ソース: [Stripeまたは会計ツール]\n- トーン: [丁寧に。30日を過ぎたらやや強めに]\n下書きの保存のみ行い、送信はしないでください。",
+        "criterion": "連携済みの受信トレイに、期限超過の請求書ごとに未送信の下書きがあり、Files/finance/invoice-followups.md に請求書番号、顧客、金額、超過日数、下書きへのリンクが一覧化されている。",
+        "start": "期限超過を確認",
+        "done": "リマインド下書き完了"
+      },
+      "auditSubscriptionSpend": {
+        "title": "ソフトウェア費用を監査",
+        "description": "重複や未使用のサブスクリプションを見つけ、削減額の順位をFilesにまとめます。",
+        "prompt": "[過去12か月]のソフトウェアサブスクリプションを監査してください。\n- ソース: [カード明細、会計ツール]\n重複、未使用のシート、値上げを見つけ、削減額の大きい順に並べてください。",
+        "criterion": "Files/finance/subscription-audit.md に、各サブスクリプションの年額、担当者、利用状況の根拠、各数値の出典付きで削減額の順位が一覧化されている。",
+        "start": "請求を確認",
+        "done": "削減額を順位付け"
+      },
+      "prepareCashForecast": {
+        "title": "資金繰り予測を作成",
+        "description": "3つのシナリオによる週次の資金繰り予測をFilesに作成します。",
+        "prompt": "[13]週間の資金繰り予測を作成してください。\n- 期首残高: [銀行残高またはその出典]\n- 入金: [Stripe、未回収の請求書]\n- 出金: [給与、家賃、取引先]\nベース、低位、高位の3ケースを示し、現金が[バーン3か月分]を下回る週を明示してください。",
+        "criterion": "Files/finance/cash-forecast.csv が指定期間をカバーし、ベース・低位・高位の各ケースで入金、出金、期末残高を含み、該当する週に印が付いている。",
+        "start": "残高を集計",
+        "done": "予測を作成済み"
+      },
+      "prepareMonthEndClose": {
+        "title": "月次決算を準備",
+        "description": "決算の各ステップを確認し、完了分と残りをFilesに保存します。",
+        "prompt": "[先月]の月次決算を準備してください。\n- ステップ: [銀行勘定調整、未払計上、繰延収益、給与、グループ会社間取引]\n- ツール: [会計ツール、Stripe]\n各ステップを完了または未完了として一覧にし、根拠または阻害要因を添えてください。",
+        "criterion": "Files/finance/month-end-close.md に全ての決算ステップが完了または未完了で一覧化され、完了分には根拠、未完了分には阻害要因が記載されている。",
+        "start": "ステップを確認",
+        "done": "決算準備完了"
+      },
+      "explainBudgetVariance": {
+        "title": "予算差異を説明",
+        "description": "実績と予算を比較し、大きな差異の理由をFilesにまとめます。",
+        "prompt": "[前四半期]の実績と予算を比較してください。\n- 予算: [Filesのパス]\n- 実績: [会計ツール]\n[10%]を超えて差がある項目をそれぞれ説明してください。",
+        "criterion": "Files/finance/budget-variance.md が項目ごとに実績と予算を比較し、しきい値を超えた全ての項目を、その要因となる取引とともに説明している。",
+        "start": "項目を比較",
+        "done": "差異を説明済み"
+      },
+      "calculateUnitEconomics": {
+        "title": "ユニットエコノミクスを計算",
+        "description": "CAC、LTV、回収期間を計算式付きでFilesにまとめます。",
+        "prompt": "[前四半期]のユニットエコノミクスを計算してください。\n- 分割単位: [プランまたは顧客セグメント]\n- データ: [Stripe、CRM、広告費]\nCAC、LTV、回収期間、粗利率を示し、各計算式と出典を明記してください。",
+        "criterion": "Files/finance/unit-economics.md にセグメントごとのCAC、LTV、回収期間、粗利率が、それぞれの計算式とデータ出典付きで記載されている。",
+        "start": "データを取得",
+        "done": "計算完了"
+      },
+      "collectTaxDocuments": {
+        "title": "税務書類を収集",
+        "description": "会計士が必要とする書類を集め、不足分をFilesに一覧化します。",
+        "prompt": "[今年の確定申告]で会計士が必要とする書類を収集してください。\n- チェックリスト: [会計士のリスト、またはFilesのパス]\n- ソース: [Files、受信トレイ、会計ツール]\n見つかった書類にはリンクを付け、不足しているものを一覧にしてください。",
+        "criterion": "Files/finance/tax-documents.md に、チェックリストの全項目が、見つかった書類へのリンクまたは不足の状態とともに一覧化されている。",
+        "start": "ファイルを検索",
+        "done": "書類を収集済み"
+      },
+      "reviewRenewals": {
+        "title": "更新予定を確認",
+        "description": "まもなく更新される契約を、通知期限と提案つきでFilesに一覧化します。",
+        "prompt": "[今後90日以内]に更新されるベンダー契約を確認してください。\n- 契約: [Filesのフォルダまたは契約ツール]\n各契約について、更新日、通知期限、価格、自動更新の有無、更新・再交渉・解約のいずれかの推奨を示してください。",
+        "criterion": "Files/finance/renewals.md に、期間内に更新される各契約の更新日、通知期限、価格、自動更新の有無、推奨が一覧化されている。",
+        "start": "契約を読む",
+        "done": "更新を確認済み"
+      },
+      "modelHiringCost": {
+        "title": "採用コストをモデル化",
+        "description": "採用計画のコストと資金余命への影響をFilesにモデル化します。",
+        "prompt": "[来年のエンジニア5名採用]のコストをモデル化してください。\n- 給与: [レンジ、またはベンチマークで調査]\n- 入社時期: [四半期ごと]\n- 現在のバーンと現金: [財務シート]\n福利厚生、税金、機器、採用費用を含め、資金余命への影響を示してください。",
+        "criterion": "Files/finance/hiring-cost.csv に、採用者ごとの月額コスト(給与、福利厚生、税金、機器、採用費用)と、採用あり・なしの場合の資金余命が記載されている。",
+        "start": "コストを集計",
+        "done": "コストをモデル化済み"
+      },
+      "compareVendorQuotes": {
+        "title": "ベンダー見積もりを比較",
+        "description": "見積もりを要件と照らして比較し、推奨をFilesに保存します。",
+        "prompt": "[購入予定のもの]の見積もりを比較してください。\n- 見積もり: [Filesのフォルダまたはメールスレッド]\n- 必須要件: [要件]\n価格、条件、納期、サポートを比較し、1社を推奨してください。",
+        "criterion": "Files/operations/vendor-comparison.md が各見積もりを価格、条件、納期、サポート、各必須要件で比較し、値ごとに出典を示したうえで1社を推奨している。",
+        "start": "見積もりを読む",
+        "done": "ベンダーを選定済み"
+      },
+      "documentBusinessProcess": {
+        "title": "業務プロセスを文書化",
+        "description": "実際の情報源から手順ごとのプロセス文書をFilesに作成します。",
+        "prompt": "[新規顧客のオンボーディング]の進め方を文書化してください。\n- ソース: [メモ、ツール、チャットのスレッド]\n各ステップについて、担当ロール、ツール、入力、出力、起こりうる問題を記載してください。",
+        "criterion": "Files/operations/process.md に番号付きの手順があり、各手順に担当ロール、ツール、入力、出力、失敗しやすい点、情報源が記載されている。",
+        "start": "メモを収集",
+        "done": "プロセスを文書化済み"
+      },
+      "reconcileInventoryRecords": {
+        "title": "在庫を突合",
+        "description": "2つのシステム間の在庫を比較し、差異をFilesに一覧化します。",
+        "prompt": "[ストア]と[倉庫のシート]の在庫を突合してください。\n- 照合キー: [SKU]\n全ての差異を、双方の数量と考えられる原因とともに一覧にしてください。",
+        "criterion": "Files/operations/inventory-reconciliation.csv に、差異のある全SKUが、双方の数量、差分、考えられる原因とともに一覧化されている。",
+        "start": "記録を比較",
+        "done": "差異を一覧化"
+      },
+      "prepareProjectHandoff": {
+        "title": "プロジェクト引き継ぎを準備",
+        "description": "プロジェクトの状況、担当者、未完了の作業を引き継ぎ資料にまとめてFilesに保存します。",
+        "prompt": "[プロジェクト]の引き継ぎ資料を準備してください。\n- 新しい担当者: [ロール]\n- ソース: [Filesのフォルダ、課題管理ツール、チャットチャンネル]\n目的、現状、未完了の作業、決定事項、ロール別の連絡先、リスクを含めてください。",
+        "criterion": "Files/operations/handoff.md に、目的、現状、リンク付きの未完了作業、決定事項、ロール別の連絡先、リスクが記載されている。",
+        "start": "背景を収集",
+        "done": "引き継ぎ準備完了"
+      },
+      "auditToolAccess": {
+        "title": "ツールのアクセス権を監査",
+        "description": "ツール間でリスクのある、または未使用のアカウントを見つけ、対処案をFilesに一覧化します。",
+        "prompt": "[ワークスペースのツール]にアクセスできるユーザーを監査してください。\n- ツール: [メールスイート、コードホスティング、チャット]\n- 照合先: [現在のチームリスト]\n退職者のアカウント、未使用のアカウント、余分な管理者を指摘してください。変更はしないでください。",
+        "criterion": "Files/operations/access-audit.md に、指摘した各アカウントのツール、理由、推奨対応が一覧化されており、アクセス権は一切変更されていない。",
+        "start": "アカウントを一覧化",
+        "done": "アクセス権を監査済み"
+      },
+      "planTeamOffsite": {
+        "title": "チームオフサイトを計画",
+        "description": "会場を比較し、予算と日程をFilesに作成します。",
+        "prompt": "[都市、月]で[20人]規模のチームオフサイトを計画してください。\n- 予算: [合計額]\n- 目的: [計画立案、チームの時間]\n会場候補3つ、予算、日程、移動に関するメモを示してください。",
+        "criterion": "Files/operations/offsite-plan.md に、価格とリンク付きの会場候補3つ、指定の合計額に収まる予算、日ごとの日程、移動に関するメモが記載されている。",
+        "start": "会場を探す",
+        "done": "オフサイトを計画済み"
+      },
+      "findAutomationWork": {
+        "title": "自動化できる作業を探す",
+        "description": "繰り返しの手作業を見つけ、削減できる時間をFilesに見積もります。",
+        "prompt": "[経理と運営]で自動化できる手作業を探してください。\n- ソース: [プロセス文書、チャットのスレッド、定期タスク]\n各タスクについて、頻度、所要時間、自動化に使うツール、月あたりの削減時間を示してください。",
+        "criterion": "Files/operations/automation-candidates.md が、月あたりの削減時間の順にタスクを並べ、それぞれ頻度、所要時間、提案ツール、情報源を示している。",
+        "start": "タスクを探す",
+        "done": "削減効果を順位付け"
+      },
+      "trackDelayedOrders": {
+        "title": "遅延注文を追跡",
+        "description": "遅れている注文とその原因を見つけ、Filesに保存します。",
+        "prompt": "[ストアまたは注文システム]で[3日]を超えて遅延している注文を見つけてください。\n各注文について、注文、顧客、約束日、現在のステータス、原因を示し、主な原因への対策を提案してください。",
+        "criterion": "Files/operations/delayed-orders.csv に遅延した各注文の約束日、ステータス、原因が一覧化され、Files/operations/delayed-orders.md に主な原因と対策が記載されている。",
+        "start": "注文を確認",
+        "done": "遅延を特定"
+      },
+      "prepareComplianceChecklist": {
+        "title": "コンプライアンスのチェックリストを準備",
+        "description": "統制と証跡を対応付け、不足分をFilesに一覧化します。",
+        "prompt": "[SOC 2]の準備状況チェックリストを作成してください。\n- 範囲: [システムとチーム]\n- 証跡: [Filesのフォルダ、ツール]\n各統制について、現在の証跡、不足点、担当ロールを示してください。",
+        "criterion": "Files/operations/compliance-checklist.md に、対象範囲の各統制が、証跡へのリンクまたは不足点、および担当ロールとともに一覧化されている。",
+        "start": "統制を対応付け",
+        "done": "不足点を一覧化"
+      },
+      "writeWeeklyOpsReport": {
+        "title": "運営レポートを作成",
+        "description": "運営の数値を週次レポートとしてFilesにまとめます。",
+        "prompt": "[今週]の運営レポートを作成してください。\n- 数値: [注文数、出荷までの時間、チケット、コスト]\n- ソース: [ストア、ヘルプデスク、会計ツール]\n各数値を先週と比較し、注意が必要な3点を挙げてください。",
+        "criterion": "Files/operations/weekly-report.md に、依頼された各数値が出典と先週からの変化とともに記載され、注意が必要な3点が挙げられている。",
+        "start": "数値を取得",
+        "done": "レポート作成済み"
+      },
+      "draftJobDescription": {
+        "title": "求人票を下書き",
+        "description": "明確な成果と要件を備えた求人票をFilesに作成します。",
+        "prompt": "[シニアバックエンドエンジニア]の求人票を作成してください。\n- チームとマネージャー: [チーム、マネージャーのロール]\n- 1年目の成果: [担当する領域]\n- 必須要件: [スキル]\n- 勤務地と報酬レンジ: [詳細]\n包括的な表現を使い、600語以内に収めてください。",
+        "criterion": "Files/people/job-description.md は600語以内で、職務概要、1年目の成果、必須スキルと歓迎スキル、勤務地、報酬レンジを含んでいる。",
+        "start": "役割を定義",
+        "done": "求人票を下書き済み"
+      },
+      "buildOnboardingPlan": {
+        "title": "オンボーディング計画を作成",
+        "description": "チームの文書から30-60-90日のオンボーディング計画をFilesに作成します。",
+        "prompt": "[ロール]の30-60-90日オンボーディング計画を作成してください。\n- チーム文書: [Filesのフォルダ]\n- 習得するツール: [使用するツール]\n- バディ: [ロール]\n各期間の目標、タスク、チェックインを示してください。",
+        "criterion": "Files/people/onboarding-plan.md に、1〜30日、31〜60日、61〜90日それぞれの目標、タスク、チェックインが記載され、各タスクで使う文書へのリンクが付いている。",
+        "start": "チーム文書を読む",
+        "done": "計画の準備完了"
+      },
+      "prepareInterviewKit": {
+        "title": "面接キットを準備",
+        "description": "構造化面接の質問と評価シートをFilesに作成します。",
+        "prompt": "[ロール]の面接キットを作成してください。\n- 求人票: [Filesのパス]\n- 選考ステージ: [書類選考、技術面接、チーム面接、最終面接]\n各ステージについて、質問、優れた回答が示すもの、1〜4段階の評価シートを示してください。",
+        "criterion": "Files/people/interview-kit.md が全ステージについて、質問、優れた回答のシグナル、求人票に紐づく1〜4段階の評価シートを網羅している。",
+        "start": "役割を確認",
+        "done": "キットの準備完了"
+      },
+      "organizePeopleHandbook": {
+        "title": "ハンドブックを整理",
+        "description": "人事ポリシーを1つのハンドブックにまとめ、不足点をFilesに示します。",
+        "prompt": "[Filesのフォルダ]から人事ハンドブックを整理してください。\n- セクション: 休暇、福利厚生、経費、リモートワーク、行動規範、セキュリティ\n矛盾している、欠けている、または古くなっているポリシーに印を付けてください。",
+        "criterion": "Files/people/handbook.md に、挙げた全セクションが元の文書とともに記載され、矛盾・欠落・古いポリシーそれぞれに印が付いている。",
+        "start": "ポリシーを読む",
+        "done": "ハンドブックを整理済み"
+      },
+      "sourceCandidates": {
+        "title": "候補者を探す",
+        "description": "公開情報から候補者を見つけ、適合度順にFilesにまとめます。",
+        "prompt": "[ロール]の候補者を[20]人探してください。\n- 必須要件: [スキルと経験]\n- 勤務地: [地域またはリモート]\n公開情報のみを使用し、各候補者についてプロフィールへのリンク、適合の理由、根拠を示してください。",
+        "criterion": "Files/people/candidates.csv に、依頼された人数分の公開プロフィールへのリンク、現在の役職、適合の理由、各必須要件の根拠が一覧化されている。",
+        "start": "プロフィールを検索",
+        "done": "候補者を順位付け"
+      },
+      "benchmarkCompensation": {
+        "title": "報酬をベンチマーク",
+        "description": "職種と勤務地の報酬を、出典付きの市場データと比較してFilesにまとめます。",
+        "prompt": "[勤務地]の[ロール]の報酬をベンチマークしてください。\n- レベル: [ミッド、シニア、スタッフ]\n- 自社の現在のレンジ: [レンジ]\n基本給、賞与、株式報酬の市場レンジを示し、各値に日付付きの出典を添えてください。",
+        "criterion": "Files/people/pay-benchmark.md に、該当のロール・レベル・勤務地の基本給、賞与、株式報酬の市場レンジが日付付きの出典とともに記載され、自社のレンジとの比較がある。",
+        "start": "データを探す",
+        "done": "報酬をベンチマーク済み"
+      },
+      "prepareReviewCycle": {
+        "title": "評価サイクルを準備",
+        "description": "評価の質問、評価尺度、スケジュールをFilesに作成します。",
+        "prompt": "[今期]の人事評価サイクルを準備してください。\n- チーム: [全チーム]\n- 形式: [自己評価、マネージャー評価、同僚からのフィードバック]\n質問、各段階の定義付き評価尺度、日付入りのスケジュールを示してください。",
+        "criterion": "Files/people/review-cycle.md に、評価種別ごとの質問、各段階の定義付き評価尺度、日付入りのスケジュールが記載されている。",
+        "start": "質問を下書き",
+        "done": "サイクルの準備完了"
+      },
+      "summarizeEngagementSurvey": {
+        "title": "サーベイを要約",
+        "description": "サーベイの回答をテーマとアクションに整理してFilesにまとめます。",
+        "prompt": "[Filesのパス]のエンゲージメントサーベイを要約してください。\n- 比較対象: [前回のサーベイ]\n質問別・チーム別のスコア、コメントから見える主なテーマ、3つの提案アクションを示してください。個人名は決して挙げないでください。",
+        "criterion": "Files/people/survey-summary.md に、質問別・チーム別のスコアと前回からの変化、個人名を含まないコメントのテーマ、3つのアクションが記載されている。",
+        "start": "回答を読む",
+        "done": "テーマを抽出"
+      },
+      "draftOfferLetter": {
+        "title": "オファーレターを下書き",
+        "description": "承認済みの条件からオファーレターを下書きし、レビュー用にFilesへ保存します。",
+        "prompt": "[ロール]のオファーレターを下書きしてください。\n- 条件: [給与、株式報酬、入社日、勤務地]\n- テンプレート: [自社のオファーテンプレートのFilesパス]\n承認済みの条件のみを使用し、法務レビュー対象と明記してください。",
+        "criterion": "Files/people/offer-letter.md は指定のテンプレートと条件のみを使用し、各条件を1か所にまとめ、法務レビュー対象と明記されている。",
+        "start": "テンプレートを読む",
+        "done": "オファーを下書き済み"
+      },
+      "planTeamTraining": {
+        "title": "チーム研修を計画",
+        "description": "セッションと教材を含む研修計画をFilesに作成します。",
+        "prompt": "[営業チーム]向けの[トピック]の研修を計画してください。\n- レベル: [新人または経験者]\n- 確保できる時間: [週あたりの時間]\nセッション、リンク付きの教材、演習、学習内容を確認する方法を示してください。",
+        "criterion": "Files/people/training-plan.md に、確保できる時間内に収まる日付入りのセッション、リンク付きの教材、演習、セッションごとの確認方法が記載されている。",
+        "start": "教材を探す",
+        "done": "計画の準備完了"
+      },
+      "fixReportedBug": {
+        "title": "報告されたバグを修正",
+        "description": "バグを再現し、テスト済みの修正をレビュー用の変更リクエストとして準備します。",
+        "prompt": "このバグを修正してください: [何が起きるか、どこで起きるか]。\n- 期待する動作: [本来どうなるべきか]\n- 再現手順: [手順またはチケットのリンク]\n- リポジトリ: [リポジトリ]\nまず再現し、失敗するテストを追加してから、変更リクエストで修正してください。",
+        "criterion": "Files/engineering/bug-fix.md に変更リクエストへのリンク、再現手順、修正前後の出力、テストコマンドとその結果、残る制限事項が記載されている。",
+        "start": "バグを再現",
+        "done": "修正の準備完了"
+      },
+      "buildScopedFeature": {
+        "title": "スコープを絞った機能を構築",
+        "description": "テスト付きの小さな機能を構築し、変更リクエストを開きます。",
+        "prompt": "[リポジトリ]に[機能]を構築してください。\n- ユーザーストーリー: [誰が、なぜ必要か]\n- 受け入れ条件: [完了時に満たすべきこと]\n- スコープ外: [作らないもの]\n各受け入れ条件にテストを追加し、変更リクエストを開いてください。",
+        "criterion": "Files/engineering/feature.md に変更リクエストへのリンクがあり、各受け入れ条件がテストとその成功時の出力に対応付けられている。",
+        "start": "スコープを確認",
+        "done": "機能を構築済み"
+      },
+      "improveSlowFlow": {
+        "title": "遅いフローを高速化",
+        "description": "遅いページやエンドポイントを計測し、効果を確認した修正を出荷します。",
+        "prompt": "[ページまたはエンドポイント]を高速化してください。\n- 現状: [どれくらい遅いか、または計測する]\n- 目標: [時間または割合]\n同じ方法で改善前後を計測し、変更リクエストを開いてください。",
+        "criterion": "Files/engineering/performance.md に、計測方法、改善前後の数値、変更リクエストへのリンク、目標を達成したかどうかが記載されている。",
+        "start": "フローを計測",
+        "done": "高速化完了"
+      },
+      "patchVulnerableDependencies": {
+        "title": "脆弱な依存関係を修正",
+        "description": "脆弱なパッケージをアップグレードし、テスト済みの変更リクエストを開きます。",
+        "prompt": "[リポジトリ]の脆弱な依存関係にパッチを適用してください。\n- 深刻度: [高および緊急]\n各パッケージをアップグレードし、テストを実行して、変更リクエストを開いてください。アップグレードできなかったものは理由とともに一覧にしてください。",
+        "criterion": "Files/engineering/dependency-patch.md に、各アドバイザリの旧バージョンと新バージョン、テスト結果、変更リクエストへのリンク、未対応のパッケージとその理由が一覧化されている。",
+        "start": "パッケージをスキャン",
+        "done": "パッチの準備完了"
+      },
+      "addMissingTests": {
+        "title": "不足しているテストを追加",
+        "description": "テストのないモジュールにテストを追加し、変更リクエストを開きます。",
+        "prompt": "[リポジトリ]の[モジュールまたはフロー]にテストを追加してください。\n- 重点: [過去に壊れたケース、エッジケース]\n公開されているインターフェースを通じて動作をテストし、変更リクエストを開いてください。",
+        "criterion": "Files/engineering/tests.md に変更リクエストへのリンクがあり、新規テストごとに検証する動作と成功時の出力が一覧化されている。",
+        "start": "コードを読む",
+        "done": "テスト追加済み"
+      },
+      "reviewChangeRequest": {
+        "title": "変更リクエストをレビュー",
+        "description": "変更内容のバグとリスクをレビューし、指摘をFilesに保存します。",
+        "prompt": "[変更リクエストのリンク]のバグとリスクをレビューしてください。\n- 重点: [正確性、セキュリティ、パフォーマンス]\n各指摘について、ファイルと行、問題点、修正案を示してください。承認やマージはしないでください。",
+        "criterion": "Files/engineering/review.md に、各指摘のファイルと行、重大度、問題点、修正案が一覧化されており、変更リクエストは承認もマージもされていない。",
+        "start": "差分を読む",
+        "done": "レビューの準備完了"
+      },
+      "writeTechnicalSpec": {
+        "title": "技術仕様書を作成",
+        "description": "コードベースを踏まえ、選択肢とトレードオフを含む仕様書をFilesに作成します。",
+        "prompt": "[機能]の技術仕様書を作成してください。\n- 課題: [ユーザーが現状できないこと]\n- 制約: [期限、使用しなければならないシステム]\n少なくとも2つの設計案をトレードオフとともに比較してください。データの変更、APIの変更、ロールアウト、テストを含めてください。",
+        "criterion": "Files/engineering/spec.md に、課題、トレードオフ付きの2つ以上の設計案、採用する設計、データとAPIの変更、ロールアウト、テスト計画が記載されている。",
+        "start": "コードを読む",
+        "done": "仕様書を作成済み"
+      },
+      "writePostmortem": {
+        "title": "ポストモーテムを作成",
+        "description": "ログからインシデントのタイムラインと根本原因をFilesにまとめます。",
+        "prompt": "[インシデント]のポストモーテムを作成してください。\n- 発生時期: [開始時刻と終了時刻]\n- ソース: [ログ、アラート、チャットのスレッド、デプロイ]\nタイムライン、根本原因、影響、フォローアップのアクションを示してください。個人を責めないでください。",
+        "criterion": "Files/engineering/postmortem.md に、出典付きのタイムライン、根本原因、影響、担当ロール付きのフォローアップアクションが記載され、原因として特定の個人を挙げていない。",
+        "start": "ログを読む",
+        "done": "ポストモーテム作成済み"
+      },
+      "upgradeFramework": {
+        "title": "フレームワークをアップグレード",
+        "description": "フレームワークのバージョンを上げ、壊れた箇所を変更リクエストで修正します。",
+        "prompt": "[リポジトリ]の[フレームワーク]を[現在のバージョン]から[目標バージョン]にアップグレードしてください。\n公式の移行ガイドに従い、壊れた箇所を修正し、テストを実行して、変更リクエストを開いてください。",
+        "criterion": "Files/engineering/upgrade.md に変更リクエストへのリンクがあり、各移行ステップ、修正した破壊的変更、テスト結果が一覧化されている。",
+        "start": "ガイドを読む",
+        "done": "アップグレードの準備完了"
+      },
+      "documentModule": {
+        "title": "モジュールを文書化",
+        "description": "新任エンジニア向けにサービスやモジュールの説明をFilesにまとめます。",
+        "prompt": "新任エンジニア向けに[サービスまたはモジュール]を文書化してください。\n- リポジトリ: [リポジトリ]\n何をするものか、主な構成要素、データの流れ、実行とテストの方法、既知の落とし穴を説明してください。",
+        "criterion": "Files/engineering/module-guide.md に、目的、ファイルへのリンク付きの主な構成要素、データの流れ、実行とテストのコマンド、既知の落とし穴が説明されている。",
+        "start": "コードを読む",
+        "done": "ガイド作成済み"
+      }
+    },
+    "templateSteps": "{start}、次に{done}",
+    "rolesLabel": "ロール別テンプレート",
+    "startNoFiles": "ゴールはテキストから開始します。ファイルを削除してから、もう一度送信してください。",
+    "startNeedsSubject": "1行目の[ ]内の部分を置き換えてから送信してください。",
+    "templateFooter": "[ ]のままになっている部分は、連携済みのツールとFilesから調べてください。見つからないことだけを私に質問してください。",
+    "restart": "ゴールを再開始",
+    "restartReason": "ゴールページから再開始しました",
+    "restartedToast": "ゴールを再開始しました",
+    "restartError": "ゴールを再開始できませんでした。もう一度お試しください。"
   },
   "agentEditor": {
     "manage": "管理",
@@ -23945,6 +24844,7 @@
     "emptyFiltered": "一致するアーティファクトはありません",
     "updated": "{time}に更新",
     "pinned": "ピン留め済み",
+    "openComments": "{count, plural, other {未解決のコメント # 件}}",
     "visibility": {
       "private": "プライベート",
       "project": "プロジェクト",
@@ -24070,7 +24970,6 @@
       "activity": "アクティビティ",
       "open": "未解決",
       "resolved": "解決済み",
-      "all": "すべて",
       "outdated": "古いコメント",
       "outdatedHint": "現在のドキュメントでこの箇所を特定できません。",
       "newComment": "新しいコメント",
@@ -24117,7 +25016,6 @@
       "noCommentsHint": "箇所を選択してコメントするか、新しいコメントを作成してください。",
       "noResolved": "解決済みのコメントはありません",
       "noResolvedHint": "解決済みのスレッドがここに表示されます。",
-      "noAllComments": "コメントはまだありません",
       "noActivity": "アクティビティはまだありません",
       "noActivityHint": "保存したバージョンとコメントがここに表示されます。",
       "loadMore": "さらに読み込む",
@@ -24190,7 +25088,6 @@
       "sentToAgent": "コメントを {agent} に送信しました",
       "newCommentFrom": "{name} からの新しいコメント",
       "newComments": "{count, plural, other {# 件の新しいコメント}}",
-      "filterLabel": "スレッドの状態",
       "pagePinLabel": "コメント {number}",
       "showPanelCount": "コメントを表示（未解決 {count} 件）",
       "hidePanelCount": "コメントを非表示（未解決 {count} 件）",
@@ -24201,7 +25098,35 @@
     "moved": "成果物を移動しました",
     "moveFailed": "成果物を移動できませんでした",
     "spaceEmpty": "{space} に成果物はまだありません",
-    "showAll": "すべて表示"
+    "showAll": "すべて表示",
+    "live": {
+      "here": "現在の参加者",
+      "hereLabel": "このアーティファクトを表示中: {names}",
+      "reconnecting": "再接続中…",
+      "you": "あなた",
+      "agents": "エージェント",
+      "agentsHere": "このスレッドのエージェント",
+      "status": {
+        "viewing": "表示中",
+        "reading": "読んでいます",
+        "editing": "編集中",
+        "writing": "書いています"
+      },
+      "hideCursor": "自分のカーソルを隠す",
+      "hideCursorHint": "ほかのユーザーには引き続きアバターが表示されます。",
+      "typingOne": "{name} が入力中…",
+      "typingTwo": "{first} と {second} が入力中…",
+      "typingMany": "{count, plural, other {# 人が入力中…}}",
+      "writing": "{name} が書いています…"
+    },
+    "coedit": {
+      "offLarge": "ライブ共同編集はオフです: このドキュメントは 1 MiB を超えています。変更は入力中に保存されます。",
+      "offLineEndings": "ライブ共同編集はオフです: このドキュメントは CRLF と LF の改行が混在しています。変更は入力中に保存されます。",
+      "offShape": "ライブ共同編集はオフです: エディターが Markdown の一部を書き換えてしまいます。変更は入力中に保存されます。",
+      "stoppedLarge": "ライブ共同編集が停止しました: 共有するには大きすぎる変更がありました。変更は入力中に保存されます。",
+      "stoppedFailed": "ライブ共同編集が停止しました: 接続に失敗しました。変更は入力中に保存されます。",
+      "stoppedHistory": "ライブ共同編集が停止しました: このドキュメントの編集履歴が大きすぎます。変更は入力中に保存されます。"
+    }
   },
   "emailConnect": {
     "homeTitle": "受信箱の場所",
@@ -24487,7 +25412,7 @@
       },
       "company": {
         "subtitle": "このプロジェクトのすべてのエージェントが知っていること。",
-        "gateDescription": "会社のメモリはチャンネルの機能です。このプロジェクトのすべてのエージェントは、チームがここに保存した内容を持ってスレッドを始めます。",
+        "gateDescription": "会社のメモリはスペースの機能です。このプロジェクトのすべてのエージェントは、チームがここに保存した内容を持ってスレッドを始めます。",
         "title": "メモリ",
         "place": "会社"
       },
@@ -24518,29 +25443,29 @@
       }
     },
     "create": {
-      "title": "チャンネルを作成",
-      "description": "このプロジェクトの全員がチャンネルを表示して使用できます。",
+      "title": "スペースを作成",
+      "description": "スペースは、マーケティング、採用、運用などの 1 つの業務領域を整理します。メンバーとエージェントはそのスレッドで作業します。",
       "nameLabel": "名前",
-      "namePlaceholder": "marketing",
-      "slugPlaceholder": "channel-name",
+      "namePlaceholder": "マーケティング",
+      "slugPlaceholder": "space-name",
       "descriptionLabel": "説明（任意）",
-      "descriptionPlaceholder": "このチャンネルの用途",
-      "submit": "チャンネルを作成",
-      "created": "チャンネルを作成しました",
+      "descriptionPlaceholder": "このスペースの用途",
+      "submit": "スペースを作成",
+      "created": "スペースを作成しました",
       "nameRequired": "名前を入力してください。",
       "invalidName": "名前には英字か数字を 1 文字以上含めてください。",
       "slugTaken": "<link>#{slug}</link> はすでにあります。",
-      "failed": "チャンネルを作成できませんでした。もう一度お試しください。",
-      "renameTitle": "チャンネル名を変更",
-      "renameDescription": "チャンネルのリンクは名前と一緒に変わります。",
+      "failed": "スペースを作成できませんでした。もう一度お試しください。",
+      "renameTitle": "スペース名を変更",
+      "renameDescription": "スペースのリンクは名前と一緒に変わります。",
       "save": "保存",
-      "renamed": "チャンネル名を変更しました",
-      "renameFailed": "チャンネル名を変更できませんでした。もう一度お試しください。",
-      "descriptionPrivate": "追加したメンバーだけがチャンネルを表示して使用できます。",
+      "renamed": "スペース名を変更しました",
+      "renameFailed": "スペース名を変更できませんでした。もう一度お試しください。",
+      "descriptionPrivate": "追加したメンバーだけがスペースを表示して使用できます。",
       "privateLabel": "プライベート",
       "privateHint": "招待されたメンバーだけが表示できます。",
-      "privateUnavailable": "このワークスペースではプライベートチャンネルはまだ利用できません。",
-      "privateLimits": "プライベートにすると、他の人からチャンネルが見えなくなります。コードの変更（git ブランチ）とエージェント自身のツールはプライベートになりません。",
+      "privateUnavailable": "このワークスペースではプライベートスペースはまだ利用できません。",
+      "privateLimits": "プライベートにすると、他の人からスペースが見えなくなります。コードの変更（git ブランチ）とエージェント自身のツールはプライベートになりません。",
       "name": "名前",
       "taken": "スペース #{slug} はすでに存在します。",
       "about": "説明",
@@ -24550,9 +25475,9 @@
     },
     "view": {
       "welcomeTitle": "#{name} へようこそ",
-      "welcomeEmpty": "#{name} で最初のスレッドを始めましょう。メッセージごとに新しいスレッドが始まります。",
+      "welcomeEmpty": "スペースは 1 つの業務領域を整理する場所です。メンバーとエージェントはここでスレッドごとに作業し、各メッセージが新しいスレッドになります。",
       "welcomeStart": "ここが #{name} の始まりです。",
-      "dmIntro": "この会話はあなたと {agent} だけのものです。",
+      "dmIntro": "このスペースを見られるのはあなたと {agent} だけです。",
       "today": "今日",
       "yesterday": "昨日",
       "openThread": "スレッドを開く",
@@ -24566,24 +25491,24 @@
       "messageAgent": "{agent} へのメッセージ",
       "threadsEmptyTitle": "スレッドはまだありません",
       "threadsEmpty": "始めたスレッドがここに表示されます。",
-      "loadError": "このチャンネルを読み込めませんでした。",
+      "loadError": "このスペースを読み込めませんでした。",
       "threadsLoadError": "スレッドを読み込めませんでした。",
       "retry": "もう一度試す",
-      "notFound": "このチャンネルは存在しません。",
-      "notFoundHint": "リンクが間違っているか、誰かがチャンネル名を変更した可能性があります。",
+      "notFound": "このスペースは存在しません。",
+      "notFoundHint": "リンクが間違っているか、誰かがスペース名を変更した可能性があります。",
       "openDefault": "#{name} を開く",
       "archivedTitle": "#{name} はアーカイブされています。",
       "archivedHint": "アーカイブを解除すると、ここでまたスレッドを読んだり始めたりできます。",
       "archivedLocked": "アーカイブを解除できるのは、作成者またはプロジェクト管理者のみです。",
-      "unarchive": "チャンネルのアーカイブを解除",
-      "unarchived": "チャンネルのアーカイブを解除しました",
-      "unarchiveFailed": "チャンネルのアーカイブを解除できませんでした。もう一度お試しください。",
+      "unarchive": "スペースのアーカイブを解除",
+      "unarchived": "スペースのアーカイブを解除しました",
+      "unarchiveFailed": "スペースのアーカイブを解除できませんでした。もう一度お試しください。",
       "dmFailed": "この会話を開けませんでした。",
-      "archive": "チャンネルをアーカイブ",
+      "archive": "スペースをアーカイブ",
       "archiveTitle": "#{name} をアーカイブしますか？",
-      "archiveDescription": "チャンネルはすべてのメンバーのサイドバーから消えます。スレッドは残り、作成者またはプロジェクト管理者がアーカイブを解除できます。",
-      "archived": "チャンネルをアーカイブしました",
-      "archiveFailed": "チャンネルをアーカイブできませんでした。もう一度お試しください。",
+      "archiveDescription": "スペースはすべてのメンバーのサイドバーから消えます。スレッドは残り、作成者またはプロジェクト管理者がアーカイブを解除できます。",
+      "archived": "スペースをアーカイブしました",
+      "archiveFailed": "スペースをアーカイブできませんでした。もう一度お試しください。",
       "threadTitle": "スレッド",
       "closeThread": "スレッドを閉じる",
       "sendFailed": "スレッドを開始できませんでした。もう一度お試しください。",
@@ -24615,7 +25540,7 @@
         },
         "links": {
           "title": "まだリンクはありません",
-          "description": "{place} のスレッドで共有されたリンクがここに表示されます。固定すると、チャンネルのすべてのエージェントに渡されます。"
+          "description": "{place} のスレッドで共有されたリンクがここに表示されます。固定すると、スペースのすべてのエージェントに渡されます。"
         },
         "triggers": {
           "title": "まだトリガーはありません",
@@ -24648,8 +25573,8 @@
         "titlePlaceholder": "内容",
         "invalidUrl": "example.com のような有効なリンクを入力してください。",
         "addFailed": "リンクを追加できませんでした。もう一度お試しください。",
-        "limit": "このチャンネルにはすでに 200 件の固定リンクがあります。先に 1 件の固定を解除してください。",
-        "addLimit": "このチャンネルにはすでに 200 件の追加済みリンクがあります。先に 1 件を削除してください。",
+        "limit": "このスペースにはすでに 200 件の固定リンクがあります。先に 1 件の固定を解除してください。",
+        "addLimit": "このスペースにはすでに 200 件の追加済みリンクがあります。先に 1 件を削除してください。",
         "added": "追加日",
         "remove": "リンクを削除",
         "removeTitle": "このリンクを削除しますか？",
@@ -24669,7 +25594,7 @@
         "all": "すべて",
         "sharedBy": "共有者",
         "earlier": "それ以前",
-        "pinHint": "固定します。チャンネルのすべてのエージェントが固定リンクを読みます。",
+        "pinHint": "固定します。スペースのすべてのエージェントが固定リンクを読みます。",
         "unpinHint": "固定を解除します。エージェントは読まなくなります。",
         "copyLink": "リンクをコピー",
         "linkCopied": "リンクをコピーしました",
@@ -24679,7 +25604,7 @@
       "appsLoadError": "アプリを読み込めませんでした。",
       "triggers": {
         "loadError": "トリガーを読み込めませんでした。",
-        "privateNote": "トリガーは非公開チャンネルに投稿できません。代わりにスレッドでループを設定してください。"
+        "privateNote": "トリガーは非公開スペースに投稿できません。代わりにスレッドでループを設定してください。"
       },
       "reply": "返信",
       "rosterTitlePeople": "メンバー",
@@ -24725,19 +25650,69 @@
         "rememberHint": "すべてのエージェントが読むメモ"
       },
       "allAgents": "すべてのエージェント",
-      "join": "チャンネルに参加",
+      "join": "スペースに参加",
       "joined": "#{name} に参加しました。",
-      "joinFailed": "チャンネルに参加できませんでした。もう一度お試しください。"
+      "joinFailed": "スペースに参加できませんでした。もう一度お試しください。",
+      "openFullSession": "Open full session",
+      "tabEdit": {
+        "kind": {
+          "file": "ファイル",
+          "artifact": "Artifact",
+          "app": "App",
+          "folder": "Folder",
+          "link": "Link"
+        },
+        "add": "Add tab",
+        "full": "A space holds at most {max} tabs. Remove one first.",
+        "noArtifacts": "No artifacts yet",
+        "noApps": "このプロジェクトにアプリはありません",
+        "spaceFiles": "This space’s files",
+        "otherFolder": "Another folder…",
+        "fileItem": "ファイル…",
+        "linkItem": "Link…",
+        "linkTitle": "Add a link",
+        "linkHint": "httpsのページです。タブ内に表示されます。",
+        "folderTitle": "Add a folder",
+        "folderHint": "パスで指定するDriveフォルダです。",
+        "fileTitle": "ファイルを追加",
+        "fileHint": "Drive 内の任意のファイルをパスで指定します。.html ファイルはページとして表示されます。",
+        "url": "URL",
+        "path": "Folder path",
+        "filePath": "ファイルのパス",
+        "submit": "Add tab",
+        "cancel": "Cancel",
+        "options": "Options for {name}",
+        "rename": "Rename",
+        "renameTitle": "Rename tab",
+        "name": "Tab name",
+        "save": "Save",
+        "moveLeft": "Move left",
+        "moveRight": "Move right",
+        "remove": "Remove tab",
+        "removed": "Removed {name}",
+        "undo": "Undo",
+        "saveError": "タブを保存できませんでした",
+        "openLink": "新しいタブで開く",
+        "linkCard": {
+          "description": "{host} は他のサイトのタブ内での表示を許可していません。",
+          "open": "開く"
+        },
+        "missing": {
+          "title": "このタブのコンテンツは見つかりません",
+          "description": "削除または名前変更されたか、あなたに共有されていません。"
+        }
+      },
+      "spaceDetails": "{name} の詳細"
     },
     "details": {
       "about": "概要",
       "members": "メンバー",
-      "name": "チャンネル名",
+      "name": "スペース名",
       "description": "説明",
       "noDescription": "説明を追加",
       "created": "作成日",
       "editField": "{field}を編集",
-      "archiveTitle": "このチャンネルをアーカイブ",
+      "archiveTitle": "このスペースをアーカイブ",
       "archiveHint": "すべてのメンバーのサイドバーから消えます。スレッドは残ります。",
       "archive": "アーカイブ",
       "find": "メンバーやエージェントを検索",
@@ -24761,9 +25736,9 @@
       "peopleFailed": "メンバーを更新できませんでした。もう一度お試しください。",
       "personMenu": "{person} のオプション",
       "removePerson": "#{name} から外す",
-      "leave": "チャンネルを抜ける",
+      "leave": "スペースを抜ける",
       "left": "#{name} を抜けました。",
-      "leaveTitle": "このチャンネルを抜ける",
+      "leaveTitle": "このスペースを抜ける",
       "leaveHint": "抜けた後も閲覧でき、いつでも再参加できます。",
       "visibilityPrivate": "メンバーのみ",
       "privateNote": "#{name} はメンバーだけが表示できます。",
@@ -24777,30 +25752,31 @@
       "leaveHintPrivate": "自分のスレッドを含め、スレッド、ファイル、メモリにアクセスできなくなります。再参加するにはメンバーに追加してもらう必要があります。",
       "leavePrivateTitle": "#{name} を抜けますか？",
       "addMembers": "メンバーを追加",
-      "privateLimits": "プライベートにすると、他の人からチャンネルが見えなくなります。コードの変更（git ブランチ）とエージェント自身のツールはプライベートになりません。"
+      "privateLimits": "プライベートにすると、他の人からスペースが見えなくなります。コードの変更（git ブランチ）とエージェント自身のツールはプライベートになりません。"
     },
     "folder": {
       "memory": "メモリ",
       "loadError": "このフォルダを読み込めませんでした",
       "memoryNoteChannel": "{place} のエージェントが覚えていること。エージェントはスレッドの開始時に毎回これを読みます。",
-      "memoryNoteDm": "{agent} がこの DM から覚えていること。スレッドの開始時に毎回これを読みます。",
+      "memoryNoteDm": "{agent} がこのスペースから覚えていること。各スレッドの開始時に読み込みます。",
       "off": {
         "title": "ここに Drive はありません",
         "description": "{place} のファイルとメモリーは Drive にあります。この Kortix は Drive を保存しません。Platinum が必要です。"
       }
     },
     "onboarding": {
-      "reenabled": "チャンネルがオフの間に始まったセッションはここにあります。",
+      "reenabled": "スペースがオフの間に始まったセッションはここにあります。",
       "intro": {
-        "title": "チャンネルへようこそ",
-        "channels": "チャンネルはチームごとに作業をまとめます。",
+        "title": "スペースへようこそ",
+        "channels": "スペースはチームごとに作業をまとめます。",
         "threads": "新しいメッセージごとにスレッドが始まります。",
-        "memory": "エージェントは各チャンネルで決まったことを覚えます。",
-        "gotIt": "OK"
+        "memory": "エージェントは各スペースで決まったことを覚えます。",
+        "gotIt": "OK",
+        "tabs": "スペースごとに専用のタブがあります。タブの追加、名前変更、並べ替えができます。Kortixに依頼することもできます。"
       },
       "getStarted": {
         "dismiss": "閉じる",
-        "channel": "チーム用のチャンネルを作成する",
+        "channel": "チーム用のスペースを作成する",
         "done": "完了"
       }
     },
@@ -24829,9 +25805,9 @@
       "noMatches": "「{query}」に一致する項目はありません。"
     },
     "privateNotIn": {
-      "row": "参加していないプライベートチャンネル",
-      "title": "参加していないプライベートチャンネル",
-      "description": "名前の変更、アーカイブ、メンバーの追加ができます。チャンネルの内容を読めるのはメンバーだけなので、自分を追加することはできません。",
+      "row": "参加していないプライベートスペース",
+      "title": "参加していないプライベートスペース",
+      "description": "名前の変更、アーカイブ、メンバーの追加ができます。スペースの内容を読めるのはメンバーだけなので、自分を追加することはできません。",
       "meta": "{count, plural, =0 {メンバーなし} other {#人のメンバー}} · 作成者: {name}",
       "metaNoCreator": "{count, plural, =0 {メンバーなし} other {#人のメンバー}}",
       "archived": "アーカイブ済み",
@@ -24855,20 +25831,15 @@
       "board": {
         "brief": "概要",
         "text": "このスペースの目的と協力の方法。",
-        "label": "ルームとボード",
+        "label": "ボードと目標",
         "description": "概要とリンクのボード、続いて目標。"
       },
       "standard": {
-        "label": "ルーム、目標、アプリ、成果物",
-        "description": "ルームと、このスペースに紐づくコンテンツ。"
-      },
-      "room": {
-        "label": "ルームのみ",
-        "description": "会話をひとつ。タブは後から追加できます。"
+        "label": "目標、アプリ、成果物",
+        "description": "このスペースに紐づくコンテンツ。"
       }
     },
     "tabs": {
-      "room": "ルーム",
       "goals": "目標",
       "apps": "アプリ",
       "artifacts": "アーティファクト",
@@ -24893,7 +25864,7 @@
       "artifacts": "このスペースに紐づく成果物がここに表示されます",
       "folder": "このフォルダーは空です",
       "board": "このボードのブロックがここに表示されます",
-      "boardHint": "My Kortix に、メモ、アプリ、ファイル、埋め込みページ、別のルームなどのブロックの追加を依頼してください。"
+      "boardHint": "My Kortix に、メモ、アプリ、ファイル、埋め込みページなどのブロックの追加を依頼してください。"
     },
     "doc": "ドキュメント",
     "page": "ページ",
@@ -24931,8 +25902,8 @@
     "cancel": "キャンセル",
     "edit": {
       "title": "タブを編集",
-      "description": "ルームは先頭に固定されます。保存すると、デフォルトブランチの kortix.yaml にタブがコミットされます。",
-      "empty": "ルームのみです。+ でタブを追加できます。",
+      "description": "保存すると、デフォルトブランチの kortix.yaml にタブがコミットされます。",
+      "empty": "まだタブがありません。+ でタブを追加できます。",
       "save": "タブを保存",
       "rename": "{name} の名前を変更",
       "moveUp": "{name} を上に移動",
@@ -24945,28 +25916,81 @@
       "unread": "{count, plural, other {未読メッセージ # 件}}"
     },
     "leave": "{name} から退出",
-    "openRooms": "ルームを開く",
-    "roomHint": "エージェントとメンバーがここに更新を投稿します。",
-    "noRoom": "ルームはまだありません。",
     "agents": "このスペースのエージェント",
     "openAgent": "{name} を開く",
-    "members": "{count, plural, other {# 人}}",
     "needsYou": "あなたの対応待ち",
     "newSession": "新しいセッション",
     "askMyKortix": "My Kortix に依頼",
     "askPrompt": "{name} スペース（kortix.yaml の `spaces.{slug}`）のタブ、ヘッダー、またはエージェントを変更したいです。何を変更するか聞いてください。",
-    "roomsOff": "このプロジェクトではルームが無効です",
-    "roomsOffHint": "プロジェクト設定でルームを有効にすると、ここでメンバーやエージェントと会話できます。",
-    "room": {
-      "introTitle": "#{name} はここから始まります",
-      "introBody": "このスペースで作業する全員のためのルームです。",
-      "introAgents": "{count, plural, other {{names} がここに更新を投稿します。}}",
-      "introNoAgents": "このスペースに追加したエージェントがここに更新を投稿します。",
-      "introMention": "@ を入力して、メンバーやエージェントにメンションできます。"
+    "intro": {
+      "title": "#{name} はここから始まります",
+      "body": "このスペースで作業する全員のための場所です。",
+      "agents": "{count, plural, other {{names} がここに更新を投稿します。}}",
+      "noAgents": "このスペースに追加したエージェントがここに更新を投稿します。",
+      "addTab": "+ でタブを追加すると、目標、アプリ、ファイル、ボードをここに固定できます。"
     },
     "filter": "スペースで絞り込み",
     "all": "すべて",
-    "projectWide": "プロジェクト全体"
+    "projectWide": "プロジェクト全体",
+    "panel": {
+      "title": "{name} の詳細",
+      "heading": "詳細",
+      "close": "詳細を閉じる",
+      "private": "非公開",
+      "rename": "名前と説明を変更",
+      "personalDescription": "My Kortix とのあなた専用の非公開スペースです。見られるのはあなただけです。",
+      "privateDescription": "このスペースを見られるのは、参加しているメンバーとエージェントだけです。",
+      "noDescription": "まだ説明はありません。",
+      "agents": "エージェント",
+      "addAgent": "エージェントを追加",
+      "default": "デフォルト",
+      "projectDefault": "プロジェクトのデフォルト",
+      "people": "メンバー",
+      "addPeople": "メンバーを追加",
+      "you": "あなた",
+      "tabs": "タブ",
+      "addTab": "タブを追加",
+      "routines": "ルーティン",
+      "addRoutine": "ルーティンを追加",
+      "routinesPrivate": "非公開スペースではまだルーティンを使えません。",
+      "allSettings": "すべての設定",
+      "askHint": "チャットで頼むこともできます:「ここにエージェントを追加して」「ローンチ資料をタブに固定して」。"
+    },
+    "profile": {
+      "viewProfile": "{name} のプロフィールを表示",
+      "viewProfileShort": "プロフィールを見る",
+      "agent": "エージェント",
+      "openProfile": "プロフィールを開く",
+      "you": "(あなた)",
+      "message": "メッセージ",
+      "messageFailed": "非公開スペースを開けませんでした。もう一度お試しください。",
+      "dmSpaceName": "{a} と {b}",
+      "heading": "プロフィール",
+      "close": "プロフィールを閉じる",
+      "model": "モデル",
+      "modelDefault": "プロジェクトのデフォルトモデル",
+      "connectors": "コネクタ",
+      "connectorsAll": "すべてのコネクタ",
+      "connectorsNone": "コネクタなし",
+      "projectDefault": "プロジェクトのデフォルト",
+      "projectDefaultYes": "エージェント未指定の新しいスレッドに応答します",
+      "email": "メール",
+      "sharedSpaces": "共通のスペース",
+      "yourSpaces": "あなたのスペース",
+      "addTo": "{space} に追加",
+      "addedTo": "{agent} を {space} に追加しました",
+      "addFailed": "エージェントを追加できませんでした。もう一度お試しください。",
+      "spacesIn": "参加しているスペース",
+      "spacesInNone": "まだどのスペースにも参加していません",
+      "default": "デフォルト"
+    },
+    "mentions": {
+      "people": "メンバー",
+      "agents": "エージェント",
+      "addToSpace": "まだ {space} にいません。メンションすると追加されます",
+      "added": "{agent} を {space} に追加しました",
+      "addFailed": "エージェントを追加できませんでした。もう一度お試しください。"
+    }
   },
   "imageGen": {
     "generating": "画像を生成中",
@@ -25052,6 +26076,7 @@
   "voiceCall": {
     "title": "音声通話",
     "call": "通話",
+    "calling": "呼び出し中…",
     "start": "音声通話を開始",
     "end": "通話を終了",
     "connecting": "接続中…",
@@ -25069,6 +26094,8 @@
     "lost": "通話に再接続できませんでした",
     "unavailable": "このセッションのサンドボックスは、音声通話が有効になる前に起動しました。次回の起動から通話できます。",
     "callAgain": "もう一度通話",
+    "openChat": "チャットを開く",
+    "turnNote": "音声通話で話され、音声が答えました。",
     "close": "閉じる"
   },
   "agentMounts": {
@@ -25116,18 +26143,38 @@
       "shutdownRequest": "{from} からの終了リクエスト",
       "shutdownResponse": "{from} からの終了リクエストへの返答",
       "expand": "メッセージ全体を表示",
-      "collapse": "メッセージを隠す"
+      "collapse": "メッセージを隠す",
+      "kind": {
+        "message": "メッセージ",
+        "finished": "完了",
+        "shutdownRequest": "停止の依頼",
+        "shutdownResponse": "停止への回答"
+      }
     },
     "notice": {
       "completed": "{name} が完了しました",
       "failed": "{name} は完了しませんでした",
       "stopped": "{name} は停止されました",
+      "viewRun": "実行を表示",
+      "peerFinished": "{name} が完了しました",
+      "result": "結果",
       "fallbackName": "あなたのエージェント",
       "openSession": "セッションを開く",
       "expand": "結果全体を表示",
       "collapse": "結果を隠す",
       "batchTitle": "{count, plural, other {# 個のエージェントが完了しました}}",
-      "ownsTasks": "未完了のタスク: {tasks}"
+      "ownsTasks": "未完了のタスク: {tasks}",
+      "source": "エージェントの更新",
+      "statusFailedShort": "未完了",
+      "statusStoppedShort": "停止済み",
+      "updateCount": "{count, plural, other {エージェントの更新 #件}}",
+      "details": "詳細",
+      "failedSentence": "エージェントは完了前に停止しました。",
+      "state": {
+        "completed": "完了",
+        "failed": "未完了",
+        "stopped": "停止"
+      }
     },
     "tools": {
       "running": {
@@ -25138,6 +26185,8 @@
         "stopping": "エージェントを停止中…"
       },
       "to": "宛先",
+      "messageTo": "@{to} へのメッセージ",
+      "messageSent": "メッセージを送信しました",
       "peerStatus": {
         "delivered": "配信済み",
         "held": "承認待ち",
@@ -25170,7 +26219,8 @@
       "blockedBy": "{tasks} によりブロック中",
       "stopped": "停止",
       "alreadyEnded": "すでに終了しています",
-      "openSession": "セッションを開く"
+      "openSession": "セッションを開く",
+      "messageToName": "{to} へ"
     },
     "strip": {
       "label": "エージェント",
@@ -25227,7 +26277,16 @@
       "retry": "再試行",
       "emptyTitle": "まだ何もありません",
       "emptyDescription": "作業中のメッセージがここに表示されます。",
-      "loadOlder": "以前のメッセージを表示"
+      "loadOlder": "以前のメッセージを表示",
+      "runsLabel": "ワークフローの実行",
+      "previousAgent": "前のエージェント",
+      "nextAgent": "次のエージェント",
+      "moreActions": "その他の操作",
+      "attachments": "添付した画像",
+      "removeAttachment": "{name} を削除",
+      "attachImages": "画像を添付",
+      "attachFailed": "画像を添付できませんでした",
+      "scrollToBottom": "最新のメッセージへ"
     },
     "tasks": {
       "label": "チームのタスク",
@@ -25245,10 +26304,15 @@
       "title": "{from} からのメッセージ",
       "titleShutdown": "{from} がこのセッションの停止を求めています",
       "waiting": "承認を待っています。5 分後に期限切れになります。",
+      "waitingShort": "承認を待っています",
+      "expires": "5 分後に期限切れ",
       "deny": "拒否",
       "approve": "承認",
       "approveFailed": "メッセージを配信できませんでした",
-      "denyFailed": "メッセージを拒否できませんでした"
+      "denyFailed": "メッセージを拒否できませんでした",
+      "wantsToSend": "がこのエージェントにメッセージを送ろうとしています",
+      "asksStop": "がこのエージェントに停止を依頼しています",
+      "needsApproval": "承認が必要です"
     },
     "workflow": {
       "large": "大規模なワークフロー",
@@ -25256,6 +26320,9 @@
       "paused": "一時停止中",
       "pause": "実行を一時停止",
       "resume": "実行を再開",
+      "pauseShort": "一時停止",
+      "resumeShort": "再開",
+      "stopShort": "停止",
       "pauseHint": "一時停止: 新しいエージェントは起動せず、実行中のエージェントは完了します (p)",
       "resumeHint": "実行を再開 (p)",
       "stop": "実行を停止",
@@ -25265,6 +26332,7 @@
       "savePrompt": "ワークフローの実行「{title}」(実行 {runId}) を保存済みワークフローとして保存してください。スクリプトを {file} に書き込み、そのための変更リクエストを作成してください。",
       "saveSent": "ワークフローの保存を依頼しました",
       "saveFailed": "ワークフローの保存を依頼できませんでした",
+      "viewing": "表示中",
       "restartHint": "同じプロンプトでこのエージェントを再起動 (r)",
       "restartAgent": "{label} を再起動",
       "failed": {
@@ -25363,5 +26431,99 @@
     "dialogTitle": "新しいコンテキストを開始しますか？",
     "dialogDescription": "エージェントは新しいコンテキストで続行し、必要な詳細があると完全な履歴を検索します。要約はせず、会話はここにそのまま残ります。",
     "dialogAction": "新しいコンテキストを開始"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Slack メッセージ",
+    "slackConversation": "Slack 会話",
+    "notionPage": "Notion ページ",
+    "figmaDesign": "Figma デザイン",
+    "figjamBoard": "FigJam ボード",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Google ドキュメント",
+    "googleSheet": "Google スプレッドシート",
+    "googleSlides": "Google スライド",
+    "pullRequest": "PR #{number}",
+    "issue": "課題 #{number}"
+  },
+  "subscriptionUsage": {
+    "fiveHour": "5-hour limit",
+    "weekly": "Weekly limit",
+    "weeklyModel": "Weekly · {model}",
+    "reconnect": "Reconnect",
+    "disabledTitle": "サブスクリプションの使用状況は利用できません",
+    "disabledDescription": "このプロジェクトではサブスクリプション接続が有効になっていません。",
+    "text0": "Reconnect needed",
+    "text1": "Inactive",
+    "text2": "Refresh failed",
+    "text3": "Awaiting usage",
+    "text4": "Limit reached",
+    "text5": "Last known usage",
+    "text6": "Usage reported",
+    "text7": "Subscription",
+    "text8": "used",
+    "text9": "リセット時刻を過ぎました · 更新して最新の使用状況を確認",
+    "text10": "リセット時刻が報告されていません",
+    "text11": "Checking provider usage…",
+    "text12": "使用状況はまだ報告されていません。このサブスクリプションを使用した後に更新してください。",
+    "text13": "更新できませんでした。最後に取得したデータを表示しています。",
+    "text14": "プロバイダーのデータを待っています",
+    "text15": "Checking…",
+    "text16": "Refresh",
+    "text17": "Subscription usage",
+    "text18": "接続済みのChatGPTとClaudeのサブスクリプションの上限を確認できます。",
+    "text19": "使用状況を読み込めませんでした",
+    "text20": "接続済みのサブスクリプションをもう一度読み込んでください。",
+    "text21": "Retry",
+    "text22": "No connected subscriptions",
+    "text23": "プロバイダーでChatGPTまたはClaudeを接続すると、報告された使用状況とリセット時刻を確認できます。",
+    "text24": "Connect a subscription",
+    "text25": "使用状況は、同じサブスクリプションを使うアプリ間で共有されます。このタブを開いている間は1分ごとに自動で確認します。",
+    "text26": "上限はプランによって異なります。接続から報告された期間のみ表示され、データがないことは無制限を意味しません。ファイルの上限は報告されません。APIの支出はコストに表示されます。",
+    "resets": "Resets {time}",
+    "observed": "Observed {time}",
+    "meterLabel": "{label}: {percent}% used",
+    "refreshLabel": "Refresh {label} usage",
+    "fiveHourNotReported": "この接続では5時間枠が報告されていません。",
+    "fableIncluded": "Fableの使用量は、週間の総合上限にも含まれます。",
+    "chatgptUsage": "ChatGPT subscription usage",
+    "claudeUsage": "Claude subscription usage",
+    "allSubscriptions": "All subscriptions"
+  },
+  "gatewayRouting": {
+    "exceptions": "例外",
+    "modeLabel": "モデルが失敗したとき",
+    "modeCustom": "自分の予備を使う",
+    "modeInherit": "Kortix に任せる",
+    "modeDisabled": "エラーを表示",
+    "stopNote": "エラーはすぐに表示されます。",
+    "addBackups": "予備を追加",
+    "add": "追加",
+    "noBackups": "予備なし · エラーが表示されます",
+    "sendImages": "画像は <model></model> に送る",
+    "autoModel": "自動（{model}）",
+    "sameModels": "同じモデル",
+    "chooseModel": "モデルを選択",
+    "addException": "例外を追加",
+    "removeException": "例外を削除",
+    "noExceptions": "例外はありません。",
+    "modelDefaults": "モデルの既定値",
+    "searchModels": "モデルを検索",
+    "noModels": "モデルが見つかりません",
+    "notConnected": "プロバイダー未接続",
+    "removeModel": "{model} を削除",
+    "unsaved": "未保存の変更",
+    "discard": "破棄",
+    "save": "保存",
+    "ifThisFails": "失敗したとき",
+    "tryInOrder": "順番に試す",
+    "onlyOnHeader": "対象",
+    "projectDefault": "プロジェクトの既定 · すべてのリクエスト",
+    "kortixPicks": "Kortix が選択",
+    "useMyOwn": "自分で選ぶ"
+  },
+  "sessionModelSwitch": {
+    "agentSession": "エージェントセッション · {id}",
+    "human": "人間",
+    "listLabel": "モデルの切り替え"
   }
 }

@@ -14,11 +14,12 @@ import { deliveryCountsAsActivity } from './delivery-activity';
 import { DAEMON_PORT, PromptNeverLandedError } from './runtime-client';
 import { armSessionRuntimeActive } from './runtime-active-signal';
 import { transitionSession } from './status-transitions';
+import { boxServesRuntimeFloor } from '../session-open/runtime-floor-policy';
 
 // After a session's runtime reports `ready` we still have to hand the prompt to
 // the opencode daemon — and a just-woken sandbox is flaky for a beat: the
 // rotated opencode session 404s, the daemon 5xx/refuses while it finishes
-// binding, or externalId/opencode_session_id read briefly null mid-resume. The
+// binding, or externalId/runtime_session_id read briefly null mid-resume. The
 // old delivery path bounced to `pending` on the FIRST such hiccup, which on
 // Slack told the user "still waking… send that again" and dropped their message
 // even though the session was up. Slack/email delivery runs AFTER the inbound
@@ -211,7 +212,7 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
           return {
             stage: healed.stage,
             externalId: sandboxExternalId(healed),
-            opencodeSessionId: healed.opencode_session_id,
+            opencodeSessionId: healed.runtime_session_id,
           };
         },
         send: sendPrompt,
@@ -314,13 +315,13 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
 
     // Runtime is ready — hand off the prompt, healing + retrying through the
     // transient failures a freshly-woken sandbox throws (rotated opencode session
-    // 404, daemon 5xx while it binds, externalId/opencode_session_id briefly
+    // 404, daemon 5xx while it binds, externalId/runtime_session_id briefly
     // null). Bounce to 'pending' only after the bounded window genuinely exhausts;
     // the old code gave up on the first hiccup and dropped the user's message.
     const toTarget = (o: NonNullable<Awaited<ReturnType<typeof openOnce>>>): DeliveryTarget => ({
       stage: o.stage,
       externalId: sandboxExternalId(o),
-      opencodeSessionId: o.opencode_session_id,
+      opencodeSessionId: o.runtime_session_id,
     });
 
     tl?.mark('env-sync');
@@ -402,6 +403,7 @@ export async function awakeDeliveryTarget(sessionId: string): Promise<DeliveryTa
         provider: sessionSandboxes.provider,
         baseUrl: sessionSandboxes.baseUrl,
         config: sessionSandboxes.config,
+        metadata: sessionSandboxes.metadata,
       })
       .from(sessionSandboxes)
       .where(eq(sessionSandboxes.sessionId, sessionId))
@@ -409,6 +411,10 @@ export async function awakeDeliveryTarget(sessionId: string): Promise<DeliveryTa
   ]);
   if (!session || session.status !== 'running' || !session.opencodeSessionId) return null;
   if (!box || box.status !== 'active' || !box.externalId) return null;
+  // Only a box an open proved at the runtime floor. An old box being updated
+  // is `active` too, and a message must wait for its open, not reach its old
+  // daemon (session-open/runtime-floor.ts).
+  if (!boxServesRuntimeFloor(box.metadata as Record<string, unknown> | null, box.externalId)) return null;
   const serviceKey = (box.config as { serviceKey?: unknown } | null)?.serviceKey;
   return {
     stage: 'ready',

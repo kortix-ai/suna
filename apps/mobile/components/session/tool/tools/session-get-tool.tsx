@@ -40,9 +40,9 @@ import {
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { OutputBlock } from '../shared/output-block';
-import { ToolCaret, ToolScroll } from '../shared/surface';
+import { ToolCaret } from '../shared/surface';
 import type { ToolProps } from '../shared/types';
-import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, fg, monoFont, muted, mutedStrong, useTurnPalette } from '../shared/styles';
+import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 
 /** `text-xs leading-snug`. */
 const SNUG = { fontSize: TURN_TYPE.xs.fontSize, lineHeight: TURN_TYPE.xs.fontSize * 1.375 };

@@ -19,7 +19,7 @@ test('arms a Quick Queue interrupt through the signed sandbox endpoint', async (
   expect(new Headers(calls[0]?.init.headers).get('x-kortix-user-context')).toBe('signed');
   expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
     // W3 name, plus the pre-W3 name for an older daemon.
-    prompt_id: 'prompt-1', runtime_session_id: 'ses_1', opencode_session_id: 'ses_1', turn_message_id: 'msg_1',
+    prompt_id: 'prompt-1', runtime_session_id: 'ses_1', turn_message_id: 'msg_1',
   });
 });
 

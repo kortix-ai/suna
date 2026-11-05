@@ -130,7 +130,7 @@ async function seedSession(input: { origin: 'user' | 'trigger'; messageId: strin
   TOKEN = `tok-${SANDBOX_ID}`;
   await db.execute(sql`
     INSERT INTO kortix.project_sessions
-      (session_id, account_id, project_id, branch_name, status, opencode_session_id, created_by, origin)
+      (session_id, account_id, project_id, branch_name, status, runtime_session_id, created_by, origin)
     VALUES (${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid, ${`br-${SESSION_ID}`}, 'running',
             ${ROOT}, ${AUTHOR}::uuid, ${input.origin})`);
   await db.execute(sql`
@@ -141,7 +141,7 @@ async function seedSession(input: { origin: 'user' | 'trigger'; messageId: strin
             ${JSON.stringify({ activeTurns: { [TOKEN]: openTurn(TOKEN, input.messageId, input.turnState) } })}::jsonb)`);
   await db.execute(sql`
     INSERT INTO kortix.session_turns
-      (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state)
+      (turn_token, session_id, sandbox_id, project_id, account_id, runtime_session_id, message_id, state)
     VALUES (${TOKEN}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid, ${ACCOUNT_ID}::uuid,
             ${ROOT}, ${input.messageId}, ${input.turnState ?? 'active'})`);
 }
@@ -212,6 +212,39 @@ function interruptedTranscript(prompt: string, opts: { completed?: boolean } = {
   ];
 }
 
+/**
+ * The box serves its own session log (`runtime.log.v1`) since #11777, not the
+ * OpenCode-era transcript route. The fixtures above keep the transcript's
+ * `{ info, parts }` shape; this is the same message as a session-log row.
+ */
+type FixtureMessage = {
+  info: { id: string; role: string; parentID?: string; time?: { created?: number; completed?: number } };
+  parts: Array<{ id: string; type: string; auto?: boolean }>;
+};
+const iso = (ms: number | undefined) => (typeof ms === 'number' ? new Date(ms).toISOString() : null);
+function asLogMessage(message: FixtureMessage, index: number) {
+  const { info, parts } = message;
+  const compaction = parts.some((part) => part.type === 'compaction');
+  const created = info.time?.created;
+  const completed = info.time?.completed;
+  return {
+    message_id: info.id,
+    thread_id: ROOT,
+    seq: index + 1,
+    role: info.role,
+    kind: compaction ? 'compaction' : 'turn',
+    // An assistant step with no completion time is the one the stop cut off.
+    status: info.role === 'assistant' && completed === undefined ? 'streaming' : 'complete',
+    in_context: true,
+    reply_to: info.parentID ?? null,
+    created_at: iso(created),
+    completed_at: iso(completed),
+    blocks: parts.map((part) =>
+      part.type === 'compaction' ? { id: part.id, type: 'compaction', trigger: part.auto ? 'auto' : 'manual' } : { id: part.id, type: part.type },
+    ),
+  };
+}
+
 const ORIGINAL_FETCH = globalThis.fetch;
 
 beforeAll(async () => {
@@ -229,8 +262,8 @@ beforeAll(async () => {
       origin = null;
     }
     if (origin !== BOX_ORIGIN) return ORIGINAL_FETCH(input, init);
-    // The Kortix transcript route: one page holds the whole root.
-    return Response.json({ messages: transcript, has_more: false });
+    // The box's session log: one page holds the whole root.
+    return Response.json({ messages: (transcript as FixtureMessage[]).map(asLogMessage), has_more: false });
   };
 });
 
@@ -569,7 +602,7 @@ describe('the reaper leaves no interrupted turn without its one continuation', (
     const second = `tok2-${SANDBOX_ID}`;
     await db.execute(sql`
       INSERT INTO kortix.session_turns
-        (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state)
+        (turn_token, session_id, sandbox_id, project_id, account_id, runtime_session_id, message_id, state)
       VALUES (${second}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid, ${ACCOUNT_ID}::uuid,
               ${ROOT}, ${continued}, 'active')`);
     await reopenBox({ [second]: openTurn(second, continued) });

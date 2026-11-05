@@ -15,7 +15,7 @@
 
 import { parse as parseToml } from 'smol-toml';
 import { parse as parseYaml } from 'yaml';
-import { KORTIX_TOOL_NAMES, kortixToolRef, REGISTRY_NAME_RE, selectedKortixTools } from './constants';
+import { EVERY_GRANT, EVERY_GRANT_KEYS, isEveryGrant, KORTIX_TOOL_NAMES, kortixToolRef, REGISTRY_NAME_RE, selectedKortixTools } from './constants';
 import { fixManifestText } from './deprecations';
 import { parseManifestText, serializeManifestObject } from './format';
 import { AGENTS_DIR, safeAgentFile, safeRepoPath, SKILLS_DIR } from './layout';
@@ -178,12 +178,12 @@ function toolsGrant(value: unknown, removed: string[]): unknown {
 
 /** `permission.task` as a `subagents` grant: undefined (none) when it denies every agent. */
 function subagentsGrant(task: unknown): unknown {
-  if (task === undefined || task === 'allow' || task === 'ask') return 'all';
+  if (task === undefined || task === 'allow' || task === 'ask') return EVERY_GRANT;
   if (task === 'deny') return undefined;
   const rules = table(task);
-  if (!rules) return 'all';
+  if (!rules) return EVERY_GRANT;
   const named = Object.entries(rules).filter(([name, action]) => name !== '*' && action !== 'deny').map(([name]) => name);
-  if (rules['*'] !== undefined && rules['*'] !== 'deny') return 'all';
+  if (rules['*'] !== undefined && rules['*'] !== 'deny') return EVERY_GRANT;
   return named.length > 0 ? named : undefined;
 }
 
@@ -238,10 +238,10 @@ function v1AsV2(raw: Table, repo: ReturnType<typeof tree>): Table {
     const { name, env, ...grants } = (table(entry) ?? {}) as Table;
     if (typeof name === 'string') agents[name] = { ...grants, ...(env === undefined ? {} : { secrets: env }) };
   }
-  // A grant v1 omitted meant `all`.
+  // A grant v1 omitted meant every name.
   for (const block of Object.values(agents)) {
-    if (block.kortix_permissions === undefined && block.kortix_cli === undefined) block.kortix_permissions = 'all';
-    for (const key of ['connectors', 'secrets', 'skills']) block[key] ??= 'all';
+    if (block.kortix_permissions === undefined && block.kortix_cli === undefined) block.kortix_permissions = EVERY_GRANT;
+    for (const key of ['connectors', 'secrets', 'skills']) block[key] ??= EVERY_GRANT;
   }
   const jsonc = ['opencode.jsonc', 'opencode.json'].map((name) => `${dir}/${name}`).find(repo.exists);
   const jsoncText = jsonc ? repo.read(jsonc) : null;
@@ -284,7 +284,7 @@ export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: s
     for (const entry of fs.list(`${opencodeDir}/${sub}`)) {
       const name = entry.name.replace(/\.md$/, '');
       if (entry.dir || !entry.name.endsWith('.md') || agents[name] !== undefined) continue;
-      agents[name] = { skills: 'all' };
+      agents[name] = { skills: EVERY_GRANT };
       folderAgents.set(name, `${opencodeDir}/${sub}/${entry.name}`);
     }
   }
@@ -416,7 +416,9 @@ export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: s
     if (Array.isArray(skillGrant) && (next.skills as unknown[]).length !== skillGrant.length) {
       dropped.push(`agents.${name}.skills: ${skillGrant.filter((skill) => !(next.skills as unknown[]).includes(skill)).join(', ')} (no such skill folder)`);
     }
-    next.tools = toolsGrant(block.tools ?? frontmatter.tools, removedTools) ?? 'all';
+    next.tools = toolsGrant(block.tools ?? frontmatter.tools, removedTools) ?? EVERY_GRANT;
+    // The latest shape spells "every name" `"*"`: an `all` the old file wrote is written as `"*"`.
+    for (const key of EVERY_GRANT_KEYS) if (typeof next[key] === 'string' && isEveryGrant(next[key])) next[key] = EVERY_GRANT;
     if (commandsOf.get(name)?.length) next.commands = commandsOf.get(name);
     if (extensionsOf.get(name)?.length) next.extensions = extensionsOf.get(name);
     const codemode = table(table(block.harnesses)?.pi)?.codemode ?? codemodeTop;

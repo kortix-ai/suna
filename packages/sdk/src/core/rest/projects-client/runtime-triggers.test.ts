@@ -61,6 +61,20 @@ test('createRuntimeTrigger POSTs a source and a target', async () => {
   });
 });
 
+test('an App source into a session carries expect_event_within: the watcher\'s silence alert', async () => {
+  nextBody = WOKEN;
+  await createRuntimeTrigger('p1', {
+    prompt: 'GitHub status changed: {{ event.data.status }}',
+    source: { type: 'app', app: 'github-status', expect_event_within: '1h' },
+    target: { session_id: 's1' },
+  });
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: 'http://test.local/projects/p1/triggers/runtime',
+    body: { source: { type: 'app', app: 'github-status', expect_event_within: '1h' }, target: { session_id: 's1' } },
+  });
+});
+
 test('update, run and delete address one runtime trigger by id', async () => {
   await updateRuntimeTrigger('p1', 'trigger.0123456789ab', { enabled: false });
   expect(last()).toMatchObject({ method: 'PATCH', url: 'http://test.local/projects/p1/triggers/runtime/trigger.0123456789ab', body: { enabled: false } });

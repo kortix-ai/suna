@@ -36,6 +36,8 @@ import {
 } from '../claude-subscription/flows';
 import { CLAUDE_ACCOUNT, countUsableClaudeAccounts, deleteOwnClaudeAccounts } from '../../claude-subscription/accounts';
 import { checkNamedConnection } from '../../secrets/provider-accounts';
+import { captureProductEvent } from '../../shared/product-analytics';
+import { analyticsSource } from '../../middleware/analytics-source';
 
 const Params = z.object({ projectId: z.string() });
 
@@ -213,6 +215,13 @@ export function registerClaudeSubscriptionRoutes(): void {
         return c.json({ error: err.code, message: err.message, code: err.code }, status);
       }
       if (!secretId) return c.json({ error: 'login_failed', message: 'This sign-in started before Claude accounts. Start it again.', code: 'login_failed' }, 410);
+      // `caller` admits only a person who is a member of the account.
+      captureProductEvent({
+        userId: who.userId,
+        accountId: who.accountId,
+        event: 'provider_configured',
+        properties: { project_id: projectId, provider: 'claude', method: 'subscription', source: analyticsSource(c) },
+      });
       return c.json({ connected: true as const, secret_id: secretId }, 200);
     },
   );
@@ -245,6 +254,13 @@ export function registerClaudeSubscriptionRoutes(): void {
       if ('body' in target) return c.json(target.body, target.status);
       const secretId = await storeClaudeAccount({ ...who, target, token });
       if (!secretId) return c.json({ error: 'not_found', message: 'This Claude account is no longer available. Add it again.', code: 'not_found' }, 404);
+      // `caller` admits only a person who is a member of the account.
+      captureProductEvent({
+        userId: who.userId,
+        accountId: who.accountId,
+        event: 'provider_configured',
+        properties: { project_id: projectId, provider: 'claude', method: 'subscription', source: analyticsSource(c) },
+      });
       return c.json({ connected: true as const, secret_id: secretId }, 200);
     },
   );

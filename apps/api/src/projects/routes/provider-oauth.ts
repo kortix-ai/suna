@@ -42,6 +42,7 @@ import {
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { capturePersonEvent } from './product-events';
 
 // ─── Provider OAuth device flow (poll-based) ───────────────────────────────
 //
@@ -482,6 +483,7 @@ export function registerProviderOauthRoutes(): void {
       if (!reconnected) {
         return c.json({ status: 'failed', error: `This ${cfg.label} account is no longer available. Add it again.` });
       }
+      capturePersonEvent(c, loaded, projectId, 'provider_configured', { provider: String(provider), method: 'oauth' });
       return c.json({ status: 'success', credential: {
         provider_id: cfg.resourceProviderId, secret_id: reconnected.secretId, label: reconnected.label,
         expires_in_ms: authExpiresInMs(result.authJson), updated_at: new Date().toISOString(),
@@ -499,6 +501,7 @@ export function registerProviderOauthRoutes(): void {
         label: state.l, value: result.authJson, projectId, kind: accountKind(cfg),
         sharing: state.s ? (parseSharingIntent(state.s, loaded.userId) ?? undefined) : undefined,
       });
+      capturePersonEvent(c, loaded, projectId, 'provider_configured', { provider: String(provider), method: 'oauth' });
       return c.json({ status: 'success', credential: {
         provider_id: cfg.resourceProviderId, secret_id: secretId, label: state.l,
         expires_in_ms: authExpiresInMs(result.authJson), updated_at: new Date().toISOString(),
@@ -516,6 +519,7 @@ export function registerProviderOauthRoutes(): void {
       sharing,
     });
 
+    capturePersonEvent(c, loaded, projectId, 'provider_configured', { provider: String(provider), method: 'oauth' });
     return c.json({
       status: 'success',
       credential: {
