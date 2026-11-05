@@ -1928,7 +1928,7 @@ Give the job a token in the environment. The CLI then needs no `kortix login`:
 | Variable | Value |
 | --- | --- |
 | `KORTIX_TOKEN` | A personal access key (`kortix_pat_`). |
-| `KORTIX_PROJECT_ID` | The workspace to act on, when the job runs outside a linked directory. |
+| `KORTIX_WORKSPACE_ID` | The workspace to act on, when the job runs outside a linked directory. The older name `KORTIX_PROJECT_ID` works too; `KORTIX_WORKSPACE_ID` wins when both are set. |
 | `KORTIX_API_URL` | The host's API URL. Leave it unset for Kortix Cloud. |
 
 `KORTIX_TOKEN` outranks any stored login, and the CLI never writes it to disk. Create a key that can reach only one workspace:
@@ -2022,7 +2022,7 @@ An MCP client can use Kortix without the CLI. See [Other AI tools (MCP)](/docs/g
 
 ### Inside a session sandbox
 
-Every sandbox has the CLI installed and signed in. The platform sets `KORTIX_TOKEN`, `KORTIX_API_URL`, `KORTIX_PROJECT_ID` and `KORTIX_SESSION_ID`, so the agent runs commands with no login and no link. The token is a session token: `kortix token` shows its session, its agent and its grants. It acts only on the session's own workspace.
+Every sandbox has the CLI installed and signed in. The platform sets `KORTIX_TOKEN`, `KORTIX_API_URL`, `KORTIX_WORKSPACE_ID` (and the same value as `KORTIX_PROJECT_ID`) and `KORTIX_SESSION_ID`, so the agent runs commands with no login and no link. The token is a session token: `kortix token` shows its session, its agent and its grants. It acts only on the session's own workspace.
 
 Commands an agent uses:
 
