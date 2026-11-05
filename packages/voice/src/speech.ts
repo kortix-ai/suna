@@ -218,12 +218,9 @@ async function transcribe(pcm: Uint8Array, strict = true, keep?: (t: string) => 
   ).catch(() => undefined)
   if (!res?.ok) return console.error('[cascade whisper]', res?.status, await res?.text()), { text: '', conf: -9 }
   // Whisper invents text for noise and echo. Keep only segments it believes are speech.
-  type Seg = { text: string; no_speech_prob: number; avg_logprob: number; compression_ratio: number }
   const { segments = [], language } = (await res.json()) as { segments?: Seg[]; language?: string }
   const detected = language && (ISO[language.toLowerCase()] ?? language.toLowerCase())
-  // Whisper's own skip rule (no speech AND low confidence), plus repetition loops and very low confidence.
-  const real = (s: Seg) => !(s.no_speech_prob > 0.6 && s.avg_logprob < -1) && s.compression_ratio <= 2.4 && s.avg_logprob > -1.5
-  let text = segments.filter(real).map((s) => s.text).join('').trim()
+  let text = segments.filter(heard).map((s) => s.text).join('').trim()
   // One or two words is where hallucinations live ("CometEdit" from echo): demand more confidence,
   // except for a command, which is never a stock hallucination and costs more to miss than to mishear.
   // Short real words score -0.5 to -0.9 ("Thanks, bye." -0.54, "Hey, what?" -0.59, "Sweet!" -0.75, all with no-speech
@@ -278,6 +275,29 @@ export type Utterance = { response: Response; add(text: string): void; end(): vo
 export type Tts = { speak: Speak; stream?(voice: string | undefined, signal: AbortSignal): Utterance; close(): void }
 
 const httpTts = (speak: Speak) => (): Tts => ({ speak, close() {} })
+
+/** A Whisper segment (verbose_json). */
+export type Seg = { text: string; no_speech_prob: number; avg_logprob: number; compression_ratio: number }
+/** A segment Whisper believes is speech: its own skip rule (no speech AND low confidence), no repetition loop, and not
+ * very low confidence. Whisper invents text for noise and echo. */
+export const heard = (s: Seg) => !(s.no_speech_prob > 0.6 && s.avg_logprob < -1) && s.compression_ratio <= 2.4 && s.avg_logprob > -1.5
+
+/** The voice a call speaks with unless it picks one: VOICE_TTS, else the models base (a Kortix box), else Inworld with its
+ * key, else xAI. */
+export const ttsDefault = (): string => process.env.VOICE_TTS ?? (viaModels() ? 'models' : process.env.INWORLD_API_KEY ? 'inworld' : 'xai-ws')
+
+/** Speech through the models base (VOICE_MODELS_URL): OpenAI-shaped, streamed back as PCM16 24 kHz (a call's) or MP3 (a
+ * file's, src/speech-api.ts). INWORLD_MODEL picks the model, INWORLD_VOICE the voice when none is given. */
+export function modelsSpeech(text: string, voice: string | undefined, signal: AbortSignal, o: { rate?: number; model?: string; format?: 'pcm' | 'mp3' } = {}): Promise<Response> {
+  const id = o.model ?? process.env.INWORLD_MODEL ?? 'inworld-tts-2'
+  chargeTts(id, text)
+  return fetch(speechUrl(), {
+    method: 'POST',
+    signal,
+    headers: { ...modelsHeaders(), 'content-type': 'application/json' },
+    body: JSON.stringify({ model: id, input: text, voice: (voice && inworldId(voice)) || process.env.INWORLD_VOICE || 'Ashley', response_format: o.format ?? 'pcm', ...(o.format === 'mp3' ? {} : { sample_rate: 24000 }), ...(o.rate && o.rate !== 1 ? { speed: o.rate } : {}) }),
+  })
+}
 
 // xAI's documented TTS languages (ISO 639-1 → its code). German, Spanish, French: Whisper reads the audio back
 // word for word, first audio ~345 ms vs ~585 ms for Gemini Flash-Lite (measured). Serbian is not on the list and
@@ -445,16 +465,7 @@ export const ttss: Record<string, (lang?: string, model?: string) => Tts> = {
   'inworld-flash': (lang = 'en') => ttss.inworld!(lang, 'inworld-tts-2-flash'),
   // The same voices through the models base (VOICE_MODELS_URL, a Kortix box): OpenAI-shaped speech that answers the
   // PCM itself, streamed. The default there; INWORLD_MODEL picks the model, as above.
-  models: (_lang = 'en', model?: string) => ({ close() {}, speak: async (text, _voice, signal, rate) => {
-    const id = model ?? process.env.INWORLD_MODEL ?? 'inworld-tts-2'
-    chargeTts(id, text)
-    return fetch(speechUrl(), {
-      method: 'POST',
-      signal,
-      headers: { ...modelsHeaders(), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: id, input: text, voice: (_voice && inworldId(_voice)) || process.env.INWORLD_VOICE || 'Ashley', response_format: 'pcm', sample_rate: 24000, ...(rate && rate !== 1 ? { speed: rate } : {}) }),
-    })
-  } }),
+  models: (_lang = 'en', model?: string) => ({ close() {}, speak: (text, voice, signal, rate) => modelsSpeech(text, voice, signal, { rate, model }) }),
   mock: httpTts(async (text, _voice, signal) => {
     chargeTts('mock', text) // free: the count of characters a real voice would bill
     await new Promise((r) => setTimeout(r, Number(process.env.VOICE_MOCK_TTS_MS ?? 180)))
@@ -465,7 +476,7 @@ export const ttss: Record<string, (lang?: string, model?: string) => Tts> = {
   }),
   eleven: httpTts((text, voice, signal) => {
     chargeTts(process.env.ELEVEN_TTS_MODEL ?? 'eleven_flash_v2_5', text)
-    return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice ?? 'EXAVITQu4vr4xnSDxMaL'}/stream?output_format=pcm_24000&optimize_streaming_latency=3`, {
+    return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice ?? 'EXAVITQu4vr4xnSDxMaL')}/stream?output_format=pcm_24000&optimize_streaming_latency=3`, {
       method: 'POST',
       signal,
       headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY!, 'content-type': 'application/json' },

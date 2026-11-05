@@ -2021,6 +2021,20 @@ describe('Telegram files — migrated PostgreSQL', () => {
     expect(delivered.filter((d) => 'overrides' in d)).toEqual([]);
   });
 
+  test('with voice calls on, a voice note points the agent at its voice_transcribe tool, not an install', async () => {
+    await db.update(projects).set({ metadata: { telegram: { allowedUserIds: [ALLOWED] }, experimental: { voice_call: true } } }).where(eq(projects.projectId, PROJECT));
+    try {
+      await bindChat(6044);
+      stored.set('voice-2', { bytes: new Uint8Array([0x4f, 0x67, 0x67, 0x53]) });
+      await handleTelegramEvent(mediaUpdate({ voice: { file_id: 'voice-2', mime_type: 'audio/ogg; codecs=opus', duration: 4 } }, { chat: 6044 }));
+      expect(delivered[0]!.parts[1]).toMatchObject({ type: 'file', mime: 'audio/ogg', filename: 'voice_message.ogg' });
+      expect(delivered[0]!.text).toContain('transcribe it with your voice_transcribe tool');
+      expect(delivered[0]!.text).not.toContain('No speech-to-text tool is preinstalled');
+    } finally {
+      await allowSender();
+    }
+  });
+
   test('a declared size over 8 MiB is not fetched: the agent is told, and the text goes', async () => {
     await bindChat(6005);
     await handleTelegramEvent(mediaUpdate(
