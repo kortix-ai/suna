@@ -923,7 +923,7 @@ describe('THEME hsl parsing', () => {
   });
 
   it('toHexColor parses decimals', () => {
-    expect(toHexColor('hsl(0 0% 50.0%)')).toBe(toHexColor('hsl(0 0% 50%)'));
+    expect(toHexColor('hsl(0 0% 50.0%)')).toBe('#808080');
   });
 
   it.each([
