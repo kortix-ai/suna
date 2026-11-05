@@ -199,6 +199,9 @@ export {
   projectAppsKey,
   appDeploymentsKey,
   appDeploymentKey,
+  useAppEvents,
+  useSendAppTestEvent,
+  appEventsKey,
 } from './use-project-apps';
 
 export * from './use-admin-accounts';

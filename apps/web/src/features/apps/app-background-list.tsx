@@ -12,6 +12,7 @@ import { CaretRightIcon } from '@phosphor-icons/react';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import type { UiTranslator } from '@/i18n/translator';
 import type { AppSelect } from './apps-view';
+import { appLastEventAt } from './app-events';
 
 /**
  * The Apps that run rather than get opened: a poller, a bot, a backend.
@@ -100,11 +101,15 @@ function BackgroundRow({
   const t = useTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
   const status = appStatus(app, t);
+  // A watcher that only posts events gets no requests: its last event is its activity.
+  const lastEvent = appLastEventAt(app, triggers);
   const activity = app.external_url || !app.active_deployment_id
     ? null
     : app.last_request_at
       ? t('text08f59056870d', { value0: relativeTime(app.last_request_at, locale) })
-      : t.raw('textbeeb1f954807');
+      : lastEvent
+        ? t('textba1daad907a0', { value0: relativeTime(lastEvent, locale) })
+        : t.raw('textbeeb1f954807');
 
   return (
     // Agent scope: the grant checkbox leads the row, a sibling of the button.

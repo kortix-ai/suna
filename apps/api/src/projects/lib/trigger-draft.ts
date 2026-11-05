@@ -151,6 +151,13 @@ export async function loadTriggersForResponse(
       interval_seconds: null,
       // An app trigger's silence alert (`expect_event_within`); null on every other type.
       expect_event_within_seconds: spec.expectEventWithinSeconds ?? null,
+      // An app trigger: when its App last posted to it (a deduplicated post and
+      // a heartbeat count), and since when it has been silent past
+      // `expect_event_within` (the open silence alert). Null on other types.
+      last_event_at: spec.type === 'app' ? (runtimeBySlug.get(spec.slug)?.lastEventAt?.toISOString() ?? null) : null,
+      silent_since: runtimeBySlug.get(spec.slug)?.alertSource === 'silence'
+        ? (runtimeBySlug.get(spec.slug)?.alertFailingSince?.toISOString() ?? null)
+        : null,
       app: spec.app ?? null,
       target: spec.target ?? null,
       event: spec.event
