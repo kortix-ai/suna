@@ -2,6 +2,7 @@
 import type { SubscriptionUsage } from '@kortix/llm-gateway';
 import { resolveProjectSecretForConsumer } from '../projects/surface';
 import { SecretUndecryptableError } from '../secrets/undecryptable';
+import { projectInAccount } from '../secrets/project-account';
 import { CODEX_USER_AGENT } from './credentials/codex';
 import { parseCodexAuth } from './credentials/codex-core';
 import { codexAccountFromLogin, codexUsageFromBody, type SubscriptionAccount } from './subscription-usage';
@@ -32,8 +33,12 @@ export interface LegacySubscriptionConnection {
   storage: LegacySubscriptionStorage;
 }
 type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
+type UsageResult = { usage: SubscriptionUsage | null; provider_account: SubscriptionAccount | null };
+// replica-local: this bounded cache only reduces outbound reads. Every caller rechecks tenant binding and credential access before using it.
+const recentReads = new Map<string, { expiresAt: number; pending: Promise<UsageResult> }>();
 
-function codexLogin(input: Principal) {
+async function codexLogin(input: Principal) {
+  if (!(await projectInAccount(input.accountId, input.projectId))) return null;
   return resolveProjectSecretForConsumer({ accountId: input.accountId, projectId: input.projectId,
     actorUserId: input.userId, principalUserId: input.userId,
     name: 'CODEX_AUTH_JSON', consumer: 'llm_gateway', throwWhenUndecryptable: true });
@@ -91,7 +96,20 @@ Promise<{ usage: SubscriptionUsage | null; provider_account: SubscriptionAccount
     if (!credential?.access) return { usage: null, provider_account: codexAccountFromLogin(login.value) };
     const headers: Record<string, string> = { authorization: `Bearer ${credential.access}`, 'user-agent': CODEX_USER_AGENT, accept: 'application/json' };
     if (credential.accountId) headers['chatgpt-account-id'] = credential.accountId;
-    return { usage: codexUsageFromBody(await readProvider(fetchImpl, 'https://chatgpt.com/backend-api/wham/usage', headers)), provider_account: codexAccountFromLogin(login.value) };
+    const cacheKey = `${input.accountId}:${input.projectId}:${input.secretId}:${login.updatedAt.getTime()}`;
+    const cached = recentReads.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.pending;
+    recentReads.delete(cacheKey);
+    if (recentReads.size >= 512) {
+      const oldest = recentReads.keys().next().value;
+      if (oldest) recentReads.delete(oldest);
+    }
+    const pending = (async () => ({
+      usage: codexUsageFromBody(await readProvider(fetchImpl, 'https://chatgpt.com/backend-api/wham/usage', headers)),
+      provider_account: codexAccountFromLogin(login.value),
+    }))();
+    recentReads.set(cacheKey, { expiresAt: Date.now() + 60_000, pending });
+    return pending;
   }
   return null;
 }

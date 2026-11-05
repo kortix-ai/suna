@@ -1,14 +1,15 @@
-import { beforeEach, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, expect, mock, setSystemTime, test } from 'bun:test';
 import { SecretUndecryptableError } from '../secrets/undecryptable';
 
 const accountId = '11111111-1111-4111-8111-111111111111';
 const projectId = '22222222-2222-4222-8222-222222222222';
 const userId = '33333333-3333-4333-8333-333333333333';
-const secretId = '44444444-4444-4444-8444-444444444444';
+let secretId = crypto.randomUUID();
 const input = { accountId, projectId, userId };
 const at = new Date('2026-11-05T12:00:00Z');
 let codex: any;
 let broken = false;
+let bound = true;
 const resolve = mock(async (_input: unknown) => {
   if (broken) throw new SecretUndecryptableError('Project secret CODEX_AUTH_JSON');
   return codex;
@@ -21,11 +22,15 @@ mock.module('../secrets/account-resource', () => ({ readAccountSecret: () => nul
   return value;
 } }));
 mock.module('../shared/db', () => ({ db: {} }));
+mock.module('../secrets/project-account', () => ({ projectInAccount: async () => bound }));
 const { listLegacySubscriptionConnections, refreshLegacySubscriptionUsage } = await import('./legacy-subscription-usage');
+afterEach(() => setSystemTime());
 
 beforeEach(() => {
   codex = null;
   broken = false;
+  bound = true;
+  secretId = crypto.randomUUID();
   resolve.mockClear();
   credential.mockClear();
 });
@@ -79,4 +84,43 @@ test('usage polling never rotates an expired ChatGPT login', async () => {
   expect(credential).not.toHaveBeenCalled();
   expect(requests.map(r => r.url)).toEqual(['https://chatgpt.com/backend-api/wham/usage']);
   expect(requests[0]?.headers.get('authorization')).toBe('Bearer stored-expired-access');
+});
+
+test('a foreign project is refused before reading any login or cached usage', async () => {
+  bound = false;
+  codex = { accountId, secretId, ownerUserId: null, updatedAt: at, value: JSON.stringify({ openai: { access: 'synthetic-access' } }) };
+  const fetcher = mock(async (_url: string, _init: RequestInit) => Response.json({}));
+  expect(await listLegacySubscriptionConnections(input)).toEqual([]);
+  expect(await refreshLegacySubscriptionUsage({ ...input, secretId, storage: 'project' }, fetcher)).toBeNull();
+  expect(resolve).not.toHaveBeenCalled();
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+test('concurrent and repeated reads share one provider request for one minute', async () => {
+  codex = { accountId, secretId, ownerUserId: null, updatedAt: at, value: JSON.stringify({ openai: { access: 'synthetic-access' } }) };
+  const fetcher = mock(async (_url: string, _init: RequestInit) => Response.json({ rate_limit: { primary_window: { used_percent: 42, limit_window_seconds: 18000 } } }));
+  const read = () => refreshLegacySubscriptionUsage({ ...input, secretId, storage: 'project' }, fetcher);
+  const results = await Promise.all([read(), read()]);
+  expect(await read()).toEqual(results[0]);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(resolve).toHaveBeenCalledTimes(3);
+});
+
+test('cached usage never bypasses tenant validation and a minute allows a fresh provider read', async () => {
+  const now = Date.now();
+  setSystemTime(new Date(now));
+  codex = { accountId, secretId, ownerUserId: null, updatedAt: at, value: JSON.stringify({ openai: { access: 'synthetic-access' } }) };
+  const fetcher = mock(async (_url: string, _init: RequestInit) => Response.json({}));
+  const read = () => refreshLegacySubscriptionUsage({ ...input, secretId, storage: 'project' }, fetcher);
+  await read();
+  bound = false;
+  expect(await read()).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  bound = true;
+  setSystemTime(new Date(now + 59_999));
+  await read();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  setSystemTime(new Date(now + 60_001));
+  await read();
+  expect(fetcher).toHaveBeenCalledTimes(2);
 });
