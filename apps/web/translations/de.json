@@ -25942,6 +25942,14 @@
       "noWorkspaceTitle": "Erstelle einen Workspace, um die CLI anzumelden",
       "noWorkspaceBody": "Die CLI meldet sich bei einem Workspace an. Erstelle einen und bestätige dann diese Anmeldung.",
       "createAction": "Workspace erstellen"
+    },
+    "models": {
+      "yourDefault": "Workspace-Standard",
+      "defaultAria": "{model} ist das Standardmodell dieses Workspace",
+      "defaultTitle": "Standardmodell des Workspace",
+      "setDefaultTitle": "Als Standardmodell des Workspace festlegen",
+      "setDefaultAria": "{model} als Standardmodell dieses Workspace festlegen",
+      "setWorkspaceDefault": "Als Workspace-Standard festlegen"
     }
   }
 }

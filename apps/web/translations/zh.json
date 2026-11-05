@@ -25942,6 +25942,14 @@
       "noWorkspaceTitle": "创建工作区以登录 CLI",
       "noWorkspaceBody": "CLI 会登录到一个工作区。请先创建工作区，然后批准此次登录。",
       "createAction": "创建工作区"
+    },
+    "models": {
+      "yourDefault": "工作区默认",
+      "defaultAria": "{model} 是此工作区的默认模型",
+      "defaultTitle": "工作区默认模型",
+      "setDefaultTitle": "设为工作区默认模型",
+      "setDefaultAria": "将 {model} 设为此工作区的默认模型",
+      "setWorkspaceDefault": "设为工作区默认"
     }
   }
 }

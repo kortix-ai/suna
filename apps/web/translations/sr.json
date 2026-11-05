@@ -25942,6 +25942,14 @@
       "noWorkspaceTitle": "Napravite radni prostor da biste prijavili CLI",
       "noWorkspaceBody": "CLI se prijavljuje u radni prostor. Napravite ga, zatim odobrite ovu prijavu.",
       "createAction": "Napravi radni prostor"
+    },
+    "models": {
+      "yourDefault": "Podrazumevano za radni prostor",
+      "defaultAria": "{model} je podrazumevani model ovog radnog prostora",
+      "defaultTitle": "Podrazumevani model radnog prostora",
+      "setDefaultTitle": "Postavi kao podrazumevani model radnog prostora",
+      "setDefaultAria": "Postavi {model} kao podrazumevani model ovog radnog prostora",
+      "setWorkspaceDefault": "Postavi kao podrazumevano za radni prostor"
     }
   }
 }

@@ -26606,6 +26606,14 @@
       "noWorkspaceTitle": "Create a workspace to sign in the CLI",
       "noWorkspaceBody": "The CLI signs in to a workspace. Create one, then approve this sign-in.",
       "createAction": "Create workspace"
+    },
+    "models": {
+      "yourDefault": "Workspace default",
+      "defaultAria": "{model} is the default model for this workspace",
+      "defaultTitle": "Workspace default model",
+      "setDefaultTitle": "Set as the workspace default model",
+      "setDefaultAria": "Set {model} as the default model for this workspace",
+      "setWorkspaceDefault": "Set as workspace default"
     }
   }
 }

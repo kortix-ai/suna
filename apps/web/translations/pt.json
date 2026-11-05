@@ -25942,6 +25942,14 @@
       "noWorkspaceTitle": "Crie um espaço de trabalho para entrar na CLI",
       "noWorkspaceBody": "A CLI entra em um espaço de trabalho. Crie um e depois aprove este acesso.",
       "createAction": "Criar espaço de trabalho"
+    },
+    "models": {
+      "yourDefault": "Padrão do espaço de trabalho",
+      "defaultAria": "{model} é o modelo padrão deste espaço de trabalho",
+      "defaultTitle": "Modelo padrão do espaço de trabalho",
+      "setDefaultTitle": "Definir como modelo padrão do espaço de trabalho",
+      "setDefaultAria": "Definir {model} como modelo padrão deste espaço de trabalho",
+      "setWorkspaceDefault": "Definir como padrão do espaço de trabalho"
     }
   }
 }

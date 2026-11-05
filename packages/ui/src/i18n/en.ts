@@ -9977,6 +9977,14 @@ const catalog = {
       "deleteKeepsLogin": "Your login stays: you can create or join another workspace.",
       "personalKeysTitle": "Your personal access keys",
       "personalKeysDescription": "API keys that act as you in this workspace: for the CLI, a script, or a CI job."
+    },
+    "models": {
+      "yourDefault": "Workspace default",
+      "defaultAria": "{model} is the default model for this workspace",
+      "defaultTitle": "Workspace default model",
+      "setDefaultTitle": "Set as the workspace default model",
+      "setDefaultAria": "Set {model} as the default model for this workspace",
+      "setWorkspaceDefault": "Set as workspace default"
     }
   }
 };
