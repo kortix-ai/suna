@@ -219,3 +219,18 @@ export {
 } from './git/push-manifest-check';
 // A manifest write refused while the default branch's kortix.yaml is not YAML (consumed by the HTTP error handler).
 export { ManifestWriteRefusedError } from './manifest-io';
+
+// The transfer engine and the workspace split's data movement (consumed by workspaces/split).
+export {
+  copyProjectSiteBlobs,
+  PROJECT_TRANSFER_APP_TABLES,
+  PROJECT_TRANSFER_LEAVE_TABLES,
+  PROJECT_TRANSFER_TABLES,
+} from './lib/project-transfer';
+export {
+  projectGrantCounts,
+  ProjectSplitError,
+  reverseProjectSplit,
+  splitProjectIntoNewAccount,
+  type SplitCopiedIds,
+} from './lib/workspace-split-copy';
