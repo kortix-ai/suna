@@ -207,7 +207,7 @@ credential for App or backend code. A person creates a service account:
 
 ```sh
 kortix tokens service-accounts new crm-sync --description "Convex CRM sync"   # bearer prints once
-kortix access grant --service-account <id> --role member --project <project-id>
+kortix access grant --service-account <id> --role member --workspace <workspace-id>
 npx convex env set KORTIX_API_URL https://api.kortix.com/v1
 npx convex env set KORTIX_PROJECT_ID <project-id>
 npx convex env set KORTIX_API_KEY <kortix_sa_…>
@@ -250,7 +250,7 @@ Names that start with `KORTIX_` are reserved and fail validation.
 
 **External program or CI.** A personal access token acts as its owner,
 private accounts included. Bind it to one project:
-`kortix tokens new crm-export --project <project-id> --expires 90d`.
+`kortix tokens new crm-export --workspace <workspace-id> --expires 90d`.
 
 ## Safety rules
 

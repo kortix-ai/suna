@@ -61,7 +61,7 @@ It grants nothing. Spaces show only while the project flag
 `chat` is on; it is off by default, and while it is off the
 keys are kept but have no effect. A Goals tab needs `goals` (off by
 default). Do not build a space
-unless the user asks and `kortix projects features` lists
+unless the user asks and `kortix workspaces features` lists
 `chat` on.
 
 ```yaml
