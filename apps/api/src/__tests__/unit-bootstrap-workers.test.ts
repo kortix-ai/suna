@@ -84,7 +84,8 @@ test('API-only boot keeps request services but starts no queued jobs, lifecycle 
   await bootServices('api');
   await Promise.resolve();
   expect(eligible).toBe(false);
-  expect(started.sort()).toEqual(['onSessionChanged', 'startAccessControlCache', 'startEventLoopLagSampler', 'startTunnelService']);
+  // startArtifactLiveSweep sweeps only this process's own Artifact sockets, like the tunnel (KRTX-3669).
+  expect(started.sort()).toEqual(['onSessionChanged', 'startAccessControlCache', 'startArtifactLiveSweep', 'startEventLoopLagSampler', 'startTunnelService']);
   await handlers.onAcquire();
   expect(started).not.toContain('kickStartupPreBuild');
   expect(started).not.toContain('startActiveTurnRenewal');

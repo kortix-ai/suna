@@ -1562,6 +1562,13 @@
       "when": 1793900600832,
       "tag": "20261105174320_runtime_names",
       "breakpoints": true
+    },
+    {
+      "idx": 223,
+      "version": "7",
+      "when": 1793906231460,
+      "tag": "20261105191711_session_pending_permissions_rls",
+      "breakpoints": true
     }
   ]
 }

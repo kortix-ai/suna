@@ -14,6 +14,7 @@ import { projectMonitorEvents, projectTriggerRuntime } from '@kortix/db';
 import { and, desc, eq, gte, inArray, lt, ne, or, sql } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { db } from '../../shared/db';
+import { isUuid } from '../../shared/validate';
 import { MONITOR_INGEST_MAX_EVENTS, MONITOR_RATE_WINDOW_MS, truncateMonitorLine, type ParsedMonitorEvent } from './monitor-events';
 import { type MonitorIngestResult, ingestMonitorEvents } from './monitor-ingest';
 import { clearTriggerAlert } from './trigger-alerts';
@@ -309,7 +310,7 @@ export function encodeAppEventCursor(row: { receivedAt: Date; logId: string }): 
 export function decodeAppEventCursor(cursor: string): { receivedAt: Date; logId: string } | null {
   const [at, logId] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
   const receivedAt = new Date(at ?? '');
-  if (!logId || Number.isNaN(receivedAt.getTime()) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(logId)) return null;
+  if (!logId || Number.isNaN(receivedAt.getTime()) || !isUuid(logId)) return null;
   return { receivedAt, logId };
 }
 

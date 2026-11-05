@@ -21236,7 +21236,15 @@
       "text05ee1d6181f3": "Када се захтев за измену споји, {agent} извршава ваше упутство.",
       "texte608495c45ce": "Спојено у {branch}",
       "text80ca527b0d55": "Окидач за захтев за измену је направљен",
-      "authEmailAlreadySent": "Ovu e-poruku smo poslali pre manje od minut. Proverite prijemno sanduče i fasciklu za neželjenu poštu pre nego što zatražite novu."
+      "authEmailAlreadySent": "Ovu e-poruku smo poslali pre manje od minut. Proverite prijemno sanduče i fasciklu za neželjenu poštu pre nego što zatražite novu.",
+      "textfe0dab79db43": "Разговарајте са Kortix-ом у једном чету: свака порука је нит, а најновији одговор Kortix-а приказује се испод ње.",
+      "text2e914b62b832": "Markdown везе",
+      "text7bed093239f3": "Препознати ресурси приказују иконицу апликације и сажету ознаку. Задржите показивач да бисте видели оригинални URL.",
+      "textaf4df8fff726": "Заврши стримовање",
+      "textc5bb2bbce674": "Прикажи стримовање",
+      "textfc19d1c660c8": "GitHub профили, репозиторијуми, pull request-ови, проблеми и комити; Linear задаци; Slack поруке и разговори; Figma дизајни, табле и слајдови; Notion странице; Google Docs, Sheets и Slides. Ознаке користе само URL. Наслови, дозволе и статус уживо се не преузимају.",
+      "textba98740fde39": "Потрошња ChatGPT претплате",
+      "text856bf8853b69": "Потрошња Claude претплате"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -23782,7 +23790,671 @@
     "lastCheckAt": "Poslednja provera {time}",
     "neverChecked": "Još nije provereno",
     "wakesTodayCount": "{count} od {max} buđenja danas",
-    "filesLabel": "Fajlovi"
+    "filesLabel": "Fajlovi",
+    "roleTab": {
+      "founder": "Osnivač",
+      "sales": "Prodaja",
+      "marketing": "Marketing",
+      "support": "Podrška",
+      "finance": "Finansije",
+      "operations": "Operacije",
+      "people": "Ljudi",
+      "engineering": "Inženjering"
+    },
+    "galleryTitle": "Pokreni novi cilj",
+    "galleryDescription": "Opišite ishod ili krenite od šablona. Agent radi na njemu dok nezavisna provera ne potvrdi da je završen.",
+    "composerPlaceholder": "Opišite ishod koji želite",
+    "templates": {
+      "draftInvestorUpdate": {
+        "title": "Napiši izveštaj za investitore",
+        "description": "Prikuplja metrike kompanije u nacrt izveštaja za investitore u Files.",
+        "prompt": "Napiši nacrt našeg izveštaja za investitore za [prošli mesec].\n- Metrike: [prihod, rast, potrošnja, runway] iz [Stripe-a i naše finansijske tabele]\n- Istaknuto: [lansiranja, uspesi, ključna zapošljavanja]\n- Slabosti i rizici: [šta je kasnilo ili je ugroženo]\n- Zahtevi: [uvodi, zapošljavanja, saveti koji su nam potrebni]\nUporedi svaki broj sa prethodnim periodom.",
+        "criterion": "Files/founder/investor-update.md sadrži izabrani period, metrike sa izvorima, promene u odnosu na prethodni period, istaknuto, rizike, zahteve i označene nedostatke u podacima.",
+        "start": "Prikupi metrike",
+        "done": "Izveštaj napisan"
+      },
+      "compareCompetitors": {
+        "title": "Uporedi konkurenciju",
+        "description": "Upoređuje konkurente i čuva pozicioni dokument sa izvorima u Files.",
+        "prompt": "Uporedi nas sa [konkurent A, konkurent B, konkurent C].\n- Šta prodajemo: [jedna rečenica o proizvodu i ko ga kupuje]\n- Uporedi: cene, ciljnog kupca, ključne funkcije, nedavna lansiranja\n- Izvori: njihovi sajtovi, stranice sa cenama, dokumentacija i javne recenzije\nZavrši sa 3 opcije pozicioniranja za nas.",
+        "criterion": "Files/founder/competitor-brief.md obuhvata svakog navedenog konkurenta sa datiranim vezama ka izvorima, ciljnim kupcima, cenama ili nepoznanicama, ključnim razlikama i 3 opcije pozicioniranja.",
+        "start": "Istraži konkurente",
+        "done": "Dokument spreman"
+      },
+      "summarizeCustomerFeedback": {
+        "title": "Pronađi prioritete kupaca",
+        "description": "Grupiše povratne informacije kupaca u rangiran dokument prioriteta u Files.",
+        "prompt": "Pronađi šta kupci najviše traže u [poslednjih 90 dana].\n- Izvori: [tiketi podrške, beleške sa poziva, komentari iz anketa, beleške prodaje]\n- Grupiši po temi i rangiraj po broju jedinstvenih kupaca\n- Za svaku temu: 2 citata, veze ka izvorima, ugroženi prihod\nZavrši sa 3 predložene akcije.",
+        "criterion": "Files/founder/customer-priorities.md navodi teme rangirane po broju jedinstvenih kupaca, sa citatima, vezama ka izvorima, uticajem na poslovanje, predloženim akcijama i obimom povratnih informacija.",
+        "start": "Pročitaj povratne informacije",
+        "done": "Prioriteti rangirani"
+      },
+      "prepareDecisionBrief": {
+        "title": "Pripremi dokument za odluku",
+        "description": "Istražuje poslovnu odluku i čuva opcije sa troškovima i kompromisima u Files.",
+        "prompt": "Pripremi dokument za odluku: [da li treba da povećamo cene za nove kupce?]\n- Rok: [kada moramo da odlučimo]\n- Ograničenja: [budžet, tim, vreme]\n- Uporedi bar 3 opcije, uključujući i opciju bez promene\nNavedi troškove, rizike i preporuku, sa izvorom za svaki broj.",
+        "criterion": "Files/founder/decision-brief.md navodi odluku, upoređuje bar 3 opcije uključujući i opciju bez promene, i sadrži troškove sa izvorima, kompromise, pretpostavke i preporuku.",
+        "start": "Prikupi dokaze",
+        "done": "Opcije upoređene"
+      },
+      "prepareBoardPack": {
+        "title": "Pripremi materijal za odbor",
+        "description": "Pravi plan sastanka odbora sa brojevima i izvorima u Files.",
+        "prompt": "Pripremi materijal za sastanak odbora za [ovaj kvartal].\n- Odeljci: KPI, finansije, proizvod, zapošljavanje, rizici, potrebne odluke\n- Podaci: [Stripe, finansijska tabela, CRM, plan razvoja]\n- Odluke za odbor: [šta treba da odobre]\nNeka bude najviše 12 slajdova. Uz svaki broj navedi izvor.",
+        "criterion": "Files/founder/board-pack.md sadrži plan od najviše 12 slajdova sa KPI, finansijama, proizvodom, zapošljavanjem, rizicima, potrebnim odlukama i izvorom za svaki broj.",
+        "start": "Prikupi brojeve",
+        "done": "Plan izrađen"
+      },
+      "draftQuarterlyOkrs": {
+        "title": "Napiši kvartalne OKR-ove",
+        "description": "Predlaže merljive ciljeve sa početnim vrednostima i vlasnicima u Files.",
+        "prompt": "Napiši nacrt naših OKR-ova za [sledeći kvartal].\n- Fokus kompanije: [jedna stvar koja je najvažnija]\n- Timovi: [proizvod, prodaja, marketing]\n- Rezultati prošlog kvartala: [veza ili putanja u Files]\nNajviše 3 cilja. Za svaki navedi 2 do 4 merljiva ključna rezultata sa početnom vrednošću i ulogom vlasnika.",
+        "criterion": "Files/founder/okrs.md sadrži najviše 3 cilja, svaki sa 2 do 4 merljiva ključna rezultata koji navode početnu vrednost, ciljnu vrednost i ulogu vlasnika.",
+        "start": "Pregledaj rezultate",
+        "done": "OKR-ovi napisani"
+      },
+      "sizeMarket": {
+        "title": "Proceni veličinu tržišta",
+        "description": "Pravi procenu TAM, SAM i SOM sa izvorima u Files.",
+        "prompt": "Proceni veličinu tržišta za [naš proizvod] u [region].\n- Kupac: [ko kupuje i veličina njegove kompanije]\n- Cena: [naša prosečna godišnja cena]\nIzradi TAM, SAM i SOM pristupom odozdo nagore i odozgo nadole. Navedi datiran izvor za svaki ulazni podatak.",
+        "criterion": "Files/founder/market-size.md sadrži procene TAM, SAM i SOM pristupom odozdo nagore i odozgo nadole, formulu za svaku i datiran izvor za svaki ulazni podatak.",
+        "start": "Pronađi podatke",
+        "done": "Tržište procenjeno"
+      },
+      "buildInvestorList": {
+        "title": "Napravi listu investitora",
+        "description": "Rangira investitore po podudarnosti za rundu i čuva listu sa izvorima u Files.",
+        "prompt": "Napravi listu od [40] investitora za našu [seed] rundu.\n- Sektor i faza: [B2B softver, seed]\n- Veličina ulaganja: [$500k do $2M]\n- Region: [SAD i Evropa]\nZa svakog: fond, partner, relevantni nedavni poslovi, razlog podudarnosti i veze ka izvorima.",
+        "criterion": "Files/founder/investors.csv obuhvata traženi broj investitora sa fondom, partnerom, relevantnim nedavnim poslovima, razlogom podudarnosti, vezama ka izvorima i prioritetom u odnosu na navedenu fazu i veličinu ulaganja.",
+        "start": "Istraži investitore",
+        "done": "Lista rangirana"
+      },
+      "writeTeamUpdate": {
+        "title": "Napiši izveštaj za tim",
+        "description": "Piše nedeljni izveštaj kompanije na osnovu stvarnog rada i brojeva u Files.",
+        "prompt": "Napiši izveštaj za tim za [ovu nedelju].\n- Isporučeno: iz [GitHub-a, sistema za praćenje zadataka]\n- Poslovi i kupci: iz [našeg CRM-a]\n- Metrike: iz [Stripe-a, analitike proizvoda]\n- Sledeća nedelja: [prioriteti]\nNeka bude kraće od 400 reči. Samo nacrt: nemoj ga slati.",
+        "criterion": "Files/founder/team-update.md ima manje od 400 reči i sadrži isporučeni rad sa vezama, vesti o kupcima i poslovima, ključne metrike sa izvorima i prioritete za sledeću nedelju.",
+        "start": "Prikupi novosti",
+        "done": "Izveštaj napisan"
+      },
+      "mapCompanyRisks": {
+        "title": "Mapiraj rizike kompanije",
+        "description": "Navodi glavne rizike za plan sa vlasnicima i merama ublažavanja u Files.",
+        "prompt": "Navedi glavne rizike za [ostvarenje našeg plana ove godine].\n- Oblasti: runway, kupci, tim, proizvod, pravna pitanja, bezbednost\n- Izvori: [finansijska tabela, CRM, plan razvoja, evidencija incidenata]\nZa svaki rizik: verovatnoća, uticaj, uloga vlasnika i mera ublažavanja.",
+        "criterion": "Files/founder/risk-register.md navodi bar 8 rizika kroz navedene oblasti, svaki sa verovatnoćom, uticajem, ulogom vlasnika, merom ublažavanja i izvorom koji ga potkrepljuje.",
+        "start": "Pregledaj izvore",
+        "done": "Rizici mapirani"
+      },
+      "researchTargetAccounts": {
+        "title": "Istraži ciljne naloge",
+        "description": "Rangira ciljne naloge po podudarnosti i čuva listu potencijalnih kupaca sa izvorima u Files.",
+        "prompt": "Pronađi [25] ciljnih naloga koji odgovaraju našem idealnom kupcu.\n- Idealan kupac: [industrija, veličina kompanije, region]\n- Signali za kupovinu: [zapošljavanje, finansiranje, novi alati, širenje]\n- Izuzmi: postojeće kupce i otvorene poslove u [našem CRM-u]\nZa svaki: kompanija, sajt, razlog podudarnosti, signal sa vezom ka izvoru i prioritet.",
+        "criterion": "Files/sales/target-accounts.csv obuhvata traženi broj naloga sa kompanijom, sajtom, razlogom podudarnosti, signalima za kupovinu, vezama ka izvorima i prioritetom u odnosu na dati profil kupca.",
+        "start": "Istraži naloge",
+        "done": "Potencijalni kupci rangirani"
+      },
+      "draftDealFollowups": {
+        "title": "Napiši naknadne poruke za poslove",
+        "description": "Koristi istoriju poslova da pripremi neposlate nacrte naknadnih poruka u povezanom sandučetu.",
+        "prompt": "Napiši naknadne poruke za [moje otvorene poslove bez odgovora u 7 dana].\n- Poslovi: [faza u CRM-u ili nazivi poslova]\n- Ton: [kratak i direktan]\n- Svaki nacrt: poslednji kontekst, jedan jasan sledeći korak, predloženo vreme\nSačuvaj ih kao nacrte u povezanom sandučetu. Nemoj ih slati.",
+        "criterion": "Povezano sanduče ima neposlat nacrt za svaki izabrani posao sa primaocem, kontekstom posla i sledećim korakom; Files/sales/follow-ups.md povezuje veze ka poslovima sa vezama ka nacrtima.",
+        "start": "Pregledaj poslove",
+        "done": "Nacrti spremni"
+      },
+      "enrichSelectedLeads": {
+        "title": "Dopuni izabrane potencijalne kupce",
+        "description": "Popunjava polja potencijalnih kupaca iz izvora u povezanom CRM-u i čuva evidenciju promena u Files.",
+        "prompt": "Dopuni [potencijalne kupce kreirane ove nedelje] u [našem CRM-u].\n- Polja: [industrija, broj zaposlenih, uloga, sajt]\n- Popuni samo prazna polja. Nikada nemoj prepisati vrednost.\nBeleži svaku promenu sa izvorom. Ostavi polje prazno kada nijedan izvor ne potvrđuje vrednost.",
+        "criterion": "Files/sales/lead-enrichment.csv obuhvata svakog izabranog potencijalnog kupca sa vezom ka CRM-u, poljem, vrednostima pre i posle, vezom ka izvoru i statusom ažurirano ili nerešeno.",
+        "start": "Proveri potencijalne kupce",
+        "done": "Polja dopunjena"
+      },
+      "draftSalesProposal": {
+        "title": "Napiši prodajnu ponudu",
+        "description": "Pretvara beleške iz otkrivanja potreba i odobrene cene u nacrt ponude u Files.",
+        "prompt": "Napiši nacrt ponude za [kompanija].\n- Beleške iz otkrivanja potreba: [putanja u Files ili posao u CRM-u]\n- Obim: [šta kupuju]\n- Cena: [odobrena cena i uslovi]\n- Rok: [datum početka]\nPoveži svaku potrebu kupca sa belešku. Navedi otvorena pitanja. Označi kao nacrt.",
+        "criterion": "Files/sales/proposal.md sadrži potrebe kupca povezane sa beleškama iz otkrivanja, predloženi obim, odobrenu cenu, izuzetke, rok, otvorena pitanja i oznaku nacrta.",
+        "start": "Pročitaj beleške",
+        "done": "Ponuda napisana"
+      },
+      "prepareCallBrief": {
+        "title": "Pripremi dokument za poziv",
+        "description": "Prikuplja istoriju naloga i vesti u dokument od jedne strane u Files.",
+        "prompt": "Pripremi dokument za moj poziv sa [kompanija].\n- Sastanak: [datum i cilj poziva]\n- Prikupi: istoriju iz CRM-a, prethodne mejlove, tikete podrške, njihove nedavne vesti i oglase za posao\nZavrši sa 5 pitanja za postavljanje i 3 rizika koje treba pratiti.",
+        "criterion": "Files/sales/call-brief.md staje na jednu stranu i sadrži istoriju naloga, nedavne vesti sa vezama ka izvorima, 5 pitanja za postavljanje i 3 rizika koje treba pratiti.",
+        "start": "Pročitaj istoriju",
+        "done": "Dokument spreman"
+      },
+      "writeOutboundSequence": {
+        "title": "Napiši izlaznu sekvencu",
+        "description": "Piše kratku višekoračnu mejl sekvencu za jednu ulogu kupca u Files.",
+        "prompt": "Napiši izlaznu mejl sekvencu od [4] koraka za [uloga kupca].\n- Problem koji rešavamo: [jedna rečenica]\n- Dokaz: [rezultat kupca ili studija slučaja]\n- Poziv na akciju: [poziv od 15 minuta]\nSvaki mejl neka bude kraći od 120 reči. Samo nacrt.",
+        "criterion": "Files/sales/outbound-sequence.md sadrži traženi broj mejlova, svaki kraći od 120 reči, sa naslovom, danom slanja, navedenim dokazom i jednim pozivom na akciju.",
+        "start": "Prouči kupca",
+        "done": "Sekvenca napisana"
+      },
+      "cleanUpPipeline": {
+        "title": "Sredi prodajni pipeline",
+        "description": "Označava zastarele poslove u CRM-u i predlaže ispravke za odobrenje u Files.",
+        "prompt": "Sredi naš pipeline u [našem CRM-u].\n- Označi poslove bez aktivnosti u poslednjih [30] dana, sa prošlim datumima zatvaranja, bez iznosa ili bez vlasnika\n- Predloži sledeću akciju za svaki\nNemoj menjati nijedan posao. Navedi predložene izmene da ih odobrim.",
+        "criterion": "Files/sales/pipeline-cleanup.csv navodi svaki označeni posao sa vezom ka CRM-u, problemom, predloženom izmenom i sledećom akcijom; nijedan zapis u CRM-u nije menjan.",
+        "start": "Pregledaj pipeline",
+        "done": "Ispravke predložene"
+      },
+      "analyzeLostDeals": {
+        "title": "Analiziraj izgubljene poslove",
+        "description": "Grupiše izgubljene poslove po razlogu i vrednosti i čuva nalaze u Files.",
+        "prompt": "Pronađi zašto smo izgubili poslove u [poslednjih 6 meseci].\n- Izvori: [razlozi gubitka iz CRM-a, beleške sa poziva, mejlovi]\n- Grupiši po razlogu, sa brojem poslova i izgubljenom vrednošću\nZavrši sa 3 promene u proizvodu, cenama ili procesu.",
+        "criterion": "Files/sales/lost-deals.md grupiše izgubljene poslove po razlogu sa brojem poslova, izgubljenom vrednošću i vezama ka izvorima, i završava se sa 3 preporučene promene.",
+        "start": "Pročitaj poslove",
+        "done": "Razlozi pronađeni"
+      },
+      "buildBattlecard": {
+        "title": "Napravi battlecard",
+        "description": "Pravi battlecard sa izvorima protiv jednog konkurenta u Files.",
+        "prompt": "Napravi prodajni battlecard protiv [konkurent].\n- Obuhvati: njihove snage i slabosti, cene, uobičajene prigovore sa našim odgovorima i naše dokaze\n- Naše pobede protiv njih: [nazivi poslova ili CRM filter]\nNavedi datiran izvor za svaku tvrdnju o njima.",
+        "criterion": "Files/sales/battlecard.md obuhvata snage, slabosti, cene, prigovore sa odgovorima i dokaze, sa datiranim izvorom za svaku tvrdnju o konkurentu.",
+        "start": "Istraži rivala",
+        "done": "Battlecard spreman"
+      },
+      "forecastQuarter": {
+        "title": "Prognoziraj kvartal",
+        "description": "Pravi prognoze commit i best-case iz CRM-a u Files.",
+        "prompt": "Pripremi prodajnu prognozu za [ovaj kvartal].\n- Pipeline: [naš CRM]\n- Pravila: [commit = kasna faza, best case = srednja faza]\n- Cilj: [kvota]\nNavedi ukupne iznose za commit, best case i pipeline, uporedi ih sa ciljem i navedi poslove koji pomeraju broj.",
+        "criterion": "Files/sales/forecast.md navodi ukupne iznose za commit, best case i pipeline u odnosu na cilj, korišćena pravila faza i poslove koji pomeraju broj, sa vezama ka CRM-u.",
+        "start": "Pročitaj pipeline",
+        "done": "Prognoza spremna"
+      },
+      "draftLaunchCampaign": {
+        "title": "Napiši kampanju za lansiranje",
+        "description": "Pretvara opis proizvoda u tekstove kampanje i kontrolnu listu za lansiranje u Files.",
+        "prompt": "Napiši nacrt kampanje za lansiranje [funkcije ili proizvoda].\n- Opis: [putanja u Files ili kratak opis]\n- Publika: [kome je namenjeno]\n- Kanali: [mejl, blog, LinkedIn, X]\n- Datum lansiranja: [datum]\nNapiši svaki sadržaj, poveži izvor za svaku tvrdnju i dodaj kontrolnu listu za lansiranje.",
+        "criterion": "Files/marketing/launch-campaign.md sadrži publiku, poruku, nacrte za svaki traženi kanal, pozive na akciju, veze ka izvorima za tvrdnje i kontrolnu listu za lansiranje.",
+        "start": "Pročitaj opis",
+        "done": "Kampanja napisana"
+      },
+      "findContentGaps": {
+        "title": "Pronađi praznine u sadržaju",
+        "description": "Upoređuje postojeće stranice sa namerom pretrage i čuva rangirane opise članaka u Files.",
+        "prompt": "Pronađi praznine u sadržaju na [našem sajtu] za [tema].\n- Konkurenti: [2 ili 3 sajta]\n- Publika: [ko traži ovu temu]\nRangiraj [10] tema po nameri pretrage i podudarnosti. Za svaku daj opis i okvir.",
+        "criterion": "Files/marketing/content-gaps.md sadrži dogovoreni broj rangiranih tema, nameru publike, praznine postojećih stranica, datirane izvore pretrage i okvir za svaku temu.",
+        "start": "Uporedi stranice",
+        "done": "Opisi spremni"
+      },
+      "rewriteLandingPage": {
+        "title": "Prepiši odredišnu stranicu",
+        "description": "Pregleda odredišnu stranicu i čuva izmenjen tekst sa potkrepljenim tvrdnjama u Files.",
+        "prompt": "Prepiši našu odredišnu stranicu na [URL].\n- Publika: [ko stiže na nju]\n- Cilj: [registracije, zahtevi za demo]\n- Dokazi koje možemo koristiti: [logotipi kupaca, brojevi, citati]\nZadrži samo tvrdnje koje možemo potkrepiti. Označi svaku izmenu i razlog.",
+        "criterion": "Files/marketing/landing-page.md sadrži izmenjen tekst po odeljcima, razlog za svaku izmenu i izvor za svaku tvrdnju.",
+        "start": "Pregledaj stranicu",
+        "done": "Tekst napisan"
+      },
+      "analyzeCampaignResults": {
+        "title": "Analiziraj rezultate kampanje",
+        "description": "Proverava potrošnju i konverzije kampanje i čuva izveštaj o rezultatima u Files.",
+        "prompt": "Napravi izveštaj o rezultatima [kampanja].\n- Podaci: [reklamne platforme, CRM, veb analitika]\n- Period: [datumi]\n- Cilj: [cena po potencijalnom kupcu ili konverzije]\nNavedi potrošnju, potencijalne kupce, cenu po potencijalnom kupcu i konverzije po kanalu. Preporuči šta smanjiti, a šta pojačati.",
+        "criterion": "Files/marketing/campaign-results.md sadrži potrošnju, potencijalne kupce, cenu po potencijalnom kupcu i konverzije po kanalu za period, poređenje sa ciljem, izvore podataka i preporuke.",
+        "start": "Prikupi rezultate",
+        "done": "Izveštaj spreman"
+      },
+      "writeBlogPost": {
+        "title": "Napiši blog objavu",
+        "description": "Istražuje temu i čuva nacrt objave sa izvorima u Files.",
+        "prompt": "Napiši blog objavu o [tema].\n- Čitalac: [ko je i šta želi da nauči]\n- Ugao: [naše gledište]\n- Dužina: [1.200 reči]\nPoveži izvor za svaku činjenicu. Dodaj meta opis i 3 opcije naslova.",
+        "criterion": "Files/marketing/blog-post.md sadrži nacrt blizu tražene dužine, 3 opcije naslova, meta opis kraći od 160 znakova i vezu ka izvoru za svaku činjenicu.",
+        "start": "Istraži temu",
+        "done": "Objava napisana"
+      },
+      "planContentCalendar": {
+        "title": "Planiraj kalendar sadržaja",
+        "description": "Planira mesec sadržaja po kanalu, datumu i cilju u Files.",
+        "prompt": "Isplaniraj naš kalendar sadržaja za [sledeći mesec].\n- Kanali: [blog, LinkedIn, njuzleter]\n- Teme: [lansiranja, priče kupaca, vodiči]\n- Ritam: [objava nedeljno]\nZa svaki sadržaj: datum, kanal, naslov, uloga vlasnika i cilj.",
+        "criterion": "Files/marketing/content-calendar.csv pokriva mesec u navedenom ritmu sa datumom, kanalom, naslovom, temom, ulogom vlasnika i ciljem za svaki sadržaj.",
+        "start": "Izaberi teme",
+        "done": "Kalendar isplaniran"
+      },
+      "draftNewsletter": {
+        "title": "Napiši njuzleter",
+        "description": "Prikuplja vesti o proizvodu i kupcima u nacrt njuzletera u Files.",
+        "prompt": "Napiši nacrt našeg [mesečnog] njuzletera.\n- Uključi: novosti o proizvodu iz [liste izmena], [jedna priča kupca], predstojeće događaje\n- Čitalac: [kupci i potencijalni kupci]\nDaj 3 naslova poruke. Neka bude kraće od 500 reči. Samo nacrt: nemoj ga slati.",
+        "criterion": "Files/marketing/newsletter.md ima manje od 500 reči i sadrži 3 naslova poruke, novosti o proizvodu sa vezama, priču kupca i predstojeće događaje.",
+        "start": "Prikupi vesti",
+        "done": "Njuzleter napisan"
+      },
+      "repurposeContent": {
+        "title": "Preradi sadržaj",
+        "description": "Pretvara jedan dugačak sadržaj u objave za društvene mreže po kanalu u Files.",
+        "prompt": "Pretvori [blog objavu ili vezu ka vebinaru] u objave za društvene mreže.\n- Kanali: [LinkedIn, X]\n- Broj: [5 po kanalu]\nSvaka objava je samostalna, vodi nazad do izvora i staje u ograničenje dužine kanala.",
+        "criterion": "Files/marketing/social-posts.md sadrži traženi broj objava po kanalu, svaka u okviru ograničenja dužine kanala i sa vezom ka izvornom sadržaju.",
+        "start": "Pročitaj izvor",
+        "done": "Objave napisane"
+      },
+      "auditSeo": {
+        "title": "Uradi SEO reviziju",
+        "description": "Proverava ključne stranice zbog problema sa pretragom i rangira ispravke u Files.",
+        "prompt": "Uradi SEO reviziju [našeg sajta].\n- Ključne stranice: [početna, cene, 10 najboljih blog objava]\nProveri naslove, meta opise, zaglavlja, neispravne veze, brzinu stranice i unutrašnje veze. Rangiraj ispravke po uticaju.",
+        "criterion": "Files/marketing/seo-audit.md navodi svaku proverenu stranicu sa njenim problemima, dokazom za svaki i ispravkama rangiranim po uticaju.",
+        "start": "Skeniraj stranice",
+        "done": "Ispravke rangirane"
+      },
+      "writeCaseStudy": {
+        "title": "Napiši studiju slučaja",
+        "description": "Pretvara materijal kupca u nacrt studije slučaja u Files.",
+        "prompt": "Napiši studiju slučaja kupca [kupac].\n- Izvorni materijal: [snimak poziva, beleške, metrike]\n- Struktura: izazov, rešenje, rezultati sa brojevima, citat\nKoristi samo činjenice iz izvora. Označi citate kojima je potrebno odobrenje kupca.",
+        "criterion": "Files/marketing/case-study.md sadrži izazov, rešenje, rezultate sa brojevima iz izvora, citate označene za odobrenje i izvor za svaku činjenicu.",
+        "start": "Pročitaj izvore",
+        "done": "Studija slučaja napisana"
+      },
+      "draftSupportReplies": {
+        "title": "Napiši odgovore podrške",
+        "description": "Piše nepoštate odgovore na otvorene tikete iz centra za pomoć.",
+        "prompt": "Napiši nacrte odgovora na [otvorene tikete starije od 24 sata].\n- Helpdesk: [povezani helpdesk ili sanduče podrške]\n- Ton: [prijateljski i kratak]\n- Koristi centar za pomoć i prethodne odgovore i navedi ih\nSačuvaj samo nacrte. Nemoj slati. Označi tikete na koje ne možeš odgovoriti.",
+        "criterion": "Svaki izabrani tiket ima neposlat nacrt odgovora koji navodi članak iz pomoći ili prethodni odgovor; Files/support/reply-drafts.md navodi veze ka tiketima, status nacrta i tikete označene kao bez odgovora.",
+        "start": "Pročitaj tikete",
+        "done": "Odgovori napisani"
+      },
+      "triageSupportBacklog": {
+        "title": "Razvrstaj zaostale tikete",
+        "description": "Označava i prioritizuje otvorene tikete i čuva razvrstavanje u Files.",
+        "prompt": "Razvrstaj naše zaostale tikete podrške u [povezanom helpdesku].\n- Oznake: greška, pitanje, zahtev za funkciju, naplata, hitno\n- Pravilo prioriteta: [prvo kupci koji plaćaju]\nGrupiši duplikate. Navedi 5 najčešćih problema po broju tiketa.",
+        "criterion": "Files/support/triage.csv obuhvata svaki otvoreni tiket sa vezom, oznakom, prioritetom i grupom duplikata; Files/support/triage.md navodi 5 najčešćih problema po broju tiketa.",
+        "start": "Pročitaj zaostatak",
+        "done": "Zaostatak razvrstan"
+      },
+      "draftHelpArticle": {
+        "title": "Napiši članak za pomoć",
+        "description": "Pretvara tikete i ponašanje proizvoda u članak za pomoć korak po korak u Files.",
+        "prompt": "Napiši članak za pomoć o [funkcija ili pitanje].\n- Izvori: [tiketi, dokumentacija, proizvod]\n- Čitalac: [novi korisnici]\nPiši korak po korak, sa očekivanim rezultatom svakog koraka i uobičajenim greškama.",
+        "criterion": "Files/support/help-article.md sadrži numerisane korake sa očekivanim rezultatima, uobičajene greške sa rešenjima i veze ka tiketima i dokumentaciji na kojima se zasniva.",
+        "start": "Pročitaj tikete",
+        "done": "Članak napisan"
+      },
+      "flagAtRiskAccounts": {
+        "title": "Označi ugrožene naloge",
+        "description": "Pronalazi naloge sa signalima odlaska i čuva rangiranu listu u Files.",
+        "prompt": "Pronađi naloge pod rizikom od odlaska u [narednih 60 dana].\n- Signali: [opadajuća upotreba, otvoreni tiketi, niske ocene iz anketa, datum obnove]\n- Podaci: [analitika proizvoda, helpdesk, CRM]\nRangiraj po ugroženom prihodu. Za svaki navedi dokaze i predloženu akciju.",
+        "criterion": "Files/support/at-risk-accounts.md rangira naloge po ugroženom prihodu, sa signalima, vezama ka izvorima i predloženom akcijom za svaki.",
+        "start": "Proveri signale",
+        "done": "Rizici označeni"
+      },
+      "buildFaqFromTickets": {
+        "title": "Napravi FAQ",
+        "description": "Pronalazi najčešća pitanja i čuva odgovore sa izvorima u Files.",
+        "prompt": "Napravi FAQ iz tiketa [prošlog meseca].\n- Broj: [20] najčešćih pitanja\n- Odgovori: iz centra za pomoć i prethodnih odgovora\nOznači svako pitanje koje nema članak u pomoći.",
+        "criterion": "Files/support/faq.md navodi traženi broj pitanja rangiranih po broju tiketa, svako sa odgovorom, vezom ka izvoru i oznakom kada ne postoji članak u pomoći.",
+        "start": "Prebroj pitanja",
+        "done": "FAQ napravljen"
+      },
+      "reviewReplyQuality": {
+        "title": "Proceni kvalitet odgovora",
+        "description": "Ocenjuje uzorak odgovora podrške i čuva beleške za usmeravanje u Files.",
+        "prompt": "Proceni kvalitet odgovora podrške [prošle nedelje].\n- Uzorak: [30] odgovora\n- Ocena: tačnost, ton, brzina, rešenje\nDaj primere i 3 tačke za usmeravanje.",
+        "criterion": "Files/support/quality-review.md ocenjuje svaki odgovor iz uzorka po 4 kriterijuma sa vezama ka tiketima i navodi 3 tačke za usmeravanje sa primerima.",
+        "start": "Uzmi uzorak odgovora",
+        "done": "Provera završena"
+      },
+      "writeSavedReplies": {
+        "title": "Napiši sačuvane odgovore",
+        "description": "Piše odgovore za višekratnu upotrebu za najčešća pitanja u Files.",
+        "prompt": "Napiši sačuvane odgovore za naših [10] najčešćih pitanja.\n- Izvor: [povezani helpdesk]\n- Ton: [prijateljski i kratak]\nSvaki odgovor povezuje odgovarajući članak u pomoći i ima rezervisano mesto za ime kupca.",
+        "criterion": "Files/support/saved-replies.md sadrži traženi broj odgovora, svaki sa pitanjem na koje odgovara, brojem tiketa i vezom ka članku u pomoći.",
+        "start": "Pronađi pitanja",
+        "done": "Odgovori napisani"
+      },
+      "turnBugsIntoIssues": {
+        "title": "Pretvori prijave grešaka u zadatke",
+        "description": "Spaja tikete o greškama u ponovljive inženjerske zadatke u Files.",
+        "prompt": "Pretvori prijave grešaka [ove nedelje] u inženjerske zadatke.\n- Izvor: [tiketi označeni kao greška u povezanom helpdesku]\n- Za svaki: koraci za reprodukciju, broj pogođenih kupaca, ozbiljnost, veze ka tiketima\nSpoji duplikate. Sačuvaj zadatke da ih pregledam pre nego što se bilo šta prijavi.",
+        "criterion": "Files/support/bug-issues.md sadrži po jedan zadatak za svaku zasebnu grešku sa koracima za reprodukciju, brojem pogođenih kupaca, ozbiljnošću i svim povezanim vezama ka tiketima.",
+        "start": "Pročitaj tikete o greškama",
+        "done": "Zadaci napisani"
+      },
+      "findOutdatedArticles": {
+        "title": "Pronađi zastarele članke u pomoći",
+        "description": "Upoređuje centar za pomoć sa proizvodom i čuva ispravke u Files.",
+        "prompt": "Pronađi zastarele članke u našem centru za pomoć na [URL].\n- Uporedi sa: trenutnim proizvodom i [listom izmena]\nZa svaku zastarelu tvrdnju: vezu ka članku, stari tekst i ispravljen tekst.",
+        "criterion": "Files/support/outdated-articles.md navodi svaku zastarelu tvrdnju sa vezom ka članku, starim tekstom, ispravljenim tekstom i izvorom ispravke.",
+        "start": "Pročitaj članke",
+        "done": "Ispravke navedene"
+      },
+      "reportSupportMetrics": {
+        "title": "Izvesti o metrikama podrške",
+        "description": "Izveštava o obimu, brzini i zadovoljstvu za period u Files.",
+        "prompt": "Napravi izveštaj o učinku podrške za [prošli mesec].\n- Podaci: [povezani helpdesk]\nNavedi vreme prvog odgovora, vreme rešavanja, obim po kategoriji i zadovoljstvo. Uporedi svaku vrednost sa prethodnim periodom.",
+        "criterion": "Files/support/metrics.md sadrži vreme prvog odgovora, vreme rešavanja, obim po kategoriji i zadovoljstvo za period, svaku vrednost upoređenu sa prethodnim periodom.",
+        "start": "Prikupi podatke",
+        "done": "Izveštaj spreman"
+      },
+      "reconcileExpenses": {
+        "title": "Uskladi troškove",
+        "description": "Povezuje transakcije sa računima i kategorijama u Files.",
+        "prompt": "Uskladi troškove za [prošli mesec].\n- Računi: [bankovni računi i računi kartica]\n- Računi (potvrde): [Files folder ili sanduče]\nPoveži svaku transakciju sa potvrdom i kategorijom. Navedi stavke bez para.",
+        "criterion": "Files/finance/expense-reconciliation.csv obuhvata svaku transakciju u periodu sa iznosom, kategorijom, vezom ka povezanoj potvrdi ili statusom bez para.",
+        "start": "Pročitaj transakcije",
+        "done": "Troškovi usklađeni"
+      },
+      "prepareInvoiceFollowups": {
+        "title": "Naplata dospelih faktura",
+        "description": "Priprema opomene za dospele fakture, bez slanja.",
+        "prompt": "Pripremi opomene za fakture čije je dospeće prekoračeno za više od [14 dana].\n- Izvor: [Stripe ili alat za računovodstvo]\n- Ton: [pristojan, strožiji nakon 30 dana]\nSačuvaj samo nacrte. Nemoj ih slati.",
+        "criterion": "Povezano prijemno sanduče ima neposlat nacrt za svaku dospelu fakturu; Files/finance/invoice-followups.md navodi broj fakture, kupca, iznos, broj dana kašnjenja i vezu do nacrta.",
+        "start": "Pronađi dospele",
+        "done": "Opomene pripremljene"
+      },
+      "auditSubscriptionSpend": {
+        "title": "Revizija troškova softvera",
+        "description": "Pronalazi duple i nekorišćene pretplate i rangira uštede u Files.",
+        "prompt": "Uradi reviziju naših softverskih pretplata za [poslednjih 12 meseci].\n- Izvori: [izvodi sa kartice, alat za računovodstvo]\nPronađi duplikate, nekorišćena mesta i poskupljenja. Rangiraj uštede.",
+        "criterion": "Files/finance/subscription-audit.md navodi svaku pretplatu sa godišnjim troškom, vlasnikom, dokazom o korišćenju i rangiranim uštedama sa izvorom svake cifre.",
+        "start": "Pronađi troškove",
+        "done": "Uštede rangirane"
+      },
+      "prepareCashForecast": {
+        "title": "Priprema prognoze novčanog toka",
+        "description": "Pravi nedeljnu prognozu novčanog toka u tri scenarija u Files.",
+        "prompt": "Napravi prognozu novčanog toka za [13] nedelja.\n- Početno stanje: [stanje na računu ili izvor]\n- Prilivi: [Stripe, otvorene fakture]\n- Odlivi: [plate, kirija, dobavljači]\nDaj osnovni, niski i visoki scenario. Označi nedelje u kojima gotovina padne ispod [3 meseca potrošnje].",
+        "criterion": "Files/finance/cash-forecast.csv pokriva tražene nedelje sa prilivima, odlivima i završnim stanjem u osnovnom, niskom i visokom scenariju; označene nedelje su obeležene.",
+        "start": "Prikupi stanja",
+        "done": "Prognoza napravljena"
+      },
+      "prepareMonthEndClose": {
+        "title": "Priprema zatvaranja meseca",
+        "description": "Proverava svaki korak zatvaranja i čuva šta je završeno, a šta ostaje u Files.",
+        "prompt": "Pripremi zatvaranje meseca za [prošli mesec].\n- Koraci: [usklađivanje banke, razgraničenja, odloženi prihodi, plate, interkompanijski odnosi]\n- Alati: [alat za računovodstvo, Stripe]\nNavedi svaki korak kao završen ili otvoren, sa dokazom ili onim što ga blokira.",
+        "criterion": "Files/finance/month-end-close.md navodi svaki korak zatvaranja kao završen ili otvoren, sa dokazom za završene korake i preprekom za otvorene.",
+        "start": "Proveri korake",
+        "done": "Zatvaranje pripremljeno"
+      },
+      "explainBudgetVariance": {
+        "title": "Objašnjenje odstupanja od budžeta",
+        "description": "Upoređuje ostvareno sa budžetom i objašnjava velika odstupanja u Files.",
+        "prompt": "Uporedi ostvareno sa budžetom za [prošli kvartal].\n- Budžet: [putanja u Files]\n- Ostvareno: [alat za računovodstvo]\nObjasni svaku stavku koja odstupa za više od [10%].",
+        "criterion": "Files/finance/budget-variance.md upoređuje ostvareno sa budžetom po stavkama i objašnjava svaku stavku iznad praga uz transakcije koje stoje iza nje.",
+        "start": "Uporedi stavke",
+        "done": "Odstupanje objašnjeno"
+      },
+      "calculateUnitEconomics": {
+        "title": "Obračun jedinične ekonomije",
+        "description": "Obračunava CAC, LTV i period povraćaja sa formulama u Files.",
+        "prompt": "Izračunaj našu jediničnu ekonomiju za [prošli kvartal].\n- Podela po: [paketu ili segmentu kupaca]\n- Podaci: [Stripe, CRM, troškovi oglašavanja]\nDaj CAC, LTV, period povraćaja i bruto maržu. Prikaži svaku formulu i izvor.",
+        "criterion": "Files/finance/unit-economics.md sadrži CAC, LTV, period povraćaja i bruto maržu po segmentu, sa formulom i izvorom podataka za svaku vrednost.",
+        "start": "Povuci podatke",
+        "done": "Ekonomija obračunata"
+      },
+      "collectTaxDocuments": {
+        "title": "Prikupljanje poreske dokumentacije",
+        "description": "Prikuplja ono što treba računovođi i navodi šta nedostaje u Files.",
+        "prompt": "Prikupi dokumenta koja su našem računovođi potrebna za [ovogodišnju poresku prijavu].\n- Spisak: [računovođin spisak ili putanja u Files]\n- Izvori: [Files, prijemno sanduče, alat za računovodstvo]\nPoveži svaki pronađeni dokument. Navedi šta nedostaje.",
+        "criterion": "Files/finance/tax-documents.md navodi svaku stavku sa spiska uz vezu do pronađenog dokumenta ili status da nedostaje.",
+        "start": "Pretraži fajlove",
+        "done": "Dokumenta prikupljena"
+      },
+      "reviewRenewals": {
+        "title": "Pregled predstojećih obnova",
+        "description": "Navodi ugovore koji se uskoro obnavljaju, sa rokovima otkaza i savetom u Files.",
+        "prompt": "Pregledaj ugovore sa dobavljačima koji se obnavljaju u [narednih 90 dana].\n- Ugovori: [fascikla u Files ili alat za ugovore]\nZa svaki: datum obnove, rok za otkaz, cena, automatska obnova i preporuka da se obnovi, preispita ili otkaže.",
+        "criterion": "Files/finance/renewals.md navodi svaki ugovor koji se obnavlja u tom periodu sa datumom obnove, rokom za otkaz, cenom, automatskom obnovom i preporukom.",
+        "start": "Pročitaj ugovore",
+        "done": "Obnove pregledane"
+      },
+      "modelHiringCost": {
+        "title": "Model troškova zapošljavanja",
+        "description": "Modeluje trošak plana zapošljavanja i uticaj na rezervu novca u Files.",
+        "prompt": "Modeluj trošak za [zapošljavanje 5 inženjera sledeće godine].\n- Plate: [opsezi ili ih uporedi sa tržištem]\n- Datumi početka: [po kvartalima]\n- Trenutna potrošnja i gotovina: [finansijska tabela]\nUključi beneficije, poreze, opremu i regrutaciju. Prikaži uticaj na rezervu novca (runway).",
+        "criterion": "Files/finance/hiring-cost.csv sadrži mesečni trošak po zaposlenom sa platom, beneficijama, porezima, opremom i regrutacijom, kao i dobijenu rezervu novca sa zapošljavanjem i bez njega.",
+        "start": "Prikupi troškove",
+        "done": "Trošak modelovan"
+      },
+      "compareVendorQuotes": {
+        "title": "Poređenje ponuda dobavljača",
+        "description": "Upoređuje ponude sa zahtevima i čuva preporuku u Files.",
+        "prompt": "Uporedi ponude za [ono što kupujemo].\n- Ponude: [fascikla u Files ili email razmena]\n- Obavezni uslovi: [zahtevi]\nUporedi cenu, uslove, isporuku i podršku. Preporuči jednu.",
+        "criterion": "Files/operations/vendor-comparison.md upoređuje svaku ponudu po ceni, uslovima, isporuci, podršci i svakom obaveznom uslovu, sa izvorom za svaku vrednost i jednom preporukom.",
+        "start": "Pročitaj ponude",
+        "done": "Dobavljač izabran"
+      },
+      "documentBusinessProcess": {
+        "title": "Dokumentovanje procesa",
+        "description": "Piše dokument o procesu korak po korak na osnovu stvarnih izvora u Files.",
+        "prompt": "Dokumentuj kako [uvodimo novog kupca].\n- Izvori: [beleške, alati, razmene u četu]\nZa svaki korak: uloga odgovorne osobe, alat, ulazi, izlazi i šta može poći po zlu.",
+        "criterion": "Files/operations/process.md sadrži numerisane korake, svaki sa ulogom odgovorne osobe, alatom, ulazima, izlazima, tačkama otkaza i izvorom iz kog je saznat.",
+        "start": "Prikupi beleške",
+        "done": "Proces dokumentovan"
+      },
+      "reconcileInventoryRecords": {
+        "title": "Usklađivanje zaliha",
+        "description": "Upoređuje zalihe između dva sistema i navodi razlike u Files.",
+        "prompt": "Uskladi zalihe između [prodavnice] i [tabele magacina].\n- Poklapanje po: [SKU]\nNavedi svaku razliku sa oba stanja i verovatnim uzrokom.",
+        "criterion": "Files/operations/inventory-reconciliation.csv navodi svaki SKU sa razlikom, oba stanja, razliku i verovatan uzrok.",
+        "start": "Uporedi evidencije",
+        "done": "Razlike navedene"
+      },
+      "prepareProjectHandoff": {
+        "title": "Priprema primopredaje projekta",
+        "description": "Sakuplja stanje projekta, vlasnike i otvoren posao u dokument o primopredaji u Files.",
+        "prompt": "Pripremi primopredaju za [projekat].\n- Novi vlasnik: [uloga]\n- Izvori: [fascikla u Files, sistem za praćenje zadataka, kanal u četu]\nObuhvati cilj, trenutno stanje, otvoren posao, donete odluke, kontakte po ulozi i rizike.",
+        "criterion": "Files/operations/handoff.md sadrži cilj, trenutno stanje, otvoren posao sa vezama, donete odluke, kontakte po ulozi i rizike.",
+        "start": "Prikupi kontekst",
+        "done": "Primopredaja spremna"
+      },
+      "auditToolAccess": {
+        "title": "Revizija pristupa alatima",
+        "description": "Pronalazi rizične ili nekorišćene naloge u alatima i navodi ispravke u Files.",
+        "prompt": "Uradi reviziju ko ima pristup [našim radnim alatima].\n- Alati: [email paket, host za kod, ćaskanje]\n- Uporedi sa: [trenutnim spiskom tima]\nOznači naloge osoba koje su otišle, nekorišćene naloge i višak administratora. Ništa ne menjaj.",
+        "criterion": "Files/operations/access-audit.md navodi svaki označeni nalog sa alatom, razlogom i preporučenom radnjom; nijedan pristup nije promenjen.",
+        "start": "Navedi naloge",
+        "done": "Pristup revidiran"
+      },
+      "planTeamOffsite": {
+        "title": "Planiranje timskog okupljanja",
+        "description": "Upoređuje lokacije i pravi budžet i agendu u Files.",
+        "prompt": "Isplaniraj naše timsko okupljanje za [20 ljudi] u [grad, mesec].\n- Budžet: [ukupno]\n- Ciljevi: [planiranje, vreme za tim]\nDaj 3 opcije za lokaciju, budžet, agendu i beleške o putovanju.",
+        "criterion": "Files/operations/offsite-plan.md sadrži 3 opcije za lokaciju sa cenama i vezama, budžet u okviru navedenog iznosa, agendu po danima i beleške o putovanju.",
+        "start": "Pronađi lokacije",
+        "done": "Okupljanje isplanirano"
+      },
+      "findAutomationWork": {
+        "title": "Pronalaženje posla za automatizaciju",
+        "description": "Pronalazi ponovljene ručne zadatke i procenjuje uštedu vremena u Files.",
+        "prompt": "Pronađi ručni posao koji možemo automatizovati u [finansijama i operacijama].\n- Izvori: [dokumenta o procesima, razmene u četu, ponavljajući zadaci]\nZa svaki zadatak: koliko često, utrošeno vreme, alat za automatizaciju i sati ušteđeni mesečno.",
+        "criterion": "Files/operations/automation-candidates.md rangira zadatke po satima ušteđenim mesečno, svaki sa učestalošću, utrošenim vremenom, predloženim alatom i izvorom.",
+        "start": "Pronađi zadatke",
+        "done": "Uštede rangirane"
+      },
+      "trackDelayedOrders": {
+        "title": "Praćenje kasnih porudžbina",
+        "description": "Pronalazi porudžbine koje kasne i njihove uzroke i čuva ih u Files.",
+        "prompt": "Pronađi porudžbine koje kasne više od [3 dana] u [prodavnici ili sistemu porudžbina].\nZa svaku: porudžbina, kupac, obećani datum, trenutni status i uzrok. Predloži rešenje za glavne uzroke.",
+        "criterion": "Files/operations/delayed-orders.csv navodi svaku porudžbinu koja kasni sa obećanim datumom, statusom i uzrokom; Files/operations/delayed-orders.md imenuje glavne uzroke i rešenja.",
+        "start": "Proveri porudžbine",
+        "done": "Kašnjenja pronađena"
+      },
+      "prepareComplianceChecklist": {
+        "title": "Priprema liste za usklađenost",
+        "description": "Povezuje kontrole sa dokazima i navodi praznine u Files.",
+        "prompt": "Pripremi listu spremnosti za [SOC 2].\n- Obim: [sistemi i timovi]\n- Dokazi: [fascikla u Files, alati]\nZa svaku kontrolu: trenutni dokaz, praznina i uloga odgovorne osobe.",
+        "criterion": "Files/operations/compliance-checklist.md navodi svaku kontrolu u obimu sa povezanim dokazom ili prazninom i ulogom odgovorne osobe.",
+        "start": "Poveži kontrole",
+        "done": "Praznine navedene"
+      },
+      "writeWeeklyOpsReport": {
+        "title": "Pisanje operativnog izveštaja",
+        "description": "Sakuplja operativne brojke u nedeljni izveštaj u Files.",
+        "prompt": "Napiši operativni izveštaj za [ovu nedelju].\n- Brojke: [porudžbine, vreme ispunjenja, tiketi, troškovi]\n- Izvori: [prodavnica, služba podrške, alat za računovodstvo]\nUporedi svaku brojku sa prošlom nedeljom. Imenuj 3 stvari kojima treba posvetiti pažnju.",
+        "criterion": "Files/operations/weekly-report.md sadrži svaku traženu brojku sa izvorom i promenom u odnosu na prošlu nedelju, kao i 3 stavke kojima treba posvetiti pažnju.",
+        "start": "Povuci brojke",
+        "done": "Izveštaj napisan"
+      },
+      "draftJobDescription": {
+        "title": "Nacrt opisa posla",
+        "description": "Piše opis posla sa jasnim ishodima i zahtevima u Files.",
+        "prompt": "Napiši opis posla za [senior backend inženjera].\n- Tim i rukovodilac: [tim, uloga rukovodioca]\n- Ishodi u prvoj godini: [za šta će biti zadužen]\n- Obavezni uslovi: [veštine]\n- Lokacija i raspon plate: [detalji]\nKoristi inkluzivan jezik. Neka bude kraće od 600 reči.",
+        "criterion": "Files/people/job-description.md ima manje od 600 reči i sadrži sažetak uloge, ishode u prvoj godini, obavezne i poželjne veštine, lokaciju i raspon plate.",
+        "start": "Definiši ulogu",
+        "done": "Opis sastavljen"
+      },
+      "buildOnboardingPlan": {
+        "title": "Izrada plana uvođenja",
+        "description": "Pravi plan uvođenja od 30-60-90 dana na osnovu timskih dokumenata u Files.",
+        "prompt": "Napravi plan uvođenja od 30-60-90 dana za [ulogu].\n- Timska dokumenta: [fascikla u Files]\n- Alati koje treba naučiti: [alati koje će koristiti]\n- Mentor: [uloga]\nDaj ciljeve, zadatke i proveru napretka za svaki period.",
+        "criterion": "Files/people/onboarding-plan.md sadrži ciljeve, zadatke i proveru napretka za dane 1-30, 31-60 i 61-90, sa vezama do dokumenata koje svaki zadatak koristi.",
+        "start": "Pročitaj timska dokumenta",
+        "done": "Plan spreman"
+      },
+      "prepareInterviewKit": {
+        "title": "Priprema kompleta za intervju",
+        "description": "Piše strukturirana pitanja za intervju i kartice za ocenjivanje u Files.",
+        "prompt": "Napravi komplet za intervju za [ulogu].\n- Opis posla: [putanja u Files]\n- Faze: [preliminarni razgovor, tehnički, sa timom, završni]\nZa svaku fazu: pitanja, šta jak odgovor pokazuje i kartica za ocenjivanje od 1 do 4.",
+        "criterion": "Files/people/interview-kit.md pokriva svaku fazu sa pitanjima, signalima jakog odgovora i karticom za ocenjivanje od 1 do 4 vezanom za opis posla.",
+        "start": "Pročitaj ulogu",
+        "done": "Komplet spreman"
+      },
+      "organizePeopleHandbook": {
+        "title": "Uređivanje priručnika",
+        "description": "Sakuplja kadrovske politike u jedan priručnik sa označenim prazninama u Files.",
+        "prompt": "Uredi naš kadrovski priručnik iz [fascikle u Files].\n- Odeljci: slobodno vreme, beneficije, troškovi, rad na daljinu, ponašanje, bezbednost\nOznači politike koje su u sukobu, nedostaju ili su zastarele.",
+        "criterion": "Files/people/handbook.md sadrži svaki navedeni odeljak sa izvornim dokumentima i označava svaku politiku koja je u sukobu, nedostaje ili je zastarela.",
+        "start": "Pročitaj politike",
+        "done": "Priručnik uređen"
+      },
+      "sourceCandidates": {
+        "title": "Pronalaženje kandidata",
+        "description": "Pronalazi kandidate iz javnih izvora i rangira ih po podudarnosti u Files.",
+        "prompt": "Pronađi [20] kandidata za [ulogu].\n- Obavezni uslovi: [veštine i iskustvo]\n- Lokacija: [region ili na daljinu]\nKoristi samo javne izvore. Za svakog: veza do profila, razlog podudarnosti i dokaz.",
+        "criterion": "Files/people/candidates.csv navodi traženi broj kandidata sa vezom do javnog profila, trenutnom ulogom, razlogom podudarnosti i dokazom za svaki obavezni uslov.",
+        "start": "Pretraži profile",
+        "done": "Kandidati rangirani"
+      },
+      "benchmarkCompensation": {
+        "title": "Poređenje plata sa tržištem",
+        "description": "Upoređuje platu za ulogu i lokaciju sa tržišnim podacima sa izvorima u Files.",
+        "prompt": "Uporedi platu za [ulogu] u [lokaciji] sa tržištem.\n- Nivo: [mid, senior, staff]\n- Naš trenutni raspon: [raspon]\nDaj tržišni raspon za osnovnu platu, bonus i akcije, sa datiranim izvorom za svaku vrednost.",
+        "criterion": "Files/people/pay-benchmark.md sadrži tržišne raspone osnovne plate, bonusa i akcija za ulogu, nivo i lokaciju, svaki sa datiranim izvorom, kao i poređenje sa našim rasponom.",
+        "start": "Pronađi podatke",
+        "done": "Plate upoređene"
+      },
+      "prepareReviewCycle": {
+        "title": "Priprema ciklusa ocenjivanja",
+        "description": "Piše pitanja za ocenjivanje, skalu ocena i vremenski plan u Files.",
+        "prompt": "Pripremi ciklus ocenjivanja učinka za [ovo polugodište].\n- Timovi: [svi timovi]\n- Format: [samoocena, ocena rukovodioca, povratne informacije kolega]\nDaj pitanja, skalu ocena sa definicijama i vremenski plan sa datumima.",
+        "criterion": "Files/people/review-cycle.md sadrži pitanja po vrsti ocenjivanja, skalu ocena sa definicijom za svaki nivo i vremenski plan sa datumima.",
+        "start": "Sastavi pitanja",
+        "done": "Ciklus spreman"
+      },
+      "summarizeEngagementSurvey": {
+        "title": "Sažimanje ankete",
+        "description": "Grupiše odgovore iz ankete u teme i radnje u Files.",
+        "prompt": "Sažmi našu anketu o angažovanosti iz [putanja u Files].\n- Uporedi sa: [prošlom anketom]\nDaj ocene po pitanju i timu, glavne teme iz komentara i 3 predložene radnje. Nikada ne imenuj osobu.",
+        "criterion": "Files/people/survey-summary.md sadrži ocene po pitanju i timu sa promenom u odnosu na prošlu anketu, teme iz komentara bez imena i 3 radnje.",
+        "start": "Pročitaj odgovore",
+        "done": "Teme pronađene"
+      },
+      "draftOfferLetter": {
+        "title": "Nacrt ponude za posao",
+        "description": "Sastavlja ponudu za posao od odobrenih uslova za pregled u Files.",
+        "prompt": "Sastavi pismo sa ponudom za [ulogu].\n- Uslovi: [plata, akcije, datum početka, lokacija]\n- Šablon: [putanja u Files do našeg šablona ponude]\nKoristi samo odobrene uslove. Označi ga za pravni pregled.",
+        "criterion": "Files/people/offer-letter.md koristi samo navedeni šablon i uslove, navodi svaki uslov na jednom mestu i označen je za pravni pregled.",
+        "start": "Pročitaj šablon",
+        "done": "Ponuda sastavljena"
+      },
+      "planTeamTraining": {
+        "title": "Planiranje obuke tima",
+        "description": "Pravi plan obuke sa terminima i materijalima u Files.",
+        "prompt": "Isplaniraj obuku za [prodajni tim] na temu [tema].\n- Nivo: [početnici ili iskusni]\n- Raspoloživo vreme: [sati nedeljno]\nDaj termine, materijale sa vezama, vežbe i način da se proveri šta je naučeno.",
+        "criterion": "Files/people/training-plan.md sadrži termine sa datumima u okviru raspoloživog vremena, materijale sa vezama, vežbe i proveru za svaki termin.",
+        "start": "Pronađi materijale",
+        "done": "Plan spreman"
+      },
+      "fixReportedBug": {
+        "title": "Ispravka prijavljene greške",
+        "description": "Reprodukuje grešku i priprema testiranu ispravku u zahtevu za izmenu na pregled.",
+        "prompt": "Ispravi ovu grešku: [šta se dešava i gde].\n- Očekivano: [šta bi trebalo da se desi]\n- Koraci za reprodukciju: [koraci ili veza do tiketa]\n- Repozitorijum: [repozitorijum]\nPrvo je reprodukuj, dodaj test koji pada, pa je ispravi u zahtevu za izmenu.",
+        "criterion": "Files/engineering/bug-fix.md povezuje zahtev za izmenu i sadrži korake reprodukcije, izlaze pre i posle, komande za testove sa rezultatima i preostala ograničenja.",
+        "start": "Reprodukuj grešku",
+        "done": "Ispravka spremna"
+      },
+      "buildScopedFeature": {
+        "title": "Izrada funkcije ograničenog obima",
+        "description": "Pravi manju funkciju sa testovima i otvara zahtev za izmenu.",
+        "prompt": "Napravi [funkciju] u [repozitorijumu].\n- Korisnička priča: [kome treba i zašto]\n- Prihvatanje: [šta mora važiti kad je gotovo]\n- Van obima: [šta ne praviti]\nDodaj testove za svaku tačku prihvatanja i otvori zahtev za izmenu.",
+        "criterion": "Files/engineering/feature.md povezuje zahtev za izmenu i svaku tačku prihvatanja povezuje sa testom i njegovim uspešnim izlazom.",
+        "start": "Pročitaj obim",
+        "done": "Funkcija napravljena"
+      },
+      "improveSlowFlow": {
+        "title": "Ubrzavanje sporog toka",
+        "description": "Meri spore stranice ili endpoint i isporučuje izmerenu ispravku.",
+        "prompt": "Ubrzaj [stranicu ili endpoint].\n- Danas: [koliko je sporo, ili izmeri]\n- Cilj: [vreme ili procenat]\nIzmeri pre i posle istom metodom, zatim otvori zahtev za izmenu.",
+        "criterion": "Files/engineering/performance.md sadrži metodu merenja, brojke pre i posle, vezu do zahteva za izmenu i podatak da li je cilj ostvaren.",
+        "start": "Izmeri tok",
+        "done": "Brzina poboljšana"
+      },
+      "patchVulnerableDependencies": {
+        "title": "Zakrpa ranjivih zavisnosti",
+        "description": "Nadograđuje ranjive pakete i otvara testiran zahtev za izmenu.",
+        "prompt": "Zakrpi ranjive zavisnosti u [repozitorijumu].\n- Ozbiljnost: [visoka i kritična]\nNadogradi svaki paket, pokreni testove i otvori zahtev za izmenu. Navedi one koje nisi mogao da nadogradiš i zašto.",
+        "criterion": "Files/engineering/dependency-patch.md navodi svako bezbednosno upozorenje sa starom i novom verzijom, rezultate testova, vezu do zahteva za izmenu i svaki preostali paket sa razlogom.",
+        "start": "Skeniraj pakete",
+        "done": "Zakrpe spremne"
+      },
+      "addMissingTests": {
+        "title": "Dodavanje testova koji nedostaju",
+        "description": "Pokriva netestirani modul testovima i otvara zahtev za izmenu.",
+        "prompt": "Dodaj testove za [modul ili tok] u [repozitorijumu].\n- Fokus: [slučajevi koji su ranije pucali, granični slučajevi]\nTestiraj ponašanje preko javne površine. Otvori zahtev za izmenu.",
+        "criterion": "Files/engineering/tests.md povezuje zahtev za izmenu i navodi svaki novi test sa ponašanjem koje proverava i njegovim uspešnim izlazom.",
+        "start": "Pročitaj kod",
+        "done": "Testovi dodati"
+      },
+      "reviewChangeRequest": {
+        "title": "Pregled zahteva za izmenu",
+        "description": "Pregleda izmenu zbog grešaka i rizika i čuva nalaze u Files.",
+        "prompt": "Pregledaj [vezu do zahteva za izmenu] zbog grešaka i rizika.\n- Fokus: [ispravnost, bezbednost, performanse]\nZa svaki nalaz: fajl i linija, problem i predložena ispravka. Nemoj odobriti niti spojiti.",
+        "criterion": "Files/engineering/review.md navodi svaki nalaz sa fajlom i linijom, ozbiljnošću, problemom i predloženom ispravkom; zahtev za izmenu nije odobren niti spojen.",
+        "start": "Pročitaj razlike",
+        "done": "Pregled spreman"
+      },
+      "writeTechnicalSpec": {
+        "title": "Pisanje tehničke specifikacije",
+        "description": "Piše specifikaciju sa opcijama i kompromisima na osnovu koda u Files.",
+        "prompt": "Napiši tehničku specifikaciju za [funkciju].\n- Problem: [šta korisnici danas ne mogu da urade]\n- Ograničenja: [rok, sistemi koje moramo koristiti]\nUporedi najmanje 2 rešenja sa kompromisima. Uključi promene podataka, promene API-ja, uvođenje i testove.",
+        "criterion": "Files/engineering/spec.md sadrži problem, najmanje 2 rešenja sa kompromisima, izabrano rešenje, promene podataka i API-ja, uvođenje i plan testiranja.",
+        "start": "Pročitaj kod",
+        "done": "Specifikacija napisana"
+      },
+      "writePostmortem": {
+        "title": "Pisanje analize incidenta",
+        "description": "Pravi vremensku liniju incidenta i uzrok iz logova u Files.",
+        "prompt": "Napiši analizu incidenta (postmortem) za [incident].\n- Kada: [vreme početka i kraja]\n- Izvori: [logovi, alarmi, razmene u četu, isporuke]\nDaj vremensku liniju, osnovni uzrok, uticaj i naknadne radnje. Ne krivi nijednu osobu.",
+        "criterion": "Files/engineering/postmortem.md sadrži vremensku liniju sa izvorima, osnovni uzrok, uticaj i naknadne radnje sa ulogama odgovornih, i ne imenuje nijednu osobu kao uzrok.",
+        "start": "Pročitaj logove",
+        "done": "Analiza napisana"
+      },
+      "upgradeFramework": {
+        "title": "Nadogradnja okvira",
+        "description": "Nadograđuje verziju okvira i ispravlja ono što pukne u zahtevu za izmenu.",
+        "prompt": "Nadogradi [okvir] sa [trenutne verzije] na [ciljnu verziju] u [repozitorijumu].\nPrati zvanični vodič za migraciju. Ispravi ono što pukne, pokreni testove i otvori zahtev za izmenu.",
+        "criterion": "Files/engineering/upgrade.md povezuje zahtev za izmenu i navodi svaki korak migracije, svaku ispravljenu prelomnu promenu i rezultate testova.",
+        "start": "Pročitaj vodič",
+        "done": "Nadogradnja spremna"
+      },
+      "documentModule": {
+        "title": "Dokumentovanje modula",
+        "description": "Objašnjava servis ili modul novim inženjerima u Files.",
+        "prompt": "Dokumentuj [servis ili modul] za nove inženjere.\n- Repozitorijum: [repozitorijum]\nObjasni šta radi, njegove glavne delove, kako teku podaci, kako se pokreće i testira i poznate zamke.",
+        "criterion": "Files/engineering/module-guide.md objašnjava svrhu, glavne delove sa vezama do fajlova, tok podataka, komande za pokretanje i testiranje i poznate zamke.",
+        "start": "Pročitaj kod",
+        "done": "Vodič napisan"
+      }
+    },
+    "templateSteps": "{start}, zatim {done}",
+    "rolesLabel": "Šabloni po ulozi",
+    "startNoFiles": "Cilj počinje od teksta. Ukloni fajlove, pa pošalji ponovo.",
+    "startNeedsSubject": "Zameni deo u [zagradama] u prvom redu, pa pošalji.",
+    "templateFooter": "Gde god je neki deo još u [zagradama], snađi se pomoću naših povezanih alata i Files. Pitaj me samo ono što ne možeš da pronađeš.",
+    "restart": "Pokreni cilj ponovo",
+    "restartReason": "Ponovo pokrenuto sa stranice cilja",
+    "restartedToast": "Cilj je ponovo pokrenut",
+    "restartError": "Nije moguće ponovo pokrenuti cilj. Pokušaj ponovo."
   },
   "agentEditor": {
     "manage": "Upravljaj",
@@ -24993,15 +25665,15 @@
         "add": "Add tab",
         "full": "A space holds at most {max} tabs. Remove one first.",
         "noArtifacts": "No artifacts yet",
-        "noApps": "No Apps in this project",
+        "noApps": "Нема апликација у овом пројекту",
         "spaceFiles": "This space’s files",
         "otherFolder": "Another folder…",
         "fileItem": "Fajl…",
         "linkItem": "Link…",
         "linkTitle": "Add a link",
-        "linkHint": "An https page, shown inside the tab.",
+        "linkHint": "https страница, приказана унутар картице.",
         "folderTitle": "Add a folder",
-        "folderHint": "A Drive folder, by its path.",
+        "folderHint": "Drive фасцикла, по својој путањи.",
         "fileTitle": "Dodaj fajl",
         "fileHint": "Bilo koji fajl u Drive-u, po putanji. Fajl .html se prikazuje kao stranica.",
         "url": "URL",
@@ -25019,15 +25691,15 @@
         "remove": "Remove tab",
         "removed": "Removed {name}",
         "undo": "Undo",
-        "saveError": "The tabs could not be saved",
-        "openLink": "Open in new tab",
+        "saveError": "Картице није могуће сачувати",
+        "openLink": "Отвори у новој картици",
         "linkCard": {
           "description": "{host} ne dozvoljava drugim sajtovima da ga prikažu u kartici.",
           "open": "Otvori"
         },
         "missing": {
-          "title": "This tab’s content is gone",
-          "description": "It was deleted or renamed, or it is not shared with you."
+          "title": "Садржај ове картице је нестао",
+          "description": "Обрисан је или преименован, или није подељен са вама."
         }
       },
       "spaceDetails": "Детаљи: {name}"
@@ -25100,7 +25772,7 @@
         "threads": "Свака нова порука започиње тему.",
         "memory": "Агенти памте шта се у сваком простору договори.",
         "gotIt": "Разумем",
-        "tabs": "Every space has its own tabs. Add, rename and reorder them, or ask Kortix to."
+        "tabs": "Сваки простор има сопствене картице. Додајте их, преименујте и промените им редослед, или замолите Kortix да то уради."
       },
       "getStarted": {
         "dismiss": "Одбаци",
@@ -25778,8 +26450,8 @@
     "weekly": "Weekly limit",
     "weeklyModel": "Weekly · {model}",
     "reconnect": "Reconnect",
-    "disabledTitle": "Subscription usage is unavailable",
-    "disabledDescription": "Subscription connections are not enabled for this project.",
+    "disabledTitle": "Потрошња претплате није доступна",
+    "disabledDescription": "Везе са претплатама нису омогућене за овај пројекат.",
     "text0": "Reconnect needed",
     "text1": "Inactive",
     "text2": "Refresh failed",
@@ -25789,30 +26461,30 @@
     "text6": "Usage reported",
     "text7": "Subscription",
     "text8": "used",
-    "text9": "Reset time passed · refresh for current usage",
-    "text10": "Reset time not reported",
+    "text9": "Време ресетовања је прошло · освежите за тренутну потрошњу",
+    "text10": "Време ресетовања није пријављено",
     "text11": "Checking provider usage…",
-    "text12": "No usage reported yet. Refresh after using this subscription.",
-    "text13": "Could not update. Showing last known data.",
-    "text14": "Waiting for provider data",
+    "text12": "Још нема пријављене потрошње. Освежите након коришћења ове претплате.",
+    "text13": "Ажурирање није успело. Приказани су последњи познати подаци.",
+    "text14": "Чека се на податке провајдера",
     "text15": "Checking…",
     "text16": "Refresh",
     "text17": "Subscription usage",
-    "text18": "Track the limits of your connected ChatGPT and Claude subscriptions.",
-    "text19": "Usage could not load",
-    "text20": "Try loading your connected subscriptions again.",
+    "text18": "Пратите ограничења својих повезаних ChatGPT и Claude претплата.",
+    "text19": "Потрошњу није могуће учитати",
+    "text20": "Покушајте поново да учитате повезане претплате.",
     "text21": "Retry",
     "text22": "No connected subscriptions",
-    "text23": "Connect ChatGPT or Claude in Providers to see reported usage and reset times.",
+    "text23": "Повежите ChatGPT или Claude у одељку Провајдери да бисте видели пријављену потрошњу и времена ресетовања.",
     "text24": "Connect a subscription",
-    "text25": "Usage is shared across apps that use the same subscription. Checks automatically every minute while this tab is open.",
-    "text26": "Limits vary by plan. Only windows reported by your connection appear here; missing data does not mean unlimited usage. File limits are not reported. API spend appears in Costs.",
+    "text25": "Потрошња се дели између апликација које користе исту претплату. Аутоматски се проверава сваког минута док је ова картица отворена.",
+    "text26": "Ограничења зависе од пакета. Овде се приказују само периоди које пријави ваша веза; подаци који недостају не значе неограничену потрошњу. Ограничења за фајлове се не пријављују. Потрошња на API приказана је у одељку Трошкови.",
     "resets": "Resets {time}",
     "observed": "Observed {time}",
     "meterLabel": "{label}: {percent}% used",
     "refreshLabel": "Refresh {label} usage",
-    "fiveHourNotReported": "Five-hour window not reported by this connection.",
-    "fableIncluded": "Fable usage also counts toward your overall weekly allowance.",
+    "fiveHourNotReported": "Ова веза не пријављује петочасовни период.",
+    "fableIncluded": "Потрошња Fable се такође рачуна у ваше укупно недељно ограничење.",
     "chatgptUsage": "ChatGPT subscription usage",
     "claudeUsage": "Claude subscription usage",
     "allSubscriptions": "All subscriptions"
@@ -25848,5 +26520,10 @@
     "projectDefault": "Podrazumevano za projekat · svaki zahtev",
     "kortixPicks": "Kortix bira",
     "useMyOwn": "Koristi svoje"
+  },
+  "sessionModelSwitch": {
+    "agentSession": "Сесија агента · {id}",
+    "human": "Човек",
+    "listLabel": "Промене модела"
   }
 }

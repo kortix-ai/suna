@@ -14,7 +14,8 @@
  */
 
 import type { ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { parseKortixToolResult, multiAgentTool, type MultiAgentTool } from '@kortix/sdk';
 import { peerHandleLabel } from '@kortix/shared';
 import { Text } from '@/components/ui/text';
@@ -165,14 +166,14 @@ function AgentRow({ agent }: { agent: ReachableAgentRow }) {
     </>
   );
   return enabled ? (
-    <Pressable
+    <PressableSurface
       accessibilityRole="button"
       accessibilityLabel={`Open @${agent.handle}${agent.state ? `, ${AGENT_STATE_LABEL[agent.state]}` : ''}`}
       onPress={() => openSession(agent.sessionId)}
       style={({ pressed }) => [rowStyle, pressed && { backgroundColor: palette.pressed }]}
     >
       {body}
-    </Pressable>
+    </PressableSurface>
   ) : (
     <View style={rowStyle}>{body}</View>
   );
