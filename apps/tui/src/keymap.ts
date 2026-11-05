@@ -143,7 +143,7 @@ export const SCOPE_TITLE: Record<KeyScope, string> = {
   providers: 'Model providers',
   connectors: 'Connectors',
   connect: 'Connect',
-  account: 'Account',
+  account: 'Workspace members',
   login: 'Login',
   ports: 'Ports panel',
   links: 'Links panel',
@@ -292,7 +292,7 @@ export const KEYMAP: readonly Binding[] = [
     id: 'screen.account',
     scope: 'global',
     chords: [chord('u', { alt: true })],
-    description: 'Open the account screen: members, invites, billing.',
+    description: 'Open the workspace members screen: members, invites, billing.',
   },
   {
     // `Alt+H` is FIRST because `Ctrl+H` is the ASCII backspace byte (0x08).

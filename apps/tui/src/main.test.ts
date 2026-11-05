@@ -52,13 +52,29 @@ describe('resolveProjectId', () => {
     notes.length = 0;
     expect(await resolveProjectId(['proj_gone'], 'acct_host', deps)).toBe('proj_first');
     expect(notes).toEqual([
-      'Project proj_gon is not available on this host (Not found); using the first project in your account.',
+      'Workspace proj_gon is not available on this host (Not found); opening your first workspace.',
     ]);
   });
 
   test('the fallback stays inside the host account — never the first project of any account', async () => {
     expect(await resolveProjectId(['proj_gone'], 'acct_host', deps)).toBe('proj_first');
     expect(await resolveProjectId([], null, deps)).toBe('proj_other_account');
+  });
+
+  test('a host account with no workspace falls through to the first workspace in another account', async () => {
+    expect(
+      await resolveProjectId([], 'acct_empty', {
+        ...deps,
+        listProjects: async (accountId: string | null) =>
+          accountId === 'acct_empty' ? [] : [{ project_id: 'proj_other_account' }],
+      }),
+    ).toBe('proj_other_account');
+  });
+
+  test('no workspace anywhere → null', async () => {
+    expect(
+      await resolveProjectId([], 'acct_empty', { ...deps, listProjects: async () => [] }),
+    ).toBeNull();
   });
 
   test('a dead flag value falls through to a live default before the list', async () => {
@@ -163,6 +179,7 @@ describe('bootSession (kortixt --new)', () => {
   test('no project → a note that says so', async () => {
     const notes: string[] = [];
     expect(await bootSession(null, {}, (t) => notes.push(t))).toBeNull();
-    expect(notes[0]).toContain('--new needs a project');
+    expect(notes[0]).toContain('--new needs a workspace');
+    expect(notes[0]).toContain('kortix workspaces create <name>');
   });
 });
