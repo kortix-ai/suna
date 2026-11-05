@@ -27,7 +27,7 @@ import { ponder as roomPonder, confirm as roomConfirm, history as roomHistory, j
 import { changed as screenChanged, look, ocr, see, VISUAL, visionOn } from './vision'
 import { follows, foresight, toneOf } from './anticipate'
 import { lookup, preconnect, prefetch, warm as warmSearch, workspaceMap } from './prefetch'
-import { type Stt, type Tts, type Utterance, cached, inworldVoice, inworldVoices, stts, ttss, vocab, voiced, voicesKnown } from './speech'
+import { type Stt, type Tts, type Utterance, cached, inworldVoice, inworldVoices, stts, ttsDefault, ttss, vocab, voiced, voicesKnown } from './speech'
 import { resolved, type Card, type Route } from './route'
 import { cardData, cue, glance, judge as judgeCard, leans, routeAhead, spokenCard, whenHeard } from './judge'
 import { content } from './pages'
@@ -425,7 +425,7 @@ export const cascade: Provider = (o, h) => {
   const voices = new Map<string, Tts>()
   // Inworld TTS-2 Flash when its key is set (first audio ~180 ms vs xAI's ~400, measured 2026-11-01), else xAI.
   // In a Kortix box (VOICE_MODELS_URL) the same voice comes through its models base.
-  const TTS = o.tts && ttss[o.tts] ? o.tts : process.env.VOICE_TTS ?? (viaModels() ? 'models' : process.env.INWORLD_API_KEY ? 'inworld' : 'xai-ws') // the caller's pick first
+  const TTS = o.tts && ttss[o.tts] ? o.tts : ttsDefault() // the caller's pick first
   const voice = (l: string) => voices.get(l) ?? voices.set(l, ttss[TTS]!(l)).get(l)!
   const gem = ttss.gemini!()
   // One voice for the whole call, whatever the language or the characters in a sentence (routing by text sent
