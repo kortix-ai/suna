@@ -21,6 +21,7 @@ import {
   CommandItem,
   CommandList,
 } from '../../../../primitives/command';
+import { CountBadge } from '../../../../primitives/count-badge';
 import Hint from '../../../../primitives/hint';
 import Loading from '../../../../primitives/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../../primitives/popover';
@@ -215,7 +216,7 @@ export function ModelPicker({
       <PopoverContent align="start" className="w-[min(320px,calc(100vw-1.5rem))] p-0">
         <Command>
           <CommandInput compact placeholder={t('searchModels')} />
-          <CommandList className="max-h-80">
+          <CommandList className="max-h-80 p-1">
             <CommandEmpty>{t('noModels')}</CommandEmpty>
             {leading ? (
               <CommandItem
@@ -245,9 +246,7 @@ export function ModelPicker({
                   <ModelMark model={model} />
                   <span className="min-w-0 flex-1 truncate">{pickerModelName(model)}</span>
                   {order < 0 ? null : multiple ? (
-                    <span className="bg-foreground text-background flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-medium tabular-nums">
-                      {order + 1}
-                    </span>
+                    <CountBadge count={order + 1} />
                   ) : (
                     <CheckIcon className="size-4 shrink-0" />
                   )}
