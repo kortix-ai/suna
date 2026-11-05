@@ -8,7 +8,7 @@ import {
 } from '@kortix/shared';
 
 import { withKortixScope } from '../api/sdk.ts';
-import { splitHelp } from '../command-argv.ts';
+import { splitHelp, fromWorkspaceAlias } from '../command-argv.ts';
 import {
   type AccountContext,
   emitJson,
@@ -50,19 +50,19 @@ Subcommands:
     --usage                         Credit usage summary.
     --days <n>                      Window for --summary / --usage. Default: 30.
   costs                             Spend over a window. --json.
-    --by project|session            Roll up by project or by session.
+    --by workspace|session          Roll up by workspace or by session.
                                     Omit for account totals + model breakdown.
-    --project <id>                  Scope to one project.
+    --workspace <id>                Scope to one workspace.
     --session <id>                  Scope the totals to one session.
     --owner <id>                    Filter sessions by owner (--by session).
     --since <iso> --until <iso>     Half-open [from, to) UTC. Default: 30 days.
     --sort <k>                      total_desc (default), total_asc, recent,
-                                    name_asc (--by project only).
-    --limit <n> --offset <n>        Paging for --by project|session.
+                                    name_asc (--by workspace only).
+    --limit <n> --offset <n>        Paging for --by workspace|session.
     --csv <file>                    Write the rows as CSV. Needs --by.
 
 Global options:
-  --account <id>     Operate on this account (default: the linked project's account, else the active account).
+  --account <id>     Operate on this account (default: the linked workspace's account, else the active account).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -70,7 +70,7 @@ Global options:
 Examples:
   kortix billing status
   kortix billing transactions --summary --days 7
-  kortix billing costs --by project --since 2026-08-01T00:00:00Z
+  kortix billing costs --by workspace --since 2026-08-01T00:00:00Z
   kortix billing costs --by session --csv sessions.csv
 `;
 
@@ -112,8 +112,8 @@ export async function runBilling(argv: string[]): Promise<number> {
     f = {
       account: takeFlagValue(rest, ['--account']),
       host: takeFlagValue(rest, ['--host']),
-      by: takeFlagValue(rest, ['--by']),
-      project: takeFlagValue(rest, ['--project']),
+      by: fromWorkspaceAlias(takeFlagValue(rest, ['--by'])),
+      project: takeFlagValue(rest, ['--project', '--workspace']),
       session: takeFlagValue(rest, ['--session']),
       owner: takeFlagValue(rest, ['--owner']),
       since: takeFlagValue(rest, ['--since', '--from']),

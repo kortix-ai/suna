@@ -64,7 +64,7 @@ describe('describeConfigStatus — a response without `release` renders exactly 
         { running_etag: null, latest_etag: null, stale: null, sandbox_reachable: true },
         REF,
       ).text,
-    ).toBe('This project has no compiled agent config to compare.');
+    ).toBe('This workspace has no compiled agent config to compare.');
   });
 });
 

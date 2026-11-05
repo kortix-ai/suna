@@ -210,7 +210,7 @@ describe('kortix projects use', () => {
         : undefined);
       const before = loadConfig();
       expect(await runProjects(['use', 'proj_x'])).toBe(1);
-      expect(stripAnsi(stderr)).toContain('Invalid project response');
+      expect(stripAnsi(stderr)).toContain('Invalid workspace response');
       if (body && 'error' in body && typeof body.error === 'string') expect(stderr).toContain(body.error);
       expect(stderr).not.toContain('TypeError');
       expect(loadConfig()).toEqual(before);
@@ -249,8 +249,8 @@ describe('kortix projects use', () => {
     // … and the active account followed it to Kortix (account_2).
     expect(activeAccount()).toEqual({ id: 'account_2', slug: 'kortix', name: 'Kortix' });
     const out = stripAnsi(stdout);
-    expect(out).toContain('Default project: Beta');
-    expect(out).toContain('now active');
+    expect(out).toContain('Default workspace: Beta');
+    expect(out).not.toContain('account →');
   });
 });
 
@@ -261,7 +261,7 @@ describe('kortix projects use (picker)', () => {
       : undefined);
     const before = loadConfig();
     expect(await runProjects(['use'])).toBe(1);
-    expect(stripAnsi(stderr)).toContain('Invalid project response');
+    expect(stripAnsi(stderr)).toContain('Invalid workspace response');
     expect(stderr).not.toContain('TypeError');
     expect(loadConfig()).toEqual(before);
     expect(stdout).toBe('');
@@ -439,20 +439,48 @@ describe('kortix projects use --host', () => {
     const code = await runProjects(['unset', '--host', 'other']);
     expect(code).toBe(0);
     expect(loadConfig().hosts.other?.default_project).toBeUndefined();
-    expect(stripAnsi(stdout)).toContain('Cleared the default project');
+    expect(stripAnsi(stdout)).toContain('Cleared the default workspace');
   });
 });
 
-describe('kortix projects ls scoping', () => {
-  test('scopes the list to the active account', async () => {
+describe('kortix workspaces ls', () => {
+  test('lists every workspace across every account, flat', async () => {
     mockApi((url) => {
-      if (url.startsWith('https://api.test/v1/projects')) {
-        return new Response(JSON.stringify([]), { status: 200, headers: JSON_HEADERS });
+      const u = new URL(url);
+      if (u.pathname === '/v1/projects') {
+        const account = u.searchParams.get('account_id');
+        return new Response(
+          JSON.stringify(
+            account === 'account_2'
+              ? [{ project_id: 'proj_b', account_id: 'account_2', name: 'Beta', repo_url: '', default_branch: 'main', manifest_path: 'kortix.yaml', status: 'active', updated_at: new Date().toISOString() }]
+              : [],
+          ),
+          { status: 200, headers: JSON_HEADERS },
+        );
       }
       return undefined;
     });
     const code = await runProjects(['ls', '--json']);
     expect(code).toBe(0);
-    expect(requests).toEqual(['https://api.test/v1/projects?account_id=account_1']);
+    expect(requests[0]).toBe('https://api.test/v1/accounts/me');
+    expect([...requests.slice(1)].sort()).toEqual([
+      'https://api.test/v1/projects?account_id=account_1',
+      'https://api.test/v1/projects?account_id=account_2',
+    ]);
+    expect(JSON.parse(stdout).map((p: { project_id: string }) => p.project_id)).toEqual(['proj_b']);
+  });
+
+  test('--account scopes the list to one account (deprecated flag)', async () => {
+    mockApi((url) =>
+      url.startsWith('https://api.test/v1/projects')
+        ? new Response(JSON.stringify([]), { status: 200, headers: JSON_HEADERS })
+        : undefined,
+    );
+    const code = await runProjects(['ls', '--json', '--account', 'account_1']);
+    expect(code).toBe(0);
+    expect(requests).toEqual([
+      'https://api.test/v1/accounts/me',
+      'https://api.test/v1/projects?account_id=account_1',
+    ]);
   });
 });

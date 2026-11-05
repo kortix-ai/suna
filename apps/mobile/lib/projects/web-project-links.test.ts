@@ -4,8 +4,7 @@ import {
   CONNECTORS_DONE_URI,
   CONNECTORS_RETURN_URL,
   WEB_CREATE_RETURN_URL,
-  newAccountWebUrl,
-  newProjectWebUrl,
+  newWorkspaceWebUrl,
   projectConnectorsWebUrl,
   projectCustomizeWebUrl,
 } from './web-project-links';
@@ -61,23 +60,10 @@ describe('connectors return urls', () => {
   });
 });
 
-describe('newProjectWebUrl', () => {
-  test('builds web /new', () => {
-    expect(newProjectWebUrl('https://kortix.com')).toBe('https://kortix.com/new');
-  });
-
-  test('scopes /new to the account when given, id encoded', () => {
-    expect(newProjectWebUrl('https://kortix.com/', 'acc 1')).toBe('https://kortix.com/new?account=acc%201');
-  });
-
-  test('omits the account param for a null account', () => {
-    expect(newProjectWebUrl('https://kortix.com', null)).toBe('https://kortix.com/new');
-  });
-});
-
-describe('newAccountWebUrl', () => {
-  test('opens the account hub list (empty accountId) over the project door', () => {
-    expect(newAccountWebUrl('https://kortix.com/')).toBe('https://kortix.com/projects/start?accountId=');
+describe('newWorkspaceWebUrl', () => {
+  test('builds web /new, never scoped to an account', () => {
+    expect(newWorkspaceWebUrl('https://kortix.com')).toBe('https://kortix.com/new');
+    expect(newWorkspaceWebUrl('https://kortix.com/')).toBe('https://kortix.com/new');
   });
 });
 

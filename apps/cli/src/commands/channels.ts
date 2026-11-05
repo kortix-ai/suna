@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { ApiError } from '../api/client.ts';
-import { splitHelp } from '../command-argv.ts';
+import { splitHelp, fromWorkspaceAlias } from '../command-argv.ts';
 import {
   emitJson,
   fail,
@@ -19,7 +19,7 @@ import { teamsConnect, teamsDisconnect, teamsManifest, teamsStatus } from './cha
 
 const HELP = help`Usage: kortix channels <subcommand> [options]
 
-Connect this project to a chat platform (Slack by default; MS Teams via
+Connect this workspace to a chat platform (Slack by default; MS Teams via
 --platform teams), give it an email inbox, and decide which agent/model each
 bound channel runs.
 
@@ -34,7 +34,7 @@ Subcommands:
                           Teams: prints the Microsoft admin-consent URL (open
                           it, grant tenant-wide consent, the app is published
                           to your Teams catalog automatically).
-  disconnect              Drop the project's connection (Slack, or Teams with
+  disconnect              Drop the workspace's connection (Slack, or Teams with
                           --platform teams).
   manifest                Print the app manifest JSON — MANUAL/self-host
                           setup only. Slack: paste into api.slack.com/apps →
@@ -42,13 +42,13 @@ Subcommands:
                           manifest from the server. The one-click install
                           never needs this.
 
-Email (Resend Inboxes, experimental — kortix projects features enable email_channel;
+Email (Resend Inboxes, experimental — kortix workspaces features enable email_channel;
   your own Resend account: https://resend.com/docs/dashboard/inboxes/introduction):
-  Every inbox is an ACCOUNT of the project's email connector (kortix_email):
-  add as many as you need; each is only yours or shared with the project.
+  Every inbox is an ACCOUNT of the workspace's email connector (kortix_email):
+  add as many as you need; each is only yours or shared with the workspace.
   email inboxes [--json]          The inboxes you can see.
   email inboxes add [options]     Add an inbox: --username, --domain, --api-key,
-                                  --share me|project (default project), --label.
+                                  --share me|workspace (default workspace), --label.
   email inboxes rm <address|id>   Remove one (Resend deletes it when Kortix made it).
   email inboxes policy <address|id> --allow … | --allow-all
                                   Replace who may email that inbox.
@@ -72,7 +72,7 @@ Channel bindings (which agent/model/join-policy one bound channel uses):
 
 Global options:
   --platform <slack|teams>  Filter status; other commands default to Slack.
-  --project <id>          Operate on this project id (default: linked or
+  --workspace <id>        Operate on this workspace id (default: linked or
                           \$KORTIX_PROJECT_ID).
   --host <name>           Use this host instead of the linked / active one.
   --json                  Machine-readable output (status/connect).
@@ -92,11 +92,11 @@ Connect options:
 Email options:
   --api-key <re_…>        Your Resend API key (full access). Or \`-\` for stdin.
                           Required unless Kortix-managed email is on.
-  --display-name <n>      From-name on outgoing mail (default: project name).
+  --display-name <n>      From-name on outgoing mail (default: workspace name).
   --username <u>          Local part of a NEW inbox.
   --domain <d>            Domain of a NEW inbox (your Resend domain, or the
                           managed one).
-  --share <me|project>    inboxes add: only you, or the project (default).
+  --share <me|workspace>  inboxes add: only you, or the workspace (default).
   --label <name>          inboxes add: the account's name (default: address).
   --inbox-id <id>         Attach an EXISTING Resend inbox. Needs --email too.
   --email <addr>          That inbox's address. Needs --inbox-id too.
@@ -108,9 +108,9 @@ Email options:
 
 Bind options:
   --agent <name>          Run this declared agent in the channel.
-  --no-agent              Fall back to the project's default agent.
+  --no-agent              Fall back to the workspace's default agent.
   --model <id>            Pin a gateway wire model id.
-  --no-model              Fall back to the agent/project/account default.
+  --no-model              Fall back to the agent or workspace default.
   --policy <p>            Who may join a conversation: owner_approval,
                           owner_only, or project_open.
 
@@ -174,7 +174,7 @@ export async function runChannels(argv: string[]): Promise<number> {
   let platformFlag: string | undefined;
   let extra: ExtraFlags;
   try {
-    projectFlag = takeFlagValue(rest, ['--project']);
+    projectFlag = takeFlagValue(rest, ['--project', '--workspace']);
     hostFlag = takeFlagValue(rest, ['--host']);
     botTokenFlag = takeFlagValue(rest, ['--bot-token']);
     signingSecretFlag = takeFlagValue(rest, ['--signing-secret']);
@@ -194,7 +194,7 @@ export async function runChannels(argv: string[]): Promise<number> {
       domain: takeFlagValue(rest, ['--domain']),
       inboxId: takeFlagValue(rest, ['--inbox-id']),
       email: takeFlagValue(rest, ['--email']),
-      share: takeFlagValue(rest, ['--share']),
+      share: fromWorkspaceAlias(takeFlagValue(rest, ['--share'])),
       label: takeFlagValue(rest, ['--label']),
       allowRegex: takeFlagValue(rest, ['--allow-regex']),
       agent: takeFlagValue(rest, ['--agent']),
@@ -283,7 +283,7 @@ async function allChannelsStatus(
         `CHANNEL  STATUS\n` +
           `slack    ${slack ? 'connected' : 'not connected'}\n` +
           `teams    ${teams ? 'connected' : 'not connected'}\n` +
-          `email    ${!mode.enabled ? 'off (kortix projects features enable email_channel)' : email ? 'connected' : 'not connected'}\n` +
+          `email    ${!mode.enabled ? 'off (kortix workspaces features enable email_channel)' : email ? 'connected' : 'not connected'}\n` +
           `\nDetails: kortix channels status --platform <slack|teams> or kortix channels email status\n`,
       );
     }
@@ -518,7 +518,7 @@ async function channelsManifest(ctxOpts: {
   const manifest = {
     display_information: {
       name: 'Kortix',
-      description: 'Run a Kortix project from Slack',
+      description: 'Run a Kortix workspace from Slack',
       background_color: '#0a0a0a',
     },
     features: { bot_user: { display_name: 'kortix', always_online: true } },

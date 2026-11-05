@@ -112,6 +112,17 @@ describe('resolveHost', () => {
     ).toBe('http://localhost:17408/v1');
   });
 
+  test('an env host reads KORTIX_WORKSPACE_ID when KORTIX_PROJECT_ID is unset, and KORTIX_PROJECT_ID wins', () => {
+    writeConfig({ active: 'cloud', hosts: {} });
+    expect(
+      resolveHost({ KORTIX_API_KEY: 't', KORTIX_WORKSPACE_ID: 'ws-1' })?.defaultProjectId,
+    ).toBe('ws-1');
+    expect(
+      resolveHost({ KORTIX_API_KEY: 't', KORTIX_WORKSPACE_ID: 'ws-1', KORTIX_PROJECT_ID: 'p-1' })
+        ?.defaultProjectId,
+    ).toBe('p-1');
+  });
+
   test('an env URL alone cannot create a host', () => {
     writeConfig({ active: 'cloud', hosts: {} });
     expect(resolveHost({ KORTIX_API_URL: 'http://localhost:9999' })).toBeNull();

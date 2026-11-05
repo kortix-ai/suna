@@ -490,7 +490,7 @@ describe('<AgentsTabView/>', () => {
     await flush();
     const frame = captureCharFrame();
     expect(frame).toContain('kortix.yaml#agents.auditor');
-    expect(frame).toContain('Uses the project default');
+    expect(frame).toContain('Uses the workspace default');
     expect(frame).toContain('none');
     expect(captured.at(-1)).toBe(true);
 
@@ -795,7 +795,7 @@ describe('<TriggersTabView/>', () => {
     );
     await flush();
     const frame = captureCharFrame();
-    expect(frame).toContain('Triggers are paused for this project');
+    expect(frame).toContain('Triggers are paused for this workspace');
     expect(frame).toContain('broken: cron: bad field');
     renderer.destroy();
   });

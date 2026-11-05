@@ -21,9 +21,9 @@ import {
 import type { AccountMembership, MeResponse } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
+import { NO_WORKSPACE_CODE, NO_WORKSPACE_LINE, noWorkspaceLoginLine } from '../api/no-workspace.ts';
 import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import { C, help, status } from '../style.ts';
-import { selectFromList } from '../tui-select.ts';
 import { deriveFrontendFromApiBase } from '../web-url.ts';
 import { openInBrowser } from '../browser.ts';
 
@@ -45,13 +45,15 @@ Options:
   --device          Authorize from any browser, without a local callback.
   --token <pat>     Skip the browser flow and authenticate directly
                     with a token. Useful for CI or headless boxes.
-  --account <slug>  Pick the active account non-interactively (skips the
-                    post-login "Select your active account" prompt).
-  --no-project      Skip the default-project binding step at the end.
+  --account <slug>  Bind a workspace of this account (legacy account slug
+                    or id) instead of asking.
+  --no-workspace    Skip the default-workspace step at the end.
+                    --no-project is the older name.
   -h, --help        Show this help.
 
-A fresh login walks the hierarchy DOWN: host ✓ → account (auto when you
-belong to one, otherwise a prompt) → default project (prompt).
+A fresh login walks the hierarchy DOWN: host ✓ → default workspace (auto
+when you belong to one, otherwise a prompt). With no workspace yet, it
+says how to create or join one.
 
 Examples:
   kortix login
@@ -65,7 +67,7 @@ export async function runLogin(argv: string[]): Promise<number> {
     api: takeFlagValue(rest, ['--api']),
     token: takeFlagValue(rest, ['--token']),
     account: takeFlagValue(rest, ['--account']),
-    noProject: takeFlagBool(rest, ['--no-project']),
+    noProject: takeFlagBool(rest, ['--no-workspace', '--no-project']),
     device: takeFlagBool(rest, ['--device']),
   }));
   if (typeof flags === 'number') return flags;
@@ -190,30 +192,36 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
     `\n${status.ok(`Logged in to host ${C.bold}${hostName}${C.reset} as ${loginIdentity}`)}\n`,
   );
 
-  // The account step of the funnel: exactly one → auto-select; several →
-  // prompt (or honor --account). Persist the active account's display fields
-  // (and reconcile any default project) so the context block + `accounts ls`
-  // read correctly offline.
-  const selected = await resolveLoginAccount(me.accounts, opts.account);
+  // A new user belongs to no workspace (no account is created at signup):
+  // the login holds, and the next step is to create or join one.
+  if ((me.accounts ?? []).length === 0) {
+    process.stdout.write(`${C.dim}  Stored at ${authFileLocation()}${C.reset}\n\n`);
+    process.stdout.write(`${status.info(NO_WORKSPACE_LINE)}\n`);
+    return 0;
+  }
+
+  // The account behind the workspace: exactly one → auto-select; --account →
+  // that one; several → the workspace step below picks it (and the account
+  // comes with it). Persist the active account's display fields so the
+  // context block reads correctly offline.
+  const selected = await resolveLoginAccount(me.accounts, opts.account, !opts.noProject);
   if (selected) {
     setActiveAccount(
       { id: selected.account_id, slug: selected.slug, name: selected.name },
       hostName,
     );
-    process.stdout.write(
-      `${C.dim}  Active account: ${C.reset}${selected.name} ${C.faded}(${selected.slug})${C.reset}\n`,
-    );
   }
   process.stdout.write(`${C.dim}  Stored at ${authFileLocation()}${C.reset}\n`);
 
   // The always-bound invariant: a fresh login ends with a global default
-  // project so every later command Just Works from any directory.
+  // workspace so every later command Just Works from any directory.
   if (!opts.noProject) {
     const saved = loadAuthForHost(hostName);
     if (saved?.token) {
       process.stdout.write('\n');
       await ensureDefaultProjectBinding(saved, {
-        promptTitle: 'Pick your default project (used anywhere no directory is linked)',
+        promptTitle: 'Pick your default workspace (used anywhere no directory is linked)',
+        accountId: opts.account ? selected?.account_id : undefined,
       });
     }
   }
@@ -221,21 +229,20 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
 }
 
 /**
- * The account step of the login funnel. One login can belong to many
- * accounts, but exactly one is active. Resolution:
- *   - zero accounts        → null (nothing to select)
+ * The account behind the login's workspace. Resolution:
+ *   - zero accounts        → null (no workspace; the caller says so)
  *   - `--account <slug>`   → match by slug/id; unknown value warns + falls
  *                            back to the first account (login still succeeds)
  *   - exactly one          → auto-select it (no prompt)
- *   - several + TTY        → interactive "Select your active account" prompt
- *                            (Ctrl+C/Esc falls back to the first account)
- *   - several + non-TTY    → first account, with a hint to switch later
- * Never throws and always leaves the login with an active account when the
- * user belongs to any, matching the historical always-pick-one behavior.
+ *   - several              → null when the workspace step follows (it picks
+ *                            the workspace, and the account comes with it);
+ *                            else the first account, with a hint to switch
+ * Never throws.
  */
 async function resolveLoginAccount(
   accounts: AccountMembership[],
   accountFlag: string | undefined,
+  workspaceStepFollows: boolean,
 ): Promise<AccountMembership | null> {
   if (accounts.length === 0) return null;
 
@@ -244,31 +251,18 @@ async function resolveLoginAccount(
     if (found) return found;
     const known = accounts.map((a) => a.slug).join(', ');
     process.stderr.write(
-      `${status.warn(`No account "${accountFlag}" on this host — known: ${known}. Using ${accounts[0]!.name}.`)}\n`,
+      `${status.warn(`No account "${accountFlag}" on this host. Known: ${known}. Using ${accounts[0]!.name}.`)}\n`,
     );
     return accounts[0]!;
   }
 
   if (accounts.length === 1) return accounts[0]!;
+  if (workspaceStepFollows) return null;
 
-  const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
-  if (!interactive) {
-    process.stdout.write(
-      `${C.dim}  ${accounts.length} accounts — kept ${accounts[0]!.name}. Switch with ${C.reset}${C.cyan}kortix accounts use <slug>${C.reset}${C.dim} (or pass \`--account\`).${C.reset}\n`,
-    );
-    return accounts[0]!;
-  }
-
-  const picked = await selectFromList<AccountMembership>({
-    title: 'Select your active account',
-    items: accounts.map((a) => ({
-      value: a,
-      label: a.name,
-      sublabel: `${a.slug} · ${a.role}`,
-    })),
-    initialIndex: 0,
-  });
-  return picked ?? accounts[0]!;
+  process.stdout.write(
+    `${C.dim}  ${accounts.length} workspaces. Kept ${accounts[0]!.name}. Switch with ${C.reset}${C.cyan}kortix workspaces use${C.reset}${C.dim}.${C.reset}\n`,
+  );
+  return accounts[0]!;
 }
 
 /**
@@ -341,8 +335,17 @@ async function deviceLogin(apiBase: string, dashboardUrl?: string): Promise<stri
     const expires = Math.min(deadline, Date.now() + Math.min(600, grant.expires_in) * 1000);
     while (Date.now() + interval < expires) {
       await new Promise(resolve => setTimeout(resolve, interval));
-      const result = await cliDeviceRequest<{ token?: string; error?: string }>(apiBase, 'poll', { device_code: grant.device_code }, signal);
+      let result: { token?: string; error?: string };
+      try {
+        result = await cliDeviceRequest<{ token?: string; error?: string }>(apiBase, 'poll', { device_code: grant.device_code }, signal);
+      } catch (err) {
+        // A 409 no_workspace: the approver has no workspace, so no key exists
+        // yet and `kortix workspaces create` cannot run. Point at the web.
+        if ((err as Error).message === NO_WORKSPACE_LINE) throw new Error(noWorkspaceLoginLine(dash));
+        throw err;
+      }
       if (result.token) return result.token;
+      if (result.error === NO_WORKSPACE_CODE) throw new Error(noWorkspaceLoginLine(dash));
       if (result.error === 'slow_down') interval += 5000;
       else if (result.error !== 'authorization_pending') throw new Error(result.error || 'Invalid device login response');
     }

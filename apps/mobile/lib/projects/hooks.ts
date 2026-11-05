@@ -113,6 +113,7 @@ import {
   type UpdateSandboxTemplateInput,
 } from './projects-client';
 import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
+import { workspaceRows } from './switcher';
 import { shouldScanPastEmptySessionPages } from '@kortix/sdk/react';
 
 export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
@@ -292,6 +293,41 @@ export function useProjects(accountId: string | null) {
     enabled: !!accountId,
     staleTime: 20_000,
   });
+}
+
+/**
+ * Every workspace of the signed-in user, as one flat list (`workspaceRows`):
+ * each account's project list, the same queries and keys as `useProjects`.
+ * `isPending` is true while the accounts or any account's list is still in
+ * flight (or paused offline): a user with workspaces must never see the
+ * empty state flash. `isError` is true when every list failed (or the
+ * accounts failed), so one account that does not answer never hides the rest.
+ */
+export function useWorkspaces(enabled = true) {
+  const accounts = useAccounts(enabled);
+  const accountList = useMemo(() => accounts.data ?? [], [accounts.data]);
+  const lists = useQueries({
+    queries: accountList.map((account) => ({
+      queryKey: projectKeys.projects(account.account_id),
+      queryFn: () => listProjectsForAccount(account.account_id),
+      enabled,
+      staleTime: 20_000,
+    })),
+  });
+  const dataKey = lists.map((list) => list.dataUpdatedAt).join(',');
+  const rows = useMemo(() => {
+    const byAccount = new Map(accountList.map((account, index) => [account.account_id, lists[index]?.data]));
+    return workspaceRows(accountList, byAccount);
+    // `lists` is a new array each render; its data changes only with `dataKey`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountList, dataKey]);
+  const isPending = accounts.isPending || lists.some((list) => list.isPending);
+  const isError = accounts.isError || (lists.length > 0 && lists.every((list) => list.isError));
+  const refetch = useCallback(async () => {
+    await accounts.refetch();
+    await Promise.all(lists.map((list) => list.refetch()));
+  }, [accounts, lists]);
+  return { accounts: accountList, rows, isPending, isError, refetch };
 }
 
 /**

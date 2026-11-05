@@ -55,8 +55,8 @@ export interface SessionStartPayload {
 const IMAGE_STEP_TEXT: Record<SessionStartImageState, { text: string; note?: string }> = {
   resolving: { text: 'choosing the image' },
   serving_last_ready: { text: 'starting from the last ready image while the new one builds' },
-  waiting_for_build: { text: 'waiting for the first image for this project to finish building' },
-  building: { text: 'building the first image for this project' },
+  waiting_for_build: { text: 'waiting for the first image for this workspace to finish building' },
+  building: { text: 'building the first image for this workspace' },
   copying_to_region: { text: "copying the image to the session's region" },
   waiting_for_provider: { text: 'waiting for the provider to finish the image', note: 'retrying' },
 };
@@ -71,7 +71,7 @@ export function formatElapsed(ms: number): string {
 }
 
 /**
- * One image step as a phrase: `building the first image for this project (0:42)`.
+ * One image step as a phrase: `building the first image for this workspace (0:42)`.
  * The elapsed time counts from `step.since` to `nowMs`.
  */
 export function describeImageStep(step: SessionStartImageStep, nowMs: number): string {
@@ -89,7 +89,7 @@ function nowFor(start: SessionStartPayload): number {
   return Number.isFinite(observed) ? observed : Date.now();
 }
 
-/** `provisioning`, or `provisioning · building the first image for this project (0:42)`. */
+/** `provisioning`, or `provisioning · building the first image for this workspace (0:42)`. */
 export function describeStartProgress(start: SessionStartPayload): string {
   const image = start.boot?.image;
   return image ? `${start.stage} · ${describeImageStep(image, nowFor(start))}` : start.stage;

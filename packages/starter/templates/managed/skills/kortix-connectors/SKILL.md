@@ -277,11 +277,11 @@ decides which accounts a call reaches:
 | App, browser | `backendUrl: '/_kortix/api/v1'` + `kortixAppViewerToken()` (App set to `--viewer api`) | the viewer's shared and private accounts |
 | App, server | `createAppViewerKortix(request, { backendUrl })` | the same, per request |
 | Convex action, App job with no viewer | a service account bearer (`kortix_sa_…`) in an env var | shared accounts nobody narrowed; never a private one |
-| External program, CI | a personal access token, `kortix tokens new <name> --project <id>` | the token owner's shared and private accounts |
+| External program, CI | a personal access token, `kortix tokens new <name> --workspace <id>` | the token owner's shared and private accounts |
 
 A service account is a human step: ask the person to run
 `kortix tokens service-accounts new <name>` and
-`kortix access grant --service-account <id> --role member --project <id>`,
+`kortix access grant --service-account <id> --role member --workspace <id>`,
 and to store the bearer (`npx convex env set KORTIX_API_KEY …` for Convex; a
 project secret under `apps.<slug>.secrets` for an App, not named `KORTIX_*`).
 Build the rest while you wait. Recipes: `references/sdk.md`.

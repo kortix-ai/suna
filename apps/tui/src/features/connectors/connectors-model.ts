@@ -139,7 +139,7 @@ export function catalogMeta(row: CatalogRow): string {
 export function accountAudience(connection: Connection, viewerId: string | null | undefined): string {
   const visibility = connectorAccountVisibility(connection, viewerId);
   if (visibility.kind === 'you') return 'Only you';
-  if (visibility.kind === 'everyone') return 'Everyone in project';
+  if (visibility.kind === 'everyone') return 'Everyone in workspace';
   const names = visibility.names.join(', ');
   return visibility.more > 0 ? `${names} +${visibility.more}` : names;
 }
@@ -175,8 +175,8 @@ export function accessChoices(projectName: string | null, purpose: 'create' | 's
       : []),
     {
       id: 'project',
-      label: projectName ? `Everyone in ${projectName}` : 'Everyone in project',
-      detail: 'Everyone with access to the project',
+      label: projectName ? `Everyone in ${projectName}` : 'Everyone in workspace',
+      detail: 'Everyone with access to the workspace',
     },
     {
       id: 'members',

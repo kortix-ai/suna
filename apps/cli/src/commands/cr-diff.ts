@@ -133,7 +133,7 @@ export async function resolveCr(
     );
     const match = list.find((c) => c.number === n);
     if (!match) {
-      process.stderr.write(`${status.err(`No CR #${n} on this project.`)}\n`);
+      process.stderr.write(`${status.err(`No CR #${n} on this workspace.`)}\n`);
       return null;
     }
     return match;

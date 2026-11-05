@@ -53,11 +53,11 @@ Subcommands:
   kill <pty-id>    Kill one terminal. The ambient shell respawns on the next
                    attach; anything running inside it does not.
 
-  --new            Start a brand-new shell instead of reattaching.
-  --project <id>   Pin this project id (skips the cross-host scan).
-  --host <name>    Pin this Kortix host (skips the cross-host scan).
-  --json           Machine-readable output (\`ls\`/\`kill\`).
-  -h, --help       Show this help.
+  --new             Start a brand-new shell instead of reattaching.
+  --workspace <id>  Pin this workspace id (skips the cross-host scan).
+  --host <name>     Pin this Kortix host (skips the cross-host scan).
+  --json            Machine-readable output (\`ls\`/\`kill\`).
+  -h, --help        Show this help.
 
 Examples:
   kortix sessions shell <session-id>
@@ -75,7 +75,7 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
   let projectArg: string | undefined;
   let hostArg: string | undefined;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
   } catch (err) {
     return fail((err as Error).message);

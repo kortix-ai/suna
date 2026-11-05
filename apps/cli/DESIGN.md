@@ -11,29 +11,32 @@ already ships.
 The CLI lets a user do **everything they can do in the dashboard**, but
 from a terminal or a local coding agent. Concretely:
 
-The mental model is a four-level hierarchy you drill DOWN:
-**Host → Account → Project → Session**. You sign into a *host* (a Kortix
-instance — auth lives here), pick an *account* (workspace) within it, pick a
-*project* within that account, and open *sessions* in the project. Exactly one
-host/account/project is "active" at a time; `use` is the verb that moves the
-active pointer at every level (`hosts use`, `accounts use`, `projects use`;
-sessions are the ephemeral leaf, addressed by id). Every command acts on the
-current (host, account, project) unless overridden by `--host` or a directory
-`link.json`. The bare `kortix` screen renders this path as a breadcrumb with
+The mental model is a three-level hierarchy you drill DOWN:
+**Host → Workspace → Session**. You sign into a *host* (a Kortix
+instance — auth lives here), pick a *workspace* within it (one company's
+Kortix: its people, billing, agents and config repo; on the wire, one
+account and its project, keyed by `project_id`), and open *sessions* in the
+workspace. Exactly one host/workspace is "active" at a time; `use` is the
+verb that moves the active pointer at every level (`hosts use`,
+`workspaces use`; sessions are the ephemeral leaf, addressed by id). Every
+command acts on the current (host, workspace) unless overridden by `--host`,
+`--workspace` or a directory `link.json`. `kortix projects`, `--project`,
+`KORTIX_PROJECT_ID` and `kortix accounts` are the older names and keep
+working. The bare `kortix` screen renders this path as a breadcrumb with
 each unmet level made actionable.
 
 - **Auth (per host)** — sign in with `kortix hosts login [<name>]`,
   sign out with `kortix hosts logout`, inspect with `kortix hosts whoami`.
   `kortix login`/`logout`/`whoami` are thin shortcuts that act on the
   active host.
-- **Projects** — list, show, link a local checkout to a remote project,
-  open the dashboard.
-- **Secrets** — list, set, unset env vars for a project.
+- **Workspaces** — create, list, show, link a local checkout to a
+  workspace, open the dashboard.
+- **Secrets** — list, set, unset env vars for a workspace.
 - **Sessions** — list, create, connect / open the live URL, restart.
 - **Triggers** — list, fire, enable / disable. (These round-trip
   through `kortix.yaml` already; CLI is convenience over the existing
   API routes, not a new surface.)
-- **Project init** — already exists (`kortix init` scaffolds a repo).
+- **Config repo init** — already exists (`kortix init` scaffolds a repo).
 
 ### Out
 
@@ -134,11 +137,11 @@ Pattern can clone the project-level OAuth device flow already in
 | `kortix whoami`                                 | Print user + active account                                          | `GET /v1/account/me`                                                |
 | `kortix accounts ls`                            | List accounts this user belongs to                                   | `GET /v1/account/me` → `accounts[]`                                 |
 | `kortix accounts use <slug-or-id>`              | Switch active account stored in `auth.json`                          | `GET /v1/account/me` then write                                     |
-| `kortix projects ls`                            | List projects in active account                                      | `GET /v1/projects`                                                  |
-| `kortix projects info [<id-or-slug>]`           | Show one project (defaults to linked project)                        | `GET /v1/projects/:id`                                              |
-| `kortix projects link [<id-or-slug>]`           | Bind cwd to a remote project (writes `.kortix/link.json`)            | `GET /v1/projects/:id`                                              |
-| `kortix projects unlink`                        | Remove `.kortix/link.json`                                           | none                                                                |
-| `kortix projects open`                          | Open the dashboard URL for the linked project                        | none                                                                |
+| `kortix workspaces ls`                          | List every workspace you belong to                                   | `GET /v1/projects`                                                  |
+| `kortix workspaces info [<id>]`                 | Show one workspace (defaults to the linked workspace)                | `GET /v1/projects/:id`                                              |
+| `kortix workspaces link [<id>]`                 | Bind cwd to a workspace (writes `.kortix/link.json`)                 | `GET /v1/projects/:id`                                              |
+| `kortix workspaces unlink`                      | Remove `.kortix/link.json`                                           | none                                                                |
+| `kortix workspaces open`                        | Open the dashboard URL for the linked workspace                      | none                                                                |
 | `kortix secrets ls`                             | List secret names + manifest `[env]` requirements                    | `GET /v1/projects/:id/secrets`                                      |
 | `kortix secrets set <NAME>=<VALUE>...`          | Upsert one or more secrets (read VALUE from stdin if `-`)            | `POST /v1/projects/:id/secrets` (per entry)                         |
 | `kortix secrets unset <NAME>...`                | Remove                                                               | `DELETE /v1/projects/:id/secrets/:name`                             |
@@ -160,23 +163,22 @@ Pattern can clone the project-level OAuth device flow already in
 | `kortix env ls/pull/push`                       | Alias of `kortix secrets` plus dotenv import/export                  | same as secrets                                                     |
 
 Conventions:
-- All `<project>` arguments accept project-id (UUID) or slug
-  (slug-resolution happens client-side via `GET /v1/projects` with a
-  small cache).
-- Commands that operate on a project look up project-id in this order:
-  `--project <id>` flag → `KORTIX_PROJECT_ID` env → `.kortix/link.json`
-  → error.
+- A workspace argument is the workspace id (the API's `project_id`).
+- Commands that operate on a workspace look up its id in this order:
+  `--workspace <id>` (or `--project <id>`) → `.kortix/link.json` →
+  `KORTIX_WORKSPACE_ID` → `KORTIX_PROJECT_ID` → the host's default
+  workspace (`kortix workspaces use`) → error.
 
-## 4. Project linking
+## 4. Workspace linking
 
 Mirrors Vercel's `.vercel/project.json`. The first `kortix` command in
 a fresh checkout prompts:
 
 ```
 $ kortix secrets ls
-This directory isn't linked to a Kortix project.
+This directory isn't linked to a Kortix workspace.
 Link it now? [Y/n]
-Select project:
+Select workspace:
   ▸ kortix-agent / acme-bot        (uuid: 1a2b...)
     kortix-agent / marketing-site  (uuid: 9f8e...)
 ✓ Linked → .kortix/link.json
@@ -289,7 +291,8 @@ Behavior:
 ## 7. Error model
 
 - Auth missing → `kortix: not logged in. Run \`kortix login\`.` (exit 1).
-- No project linked → `kortix: no project linked. Run \`kortix projects link\`.` (exit 1).
+- No workspace selected → `No workspace selected. Run \`kortix workspaces use\`, \`kortix workspaces link\`, or pass --workspace <id>.` (exit 1).
+- No workspace at all (`409 no_workspace`, or `/accounts/me` lists none) → `No workspace yet. Create one with kortix workspaces create <name>, or accept an invite.` (exit 1; `ls` prints it and exits 0).
 - API 4xx → print `kortix: <message from API>` (exit 1).
 - API 5xx → print `kortix: server error — try again.` (exit 2).
 - All errors use `status.err()` from `src/style.ts`.

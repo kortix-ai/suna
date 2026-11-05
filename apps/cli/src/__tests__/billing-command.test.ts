@@ -252,7 +252,7 @@ describe('kortix billing', () => {
       'transactions',
       '--breakdown',
       'costs',
-      '--by project|session',
+      '--by workspace|session',
       '--csv <file>',
       'Read-only',
     ]) {
@@ -576,9 +576,9 @@ describe('kortix billing', () => {
       [['--sort', 'bogus'], '--sort must be one of'],
       [
         ['--by', 'session', '--sort', 'name_asc'],
-        '--sort name_asc is only valid with --by project',
+        '--sort name_asc is only valid with --by workspace',
       ],
-      [['--by', 'bogus'], '--by must be project or session'],
+      [['--by', 'bogus'], '--by must be workspace or session'],
     ] as const) {
       const r = await runCli(['billing', 'costs', ...args], config);
       expect(r.code).toBe(2);

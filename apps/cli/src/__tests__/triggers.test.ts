@@ -752,7 +752,7 @@ describe('kortix triggers — events', () => {
       },
     });
     const cfg = writeConfig(`http://127.0.0.1:${server.port}`);
-    const line = 'Composio event triggers are off for this project. Turn them on: kortix projects features enable event_triggers';
+    const line = 'Composio event triggers are off for this workspace. Turn them on: kortix workspaces features enable event_triggers';
     for (const args of [
       ['triggers', 'events', '--apps'],
       ['triggers', 'events', '--connector', 'github'],
@@ -803,7 +803,7 @@ describe('kortix triggers — events', () => {
     expect(info.stdout).toContain('needs connection');
     expect(info.stdout).toContain('No connected account');
     expect(info.stdout).toContain('last_event');
-    expect(info.stdout).toContain('kortix connectors connect github --owner project');
+    expect(info.stdout).toContain('kortix connectors connect github --owner workspace');
   });
 
   test('ls shows connector/account and info shows connected as', async () => {
@@ -913,7 +913,7 @@ describe('kortix triggers — events', () => {
       expect(r.stdout).toMatch(/docs-search\s+1 event\s+connected/);
       expect(r.stdout).toContain('No connector yet, source mcp (2): linear (0), notes (1, add as notes-events)');
       expect(r.stdout).toContain(
-        'Add an MCP app (its read-only list tools become events too): kortix connectors add <slug> --provider mcp --url <mcp_url> --apply, then sign it in for the project: kortix connectors authorize <slug>.',
+        'Add an MCP app (its read-only list tools become events too): kortix connectors add <slug> --provider mcp --url <mcp_url> --apply, then sign it in for the workspace: kortix connectors authorize <slug>.',
       );
       // Apps come from the MCP catalogue: no Composio add line.
       expect(r.stdout).not.toContain('--provider composio');
@@ -928,7 +928,7 @@ describe('kortix triggers — events', () => {
       const one = await runCli(['triggers', 'events', '--app', 'notes', '--event', 'gmail.message.received', '--project', PROJECT], cfg);
       expect(one.code).toBe(0);
       expect(one.stdout).toContain(`1. kortix connectors add notes-events --provider mcp --url ${NOTES_URL} --apply`);
-      expect(one.stdout).toContain('2. kortix connectors authorize notes-events  (a person signs in; the account is shared with the project)');
+      expect(one.stdout).toContain('2. kortix connectors authorize notes-events  (a person signs in; the account is shared with the workspace)');
       expect(one.stdout).toContain('3. kortix triggers add <slug> --type event --connector notes-events --event gmail.message.received --prompt "…" --apply');
       expect(one.stdout).not.toContain('--provider composio');
       const list = await runCli(['triggers', 'events', '--app', 'notes', '--project', PROJECT], cfg);
@@ -1091,7 +1091,7 @@ describe('eventNextStep on an error', () => {
     const { lines } = eventNextStep(
       errored({ source: 'composio', provider: 'composio', error: 'App event triggers are off for this project. Turn them on in Settings → Feature flags.' }),
     );
-    expect(lines.join('\n')).toContain('kortix projects features enable event_triggers');
+    expect(lines.join('\n')).toContain('kortix workspaces features enable event_triggers');
     expect(lines.join('\n')).not.toContain('--config');
   });
 

@@ -83,18 +83,18 @@ interface ConnectedApp {
 
 const HELP = help`Usage: kortix tokens <subcommand> [options]
 
-Non-interactive credentials for this account. Reads need token.read. Every
+Non-interactive credentials for this workspace. Reads need token.read. Every
 member may mint and revoke their OWN personal keys (token.personal.create,
 token.personal.revoke). Service accounts and other people's keys need
 token.create / token.revoke.
 
 Personal API keys — act as YOU, and die with your membership:
-  ls [--mine] [--all] [--json]      List the account's keys that still
+  ls [--mine] [--all] [--json]      List the workspace's keys that still
                                     authenticate. --mine narrows to the ones
                                     you minted yourself; --mine --all lists
                                     your revoked keys too.
   new <name> [--expires <when>]     Mint a key. The secret prints ONCE.
-      [--project <id>]              Bind the key to one project (it can never
+      [--workspace <id>]            Bind the key to one workspace (it can never
                                     reach another).
   rm <token-id> [-y] [--force]      Revoke a key; delete it if already revoked.
                                     Refuses the key this CLI is signed in
@@ -123,9 +123,9 @@ Options:
   --all               ls --mine: also list your keys that cannot
                       authenticate (revoked, or revoked_at stamped on a row
                       still reading active). Without --mine it changes
-                      nothing: the account list holds live keys only.
+                      nothing: the workspace list holds live keys only.
   --expires <when>    ISO-8601, or a forward span: 30d, 12h, 6w, 1y.
-  --project <id>      new: bind the key to one project.
+  --workspace <id>    new: bind the key to one workspace.
   --description <t>   service-accounts new: what this identity is for.
   --account <id>      Operate on this account (default: the active account).
   --host <name>       Operate against a non-default Kortix host.
@@ -159,7 +159,7 @@ export async function runTokens(argv: string[]): Promise<number> {
     f.account = takeFlagValue(rest, ['--account']);
     f.host = takeFlagValue(rest, ['--host']);
     f.expires = takeFlagValue(rest, ['--expires']);
-    f.project = takeFlagValue(rest, ['--project']);
+    f.project = takeFlagValue(rest, ['--project', '--workspace']);
     f.description = takeFlagValue(rest, ['--description', '--desc']);
     json = takeFlagBool(rest, ['--json']);
     mine = takeFlagBool(rest, ['--mine']);
@@ -277,7 +277,7 @@ export async function runTokens(argv: string[]): Promise<number> {
           `  ${C.dim}expires  ${C.reset}${token.expires_at ? token.expires_at.slice(0, 10) : 'never'}\n`,
         );
         if (token.project_id) {
-          process.stdout.write(`  ${C.dim}project  ${C.reset}${token.project_id}\n`);
+          process.stdout.write(`  ${C.dim}workspace  ${C.reset}${token.project_id}\n`);
         }
         return 0;
       }

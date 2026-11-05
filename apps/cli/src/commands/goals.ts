@@ -421,7 +421,7 @@ async function newGoal(ctx: Ctx, objective: string, flags: Flags): Promise<numbe
   if (!objective) return missing('the goal, e.g. kortix goals new "EU billing live: invoices in EUR with VAT"');
   const off = await goalFlagsOff(ctx.client, ctx.projectId);
   if (off.length) {
-    return fail(`Goals need these project features on: ${off.join(', ')}. Turn them on with ${off.map((f) => `kortix projects features enable ${f}`).join(' && ')} (a project admin), then run this again.`);
+    return fail(`Goals need these workspace features on: ${off.join(', ')}. Turn them on with ${off.map((f) => `kortix workspaces features enable ${f}`).join(' && ')} (a workspace admin), then run this again.`);
   }
   if (!existsSync(drivesRoot())) return fail('Files is not mounted in this session yet. Volumes is on: start a new session, then run this again.');
   const parent = flags.folder ?? join(drivesRoot(), 'me');
@@ -694,7 +694,7 @@ function bindGoal(slug: string | undefined, flags: Flags): number {
   const next = { ...g, space: flags.clear ? null : (flags.space ?? g.space ?? null), agent: flags.clear ? null : (flags.agent ?? g.agent ?? null) };
   writeGoal(folder, next);
   if (flags.json) emitJson({ folder, space: next.space, agent: next.agent });
-  else process.stdout.write(`${status.ok(`Goal ${C.bold}${folder.split('/').at(-1)}${C.reset} is in ${next.space ?? (next.agent ? `${next.agent}'s space` : 'no space (project-wide)')}`)}\n`);
+  else process.stdout.write(`${status.ok(`Goal ${C.bold}${folder.split('/').at(-1)}${C.reset} is in ${next.space ?? (next.agent ? `${next.agent}'s space` : 'no space (workspace-wide)')}`)}\n`);
   return 0;
 }
 

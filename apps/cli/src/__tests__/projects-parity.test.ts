@@ -123,6 +123,14 @@ function startServer(): string {
           }),
         );
       }
+      // `workspaces ls` reads the identity first, then each account's list.
+      if (url.pathname === '/v1/accounts/me' && req.method === 'GET') {
+        return Response.json({
+          user_id: 'user_1',
+          email: 'user@example.test',
+          accounts: [{ account_id: 'acct_1', slug: 'acct1', name: 'Parity', role: 'owner' }],
+        });
+      }
       if (url.pathname === '/v1/projects' && req.method === 'GET') {
         return Response.json([
           project(),
@@ -446,7 +454,7 @@ describe('kortix projects cli-tokens', () => {
     };
     const r = await runCli(['projects', 'cli-tokens', 'ls', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('No CLI tokens on this project.');
+    expect(r.stdout).toContain('No CLI tokens in this workspace.');
     expect(r.stdout).toContain('1 session token');
   });
 
@@ -500,7 +508,7 @@ describe('kortix projects ls --query', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['projects', 'ls', '--query', 'zzz-nothing'], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('match "zzz-nothing"');
+    expect(r.stdout).toContain('No workspace matches "zzz-nothing"');
   });
 
   test('--query with no value exits 2', async () => {

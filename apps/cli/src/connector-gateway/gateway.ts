@@ -43,7 +43,7 @@ export async function connectorContext(
   const ctx = await resolveProjectContext({ projectArg: projectOverride, hostArg, envPin: true });
   if (!ctx) {
     throw new CliError(
-      'no project context — run `kortix login`, then `kortix projects link` (or pass --project / --host).',
+      'no workspace context — run `kortix login`, then `kortix workspaces link` (or pass --project / --host).',
       'NO_PROJECT_CONTEXT',
     );
   }

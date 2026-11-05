@@ -343,6 +343,9 @@ function startCliE2eServer() {
     port: 0,
     fetch: async (req) => {
       const url = new URL(req.url);
+      // A port probe from the dev box (PTXP sends HEAD / and GET / to every new
+      // listening port) is not the CLI: the CLI never requests the bare root.
+      if (url.pathname === '/') return new Response(null, { status: 404 });
       const entry: { method: string; path: string; authorization: string | null; body?: unknown } = {
         method: req.method,
         path: `${url.pathname}${url.search}`,
@@ -360,6 +363,13 @@ function startCliE2eServer() {
       }
       requests.push(entry);
 
+      if (url.pathname === '/v1/accounts/me' && req.method === 'GET') {
+        return Response.json({
+          user_id: 'user_1',
+          email: 'user@example.test',
+          accounts: [{ account_id: 'account_1', slug: 'acct', name: 'Account', role: 'owner' }],
+        });
+      }
       if (url.pathname === '/v1/projects' && req.method === 'GET') {
         return Response.json(archived ? [] : [projectSummary()]);
       }
@@ -518,15 +528,14 @@ describe('kortix CLI black-box behavior', () => {
     expect(result.code).toBe(0);
     // Tier bands lead with the navigable hierarchy, then the linked project,
     // then the CLI tool itself (rendered as a labeled divider).
-    for (const tier of ['Where you are', 'The linked project', 'CLI']) {
+    for (const tier of ['Where you are', 'The linked workspace', 'CLI']) {
       expect(result.stdout).toContain(`\n  ${tier}`);
     }
     // Section headings within the tiers — the hierarchy comes first, top-down.
     for (const heading of [
       'Sign in — per host',
-      'Account — within the host',
-      'Project — within the account',
-      'Session — within the project',
+      'Workspace — within the host',
+      'Session — within the workspace',
       'Author & ship',
       'Agents & connectors',
       'Files, changes & triggers',
@@ -733,7 +742,7 @@ describe('kortix CLI black-box behavior', () => {
     const help = await runCli(['apps', '--help', '--project', 'proj_e2e'], tmp, env);
     expect(help.code).toBe(0);
     expect(help.stdout).toContain('Usage: kortix apps');
-    expect(help.stdout).toContain('private (default), project, restricted, public, or password');
+    expect(help.stdout).toContain('private (default), workspace, restricted, public, or password');
 
     const listed = await runCli(['apps', 'list', '--project', 'proj_e2e'], tmp, env);
     expect(listed.code).toBe(0);
@@ -783,7 +792,7 @@ describe('kortix CLI black-box behavior', () => {
 
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('unknown command `use`');
-    expect(result.stderr).toContain('kortix init <name>');
+    expect(result.stderr).toContain('kortix workspaces create <name>');
     expect(result.stdout).not.toContain('Scaffolded');
     expect(existsSync(join(tmp, 'use'))).toBe(false);
   });
@@ -955,7 +964,9 @@ describe('kortix CLI black-box behavior', () => {
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(false);
 
     expect(requests.map((r) => [r.method, r.path, r.body ?? null])).toEqual([
-      // `projects ls` is scoped to the active account; by-id routes are not.
+      // `projects ls` is the flat workspace list: the memberships, then each
+      // account's projects. By-id routes are not account-scoped.
+      ['GET', '/v1/accounts/me', null],
       ['GET', '/v1/projects?account_id=account_1', null],
       ['GET', '/v1/projects/proj_e2e', null],
       ['GET', '/v1/projects/proj_e2e', null],

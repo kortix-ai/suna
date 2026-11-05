@@ -30,7 +30,7 @@ import {
 const HELP = help`Usage: kortix cr <subcommand> [options]
 
 Open, review, and merge Kortix change requests. A CR proposes merging one
-version (branch) into another inside a project. The CR layer is Kortix-
+version (branch) into another inside a workspace. The CR layer is Kortix-
 native — it works on top of any git host (GitHub, GitLab, plain
 git) without a per-host adapter.
 
@@ -56,12 +56,12 @@ session, booting its sandbox if it is asleep. It needs project.review.act —
 the same leaf the Review Center uses, not gitops.push.
 
 Global options:
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>   Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 
-One principal: a project the CLI config supplies (.kortix/link.json in cwd or
-the active host's default project) is always paired with THAT host's login —
+One principal: a workspace the CLI config supplies (.kortix/link.json in cwd or
+the active host's default workspace) is always paired with THAT host's login —
 never with the sandbox's ambient session token, which cannot act on it. When
 that host is not logged in here, the command stops and asks for
 kortix login --host <name>.
@@ -81,7 +81,7 @@ export async function runCr(argv: string[]): Promise<number> {
   let hostFlag: string | undefined;
   let json = false;
   try {
-    projectFlag = takeFlagValue(rest, ['--project']);
+    projectFlag = takeFlagValue(rest, ['--project', '--workspace']);
     hostFlag = takeFlagValue(rest, ['--host']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {

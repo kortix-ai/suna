@@ -41,7 +41,7 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
     );
   }
   if (everyone && users.length + groups.length + agents.length > 0) {
-    return fail('--everyone shares it with the whole project; drop --user, --group and --agent.');
+    return fail('--everyone shares it with the whole workspace; drop --user, --group and --agent.');
   }
   if (!everyone && users.length + groups.length + agents.length === 0) {
     return fail(
@@ -91,7 +91,7 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
         const hit = identities.find((agent) => agent.agent_name === name);
         if (!hit) {
           process.stderr.write(
-            `${status.err(`No agent "${name}" in this project. See: kortix agents ls`)}\n`,
+            `${status.err(`No agent "${name}" in this workspace. See: kortix agents ls`)}\n`,
           );
           return 1;
         }
@@ -112,7 +112,7 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
       return n === 0 ? null : `${n} ${n === 1 ? one : many}`;
     };
     const audience = everyone
-      ? 'everyone in the project'
+      ? 'everyone in the workspace'
       : [
           count('user', 'person', 'people'),
           count('group', 'group', 'groups'),
@@ -326,7 +326,7 @@ export async function secretsGrant(argv: string[], opts: CtxOpts, json = false):
   // every other agent on the project.
   if (resp.adopted_governance) {
     process.stdout.write(
-      `${status.warn('This wrote the first `agents:` block — an agent that is not listed now receives NO project secrets.')}\n`,
+      `${status.warn('This wrote the first `agents:` block — an agent that is not listed now receives NO workspace secrets.')}\n`,
     );
   }
   return 0;

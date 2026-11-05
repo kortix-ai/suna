@@ -169,8 +169,37 @@ describe('multi-agent commands', () => {
     const tasks = findCommand('tasks');
     if (!tasks) throw new Error('tasks missing');
     expect(unavailableReason(tasks, { ...FULL, flags: { agent_teams: false } })).toBe(
-      'turned off for this project',
+      'turned off for this workspace',
     );
     expect(unavailableReason(tasks, { ...FULL, flags: { agent_teams: true } })).toBeNull();
+  });
+});
+
+describe('workspaces', () => {
+  test('/workspaces is the command; /projects, /project, /accounts and /org still open it', () => {
+    for (const word of ['workspaces', 'workspace', 'projects', 'project', 'accounts', 'org']) {
+      expect(findCommand(word)?.name).toBe('workspaces');
+    }
+    expect(menuEntries('workspa', FULL)[0]?.name).toBe('workspaces');
+  });
+
+  test('the members screen keeps /account as an alias', () => {
+    expect(findCommand('members')?.name).toBe('members');
+    expect(findCommand('account')?.name).toBe('members');
+  });
+
+  test('a command that needs a workspace says so and names /workspaces', () => {
+    const none = { ...FULL, hasProject: false, hasAccount: false };
+    const spec = findCommand('new');
+    expect(spec && unavailableReason(spec, none)).toBe('needs a workspace: /workspaces');
+    const members = findCommand('members');
+    expect(members && unavailableReason(members, none)).toBe('needs a workspace: /workspaces');
+  });
+
+  test('no command name, alias or description says "project"', () => {
+    for (const spec of COMMANDS) {
+      expect(spec.description).not.toMatch(/\bproject/i);
+      expect(spec.name).not.toMatch(/project|account/);
+    }
   });
 });

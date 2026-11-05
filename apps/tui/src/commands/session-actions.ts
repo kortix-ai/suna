@@ -98,7 +98,7 @@ export async function shareSession(
   const word = mode.trim().toLowerCase();
   if (word === 'team' || word === 'project') {
     await handle.setSharing({ mode: 'project' });
-    return 'Everyone in this project can open this session.';
+    return 'Everyone in this workspace can open this session.';
   }
   if (word === 'private' || word === 'me') {
     const current = (await handle.get()) as { created_by?: string | null } | null;

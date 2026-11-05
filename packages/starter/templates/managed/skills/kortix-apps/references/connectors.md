@@ -19,7 +19,7 @@ code. Ask the user to run:
 
 ```sh
 kortix tokens service-accounts new crm-sync --description "CRM sync"    # the bearer prints once
-kortix access grant --service-account <id> --role member --project <project-id>
+kortix access grant --service-account <id> --role member --workspace <workspace-id>
 ```
 
 An agent session cannot do this for them. They store the bearer with

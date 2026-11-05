@@ -220,7 +220,7 @@ describe('whoami renderings (human + --token-only) are byte-stable', () => {
     expect(stdout).toBe(
       '\n' +
         '  session token\n' +
-        '  project   proj_1\n' +
+        '  workspace proj_1\n' +
         '  session   sess_1\n' +
         '  agent     reviewer\n' +
         '  connectors projects:read, files:read\n' +
@@ -255,9 +255,9 @@ describe('whoami renderings (human + --token-only) are byte-stable', () => {
     expect(stdout).toContain(`\n  ${EMAIL}\n`);
     expect(stdout).toContain(`  email     ${EMAIL}\n`);
     expect(stdout).toContain(`  user_id   ${USER_ID}\n`);
-    expect(stdout).toContain('  account   Acme (acme, owner)\n');
-    expect(stdout).toContain('  2 accounts total — switch with kortix accounts use <slug>\n');
-    expect(stdout).toContain('  project   Def Project (default)\n');
+    expect(stdout).toContain('  workspace Def Project (owner, default)\n');
+    expect(stdout).toContain('  switch workspace with kortix workspaces use\n');
+    expect(stdout).not.toContain('  account   ');
     expect(stdout).toContain(`  host      ${HOST_NAME} (http://127.0.0.1:${apiPort}/v1)\n`);
     expect(stdout).toMatch(/hosts configured — list with `kortix hosts ls`\n/);
   });
@@ -265,7 +265,7 @@ describe('whoami renderings (human + --token-only) are byte-stable', () => {
   test('human mode: a session token renders the token block without permissions/env', () => {
     const { stdout } = get('human session');
     expect(stdout).toContain('  token     session token\n');
-    expect(stdout).toContain('  project   proj_1\n');
+    expect(stdout).toContain('  workspace proj_1\n');
     expect(stdout).toContain('  session   sess_1\n');
     expect(stdout).toContain('  agent     reviewer\n');
     expect(stdout).toContain('  connectors projects:read, files:read\n');

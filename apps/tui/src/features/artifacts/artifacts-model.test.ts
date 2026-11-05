@@ -86,10 +86,10 @@ describe('list helpers', () => {
 });
 
 describe('unavailableReason', () => {
-  test('names the missing project, then the off flag, and is null otherwise', () => {
+  test('names the missing workspace, then the off flag, and is null otherwise', () => {
     expect(
       unavailableReason({ projectId: null, flagLoading: false, flagEnabled: false }),
-    ).toContain('No project selected');
+    ).toContain('No workspace open');
     expect(unavailableReason({ projectId: 'p', flagLoading: false, flagEnabled: false })).toContain(
       '`artifacts` flag',
     );

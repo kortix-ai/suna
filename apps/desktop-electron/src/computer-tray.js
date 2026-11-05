@@ -638,10 +638,10 @@ function setupComputer(deps) {
   async function connect(args) {
     const projectId = args.projectId ? String(args.projectId) : undefined;
     if (projectId !== undefined && !computer.isProjectId(projectId)) {
-      return { ok: false, error: 'projectId must be a project UUID' };
+      return { ok: false, error: 'projectId must be a workspace UUID' };
     }
     if (args.share !== undefined && args.share !== 'me' && args.share !== 'project') {
-      return { ok: false, error: "share must be 'me' or 'project'" };
+      return { ok: false, error: "share must be 'me' or 'project' (the whole workspace)" };
     }
     const { backendUrl, home } = await context();
     const mismatch = computer.checkPageApiUrl(args.apiUrl, backendUrl);

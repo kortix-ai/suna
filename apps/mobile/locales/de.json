@@ -604,7 +604,6 @@
     "cancelRequestDescription": "Du kannst diese Anfrage jederzeit vor dem Löschungsdatum abbrechen. Alle deine Daten werden erhalten, wenn du abbrichst.",
     "scheduledBadge": "Geplant",
     "notAvailableTitle": "Auf diesem Server nicht verfügbar",
-    "projectsAndSessions": "Projekte und Sitzungen",
     "credentialsAndConnections": "Zugangsdaten und Verbindungen",
     "subscriptionAndBilling": "Abonnement",
     "when": "Wann",
@@ -618,8 +617,9 @@
     "deleting": "Wird gelöscht…",
     "cancelling": "Wird abgebrochen…",
     "finalTitle": "Bist du sicher?",
-    "finalDescriptionNow": "Deine Projekte, Sitzungen und Zugangsdaten werden sofort gelöscht. Abrechnungsunterlagen bleiben so lange erhalten, wie es das Gesetz vorschreibt. Das kann nicht rückgängig gemacht werden.",
-    "finalDescriptionScheduled": "Deine Projekte, Sitzungen und Zugangsdaten werden in 14 Tagen gelöscht. Abrechnungsunterlagen bleiben so lange erhalten, wie es das Gesetz vorschreibt. Bis dahin kannst du abbrechen."
+    "finalDescriptionNow": "Deine Workspaces, Sitzungen und Zugangsdaten werden sofort gelöscht. Abrechnungsunterlagen bleiben so lange erhalten, wie es das Gesetz vorschreibt. Das kann nicht rückgängig gemacht werden.",
+    "finalDescriptionScheduled": "Deine Workspaces, Sitzungen und Zugangsdaten werden in 14 Tagen gelöscht. Abrechnungsunterlagen bleiben so lange erhalten, wie es das Gesetz vorschreibt. Bis dahin kannst du abbrechen.",
+    "workspacesAndSessions": "Workspaces und Sitzungen"
   },
   "models": {
     "selectModel": "Modell wählen",
@@ -676,7 +676,7 @@
     "upgradeYourPlan": "Upgrade deinen Plan",
     "upgradeDescription": "Hol dir mehr Credits und schalte Premium-Features frei",
     "topUp": "Aufladen",
-    "topUpDescription": "Lade dein Konto mit zusätzlichen Credits auf",
+    "topUpDescription": "Lade deinen Workspace mit zusätzlichen Credits auf",
     "upgrade": "Upgraden",
     "totalUsage": "Gesamtnutzung",
     "selectedPeriod": "Ausgewählter Zeitraum",
@@ -1148,8 +1148,7 @@
     "preferences": "Einstellungen",
     "sounds": "Töne",
     "richAnswers": "Erweiterte Antworten",
-    "workspace": "Arbeitsbereich",
-    "accounts": "Konten",
+    "workspace": "Workspace",
     "help": "Hilfe",
     "docs": "Dokumentation",
     "support": "Support",
@@ -1165,7 +1164,7 @@
     "current": "Aktuell",
     "currentPlan": "Aktueller Tarif",
     "includes": "{{plan}} enthält",
-    "askOwner": "Bitte einen Kontoinhaber oder Admin um ein Upgrade",
+    "askOwner": "Bitte einen Inhaber oder Admin des Workspace um ein Upgrade",
     "contactSales": "Vertrieb kontaktieren",
     "upgradeTo": "Upgrade auf {{plan}}",
     "switchTo": "Zu {{plan}} wechseln",
@@ -1176,7 +1175,8 @@
     "creditsPlan": "Kortix Credits",
     "pickAmount": "Wähle im Web einen beliebigen Monatsbetrag. Unbegrenzt viele Mitglieder teilen sich einen Credit-Pool.",
     "includes": "Enthalten",
-    "notNow": "Nicht jetzt"
+    "notNow": "Nicht jetzt",
+    "continueFree": "Mit Free fortfahren"
   },
   "sessions": {
     "showMoreSubsessions_one": "{{count}} weitere anzeigen",
@@ -1200,7 +1200,7 @@
     "archivedView": "Archiviert",
     "archivedEmpty": "Sitzungen, die du archivierst, erscheinen hier.",
     "stoppedBy": "Gestoppt von {{name}}",
-    "stopNotAllowed": "Nur das Mitglied, das diesen Lauf gestartet hat, der Inhaber der Sitzung oder ein Manager des Projekts kann ihn stoppen."
+    "stopNotAllowed": "Nur das Mitglied, das diesen Lauf gestartet hat, der Inhaber der Sitzung oder ein Manager des Workspace kann ihn stoppen."
   },
   "genui": {
     "call": "Anrufen",
@@ -1229,12 +1229,6 @@
   "invites": {
     "group": "Einladungen",
     "fallbackTitle": "Einladung",
-    "invitedYouToProject": "{{inviter}} hat dich zu einem Projekt eingeladen.",
-    "invitedToProject": "Du wurdest zu einem Projekt eingeladen.",
-    "invitedYouToTeam": "{{inviter}} hat dich in ein Team eingeladen.",
-    "invitedToTeam": "Du wurdest in ein Team eingeladen.",
-    "joinProject": "Du trittst {{project}} als {{role}} bei.",
-    "joinAccount": "Du trittst diesem Konto als {{role}} bei und siehst die Projekte, für die dir der Inhaber Zugriff gibt.",
     "roleMember": "Mitglied",
     "roleManager": "Manager",
     "roleAdmin": "Admin",
@@ -1253,15 +1247,19 @@
     "wrongAccountTitle": "Konto wechseln",
     "wrongAccountBody": "Diese Einladung ist an ein anderes Konto gerichtet. Du bist als {{email}} angemeldet.",
     "directoryTitle": "Mit Single Sign-On anmelden",
-    "directoryBody": "Das Verzeichnis deiner Organisation hat dich zu diesem Konto hinzugefügt. Öffne diese Einladung im Browser und melde dich mit dem Single Sign-On deiner Organisation an, oder bitte einen Kontoadmin, die Einladung erneut zu senden.",
+    "directoryBody": "Das Verzeichnis deiner Organisation hat dich zu diesem Workspace hinzugefügt. Öffne diese Einladung im Browser und melde dich mit dem Single Sign-On deiner Organisation an, oder bitte einen Workspace-Admin, die Einladung erneut zu senden.",
     "ssoDomainUnverifiedBody": "Dein Single-Sign-On-Anbieter hat die Domain dieser E-Mail-Adresse nicht verifiziert. Melde dich ab und mit deiner E-Mail-Adresse wieder an, um diese Einladung zu nutzen.",
     "signOutAndContinue": "Abmelden und fortfahren",
-    "backToProjects": "Zurück zu den Projekten"
+    "invitedYouToWorkspace": "{{inviter}} hat dich in einen Workspace eingeladen.",
+    "invitedToWorkspace": "Du wurdest in einen Workspace eingeladen.",
+    "joinWorkspace": "Du trittst {{workspace}} als {{role}} bei.",
+    "joinThisWorkspace": "Du trittst diesem Workspace als {{role}} bei.",
+    "backToWorkspaces": "Zurück zu den Workspaces"
   },
   "approvals": {
-    "waitingManagers": "Eine Person, die dieses Projekt verwaltet, kann den Aufruf genehmigen oder ablehnen.",
+    "waitingManagers": "Eine Person, die diesen Workspace verwaltet, kann den Aufruf genehmigen oder ablehnen.",
     "waitingTitle": "Wartet auf Genehmigung",
-    "waitingWho": "Die Person, die diese Sitzung gestartet hat, oder eine Person, die dieses Projekt verwaltet, kann den Aufruf genehmigen oder ablehnen."
+    "waitingWho": "Die Person, die diese Sitzung gestartet hat, oder eine Person, die diesen Workspace verwaltet, kann den Aufruf genehmigen oder ablehnen."
   },
   "imageGen": {
     "generating": "Bild wird erstellt",
@@ -1290,10 +1288,69 @@
     "states": {
       "resolving": "Das Image für diese Sitzung wird ausgewählt.",
       "serving_last_ready": "Start mit dem letzten fertigen Image. Das neue wird im Hintergrund gebaut.",
-      "waiting_for_build": "Das erste Image für dieses Projekt wird gebaut. Die Sitzung startet, sobald es fertig ist.",
-      "building": "Das erste Image für dieses Projekt wird gebaut. Das passiert einmal und dauert einige Minuten.",
+      "waiting_for_build": "Das erste Image für diesen Workspace wird gebaut. Die Sitzung startet, sobald es fertig ist.",
+      "building": "Das erste Image für diesen Workspace wird gebaut. Das passiert einmal und dauert einige Minuten.",
       "copying_to_region": "Das Image wird in die Region dieser Sitzung kopiert.",
       "waiting_for_provider": "Das Image wird fertiggestellt. Die Sitzung startet, sobald es fertig ist."
+    }
+  },
+  "workspace": {
+    "switcherTitle": "Workspaces",
+    "create": "Workspace erstellen",
+    "createTitle": "Workspace erstellen",
+    "createBody": "In einem Workspace arbeitet dein Unternehmen mit Kortix: Menschen, Agenten und alles, was sie erstellen.",
+    "createOnWebTitle": "Workspace im Web erstellen",
+    "createOnWebLine": "Workspaces werden auf kortix.com erstellt.",
+    "invitedHint": "Eingeladen? Öffne den Einladungslink aus deiner E-Mail, oder bitte einen Admin, {{email}} einzuladen.",
+    "yours": "Dein Workspace",
+    "openNamed": "{{workspace}} öffnen",
+    "open": "Workspace öffnen",
+    "settings": "Workspace-Einstellungen",
+    "search": "Workspaces durchsuchen",
+    "loadFailed": "Workspaces konnten nicht geladen werden",
+    "loadFailedBody": "Prüfe deine Verbindung und versuche es erneut.",
+    "loadOneFailed": "Dieser Workspace konnte nicht geladen werden",
+    "emptyTitle": "Noch keine Workspaces",
+    "noMatches": "Keine Treffer für „{{query}}“",
+    "noMatchesBody": "Versuche einen anderen Suchbegriff",
+    "allWorkspaces": "Alle Workspaces",
+    "switch": "Workspace wechseln",
+    "switchNamed": "Workspace wechseln, {{workspace}}",
+    "actions": "Workspace-Aktionen",
+    "actionsNamed": "Workspace-Aktionen, {{workspace}}",
+    "archive": "Workspace archivieren",
+    "archiveConfirm": "„{{workspace}}“ archivieren?",
+    "archiveFailed": "Archivieren nicht möglich. Prüfe deine Verbindung und versuche es erneut.",
+    "archiving": "Wird archiviert…",
+    "archived": "Workspace archiviert",
+    "delete": "Workspace löschen",
+    "deleteBody": "Entfernt „{{workspace}}“ und alles darin, für alle Mitglieder. Das kann nicht rückgängig gemacht werden. Gib zur Bestätigung den Namen des Workspace ein.",
+    "deleteTypeName": "Gib zur Bestätigung den Namen des Workspace ein",
+    "deleteConfirmTitle": "Diesen Workspace löschen?",
+    "deleteConfirmBody": "Entfernt „{{workspace}}“ für alle Mitglieder. Das kann nicht rückgängig gemacht werden.",
+    "deleteFailed": "Der Workspace konnte nicht gelöscht werden",
+    "name": "Name des Workspace",
+    "billing": "Abrechnung",
+    "billingAndMembers": "Abrechnung und Mitglieder",
+    "onWeb": "Auf kortix.com",
+    "members": "Mitglieder",
+    "git": "Git",
+    "auditLog": "Audit-Log",
+    "join": "Beitreten",
+    "joinNamed": "{{workspace}} beitreten",
+    "inviteFrom": "{{inviter}} · {{role}}",
+    "roleOwner": "Inhaber",
+    "roleAdmin": "Admin",
+    "roleManager": "Manager",
+    "roleMember": "Mitglied",
+    "startFailure": {
+      "sessionTitle": "Deine Sitzung ist abgelaufen",
+      "sessionBody": "Melde dich erneut an, um fortzufahren.",
+      "unreachableTitle": "Kortix ist nicht erreichbar",
+      "unreachableBody": "Prüfe deine Verbindung und versuche es dann erneut.",
+      "serverTitle": "Dein Workspace konnte nicht geöffnet werden",
+      "serverBody": "Versuche es erneut, oder öffne einen anderen Workspace.",
+      "signInAgain": "Erneut anmelden"
     }
   }
 }

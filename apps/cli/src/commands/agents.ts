@@ -42,18 +42,18 @@ type DetailAgent = ProjectConfigSummary['agents'][number];
 
 const HELP = help`Usage: kortix agents <subcommand> [options]
 
-Per-agent settings on the linked Kortix project — the CLI half of Customize →
+Per-agent settings on the linked Kortix workspace — the CLI half of Customize →
 Agents. \`model\` pins an explicit concrete model (scope=agent); an agent with no
-pin follows the project → account → platform default. Model pins and scope apply
+pin follows the workspace → account → platform default. Model pins and scope apply
 instantly, with no kortix.yaml commit; \`default\` and \`config\` commit to
-kortix.yaml on the project's default branch.
+kortix.yaml on the workspace's default branch.
 
 Subcommands:
-  ls [--json]                     List the project's agents (name, source file,
+  ls [--json]                     List the workspace's agents (name, source file,
                                   model) + the fallback default. (Alias: \`models\`.)
   model <agent> <model-id>        Pin an agent to a plain model id (e.g. deepseek-v4.1-flash).
   model <agent> --clear           Clear the pin — the agent follows the default again.
-  default <agent>                 Make this the project's default agent.
+  default <agent>                 Make this the workspace's default agent.
   default --show [--json]         Print the current default agent.
   scope <agent> [options]         Which secrets/connectors/Apps the agent may use.
   scope <agent> --show [--json]   Print the agent's current scope.
@@ -62,7 +62,7 @@ Subcommands:
   config <agent> --set k=v ...    Change single (dotted) keys, merged in.
 
 Scope options (each replaces the field; --policy-set merges):
-  --secrets all|none|A,B          Which project secrets reach the agent's env.
+  --secrets all|none|A,B          Which workspace secrets reach the agent's env.
   --connectors all|none|a,b       Which connectors it may call as tools.
   --apps all|none|a,b             Which Kortix Apps it may open by slug, when
                                   the App is restricted or private. The agent
@@ -87,7 +87,7 @@ Config options:
                                   JSON when it parses, else kept as a string.
 
 Global:
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>   Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -121,7 +121,7 @@ export async function runAgents(argv: string[]): Promise<number> {
     requiredFlags = takeFlagValues(rest, ['--require-connector', '--required-connector']);
     policySetFlags = takeFlagValues(rest, ['--policy-set']);
     setFlags = takeFlagValues(rest, ['--set']);
-    projectFlag = takeFlagValue(rest, ['--project']);
+    projectFlag = takeFlagValue(rest, ['--project', '--workspace']);
     hostFlag = takeFlagValue(rest, ['--host']);
     secretsFlag = takeFlagValue(rest, ['--secrets', '--env']);
     connectorsFlag = takeFlagValue(rest, ['--connectors']);
@@ -243,7 +243,7 @@ async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
   const fallback = d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}Default (project → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
+    `  ${C.dim}Default (workspace → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
   );
   if (agents === null) {
     const entries = Object.entries(pins).sort((a, b) => a[0].localeCompare(b[0]));
@@ -264,7 +264,7 @@ async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
     return 0;
   }
   if (agents.length === 0) {
-    process.stdout.write(`  ${C.dim}No agents declared in this project.${C.reset}\n\n`);
+    process.stdout.write(`  ${C.dim}No agents declared in this workspace.${C.reset}\n\n`);
   } else {
     process.stdout.write(`  ${C.dim}Agents (${agents.length})${C.reset}\n`);
     const width = Math.max(...agents.map((agent) => agent.name.length));
@@ -533,7 +533,7 @@ function printBuiltinAgent(cfg: AgentConfigResponse, json: boolean): number {
   }
   process.stdout.write(
     `\n  ${C.bold}My Kortix${C.reset} ${C.dim}(${cfg.agent}, built in)${C.reset}\n` +
-      `  ${C.dim}${pad('kortix permissions', 20)}${C.reset} yours, in this project\n` +
+      `  ${C.dim}${pad('kortix permissions', 20)}${C.reset} yours, in this workspace\n` +
       `  ${C.dim}${pad('secrets', 20)}${C.reset} none\n` +
       `  ${C.dim}${pad('connectors', 20)}${C.reset} none\n` +
       `  ${C.dim}${pad('apps', 20)}${C.reset} none\n\n` +
@@ -625,7 +625,7 @@ async function agentsConfig(
     if (cfg.builtin) return printBuiltinAgent(cfg, false);
     if (!cfg.editable) {
       process.stdout.write(
-        `  ${C.yellow}!${C.reset}  ${C.dim}This block is read-only: the project's manifest is not a current kortix.yaml. Run \`kortix validate\` for the fix.${C.reset}\n`,
+        `  ${C.yellow}!${C.reset}  ${C.dim}This block is read-only: the workspace's manifest is not a current kortix.yaml. Run \`kortix validate\` for the fix.${C.reset}\n`,
       );
     }
     process.stdout.write(`${JSON.stringify(cfg.block ?? {}, null, 2)}\n`);

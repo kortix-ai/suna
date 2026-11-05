@@ -6,10 +6,12 @@ import type { AccountMembership, MeResponse } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { emitJson, takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
+import { NO_WORKSPACE_LINE } from '../api/no-workspace.ts';
+import { listWorkspaceRows } from '../project-bind.ts';
 
 const HELP = help`Usage: kortix whoami [options]
 
-Print the currently authenticated user + active account on the
+Print the currently authenticated user + default workspace on the
 selected host.
 
 Shortcut for the active host — same as \`kortix hosts whoami\`. Use
@@ -40,7 +42,7 @@ export async function runWhoami(argv: string[]): Promise<number> {
 const TOKEN_HELP = help`Usage: kortix token [options]
 
 Print only the active token context on the selected host: the kind of
-credential in use and its project/session/agent grants — never the
+credential in use and its workspace/session/agent grants — never the
 secret value itself. Same as \`kortix whoami --token-only\`.
 
 Options:
@@ -117,7 +119,17 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
     whoamiTokenOnly(me);
     return 0;
   }
-  whoamiHuman(me, auth, resolvedHost, active, def);
+  // With no default picked, tell "pick one" apart from "none exists": an
+  // account with 0 projects is not a workspace.
+  let hasWorkspace = me.accounts.length > 0;
+  if (hasWorkspace && !def) {
+    try {
+      hasWorkspace = (await listWorkspaceRows(auth, undefined, me)).length > 0;
+    } catch {
+      // Unreadable list: keep the "pick one" hint rather than claim none.
+    }
+  }
+  whoamiHuman(me, auth, resolvedHost, active, def, hasWorkspace);
   return 0;
 }
 
@@ -157,32 +169,36 @@ function whoamiTokenOnly(me: MeResponse): void {
   process.stdout.write('\n');
 }
 
-/** The default human rendering: identity, account, then the token context. */
+/** The default human rendering: identity, workspace, then the token context. */
 function whoamiHuman(
   me: MeResponse,
   auth: Auth,
   resolvedHost: string | null,
   active: AccountMembership | undefined,
   def: DefaultProjectRef | null,
+  hasWorkspace = me.accounts.length > 0,
 ): void {
   process.stdout.write(`\n  ${C.bold}${me.email || me.user_id}${C.reset}\n`);
   if (me.email) {
     process.stdout.write(`  ${C.dim}email     ${C.reset}${me.email}\n`);
   }
   process.stdout.write(`  ${C.dim}user_id   ${C.reset}${me.user_id}\n`);
-  if (active) {
+  if (!hasWorkspace) {
+    // A new user belongs to no workspace: say how to get one.
+    process.stdout.write(`  ${C.dim}workspace ${C.reset}${C.dim}${NO_WORKSPACE_LINE}${C.reset}\n`);
+  } else if (def) {
+    const role = active && active.account_id === def.account_id ? `${active.role}, ` : '';
     process.stdout.write(
-      `  ${C.dim}account   ${C.reset}${active.name} ${C.faded}(${active.slug}, ${active.role})${C.reset}\n`,
+      `  ${C.dim}workspace ${C.reset}${def.name || def.project_id} ${C.faded}(${role}default)${C.reset}\n`,
+    );
+  } else {
+    process.stdout.write(
+      `  ${C.dim}workspace ${C.reset}${C.dim}none selected. Pick one with ${C.reset}${C.cyan}kortix workspaces use${C.reset}\n`,
     );
   }
-  if (me.accounts.length > 1) {
+  if (me.accounts.length > 1 && def) {
     process.stdout.write(
-      `  ${C.dim}${me.accounts.length} accounts total — switch with ${C.reset}${C.cyan}kortix accounts use <slug>${C.reset}\n`,
-    );
-  }
-  if (def) {
-    process.stdout.write(
-      `  ${C.dim}project   ${C.reset}${def.name || def.project_id} ${C.faded}(default)${C.reset}\n`,
+      `  ${C.dim}switch workspace with ${C.reset}${C.cyan}kortix workspaces use${C.reset}\n`,
     );
   }
   process.stdout.write(
@@ -203,7 +219,7 @@ function whoamiHuman(
 }
 
 /**
- * The token-kind label and the project/session/agent/connectors detail lines
+ * The token-kind label and the workspace/session/agent/connectors detail lines
  * that the `--token-only` block and the human summary both render.
  *
  * `fallbackKind` exists because the two renderings drifted before they were
@@ -218,10 +234,10 @@ function renderTokenContext(
   const kind = ctx?.session_id
     ? 'session token'
     : ctx?.project_id
-      ? 'project token'
+      ? 'workspace token'
       : ctx?.auth_type || fallbackKind;
   let details = '';
-  if (ctx?.project_id) details += `  ${C.dim}project   ${C.reset}${ctx.project_id}\n`;
+  if (ctx?.project_id) details += `  ${C.dim}workspace ${C.reset}${ctx.project_id}\n`;
   if (ctx?.session_id) details += `  ${C.dim}session   ${C.reset}${ctx.session_id}\n`;
   if (ctx?.agent) details += `  ${C.dim}agent     ${C.reset}${ctx.agent}\n`;
   if (ctx?.connectors != null) {

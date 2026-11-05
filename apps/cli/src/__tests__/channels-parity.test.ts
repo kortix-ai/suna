@@ -535,7 +535,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     const config = writeConfig(startServer({ emailEnabled: false }));
     const r = await runCli(['channels', 'email', 'connect', '--api-key', 're_secret', '--project', PROJECT], config);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('kortix projects features enable email_channel');
+    expect(r.stderr).toContain('kortix workspaces features enable email_channel');
   });
 
   test('email status with the flag off says so and how to turn it on', async () => {
@@ -554,7 +554,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     ]);
     // A Slack channel reads `#eng`, as the Channels page shows it.
     expect(r.stdout).toMatch(/bind_1\s+#eng\s+slack\s+default \(project\)\s+auto \(platform\)\s+owner_approval/);
-    expect(r.stdout).toContain('project default agent: default');
+    expect(r.stdout).toContain('workspace default agent: default');
 
     const j = await runCli(['channels', 'bindings', 'ls', '--project', PROJECT, '--json'], config);
     expect(JSON.parse(j.stdout).bindings[0].bindingId).toBe('bind_1');

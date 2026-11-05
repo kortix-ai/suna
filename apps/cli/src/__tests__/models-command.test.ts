@@ -219,7 +219,7 @@ describe('kortix models', () => {
     expect(r.stdout).toMatch(/openai\/gpt-5\.5\s+on\s+override/);
     // The default carries the ● marker and is named in the footer.
     expect(r.stdout).toContain('● glm-5.3-flash');
-    expect(r.stdout).toContain('project default (glm-5.3-flash)');
+    expect(r.stdout).toContain('workspace default (glm-5.3-flash)');
 
     const j = await runCli(['models', 'ls', '--project', PROJECT, '--json'], config);
     expect(j.code).toBe(0);
@@ -315,7 +315,7 @@ describe('kortix models', () => {
     const config = writeConfig(startServer({}));
     const r = await runCli(['models', 'enable', 'not-a-model', '--project', PROJECT], config);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Not served by this project: not-a-model');
+    expect(r.stderr).toContain('Not served by this workspace: not-a-model');
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
   });
 
@@ -330,14 +330,14 @@ describe('kortix models', () => {
     expect(ls.code).toBe(0);
     expect(ls.stdout).toContain('No models yet');
     expect(ls.stdout).toContain('kortix providers set');
-    expect(ls.stdout).not.toContain('No models served for this project');
+    expect(ls.stdout).not.toContain('No models served for this workspace');
 
     const enable = await runCli(
       ['models', 'enable', 'anthropic/claude-opus-4-8', '--project', PROJECT],
       config,
     );
     expect(enable.code).toBe(1);
-    expect(enable.stderr).toContain('Not served by this project: anthropic/claude-opus-4-8');
+    expect(enable.stderr).toContain('Not served by this workspace: anthropic/claude-opus-4-8');
     expect(enable.stderr).toContain('kortix providers set');
     expect(enable.stderr).not.toContain('List the ids with');
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
@@ -361,7 +361,7 @@ describe('kortix models', () => {
     const config = writeConfig(startServer({}));
     const r = await runCli(['models', 'default', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/project\s+glm-5\.3-flash/);
+    expect(r.stdout).toMatch(/workspace\s+glm-5\.3-flash/);
     expect(r.stdout).toMatch(/account\s+unset/);
     expect(r.stdout).toMatch(/platform\s+openai\/gpt-5\.5/);
     expect(r.stdout).toContain('resolves to glm-5.3-flash (project)');
@@ -380,7 +380,7 @@ describe('kortix models', () => {
       path: `/v1/projects/${PROJECT}/model-defaults`,
       body: { scope: 'project', model: 'openai/gpt-5.5' },
     });
-    expect(p.stdout).toContain('project default → openai/gpt-5.5');
+    expect(p.stdout).toContain('workspace default → openai/gpt-5.5');
 
     const a = await runCli(
       ['models', 'default', 'glm-5.3-flash', '--account', '--project', PROJECT],
@@ -399,7 +399,7 @@ describe('kortix models', () => {
       path: `/v1/projects/${PROJECT}/model-defaults`,
       query: '?scope=project',
     });
-    expect(r.stdout).toContain('Cleared the project default model');
+    expect(r.stdout).toContain('Cleared the workspace default model');
 
     const acct = await runCli(
       ['models', 'default', '--clear', '--account', '--project', PROJECT],

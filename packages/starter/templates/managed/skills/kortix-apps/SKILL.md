@@ -27,7 +27,7 @@ another host.
 ## Preflight
 
 1. Run `pwd` and inspect the intended source directory before deploying.
-2. Run `kortix projects info --json`. Read `project_id`.
+2. Run `kortix workspaces info --json`. Read `project_id`.
 3. Apps are generally available. Use Apps directly without checking a feature
    flag or routing to an alternative.
 4. Do not create an empty App identity first: `kortix apps deploy` and

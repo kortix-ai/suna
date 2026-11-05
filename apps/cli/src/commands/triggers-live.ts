@@ -44,7 +44,7 @@ function buildSessionAccess(
   if (!mode && !named) return undefined;
   const resolved = mode ?? 'members';
   if (resolved !== 'private' && resolved !== 'project' && resolved !== 'members') {
-    return { error: '--session-access must be private, project, or members.' };
+    return { error: '--session-access must be private, workspace, or members.' };
   }
   if (resolved !== 'members' && named) {
     return {
@@ -164,7 +164,7 @@ export async function triggersAddLive(
   const where =
     created?.type === 'event' && created.event?.status !== 'active' ? 'added to' : 'live on';
   process.stdout.write(
-    `${status.ok(`${C.bold}${slug}${C.reset} (${type}) ${where} the project`)} ${C.dim}(committed to kortix.yaml on main + reconciled)${C.reset}\n`,
+    `${status.ok(`${C.bold}${slug}${C.reset} (${type}) ${where} the workspace`)} ${C.dim}(committed to kortix.yaml on main + reconciled)${C.reset}\n`,
   );
   reportWebhookUrl(resp, slug);
   if (created?.type === 'event') {

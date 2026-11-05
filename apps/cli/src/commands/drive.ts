@@ -27,7 +27,7 @@ import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix drive <subcommand> [options]
 
-The project's Files: one drive of folders. You reach your own folder
+The workspace's Files: one drive of folders. You reach your own folder
 (/Users/<name>) and the Drive of each agent you may use (/Agents/<agent>).
 Every command acts as you, with your folder access. Inside a session it acts
 as the person who started the session, and works only in their own private
@@ -51,14 +51,14 @@ Subcommands:
 
 Options:
   -r, --recursive    rm: delete a folder and everything in it.
-  --agent <name>     share: one of the project's agents.
+  --agent <name>     share: one of the workspace's agents.
   --write            share: give write instead of read.
   --json             Emit the API payload as JSON.
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>   Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 
-Nothing is shared with a person, a team or the whole project: a person
+Nothing is shared with a person, a team or the whole workspace: a person
 reaches a folder through an agent they may use. Sharing from inside a session
 works only in your own private session.
 `;
@@ -81,7 +81,7 @@ export async function runDrive(argv: string[]): Promise<number> {
   let recursive = false;
   let json = false;
   try {
-    projectFlag = takeFlagValue(rest, ['--project']);
+    projectFlag = takeFlagValue(rest, ['--project', '--workspace']);
     hostFlag = takeFlagValue(rest, ['--host']);
     user = takeFlagValue(rest, ['--user']);
     agent = takeFlagValue(rest, ['--agent']);

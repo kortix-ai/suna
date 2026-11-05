@@ -660,7 +660,7 @@ describe('kortix agents — default, scope, config', () => {
     const config = writeConfig(startServer([]));
     const r = await runCli(['agents', 'ls', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('No agents declared in this project.');
+    expect(r.stdout).toContain('No agents declared in this workspace.');
     expect(r.stdout).not.toContain('Agents (');
   });
 
@@ -674,7 +674,7 @@ describe('kortix agents — default, scope, config', () => {
       expect(pin.code).toBe(0);
       const r = await runCli(['agents', 'ls', '--project', PROJECT], config);
       expect(r.code).toBe(0);
-      expect(r.stdout).toContain('Default (project → account → platform)');
+      expect(r.stdout).toContain('Default (workspace → account → platform)');
       expect(r.stdout).toContain('reviewer');
       expect(r.stdout).toContain('glm-5.3-flash');
       expect(r.stdout).toContain('1 pinned · the rest follow the default');
@@ -696,7 +696,7 @@ describe('kortix agents — default, scope, config', () => {
       const r = await runCli(['agents', 'ls', '--project', PROJECT], config);
       expect(r.code).toBe(0);
       expect(r.stdout).toContain('No per-agent model pins — every agent follows the default.');
-      expect(r.stdout).not.toContain('No agents declared in this project.');
+      expect(r.stdout).not.toContain('No agents declared in this workspace.');
       expect(r.stdout).not.toContain('Agents (');
     });
   });

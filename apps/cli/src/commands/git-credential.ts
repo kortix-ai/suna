@@ -94,7 +94,7 @@ export async function runGitCredential(argv: string[]): Promise<number> {
     project = await client.get<ProjectSummary>(`/projects/${link.project_id}`);
   } catch (error) {
     process.stderr.write(
-      `Kortix Git could not load the linked project: ${(error as Error).message}\n`,
+      `Kortix Git could not load the linked workspace: ${(error as Error).message}\n`,
     );
     process.stdout.write('quit=true\n\n');
     return 0;

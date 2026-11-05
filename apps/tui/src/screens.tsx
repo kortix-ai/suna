@@ -32,6 +32,7 @@ import { SpacesScreen } from './features/spaces/index.ts';
 import { copyToClipboard } from './lib/clipboard.ts';
 import { theme } from './theme.ts';
 import type { ToastKind } from './ui/index.ts';
+import { NO_WORKSPACE_TEXT, PICK_WORKSPACE_TEXT } from './lib/workspaces.ts';
 
 export type ScreenRoute = Exclude<Route, 'session'>;
 
@@ -44,7 +45,7 @@ export const SCREEN_TITLE: Record<ScreenRoute, string> = {
   providers: 'Model providers',
   connectors: 'Connectors',
   connect: 'Connect',
-  account: 'Account',
+  account: 'Workspace members',
   drive: 'Drive',
   repo: 'Repository',
   artifacts: 'Artifacts',
@@ -135,7 +136,7 @@ export function Screen(props: ScreenProps) {
         />
       );
     case 'review':
-      if (!projectId) return <Missing text="No project selected. Type /projects to pick one." />;
+      if (!projectId) return <Missing text={PICK_WORKSPACE_TEXT} />;
       return (
         <ReviewScreen
           projectId={projectId}
@@ -214,7 +215,7 @@ export function Screen(props: ScreenProps) {
       );
     case 'account':
       if (!accountId)
-        return <Missing text="No account on this host. Type /accounts to pick one." />;
+        return <Missing text={NO_WORKSPACE_TEXT} />;
       return (
         <AccountScreen
           accountId={accountId}

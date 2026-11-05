@@ -46,7 +46,7 @@ export interface CommandSpec {
   needs?: CommandNeed;
   /** A runtime capability (`GET /kortix/health`) the command needs. */
   capability?: RuntimeCapability;
-  /** A project feature flag (`useFeatureFlag`) the command needs. */
+  /** A workspace feature flag (`useFeatureFlag`) the command needs. */
   flag?: string;
 }
 
@@ -69,7 +69,7 @@ export const COMMANDS = [
     name: 'sessions',
     aliases: ['resume', 'continue', 'switch'],
     args: '[filter]',
-    description: 'Pick a session of this project and open it.',
+    description: 'Pick a session of this workspace and open it.',
     group: 'session',
     binding: 'switcher',
     needs: 'project',
@@ -156,7 +156,7 @@ export const COMMANDS = [
   {
     name: 'share',
     args: '<team|private>',
-    description: 'Let the whole project open this session, or only you.',
+    description: 'Let the whole workspace open this session, or only you.',
     group: 'session',
     needs: 'session',
   },
@@ -201,17 +201,12 @@ export const COMMANDS = [
   },
   // — switch —
   {
-    name: 'projects',
-    aliases: ['project'],
+    name: 'workspaces',
+    // `projects`, `project`, `accounts` and `org` are the names this command
+    // had before workspaces. They keep working; the menu shows `workspaces`.
+    aliases: ['workspace', 'projects', 'project', 'accounts', 'org'],
     args: '[filter]',
-    description: 'Pick another project.',
-    group: 'switch',
-  },
-  {
-    name: 'accounts',
-    aliases: ['org'],
-    args: '[filter]',
-    description: 'Pick another account.',
+    description: 'Pick another workspace.',
     group: 'switch',
   },
   {
@@ -326,7 +321,7 @@ export const COMMANDS = [
   {
     name: 'drive',
     aliases: ['volumes'],
-    description: 'Project files on Drive: yours, shared, team folders.',
+    description: 'Workspace files on Drive: yours, shared, team folders.',
     group: 'screen',
     needs: 'project',
     flag: 'drives',
@@ -334,7 +329,7 @@ export const COMMANDS = [
   {
     name: 'repo',
     aliases: ['git', 'code'],
-    description: "Browse the project's repository: files, branches, history.",
+    description: "Browse the workspace's repository: files, branches, history.",
     group: 'screen',
     needs: 'project',
   },
@@ -443,9 +438,9 @@ export const COMMANDS = [
     needs: 'project',
   },
   {
-    name: 'account',
-    aliases: ['members', 'billing', 'usage'],
-    description: 'Members, invites, roles, credits.',
+    name: 'members',
+    aliases: ['account', 'billing', 'usage'],
+    description: 'Workspace members, invites, roles, credits.',
     group: 'screen',
     binding: 'screen.account',
     needs: 'account',
@@ -454,7 +449,7 @@ export const COMMANDS = [
   {
     name: 'status',
     aliases: ['doctor', 'whoami'],
-    description: 'Host, account, project, session, runtime and version.',
+    description: 'Host, workspace, session, runtime and version.',
     group: 'app',
   },
   {
@@ -493,7 +488,7 @@ export interface CommandContext {
   hasAccount: boolean;
   /** The runtime's `/kortix/health` capabilities. Null = not read yet: hide nothing. */
   capabilities: readonly string[] | null;
-  /** Project feature flags by key. A key that is absent is not known yet: allow. */
+  /** Workspace feature flags by key. A key that is absent is not known yet: allow. */
   flags?: Readonly<Record<string, boolean>>;
 }
 
@@ -505,8 +500,8 @@ export interface CommandContext {
  */
 export function unavailableReason(spec: CommandSpec, context: CommandContext): string | null {
   if (spec.needs === 'session' && !context.hasSession) return 'needs an open session';
-  if (spec.needs === 'project' && !context.hasProject) return 'needs a project — /projects';
-  if (spec.needs === 'account' && !context.hasAccount) return 'needs an account — /accounts';
+  if (spec.needs === 'project' && !context.hasProject) return 'needs a workspace: /workspaces';
+  if (spec.needs === 'account' && !context.hasAccount) return 'needs a workspace: /workspaces';
   if (
     spec.capability &&
     context.hasSession &&
@@ -514,7 +509,7 @@ export function unavailableReason(spec: CommandSpec, context: CommandContext): s
   ) {
     return "this session's runtime does not support it";
   }
-  if (spec.flag && context.flags?.[spec.flag] === false) return 'turned off for this project';
+  if (spec.flag && context.flags?.[spec.flag] === false) return 'turned off for this workspace';
   return null;
 }
 
@@ -646,7 +641,7 @@ export function menuEntries(
       order,
       entry: {
         name: command.name,
-        description: command.description?.trim() || 'Project command',
+        description: command.description?.trim() || 'Workspace command',
         source: 'runtime',
         group: 'project',
         unavailable: null,

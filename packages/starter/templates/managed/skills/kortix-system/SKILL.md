@@ -52,7 +52,7 @@ media and datasets in object storage; add build output to `.gitignore`.
 A commit that stays on your session branch reaches no other session. A
 change request (CR) is the only way to the default branch. Do every step:
 1. Sync: `git fetch origin && git rebase origin/main` (`main` or the default
-   branch `kortix projects info` names). Resolve conflicts now.
+   branch `kortix workspaces info` names). Resolve conflicts now.
 2. Commit small, working commits. Run `kortix validate` after a `kortix.yaml`
    change. Keep big files out of Git (`<machine>`).
 3. Push: `git push origin HEAD`. Rejected because the remote branch moved?
@@ -87,7 +87,7 @@ state. Use `git` and the file tools for files and commits.
   to stderr. Mutations take flags and never prompt.
 - `kortix <group> --help` lists every subcommand and flag. Read it before
   you guess a flag.
-- The token cannot reach other projects or account routes (`kortix projects
+- The token cannot reach other workspaces or account routes (`kortix workspaces
   ls` answers `403`). `kortix whoami --token-only` prints your agent's grant.
 - Never send the user to a settings page for something the CLI does. For
   people: https://kortix.com/docs/developers#cli
@@ -105,7 +105,7 @@ state. Use `git` and the file tools for files and commits.
 | Drive files and sharing | `kortix drive …` (the `kortix-drives` skill) |
 | Connect Slack or Teams | `kortix channels connect` (the `kortix-slack` skill) |
 | Agents and models | `kortix agents ls\|default\|config\|scope`, `kortix models ls\|default <model-id>` |
-| Tools, feature flags | `kortix tools ls\|eject <name>`, `kortix projects features [enable <flag>]` |
+| Tools, feature flags | `kortix tools ls\|eject <name>`, `kortix workspaces features [enable <flag>]` |
 | The manifest | `kortix validate [--scopes]`, `kortix schema` |
 </cli>
 
@@ -170,7 +170,7 @@ watch), set up this session's wake-up before you end the turn. Nobody asks.
 
 - A loop or a session trigger lives in the database: no CR. Every fire is a
   model turn. `403 feature_disabled`: Loops are off. Tell the user
-  (`kortix projects features enable reminders`); use an `at` trigger meanwhile.
+  (`kortix workspaces features enable reminders`); use an `at` trigger meanwhile.
 - `kortix triggers add|rm|enable|disable` edit `kortix.yaml`: a trigger fires
   after its CR merges, or at once with `--apply` (through the API, gated by
   your `kortix_permissions`). Then `kortix triggers fire <slug>` once.

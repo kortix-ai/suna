@@ -71,11 +71,11 @@ interface InviteResult {
 const HELP = help`Usage: kortix members <subcommand> [options]
 
 Who belongs to the account, and at what account role. Roles are owner, admin
-and member; owners and admins hold implicit Manager on every project, so a
-member is the only role that takes per-project grants.
+and member; owners and admins hold implicit Manager on every workspace, so a
+member is the only role that takes per-workspace grants.
 
 Members:
-  ls [--json]                       List members, roles and project counts.
+  ls [--json]                       List members, roles and workspace counts.
   invite <email> --role <r>         Invite by email. Adds an existing Kortix
                                     user immediately; otherwise mails an
                                     invite link. Needs member.invite.
@@ -92,17 +92,17 @@ Pending invitations you sent:
   invites resend <invite-id>        Re-send the email, refresh the 14-day expiry.
 
 Options:
-  --role <r>          Account role. invite: ${INVITE_ROLES.join('|')}.
-                      set-role: ${ACCOUNT_ROLES.join('|')}.
-  --project <id>:<r>  Repeatable. Project access to grant alongside a member
-                      invite: project roles are manager|member (default
-                      member). Applied on accept for a pending invite. Ignored
-                      by the server for an admin invite.
-  --account <id>      Operate on this account (default: the linked project's account, else the active account).
-  --host <name>       Operate against a non-default Kortix host.
-  --json              Machine-readable output (read subcommands).
-  -y, --yes           Skip the confirmation prompt.
-  -h, --help          Show this help.
+  --role <r>            Account role. invite: ${INVITE_ROLES.join('|')}.
+                        set-role: ${ACCOUNT_ROLES.join('|')}.
+  --workspace <id>:<r>  Repeatable. Workspace access to grant alongside a member
+                        invite: workspace roles are manager|member (default
+                        member). Applied on accept for a pending invite. Ignored
+                        by the server for an admin invite.
+  --account <id>        Operate on this account (default: the linked workspace's account, else the active account).
+  --host <name>         Operate against a non-default Kortix host.
+  --json                Machine-readable output (read subcommands).
+  -y, --yes             Skip the confirmation prompt.
+  -h, --help            Show this help.
 
 A <user> is a user id, or the email of someone already in the account.
 
@@ -128,7 +128,7 @@ export async function runMembers(argv: string[]): Promise<number> {
     f.account = takeFlagValue(rest, ['--account']);
     f.host = takeFlagValue(rest, ['--host']);
     f.role = takeFlagValue(rest, ['--role']);
-    projectGrantArgs = takeFlagValues(rest, ['--project']);
+    projectGrantArgs = takeFlagValues(rest, ['--project', '--workspace']);
     json = takeFlagBool(rest, ['--json']);
     yes = takeFlagBool(rest, ['-y', '--yes']);
   } catch (err) {
@@ -201,7 +201,7 @@ async function membersLs(
   const roleW = Math.max(...members.map((m) => m.account_role.length), 4);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('MEMBER', emailW)}   ${pad('ROLE', roleW)}   ${pad('PROJECTS', 8)}   ${pad('MFA', 3)}   FLAGS${C.reset}\n`,
+    `  ${C.dim}${pad('MEMBER', emailW)}   ${pad('ROLE', roleW)}   ${pad('WORKSPACES', 10)}   ${pad('MFA', 3)}   FLAGS${C.reset}\n`,
   );
   for (const m of members) {
     const flags: string[] = [];
@@ -212,7 +212,7 @@ async function membersLs(
     }
     process.stdout.write(
       `  ${pad(label(m), emailW)}   ${pad(m.account_role, roleW)}   ` +
-        `${pad(String(m.explicit_project_count), 8)}   ${pad(m.has_verified_mfa ? 'yes' : 'no', 3)}   ` +
+        `${pad(String(m.explicit_project_count), 10)}   ${pad(m.has_verified_mfa ? 'yes' : 'no', 3)}   ` +
         `${flags.join(' · ')}\n`,
     );
   }
@@ -229,10 +229,10 @@ function parseProjectGrant(raw: string): { project_id: string; role: string } | 
   const idx = raw.lastIndexOf(':');
   const projectId = idx < 0 ? raw : raw.slice(0, idx);
   const role = idx < 0 ? 'member' : raw.slice(idx + 1);
-  if (!projectId) return { error: `--project "${raw}" has no project id` };
-  if (!role) return { error: `--project "${raw}" has no role — use <id>:manager or <id>:member` };
+  if (!projectId) return { error: `--workspace "${raw}" has no workspace id` };
+  if (!role) return { error: `--workspace "${raw}" has no role — use <id>:manager or <id>:member` };
   if (role !== 'manager' && role !== 'member') {
-    return { error: `--project role must be manager or member (got "${role}")` };
+    return { error: `--workspace role must be manager or member (got "${role}")` };
   }
   return { project_id: projectId, role };
 }
@@ -266,7 +266,7 @@ async function membersInvite(
   }
   if (grants.length > 0 && role !== 'member') {
     process.stdout.write(
-      `${status.warn('--project is ignored for an admin invite — admins already manage every project.')}\n`,
+      `${status.warn('--workspace is ignored for an admin invite — admins already manage every workspace.')}\n`,
     );
   }
 
@@ -301,7 +301,7 @@ async function membersInvite(
   }
   for (const g of result.project_grants ?? []) {
     process.stdout.write(
-      `  ${C.dim}project ${C.reset}${g.project_id} ${C.faded}${g.role}${C.reset}\n`,
+      `  ${C.dim}workspace ${C.reset}${g.project_id} ${C.faded}${g.role}${C.reset}\n`,
     );
   }
   return 0;
@@ -355,7 +355,7 @@ async function membersRm(
 
   if (!yes) {
     const ok = await confirm(
-      `Remove ${C.bold}${who}${C.reset} from this account? Their API keys and live sessions are revoked immediately.`,
+      `Remove ${C.bold}${who}${C.reset} from this workspace? Their API keys and live sessions are revoked immediately.`,
       false,
       { onEndOfInput: false },
     );
@@ -395,7 +395,7 @@ async function membersSuperAdmin(
   );
   if (result.is_super_admin) {
     process.stdout.write(
-      `  ${C.dim}Super-admin bypasses every permission check in this account, and MFA enforcement.${C.reset}\n`,
+      `  ${C.dim}Super-admin bypasses every permission check in this workspace, and MFA enforcement.${C.reset}\n`,
     );
   }
   return 0;

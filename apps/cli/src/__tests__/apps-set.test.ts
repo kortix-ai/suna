@@ -208,7 +208,7 @@ describe('kortix apps set', () => {
     const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain(`access        ${mode}`);
-    expect(r.stdout).toContain(`kortix apps access-link ${APP_ID} --project ${PROJECT}`);
+    expect(r.stdout).toContain(`kortix apps access-link ${APP_ID} --workspace ${PROJECT}`);
     expect(calls.every((call) => call.method === 'GET')).toBe(true);
   });
 
@@ -227,7 +227,7 @@ describe('kortix apps set', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT, '--host', 'test'], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain(`kortix apps access-link ${APP_ID} --project ${PROJECT} --host test`);
+    expect(r.stdout).toContain(`kortix apps access-link ${APP_ID} --workspace ${PROJECT} --host test`);
   });
 
   test('show --json remains a credential-free read', async () => {

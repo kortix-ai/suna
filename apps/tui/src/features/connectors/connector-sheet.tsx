@@ -275,7 +275,7 @@ export function ConnectorSheet({
         onToast(
           draft.audience === 'members'
             ? 'Pick at least one person, group, or agent.'
-            : "Sharing an account needs permission to manage the project's connections.",
+            : "Sharing an account needs permission to manage the workspace's connections.",
           'error',
         );
         return;
@@ -296,7 +296,7 @@ export function ConnectorSheet({
           return true;
         });
         if (ok) {
-          onToast(draft.audience === 'private' ? 'Connected privately — only you can use this' : 'Project connection created');
+          onToast(draft.audience === 'private' ? 'Connected privately — only you can use this' : 'Workspace connection created');
           setFlow(VIEW);
         } else setFlow(VIEW);
         return;
@@ -346,7 +346,7 @@ export function ConnectorSheet({
   const saveShare = useCallback(
     (connection: Connection, audience: NewConnectorAccountAudience, selected: string[]) => {
       const accountId = data.accountId;
-      if (!accountId) return onToast('Could not find this project’s account.', 'error');
+      if (!accountId) return onToast('Could not find this workspace.', 'error');
       const picked = pickedLists(selected);
       if (audience === 'members' && picked.memberIds.length + picked.groupIds.length + (picked.agentIds?.length ?? 0) === 0) {
         return onToast('Pick at least one person, group, or agent.', 'error');
@@ -543,7 +543,7 @@ export function ConnectorSheet({
       return;
     }
     if (is(key, 'connectors.remove')) {
-      if (!data.canWrite) return onToast('Removing a connector needs permission to manage the project’s connectors.', 'error');
+      if (!data.canWrite) return onToast('Removing a connector needs permission to manage the workspace’s connectors.', 'error');
       return setFlow({ kind: 'confirm', action: 'remove' });
     }
     if (!current) return;
@@ -565,7 +565,7 @@ export function ConnectorSheet({
     if (is(key, 'connectors.rename')) return setFlow({ kind: 'rename', connection: current, value: current.label });
     if (is(key, 'connectors.access')) {
       if (current.owner_type === 'member' && !data.canManageConnections) {
-        return onToast("Sharing an account needs permission to manage the project's connections.", 'error');
+        return onToast("Sharing an account needs permission to manage the workspace's connections.", 'error');
       }
       return setFlow({
         kind: 'access',
@@ -634,7 +634,7 @@ export function ConnectorSheet({
       push(`Disconnect "${flow.connection?.label ?? ''}"?`, theme.danger);
       push(
         flow.connection?.owner_type === 'project'
-          ? 'Everyone on this project loses access to this account. Sessions bound to it will stop working.'
+          ? 'Everyone in this workspace loses access to this account. Sessions bound to it will stop working.'
           : 'Your own connection is removed. Sessions bound to it will stop working.',
         theme.faint,
       );
@@ -645,7 +645,7 @@ export function ConnectorSheet({
     push(
       flow.purpose === 'share'
         ? flow.connection?.owner_type === 'member'
-          ? 'Choose who else can use your account. It becomes a shared account, which the project’s connection managers can also manage.'
+          ? 'Choose who else can use your account. It becomes a shared account, which the workspace’s connection managers can also manage.'
           : 'Choose who can use this account.'
         : 'Who can use it',
       theme.faint,
@@ -656,13 +656,13 @@ export function ConnectorSheet({
       push(`${on ? '●' : '○'} ${index + 1} ${choice.label}`, locked ? theme.faint : theme.fg);
       push(`    ${choice.detail}`, theme.faint);
     });
-    if (!data.canManageConnections) push("Sharing an account needs permission to manage the project's connections.", theme.faint);
+    if (!data.canManageConnections) push("Sharing an account needs permission to manage the workspace's connections.", theme.faint);
     if (flow.purpose === 'create') push("You'll authorize the account in the next step.", theme.faint);
     const n = accessChoices(data.projectName, flow.purpose).length;
     hint = `1-${n} or j/k choose · Enter ${flow.choice === 'members' ? 'pick' : flow.purpose === 'share' ? 'save' : 'continue'} · Esc cancel`;
   } else if (flow.kind === 'pick') {
     push('Specific people, groups, or agents');
-    if (data.candidates.length === 0) push('No one else in this project yet.', theme.faint);
+    if (data.candidates.length === 0) push('No one else in this workspace yet.', theme.faint);
     const room = Math.max(height - lines.length - 3, 3);
     const start = Math.min(Math.max(flow.cursor - Math.floor(room / 2), 0), Math.max(data.candidates.length - room, 0));
     data.candidates.slice(start, start + room).forEach((candidate, offset) => {
