@@ -1,12 +1,12 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@kortix/ui';
 import { InfoBanner } from '@kortix/ui/info-banner';
 import { InputGroup, InputGroupAddon, InputGroupButton } from '@kortix/ui/input-group';
 import Loading from '@kortix/ui/loading';
-import { cn } from '@kortix/ui';
 import { ArrowRightIcon, ArrowUpIcon } from '@phosphor-icons/react';
 import { useId, useRef, useState, type KeyboardEvent } from 'react';
-import { useTranslations } from '@/i18n/use-translations';
 import {
   GOAL_TEMPLATE_CATEGORIES,
   goalTemplatesIn,
@@ -33,6 +33,8 @@ const ACCENT: Record<GoalTemplateAccent, string> = {
 export interface GoalDraft {
   outcome: string;
   templateId: string | null;
+  /** Done criteria written out in the form. Unset: the template's criterion, if any. */
+  criteria?: string[];
 }
 
 export const EMPTY_GOAL_DRAFT: GoalDraft = { outcome: '', templateId: null };
@@ -50,6 +52,15 @@ export function useDraftTemplate(draft: GoalDraft) {
   const opening = prompt.trimEnd();
   if (!draft.outcome.startsWith(opening)) return null;
   return { opening, criterion: t(`templates.${draft.templateId}.criterion`) };
+}
+
+/** The done criteria a draft starts with: the ones written out in the form, else its template's. */
+export function draftCriteria(
+  draft: GoalDraft,
+  template: ReturnType<typeof useDraftTemplate>,
+): string[] {
+  if (draft.criteria) return draft.criteria.map((c) => c.trim()).filter(Boolean);
+  return template ? [template.criterion] : [];
 }
 
 /**
@@ -83,23 +94,24 @@ export function GoalStarter({
   const [category, setCategory] = useState<GoalTemplateCategory>('featured');
   const composer = useRef<HTMLTextAreaElement>(null);
   const hintId = useId();
+  const criterionId = useId();
   const template = useDraftTemplate(draft);
+  const criteria = draftCriteria(draft, template);
   const { start, reset } = useStartGoal(projectId, () => {
     onDraftChange(EMPTY_GOAL_DRAFT);
     onPendingChange?.(false);
     onStarted?.();
   });
   const specifics = template ? draft.outcome.slice(template.opening.length) : draft.outcome;
-  const ready = specifics.trim() !== '' && !start.isPending;
+  const pending = start.isPending;
+  const ready = specifics.trim() !== '' && !pending;
   const submit = () => {
     if (!ready) return;
     onPendingChange?.(true);
-    start.mutate(
-      { outcome: draft.outcome, criteria: template ? [template.criterion] : [] },
-      { onError: () => onPendingChange?.(false) },
-    );
+    start.mutate({ outcome: draft.outcome, criteria }, { onError: () => onPendingChange?.(false) });
   };
   const pick = (next: GoalTemplate) => {
+    if (pending) return;
     const prompt = t(`templates.${next.id}.prompt`);
     // Switching templates keeps what the person wrote after the old prompt.
     const text = prompt + specifics.trimStart();
@@ -140,8 +152,8 @@ export function GoalStarter({
             }}
             placeholder={t('composerPlaceholder')}
             aria-label={t('composerLabel')}
-            aria-describedby={hintId}
-            disabled={start.isPending}
+            aria-describedby={criteria.length > 0 ? `${hintId} ${criterionId}` : hintId}
+            disabled={pending}
             className="text-foreground placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-28 w-full resize-none bg-transparent px-4 pt-4 text-base outline-none disabled:opacity-60"
             data-testid="goal-composer"
           />
@@ -165,13 +177,21 @@ export function GoalStarter({
               disabled={!ready}
               data-testid="goal-composer-send"
             >
-              {start.isPending ? <Loading className="size-3.5" /> : <ArrowUpIcon weight="bold" className="size-3.5" aria-hidden />}
+              {start.isPending ? (
+                <Loading className="size-3.5" />
+              ) : (
+                <ArrowUpIcon weight="bold" className="size-3.5" aria-hidden />
+              )}
             </InputGroupButton>
           </InputGroupAddon>
         </InputGroup>
-        {template ? (
-          <p className="text-muted-foreground px-1 text-xs text-pretty" data-testid="goal-composer-criterion">
-            {t('templateCriterion', { criterion: template.criterion })}
+        {criteria.length > 0 ? (
+          <p
+            id={criterionId}
+            className="text-muted-foreground px-1 text-xs text-pretty"
+            data-testid="goal-composer-criterion"
+          >
+            {t('templateCriterion', { criterion: criteria.join(' · ') })}
           </p>
         ) : null}
         {start.isError ? (
@@ -181,7 +201,13 @@ export function GoalStarter({
         ) : null}
       </form>
 
-      <TemplateGallery category={category} onCategoryChange={setCategory} pickedId={template ? draft.templateId : null} onPick={pick} />
+      <TemplateGallery
+        category={category}
+        onCategoryChange={setCategory}
+        pickedId={template ? draft.templateId : null}
+        disabled={pending}
+        onPick={pick}
+      />
     </div>
   );
 }
@@ -195,11 +221,14 @@ function TemplateGallery({
   category,
   onCategoryChange,
   pickedId,
+  disabled,
   onPick,
 }: {
   category: GoalTemplateCategory;
   onCategoryChange: (category: GoalTemplateCategory) => void;
   pickedId: string | null;
+  /** While a start is in flight: the composer's text is fixed. */
+  disabled: boolean;
   onPick: (template: GoalTemplate) => void;
 }) {
   const t = useTranslations('goals');
@@ -211,11 +240,19 @@ function TemplateGallery({
     const index = GOAL_TEMPLATE_CATEGORIES.indexOf(category);
     const last = GOAL_TEMPLATE_CATEGORIES.length - 1;
     const next =
-      event.key === 'ArrowRight' ? (index === last ? 0 : index + 1)
-      : event.key === 'ArrowLeft' ? (index === 0 ? last : index - 1)
-      : event.key === 'Home' ? 0
-      : event.key === 'End' ? last
-      : null;
+      event.key === 'ArrowRight'
+        ? index === last
+          ? 0
+          : index + 1
+        : event.key === 'ArrowLeft'
+          ? index === 0
+            ? last
+            : index - 1
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? last
+              : null;
     if (next === null) return;
     event.preventDefault();
     onCategoryChange(GOAL_TEMPLATE_CATEGORIES[next]);
@@ -229,7 +266,7 @@ function TemplateGallery({
         role="tablist"
         aria-label={t('categoriesLabel')}
         onKeyDown={move}
-        className="-mx-1 flex items-center gap-1 overflow-x-auto px-1 [scrollbar-width:none]"
+        className="-mx-1 flex [scrollbar-width:none] items-center gap-1 overflow-x-auto px-1"
       >
         {GOAL_TEMPLATE_CATEGORIES.map((value) => {
           const active = value === category;
@@ -246,7 +283,9 @@ function TemplateGallery({
               className={cn(
                 'focus-visible:ring-ring/15 h-8 shrink-0 rounded-full px-3 text-sm whitespace-nowrap outline-none focus-visible:ring-3',
                 'transition-[color,background-color] duration-(--duration-normal) ease-out',
-                active ? 'bg-foreground/6 text-foreground' : 'text-muted-foreground hover:text-foreground',
+                active
+                  ? 'bg-foreground/6 text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
               )}
               data-testid={`goal-templates-tab-${value}`}
             >
@@ -259,7 +298,12 @@ function TemplateGallery({
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="goal-templates">
           {goalTemplatesIn(category).map((template) => (
             <li key={template.id} className="flex">
-              <TemplateCard template={template} picked={pickedId === template.id} onPick={() => onPick(template)} />
+              <TemplateCard
+                template={template}
+                picked={pickedId === template.id}
+                disabled={disabled}
+                onPick={() => onPick(template)}
+              />
             </li>
           ))}
         </ul>
@@ -269,7 +313,17 @@ function TemplateGallery({
 }
 
 /** One template: its glyph, name, what the agent does, then the first step → what proves it done. */
-function TemplateCard({ template, picked, onPick }: { template: GoalTemplate; picked: boolean; onPick: () => void }) {
+function TemplateCard({
+  template,
+  picked,
+  disabled,
+  onPick,
+}: {
+  template: GoalTemplate;
+  picked: boolean;
+  disabled: boolean;
+  onPick: () => void;
+}) {
   const t = useTranslations('goals');
   const Glyph = template.icon;
   const [StartGlyph, DoneGlyph] = template.steps;
@@ -279,21 +333,33 @@ function TemplateCard({ template, picked, onPick }: { template: GoalTemplate; pi
     <button
       type="button"
       onClick={onPick}
+      disabled={disabled}
       aria-current={picked ? 'true' : undefined}
       className={cn(
         'bg-popover border-border flex w-full flex-col items-start gap-1 rounded-xl border p-4 text-left shadow-xs outline-none',
         'transition-[background-color,border-color,scale] duration-(--duration-normal) ease-out active:scale-[0.99] motion-reduce:active:scale-100',
-        'hover:bg-hover focus-visible:border-ring focus-visible:ring-ring/15 focus-visible:ring-3',
-        picked && 'border-ring',
+        'hover:bg-hover focus-visible:border-ring focus-visible:ring-ring/15 focus-visible:ring-3 disabled:pointer-events-none disabled:opacity-60',
+        picked && 'bg-hover',
       )}
       data-testid="goal-template"
       data-template={template.id}
     >
-      <Glyph weight="duotone" className={cn('mb-2.5 size-5 shrink-0', ACCENT[template.accent])} aria-hidden />
-      <span className="text-foreground text-sm font-medium">{t(`templates.${template.id}.title`)}</span>
-      <span className="text-muted-foreground text-sm text-pretty">{t(`templates.${template.id}.description`)}</span>
+      <Glyph
+        weight="duotone"
+        className={cn('mb-2.5 size-5 shrink-0', ACCENT[template.accent])}
+        aria-hidden
+      />
+      <span className="text-foreground text-base font-medium">
+        {t(`templates.${template.id}.title`)}
+      </span>
+      <span className="text-muted-foreground text-sm text-pretty">
+        {t(`templates.${template.id}.description`)}
+      </span>
       <span className="sr-only">{t('templateSteps', { start, done })}</span>
-      <span className="text-muted-foreground mt-auto flex flex-wrap items-center gap-x-1.5 gap-y-1 pt-2 text-sm" aria-hidden>
+      <span
+        className="text-muted-foreground mt-auto flex flex-wrap items-center gap-x-1.5 gap-y-1 pt-2 text-sm"
+        aria-hidden
+      >
         <StartGlyph className="size-3.5 shrink-0" />
         <span>{start}</span>
         <ArrowRightIcon className="size-3 shrink-0" />

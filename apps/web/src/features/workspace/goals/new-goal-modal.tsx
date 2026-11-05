@@ -1,17 +1,32 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@kortix/ui';
 import { Button } from '@kortix/ui/button';
+import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@kortix/ui/field';
 import { Hint } from '@kortix/ui/hint';
 import { InfoBanner } from '@kortix/ui/info-banner';
-import { Input } from '@kortix/ui/input';
 import Loading from '@kortix/ui/loading';
-import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@kortix/ui/modal';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@kortix/ui/modal';
 import { Textarea } from '@kortix/ui/textarea';
 import { ArrowLeftIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
-import { useTranslations } from '@/i18n/use-translations';
-import { EMPTY_GOAL_DRAFT, GoalStarter, useDraftTemplate, type GoalDraft } from './goal-starter';
+import {
+  EMPTY_GOAL_DRAFT,
+  GoalStarter,
+  draftCriteria,
+  useDraftTemplate,
+  type GoalDraft,
+} from './goal-starter';
 import { useStartGoal } from './use-start-goal';
 
 const MAX_CRITERIA = 8;
@@ -64,15 +79,27 @@ export function NewGoalModal({
 
   return (
     <Modal open={open} onOpenChange={dismiss}>
+      {/* One size for both views, anchored at the top: switching views never moves the title. */}
       <ModalContent
-        variant={view === 'form' ? 'default' : 'base'}
-        className={view === 'form' ? 'lg:max-w-lg' : 'flex max-h-[min(88svh,56rem)] flex-col lg:max-w-4xl'}
+        variant="base"
+        className={cn(
+          'flex max-h-[min(88svh,56rem)] flex-col lg:top-[6svh] lg:translate-y-0',
+          // Opened on the form, it never switches views: it takes a form's width.
+          initialView === 'form' ? 'lg:max-w-xl' : 'lg:max-w-4xl',
+        )}
       >
         {view === 'form' ? (
           <NewGoalForm
             projectId={projectId}
             draft={draft}
-            onBack={initialView === 'templates' ? () => setView('templates') : undefined}
+            onBack={
+              initialView === 'templates'
+                ? (edited) => {
+                    setDraft(edited);
+                    setView('templates');
+                  }
+                : undefined
+            }
             onCancel={() => dismiss(false)}
             onStarted={started}
             onPendingChange={setPending}
@@ -82,13 +109,15 @@ export function NewGoalModal({
             <ModalHeader className="flex-row items-start justify-between gap-4 pr-14">
               <div className="flex min-w-0 flex-col gap-1">
                 <ModalTitle>{t('galleryTitle')}</ModalTitle>
-                <ModalDescription className="text-pretty">{t('galleryDescription')}</ModalDescription>
+                <ModalDescription className="text-pretty">
+                  {t('galleryDescription')}
+                </ModalDescription>
               </div>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                className="shrink-0"
+                className="shrink-0 rounded-full"
                 disabled={pending}
                 onClick={() => setView('form')}
                 data-testid="goals-start-fresh"
@@ -96,7 +125,13 @@ export function NewGoalModal({
                 {t('startFresh')}
               </Button>
             </ModalHeader>
-            <ModalBody className="min-h-0 overflow-y-auto pt-5">
+            {/* The cards go on below the fold: the bottom edge fades while more is left to scroll. */}
+            <FadedScrollArea
+              fadeColor="from-background"
+              fadeSize="8"
+              rootClassName="flex-1"
+              className="px-5 pt-5 pb-5"
+            >
               <GoalStarter
                 projectId={projectId}
                 draft={draft}
@@ -105,7 +140,7 @@ export function NewGoalModal({
                 onPendingChange={setPending}
                 onStarted={started}
               />
-            </ModalBody>
+            </FadedScrollArea>
           </>
         )}
       </ModalContent>
@@ -125,7 +160,8 @@ function NewGoalForm({
   projectId: string;
   /** The composer's text, and its template's criterion as the first one. */
   draft: GoalDraft;
-  onBack?: () => void;
+  /** Back to the templates with what was written here. */
+  onBack?: (draft: GoalDraft) => void;
   onCancel: () => void;
   onStarted: () => void;
   onPendingChange: (pending: boolean) => void;
@@ -133,128 +169,156 @@ function NewGoalForm({
   const t = useTranslations('goals');
   const template = useDraftTemplate(draft);
   const [outcome, setOutcome] = useState(draft.outcome);
-  const [criteria, setCriteria] = useState<string[]>(template ? [template.criterion] : ['']);
+  const [criteria, setCriteria] = useState<string[]>(() => {
+    const initial = draftCriteria(draft, template);
+    return initial.length > 0 ? initial : [''];
+  });
   const { start: create } = useStartGoal(projectId, onStarted);
   const submit = () => {
     onPendingChange(true);
-    create.mutate({ outcome, criteria }, { onError: () => onPendingChange(false) });
+    create.mutate(
+      { outcome, criteria: criteria.map((c) => c.trim()).filter(Boolean) },
+      { onError: () => onPendingChange(false) },
+    );
   };
-  const setCriterion = (index: number, value: string) => setCriteria((list) => list.map((c, i) => (i === index ? value : c)));
-  const removeCriterion = (index: number) => setCriteria((list) => (list.length === 1 ? [''] : list.filter((_, i) => i !== index)));
+  const setCriterion = (index: number, value: string) =>
+    setCriteria((list) => list.map((c, i) => (i === index ? value : c)));
+  const removeCriterion = (index: number) =>
+    setCriteria((list) => (list.length === 1 ? [''] : list.filter((_, i) => i !== index)));
   const canAdd = criteria.length < MAX_CRITERIA && (criteria.at(-1) ?? '').trim() !== '';
-  const focusCriterion = (index: number) => requestAnimationFrame(() => document.getElementById(`new-goal-criterion-${index}`)?.focus());
+  const focusCriterion = (index: number) =>
+    requestAnimationFrame(() => document.getElementById(`new-goal-criterion-${index}`)?.focus());
   const addCriterion = () => {
     setCriteria((list) => [...list, '']);
     focusCriterion(criteria.length);
   };
 
   return (
-    <>
-        <ModalHeader>
-          <ModalTitle>{t('newGoalTitle')}</ModalTitle>
-          <ModalDescription>{t('newGoalDescription')}</ModalDescription>
-        </ModalHeader>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (outcome.trim() && !create.isPending) submit();
-          }}
-        >
-          <ModalBody className="max-h-[60vh] overflow-y-auto">
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="new-goal-outcome">{t('outcomeLabel')}</FieldLabel>
-                <Textarea
-                  id="new-goal-outcome"
-                  autoFocus
-                  rows={3}
-                  value={outcome}
-                  onChange={(event) => setOutcome(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) event.currentTarget.form?.requestSubmit();
-                  }}
-                  placeholder={t('newGoalPlaceholder')}
-                  data-testid="new-goal-outcome"
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="new-goal-criterion-0">{t('doneWhenLabel')}</FieldLabel>
-                <FieldDescription>{t('doneWhenHint')}</FieldDescription>
-                <ol className="flex flex-col gap-2">
-                  {criteria.map((value, index) => (
-                    <li key={index} className="flex items-center gap-2">
-                      <Input
-                        id={`new-goal-criterion-${index}`}
-                        value={value}
-                        onChange={(event) => setCriterion(index, event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key !== 'Enter') return;
-                          // ⌘/Ctrl+Enter starts the goal; a plain Enter never does: it moves to the next criterion.
-                          if (event.metaKey || event.ctrlKey) {
-                            event.currentTarget.form?.requestSubmit();
-                            return;
-                          }
-                          event.preventDefault();
-                          if (index < criteria.length - 1) focusCriterion(index + 1);
-                          else if (canAdd) addCriterion();
-                        }}
-                        placeholder={index === 0 ? t('criterionPlaceholder') : undefined}
-                        aria-label={t('criterionLabel', { n: index + 1 })}
-                        data-testid="new-goal-criterion"
-                      />
-                      {criteria.length > 1 || value ? (
-                        <Hint label={t('removeCriterion')}>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={t('removeCriterionN', { n: index + 1 })}
-                            onClick={() => removeCriterion(index)}
-                          >
-                            <XIcon className="size-3.5" aria-hidden />
-                          </Button>
-                        </Hint>
-                      ) : null}
-                    </li>
-                  ))}
-                </ol>
-                {canAdd ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="w-fit gap-1.5 self-start"
-                    onClick={addCriterion}
-                  >
-                    <PlusIcon className="size-3.5 shrink-0" aria-hidden />
-                    {t('addCriterion')}
-                  </Button>
-                ) : null}
-              </Field>
-            </FieldGroup>
-            {create.isError ? (
-              <InfoBanner tone="destructive" title={t('startError')} role="alert">
-                {create.error instanceof Error ? create.error.message : null}
-              </InfoBanner>
-            ) : null}
-          </ModalBody>
-          <ModalFooter className="sm:justify-between">
-            {onBack ? (
-              <Button type="button" variant="outline-ghost" className="gap-1.5" disabled={create.isPending} onClick={onBack}>
-                <ArrowLeftIcon className="size-3.5 shrink-0" aria-hidden />
-                {t('backToTemplates')}
-              </Button>
-            ) : (
-              <Button type="button" variant="outline-ghost" disabled={create.isPending} onClick={onCancel}>
-                {t('cancel')}
-              </Button>
-            )}
-            <Button type="submit" disabled={!outcome.trim() || create.isPending} aria-busy={create.isPending} data-testid="goals-new-start">
-              {create.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              {t('newGoalStart')}
+    <div className="mx-auto flex min-h-0 w-full max-w-xl flex-col">
+      <ModalHeader className="pb-5">
+        <ModalTitle>{t('newGoalTitle')}</ModalTitle>
+        <ModalDescription>{t('newGoalDescription')}</ModalDescription>
+      </ModalHeader>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (outcome.trim() && !create.isPending) submit();
+        }}
+      >
+        <ModalBody className="max-h-[60vh] overflow-y-auto">
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="new-goal-outcome">{t('outcomeLabel')}</FieldLabel>
+              <Textarea
+                id="new-goal-outcome"
+                autoFocus
+                rows={3}
+                value={outcome}
+                onChange={(event) => setOutcome(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey))
+                    event.currentTarget.form?.requestSubmit();
+                }}
+                placeholder={t('newGoalPlaceholder')}
+                data-testid="new-goal-outcome"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="new-goal-criterion-0">{t('doneWhenLabel')}</FieldLabel>
+              <FieldDescription>{t('doneWhenHint')}</FieldDescription>
+              <ol className="flex flex-col gap-2">
+                {criteria.map((value, index) => (
+                  <li key={index} className="flex items-center gap-2">
+                    <Textarea
+                      id={`new-goal-criterion-${index}`}
+                      rows={1}
+                      className="field-sizing-content min-h-0 resize-none"
+                      value={value}
+                      onChange={(event) => setCriterion(index, event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter') return;
+                        // ⌘/Ctrl+Enter starts the goal; a plain Enter never does: it moves to the next criterion.
+                        if (event.metaKey || event.ctrlKey) {
+                          event.currentTarget.form?.requestSubmit();
+                          return;
+                        }
+                        event.preventDefault();
+                        if (index < criteria.length - 1) focusCriterion(index + 1);
+                        else if (canAdd) addCriterion();
+                      }}
+                      placeholder={index === 0 ? t('criterionPlaceholder') : undefined}
+                      aria-label={t('criterionLabel', { n: index + 1 })}
+                      data-testid="new-goal-criterion"
+                    />
+                    {criteria.length > 1 || value ? (
+                      <Hint label={t('removeCriterion')}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('removeCriterionN', { n: index + 1 })}
+                          onClick={() => removeCriterion(index)}
+                        >
+                          <XIcon className="size-3.5" aria-hidden />
+                        </Button>
+                      </Hint>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+              {canAdd ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-fit gap-1.5 self-start"
+                  onClick={addCriterion}
+                >
+                  <PlusIcon className="size-3.5 shrink-0" aria-hidden />
+                  {t('addCriterion')}
+                </Button>
+              ) : null}
+            </Field>
+          </FieldGroup>
+          {create.isError ? (
+            <InfoBanner tone="destructive" title={t('startError')} role="alert">
+              {create.error instanceof Error ? create.error.message : null}
+            </InfoBanner>
+          ) : null}
+        </ModalBody>
+        <ModalFooter className="sm:justify-between">
+          {onBack ? (
+            <Button
+              type="button"
+              variant="outline-ghost"
+              className="gap-1.5"
+              disabled={create.isPending}
+              onClick={() => onBack({ outcome, templateId: draft.templateId, criteria })}
+            >
+              <ArrowLeftIcon className="size-3.5 shrink-0" aria-hidden />
+              {t('backToTemplates')}
             </Button>
-          </ModalFooter>
-        </form>
-    </>
+          ) : (
+            <Button
+              type="button"
+              variant="outline-ghost"
+              disabled={create.isPending}
+              onClick={onCancel}
+            >
+              {t('cancel')}
+            </Button>
+          )}
+          <Button
+            type="submit"
+            disabled={!outcome.trim() || create.isPending}
+            aria-busy={create.isPending}
+            data-testid="goals-new-start"
+          >
+            {create.isPending ? <Loading className="size-4 shrink-0" /> : null}
+            {t('newGoalStart')}
+          </Button>
+        </ModalFooter>
+      </form>
+    </div>
   );
 }

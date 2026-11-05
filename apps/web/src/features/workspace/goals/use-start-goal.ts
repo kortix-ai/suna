@@ -1,14 +1,14 @@
 'use client';
 
-import { successToast } from '@kortix/ui/toast';
-import { useUiViewerId } from '@kortix/ui';
-import { goalHref } from '@kortix/ui/workspace';
+import { useTranslations } from '@/i18n/use-translations';
 import { createProjectGoal, generateSessionId } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
+import { useUiViewerId } from '@kortix/ui';
+import { successToast } from '@kortix/ui/toast';
+import { goalHref } from '@kortix/ui/workspace';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useRef } from 'react';
-import { useTranslations } from '@/i18n/use-translations';
 
 /**
  * Starts a goal for the viewer (`createProjectGoal`: GOAL.md in their own
@@ -30,13 +30,14 @@ export function useStartGoal(projectId: string, onStarted?: () => void) {
         assignedUser: viewerId ?? null,
         sessionId: sessionId.current,
       }),
-    onSuccess: async (created) => {
-      await queryClient.invalidateQueries({ queryKey: qk.project.goals(projectId) });
-      successToast(t('startedToast'));
+    onSuccess: (created) => {
       sessionId.current = generateSessionId();
       onStarted?.();
+      // The goal's page opens at once; the list refreshes behind it.
       const href = goalHref(projectId, created);
       if (href) router.push(href);
+      successToast(t('startedToast'));
+      void queryClient.invalidateQueries({ queryKey: qk.project.goals(projectId) });
     },
   });
   const reset = () => {
