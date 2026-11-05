@@ -151,6 +151,25 @@ describe('Claude Code output as a pi response', () => {
     expect(reply.message.stopReason).toBe('error')
     expect(reply.message.errorMessage).toBe('Your Claude subscription limit is reached (five hour). It resets at 2030-03-17T17:46:40.000Z.')
   })
+
+  test('a limit before any output hands the step to the fallback; a limit after output, or a success, does not', async () => {
+    const limit = { type: 'result', subtype: 'success', is_error: true, result: '', api_error_status: 429, usage: {} } as never
+    const before = events((r) => {
+      r.push({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'kortix_claude_accounts', resetsAt: 1_900_000_000 } } as never)
+      r.push({ type: 'assistant', parent_tool_use_id: null, uuid: 'a1', session_id: 's', error: 'rate_limit', message: { id: 'm1', content: [] } } as never)
+    })
+    const after = events((r) => {
+      r.push(streamEvent({ type: 'message_start', message: { id: 'm1', model: 'claude-haiku-5-5', usage: { input_tokens: 1 } } }))
+      r.push({ type: 'assistant', parent_tool_use_id: null, uuid: 'a2', session_id: 's', error: 'rate_limit', message: { id: 'm2', content: [] } } as never)
+    })
+    const ok = events(() => undefined)
+    await Bun.sleep(0)
+    expect(before.reply.limitedBeforeOutput(limit)).toBe(true)
+    // Nothing reached pi yet: the fallback's stream is the whole step.
+    expect(before.seen).toEqual([])
+    expect(after.reply.limitedBeforeOutput(limit)).toBe(false)
+    expect(ok.reply.limitedBeforeOutput({ type: 'result', subtype: 'success', is_error: false, result: 'ok', usage: {} } as never)).toBe(false)
+  })
 })
 
 describe('the Claude login', () => {

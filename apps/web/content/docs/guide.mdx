@@ -871,7 +871,7 @@ Connect a Claude Pro or Max plan, and Claude models run on it: **Claude Opus 5.5
 - Everything else works as with any other model: the agent's tools, permissions, questions, subagents, skills and pi extensions, and the messages and tool calls the session shows.
 - You can switch between a Claude subscription model and any other model in the same session. The new model sees the whole session.
 - A Claude account works like a ChatGPT account. It is private to you until you share it with the project or with chosen members. A session uses the accounts selected for it, then your own, then one shared with the project. Triggers and channels use the shared ones. Kortix stores the login encrypted and never shows it again.
-- Your Claude plan sets the limits. When you reach one, the turn ends with "Your Claude subscription limit is reached" and the time it resets.
+- Your Claude plan sets the limits. When every Claude account the session may use reaches its limit, the project's [fallback models](/docs/guide#fallback-models) take over the turn, and the session moves to the model that answered. It moves back to Claude once an account has room again. A project without fallback models ends the turn with "Your Claude subscription limit is reached" and the time it resets.
 - Claude Code features that Kortix has no version of do not apply: plan usage (`/usage`), auto mode and Claude Code's own skills.
 
 **A ChatGPT subscription also generates images.** With a connected ChatGPT account, the `image_gen` tool can use `gpt-image-2` on your plan. ChatGPT sets its own image limit, separate from the chat limit, and reaching it does not pause the account for chat. An OpenAI, Google, xAI or OpenRouter key also generates images. Kortix-managed models do not generate images. See [Generate images](/docs/developers#generate-images).
@@ -921,7 +921,7 @@ Account owners, admins and project managers get an email at 80% and at 100% of a
 
 Open **Customize** → **Models** → **Routing** to list up to 8 models that the gateway tries in order when a model fails. When a fallback model answers, the composer shows **Running on** and its name. A request on your own key moves to a Kortix-billed model only when your own fallback list names that model.
 
-The fallback list also takes over when the requested model is unknown or retired. Every successful gateway answer names the model you asked for (`x-kortix-requested-model`) and the model that answered (`x-kortix-model`). When they differ, a fallback model answered.
+The fallback list also takes over when the requested model is unknown or retired, and when every Claude account of a session is at its plan limit. Every successful gateway answer names the model you asked for (`x-kortix-requested-model`) and the model that answered (`x-kortix-model`). When they differ, a fallback model answered.
 
 ## Outcomes
 

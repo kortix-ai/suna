@@ -60,6 +60,17 @@ export interface ClaudeProviderOptions {
   readonly stateDir: string
   readonly cwd: string
   readonly env?: NodeJS.ProcessEnv
+  /**
+   * Runs a step through the LLM gateway under the same `claude-agent/<id>` ref. The gateway
+   * cannot serve the ref itself: it answers with the project's fallback model (Routing).
+   */
+  readonly gatewayStep?: (model: Model<Api>, context: TranscriptContext, options: StreamOptions) => AssistantMessageEventStream
+}
+
+/** Relays a whole step from `source` into `out`. */
+async function relayStep(source: AssistantMessageEventStream, out: AssistantMessageEventStream): Promise<void> {
+  for await (const event of source) out.push(event)
+  out.end(await source.result())
 }
 
 function ensureSessions(opts: ClaudeProviderOptions): ClaudeSessions {
@@ -98,7 +109,11 @@ function stream(opts: ClaudeProviderOptions, model: Model<Api>, context: Transcr
         signal: options.signal,
       })
       if (outcome.kind === 'tools') reply.finishTools()
-      else if (outcome.kind === 'result') reply.finishResult(outcome.result)
+      else if (outcome.kind === 'result' && opts.gatewayStep && reply.limitedBeforeOutput(outcome.result)) {
+        // Every Claude account is at its limit: the project's fallback model takes the step.
+        logger.warn('[claude] every Claude account is at its usage limit; the step goes to the gateway fallback', { model: model.id })
+        await relayStep(opts.gatewayStep(model, context, options), out)
+      } else if (outcome.kind === 'result') reply.finishResult(outcome.result)
       else reply.fail(new Error('Request was aborted'), 'aborted')
     } catch (err) {
       if (options.signal?.aborted) reply.fail(new Error('Request was aborted'), 'aborted')

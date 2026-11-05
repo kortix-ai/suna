@@ -1,4 +1,5 @@
 import { isClaudeAgentModelRef } from './claude-agent';
+import { resolveClaudeCredentials } from '../../claude-subscription/accounts';
 import { getProjectGatewayResolution, type getProjectModelAccess } from '../../repositories/project-model-access';
 import {
   resolveDefaultCodexAccountSecret,
@@ -541,6 +542,15 @@ export async function resolveCandidates(
   // Chat completion callers (including the sessionless playground) cannot run
   // Claude Code. Reaching this resolver says nothing about a runtime's age.
   if (isClaudeAgentModelRef(effectiveModel)) {
+    // pi sends a Claude step here when every Claude account of the session is at
+    // its limit (harness/pi/claude/provider.ts). The accounts' own refusal
+    // (resting, needs reconnection) starts the project's Routing chain.
+    if (principal.projectId && principal.sessionId) {
+      await resolveClaudeCredentials({
+        accountId: principal.accountId, projectId: principal.projectId, userId: principal.userId,
+        sessionId: principal.sessionId, keyId: principal.keyId, personalUserId,
+      }, { probe: true });
+    }
     throw new GatewayResolutionError(
       'model_not_found',
       `"${effectiveModel}" runs through Claude Code inside sessions only. Test it by starting a session with this model; the gateway playground and chat completions cannot execute it.`,

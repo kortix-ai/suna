@@ -204,7 +204,18 @@ export async function createPiModels(input: {
     api: { 'openai-completions': openAICompletionsApi() },
   })
   models.setProvider(provider)
-  if (input.claude) models.setProvider(createClaudeProvider(input.claude))
+  if (input.claude) {
+    const gatewayApi = openAICompletionsApi()
+    models.setProvider(createClaudeProvider({
+      ...input.claude,
+      // The ref stays `claude-agent/<id>`: the gateway answers it with the project's fallback model.
+      // The Claude model's window and image input, so the step is the one Claude would have taken.
+      gatewayStep: (model, context, options) => gatewayApi.streamSimple(
+        gatewayModel(`${CLAUDE_AGENT_PROVIDER_ID}/${model.id}`, { attachment: true, limit: { context: model.contextWindow, output: model.maxTokens } }, target),
+        context, { ...options, apiKey: target.apiKey },
+      ),
+    }))
+  }
   await credentials.modify(KORTIX_PROVIDER_ID, async () => ({ type: 'api_key', key: target.apiKey }))
   const fallback = nativeModelId(input.defaultModelRef) ?? Object.keys(catalog)[0] ?? null
   if (!fallback) throw new Error('pi harness has no model: no KORTIX_MODEL and no live model catalog')
