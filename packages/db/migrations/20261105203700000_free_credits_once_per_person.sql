@@ -4,6 +4,11 @@
 -- Tune these down further for large/hot tables; raise statement_timeout only
 -- for an operation you've deliberately reasoned about (e.g. a NOT VALID
 -- constraint's later VALIDATE, or a batched backfill with its own paging).
+-- Idempotent on purpose: this migration was re-dated twice on the workspaces
+-- branch (173737521 -> 192403865 -> 203700000) to sort after dev. A local
+-- database that applied an earlier name records the same objects under that
+-- name; IF NOT EXISTS lets the new name apply there as a no-op. ENABLE ROW
+-- LEVEL SECURITY is a no-op when RLS is already on.
 set lock_timeout = '2s';
 set statement_timeout = '30s';
 
@@ -21,11 +26,11 @@ set statement_timeout = '30s';
 --   [ ] Any ALTER TYPE ... ADD VALUE needs:
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
-CREATE TABLE "kortix"."free_credit_claims" (
+CREATE TABLE IF NOT EXISTS "kortix"."free_credit_claims" (
 	"user_id" uuid PRIMARY KEY NOT NULL,
 	"account_id" uuid NOT NULL,
 	"claimed_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 ALTER TABLE "kortix"."free_credit_claims" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-ALTER TABLE "kortix"."credit_accounts" ADD COLUMN "free_credits_eligible" boolean DEFAULT true NOT NULL;
+ALTER TABLE "kortix"."credit_accounts" ADD COLUMN IF NOT EXISTS "free_credits_eligible" boolean DEFAULT true NOT NULL;
