@@ -587,7 +587,7 @@ export function ProfileTabView({
                     disabled={isDeletingAccount || deleteConfirmText !== 'delete'}
                     className="w-full sm:w-auto"
                   >
-                    {isDeletingAccount ? copy.processing : copy.deleteAccount}
+                    {isDeletingAccount ? copy.processing : (loginOnly?.label ?? copy.deleteAccount)}
                   </Button>
                 </ModalFooter>
               </ModalContent>
