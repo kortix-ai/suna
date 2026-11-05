@@ -21,7 +21,7 @@ export function parseGoalLog(markdown: string): GoalLogBlock[] {
   for (const line of markdown.replace(/^\s*# [^\n]*\n+/, '').split('\n')) {
     const run = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
     // A backtick fence's info string has no backtick: "```js``` x" is inline code, not a fence.
-    const marker = run && (run[0] === '~' || fence !== null || !line.trim().slice(run.length).includes('`')) ? run : undefined;
+    const marker: string | undefined = run && (run[0] === '~' || fence !== null || !line.trim().slice(run.length).includes('`')) ? run : undefined;
     const inFence = fence !== null || !!marker;
     // A fence closes only on the same character, at least as long (CommonMark).
     if (marker && fence === null) fence = marker;

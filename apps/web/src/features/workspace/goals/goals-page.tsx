@@ -10,7 +10,7 @@ import { EmptyArt } from '@kortix/ui/empty-art';
 import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import {
   ALL_SPACES,
   goalAssignedTo,
@@ -144,10 +144,10 @@ export function GoalsPage({ projectId }: { projectId: string }) {
                   value={mine ? 'mine' : 'all'}
                   onValueChange={(value) => setMine(value === 'mine')}
                 >
-                  <TabsListCompact aria-label={t('assignedToMe')}>
-                    <TabsTriggerCompact value="all">{t('allGoals')}</TabsTriggerCompact>
-                    <TabsTriggerCompact value="mine">{t('assignedToMe')}</TabsTriggerCompact>
-                  </TabsListCompact>
+                  <TabsList aria-label={t('assignedToMe')}>
+                    <TabsTrigger value="all">{t('allGoals')}</TabsTrigger>
+                    <TabsTrigger value="mine">{t('assignedToMe')}</TabsTrigger>
+                  </TabsList>
                 </Tabs>
                 <SpaceFilterTabs
                   spaces={spaces}
