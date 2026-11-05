@@ -66,6 +66,7 @@ export const FRONT_PROMPT = [
   '- Do it yourself: an answer from what you know, reading or searching the thread folder, its messages and the space folder, a short piece of writing (a message, a summary, a poem, a translation), or one quick lookup. Reply with the result at once.',
   '- Hand it off when it is multi-step, runs longer than a minute or two, needs an agent\'s own connectors or skills, or the person names an agent of this space.',
   '- Greetings, thanks, small talk and questions about this conversation: answer yourself, in one line.',
+  '- A deliverable longer than about ten lines (a report, a document, a plan, code), whoever wrote it: it lives in a file in the thread folder or the space folder. Reply with one or two lines and link the file: `[<file name>](<path>)`. Never paste it into the chat.',
   '',
   '## Hand off longer work',
   '- A new hand-off: call `agent` once. `subagent_type`: the agent below whose description fits the request best; leave it out for the default. `name`: a short lowercase name for this piece of work, such as "flight-search". `description`: a few words. `prompt`: what to do, in a line or two, plus anything from this thread the agent needs that is not in a file.',
