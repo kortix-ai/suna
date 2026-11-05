@@ -27,6 +27,9 @@ const located = (place: string) => {
   void found.then((g) => g || places.delete(key), () => places.delete(key))
   return found
 }
+/** Whether the geocoder knows the place (the card's own lookup, cached for it); undefined when it did not answer in time. */
+export const placeKnown = (place: string, ms = 800): Promise<boolean | undefined> =>
+  Promise.race([located(place).then((g) => !!g, () => undefined), new Promise<undefined>((ok) => setTimeout(ok, ms))])
 // open.er-api.com's rates are daily, and one answer holds every currency of its base: kept ten minutes per base, so a
 // follow-up in another currency ("And in Serbian dinars?" after a dollar rate) reads its rate in hand. It fetched the
 // same address again after its transcript, the card that turn waited on (~960 ms against ~560 for follow-ups in hand).
