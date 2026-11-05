@@ -42,6 +42,14 @@ export function bindProjectAccessResources(projectId: string) {
         remove: (...a: DropFirst<Parameters<typeof P.deleteAppDeployment>>) =>
           P.deleteAppDeployment(projectId, ...a),
       },
+      /** The App's event log: what it posted and what came of each event. */
+      events: {
+        list: (...a: DropFirst<Parameters<typeof P.listAppEvents>>) => P.listAppEvents(projectId, ...a),
+        /** A test event on the real path; its id starts with `test-`. */
+        test: (...a: DropFirst<Parameters<typeof P.sendAppTestEvent>>) => P.sendAppTestEvent(projectId, ...a),
+        /** The URL and token the App posts with. Project admins only. */
+        credentials: (appId: string) => P.getAppEventCredentials(projectId, appId),
+      },
       start: (appId: string) => P.startApp(projectId, appId),
       stop: (appId: string) => P.stopApp(projectId, appId),
       rollback: (...a: DropFirst<Parameters<typeof P.rollbackApp>>) =>

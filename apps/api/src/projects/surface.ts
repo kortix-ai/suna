@@ -89,7 +89,17 @@ export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
 export { listProjectSecretNamesForConsumer, listResolvedProjectSecrets } from './secrets';
 // App events (`type: app` triggers): apps/event-routes.ts appends through these.
-export { ingestAppEvents, parseAppEventsBody, type AppEventInput } from './lib/app-events';
+export {
+  APP_EVENT_LOG_STATUSES,
+  asTestEvents,
+  decodeAppEventCursor,
+  ingestAppEvents,
+  listAppEventLog,
+  parseAppEventsBody,
+  type AppEventInput,
+  type AppEventLogEntry,
+  type AppEventLogStatus,
+} from './lib/app-events';
 // One-off App runs (runAfter / runAt) on the trigger engine.
 export { cancelAppRun, insertAppRun } from './lib/app-runs';
 export { currentInstanceId } from './instance-scope';
