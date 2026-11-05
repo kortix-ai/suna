@@ -203,6 +203,15 @@ export class AppHostingProvider {
     await runtimeProvider.ensureAppRuntimeStarted(externalId);
   }
 
+  /**
+   * Start kortix-appd inside a VM that already runs. It never starts the VM:
+   * a stopped VM refuses the exec, so a VM start always goes through the wake
+   * gate (entitlement, concurrency, billing) in `ensureAppRuntimeRunning`.
+   */
+  async startSupervisor(provider: SandboxProviderName, externalId: string): Promise<void> {
+    await this.dependencies.runtimeProvider(provider).ensureAppRuntimeStarted(externalId);
+  }
+
   /** The provider's own answer. The database row can be wrong about it. */
   async providerStatus(provider: SandboxProviderName, externalId: string): Promise<SandboxStatus> {
     return this.dependencies.runtimeProvider(provider).getStatus(externalId);
