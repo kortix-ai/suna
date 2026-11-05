@@ -321,7 +321,7 @@ describe('scripts/secrets-envs-separation.py', () => {
       prod: {},
       nonProd: nonProd({
         SUPABASE_TOKEN_URL: 'https://token@api.kortix.com/rest/v1',
-        BETTERSTACK_API_SENTRY_DSN: 'https://2CMsgkD6HwZfDVRaFufTLxaL@supa.kortix.com/1',
+        BETTERSTACK_API_SENTRY_DSN: 'https://SyNtheticBetterStackToken9@supa.kortix.com/1',
       }),
     });
     expect(r.code, r.out).toBe(1);
@@ -336,7 +336,7 @@ describe('scripts/secrets-envs-separation.py', () => {
       prod: {},
       nonProd: nonProd({
         BETTERSTACK_API_SENTRY_DSN:
-          'https://2CMsgkD6HwZfDVRaFufTLxaL@s2347088.eu-nbg-2.betterstackdata.com/1',
+          'https://SyNtheticBetterStackToken9@s2347088.eu-nbg-2.betterstackdata.com/1',
         DEV_API: 'https://deploy-token@dev-api.kortix.com/v1',
       }),
     });
