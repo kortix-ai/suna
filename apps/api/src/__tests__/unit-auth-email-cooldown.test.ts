@@ -1,6 +1,6 @@
 // One auth email per address per minute (auth/email-cooldown.ts): check-email
-// reports the cooldown to the web form, and the headless signup and magic-link
-// routes refuse with 429 before GoTrue mails the address again.
+// reports the cooldown to the web form, and the headless signup, magic-link and
+// password-reset routes refuse with 429 before GoTrue mails the address again.
 
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { PgDialect } from 'drizzle-orm/pg-core';
@@ -110,10 +110,11 @@ describe('POST /v1/access/check-email', () => {
   });
 });
 
-describe('headless signup and magic link', () => {
+describe('headless email-sending routes', () => {
   for (const [path, body] of [
     ['/v1/auth/signup', { email: 'pending@b.test', password: 'synthetic-password' }],
     ['/v1/auth/sign-in/magic-link', { email: 'pending@b.test' }],
+    ['/v1/auth/password/reset', { email: 'pending@b.test' }],
   ] as const) {
     test(`${path} answers 429 over_email_send_rate_limit inside the cooldown and never calls GoTrue`, async () => {
       users.set('pending@b.test', 5);
