@@ -1036,7 +1036,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'us_region',
     'event_triggers',
     'notification_center',
-    'session_log_restore',
     'workspace_volume',
     'chat',
     'shared_drives',
@@ -1149,8 +1148,8 @@ test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () =>
 
 test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
   const managed: FeatureFlagView = {
-    key: 'session_log_restore',
-    name: 'Session log restore',
+    key: 'workspace_volume',
+    name: 'Stateless sandboxes',
     description: 'x',
     stability: 'experimental',
     available: true,

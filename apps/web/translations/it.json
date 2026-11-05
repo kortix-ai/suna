@@ -1296,17 +1296,13 @@
           "name": "Trigger di eventi Composio",
           "description": "Avvia un agente quando succede qualcosa in un'app collegata: una nuova email, una pull request, un evento del calendario. Gli eventi arrivano da Composio. Kortix controlla anche da solo le tue app collegate."
         },
-        "session_log_restore": {
-          "name": "Ripristino dal log di sessione",
-          "description": "Ricostruisce una sessione dal suo log di sessione salvato quando il suo computer ha perso la conversazione. Kortix lo attiva per progetto."
-        },
         "goals": {
           "name": "Obiettivi",
           "description": "Assegna a un agente un obiettivo di cui resta responsabile finché un controllo indipendente non conferma il risultato. Pianifica, lavora, attende, sollecita le persone e conserva il suo stato in una cartella Goals in File. Richiede Volumi e Cicli attivi."
         },
         "workspace_volume": {
-          "name": "Volume del workspace",
-          "description": "Mantiene la /workspace di ogni nuova sessione su un volume dedicato, così una sandbox ferma può essere eliminata e la successiva si avvia con gli stessi file e la stessa conversazione. Kortix lo attiva per progetto."
+          "name": "Sandbox senza stato",
+          "description": "Ogni sessione conserva solo /workspace, su un volume dedicato. Una sandbox ferma da un'ora viene eliminata e l'apertura successiva ne avvia una nuova con gli stessi file e la stessa conversazione. I programmi della sandbox precedente non sono più in esecuzione. Kortix lo attiva per progetto."
         },
         "artifacts": {
           "name": "Artefatti",

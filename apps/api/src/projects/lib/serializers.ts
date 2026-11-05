@@ -347,7 +347,8 @@ export function serializeProject(
     // `llm_gateway` graduated on 2026-10-20 and stays `true` too: mobile builds
     // and SDKs from before then read false as the removed native model mode.
     // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
-    // and mobile builds read false as "serve the v1 transcript". `pi_harness`
+    // and mobile builds read false as "serve the v1 transcript". `session_log_restore`
+    // graduated on 2026-11-05 and stays `true`: every box restores from the log. `pi_harness`
     // graduated on 2026-10-23: every new session runs pi. `genui` graduated on
     // 2026-10-24: older web, SDK and mobile clients render blocks only while it is true.
     // `connectors_v2` and `connectors_api_discover` graduated on 2026-10-24: older SDKs and
@@ -366,6 +367,7 @@ export function serializeProject(
       apps: true,
       llm_gateway: true,
       session_log: true,
+      session_log_restore: true,
       pi_harness: true,
       genui: true,
       connectors_v2: true,

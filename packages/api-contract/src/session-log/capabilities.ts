@@ -12,7 +12,7 @@
  *
  * `switchPreflight(log, to, ctx)` is the report of a switch to `to`:
  * - `available` / `reason`: the switch can happen. `same_harness`: the log already runs on `to`.
- * - `restores`: the project's `session_log_restore` flag (and the operator switch) is on and the log, or
+ * - `restores`: the deployment's restore switch (`SESSION_LOG_RESTORE_ENABLED`) is on and the log, or
  *   else what the model sees of it (`modelViewSliceIds`), is under the API's restore cap
  *   (`SESSION_LOG_RESTORE_MAX_BYTES`), so the new box restores the model's context. Otherwise the new box
  *   starts without the earlier conversation, and `losses` starts with a `history` line (every live message).
@@ -95,7 +95,7 @@ const own = <T>(table: Record<string, T>, key: string): T | undefined => (Object
 
 /** What the API knows besides the log (`POST …/log/switch-preflight`). */
 export type SwitchContext = {
-  /** The project's `session_log_restore` flag and the operator switch are on and the log is under the restore cap: the new box restores the log. */
+  /** The deployment's restore switch is on and the log is under the restore cap: the new box restores the log. */
   restore: boolean;
   /** Tombstoned messages: OpenCode deletes the messages a rewind reverts. */
   deletedMessages?: number;

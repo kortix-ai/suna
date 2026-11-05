@@ -339,13 +339,10 @@ const envSchema = z.object({
   // On by default. Off answers 503: each daemon keeps its unacknowledged changes and
   // retries with backoff, so turning it back on loses nothing the boxes still hold.
   SESSION_LOG_INGEST_ENABLED: optBoolTrue,
-  // Operator switch for the session-log restore (`POST …/sessions/:s/log/restore`, P6.1).
-  // On by default. Off answers 503 and claims nothing: the box boots without a restore.
+  // Operator switch for the session-log restore (`POST …/sessions/:s/log/restore`, P6.1). On by
+  // default. Off answers 503 and claims nothing: every box boots on its own native store. The
+  // project flag `session_log_restore` graduated on 2026-11-05; this switch is the only way off.
   SESSION_LOG_RESTORE_ENABLED: optBoolTrue,
-  // Default of the project flag `session_log_restore` for a project with no stored value. On by
-  // default (2026-10-28). A project's stored value wins. Rollback: set it to "false" in the
-  // deployment's env (ECS overrides); removing the key keeps the running task's value.
-  SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolTrue,
   // The largest restore the API answers (`POST …/log/restore`), in bytes: the live messages' stored
   // JSON lengths plus 2/5 of the session's live blob bytes (full texts, attachments; ~15x in the daemon,
   // 30 MB of images: +455 MB; `SESSION_LOG_BLOB_WEIGHT`). So 24 MiB allows 24 MiB of records or 60 MiB
@@ -1442,7 +1439,6 @@ export const config = {
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
-  SESSION_LOG_RESTORE_DEFAULT_ENABLED: env.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
   SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,

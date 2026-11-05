@@ -1,7 +1,7 @@
 
 import { projectSessions, projectSpaces, projects } from '@kortix/db';
 import { COMPILED_AGENT_CONFIG_ENV, fitsInEnvString } from '@kortix/api-contract/compiled-agent-config-env';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 
 
@@ -64,7 +64,6 @@ import { sessionChannelEnvFromMetadata, sessionSpaceEnv } from './session-channe
 import { buildSessionRuntimeContextEnv } from './session-runtime-context';
 import { buildFeatureFlagSandboxEnv } from './feature-flag-env';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { recordedWorkspaceVolume } from '../../platform/services/workspace-volume';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import { buildMyKortixConfig } from './my-kortix-agent';
 
@@ -231,38 +230,6 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
   return { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode, manifestContext };
 }
 
-/**
- * Whether the daemon restores its native store from the session log at boot
- * (`session_log_restore`, kortixd `harness/shared/session-log-boot.ts`).
- */
-async function resolveSessionLogRestore(input: SessionSandboxEnvInput): Promise<boolean> {
-  // One indexed read for the flag: the callers hold the project row in
-  // different shapes (or not at all on the reload paths), and the flag must
-  // apply on every provisioning path, not only create.
-  const [projectRow] = await db
-    .select({ metadata: projects.metadata, sessionMetadata: projectSessions.metadata })
-    .from(projects)
-    .leftJoin(
-      projectSessions,
-      and(eq(projectSessions.projectId, projects.projectId), eq(projectSessions.sessionId, input.sessionId)),
-    )
-    .where(eq(projects.projectId, input.projectId))
-    .limit(1);
-  // A lost session continued on a new computer (KRTX-2419,
-  // `recover-lost-session.ts`) and a restored deleted session
-  // (`restore-session.ts`) restore from their log whatever the project flag says.
-  const sessionMetadata = (projectRow?.sessionMetadata ?? null) as Record<string, unknown> | null;
-  return (
-    resolveFeatureFlag(projectRow?.metadata, 'session_log_restore') ||
-    typeof sessionMetadata?.lostRecoveredAt === 'string' ||
-    typeof sessionMetadata?.restoredAt === 'string' ||
-    typeof sessionMetadata?.forkedFromSessionId === 'string' ||
-    // A /workspace-volume session's box is removed when idle
-    // (reaping/idle-volume-retire.ts): its next box gets the conversation from the log.
-    recordedWorkspaceVolume(input.sessionId, sessionMetadata) !== null
-  );
-}
-
 /** Read the session's runtime secrets and drop the ones the sandbox must never hold. */
 async function loadSessionRuntimeSecrets(
   input: SessionSandboxEnvInput,
@@ -355,7 +322,6 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
     return promise;
   };
   const agentConfigRead = started(tl.span('agent-config', () => resolveSessionAgentConfig(input)));
-  const logRestoreRead = started(tl.span('log-restore', () => resolveSessionLogRestore(input)));
   // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
   const piPackagesRead = started(
     agentConfigRead.then(({ manifestPackages }) =>
@@ -486,7 +452,6 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   );
 
   const { compiledAgentConfig, manifestPackages, manifestCodemode, manifestContext } = await agentConfigRead;
-  const sessionLogRestore = await logRestoreRead;
   const piPackagesBundle = await piPackagesRead;
   await policyRead;
   const opencodeModel = await modelRead;
@@ -565,8 +530,10 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
     ...(input.platformMetaAgent
       ? { KORTIX_PROJECT_AUTO_CLONE: '0', KORTIX_META_AGENT: '1' }
       : {}),
-    // The project flag `session_log_restore`: no key while it is off, so the box keeps its native state.
-    ...(sessionLogRestore ? { KORTIX_SESSION_LOG_RESTORE: '1' } : {}),
+    // The restore graduated on 2026-11-05: a current daemon reconciles at every boot without this key.
+    // A daemon older than that skips the reconcile unless it reads '1', so every box gets it. Delete
+    // the key once the runtime floor (session-open/runtime-floor-policy.ts) excludes those daemons.
+    KORTIX_SESSION_LOG_RESTORE: '1',
   };
 }
 

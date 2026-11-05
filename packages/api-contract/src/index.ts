@@ -60,7 +60,6 @@ export const FeatureFlagMapSchema = z.object({
   us_region: z.boolean(),
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
-  session_log_restore: z.boolean(),
   chat: z.boolean(),
   shared_drives: z.boolean(),
   goals: z.boolean(),
@@ -194,6 +193,8 @@ export const ProjectSchema = z.object({
     llm_gateway: z.literal(true).optional(),
     /** Not a flag (the session log is every session's saved history); always `true` for older SDK, CLI and mobile clients. */
     session_log: z.literal(true).optional(),
+    /** Not a flag since 2026-11-05 (every box restores from the session log when its store is behind); always `true` from this server. A server before then sent `false` for a project an operator turned off. */
+    session_log_restore: z.boolean().optional(),
     /** Not a flag (every new session runs pi; OpenCode is sunset); always `true` for older SDK, CLI and mobile clients. */
     pi_harness: z.literal(true).optional(),
     /** Not a flag (generative UI is always on); always `true` for older SDK, web and mobile clients, which render blocks only while it is on. */
