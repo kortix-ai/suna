@@ -357,11 +357,12 @@ name and data, so the same state never fires twice; with nothing to report
 it posts `kortix.heartbeat`. `--expect-event-within 1h` (or `expect_event_within`
 on a `kortix.yaml` trigger) tells the person once when the watcher stops posting.
 
-- Return only the part that matters. A time or a counter in `data` fires on
-  every tick.
+- Return only the part that matters. Your check's time or a counter in
+  `data` fires on every tick; the source's own change stamp does not.
 - The first tick fires once with the current state: the woken turn records
   it as the starting point. A return to a state seen in the last 30 days
-  fires nothing.
+  fires nothing: when the return matters (back to normal after an incident),
+  put the source's own change stamp or the ended incident's id in `data`.
 - A trigger takes at most 60 events an hour and 30 a minute; past that it is
   suppressed for 10 minutes, and 3 suppressions in 24 h disable it. Emit one
   summary event, not one per item. One event is at most 8 KiB; `name` is
