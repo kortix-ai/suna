@@ -18,7 +18,7 @@
  * schema table carrying both columns is in neither list, so a future table
  * cannot be silently forgotten here.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, getTableName, inArray, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import {
   artifacts,
@@ -195,6 +195,19 @@ export const PROJECT_TRANSFER_APP_TABLES: Readonly<Record<string, string>> = {
   app_runtimes: 'moved by app_deployments.app_id → apps.project_id',
   app_volumes: 'moved by app_id → apps.project_id',
   app_site_blobs: 'copied for the moved Apps\' sha256 set; source rows stay for reclaimAppSiteBlobs',
+};
+
+/**
+ * Moved tables with no index leading on `project_id` but an index on a NOT
+ * NULL session column (checked 2026-11-05: `session_logs`, `session_turns`
+ * are large). Every row's session belongs to the row's project.
+ */
+const SESSION_KEYED_TRANSFER_TABLES: Readonly<Record<string, string>> = {
+  session_turns: 'session_id',
+  session_logs: 'session_id',
+  session_content_purges: 'session_id',
+  session_pending_questions: 'session_id',
+  session_idle_watches: 'target_session_id',
 };
 
 export type ProjectTransferErrorCode =
@@ -451,9 +464,15 @@ export async function moveProjectInTransaction(
     kortix.connection_oauth_applications_connection_tenant_fk DEFERRED`);
 
   for (const table of PROJECT_TRANSFER_TABLES) {
+    const sessionColumn = SESSION_KEYED_TRANSFER_TABLES[getTableName(table)];
+    // A session-keyed table without a project_id index is reached through its
+    // (NOT NULL, indexed) session column instead of a sequential scan.
+    const bySession = sessionColumn
+      ? sql` AND ${sql.identifier(sessionColumn)} IN (SELECT session_id FROM kortix.project_sessions WHERE project_id = ${projectId})`
+      : sql``;
     await tx.execute(
       sql`UPDATE ${table} SET account_id = ${toAccountId}
-           WHERE project_id = ${projectId} AND account_id = ${fromAccountId}`,
+           WHERE project_id = ${projectId} AND account_id = ${fromAccountId}${bySession}`,
     );
   }
 
