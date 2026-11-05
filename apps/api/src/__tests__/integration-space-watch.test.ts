@@ -7,15 +7,8 @@ import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { accounts, projectSessions, projectSpaceEvents, projectSpaces, projectSpaceWatchers, projects } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 
-const notices: Array<{ sessionId: string; text: string; key: string; actorUserId: string | null }> = [];
-mock.module('../projects/session-notice-batch', () => ({
-  NOTICE_BATCH_HOLD_MS: 0,
-  setNoticeBatchHoldForTests: () => {},
-  enqueueSessionNotice: async (notice: { sessionId: string; text: string; key: string; actorUserId: string | null }) => {
-    notices.push(notice);
-    return { rowKey: notice.key, deduped: false, coalesced: false };
-  },
-}));
+/** One record per wake: the fresh session each wake creates (wake.ts `setWakeSessionCreatorForTests`). */
+const notices: Array<{ sessionId: string; text: string; key: string; actorUserId: string | null; spaceId: unknown }> = [];
 
 const { config } = await import('../config');
 const { db } = await import('../shared/db');
@@ -24,7 +17,12 @@ const { FakeVolume } = await import('./helpers/memory-fake-volume');
 const { ensureProjectDrive } = await import('../drives/service');
 const { insertSpaceMembers } = await import('../projects/lib/project-space-members');
 const store = await import('../projects/lib/space-watch/store');
-const { runSpaceWatcherTick } = await import('../projects/lib/space-watch/wake');
+const { runSpaceWatcherTick, setWakeSessionCreatorForTests } = await import('../projects/lib/space-watch/wake');
+setWakeSessionCreatorForTests((async (input: { userId: string; body: { initial_prompt?: string; space_id?: unknown }; idempotencyKey?: string }) => {
+  const sessionId = crypto.randomUUID();
+  notices.push({ sessionId, text: String(input.body.initial_prompt ?? ''), key: String(input.idempotencyKey ?? ''), actorUserId: input.userId, spaceId: input.body.space_id });
+  return { row: { sessionId }, sessionId };
+}) as never);
 const { SPACE_EVENTS_KEEP, WATCH_DAILY_WAKES } = await import('../projects/lib/space-watch/policy');
 
 (config as { PLATINUM_API_KEY?: string }).PLATINUM_API_KEY ||= 'test-key';
@@ -118,14 +116,15 @@ describe('the event feed', () => {
 });
 
 describe('the tick wakes the watcher', () => {
-  test('new events wake it once: one notice to its session, as its person, with events, brief and rules; events.md is written; the cursor moves', async () => {
-    await db.update(projectSpaceWatchers).set({ watcherSessionId: WATCHER }).where(eq(projectSpaceWatchers.spaceId, LAUNCH));
+  test('new events wake it once: one fresh session, as its person, filed in no space, with events, brief and rules; events.md is written; the cursor moves', async () => {
     const result = await runSpaceWatcherTick(at(0));
     expect(result).toMatchObject({ watchers: 1, woken: 1 });
     expect(notices).toHaveLength(1);
     const [notice] = notices;
-    expect(notice!.sessionId).toBe(WATCHER);
     expect(notice!.actorUserId).toBe(ANA);
+    // Filed in no space: without `space_id: null` session create files it in #general.
+    expect(notice!.spaceId).toBeNull();
+    expect((await watchOf(LAUNCH)).watcherSessionId).toBe(notice!.sessionId);
     expect(notice!.text).toContain('## Space watch: #launch');
     expect(notice!.text).toContain('- thread finished');
     expect(notice!.text).toContain('Ship v2 on Friday.');

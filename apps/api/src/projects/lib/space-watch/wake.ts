@@ -75,6 +75,12 @@ export function watcherAgent(space: Pick<SpaceRow, 'kind' | 'agents' | 'dmAgentN
   return space.kind === 'dm' ? (space.dmAgentName ?? CHAT_AGENT) : (space.agents?.[0] ?? CHAT_AGENT);
 }
 
+/** Creates a wake's session; tests record the call instead (`setWakeSessionCreatorForTests`). */
+let createWakeSession: typeof createSession = createSession;
+export function setWakeSessionCreatorForTests(create: typeof createSession | null): void {
+  createWakeSession = create ?? createSession;
+}
+
 /**
  * Deliver one wake prompt: every wake is a fresh session with the prompt as its
  * first message. The watcher's memory is the space's files (`events.md`,
@@ -84,12 +90,13 @@ export function watcherAgent(space: Pick<SpaceRow, 'kind' | 'agents' | 'dmAgentN
  * `system:space-watcher` (so session-create gives it `kortix.watcher`).
  */
 async function deliverWake(input: { project: ProjectRow; space: SpaceRow; watch: WatcherRow; text: string; key: string }): Promise<string | null> {
-  const result = await createSession({
+  const result = await createWakeSession({
     source: SPACE_WATCHER_SOURCE,
     project: input.project,
     userId: input.watch.ownerUserId,
     requestingPrincipalType: 'human',
-    body: { agent_name: watcherAgent(input.space), initial_prompt: input.text },
+    // `space_id: null`: filed in no space. Without it, session create files the session in #general.
+    body: { agent_name: watcherAgent(input.space), initial_prompt: input.text, space_id: null },
     metadata: { name: `Watcher · ${spacePlace(input.space)}`, [WATCHER_SPACE_METADATA_KEY]: input.space.spaceId },
     visibility: 'private',
     inSession: false,
