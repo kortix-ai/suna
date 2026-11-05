@@ -157,3 +157,34 @@ describe('workspace name = account name = project name', () => {
     expect((await db.select().from(accounts).where(eq(accounts.accountId, legacy)))[0]?.name).toBe('nw-owner');
   });
 });
+
+describe('self-host platform admin without a personal account', () => {
+  test('an allowlisted email is a platform admin whatever its accounts are, and creates a workspace under the restriction', async () => {
+    const { isPlatformAdmin } = await import('../shared/platform-roles');
+    const caller = await person();
+    const email = `nw-admin-${caller.userId}@example.test`;
+    await db.execute(sql`update auth.users set email = ${email} where id = ${caller.userId}::uuid`);
+    const mutable = config as { KORTIX_RESTRICT_ACCOUNT_CREATION: boolean };
+    const before = { restrict: mutable.KORTIX_RESTRICT_ACCOUNT_CREATION, admins: process.env.KORTIX_PLATFORM_ADMIN_EMAILS };
+    mutable.KORTIX_RESTRICT_ACCOUNT_CREATION = true;
+    process.env.KORTIX_PLATFORM_ADMIN_EMAILS = `someone@example.test, ${email.toUpperCase()}`;
+    try {
+      // The admin's only account has its own id, never the user id.
+      const owned = await account(caller.userId, 'owner', { projects: 1 });
+      expect(owned).not.toBe(caller.userId);
+      expect(await isPlatformAdmin(caller.userId)).toBe(true);
+      const result = await resolve(caller);
+      expect(result).toMatchObject({ ok: true, created: true });
+      if (result.ok) expect(result.accountId).not.toBe(caller.userId);
+
+      // Control: a person not on the list is refused.
+      const other = await person();
+      expect(await isPlatformAdmin(other.userId)).toBe(false);
+      expect(await resolve(other)).toMatchObject({ ok: false, result: { status: 403, body: { code: 'account_creation_restricted' } } });
+    } finally {
+      mutable.KORTIX_RESTRICT_ACCOUNT_CREATION = before.restrict;
+      if (before.admins === undefined) delete process.env.KORTIX_PLATFORM_ADMIN_EMAILS;
+      else process.env.KORTIX_PLATFORM_ADMIN_EMAILS = before.admins;
+    }
+  });
+});
