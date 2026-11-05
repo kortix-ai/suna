@@ -33,6 +33,7 @@ import { getTranslations } from '@/i18n/get-translations';
 import { normalizeLocale } from '@/i18n/locale';
 import { loadMessages } from '@/i18n/messages';
 import { notFound } from 'next/navigation';
+import Script from 'next/script';
 import { headers } from 'next/headers';
 import { connection } from 'next/server';
 import { Toaster } from 'sonner';
@@ -422,6 +423,12 @@ export default async function RootLayout({
           </LazyMotionProvider>
         </ThemeProvider>
         <div id="portal" className="fixed top-0 left-0 z-40" />
+        {/* ui.sh picker toolbar: switches between `data-uidotsh-option`
+            variants while a design is compared. Development builds only; the
+            CSP allows the origin in development only. */}
+        {process.env.NODE_ENV === 'development' ? (
+          <Script src="https://ui.sh/ui-picker.js" strategy="afterInteractive" />
+        ) : null}
       </body>
     </html>
   );

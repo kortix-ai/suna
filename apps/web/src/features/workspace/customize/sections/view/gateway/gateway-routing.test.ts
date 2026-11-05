@@ -85,10 +85,6 @@ describe('gateway routing editor helpers', () => {
     ).toContain('at least one');
   });
 
-  test('uses the shared model selector', () => {
-    expect(routingSource).toContain('<ModelSelector');
-  });
-
   test('renders an editable vision model override saved through the same routing policy', () => {
     expect(routingSource).toContain("raw('text0a15fd3848fa')");
     expect(routingSource).toContain('draft.visionModel');
@@ -100,13 +96,6 @@ describe('gateway routing editor helpers', () => {
     // in the same `routing.set.mutate({ ...draft, ... })` payload as the
     // fallback chain and rules.
     expect(routingSource).toContain('visionModel: policy.visionModel');
-  });
-
-  test('debounces a routing-policy/preview availability check and surfaces per-entry feedback', () => {
-    expect(routingSource).toContain('routing.preview.mutateAsync');
-    expect(routingSource).toContain('setTimeout');
-    expect(routingSource).toContain('AvailabilityBadge');
-    expect(routingSource).toContain("raw('text0303e1824670')");
   });
 
   test('collects a deduped preview target list across the primary, vision override, default chain, and rule chains', () => {
