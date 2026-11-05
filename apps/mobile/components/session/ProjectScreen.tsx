@@ -24,7 +24,7 @@
  * different one (see ProjectRoutes).
  */
 
-import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { useProjectSessionConnect } from '@/lib/session/project-connect';
 import { markComposerFocus } from '@/lib/onboarding/composer-handoff';
 import { useProjectHomeSend } from '@/components/session/use-project-home-send';
@@ -63,15 +63,11 @@ import {
 } from '@/lib/session/project-stack';
 import { ProjectSwitcherSheet } from '@/components/projects/ProjectSwitcherSheet';
 import {
-  leaveSandboxOnFocus,
   pendingOpenedThread,
-  showsSessionContent as showsSessionContentFor,
   threadSandboxReady,
-  type OpenedThread,
 } from '@/lib/session/session-sandbox';
 import { ProjectHome } from '@/components/session/ProjectHome';
 import {
-  resolveSessionTitle,
   sessionDisplayTitle,
   subsessionTitle,
 } from '@/lib/session/session-list';
@@ -99,8 +95,6 @@ import { NOTIFICATION_INBOX_LIMIT, notificationInboxEnabled } from '@/lib/notifi
 import { carryOverLegacyKinds } from '@/lib/notifications/registration';
 import { useSavedCopy } from '@/hooks/useSavedCopy';
 import type { ProjectSession } from '@/lib/projects/projects-client';
-import { getSandboxUrl } from '@/lib/platform/client';
-import type { SandboxProviderName } from '@/lib/platform/client';
 
 // ── Tool pages (reused verbatim from the legacy page ternary) ──
 
@@ -239,7 +233,7 @@ export function ProjectScreen() {
     isHomeRef, ensuringRef, navigateToSession, goHome, refreshSessionLists,
     firstPromptRef, freshSessionIdRef, erroredSessionRef, setConnectError, setConnectingProjectSessionId, showUpgradeForError,
     handleOpenProjectSession, handleOpenSessionById, handleRestartSession,
-    handleCancelConnect, takeInitialDraft,
+    handleCancelConnect, initialDraft, consumeInitialDraft,
   } = useProjectSessionConnect(projectId, projectSessions, activeSessionId, activePageId, setHomeKey);
 
   // Review items that wait for the user. The project sheet that used to show
@@ -804,11 +798,12 @@ export function ProjectScreen() {
           onSubmitNewSession={submitNewSession}
           onOpenDrawer={openDrawer}
           notifications={homeNotifications}
-          takeInitialDraft={takeInitialDraft}
+          initialDraft={initialDraft}
+          consumeInitialDraft={consumeInitialDraft}
         />
       </View>
     ),
-    [projectId, isDashboardSending, submitNewSession, openDrawer, homeNotifications, takeInitialDraft]
+    [projectId, isDashboardSending, submitNewSession, openDrawer, homeNotifications, initialDraft, consumeInitialDraft]
   );
 
   // Memoized: a new value re-renders every project route that reads it.

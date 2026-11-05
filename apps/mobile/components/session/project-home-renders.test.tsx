@@ -111,19 +111,19 @@ afterEach(async () => {
   tree = undefined;
 });
 
-const home = (takeInitialDraft?: () => { text: string; files: any[] }, sending = false) => (
+const home = (initialDraft?: { text: string; files: any[] }, sending = false) => (
   <ProjectHome
     projectId="project-1"
     sending={sending}
     onSubmitNewSession={onSubmitNewSession}
     onOpenDrawer={onOpenDrawer}
-    takeInitialDraft={takeInitialDraft}
+    initialDraft={initialDraft}
   />
 );
 
-async function mount(takeInitialDraft?: () => { text: string; files: any[] }) {
+async function mount(initialDraft?: { text: string; files: any[] }) {
   await act(async () => {
-    tree = create(home(takeInitialDraft));
+    tree = create(home(initialDraft));
   });
 }
 
@@ -155,7 +155,7 @@ test('Send sends the typed text once per tap burst; the draft stays', async () =
 });
 
 test('a handed-back draft seeds the composer', async () => {
-  await mount(() => ({ text: 'restored prompt', files: [] }));
+  await mount({ text: 'restored prompt', files: [] });
   expect(composer.value).toBe('restored prompt');
 });
 
@@ -192,7 +192,7 @@ test('pastes alone send; a removed paste does not', async () => {
 
 test('a handed-back prompt with a paste seeds the text and the tile', async () => {
   const paste = 'q'.repeat(1000);
-  await mount(() => ({ text: `<pasted_content id="abcd1234" chars="1000">\n${paste}\n</pasted_content>\n\nhello`, files: [] }));
+  await mount({ text: `<pasted_content id="abcd1234" chars="1000">\n${paste}\n</pasted_content>\n\nhello`, files: [] });
   expect(composer.value).toBe('hello');
   expect(composer.pastes).toEqual([{ id: 'abcd1234', text: paste }]);
 });
@@ -258,4 +258,19 @@ test("another project's New session does not focus this home", async () => {
   await act(async () => markComposerFocus('project-2'));
   await settle();
   expect(field.calls).toBe(0);
+});
+
+test('an abandoned home render preserves the handed-back draft until a composer commits', async () => {
+  let pending = { text: 'restored after suspension', files: [] as any[] };
+  const consume = (draft: typeof pending) => { if (pending === draft) pending = { text: '', files: [] }; };
+  const renderHome = () => <ProjectHome projectId="project-1" onSubmitNewSession={onSubmitNewSession} onOpenDrawer={onOpenDrawer} initialDraft={pending} consumeInitialDraft={consume} />;
+  const never = new Promise<void>(() => {});
+  const Suspend = () => { throw never; };
+  await act(async () => {
+    tree = create(<React.Suspense fallback={null}>{renderHome()}<Suspend /></React.Suspense>);
+  });
+  expect(pending.text).toBe('restored after suspension');
+  await act(async () => { tree!.update(<React.Suspense fallback={null}>{renderHome()}</React.Suspense>); });
+  expect(composer.value).toBe('restored after suspension');
+  expect(pending.text).toBe('');
 });

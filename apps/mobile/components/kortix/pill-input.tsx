@@ -10,7 +10,6 @@
 import * as React from 'react';
 import { TextInput, type TextStyle, type TextInputInstance } from 'react-native';
 import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
-import { THEME } from '@/lib/utils/theme';
 import { useThemePalette } from '@/lib/utils/use-theme-palette';
 
 /** Matches `Button size="lg"` (h-11, 44pt), so fields and buttons stack flush. */

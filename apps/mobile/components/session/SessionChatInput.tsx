@@ -13,10 +13,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
-  TextInput,
   Pressable,
-  StyleSheet,
-  type NativeSyntheticEvent,
   type TextInputSelectionChangeEvent,
   type TextInputInstance
 } from 'react-native';

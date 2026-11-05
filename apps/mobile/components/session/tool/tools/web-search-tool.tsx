@@ -12,11 +12,11 @@
  * on web: each source's domain is sent to Google when the row renders.
  */
 
-import { useMemo, useState } from 'react';
-import { View, Image } from 'react-native';
+import { useMemo } from 'react';
+import { View } from 'react-native';
 import { parseWebSearchOutput as parseSdkWebSearchOutput } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
-import { MagnifyingGlassIcon, MagnifyingGlassIcon as Search, CaretRightIcon as ChevronRight } from '@/lib/icons';
+import { MagnifyingGlassIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import {
   countWebSearchSources,
@@ -37,7 +37,7 @@ import {
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { ToolResultCard } from '../shared/result-card';
-import { TURN_SPACE, TURN_TYPE, fg, monoFont, muted, mutedStrong, useTurnPalette } from '../shared/styles';
+import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 import { WebSourceRow } from '../shared/web-source-row';
 
