@@ -183,7 +183,7 @@ export function SessionFixtureScreen() {
                     style={turns.length > 0 ? { marginTop: webSpace(6) } : undefined}
                   />
                 </View>
-              ) : null
+              ) : undefined
             }
           />
         </MarkdownActionsProvider>

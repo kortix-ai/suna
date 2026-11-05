@@ -14,7 +14,12 @@
 
 import * as React from 'react';
 import { StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
-import MaskedView from '@react-native-masked-view/masked-view';
+import MaskedViewNative from '@react-native-masked-view/masked-view';
+// masked-view 0.3.2 types its class on `NativeMethods`, which react-native
+// 0.88's strict types no longer export, so its JSX type does not resolve.
+const MaskedView = MaskedViewNative as unknown as React.ComponentType<
+  React.ComponentProps<typeof View> & { maskElement: React.ReactElement }
+>;
 import { useColorScheme } from 'nativewind';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 

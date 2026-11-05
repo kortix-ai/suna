@@ -155,9 +155,8 @@ function makeSpriteSheet(palette: Palette): SkImage | null {
         TileMode.Clamp
       )
     );
-    const path = Skia.Path.Make();
-    path.moveTo(x0, CELL / 2);
-    path.lineTo(x1, CELL / 2);
+    // Skia 2.14: `SkPath` is immutable; a `PathBuilder` draws it.
+    const path = Skia.PathBuilder.Make().moveTo(x0, CELL / 2).lineTo(x1, CELL / 2).build();
     canvas.drawPath(path, paint);
   };
 
@@ -193,8 +192,8 @@ function makeSpriteSheet(palette: Palette): SkImage | null {
  * height; the field itself always fills the frame.
  */
 function buildEdgePoints(width: number, height: number, markCenterY: number): number[] {
-  const path = Skia.Path.MakeFromSVGString(KORTIX_SYMBOL_PATH);
-  if (!path) return [];
+  const symbol = Skia.Path.MakeFromSVGString(KORTIX_SYMBOL_PATH);
+  if (!symbol) return [];
 
   const size = Math.min(height * 0.64, (width * 0.64) / SYMBOL_ASPECT);
   const scale = size / SYMBOL_HEIGHT;
@@ -204,7 +203,7 @@ function buildEdgePoints(width: number, height: number, markCenterY: number): nu
   const matrix = Skia.Matrix();
   matrix.translate((width - w) / 2, height * markCenterY - h / 2);
   matrix.scale(scale, scale);
-  path.transform(matrix);
+  const path = Skia.PathBuilder.MakeFromPath(symbol).transform(matrix).build();
 
   const points: number[] = [];
   const iter = Skia.ContourMeasureIter(path, false, 1);
