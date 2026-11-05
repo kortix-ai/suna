@@ -581,7 +581,7 @@ function createMainWindow() {
         defaultId: 0,
         cancelId: 0,
         message: 'Kortix stopped unexpectedly',
-        detail: 'Reload to return to this page, or go home to your latest project.',
+        detail: 'Reload to return to this page, or go home to your latest workspace.',
       })
       .then(({ response }) => {
         if (!mainWindow || mainWindow.isDestroyed()) return;
