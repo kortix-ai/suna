@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -187,6 +195,41 @@ describe('scripts/secrets-envs-separation.py', () => {
     expect(r.out).not.toMatch(/CLOUDFLARE_ZONE_NAME|MAILTRAP_FROM_EMAIL|CORS_ALLOWED_ORIGINS/);
   });
 
+  // KRTX-4108 review item 1, the case that actually fails a real profile: the brand values
+  // dev and staging hold are the SAME strings prod holds, so the == prod value track fires.
+  // One public name serves every environment, so these are allowlisted as brand values.
+  it('passes the real dev brand values even though they equal prod (KRTX-4108 item 1)', () => {
+    const brand = {
+      CLOUDFLARE_ZONE_NAME: 'kortix.com',
+      MAILTRAP_FROM_EMAIL: 'hi@kortix.com',
+      RESEND_FROM_EMAIL: 'noreply@kortix.cloud',
+      RESEND_MANAGED_DOMAIN: 'kortixmail.com',
+      KORTIX_PREVIEW_BASE_DOMAIN: 'p.kortix.com',
+    };
+    const r = run(
+      { prod: brand, nonProd: nonProd({ ...brand, DATABASE_URL: 'postgres://dev-db:5432/kortix' }) },
+      'CLOUDFLARE_ZONE_NAME one DNS zone\nMAILTRAP_FROM_EMAIL one mail domain\n' +
+        'RESEND_FROM_EMAIL one mail domain\nRESEND_MANAGED_DOMAIN one sending domain\n' +
+        'KORTIX_PREVIEW_BASE_DOMAIN one preview domain\n',
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toMatch(/~ local +CLOUDFLARE_ZONE_NAME +== prod value \(allowlisted/);
+    expect(r.out).toMatch(/~ local +KORTIX_PREVIEW_BASE_DOMAIN +== prod value \(allowlisted/);
+    expect(r.out).toMatch(/✓ local +0 unallowed, 5 allowlisted/);
+    expect(r.out).not.toMatch(/DATABASE_URL/);
+  });
+
+  // The brand allowlist must not launder a credential: the same key fails on a prod host
+  // or a LIVE key, because an entry waives the shared-value class only.
+  it('a brand allowlist entry still fails a prod host (KRTX-4108 item 1)', () => {
+    const r = run(
+      { prod: {}, nonProd: nonProd({ CLOUDFLARE_ZONE_NAME: 'postgres://u:p@api.kortix.com:5432/x' }) },
+      'CLOUDFLARE_ZONE_NAME one DNS zone\n',
+    );
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toMatch(/✗ local +CLOUDFLARE_ZONE_NAME +names api\.kortix\.com \u2014 split it$/m);
+  });
+
   it('still fails a credential DSN that points at a prod host (KRTX-4108 item 1)', () => {
     const r = run({
       prod: {},
@@ -254,5 +297,26 @@ describe('scripts/secrets-envs-separation.py', () => {
     });
     expect(r.code, r.out).toBe(1);
     expect(r.out).toMatch(/prod did not decrypt/);
+  });
+
+  // The shipped allowlist is the file the gate reads: a brand key that is not listed there
+  // fails the real dev/staging profiles on the one host that can decrypt prod.
+  it('ships an entry for every brand key the real dev and staging profiles hold', () => {
+    const shipped = readFileSync(resolve(root, 'scripts/secrets-shared-with-prod.allowlist'), 'utf8');
+    const listed = new Set(
+      shipped
+        .split('\n')
+        .map((l) => /^([A-Z][A-Z0-9_]+)\s/.exec(l)?.[1])
+        .filter(Boolean),
+    );
+    for (const key of [
+      'CLOUDFLARE_ZONE_NAME',
+      'MAILTRAP_FROM_EMAIL',
+      'RESEND_FROM_EMAIL',
+      'RESEND_MANAGED_DOMAIN',
+      'KORTIX_PREVIEW_BASE_DOMAIN',
+      'BETTERSTACK_API_LOG_HOST',
+    ])
+      expect(listed, `${key} is shared by every environment`).toContain(key);
   });
 });

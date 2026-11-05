@@ -64,8 +64,9 @@ There are **four environments**, each a separate encrypted file with its **own k
   staging and `*.kortix.internal` are their own stacks);
   `scripts/secrets-shared-with-prod.allowlist` lists the
   remaining shared vendor keys with the reason and the rotation that removes
-  each line. An entry waives only the shared-value match, never a prod host
-  or a LIVE key. Do not add to that file to make the test pass — split the
+  each line, plus the brand values (one public domain, sender address or zone
+  name that serves every environment and can never diverge). An entry waives
+  only the shared-value match, never a prod host or a LIVE key. Do not add to that file to make the test pass — split the
   credential.
 - **`.env.dev`**: the `Kortix DEV` Supabase project holds signups from
   dev.kortix.com (2,793 users on 2026-08-26). The owner classifies them as
