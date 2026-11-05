@@ -52,7 +52,7 @@ import {
   isApprovalExpiredError,
   itemDeepLink,
 } from '../../../workspace/review/review-actions';
-import { AskDeck } from '../../../workspace/review/ask-deck';
+import { AskDeck } from '../../../session/prompts/ask-deck';
 import { ReviewCenter } from '../../../workspace/review/review-center';
 
 /**

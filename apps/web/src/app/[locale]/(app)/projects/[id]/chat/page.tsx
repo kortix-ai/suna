@@ -2,6 +2,8 @@
 
 import { useParams } from 'next/navigation';
 
+import { useTranslations } from '@/i18n/use-translations';
+
 import { SpaceFileView } from '@/features/drives/space-file-view';
 import { SpaceFolderView } from '@/features/drives/space-folder-view';
 import { useProjectSendGate } from '@/hooks/projects/use-project-send-gate';
@@ -16,11 +18,12 @@ import { SpaceView } from '@kortix/ui/workspace';
  */
 export default function OneChatPage() {
   const { id } = useParams<{ id: string }>();
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const flag = useFeatureFlag(id, 'chat');
   const beforeSend = useProjectSendGate(id);
   if (flag.isLoading) return null;
   if (!flag.enabled) {
-    return <FeatureGateScreen featureKey="chat" featureName="Chat" description="Talk to Kortix in one chat: every message is a thread, and Kortix's newest reply shows under it." />;
+    return <FeatureGateScreen featureKey="chat" featureName="Chat" description={tI18nComplete.raw('textfe0dab79db43')} />;
   }
   return (
     <SpaceView

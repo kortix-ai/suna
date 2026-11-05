@@ -6,7 +6,7 @@ import { useContext, useId, useState, type ReactNode } from 'react';
 import { useTranslations } from '../../i18n';
 import { AgentMarkGlyph, agentMarkTileClass, agentMarkVars } from '../../internal/components/agent-mark';
 import { cn } from '../../lib/utils';
-import { SessionStatusMark } from '../../workspace/sidebar/session-status-mark';
+import { SessionStatusMark } from '../list/session-status-mark';
 import type { SessionDisplayStatus } from '../actions/session-label';
 import { TextShimmer } from '../../primitives/text-shimmer';
 import { BoundActivateContext, ToolOutcomeContext, ToolRunningContext, useToolOpen } from '../tool/shared/infrastructure-contexts';

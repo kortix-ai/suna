@@ -306,7 +306,7 @@ function GoalRow({
           <span className="text-muted-foreground flex min-w-0 text-xs">
             <span className="min-w-0 truncate">{stateText(goal, locale, now)}</span>
             {meta.length ? (
-              <span className="shrink-0 whitespace-nowrap">&nbsp;· {meta.join(' · ')}</span>
+              <span className="shrink-0 whitespace-nowrap">{`\u00a0· ${meta.join(' · ')}`}</span>
             ) : null}
           </span>
         </span>

@@ -374,6 +374,7 @@
     "./item": "./src/primitives/item.tsx",
     "./kbd": "./src/primitives/kbd.tsx",
     "./kortix-asterisk": "./src/primitives/kortix-asterisk.tsx",
+    "./kortix-glyphs": "./src/primitives/kortix-glyphs.tsx",
     "./kortix-icons": "./src/primitives/kortix-icons.ts",
     "./kortix-loader": "./src/primitives/kortix-loader.tsx",
     "./kortix-logo": "./src/primitives/kortix-logo.tsx",
@@ -433,7 +434,6 @@
     "./session/composer/composer-agent-access": "./src/session/composer/composer-agent-access.ts",
     "./session/composer/composer-chat-input": "./src/session/composer/composer-chat-input.tsx",
     "./session/composer/composer-draft-recovery": "./src/session/composer/composer-draft-recovery.ts",
-    "./session/composer/menus/menu-shell": "./src/session/composer/menus/menu-shell.tsx",
     "./session/composer/menus/slash-actions": "./src/session/composer/menus/slash-actions.ts",
     "./session/composer/queue-projection": "./src/session/composer/queue-projection.ts",
     "./session/composer/session-chat-input": "./src/session/composer/session-chat-input.tsx",
@@ -1961,6 +1961,10 @@
         "types": "./dist/primitives/kortix-asterisk.d.ts",
         "import": "./dist/primitives/kortix-asterisk.js"
       },
+      "./kortix-glyphs": {
+        "types": "./dist/primitives/kortix-glyphs.d.ts",
+        "import": "./dist/primitives/kortix-glyphs.js"
+      },
       "./kortix-icons": {
         "types": "./dist/primitives/kortix-icons.d.ts",
         "import": "./dist/primitives/kortix-icons.js"
@@ -2190,10 +2194,6 @@
       "./session/composer/composer-draft-recovery": {
         "types": "./dist/session/composer/composer-draft-recovery.d.ts",
         "import": "./dist/session/composer/composer-draft-recovery.js"
-      },
-      "./session/composer/menus/menu-shell": {
-        "types": "./dist/session/composer/menus/menu-shell.d.ts",
-        "import": "./dist/session/composer/menus/menu-shell.js"
       },
       "./session/composer/menus/slash-actions": {
         "types": "./dist/session/composer/menus/slash-actions.d.ts",

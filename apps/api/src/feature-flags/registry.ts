@@ -435,8 +435,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     wip: true,
     available: () => true,
-    // Off by default (Marko, 2026-11-03): Drive is My files until shared Drives are figured out.
-    platformDefault: () => false,
+    // On by default (Marko, 2026-11-05): teams share Drives out of the box; a project can still turn it off.
+    platformDefault: () => true,
     enforcement: 'routes',
     enforcementNote:
       'PUT /v1/drives/:driveId/access answers 403 feature_disabled while off. Off, driveSubjectFor gives a person no agent reach (agentIds empty) and ' +
