@@ -148,7 +148,11 @@ async function emitCommand(rest: string[], options: ContextOptions, json: boolea
   const deadline = Date.now() + wait * 1000;
   let rows: AppEvent[] = [];
   for (;;) {
-    rows = (await scoped(ctx, () => ctx.apps.events.list(app.app_id, { id: testId, limit: 50 }))).events;
+    // The same --id may have an older row of the other kind (unmatched before a
+    // trigger existed): keep only the rows this send can have written.
+    rows = (await scoped(ctx, () => ctx.apps.events.list(app.app_id, { id: testId, limit: 50 }))).events.filter((row) =>
+      sent.triggers > 0 ? row.trigger !== null : row.status === 'unmatched',
+    );
     if (rows.length > 0 && rows.every((row) => row.status !== 'pending')) break;
     if (Date.now() >= deadline) break;
     await new Promise((resolveSleep) => setTimeout(resolveSleep, WAIT_POLL_MS));
