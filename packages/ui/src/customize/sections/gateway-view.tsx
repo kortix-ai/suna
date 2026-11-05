@@ -91,6 +91,7 @@ import { CapabilityPageShell } from '../shared/capability-page-shell';
 import { GatewayAccessTab } from './gateway-access-tab';
 import { CustomProviderPanel } from './llm-provider/custom-provider-panel';
 import { ModelsTab } from './llm-provider/models-tab';
+import { SubscriptionUsageTab } from './view/subscription-usage-tab';
 import { GatewayLogs } from './view/gateway/gateway-logs';
 import { GatewayOverview } from './view/gateway/gateway-overview';
 import { GatewayRouting } from './view/gateway/gateway-routing';
@@ -104,7 +105,7 @@ export const MODELS_PAGE_TITLE = 'Models';
 export const MODELS_PAGE_DESCRIPTION = 'Choose the providers and models this project can use.';
 
 type LlmTab =
-  'providers' | 'models' | 'custom' | 'gateway' | 'routing' | 'overview' | 'logs';
+  'providers' | 'models' | 'custom' | 'gateway' | 'routing' | 'overview' | 'logs' | 'usage';
 
 interface LlmTabEntry {
   /** `agent` exists only on the agent variant (`AGENT_LLM_TABS`). */
@@ -132,6 +133,7 @@ export const LLM_TABS: LlmTabEntry[] = [
   // file's own render switch keep working unchanged.
   { id: 'overview', label: 'Costs' },
   { id: 'logs', label: 'Logs' },
+  { id: 'usage', label: 'Usage' },
 ];
 
 /**
@@ -348,6 +350,9 @@ export function LlmSections({
           used to live one tab over. */}
       {tab === 'overview' && <GatewayOverview projectId={projectId} canWrite={canWrite} />}
       {tab === 'logs' && <GatewayLogs projectId={projectId} />}
+      {tab === 'usage' && (
+        <SubscriptionUsageTab projectId={projectId} onConnect={() => onTabChange('providers')} />
+      )}
     </>
   );
 }
@@ -424,7 +429,9 @@ export function LlmManagementView({
               />
             </FadedScrollArea>
           ) : (
-            <LlmTabStrip value={tab} onValueChange={(v) => setTab(v as LlmTab)} tabs={LLM_TABS} />
+            <FadedScrollArea orientation="horizontal" fadeColor="from-background" className="min-w-0 max-w-full">
+              <LlmTabStrip value={tab} onValueChange={(v) => setTab(v as LlmTab)} tabs={LLM_TABS} />
+            </FadedScrollArea>
           )}
           {canWrite && !agentScoped ? <ProjectDefaultPicker projectId={projectId} /> : null}
         </>
