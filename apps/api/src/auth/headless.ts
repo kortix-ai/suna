@@ -569,6 +569,11 @@ headlessAuthRouter.openapi(
     const limited = throttled(c);
     if (limited) return limited;
     const body = c.req.valid('json');
+    // One auth email per address per minute, the same guard /signup and
+    // /sign-in/magic-link already apply (CWE-770): a reset is exactly the flow
+    // a user clicks repeatedly while waiting for the mail.
+    const coolingDown = await emailCoolingDown(c, body.email);
+    if (coolingDown) return coolingDown;
     const result = await gotrue('/recover', {
       body: { email: body.email.trim().toLowerCase() },
       clientIp: requestClientIp(c),
