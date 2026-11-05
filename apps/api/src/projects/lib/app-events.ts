@@ -55,6 +55,26 @@ export function parseAppEventsBody(body: Record<string, unknown>): AppEventInput
   return events;
 }
 
+/** The id prefix every test event carries, so a test never spends a real event id. */
+export const TEST_EVENT_ID_PREFIX = 'test-';
+
+/**
+ * Events a person or agent sends to test the wiring (`POST …/events/test`):
+ * every id starts with `test-` (one is made when none was sent), so a real
+ * event with the same id still fires later.
+ */
+export function asTestEvents(events: readonly AppEventInput[]): AppEventInput[] {
+  return events.map((event) => ({
+    ...event,
+    id: event.id?.startsWith(TEST_EVENT_ID_PREFIX) ? event.id : `${TEST_EVENT_ID_PREFIX}${event.id ?? randomUUID()}`,
+  }));
+}
+
+/** The stored line of one event; a test event carries `test: true` (the prompt reads it as `event.test`). */
+function eventLine(event: AppEventInput, test: boolean): Record<string, unknown> {
+  return truncateMonitorLine({ name: event.name, data: event.data ?? {}, ...(event.id ? { id: event.id } : {}), ...(test ? { test: true } : {}) });
+}
+
 /** A dedup key from the App's event id: 52 bits, so it fits the bigint `seq` as a JS number. */
 function eventSeq(id: string): number {
   return Number.parseInt(createHash('sha256').update(id).digest('hex').slice(0, 13), 16);
@@ -82,6 +102,8 @@ export async function ingestAppEvents(input: {
   appId: string;
   appSlug: string;
   events: readonly AppEventInput[];
+  /** Sent through the test route: the events must already carry `test-` ids (asTestEvents). */
+  test?: boolean;
   now?: Date;
 }): Promise<AppEventIngestResult> {
   const now = input.now ?? new Date();
@@ -93,14 +115,14 @@ export async function ingestAppEvents(input: {
   const slugs = named.filter((row) => row.enabled !== false).map((row) => row.slug);
   if (slugs.length === 0) {
     const reason = unmatchedReason(input.appSlug, named.map((row) => row.slug));
-    const kept = await keepUnmatchedEvents({ ...input, now, reason });
+    const kept = await keepUnmatchedEvents({ ...input, test: input.test === true, now, reason });
     return { accepted: 0, deduped: kept.deduped, suppressed: 0, triggers: 0, unmatched: input.events.length, hint: reason };
   }
 
   const parsed: ParsedMonitorEvent[] = input.events.flatMap((event) => {
     // An event without an id is never deduplicated: each POST is a new event.
     const seq = eventSeq(event.id ?? randomUUID());
-    const line = truncateMonitorLine({ name: event.name, data: event.data ?? {}, ...(event.id ? { id: event.id } : {}) });
+    const line = eventLine(event, input.test === true);
     return slugs.map((slug) => ({ slug, seq, kind: 'event' as const, line, emittedAt: now }));
   });
   const result = await ingestMonitorEvents({ projectId: input.projectId, boxEpoch: `app:${input.appId}`, events: parsed, now });
@@ -116,6 +138,7 @@ async function keepUnmatchedEvents(input: {
   projectId: string;
   appId: string;
   events: readonly AppEventInput[];
+  test: boolean;
   now: Date;
   reason: string;
 }): Promise<{ kept: number; deduped: number }> {
@@ -144,7 +167,7 @@ async function keepUnmatchedEvents(input: {
         boxEpoch,
         seq: eventSeq(event.id ?? randomUUID()),
         kind: 'event',
-        line: truncateMonitorLine({ name: event.name, data: event.data ?? {}, ...(event.id ? { id: event.id } : {}) }),
+        line: eventLine(event, input.test),
         emittedAt: input.now,
         ingestedAt: input.now,
         status: 'skipped',
@@ -180,6 +203,8 @@ export interface AppEventLogEntry {
   /** The event was over 8 KiB: `data` is null and `raw` holds its head. */
   truncated: boolean;
   raw: string | null;
+  /** Sent through the test route by a person or agent, not by the App. */
+  test: boolean;
   /** The trigger the row belongs to; null when no trigger listened. */
   trigger: string | null;
   status: AppEventLogStatus;
@@ -209,6 +234,7 @@ export function appEventLogEntry(row: LogRow): AppEventLogEntry {
     data: !truncated && line.data && typeof line.data === 'object' && !Array.isArray(line.data) ? (line.data as Record<string, unknown>) : null,
     truncated,
     raw: truncated && typeof line.raw === 'string' ? line.raw : null,
+    test: line.test === true,
     trigger: unmatched ? null : row.slug,
     status: unmatched ? 'unmatched' : (row.status as AppEventLogStatus),
     reason: row.status === 'fired' ? null : (row.lastError ?? null),
@@ -240,6 +266,8 @@ export async function listAppEventLog(input: {
   cursor?: { receivedAt: Date; logId: string } | null;
   status?: AppEventLogStatus;
   trigger?: string;
+  /** The App's own id for the event (a test event's starts with `test-`). */
+  eventId?: string;
 }): Promise<{ events: AppEventLogEntry[]; next_cursor: string | null }> {
   const filters = [
     eq(projectMonitorEvents.projectId, input.projectId),
@@ -248,6 +276,7 @@ export async function listAppEventLog(input: {
   if (input.status === 'unmatched') filters.push(eq(projectMonitorEvents.slug, UNMATCHED_SLUG));
   else if (input.status) filters.push(eq(projectMonitorEvents.status, input.status), ne(projectMonitorEvents.slug, UNMATCHED_SLUG));
   if (input.trigger) filters.push(eq(projectMonitorEvents.slug, input.trigger));
+  if (input.eventId) filters.push(sql`${projectMonitorEvents.line}->>'id' = ${input.eventId}`);
   if (input.cursor) {
     const { receivedAt, logId } = input.cursor;
     filters.push(

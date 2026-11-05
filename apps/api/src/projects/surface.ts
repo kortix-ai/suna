@@ -91,6 +91,7 @@ export { listProjectSecretNamesForConsumer, listResolvedProjectSecrets } from '.
 // App events (`type: app` triggers): apps/event-routes.ts appends through these.
 export {
   APP_EVENT_LOG_STATUSES,
+  asTestEvents,
   decodeAppEventCursor,
   ingestAppEvents,
   listAppEventLog,
