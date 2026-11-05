@@ -2,85 +2,27 @@
 
 import { useTranslations } from '../../../../i18n';
 /**
- * Routing — where a request goes when the project default can't take it.
+ * Routing — where a request goes when its model can't take it.
  *
- * **One axis, flat rows.** Every control on this screen sits in the same
- * right-hand column, one row per decision: label and explanation on the left,
- * the control on the right. Same shape, same column width, same row padding
- * as `ProviderRow` in `packages/ui/src/customize/providers/provider-connect.tsx` ("click,
- * paste, done") — a settings screen is scanned by running the eye straight
- * down the controls, and it can only be scanned that way if the controls
- * share one x-position and one rhythm, not just a similar-looking layout.
- *
- * **What this replaced.** Four `bg-popover` panels of equal visual weight,
- * one of them a `Disclosure` hiding a stack of per-model rule blocks, each of
- * which held ANOTHER bordered panel (`ChainEditor`) whose fallback steps were
- * themselves bordered `<li>` cards. Five levels of box for "try B if A
- * fails", with the mode select at one x-position, the condition select at
- * another, the model pickers at a third — and the feature the product owner
- * called out as "the core thing want here" (per-model overrides) was the LAST
- * of the four panels, behind a click that gave no hint of what was under it.
- *
- * **Two tiers, not four equal boxes.** The product feedback on the old
- * layout was specific: it "looks horrendous", overrides are the core feature
- * and should not read as a footnote, and it needs to be as simple as
- * possible. So the four sections split into two tiers instead of one flat
- * stack:
- *
- *   1. **Primary — always visible.** *Fallback* (what handles this project's
- *      requests) and *Per-model overrides* (the exceptions to it) sit at the
- *      top, in that order, right after each other. Overrides also gets a
- *      full-strength `text-foreground` heading (the other three stay
- *      `Label`'s default muted weight) and its "Add override" button lives in
- *      the section header rather than at the bottom of a list — together that
- *      is the visual weight the product owner asked for, without a box.
- *   2. **Advanced — collapsed by default.** *Vision model* (a narrow,
- *      image-input-only override) and *Generation defaults* (four raw
- *      parameter knobs: reasoning effort, temperature, top-p, max tokens) are
- *      fine-tuning, not the decision someone opens this tab to make. Both
- *      move under one "Advanced" `Disclosure` below the primary content. It
- *      opens by default (`hasAdvancedRoutingConfig`) whenever the project
- *      already sets a vision override or a generation parameter, so an
- *      existing non-default config is never hidden from the person who set it.
- *
- * Nothing was cut. Every capability the panels held is still here:
- *
- * | Capability | Where it is now |
- * | --- | --- |
- * | Inherit / custom / no fallback | "When a model fails" row (primary) |
- * | Ordered default chain, reorder + remove, max 8 | Chain row — one line per step (primary) |
- * | Fallback condition (transient / any error) | "Retry on" line, inside the chain it belongs to |
- * | Per-model override rules, max 20 | "Per-model overrides" — one row per rule, promoted second (primary) |
- * | Vision (image-input) override | "Vision model" row, inside Advanced |
- * | Per-model generation defaults | "Generation defaults" section, inside Advanced |
- * | Provider-availability preview | `AvailabilityBadge`, on every chain step and override |
- * | Reset / dirty / validation / save | Header action + sticky footer, unchanged |
+ * This file owns the state: the editable draft of the project routing policy,
+ * the fallback mode, the debounced provider-availability preview, save, and
+ * reset. `routing-sentence-layout.tsx` renders the draft as plain sentences
+ * (All requests, Images, Exceptions, Model defaults); `routing-parts.tsx`
+ * holds the controls it is built from, including the floating save bar.
  *
  * The data contract is untouched: same props in, same `routing.set` /
  * `routing.reset` / `routing.preview` calls out, same exported helpers (which
  * `gateway-routing.test.ts` pins).
  */
 
-import { CaretDownIcon, ArrowCounterClockwiseIcon as RotateCcw, PlusIcon as Plus, TrashIcon as Trash2 } from '@phosphor-icons/react';
+import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '../../../../primitives/badge';
 import { Button } from '../../../../primitives/button';
 import { ConfirmDialog } from '../../../../primitives/confirm-dialog';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../../../primitives/disclosure';
-import Hint from '../../../../primitives/hint';
-import { Label } from '../../../../primitives/label';
-import Loading from '../../../../primitives/loading';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../../../primitives/select';
 import { Skeleton } from '../../../../primitives/skeleton';
 import { errorToast, successToast } from '../../../../primitives/toast';
-import { cn } from '../../../../internal/lib/utils';
 import type { GatewayProjectRoutingPolicy, GatewayRoutingRule } from '@kortix/sdk';
 import {
   modelKeyToWire,
@@ -94,18 +36,15 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { GenerationControlsPanel } from './generation-controls';
 import {
-  AvailabilityBadge,
-  ChainRows,
   type FallbackMode,
+  isSelectableModel,
   MAX_FALLBACKS,
   MAX_RULES,
   type RoutingLayoutProps,
   type RoutingModel,
-  RoutingModelSelector,
-  RoutingRow,
+  RoutingSaveBar,
 } from './routing-parts';
 import { RoutingSentenceLayout } from './routing-sentence-layout';
-import { RoutingSplitLayout } from './routing-split-layout';
 
 export { moveFallback } from './routing-parts';
 export type { FallbackMode } from './routing-parts';
@@ -265,6 +204,7 @@ export function GatewayRouting({
   projectDefaultPending: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('gatewayRouting');
   const queryClient = useQueryClient();
   const routing = useGatewayRoutingPolicy(projectId);
   const modelDefaults = useModelDefaults(projectId);
@@ -272,7 +212,6 @@ export function GatewayRouting({
   const pickerCatalog = useProjectModelPickerCatalog(projectId);
   const [draft, setDraft] = useState<GatewayProjectRoutingPolicy | null>(null);
   const [fallbackMode, setFallbackMode] = useState<FallbackMode>('inherit');
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [availability, setAvailability] = useState<Record<string, boolean>>({});
   const [hydratedPolicySignature, setHydratedPolicySignature] = useState<string | null>(null);
@@ -287,7 +226,6 @@ export function GatewayRouting({
     setHydratedPolicySignature(persistedSignature);
     setDraft(clonePolicy(persistedProject));
     setFallbackMode(fallbackModeForPolicy(persistedProject.defaultFallback));
-    setAdvancedOpen((current) => current || hasAdvancedRoutingConfig(persistedProject));
   }
 
   const previewRoute = routing.preview.mutateAsync;
@@ -397,7 +335,10 @@ export function GatewayRouting({
     rules: policy.rules,
     modelGenerationConfig: policy.modelGenerationConfig ?? {},
   });
+  // The mode counts too: "try backups" with an empty chain serializes like
+  // "show the error", but it is an unsaved (and invalid) choice.
   const dirty =
+    fallbackMode !== fallbackModeForPolicy(routing.data.project.defaultFallback) ||
     JSON.stringify(editableState(draft)) !== JSON.stringify(editableState(routing.data.project));
   const projectDefaultWire = modelDefaults.projectDefault
     ? modelKeyToWire(modelDefaults.projectDefault)
@@ -406,7 +347,11 @@ export function GatewayRouting({
   const validation = validateRoutingDraft({ ...draft, defaultModel: primaryModel }, fallbackMode);
   const usedRuleModels = draft.rules.map((rule) => rule.model);
   const usedRuleModelSet = new Set(usedRuleModels);
-  const newRuleModel = models.find((model) => !usedRuleModelSet.has(modelKeyToWire(model)));
+  const selectableModels = models.filter(isSelectableModel);
+  const newRuleModel = selectableModels.find(
+    (model) =>
+      modelKeyToWire(model) !== primaryModel && !usedRuleModelSet.has(modelKeyToWire(model)),
+  );
   const inheritedRoute = [
     routing.data.effective.defaultModel,
     ...routing.data.effective.defaultFallback.models,
@@ -430,12 +375,13 @@ export function GatewayRouting({
         return { ...current, defaultFallback: { models: [], fallbackOn: 'transient' } };
       }
       if (current.defaultFallback?.models.length) return current;
+      const runnable = new Set(selectableModels.map((model) => modelKeyToWire(model)));
       const inherited = routing.data.effective.defaultFallback.models.filter(
-        (model) => model !== primaryModel,
+        (model) => model !== primaryModel && runnable.has(model),
       );
       // No model id is hardcoded: the platform fallback already follows the
       // served lineup (`inherited`); otherwise take the first other model.
-      const preferred = models.find((model) => modelKeyToWire(model) !== primaryModel);
+      const preferred = selectableModels.find((model) => modelKeyToWire(model) !== primaryModel);
       return {
         ...current,
         defaultFallback: {
@@ -492,10 +438,16 @@ export function GatewayRouting({
     fallbackMode,
     changeFallbackMode,
     models,
+    selectableModels,
     availability,
     primaryModel,
     inheritedRoute,
-    effectiveVisionModel: routing.data.effective.visionModel ?? null,
+    // What "Auto" resolves to: the inherited model, not this project's own
+    // override (choosing Auto clears that override).
+    effectiveVisionModel:
+      (routing.data.project.visionModel
+        ? routing.data.platform.visionModel
+        : routing.data.effective.visionModel) ?? null,
     generationControls,
     controlsDisabled,
     writable: Boolean(writable),
@@ -521,287 +473,39 @@ export function GatewayRouting({
         )
       }
     >
-      {/* ui.sh picker: three layouts over one draft. Development builds load
-          the toolbar (`apps/web/src/app/[locale]/layout.tsx`) to switch between them;
-          without it only the first option renders. */}
-      <div data-uidotsh-pick="Routing layout" className="contents">
-        <div data-uidotsh-option="Sections (current)" className="contents">
-          <div className="space-y-8">
-            {/* PRIMARY — always visible. "What handles this project's requests"
-                (Fallback) and "the exceptions to it" (Per-model overrides) are
-                the decision someone opens this tab to make; both get the
-                full-strength foreground heading below, not the muted `Label`
-                default the two Advanced sections keep. */}
-            <section className="space-y-1">
-              <Label className="text-foreground">{tI18nComplete.raw('text325e84939c64')}</Label>
-              <div className="flex flex-col">
-                <RoutingRow
-                  label={tI18nComplete.raw('text146b38e7fa80')}
-                  hint={tI18nComplete.raw('textd48d1b0dbdd6')}
-                >
-                  <Select
-                    value={fallbackMode}
-                    disabled={controlsDisabled}
-                    onValueChange={(mode) => changeFallbackMode(mode as FallbackMode)}
-                  >
-                    <SelectTrigger
-                      className="w-48 max-w-full"
-                      aria-label={tI18nComplete.raw('textdf33a10e5579')}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="inherit">{tI18nComplete.raw('text975aa2ab538e')}</SelectItem>
-                      <SelectItem value="custom">{tI18nComplete.raw('texta913ec01bd04')}</SelectItem>
-                      <SelectItem value="disabled">{tI18nComplete.raw('text3822b0412ed7')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </RoutingRow>
+      <RoutingSentenceLayout {...layoutProps} />
 
-                {fallbackMode === 'custom' && draft.defaultFallback ? (
-                  <RoutingRow
-                    align="start"
-                    label={tI18nComplete.raw('texte75d99a42dba')}
-                    hint={tI18nComplete.raw('textc3ecd3cd791b')}
-                  >
-                    <div className="space-y-1.5">
-                      <ChainRows
-                        primary={primaryModel}
-                        chain={draft.defaultFallback}
-                        models={models}
-                        disabled={controlsDisabled}
-                        availability={availability}
-                        onChange={(defaultFallback) => setDraft({ ...draft, defaultFallback })}
-                      />
-                    </div>
-                  </RoutingRow>
-                ) : fallbackMode === 'inherit' ? (
-                  <RoutingRow label={tI18nComplete.raw('text74a1a0f65906')}>
-                    <p className="text-muted-foreground truncate font-mono text-xs">{inheritedRoute.join(' → ')}</p>
-                  </RoutingRow>
-                ) : (
-                  <RoutingRow label={tI18nComplete.raw('text0af465ef42c0')}>
-                    <p className="text-muted-foreground text-xs text-pretty">
-                      {tI18nComplete.raw('texta3df3f9e4422')}
-                    </p>
-                  </RoutingRow>
-                )}
-              </div>
-            </section>
-
-            {/* Per-model overrides is the core feature this tab exists for, not
-                the fourth of four equal panels it used to be. It is promoted
-                straight to second position (right after the baseline it
-                overrides), keeps a foreground heading, and its "Add override"
-                action moved into the section header — no more scrolling to the
-                bottom of a list to find the one thing you opened the tab to do. */}
-            <section className="space-y-1">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Label className="text-foreground">{tI18nComplete.raw('text5c63c15261bb')}</Label>
-                  {draft.rules.length > 0 ? (
-                    <Badge variant="secondary" size="sm">
-                      {draft.rules.length}
-                    </Badge>
-                  ) : null}
-                </div>
-                {writable ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    disabled={controlsDisabled || !addRule}
-                    onClick={() => addRule?.()}
-                  >
-                    <Plus className="size-3.5 shrink-0" /> {tI18nComplete.raw('textfafc22c398f0')}
-                  </Button>
-                ) : null}
-              </div>
-              <p className="text-muted-foreground text-xs text-pretty">
-                {tI18nComplete.raw('text335e692111a5')}
-              </p>
-
-              {draft.rules.length === 0 ? (
-                <p className="text-muted-foreground pt-3 text-xs">
-                  {tI18nComplete.raw('textd4c5e9c25176')}
-                </p>
-              ) : (
-                <div className="flex flex-col">
-                  {draft.rules.map((rule, index) => (
-                    <RoutingRow
-                      key={rule.model}
-                      align="start"
-                      label={
-                        <div className="flex min-w-0 items-center gap-1">
-                          <div className="min-w-0 flex-1">
-                            <RoutingModelSelector
-                              value={rule.model}
-                              models={models}
-                              exclude={usedRuleModels.filter((_, itemIndex) => itemIndex !== index)}
-                              disabled={controlsDisabled}
-                              onChange={(model) => model && setRule(index, { ...rule, model })}
-                            />
-                          </div>
-                          {writable ? (
-                            <Hint label={tI18nComplete.raw('text6d43eea1425f')}>
-                              <Button
-                                type="button"
-                                size="icon-sm"
-                                variant="ghost"
-                                aria-label={tI18nComplete.raw('texta0e2582b4c3a')}
-                                disabled={controlsDisabled}
-                                onClick={() => removeRule(index)}
-                              >
-                                <Trash2 className="size-3.5" />
-                              </Button>
-                            </Hint>
-                          ) : null}
-                        </div>
-                      }
-                    >
-                      <div className="space-y-1.5">
-                        <AvailabilityBadge available={availability[rule.model]} />
-                        <ChainRows
-                          primary={rule.model}
-                          chain={{ models: rule.fallbackModels, fallbackOn: rule.fallbackOn }}
-                          models={models}
-                          disabled={controlsDisabled}
-                          availability={availability}
-                          onChange={(chain) =>
-                            setRule(index, {
-                              ...rule,
-                              fallbackModels: chain.models,
-                              fallbackOn: chain.fallbackOn,
-                            })
-                          }
-                        />
-                      </div>
-                    </RoutingRow>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            {/* ADVANCED — collapsed by default. Vision is a narrow, image-input-only
-                override; Generation defaults is four raw parameter knobs
-                (reasoning effort, temperature, top-p, max tokens). Neither is the
-                decision someone opens Routing to make, so both fold under one
-                disclosure below the primary content instead of matching Fallback
-                and Per-model overrides panel-for-panel. `hasAdvancedRoutingConfig`
-                opens this by default whenever the project already sets either —
-                an existing non-default config is never hidden from view. */}
-            <Disclosure open={advancedOpen} onOpenChange={setAdvancedOpen}>
-              <DisclosureTrigger>
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-foreground -mx-1 flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-1 text-xs font-medium transition-colors"
-                >
-                  <CaretDownIcon
-                    className={cn(
-                      'size-3.5 shrink-0 transition-transform',
-                      advancedOpen && 'rotate-180',
-                    )}
-                  />
-                  {tI18nComplete.raw('text9f088dbebd6c')}
-                  <span className="text-muted-foreground font-normal">
-                    {tI18nComplete.raw('text022bfb219bea')}
-                  </span>
-                </button>
-              </DisclosureTrigger>
-              <DisclosureContent>
-                <div className="space-y-8 pt-5">
-                  <section className="space-y-1">
-                    <Label>{tI18nComplete.raw('text0a15fd3848fa')}</Label>
-                    <div className="flex flex-col">
-                      <RoutingRow
-                        label={tI18nComplete.raw('text3efdd4ec1a82')}
-                        hint={
-                          draft.visionModel
-                            ? tI18nComplete.raw('textc916a6a191c1')
-                            : routing.data.effective.visionModel
-                              ? tI18nComplete('text8375520a8316', {
-                                  value0: routing.data.effective.visionModel,
-                                })
-                              : tI18nComplete.raw('text59e7c0aa6df1')
-                        }
-                      >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <RoutingModelSelector
-                            value={draft.visionModel}
-                            models={models}
-                            disabled={controlsDisabled}
-                            unsetLabel={tI18nComplete.raw('text975aa2ab538e')}
-                            onChange={(visionModel) => setDraft({ ...draft, visionModel })}
-                          />
-                          <AvailabilityBadge
-                            available={draft.visionModel ? availability[draft.visionModel] : undefined}
-                          />
-                        </div>
-                      </RoutingRow>
-                    </div>
-                  </section>
-
-                  <section className="space-y-1">
-                    <Label>{tI18nComplete.raw('textea942b85faac')}</Label>
-                    <p className="text-muted-foreground text-xs text-pretty">
-                      {tI18nComplete.raw('text45583b07c7c8')}{' '}
-                      <span className="font-mono">{primaryModel}</span>{' '}
-                      {tI18nComplete.raw('textb6b6f5c32995')}
-                    </p>
-                    <div className="pt-3">{generationControls}</div>
-                  </section>
-                </div>
-              </DisclosureContent>
-            </Disclosure>
-          </div>
-        </div>
-        <div data-uidotsh-option="Plain sentences" className="contents" hidden>
-          <RoutingSentenceLayout {...layoutProps} />
-        </div>
-        <div data-uidotsh-option="Split rules" className="contents" hidden>
-          <RoutingSplitLayout {...layoutProps} />
-        </div>
-      </div>
-
-      {writable ? (
-        <div className="bg-background/95 sticky bottom-0 -mx-4 mt-8 flex items-center justify-between gap-4 border-t px-4 py-4 backdrop-blur">
-          <div className="text-muted-foreground text-xs">
-            {validation ??
-              (dirty
-                ? tI18nComplete.raw('texta710c2b90913')
-                : tI18nComplete.raw('text634cfb4b6bfd'))}
-          </div>
-          <Button
-            type="button"
-            disabled={!dirty || !!validation || controlsDisabled}
-            onClick={() => {
-              const defaultModel = modelDefaults.data ? projectDefaultWire : draft.defaultModel;
-              routing.set.mutate(
-                { ...draft, defaultModel },
-                {
-                  onSuccess: async () => {
-                    await Promise.all([
-                      queryClient.invalidateQueries({ queryKey: ['model-defaults', projectId] }),
-                      queryClient.invalidateQueries({
-                        queryKey: qk.project.modelPicker(projectId),
-                      }),
-                    ]);
-                    successToast(tI18nComplete.raw('text538f96979be7'));
-                  },
-                  onError: (error) =>
-                    errorToast(
-                      error instanceof Error
-                        ? error.message
-                        : tI18nComplete.raw('text4501be681694'),
-                    ),
+      {writable && (dirty || routing.set.isPending) ? (
+        <RoutingSaveBar
+          message={validation ?? t('unsaved')}
+          saving={routing.set.isPending}
+          canSave={dirty && !validation && !controlsDisabled}
+          onDiscard={() => {
+            setDraft(clonePolicy(routing.data.project));
+            setFallbackMode(fallbackModeForPolicy(routing.data.project.defaultFallback));
+          }}
+          onSave={() => {
+            const defaultModel = modelDefaults.data ? projectDefaultWire : draft.defaultModel;
+            routing.set.mutate(
+              { ...draft, defaultModel },
+              {
+                onSuccess: async () => {
+                  await Promise.all([
+                    queryClient.invalidateQueries({ queryKey: ['model-defaults', projectId] }),
+                    queryClient.invalidateQueries({
+                      queryKey: qk.project.modelPicker(projectId),
+                    }),
+                  ]);
+                  successToast(tI18nComplete.raw('text538f96979be7'));
                 },
-              );
-            }}
-          >
-            {routing.set.isPending ? <Loading className="size-4 shrink-0" /> : null}
-            {tI18nComplete.raw('text1509f561f241')}
-          </Button>
-        </div>
+                onError: (error) =>
+                  errorToast(
+                    error instanceof Error ? error.message : tI18nComplete.raw('text4501be681694'),
+                  ),
+              },
+            );
+          }}
+        />
       ) : null}
 
       <ConfirmDialog

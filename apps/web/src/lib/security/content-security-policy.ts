@@ -33,9 +33,6 @@ import { KORTIX_EXTENSION_ID } from '@kortix/ui/internal/chrome/extension';
 
 export const CSP_REPORT_PATH = '/api/csp-report';
 
-/** The ui.sh picker toolbar origin; `script-src` allows it in development builds only. */
-export const UI_PICKER_ORIGIN = 'https://ui.sh';
-
 /** Hosts that legitimately serve scripts to kortix pages today. */
 export const SCRIPT_SRC_HOSTS = [
   // Google Tag Manager and the tags it loads (GA4, Ads).
@@ -75,8 +72,6 @@ function scriptSourceDirective(): string {
     // Workers created from blob URLs (PDF and editor workers).
     'blob:',
     ...SCRIPT_SRC_HOSTS,
-    // The ui.sh design picker, loaded by the root layout in development only.
-    ...(process.env.NODE_ENV === 'development' ? [UI_PICKER_ORIGIN] : []),
   ];
   return `script-src ${scriptSrc.join(' ')}`;
 }

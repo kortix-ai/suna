@@ -1,29 +1,28 @@
 'use client';
 
 /**
- * The pieces every Routing layout shares: the row, the model picker, the
- * availability badge, the condition select, the editable chain and the help
- * mark. `gateway-routing.tsx` owns the draft state; the layouts
- * (`routing-sentence-layout.tsx`, `routing-split-layout.tsx`, and the current
- * section layout in `gateway-routing.tsx`) only render it through
- * `RoutingLayoutProps`. Kept in its own module so a layout file never imports
- * `gateway-routing.tsx` back (`module-cycles.test.ts`).
+ * The controls the Routing tab is built from: the provider-logo model chip,
+ * the searchable model picker (single or ordered multi-select), the error
+ * condition select and the floating save bar. `gateway-routing.tsx` owns the
+ * draft; `routing-sentence-layout.tsx` renders it as sentences.
  */
 
-import {
-  WarningIcon as AlertTriangle,
-  ArrowDownIcon as ArrowDown,
-  ArrowUpIcon as ArrowUp,
-  InfoIcon,
-  PlusIcon as Plus,
-  TrashIcon as Trash2,
-} from '@phosphor-icons/react';
-import type { ReactNode } from 'react';
+import { CaretDownIcon, CheckIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
+import { m, useReducedMotion } from 'motion/react';
+import { type ComponentProps, type ReactNode, useState } from 'react';
 
 import { useTranslations } from '../../../../i18n';
-import { Badge } from '../../../../primitives/badge';
 import { Button } from '../../../../primitives/button';
+import { ButtonGroup } from '../../../../primitives/button-group';
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '../../../../primitives/command';
 import Hint from '../../../../primitives/hint';
+import Loading from '../../../../primitives/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../../primitives/popover';
 import {
   Select,
@@ -32,14 +31,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../../primitives/select';
-import { ModelSelector } from '../../../../session/models/model-selector';
 import { cn } from '../../../../internal/lib/utils';
+import { ProviderLogo } from '../../../../internal/lib/provider-branding';
+import { pickerGroupId } from '../../../../session/models/model-grouping';
+import { pickerModelName } from '../../../../session/models/model-tags';
 import type {
   GatewayFallbackChain,
   GatewayProjectRoutingPolicy,
   GatewayRoutingRule,
 } from '@kortix/sdk';
-import { modelKeyToWire, useProjectModels, wireToModelKey } from '@kortix/sdk/react';
+import { modelKeyToWire, useProjectModels } from '@kortix/sdk/react';
 
 export const MAX_FALLBACKS = 8;
 export const MAX_RULES = 20;
@@ -49,23 +50,22 @@ export type FallbackMode = 'inherit' | 'custom' | 'disabled';
 export type RoutingModel = ReturnType<typeof useProjectModels>[number];
 
 /**
- * Everything a Routing layout reads and writes. The state lives in
- * `GatewayRouting`; a layout is a pure view over it, so switching layouts
- * keeps an unsaved draft and the save bar works the same for each.
+ * Everything the Routing layout reads and writes. The state lives in
+ * `GatewayRouting`; the layout is a pure view over it.
  */
 export interface RoutingLayoutProps {
   draft: GatewayProjectRoutingPolicy;
   setDraft: (draft: GatewayProjectRoutingPolicy) => void;
   setRule: (index: number, rule: GatewayRoutingRule) => void;
   removeRule: (index: number) => void;
-  /**
-   * Adds a rule for the first model without one and returns its wire id.
-   * `null` when no model is left or the cap is hit.
-   */
+  /** Adds a rule for the first runnable model without one. `null` when none is left or the cap is hit. */
   addRule: (() => string) | null;
   fallbackMode: FallbackMode;
   changeFallbackMode: (mode: FallbackMode) => void;
+  /** Every model the draft can name, including ones that are no longer runnable. */
   models: RoutingModel[];
+  /** The models a person may pick: offered by the project and runnable for the caller. */
+  selectableModels: RoutingModel[];
   availability: Record<string, boolean>;
   primaryModel: string;
   /** The platform route this project inherits: primary first. */
@@ -77,129 +77,241 @@ export interface RoutingLayoutProps {
   writable: boolean;
 }
 
+/**
+ * A model the project can choose: the project offers it (`enabled`) and its
+ * provider is connected for the caller (`available`). Undefined means the
+ * catalog does not say, which counts as yes.
+ */
+export function isSelectableModel(model: RoutingModel): boolean {
+  return model.enabled !== false && model.available !== false;
+}
+
+export function findModel(models: RoutingModel[], wire: string | null): RoutingModel | undefined {
+  if (!wire) return undefined;
+  return models.find((model) => modelKeyToWire(model) === wire);
+}
+
 /** A model's display name for a wire id, falling back to the id. */
 export function modelLabel(models: RoutingModel[], wire: string | null): string {
   if (!wire) return '';
-  const match = models.find((model) => modelKeyToWire(model) === wire);
-  return match?.modelName ?? wire;
+  const match = findModel(models, wire);
+  return match ? pickerModelName(match) : wire;
 }
 
-/**
- * One decision, one line: what it is on the left, the control on the right.
- *
- * Column width, row padding, and gaps match `ProviderRow` in
- * `packages/ui/src/customize/providers/provider-connect.tsx` exactly (`13rem` label column,
- * `py-1.5` row, `gap-4` between columns).
- */
-export function RoutingRow({
-  label,
-  hint,
-  children,
-  align = 'center',
-}: {
-  label: ReactNode;
-  hint?: ReactNode;
-  children: ReactNode;
-  /** `start` when the right column is a stack (a chain) rather than one control. */
-  align?: 'center' | 'start';
-}) {
-  return (
-    <div
-      className={cn(
-        'grid gap-1.5 py-1.5 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] sm:gap-4',
-        align === 'start' ? 'sm:items-start' : 'sm:items-center',
-      )}
-    >
-      <div className="min-w-0">
-        <div className="text-foreground text-sm">{label}</div>
-        {hint ? <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{hint}</p> : null}
-      </div>
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-}
-
-export function RoutingModelSelector({
-  value,
-  models,
-  onChange,
-  disabled,
-  unsetLabel = 'Choose model',
-  exclude = [],
-  triggerVariant,
-}: {
-  value: string | null;
-  models: RoutingModel[];
-  onChange: (value: string | null) => void;
-  disabled?: boolean;
-  unsetLabel?: string;
-  exclude?: string[];
-  /** `secondary` draws a filled chip, for a model inside a sentence. */
-  triggerVariant?: 'ghost' | 'secondary';
-}) {
-  const excluded = new Set(exclude);
-  const options = models.filter((model) => {
-    const wire = modelKeyToWire(model);
-    return !excluded.has(wire) || wire === value;
-  });
-  if (value && !options.some((model) => modelKeyToWire(model) === value)) {
-    options.push({
-      providerID: 'kortix',
-      providerName: 'Kortix',
-      modelID: value,
-      modelName: value,
-    });
+export function moveFallback(models: string[], index: number, delta: -1 | 1): string[] {
+  const target = index + delta;
+  if (index < 0 || index >= models.length || target < 0 || target >= models.length) {
+    return models;
   }
+  const next = [...models];
+  [next[index], next[target]] = [next[target]!, next[index]!];
+  return next;
+}
+
+function ModelMark({ model }: { model: RoutingModel | undefined }) {
+  if (!model) return null;
   return (
-    <ModelSelector
-      models={options}
-      selectedModel={value ? wireToModelKey(value) : null}
-      unsetLabel={unsetLabel}
-      disabled={disabled}
-      triggerVariant={triggerVariant}
-      triggerLabelClassName={triggerVariant === 'secondary' ? 'max-w-48' : undefined}
-      onSelect={(model) => onChange(model ? modelKeyToWire(model) : null)}
+    <ProviderLogo
+      providerID={pickerGroupId(model)}
+      name={model.providerName}
+      size="xs"
+      className="size-4 rounded-none bg-transparent"
     />
   );
 }
 
-/** Warns inline when the routing-policy preview reports a model's provider isn't connected. */
-export function AvailabilityBadge({ available }: { available: boolean | undefined }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  if (available !== false) return null;
+/** The orange dot a model gets when its provider is not connected. */
+function UnavailableDot({ label }: { label: string }) {
   return (
-    <Hint label={tI18nComplete.raw('text7031306d3dd8')}>
-      <Badge variant="warning" size="xs" className="shrink-0 gap-1">
-        <AlertTriangle className="size-3" />
-        {tI18nComplete.raw('text0303e1824670')}
-      </Badge>
+    <Hint label={label}>
+      <span
+        role="img"
+        aria-label={label}
+        className="bg-kortix-orange size-1.5 shrink-0 rounded-full"
+      />
     </Hint>
   );
 }
 
 /**
- * The help mark: one accent-coloured glyph that replaces a description line.
- * It opens a popover on click or tap, so the explanation is reachable on touch
- * screens and by keyboard; the screen itself carries labels only.
+ * A model in a sentence: provider logo and name, read-only or removable.
+ * The same pill shape the pickers use, so a chain reads as one row of things.
  */
-export function HelpMark({ label }: { label: string }) {
+export function ModelChip({
+  wire,
+  models,
+  unavailable,
+  onRemove,
+}: {
+  wire: string;
+  models: RoutingModel[];
+  unavailable?: boolean;
+  onRemove?: () => void;
+}) {
+  const t = useTranslations('gatewayRouting');
+  const label = modelLabel(models, wire);
   return (
-    <Popover>
-      <PopoverTrigger asChild>
+    <span
+      className={cn(
+        'bg-secondary text-secondary-foreground inline-flex h-8 max-w-full min-w-0 items-center gap-2 rounded-lg pl-2.5 text-sm',
+        onRemove ? 'pr-1' : 'pr-3',
+      )}
+    >
+      <ModelMark model={findModel(models, wire)} />
+      <span className="min-w-0 truncate font-medium">{label}</span>
+      {unavailable ? <UnavailableDot label={t('notConnected')} /> : null}
+      {onRemove ? (
         <Button
           type="button"
           size="icon-xs"
           variant="ghost"
-          aria-label={label}
-          className="text-kortix-blue shrink-0 rounded-full"
+          aria-label={t('removeModel', { model: label })}
+          className="text-muted-foreground hover:text-foreground shrink-0"
+          onClick={onRemove}
         >
-          <InfoIcon className="size-3.5" />
+          <XIcon className="size-3" />
         </Button>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * Searchable model list in a popover. `multiple` keeps the popover open and
+ * numbers the picked models in pick order, so a whole backup chain is built
+ * in one visit; single mode closes on pick. `leading` is an extra first row
+ * (for example "Auto").
+ */
+export function ModelPicker({
+  models,
+  selected,
+  onToggle,
+  multiple = false,
+  exclude = [],
+  trigger,
+  leading,
+  disabled,
+}: {
+  models: RoutingModel[];
+  /** Picked wire ids, in order. */
+  selected: string[];
+  onToggle: (wire: string) => void;
+  multiple?: boolean;
+  exclude?: string[];
+  trigger: ReactNode;
+  leading?: { label: string; active: boolean; onSelect: () => void };
+  disabled?: boolean;
+}) {
+  const t = useTranslations('gatewayRouting');
+  const [open, setOpen] = useState(false);
+  const excluded = new Set(exclude);
+  const options = models.filter((model) => !excluded.has(modelKeyToWire(model)));
+
+  return (
+    <Popover open={disabled ? false : open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild disabled={disabled}>
+        {trigger}
       </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-64 p-3 text-xs text-pretty">
-        {label}
+      <PopoverContent align="start" className="w-[min(320px,calc(100vw-1.5rem))] p-0">
+        <Command>
+          <CommandInput compact placeholder={t('searchModels')} />
+          <CommandList className="max-h-80">
+            <CommandEmpty>{t('noModels')}</CommandEmpty>
+            {leading ? (
+              <CommandItem
+                value={`__leading ${leading.label}`}
+                onSelect={() => {
+                  leading.onSelect();
+                  setOpen(false);
+                }}
+              >
+                <span className="size-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{leading.label}</span>
+                {leading.active ? <CheckIcon className="size-4 shrink-0" /> : null}
+              </CommandItem>
+            ) : null}
+            {options.map((model) => {
+              const wire = modelKeyToWire(model);
+              const order = selected.indexOf(wire);
+              return (
+                <CommandItem
+                  key={wire}
+                  value={`${pickerModelName(model)} ${model.providerName} ${wire}`}
+                  onSelect={() => {
+                    onToggle(wire);
+                    if (!multiple) setOpen(false);
+                  }}
+                >
+                  <ModelMark model={model} />
+                  <span className="min-w-0 flex-1 truncate">{pickerModelName(model)}</span>
+                  {order < 0 ? null : multiple ? (
+                    <span className="bg-foreground text-background flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-medium tabular-nums">
+                      {order + 1}
+                    </span>
+                  ) : (
+                    <CheckIcon className="size-4 shrink-0" />
+                  )}
+                </CommandItem>
+              );
+            })}
+          </CommandList>
+        </Command>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** A picker trigger that shows the chosen model as a chip with a caret. */
+export function ModelPickerButton({
+  wire,
+  models,
+  placeholder,
+  unavailable,
+  className,
+  ...props
+}: {
+  wire: string | null;
+  models: RoutingModel[];
+  placeholder: string;
+  unavailable?: boolean;
+} & ComponentProps<typeof Button>) {
+  const t = useTranslations('gatewayRouting');
+  return (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      className={cn('max-w-full min-w-0 gap-2', className)}
+      {...props}
+    >
+      {wire ? <ModelMark model={findModel(models, wire)} /> : null}
+      <span className="min-w-0 truncate">{wire ? modelLabel(models, wire) : placeholder}</span>
+      {unavailable ? <UnavailableDot label={t('notConnected')} /> : null}
+      <CaretDownIcon className="text-muted-foreground size-3 shrink-0" />
+    </Button>
+  );
+}
+
+/** The dashed "+" that opens the multi-select backup picker. */
+export function AddModelButton({
+  label,
+  className,
+  ...props
+}: { label: string } & ComponentProps<typeof Button>) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className={cn(
+        'border-border text-muted-foreground hover:text-foreground border border-dashed',
+        className,
+      )}
+      {...props}
+    >
+      <PlusIcon className="size-3.5" />
+      {label}
+    </Button>
   );
 }
 
@@ -207,12 +319,10 @@ export function ConditionSelect({
   value,
   onChange,
   disabled,
-  className,
 }: {
   value: GatewayFallbackChain['fallbackOn'];
   onChange: (value: GatewayFallbackChain['fallbackOn']) => void;
   disabled?: boolean;
-  className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
@@ -222,7 +332,7 @@ export function ConditionSelect({
       disabled={disabled}
     >
       <SelectTrigger
-        className={cn('w-40', className)}
+        className="w-auto"
         size="sm"
         aria-label={tI18nComplete.raw('text5970362b52d5')}
       >
@@ -240,160 +350,68 @@ export function ConditionSelect({
   );
 }
 
+const EASE_OUT = [0.23, 1, 0.32, 1] as const;
+
 /**
- * One fallback chain as plain lines — a numbered step per model, an add line,
- * and the condition the chain triggers on.
+ * The floating save bar: the `SelectionBar` shape (popover surface, one line,
+ * actions on the right), pinned to the bottom of the column while the draft
+ * differs from what is saved.
  */
-export function ChainRows({
-  primary,
-  chain,
-  models,
-  onChange,
-  disabled,
-  availability,
-  addLabel,
-  conditionLabel,
+export function RoutingSaveBar({
+  message,
+  saving,
+  canSave,
+  onDiscard,
+  onSave,
 }: {
-  primary: string | null;
-  chain: GatewayFallbackChain;
-  models: RoutingModel[];
-  onChange: (chain: GatewayFallbackChain) => void;
-  disabled?: boolean;
-  availability?: Record<string, boolean>;
-  /** Overrides the "Add a fallback" placeholder, for a layout with its own wording. */
-  addLabel?: string;
-  /** Overrides the "Retry on" label. */
-  conditionLabel?: string;
+  message: string;
+  saving: boolean;
+  canSave: boolean;
+  onDiscard: () => void;
+  onSave: () => void;
 }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const taken = [primary ?? '', ...chain.models];
-  const takenSet = new Set(taken);
-  const canAdd = models.some((model) => !takenSet.has(modelKeyToWire(model)));
-
+  const t = useTranslations('gatewayRouting');
+  const reduceMotion = useReducedMotion();
   return (
-    <div className="flex flex-col gap-0.5">
-      {chain.models.map((model, index) => (
-        <div key={model} className="flex min-w-0 items-center gap-1">
-          <span className="text-muted-foreground w-4 shrink-0 text-xs tabular-nums">
-            {index + 1}
-          </span>
-          <div className="min-w-0 flex-1">
-            <RoutingModelSelector
-              value={model}
-              models={models}
-              exclude={[
-                primary ?? '',
-                ...chain.models.filter((_, itemIndex) => itemIndex !== index),
-              ]}
-              onChange={(next) => {
-                if (!next) return;
-                const updated = [...chain.models];
-                updated[index] = next;
-                onChange({ ...chain, models: updated });
-              }}
-              disabled={disabled}
-            />
-          </div>
-          <AvailabilityBadge available={availability?.[model]} />
-          {/* Rendered even while `disabled` (a save in flight), not hidden —
-              a control that disappears for the length of a mutation makes the
-              row jump twice per save. */}
-          <Hint label={tI18nComplete.raw('textc66feb5eb8f2')}>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label={tI18nComplete.raw('textdfea74d6d58d')}
-              disabled={disabled || index === 0}
-              onClick={() =>
-                onChange({
-                  ...chain,
-                  models: moveFallback(chain.models, index, -1),
-                })
-              }
-            >
-              <ArrowUp className="size-3.5" />
-            </Button>
-          </Hint>
-          <Hint label={tI18nComplete.raw('text40bb50da160c')}>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label={tI18nComplete.raw('text54e22a5335af')}
-              disabled={disabled || index === chain.models.length - 1}
-              onClick={() =>
-                onChange({
-                  ...chain,
-                  models: moveFallback(chain.models, index, 1),
-                })
-              }
-            >
-              <ArrowDown className="size-3.5" />
-            </Button>
-          </Hint>
-          <Hint label={tI18nComplete.raw('textc3812fc4acb8')}>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label={tI18nComplete.raw('textb4e437b00de3')}
-              disabled={disabled}
-              onClick={() =>
-                onChange({
-                  ...chain,
-                  models: chain.models.filter((_, itemIndex) => itemIndex !== index),
-                })
-              }
-            >
-              <Trash2 className="size-3.5" />
-            </Button>
-          </Hint>
-        </div>
-      ))}
-
-      {!disabled ? (
-        <div className="flex min-w-0 items-center gap-1">
-          <Plus className="text-muted-foreground ml-0.5 size-3 shrink-0" />
-          <RoutingModelSelector
-            value={null}
-            models={models}
-            exclude={taken}
-            unsetLabel={
-              canAdd
-                ? (addLabel ?? tI18nComplete.raw('text5b660045c015'))
-                : tI18nComplete.raw('text82e4b64f1673')
-            }
-            disabled={!canAdd || chain.models.length >= MAX_FALLBACKS}
-            onChange={(next) => next && onChange({ ...chain, models: [...chain.models, next] })}
-          />
-        </div>
-      ) : null}
-
-      {chain.models.length === 0 && disabled ? (
-        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text545403adb9e5')}</p>
-      ) : null}
-
-      <div className="mt-1.5 flex items-center gap-2">
-        <span className="text-muted-foreground shrink-0 text-xs">
-          {conditionLabel ?? tI18nComplete.raw('textbb68ff20e011')}
+    <div className="pointer-events-none sticky bottom-4 z-10 mt-10 flex justify-center">
+      <m.div
+        initial={{
+          opacity: 0,
+          transform: reduceMotion ? 'translateY(0px)' : 'translateY(8px)',
+        }}
+        animate={{
+          opacity: 1,
+          transform: 'translateY(0px)',
+          transition: { duration: 0.18, ease: EASE_OUT },
+        }}
+        className="bg-popover text-popover-foreground border-border pointer-events-auto flex w-full max-w-xl items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-md"
+      >
+        <span className="min-w-0 flex-1 truncate text-sm font-medium" aria-live="polite">
+          {message}
         </span>
-        <ConditionSelect
-          value={chain.fallbackOn}
-          onChange={(fallbackOn) => onChange({ ...chain, fallbackOn })}
-          disabled={disabled}
-        />
-      </div>
+        <ButtonGroup className="shrink-0">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="h-8"
+            disabled={saving}
+            onClick={onDiscard}
+          >
+            {t('discard')}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8"
+            disabled={!canSave || saving}
+            onClick={onSave}
+          >
+            {saving ? <Loading className="size-4 shrink-0" /> : null}
+            {t('save')}
+          </Button>
+        </ButtonGroup>
+      </m.div>
     </div>
   );
-}
-
-export function moveFallback(models: string[], index: number, delta: -1 | 1): string[] {
-  const target = index + delta;
-  if (index < 0 || index >= models.length || target < 0 || target >= models.length) {
-    return models;
-  }
-  const next = [...models];
-  [next[index], next[target]] = [next[target]!, next[index]!];
-  return next;
 }
