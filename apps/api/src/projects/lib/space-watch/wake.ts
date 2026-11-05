@@ -10,7 +10,7 @@
  *    `KORTIX_SPACE_WATCH_DEBOUNCE_MS` (10 min) unless urgent, at most
  *    `WATCH_DAILY_WAKES` (24) per UTC day, the daily brief at 09:00 local.
  * 4. A wake writes `events.md` into the space folder, then delivers ONE
- *    prompt to the space's watcher session (created on the first wake): the
+ *    prompt to a fresh watcher session (one per wake, so none grows): the
  *    new events, the space's context.md and the watcher's recent posts. The
  *    watcher's answer is carried out at its turn end (`act.ts`).
  *
@@ -25,7 +25,6 @@ import { findProjectDrive, listFolderGrants, personalFolderFor, type DriveRow } 
 import { logger } from '../../../lib/logger';
 import { volumeOps } from '../../../memory/volume-ops';
 import { db } from '../../../shared/db';
-import { enqueueSessionNotice } from '../../session-notice-batch';
 import { createSession } from '../../session-lifecycle';
 import { CHAT_AGENT, CHAT_ROOT_TEXT_KEY } from '../chat-threads';
 import { listOpenAsks } from '../session-asks';
@@ -75,37 +74,15 @@ export function watcherAgent(space: Pick<SpaceRow, 'kind' | 'agents' | 'dmAgentN
   return space.kind === 'dm' ? (space.dmAgentName ?? CHAT_AGENT) : (space.agents?.[0] ?? CHAT_AGENT);
 }
 
-/** The watcher's live session id, or null when it has none (or it was deleted). */
-async function liveWatcherSession(watch: WatcherRow): Promise<string | null> {
-  if (!watch.watcherSessionId) return null;
-  const [row] = await db
-    .select({ sessionId: projectSessions.sessionId })
-    .from(projectSessions)
-    .where(and(eq(projectSessions.sessionId, watch.watcherSessionId), sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`))
-    .limit(1);
-  return row?.sessionId ?? null;
-}
-
 /**
- * Deliver one wake prompt. A watcher without a live session gets one, with
- * the prompt as its first message: private to the owner, not filed in the
- * space (so no thread list shows it), source `system:space-watcher` (so
- * session-create gives it `kortix.watcher`).
+ * Deliver one wake prompt: every wake is a fresh session with the prompt as its
+ * first message. The watcher's memory is the space's files (`events.md`,
+ * `context.md`) and its own posts, so no session carries a growing context or
+ * depends on one box staying alive. The session is private to the owner, not
+ * filed in the space (so no thread list shows it), source
+ * `system:space-watcher` (so session-create gives it `kortix.watcher`).
  */
 async function deliverWake(input: { project: ProjectRow; space: SpaceRow; watch: WatcherRow; text: string; key: string }): Promise<string | null> {
-  const existing = await liveWatcherSession(input.watch);
-  if (existing) {
-    await enqueueSessionNotice({
-      source: SPACE_WATCHER_SOURCE,
-      projectId: input.project.projectId,
-      accountId: input.project.accountId,
-      sessionId: existing,
-      actorUserId: input.watch.ownerUserId,
-      text: input.text,
-      key: input.key,
-    });
-    return existing;
-  }
   const result = await createSession({
     source: SPACE_WATCHER_SOURCE,
     project: input.project,
