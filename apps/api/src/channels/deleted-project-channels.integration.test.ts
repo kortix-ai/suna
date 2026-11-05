@@ -64,6 +64,7 @@ beforeAll(async () => {
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner', isSuperAdmin: false });
   await db.insert(projects).values(
     [TOMBSTONE, DELETED, LIVE, LIVE_2].map((projectId) => ({
+      splitPending: true,
       projectId,
       accountId: ACCOUNT,
       name: `channels-${projectId.slice(0, 8)}`,

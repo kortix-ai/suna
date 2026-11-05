@@ -222,6 +222,16 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
   // Owns the run-scoped shared projects (see sharedProject below).
   const sharedStack = new ResourceStack(adminClient, deleteDatabaseProjectFixture);
 
+  /** A new account the run's owner holds: the home of one managed fixture project. */
+  async function createWorkspaceAccount(stack: ResourceStack, name: string): Promise<string> {
+    const res = await adminClient.post('/v1/accounts', { name });
+    throwIfEdgeLaundered(res, 'workspace account create');
+    const accountId = res.json<any>()?.account_id;
+    if (!accountId) throw new Error(`workspace account create returned no id: ${res.text()}`);
+    stack.push('account', accountId);
+    return accountId;
+  }
+
   async function createProject(
     stack: ResourceStack,
     opts?: ProjectFixtureOptions,
@@ -253,11 +263,17 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       return { ...project, accountId };
     }
 
+    // A managed project is created through the API, which refuses a second
+    // active project in one account (409 `workspace_has_project`, Workspaces
+    // 1:1). So a project with no explicit account gets its own: a fresh account
+    // the owner holds, one workspace per fixture project. An explicit account
+    // (a team's project) is used as given.
+    const managedAccountId = opts?.accountId ?? (await createWorkspaceAccount(stack, name));
     const id = await provisionProject(
       adminClient,
       {
         name,
-        ...(opts?.accountId ? { account_id: opts.accountId } : {}),
+        account_id: managedAccountId,
         ...(opts?.seed ? { seed_starter: true } : {}),
       },
       { signal },
@@ -265,7 +281,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     managedProjectCount++;
     stack.push('project', id);
     if (opts?.metadata) await mergeDatabaseProjectMetadata(env, id, opts.metadata);
-    return { id, name, accountId } as CreatedProject;
+    return { id, name, accountId: managedAccountId } as CreatedProject;
   }
 
   // Run-scoped: no attempt signal. One flow's timeout must not abort the

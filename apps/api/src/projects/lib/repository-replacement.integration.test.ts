@@ -38,6 +38,7 @@ withDb('repository replacement persists a validated source atomically', () => {
     await cleanup();
     await db.insert(accounts).values({ accountId, name: 'Repository replacement test' });
     await db.insert(projects).values({
+      splitPending: true,
       projectId, accountId, name: 'Project One', repoUrl: oldUrl,
       defaultBranch: 'main', manifestPath: 'kortix.yaml', status: 'active',
       metadata: { icon: '🚀', git: { managed: true } },
@@ -87,6 +88,7 @@ withDb('repository replacement persists a validated source atomically', () => {
   test('two projects can use the same repository with separate encrypted credentials', async () => {
     const secondOldUrl = 'https://github.com/managed-kortix/other.git';
     await db.insert(projects).values({
+      splitPending: true,
       projectId: secondProjectId, accountId, name: 'Project Two',
       repoUrl: secondOldUrl, defaultBranch: 'main',
       manifestPath: 'kortix.yaml', status: 'active', metadata: {},
@@ -111,6 +113,7 @@ withDb('repository replacement persists a validated source atomically', () => {
 
   test('copies selected shared runtime secrets under the target encryption key', async () => {
     await db.insert(projects).values({
+      splitPending: true,
       projectId: sourceProjectId, accountId, name: 'Source', repoUrl: oldUrl,
       defaultBranch: 'main', manifestPath: 'kortix.yaml', status: 'active', metadata: {},
     });
@@ -131,6 +134,7 @@ withDb('repository replacement persists a validated source atomically', () => {
 
   test('missing source secret aborts the repository replacement', async () => {
     await db.insert(projects).values({
+      splitPending: true,
       projectId: sourceProjectId, accountId, name: 'Source', repoUrl: oldUrl,
       defaultBranch: 'main', manifestPath: 'kortix.yaml', status: 'active', metadata: {},
     });
@@ -160,6 +164,7 @@ withDb('repository replacement persists a validated source atomically', () => {
     async function seedSourceSecret(identifier: string, overrides: Record<string, unknown> = {}) {
       const sourceId = randomUUID();
       await db.insert(projects).values({
+        splitPending: true,
         projectId: sourceId, accountId, name: 'Source', repoUrl: oldUrl,
         defaultBranch: 'main', manifestPath: 'kortix.yaml', status: 'active', metadata: {},
       });

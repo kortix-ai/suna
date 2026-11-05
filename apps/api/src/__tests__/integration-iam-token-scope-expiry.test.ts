@@ -27,8 +27,8 @@ const proj = (id: string) => ({ type: 'project' as const, id });
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'token-scope-test' });
   await db.insert(projects).values([
-    { projectId: P1, accountId: ACCOUNT, name: 'p1', repoUrl: 'https://example.com/p1.git' },
-    { projectId: P2, accountId: ACCOUNT, name: 'p2', repoUrl: 'https://example.com/p2.git' },
+    { splitPending: true, projectId: P1, accountId: ACCOUNT, name: 'p1', repoUrl: 'https://example.com/p1.git' },
+    { splitPending: true, projectId: P2, accountId: ACCOUNT, name: 'p2', repoUrl: 'https://example.com/p2.git' },
   ]);
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
   await db.insert(accountTokens).values([

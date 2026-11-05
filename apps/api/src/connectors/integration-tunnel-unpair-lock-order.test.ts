@@ -34,6 +34,7 @@ beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT_ID, name: 'Unpair lock order' });
   for (const projectId of [PROJECT_ID, OTHER_PROJECT_ID]) {
     await db.insert(projects).values({
+      splitPending: true,
       projectId, accountId: ACCOUNT_ID, name: `p-${projectId}`, repoUrl: 'https://example.test/r.git',
     });
   }

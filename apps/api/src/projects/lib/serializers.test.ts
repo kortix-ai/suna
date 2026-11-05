@@ -23,6 +23,7 @@ function projectRow(metadata: Record<string, unknown> | null) {
     secretDefaultStrategy: 'runtime' as const,
     metadata,
     sandboxProviderGeneration: 0,
+    splitPending: false,
     lastOpenedAt: null,
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),

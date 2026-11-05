@@ -91,6 +91,7 @@ async function seedUser(id: string, email: string) {
 
 async function seedProject(projectId: string, accountId: string, label: string) {
   await db.insert(projects).values({
+    splitPending: true,
     projectId,
     accountId,
     name: label,

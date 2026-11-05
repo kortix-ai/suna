@@ -178,6 +178,7 @@ beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'discord-test' });
   for (const [projectId, name] of [[PROJECT, 'discord-main'], [OTHER, 'discord-other']] as const) {
     await db.insert(projects).values({
+      splitPending: true,
       projectId,
       accountId: ACCOUNT,
       name,
@@ -559,7 +560,7 @@ describe('edge cases', () => {
   test("a server that removed the bot while no Gateway listened is forgotten at READY; a suspicious READY removes nothing", async () => {
     const gone = '720000000000000777';
     const extra = crypto.randomUUID();
-    await db.insert(projects).values({ projectId: extra, accountId: ACCOUNT, name: 'discord-gone', repoUrl: 'file:///nonexistent/gone.git', metadata: {} });
+    await db.insert(projects).values({ splitPending: true, projectId: extra, accountId: ACCOUNT, name: 'discord-gone', repoUrl: 'file:///nonexistent/gone.git', metadata: {} });
     await saveDiscordInstall({ projectId: extra, guildId: gone, guildName: null });
     // An empty list is a broken READY, not a bot removed from every server.
     expect(await reconcileGuilds([])).toEqual([]);
@@ -586,7 +587,7 @@ describe('the shared bot token stays in each project', () => {
   beforeEach(() => resetDiscordScopeForTest());
 
   test("a DM moved to another project leaves its old project nothing there, and its history before the move stays closed", async () => {
-    await db.insert(projects).values({ projectId: LEFT, accountId: ACCOUNT, name: 'discord-left', repoUrl: 'file:///nonexistent/left.git', metadata: { discord: { allowedUserIds: [] } } });
+    await db.insert(projects).values({ splitPending: true, projectId: LEFT, accountId: ACCOUNT, name: 'discord-left', repoUrl: 'file:///nonexistent/left.git', metadata: { discord: { allowedUserIds: [] } } });
     await saveDiscordInstall({ projectId: LEFT, guildId: GUILD_B, guildName: null });
     const old = await newSession(LEFT);
     await bindChatThread({ platform: 'discord', workspaceId: GUILD_B, threadId: DM2, projectId: LEFT, sessionId: old });
@@ -950,7 +951,7 @@ describe('edge cases: failures, order and Discord limits', () => {
     const DM3 = '750000000000000003';
     const GX = '720000000000000003';
     const removed = crypto.randomUUID();
-    await db.insert(projects).values({ projectId: removed, accountId: ACCOUNT, name: 'discord-removed', repoUrl: 'file:///nonexistent/removed.git', metadata: { discord: { allowedUserIds: [] } } });
+    await db.insert(projects).values({ splitPending: true, projectId: removed, accountId: ACCOUNT, name: 'discord-removed', repoUrl: 'file:///nonexistent/removed.git', metadata: { discord: { allowedUserIds: [] } } });
     await saveDiscordInstall({ projectId: removed, guildId: GX, guildName: null });
     await db.insert(chatChannelBindings).values({ platform: 'discord', workspaceId: GX, channelId: DM3, projectId: removed, channelType: 'dm' });
     expect(await resolveDiscordRoute({ guildId: null, channelId: DM3, userId: ALLOWED })).toMatchObject({ kind: 'project', projectId: PROJECT });

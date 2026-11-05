@@ -279,6 +279,7 @@ beforeAll(async () => {
   (config as { TELEGRAM_API_URL: string }).TELEGRAM_API_URL = fake.url.origin;
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'telegram-v2-test' });
   await db.insert(projects).values({
+    splitPending: true,
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'telegram-v2',
@@ -644,7 +645,7 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
 
   test('a create row of the same key in another project is not this message', async () => {
     const other = crypto.randomUUID();
-    await db.insert(projects).values({ projectId: other, accountId: ACCOUNT, name: 'telegram-v2-other', repoUrl: 'https://example.test/o.git' });
+    await db.insert(projects).values({ splitPending: true, projectId: other, accountId: ACCOUNT, name: 'telegram-v2-other', repoUrl: 'https://example.test/o.git' });
     try {
       const event = update('mine', ALLOWED, 934);
       await createCommand(event, 'running', other);
@@ -713,6 +714,7 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
   test('a chat create the lifecycle gives up frees the chat at once', async () => {
     const archived = crypto.randomUUID();
     await db.insert(projects).values({
+      splitPending: true,
       projectId: archived,
       accountId: ACCOUNT,
       name: 'telegram-v2-archived',
@@ -1526,7 +1528,7 @@ describe('Telegram question buttons — migrated PostgreSQL', () => {
 
   test('a question of another project answers nothing', async () => {
     const otherProject = crypto.randomUUID();
-    await db.insert(projects).values({ projectId: otherProject, accountId: ACCOUNT, name: 'telegram-other', repoUrl: 'file:///nonexistent/other.git' });
+    await db.insert(projects).values({ splitPending: true, projectId: otherProject, accountId: ACCOUNT, name: 'telegram-other', repoUrl: 'file:///nonexistent/other.git' });
     const sessionId = await bindChat(2013);
     const [row] = await db
       .insert(sessionPendingQuestions)
@@ -2714,7 +2716,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
 
     test("a row another project left on the chat (a bot reused across projects) is taken over with both of its choices cleared", async () => {
       const other = crypto.randomUUID();
-      await db.insert(projects).values({ projectId: other, accountId: ACCOUNT, name: 'telegram-other', repoUrl: 'file:///nonexistent/telegram-other.git' });
+      await db.insert(projects).values({ splitPending: true, projectId: other, accountId: ACCOUNT, name: 'telegram-other', repoUrl: 'file:///nonexistent/telegram-other.git' });
       const left = { platform: 'telegram', workspaceId: BOT_ID, projectId: other, agentName: 'other-agent', model: 'other-model' };
       await db.insert(chatChannelBindings).values([{ ...left, channelId: '7058' }, { ...left, channelId: '7059' }]);
       try {

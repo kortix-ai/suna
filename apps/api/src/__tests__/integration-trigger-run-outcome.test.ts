@@ -110,13 +110,14 @@ beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'trigger-run-outcome-test' });
   await db.insert(projects).values([
     {
+      splitPending: true,
       projectId: PROJECT,
       accountId: ACCOUNT,
       name: 'trigger runs',
       repoUrl: 'https://example.test/runs.git',
       metadata: { experimental: { notification_center: true } },
     },
-    { projectId: LEGACY_PROJECT, accountId: ACCOUNT, name: 'trigger runs, flag off', repoUrl: 'https://example.test/runs-off.git' },
+    { splitPending: true, projectId: LEGACY_PROJECT, accountId: ACCOUNT, name: 'trigger runs, flag off', repoUrl: 'https://example.test/runs-off.git' },
   ]);
   await insertIntoView(db, accountMembers, [
     { accountId: ACCOUNT, userId: OWNER, accountRole: 'owner' },

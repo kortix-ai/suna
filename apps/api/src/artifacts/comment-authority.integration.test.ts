@@ -37,7 +37,7 @@ beforeAll(async () => {
   localTestDatabaseUrl();
   await db.insert(accounts).values({ accountId, name: 'Artifact authority test' });
   for (let i = 0; i < 2; i++) {
-    const [project] = await db.insert(projects).values({ accountId, name: `Authority ${i}`, repoUrl: 'https://example.test/authority.git',
+    const [project] = await db.insert(projects).values({ splitPending: true, accountId, name: `Authority ${i}`, repoUrl: 'https://example.test/authority.git',
       metadata: { experimental: { artifacts: true, artifact_comments: true } } }).returning();
     const [drive] = await db.insert(drives).values({ accountId, projectId: project!.projectId, kind: 'project', name: 'Authority fixture',
       platinumVolumeName: `test-authority-${crypto.randomUUID()}` }).returning();
