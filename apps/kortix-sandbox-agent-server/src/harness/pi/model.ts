@@ -210,9 +210,19 @@ export async function createPiModels(input: {
       ...input.claude,
       // The ref stays `claude-agent/<id>`: the gateway answers it with the project's fallback model.
       // The Claude model's window and image input, so the step is the one Claude would have taken.
+      // No output cap: Claude's (64k) is above many fallbacks' own, which refuse it with a 400.
       gatewayStep: (model, context, options) => gatewayApi.streamSimple(
         gatewayModel(`${CLAUDE_AGENT_PROVIDER_ID}/${model.id}`, { attachment: true, limit: { context: model.contextWindow, output: model.maxTokens } }, target),
-        context, { ...options, apiKey: target.apiKey },
+        context,
+        {
+          ...options,
+          apiKey: target.apiKey,
+          onPayload: async (payload, payloadModel) => {
+            const next = ((await options.onPayload?.(payload, payloadModel)) ?? payload) as Record<string, unknown>
+            const { max_tokens: _maxTokens, max_completion_tokens: _maxCompletionTokens, ...rest } = next
+            return rest
+          },
+        },
       ),
     }))
   }

@@ -543,13 +543,17 @@ export async function resolveCandidates(
   // Claude Code. Reaching this resolver says nothing about a runtime's age.
   if (isClaudeAgentModelRef(effectiveModel)) {
     // pi sends a Claude step here when every Claude account of the session is at
-    // its limit (harness/pi/claude/provider.ts). The accounts' own refusal
-    // (resting, needs reconnection) starts the project's Routing chain.
+    // its limit (harness/pi/claude/provider.ts). A resting pool starts the
+    // project's Routing chain with its own rest, so the session's fallback holds
+    // until the plan resets. Any other refusal stays `model_not_found` below,
+    // which starts the chain too.
     if (principal.projectId && principal.sessionId) {
       await resolveClaudeCredentials({
         accountId: principal.accountId, projectId: principal.projectId, userId: principal.userId,
         sessionId: principal.sessionId, keyId: principal.keyId, personalUserId,
-      }, { probe: true });
+      }, { probe: true }).catch((err: unknown) => {
+        if (err instanceof GatewayResolutionError && err.code === 'provider_pool_rate_limited') throw err;
+      });
     }
     throw new GatewayResolutionError(
       'model_not_found',

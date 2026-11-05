@@ -6,6 +6,7 @@
  */
 import { Client } from '../core/client';
 import { flow } from '../core/flow';
+import { waitFor } from '../core/poll';
 import { createDatabaseSession } from '../fixtures/database-project';
 
 // Synthetic: the shape `claude setup-token` prints, not a real token.
@@ -306,18 +307,17 @@ flow(
           .headerEquals('x-kortix-model', fallback)
           .body().has('$.choices[0].message.content', 'FALLBACK-OK');
         if (received.at(-1) !== 'm1') throw new Error(`the stub received ${JSON.stringify(received)}`);
-        let metadata: Record<string, unknown> = {};
-        for (let attempt = 0; attempt < 40; attempt++) {
-          const { rows } = await db.query('SELECT metadata FROM kortix.project_sessions WHERE session_id = $1', [sessionId]);
-          metadata = (rows[0]?.metadata ?? {}) as Record<string, unknown>;
-          if (metadata.opencode_model_source === 'fallback') break;
-          await new Promise((resolve) => setTimeout(resolve, 250));
-        }
-        if (metadata.opencode_model !== `kortix/${fallback}` || metadata.opencode_model_source !== 'fallback'
-          || metadata.opencode_model_fallback_from !== 'claude-agent/opus' || metadata.opencode_model_fallback_reason !== 'provider_pool_rate_limited') {
+        const metadata = await waitFor(async () => (await asHolder.get('/v1/projects/:projectId/sessions/:sessionId', { params: { ...params, sessionId } }))
+          .status(200).json<{ metadata?: Record<string, unknown> }>().metadata ?? {}, {
+          until: (value) => value.opencode_model_source === 'fallback',
+          timeoutMs: 10_000,
+          intervalMs: 250,
+          description: 'the session moves to the fallback model',
+        });
+        if (metadata.opencode_model !== `kortix/${fallback}` || metadata.opencode_model_fallback_from !== 'claude-agent/opus'
+          || metadata.opencode_model_fallback_reason !== 'provider_pool_rate_limited') {
           throw new Error(`session model after the fallback: ${JSON.stringify(metadata)}`);
         }
-        (await asHolder.get('/v1/projects/:projectId/sessions/:sessionId', { params: { ...params, sessionId } })).status(200);
       });
     } finally {
       upstream.close();
