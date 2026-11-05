@@ -194,6 +194,15 @@ const BrandIcon = forwardRef<SVGSVGElement, IconProps>((props, ref) => {
 }) as Icon;
 BrandIcon.displayName = 'BrandIconGlyph';
 
+/**
+ * The full-bleed brand tile's border: a 1px ring drawn OVER the image (an
+ * inset ring on the tile itself would paint under it), so a light or
+ * transparent logo still reads as a tile. One literal class list for every
+ * host, so Tailwind extracts it.
+ */
+export const FULL_BLEED_BORDER =
+  "relative overflow-hidden after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:inset-ring-1 after:inset-ring-foreground/15 after:content-['']";
+
 /** True when this glyph is the brand icon AND the account has a brand image:
  *  the tile then shows the image full bleed instead of a padded icon. */
 export function useFullBleedGlyph(name: string | undefined): boolean {

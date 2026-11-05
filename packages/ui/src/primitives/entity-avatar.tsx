@@ -5,7 +5,7 @@ import { Hint } from './hint';
 import { emojiTint } from './emoji-tint';
 import { glyphFace } from './glyph-face';
 import { glyphForeground, glyphStyle, glyphTint } from './glyph-tint';
-import { useFullBleedGlyph } from './kortix-glyphs';
+import { FULL_BLEED_BORDER, useFullBleedGlyph } from './kortix-glyphs';
 import type { Icon } from './kortix-icons';
 import { cn } from '../lib/utils';
 import { chalkColors } from '@kortix/shared';
@@ -129,7 +129,7 @@ export function EntityAvatar({
       className={cn(
         'inline-flex shrink-0 items-center justify-center border font-semibold',
         sizes.box,
-        fullBleed && 'overflow-hidden',
+        fullBleed && FULL_BLEED_BORDER,
         // After `sizes.box`, so tailwind-merge resolves `sizes.emoji` over the
         // initial's text size — and so `border-0` resolves over the base
         // `border`, which is what stops a neutral hairline being drawn OUTSIDE

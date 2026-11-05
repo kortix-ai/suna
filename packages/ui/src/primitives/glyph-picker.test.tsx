@@ -97,6 +97,8 @@ describe('GlyphPicker — Enterprise brand icon', () => {
       </UiProvider>,
     );
     expect(html).toMatch(/data-slot="entity-avatar" class="[^"]*overflow-hidden/);
+    // The border is a ring drawn over the image, not under it.
+    expect(html).toMatch(/data-slot="entity-avatar" class="[^"]*after:inset-ring-1/);
     expect(html).toMatch(/data-brand-icon="" class="[^"]*size-full/);
     expect(html).toContain('object-cover');
     expect(html).not.toMatch(/data-brand-icon="" [^>]*style="width/);

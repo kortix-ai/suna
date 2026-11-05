@@ -11,7 +11,7 @@ import { EntityAvatar } from '../../../primitives/entity-avatar';
 import type { GlyphSelection } from '../../../primitives/glyph-picker';
 import { glyphFace as glyphDrawing } from '../../../primitives/glyph-face';
 import { glyphForeground, glyphStyle, glyphTint, glyphTintHover } from '../../../primitives/glyph-tint';
-import { useFullBleedGlyph } from '../../../primitives/kortix-glyphs';
+import { FULL_BLEED_BORDER, useFullBleedGlyph } from '../../../primitives/kortix-glyphs';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../primitives/popover';
 import { preloadProjectIconPicker, ProjectIconPicker } from '../../../primitives/project-icon-picker';
 import { cn } from '../../../internal/lib/utils';
@@ -267,7 +267,7 @@ export function ProjectIconField({
             triggerClassName,
             emoji && [emojiTint(emoji), emojiTintHover(emoji), 'hover:brightness-110'],
             glyphFace && [glyphTint(glyphFace.color), glyphTintHover(glyphFace.color), 'hover:brightness-110'],
-            fullBleed && 'overflow-hidden p-0',
+            fullBleed && [FULL_BLEED_BORDER, 'p-0'],
           )}
           style={glyphFace ? glyphStyle(glyphFace.color) : undefined}
         >
