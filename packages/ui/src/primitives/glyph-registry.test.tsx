@@ -33,7 +33,7 @@ describe('the glyph registry', () => {
   });
 
   test('glyphComponent returns null for an unknown name', () => {
-    expect(glyphComponent('Skull')).toBeNull();
+    expect(glyphComponent('NoSuchGlyph')).toBeNull();
     expect(glyphComponent('')).toBeNull();
   });
 

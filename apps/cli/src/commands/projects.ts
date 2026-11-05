@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { PROJECT_GLYPH_COLORS, isProjectGlyphColor, isProjectGlyphName } from '@kortix/shared';
+import { PROJECT_GLYPH_COLORS, isProjectGlyphName, normalizeProjectGlyphColor } from '@kortix/shared';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import type { Auth } from '../api/auth.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
@@ -405,8 +405,8 @@ function parseGlyphFlag(raw: string): { name: string; color: string } | null {
   const at = raw.lastIndexOf(':');
   if (at <= 0 || at === raw.length - 1) return null;
   const name = raw.slice(0, at);
-  const color = raw.slice(at + 1);
-  if (!isProjectGlyphName(name) || !isProjectGlyphColor(color)) return null;
+  const color = normalizeProjectGlyphColor(raw.slice(at + 1));
+  if (!isProjectGlyphName(name) || !color) return null;
   return { name, color };
 }
 
@@ -430,7 +430,7 @@ Options:
   --icon <emoji>         Set the per-project emoji.
   --no-icon              Remove the emoji.
   --glyph <name>:<color> Set the per-project glyph, e.g. Rocket:blue.
-                         Colors: ${PROJECT_GLYPH_COLORS.join(', ')}.
+                         Colors: ${PROJECT_GLYPH_COLORS.join(', ')}, or #rrggbb.
   --no-glyph             Remove the glyph.
   --project <id>         Act on this project (default: linked/default).
   --host <name>          Use this logged-in host.
@@ -526,7 +526,7 @@ async function projectsSet(argv: string[]): Promise<number> {
     if (!glyph) {
       process.stderr.write(
         `${status.err(`Invalid --glyph "${glyphArg}". Use <name>:<color>, e.g. Rocket:blue.`)}\n` +
-          `  ${C.dim}colors: ${PROJECT_GLYPH_COLORS.join(', ')}${C.reset}\n`,
+          `  ${C.dim}colors: ${PROJECT_GLYPH_COLORS.join(', ')}, or #rrggbb${C.reset}\n`,
       );
       return 2;
     }

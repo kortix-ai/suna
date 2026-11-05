@@ -124,7 +124,7 @@ describe('serializeProject — icon_glyph', () => {
   test('a malformed stored glyph normalizes to null on READ', () => {
     // This is the read-path guarantee: a row hand-edited in the database
     // cannot put an unrenderable value in front of the UI.
-    const row = projectRow({ icon_glyph: { name: 'Skull', color: 'red' } });
+    const row = projectRow({ icon_glyph: { name: 'NoSuchGlyph', color: 'red' } });
     expect(serializeProject(row).icon_glyph).toBeNull();
   });
 
