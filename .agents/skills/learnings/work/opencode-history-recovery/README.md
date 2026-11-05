@@ -1,8 +1,8 @@
 ---
 title: Recover OpenCode-era conversations that never reached the session log
-status: building (branch `recover-opencode-history`); dev proof done 2026-11-04; prod run waits for the release that ships the script
+status: dev rehearsal done 2026-11-05 (Platinum); prod run waits for the release that ships the script (PR #11788)
 owner: platform
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
 # Recover OpenCode-era conversations that never reached the session log
@@ -54,7 +54,11 @@ The next wake of the box restores the log into pi (generation 0 → 1).
 
 Outcomes: `written`, `converted` (dry run), `no_store`, `empty_store`, `box_gone`,
 `unsupported_store`, `invalid`, `skipped` (the session changed), `retry`, `failed`,
-`refused`.
+`refused`, `too_large` (a store over 128 MiB or the row caps: set aside, not read).
+
+`retry` is mostly a box another writer stopped during the copy, for example
+Kortix's row-VM divergence sweep, which stops a running box whose row says
+`stopped`. The next run takes it again, up to 3 attempts.
 
 ## Runbook
 
@@ -90,6 +94,14 @@ are stamped and skipped.
   project-visible session (OpenCode 1.17.11): `GET /log` 404 → 200 with 6
   messages, the web page shows the conversation, and the next wake restored it
   (generation 0 → 1). Daytona dry run: 3 messages, 32 s.
-- Open: the full dev run as a rehearsal; the prod run after the release; pi
-  sessions with no log (146 Platinum since 08-19, `ses_pi…` roots) need a pi reader
-  and are not covered.
+- 2026-11-05: full dev rehearsal, Platinum, one ECS task (worker task definition,
+  concurrency 3): 782 sessions in 110.6 min, exit 0. 761 `written` (5,872
+  messages, 180 attachments; p50 15 s, p95 42 s per session), 10 `empty_store`,
+  10 `retry`, 1 `too_large` (227 MB store). After the run: all 785 touched boxes
+  `archived`/`archiving`/`stopped` (0 `running`), 0 session rows with a new
+  `updated_at`. 6 of the 10 `retry` waited 600 s on a box another writer had
+  stopped; the fix fails them after 30 s. Rerun of the 10 with the fix: 8
+  `written`, 1 `too_large`, 1 `retry`, in 1.3 min.
+- Open: the Daytona dev rehearsal; the prod run after the release; pi sessions with
+  no log (146 Platinum since 08-19, `ses_pi…` roots) need a pi reader and are not
+  covered.
