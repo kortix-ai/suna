@@ -27,7 +27,7 @@ function result(overrides: Partial<SessionReloadResult> = {}): SessionReloadResu
     repo_refreshed: true,
     commit_sha: null,
     agent_files: 'updated',
-    opencode_reload: 'restarted',
+    runtime_reload: 'restarted',
     turn_ended: false,
     ...overrides,
   };

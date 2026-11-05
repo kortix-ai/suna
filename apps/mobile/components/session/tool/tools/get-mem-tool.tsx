@@ -32,7 +32,7 @@ import {
   ToolOutputFallback,
   ToolRunningContext,
 } from '../shared/infrastructure';
-import { FoldedSection, MonoBlock, OutputBlock, ToolField, ToolSection } from '../shared/output-block';
+import { FoldedSection, OutputBlock, ToolField, ToolSection } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
 import { ToolResultCard } from '../shared/result-card';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';

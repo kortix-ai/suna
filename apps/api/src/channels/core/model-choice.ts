@@ -42,14 +42,14 @@ export async function chatSessionStart(
 ): Promise<{ agentName: string; model?: string; pools?: Record<string, string[]>; unavailableModel?: string }> {
   const selection = await chatSelection(settings, project.projectId);
   const agentName = selection?.agentName || 'default';
-  if (!selection?.opencodeModel) return { agentName };
+  if (!selection?.sessionModel) return { agentName };
   const scope = await sharedChatScope(project);
   const start = await planChannelSessionStart({
     projectId: project.projectId,
     accountId: project.accountId,
     userId: scope.memberUserId,
     scope,
-    chosenModel: selection.opencodeModel,
+    chosenModel: selection.sessionModel,
     agentName,
     // The core judges a first image against the body's model (conversation.ts `startModel`).
     hasImage: false,
@@ -81,9 +81,9 @@ export async function chatTurnModel(settings: SettingsChannel, thread: { session
     .where(and(eq(projectSessions.sessionId, thread.sessionId), eq(projectSessions.projectId, thread.projectId)))
     .limit(1);
   if (!row) return null;
-  const pinned = (row.metadata as Record<string, unknown> | null)?.opencode_model;
+  const pinned = (row.metadata as Record<string, unknown> | null)?.model;
   const pin = typeof pinned === 'string' && pinned.trim() ? pinned.trim() : null;
-  const choice = (await chatSelection(settings, thread.projectId))?.opencodeModel ?? null;
+  const choice = (await chatSelection(settings, thread.projectId))?.sessionModel ?? null;
   if (!choice && !pin) return null;
   const scope = await sharedChatScope({ projectId: thread.projectId, accountId: row.accountId, metadata: row.projectMetadata });
   return planChannelFollowUp({

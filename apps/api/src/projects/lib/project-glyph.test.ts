@@ -17,6 +17,13 @@ describe('normalizeProjectGlyph — accepts', () => {
     });
   });
 
+  test('a custom #rrggbb colour, stored in lower case', () => {
+    expect(normalizeProjectGlyph({ name: 'KortixDither', color: '#3FB6A8' })).toEqual({
+      name: 'KortixDither',
+      color: '#3fb6a8',
+    });
+  });
+
   test('every colour in the palette', () => {
     // Iterated from the catalogue rather than a hand-written array. A literal
     // list here would both drift from the palette silently and widen `color`
@@ -41,7 +48,13 @@ describe('normalizeProjectGlyph — rejects', () => {
   test('a name outside the catalogue', () => {
     // The renderer maps name -> component from a static registry. A name with
     // no component paints an empty tile, so it must be unstorable.
-    expect(normalizeProjectGlyph({ name: 'Skull', color: 'red' })).toBeNull();
+    expect(normalizeProjectGlyph({ name: 'NoSuchGlyph', color: 'red' })).toBeNull();
+  });
+
+  test('a malformed custom colour', () => {
+    for (const color of ['#3fb6a', '#3fb6a8ff', '3fb6a8', '#ggg000', 'rgb(1,2,3)']) {
+      expect(normalizeProjectGlyph({ name: 'Rocket', color })).toBeNull();
+    }
   });
 
   test('a colour outside the palette', () => {

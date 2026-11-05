@@ -383,7 +383,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     expect(env[OVERRIDE_KEY]).toBe('owner-val');
   });
 
-  test('the session_log_restore project flag (on by default) reaches the box env as KORTIX_SESSION_LOG_RESTORE=1, and no key while it is off', async () => {
+  test('every box gets KORTIX_SESSION_LOG_RESTORE=1, also in a project that stored session_log_restore: false before the restore graduated', async () => {
     const boot = () =>
       buildSessionSandboxEnvVars({
         accountId: ctx.accountId,
@@ -394,59 +394,18 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
         baseRef: 'main',
         agentName: 'default',
       });
-    const setFlag = (on: boolean | null) =>
-      db
-        .update(projects)
-        .set({ metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{experimental}', ${JSON.stringify(on === null ? {} : { session_log_restore: on })}::jsonb)` })
-        .where(eq(projects.projectId, ctx.projectId));
-    try {
-      expect((await boot()).KORTIX_SESSION_LOG_RESTORE).toBe('1');
-      await setFlag(true);
-      expect((await boot()).KORTIX_SESSION_LOG_RESTORE).toBe('1');
-      await setFlag(false);
-      expect('KORTIX_SESSION_LOG_RESTORE' in (await boot())).toBe(false);
-    } finally {
-      await setFlag(null);
-    }
-  });
-
-  test('a lost session continued on a new computer (lostRecoveredAt) and a restored deleted session (restoredAt) restore from their log with the project flag off; another session does not', async () => {
-    const boot = (sessionId: string) =>
-      buildSessionSandboxEnvVars({
-        accountId: ctx.accountId,
-        projectId: ctx.projectId,
-        sessionId,
-        userId: OWNER,
-        repoUrl: 'https://example.test/principal.git',
-        baseRef: 'main',
-        agentName: 'default',
-      });
-    const mark = (key: string, on: boolean) =>
-      db
-        .update(projectSessions)
-        .set({
-          metadata: on
-            ? sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text, '2026-10-15T10:00:00.000Z')`
-            : sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) - ${key}::text`,
-        })
-        .where(eq(projectSessions.sessionId, PRINCIPAL_SESSION));
-    const setProjectFlag = (experimental: Record<string, boolean>) =>
+    const setStored = (experimental: Record<string, boolean>) =>
       db
         .update(projects)
         .set({ metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{experimental}', ${JSON.stringify(experimental)}::jsonb)` })
         .where(eq(projects.projectId, ctx.projectId));
-    await setProjectFlag({ session_log_restore: false });
-    for (const key of ['lostRecoveredAt', 'restoredAt']) {
-      try {
-        expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(PRINCIPAL_SESSION))).toBe(false);
-        await mark(key, true);
-        expect({ key, env: (await boot(PRINCIPAL_SESSION)).KORTIX_SESSION_LOG_RESTORE }).toEqual({ key, env: '1' });
-        expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(SESSION_ID))).toBe(false);
-      } finally {
-        await mark(key, false);
-      }
+    try {
+      expect((await boot()).KORTIX_SESSION_LOG_RESTORE).toBe('1');
+      await setStored({ session_log_restore: false });
+      expect((await boot()).KORTIX_SESSION_LOG_RESTORE).toBe('1');
+    } finally {
+      await setStored({});
     }
-    await setProjectFlag({});
   });
 
   test('sandbox boot snapshots the latest committed backend-wrapper capability secrets without caching', async () => {

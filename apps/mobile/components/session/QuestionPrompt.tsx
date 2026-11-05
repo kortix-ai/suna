@@ -12,7 +12,7 @@
  * `lib/session/question-prompt.ts`.
  */
 
-import React, { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';

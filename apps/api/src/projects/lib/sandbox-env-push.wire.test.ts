@@ -43,10 +43,4 @@ describe('postEnvToDaemon across daemon builds', () => {
     const result = await postEnvToDaemon(ARGS);
     expect(result).toMatchObject({ opencodeState: 'starting', opencodeReload: 'kept-old', opencodeTurnEnded: false });
   });
-
-  test('reads a pre-W3 answer (opencode*)', async () => {
-    daemonAnswering({ opencode: 'ok', opencode_reload: 'restarted', opencode_turn_ended: true });
-    const result = await postEnvToDaemon(ARGS);
-    expect(result).toMatchObject({ opencodeState: 'ok', opencodeReload: 'restarted', opencodeTurnEnded: true });
-  });
 });

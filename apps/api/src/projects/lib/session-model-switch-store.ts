@@ -26,7 +26,7 @@ export async function storeSessionModelSwitch(input: {
           !('actorSessionId' in audit) || audit.actorSessionId !== input.actorSessionId || existing.actorUserId !== input.actorUserId) {
         return { kind: 'conflict' } as const;
       }
-      return { kind: 'stored', promptId: existing.commandId, model: typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : input.model, needsPush: false, deduped: true } as const;
+      return { kind: 'stored', promptId: existing.commandId, model: typeof session.metadata?.model === 'string' ? session.metadata.model : input.model, needsPush: false, deduped: true } as const;
     }
     // Bound unattended self-switch loops. Human model writes do not consume this budget.
     if (input.actorSessionId === input.sessionId) {
@@ -49,7 +49,7 @@ export async function storeSessionModelSwitch(input: {
     });
     const [row] = await tx.insert(sessionLifecycleCommands).values({ ...values, ...(!input.prompt ? { status: 'succeeded', completedAt: new Date() } : {}), payload: {
       ...values.payload,
-      modelSwitch: { from: metadata.opencode_model ?? null, to: input.model,
+      modelSwitch: { from: metadata.model ?? null, to: input.model,
         actorSessionId: input.actorSessionId, prompt: input.prompt ?? null, at: new Date().toISOString() },
     } }).returning();
     if (!row) throw new Error('Model switch continuation was not stored');
@@ -58,12 +58,12 @@ export async function storeSessionModelSwitch(input: {
       actorUserId: input.actorUserId, actorType: input.actorSessionId ? 'agent_session' : 'user',
       agentId: input.actorSessionId, action: 'session.model.changed', resourceType: 'session',
       resourceId: input.sessionId, outcome: 'success', source: 'api',
-      inputSummary: { from: metadata.opencode_model ?? null, to: input.model,
+      inputSummary: { from: metadata.model ?? null, to: input.model,
         prompt: input.prompt ?? null, prompt_id: row.commandId, actor_session_id: input.actorSessionId },
     });
-    await tx.update(projectSessions).set({ metadata: { ...pickedModelMetadata(metadata, input.model), model_switches: [...(Array.isArray(metadata.model_switches) ? metadata.model_switches.slice(-99) : []), { id: row.commandId, from: metadata.opencode_model ?? null, to: input.model, actor_session_id: input.actorSessionId, prompt: input.prompt ?? null, at: row.createdAt.toISOString() }] }, updatedAt: new Date() })
+    await tx.update(projectSessions).set({ metadata: { ...pickedModelMetadata(metadata, input.model), model_switches: [...(Array.isArray(metadata.model_switches) ? metadata.model_switches.slice(-99) : []), { id: row.commandId, from: metadata.model ?? null, to: input.model, actor_session_id: input.actorSessionId, prompt: input.prompt ?? null, at: row.createdAt.toISOString() }] }, updatedAt: new Date() })
       .where(eq(projectSessions.sessionId, input.sessionId));
-    const needsPush = modelChangeNeedsLivePush({ current: typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null, next: input.model, status: session.status });
+    const needsPush = modelChangeNeedsLivePush({ current: typeof metadata.model === 'string' ? metadata.model : null, next: input.model, status: session.status });
     // Keep the session lock until live reconfiguration finishes: another writer cannot push an older pin last.
     const push = needsPush && input.push ? await input.push(input.model).catch(() => ({ applied: false, reason: 'live reconfiguration failed' })) : undefined;
     return { kind: 'stored', promptId: row.commandId, model: input.model, needsPush, push, deduped: false } as const;

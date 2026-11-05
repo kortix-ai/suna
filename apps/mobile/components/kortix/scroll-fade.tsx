@@ -22,7 +22,6 @@
  * the SAME colour at zero alpha. Never fade to `transparent`: that is black at
  * zero alpha, and Android draws a grey band through the middle of the gradient.
  */
-import * as React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {

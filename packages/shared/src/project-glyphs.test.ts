@@ -4,25 +4,19 @@ import {
   PROJECT_GLYPH_GROUPS,
   PROJECT_GLYPH_NAMES,
   isProjectGlyphColor,
+  normalizeProjectGlyphColor,
   isProjectGlyphName,
 } from './project-glyphs';
 
 describe('the glyph catalogue', () => {
-  test('is 202 names in 17 groups: 16 of 12 and one of 10', () => {
-    expect(PROJECT_GLYPH_NAMES).toHaveLength(202);
-    expect(PROJECT_GLYPH_GROUPS).toHaveLength(17);
-    // Groups are not uniform size: 16 categories carry 12 glyphs each, and the
-    // Numbers group (drawn digit pictograms, not typographic characters) carries
-    // 10 — one NumberCircle* glyph per digit 0-9. Asserting the exact shape
-    // (rather than dropping the check because sizes differ) is what still fails
-    // if a group silently gains or loses a glyph.
-    const sizes = PROJECT_GLYPH_GROUPS.map((group) => group.names.length);
-    const numbersIndex = PROJECT_GLYPH_GROUPS.findIndex((group) => group.label === 'Numbers');
-    expect(numbersIndex).toBeGreaterThanOrEqual(0);
-    sizes.forEach((size, index) => {
-      expect(size).toBe(index === numbersIndex ? 10 : 12);
-    });
+  test('is 949 unique names in 39 non-empty groups, the Kortix marks first', () => {
+    expect(PROJECT_GLYPH_NAMES).toHaveLength(949);
+    expect(PROJECT_GLYPH_GROUPS).toHaveLength(39);
+    expect(new Set(PROJECT_GLYPH_NAMES).size).toBe(PROJECT_GLYPH_NAMES.length);
+    for (const group of PROJECT_GLYPH_GROUPS) expect(group.names.length).toBeGreaterThan(0);
+    expect(PROJECT_GLYPH_GROUPS[0]?.names).toEqual(['KortixMark', 'KortixPixel', 'KortixDither']);
   });
+
 
   test('every grouped name appears in the flat list, and vice versa', () => {
     // The flat list is what the validator allowlists; the groups are what the
@@ -51,6 +45,16 @@ describe('the glyph catalogue', () => {
     expect(isProjectGlyphColor('blue')).toBe(true);
     expect(isProjectGlyphColor('chartreuse')).toBe(false);
     expect(isProjectGlyphColor('')).toBe(false);
+    // A custom colour is exact lower-case #rrggbb only.
+    expect(isProjectGlyphColor('#3fb6a8')).toBe(true);
+    expect(isProjectGlyphColor('#3FB6A8')).toBe(false);
+    expect(isProjectGlyphColor('#3fb6a')).toBe(false);
+    expect(isProjectGlyphColor('#3fb6a8ff')).toBe(false);
+    expect(isProjectGlyphColor('red; background:url(x)')).toBe(false);
+    expect(normalizeProjectGlyphColor('#3FB6A8')).toBe('#3fb6a8');
+    expect(normalizeProjectGlyphColor('blue')).toBe('blue');
+    expect(normalizeProjectGlyphColor('#zzzzzz')).toBeNull();
+    expect(normalizeProjectGlyphColor(42)).toBeNull();
   });
 
   test('names are PascalCase Phosphor identifiers', () => {

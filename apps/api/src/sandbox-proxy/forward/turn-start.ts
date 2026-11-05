@@ -185,7 +185,7 @@ export function claimPromptDeliveryOnce(input: {
     // cannot dedupe is still the user acting on this session. Past the claim,
     // so a re-sent prompt cannot double-count, and outside the retry loop
     // below, so a wake retry cannot either. This is the sidebar's authoritative
-    // "last activity" — unlike the opencode_sessions snapshot scheduled further
+    // "last activity" — unlike the runtime_sessions snapshot scheduled further
     // down, it needs no sandbox round-trip, so a session stays correctly dated
     // even when the box is unreachable. See projects/session-activity.ts.
     void recordSessionActivity({

@@ -94,6 +94,68 @@ function matchPatterns(subject: string, patterns: Record<string, PermissionRule>
   return matched
 }
 
+/** `<<word`, `<<-word`, `<<'word'`, `<<"word"`, `<<\\word`; never `<<<`. */
+const HEREDOC = /^<<(-?)[ \t]*(?:'([^'\n]+)'|"([^"\n]+)"|(\\?)([A-Za-z0-9_.-]+))/
+
+interface Heredoc {
+  delimiter: string
+  /** `<<-`: the delimiter line may start with tabs. */
+  tabs: boolean
+  /** A quoted delimiter: bash expands nothing in the body. */
+  quoted: boolean
+}
+
+/**
+ * Where the bodies of `heredocs` end, starting at `from` (the line after the
+ * command): the index of the last delimiter line's newline, or the end. -1
+ * when a delimiter is missing (`$((1<<2))` is not a heredoc) or an unquoted
+ * body runs a substitution: the body is then read as commands.
+ */
+function heredocBodiesEnd(line: string, from: number, heredocs: Heredoc[]): number {
+  let at = from
+  for (const heredoc of heredocs) {
+    const bodyStart = at
+    for (;;) {
+      if (at > line.length) return -1
+      const newline = line.indexOf('\n', at)
+      const end = newline < 0 ? line.length : newline
+      const text = line.slice(at, end)
+      if ((heredoc.tabs ? text.replace(/^\t+/, '') : text) === heredoc.delimiter) {
+        if (!heredoc.quoted && /\$\(|`/.test(line.slice(bodyStart, at))) return -1
+        at = end + 1
+        break
+      }
+      at = end + 1
+    }
+  }
+  return at - 1
+}
+
+/**
+ * Commands that read stdin as data. Any other program can run its stdin
+ * (`sh`, `$SHELL`, `./run.sh`, `sudo …`), so only these make a heredoc body
+ * data. `sed`, `awk`, `psql` and `mysql` are left out: their stdin can run a
+ * shell command.
+ */
+const STDIN_DATA_READERS = new Set([
+  'cat', 'tee', 'grep', 'egrep', 'fgrep', 'rg', 'head', 'tail', 'wc', 'sort', 'uniq', 'tr', 'cut', 'jq', 'yq',
+  'base64', 'gh', 'git', 'diff', 'cmp', 'comm', 'column', 'envsubst', 'read', 'mapfile', 'readarray', 'fmt', 'fold',
+  'nl', 'paste', 'xxd', 'od', 'gzip', 'md5sum', 'sha256sum', 'curl',
+])
+
+/**
+ * Whether a heredoc's line may run the body: some command on it (the one
+ * that declares the heredoc, or one it is piped to) is not a data reader.
+ * Leading `NAME=value` assignments are skipped. Word based, so a quoted `|`
+ * reads as a new command: it errs towards reading a body as commands.
+ */
+function readsStdinAsCode(text: string): boolean {
+  return text.split(/[;&|()]+/).some((segment) => {
+    const words = segment.trim().replace(RESERVED_PREFIX, '').split(/\s+/).filter((word) => word && !/^\w+=/.test(word))
+    return words.length > 0 && !STDIN_DATA_READERS.has(words[0]!)
+  })
+}
+
 const RESERVED_PREFIX = /^(?:(?:if|then|elif|else|do|while|until|time|!|\{)\s+)+/
 const RESERVED_ALONE = new Set(['fi', 'done', 'esac', '}'])
 
@@ -102,10 +164,13 @@ const RESERVED_ALONE = new Set(['fi', 'done', 'esac', '}'])
  * the line splits on unquoted `;`, `&`, `|` and newlines (so `&&`, `||` and
  * `|&` too), and every `$(…)`, `` `…` ``, `<(…)`, `>(…)` and `( … )` body is
  * read as commands of its own. A command keeps its substitutions' text.
- * `null` when the quotes or brackets do not balance.
- * ponytail: not a bash grammar — `case` arms and heredoc bodies read as
- * unbalanced or as extra commands, so they fail closed. Use tree-sitter-bash
- * when a manifest needs them exact.
+ * A `#` comment is skipped. A heredoc body is data and is skipped, except an
+ * unquoted one that runs `$(…)` or `` `…` `` (bash expands those) and one
+ * whose line has a command that is not a data reader (`sh <<EOF`,
+ * `cat <<EOF | bash`): those bodies are read as commands. `null` when the quotes or brackets do not balance.
+ * ponytail: not a bash grammar — `case` arms read as unbalanced or as extra
+ * commands, so they fail closed. Use tree-sitter-bash when a manifest needs
+ * them exact.
  */
 export function bashCommands(line: string): string[] | null {
   const commands: string[] = []
@@ -113,6 +178,10 @@ export function bashCommands(line: string): string[] | null {
   const read = (start: number, close: string): number => {
     let piece = ''
     let quote = ''
+    let heredocs: Heredoc[] = []
+    let lineStart = start
+    // The index of the last backslash-escaped character: `a\ #b` is one word, not a comment.
+    let escaped = -1
     const flush = () => {
       const command = piece.trim().replace(RESERVED_PREFIX, '')
       // A `( … )` group is not a command: its body was read on its own.
@@ -131,6 +200,7 @@ export function bashCommands(line: string): string[] | null {
       if (ch === '\\') {
         piece += line.slice(i, i + 2)
         i += 2
+        escaped = i - 1
         continue
       }
       if (ch === '"' || (ch === "'" && !quote)) {
@@ -151,6 +221,30 @@ export function bashCommands(line: string): string[] | null {
         continue
       }
       if (!quote && ch === ')') return -1
+      if (!quote && ch === '#' && (i === start || (/[\s;&|(]/.test(line[i - 1]!) && escaped !== i - 1))) {
+        const end = line.indexOf('\n', i)
+        i = end < 0 ? line.length : end
+        continue
+      }
+      const heredoc = !quote && ch === '<' ? HEREDOC.exec(line.slice(i)) : null
+      // Quote removal joins a delimiter word (`<<'E'OF` is `EOF`): a word read
+      // only in part is no heredoc, and its lines stay commands.
+      if (heredoc && line[i - 1] !== '<' && !/[^\s;&|()<>]/.test(line[i + heredoc[0].length] ?? '')) {
+        heredocs.push({ delimiter: heredoc[2] ?? heredoc[3] ?? heredoc[5]!, tabs: heredoc[1] === '-', quoted: !heredoc[5] || !!heredoc[4] })
+        piece += heredoc[0]
+        i += heredoc[0].length
+        continue
+      }
+      if (!quote && ch === '\n' && heredocs.length > 0) {
+        const end = readsStdinAsCode(line.slice(lineStart, i)) ? -1 : heredocBodiesEnd(line, i + 1, heredocs)
+        heredocs = []
+        if (end >= 0) {
+          flush()
+          i = end
+          continue
+        }
+      }
+      if (ch === '\n') lineStart = i + 1
       // `2>&1`, `&>file` and `>|file` are redirections, not separators.
       const redirect = line[i - 1] === '>' || line[i - 1] === '<' || (ch === '&' && line[i + 1] === '>')
       if (!quote && (ch === ';' || ch === '\n' || ((ch === '&' || ch === '|') && !redirect))) {
@@ -208,14 +302,30 @@ export function permissionSubject(tool: string, args: unknown, workspace: string
   return file === undefined ? undefined : relative(workspace, file) || '.'
 }
 
-/** Resolve one tool's rule for this call. `undefined` means "no rule applies". */
-function resolveRule(config: PermissionRuleConfig | undefined, subject: string | undefined): PermissionRule | undefined {
+/**
+ * Resolve one tool's rule for this call. `undefined` means "no rule applies".
+ * `unparsed` is a bash line that `bashCommands` could not split.
+ */
+function resolveRule(config: PermissionRuleConfig | undefined, subject: string | undefined, unparsed?: string): PermissionRule | undefined {
   if (config === undefined || typeof config === 'string') return config
   if (subject !== undefined) return matchPatterns(subject, config)
   // No subject to test the specific patterns against. A restriction we cannot
   // evaluate must never silently degrade to `allow`.
-  if (Object.entries(config).some(([pattern, rule]) => pattern !== '*' && rule !== 'allow')) return 'ask'
+  if (Object.entries(config).some(([pattern, rule]) => pattern !== '*' && rule !== 'allow' && mayMatchUnparsed(pattern, unparsed))) return 'ask'
   return config['*']
+}
+
+/**
+ * Whether a restricted pattern can match a command of a line that does not
+ * parse. A pattern matches from a command's first word (`wildcardMatch` is
+ * anchored), so `rm *` cannot match a line in which `rm` is not a word. A
+ * pattern whose first word holds a wildcard, or no line at all, may match.
+ */
+function mayMatchUnparsed(pattern: string, unparsed: string | undefined): boolean {
+  const word = pattern.trim().split(/\s/)[0]!
+  if (unparsed === undefined || !word || /[*?]/.test(word)) return true
+  const escaped = word.replaceAll('\\', '/').replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?<![\\w./-])${escaped}(?![\\w.-])`).test(unparsed.replaceAll('\\', '/'))
 }
 
 /**
@@ -249,8 +359,9 @@ export function toolCapability(tool: string, args?: unknown): string {
  *
  * A bash line is decided command by command (`bashCommands`), and the
  * strictest answer wins: `allowed x; env` is the rule for `env`,
- * never the allowed prefix's. A line that does not parse is decided as a call
- * with no subject, so a restriction asks.
+ * never the allowed prefix's. A line that does not parse asks when a
+ * restricted pattern may match one of its commands (`mayMatchUnparsed`), and
+ * otherwise takes the `*` rule.
  *
  * A file tool whose path leaves the workspace also answers to
  * `external_directory`, and the strictest of the two rules wins.
@@ -259,7 +370,7 @@ export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: 
   const line = tool === 'bash' ? permissionSubject(tool, args, workspace) : undefined
   if (line === undefined) return strictest([resolveCall(policy, tool, args, workspace), externalRule(policy, tool, args, workspace)])
   const commands = bashCommands(line)
-  if (commands === null) return resolveCall(policy, tool, {}, workspace)
+  if (commands === null) return resolveKeys(policy, [tool, toolCapability(tool, {})], undefined, line)
   if (commands.length === 0) return resolveCall(policy, tool, args, workspace)
   return strictest(commands.map((command) => resolveCall(policy, tool, { ...(args as object), command }, workspace)))
 }
@@ -270,12 +381,12 @@ function resolveCall(policy: PermissionPolicy, tool: string, args: unknown, work
   return resolveKeys(policy, [tool, toolCapability(tool, args)], permissionSubject(tool, args, workspace))
 }
 
-function resolveKeys(policy: PermissionPolicy, names: string[], subject: string | undefined): PermissionRule | undefined {
+function resolveKeys(policy: PermissionPolicy, names: string[], subject: string | undefined, unparsed?: string): PermissionRule | undefined {
   const keys = Object.keys(policy)
     .filter((key) => names.some((name) => wildcardMatch(name, key)))
     .sort((a, b) => comparePatterns(b, a))
   for (const key of keys) {
-    const rule = resolveRule(policy[key], subject)
+    const rule = resolveRule(policy[key], subject, unparsed)
     if (rule !== undefined) return rule
   }
   return undefined

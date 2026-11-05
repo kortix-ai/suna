@@ -195,6 +195,8 @@ function appWithProbe() {
   );
   app.get('/v1/skills', (c) => c.json({ ok: true }));
   app.get('/v1/drives/:driveId/files', (c) => c.json({ ok: true }));
+  app.post('/v1/feedback', (c) => c.json({ ok: true }, 201));
+  app.get('/v1/feedback', (c) => c.json({ ok: true }));
   app.get('/v1/usage/cost-summary', (c) => c.json({ projectId: c.get('tokenProjectId' as never) }));
   app.get('/v1/usage/cost-by-project', (c) => c.json({ projectId: c.get('tokenProjectId' as never) }));
   app.post('/v1/usage/cost-summary', (c) => c.json({ ok: true }));
@@ -360,6 +362,30 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(files.status).toBe(200);
 
     const lookalike = await appWithProbe().request('/v1/drivesx', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+    expect(lookalike.status).toBe(403);
+  });
+
+  // `kortix feedback` inside a session holds the session PAT. The route was
+  // default-denied, so an agent that hit a Kortix bug could not report it
+  // (2026-11-05: "Project-scoped token cannot call this surface ... path=/v1/feedback").
+  test('session-BOUND and plain project PATs CAN file feedback (POST /v1/feedback only)', async () => {
+    for (const token of ['kortix_pat_session_bound_a', 'kortix_pat_project_a']) {
+      const res = await appWithProbe().request('/v1/feedback', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(201);
+    }
+
+    const read = await appWithProbe().request('/v1/feedback', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+    expect(read.status).toBe(403);
+
+    const lookalike = await appWithProbe().request('/v1/feedbackx', {
+      method: 'POST',
       headers: { Authorization: 'Bearer kortix_pat_project_a' },
     });
     expect(lookalike.status).toBe(403);

@@ -86,7 +86,7 @@ export interface PublicSessionTranscript {
   source?: 'live' | 'mirror' | 'none';
   /** When the saved transcript was last written. Null for a live read. */
   captured_at?: string | null;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
   message_count: number;
   messages: PublicSessionTranscriptMessage[];
 }

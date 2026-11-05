@@ -396,9 +396,9 @@ export function useRuntimeLocal({
       sessionModelCandidates({ session: projectSession, lastPromptModel }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      projectSession?.metadata?.opencode_model,
-      projectSession?.metadata?.opencode_model_source,
-      projectSession?.metadata?.opencode_model_restored,
+      projectSession?.metadata?.model,
+      projectSession?.metadata?.model_source,
+      projectSession?.metadata?.model_restored,
       lastPromptModel?.providerID,
       lastPromptModel?.modelID,
     ],
@@ -410,14 +410,14 @@ export function useRuntimeLocal({
     () => sessionModelFallback(projectSession),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      projectSession?.metadata?.opencode_model,
-      projectSession?.metadata?.opencode_model_source,
-      projectSession?.metadata?.opencode_model_fallback_from,
-      projectSession?.metadata?.opencode_model_fallback_at,
+      projectSession?.metadata?.model,
+      projectSession?.metadata?.model_source,
+      projectSession?.metadata?.model_fallback_from,
+      projectSession?.metadata?.model_fallback_at,
       providerMode,
     ],
   );
-  const pickedAt = projectSession?.metadata?.opencode_model_picked_at;
+  const pickedAt = projectSession?.metadata?.model_picked_at;
   const switchAtMs = Math.max(sessionFallback?.atMs ?? -1, typeof pickedAt === 'number' ? pickedAt : -1);
   const sessionSwitch = switchAtMs >= 0 ? { atMs: switchAtMs } : undefined;
   const sessionPick = (key: string | undefined): ModelKey | undefined =>

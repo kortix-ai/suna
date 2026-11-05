@@ -26,17 +26,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { View } from 'react-native';
 import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@kortix/sdk';
 import { safeHttpUrl } from '@kortix/shared';
-import type { SandboxFile } from '@/api/types';
 import { FilePreviewSheet, type PreviewFile } from '@/components/files/FilePreviewSheet';
 import type { SheetRef } from '@/components/kortix/sheet';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { useColorScheme } from 'nativewind';
 
 import { ResultRow } from './result-row';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { THEME } from '@/lib/utils/theme';
 import { ArrowSquareOutIcon, MonitorIcon } from '@/lib/icons';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { webSpace } from '@/lib/session/user-message';

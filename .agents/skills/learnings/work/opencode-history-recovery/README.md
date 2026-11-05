@@ -1,6 +1,6 @@
 ---
 title: Recover OpenCode-era conversations that never reached the session log
-status: dev rehearsal done 2026-11-05 (Platinum); prod run waits for the release that ships the script (PR #11788)
+status: dev rehearsal done 2026-11-05 (Platinum and Daytona); prod run waits for the release that ships the script (PR #11788)
 owner: platform
 updated: 2026-11-05
 ---
@@ -55,6 +55,8 @@ The next wake of the box restores the log into pi (generation 0 → 1).
 Outcomes: `written`, `converted` (dry run), `no_store`, `empty_store`, `box_gone`,
 `unsupported_store`, `invalid`, `skipped` (the session changed), `retry`, `failed`,
 `refused`, `too_large` (a store over 128 MiB or the row caps: set aside, not read).
+`empty_store` carries `store_messages=0`; a store with message rows of which none
+parse records `unsupported_store`.
 
 `retry` is mostly a box another writer stopped during the copy, for example
 Kortix's row-VM divergence sweep, which stops a running box whose row says
@@ -101,7 +103,21 @@ are stamped and skipped.
   `archived`/`archiving`/`stopped` (0 `running`), 0 session rows with a new
   `updated_at`. 6 of the 10 `retry` waited 600 s on a box another writer had
   stopped; the fix fails them after 30 s. Rerun of the 10 with the fix: 8
-  `written`, 1 `too_large`, 1 `retry`, in 1.3 min.
-- Open: the Daytona dev rehearsal; the prod run after the release; pi sessions with
-  no log (146 Platinum since 08-19, `ses_pi…` roots) need a pi reader and are not
-  covered.
+  `written`, 1 `too_large`, 1 `retry`, in 1.3 min. The last `retry` was
+  `written` by the deployed image (#11834): dev Platinum has no candidate left.
+- 2026-11-05: Daytona dev rehearsal, one ECS task, concurrency 2: 136 sessions in
+  59.7 min, exit 0. 92 `written` (2,603 messages; p50 57 s, p95 85 s per
+  session), 36 `empty_store`, 3 `no_store`, 2 `box_gone`, 3 `retry`. Sampled
+  `empty_store` stores hold the session's root with 0 message rows; `fromV1`
+  merges every root into the session's thread, so 0 messages means no row
+  parsed. Two Daytona starts answered 502 and the boxes booted later, after the
+  cycle had parked them: they ran until Daytona's auto-stop (15–60 min). The fix
+  waits for the box after a failed start and starts it again (3 attempts);
+  `release` waits for a settled state. Rerun with the fix: both `502` sessions
+  done (1 `written`, 1 `empty_store`). After it: all 136 boxes `archived` or
+  `archiving`, except 2 in Daytona `error` since July.
+- Prod Daytona estimate at the dev rate: 6,069 sessions × 57 s / 2 ≈ 48 h at
+  concurrency 2. Daytona's disk quota is shared by every environment, so raise the
+  concurrency only while watching it.
+- Open: the prod run after the release; pi sessions with no log (146 Platinum
+  since 08-19, `ses_pi…` roots) need a pi reader and are not covered.

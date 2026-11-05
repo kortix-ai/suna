@@ -21,7 +21,7 @@ afterEach(() => {
   resetSessionOpenBundles();
 });
 
-const ROW = { session_id: 'S1', project_id: 'P1', opencode_session_id: 'ses_root' };
+const ROW = { session_id: 'S1', project_id: 'P1', runtime_session_id: 'ses_root' };
 
 function mockFetch(body: (url: string) => unknown) {
   const urls: string[] = [];
@@ -53,7 +53,7 @@ describe('readProjectSessionRow', () => {
     const urls = mockFetch((url) => (url.includes('/snapshot') ? bundleBody : { ...ROW, name: 'row' }));
     openSessionBundle('P1', 'S1');
     const row = await readProjectSessionRow('P1', 'S1', { bundle: true });
-    expect(row.opencode_session_id).toBe('ses_root');
+    expect(row.runtime_session_id).toBe('ses_root');
     expect(urls.filter((u) => u.endsWith('/sessions/S1'))).toHaveLength(0);
   });
 

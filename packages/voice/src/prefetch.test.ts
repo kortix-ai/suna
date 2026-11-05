@@ -37,3 +37,19 @@ test('a late card fact wins over search snippets that land with it', async () =>
   search.resolve(Response.json({ organic: [{ title: 'Exchange estimates', link: 'https://example.test/rates', snippet: 'This estimate is not a live quote.' }] }))
   expect(await pending).toContain('1 CAD = 0.72 USD')
 })
+
+// The search kept ready for an agent's turn (cascade standby(): the caller's words, searched as they are) searches only
+// words that can be searched. On a dev call "You decide." raced three providers and read two pages, $0.03 for nothing.
+test('a hand-back is never searched as it is; a request naming what to search is', async () => {
+  const hosts: string[] = []
+  globalThis.fetch = Object.assign(async (input: Parameters<typeof fetch>[0]) => {
+    const url = String(input instanceof Request ? input.url : input)
+    hosts.push(new URL(url).hostname)
+    if (url.includes('google.serper.dev')) return Response.json({ organic: [{ title: 'Used hybrids in Serbia', link: 'https://example.test/a', snippet: 'Toyota Auris hybrids from 9,000 euros.' }] })
+    return new Response('', { status: 404 })
+  }, { preconnect: originalFetch.preconnect })
+  for (const words of ['You decide.', 'Okay, go ahead.', 'Yes.']) expect(await prefetch(words, 'User: Can you write some python code?', undefined, true)).toBe('')
+  expect(hosts.filter((h) => h === 'google.serper.dev')).toEqual([])
+  expect(await prefetch('Search for used hybrid cars in Serbia', '', undefined, true)).toContain('hybrid')
+  expect(hosts).toContain('google.serper.dev')
+})

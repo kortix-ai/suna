@@ -38,7 +38,7 @@ export function bindSessionStart(projectId: string, sessionId: string) {
       await new Promise((r) => setTimeout(r, Math.min(1_000, remainingMs())));
       started = await P.startProjectSession(projectId, sessionId, Math.min(30_000, remainingMs()));
     }
-    const runtimeSessionId = started?.runtime_session_id ?? started?.opencode_session_id;
+    const runtimeSessionId = started?.runtime_session_id;
     if (!started || started.stage !== 'ready' || !started.sandbox || !runtimeSessionId) {
       throw new ApiError(runtimeNotReadyMessage(started), {
         code: 'RUNTIME_UNAVAILABLE',

@@ -2273,7 +2273,7 @@ flow(
         for (const [suffix, endReason, messageId, endError, agoSeconds] of rows) {
           await db.query(
             `INSERT INTO kortix.session_turns
-               (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id,
+               (turn_token, session_id, sandbox_id, project_id, account_id, runtime_session_id,
                 message_id, state, end_reason, end_error, started_at, ended_at, created_at, updated_at)
              VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, 'ses_root', $6, 'ended', $7, $8::jsonb,
                      now() - ($9 || ' seconds')::interval, now() - ($9 || ' seconds')::interval, now(), now())`,
@@ -2338,7 +2338,7 @@ flow(
       await ctx.step('a requested stop is not an error on last_ended either', async () => {
         await db.query(
           `INSERT INTO kortix.session_turns
-             (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id,
+             (turn_token, session_id, sandbox_id, project_id, account_id, runtime_session_id,
               message_id, state, end_reason, end_error, started_at, ended_at, created_at, updated_at)
            VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, 'ses_root', 'msg_stop_2', 'ended', 'failed',
                    '{"name":"UserStop","message":null}'::jsonb, now(), now(), now(), now())`,
@@ -2407,7 +2407,7 @@ flow(
     const insertEndedTurn = (suffix: string, messageId: string, endError: Record<string, unknown>) =>
       db.query(
         `INSERT INTO kortix.session_turns
-           (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id,
+           (turn_token, session_id, sandbox_id, project_id, account_id, runtime_session_id,
             message_id, state, end_reason, end_error, started_at, ended_at, created_at, updated_at)
          VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, 'ses_root', $6, 'ended', 'failed', $7::jsonb,
                  now() - interval '40 seconds', now() - interval '1 second', now(), now())`,
@@ -2420,7 +2420,7 @@ flow(
           session_id: sessionId,
           kind: 'end',
           status: 'error',
-          opencode_session_id: 'ses_root',
+          runtime_session_id: 'ses_root',
           error_name: 'SandboxMemoryGuard',
           error_message: GUARD_MESSAGE,
           error_retryable: true,

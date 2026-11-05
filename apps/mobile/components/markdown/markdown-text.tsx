@@ -4,7 +4,6 @@
  * so the table and selection-fallback renderers import them without a cycle
  * through the main module).
  */
-import React from 'react';
 import { Platform, Text as RNText, UIManager, type TextProps } from 'react-native';
 import { UITextView } from 'react-native-uitextview';
 
