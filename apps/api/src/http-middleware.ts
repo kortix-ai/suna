@@ -129,6 +129,24 @@ app.use('*', async (c, next) => {
   await next();
 });
 
+// ─── Malformed JSON request bodies ──────────────────────────────────────────
+// `c.req.json()` rejects with a bare SyntaxError on a body that is not JSON, and
+// the error handler answered every route that calls it with a 500. That is a
+// client fault: scope the translation to the body read itself, so a SyntaxError
+// from anywhere else in a handler (an upstream parse) stays a 500.
+app.use('*', async (c, next) => {
+  const readJson = c.req.json.bind(c.req);
+  c.req.json = async () => {
+    try {
+      return await readJson();
+    } catch (err) {
+      if (err instanceof SyntaxError) throw new HTTPException(400, { message: 'Malformed JSON in request body' });
+      throw err;
+    }
+  };
+  await next();
+});
+
 // ─── Request context (AsyncLocalStorage) ────────────────────────────────────
 // Must be FIRST — wraps the entire request lifecycle so all downstream code
 // (auth, route handlers, console.error calls) automatically gets context fields
