@@ -313,6 +313,36 @@ describe('scripts/secrets-envs-separation.py', () => {
     expect(r.out).toMatch(/✗ local +BETTERSTACK_MCP_URL +names a LIVE Stripe key/);
   });
 
+  // KRTX-4108 review item [B]: a user-only DSN (scheme://token@host, no password) is the
+  // shape of BETTERSTACK_API_SENTRY_DSN in the real dev and staging profiles, and its token
+  // alone authenticates against the deployment it points at. The host rule must judge it.
+  it('fails a user-only DSN naming a prod host, and the real SENTRY_DSN shape (KRTX-4108 [B])', () => {
+    const r = run({
+      prod: {},
+      nonProd: nonProd({
+        SUPABASE_TOKEN_URL: 'https://token@api.kortix.com/rest/v1',
+        BETTERSTACK_API_SENTRY_DSN: 'https://2CMsgkD6HwZfDVRaFufTLxaL@supa.kortix.com/1',
+      }),
+    });
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toMatch(/✗ local +SUPABASE_TOKEN_URL +names api\.kortix\.com/);
+    expect(r.out).toMatch(/✗ local +BETTERSTACK_API_SENTRY_DSN +names supa\.kortix\.com/);
+  });
+
+  // The real dev/staging DSN points at the shared Better Stack ingestion host, which is not
+  // the prod apex: a user-only DSN must be judged, not denied for being one.
+  it('keeps a user-only DSN at the shared Better Stack host allowed (KRTX-4108 [B])', () => {
+    const r = run({
+      prod: {},
+      nonProd: nonProd({
+        BETTERSTACK_API_SENTRY_DSN:
+          'https://2CMsgkD6HwZfDVRaFufTLxaL@s2347088.eu-nbg-2.betterstackdata.com/1',
+        DEV_API: 'https://deploy-token@dev-api.kortix.com/v1',
+      }),
+    });
+    expect(r.code, r.out).toBe(0);
+  });
+
   // Strix finding 407a920a: a prod host is any label under the apex, not three literal
   // names, and a client's spelling of the same host does not launder it.
   it('names every label under the prod apex, and keeps dev, staging and internal (KRTX-4108 item 4)', () => {

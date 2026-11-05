@@ -11,10 +11,11 @@ production reach with no KEY/SECRET/TOKEN in the name. So every key in a non-pro
 is compared by VALUE against prod, whether or not prod defines that key. A green run
 proves the comparison happened: an undecrypted profile fails instead of passing.
 
-Only a credential DSN reaches prod: a scheme://user:pass@host value authenticates against
-the deployment it points at. The host value rule fires there and nowhere else. A bare host
-name is not a reach into prod, so CLOUDFLARE_ZONE_NAME=kortix.com, hi@kortix.com and a CORS
-origin list in a dev profile do not fail: the value track still compares them to prod.
+Only a credential DSN reaches prod: a scheme://userinfo@host value (a user:pass pair, or a
+token alone) authenticates against the deployment it points at. The host value rule fires
+there and nowhere else. A bare host name is not a reach into prod, so
+CLOUDFLARE_ZONE_NAME=kortix.com, hi@kortix.com and a CORS origin list in a dev profile do
+not fail: the value track still compares them to prod.
 A bare boolean (true/false) is also exempt: every environment's flag holds the same string
 and no credential can be one.
 """
@@ -26,10 +27,12 @@ ROOT = Path(__file__).resolve().parent.parent
 DX = sys.argv[1] if len(sys.argv) > 1 else "dotenvx"
 PROFILES = [("local", "apps/api/.env"), ("dev", "apps/api/.env.dev"), ("stage", "apps/api/.env.staging")]
 PROD = "apps/api/.env.prod"
-# A credential DSN names its deployment's host: the userinfo carries a password. The scheme
-# is case-insensitive (a POSTGRES:// token is the same credential) and the password may
-# hold any non-space, non-slash character, quotes included.
-DSN_RE = re.compile(r"^[a-z][a-z0-9+.-]*://[^/@\s]*:[^/@\s]+@", re.IGNORECASE)
+# A credential DSN names its deployment's host: the userinfo authenticates, as a password
+# (postgres://user:pw@host) or as a token alone (https://token@host, the shape of
+# BETTERSTACK_API_SENTRY_DSN in the real dev and staging profiles). The scheme is
+# case-insensitive (a POSTGRES:// token is the same credential) and the userinfo may hold
+# any non-space, non-slash, non-@ character, quotes included.
+DSN_RE = re.compile(r"^[a-z][a-z0-9+.-]*://[^/@\s]+@", re.IGNORECASE)
 
 # Every host under the production apex IS the production stack (supa., gateway., prod-fe-ecs.,
 # ...), whatever the label. These are their own environments despite the apex, and a local
@@ -73,11 +76,11 @@ def allowlist() -> dict:
 def prod_origin(value: str) -> str:
     """What in the value reaches prod, or '' — a prod host in a credential DSN, a LIVE Stripe key.
 
-    Only a DSN with credentials (scheme://user:pass@host) carries the deployment it points
-    at: that connection authenticates against the prod database. A bare host name
-    (CLOUDFLARE_ZONE_NAME=kortix.com), a sender address (hi@kortix.com) and an origin
-    list (CORS_ALLOWED_ORIGINS, no user:pass@) name the prod brand, not prod data, and
-    dev legitimately serves them. The host is read the way a URL client reads it, and an
+    Only a DSN with credentials (scheme://userinfo@host, a password or a token alone)
+    carries the deployment it points at: that connection authenticates against the prod
+    database. A bare host name (CLOUDFLARE_ZONE_NAME=kortix.com), a sender address
+    (hi@kortix.com) and an origin list (CORS_ALLOWED_ORIGINS, no userinfo@) name the prod
+    brand, not prod data, and dev legitimately serves them. The host is read the way a URL client reads it, and an
     unknown label under the apex is prod: a new supa.kortix.com fails until it is listed.
     """
     if value.startswith(("sk_live_", "pk_live_")):
