@@ -1,7 +1,16 @@
 'use client';
 
 import type { ProjectSpace, ProjectSpaceMember } from '@kortix/sdk';
-import { qk, useProjectConfig, useProjectSpaceMembers, useProjectTriggers, useUpdateProjectSpace } from '@kortix/sdk/react';
+import {
+  qk,
+  useFeatureFlag,
+  useProjectConfig,
+  useProjectSpaceMembers,
+  useProjectSpaceProactive,
+  useProjectTriggers,
+  useSetProjectSpaceProactive,
+  useUpdateProjectSpace,
+} from '@kortix/sdk/react';
 import { DotsThreeIcon, LightningIcon, LockSimpleIcon, PencilSimpleIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
@@ -24,6 +33,7 @@ import {
 } from '../../primitives/dropdown-menu';
 import Hint from '../../primitives/hint';
 import { Label } from '../../primitives/label';
+import { Switch } from '../../primitives/switch';
 import { errorToast, successToast } from '../../primitives/toast';
 import { UserAvatar } from '../../primitives/user-avatar';
 import { UiLink as Link, useUiViewer } from '../../providers/ui-provider';
@@ -37,7 +47,8 @@ import { agentLabel } from './space-timeline';
 /**
  * A space's details, on the right of the space (flag `chat`), opened from its
  * name in the header: its tile, name and description, then Agents (the
- * default first), People, Tabs and Routines, each with its own "Add". The
+ * default first), People, Tabs and Routines, each with its own "Add", and
+ * Proactive (flag `spaces_proactive`). The
  * rarer settings (make private, leave, archive, member menus) stay in the
  * full settings dialog, one link at the end. Everything here can also be
  * asked for in chat: the hint line says so.
@@ -126,6 +137,7 @@ export function SpaceDetailsPanel({
           </div>
           <TabsSection projectId={projectId} space={space} onOpenTab={onOpenTab} />
           <RoutinesSection projectId={projectId} space={space} />
+          <ProactiveSection projectId={projectId} space={space} />
           {onOpenSettings ? (
             <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={onOpenSettings}>
               {t('allSettings')}
@@ -424,6 +436,77 @@ function RoutinesSection({ projectId, space }: { projectId: string; space: Proje
       ))}
       {privateChannel && routines.length === 0 ? (
         <li className="text-muted-foreground px-2 py-1 text-xs text-pretty">{t('routinesPrivate')}</li>
+      ) : null}
+    </Section>
+  );
+}
+
+/** The browser's IANA zone, for the daily brief; UTC when it has none. */
+function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/** One switch row: the name, a muted line under it, the switch at the end. */
+function SwitchRow({
+  label,
+  hint,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <li className="flex min-h-9 items-center gap-2.5 px-2 py-1">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm">{label}</p>
+        <p className="text-muted-foreground text-xs text-pretty">{hint}</p>
+      </div>
+      <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} aria-label={label} className="shrink-0" />
+    </li>
+  );
+}
+
+/**
+ * Proactive (flag `spaces_proactive`): the space's watcher reads what happens
+ * here and writes only when it matters; the daily brief adds one summary at
+ * 9:00. Only the space's creator, a project manager or the DM's owner may
+ * change them (`can_edit`); everyone else sees the state.
+ */
+function ProactiveSection({ projectId, space }: { projectId: string; space: ProjectSpace }) {
+  const t = useTranslations('spaces.panel');
+  const flag = useFeatureFlag(projectId, 'spaces_proactive');
+  const settings = useProjectSpaceProactive(projectId, space.space_id, { enabled: flag.enabled });
+  const update = useSetProjectSpaceProactive(projectId, space.space_id);
+  if (!flag.enabled || !settings.data) return null;
+  const { enabled, daily_brief: dailyBrief, can_edit: canEdit } = settings.data;
+  const save = (input: Parameters<typeof update.mutate>[0]) =>
+    update.mutate(input, { onError: () => errorToast(t('proactiveFailed')) });
+  return (
+    <Section title={t('proactive')}>
+      <SwitchRow
+        label={t('proactiveWatch')}
+        hint={t('proactiveWatchHint')}
+        checked={enabled}
+        disabled={!canEdit || update.isPending}
+        onChange={(next) => save({ enabled: next })}
+      />
+      {enabled ? (
+        <SwitchRow
+          label={t('proactiveBrief')}
+          hint={t('proactiveBriefHint')}
+          checked={dailyBrief}
+          disabled={!canEdit || update.isPending}
+          onChange={(next) => save(next ? { daily_brief: true, brief_timezone: browserTimeZone() } : { daily_brief: false })}
+        />
       ) : null}
     </Section>
   );

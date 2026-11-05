@@ -54,6 +54,7 @@ const WORKERS: Record<string, string> = {
   'approval-expiry': 'worker/jobs/approval-expiry.ts',
   'oauth-sweep': 'worker/jobs/oauth-sweep.ts',
   'session-model-fallback': 'worker/jobs/session-model-fallback.ts',
+  'space-watcher': 'worker/jobs/space-watcher.ts',
   'session-lifecycle': 'projects/session-lifecycle/drain.ts',
   'tunnel-cleanup': 'worker/jobs/tunnel-cleanup.ts',
   'tunnel-forward-expiry': 'worker/jobs/tunnel-forward-expiry.ts',

@@ -664,6 +664,10 @@ export async function onPeerTurnEnded(sessionId: string, outcome: 'idle' | 'erro
     void import('../../memory/thread-files')
       .then(({ recordThreadReply }) => recordThreadReply(sessionId, lastTurnAnswer))
       .catch(() => undefined);
+    // The space watcher (`spaces_proactive`): a watched thread's turn as a feed line, or the watcher's own decision.
+    void import('../lib/space-watch/act')
+      .then(({ onSpaceSessionTurnEnded }) => onSpaceSessionTurnEnded(sessionId))
+      .catch(() => undefined);
   }
   try {
     const excerpt = outcome === 'idle' ? await recordResultExcerpt(sessionId) : null;

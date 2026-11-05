@@ -2347,6 +2347,19 @@ describe('pi subagents extension', () => {
     }
   })
 
+  test('a space watcher (kortix.watcher) has no tools and answers under the watcher prompt', async () => {
+    const r = await boot({
+      script: [{ text: '{"action":"quiet","why":"nothing new"}' }],
+      env: { KORTIX_SESSION_CONTEXT: JSON.stringify({ 'kortix.watcher': true }) },
+    })
+    expect(await toolIds(r)).toEqual([])
+    const sentBefore = gateway.sent.length
+    await promptAndSettle(r, '## Space watch: #launch')
+    const systems = gateway.sent.slice(sentBefore).map(systemSent)
+    expect(systems.length).toBeGreaterThan(0)
+    expect(systems.every((system) => system.startsWith("You are Kortix, the watcher of one space"))).toBe(true)
+  })
+
   test("a router's prompt body thread_files end every worker prompt with the Context files block, kept across a notice turn", async () => {
     const creates: Array<Record<string, any>> = []
     const server = Bun.serve({

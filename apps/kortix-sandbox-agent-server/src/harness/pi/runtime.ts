@@ -40,6 +40,7 @@ import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './e
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import { SUBAGENT_SPEC_REQUIRED, TASK_STOP_TOOL, type KortixHost, type SpawnSessionInput, type SpawnSessionResult } from './extensions/subagents'
 import { FRONT_AGENTS_TTL_MS, FRONT_PROMPT, FRONT_TOOLS, FRONT_WORKER_NOTE, fetchFrontAgents, frontAgentsSection, frontThreadFilesFrom, type FrontAgent, type FrontThreadFiles } from './front'
+import { WATCHER_PROMPT } from './watcher'
 import { frontSpaceAgentsFrom, frontSpaceRoster, frontSpaceRosterSection } from './front-space'
 import { cloudChildReport, cloudChildToolDetails, cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import type { ControlPlane } from './extensions/control-plane'
@@ -2066,6 +2067,8 @@ export class PiRuntime {
   private rootToolAllowed(name: string): boolean {
     // A router does quick work with its agent's own tools and always keeps its hand-off tools (front.ts).
     if (this.subagentContext.front && FRONT_TOOLS.includes(name)) return true
+    // A space's watcher has none: the API carries out its decision (watcher.ts).
+    if (this.subagentContext.watcher) return false
     // A workflow runs `agent` calls, and the multi-agent tools talk to the sessions it starts: they follow the
     // agent tool's grant, unless the agent's `tools` names them.
     if (DELEGATION_TOOLS.includes(name) && !Object.hasOwn(this.compiledAgent()?.tools ?? {}, name)) {
@@ -2511,6 +2514,7 @@ export class PiRuntime {
   private systemPrompt(
     child?: { base: string; tools: AgentTool<any, any>[]; policy: PermissionPolicy; interactive: false; codemode?: CodemodeMode },
   ): string {
+    if (!child && this.subagentContext.watcher) return WATCHER_PROMPT
     // A router's own prompt leads; its agent's instructions, skills and capabilities follow, since it now works too.
     const front = !child && this.subagentContext.front
     const parts = [front ? FRONT_PROMPT : child?.base || this.compiledAgent()?.prompt?.trim() || DEFAULT_SYSTEM_PROMPT]

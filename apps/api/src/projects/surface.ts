@@ -29,6 +29,7 @@ export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert'
 export { chatThreadBoardTurn } from './lib/chat-threads';
 export { sessionWhereTurn } from './lib/session-where';
 export { notifyMessageMentions } from './lib/space-posts';
+export { runSpaceWatcherTick } from './lib/space-watch/wake';
 export { sessionSpaceAgents } from './lib/front-thread';
 
 // A person's pins and archive (consumed by account erasure and offboarding).

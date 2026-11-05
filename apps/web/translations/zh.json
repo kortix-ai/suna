@@ -1347,6 +1347,10 @@
         "chat_front": {
           "name": "Spaces-Router",
           "description": "开启 Spaces 后，你在话题中对话的智能体是一个路由器：快速的工作它自己完成（一个回答、一段短文、查看话题文件），较长的工作交给空间的智能体。它像人一样用简短消息回复。智能体把完整结果保存为话题中的文件，路由器链接该文件，而不是重新输入。消息下方的“查看工作”会打开背后的工作。需要在 kortix.yaml 中开启 My Kortix。"
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "开启空间后，空间可以自己留意动态：在空间详情中打开“主动”，一个智能体会阅读这里发生的事（完成的话题、未回答的问题、新加入的人），只在重要时在聊天中发言：值得分享的结果、需要你做的决定或逾期事项。它也可以开启一个话题来完成工作。可选每天 9:00 的简报。"
         }
       },
       "channelsSwitch": {
@@ -25954,6 +25958,12 @@
       "routines": "例行任务",
       "addRoutine": "添加例行任务",
       "routinesPrivate": "私密空间暂不支持例行任务。",
+      "proactive": "主动",
+      "proactiveWatch": "留意这个空间",
+      "proactiveWatchHint": "智能体会阅读这里发生的事，只在重要时发言。",
+      "proactiveBrief": "每日简报",
+      "proactiveBriefHint": "有新动态的日子在 9:00 发送简短总结。",
+      "proactiveFailed": "设置未保存，请重试。",
       "allSettings": "所有设置",
       "askHint": "你也可以在聊天中直接说：“在这里添加一个智能体”、“把发布文档固定为标签页”。",
       "noAgentsToAdd": "项目的所有智能体都已在此空间中。"

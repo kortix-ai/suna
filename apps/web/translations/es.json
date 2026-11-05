@@ -1347,6 +1347,10 @@
         "chat_front": {
           "name": "Spaces-Router",
           "description": "Con Spaces activado, el agente con el que hablas en un hilo es un enrutador: hace él mismo el trabajo rápido (una respuesta, un texto corto, mirar los archivos del hilo) y pasa el trabajo largo a los agentes del espacio. Responde como una persona, en mensajes cortos. Un agente guarda su resultado completo como archivo en el hilo, y el enrutador enlaza ese archivo en vez de reescribirlo. «Ver trabajo» bajo un mensaje abre el trabajo detrás. Requiere My Kortix activado en kortix.yaml."
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "Con Espacios activado, un espacio puede vigilarse a sí mismo: activa Proactivo en sus detalles y un agente lee lo que pasa ahí (hilos terminados, preguntas sin responder, personas que se unen) y escribe en el chat solo cuando importa: un resultado que vale la pena compartir, una decisión que debes tomar o algo atrasado. También puede iniciar un hilo que haga el trabajo. Resumen diario opcional a las 9:00."
         }
       },
       "channelsSwitch": {
@@ -25954,6 +25958,12 @@
       "routines": "Rutinas",
       "addRoutine": "Añadir rutina",
       "routinesPrivate": "Un espacio privado aún no admite rutinas.",
+      "proactive": "Proactivo",
+      "proactiveWatch": "Vigilar este espacio",
+      "proactiveWatchHint": "Un agente lee lo que pasa aquí y escribe solo cuando importa.",
+      "proactiveBrief": "Resumen diario",
+      "proactiveBriefHint": "Un resumen breve a las 9:00 los días con novedades.",
+      "proactiveFailed": "No se guardó el ajuste. Inténtalo de nuevo.",
       "allSettings": "Todos los ajustes",
       "askHint": "También puedes pedirlo en el chat: «añade un agente aquí», «fija el documento del lanzamiento como pestaña».",
       "noAgentsToAdd": "Todos los agentes del proyecto ya están en este espacio."

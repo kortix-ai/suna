@@ -1347,6 +1347,10 @@
         "chat_front": {
           "name": "Spaces-Router",
           "description": "Када су Spaces укључени, агент са којим разговараш у нити је рутер: брзе послове ради сам (одговор, кратак текст, поглед у фајлове нити), а дуже послове предаје агентима простора. Одговара као особа, кратким порукама. Агент чува цео резултат као фајл у нити, а рутер линкује тај фајл уместо да га преписује. „Прикажи рад“ испод поруке отвара рад иза ње. Потребан је укључен My Kortix у kortix.yaml."
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "Kada su Prostori uključeni, prostor može sam sebe da prati: uključite Proaktivno u njegovim detaljima, i agent čita šta se tu dešava (završene niti, otvorena pitanja, ljudi koji se pridruže) i piše u čet samo kada je važno: rezultat vredan deljenja, odluka koju treba da donesete ili nešto što kasni. Može i da pokrene nit koja obavlja posao. Opcioni dnevni pregled u 9:00."
         }
       },
       "channelsSwitch": {
@@ -25954,6 +25958,12 @@
       "routines": "Рутине",
       "addRoutine": "Додај рутину",
       "routinesPrivate": "Приватни простор још не прима рутине.",
+      "proactive": "Proaktivno",
+      "proactiveWatch": "Prati ovaj prostor",
+      "proactiveWatchHint": "Agent čita šta se ovde dešava i piše samo kada je važno.",
+      "proactiveBrief": "Dnevni pregled",
+      "proactiveBriefHint": "Kratak pregled u 9:00 danima kada ima novosti.",
+      "proactiveFailed": "Podešavanje nije sačuvano. Pokušajte ponovo.",
       "allSettings": "Сва подешавања",
       "askHint": "Можеш и да питаш у ћаскању: „додај агента овде“, „закачи документ за лансирање као картицу“.",
       "noAgentsToAdd": "Сви агенти пројекта су већ у овом простору."
