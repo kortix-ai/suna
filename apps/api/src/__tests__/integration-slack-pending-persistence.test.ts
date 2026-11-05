@@ -28,8 +28,8 @@ test('auth and picker persist exact payloads, ownership and independent TTLs; ne
   expect(rows).toHaveLength(2);
   const auth = rows.find(row => row.pendingId === authId);
   const picker = rows.find(row => row.pendingId === pickerId);
-  expect(auth).toMatchObject({ projectId, platform: 'slack', workspaceId: teamId, platformUserId: 'auth-user', envelope, event });
-  expect(picker).toMatchObject({ projectId: null, platform: 'slack', workspaceId: teamId, platformUserId: 'synthetic-user', envelope, event });
+  expect(auth).toMatchObject({ projectId, platform: 'slack', platformTeamId: teamId, platformUserId: 'auth-user', envelope, event });
+  expect(picker).toMatchObject({ projectId: null, platform: 'slack', platformTeamId: teamId, platformUserId: 'synthetic-user', envelope, event });
   expect(auth?.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 600_000);
   expect(picker?.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 120_000);
   const expiredId = await createPendingSlackPickerMessage({ teamId, envelope, ttlMs: -1 });
