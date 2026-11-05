@@ -523,6 +523,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/apps/:appId/token': { action: 'app.token.mint', title: 'Minted Kortix App sign-in token' },
   'GET /v1/projects/:projectId/apps/:appId/events': { action: 'app.event.list', title: 'Viewed Kortix App events' },
   'POST /v1/projects/:projectId/apps/:appId/events': { action: 'app.event.emit', title: 'Kortix App emitted events' },
+  'POST /v1/projects/:projectId/apps/:appId/events/test': { action: 'app.event.test', title: 'Sent a Kortix App test event' },
   'GET /v1/projects/:projectId/apps/:appId/events/credentials': { action: 'app.event_credentials.read', title: 'Read Kortix App event credentials' },
   'POST /v1/projects/:projectId/apps/:appId/runs': { action: 'app.run.create', title: 'Kortix App scheduled a run' },
   'DELETE /v1/projects/:projectId/apps/:appId/runs/:runId': { action: 'app.run.cancel', title: 'Kortix App cancelled a run' },
