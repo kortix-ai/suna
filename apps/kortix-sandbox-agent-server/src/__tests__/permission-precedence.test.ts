@@ -75,6 +75,40 @@ describe('bashCommands reads heredocs and comments', () => {
     expect(resolvePolicyRule(compilePermissionPolicy({ bash: { '*': 'allow', 'rm *': 'deny' } }), 'bash', { command: line }, '/workspace')).toBe('deny')
   })
 
+  // Quote removal joins the delimiter word (`<<'E'OF` is `EOF`). A word the
+  // parser does not read whole is not a heredoc: its lines stay commands
+  // (Strix, PR #11850).
+  test.each([
+    ["<<'E'OF", "cat <<'E'OF\nnotes\nEOF\nrm ./victim\nE"],
+    ['<<"E"OF', 'cat <<"E"OF\nnotes\nEOF\nrm ./victim\nE'],
+    ['<<E\\OF', 'cat <<E\\OF\nnotes\nEOF\nrm ./victim\nE'],
+    ['<<E"OF"', 'cat <<E"OF"\nnotes\nEOF\nrm ./victim\nE'],
+  ])('a split delimiter %s does not hide the commands after it', (_name, line) => {
+    expect(resolvePolicyRule(compilePermissionPolicy({ bash: { '*': 'allow', 'rm *': 'deny' } }), 'bash', { command: line }, '/workspace')).toBe('deny')
+  })
+
+  // Any program can run its stdin, so a body is data only when every command
+  // on its line is a known data reader; anything else keeps its lines as commands.
+  test.each([
+    ['$SHELL', "$SHELL <<'EOF'\nrm -rf /\nEOF"],
+    ['a function defined on the line', "f(){ sh; }; f <<'EOF'\nrm -rf /\nEOF"],
+    ['a script', "./run.sh <<'EOF'\nrm -rf /\nEOF"],
+    ['sudo cat (a wrapper)', "sudo cat <<'EOF'\nrm -rf /\nEOF"],
+    ['an escaped space before # (not a comment)', 'echo a\\ #; rm -rf /'],
+    ['$((1<<2)) is no heredoc', 'echo $((1<<2))\nrm -rf /\n2'],
+  ])('%s does not hide rm from a deny', (_name, line) => {
+    expect(resolvePolicyRule(compilePermissionPolicy({ bash: { '*': 'allow', 'rm *': 'deny' } }), 'bash', { command: line }, '/workspace')).toBe('deny')
+  })
+
+  test.each([
+    ['cat > "$OUT"', `cat > "$OUT" <<'EOF'\nit's\nEOF`],
+    ['A=1 tee', "A=1 tee notes.md <<'EOF'\nit's\nEOF"],
+    ['gh pr create --body-file -', "gh pr create --body-file - <<'EOF'\nit's done\nEOF"],
+    ['git commit -F -', "git commit -F - <<'EOF'\ndon't\nEOF"],
+  ])('a data reader (%s) keeps its body as data', (_name, line) => {
+    expect(resolvePolicyRule(compilePermissionPolicy({ bash: { '*': 'allow', 'rm *': 'deny' } }), 'bash', { command: line }, '/workspace')).toBe('allow')
+  })
+
   test.each([
     ['a heredoc with no delimiter line', "cat <<'EOF'\nit's"],
     ['an unbalanced quote', "echo 'it"],

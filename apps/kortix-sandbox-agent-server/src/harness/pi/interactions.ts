@@ -131,22 +131,29 @@ function heredocBodiesEnd(line: string, from: number, heredocs: Heredoc[]): numb
   return at - 1
 }
 
-/** Commands that run their stdin as a program, or send it to one (`ssh`, `source /dev/stdin`). */
-const STDIN_INTERPRETERS = new Set([
-  'sh', 'bash', 'zsh', 'dash', 'ksh', 'mksh', 'ash', 'busybox', 'csh', 'tcsh', 'fish', 'ssh', 'su', 'source', '.',
-  'python', 'pypy', 'perl', 'ruby', 'node', 'nodejs', 'deno', 'bun', 'php', 'lua', 'tclsh', 'awk', 'gawk', 'mawk', 'nawk',
+/**
+ * Commands that read stdin as data. Any other program can run its stdin
+ * (`sh`, `$SHELL`, `./run.sh`, `sudo …`), so only these make a heredoc body
+ * data. `sed`, `awk`, `psql` and `mysql` are left out: their stdin can run a
+ * shell command.
+ */
+const STDIN_DATA_READERS = new Set([
+  'cat', 'tee', 'grep', 'egrep', 'fgrep', 'rg', 'head', 'tail', 'wc', 'sort', 'uniq', 'tr', 'cut', 'jq', 'yq',
+  'base64', 'gh', 'git', 'diff', 'cmp', 'comm', 'column', 'envsubst', 'read', 'mapfile', 'readarray', 'fmt', 'fold',
+  'nl', 'paste', 'xxd', 'od', 'gzip', 'md5sum', 'sha256sum', 'curl',
 ])
 
 /**
- * Whether a heredoc's line names a command that runs the body: the command
- * that declares it (`sh`, `sudo bash -s`, `/usr/bin/python3.12`) or one it is
- * piped to (`cat <<'EOF' | bash`). Word based, so it errs towards reading a
- * body as commands.
+ * Whether a heredoc's line may run the body: some command on it (the one
+ * that declares the heredoc, or one it is piped to) is not a data reader.
+ * Leading `NAME=value` assignments are skipped. Word based, so a quoted `|`
+ * reads as a new command: it errs towards reading a body as commands.
  */
 function readsStdinAsCode(text: string): boolean {
-  return text
-    .split(/[\s;|&()<>]+/)
-    .some((word) => !!word && !/^['"$]/.test(word) && STDIN_INTERPRETERS.has(word.split('/').pop()!.replace(/[\d.]+$/, '') || word))
+  return text.split(/[;&|()]+/).some((segment) => {
+    const words = segment.trim().replace(RESERVED_PREFIX, '').split(/\s+/).filter((word) => word && !/^\w+=/.test(word))
+    return words.length > 0 && !STDIN_DATA_READERS.has(words[0]!)
+  })
 }
 
 const RESERVED_PREFIX = /^(?:(?:if|then|elif|else|do|while|until|time|!|\{)\s+)+/
@@ -158,9 +165,9 @@ const RESERVED_ALONE = new Set(['fi', 'done', 'esac', '}'])
  * `|&` too), and every `$(…)`, `` `…` ``, `<(…)`, `>(…)` and `( … )` body is
  * read as commands of its own. A command keeps its substitutions' text.
  * A `#` comment is skipped. A heredoc body is data and is skipped, except an
- * unquoted one that runs `$(…)` or `` `…` `` (bash expands those) and one on
- * the stdin of an interpreter (`sh <<EOF`, `cat <<EOF | bash`): those bodies
- * are read as commands. `null` when the quotes or brackets do not balance.
+ * unquoted one that runs `$(…)` or `` `…` `` (bash expands those) and one
+ * whose line has a command that is not a data reader (`sh <<EOF`,
+ * `cat <<EOF | bash`): those bodies are read as commands. `null` when the quotes or brackets do not balance.
  * ponytail: not a bash grammar — `case` arms read as unbalanced or as extra
  * commands, so they fail closed. Use tree-sitter-bash when a manifest needs
  * them exact.
@@ -173,6 +180,8 @@ export function bashCommands(line: string): string[] | null {
     let quote = ''
     let heredocs: Heredoc[] = []
     let lineStart = start
+    // The index of the last backslash-escaped character: `a\ #b` is one word, not a comment.
+    let escaped = -1
     const flush = () => {
       const command = piece.trim().replace(RESERVED_PREFIX, '')
       // A `( … )` group is not a command: its body was read on its own.
@@ -191,6 +200,7 @@ export function bashCommands(line: string): string[] | null {
       if (ch === '\\') {
         piece += line.slice(i, i + 2)
         i += 2
+        escaped = i - 1
         continue
       }
       if (ch === '"' || (ch === "'" && !quote)) {
@@ -211,13 +221,15 @@ export function bashCommands(line: string): string[] | null {
         continue
       }
       if (!quote && ch === ')') return -1
-      if (!quote && ch === '#' && (i === start || /[\s;&|(]/.test(line[i - 1]!))) {
+      if (!quote && ch === '#' && (i === start || (/[\s;&|(]/.test(line[i - 1]!) && escaped !== i - 1))) {
         const end = line.indexOf('\n', i)
         i = end < 0 ? line.length : end
         continue
       }
       const heredoc = !quote && ch === '<' ? HEREDOC.exec(line.slice(i)) : null
-      if (heredoc && line[i - 1] !== '<') {
+      // Quote removal joins a delimiter word (`<<'E'OF` is `EOF`): a word read
+      // only in part is no heredoc, and its lines stay commands.
+      if (heredoc && line[i - 1] !== '<' && !/[^\s;&|()<>]/.test(line[i + heredoc[0].length] ?? '')) {
         heredocs.push({ delimiter: heredoc[2] ?? heredoc[3] ?? heredoc[5]!, tabs: heredoc[1] === '-', quoted: !heredoc[5] || !!heredoc[4] })
         piece += heredoc[0]
         i += heredoc[0].length
