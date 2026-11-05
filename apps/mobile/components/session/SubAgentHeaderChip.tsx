@@ -15,7 +15,6 @@
  * 32pt pill, and a Button takes no size classes. `hitSlop` keeps the target
  * 44pt.
  */
-import * as React from 'react';
 import { View } from 'react-native';
 
 import { PressableSurface } from '@/components/kortix/pressable-surface';

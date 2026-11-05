@@ -39,8 +39,7 @@ import Reanimated, {
   useReducedMotion,
   useSharedValue,
   withTiming,
-  interpolate,
-} from 'react-native-reanimated';
+  } from 'react-native-reanimated';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';

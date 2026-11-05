@@ -2,8 +2,7 @@ import Purchases, {
   PurchasesOffering,
   PurchasesPackage,
   CustomerInfo,
-  PurchasesStoreProduct,
-} from 'react-native-purchases';
+  } from 'react-native-purchases';
 import RevenueCatUI from 'react-native-purchases-ui';
 import { Platform } from 'react-native';
 import { log } from '@/lib/logger';

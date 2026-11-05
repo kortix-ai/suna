@@ -19,13 +19,8 @@ import { Text } from '@/components/ui/text';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useTone } from '@/lib/utils/tone';
 import {
-  CheckCircleIcon,
-  DotsThreeCircleIcon,
-  CircleIcon,
   ListChecksIcon,
-  XCircleIcon,
-  type AppIcon,
-} from '@/lib/icons';
+  } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import { selectTodos, todoProgress } from '@/lib/session/tools/agents-todo';
 import { webSpace } from '@/lib/session/user-message';
@@ -37,7 +32,7 @@ import {
   partStreamingInput,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
-import { FONT_MEDIUM, TURN_TYPE, fg, muted, useTurnPalette } from '../shared/styles';
+import { FONT_MEDIUM, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import { TodoStatusIcon } from '../shared/todo-helpers';
 import type { ToolProps } from '../shared/types';
 

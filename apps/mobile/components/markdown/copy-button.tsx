@@ -1,5 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable } from 'react-native';
 import Animated, { Easing, Keyframe, LayoutAnimationConfig } from 'react-native-reanimated';
 
