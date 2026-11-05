@@ -26621,6 +26621,13 @@
       "deleteLoginDescription": "Deletes your Kortix login. You belong to no workspace, so nothing else is deleted.",
       "deleteLoginTitle": "Delete your login?",
       "deleteLoginWarning": "This deletes your login right away. This cannot be undone."
+    },
+    "capture": {
+      "noWorkspaceTitle": "Create or join a workspace first.",
+      "noWorkspaceBody": "Kortix Capture records into a workspace. Then open this sign-in again.",
+      "openChooser": "Create or join a workspace",
+      "workspaceLabel": "Workspace",
+      "noCaptureWorkspace": "None of your workspaces has Kortix Capture on. An owner or admin can turn it on."
     }
   }
 }

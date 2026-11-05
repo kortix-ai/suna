@@ -173,7 +173,7 @@ export function WorkspaceMenuSection({
               <DropdownMenuItem asChild className="cursor-pointer px-1.5" size="sm">
                 <Link href={captureHref(activeAccountId, 'devices')}>
                   <MonitorPlayIcon className="size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{tCapture('open')}</span>
+                  <span className="min-w-0 flex-1 truncate">{tCapture('title')}</span>
                 </Link>
               </DropdownMenuItem>
             ) : null}

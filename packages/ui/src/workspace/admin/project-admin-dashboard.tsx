@@ -38,7 +38,8 @@ import { type Icon } from '@phosphor-icons/react';
 
 import { getProject } from '@kortix/sdk';
 import type { AccountSection } from '../../internal/account-hub/sections';
-import { contract, invalidatePermissionProbes, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, invalidatePermissionProbes, qk, useCaptureWorkspace, useFeatureFlag } from '@kortix/sdk/react';
+import { captureHref } from '../../internal/capture/use-capture-area';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
 import { Button } from '../../primitives/button';
@@ -105,6 +106,7 @@ import {
   QuestionIcon,
   CreditCardIcon,
   CoinsIcon,
+  MonitorPlayIcon,
 } from '@phosphor-icons/react';
 
 export { buildProjectAdminNav } from './project-admin-nav';
@@ -236,7 +238,10 @@ const SETTINGS_PAGES: Record<ProjectAdminSettingsKey, SectionPage> = {
 };
 
 interface RailRow {
-  key: ProjectAdminSectionKey;
+  /** `capture` is a link out to the workspace's Kortix Capture area. */
+  key: ProjectAdminSectionKey | 'capture';
+  /** Where the row goes when it is not a section of this page. */
+  href?: string;
   label: string;
   icon: Icon;
   /** The project pane of this section is open to the caller. */
@@ -304,6 +309,12 @@ export function ProjectAdminDashboard({
     !!accountId && (accountsQuery.data ?? []).some((account) => account.account_id === accountId);
   const hub = useAccountHubAccess(isAccountMember ? accountId : undefined);
   const accountPane = hostSections.account;
+  // Kortix Capture is per workspace (its tenant is the account). The row
+  // follows the rule the switcher's Capture link follows: Capture is on for
+  // this workspace, for a member of its account.
+  const tCapture = useI18nTranslations('capture.account');
+  const capture = useCaptureWorkspace(isAccountMember ? (accountId ?? null) : null);
+  const captureOn = isAccountMember && capture.data?.enabled === true;
 
   // The Customize rule for each library, without its flag clauses: a flag-off
   // Loops page explains its own gate (`FeatureGateScreen`) instead of
@@ -374,10 +385,20 @@ export function ProjectAdminDashboard({
       if (!projectOpen && !account) return null;
       return { key, label: setting.label, icon: setting.icon, project: projectOpen, account };
     };
-    return WORKSPACE_SETTINGS_GROUPS.map((group) => ({
-      id: group.id,
-      rows: group.sections.map(rowFor).filter((row): row is RailRow => row !== null),
-    })).filter((group) => group.rows.length > 0);
+    return WORKSPACE_SETTINGS_GROUPS.map((group) => {
+      const rows = group.sections.map(rowFor).filter((row): row is RailRow => row !== null);
+      if (group.id === 'workspace' && captureOn && accountId) {
+        rows.push({
+          key: 'capture',
+          href: captureHref(accountId, 'devices'),
+          label: tCapture('title'),
+          icon: MonitorPlayIcon,
+          project: false,
+          account: false,
+        });
+      }
+      return { id: group.id, rows };
+    }).filter((group) => group.rows.length > 0);
   }, [
     allowedTabs,
     accountPane,
@@ -391,9 +412,15 @@ export function ProjectAdminDashboard({
     tI18nComplete,
     tAdmin,
     tSettings,
+    captureOn,
+    accountId,
+    tCapture,
   ]);
 
-  const rows = groups.flatMap((group) => group.rows);
+  // The sections of this page; a link-out row (Capture) is never active.
+  const rows = groups.flatMap((group) => group.rows).filter(
+    (row): row is RailRow & { key: ProjectAdminSectionKey } => row.key !== 'capture',
+  );
 
   // A section named in the URL but not listed for this caller falls back to
   // General, else the first listed row, so a stale link lands on a real pane.
@@ -486,7 +513,7 @@ export function ProjectAdminDashboard({
                 <div className="flex w-fit items-center gap-2">
                   <Tabs value={active} className="w-fit">
                     <TabsList orientation="horizontal" className="w-fit">
-                      {rows.map((row) => (
+                      {groups.flatMap((group) => group.rows).map((row) => (
                         <RailTrigger key={row.key} projectId={projectId} row={row} horizontal />
                       ))}
                     </TabsList>
@@ -595,7 +622,7 @@ function RailTrigger({
       size={horizontal ? undefined : 'md'}
       className={horizontal ? RAIL_HORIZONTAL_ROW_CLASS : RAIL_ROW_CLASS}
     >
-      <Link href={projectAdminHref(projectId, row.key)} prefetch>
+      <Link href={row.href ?? projectAdminHref(projectId, row.key as ProjectAdminSectionKey)} prefetch>
         <Glyph className="size-4 shrink-0" />
         <span className={cn(!horizontal && 'truncate')}>{row.label}</span>
       </Link>

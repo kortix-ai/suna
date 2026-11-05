@@ -25957,6 +25957,13 @@
       "deleteLoginDescription": "Briše vašu Kortix prijavu. Ne pripadate nijednom radnom prostoru, pa se ništa drugo ne briše.",
       "deleteLoginTitle": "Obrisati vašu prijavu?",
       "deleteLoginWarning": "Vaša prijava se odmah briše. Ovo se ne može poništiti."
+    },
+    "capture": {
+      "noWorkspaceTitle": "Prvo napravite radni prostor ili mu se pridružite.",
+      "noWorkspaceBody": "Kortix Capture snima u radni prostor. Zatim ponovo otvorite ovu prijavu.",
+      "openChooser": "Napravi radni prostor ili mu se pridruži",
+      "workspaceLabel": "Radni prostor",
+      "noCaptureWorkspace": "Kortix Capture nije uključen ni u jednom vašem radnom prostoru. Vlasnik ili administrator može da ga uključi."
     }
   }
 }

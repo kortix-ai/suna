@@ -25957,6 +25957,13 @@
       "deleteLoginDescription": "Kortix のログインを削除します。どのワークスペースにも属していないため、他には何も削除されません。",
       "deleteLoginTitle": "ログインを削除しますか？",
       "deleteLoginWarning": "ログインはすぐに削除されます。元に戻すことはできません。"
+    },
+    "capture": {
+      "noWorkspaceTitle": "まずワークスペースを作成するか、参加してください。",
+      "noWorkspaceBody": "Kortix Capture はワークスペースに記録します。その後、このサインインをもう一度開いてください。",
+      "openChooser": "ワークスペースを作成または参加",
+      "workspaceLabel": "ワークスペース",
+      "noCaptureWorkspace": "どのワークスペースでも Kortix Capture はオフです。オーナーまたは管理者がオンにできます。"
     }
   }
 }

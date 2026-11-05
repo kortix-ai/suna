@@ -25957,6 +25957,13 @@
       "deleteLoginDescription": "Elimina tu inicio de sesión de Kortix. No perteneces a ningún espacio de trabajo, así que no se elimina nada más.",
       "deleteLoginTitle": "¿Eliminar tu inicio de sesión?",
       "deleteLoginWarning": "Tu inicio de sesión se elimina de inmediato. No se puede deshacer."
+    },
+    "capture": {
+      "noWorkspaceTitle": "Primero crea un espacio de trabajo o únete a uno.",
+      "noWorkspaceBody": "Kortix Capture graba en un espacio de trabajo. Después vuelve a abrir este inicio de sesión.",
+      "openChooser": "Crear o unirse a un espacio de trabajo",
+      "workspaceLabel": "Espacio de trabajo",
+      "noCaptureWorkspace": "Ninguno de tus espacios de trabajo tiene Kortix Capture activado. Un propietario o administrador puede activarlo."
     }
   }
 }

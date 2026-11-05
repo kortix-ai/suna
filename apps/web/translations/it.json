@@ -25957,6 +25957,13 @@
       "deleteLoginDescription": "Elimina il tuo accesso a Kortix. Non appartieni a nessun workspace, quindi non viene eliminato nient'altro.",
       "deleteLoginTitle": "Eliminare il tuo accesso?",
       "deleteLoginWarning": "Il tuo accesso viene eliminato subito. Non si può annullare."
+    },
+    "capture": {
+      "noWorkspaceTitle": "Prima crea un workspace o unisciti a uno.",
+      "noWorkspaceBody": "Kortix Capture registra in un workspace. Poi riapri questo accesso.",
+      "openChooser": "Crea o unisciti a un workspace",
+      "workspaceLabel": "Workspace",
+      "noCaptureWorkspace": "Kortix Capture non è attivo in nessuno dei tuoi workspace. Un proprietario o un amministratore può attivarlo."
     }
   }
 }

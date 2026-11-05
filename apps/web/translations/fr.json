@@ -25957,6 +25957,13 @@
       "deleteLoginDescription": "Supprime votre connexion Kortix. Vous n'appartenez à aucun espace de travail : rien d'autre n'est supprimé.",
       "deleteLoginTitle": "Supprimer votre connexion ?",
       "deleteLoginWarning": "Votre connexion est supprimée immédiatement. Cette action est irréversible."
+    },
+    "capture": {
+      "noWorkspaceTitle": "Créez ou rejoignez d'abord un espace de travail.",
+      "noWorkspaceBody": "Kortix Capture enregistre dans un espace de travail. Rouvrez ensuite cette connexion.",
+      "openChooser": "Créer ou rejoindre un espace de travail",
+      "workspaceLabel": "Espace de travail",
+      "noCaptureWorkspace": "Kortix Capture n'est activé dans aucun de vos espaces de travail. Un propriétaire ou un administrateur peut l'activer."
     }
   }
 }

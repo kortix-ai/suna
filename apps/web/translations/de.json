@@ -25957,6 +25957,13 @@
       "deleteLoginDescription": "Löscht deinen Kortix-Login. Du gehörst zu keinem Workspace, daher wird nichts anderes gelöscht.",
       "deleteLoginTitle": "Login löschen?",
       "deleteLoginWarning": "Dein Login wird sofort gelöscht. Das kann nicht rückgängig gemacht werden."
+    },
+    "capture": {
+      "noWorkspaceTitle": "Erstelle zuerst einen Workspace oder tritt einem bei.",
+      "noWorkspaceBody": "Kortix Capture nimmt in einen Workspace auf. Öffne danach diese Anmeldung erneut.",
+      "openChooser": "Workspace erstellen oder beitreten",
+      "workspaceLabel": "Workspace",
+      "noCaptureWorkspace": "In keinem deiner Workspaces ist Kortix Capture aktiv. Ein Inhaber oder Admin kann es aktivieren."
     }
   }
 }

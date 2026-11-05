@@ -25957,6 +25957,13 @@
       "deleteLoginDescription": "Exclui seu login do Kortix. Você não pertence a nenhum espaço de trabalho, então nada mais é excluído.",
       "deleteLoginTitle": "Excluir seu login?",
       "deleteLoginWarning": "Seu login é excluído imediatamente. Isso não pode ser desfeito."
+    },
+    "capture": {
+      "noWorkspaceTitle": "Primeiro crie um espaço de trabalho ou entre em um.",
+      "noWorkspaceBody": "O Kortix Capture grava em um espaço de trabalho. Depois abra este login de novo.",
+      "openChooser": "Criar ou entrar em um espaço de trabalho",
+      "workspaceLabel": "Espaço de trabalho",
+      "noCaptureWorkspace": "Nenhum dos seus espaços de trabalho tem o Kortix Capture ativado. Um proprietário ou administrador pode ativá-lo."
     }
   }
 }
