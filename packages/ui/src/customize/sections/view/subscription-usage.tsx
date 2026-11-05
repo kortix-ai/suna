@@ -11,15 +11,16 @@ const SUBSCRIPTION_PROVIDERS = new Set(['codex', 'claude-agent']);
 /** A snapshot older than this says when it was observed. */
 const STALE_MS = 10 * 60 * 1000;
 
-export type UsageTone = 'ok' | 'near' | 'limited';
+export type UsageTone = 'ok' | 'near' | 'critical' | 'limited';
 
-/** Bar color by state: the storage meter's thresholds, red once the provider refuses. */
+/** Warn at 80%, turn red at 95%, and distinguish a provider-enforced limit. */
 export function usageTone(window: SubscriptionUsageWindow, limited: boolean): UsageTone {
   if (window.used_percent >= 100 || (limited && window.used_percent >= 90)) return 'limited';
-  return window.used_percent >= 90 ? 'near' : 'ok';
+  if (window.used_percent >= 95) return 'critical';
+  return window.used_percent >= 80 ? 'near' : 'ok';
 }
 
-const TONE_BAR: Record<UsageTone, string> = { ok: 'bg-primary', near: 'bg-kortix-orange', limited: 'bg-kortix-red' };
+const TONE_BAR: Record<UsageTone, string> = { ok: 'bg-primary', near: 'bg-kortix-orange', critical: 'bg-kortix-red', limited: 'bg-kortix-red' };
 
 /** The model name of a model-specific weekly window (`seven_day_opus` → `Opus`), or null. */
 export function weeklyModel(id: string): string | null {
