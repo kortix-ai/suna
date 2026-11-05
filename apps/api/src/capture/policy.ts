@@ -6,7 +6,7 @@
  * fails, the row rolls back, so the database never claims a policy the devices
  * cannot see.
  */
-import { captureWorkspaces } from '@kortix/db';
+import { captureTenants } from '@kortix/db';
 import { db } from '../shared/db';
 import { logger } from '../lib/logger';
 import { accountPrefix, policyDocument, type CapturePolicy } from './format';
@@ -29,9 +29,9 @@ export async function writeAccountPolicy(accountId: string, policy: CapturePolic
   const now = new Date();
   await db.transaction(async (tx) => {
     await tx
-      .insert(captureWorkspaces)
+      .insert(captureTenants)
       .values({ accountId, policy, updatedBy: userId, updatedAt: now })
-      .onConflictDoUpdate({ target: captureWorkspaces.accountId, set: { policy, updatedBy: userId, updatedAt: now } });
+      .onConflictDoUpdate({ target: captureTenants.accountId, set: { policy, updatedBy: userId, updatedAt: now } });
     await putAccountObject(accountId, `${accountPrefix(accountId)}/policy.json`, policyDocument(policy, now.getTime()), 'application/json');
   });
   return { policy, updated_at: now.toISOString(), updated_by: userId };

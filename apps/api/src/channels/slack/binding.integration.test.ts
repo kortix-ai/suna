@@ -58,7 +58,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.delete(chatThreads).where(eq(chatThreads.workspaceId, TEAM));
+  await db.delete(chatThreads).where(eq(chatThreads.platformTeamId, TEAM));
   for (const projectId of [PROJECT, OTHER_PROJECT]) await deleteSlackInstall(projectId);
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));

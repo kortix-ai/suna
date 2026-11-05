@@ -127,13 +127,13 @@ beforeAll(async () => {
   await db.insert(chatThreads).values({
     projectId: project.project_id,
     platform: 'teams',
-    workspaceId: TENANT,
+    platformTeamId: TENANT,
     threadId: CONVO,
     sessionId,
   });
   await db.insert(chatUserIdentities).values([
-    { platform: 'teams', workspaceId: TENANT, platformUserId: 'aad-manager', userId: MANAGER },
-    { platform: 'teams', workspaceId: TENANT, platformUserId: 'aad-bystander', userId: BYSTANDER },
+    { platform: 'teams', platformTeamId: TENANT, platformUserId: 'aad-manager', userId: MANAGER },
+    { platform: 'teams', platformTeamId: TENANT, platformUserId: 'aad-bystander', userId: BYSTANDER },
   ]);
 });
 
@@ -144,7 +144,7 @@ beforeEach(() => {
 });
 
 afterAll(async () => {
-  await db.delete(chatUserIdentities).where(eq(chatUserIdentities.workspaceId, TENANT));
+  await db.delete(chatUserIdentities).where(eq(chatUserIdentities.platformTeamId, TENANT));
   await db.delete(jobQueue).where(eq(jobQueue.queue, HELD_CALL_QUEUE));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.projectId, project.project_id));
   await db.delete(connectorCalls).where(eq(connectorCalls.projectId, project.project_id));

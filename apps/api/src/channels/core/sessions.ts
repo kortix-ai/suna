@@ -51,7 +51,7 @@ export async function listVisibleChatSessions(
     .where(
       and(
         eq(chatThreads.platform, user.platform),
-        eq(chatThreads.workspaceId, user.workspaceId),
+        eq(chatThreads.platformTeamId, user.workspaceId),
         opts.projectId ? eq(chatThreads.projectId, opts.projectId) : undefined,
         sql`${projectSessions.metadata}->>'deletedAt' IS NULL`,
       ),

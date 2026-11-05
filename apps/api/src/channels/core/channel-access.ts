@@ -145,9 +145,9 @@ async function editChannelAccess(
     if (scopeId) {
       // A disconnect or another install's connect clears the requests after this check, or waits for this lock.
       const [install] = await tx
-        .select({ scopeId: chatInstalls.workspaceId })
+        .select({ scopeId: chatInstalls.platformTeamId })
         .from(chatInstalls)
-        .where(and(eq(chatInstalls.platform, platform), eq(chatInstalls.projectId, projectId), eq(chatInstalls.workspaceId, scopeId)))
+        .where(and(eq(chatInstalls.platform, platform), eq(chatInstalls.projectId, projectId), eq(chatInstalls.platformTeamId, scopeId)))
         .limit(1);
       if (!install) return;
     }

@@ -396,7 +396,7 @@ async function tellNotTaken(m: GatewayMessage, botUserId: string): Promise<void>
  */
 export async function reconcileGuilds(present: string[]): Promise<string[]> {
   try {
-    const installed = [...new Set((await db.select({ guildId: chatInstalls.workspaceId }).from(chatInstalls).where(eq(chatInstalls.platform, 'discord'))).map((r) => r.guildId))];
+    const installed = [...new Set((await db.select({ guildId: chatInstalls.platformTeamId }).from(chatInstalls).where(eq(chatInstalls.platform, 'discord'))).map((r) => r.guildId))];
     const missing = installed.filter((id) => !present.includes(id));
     if (!missing.length) return [];
     if (!present.length || missing.length > installed.length / 2) {
@@ -419,7 +419,7 @@ export async function leaveIfOrphan(guildId: string, joinedAt: string | null, no
     const [install] = await db
       .select({ id: chatInstalls.installId })
       .from(chatInstalls)
-      .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.workspaceId, guildId)))
+      .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.platformTeamId, guildId)))
       .limit(1);
     if (install) return false;
     await leaveDiscordGuild(guildId);

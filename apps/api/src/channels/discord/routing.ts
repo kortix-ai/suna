@@ -49,7 +49,7 @@ async function boundProject(guildId: string, channelId: string): Promise<string 
       chatInstalls,
       and(
         eq(chatInstalls.platform, 'discord'),
-        eq(chatInstalls.workspaceId, chatChannelBindings.workspaceId),
+        eq(chatInstalls.platformTeamId, chatChannelBindings.platformTeamId),
         eq(chatInstalls.projectId, chatChannelBindings.projectId),
       ),
     )
@@ -57,7 +57,7 @@ async function boundProject(guildId: string, channelId: string): Promise<string 
     .where(
       and(
         eq(chatChannelBindings.platform, 'discord'),
-        eq(chatChannelBindings.workspaceId, guildId),
+        eq(chatChannelBindings.platformTeamId, guildId),
         eq(chatChannelBindings.channelId, channelId),
       ),
     )
@@ -91,13 +91,13 @@ async function resolveGuild(place: DiscordPlace & { guildId: string }): Promise<
 async function resolveDirect(place: DiscordPlace): Promise<DiscordRoute> {
   const conversation = { platform: 'discord', threadId: place.channelId };
   const bound = await db
-    .select({ projectId: chatChannelBindings.projectId, guildId: chatChannelBindings.workspaceId, metadata: projects.metadata })
+    .select({ projectId: chatChannelBindings.projectId, guildId: chatChannelBindings.platformTeamId, metadata: projects.metadata })
     .from(chatChannelBindings)
     .innerJoin(
       chatInstalls,
       and(
         eq(chatInstalls.platform, 'discord'),
-        eq(chatInstalls.workspaceId, chatChannelBindings.workspaceId),
+        eq(chatInstalls.platformTeamId, chatChannelBindings.platformTeamId),
         eq(chatInstalls.projectId, chatChannelBindings.projectId),
       ),
     )
@@ -115,7 +115,7 @@ async function resolveDirect(place: DiscordPlace): Promise<DiscordRoute> {
 // 3-second interaction window. Upgrade at ~10k installs: a GIN index on metadata->'discord'->'allowedUserIds'.
 export async function projectsAllowing(userId: string): Promise<Array<{ projectId: string; guildId: string }>> {
   const rows = await db
-    .select({ projectId: chatInstalls.projectId, guildId: chatInstalls.workspaceId, metadata: projects.metadata })
+    .select({ projectId: chatInstalls.projectId, guildId: chatInstalls.platformTeamId, metadata: projects.metadata })
     .from(chatInstalls)
     .innerJoin(projects, and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active')))
     .where(

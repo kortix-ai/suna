@@ -236,7 +236,7 @@ const claimRows = (chat: number) => db.select().from(chatEventDedup).where(eq(ch
 const holdClaim = (chat: number, expiresInMs = 60_000) =>
   db.insert(chatEventDedup).values({ eventId: claimKey(chat), expiresAt: new Date(Date.now() + expiresInMs) });
 const threadRow = async (chat: number) =>
-  (await db.select().from(chatThreads).where(and(eq(chatThreads.workspaceId, BOT_ID), eq(chatThreads.threadId, String(chat)))))[0];
+  (await db.select().from(chatThreads).where(and(eq(chatThreads.platformTeamId, BOT_ID), eq(chatThreads.threadId, String(chat)))))[0];
 const replies = () => calls.filter((c) => c.method === 'sendMessage').map((c) => String(c.body.text));
 /** The lifecycle's `create_session` row for a message, as `createSession` writes it. */
 const createCommand = (event: { id: string }, status: string, projectId = PROJECT) =>
@@ -369,7 +369,7 @@ beforeEach(() => {
 afterAll(async () => {
   resetChannelLifecycleForTest();
   fake.stop(true);
-  await db.delete(chatThreads).where(eq(chatThreads.workspaceId, BOT_ID));
+  await db.delete(chatThreads).where(eq(chatThreads.platformTeamId, BOT_ID));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:threadcreate:${PROJECT}:%`));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, 'channel:start-retrying:%'));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:question-buttons:${PROJECT}:%`));
@@ -867,7 +867,7 @@ describe('Telegram notices addressed by session — migrated PostgreSQL', () => 
     await db
       .update(chatThreads)
       .set({ lastMessageAt: new Date(Date.now() - 60_000) })
-      .where(and(eq(chatThreads.workspaceId, BOT_ID), eq(chatThreads.threadId, '946')));
+      .where(and(eq(chatThreads.platformTeamId, BOT_ID), eq(chatThreads.threadId, '946')));
     await runFailed(sessionId);
     expect(calls.map((c) => c.body.chat_id)).toEqual([947]);
   });
@@ -2215,7 +2215,7 @@ describe('Telegram files — migrated PostgreSQL', () => {
 describe("a Telegram chat's model goes with every message — migrated PostgreSQL", () => {
   /** The chat's settings row, as `/model` or the Channels page writes it. */
   const seedChoice = (chat: number, model: string) =>
-    db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: String(chat), projectId: PROJECT, model });
+    db.insert(chatChannelBindings).values({ platform: 'telegram', platformTeamId: BOT_ID, channelId: String(chat), projectId: PROJECT, model });
   /** Every model reads as servable (or none does), with nothing in the catalog to replace one. */
   const servable = (answer: boolean) => [
     spyOn(defaultModel, 'isModelServableForAccount').mockResolvedValue(answer),
@@ -2304,7 +2304,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
   ].join('\n');
   /** The chat's settings row, or undefined. */
   const settingsRow = async (chat: string) =>
-    (await db.select().from(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.workspaceId, BOT_ID), eq(chatChannelBindings.channelId, chat))))[0];
+    (await db.select().from(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.platformTeamId, BOT_ID), eq(chatChannelBindings.channelId, chat))))[0];
   /** A running turn as forwarding records it: `source` is the source of the prompt it delivered, null when none. */
   const liveTurn = (token: string, startedAtMs: number, source: string | null) => ({ token, state: 'active', messageId: `msg_${token}`, startedAtMs, source });
   /** A session of the chat in `status`; with `source`, a running turn whose prompt came from there. */
@@ -2415,7 +2415,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     const catalog = (models: Record<string, unknown>) =>
       spyOn(servableCatalog, 'servableProjectCatalog').mockResolvedValue({ models, modelOverrides: {}, defaultModel: undefined, usingDefaults: true } as never);
     // No session, and the chat's model cannot run with nothing to replace it: the create refuses every message.
-    await db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: '7047', projectId: PROJECT, model: 'cmd-gone-s' });
+    await db.insert(chatChannelBindings).values({ platform: 'telegram', platformTeamId: BOT_ID, channelId: '7047', projectId: PROJECT, model: 'cmd-gone-s' });
     let spies = [spyOn(defaultModel, 'isModelServableForAccount').mockResolvedValue(false), catalog({})];
     try {
       await handleTelegramEvent(update('/status', ALLOWED, 7047));
@@ -2612,7 +2612,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
   });
 
   test('/agent and /model default while Kortix still creates the chat\'s session say that session keeps its own', async () => {
-    await db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: '7049', projectId: PROJECT, model: 'cmd-held' });
+    await db.insert(chatChannelBindings).values({ platform: 'telegram', platformTeamId: BOT_ID, channelId: '7049', projectId: PROJECT, model: 'cmd-held' });
     await holdClaim(7049);
     const spies: Array<{ mockRestore(): void }> = [
       spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),
@@ -2718,7 +2718,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     test("a row another project left on the chat (a bot reused across projects) is taken over with both of its choices cleared", async () => {
       const other = crypto.randomUUID();
       await db.insert(projects).values({ splitPending: true, projectId: other, accountId: ACCOUNT, name: 'telegram-other', repoUrl: 'file:///nonexistent/telegram-other.git' });
-      const left = { platform: 'telegram', workspaceId: BOT_ID, projectId: other, agentName: 'other-agent', model: 'other-model' };
+      const left = { platform: 'telegram', platformTeamId: BOT_ID, projectId: other, agentName: 'other-agent', model: 'other-model' };
       await db.insert(chatChannelBindings).values([{ ...left, channelId: '7058' }, { ...left, channelId: '7059' }]);
       try {
         await handleTelegramEvent(update('/model cmd-taken', ALLOWED, 7058));
@@ -2760,7 +2760,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
   });
 
   test("a connect with another bot drops the chats' settings", async () => {
-    await db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: '7090', projectId: PROJECT, model: 'cmd-m1' });
+    await db.insert(chatChannelBindings).values({ platform: 'telegram', platformTeamId: BOT_ID, channelId: '7090', projectId: PROJECT, model: 'cmd-m1' });
     const otherBot = String(Number(BOT_ID) + 1);
     try {
       await saveTelegramInstall({ projectId: PROJECT, botId: otherBot, username: 'other_bot', token: `${otherBot}:${'B'.repeat(35)}`, webhookSecret: 's' });
@@ -3577,7 +3577,7 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
       webhookInfo = webhook;
       botMenu = kortixAndOwn;
       calls.length = 0;
-      await db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: '7091', projectId: PROJECT, model: 'cmd-m1' });
+      await db.insert(chatChannelBindings).values({ platform: 'telegram', platformTeamId: BOT_ID, channelId: '7091', projectId: PROJECT, model: 'cmd-m1' });
       try {
         const res = await api('DELETE', '');
         const settings = await db.select().from(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.projectId, PROJECT)));

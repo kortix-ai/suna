@@ -40,7 +40,7 @@ export async function resolveProjectForEmailInbox(inboxId: string): Promise<stri
   const [row] = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.workspaceId, inboxId)))
+    .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.platformTeamId, inboxId)))
     .limit(1);
   return row?.projectId ?? null;
 }
@@ -320,7 +320,7 @@ async function planEmailSession(projectId: string, email: InboundEmail): Promise
       and(
         eq(chatChannelBindings.projectId, projectId),
         eq(chatChannelBindings.platform, 'email'),
-        eq(chatChannelBindings.workspaceId, inboxId),
+        eq(chatChannelBindings.platformTeamId, inboxId),
       ),
     )
     .limit(1);

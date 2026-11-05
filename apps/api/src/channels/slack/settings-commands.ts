@@ -481,7 +481,7 @@ export async function listWorkspaceProjects(teamId: string): Promise<WorkspacePr
   const installs = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformTeamId, teamId)));
   if (installs.length === 0) return [];
   const ids = installs.map((i) => i.projectId);
   return db
@@ -497,7 +497,7 @@ export async function currentChannelProjectId(ctx: { teamId: string; channelId: 
     .from(chatChannelBindings)
     .where(and(
       eq(chatChannelBindings.platform, 'slack'),
-      eq(chatChannelBindings.workspaceId, ctx.teamId),
+      eq(chatChannelBindings.platformTeamId, ctx.teamId),
       eq(chatChannelBindings.channelId, ctx.channelId),
     ))
     .limit(1);

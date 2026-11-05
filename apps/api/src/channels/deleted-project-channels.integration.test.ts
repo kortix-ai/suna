@@ -35,14 +35,14 @@ const TAG = crypto.randomUUID().slice(0, 8).toUpperCase();
 const ws = (name: string) => `${name}${TAG}`;
 
 const install = (platform: string, workspaceId: string, ...projectIds: string[]) =>
-  db.insert(chatInstalls).values(projectIds.map((projectId) => ({ platform, workspaceId, projectId })));
+  db.insert(chatInstalls).values(projectIds.map((projectId) => ({ platform, platformTeamId: workspaceId, projectId })));
 const bind = (platform: string, workspaceId: string, channelId: string, projectId: string) =>
-  db.insert(chatChannelBindings).values({ platform, workspaceId, channelId, projectId });
+  db.insert(chatChannelBindings).values({ platform, platformTeamId: workspaceId, channelId, projectId });
 async function boundTo(platform: string, workspaceId: string, channelId: string) {
   const [row] = await db
     .select({ projectId: chatChannelBindings.projectId })
     .from(chatChannelBindings)
-    .where(and(eq(chatChannelBindings.platform, platform), eq(chatChannelBindings.workspaceId, workspaceId), eq(chatChannelBindings.channelId, channelId)));
+    .where(and(eq(chatChannelBindings.platform, platform), eq(chatChannelBindings.platformTeamId, workspaceId), eq(chatChannelBindings.channelId, channelId)));
   return row ? row.projectId : 'unbound';
 }
 

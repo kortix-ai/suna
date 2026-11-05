@@ -802,7 +802,7 @@ async function waitForConversationSession(
       .where(
         and(
           eq(chatThreads.platform, 'teams'),
-          eq(chatThreads.workspaceId, tenantId),
+          eq(chatThreads.platformTeamId, tenantId),
           eq(chatThreads.threadId, conversationId),
           eq(chatThreads.projectId, projectId),
         ),

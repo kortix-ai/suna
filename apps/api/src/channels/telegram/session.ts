@@ -690,7 +690,7 @@ async function telegramThreadOfSession(sessionId: string, botId: string, chatId:
     .where(
       and(
         eq(chatThreads.platform, 'telegram'),
-        eq(chatThreads.workspaceId, botId),
+        eq(chatThreads.platformTeamId, botId),
         eq(chatThreads.sessionId, sessionId),
         or(eq(chatThreads.threadId, chatId), like(chatThreads.threadId, `${chatId}:%`)),
       ),

@@ -2625,7 +2625,7 @@ export const chatInstalls = kortixSchema.table(
   {
     installId: uuid('install_id').defaultRandom().primaryKey(),
     platform: varchar('platform', { length: 32 }).notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformTeamId: varchar('workspace_id', { length: 128 }).notNull(),
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
@@ -2634,10 +2634,10 @@ export const chatInstalls = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_chat_installs_workspace_project').on(
       table.platform,
-      table.workspaceId,
+      table.platformTeamId,
       table.projectId,
     ),
-    index('idx_chat_installs_workspace').on(table.platform, table.workspaceId),
+    index('idx_chat_installs_workspace').on(table.platform, table.platformTeamId),
     index('idx_chat_installs_project').on(table.projectId),
   ],
 );
@@ -2653,7 +2653,7 @@ export const chatChannelBindings = kortixSchema.table(
       onDelete: 'cascade',
     }),
     platform: varchar('platform', { length: 32 }).notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformTeamId: varchar('workspace_id', { length: 128 }).notNull(),
     channelId: text('channel_id').notNull(),
     channelName: varchar('channel_name', { length: 256 }),
     channelType: varchar('channel_type', { length: 32 }),
@@ -2674,7 +2674,7 @@ export const chatChannelBindings = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_chat_channel_bindings_channel').on(
       table.platform,
-      table.workspaceId,
+      table.platformTeamId,
       table.channelId,
     ),
     index('idx_chat_channel_bindings_project').on(table.projectId),
@@ -2693,7 +2693,7 @@ export const chatThreads = kortixSchema.table(
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     platform: varchar('platform', { length: 32 }).notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformTeamId: varchar('workspace_id', { length: 128 }).notNull(),
     threadId: text('thread_id').notNull(),
     sessionId: text('session_id')
       .notNull()
@@ -2702,7 +2702,7 @@ export const chatThreads = kortixSchema.table(
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('idx_chat_threads_thread').on(table.platform, table.workspaceId, table.threadId),
+    uniqueIndex('idx_chat_threads_thread').on(table.platform, table.platformTeamId, table.threadId),
     index('idx_chat_threads_project').on(table.projectId),
     index('idx_chat_threads_session').on(table.sessionId),
   ],
@@ -2719,7 +2719,7 @@ export const chatPendingAuthMessages = kortixSchema.table(
     projectId: uuid('project_id')
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     platform: varchar('platform', { length: 32 }).default('slack').notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformTeamId: varchar('workspace_id', { length: 128 }).notNull(),
     platformUserId: varchar('platform_user_id', { length: 128 }).notNull(),
     envelope: jsonb('envelope').notNull().$type<Record<string, unknown>>(),
     event: jsonb('event').notNull().$type<Record<string, unknown>>(),
@@ -2729,7 +2729,7 @@ export const chatPendingAuthMessages = kortixSchema.table(
   },
   (table) => [
     index('idx_chat_pending_auth_messages_lookup').on(
-      table.workspaceId,
+      table.platformTeamId,
       table.platformUserId,
       table.expiresAt,
     ),
@@ -2747,7 +2747,7 @@ export const chatThreadParticipants = kortixSchema.table(
   {
     participantId: uuid('participant_id').defaultRandom().primaryKey(),
     platform: varchar('platform', { length: 32 }).notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformTeamId: varchar('workspace_id', { length: 128 }).notNull(),
     threadId: text('thread_id').notNull(),
     sessionId: text('session_id')
       .notNull()
@@ -2763,7 +2763,7 @@ export const chatThreadParticipants = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_chat_thread_participants_thread_user').on(
       table.platform,
-      table.workspaceId,
+      table.platformTeamId,
       table.threadId,
       table.platformUserId,
     ),
@@ -2785,7 +2785,7 @@ export const chatUserIdentities = kortixSchema.table(
   {
     identityId: uuid('identity_id').defaultRandom().primaryKey(),
     platform: varchar('platform', { length: 32 }).notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformTeamId: varchar('workspace_id', { length: 128 }).notNull(),
     platformUserId: varchar('platform_user_id', { length: 128 }).notNull(),
     userId: uuid('user_id').notNull(),
     linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow().notNull(),
@@ -2800,7 +2800,7 @@ export const chatUserIdentities = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_chat_user_identities_platform_user').on(
       table.platform,
-      table.workspaceId,
+      table.platformTeamId,
       table.platformUserId,
     ),
     index('idx_chat_user_identities_user').on(table.userId),
@@ -8235,7 +8235,7 @@ export const jobQueue = kortixSchema.table(
  * mirrored to `orgs/<account_id>/policy.json`. No row, or `enabled` false,
  * means Capture is off for the account: no sign-in, credentials or ingest.
  */
-export const captureWorkspaces = kortixSchema.table('capture_workspaces', {
+export const captureTenants = kortixSchema.table('capture_workspaces', {
   accountId: uuid('account_id')
     .primaryKey()
     .references(() => accounts.accountId, { onDelete: 'cascade' }),

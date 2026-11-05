@@ -70,7 +70,7 @@ export async function bindDiscordChannel(conversation: DiscordConversation, proj
     const [install] = await tx
       .select({ id: chatInstalls.installId })
       .from(chatInstalls)
-      .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.workspaceId, conversation.guildId), eq(chatInstalls.projectId, projectId)))
+      .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.platformTeamId, conversation.guildId), eq(chatInstalls.projectId, projectId)))
       .limit(1);
     if (!install) return false;
     // A DM has one row whatever guild it sits under; a guild channel has one in its guild.
@@ -81,7 +81,7 @@ export async function bindDiscordChannel(conversation: DiscordConversation, proj
       .where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.threadId, channelId), ne(chatThreads.projectId, projectId)));
     await tx.insert(chatChannelBindings).values({
       platform: 'discord',
-      workspaceId: conversation.guildId,
+      platformTeamId: conversation.guildId,
       channelId,
       projectId,
       channelName: conversation.direct ? 'direct message' : conversation.channelName ? `#${conversation.channelName}` : null,
@@ -114,11 +114,11 @@ export async function claimDiscordChannel(conversation: DiscordConversation, pro
     .insert(chatChannelBindings)
     .values({
       platform: 'discord',
-      workspaceId: conversation.guildId,
+      platformTeamId: conversation.guildId,
       channelId: conversation.settingsId,
       projectId,
       channelName: conversation.direct ? clip(senderName || 'direct message', 100) : conversation.channelName ? `#${conversation.channelName}` : null,
       channelType: conversation.direct ? 'dm' : 'channel',
     })
-    .onConflictDoNothing({ target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId] });
+    .onConflictDoNothing({ target: [chatChannelBindings.platform, chatChannelBindings.platformTeamId, chatChannelBindings.channelId] });
 }

@@ -70,7 +70,7 @@ export async function resolveTeamsProjectConversation(
   // project was already talking in; the tenant is read from the row rather
   // than from the caller.
   const [binding] = await db
-    .select({ workspaceId: chatChannelBindings.workspaceId, channelType: chatChannelBindings.channelType })
+    .select({ workspaceId: chatChannelBindings.platformTeamId, channelType: chatChannelBindings.channelType })
     .from(chatChannelBindings)
     .where(
       and(

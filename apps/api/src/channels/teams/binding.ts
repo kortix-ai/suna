@@ -21,7 +21,7 @@ export async function listTenantProjects(
   const installs = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.workspaceId, tenantId)));
+    .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.platformTeamId, tenantId)));
   if (installs.length === 0) return [];
   const ids = installs.map((i) => i.projectId);
   // Only the installed projects. This read had no `where`, so every `/status`,
@@ -47,7 +47,7 @@ export async function resolveConversationProject(
     .where(
       and(
         eq(chatChannelBindings.platform, PLATFORM),
-        eq(chatChannelBindings.workspaceId, tenantId),
+        eq(chatChannelBindings.platformTeamId, tenantId),
         eq(chatChannelBindings.channelId, conversationId),
       ),
     )
@@ -60,7 +60,7 @@ export async function resolveConversationProject(
       .where(
         and(
           eq(chatInstalls.platform, PLATFORM),
-          eq(chatInstalls.workspaceId, tenantId),
+          eq(chatInstalls.platformTeamId, tenantId),
           eq(chatInstalls.projectId, binding.projectId),
         ),
       )
@@ -72,7 +72,7 @@ export async function resolveConversationProject(
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
     .innerJoin(projects, liveProject)
-    .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.workspaceId, tenantId)))
+    .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.platformTeamId, tenantId)))
     .limit(1);
   return install?.projectId ?? null;
 }
@@ -109,7 +109,7 @@ async function resolveBoundProject(tenantId: string, conversationId: string): Pr
     .where(
       and(
         eq(chatChannelBindings.platform, PLATFORM),
-        eq(chatChannelBindings.workspaceId, tenantId),
+        eq(chatChannelBindings.platformTeamId, tenantId),
         eq(chatChannelBindings.channelId, conversationId),
       ),
     )
@@ -122,7 +122,7 @@ async function resolveBoundProject(tenantId: string, conversationId: string): Pr
     .where(
       and(
         eq(chatInstalls.platform, PLATFORM),
-        eq(chatInstalls.workspaceId, tenantId),
+        eq(chatInstalls.platformTeamId, tenantId),
         eq(chatInstalls.projectId, binding.projectId),
       ),
     )
@@ -181,7 +181,7 @@ export async function ensureTeamsConversationBinding(input: {
     .where(
       and(
         eq(chatInstalls.platform, PLATFORM),
-        eq(chatInstalls.workspaceId, input.tenantId),
+        eq(chatInstalls.platformTeamId, input.tenantId),
         eq(chatInstalls.projectId, input.projectId),
       ),
     )
@@ -192,7 +192,7 @@ export async function ensureTeamsConversationBinding(input: {
     .insert(chatChannelBindings)
     .values({
       platform: PLATFORM,
-      workspaceId: input.tenantId,
+      platformTeamId: input.tenantId,
       channelId: input.conversationId,
       projectId: input.projectId,
       channelName: input.channelName ?? null,
@@ -201,7 +201,7 @@ export async function ensureTeamsConversationBinding(input: {
     .onConflictDoUpdate({
       target: [
         chatChannelBindings.platform,
-        chatChannelBindings.workspaceId,
+        chatChannelBindings.platformTeamId,
         chatChannelBindings.channelId,
       ],
       set: {

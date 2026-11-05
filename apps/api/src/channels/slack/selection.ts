@@ -41,7 +41,7 @@ export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelS
       .from(chatChannelBindings)
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.platformTeamId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .limit(1);
@@ -68,7 +68,7 @@ export async function setChannelConversationPolicy(ctx: ChannelCtx, conversation
       .set({ conversationPolicy })
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.platformTeamId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .returning({ id: chatChannelBindings.bindingId });
@@ -115,7 +115,7 @@ export async function setChannelAgent(
       .set({ agentName })
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.platformTeamId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .returning({ id: chatChannelBindings.bindingId });
@@ -136,7 +136,7 @@ export async function setChannelModel(ctx: ChannelCtx, sessionModel: string | nu
       .set({ model: sessionModel })
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.platformTeamId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .returning({ id: chatChannelBindings.bindingId });
@@ -154,7 +154,7 @@ async function currentChannelProjectId(ctx: ChannelCtx): Promise<string | null> 
     .from(chatChannelBindings)
     .where(and(
       eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-      eq(chatChannelBindings.workspaceId, ctx.teamId),
+      eq(chatChannelBindings.platformTeamId, ctx.teamId),
       eq(chatChannelBindings.channelId, ctx.channelId),
     ))
     .limit(1);
@@ -251,7 +251,7 @@ export async function listChannelBindingsForProject(projectId: string): Promise<
       bindingId: chatChannelBindings.bindingId,
       projectId: chatChannelBindings.projectId,
       platform: chatChannelBindings.platform,
-      workspaceId: chatChannelBindings.workspaceId,
+      workspaceId: chatChannelBindings.platformTeamId,
       channelId: chatChannelBindings.channelId,
       channelName: chatChannelBindings.channelName,
       channelType: chatChannelBindings.channelType,
@@ -278,7 +278,7 @@ export async function getChannelBindingById(
       bindingId: chatChannelBindings.bindingId,
       projectId: chatChannelBindings.projectId,
       platform: chatChannelBindings.platform,
-      workspaceId: chatChannelBindings.workspaceId,
+      workspaceId: chatChannelBindings.platformTeamId,
       channelId: chatChannelBindings.channelId,
       channelName: chatChannelBindings.channelName,
       channelType: chatChannelBindings.channelType,

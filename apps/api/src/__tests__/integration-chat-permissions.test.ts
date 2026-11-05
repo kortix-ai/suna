@@ -57,7 +57,7 @@ async function approve(sessionId: string, aad: string, userId: string) {
     .insert(chatThreadParticipants)
     .values({
       platform: 'teams',
-      workspaceId: TENANT,
+      platformTeamId: TENANT,
       threadId: CONVO,
       sessionId,
       platformUserId: aad,
@@ -67,7 +67,7 @@ async function approve(sessionId: string, aad: string, userId: string) {
     .onConflictDoUpdate({
       target: [
         chatThreadParticipants.platform,
-        chatThreadParticipants.workspaceId,
+        chatThreadParticipants.platformTeamId,
         chatThreadParticipants.threadId,
         chatThreadParticipants.platformUserId,
       ],
@@ -80,7 +80,7 @@ async function pointConversationAt(sessionId: string) {
   await db.insert(chatThreads).values({
     projectId: project.project_id,
     platform: 'teams',
-    workspaceId: TENANT,
+    platformTeamId: TENANT,
     threadId: CONVO,
     sessionId,
   });
@@ -100,10 +100,10 @@ beforeAll(async () => {
     { accountId: project.account_id, projectId: project.project_id, userId: JOINER, projectRole: 'member' },
   ]);
   await db.insert(chatUserIdentities).values([
-    { platform: 'teams', workspaceId: TENANT, platformUserId: 'aad-owner', userId: OWNER },
-    { platform: 'teams', workspaceId: TENANT, platformUserId: 'aad-member', userId: MEMBER },
-    { platform: 'teams', workspaceId: TENANT, platformUserId: 'aad-joiner', userId: JOINER },
-    { platform: 'teams', workspaceId: TENANT, platformUserId: 'aad-outsider', userId: OUTSIDER },
+    { platform: 'teams', platformTeamId: TENANT, platformUserId: 'aad-owner', userId: OWNER },
+    { platform: 'teams', platformTeamId: TENANT, platformUserId: 'aad-member', userId: MEMBER },
+    { platform: 'teams', platformTeamId: TENANT, platformUserId: 'aad-joiner', userId: JOINER },
+    { platform: 'teams', platformTeamId: TENANT, platformUserId: 'aad-outsider', userId: OUTSIDER },
   ]);
   earlierSession = await session(MEMBER, 'owner_approval');
   currentSession = await session(MEMBER, 'owner_approval');
@@ -126,7 +126,7 @@ beforeEach(async () => {
 afterAll(async () => {
   await db.delete(chatThreadParticipants).where(eq(chatThreadParticipants.threadId, CONVO));
   await db.delete(chatThreads).where(eq(chatThreads.threadId, CONVO));
-  await db.delete(chatUserIdentities).where(eq(chatUserIdentities.workspaceId, TENANT));
+  await db.delete(chatUserIdentities).where(eq(chatUserIdentities.platformTeamId, TENANT));
   await db.delete(projectSessions).where(eq(projectSessions.projectId, project.project_id));
   await removeSeeded([project]);
 });

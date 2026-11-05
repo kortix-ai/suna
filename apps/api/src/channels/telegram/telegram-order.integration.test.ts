@@ -198,7 +198,7 @@ afterAll(async () => {
   resetChannelLifecycleForTest();
   fake.stop(true);
   await db.delete(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
-  await db.delete(chatThreads).where(eq(chatThreads.workspaceId, BOT_ID));
+  await db.delete(chatThreads).where(eq(chatThreads.platformTeamId, BOT_ID));
   await db.delete(chatEventDedup).where(inArray(chatEventDedup.eventId, [telegramMenuClaim(BOT_ID), `telegram:buttons:${BOT_ID}`]));
   await deleteTelegramInstall(PROJECT);
   await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT));

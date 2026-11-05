@@ -15,7 +15,7 @@ beforeAll(async () => {
   await db.insert(projects).values({ projectId, accountId, name: 'pending-test', repoUrl: 'https://example.test/synthetic.git', metadata: {} });
 });
 afterAll(async () => {
-  await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.workspaceId, teamId));
+  await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.platformTeamId, teamId));
   await db.delete(projects).where(eq(projects.projectId, projectId));
   await db.delete(accounts).where(eq(accounts.accountId, accountId));
 });
@@ -24,7 +24,7 @@ test('auth and picker persist exact payloads, ownership and independent TTLs; ne
   const before = Date.now();
   const authId = await createPendingSlackAuthMessage({ projectId, teamId, slackUserId: 'auth-user', envelope, event });
   const pickerId = await createPendingSlackPickerMessage({ teamId, envelope, ttlMs: 120_000 });
-  const rows = await db.select().from(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.workspaceId, teamId));
+  const rows = await db.select().from(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.platformTeamId, teamId));
   expect(rows).toHaveLength(2);
   const auth = rows.find(row => row.pendingId === authId);
   const picker = rows.find(row => row.pendingId === pickerId);
@@ -34,7 +34,7 @@ test('auth and picker persist exact payloads, ownership and independent TTLs; ne
   expect(picker?.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 120_000);
   const expiredId = await createPendingSlackPickerMessage({ teamId, envelope, ttlMs: -1 });
   await createPendingSlackPickerMessage({ teamId, envelope: { ...envelope, event: { ...event, user: undefined } }, ttlMs: 60_000 });
-  const remaining = await db.select().from(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.workspaceId, teamId));
+  const remaining = await db.select().from(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.platformTeamId, teamId));
   expect(remaining.some(row => row.pendingId === expiredId)).toBe(false);
   expect(remaining.some(row => row.platformUserId === '')).toBe(true);
 });

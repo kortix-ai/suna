@@ -189,7 +189,7 @@ for (const f of [fixture('tombstone'), fixture('deleted')]) {
       calls.length = 0;
       await db.delete(jobQueue).where(like(jobQueue.jobKey, `telegram:${f.botId}:%`));
       await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.projectId, f.project));
-      await db.delete(chatThreads).where(eq(chatThreads.workspaceId, f.botId));
+      await db.delete(chatThreads).where(eq(chatThreads.platformTeamId, f.botId));
       await bindChatThread({ projectId: f.project, platform: 'telegram', workspaceId: f.botId, threadId: String(BOUND_CHAT), sessionId: f.session });
     });
 

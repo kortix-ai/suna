@@ -76,7 +76,7 @@ interface Holding {
  */
 async function holding(channelId: string, projectId: string): Promise<Holding> {
   const installed = (table: typeof chatThreads | typeof chatChannelBindings) =>
-    and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.workspaceId, table.workspaceId), eq(chatInstalls.projectId, table.projectId));
+    and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.platformTeamId, table.platformTeamId), eq(chatInstalls.projectId, table.projectId));
   const bindings = await db
     .select({ projectId: chatChannelBindings.projectId, type: chatChannelBindings.channelType, since: chatChannelBindings.installedAt })
     .from(chatChannelBindings)
@@ -102,7 +102,7 @@ async function holding(channelId: string, projectId: string): Promise<Holding> {
 
 async function projectGuild(projectId: string): Promise<string | null> {
   const [row] = await db
-    .select({ guildId: chatInstalls.workspaceId })
+    .select({ guildId: chatInstalls.platformTeamId })
     .from(chatInstalls)
     .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.projectId, projectId)))
     .limit(1);

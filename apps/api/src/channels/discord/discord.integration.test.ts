@@ -551,7 +551,7 @@ describe('edge cases', () => {
     const gone = '760000000000000055';
     const session = await newSession();
     await bindChatThread({ platform: 'discord', workspaceId: GUILD, threadId: gone, projectId: PROJECT, sessionId: session });
-    await db.insert(chatChannelBindings).values({ platform: 'discord', workspaceId: GUILD, channelId: gone, projectId: PROJECT });
+    await db.insert(chatChannelBindings).values({ platform: 'discord', platformTeamId: GUILD, channelId: gone, projectId: PROJECT });
     await forgetDiscordChannel(gone);
     expect(await db.select().from(chatThreads).where(eq(chatThreads.threadId, gone))).toEqual([]);
     expect(await db.select().from(chatChannelBindings).where(eq(chatChannelBindings.channelId, gone))).toEqual([]);
@@ -565,7 +565,7 @@ describe('edge cases', () => {
     // An empty list is a broken READY, not a bot removed from every server.
     expect(await reconcileGuilds([])).toEqual([]);
     expect(await reconcileGuilds([GUILD])).toEqual([gone]);
-    expect(await db.select().from(chatInstalls).where(eq(chatInstalls.workspaceId, gone))).toEqual([]);
+    expect(await db.select().from(chatInstalls).where(eq(chatInstalls.platformTeamId, gone))).toEqual([]);
   });
 
   test('the bot leaves a server no project has, but never one it joined in the last hour (an install in progress)', async () => {
@@ -591,7 +591,7 @@ describe('the shared bot token stays in each project', () => {
     await saveDiscordInstall({ projectId: LEFT, guildId: GUILD_B, guildName: null });
     const old = await newSession(LEFT);
     await bindChatThread({ platform: 'discord', workspaceId: GUILD_B, threadId: DM2, projectId: LEFT, sessionId: old });
-    await db.insert(chatChannelBindings).values({ platform: 'discord', workspaceId: GUILD_B, channelId: DM2, projectId: LEFT, channelType: 'dm' });
+    await db.insert(chatChannelBindings).values({ platform: 'discord', platformTeamId: GUILD_B, channelId: DM2, projectId: LEFT, channelType: 'dm' });
     expect(await discordCallRefusal({ projectId: LEFT, args: { channel_id: DM2 } })).toBeNull();
 
     // The person moves their DM, though the old project no longer allows them: only they press a button in it.
@@ -767,7 +767,7 @@ describe('the Gateway', () => {
     const guild = '720000000000000555';
     await saveDiscordInstall({ projectId: OTHER, guildId: guild, guildName: null });
     expect(await forgetDiscordGuild(guild)).toEqual([OTHER]);
-    expect(await db.select().from(chatInstalls).where(eq(chatInstalls.workspaceId, guild))).toEqual([]);
+    expect(await db.select().from(chatInstalls).where(eq(chatInstalls.platformTeamId, guild))).toEqual([]);
   });
 });
 
@@ -926,7 +926,7 @@ describe('edge cases: failures, order and Discord limits', () => {
     channels.set(CH, { id: CH, type: 0, guild_id: GUILD, parent_id: null, name: 'shared' });
     await saveDiscordInstall({ projectId: OTHER, guildId: GUILD, guildName: null });
     try {
-      await db.insert(chatChannelBindings).values({ platform: 'discord', workspaceId: GUILD, channelId: CH, projectId: OTHER, model: 'other-model' });
+      await db.insert(chatChannelBindings).values({ platform: 'discord', platformTeamId: GUILD, channelId: CH, projectId: OTHER, model: 'other-model' });
       await bindChatThread({ platform: 'discord', workspaceId: GUILD, threadId: THREAD, projectId: PROJECT, sessionId: await newSession() });
       const settings = { platform: 'discord', teamId: GUILD, channelId: CH };
       expect(await ensureChatBinding(settings, PROJECT, { name: null, type: 'channel' }, { keepsOtherProjects: true })).toBe('held');
@@ -953,7 +953,7 @@ describe('edge cases: failures, order and Discord limits', () => {
     const removed = crypto.randomUUID();
     await db.insert(projects).values({ splitPending: true, projectId: removed, accountId: ACCOUNT, name: 'discord-removed', repoUrl: 'file:///nonexistent/removed.git', metadata: { discord: { allowedUserIds: [] } } });
     await saveDiscordInstall({ projectId: removed, guildId: GX, guildName: null });
-    await db.insert(chatChannelBindings).values({ platform: 'discord', workspaceId: GX, channelId: DM3, projectId: removed, channelType: 'dm' });
+    await db.insert(chatChannelBindings).values({ platform: 'discord', platformTeamId: GX, channelId: DM3, projectId: removed, channelType: 'dm' });
     expect(await resolveDiscordRoute({ guildId: null, channelId: DM3, userId: ALLOWED })).toMatchObject({ kind: 'project', projectId: PROJECT });
     const dm = { guildId: GUILD, threadId: DM3, settingsId: DM3, direct: true, startThread: false, addressed: true, channelName: null, threadName: null };
     await claimDiscordChannel(dm, PROJECT, ALLOWED);

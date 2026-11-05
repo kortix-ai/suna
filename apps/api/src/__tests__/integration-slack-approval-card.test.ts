@@ -141,15 +141,15 @@ beforeAll(async () => {
     await db.insert(chatThreads).values({
       projectId: project.project_id,
       platform: 'slack',
-      workspaceId: TEAM,
+      platformTeamId: TEAM,
       threadId: thread,
       sessionId: id,
     });
   }
   await db.insert(chatUserIdentities).values([
-    { platform: 'slack', workspaceId: TEAM, platformUserId: SLACK.owner, userId: OWNER },
-    { platform: 'slack', workspaceId: TEAM, platformUserId: SLACK.launcher, userId: LAUNCHER },
-    { platform: 'slack', workspaceId: TEAM, platformUserId: SLACK.bystander, userId: BYSTANDER },
+    { platform: 'slack', platformTeamId: TEAM, platformUserId: SLACK.owner, userId: OWNER },
+    { platform: 'slack', platformTeamId: TEAM, platformUserId: SLACK.launcher, userId: LAUNCHER },
+    { platform: 'slack', platformTeamId: TEAM, platformUserId: SLACK.bystander, userId: BYSTANDER },
   ]);
 });
 
@@ -162,7 +162,7 @@ beforeEach(() => {
 });
 
 afterAll(async () => {
-  await db.delete(chatUserIdentities).where(eq(chatUserIdentities.workspaceId, TEAM));
+  await db.delete(chatUserIdentities).where(eq(chatUserIdentities.platformTeamId, TEAM));
   await db.delete(jobQueue).where(eq(jobQueue.queue, HELD_CALL_QUEUE));
   await db.delete(connectorCalls).where(eq(connectorCalls.projectId, project.project_id));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.projectId, project.project_id));
@@ -370,7 +370,7 @@ test.each(['absent', 'revoked', 'other-workspace', 'expired'] as const)(
     const workspaceId = scenario === 'other-workspace' ? `${TEAM}OTHER` : TEAM;
     if (scenario !== 'absent') {
       await db.insert(chatUserIdentities).values({
-        platform: 'slack', workspaceId, platformUserId: `U${scenario}`, userId: actorUserId,
+        platform: 'slack', platformTeamId: workspaceId, platformUserId: `U${scenario}`, userId: actorUserId,
         revokedAt: scenario === 'revoked' ? new Date() : null,
       });
     }
@@ -499,7 +499,7 @@ test('a held call approved from a follow-up thread resumes the agent with that t
   await db.insert(chatThreads).values({
     projectId: project.project_id,
     platform: 'slack',
-    workspaceId: TEAM,
+    platformTeamId: TEAM,
     threadId: FOLLOW_UP,
     sessionId,
   });

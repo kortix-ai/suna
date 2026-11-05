@@ -229,7 +229,7 @@ export function registerSlackWebhookRoutes(): void {
           const installs = await db
             .select({ projectId: chatInstalls.projectId })
             .from(chatInstalls)
-            .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+            .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformTeamId, teamId)));
           if (installs.length > 0) {
             await maybePostPicker(
               teamId,

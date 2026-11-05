@@ -912,7 +912,7 @@ export async function handleBlockAction(
     .where(
       and(
         eq(chatInstalls.platform, 'slack'),
-        eq(chatInstalls.workspaceId, teamId),
+        eq(chatInstalls.platformTeamId, teamId),
         eq(chatInstalls.projectId, projectId),
       ),
     )
@@ -935,7 +935,7 @@ export async function handleBlockAction(
     .where(
       and(
         eq(chatChannelBindings.platform, 'slack'),
-        eq(chatChannelBindings.workspaceId, teamId),
+        eq(chatChannelBindings.platformTeamId, teamId),
         eq(chatChannelBindings.channelId, channelId),
       ),
     );

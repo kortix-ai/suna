@@ -420,7 +420,7 @@ function listOf(data: unknown, key: string): unknown[] | null {
 export const dbChannelOwnership: ChannelOwnership = {
   async installs(projectId, platform) {
     const rows = await db
-      .select({ workspaceId: chatInstalls.workspaceId })
+      .select({ workspaceId: chatInstalls.platformTeamId })
       .from(chatInstalls)
       .where(and(eq(chatInstalls.platform, platform), eq(chatInstalls.projectId, projectId)));
     const workspaceIds = [...new Set(rows.map((r) => r.workspaceId).filter(Boolean))];
@@ -431,7 +431,7 @@ export const dbChannelOwnership: ChannelOwnership = {
       .where(
         and(
           eq(chatInstalls.platform, platform),
-          inArray(chatInstalls.workspaceId, workspaceIds),
+          inArray(chatInstalls.platformTeamId, workspaceIds),
           ne(chatInstalls.projectId, projectId),
         ),
       )
@@ -454,7 +454,7 @@ export const dbChannelOwnership: ChannelOwnership = {
         .where(
           and(
             eq(chatChannelBindings.platform, 'slack'),
-            inArray(chatChannelBindings.workspaceId, workspaceIds),
+            inArray(chatChannelBindings.platformTeamId, workspaceIds),
             inArray(chatChannelBindings.channelId, channelIds),
             isNotNull(chatChannelBindings.projectId),
           ),
@@ -473,7 +473,7 @@ export const dbChannelOwnership: ChannelOwnership = {
         .where(
           and(
             eq(chatChannelBindings.platform, 'teams'),
-            inArray(chatChannelBindings.workspaceId, workspaceIds),
+            inArray(chatChannelBindings.platformTeamId, workspaceIds),
             inArray(bindingChannel, channelIds),
             isNotNull(chatChannelBindings.projectId),
           ),
@@ -484,7 +484,7 @@ export const dbChannelOwnership: ChannelOwnership = {
         .where(
           and(
             eq(chatThreads.platform, 'teams'),
-            inArray(chatThreads.workspaceId, workspaceIds),
+            inArray(chatThreads.platformTeamId, workspaceIds),
             inArray(threadChannel, channelIds),
           ),
         ),
@@ -502,7 +502,7 @@ export const dbChannelOwnership: ChannelOwnership = {
       .where(
         and(
           eq(chatThreads.platform, platform),
-          inArray(chatThreads.workspaceId, workspaceIds),
+          inArray(chatThreads.platformTeamId, workspaceIds),
           inArray(threadId, threadIds),
         ),
       );
@@ -517,7 +517,7 @@ export const dbChannelOwnership: ChannelOwnership = {
       .where(
         and(
           eq(chatChannelBindings.platform, 'teams'),
-          inArray(chatChannelBindings.workspaceId, workspaceIds),
+          inArray(chatChannelBindings.platformTeamId, workspaceIds),
           inArray(bindingId, threadIds),
           isNotNull(chatChannelBindings.projectId),
         ),

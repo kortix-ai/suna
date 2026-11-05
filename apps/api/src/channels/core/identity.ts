@@ -42,7 +42,7 @@ export type ChatActor = { userId: string } | { reason: 'unlinked' | 'not_member'
 function linkRow(user: ChatUser) {
   return and(
     eq(chatUserIdentities.platform, user.platform),
-    eq(chatUserIdentities.workspaceId, user.workspaceId),
+    eq(chatUserIdentities.platformTeamId, user.workspaceId),
     eq(chatUserIdentities.platformUserId, user.platformUserId),
     isNull(chatUserIdentities.revokedAt),
   );
@@ -79,13 +79,13 @@ export async function linkChatIdentity(
     .insert(chatUserIdentities)
     .values({
       platform: user.platform,
-      workspaceId: user.workspaceId,
+      platformTeamId: user.workspaceId,
       platformUserId: user.platformUserId,
       userId,
       mfaVerifiedAt: opts.mfaVerified ? now : null,
     })
     .onConflictDoUpdate({
-      target: [chatUserIdentities.platform, chatUserIdentities.workspaceId, chatUserIdentities.platformUserId],
+      target: [chatUserIdentities.platform, chatUserIdentities.platformTeamId, chatUserIdentities.platformUserId],
       set: {
         userId,
         linkedAt: now,
@@ -185,7 +185,7 @@ export async function lookupChatUserForKortixUser(
     .where(
       and(
         eq(chatUserIdentities.platform, platform),
-        eq(chatUserIdentities.workspaceId, workspaceId),
+        eq(chatUserIdentities.platformTeamId, workspaceId),
         eq(chatUserIdentities.userId, userId),
         isNull(chatUserIdentities.revokedAt),
       ),
@@ -279,7 +279,7 @@ export async function createChatAccessRequest(user: ChatUser, projectId: string)
       and(
         eq(chatInstalls.projectId, projects.projectId),
         eq(chatInstalls.platform, user.platform),
-        eq(chatInstalls.workspaceId, user.workspaceId),
+        eq(chatInstalls.platformTeamId, user.workspaceId),
       ),
     )
     .where(eq(projects.projectId, projectId))

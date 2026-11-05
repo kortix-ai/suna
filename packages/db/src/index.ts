@@ -331,7 +331,7 @@ export {
   captureDevices,
   captureEnrollmentTokens,
   captureEnrollments,
-  captureWorkspaces,
+  captureTenants,
   timelineChunks,
   timelineFrames,
   timelineActions,

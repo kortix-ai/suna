@@ -93,11 +93,11 @@ export async function ensureProjectChannelBinding(
   // (`commands.ts`) deletes the row so the next event can re-claim it.
   await db
     .insert(chatChannelBindings)
-    .values({ platform: 'slack', workspaceId: teamId, channelId, projectId, pickerTs: null })
+    .values({ platform: 'slack', platformTeamId: teamId, channelId, projectId, pickerTs: null })
     .onConflictDoNothing({
       target: [
         chatChannelBindings.platform,
-        chatChannelBindings.workspaceId,
+        chatChannelBindings.platformTeamId,
         chatChannelBindings.channelId,
       ],
     });
@@ -124,7 +124,7 @@ export async function resolveOauthProject(
   if (channelId) {
     const where = and(
       eq(chatChannelBindings.platform, 'slack'),
-      eq(chatChannelBindings.workspaceId, teamId),
+      eq(chatChannelBindings.platformTeamId, teamId),
       eq(chatChannelBindings.channelId, channelId),
     );
     const [binding] = await db
@@ -147,16 +147,16 @@ export async function resolveOauthProject(
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
     .innerJoin(projects, and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active')))
-    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformTeamId, teamId)));
   if (installs.length === 0) return { kind: 'none' };
   if (installs.length === 1) {
     const onlyProjectId = installs[0].projectId;
     if (channelId) {
       await db
         .insert(chatChannelBindings)
-        .values({ platform: 'slack', workspaceId: teamId, channelId, projectId: onlyProjectId })
+        .values({ platform: 'slack', platformTeamId: teamId, channelId, projectId: onlyProjectId })
         .onConflictDoNothing({
-          target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
+          target: [chatChannelBindings.platform, chatChannelBindings.platformTeamId, chatChannelBindings.channelId],
         });
       await backfillSlackBindingLabel(teamId, channelId, onlyProjectId);
     }
@@ -205,9 +205,9 @@ async function postProjectPicker(opts: {
 
   const claimed = await db
     .insert(chatChannelBindings)
-    .values({ platform: 'slack', workspaceId: teamId, channelId, projectId: null })
+    .values({ platform: 'slack', platformTeamId: teamId, channelId, projectId: null })
     .onConflictDoNothing({
-      target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
+      target: [chatChannelBindings.platform, chatChannelBindings.platformTeamId, chatChannelBindings.channelId],
     })
     .returning({ id: chatChannelBindings.bindingId });
   const isFreshClaim = claimed.length > 0;
@@ -221,7 +221,7 @@ async function postProjectPicker(opts: {
       .from(chatChannelBindings)
       .where(and(
         eq(chatChannelBindings.platform, 'slack'),
-        eq(chatChannelBindings.workspaceId, teamId),
+        eq(chatChannelBindings.platformTeamId, teamId),
         eq(chatChannelBindings.channelId, channelId),
       ))
       .limit(1);
@@ -288,7 +288,7 @@ async function postProjectPicker(opts: {
       .where(
         and(
           eq(chatChannelBindings.platform, 'slack'),
-          eq(chatChannelBindings.workspaceId, teamId),
+          eq(chatChannelBindings.platformTeamId, teamId),
           eq(chatChannelBindings.channelId, channelId),
         ),
       );
@@ -318,7 +318,7 @@ export async function handleAssistantThreadStarted(
     const installs = await db
       .select({ projectId: chatInstalls.projectId })
       .from(chatInstalls)
-      .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+      .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformTeamId, teamId)));
     if (installs.length > 0) {
       await postProjectPicker({ teamId, projectIds: installs.map((i) => i.projectId), channelId, threadTs, isDm: true });
     }
@@ -378,7 +378,7 @@ export async function maybeHandleDmCommand(
       .from(chatChannelBindings)
       .where(and(
         eq(chatChannelBindings.platform, 'slack'),
-        eq(chatChannelBindings.workspaceId, teamId),
+        eq(chatChannelBindings.platformTeamId, teamId),
         eq(chatChannelBindings.channelId, channelId),
       ))
       .limit(1);
@@ -388,7 +388,7 @@ export async function maybeHandleDmCommand(
     const [install] = await db
       .select({ projectId: chatInstalls.projectId })
       .from(chatInstalls)
-      .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)))
+      .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformTeamId, teamId)))
       .limit(1);
     tokenProjectId = install?.projectId ?? null;
   }
@@ -549,7 +549,7 @@ export async function maybePostChannelIntro(teamId: string, event: SlackEvent): 
   const [install] = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)))
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformTeamId, teamId)))
     .limit(1);
   if (!install) return;
   const botUserId = await loadSlackBotUserIdForProject(install.projectId);

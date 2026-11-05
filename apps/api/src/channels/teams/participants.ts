@@ -79,7 +79,7 @@ async function loadParticipant(input: { tenantId: string; conversationId: string
     .where(
       and(
         eq(chatThreadParticipants.platform, PLATFORM),
-        eq(chatThreadParticipants.workspaceId, input.tenantId),
+        eq(chatThreadParticipants.platformTeamId, input.tenantId),
         eq(chatThreadParticipants.threadId, input.conversationId),
         eq(chatThreadParticipants.platformUserId, input.teamsUserId),
       ),
@@ -165,7 +165,7 @@ export async function ensureTeamsThreadParticipant(input: {
       .where(
         and(
           eq(chatThreadParticipants.platform, PLATFORM),
-          eq(chatThreadParticipants.workspaceId, input.tenantId),
+          eq(chatThreadParticipants.platformTeamId, input.tenantId),
           eq(chatThreadParticipants.threadId, input.conversationId),
           eq(chatThreadParticipants.platformUserId, input.teamsUserId),
         ),
@@ -176,7 +176,7 @@ export async function ensureTeamsThreadParticipant(input: {
       .insert(chatThreadParticipants)
       .values({
         platform: PLATFORM,
-        workspaceId: input.tenantId,
+        platformTeamId: input.tenantId,
         threadId: input.conversationId,
         sessionId: input.sessionId,
         platformUserId: input.teamsUserId,
@@ -186,7 +186,7 @@ export async function ensureTeamsThreadParticipant(input: {
       .onConflictDoNothing({
         target: [
           chatThreadParticipants.platform,
-          chatThreadParticipants.workspaceId,
+          chatThreadParticipants.platformTeamId,
           chatThreadParticipants.threadId,
           chatThreadParticipants.platformUserId,
         ],
@@ -232,7 +232,7 @@ export async function rememberTeamsThreadOwner(input: {
     .insert(chatThreadParticipants)
     .values({
       platform: PLATFORM,
-      workspaceId: input.tenantId,
+      platformTeamId: input.tenantId,
       threadId: input.conversationId,
       sessionId: input.sessionId,
       platformUserId: input.teamsUserId,
@@ -244,7 +244,7 @@ export async function rememberTeamsThreadOwner(input: {
     .onConflictDoUpdate({
       target: [
         chatThreadParticipants.platform,
-        chatThreadParticipants.workspaceId,
+        chatThreadParticipants.platformTeamId,
         chatThreadParticipants.threadId,
         chatThreadParticipants.platformUserId,
       ],
@@ -288,7 +288,7 @@ export async function decideTeamsThreadJoin(input: {
     .where(
       and(
         eq(chatThreads.platform, PLATFORM),
-        eq(chatThreads.workspaceId, input.tenantId),
+        eq(chatThreads.platformTeamId, input.tenantId),
         eq(chatThreads.threadId, input.conversationId),
       ),
     )

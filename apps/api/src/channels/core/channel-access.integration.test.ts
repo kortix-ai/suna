@@ -72,8 +72,8 @@ const port = (
 beforeAll(async () => {
   project = await seedProject(`access-${crypto.randomUUID().slice(0, 8)}`);
   await db.insert(chatInstalls).values([
-    { platform: 'telegram', workspaceId: SCOPE, projectId: project.project_id },
-    { platform: FAKE, workspaceId: SCOPE, projectId: project.project_id },
+    { platform: 'telegram', platformTeamId: SCOPE, projectId: project.project_id },
+    { platform: FAKE, platformTeamId: SCOPE, projectId: project.project_id },
   ]);
 });
 
@@ -122,14 +122,14 @@ describe('channel access store — a second platform beside Telegram', () => {
   test("a request is stored only while the project has that platform's install with that scope", async () => {
     const other = `W${crypto.randomUUID().slice(0, 8)}`;
     // Telegram has an install with `other`; the fake platform does not.
-    await db.insert(chatInstalls).values({ platform: 'telegram', workspaceId: other, projectId: project.project_id });
+    await db.insert(chatInstalls).values({ platform: 'telegram', platformTeamId: other, projectId: project.project_id });
     try {
       expect(await recordChannelAccessRequest(FAKE, project.project_id, { scopeId: other, accessRequests: [] }, requester('51'))).toBe(false);
       expect((await metadata())[FAKE]).toBeUndefined();
       expect(await recordChannelAccessRequest('telegram', project.project_id, { scopeId: other, accessRequests: [] }, requester('51'))).toBe(true);
       expect((await lists('telegram')).accessRequests.map((r) => r.id)).toContain('51');
     } finally {
-      await db.delete(chatInstalls).where(eq(chatInstalls.workspaceId, other));
+      await db.delete(chatInstalls).where(eq(chatInstalls.platformTeamId, other));
     }
   });
 

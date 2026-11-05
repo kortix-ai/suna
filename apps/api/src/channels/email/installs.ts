@@ -219,15 +219,15 @@ export async function reserveEmailInbox(input: {
 }): Promise<void> {
   await db
     .insert(chatInstalls)
-    .values({ platform: 'email', workspaceId: input.inboxId, projectId: input.projectId })
+    .values({ platform: 'email', platformTeamId: input.inboxId, projectId: input.projectId })
     .onConflictDoNothing({
-      target: [chatInstalls.platform, chatInstalls.workspaceId, chatInstalls.projectId],
+      target: [chatInstalls.platform, chatInstalls.platformTeamId, chatInstalls.projectId],
     });
   await db
     .insert(chatChannelBindings)
     .values({
       platform: 'email',
-      workspaceId: input.inboxId,
+      platformTeamId: input.inboxId,
       channelId: input.inboxId,
       projectId: input.projectId,
       channelName: input.email,
@@ -237,7 +237,7 @@ export async function reserveEmailInbox(input: {
     .onConflictDoUpdate({
       target: [
         chatChannelBindings.platform,
-        chatChannelBindings.workspaceId,
+        chatChannelBindings.platformTeamId,
         chatChannelBindings.channelId,
       ],
       set: { agentName: input.agentName, channelName: input.email },
@@ -252,7 +252,7 @@ export async function releaseEmailInbox(projectId: string, inboxId: string): Pro
       and(
         eq(chatChannelBindings.platform, 'email'),
         eq(chatChannelBindings.projectId, projectId),
-        eq(chatChannelBindings.workspaceId, inboxId),
+        eq(chatChannelBindings.platformTeamId, inboxId),
       ),
     );
   await db
@@ -261,7 +261,7 @@ export async function releaseEmailInbox(projectId: string, inboxId: string): Pro
       and(
         eq(chatInstalls.platform, 'email'),
         eq(chatInstalls.projectId, projectId),
-        eq(chatInstalls.workspaceId, inboxId),
+        eq(chatInstalls.platformTeamId, inboxId),
       ),
     );
 }
@@ -394,7 +394,7 @@ export async function updateEmailInboxAccount(
         and(
           eq(chatChannelBindings.platform, 'email'),
           eq(chatChannelBindings.projectId, account.projectId),
-          eq(chatChannelBindings.workspaceId, account.inboxId),
+          eq(chatChannelBindings.platformTeamId, account.inboxId),
         ),
       );
   }
@@ -572,7 +572,7 @@ export async function purgeLegacyEmailState(projectId: string): Promise<number> 
   // An add claims the inbox before its account row exists (and may sync in
   // between), so a claim younger than ORPHAN_GRACE_MS is never an orphan yet.
   const claims = await db
-    .select({ workspaceId: chatInstalls.workspaceId })
+    .select({ workspaceId: chatInstalls.platformTeamId })
     .from(chatInstalls)
     .where(
       and(
@@ -589,7 +589,7 @@ export async function purgeLegacyEmailState(projectId: string): Promise<number> 
         and(
           eq(chatChannelBindings.platform, 'email'),
           eq(chatChannelBindings.projectId, projectId),
-          inArray(chatChannelBindings.workspaceId, orphans),
+          inArray(chatChannelBindings.platformTeamId, orphans),
         ),
       );
     await db
@@ -598,7 +598,7 @@ export async function purgeLegacyEmailState(projectId: string): Promise<number> 
         and(
           eq(chatInstalls.platform, 'email'),
           eq(chatInstalls.projectId, projectId),
-          inArray(chatInstalls.workspaceId, orphans),
+          inArray(chatInstalls.platformTeamId, orphans),
         ),
       );
   }

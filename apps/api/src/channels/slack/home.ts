@@ -12,7 +12,7 @@ export async function publishHomeForUser(teamId: string, userId: string): Promis
   const installs = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformTeamId, teamId)));
   if (installs.length === 0) return;
 
   const token = await loadSlackTokenForProject(installs[0].projectId);
@@ -31,7 +31,7 @@ export async function publishHomeForUser(teamId: string, userId: string): Promis
       threadId: chatThreads.threadId,
     })
     .from(chatThreads)
-    .where(and(eq(chatThreads.platform, 'slack'), eq(chatThreads.workspaceId, teamId)))
+    .where(and(eq(chatThreads.platform, 'slack'), eq(chatThreads.platformTeamId, teamId)))
     .orderBy(desc(chatThreads.lastMessageAt))
     .limit(5);
 

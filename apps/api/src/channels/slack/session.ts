@@ -416,7 +416,7 @@ async function waitForThreadSession(teamId: string, threadId: string, projectId:
       .where(
         and(
           eq(chatThreads.platform, 'slack'),
-          eq(chatThreads.workspaceId, teamId),
+          eq(chatThreads.platformTeamId, teamId),
           eq(chatThreads.threadId, threadId),
           eq(chatThreads.projectId, projectId),
         ),

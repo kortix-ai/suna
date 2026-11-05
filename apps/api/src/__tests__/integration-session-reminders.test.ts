@@ -265,7 +265,7 @@ describe('session reminders on the trigger tables', () => {
     const failed = await seedSession();
     await db.update(projectSessions).set({ status: 'failed' }).where(eq(projectSessions.sessionId, failed));
     const { spec } = await seedReminder(failed, { prompt: 'Advance the goal', every: '1d' }, now);
-    const thread = { platform: 'slack', workspaceId: 'T-test', threadId: `D-test:${failed.slice(0, 8)}` };
+    const thread = { platform: 'slack', platformTeamId: 'T-test', threadId: `D-test:${failed.slice(0, 8)}` };
     await db.insert(chatThreads).values({ projectId: PROJECT, sessionId: failed, ...thread });
 
     const result = await fireGitTrigger({ spec, project: await projectRow(), payload: {}, renderedPrompt: '', source: 'cron' });
