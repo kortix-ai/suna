@@ -9,6 +9,7 @@ import { hedged } from './hedge'
 import { norm } from './lang'
 import { threadSnapshot, type ThreadSnapshot } from './thread'
 import { fastFetch, fastOn } from './models'
+import * as places from './cards' // placeKnown read off it: a stand-in card source (the proofs') may have only card()
 
 export type Card = { type: 'weather'; place: string; horizon?: 'next_week' } | { type: 'version'; product: string } | { type: 'price'; asset: string } | { type: 'fx'; from: string; to: string } | { type: 'f1' }
 export type Route = { need: 'web' | 'code' | 'none' | 'clarify'; query: string; card?: Card; locationEvidence?: string; heard?: string } // heard: what they most likely said, when speech-to-text misheard it
@@ -65,6 +66,10 @@ const cache = new Map<string, Promise<Route | undefined>>()
 const SCREEN_RULE = '\nA question the shared screen answers (the "Shared screen" line: the assistant sees it) is "none", with no card.'
 // Only while a clarification is pending (the context's "Pending clarification" line), so every other turn's prompt stays
 // as it was: "You decide." after "What is Unisite?" was routed "web: what is Unisite" (bench/misheard-proof.ts).
+// Only while the assistant's own question is the last thing it said (the context's "Agent: ...?" line): the same choice
+// handed back answers it. "You decide." after "What do you need it to do?" (python code) was asked again in about half of
+// the runs once the clarify rule grew (bench/misheard-proof.ts), and no pending clarification carried the rule then.
+const ASKED_RULE = '\nA reply that hands the choice back to the assistant ("you decide", "whatever you think", "I don\'t know") answers the assistant\'s question: "none", never a "clarify" asking it again or a lookup of a word in it.'
 const PENDING_RULE = '\nA reply that hands the choice back to the assistant ("you decide", "whatever you think", "I don\'t know") answers the pending clarification: "none", never a lookup of the pending question.'
 // The router's question checked against the call by a stronger model (the fast lane's): needed (a forecast or a place
 // nearby with no city), or about a word speech-to-text most likely misheard ("I don't know Unisite" after "What do you
@@ -167,7 +172,7 @@ export function route(text: string, context = '', workspace = '', ms = 1200): Pr
       reasoning_effort: MODEL.includes('gpt-oss') ? 'low' : undefined,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: system(workspace, !!context) + (context ? '\nFor an entity-only or date-only continuation, replace the previous question\'s entity/date with the one in Turn. The query must target the new entity/date, not just repeat the previous question or answer both.' + THREAD_RULES : '') + (/^Shared screen: /m.test(input) ? SCREEN_RULE : '') + (/^Pending clarification: /m.test(input) ? PENDING_RULE : '') },
+        { role: 'system', content: system(workspace, !!context) + (context ? '\nFor an entity-only or date-only continuation, replace the previous question\'s entity/date with the one in Turn. The query must target the new entity/date, not just repeat the previous question or answer both.' + THREAD_RULES : '') + (/^Shared screen: /m.test(input) ? SCREEN_RULE : '') + (/^Pending clarification: /m.test(input) ? PENDING_RULE : /^Agent: .*\?\s*$/m.test(input) ? ASKED_RULE : '') },
         { role: 'user', content: `${input ? `Conversation context:\n${input}\n\n` : ''}Turn: ${text}` },
       ],
     }),
@@ -243,7 +248,12 @@ export function route(text: string, context = '', workspace = '', ms = 1200): Pr
     .then(async (found) => {
       // The router searching its own pending question ("You decide." after "What is Unisite?" became "web: What is
       // Unisite?") is that question put again: it goes to the same check.
-      const asks = found?.need === 'clarify' ? found.query : found?.need === 'web' && memory?.pending && said(found.query) === said(memory.pending.question) ? found.query : ''
+      // A forecast for a place that is nowhere (the geocoder knows no such name) is a word speech-to-text most likely
+      // misheard: "I don't know Unisite" (Whisper's "I don't know, you decide") went to "weather in Unisite" on a Kortix
+      // box, and the search found a company. It goes to the same check. A real place waits only for the lookup its card
+      // makes anyway (cached for the card, often already in from the words), at most 800 ms.
+      const nowhere = found?.need === 'web' && found.card?.type === 'weather' && (await places.placeKnown?.(found.card.place)) === false
+      const asks = nowhere && found.card?.type === 'weather' ? `Which place is "${found.card.place}"?` : found?.need === 'clarify' ? found.query : found?.need === 'web' && memory?.pending && said(found.query) === said(memory.pending.question) ? found.query : ''
       if (!found || !asks || asks === CITY_Q || REROUTED.has(text)) return found // the city question is the provenance rule's own: never second-guessed
       const v = await needed(text, context, asks)
       if (!v || v.needed) return found
