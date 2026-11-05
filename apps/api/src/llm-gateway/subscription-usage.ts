@@ -165,7 +165,7 @@ export function codexUsageFromBody(body: unknown, now = Date.now()): Subscriptio
   return snapshot(windows, rateLimit.limit_reached === true || rateLimit.allowed === false, now);
 }
 
-const CLAUDE_WINDOWS: Record<string, number | null> = { five_hour: 300, seven_day: 7 * 24 * 60, seven_day_opus: 7 * 24 * 60, seven_day_sonnet: 7 * 24 * 60 };
+const CLAUDE_WINDOWS: Record<string, number | null> = { five_hour: 300, seven_day: 7 * 24 * 60, seven_day_opus: 7 * 24 * 60, seven_day_sonnet: 7 * 24 * 60, seven_day_fable: 7 * 24 * 60 };
 
 /** Claude's `oauth/usage` body: `{ five_hour, seven_day, seven_day_opus, … }`, `utilization` 0–100. */
 export function claudeUsageFromBody(body: unknown, now = Date.now()): SubscriptionUsage | null {

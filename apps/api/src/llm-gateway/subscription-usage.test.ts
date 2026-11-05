@@ -41,6 +41,22 @@ describe('provider usage endpoint bodies', () => {
     });
   });
 
+  test('Claude includes the separate Fable weekly allowance when reported', () => {
+    expect(claudeUsageFromBody({
+      seven_day: { utilization: 18, resets_at: null },
+      seven_day_fable: { utilization: 64, resets_at: '2026-11-07T14:00:00Z' },
+    }, NOW)?.windows).toEqual([
+      { id: 'weekly', window_minutes: 10080, used_percent: 18, resets_at: null },
+      { id: 'seven_day_fable', window_minutes: null, used_percent: 64, resets_at: '2026-11-07T14:00:00.000Z' },
+    ]);
+  });
+
+  test('a weekly-only Codex response does not invent a five-hour allowance', () => {
+    expect(codexUsageFromBody({ rate_limit: {
+      primary_window: { used_percent: 18, limit_window_seconds: 604800 },
+    } }, NOW)?.windows.map(window => window.id)).toEqual(['weekly']);
+  });
+
   // A provider body is untrusted input: a reset time Date cannot represent is
   // no reset time, and the window keeps its utilization.
   test('a body reset time Date cannot represent is dropped, the window stays', () => {
