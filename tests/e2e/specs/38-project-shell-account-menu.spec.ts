@@ -78,7 +78,7 @@ test.describe('38 — The project shell knows who you are', () => {
       });
 
       await test.step('the shell opens an account menu on the signed-in identity', async () => {
-        await page.getByRole('button', { name: 'Switch project' }).click();
+        await page.getByRole('button', { name: 'Switch workspace' }).click();
         const menu = page.getByRole('menu');
         await expect(menu.getByText('Logged in as')).toBeVisible();
         await expect(menu.getByText(email)).toBeVisible();

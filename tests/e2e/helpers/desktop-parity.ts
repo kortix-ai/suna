@@ -172,6 +172,17 @@ const authOptions = {
   password: "DesktopParity123!",
 };
 
+/**
+ * The caller's accounts. Sign-up creates no account (Workspaces), so a fresh
+ * test user creates one first, the way the product's "Create workspace" does.
+ */
+async function accountsOf(accessToken: string): Promise<{ account_id: string }[]> {
+  const accounts = await api<{ account_id: string }[]>(accessToken, "GET", "/accounts");
+  if (accounts.length > 0) return accounts;
+  await api<{ account_id: string }>(accessToken, "POST", "/accounts", { name: "Desktop parity" }, 201);
+  return api<{ account_id: string }[]>(accessToken, "GET", "/accounts");
+}
+
 /** Check rendered geometry: a source-string assertion cannot detect collapsed flex lists. */
 /** Stop and Thinking read one busy value: exactly one row while Stop shows, none otherwise. */
 async function expectThinkingMatchesStop(page: Page) {
@@ -268,11 +279,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
       const session = await signIn(email, authOptions);
       let project: ManifestProject | undefined;
       try {
-        const accounts = await api<{ account_id: string }[]>(
-          session.access_token,
-          "GET",
-          "/accounts",
-        );
+        const accounts = await accountsOf(session.access_token);
         project = await createManifestProject({
           api,
           accessToken: session.access_token,
@@ -297,7 +304,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         // while passing locally. Wait for the shell's own sidebar, then press
         // until the effect has bound — the dialog must still come from Mod+,.
         await expect(
-          page.getByRole("button", { name: "Switch project", exact: true }),
+          page.getByRole("button", { name: "Switch workspace", exact: true }),
         ).toBeVisible({ timeout: 60_000 });
         const settings = page.getByRole("dialog");
         await expect(async () => {
@@ -320,27 +327,13 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         await page.goto(
           `${baseURL}/projects/${project.id}?accountId=${accounts[0].account_id}`,
         );
-        const hub = page.getByRole("dialog");
-        await expect(hub).toBeVisible();
-        const hubRow = hub.locator(".kx-overlay-sidebar-titlebar");
-        const back = hubRow.getByRole("button", { name: /Back to app/i });
-        // Since #9750 the hub titlebar is Back to app + account switcher on the
-        // left and the sidebar collapse trigger on the right (no search button).
-        const collapse = hubRow.getByRole("button", { name: /Toggle Sidebar/i });
-        await expect(back).toBeVisible();
-        await expect(collapse).toBeVisible();
-        expect(
-          await hubRow.evaluate((row) => getComputedStyle(row).justifyContent),
-        ).toBe(desktop ? "flex-end" : "space-between");
-        const backBox = (await back.boundingBox())!;
-        const collapseBox = (await collapse.boundingBox())!;
-        expect(backBox.x + backBox.width).toBeLessThan(collapseBox.x);
-        if (!desktop) {
-          const rowBox = (await hubRow.boundingBox())!;
-          expect(backBox.x - rowBox.x).toBeLessThan(24);
-        }
-        await back.click();
-        await expect(hub).not.toBeVisible();
+        // Workspaces: the account hub is no longer a modal. An old
+        // `?accountId=` link opens the workspace's settings page in the shell.
+        await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/admin`), {
+          timeout: 30_000,
+        });
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        await expect(page.getByText("General", { exact: true }).first()).toBeVisible();
       } finally {
         await project?.dispose();
         await deleteAuthUser(user.id, authOptions);
@@ -380,11 +373,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
       let project: ManifestProject | undefined;
       let pooledResource: { accountId: string; secretId: string } | undefined;
       try {
-        const accounts = await api<{ account_id: string }[]>(
-          session.access_token,
-          "GET",
-          "/accounts",
-        );
+        const accounts = await accountsOf(session.access_token);
         const accountId = accounts[0].account_id;
         project = await createManifestProject({
           api,
@@ -415,7 +404,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           );
 
         const switcher = page.getByRole("button", {
-          name: "Switch project",
+          name: "Switch workspace",
           exact: true,
         });
         await expect(switcher).toBeVisible();
@@ -458,7 +447,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           "Appearance",
           "Notifications",
           "Language & shortcuts",
-          "Personal access keys",
+          // Personal access keys moved to Workspace settings › API keys.
           "Profile",
         ]) {
           const tab = dialog.getByRole("tab", { name, exact: true });
@@ -911,11 +900,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
       let bootSessionId = "";
       const deliveryFixtureId = randomUUID();
       try {
-        const accounts = await api<{ account_id: string }[]>(
-          auth.access_token,
-          "GET",
-          "/accounts",
-        );
+        const accounts = await accountsOf(auth.access_token);
         project = await createManifestProject({
           api,
           accessToken: auth.access_token,
@@ -1260,7 +1245,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         );
         for (const theme of ["Dark", "Light"]) {
           await page
-            .getByRole("button", { name: "Switch project", exact: true })
+            .getByRole("button", { name: "Switch workspace", exact: true })
             .click();
           await page.getByRole("menuitem", { name: /^Settings/ }).click();
           const settings = page.getByRole("dialog");
@@ -1686,11 +1671,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         const session = await signIn(email, authOptions);
         let project: ManifestProject | undefined;
         try {
-          const accounts = await api<{ account_id: string }[]>(
-            session.access_token,
-            "GET",
-            "/accounts",
-          );
+          const accounts = await accountsOf(session.access_token);
           await fundAccount(databaseUrl, accounts[0].account_id);
           project = await createManifestProject({
             api,
@@ -1875,11 +1856,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         };
         type PickerHolder = { quickEntryPicker?: PickerMenu };
         try {
-          const accounts = await api<{ account_id: string }[]>(
-            session.access_token,
-            "GET",
-            "/accounts",
-          );
+          const accounts = await accountsOf(session.access_token);
           await fundAccount(databaseUrl, accounts[0].account_id);
           project = await createManifestProject({
             api,
@@ -2151,7 +2128,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
       }
     });
 
-    test("Create a project keeps a way back to the project it opened from", async ({
+    test("Create a workspace keeps a way back to the workspace it opened from", async ({
       page,
       baseURL,
       desktopApp,
@@ -2169,11 +2146,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
       const session = await signIn(email, authOptions);
       let project: ManifestProject | undefined;
       try {
-        const accounts = await api<{ account_id: string }[]>(
-          session.access_token,
-          "GET",
-          "/accounts",
-        );
+        const accounts = await accountsOf(session.access_token);
         const accountId = accounts[0].account_id;
         project = await createManifestProject({
           api,
@@ -2197,15 +2170,15 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         // The reported soft lock: the switcher opens /new, and /new has no
         // navigation of its own — only an account menu.
         await page
-          .getByRole("button", { name: "Switch project", exact: true })
+          .getByRole("button", { name: "Switch workspace", exact: true })
           .click();
         await page
-          .getByRole("menuitem", { name: "Switch Project", exact: true })
+          .getByRole("menuitem", { name: "Switch workspace", exact: true })
           .click();
-        await page.getByRole("menuitem", { name: "Create a project…" }).click();
+        await page.getByRole("menuitem", { name: "Create workspace" }).click();
         await expect(page).toHaveURL(/\/new(\?|$)/, { timeout: 60_000 });
         await expect(
-          page.getByRole("heading", { name: "Create a project" }),
+          page.getByRole("heading", { name: "Create a workspace" }),
         ).toBeVisible({ timeout: 60_000 });
 
         const back = page.getByRole("button", { name: "Back", exact: true });
@@ -2287,13 +2260,13 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
               await other.goto(projectUrl);
               await expect(
                 other.getByRole("button", {
-                  name: "Switch project",
+                  name: "Switch workspace",
                   exact: true,
                 }),
               ).toBeVisible({ timeout: 60_000 });
               await other.goto(`${baseURL}/new`);
               await expect(
-                other.getByRole("heading", { name: "Create a project" }),
+                other.getByRole("heading", { name: "Create a workspace" }),
               ).toBeVisible({ timeout: 60_000 });
               const otherBack = other.getByRole("button", {
                 name: "Back",
@@ -2411,11 +2384,7 @@ nativeBrowserTest?.(
     let project: ManifestProject | undefined;
     let app: ElectronApplication | undefined;
     try {
-      const accounts = await api<{ account_id: string }[]>(
-        session.access_token,
-        "GET",
-        "/accounts",
-      );
+      const accounts = await accountsOf(session.access_token);
       project = await createManifestProject({
         api,
         accessToken: session.access_token,
@@ -2495,11 +2464,7 @@ nativeBrowserTest?.(
     let project: ManifestProject | undefined;
     let app: ElectronApplication | undefined;
     try {
-      const accounts = await api<{ account_id: string }[]>(
-        session.access_token,
-        "GET",
-        "/accounts",
-      );
+      const accounts = await accountsOf(session.access_token);
       project = await createManifestProject({
         api,
         accessToken: session.access_token,
@@ -2720,11 +2685,7 @@ nativeBrowserTest?.(
     let app: ElectronApplication | undefined;
     let adminRoleGranted = false;
     try {
-      const accounts = await api<{ account_id: string }[]>(
-        session.access_token,
-        "GET",
-        "/accounts",
-      );
+      const accounts = await accountsOf(session.access_token);
       project = await createManifestProject({
         api,
         accessToken: session.access_token,
@@ -3155,11 +3116,7 @@ nativeBrowserTest?.(
     let project: ManifestProject | undefined;
     let app: ElectronApplication | undefined;
     try {
-      const accounts = await api<{ account_id: string }[]>(
-        session.access_token,
-        "GET",
-        "/accounts",
-      );
+      const accounts = await accountsOf(session.access_token);
       project = await createManifestProject({
         api,
         accessToken: session.access_token,

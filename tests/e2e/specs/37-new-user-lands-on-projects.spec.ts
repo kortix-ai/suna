@@ -14,13 +14,15 @@ const databaseUrl =
 const password = "E2eNewUserLanding123!";
 const authOptions = { supabaseUrl, password };
 
-test.describe("37 — A new user lands on the project selector", () => {
+test.describe("37 — A new user lands on create-or-join", () => {
   // Regression: KRTX-638 put a "Name your account" form in front of the
   // selector and then forwarded every new user to `/new?account=<id>`, the
   // create form. A member who joins to work in a team's project was forced to
   // create one. The landing page is the selector: open a project, join an
   // invite, or choose to create a project. Onboarding belongs to a project.
-  test("lands on /projects with the selector, no forced step, no redirect to /new", async ({
+  // Workspaces (2026-11-05): sign-up creates no account, so a new user has 0
+  // workspaces and the selector is "Create a workspace" with the invite hint.
+  test("lands on /projects with create-or-join, no account, no redirect to /new", async ({
     page,
   }) => {
     test.skip(!databaseUrl, "KE2E_DATABASE_URL is required");
@@ -36,10 +38,16 @@ test.describe("37 — A new user lands on the project selector", () => {
       await test.step("The landing door opens the selector on /projects", async () => {
         await expect(page).toHaveURL(/\/projects(\?|$)/, { timeout: 60_000 });
         await expect(
-          page.getByRole("heading", { name: "Welcome to Kortix" }),
+          page.getByRole("heading", { name: "Create a workspace" }),
         ).toBeVisible({ timeout: 60_000 });
         await expect(page.getByTestId("selector-create")).toBeVisible();
+        await expect(page.getByText(`ask an admin to invite ${email}`)).toBeVisible();
         await expect(page.getByLabel("Account name")).toHaveCount(0);
+        const members = await queryDatabaseRows<{ n: string }>(
+          "select count(*)::text as n from kortix.account_members where user_id = $1::uuid",
+          [user.id],
+        );
+        expect(members[0]?.n).toBe("0");
       });
 
       await test.step("The selector stays: nothing forwards the user to /new", async () => {
@@ -49,7 +57,8 @@ test.describe("37 — A new user lands on the project selector", () => {
 
       await test.step("The create card is the user's own way to /new", async () => {
         await page.getByTestId("selector-create").click();
-        await expect(page).toHaveURL(/\/new\?account=/, { timeout: 60_000 });
+        await expect(page).toHaveURL(/\/new(\?|$)/, { timeout: 60_000 });
+        await expect(page).not.toHaveURL(/account=/);
       });
     } finally {
       const rows = await queryDatabaseRows<{ account_id: string }>(

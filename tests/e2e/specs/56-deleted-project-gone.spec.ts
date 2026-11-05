@@ -42,9 +42,9 @@ test('56 — a deleted remembered project shows the gone page on every visit @lo
     });
     for (let visit = 0; visit < 2; visit++) {
       await page.goto(`/projects/${project.id}`);
-      await expect(page.getByRole('heading', { name: 'This project is gone.' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'This workspace is gone.' })).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
-      await expect(page.getByRole('link', { name: 'Back to projects' })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Back to workspaces' })).toBeVisible();
       await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === 'kortix_last_project')?.value)
         .not.toBe(encodeURIComponent(`${user.id}:${project.id}`));
     }
