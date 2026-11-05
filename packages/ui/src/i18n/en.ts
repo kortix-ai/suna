@@ -7877,6 +7877,16 @@ const catalog = {
       "worker": "Worker",
       "verifier": "Verifier"
     },
+    "roleTab": {
+      "founder": "Founder",
+      "sales": "Sales",
+      "marketing": "Marketing",
+      "support": "Support",
+      "finance": "Finance",
+      "operations": "Operations",
+      "people": "People",
+      "engineering": "Engineering"
+    },
     "timeline": "Timeline",
     "verification": "Verification",
     "notes": "Notes",
@@ -7905,10 +7915,268 @@ const catalog = {
     "stopError": "Could not stop the goal. Try again.",
     "needsAttention": "Needs attention",
     "newGoal": "New goal",
-    "newGoalTitle": "New goal",
-    "newGoalDescription": "Describe the outcome. An agent works it until an independent check confirms it is done.",
-    "newGoalPlaceholder": "For example: our docs site is live on docs.example.com",
-    "newGoalStart": "Start goal",
+    "galleryTitle": "Start a new goal",
+    "galleryDescription": "Describe an outcome, or start from a template. An agent works it until an independent check confirms it is done.",
+    "composerPlaceholder": "Describe the outcome you want",
+    "templates": {
+      "draftInvestorUpdate": {
+        "title": "Draft an investor update",
+        "description": "Pulls company metrics into an investor update draft in Files.",
+        "prompt": "Draft this investor update: ",
+        "criterion": "Files/founder/investor-update.md contains the selected period, sourced metrics, changes from the prior period, milestones, risks, asks, and flagged data gaps.",
+        "start": "Gather metrics",
+        "done": "Update drafted"
+      },
+      "compareCompetitors": {
+        "title": "Compare the competition",
+        "description": "Compares competitors and saves a sourced positioning brief in Files.",
+        "prompt": "Compare these competitors: ",
+        "criterion": "Files/founder/competitor-brief.md covers each named competitor with dated source links, target buyers, pricing or unknowns, key differences, and positioning options.",
+        "start": "Research competitors",
+        "done": "Brief ready"
+      },
+      "summarizeCustomerFeedback": {
+        "title": "Find customer priorities",
+        "description": "Groups selected customer feedback into a ranked priorities brief in Files.",
+        "prompt": "Analyze this customer feedback: ",
+        "criterion": "Files/founder/customer-priorities.md lists themes ranked by unique customer count, source links, business impact, suggested actions, and the feedback scope.",
+        "start": "Read feedback",
+        "done": "Priorities ranked"
+      },
+      "prepareDecisionBrief": {
+        "title": "Prepare a decision brief",
+        "description": "Researches a business decision and saves options with costs and tradeoffs in Files.",
+        "prompt": "Prepare this business decision: ",
+        "criterion": "Files/founder/decision-brief.md states the decision, compares at least 3 options including no change, and lists sourced costs, tradeoffs, assumptions, and a recommendation.",
+        "start": "Gather evidence",
+        "done": "Options compared"
+      },
+      "researchTargetAccounts": {
+        "title": "Research target accounts",
+        "description": "Ranks target accounts by fit and saves a sourced prospect list in Files.",
+        "prompt": "Research these target accounts: ",
+        "criterion": "Files/sales/target-accounts.csv covers the requested account count with company, website, fit reason, buying signals, source links, and priority against the supplied buyer profile.",
+        "start": "Research accounts",
+        "done": "Prospects ranked"
+      },
+      "draftDealFollowups": {
+        "title": "Draft deal follow-ups",
+        "description": "Uses deal history to prepare unsent follow-up drafts in the connected inbox.",
+        "prompt": "Draft follow-ups for these deals: ",
+        "criterion": "The connected inbox has an unsent draft per selected deal with recipient, deal context, and next step; Files/sales/follow-ups.md maps deal links to draft links.",
+        "start": "Review deals",
+        "done": "Drafts ready"
+      },
+      "enrichSelectedLeads": {
+        "title": "Enrich selected leads",
+        "description": "Fills sourced lead fields in the connected CRM and saves a change log in Files.",
+        "prompt": "Enrich these CRM leads: ",
+        "criterion": "Files/sales/lead-enrichment.csv covers each selected lead with its CRM link, permitted field, before and after values, source link, and updated or unresolved status.",
+        "start": "Check leads",
+        "done": "Fields enriched"
+      },
+      "draftSalesProposal": {
+        "title": "Draft a sales proposal",
+        "description": "Turns discovery notes and approved pricing into a proposal draft in Files.",
+        "prompt": "Draft this sales proposal: ",
+        "criterion": "Files/sales/proposal.md contains buyer needs linked to discovery notes, proposed scope, approved pricing, exclusions, timeline, open questions, and a draft label.",
+        "start": "Read discovery",
+        "done": "Proposal drafted"
+      },
+      "draftLaunchCampaign": {
+        "title": "Draft a launch campaign",
+        "description": "Turns a product brief into campaign copy and a launch checklist in Files.",
+        "prompt": "Draft this launch campaign: ",
+        "criterion": "Files/marketing/launch-campaign.md contains the audience, message, drafts for each requested channel, calls to action, source links for claims, and a launch checklist.",
+        "start": "Read brief",
+        "done": "Campaign drafted"
+      },
+      "findContentGaps": {
+        "title": "Find content gaps",
+        "description": "Compares existing pages with search intent and saves ranked article briefs in Files.",
+        "prompt": "Find content gaps for: ",
+        "criterion": "Files/marketing/content-gaps.md contains the agreed number of ranked topics, audience intent, existing page gaps, dated search sources, and an outline per topic.",
+        "start": "Compare pages",
+        "done": "Briefs ready"
+      },
+      "rewriteLandingPage": {
+        "title": "Rewrite a landing page",
+        "description": "Reviews a landing page and saves revised copy with supported claims in Files.",
+        "prompt": "Rewrite this landing page: ",
+        "criterion": "Files/marketing/landing-page-copy.md maps each existing section to revised copy, with audience, headline, benefits, calls to action, and evidence links for claims.",
+        "start": "Review page",
+        "done": "Copy drafted"
+      },
+      "analyzeCampaignResults": {
+        "title": "Analyze campaign results",
+        "description": "Checks campaign spend and conversions and saves a results report in Files.",
+        "prompt": "Analyze this campaign: ",
+        "criterion": "Files/marketing/campaign-results.md states the campaign and date range, source links, spend, conversions, cost per conversion, attribution limits, and 3 recommended changes.",
+        "start": "Gather results",
+        "done": "Report ready"
+      },
+      "draftSupportReplies": {
+        "title": "Draft support replies",
+        "description": "Prepares unsent replies for selected tickets in the connected help desk.",
+        "prompt": "Draft replies for these tickets: ",
+        "criterion": "The connected help desk has an unsent draft per selected ticket with answer or escalation and source links; Files/support/reply-index.md lists ticket and draft links.",
+        "start": "Read tickets",
+        "done": "Replies drafted"
+      },
+      "triageSupportBacklog": {
+        "title": "Triage the support backlog",
+        "description": "Sorts a snapshot of open tickets into an action list in Files.",
+        "prompt": "Triage this support backlog: ",
+        "criterion": "Files/support/backlog.csv covers each ticket in the selected snapshot with ticket link, age, category, impact evidence, priority, suggested owner, and next action.",
+        "start": "Review backlog",
+        "done": "Tickets prioritized"
+      },
+      "draftHelpArticle": {
+        "title": "Draft a help article",
+        "description": "Turns repeated support questions into a sourced help article draft in Files.",
+        "prompt": "Draft a help article about: ",
+        "criterion": "Files/support/help-article.md contains the audience, symptom, verified steps, expected result, troubleshooting, and links to source tickets and product references.",
+        "start": "Find questions",
+        "done": "Article drafted"
+      },
+      "flagAtRiskAccounts": {
+        "title": "Flag at-risk accounts",
+        "description": "Reviews account support history and saves a retention action brief in Files.",
+        "prompt": "Review retention risks for: ",
+        "criterion": "Files/support/retention-brief.md covers each selected account with dated ticket evidence, unresolved issues, renewal date or unknown, and a proposed retention action.",
+        "start": "Review accounts",
+        "done": "Risks documented"
+      },
+      "reconcileExpenses": {
+        "title": "Reconcile expense records",
+        "description": "Matches transactions to receipts and saves a reconciliation file for review in Files.",
+        "prompt": "Reconcile these expense records: ",
+        "criterion": "Files/finance/expense-reconciliation.csv covers each selected transaction with date, amount, currency, receipt link or missing status, match status, and discrepancy.",
+        "start": "Match receipts",
+        "done": "Expenses reconciled"
+      },
+      "prepareInvoiceFollowups": {
+        "title": "Prepare invoice follow-ups",
+        "description": "Checks unpaid invoices and saves an aging report with unsent reminder copy in Files.",
+        "prompt": "Prepare follow-ups for these invoices: ",
+        "criterion": "Files/finance/invoice-follow-ups.md lists each selected invoice, source link, due date, currency, outstanding amount, payment evidence, and reminder copy for overdue balances.",
+        "start": "Check balances",
+        "done": "Reminders drafted"
+      },
+      "auditSubscriptionSpend": {
+        "title": "Review subscription spending",
+        "description": "Finds duplicate or unused subscriptions and saves a cost review in Files.",
+        "prompt": "Review these subscription costs: ",
+        "criterion": "Files/finance/subscription-review.csv lists each subscription, source link, cost, billing period, renewal date, usage evidence or unknown, and a keep or review recommendation.",
+        "start": "Gather charges",
+        "done": "Costs reviewed"
+      },
+      "prepareCashForecast": {
+        "title": "Prepare a cash forecast",
+        "description": "Uses supplied balances and commitments to save a cash forecast for review in Files.",
+        "prompt": "Forecast cash for this period: ",
+        "criterion": "Files/finance/cash-forecast.csv shows opening balance, sourced inflows and outflows, and closing balance per requested interval, with currency, assumptions, and data gaps.",
+        "start": "Gather balances",
+        "done": "Forecast prepared"
+      },
+      "compareVendorQuotes": {
+        "title": "Compare vendor quotes",
+        "description": "Compares vendor offers and saves a purchase recommendation for review in Files.",
+        "prompt": "Compare these vendor quotes: ",
+        "criterion": "Files/operations/vendor-comparison.md covers each quote with source link, currency, total cost, scope, lead time, exclusions, and a recommendation against supplied requirements.",
+        "start": "Review quotes",
+        "done": "Vendors compared"
+      },
+      "documentBusinessProcess": {
+        "title": "Document a business process",
+        "description": "Turns supplied process notes into a step-by-step operating guide in Files.",
+        "prompt": "Document this business process: ",
+        "criterion": "Files/operations/process-guide.md contains the trigger, required inputs, ordered steps, responsible roles, exception paths, completion checklist, and source links.",
+        "start": "Gather notes",
+        "done": "Guide ready"
+      },
+      "reconcileInventoryRecords": {
+        "title": "Reconcile inventory records",
+        "description": "Compares stock records with supplied counts and saves discrepancies in Files.",
+        "prompt": "Reconcile these inventory records: ",
+        "criterion": "Files/operations/inventory-reconciliation.csv covers each selected item with SKU, location, recorded quantity, counted quantity, variance, source links, and proposed correction.",
+        "start": "Compare counts",
+        "done": "Variances listed"
+      },
+      "prepareProjectHandoff": {
+        "title": "Prepare a project handoff",
+        "description": "Collects project decisions and open work into a handoff pack in Files.",
+        "prompt": "Prepare this project handoff: ",
+        "criterion": "Files/operations/project-handoff.md contains scope, current status, deliverable links, decisions, open tasks, responsible people, deadlines, blockers, and missing information.",
+        "start": "Collect records",
+        "done": "Handoff ready"
+      },
+      "draftJobDescription": {
+        "title": "Draft a job description",
+        "description": "Turns a hiring brief into a job description and candidate scorecard in Files.",
+        "prompt": "Draft this job description: ",
+        "criterion": "Files/people/job-description.md contains role outcomes, responsibilities, required skills, approved employment details, open questions, and a job-related candidate scorecard.",
+        "start": "Read brief",
+        "done": "Role drafted"
+      },
+      "buildOnboardingPlan": {
+        "title": "Build an onboarding plan",
+        "description": "Uses role documents to save a bounded onboarding checklist in Files.",
+        "prompt": "Build onboarding for this role: ",
+        "criterion": "Files/people/onboarding-plan.md covers the requested onboarding period with tasks, responsible roles, deadlines, learning goals, resource links, and access requests for review.",
+        "start": "Read role",
+        "done": "Plan ready"
+      },
+      "prepareInterviewKit": {
+        "title": "Prepare an interview kit",
+        "description": "Builds role-specific questions and a consistent scoring rubric in Files.",
+        "prompt": "Prepare interviews for this role: ",
+        "criterion": "Files/people/interview-kit.md maps each required skill to questions, a scoring rubric, and evidence examples, with interview stages and a job-related work sample.",
+        "start": "Review requirements",
+        "done": "Kit ready"
+      },
+      "organizePeopleHandbook": {
+        "title": "Organize the people handbook",
+        "description": "Combines supplied policies into a handbook draft with a gap list in Files.",
+        "prompt": "Organize these people policies: ",
+        "criterion": "Files/people/handbook-draft.md contains an index, source links for each policy, duplicate or conflicting sections, missing topics, and questions that require human review.",
+        "start": "Review policies",
+        "done": "Handbook drafted"
+      },
+      "fixReportedBug": {
+        "title": "Fix a reported bug",
+        "description": "Reproduces a bug and prepares a tested fix in a change request for review.",
+        "prompt": "Fix this reported bug: ",
+        "criterion": "Files/engineering/bug-fix.md links the change request and contains reproduction steps, before and after outputs, test commands with results, and remaining limitations.",
+        "start": "Reproduce bug",
+        "done": "Fix ready"
+      },
+      "buildScopedFeature": {
+        "title": "Build a scoped feature",
+        "description": "Implements a scoped feature and prepares a change request with verification evidence.",
+        "prompt": "Build this scoped feature: ",
+        "criterion": "Files/engineering/feature-verification.md links the change request, maps each requested acceptance criterion to real inputs and outputs, and lists test commands with results.",
+        "start": "Read requirements",
+        "done": "Feature ready"
+      },
+      "improveSlowFlow": {
+        "title": "Speed up a flow",
+        "description": "Measures a slow flow and prepares a change request with before and after results.",
+        "prompt": "Speed up this flow: ",
+        "criterion": "Files/engineering/performance-results.md links the change request and records the agreed target, measurement method, comparable before and after timings, and correctness checks.",
+        "start": "Measure flow",
+        "done": "Results measured"
+      },
+      "patchVulnerableDependencies": {
+        "title": "Patch vulnerable dependencies",
+        "description": "Updates vulnerable dependencies in scope and prepares a change request for review.",
+        "prompt": "Patch these vulnerable dependencies: ",
+        "criterion": "Files/engineering/dependency-patches.md links the change request and lists each scoped advisory, old and new versions, scan and test results, and unresolved findings with reasons.",
+        "start": "Review advisories",
+        "done": "Patches ready"
+      }
+    },
+    "templateSteps": "{start}, then {done}",
     "cancel": "Cancel",
     "forPerson": "for {person}",
     "answerInChat": "Answer in chat",
@@ -7930,14 +8198,6 @@ const catalog = {
       "workingNoWake": "In progress."
     },
     "startedToast": "Goal started",
-    "outcomeLabel": "Outcome",
-    "doneWhenLabel": "Done when",
-    "doneWhenHint": "Optional. Leave it empty and the agent writes the criteria before it starts.",
-    "criterionPlaceholder": "For example: the site loads on docs.example.com",
-    "criterionLabel": "Done criterion {n}",
-    "removeCriterion": "Remove criterion",
-    "removeCriterionN": "Remove done criterion {n}",
-    "addCriterion": "Add criterion",
     "startError": "Could not start the goal. Try again.",
     "updated": "updated {time}",
     "attentionTitle": "Needs attention",
@@ -8000,7 +8260,10 @@ const catalog = {
     "lastCheckAt": "Last checked {time}",
     "neverChecked": "Not checked yet",
     "wakesTodayCount": "{count} of {max} wakes today",
-    "filesLabel": "Files"
+    "filesLabel": "Files",
+    "rolesLabel": "Templates by role",
+    "startNoFiles": "A goal starts from text. Remove the files, then send again.",
+    "startNeedsSubject": "Add the subject after the template text, then send."
   },
   "agentEditor": {
     "manage": "Manage",
