@@ -113,7 +113,9 @@ export function PageHeader({
     );
 
   return (
-    <View style={{ paddingBottom }} className={`bg-background ${className ?? ''}`}>
+    // zIndex: a pressed glass button grows past the row (the system press
+    // response); the page below must not draw over it.
+    <View style={{ paddingBottom, zIndex: 1 }} className={`bg-background ${className ?? ''}`}>
       {/* `SettingsHeader`'s metrics (56pt min height, 12pt below). Three
           flex-1 columns: the outer two take equal width no matter how many
           buttons either holds, so the title is centred in the row, not in
