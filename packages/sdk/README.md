@@ -936,7 +936,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 
 | namespace | what |
 |---|---|
-| `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
+| `kortix.projects` | list · get · detail · create · provision · createWorkspace · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
 | `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,retry,remove,grant,revoke,setAccess}` · `subscriptions.{list,usage}` (project-authorized usage for named and legacy ChatGPT logins; reads credentials in place) · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}`. A project installs an item through `createMarketplaceInstallSession(projectId, itemId)`, which starts a session whose agent merges the item into the project and opens a change request; it resolves `{ session_id }` |
@@ -1375,6 +1375,34 @@ the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes:
 - `SessionNotReadyError` (root barrel) — a session handle's runtime-scoped
   member (`.runtime`, `.previewUrl()`, `.proxyUrl()`) was touched before
   `ensureReady()` resolved this session's own sandbox.
+- `isNoWorkspaceError(err)` — HTTP 409 with `code: NO_WORKSPACE_CODE`
+  (`'no_workspace'`): the caller belongs to no workspace. Sign-up creates no
+  account; show "Create a workspace or join one" and call `createWorkspace`.
+
+## Create a workspace
+
+A workspace is one account and its one project; the workspace id is the
+`project_id`. `createWorkspace(input, onEvent?, options?)` (also
+`kortix.projects.createWorkspace`) creates both in one call
+(`new_workspace: true` on `POST /projects/provision`). The server reuses the
+caller's newest owned account with no active project, else creates one named
+after the workspace. `input` is `CreateWorkspaceInput`: the provision fields
+without `account_id`. Pass `onEvent` to stream the same phases as
+`provisionProjectStream`; omit it on React Native.
+
+```ts
+import { createWorkspace } from "@kortix/sdk";
+
+const ws = await createWorkspace(
+  { name: "Northwind", idempotency_key: crypto.randomUUID() },
+  (e) => e.type === "phase" && console.log(e.phase),
+);
+// ws.project_id is the workspace id; ws.account_id its account.
+```
+
+Codes: `403 account_creation_restricted` (the deployment restricts account
+creation), `403 new_workspace_requires_person` (a project, session or agent
+token), `409 provision_in_flight` (retry with the same key).
 
 The canonical server-side wrapper shape — catch a 402 and pass the payload
 through to your own client for re-billing, instead of leaking a Kortix error:

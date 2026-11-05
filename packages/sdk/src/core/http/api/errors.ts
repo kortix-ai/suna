@@ -254,6 +254,22 @@ export function isRepositoryDisconnectedError(error: unknown): boolean {
 }
 
 /**
+ * Stable code of the API's HTTP 409 for a caller who belongs to no workspace.
+ * No account is created at sign-up (Workspaces, 2026-11-05): a new person has
+ * 0 workspaces until they create one (`createWorkspace`) or accept an invite.
+ * Every call that needs a workspace (mint a token, approve a CLI login, read
+ * billing, …) answers this code until then. Hosts branch on it and show
+ * "Create a workspace or join one". Must stay in sync with `NO_WORKSPACE_CODE`
+ * in `apps/api/src/shared/no-workspace.ts`.
+ */
+export const NO_WORKSPACE_CODE = 'no_workspace' as const;
+
+/** True when `error` is the API's 409 `no_workspace`. Duck-typed on `code`. */
+export function isNoWorkspaceError(error: unknown): boolean {
+  return !!error && typeof error === 'object' && (error as { code?: unknown }).code === NO_WORKSPACE_CODE;
+}
+
+/**
  * The disconnect reason stored on a project's git connection
  * (`ProjectDetail.git_connection`: `status: 'error'` and `last_error_code`),
  * or `null` when the connection is healthy or failed for another reason.
