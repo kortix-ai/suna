@@ -2695,7 +2695,7 @@
           "f3": "メンバー無制限、クレジットプールは 1 つを共有",
           "f4": "未使用のクレジットは 1 か月繰り越し",
           "f5": "いつでもチャージ可能。チャージ分は無期限",
-          "f6": "最大 200 プロジェクトと、より高いモデルのレート制限",
+          "f6": "より高いモデルのレート制限",
           "f7": "メールサポート"
         },
         "enterprise": {
@@ -21240,7 +21240,11 @@
       "text05ee1d6181f3": "変更リクエストがマージされると、{agent}があなたの指示を実行します。",
       "texte608495c45ce": "{branch} にマージ",
       "text80ca527b0d55": "変更リクエストのトリガーを作成しました",
-      "authEmailAlreadySent": "このメールは1分以内に送信済みです。再送信する前に、受信トレイと迷惑メールフォルダを確認してください。"
+      "authEmailAlreadySent": "このメールは1分以内に送信済みです。再送信する前に、受信トレイと迷惑メールフォルダを確認してください。",
+      "text2590cd62a747": "ワークスペースの設定",
+      "text276261b1e03d": "ワークスペース 設定 組織 チーム 管理",
+      "text634ebc515b7f": "アカウント · API キー",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -25929,7 +25933,10 @@
       "accessTitle": "アクセス",
       "accessDescription": "このワークスペースを開ける人と、そのロール。",
       "securityTitle": "セキュリティ",
-      "githubTitle": "GitHub 接続"
+      "githubTitle": "GitHub 接続",
+      "deleteKeepsLogin": "ログインは残ります。別のワークスペースを作成するか、参加できます。",
+      "personalKeysTitle": "あなたの個人アクセスキー",
+      "personalKeysDescription": "このワークスペースであなたとして動作する API キー。CLI、スクリプト、CI ジョブに使います。"
     },
     "cli": {
       "noWorkspaceTitle": "CLI にサインインするにはワークスペースを作成してください",

@@ -2695,7 +2695,7 @@
           "f3": "Membres illimités, un seul pool de crédits partagé",
           "f4": "Les crédits inutilisés sont reportés d'un mois",
           "f5": "Rechargez à tout moment. Les recharges n'expirent jamais",
-          "f6": "Jusqu’à 200 projets et des limites de débit plus élevées",
+          "f6": "Des limites de débit plus élevées",
           "f7": "Support par e-mail"
         },
         "enterprise": {
@@ -21240,7 +21240,11 @@
       "text05ee1d6181f3": "Quand une demande de modification est fusionnée, {agent} exécute votre instruction.",
       "texte608495c45ce": "Fusionnée dans {branch}",
       "text80ca527b0d55": "Déclencheur de demande de modification créé",
-      "authEmailAlreadySent": "Nous avons envoyé cet e-mail il y a moins d'une minute. Vérifiez votre boîte de réception et vos spams avant d'en demander un autre."
+      "authEmailAlreadySent": "Nous avons envoyé cet e-mail il y a moins d'une minute. Vérifiez votre boîte de réception et vos spams avant d'en demander un autre.",
+      "text2590cd62a747": "Paramètres de l'espace de travail",
+      "text276261b1e03d": "espace de travail paramètres organisations équipes gérer",
+      "text634ebc515b7f": "Compte · Clés API",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -25929,7 +25933,10 @@
       "accessTitle": "Accès",
       "accessDescription": "Qui peut ouvrir cet espace de travail, et avec quel rôle.",
       "securityTitle": "Sécurité",
-      "githubTitle": "Connexions GitHub"
+      "githubTitle": "Connexions GitHub",
+      "deleteKeepsLogin": "Votre connexion reste : vous pouvez créer ou rejoindre un autre espace de travail.",
+      "personalKeysTitle": "Vos clés d’accès personnelles",
+      "personalKeysDescription": "Des clés API qui agissent en votre nom dans cet espace de travail : pour la CLI, un script ou une tâche CI."
     },
     "cli": {
       "noWorkspaceTitle": "Créez un espace de travail pour connecter la CLI",

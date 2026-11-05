@@ -2695,7 +2695,7 @@
           "f3": "Membri illimitati, un unico pool di crediti condiviso",
           "f4": "I crediti non usati si trasferiscono di un mese",
           "f5": "Ricarica quando vuoi. Le ricariche non scadono mai",
-          "f6": "Fino a 200 progetti e limiti di frequenza dei modelli più alti",
+          "f6": "Limiti di frequenza dei modelli più alti",
           "f7": "Assistenza via email"
         },
         "enterprise": {
@@ -21240,7 +21240,11 @@
       "text05ee1d6181f3": "Quando una richiesta di modifica viene unita, {agent} esegue la tua istruzione.",
       "texte608495c45ce": "Unita in {branch}",
       "text80ca527b0d55": "Trigger della richiesta di modifica creato",
-      "authEmailAlreadySent": "Abbiamo inviato questa email meno di un minuto fa. Controlla la posta in arrivo e la cartella spam prima di richiederne un'altra."
+      "authEmailAlreadySent": "Abbiamo inviato questa email meno di un minuto fa. Controlla la posta in arrivo e la cartella spam prima di richiederne un'altra.",
+      "text2590cd62a747": "Impostazioni del workspace",
+      "text276261b1e03d": "workspace impostazioni organizzazioni team gestire",
+      "text634ebc515b7f": "Account · Chiavi API",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -25929,7 +25933,10 @@
       "accessTitle": "Accesso",
       "accessDescription": "Chi può aprire questo workspace e con quale ruolo.",
       "securityTitle": "Sicurezza",
-      "githubTitle": "Connessioni GitHub"
+      "githubTitle": "Connessioni GitHub",
+      "deleteKeepsLogin": "Il tuo accesso resta: puoi creare un altro workspace o unirti a uno.",
+      "personalKeysTitle": "Le tue chiavi di accesso personali",
+      "personalKeysDescription": "Chiavi API che agiscono come te in questo workspace: per la CLI, uno script o un job CI."
     },
     "cli": {
       "noWorkspaceTitle": "Crea un workspace per accedere con la CLI",

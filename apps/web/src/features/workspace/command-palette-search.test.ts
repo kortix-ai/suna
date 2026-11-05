@@ -491,7 +491,7 @@ describe('genuine synonyms still answer', () => {
     // answered by a registry row. `api-keys` came BACK on 2026-08-18 as the
     // `tokens` tab (the personal half only), so `pat` reaches a settings row
     // again — `nav:account-tokens` answers for service account tokens.
-    ['pat', 'settings:tokens'],
+    ['pat', 'nav:account-tokens'],
     ['hotkeys', 'settings:preferences'],
     ['ledger', 'nav:account-usage'],
     ['configure', 'nav:proj-customize'],

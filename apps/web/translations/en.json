@@ -2695,7 +2695,7 @@
           "f3": "Unlimited members, one shared credit pool",
           "f4": "Unused credits roll over one month",
           "f5": "Top up any time. Top-ups never expire",
-          "f6": "Up to 200 projects and higher model rate limits",
+          "f6": "Higher model rate limits",
           "f7": "Support via email"
         },
         "enterprise": {
@@ -21285,7 +21285,11 @@
       "text05ee1d6181f3": "When a change request merges, {agent} runs your instruction.",
       "texte608495c45ce": "Merged into {branch}",
       "text80ca527b0d55": "Change request trigger created",
-      "authEmailAlreadySent": "We sent this email less than a minute ago. Check your inbox and your spam folder before you ask for another one."
+      "authEmailAlreadySent": "We sent this email less than a minute ago. Check your inbox and your spam folder before you ask for another one.",
+      "text2590cd62a747": "Workspace settings",
+      "text276261b1e03d": "workspace settings organizations teams manage",
+      "text634ebc515b7f": "Account · API keys",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -26593,7 +26597,10 @@
       "accessTitle": "Access",
       "accessDescription": "Who can open this workspace, and with which role.",
       "securityTitle": "Security",
-      "githubTitle": "GitHub connections"
+      "githubTitle": "GitHub connections",
+      "deleteKeepsLogin": "Your login stays: you can create or join another workspace.",
+      "personalKeysTitle": "Your personal access keys",
+      "personalKeysDescription": "API keys that act as you in this workspace: for the CLI, a script, or a CI job."
     },
     "cli": {
       "noWorkspaceTitle": "Create a workspace to sign in the CLI",

@@ -194,11 +194,8 @@ describe('search terms carried across from the removed registry entries', () => 
     // `connected` left the overlay on 2026-09-03 — the account's GitHub App
     // installations are the account page's Git tab.
     ['avatar', 'profile'],
-    // API keys came back into the rail on 2026-08-18, so the two words that
-    // name a person's own key answer HERE again, not on `account-tokens` —
-    // that row is the service-account surface now.
-    ['pat', 'tokens'],
-    ['cli', 'tokens'],
+    // `pat` and `cli` left this rail with the personal keys (Workspaces,
+    // PR 1): the `account-tokens` row answers them now.
     // Everything else that used to be listed here named a tab that has left
     // this rail. The thirteen project-configuration words (secrets, env, git,
     // github, members, collaborators, slack, telegram, llm, openrouter,

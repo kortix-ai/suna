@@ -48,6 +48,7 @@ import { AccessHelp } from '@/components/iam/access-help';
 import { WorkspaceAccessSection } from '@/features/workspace/settings/workspace-access-section';
 import { AddGitHubAccountDialog } from '@kortix/ui/access/iam/add-github-account-dialog';
 import { ApiKeysSection } from '@/components/iam/api-keys-card';
+import { TokensTab } from '@kortix/ui/customize/settings/tabs/tokens-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
@@ -516,6 +517,12 @@ export function AccountHubContent({
               above is the only other chrome. */}
           {activeSection === 'tokens' && sectionVisible.tokens ? (
             <div className="space-y-10">
+              {/* A person's own keys first: every member has them (Workspaces,
+                  PR 1 — they left `/settings`). The machine keys below need
+                  `token.create`. */}
+              <TokensTab accountId={account.account_id} embedded />
+              {canCreateToken === true ? (
+                <>
               <ApiKeysSection accountId={account.account_id} canManage={canCreateToken === true} />
               {/* OAuth apps — "Sign in with Kortix" clients. A client secret
                   is a credential the account issues to a machine, so it
@@ -523,6 +530,8 @@ export function AccountHubContent({
                   `token.*` permissions. */}
               <OAuthAppsCard accountId={account.account_id} canManage={canCreateToken === true} />
               <KeyRulesCard accountId={account.account_id} canManage={canWriteAccount} />
+                </>
+              ) : null}
             </div>
           ) : null}
 

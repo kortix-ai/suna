@@ -29,7 +29,6 @@ import { forgetLastProjectId } from '../../../internal/lib/onboarding/last-proje
 import { PROJECT_ACTIONS } from '../../../internal/lib/project-actions';
 import { useProjectCans } from '../../../internal/lib/use-project-can';
 import { useSettingsPanelStore } from '../../../internal/stores/settings-panel-store';
-import { TransferWorkspaceEntry } from './transfer-workspace-dialog';
 import {
   archiveProject,
   getProject,
@@ -117,13 +116,6 @@ export interface GeneralTabViewProps {
   onCloseArchiveDialog?: () => void;
   onConfirmArchive?: () => void;
   isArchivePending?: boolean;
-  /** `TransferWorkspaceEntry` — the second danger-zone row and its dialog.
-   *  A slot for the same reason the others are: the dialog owns its own
-   *  accounts query and mutation, so it cannot render under
-   *  `renderToStaticMarkup` with no providers. Shares the Delete section's
-   *  `canDelete` gate — the API's source gate for a transfer is the same
-   *  destructive tier that gates delete. */
-  transferSlot?: ReactNode;
 }
 
 export interface GeneralTabCopy {
@@ -176,7 +168,6 @@ export function GeneralTabView({
   onCloseArchiveDialog = () => {},
   onConfirmArchive = () => {},
   isArchivePending = false,
-  transferSlot,
 }: GeneralTabViewProps) {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
@@ -217,7 +208,6 @@ export function GeneralTabView({
                     {copy.deleteWorkspace}
                   </Button>
                 </SettingsRow>
-                {transferSlot}
               </SettingsRowGroup>
             </section>
           ) : null}
@@ -500,6 +490,7 @@ export function GeneralTab({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.workspace');
+  const tWorkspaces = useTranslations('workspaces.settings');
   const queryClient = useQueryClient();
   const router = useUiRouter();
   const viewerId = useUiViewerId();
@@ -572,7 +563,9 @@ export function GeneralTab({
           t('consequences.managedRepo'),
           t('consequences.access'),
         ],
-        reassurance: t('reassurance'),
+        // Deleting a workspace never deletes the person: their login stays,
+        // with 0 workspaces they land on create-or-join (FAQ, DEL-6).
+        reassurance: `${t('reassurance')} ${tWorkspaces('deleteKeepsLogin')}`,
         keepWorkspace: t('keepWorkspace'),
       }}
       isLoading={projectQuery.isLoading}
@@ -596,12 +589,6 @@ export function GeneralTab({
       onCloseArchiveDialog={() => setArchiveOpen(false)}
       onConfirmArchive={() => archiveMutation.mutate()}
       isArchivePending={archiveMutation.isPending}
-      transferSlot={
-        <TransferWorkspaceEntry
-          projectId={projectId}
-          currentAccountId={project?.account_id}
-        />
-      }
     />
   );
 }

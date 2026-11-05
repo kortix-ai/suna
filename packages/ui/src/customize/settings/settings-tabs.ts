@@ -149,14 +149,12 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'sessions',
   'preferences',
   'chrome',
-  'tokens',
   'mcp',
   'computer',
-  // `connected` is a legacy alias for the person's Profile tab in RENAMED.
-  // `credits` and `plan` are still in the type but NOT here: the overlay's
-  // Account group was removed on 2026-09-03 (Marko) — a wallet and a
-  // subscription belong to the account page, `/accounts/[id]`, and both ids
-  // resolve there through `ACCOUNT_GRADUATED`.
+  // `tokens`, `connected`, `credits` and `plan` are still in the type but NOT
+  // here: a workspace's keys, GitHub connections, wallet and plan live in
+  // Workspace settings, and each id resolves there through
+  // `ACCOUNT_GRADUATED`.
   // `workspace`, `sandbox` and `feature-flags` are still in the
   // type — `settings-panel.tsx` keeps their panes mountable — but NOT here:
   // the overlay's Workspace group was removed on 2026-09-03 (Marko), so no
@@ -295,38 +293,26 @@ export const ACCOUNT_GRADUATED: Record<string, string> = {
   roles: 'roles',
   identity: 'identity',
   audit: 'audit',
-  // `api-keys` and `tokens` are NOT here any more. Both used to send a stale
-  // link to `/accounts/<id>?tab=tokens`, which was right while every
-  // credential lived on that one page. Since 2026-08-18 a person's own API
-  // keys are back in this overlay as the `tokens` tab and only the automation
-  // half stayed on the account page, so both ids resolve to the overlay
-  // instead: `tokens` through `parseSettingsTab` (it names a live tab now) and
-  // `api-keys` through `RENAMED` below. That is the better default for a stale
-  // link — someone who bookmarked "API keys" wanted a key they could use, and
-  // the pane they land on carries a one-line pointer to the account page for
-  // the other kind.
   members: 'access-projects',
+  // Workspaces (FAQ, PR 1): `/settings` keeps only what is the person's own.
+  // Personal access keys act in ONE workspace, so they live in Workspace
+  // settings › API keys; the account's GitHub connections in Git repo. Each
+  // lands on the current workspace's section (`account-hub-router.tsx`), or
+  // on the chooser with no workspace.
+  tokens: 'tokens',
+  'api-keys': 'tokens',
+  connected: 'git',
 };
 
 /**
- * Legacy ids that came BACK into the overlay under a new name.
- *
- * One entry, and it is a rename rather than a graduation: `api-keys` was this
- * overlay's tab for a person's own API keys before every credential surface
- * moved to `/accounts/[id]`. The personal half has returned as `tokens`, so a
- * stale `/settings/api-keys` or `/customize/api-keys` link lands on the pane
- * that holds what it was a link to, not on the account page's automation tab.
- *
- * Checked BEFORE `ACCOUNT_GRADUATED` so the answer does not depend on whether
- * the caller happened to have resolved an account id yet.
+ * Legacy ids that came BACK into the overlay under a new name. None today:
+ * `api-keys` and `connected` resolve to Workspace settings. Checked BEFORE
+ * `ACCOUNT_GRADUATED` so an entry never depends on an account id.
  */
 export const RENAMED: Record<string, SettingsTab> = {
-  // Personal sign-in details live on Profile, not the organization's Git pane.
-  connected: 'profile',
-  'api-keys': 'tokens',
-  // Every project-configuration spelling (`general`, `git`, `snapshots`,
-  // `experimental`, …) is in `GRADUATED` above: they name the
-  // Customize bar's Settings tab, not a tab of this overlay.
+  // `connected` and `api-keys` left this overlay for Workspace settings
+  // (`ACCOUNT_GRADUATED`). Every project-configuration spelling (`general`,
+  // `git`, `snapshots`, `experimental`, …) is in `GRADUATED` above.
 };
 
 /**

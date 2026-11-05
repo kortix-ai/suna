@@ -1237,7 +1237,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-tokens',
-    label: 'Account · Service account tokens',
+    label: 'Account · API keys',
     icon: KeyRound,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1250,8 +1250,11 @@ export const menuRegistry: MenuItemDef[] = [
     // them here would make this row the answer to a query it is the wrong
     // answer to.
     accountTab: 'tokens',
+    // Workspaces (PR 1): a person's own access keys came back here from
+    // `/settings` — Workspace settings › API keys holds both kinds — so the
+    // words for them (`personal`, `pat`, `cli`) are this row's again.
     keywords:
-      'service account tokens machine identity automation ci cd bot integration key rules expiry policy',
+      'api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy',
   },
 
   // ──────────────────────────────────────────────────────────────────────────

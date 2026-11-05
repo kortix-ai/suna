@@ -2695,7 +2695,7 @@
           "f3": "Unbegrenzt viele Mitglieder, ein gemeinsamer Credit-Pool",
           "f4": "Ungenutzte Credits werden einen Monat übertragen",
           "f5": "Jederzeit aufladen. Aufladungen verfallen nie",
-          "f6": "Bis zu 200 Projekte und höhere Modell-Ratenlimits",
+          "f6": "Höhere Modell-Ratenlimits",
           "f7": "Support per E-Mail"
         },
         "enterprise": {
@@ -21240,7 +21240,11 @@
       "text05ee1d6181f3": "Wenn eine Änderungsanfrage zusammengeführt wird, führt {agent} deine Anweisung aus.",
       "texte608495c45ce": "In {branch} zusammengeführt",
       "text80ca527b0d55": "Änderungsanfrage-Trigger erstellt",
-      "authEmailAlreadySent": "Wir haben diese E-Mail vor weniger als einer Minute gesendet. Prüfe deinen Posteingang und deinen Spam-Ordner, bevor du eine neue anforderst."
+      "authEmailAlreadySent": "Wir haben diese E-Mail vor weniger als einer Minute gesendet. Prüfe deinen Posteingang und deinen Spam-Ordner, bevor du eine neue anforderst.",
+      "text2590cd62a747": "Workspace-Einstellungen",
+      "text276261b1e03d": "workspace einstellungen organisationen teams verwalten",
+      "text634ebc515b7f": "Konto · API-Schlüssel",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -25929,7 +25933,10 @@
       "accessTitle": "Zugriff",
       "accessDescription": "Wer diesen Workspace öffnen kann, und mit welcher Rolle.",
       "securityTitle": "Sicherheit",
-      "githubTitle": "GitHub-Verbindungen"
+      "githubTitle": "GitHub-Verbindungen",
+      "deleteKeepsLogin": "Dein Login bleibt: Du kannst einen anderen Workspace erstellen oder einem beitreten.",
+      "personalKeysTitle": "Deine persönlichen Zugriffsschlüssel",
+      "personalKeysDescription": "API-Schlüssel, die in diesem Workspace als du handeln: für die CLI, ein Skript oder einen CI-Job."
     },
     "cli": {
       "noWorkspaceTitle": "Erstelle einen Workspace, um die CLI anzumelden",

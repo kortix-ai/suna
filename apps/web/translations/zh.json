@@ -2695,7 +2695,7 @@
           "f3": "成员不限数量，共用一个积分池",
           "f4": "未用完的积分可顺延一个月",
           "f5": "随时充值，充值的积分永不过期",
-          "f6": "最多 200 个项目，更高的模型速率限制",
+          "f6": "更高的模型速率限制",
           "f7": "邮件支持"
         },
         "enterprise": {
@@ -21240,7 +21240,11 @@
       "text05ee1d6181f3": "变更请求合并时，{agent} 会执行你的指令。",
       "texte608495c45ce": "合并到 {branch}",
       "text80ca527b0d55": "已创建变更请求触发器",
-      "authEmailAlreadySent": "我们在一分钟内已发送过这封邮件。请先检查收件箱和垃圾邮件文件夹，再申请重新发送。"
+      "authEmailAlreadySent": "我们在一分钟内已发送过这封邮件。请先检查收件箱和垃圾邮件文件夹，再申请重新发送。",
+      "text2590cd62a747": "工作区设置",
+      "text276261b1e03d": "工作区 设置 组织 团队 管理",
+      "text634ebc515b7f": "账户 · API 密钥",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -25929,7 +25933,10 @@
       "accessTitle": "访问权限",
       "accessDescription": "谁可以打开此工作区，以及使用哪个角色。",
       "securityTitle": "安全",
-      "githubTitle": "GitHub 连接"
+      "githubTitle": "GitHub 连接",
+      "deleteKeepsLogin": "你的登录保留：你可以创建或加入另一个工作区。",
+      "personalKeysTitle": "你的个人访问密钥",
+      "personalKeysDescription": "在此工作区中代表你操作的 API 密钥：用于 CLI、脚本或 CI 任务。"
     },
     "cli": {
       "noWorkspaceTitle": "创建工作区以登录 CLI",

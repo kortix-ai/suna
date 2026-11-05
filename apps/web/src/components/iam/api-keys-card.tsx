@@ -625,20 +625,6 @@ function CreateApiKeySheetFooter({ accountId }: { accountId: string }) {
   );
 }
 
-/** Where a person's own API key lives (Settings → Tokens). */
-function ApiKeyFootnote() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  return (
-    <p className="text-muted-foreground text-xs">
-      {tI18nComplete.raw('text4703d3bef6c4')}{' '}
-      <Link href="/settings/tokens" className="text-foreground underline underline-offset-2">
-        {tI18nComplete.raw('text80b9316cb15b')}
-      </Link>
-      .
-    </p>
-  );
-}
-
 export interface ApiKeysSectionProps {
   accountId: string;
   canManage: boolean;
@@ -682,7 +668,7 @@ export function ApiKeysSection({ accountId, canManage }: ApiKeysSectionProps) {
           ) : undefined
         }
       />
-      <ApiKeysList accountId={accountId} canManage={canManage} footnote={<ApiKeyFootnote />} />
+      <ApiKeysList accountId={accountId} canManage={canManage} />
     </section>
   );
 }

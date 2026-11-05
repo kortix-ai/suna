@@ -2695,7 +2695,7 @@
           "f3": "Membros ilimitados, um único pool de créditos compartilhado",
           "f4": "Créditos não usados são transferidos por um mês",
           "f5": "Recarregue quando quiser. Recargas nunca expiram",
-          "f6": "Até 200 projetos e limites de taxa de modelos mais altos",
+          "f6": "Limites de taxa de modelos mais altos",
           "f7": "Suporte por e-mail"
         },
         "enterprise": {
@@ -21240,7 +21240,11 @@
       "text05ee1d6181f3": "Quando uma solicitação de mudança é mesclada, {agent} executa sua instrução.",
       "texte608495c45ce": "Mesclada em {branch}",
       "text80ca527b0d55": "Gatilho de solicitação de mudança criado",
-      "authEmailAlreadySent": "Enviamos este e-mail há menos de um minuto. Verifique a sua caixa de entrada e a pasta de spam antes de pedir outro."
+      "authEmailAlreadySent": "Enviamos este e-mail há menos de um minuto. Verifique a sua caixa de entrada e a pasta de spam antes de pedir outro.",
+      "text2590cd62a747": "Configurações do espaço de trabalho",
+      "text276261b1e03d": "espaço de trabalho configurações organizações equipes gerenciar",
+      "text634ebc515b7f": "Conta · Chaves de API",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -25929,7 +25933,10 @@
       "accessTitle": "Acesso",
       "accessDescription": "Quem pode abrir este espaço de trabalho e com qual função.",
       "securityTitle": "Segurança",
-      "githubTitle": "Conexões do GitHub"
+      "githubTitle": "Conexões do GitHub",
+      "deleteKeepsLogin": "Seu login continua: você pode criar ou entrar em outro espaço de trabalho.",
+      "personalKeysTitle": "Suas chaves de acesso pessoais",
+      "personalKeysDescription": "Chaves de API que agem como você neste espaço de trabalho: para a CLI, um script ou um job de CI."
     },
     "cli": {
       "noWorkspaceTitle": "Crie um espaço de trabalho para entrar na CLI",

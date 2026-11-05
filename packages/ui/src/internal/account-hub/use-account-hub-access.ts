@@ -163,7 +163,10 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     // The account's service accounts and OAuth apps. Their lists assert
     // `token.read`, which every member holds, but every control in the pane
     // needs `token.create`; a person's own tokens live in /settings/tokens.
-    tokens: canCreateToken === true,
+    // Every member: a person's own access keys live here (they left
+    // `/settings` with Workspaces). The machine keys inside still need
+    // `token.create`.
+    tokens: true,
     // GET .../audit — `AUDIT_READ`, also ADMIN_EXTRAS.
     audit: canReadAudit === true,
     settings: canWriteAccount === true,

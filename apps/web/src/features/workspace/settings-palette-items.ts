@@ -49,7 +49,6 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'preferences',
   'connected',
   'chrome',
-  'tokens',
   'credits',
   'plan',
   'mcp',

@@ -2695,7 +2695,7 @@
           "f3": "Miembros ilimitados, un único fondo de créditos compartido",
           "f4": "Los créditos sin usar se trasladan un mes",
           "f5": "Recarga cuando quieras. Las recargas nunca caducan",
-          "f6": "Hasta 200 proyectos y límites de uso de modelos más altos",
+          "f6": "Límites de uso de modelos más altos",
           "f7": "Soporte por correo electrónico"
         },
         "enterprise": {
@@ -21240,7 +21240,11 @@
       "text05ee1d6181f3": "Cuando se fusiona una solicitud de cambio, {agent} ejecuta tu instrucción.",
       "texte608495c45ce": "Fusionada en {branch}",
       "text80ca527b0d55": "Activador de solicitud de cambio creado",
-      "authEmailAlreadySent": "Enviamos este correo hace menos de un minuto. Revisa tu bandeja de entrada y la carpeta de spam antes de pedir otro."
+      "authEmailAlreadySent": "Enviamos este correo hace menos de un minuto. Revisa tu bandeja de entrada y la carpeta de spam antes de pedir otro.",
+      "text2590cd62a747": "Configuración del espacio de trabajo",
+      "text276261b1e03d": "espacio de trabajo configuración organizaciones equipos gestionar",
+      "text634ebc515b7f": "Cuenta · Claves de API",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -25929,7 +25933,10 @@
       "accessTitle": "Acceso",
       "accessDescription": "Quién puede abrir este espacio de trabajo y con qué rol.",
       "securityTitle": "Seguridad",
-      "githubTitle": "Conexiones de GitHub"
+      "githubTitle": "Conexiones de GitHub",
+      "deleteKeepsLogin": "Tu inicio de sesión se mantiene: puedes crear o unirte a otro espacio de trabajo.",
+      "personalKeysTitle": "Tus claves de acceso personales",
+      "personalKeysDescription": "Claves de API que actúan como tú en este espacio de trabajo: para la CLI, un script o un trabajo de CI."
     },
     "cli": {
       "noWorkspaceTitle": "Crea un espacio de trabajo para iniciar sesión en la CLI",

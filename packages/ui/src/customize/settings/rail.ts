@@ -5,7 +5,6 @@ import {
   ShippingContainerIcon as Container,
   CreditCardIcon as CreditCard,
   FlaskIcon as Flask,
-  KeyIcon as Key,
   LaptopIcon as Laptop,
   LinkIcon as Link,
   PaletteIcon as Palette,
@@ -100,22 +99,8 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
         // Monochrome like its neighbours; `ChromeRailIcon` takes only `className`.
         icon: ChromeRailIcon as unknown as Icon,
       },
-      // Labelled "API keys", routed at `/settings/tokens`. The id has to be
-      // `tokens` — it is the URL segment, and the account page already spends
-      // `api-keys` on a legacy redirect (`RENAMED` in `settings-tabs.ts`) —
-      // but nothing in the product calls a person's own key a "token", so the
-      // row says what the thing is called. Same split as `connected`, whose id
-      // is one word and whose label is two.
-      {
-        tab: 'tokens',
-        // "Personal access keys" (Marko, 2026-09-03): these are API keys that
-        // act AS YOU — the CLI, a script or a CI job signed in under your
-        // identity — as opposed to the account's service-account tokens on
-        // the account page. The label says whose identity they carry.
-        label: 'Personal access keys',
-        description: 'API keys that act as you — for the CLI, a script, or a CI job.',
-        icon: Key,
-      },
+      // Personal access keys left this rail for Workspace settings › API
+      // keys (Workspaces, PR 1): a key acts in one workspace.
       // MCP and the paired computers (KRTX-1997) are the person's own too: the
       // MCP URL is one per person, and a computer follows its owner into every
       // project. They sat in a separate `Connect` block at the rail's foot

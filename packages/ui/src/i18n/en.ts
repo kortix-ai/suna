@@ -9973,7 +9973,10 @@ const catalog = {
       "accessTitle": "Access",
       "accessDescription": "Who can open this workspace, and with which role.",
       "securityTitle": "Security",
-      "githubTitle": "GitHub connections"
+      "githubTitle": "GitHub connections",
+      "deleteKeepsLogin": "Your login stays: you can create or join another workspace.",
+      "personalKeysTitle": "Your personal access keys",
+      "personalKeysDescription": "API keys that act as you in this workspace: for the CLI, a script, or a CI job."
     }
   }
 };

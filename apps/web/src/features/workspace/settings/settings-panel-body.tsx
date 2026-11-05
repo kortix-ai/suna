@@ -66,10 +66,6 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   'connected',
   // The browsers a person connected are theirs, in any project or none.
   'chrome',
-  // Your own API keys are yours in ONE account (the read is account-scoped —
-  // see `tabs/tokens-tab.tsx`), but never in one project, so this renders with
-  // or without a project open like the three above it.
-  'tokens',
   // Same scope as `plan` below — one wallet per account, read through the same
   // resolved id — so it renders wherever `plan` does. Listed before it, in the
   // rail's own order, because `command-palette.test.tsx` asserts this array
