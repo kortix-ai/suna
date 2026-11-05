@@ -51,6 +51,44 @@ async function state(externalId: string): Promise<BoxState> {
   }
 }
 
+const SETTLE_POLL_MS = 5_000;
+const START_ATTEMPTS = 3;
+
+/** Waits until the box is running, parked or gone, up to the start budget. */
+async function waitSettled(externalId: string): Promise<BoxState> {
+  const deadline = Date.now() + START_TIMEOUT_S * 1000;
+  for (;;) {
+    const s = await state(externalId);
+    if (s !== 'other' || Date.now() >= deadline) return s;
+    await Bun.sleep(SETTLE_POLL_MS);
+  }
+}
+
+/**
+ * Starts the box. Daytona can answer a start with a 502 or "state change in
+ * progress" and still boot the box minutes later (dev, 2026-11-05: 3 of 140
+ * starts; one box came up more than a minute after its 502, after the cycle had
+ * parked it). So a failed start waits for the box to settle, uses it when it
+ * runs, and else starts it again: a late boot is then this cycle's own and
+ * `release` parks it.
+ */
+async function startBox(sandbox: Sandbox, externalId: string): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await withTimeout(sandbox.start(START_TIMEOUT_S), (START_TIMEOUT_S + 30) * 1000, `Daytona start(${externalId})`);
+      return;
+    } catch (err) {
+      const message = `start failed: ${err instanceof Error ? err.message.slice(0, 300) : String(err)}`;
+      if (notFound(err)) throw new RecoverableBoxError(message, false);
+      const s = await waitSettled(externalId);
+      if (s === 'running') return;
+      if (s === 'gone') throw new RecoverableBoxError(message, false);
+      if (attempt >= START_ATTEMPTS) throw new RecoverableBoxError(`${message} (${attempt} attempts, box ${s})`, true);
+      await Bun.sleep(10_000 * attempt);
+    }
+  }
+}
+
 async function download(sandbox: Sandbox, path: string, to: string): Promise<number> {
   const bytes = await sandbox.fs.downloadFile(path, DOWNLOAD_TIMEOUT_S);
   if (bytes.length >= MAX_FILE_BYTES) throw new RecoverableBoxError(`a store file is at the ${MAX_FILE_BYTES} B download cap`, false);
@@ -60,11 +98,7 @@ async function download(sandbox: Sandbox, path: string, to: string): Promise<num
 
 async function copyStore(externalId: string, localDir: string): Promise<CopiedStore | null> {
   const sandbox = await get(externalId);
-  try {
-    await withTimeout(sandbox.start(START_TIMEOUT_S), (START_TIMEOUT_S + 30) * 1000, `Daytona start(${externalId})`);
-  } catch (err) {
-    throw new RecoverableBoxError(`start failed: ${err instanceof Error ? err.message.slice(0, 300) : String(err)}`, !notFound(err));
-  }
+  await startBox(sandbox, externalId);
   const exec = await withTimeout(
     sandbox.process.executeCommand(`sh -c '${COPY_SCRIPT.replaceAll("'", `'\\''`)}'`, undefined, undefined, EXEC_TIMEOUT_S),
     (EXEC_TIMEOUT_S + 30) * 1000,
@@ -116,7 +150,8 @@ async function release(externalId: string, boxTemp: string | null, stillParked: 
     return 'left-running';
   };
   if (!(await stillParked())) return 'left-running';
-  const s = await state(externalId);
+  // A box still starting refuses a stop ("state change in progress"): wait for it.
+  const s = await waitSettled(externalId);
   if (s === 'gone' || s === 'stopped' || s === 'archived') return (await stillParked()) ? 'parked' : 'left-running';
   if (!(await stillParked())) return 'left-running';
   await withTimeout(sandbox.stop(CALL_TIMEOUT_MS / 1000), CALL_TIMEOUT_MS + 10_000, `Daytona stop(${externalId})`);
