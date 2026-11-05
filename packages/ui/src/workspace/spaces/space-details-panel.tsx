@@ -205,7 +205,7 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
  */
 function AgentsSection({ projectId, space, editable }: { projectId: string; space: ProjectSpace; editable: boolean }) {
   const t = useTranslations('spaces.panel');
-  const td = useTranslations('spaces.details');
+  const tDetails = useTranslations('spaces.details');
   const config = useProjectConfig(projectId);
   const update = useUpdateProjectSpace(projectId);
   const projectDefault = config?.default_agent ?? config?.open_code_default_agent ?? null;
@@ -219,7 +219,7 @@ function AgentsSection({ projectId, space, editable }: { projectId: string; spac
   const save = (next: string[], done: string) =>
     update.mutate(
       { spaceId: space.space_id, input: { agents: next } },
-      { onSuccess: () => successToast(done), onError: () => errorToast(td('agentsFailed')) },
+      { onSuccess: () => successToast(done), onError: () => errorToast(tDetails('agentsFailed')) },
     );
   const add = editable ? (
     <DropdownMenu>
@@ -241,7 +241,7 @@ function AgentsSection({ projectId, space, editable }: { projectId: string; spac
                 // An empty list ran on the project's default: adding keeps that agent first, so the default does not move.
                 save(
                   agents.length === 0 && projectDefault && projectDefault !== agent.name ? [projectDefault, agent.name] : [...agents, agent.name],
-                  td('agentAdded', { agent: agentLabel(agent.name), name: spaceName }),
+                  tDetails('agentAdded', { agent: agentLabel(agent.name), name: spaceName }),
                 )
               }
             >
@@ -279,7 +279,7 @@ function AgentsSection({ projectId, space, editable }: { projectId: string; spac
                       variant="ghost"
                       size="icon-sm"
                       className="text-muted-foreground shrink-0"
-                      aria-label={td('agentMenu', { agent: label })}
+                      aria-label={tDetails('agentMenu', { agent: label })}
                       disabled={update.isPending}
                     >
                       <DotsThreeIcon className="size-4" />
@@ -288,15 +288,15 @@ function AgentsSection({ projectId, space, editable }: { projectId: string; spac
                   <DropdownMenuContent align="end">
                     {isDefault ? null : (
                       <DropdownMenuItem
-                        onSelect={() => save([agent, ...agents.filter((item) => item !== agent)], td('defaultSet', { agent: label, name: spaceName }))}
+                        onSelect={() => save([agent, ...agents.filter((item) => item !== agent)], tDetails('defaultSet', { agent: label, name: spaceName }))}
                       >
-                        {td('makeDefault')}
+                        {tDetails('makeDefault')}
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem
-                      onSelect={() => save(agents.filter((item) => item !== agent), td('agentRemoved', { agent: label, name: spaceName }))}
+                      onSelect={() => save(agents.filter((item) => item !== agent), tDetails('agentRemoved', { agent: label, name: spaceName }))}
                     >
-                      {td('removeAgent', { name: spaceName })}
+                      {tDetails('removeAgent', { name: spaceName })}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
