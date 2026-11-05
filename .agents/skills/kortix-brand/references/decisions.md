@@ -10,6 +10,16 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-11-05
+
+### D38 The email footer sits on the left edge
+- **Date:** 2026-11-05
+- **Decision:** The email footer (tagline, social icons, `kortix.com`) is left-aligned on the frame edge, the same edge as the header symbol and the card. The first social icon has no left padding, so it starts on that edge; the icons are 16 px apart.
+- **Why:** founder, 2026-11-05: the logo, the body and the footer must share one alignment. A centered footer under a left-aligned header and card "looks a bit weird" and breaks the hierarchy.
+- **Where:** `apps/api/src/lib/email/template.tsx`.
+- **Supersedes:** the last sentence of D26 ("The footer is centered"). The rest of D26 stands.
+- **Source:** the `email-footer-left` branch.
+
 ## 2026-11-02
 
 ### D37 The home hero subhead merges the positioning line with "Hand it an outcome"
