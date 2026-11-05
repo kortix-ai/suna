@@ -96,3 +96,24 @@ describe('logoFrontColor', () => {
     expect(logoFrontColor(null, 'dark')).toBeNull();
   });
 });
+
+describe('THEME hsl parsing', () => {
+  test('reads the hue as a number', () => {
+    expect(logoPaletteSwatch('hsl(220.50 50% 40%)', 'dark')).toEqual({
+      highlight: 'hsl(220.5 45% 78%)',
+      body: 'hsl(220.5 30% 12%)',
+    });
+  });
+
+  test.each([
+    '#ff0000',
+    'hsl(0, 0%, 50%)',
+    'hsl(0 0% 50% / 0.5)',
+    'hsla(0 0% 50%)',
+    'hsl(-1 0% 50%)',
+  ])('names logo-palette in the error for %p', (input) => {
+    const expected = `logo-palette expects a THEME 'hsl(H S% L%)' string, received: ${input}`;
+    expect(() => logoPaletteColors(input, 'dark')).toThrow(expected);
+    expect(() => logoPaletteSwatch(input, 'light')).toThrow(expected);
+  });
+});
