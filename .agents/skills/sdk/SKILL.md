@@ -90,9 +90,9 @@ browser/, node/, platform/             ← host adapters: zustand stores, ./serv
 react/                                 ← optional glue. Nothing below this line knows React.
 ```
 
-`src/deprecated/` holds the ~20 legacy subpath shims (`./projects-client`,
-`./event-stream`, `./server-store`, …). They re-export from `core/` and stay
-until the next major. Add nothing new there.
+The legacy subpath shims (`src/deprecated/`: `./projects-client`,
+`./event-stream`, `./server-store`, …) were removed in 0.15.0. Do not add a
+subpath that only re-exports root names.
 
 `core/turns/` deserves a note: the transcript (`kortix.transcript.v1`, the same
 wire from OpenCode and pi) has ~50 part variants.
@@ -305,9 +305,9 @@ Every non-React subpath is classified in `SUBPATH_TIERS`
 
 | Tier | Entry points | Forbids |
 |---|---|---|
-| `isomorphic-core` | root `.`, `./message-queue`, and the `src/deprecated/` shims (`./session`, `./turns`, `./files`, `./event-stream`, `./projects-client`, …) | `react`, `react-dom`, `next`, `zustand`, `@tanstack/react-query`, `'use client'`, **any `node:` import** |
+| `isomorphic-core` | root `.`, `./wire-message-id`, `./capture-rules`, `./workspace-search` | `react`, `react-dom`, `next`, `zustand`, `@tanstack/react-query`, `'use client'`, **any `node:` import** |
 | `node-allowed` | `./server` only | same, except `node:async_hooks` is permitted (per-request config isolation) |
-| `browser-only` | `./internal/sync-store`, `./internal/server-store`, `./internal/sandbox-connection-store`, `./internal/opencode-pending-store`, `./internal/idb-sync-cache`, `./internal/diagnostics-store`, `./internal/managed-storage` — plus their un-prefixed `@deprecated` aliases | only `react` / `react-dom` / `next`. zustand and `window`/`localStorage`/`indexedDB` are expected here |
+| `browser-only` | `./internal/idb-sync-cache`, `./internal/diagnostics-store`, `./internal/managed-storage` | only `react` / `react-dom` / `next`. zustand and `window`/`localStorage`/`indexedDB` are expected here |
 
 If a test named `<subpath> (<tier>): no forbidden framework imports` fails, you
 did not "break a lint rule" — you broke the package for a host that has no
@@ -341,9 +341,8 @@ third-party should build on them, and they are **not** exposed on the
 `window.Kortix` global. Treat them as implementation detail that is
 regrettably visible, not as a designed API.
 
-`apps/web/eslint.config.mjs` and `apps/web/scripts/sdk-boundary.mjs` both list the
-un-prefixed aliases (`@kortix/sdk/server-store`, …). Import the `./internal/`
-form in new code.
+`apps/web/eslint.config.mjs` and `apps/web/scripts/sdk-boundary.mjs` still reject
+the removed store subpaths (`@kortix/sdk/server-store`, …).
 
 ## Adding or moving an export requires three synchronized edits
 

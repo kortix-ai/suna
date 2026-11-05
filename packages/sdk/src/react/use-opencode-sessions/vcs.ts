@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query';
 
 import type { VcsFileDiff } from '../../core/runtime/runtime-types';
 
-import { getClient } from '../../core/runtime/client';
 import {
   activeRuntimeAction,
   runtimeActionError,
@@ -14,7 +13,6 @@ import {
 } from '../../core/session/runtime-actions';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { runtimeKeys, useRuntimeReady } from './keys';
-import { unwrap } from './shared';
 
 // Re-exported so a host reads the diff shape from `@kortix/sdk`, never from
 // `@opencode-ai/sdk` (see AGENTS.md — hosts never import the opencode SDK).
@@ -88,6 +86,3 @@ export function useRuntimeWorkspace() {
   });
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `useRuntimeVcsDiff`. Removed in the next major. */
-export const useOpenCodeVcsDiff = useRuntimeVcsDiff;

@@ -1711,11 +1711,6 @@
       "count": 3
     }
   },
-  "src/projects/lib/session-runtime-transport.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
   "src/projects/lib/session-sandbox-env-build.ts": {
     "no-console": {
       "count": 4
@@ -2702,7 +2697,7 @@
       "count": 2
     },
     "no-console": {
-      "count": 2
+      "count": 1
     }
   },
   "src/sandbox-proxy/forward/wake.ts": {

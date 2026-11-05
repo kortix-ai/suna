@@ -6,17 +6,14 @@ import type { Agent } from '../../core/runtime/runtime-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap } from './shared';
 import { getProjectDetail } from '../../core/rest/projects-client';
-import {
-  projectConfigAgentsToOpenCodeAgents,
-  projectConfigAgentsToRuntimeAgents,
-} from '../../core/agents/composer-agents';
+import { projectConfigAgentsToRuntimeAgents } from '../../core/agents/composer-agents';
 import { contract } from '../query-contracts';
 import { qk } from '../query-keys';
 
 // Re-export filtered agents hook for UI agent selectors
 export { useVisibleAgents } from '../use-visible-agents';
 // Framework-free since it moved to core; re-exported so `./react` keeps it.
-export { projectConfigAgentsToOpenCodeAgents, projectConfigAgentsToRuntimeAgents };
+export { projectConfigAgentsToRuntimeAgents };
 
 // ============================================================================
 // Agent Hooks
@@ -72,24 +69,3 @@ export function useRuntimeAgents(options?: { directory?: string; projectId?: str
   });
 }
 
-/** @deprecated Use `useRuntimeAgents` and select by `name`. Removed in the next major. */
-export function useRuntimeAgent(agentName: string) {
-  const runtimeReady = useRuntimeReady();
-  return useQuery<Agent | undefined>({
-    queryKey: [...runtimeKeys.agents(), agentName],
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.app.agents();
-      const agents = unwrap(result);
-      return agents.find((a: Agent) => a.name === agentName);
-    },
-    enabled: runtimeReady && !!agentName,
-    staleTime: Infinity,
-  });
-}
-
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `useRuntimeAgents`. Removed in the next major. */
-export const useOpenCodeAgents = useRuntimeAgents;
-/** @deprecated Renamed to `useRuntimeAgent`. Removed in the next major. */
-export const useOpenCodeAgent = useRuntimeAgent;

@@ -121,6 +121,3 @@ export const useRuntimePendingStore = create<OpenCodePendingState>()((set, get) 
   },
 }));
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `useRuntimePendingStore`. Removed in the next major. */
-export const useOpenCodePendingStore = useRuntimePendingStore;

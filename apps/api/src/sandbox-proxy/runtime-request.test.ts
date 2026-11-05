@@ -17,7 +17,6 @@ describe('classifyRuntimeRequest', () => {
     ['post', '/session/ses_1/summarize', { kind: 'turn-start', verb: 'summarize', runtimeSessionId: 'ses_1', prefix: '' }],
     ['POST', '/proxy/4096/session/ses_1/prompt_async', { kind: 'turn-start', verb: 'prompt_async', runtimeSessionId: 'ses_1', prefix: '/proxy/4096' }],
     ['POST', '/kortix/runtime/sessions/ses_1/prompt', { kind: 'turn-start', verb: 'prompt', runtimeSessionId: 'ses_1', prefix: '' }],
-    ['POST', '/kortix/opencode/sessions/ses_1/prompt', { kind: 'turn-start', verb: 'prompt', runtimeSessionId: 'ses_1', prefix: '' }],
     ['POST', '/kortix/runtime/sessions/ses_1/command', { kind: 'turn-start', verb: 'command', runtimeSessionId: 'ses_1', prefix: '' }],
     ['POST', '/kortix/runtime/sessions/ses_1/compact', { kind: 'turn-start', verb: 'summarize', runtimeSessionId: 'ses_1', prefix: '' }],
     ['POST', '/session/ses_1/abort', { kind: 'abort', runtimeSessionId: 'ses_1', prefix: '' }],

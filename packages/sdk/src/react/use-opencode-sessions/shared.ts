@@ -98,12 +98,3 @@ export function canQueryRuntimeSession(sessionId: string | null | undefined): se
   return !!sessionId && !PROJECT_SESSION_UUID_RE.test(sessionId);
 }
 
-/**
- * @deprecated The provider lists are no longer kept in localStorage, so there
- * is nothing to clear. Does nothing. Removed in the next major.
- */
-export function clearProjectProviderCache(_projectId: string): void {}
-
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `canQueryRuntimeSession`. Removed in the next major. */
-export const canQueryOpenCodeSession = canQueryRuntimeSession;

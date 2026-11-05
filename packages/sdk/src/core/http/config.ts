@@ -1,7 +1,7 @@
 import type { RuntimeEventTransport } from '../runtime/runtime-rest-client';
 
 /**
- * Per-flag overrides for `@kortix/sdk/feature-flags`. A host that isn't Next.js
+ * Per-flag overrides for the SDK's client feature flags (`feature-flags.ts`). A host that isn't Next.js
  * (no `NEXT_PUBLIC_*` build-time env, e.g. React Native, a bare browser bundle,
  * or a CLI) has no other way to flip these — `configureKortix({ featureFlags })`
  * is the portable seam. Omitted flags fall back to the legacy `NEXT_PUBLIC_*`
@@ -85,7 +85,7 @@ export interface KortixPlatformConfig {
   onToast?: (level: 'info' | 'success' | 'error' | 'warning', message: string, options?: unknown) => void;
   /** OS/web-notification sink — the host renders it. */
   onNotify?: (event: { kind: string; sessionId: string; [key: string]: unknown }) => void;
-  /** Explicit per-flag overrides for `@kortix/sdk/feature-flags` (portable path). */
+  /** Explicit per-flag overrides for the client feature flags (portable path). */
   featureFlags?: KortixFeatureFlagOverrides;
 }
 

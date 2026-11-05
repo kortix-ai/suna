@@ -195,18 +195,6 @@ export function createRuntimeRouter(
       return answer(c, () => turns.abort(c.req.param('sessionId')))
     })
 
-    app.get('/messages/:sessionId/:messageId', async (c) => {
-      const auth = authorize(cfg, c)
-      if (!auth.ok) return auth.response
-      return answer(c, () => turns.readMessage(c.req.param('sessionId'), c.req.param('messageId')))
-    })
-
-    app.delete('/messages/:sessionId/:messageId', async (c) => {
-      const auth = authorize(cfg, c)
-      if (!auth.ok) return auth.response
-      return answer(c, () => turns.removeMessage(c.req.param('sessionId'), c.req.param('messageId')))
-    })
-
     // Take back a user message no model call has read (RUNTIME_RETRACT_CAPABILITY).
     app.post('/messages/:sessionId/:messageId/retract', async (c) => {
       const auth = authorize(cfg, c)

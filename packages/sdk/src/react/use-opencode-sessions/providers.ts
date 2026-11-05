@@ -97,6 +97,3 @@ export function useRuntimeProviders() {
   return projectId ? gatewayProvidersQuery : runtimeProvidersQuery;
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `useRuntimeProviders`. Removed in the next major. */
-export const useOpenCodeProviders = useRuntimeProviders;

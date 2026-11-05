@@ -303,7 +303,7 @@ export type PlatformExtensionId = (typeof PLATFORM_EXTENSION_IDS)[number];
 
 /**
  * The daemon serves the Kortix turn verbs: `POST /kortix/runtime/sessions/:id/prompt`,
- * `POST /kortix/runtime/sessions/:id/abort`, `GET|DELETE /kortix/runtime/messages/:id/:messageId`
+ * `POST /kortix/runtime/sessions/:id/abort`, `GET /kortix/runtime/messages/:id`
  * and `GET /kortix/runtime/agents`. Listed in `capabilities` beside the runtime's own.
  */
 export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;

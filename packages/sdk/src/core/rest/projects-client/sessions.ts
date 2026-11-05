@@ -382,9 +382,6 @@ export interface ProjectRuntimeSession {
   archived_at: number | null;
 }
 
-/** @deprecated Renamed to `ProjectRuntimeSession`. Removed in the next major. */
-export type ProjectOpenCodeSession = ProjectRuntimeSession;
-
 /** Default page size the API applies when `limit` is omitted. Mirrors
  *  `SESSION_PAGE_DEFAULT_LIMIT` in `apps/api/src/projects/lib/session-inventory.ts`. */
 export const PROJECT_SESSION_PAGE_DEFAULT_LIMIT = 50;

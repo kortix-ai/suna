@@ -147,6 +147,3 @@ export async function getPtyWebSocketUrl(
   return getKortixPtyWebSocketUrl(ptyId, serverUrl || getActiveRuntimeUrl(), opts);
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `useRuntimePtyList`. Removed in the next major. */
-export const useOpenCodePtyList = useRuntimePtyList;

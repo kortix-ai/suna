@@ -125,7 +125,6 @@ const FORBIDDEN_IMPORTS = [
 
 const FORBIDDEN_RUNTIME_IDENTIFIERS = new Set([
   'getClient',
-  'getActiveOpenCodeUrl',
   'createKortixPty',
   'getKortixPtyWebSocketUrl',
   'removeKortixPty',
