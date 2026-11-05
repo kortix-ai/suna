@@ -18,10 +18,11 @@ had.
    database URL it names. A local DB with production vendor keys is a
    production profile.
 2. A key in `.env`, `.env.dev`, or `.env.staging` must not equal a
-   `.env.prod` value, nor name a prod host in its URL — the value decides, not
-   the key name, and `DATABASE_URL`/`SUPABASE_URL`/`KORTIX_URL` carry
-   production reach with no KEY/SECRET/TOKEN in the name. Every exception is a
-   listed debt with the rotation that removes it.
+   `.env.prod` value, nor point a credential DSN at a prod host — the value
+   decides, not the key name, and `DATABASE_URL`/`SUPABASE_URL`/`KORTIX_URL`
+   carry production reach with no KEY/SECRET/TOKEN in the name. A bare host or
+   sender address names the brand, not prod data. Every exception is a listed
+   debt with the rotation that removes it.
 3. Delete a credential the code never reads. A dead key is pure exposure.
 4. Personal tokens never belong in a shared profile. Use a service credential
    scoped to one environment.
@@ -33,8 +34,8 @@ had.
    `.env` qualifies for people without production clearance.
 
 *Automation:* `pnpm test:envs` runs `scripts/secrets-envs-separation.py`,
-which fails on any unlisted non-prod value that equals a prod value or names a
-prod host;
+which fails on any unlisted non-prod value that equals a prod value or points a
+credential DSN at a prod host;
 `scripts/secrets-shared-with-prod.allowlist` is the tracked exception list.
 
 *Incident:* no known misuse. The Armor audit log shows the PROD keypairs were

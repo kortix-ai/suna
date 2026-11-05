@@ -11,19 +11,30 @@ const script = resolve(root, 'scripts/secrets-envs-separation.py');
 // case is decided by the check's own logic and not by a real private key.
 const STUB = `#!/usr/bin/env node
 const fs = require('node:fs');
+const file = process.argv[process.argv.indexOf('-f') + 1];
+if (fs.existsSync(file + '.nokey')) { console.log(JSON.stringify({ DOTENV_PUBLIC_KEY_PROD: 'encrypted:still-ciphertext' })); process.exit(0); }
 const out = {};
-for (const line of fs.readFileSync(process.argv[process.argv.indexOf('-f') + 1], 'utf8').split(String.fromCharCode(10))) {
+for (const line of fs.readFileSync(file, 'utf8').split(String.fromCharCode(10))) {
   const m = /^([A-Za-z0-9_]+)=(.*)$/.exec(line);
   if (m) out[m[1]] = m[2].replace(/^encrypted:/, '');
 }
 console.log(JSON.stringify(out));
 `;
 
-type Profiles = { prod: Record<string, string>; nonProd: Record<string, Record<string, string>> };
+type Profiles = {
+  prod: Record<string, string>;
+  nonProd: Record<string, Record<string, string>>;
+  rawProd?: string;
+};
 
 // The script resolves ROOT from its own path, so a temp dir holding scripts/ and
 // apps/api/.env* is a whole workspace for a black-box run of the real file.
-function run({ prod, nonProd }: Profiles, allowlist = ''): { code: number | null; out: string } {
+// `rawProd` writes apps/api/.env.prod verbatim; its stub then fails to decrypt it, the way
+// a missing DOTENV_PRIVATE_KEY_PROD leaves every value as ciphertext.
+function run(
+  { prod, nonProd, rawProd }: Profiles,
+  allowlist = '',
+): { code: number | null; out: string } {
   const dir = mkdtempSync(join(tmpdir(), 'secrets-separation-'));
   try {
     mkdirSync(join(dir, 'scripts'));
@@ -33,26 +44,44 @@ function run({ prod, nonProd }: Profiles, allowlist = ''): { code: number | null
     const stub = join(dir, 'dotenvx-stub');
     writeFileSync(stub, STUB);
     chmodSync(stub, 0o755);
+    // An empty profile holds only its dotenvx public-key line, which every reader skips:
+    // `DOTENV_PUBLIC_KEY_<ENV>=` leaves the profile legitimately empty, as a fresh env is.
     const lines = (vars: Record<string, string>) =>
-      Object.entries(vars)
-        .map(([k, v]) => `${k}=encrypted:${v}`)
-        .join('\n') + '\n';
-    writeFileSync(join(dir, 'apps', 'api', '.env.prod'), lines(prod));
-    for (const [file, vars] of Object.entries(nonProd)) writeFileSync(join(dir, 'apps', 'api', file), lines(vars));
-    const r = spawnSync('python3', [join(dir, 'scripts', 'secrets-envs-separation.py'), stub], { encoding: 'utf8' });
+      `${
+        Object.entries(vars)
+          .map(([k, v]) => `${k}=encrypted:${v}`)
+          .join('\n') || 'DOTENV_PUBLIC_KEY_EMPTY=encrypted:pkey'
+      }\n`;
+    writeFileSync(join(dir, 'apps', 'api', '.env.prod'), rawProd ?? lines(prod));
+    if (rawProd) writeFileSync(join(dir, 'apps', 'api', '.env.prod.nokey'), '');
+    for (const [file, vars] of Object.entries(nonProd))
+      writeFileSync(join(dir, 'apps', 'api', file), lines(vars));
+    const r = spawnSync('python3', [join(dir, 'scripts', 'secrets-envs-separation.py'), stub], {
+      encoding: 'utf8',
+    });
     return { code: r.status, out: r.stdout + r.stderr };
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    if (!process.env.KEEP) rmSync(dir, { recursive: true, force: true });
   }
 }
 
-const nonProd = (vars: Record<string, string>) => ({ '.env': vars, '.env.dev': {}, '.env.staging': {} });
+const nonProd = (vars: Record<string, string>) => ({
+  '.env': vars,
+  '.env.dev': {},
+  '.env.staging': {},
+});
 
 describe('scripts/secrets-envs-separation.py', () => {
   it('fails a prod-identical key whose name has no KEY/SECRET/TOKEN (KRTX-4108)', () => {
     const r = run({
-      prod: { DATABASE_URL: 'postgres://prod-db:5432/kortix', SUPABASE_URL: 'https://prod.supabase.co' },
-      nonProd: nonProd({ DATABASE_URL: 'postgres://prod-db:5432/kortix', SUPABASE_URL: 'https://prod.supabase.co' }),
+      prod: {
+        DATABASE_URL: 'postgres://prod-db:5432/kortix',
+        SUPABASE_URL: 'https://prod.supabase.co',
+      },
+      nonProd: nonProd({
+        DATABASE_URL: 'postgres://prod-db:5432/kortix',
+        SUPABASE_URL: 'https://prod.supabase.co',
+      }),
     });
     expect(r.code, r.out).toBe(1);
     expect(r.out).toMatch(/✗ local +DATABASE_URL +== prod value/);
@@ -62,51 +91,66 @@ describe('scripts/secrets-envs-separation.py', () => {
   it('passes distinct values', () => {
     const r = run({
       prod: { DATABASE_URL: 'postgres://prod-db:5432/kortix', API_KEY_SECRET: 'prod-key' },
-      nonProd: nonProd({ DATABASE_URL: 'postgres://local-db:5432/kortix', API_KEY_SECRET: 'local-key' }),
+      nonProd: nonProd({
+        DATABASE_URL: 'postgres://local-db:5432/kortix',
+        API_KEY_SECRET: 'local-key',
+      }),
     });
     expect(r.code, r.out).toBe(0);
   });
 
   it('fails a prod-identical value under a secret name too', () => {
-    const r = run({ prod: { API_KEY_SECRET: 'shared' }, nonProd: nonProd({ API_KEY_SECRET: 'shared' }) });
+    const r = run({
+      prod: { API_KEY_SECRET: 'shared' },
+      nonProd: nonProd({ API_KEY_SECRET: 'shared' }),
+    });
     expect(r.code, r.out).toBe(1);
     expect(r.out).toMatch(/✗ local +API_KEY_SECRET +== prod value/);
   });
 
-  it('fails a value naming a prod origin even when prod does not define the key', () => {
+  it('fails a credential DSN naming a prod host even when prod does not define the key', () => {
     const r = run({
       prod: {},
-      nonProd: nonProd({ KORTIX_URL: 'https://api.kortix.com', LANGFUSE_HOST: 'https://dev.langfuse.example' }),
+      nonProd: nonProd({
+        DATABASE_URL: 'postgres://user:pw@api.kortix.com:5432/kortix',
+        LANGFUSE_HOST: 'postgres://user:pw@dev.langfuse.example:5432/traces',
+      }),
     });
     expect(r.code, r.out).toBe(1);
-    expect(r.out).toMatch(/✗ local +KORTIX_URL +names api\.kortix\.com/);
+    expect(r.out).toMatch(/✗ local +DATABASE_URL +names api\.kortix\.com/);
     expect(r.out).not.toMatch(/LANGFUSE_HOST/);
   });
 
-  it('names the prod host for a URL, a DSN and a host list alike', () => {
+  it('names the prod host for a credential DSN and keeps a plain URL out of it', () => {
     const r = run({
       prod: {},
       nonProd: nonProd({
         FRONTEND_URL: 'https://kortix.com/pricing',
         DATABASE_URL: 'postgres://user:pw@api.kortix.com:5432/kortix',
-        CORS_ORIGINS: 'https://kortix.ai, https://api.kortix.com',
         DEV_DB: 'postgres://user:pw@dev-db.kortix.internal:5432/kortix',
       }),
     });
     expect(r.code, r.out).toBe(1);
-    expect(r.out).toMatch(/✗ local +FRONTEND_URL +names kortix\.com/);
     expect(r.out).toMatch(/✗ local +DATABASE_URL +names api\.kortix\.com/);
-    expect(r.out).toMatch(/✗ local +CORS_ORIGINS +names api\.kortix\.com/);
-    expect(r.out).not.toMatch(/DEV_DB/);
+    expect(r.out).not.toMatch(/FRONTEND_URL|DEV_DB/);
   });
 
   it('reads dev.kortix.com as the dev stack, not prod', () => {
-    const r = run({ prod: {}, nonProd: nonProd({ KORTIX_URL: 'https://dev-api.kortix.com', FRONTEND_URL: 'https://dev.kortix.com' }) });
+    const r = run({
+      prod: {},
+      nonProd: nonProd({
+        DATABASE_URL: 'postgres://user:pw@dev-api.kortix.com:5432/kortix',
+        REDIS_URL: 'redis://:secret@dev.kortix.com:6379',
+      }),
+    });
     expect(r.code, r.out).toBe(0);
   });
 
   it('fails a LIVE Stripe key in a non-prod profile', () => {
-    const r = run({ prod: {}, nonProd: nonProd({ STRIPE_API: 'sk_live_abc', STRIPE_TEST_API: 'sk_test_abc' }) });
+    const r = run({
+      prod: {},
+      nonProd: nonProd({ STRIPE_API: 'sk_live_abc', STRIPE_TEST_API: 'sk_test_abc' }),
+    });
     expect(r.code, r.out).toBe(1);
     expect(r.out).toMatch(/✗ local +STRIPE_API +names a LIVE Stripe key/);
     expect(r.out).not.toMatch(/STRIPE_TEST_API/);
@@ -118,11 +162,55 @@ describe('scripts/secrets-envs-separation.py', () => {
       'DAYTONA_API_KEY prod Daytona org\n',
     );
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toMatch(/~ local +DAYTONA_API_KEY +== prod value \(allowlisted: prod Daytona org\)/);
+    expect(r.out).toMatch(
+      /~ local +DAYTONA_API_KEY +== prod value \(allowlisted: prod Daytona org\)/,
+    );
   });
 
   it('never matches an empty prod value against a populated non-prod one', () => {
     const r = run({ prod: { UNUSED: '' }, nonProd: nonProd({ UNUSED: 'local-only' }) });
     expect(r.code, r.out).toBe(0);
+  });
+
+  // KRTX-4108 review item 1: a public host name is not a reach into prod. Only a
+  // credential DSN (scheme://user:pass@host) carries the deployment it points at.
+  it('keeps a bare host, a sender address and an origin list allowed (KRTX-4108 item 1)', () => {
+    const r = run({
+      prod: {},
+      nonProd: nonProd({
+        CLOUDFLARE_ZONE_NAME: 'kortix.com',
+        MAILTRAP_FROM_EMAIL: 'hi@kortix.com',
+        CORS_ALLOWED_ORIGINS: 'https://dev.kortix.com,https://kortix.com,https://www.kortix.com',
+      }),
+    });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).not.toMatch(/CLOUDFLARE_ZONE_NAME|MAILTRAP_FROM_EMAIL|CORS_ALLOWED_ORIGINS/);
+  });
+
+  it('still fails a credential DSN that points at a prod host (KRTX-4108 item 1)', () => {
+    const r = run({
+      prod: {},
+      nonProd: nonProd({
+        DATABASE_URL: 'postgres://user:pw@api.kortix.com:5432/kortix',
+        REDIS_URL: 'redis://:secret@kortix.com:6379',
+        DEV_DB: 'postgres://user:pw@dev-db.kortix.internal:5432/kortix',
+      }),
+    });
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toMatch(/✗ local +DATABASE_URL +names api\.kortix\.com/);
+    expect(r.out).toMatch(/✗ local +REDIS_URL +names kortix\.com/);
+    expect(r.out).not.toMatch(/DEV_DB/);
+  });
+
+  // KRTX-4108 review item 2: a green run must prove prod decrypted. A ciphertext prod
+  // value can never equal a plaintext non-prod one, so the value track would pass vacuously.
+  it('fails instead of passing when the prod profile did not decrypt (KRTX-4108 item 2)', () => {
+    const r = run({
+      prod: {},
+      rawProd: 'DATABASE_URL=encrypted:BHBGJpUn\n',
+      nonProd: nonProd({ DATABASE_URL: 'postgres://local-db/kortix' }),
+    });
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toMatch(/prod did not decrypt/);
   });
 });

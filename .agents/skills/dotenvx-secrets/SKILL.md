@@ -56,9 +56,11 @@ There are **four environments**, each a separate encrypted file with its **own k
   Its DB is local Docker. It must not contain a credential that reaches
   customer data. `scripts/secrets-envs-separation.py` fails `pnpm test:envs`
   when any key in `.env`, `.env.dev`, or `.env.staging` equals a `.env.prod`
-  value or its URL names a prod host — the VALUE decides, never the key name,
-  because `DATABASE_URL`, `SUPABASE_URL` and `KORTIX_URL` carry production reach
-  with no KEY/SECRET/TOKEN in the name; `scripts/secrets-shared-with-prod.allowlist` lists the
+  value or a credential DSN (`scheme://user:pass@host`) names a prod host — the
+  VALUE decides, never the key name, because `DATABASE_URL`, `SUPABASE_URL` and
+  `KORTIX_URL` carry production reach with no KEY/SECRET/TOKEN in the name. A
+  bare host (`CLOUDFLARE_ZONE_NAME=kortix.com`) or a sender address does not
+  reach prod; `scripts/secrets-shared-with-prod.allowlist` lists the
   remaining shared vendor keys with the reason and the rotation that removes
   each line. Do not add to that file to make the test pass — split the
   credential.
