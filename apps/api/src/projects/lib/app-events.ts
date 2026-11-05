@@ -11,11 +11,12 @@
  * spend the event's id: a trigger added later still fires on a retry.
  */
 import { projectMonitorEvents, projectTriggerRuntime } from '@kortix/db';
-import { and, desc, eq, gte, lt, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, ne, or, sql } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { db } from '../../shared/db';
 import { MONITOR_INGEST_MAX_EVENTS, MONITOR_RATE_WINDOW_MS, truncateMonitorLine, type ParsedMonitorEvent } from './monitor-events';
 import { type MonitorIngestResult, ingestMonitorEvents } from './monitor-ingest';
+import { clearTriggerAlert } from './trigger-alerts';
 
 export interface AppEventInput {
   name: string;
@@ -25,6 +26,14 @@ export interface AppEventInput {
 }
 
 const EVENT_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
+
+/**
+ * `kortix.heartbeat`: "this App is alive". It counts as heard for
+ * `expect_event_within` and is never stored and never fires. Every other
+ * `kortix.` name is reserved for events Kortix itself writes.
+ */
+export const HEARTBEAT_EVENT_NAME = 'kortix.heartbeat';
+const RESERVED_PREFIX = 'kortix.';
 
 /** The slug of an `unmatched` row: no trigger slug is empty. */
 export const UNMATCHED_SLUG = '';
@@ -43,6 +52,9 @@ export function parseAppEventsBody(body: Record<string, unknown>): AppEventInput
     const { name, data, id } = raw as Record<string, unknown>;
     if (typeof name !== 'string' || !EVENT_NAME_RE.test(name)) {
       return { error: `${at}name must be 1-128 characters: letters, digits and . _ : / -, starting with a letter or digit` };
+    }
+    if (name.startsWith(RESERVED_PREFIX) && name !== HEARTBEAT_EVENT_NAME) {
+      return { error: `${at}name: names starting with "kortix." are reserved; an App sends only "${HEARTBEAT_EVENT_NAME}"` };
     }
     if (data !== undefined && (!data || typeof data !== 'object' || Array.isArray(data))) {
       return { error: `${at}data must be an object` };
@@ -85,6 +97,8 @@ export interface AppEventIngestResult extends MonitorIngestResult {
   triggers: number;
   /** Events no enabled trigger listens to (kept as `unmatched`, up to the hourly bound). */
   unmatched: number;
+  /** `kortix.heartbeat` events: counted as heard, never stored. */
+  heartbeats?: number;
   /** What to do when `unmatched` is not 0. */
   hint?: string;
 }
@@ -108,11 +122,26 @@ export async function ingestAppEvents(input: {
 }): Promise<AppEventIngestResult> {
   const now = input.now ?? new Date();
   const rows = await db
-    .select({ slug: projectTriggerRuntime.slug, enabled: projectTriggerRuntime.enabled, scheduleSpec: projectTriggerRuntime.scheduleSpec })
+    .select({
+      slug: projectTriggerRuntime.slug,
+      enabled: projectTriggerRuntime.enabled,
+      scheduleSpec: projectTriggerRuntime.scheduleSpec,
+      alertSource: projectTriggerRuntime.alertSource,
+    })
     .from(projectTriggerRuntime)
     .where(and(eq(projectTriggerRuntime.projectId, input.projectId), eq(projectTriggerRuntime.triggerType, 'app')));
   const named = rows.filter((row) => (row.scheduleSpec as { app?: string } | null)?.app === input.appSlug);
   const slugs = named.filter((row) => row.enabled !== false).map((row) => row.slug);
+  const heartbeats = input.events.filter((event) => event.name === HEARTBEAT_EVENT_NAME).length;
+  if (heartbeats > 0) {
+    const events = input.events.filter((event) => event.name !== HEARTBEAT_EVENT_NAME);
+    const rest = events.length > 0 ? await ingestAppEvents({ ...input, events }) : null;
+    if (!rest && input.test !== true && slugs.length > 0) {
+      const silent = named.filter((row) => row.enabled !== false && row.alertSource === 'silence').map((row) => row.slug);
+      await markAppTriggersHeard(input.projectId, slugs, silent, now);
+    }
+    return { ...(rest ?? { accepted: 0, deduped: 0, suppressed: 0, triggers: slugs.length, unmatched: 0 }), heartbeats };
+  }
   if (slugs.length === 0) {
     const reason = unmatchedReason(input.appSlug, named.map((row) => row.slug));
     const kept = await keepUnmatchedEvents({ ...input, test: input.test === true, now, reason });
@@ -126,7 +155,30 @@ export async function ingestAppEvents(input: {
     return slugs.map((slug) => ({ slug, seq, kind: 'event' as const, line, emittedAt: now }));
   });
   const result = await ingestMonitorEvents({ projectId: input.projectId, boxEpoch: `app:${input.appId}`, events: parsed, now });
+  // The App is alive: a deduplicated event counts (a watcher posts the same
+  // content id while nothing changes). A test event is not the App speaking.
+  if (input.test !== true) {
+    const silent = named.filter((row) => row.enabled !== false && row.alertSource === 'silence').map((row) => row.slug);
+    await markAppTriggersHeard(input.projectId, slugs, silent, now);
+  }
   return { ...result, triggers: slugs.length, unmatched: 0 };
+}
+
+/**
+ * Stamp `last_event_at` on the triggers an App just posted to, so the silence
+ * check (app-trigger-silence.ts) knows the App is alive, and end the silence
+ * alert of each that had one. Never throws: the events are already stored.
+ */
+async function markAppTriggersHeard(projectId: string, slugs: readonly string[], silent: readonly string[], now: Date): Promise<void> {
+  try {
+    await db
+      .update(projectTriggerRuntime)
+      .set({ lastEventAt: now })
+      .where(and(eq(projectTriggerRuntime.projectId, projectId), inArray(projectTriggerRuntime.slug, [...slugs])));
+    for (const slug of silent) await clearTriggerAlert({ projectId, slug, source: 'silence' });
+  } catch {
+    // The next event stamps it again.
+  }
 }
 
 /**

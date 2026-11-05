@@ -13,7 +13,7 @@
  * exactly one winner.
  */
 import { projectMonitorEvents, projectTriggerRuntime, projects } from '@kortix/db';
-import { and, asc, eq, lt } from 'drizzle-orm';
+import { and, asc, eq, lt, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { GitTriggerSpec } from '../triggers';
 import { appEventPromptPreamble, buildAppEventPayload } from './monitor-events';
@@ -232,7 +232,8 @@ async function touchMonitorLastEvent(
 ): Promise<void> {
   await db
     .update(projectTriggerRuntime)
-    .set({ lastEventAt: emittedAt, updatedAt: now })
+    // Ingest stamps the time an App posted (app-events.ts); never move it back.
+    .set({ lastEventAt: sql`greatest(coalesce(${projectTriggerRuntime.lastEventAt}, ${emittedAt.toISOString()}::timestamptz), ${emittedAt.toISOString()}::timestamptz)`, updatedAt: now })
     .where(
       and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
     );
