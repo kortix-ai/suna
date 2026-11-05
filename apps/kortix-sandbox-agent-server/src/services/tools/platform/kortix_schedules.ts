@@ -168,7 +168,7 @@ function wakeText(args: Record<string, any>, action: 'follow_up' | 'wake_on'): s
   const key = TEXT_KEYS.find((k) => typeof args[k] === 'string' && args[k].trim())
   const text = key ? String(args[key]).trim() : ''
   if (!text) {
-    return { error: `Missing \`text\`: what the woken turn reads (what was done, what to check, what to do on each outcome, an end date). Call again with it, e.g. ${TEXT_EXAMPLE[action]}` }
+    return { error: `Missing \`text\`: what the woken turn reads (what was done, what to check, what to do on each outcome, an end date). If you did send it, it did not arrive: send this call from codemode. Call again with it, e.g. ${TEXT_EXAMPLE[action]}` }
   }
   const problem = cliArgProblem('text', text, 'text')
   return problem ? { error: problem } : text
