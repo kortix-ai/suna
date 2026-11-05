@@ -28,6 +28,8 @@ const gateway = Bun.serve({
       let file: Got['file']
       f.forEach((v, k) => (typeof v === 'string' ? (form[k] = v) : (file = { name: (v as File).name, size: v.size })))
       got.push({ path: u.pathname, form, file })
+      // A file of 1111 bytes: unclear audio, where Whisper reads its prompt back.
+      if (file?.size === 1111) return Response.json({ language: 'english', duration: 2, segments: [{ text: ' Kortix, OpenCode, Bun.', no_speech_prob: 0.2, avg_logprob: -0.5, compression_ratio: 1 }] })
       return Response.json({ language: 'serbian', duration: 3.42, text: 'Здраво, како си? Thank you.', segments: [
         { text: 'Здраво, како си?', no_speech_prob: 0.01, avg_logprob: -0.2, compression_ratio: 1.1 },
         { text: ' Thank you.', no_speech_prob: 0.9, avg_logprob: -1.3, compression_ratio: 1 }, // noise Whisper made words of
@@ -140,11 +142,20 @@ test('transcribe: a Telegram voice note goes up as Ogg, only the words Whisper b
   const r = await post({ transcribe: { file: note, language: 'SR' } })
   expect(r.body).toEqual({ text: 'Zdravo, kako si?', language: 'sr', seconds: 3.4 })
   expect(got[n]?.file).toEqual({ name: 'audio.ogg', size: 2048 })
-  expect(got[n]?.form).toEqual({ model: 'whisper-large-v3', language: 'sr', temperature: '0', response_format: 'verbose_json' })
+  expect(got[n]?.form).toMatchObject({ model: 'whisper-large-v3', language: 'sr', temperature: '0', response_format: 'verbose_json' })
+  // The call's hint: the product's names spelled as they are ("Kortix", not "Cordix").
+  expect(got[n]?.form?.prompt).toContain('Kortix')
   process.env.KORTIX_WORKSPACE = dir
   const relative = await post({ transcribe: { file: 'voice_message.oga' } })
   expect(relative.body.text).toBe('Zdravo, kako si?')
   expect(got.at(-1)?.form?.language).toBeUndefined()
+})
+
+test('transcribe: the hint read back on unclear audio is no speech', async () => {
+  const murmur = join(dir, 'murmur.ogg')
+  writeFileSync(murmur, Buffer.alloc(1111, 3))
+  const r = await post({ transcribe: { file: murmur } })
+  expect(r.body.text).toBe('(no speech in it)')
 })
 
 test('transcribe refuses a missing, unreadable or too large file, sending nothing', async () => {
