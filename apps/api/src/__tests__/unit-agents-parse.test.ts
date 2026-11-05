@@ -32,8 +32,9 @@ describe('agents — grantable enum drift guard', () => {
   // either side is caught even if it happens to keep the two sides equal to
   // EACH OTHER but wrong in absolute terms (both sides sourced from the same
   // stale copy-paste, say).
-  test('56 grantable project actions (all of PROJECT_ACTIONS)', () => {
-    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(56);
+  // 54 since Rooms were removed (2026-11: project.room.read / project.room.write).
+  test('54 grantable project actions (all of PROJECT_ACTIONS)', () => {
+    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(54);
     expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.artifact.comment')).toBe(true);
   });
 
@@ -86,6 +87,15 @@ describe('agents — kortix_permissions enum enforcement', () => {
     const { specs, errors } = parseAgents('  a:\n    kortix_permissions: [member.invite, project.create]\n');
     expect(errors).toEqual([]);
     expect(specs[0].permissions).toEqual([]);
+  });
+
+  // Workspaces: every grantable action has a workspace.* name, accepted forever.
+  test('a workspace name is grantable; an account-scoped workspace name is dropped like its legacy name', () => {
+    const { specs, errors } = parseAgents(
+      '  a:\n    kortix_permissions: [workspace.session.start, workspace.billing.read, project.file.read]\n',
+    );
+    expect(errors).toEqual([]);
+    expect(specs[0].permissions).toEqual(['workspace.session.start', 'project.file.read']);
   });
 
   test('unknown action is dropped, the rest of the list stays', () => {

@@ -38,6 +38,7 @@ import {
   accounts,
   iamRoleActions,
   iamRoles,
+  projects,
   roleAssignments,
   serviceAccounts,
 } from '@kortix/db';
@@ -48,9 +49,10 @@ import { retryTransientDatabaseRead } from '../shared/database-errors';
 import { isImpersonatingAccount, isImpersonationBlockedAccount } from '../shared/impersonation';
 import { isUuid } from '../shared/validate';
 import { isMyKortixAgentName } from '@kortix/shared';
+import { toLegacyAction } from '@kortix/shared/workspace-actions';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
-import { AGENT_DEFAULT_CEILING, agentPrincipalDecision } from './agent-principal';
+import { AGENT_DEFAULT_CEILING, agentPrincipalDecision, isWorkspaceAdministration } from './agent-principal';
 import {
   loadPermissionCatalog,
   loadSystemRoles,
@@ -71,10 +73,41 @@ import {
 
 // ─── Public surface ─────────────────────────────────────────────────────────
 
-/** The object a verdict is about. */
+/**
+ * The object a verdict is about.
+ *
+ * `workspace` is the one scope (Workspaces, design.md §5): its id is the
+ * workspace id (= `project_id`). `account` and `project` are the legacy shapes
+ * and stay accepted permanently; `normalizeObj` folds all three into one
+ * evaluation, so an old call site and a new one get the same verdict.
+ *
+ * Assignment reach is unchanged storage, read through one rule. An assignment
+ * reaches workspace W when it is
+ *   - `scope_type='project' AND scope_id=W`, or
+ *   - `scope_type='account' AND account_id=W.account`.
+ * For a 1:1 workspace that is today's semantics exactly. For a `split_pending`
+ * legacy account (2+ active projects) an account-scope grant reaches every
+ * project of the account, which is the permanently supported legacy state:
+ * actions on the shared account rows (billing, members, SSO) need an
+ * account-scope grant, i.e. a grant on every project of the account.
+ */
 export type Obj =
   | { type: 'account' }
+  | { type: 'project'; id: string; resource?: { type: ObjectType; id: string } }
+  | { type: 'workspace'; id: string; resource?: { type: ObjectType; id: string } };
+
+/** The evaluation shape of an `Obj`: workspace and project are one thing. */
+type EvalObj =
+  | { type: 'account' }
   | { type: 'project'; id: string; resource?: { type: ObjectType; id: string } };
+
+/** Fold the workspace shape onto the project shape the engine evaluates. */
+export function normalizeObj(obj: Obj): EvalObj {
+  if (obj.type === 'workspace') {
+    return obj.resource ? { type: 'project', id: obj.id, resource: obj.resource } : { type: 'project', id: obj.id };
+  }
+  return obj;
+}
 
 /**
  * Why. Denial reasons are byte-identical to the strings `denial-message.ts` is
@@ -174,7 +207,23 @@ const AGENT_GRANT_EXEMPT_ACTIONS: ReadonlySet<string> = new Set([
  */
 export function authorize(actor: Actor, action: string, obj: Obj = { type: 'account' }): Promise<Verdict> {
   // `Server-Timing: iam` — every capability decision on the request path.
-  return timeStage('iam', () => authorizeDecision(actor, action, obj));
+  // Both action names are accepted forever: a workspace name is evaluated as
+  // the legacy name it aliases (`@kortix/shared/workspace-actions`), because the
+  // catalog and every role row store the legacy name.
+  return timeStage('iam', () => authorizeObj(actor, toLegacyAction(action), obj));
+}
+
+async function authorizeObj(actor: Actor, action: string, obj: Obj): Promise<Verdict> {
+  if (obj.type === 'workspace' && !isImpersonatingAccount(actor.userId, actor.accountId)) {
+    // The reach rule's account half: the actor was resolved for one account, and
+    // a workspace of another account is never reached by its assignments. Every
+    // legacy `project` call site already resolves the actor for the project's own
+    // account (`loadProjectForUser` → `actorOf(c, row.accountId)`); a workspace
+    // call site gets that guarantee checked instead of assumed.
+    const owner = await workspaceAccountOf(obj.id);
+    if (owner === null || owner !== actor.accountId) return deny('no_project_membership');
+  }
+  return authorizeDecision(actor, action, normalizeObj(obj));
 }
 
 /**
@@ -189,7 +238,7 @@ export async function ssoRequiredFor(actor: Actor): Promise<boolean> {
   return rec?.accountSsoRequired === true;
 }
 
-async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promise<Verdict> {
+async function authorizeDecision(actor: Actor, action: string, obj: EvalObj): Promise<Verdict> {
   // 1. ACT-AS. Above everything, and above the principal memo in particular:
   // `resolvePrincipal` is a TTL memo shared across requests, so widening the
   // actor inside it would cache "owner" and serve it to this operator's own
@@ -218,6 +267,21 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
   // 4. A token bound to one project is refused on every other project and on
   // every account-level action.
   if (!tokenScopeAllows(binding, tokenId, rec.kind, scope, obj)) return deny('token_out_of_scope');
+
+  // 4b. AGENTS NEVER INHERIT WORKSPACE ADMINISTRATION. An agent session that
+  // authorizes as the person who launched it (an ungoverned grant: My Kortix,
+  // or a workspace that declares no agents) would otherwise hold that person's
+  // owner/admin powers. Billing, members, roles, policies, SSO, keys and
+  // credentials stay with people. Above the super-admin bypass on purpose: the
+  // launcher's bypass is exactly the power that must not pass to the agent. A
+  // governed agent (step 5a) holds what its grant ∩ ceiling says instead.
+  if (
+    actor.credential.kind === 'agent_session' &&
+    !(actor.credential.agentPrincipal && binding?.agentGrant) &&
+    isWorkspaceAdministration(action, scope)
+  ) {
+    return deny('agent_human_only_action');
+  }
 
   // 4a. SSO only. Above the super-admin bypass: the account creator holds
   // `is_super_admin`, and enforcement exists to close exactly that person's
@@ -367,9 +431,12 @@ export async function assertAuthorized(actor: Actor, action: string, obj: Obj = 
  */
 export async function listAccessible(
   actor: Actor,
-  action: string,
-  resourceType: 'project' | ObjectType,
+  rawAction: string,
+  resourceType: 'project' | 'workspace' | ObjectType,
 ): Promise<Accessible> {
+  const action = toLegacyAction(rawAction);
+  // A workspace IS a project row: listing workspaces lists projects.
+  if (resourceType === 'workspace') return listAccessibleProjects(actor, action);
   // Only projects are listable standalone. An object (an agent, a skill) is
   // always reached THROUGH its project, and the caller already holds the ids
   // the manifest declares — `filterAccessibleObjects` is that surface, and it
@@ -544,12 +611,13 @@ export function tokenScopeAllows(
   tokenId: string | undefined,
   principalKind: 'member' | 'service_account',
   scope: ScopeType,
-  obj: Obj,
+  rawObj: Obj,
 ): boolean {
   if (!tokenId) return true;
   if (!binding) return principalKind === 'service_account';
   if (!binding.projectId) return true;
   if (scope === 'account') return false;
+  const obj = normalizeObj(rawObj);
   if (obj.type !== 'project') return false;
   return obj.id === binding.projectId;
 }
@@ -884,10 +952,12 @@ function projectRoleRank(key: string): number {
 export function customRoleAllows(
   rec: { customActions: CustomAction[] },
   scope: ScopeType,
-  action: string,
-  obj: Obj,
+  rawAction: string,
+  rawObj: Obj,
 ): boolean {
   if (rec.customActions.length === 0) return false;
+  const action = toLegacyAction(rawAction);
+  const obj = normalizeObj(rawObj);
   for (const ca of rec.customActions) {
     if (ca.action !== action) continue;
     if (ca.scopeType === 'account') return true;
@@ -998,8 +1068,36 @@ registerProjectScopedMemo(loadObjectGrants);
 
 export { loadObjectGrants };
 
+/**
+ * workspace id -> the account that owns it, or null for an unknown id. The
+ * account half of the workspace reach rule. Positive-only: a workspace that
+ * does not exist yet must resolve on the next request. A transfer moves a
+ * project to another account and busts this through the project-scoped
+ * invalidation every project write already calls.
+ */
+const workspaceAccountMemo = ttlMemo({
+  ttlMs: TTL_MS,
+  keyFn: (workspaceId: string) => `${workspaceId}|account`,
+  loader: async (workspaceId: string): Promise<string | null> => {
+    if (!isUuid(workspaceId)) return null;
+    const [row] = await db
+      .select({ accountId: projects.accountId })
+      .from(projects)
+      .where(eq(projects.projectId, workspaceId))
+      .limit(1);
+    return row?.accountId ?? null;
+  },
+  shouldCache: (accountId) => accountId !== null,
+});
+registerProjectScopedMemo(workspaceAccountMemo);
+
+function workspaceAccountOf(workspaceId: string): Promise<string | null> {
+  return workspaceAccountMemo(workspaceId);
+}
+
 /** Test hook: drop the principal + object-grant memos. */
 export function clearAuthorizeCaches(): void {
   resolvePrincipalMemo.clear();
   loadObjectGrants.clear();
+  workspaceAccountMemo.clear();
 }

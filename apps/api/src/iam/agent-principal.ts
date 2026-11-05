@@ -40,6 +40,34 @@ export const HUMAN_ONLY_ACTIONS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Workspace administration: what an agent session never INHERITS from the
+ * person who launched it (Workspaces, README "one decision" item 3). Every
+ * account-scoped action (billing, members, groups, roles, policies, tokens,
+ * SSO and MFA settings via `account.write`, workspace creation, Capture
+ * administration), plus the project-scoped leaves that administer people,
+ * keys, credentials, spend or the workspace's existence.
+ *
+ * Legacy spelling: the engine compares after `toLegacyAction`.
+ *
+ * Applies only on the INHERITED path (an ungoverned grant: the session acts as
+ * its launcher). A governed agent authorizes as its own service account, and
+ * there `grant ∩ ceiling − HUMAN_ONLY` decides, so an admin can still hand an
+ * agent `project.members.manage` deliberately.
+ */
+export const WORKSPACE_ADMIN_PROJECT_ACTIONS: ReadonlySet<string> = new Set([
+  'project.delete',
+  'project.members.manage',
+  'project.gateway.keys.manage',
+  'project.gateway.budget.set',
+  'project.credentials.issue',
+]);
+
+/** True when `action` (legacy spelling, catalog `scope`) administers the workspace. */
+export function isWorkspaceAdministration(action: string, scope: ScopeType): boolean {
+  return scope === 'account' || WORKSPACE_ADMIN_PROJECT_ACTIONS.has(action);
+}
+
+/**
  * The ceiling of an agent whose service account has no role bound: every
  * grantable project permission except HUMAN_ONLY. The manifest grant still
  * narrows it.

@@ -87,6 +87,9 @@ export {
   PROJECT_ACTIONS,
   ACTION_CATALOG,
   VALID_ACTIONS,
+  isKnownAction,
   resourceTypeForAction,
+  toLegacyAction,
+  toWorkspaceAction,
   type ResourceType,
 } from './actions';

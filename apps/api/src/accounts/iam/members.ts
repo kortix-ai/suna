@@ -19,6 +19,7 @@ import {
   assertAuthorized,
   authorize,
   resourceTypeForAction,
+  toWorkspaceAction,
   type Obj,
 } from '../../iam';
 import { actorForUser, actorOf, type Actor } from '../../iam/actor';
@@ -75,6 +76,7 @@ async function probeActor(
  */
 function probeObject(scope: unknown, id: unknown): Obj {
   if (scope === 'project' && typeof id === 'string' && id) return { type: 'project', id };
+  if (scope === 'workspace' && typeof id === 'string' && id) return { type: 'workspace', id };
   return { type: 'account' };
 }
 
@@ -429,6 +431,7 @@ export function registerIamMembersRoutes(): void {
       allowed: result.allowed,
       reason: result.reason ?? null,
       action,
+      workspace_action: toWorkspaceAction(action),
       resource_type: resourceTypeForAction(action),
     });
     },

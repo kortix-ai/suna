@@ -67,6 +67,7 @@ export const EffectiveResultSchema = z
     allowed: z.boolean(),
     reason: z.string().nullable(),
     action: z.string(),
+    workspace_action: z.string().optional(),
     resource_type: z.string().nullable().optional(),
   })
   .openapi('IamEffectiveResult');
@@ -74,6 +75,7 @@ export const EffectiveResultSchema = z
 export const EffectiveBatchResultSchema = z
   .object({
     action: z.string(),
+    workspace_action: z.string().optional(),
     resource_type: z.string().nullable().optional(),
     resource_id: z.string().nullable(),
     allowed: z.boolean(),
@@ -143,6 +145,7 @@ export const ServiceAccountSchema = z
   })
   .openapi('IamServiceAccount');
 
-export function isResourceType(value: unknown): value is ResourceType {
-  return typeof value === 'string' && (RESOURCE_TYPES as readonly string[]).includes(value);
+export function isResourceType(value: unknown): value is ResourceType | 'workspace' {
+  // `workspace` is the one scope's name for a project target (id = project_id).
+  return typeof value === 'string' && (value === 'workspace' || (RESOURCE_TYPES as readonly string[]).includes(value));
 }
