@@ -179,6 +179,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'DELETE /v1/accounts/:accountId/members/:userId': { action: 'member.remove', title: 'Removed member from account' },
   'PATCH /v1/accounts/:accountId/members/:userId': { action: 'member.role.update', title: 'Changed member role' },
   'GET /v1/accounts/:accountId/secret-resources': { action: 'secret.account_resource.list', title: 'Listed pooled provider keys' },
+  'GET /v1/accounts/:accountId/subscription-connections': { action: 'secret.subscription.list', title: 'Listed connected subscriptions' },
+  'POST /v1/accounts/:accountId/subscription-connections/:secretId/usage': { action: 'secret.subscription.usage.refresh', title: 'Refreshed connected subscription usage' },
   'POST /v1/accounts/:accountId/secret-resources': { action: 'secret.account_resource.create', title: 'Added pooled provider key' },
   'DELETE /v1/accounts/:accountId/secret-resources/:secretId': { action: 'secret.account_resource.delete', title: 'Deleted pooled provider key' },
   'PUT /v1/accounts/:accountId/secret-resources/:secretId/access': { action: 'secret.account_resource.access.set', title: 'Set pooled provider key access' },
