@@ -245,7 +245,7 @@ describe('KortixActionTool — denied', () => {
     const html = render(
       <KortixActionTool call={done('kortix_people', { ...DENIED, error: { kind: 'denied', message: 'refused' } }, { action: 'invite' })} />,
     );
-    expect(textOf(html)).toContain('Anyone who manages this project can grant it.');
+    expect(textOf(html)).toContain('Anyone who manages this workspace can grant it.');
   });
 
   test('a call that threw its result still draws the card, not the generic error row', () => {

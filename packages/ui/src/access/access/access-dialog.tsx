@@ -1536,7 +1536,7 @@ function PrincipalAccessDialog({
                   ? scope.projectName
                   : scope.kind === 'group'
                     ? scope.groupName
-                    : (accountName ?? 'this account'),
+                    : (accountName ?? 'this workspace'),
               inherited: inheritedFrom,
             },
             tI18nComplete,

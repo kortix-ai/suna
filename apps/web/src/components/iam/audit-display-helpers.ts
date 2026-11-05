@@ -540,7 +540,7 @@ function routeArea(path: string): string {
   if (path.startsWith('/v1/webhooks/')) return 'Webhooks';
   if (path.includes('/channels/')) return 'Channels';
   if (path.startsWith('/v1/router/') || path.startsWith('/v1/llm/')) return 'Models';
-  if (path.startsWith('/v1/projects')) return 'Projects';
+  if (path.startsWith('/v1/projects')) return 'Workspaces';
   if (path.startsWith('/v1/accounts') || path.startsWith('/v1/account')) return 'Accounts';
   return 'API';
 }

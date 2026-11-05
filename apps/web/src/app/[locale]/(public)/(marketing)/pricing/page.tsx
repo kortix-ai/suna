@@ -90,7 +90,7 @@ function compareGroups(
             'Volume pricing',
           ],
         },
-        { label: 'Projects', marks: ['1', 'Up to 200', 'Up to 200'] },
+        { label: 'Workspaces', marks: ['1', 'Up to 200', 'Up to 200'] },
         { label: 'Members', marks: ['Unlimited', 'Unlimited', 'Unlimited'] },
         { label: 'Unused credits roll over', marks: [false, 'One month', 'One month'] },
         { label: 'Top-ups that never expire', marks: [false, true, true] },

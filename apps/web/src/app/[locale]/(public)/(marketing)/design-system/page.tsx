@@ -511,7 +511,7 @@ const TOC_SECTIONS = [
       { id: 'comp-tooltip', label: 'Tooltip' },
       { id: 'comp-popover', label: 'Popover' },
       { id: 'comp-emoji-picker', label: 'Emoji Picker' },
-      { id: 'comp-project-icon-picker', label: 'Project Icon Picker' },
+      { id: 'comp-project-icon-picker', label: 'Workspace Icon Picker' },
       { id: 'comp-alert', label: 'Alert' },
       { id: 'comp-toast', label: 'Toast' },
       { id: 'comp-alert-dialog', label: 'Alert Dialog' },

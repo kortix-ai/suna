@@ -40,7 +40,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     note: 'Start with real sandbox credits.',
     features: [
       '500 credits / month, no card needed',
-      '1 project',
+      '1 workspace',
       'Bring your own API key for any premium model',
       'Connect your ChatGPT subscription',
     ],
@@ -58,7 +58,7 @@ export const PRICING_PLANS: PricingPlan[] = [
       'Unlimited members, one shared credit pool',
       'Unused credits roll over one month',
       'Top up any time. Top-ups never expire',
-      'Up to 200 projects and higher model rate limits',
+      'Up to 200 workspaces and higher model rate limits',
       'Support via email',
     ],
   },

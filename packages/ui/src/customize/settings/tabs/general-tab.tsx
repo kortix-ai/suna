@@ -141,7 +141,7 @@ export interface GeneralTabCopy {
 }
 
 const DEFAULT_GENERAL_COPY: GeneralTabCopy = {
-  loadFailed: 'Failed to load project',
+  loadFailed: 'Failed to load workspace',
   retry: 'Retry',
   dangerZone: 'Danger zone',
   deleteWorkspace: 'Delete workspace',

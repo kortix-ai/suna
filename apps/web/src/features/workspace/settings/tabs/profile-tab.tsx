@@ -167,9 +167,9 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   namePlaceholder: 'Your name',
   save: 'Save',
   organizations: {
-    title: 'Organizations',
-    description: "Members, billing, roles, and audit live in each organization's own settings.",
-    fallbackAccountName: 'Account',
+    title: 'Workspaces',
+    description: "Members, billing, roles, and audit live in each workspace's own settings.",
+    fallbackAccountName: 'Workspace',
     owner: 'Owner',
     admin: 'Admin',
     member: 'Member',

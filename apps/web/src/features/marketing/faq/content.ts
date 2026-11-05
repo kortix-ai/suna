@@ -117,7 +117,7 @@ export const faq = {
       id: 'guardrails',
       question: 'What stops it doing something I did not want?',
       answer:
-        'You set allow, ask or block per action, and a rule can match on a glob, a regular expression, or the arguments of the call itself. Be aware that nothing is switched on for you: a project with no policy declared runs every action, so this is a thing you configure rather than a thing you inherit. Session work reaches main through a change request, and merge is default-deny for an agent unless an admin grants it.',
+        'You set allow, ask or block per action, and a rule can match on a glob, a regular expression, or the arguments of the call itself. Be aware that nothing is switched on for you: a workspace with no policy declared runs every action, so this is a thing you configure rather than a thing you inherit. Session work reaches main through a change request, and merge is default-deny for an agent unless an admin grants it.',
     },
     {
       id: 'audit',
@@ -129,7 +129,7 @@ export const faq = {
       id: 'ownership',
       question: 'Is my company data yours?',
       answer:
-        'No. A project is a git repository — clone it and the agents, the skills and everything the company has learned come with you. Self-host and the database, the files, the repos, the secrets and the audit record all sit on disk you control, on one Docker Compose stack built from the same images the managed cloud runs. It is not air-gapped, and we will not pretend otherwise: agent sandboxes run on the compute provider you configure, and your instance has to be reachable so they can call back.',
+        'No. A workspace is backed by a git repository — clone it and the agents, the skills and everything the company has learned come with you. Self-host and the database, the files, the repos, the secrets and the audit record all sit on disk you control, on one Docker Compose stack built from the same images the managed cloud runs. It is not air-gapped, and we will not pretend otherwise: agent sandboxes run on the compute provider you configure, and your instance has to be reachable so they can call back.',
     },
     {
       id: 'models',
@@ -141,7 +141,7 @@ export const faq = {
       id: 'price',
       question: 'What does it cost?',
       answer:
-        'Free is $0 — one project, 500 credits a month and every feature, with your own key or ChatGPT subscription for models. Kortix-managed models need a paid plan. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.',
+        'Free is $0 — one workspace, 500 credits a month and every feature, with your own key or ChatGPT subscription for models. Kortix-managed models need a paid plan. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole workspace. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.',
     },
   ] satisfies readonly FaqItem[],
 } as const;

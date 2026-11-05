@@ -93,11 +93,11 @@ test('default scopes, hidden restrictions, wire clipboard and locked/read-only c
     const root = renderer.root;
     const managed = modelRow(root, 'deepseek-v4.1-flash');
     expect(text(managed)).toContain('your default');
-    expect(text(managed)).toContain('project default');
+    expect(text(managed)).toContain('workspace default');
     expect(managed.findByProps({ role: 'switch' }).props.disabled).toBe(true);
     const available = modelRow(root, 'example/available');
     await click(trigger(available));
-    await click(button(available, "Start this project's sessions with it"));
+    await click(button(available, "Start this workspace's sessions with it"));
     await click(button(available, 'Make it my default everywhere'));
     expect(setProjectDefault).toHaveBeenCalledWith({ providerID: 'kortix', modelID: 'example/available' });
     expect(setAccountDefault).toHaveBeenCalledWith({ providerID: 'kortix', modelID: 'example/available' });
@@ -106,7 +106,7 @@ test('default scopes, hidden restrictions, wire clipboard and locked/read-only c
     const hidden = modelRow(root, 'example/hidden');
     expect(text(hidden)).toContain('direct requests still work');
     await click(trigger(hidden));
-    expect(button(hidden, "Start this project's sessions with it").props.disabled).toBe(true);
+    expect(button(hidden, "Start this workspace's sessions with it").props.disabled).toBe(true);
     expect(button(hidden, 'Make it my default everywhere').props.disabled).toBe(true);
     const disable = hidden.findAllByType('button').find((node) => /Disable/.test(text(node)))!;
     await click(disable);

@@ -51,9 +51,9 @@ describe('ConnectorConnectionGateContent', () => {
     expect(html).toContain('Private calendar');
     expect(html).toContain('Project CRM');
     expect(html).toContain('Private');
-    expect(html).toContain('Project');
+    expect(html).toContain('Workspace');
     expect(html).toContain('Only your private sessions can use this connection.');
-    expect(html).toContain('Eligible project members can use this connection.');
+    expect(html).toContain('Eligible workspace members can use this connection.');
     expect(html).toContain('aria-label="Connect Private calendar"');
     expect(html).toContain('aria-label="Connect Project CRM"');
   });
@@ -61,7 +61,7 @@ describe('ConnectorConnectionGateContent', () => {
   test('requires a project manager for a project connection without management access', () => {
     const html = renderGate({ canManageProjectConnections: false });
 
-    expect(html).toContain('A project manager must create this connection.');
+    expect(html).toContain('A workspace manager must create this connection.');
     expect(html).toContain('Manager required');
     expect(html).toContain('aria-label="Connect Private calendar"');
     expect(html).not.toContain('aria-label="Connect Project CRM"');

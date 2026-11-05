@@ -146,7 +146,7 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
  */
 /** `featureFlag`: the group is offered only while that project flag is on. */
 export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[]; featureFlag?: FeatureFlagKey }[] = [
-  { group: 'Project', actions: ['project.read', 'project.write', 'project.delete'] },
+  { group: 'Workspace', actions: ['project.read', 'project.write', 'project.delete'] },
   {
     group: 'Sessions',
     actions: [

@@ -31,7 +31,7 @@ export const hero = {
   title: 'One CompanyOS for every team.',
   titleMuted: 'Every team’s agents and memory, in one place you own.',
   sub: 'Roll Kortix out team by team. Agents run around the clock on schedules and webhooks, on Kortix Cloud or your own infrastructure, with any model.',
-  caption: 'One account for every team.',
+  caption: 'One workspace for every team.',
   captionMuted: 'Members are unlimited.',
 } as const;
 
@@ -278,7 +278,7 @@ export const deployments = [
 
 /** guide.mdx "Models → Set a budget", "Fallback models". No amounts. */
 export const spendRows = [
-  { k: 'Budget per day, week or month', v: 'Per project' },
+  { k: 'Budget per day, week or month', v: 'Per workspace' },
   { k: 'At the limit', v: 'Block, or warn only' },
   { k: 'Alerts', v: 'Email at 80% and 100%' },
   { k: 'Fallback models', v: 'Up to 8, tried in order' },

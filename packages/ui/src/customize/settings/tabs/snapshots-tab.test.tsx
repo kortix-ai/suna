@@ -350,7 +350,7 @@ describe('SnapshotsTabView', () => {
       <SnapshotsTabView status={runtimeStatus({ state: 'ready' })} />,
     );
 
-    expect(out).toContain('This project’s environment is ready');
+    expect(out).toContain('This workspace’s environment is ready');
     expect(out).not.toContain('Sessions can’t start');
     expect(out).not.toContain('Some sessions won’t start');
   });
@@ -359,7 +359,7 @@ describe('SnapshotsTabView', () => {
     const out = renderToStaticMarkup(
       <SnapshotsTabView status={runtimeStatus({ state: 'building' })} />,
     );
-    expect(out).toContain('Preparing this project’s environment');
+    expect(out).toContain('Preparing this workspace’s environment');
     expect(out).toContain('they don’t fail');
   });
 

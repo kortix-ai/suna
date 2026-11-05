@@ -62,9 +62,9 @@ export interface AccountMembershipsCopy {
 }
 
 export const DEFAULT_ACCOUNT_MEMBERSHIPS_COPY: AccountMembershipsCopy = {
-  title: 'Organizations',
-  description: "Members, billing, roles, and audit live in each organization's own settings.",
-  fallbackAccountName: 'Account',
+  title: 'Workspaces',
+  description: "Members, billing, roles, and audit live in each workspace's own settings.",
+  fallbackAccountName: 'Workspace',
   owner: 'Owner',
   admin: 'Admin',
   member: 'Member',

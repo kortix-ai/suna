@@ -38,8 +38,8 @@ const DESTINATIONS: { href: string; label: string; description: string; icon: Ic
   },
   {
     href: '/admin/projects',
-    label: 'Projects',
-    description: 'Every project across every account, most-active first.',
+    label: 'Workspaces',
+    description: 'Every workspace across every account, most-active first.',
     icon: KanbanIcon,
   },
   {
