@@ -2226,7 +2226,7 @@ describe("a Telegram chat's model goes with every message — migrated PostgreSQ
     try {
       await handleTelegramEvent(update('first task', ALLOWED, 7012));
       expect(created).toHaveLength(1);
-      expect(created[0]!.body).toMatchObject({ agent_name: 'default', opencode_model: 'cmd-c1' });
+      expect(created[0]!.body).toMatchObject({ agent_name: 'default', model: 'cmd-c1' });
       expect(created[0]!.postCreate[1]).not.toHaveProperty('overrides');
     } finally {
       for (const spy of spies) spy.mockRestore();
@@ -2251,7 +2251,7 @@ describe("a Telegram chat's model goes with every message — migrated PostgreSQ
 
   test("with no choice, a follow-up carries the session's own model, so an earlier turn's model does not stick", async () => {
     const sessionId = await bindChat(7014);
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'cmd-p1' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'cmd-p1' } }).where(eq(projectSessions.sessionId, sessionId));
     const spies = servable(true);
     try {
       await handleTelegramEvent(update('carry on', ALLOWED, 7014));
@@ -2263,7 +2263,7 @@ describe("a Telegram chat's model goes with every message — migrated PostgreSQ
 
   test("a button's answer carries the session's model too", async () => {
     const sessionId = await bindChat(7016);
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'cmd-p2' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'cmd-p2' } }).where(eq(projectSessions.sessionId, sessionId));
     const spies = servable(true);
     try {
       await handleTelegramPress(press(`kq:${await pending(sessionId)}:0`, { chat: 7016 }));
@@ -2426,7 +2426,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     }
     // A session pinned to a model the shared keys cannot run: its follow-ups run a replacement, and /status names it.
     const sessionId = await chatSession(7048, 'running');
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/codex/pin-s' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'kortix/codex/pin-s' } }).where(eq(projectSessions.sessionId, sessionId));
     spies = [
       spyOn(defaultModel, 'isModelServableForAccount').mockImplementation(async ({ model }) => model === 'repl-s'),
       catalog({ 'repl-s': { name: 'Repl S', provider: 'kortix', enabled: true } }),
@@ -2660,7 +2660,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     const deleted = await chatSession(7054, 'running', 'telegram');
     await db
       .update(projectSessions)
-      .set({ metadata: { deletedAt: new Date().toISOString(), opencode_model: 'cmd-deleted-pin' } })
+      .set({ metadata: { deletedAt: new Date().toISOString(), model: 'cmd-deleted-pin' } })
       .where(eq(projectSessions.sessionId, deleted));
     const spies: Array<{ mockRestore(): void }> = [
       spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),

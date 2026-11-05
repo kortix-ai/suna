@@ -41,7 +41,6 @@ describe('restartPendingStartSeed — the optimistic /start payload', () => {
       retriable: true,
       sandbox: null,
       runtime_session_id: null,
-      opencode_session_id: null,
       reason: 'restart_requested',
     });
   });

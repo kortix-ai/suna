@@ -212,7 +212,7 @@ describe('ProjectLeftDrawer renders', () => {
       { id: 'rt-root', parent_id: null, updated_at: 100 },
       ...Array.from({ length: 8 }, (_, index) => ({ id: `child-${index}`, parent_id: 'rt-root', title: `Child ${index}`, updated_at: 90 - index })),
     ];
-    paged.me = page([row('s-9', { opencode_session_id: 'rt-root', runtime_session_id: 'rt-root', runtime_sessions: runtime })]);
+    paged.me = page([row('s-9', { runtime_session_id: 'rt-root', runtime_sessions: runtime })]);
     await act(async () => {
       tree = create(
         React.createElement(Drawer.ProjectLeftDrawer, {

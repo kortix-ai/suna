@@ -130,7 +130,7 @@ async function seedSession(input: { origin: 'user' | 'trigger'; messageId: strin
   TOKEN = `tok-${SANDBOX_ID}`;
   await db.execute(sql`
     INSERT INTO kortix.project_sessions
-      (session_id, account_id, project_id, branch_name, status, opencode_session_id, created_by, origin)
+      (session_id, account_id, project_id, branch_name, status, runtime_session_id, created_by, origin)
     VALUES (${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid, ${`br-${SESSION_ID}`}, 'running',
             ${ROOT}, ${AUTHOR}::uuid, ${input.origin})`);
   await db.execute(sql`
@@ -141,7 +141,7 @@ async function seedSession(input: { origin: 'user' | 'trigger'; messageId: strin
             ${JSON.stringify({ activeTurns: { [TOKEN]: openTurn(TOKEN, input.messageId, input.turnState) } })}::jsonb)`);
   await db.execute(sql`
     INSERT INTO kortix.session_turns
-      (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state)
+      (turn_token, session_id, sandbox_id, project_id, account_id, runtime_session_id, message_id, state)
     VALUES (${TOKEN}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid, ${ACCOUNT_ID}::uuid,
             ${ROOT}, ${input.messageId}, ${input.turnState ?? 'active'})`);
 }
@@ -602,7 +602,7 @@ describe('the reaper leaves no interrupted turn without its one continuation', (
     const second = `tok2-${SANDBOX_ID}`;
     await db.execute(sql`
       INSERT INTO kortix.session_turns
-        (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state)
+        (turn_token, session_id, sandbox_id, project_id, account_id, runtime_session_id, message_id, state)
       VALUES (${second}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid, ${ACCOUNT_ID}::uuid,
               ${ROOT}, ${continued}, 'active')`);
     await reopenBox({ [second]: openTurn(second, continued) });

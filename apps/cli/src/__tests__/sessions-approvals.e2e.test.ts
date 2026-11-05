@@ -42,7 +42,7 @@ function sessionRow() {
     sandbox_provider: 'daytona',
     sandbox_id: 'sandbox-row-id',
     sandbox_url: `http://127.0.0.1/v1/p/${PROXY_ID}/8000`,
-    opencode_session_id: 'ses_oc',
+    runtime_session_id: 'ses_oc',
     name: null,
     agent_name: 'default',
     status: 'running',
@@ -86,7 +86,7 @@ describe('sessions pending/approve/answer', () => {
             agent_name: 'default',
             retriable: false,
             sandbox: { external_id: PROXY_ID },
-            opencode_session_id: 'ses_oc',
+            runtime_session_id: 'ses_oc',
           });
         }
         if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/kortix/health`) {

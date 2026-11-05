@@ -194,7 +194,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   // both the sandbox URL and the runtime's root session (`runtime_session_id`).
   const connectToProjectSession = useCallback(
     (ps: ProjectSession) => {
-      const rootId = ps.runtime_session_id ?? ps.opencode_session_id;
+      const rootId = ps.runtime_session_id;
       if (!ps.sandbox_url || !rootId) return false;
       const externalId =
         ps.sandbox_url.match(/\/p\/([^/]+)\//)?.[1] || ps.sandbox_id || ps.session_id;
@@ -303,7 +303,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
           const sandbox = start.sandbox;
           if (step.kind === 'open' && sandbox?.external_id) {
             const sandboxUrl = getSandboxUrl(sandbox.external_id);
-            const rootId = start.runtime_session_id ?? start.opencode_session_id;
+            const rootId = start.runtime_session_id;
             const openSession = (runtimeSessionId: string) => {
               // The SDK's own `/start` read (`useSession`, bound by the switch
               // below) starts from this answer instead of asking again.
@@ -313,7 +313,6 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
                 sandbox_id: sandbox.sandbox_id,
                 sandbox_url: sandboxUrl,
                 runtime_session_id: runtimeSessionId,
-                opencode_session_id: runtimeSessionId,
                 sandbox_provider: sandbox.provider ?? 'platinum',
                 created_at: sandbox.created_at,
                 updated_at: sandbox.updated_at,

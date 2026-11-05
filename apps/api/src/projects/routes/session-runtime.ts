@@ -34,7 +34,7 @@ export function registerSessionRuntimeRoutes(): void {
   // THE unified session-open endpoint. One idempotent call that provisions a
   // missing sandbox, resumes a hibernated/idle one, and resolves the OpenCode pin
   // once reachable — returning a single readiness payload { stage, sandbox,
-  // opencode_session_id, retriable } the client polls until stage='ready'.
+  // runtime_session_id, retriable } the client polls until stage='ready'.
 
   projectsApp.openapi(
     createRoute({

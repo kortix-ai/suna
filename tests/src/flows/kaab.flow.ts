@@ -70,7 +70,7 @@ flow('KAAB-4', { ...REQ, requires: ['funded', 'sandbox'], routes: [CREATE] }, as
       .as(ctx.P.PAT_ACCT)
       .post(
         '/v1/projects/:projectId/sessions',
-        { opencode_model: 'totally-bogus-model-xyz-9999' },
+        { model: 'totally-bogus-model-xyz-9999' },
         { params: { projectId: project.id } },
       );
     response.status(400);

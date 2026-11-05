@@ -832,7 +832,7 @@ export function registerProjectSessionsRoutes(): void {
         sessionId,
         owner: visible.row.createdBy ?? loaded.userId,
         freeModelsOnly: !(await accountMayUseManagedModels(loaded.row.accountId)),
-        model: typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null,
+        model: typeof metadata.model === 'string' ? metadata.model : null,
         visibility: next.visibility,
         mayPool:
           resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
@@ -943,20 +943,12 @@ export function registerProjectSessionsRoutes(): void {
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-    const serverManagedFields = ['status', 'sandbox_url', 'sandboxUrl', 'error'];
+    // runtime_session_id: the backend alone maps a Kortix session to its runtime session,
+    // so a stale or forged client value cannot drift it.
+    const serverManagedFields = ['status', 'sandbox_url', 'sandboxUrl', 'error', 'runtime_session_id', 'runtimeSessionId'];
     const attemptedServerField = serverManagedFields.find((field) => hasOwn(body, field));
     if (attemptedServerField) {
       return c.json({ error: `field is server-managed: ${attemptedServerField}` }, 400);
-    }
-
-    // opencode_session_id is SERVER-MANAGED: the backend is the sole authority
-    // for the OpenCode↔Kortix mapping (see ensure-opencode + opencode-mapping.ts).
-    // Clients must never set it, so a stale/forged client value can't drift it.
-      const opencodeManagedField = ['opencode_session_id', 'opencodeSessionId'].find((f) =>
-        hasOwn(body, f),
-      );
-    if (opencodeManagedField) {
-      return c.json({ error: `field is server-managed: ${opencodeManagedField}` }, 400);
     }
 
     const allowedFields = ['name', 'labels', 'metadata'];
@@ -979,7 +971,7 @@ export function registerProjectSessionsRoutes(): void {
     // Letting a client forge either via PATCH lets any project member hide
     // another member's session, block its follow-ups, and trip the reaper.
     // See SSR-7 (weekly pentest run #4).
-    // opencode_model is create-only by contract and changed only via
+    // model is create-only by contract and changed only via
     // PUT /sessions/{id}/model, which validates it against the account. Planting
     // it through metadata skipped that check entirely, so a retired or
     // account-forbidden model could be stored and booted by the next cold provision.

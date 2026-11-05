@@ -109,7 +109,7 @@ export async function buildSlackModelsResponse(ctx: SlackModelCtx): Promise<Slas
     };
   }
   const selection = await currentChannelSelection({ teamId: ctx.teamId, channelId: ctx.channelId });
-  const current = selection?.opencodeModel ?? null;
+  const current = selection?.sessionModel ?? null;
 
   const { models, defaultModel } = await listChannelModels(scope);
   const currentWire = current ? toWireModel(current) : null;

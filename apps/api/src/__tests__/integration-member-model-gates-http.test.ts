@@ -195,7 +195,7 @@ describe('project member — model selection', () => {
 
   test('can WRITE the session model on a session it owns', async () => {
     const res = await req('PUT', `${base}/sessions/${SESSION}/model`, memberKey, {
-      opencode_model: 'kortix/deepseek-v4-flash',
+      model: 'kortix/deepseek-v4-flash',
     });
     expect(await roleDenied(res)).toBe(false);
     expect(res.status).not.toBe(403);

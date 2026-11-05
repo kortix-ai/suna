@@ -6,7 +6,7 @@
  * that id SERVER-SIDE so the mapping no longer depends on any client (browser,
  * CLI, cron) doing the right thing.
  *
- * `project_sessions.opencode_session_id` is the pin. The invariant:
+ * `project_sessions.runtime_session_id` is the pin. The invariant:
  *   1. Honor the pin whenever it still exists in the sandbox's live session
  *      list (stable identity — never flip off it for recency/duplicates).
  *   2. If the pin is missing (fresh/rebuilt sandbox, deleted session, never
@@ -70,7 +70,7 @@ export async function sandboxOpencodeEndpoint(
  * "something about the box did not answer".
  *
  * That is not hypothetical. The 401 case is already recorded in the comment
- * below as having disabled the opencode_sessions snapshot for three weeks
+ * below as having disabled the runtime_sessions snapshot for three weeks
  * unnoticed (0 of 2804 staging sessions, 2026-08). And on 2026-09-28 a dev
  * session cycled `starting/unreachable` -> `failed/runtime_unreachable_timeout`
  * for 1447s while its daemon answered the API's own service key with
@@ -220,7 +220,7 @@ export interface EnsureResult {
 }
 
 /**
- * The single authoritative writer of `opencode_session_id`. Reads the root the
+ * The single authoritative writer of `runtime_session_id`. Reads the root the
  * box names on its health and persists it when it differs from the stored pin.
  * Best-effort on unreachability: returns the current pin unchanged so a
  * transient sandbox blip never clobbers a good mapping.

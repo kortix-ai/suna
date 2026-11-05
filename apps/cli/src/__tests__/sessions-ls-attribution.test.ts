@@ -23,7 +23,7 @@ const row = (over: Record<string, unknown>) => ({
   sandbox_provider: "daytona",
   sandbox_id: PARENT_ID,
   sandbox_url: null,
-  opencode_session_id: null,
+  runtime_session_id: null,
   name: "Nightly sweep",
   agent_name: "default",
   status: "running",

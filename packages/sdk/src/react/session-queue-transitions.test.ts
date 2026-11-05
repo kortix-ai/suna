@@ -52,7 +52,7 @@ test('the same turn changes from sending to running on its first active observat
   const atMs = Date.now();
   const observation: SessionTurnObservation = {
     atMs,
-    turns: [{ turn_token: 't1', message_id: 'm1', opencode_session_id: 'wire1', state: 'delivering', started_at: new Date(atMs).toISOString(), accepted_at: new Date(atMs).toISOString() }],
+    turns: [{ turn_token: 't1', message_id: 'm1', runtime_session_id: 'wire1', state: 'delivering', started_at: new Date(atMs).toISOString(), accepted_at: new Date(atMs).toISOString() }],
   };
   client.setQueryData(key, observation);
   let working: WorkingProjection;

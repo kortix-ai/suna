@@ -10,17 +10,17 @@ function payload(partial: Partial<SessionStartResult>): SessionStartResult {
     agent_name: 'default',
     retriable: true,
     sandbox: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     ...partial,
   };
 }
 
 describe('the session-open answer names the runtime session neutrally', () => {
-  test('runtime_session_id carries the same pin as opencode_session_id', () => {
+  test('runtime_session_id carries the same pin as runtime_session_id', () => {
     const log = createStartCallLog(OBSERVED_AT);
-    const pinned = withStartEnvelope(payload({ opencode_session_id: 'ses_root' }), log);
+    const pinned = withStartEnvelope(payload({ runtime_session_id: 'ses_root' }), log);
     expect(pinned.runtime_session_id).toBe('ses_root');
-    expect(pinned.opencode_session_id).toBe('ses_root');
+    expect(pinned.runtime_session_id).toBe('ses_root');
     expect(withStartEnvelope(payload({}), log).runtime_session_id).toBeNull();
   });
 });

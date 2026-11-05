@@ -25,7 +25,6 @@ import { askExpiresAt, liveWaitMsFor, surfaceSessionIdOf } from '../lib/session-
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import {
-  normalizeRuntimeRelayBody,
   type TurnQuestionRelayBody,
   TurnQuestionRelayBodySchema,
 } from '@kortix/api-contract/runtime-relay';
@@ -107,8 +106,7 @@ export function registerTurnQuestionsRoutes(): void {
 
       let body: Partial<TurnQuestionRelayBody>;
       try {
-        // A daemon built before W3 names the runtime session `opencode_session_id`.
-        body = normalizeRuntimeRelayBody((await c.req.json()) as typeof body);
+        body = (await c.req.json()) as typeof body;
       } catch {
         return c.json({ error: 'Invalid JSON body' }, 400);
       }

@@ -426,7 +426,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
   }
 
   test('vision queues byte-free file references and final delivery materializes fresh image parts; text-only sends URLs', async () => {
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/screenshot-vision' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'kortix/screenshot-vision' } }).where(eq(projectSessions.sessionId, sessionId));
     const source = await thread('Review the marked screenshot.', true);
     await screenshot(source);
     await runArtifactCommentAgentJob(await job(source));
@@ -441,7 +441,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
     expect(image.parts).toMatchObject([{ type: 'text', text: image.text }, { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AQID' }]);
     expect(image.text).toContain('/screenshot');
     expect(reads).toBe(1);
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/screenshot-text' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'kortix/screenshot-text' } }).where(eq(projectSessions.sessionId, sessionId));
     const text = await rebuildArtifactCommentScreenshotMessage(command, undefined, store);
     expect(text.parts).toBeUndefined();
     expect(text.text).toContain('/screenshot');
@@ -450,7 +450,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
   });
 
   test('a screenshot deleted while its private read is pending never survives the final source recheck', async () => {
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/screenshot-vision' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'kortix/screenshot-vision' } }).where(eq(projectSessions.sessionId, sessionId));
     const source = await thread('Live root.', true);
     const [reply] = await db.insert(artifactComments).values({ threadId: source.row.threadId, authorUserId: actor.userId, body: 'Delete this image before dispatch.' }).returning();
     await screenshot(source, reply!.commentId);
@@ -473,7 +473,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
   });
 
   test('oversized vision Send fails with numeric limits before any command or sent event, while text-only can retry', async () => {
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/screenshot-vision' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'kortix/screenshot-vision' } }).where(eq(projectSessions.sessionId, sessionId));
     const source = await thread('Many image comments.');
     for (let index = 0; index < 21; index++) {
       const [comment] = await db.insert(artifactComments).values({ threadId: source.row.threadId, authorUserId: actor.userId, body: `Image ${index}` }).returning();
@@ -482,7 +482,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
     await expect(sendArtifactCommentThreads(artifact, actor, null, { thread_ids: [source.row.threadId], batch_id: crypto.randomUUID(), agent: 'writer' })).rejects.toMatchObject({ status: 413, code: 'artifact_comment_screenshot_limit', limits: { max_files: 20, max_parts_bytes: 12582912 } });
     expect(await commands()).toEqual([]);
     expect(await events()).toEqual([]);
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/screenshot-text' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'kortix/screenshot-text' } }).where(eq(projectSessions.sessionId, sessionId));
     await sendArtifactCommentThreads(artifact, actor, null, { thread_ids: [source.row.threadId], batch_id: crypto.randomUUID(), agent: 'writer' });
     expect(await commands()).toHaveLength(1);
     expect((await commands())[0]!.payload.parts).toBeUndefined();
@@ -490,7 +490,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
   });
 
   test('a batch near the image limit rejects combined comment text before job creation or sent state', async () => {
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/screenshot-vision' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'kortix/screenshot-vision' } }).where(eq(projectSessions.sessionId, sessionId));
     const source = await thread('Four large screenshots and long valid comments.');
     const keys: string[] = [];
     for (let index = 0; index < 4; index++) {

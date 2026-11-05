@@ -9,7 +9,7 @@ describe('composer model pick', () => {
     expect(selectComposerModel('kortix/gpt-5', null)).toBe('kortix/gpt-5');
   });
 
-  test('opencode_model: the bare gateway wire id', () => {
+  test('model: the bare gateway wire id', () => {
     expect(sessionModelRef({ providerID: 'kortix', modelID: 'anthropic/claude-sonnet-5' })).toBe('anthropic/claude-sonnet-5');
     expect(sessionModelRef({ providerID: 'kortix', modelID: 'kimi-k3' })).toBe('kimi-k3');
   });

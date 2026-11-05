@@ -71,14 +71,14 @@ test("projectSessionStartSeed turns a running inventory row into a ready cache s
     sandbox_id: "sbx-db-1",
     sandbox_provider: "daytona",
     sandbox_url: "http://test.local/v1/p/ext-1/8000",
-    opencode_session_id: "oc-1",
+    runtime_session_id: "oc-1",
     name: null,
     custom_name: null,
     agent_name: "default",
     status: "running",
     error: null,
     metadata: { source: "ui" },
-    opencode_sessions: [],
+    runtime_sessions: [],
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-02T00:00:00Z",
   } satisfies ProjectSession;
@@ -103,7 +103,6 @@ test("projectSessionStartSeed turns a running inventory row into a ready cache s
       updated_at: "2026-01-02T00:00:00Z",
     },
     runtime_session_id: "oc-1",
-    opencode_session_id: "oc-1",
     runtime_url: "http://test.local/v1/p/ext-1/8000",
   });
 });
@@ -118,21 +117,21 @@ test("projectSessionStartSeed rejects stale or incomplete inventory rows", () =>
     sandbox_id: "sbx-db-1",
     sandbox_provider: "daytona",
     sandbox_url: "http://test.local/v1/p/ext-1/8000",
-    opencode_session_id: "oc-1",
+    runtime_session_id: "oc-1",
     name: null,
     custom_name: null,
     agent_name: null,
     status: "running",
     error: null,
     metadata: {},
-    opencode_sessions: [],
+    runtime_sessions: [],
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-02T00:00:00Z",
   } satisfies ProjectSession;
 
   expect(projectSessionStartSeed({ ...base, status: "stopped" })).toBeNull();
   expect(
-    projectSessionStartSeed({ ...base, opencode_session_id: null }),
+    projectSessionStartSeed({ ...base, runtime_session_id: null }),
   ).toBeNull();
   expect(projectSessionStartSeed({ ...base, sandbox_url: null })).toBeNull();
   // A legacy Suna-migration row is minted with `sandbox_id = null` and
@@ -150,7 +149,7 @@ test("projectSessionStartSeed rejects stale or incomplete inventory rows", () =>
 test("startProjectSession POSTs to /start with no query string when waitMs is omitted", async () => {
   nextResponse = {
     status: 200,
-    body: { stage: "provisioning", agent_name: "default", retriable: true, sandbox: null, opencode_session_id: null,
+    body: { stage: "provisioning", agent_name: "default", retriable: true, sandbox: null, runtime_session_id: null,
     },
   };
   await startProjectSession(PROJECT, SESSION);
@@ -163,7 +162,7 @@ test("startProjectSession POSTs to /start with no query string when waitMs is om
 test("startProjectSession appends ?wait_ms=<floored ms> when waitMs is given", async () => {
   nextResponse = {
     status: 200,
-    body: { stage: "provisioning", agent_name: "default", retriable: true, sandbox: null, opencode_session_id: null,
+    body: { stage: "provisioning", agent_name: "default", retriable: true, sandbox: null, runtime_session_id: null,
     },
   };
   await startProjectSession(PROJECT, SESSION, 5_500.9);
@@ -173,7 +172,7 @@ test("startProjectSession appends ?wait_ms=<floored ms> when waitMs is given", a
 test("startProjectSession explicitly requests the preserved previous-repository runtime", async () => {
   nextResponse = {
     status: 200,
-    body: { stage: "starting", agent_name: "default", retriable: true, sandbox: null, opencode_session_id: null },
+    body: { stage: "starting", agent_name: "default", retriable: true, sandbox: null, runtime_session_id: null },
   };
   await startProjectSession(PROJECT, SESSION, {
     waitMs: 5_500.9,
@@ -187,7 +186,7 @@ test("startProjectSession explicitly requests the preserved previous-repository 
 test("startProjectSession keepStopped asks the API to report a stopped box, never wake it", async () => {
   nextResponse = {
     status: 200,
-    body: { stage: "stopped", agent_name: "default", retriable: false, sandbox: null, opencode_session_id: null },
+    body: { stage: "stopped", agent_name: "default", retriable: false, sandbox: null, runtime_session_id: null },
   };
   await startProjectSession(PROJECT, SESSION, { waitMs: 15_000, keepStopped: true });
   expect(last().url).toBe(
@@ -200,7 +199,7 @@ test("startProjectSession keepStopped asks the API to report a stopped box, neve
 test("startProjectSession omits the query string for a zero or negative waitMs", async () => {
   nextResponse = {
     status: 200,
-    body: { stage: "provisioning", agent_name: "default", retriable: true, sandbox: null, opencode_session_id: null,
+    body: { stage: "provisioning", agent_name: "default", retriable: true, sandbox: null, runtime_session_id: null,
     },
   };
   await startProjectSession(PROJECT, SESSION, 0);
@@ -265,7 +264,7 @@ test("startProjectSession returns null when the response has no data", async () 
 test("startProjectSession returns the parsed result even when stage is not ready (no registry write)", async () => {
   nextResponse = {
     status: 200,
-    body: { stage: "starting", agent_name: "default", retriable: true, sandbox: readySandbox(), opencode_session_id: null,
+    body: { stage: "starting", agent_name: "default", retriable: true, sandbox: readySandbox(), runtime_session_id: null,
     },
   };
   const result = await startProjectSession(PROJECT, SESSION);
@@ -286,7 +285,7 @@ test("startProjectSession returns the provisioning boot's image step as the serv
       agent_name: "default",
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
       boot: { phase: "provisioning", since: "2026-11-02T09:59:58.000Z", actively_starting: true, image },
     },
   };
@@ -296,7 +295,7 @@ test("startProjectSession returns the provisioning boot's image step as the serv
   expect(result?.boot?.image).toEqual(image);
 });
 
-test("startProjectSession populates the shared session-runtime registry once stage is ready with a sandbox external_id + opencode_session_id", async () => {
+test("startProjectSession populates the shared session-runtime registry once stage is ready with a sandbox external_id + runtime_session_id", async () => {
   nextResponse = {
     status: 200,
     body: {
@@ -304,7 +303,7 @@ test("startProjectSession populates the shared session-runtime registry once sta
       agent_name: "default",
       retriable: false,
       sandbox: readySandbox({ external_id: "ext-ready-1" }),
-      opencode_session_id: "ocs-ready-1",
+      runtime_session_id: "ocs-ready-1",
     },
   };
   const result = await startProjectSession(PROJECT, SESSION);
@@ -313,28 +312,9 @@ test("startProjectSession populates the shared session-runtime registry once sta
   const entry = getSessionRuntime(PROJECT, SESSION);
   expect(entry).toBeDefined();
   expect(entry?.opencodeSessionId).toBe("ocs-ready-1");
-  // A pre-W4 API sends only `opencode_session_id`; the neutral field still carries it.
   expect(entry?.runtimeSessionId).toBe("ocs-ready-1");
   expect(entry?.sandboxId).toBe("ext-ready-1");
   expect(entry?.runtimeUrl).toBe("http://test.local/v1/p/ext-ready-1/8000");
-});
-
-test("startProjectSession reads the neutral runtime_session_id first", async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      stage: "ready",
-      agent_name: "default",
-      retriable: false,
-      sandbox: readySandbox({ external_id: "ext-ready-neutral" }),
-      runtime_session_id: "rs-neutral",
-      opencode_session_id: null,
-    },
-  };
-  await startProjectSession(PROJECT, SESSION);
-  const entry = getSessionRuntime(PROJECT, SESSION);
-  expect(entry?.runtimeSessionId).toBe("rs-neutral");
-  expect(entry?.opencodeSessionId).toBe("rs-neutral");
 });
 
 test("startProjectSession does NOT populate the registry when ready but sandbox has no external_id", async () => {
@@ -345,14 +325,14 @@ test("startProjectSession does NOT populate the registry when ready but sandbox 
       agent_name: "default",
       retriable: false,
       sandbox: readySandbox({ external_id: null }),
-      opencode_session_id: "ocs-2",
+      runtime_session_id: "ocs-2",
     },
   };
   await startProjectSession(PROJECT, SESSION);
   expect(getSessionRuntime(PROJECT, SESSION)).toBeUndefined();
 });
 
-test("startProjectSession does NOT populate the registry when ready but opencode_session_id is missing", async () => {
+test("startProjectSession does NOT populate the registry when ready but runtime_session_id is missing", async () => {
   nextResponse = {
     status: 200,
     body: {
@@ -360,7 +340,7 @@ test("startProjectSession does NOT populate the registry when ready but opencode
       agent_name: "default",
       retriable: false,
       sandbox: readySandbox({ external_id: "ext-3" }),
-      opencode_session_id: null,
+      runtime_session_id: null,
     },
   };
   await startProjectSession(PROJECT, SESSION);
@@ -370,7 +350,7 @@ test("startProjectSession does NOT populate the registry when ready but opencode
 test("startProjectSession does NOT populate the registry when ready but sandbox itself is null", async () => {
   nextResponse = {
     status: 200,
-    body: { stage: "ready", agent_name: "default", retriable: false, sandbox: null, opencode_session_id: "ocs-4",
+    body: { stage: "ready", agent_name: "default", retriable: false, sandbox: null, runtime_session_id: "ocs-4",
     },
   };
   await startProjectSession(PROJECT, SESSION);

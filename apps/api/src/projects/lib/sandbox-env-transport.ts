@@ -169,14 +169,10 @@ export async function postEnvToDaemon(args: {
     runtime?: unknown;
     runtime_reload?: unknown;
     runtime_turn_ended?: unknown;
-    /** Pre-W3 names of the three fields above; a daemon built before W3 sends only these. */
-    opencode?: unknown;
-    opencode_reload?: unknown;
-    opencode_turn_ended?: unknown;
   } | null;
-  const runtimeState = body?.runtime ?? body?.opencode;
-  const runtimeReload = body?.runtime_reload ?? body?.opencode_reload;
-  const runtimeTurnEnded = body?.runtime_turn_ended ?? body?.opencode_turn_ended;
+  const runtimeState = body?.runtime;
+  const runtimeReload = body?.runtime_reload;
+  const runtimeTurnEnded = body?.runtime_turn_ended;
   const expectedExported = Object.keys(args.snapshot.env).length;
   if (args.requireAgentEnvProof) {
     if (!body || body.ok !== true) throw new Error('env sync proof missing ok=true');

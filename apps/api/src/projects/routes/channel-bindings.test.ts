@@ -20,7 +20,7 @@ describe('needsSlackNameBackfill', () => {
     channelName: null,
     channelType: null,
     agentName: null,
-    opencodeModel: null,
+    sessionModel: null,
     conversationPolicy: 'owner_approval',
     installedAt: new Date('2026-01-01T00:00:00Z'),
   };

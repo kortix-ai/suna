@@ -174,11 +174,8 @@ export interface ProjectSession {
   sandbox_provider: string;
   sandbox_id: string;
   sandbox_url: string | null;
-  /** Served by a W4 API; read it before `opencode_session_id`. */
   runtime_session_id?: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. */
-  opencode_session_id: string | null;
-  /** The runtime's conversation tree (a W4 API); older APIs only have `metadata.opencode_sessions`. */
+  /** The runtime's conversation tree. */
   runtime_sessions?: unknown[];
   /** Resolved display name: user-set custom_name, else the auto runtime title. */
   name: string | null;

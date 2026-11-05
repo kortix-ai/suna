@@ -756,7 +756,7 @@ flow(
       scopeRead.status(404);
       const model = await owner.put(
         '/v1/projects/:projectId/sessions/:sessionId/model',
-        { opencode_model: 'openai/gpt-5' },
+        { model: 'openai/gpt-5' },
         { params },
       );
       model.status(404);

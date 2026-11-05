@@ -10,7 +10,7 @@ export interface SessionRuntimeEnvInput {
   apiUrl: string;
   /** Frontend base URL (no /v1) the sandbox surfaces as user-facing links. */
   frontendUrl?: string;
-  opencodeModel?: string | null;
+  sessionModel?: string | null;
   /** Project file delivery mode selected by the session's agent. */
   repositoryAccess?: boolean;
   /** True only for a newly-created session branch that still equals base. */
@@ -176,11 +176,11 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_BOOTSTRAP_RUNTIME_SESSION: '1',
     // The pre-W3 name of the variable above, for a daemon built before W3.
     KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
-    ...(input.opencodeModel
+    ...(input.sessionModel
       ? {
-          KORTIX_MODEL: input.opencodeModel,
+          KORTIX_MODEL: input.sessionModel,
           // The pre-W3 name of `KORTIX_MODEL`; the OpenCode adapter still falls back to it.
-          KORTIX_OPENCODE_MODEL: input.opencodeModel,
+          KORTIX_OPENCODE_MODEL: input.sessionModel,
         }
       : {}),
     // The sandbox daemon applies this as the BASE of the agent config it runs

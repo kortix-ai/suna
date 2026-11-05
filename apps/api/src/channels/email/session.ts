@@ -313,7 +313,7 @@ async function planEmailSession(projectId: string, email: InboundEmail): Promise
   const [selection] = await db
     .select({
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.model,
+      sessionModel: chatChannelBindings.model,
     })
     .from(chatChannelBindings)
     .where(
@@ -340,7 +340,7 @@ async function planEmailSession(projectId: string, email: InboundEmail): Promise
     visibility: privateInbox ? 'private' : 'project',
     body: {
       agent_name: selection?.agentName || 'default',
-      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
+      ...(selection?.sessionModel ? { model: selection.sessionModel } : {}),
       connector_bindings: {
         email: { connection_id: account.connectionId },
       },

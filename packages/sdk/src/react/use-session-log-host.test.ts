@@ -151,7 +151,7 @@ describe('useSession negotiates the session log without its chat engine', () => 
     serveLog = true;
     // A ready box (a fresh ready answer is served from cache): the runtime stream joins, and carries the log.
     queryClient.setQueryData(sessionStartKey(PROJECT_ID, SESSION_ID), {
-      stage: 'ready', agent_name: 'default', retriable: false, reason: 'unchanged', opencode_session_id: 'ses_log_host', runtime_url: '/p/sbx_log/8000',
+      stage: 'ready', agent_name: 'default', retriable: false, reason: 'unchanged', runtime_session_id: 'ses_log_host', runtime_url: '/p/sbx_log/8000',
       sandbox: { sandbox_id: SESSION_ID, session_id: SESSION_ID, project_id: PROJECT_ID, account_id: 'acct', provider: 'platinum', external_id: 'sbx_log', base_url: null, status: 'active', config: {}, metadata: {}, last_used_at: null, created_at: '2026-10-14T00:00:00Z', updated_at: '2026-10-14T00:00:00Z' },
     } as unknown as SessionStartResult);
     const seen: { thread: SessionLogThread | null } = { thread: null };
