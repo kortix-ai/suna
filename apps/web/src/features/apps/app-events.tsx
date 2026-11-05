@@ -148,7 +148,8 @@ export function AppEventsSection({ projectId, app, triggers }: { projectId: stri
             </li>
           ))}
         </ul>
-      ) : events.isError ? (
+      ) : events.isError && !events.data ? (
+        // A failed 10 s refresh keeps the rows already shown; only a first load that fails shows this.
         <ErrorState
           size="sm"
           title={t.raw('textb31f231088c9')}
@@ -243,7 +244,7 @@ function EventRow({ projectId, row, locale, t }: { projectId: string; row: AppEv
             {row.truncated ? row.raw : JSON.stringify(row.data ?? {}, null, 2)}
           </pre>
           {row.session_id ? (
-            <Button variant="ghost" size="xs" className="text-muted-foreground gap-1.5 text-xs" asChild>
+            <Button variant="ghost" size="xs" className="text-muted-foreground -ml-2 flex w-fit gap-1.5 text-xs" asChild>
               <Link href={`/projects/${projectId}/sessions/${row.session_id}`}>
                 <ArrowSquareOutIcon className="size-3 shrink-0" />
                 {t.raw('textb205bb47f81a')}

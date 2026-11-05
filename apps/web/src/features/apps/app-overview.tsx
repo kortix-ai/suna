@@ -119,6 +119,11 @@ export function AppOverview({
                 <TriggerList t={t} rows={startsOn} detail={() => null} />
               </Fact>
             ) : null}
+            {startsOn.length ? (
+              <Fact label={t.raw('texta76d8716b0ff')}>
+                <LastEventFact app={app} triggers={triggers} />
+              </Fact>
+            ) : null}
           </dl>
         ) : null}
 
