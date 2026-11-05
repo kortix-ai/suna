@@ -82,23 +82,23 @@ export function SubscriptionUsageCard({
               ? t('text5')
               : t('text6');
   return (
-    <article className="rounded-md border border-border bg-card p-5 flex flex-col gap-6 min-w-0">
+    <article className="rounded-md border border-border bg-card p-4 flex flex-col gap-4 min-w-0">
       <header className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <ProviderLogo
             providerID={secret.provider_id ?? ''}
-            size="small"
+            size="large"
             tone="light"
           />
-          <div className="min-w-0 space-y-1">
-            <h3 className="text-base font-medium">
+          <div className="min-w-0">
+            <h3 className="text-base leading-6 font-medium">
               {secret.provider_id === 'codex' ? 'ChatGPT (Codex)' : 'Claude'}{' '}
               <span className="text-muted-foreground font-normal capitalize">
                 {secret.provider_account?.plan ?? t('text7')}
               </span>
             </h3>
             <p
-              className="text-sm text-muted-foreground truncate"
+              className="text-sm leading-5 text-muted-foreground truncate"
               title={secret.label}
             >
               {secret.label}
@@ -112,7 +112,7 @@ export function SubscriptionUsageCard({
           {status}
         </Badge>
       </header>
-      <div className="flex-1 space-y-5">
+      <div className="space-y-4">
         {usage?.windows.length &&
         !usage.windows.some(
           (window) =>
@@ -189,7 +189,7 @@ export function SubscriptionUsageCard({
           </p>
         )}
       </div>
-      <footer className="flex items-center justify-between gap-3 border-t border-border pt-4">
+      <footer className="flex items-center justify-between gap-3 border-t border-border pt-3">
         <p className="text-xs text-muted-foreground">
           {error
             ? usage
@@ -344,7 +344,7 @@ export function SubscriptionUsageTab({
           }
         />
       ) : (
-        <div className="grid grid-flow-dense grid-cols-1 @3xl:grid-cols-2 gap-4">
+        <div className="grid grid-flow-dense grid-cols-1 @3xl:grid-cols-2 items-start gap-4">
           {subscriptions.map((secret) => (
             <ConnectedSubscription
               key={secret.secret_id}
@@ -355,7 +355,7 @@ export function SubscriptionUsageTab({
           ))}
         </div>
       )}
-      <div className="text-xs text-muted-foreground space-y-1 border-t border-border pt-4">
+      <div className="text-xs text-muted-foreground space-y-1 border-t border-border pt-3">
         <p>{t('text25')}</p>
         <p>{t('text26')}</p>
       </div>
