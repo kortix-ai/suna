@@ -528,6 +528,10 @@ function onRunTriggerSchema(): JsonSchemaFragment {
       max_runs_per_hour: { type: 'integer', minimum: 1, default: 60, description: 'Runs the trigger starts in any 60 minutes.' },
       max_runs_per_day: { type: 'integer', minimum: 1, description: 'Runs the trigger starts in a UTC day.' },
       max_lateness: { ...durationSchema, description: 'Schedules only, `60s` or more. A missed fire later than this does not run.' },
+      expect_event_within: {
+        ...durationSchema,
+        description: 'App events only, `5m` or more. No event for this long tells the trigger\'s watchers once; the next event clears it.',
+      },
       overlap: {
         type: 'string',
         enum: ['skip', 'allow'],
@@ -629,6 +633,8 @@ function triggerSchema(): JsonSchemaFragment {
       // `type: cron` only — the misfire bound. Its 60s floor is the imperative
       // validator's.
       max_lateness: durationSchema,
+      // `type: app` only — the silence alert. Its 5m floor is the imperative validator's.
+      expect_event_within: durationSchema,
       // Any trigger type: runs started in any 60 minutes (60 when unset) and
       // in a UTC day (KRTX-1721).
       max_runs_per_hour: { type: 'integer', minimum: 1 },
@@ -733,6 +739,11 @@ function triggerSchema(): JsonSchemaFragment {
         // The event fields exist only on an event trigger.
         if: { properties: { type: { enum: ['cron', 'webhook', 'app'] } }, required: ['type'] },
         then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
+      },
+      {
+        // The silence alert exists only on an app trigger.
+        if: { properties: { type: { enum: ['cron', 'webhook', 'event'] } }, required: ['type'] },
+        then: { properties: { expect_event_within: false } },
       },
       {
         // The misfire bound and `every` exist only on a cron trigger.

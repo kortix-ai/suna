@@ -8,6 +8,7 @@ import { isLeader } from '../../shared/leader-election';
 import { claimDueScheduleSlots, claimTriggerExecutions, markTriggerExecutionDispatched, markTriggerExecutionFailed, markTriggerExecutionSkipped, markTriggerExecutionSucceeded, type TriggerExecutionRow } from '../trigger-execution-store';
 import type { GitTriggerSpec } from '../triggers';
 import { drainMonitorEvents } from './monitor-observer';
+import { checkAppTriggerSilence } from './app-trigger-silence';
 import { renderPromptTemplate } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
 import { raiseTriggerAlert } from './trigger-alerts';
@@ -338,6 +339,12 @@ export function runProjectTriggerSchedulerTick(): void {
     .catch((error) => {
       console.error('[project-monitors] event drain failed:', error);
     });
+
+  // App triggers that expect an event (`expect_event_within`) and heard none:
+  // tell their watchers once. At most once a minute, on the leader.
+  checkAppTriggerSilence().catch((error) => {
+    logger.warn('[app-trigger-silence] check failed', { error: error instanceof Error ? error.message : String(error) });
+  });
 
   // Connector reconcile backstop — slower cadence than the trigger sweep so
   // we don't re-read every manifest each tick. Catches out-of-band manifest
