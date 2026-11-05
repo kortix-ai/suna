@@ -659,7 +659,7 @@ const OAuth2AdditionalTokenParametersSchema = z
     if (entries.length > 32) {
       ctx.addIssue({
         code: z.ZodIssueCode.too_big,
-        type: 'array',
+        origin: 'array',
         maximum: 32,
         inclusive: true,
         message: 'at most 32 additional token parameters are allowed',
@@ -760,8 +760,8 @@ const OAuth2ApplicationFields = {
   scopes: z.array(z.string().trim().min(1).max(2048)).max(64).optional(),
   resource: z.string().trim().min(1).max(4096).optional(),
   audience: z.string().trim().min(1).max(4096).optional(),
-  authorization_params: z.record(z.string().max(4096)).optional(),
-  token_params: z.record(z.string().max(4096)).optional(),
+  authorization_params: z.record(z.string(), z.string().max(4096)).optional(),
+  token_params: z.record(z.string(), z.string().max(4096)).optional(),
   // RFC 7591/7592: present when Kortix registered this client dynamically.
   registration_client_uri: OAuth2HttpsUrlSchema.optional(),
   registration_access_token: z.string().min(1).max(65536).optional(),

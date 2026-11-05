@@ -738,7 +738,7 @@ export function registerProjectAuditRoutes(): void {
             count: z.number().int(),
             events: z.array(AuditEventSchema),
             next_cursor: z.string().nullable(),
-            actions: z.array(z.record(z.unknown())),
+            actions: z.array(z.record(z.string(), z.unknown())),
           }),
           'Canonical per-session reconstruction log and connector approval projection',
         ),

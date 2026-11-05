@@ -43,7 +43,7 @@ import { rethrowDatabaseError } from '../../shared/database-errors';
 // Bodies are documented with `lenientBody` and parsed by each handler, so a bad
 // body still answers its own 400 message, and only after the 404/403 checks.
 const ConnectionParams = z.object({ projectId: z.string(), connectionId: z.string() });
-const body = (schema: z.AnyZodObject) => ({
+const body = (schema: z.ZodObject) => ({
   body: { content: { 'application/json': { schema: lenientBody(schema.shape) } } },
 });
 const ApplicationResponse = z.object({ application: OAuth2ApplicationViewSchema });
@@ -140,7 +140,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       method: 'put',
       path: '/{projectId}/connections/{connectionId}/oauth2/application',
       summary: "Save a connection's OAuth2 application",
-      request: { params: ConnectionParams, ...body(OAuth2ApplicationInputSchema.innerType()) },
+      request: { params: ConnectionParams, ...body(OAuth2ApplicationInputSchema) },
       responses: { 200: json(OkSchema, 'Saved'), ...errors(400, 403, 404) },
     }),
     async (c) => {
@@ -262,7 +262,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       method: 'post',
       path: '/{projectId}/connections/{connectionId}/oauth2/register',
       summary: 'Register Kortix as an OAuth2 client (RFC 7591)',
-      request: { params: ConnectionParams, ...body(OAuth2ClientRegistrationInputSchema.innerType()) },
+      request: { params: ConnectionParams, ...body(OAuth2ClientRegistrationInputSchema) },
       responses: { 200: json(ApplicationResponse, 'The registered application'), ...errors(400, 403, 404) },
     }),
     async (c) => {

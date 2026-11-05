@@ -30,7 +30,7 @@
     "@composio/client": "0.1.0-alpha.76",
     "@composio/core": "0.17.0",
     "@daytonaio/sdk": "^0.184.0",
-    "@hono/zod-openapi": "^0.19.10",
+    "@hono/zod-openapi": "^1.6.3",
     "@kortix/api-contract": "workspace:*",
     "@kortix/db": "workspace:*",
     "@kortix/llm-catalog": "workspace:*",
@@ -64,7 +64,7 @@
     "tar": "7.5.21",
     "yaml": "^2.8.2",
     "yjs": "13.6.33",
-    "zod": "^3.25.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@aws-crypto/sha256-js": "5.2.0",
