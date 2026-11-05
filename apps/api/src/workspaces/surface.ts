@@ -35,3 +35,6 @@ export {
   WorkspaceHasProjectError,
   type WorkspaceHasProjectBody,
 } from './one-project';
+// The workspace split (runner, ledger, invariants) is NOT re-exported here:
+// it imports projects/surface, and projects/ imports this file. Import it from
+// `workspaces/split/split-runner` and `workspaces/split/invariants`.
