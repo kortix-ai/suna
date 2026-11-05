@@ -9,7 +9,7 @@ This page covers the CLI and git workflow, the [kortix.yaml reference](#kortixya
 
 ## Quickstart
 
-Go from an empty terminal to a merged change request. Each step is a git operation on your workspace's repository. The CLI, the API and the SDK still name a workspace a project: `kortix projects` (a workspace), `--project`, `project_id` and `KORTIX_PROJECT_ID` all mean the workspace.
+Go from an empty terminal to a merged change request. Each step is a git operation on your workspace's repository. The workspace id is the `project_id`. The project names keep working permanently: `kortix projects` (a workspace), `--project`, `project_id` and `KORTIX_PROJECT_ID` all mean the workspace. The SDK names are `kortix.workspaces` and `kortix.workspace(id)`.
 
 | Step | Command | What happens in git |
 | --- | --- | --- |
@@ -3752,7 +3752,7 @@ for (;;) {
 React hooks in `@kortix/sdk/react`:
 `useProjectApps`, `useAppDeployments`, `useAppDeployment`, `useAppAccess`,
 `useAppMachines`, `useAppVolumes` and `useAppVolumeSnapshots`. Signatures and
-types: [SDK reference](/docs/developers#the-project-handle) and
+types: [SDK reference](/docs/developers#the-workspace-handle) and
 [React hooks](/docs/developers#react-hooks).
 
 ### Permissions and CLI reference
@@ -4440,7 +4440,7 @@ Every subcommand takes `--instance <name>` (default `default`).
 | [`@kortix/sdk/genui/react`](/docs/developers#generative-ui) | Browser | `react`, `zod`, `@openuidev/lang-core` 0.3.1 | You render blocks with your own React components. |
 | [`@kortix/ui`](/docs/developers#kortix-ui) | Browser | `@kortix/sdk`, `react` 19 or later, `react-dom` 19 or later, `@tanstack/react-query` | You want the Kortix session chat and components without building them. |
 
-Every task guide is in a later H2: [SDK authentication](/docs/developers#sdk-authentication), [Sessions from code](/docs/developers#sessions-from-code), [Workspaces from code](/docs/developers#projects-from-code), [React](/docs/developers#react), [Generative UI](/docs/developers#generative-ui), [Kortix UI](/docs/developers#kortix-ui). Exact signatures are in the [SDK reference](/docs/developers#sdk-reference).
+Every task guide is in a later H2: [SDK authentication](/docs/developers#sdk-authentication), [Sessions from code](/docs/developers#sessions-from-code), [Workspaces from code](/docs/developers#workspaces-from-code), [React](/docs/developers#react), [Generative UI](/docs/developers#generative-ui), [Kortix UI](/docs/developers#kortix-ui). Exact signatures are in the [SDK reference](/docs/developers#sdk-reference).
 
 ### Install
 
@@ -5904,7 +5904,7 @@ A session create is a `POST`. To make it retry-safe, see [Retry a create safely]
 
 ## Workspaces from code
 
-A workspace owns its repository, connectors, secrets, triggers and Apps. Sessions run inside it. This section shows one call for each workspace-level job. Every method is on the workspace handle, `kortix.project(projectId)`. Creating the handle sends no request. The full method tables are in [SDK reference > The workspace handle](/docs/developers#sdk-reference).
+A workspace owns its repository, connectors, secrets, triggers and Apps. Sessions run inside it. This section shows one call for each workspace-level job. Every method is on the workspace handle, `kortix.workspace(workspaceId)`. The workspace id is the `project_id`, and `kortix.project(projectId)` returns the same methods without the workspace-level members below. Creating the handle sends no request. The full method tables are in [SDK reference > The workspace handle](/docs/developers#sdk-reference).
 
 Each sample assumes one client, made as in [Create the client](/docs/developers#create-the-client):
 
@@ -5918,11 +5918,36 @@ const kortix = createKortix({
 const p = kortix.project(process.env.KORTIX_PROJECT_ID!);
 ```
 
+### List and read workspaces
+
+`kortix.workspaces.list()` (`listWorkspaces()`) returns every workspace the caller can open as `WorkspaceSummary[]`, most recently opened first. Each row carries every `KortixProject` field, `workspace_id` (equal to `project_id`) and `role`: `owner`, `admin`, `manager` or `member`. An account with no workspace adds no row. One account whose list fails does not hide the others; the call rejects only when every read fails.
+
+`kortix.workspace(id).get()` (`getWorkspace(id)`) returns one `Workspace`: the summary plus the settings the caller may read (`mfa_required`, `branding`, `member_count`, and on newer servers the session and personal-access-key policy). A person who may open the workspace but is not a member of it gets the workspace without the settings.
+
+```ts
+const [first] = await kortix.workspaces.list();
+const ws = kortix.workspace(first.workspace_id);
+
+const workspace = await ws.get();
+await ws.update({ name: 'Northwind' });
+const members = await ws.members.list();
+await ws.members.invite({ email: 'person@example.com', role: 'member' });
+const state = await ws.billing.state();
+const { secret_key } = await ws.tokens.create({ name: 'ci' }); // returned once
+const assignments = await ws.iam.assignments.list();
+```
+
+Every response that names a workspace's project or account can also carry `workspace_id`. Older servers omit it: read `project_id` for them. The older `Project*` and `Account*` names keep working permanently. A name with an exact workspace equivalent is marked `@deprecated` and names it, for example `listAccountMembers` → `listWorkspaceMembers`.
+
+`Workspace` here is the Kortix workspace. `RuntimeWorkspace*`, `@kortix/sdk/workspace-search` and `toWorkspaceRelative` are about the session sandbox's `/workspace` directory. `CaptureWorkspace` is a Kortix Capture tenant.
+
+In React, `useWorkspaces({ userId })` and `useWorkspace(id)` from `@kortix/sdk/react` read the same data. `useWorkspaces` shares its queries with `useAccounts` and `useProjects(accountId)` and returns `{ workspaces, accounts, isLoading, isError, failedAccountIds, refetchFailed }`.
+
 ### Create a workspace
 
 A workspace is one account and its one project. The workspace id is the `project_id`. Sign-up creates no account: a new person has 0 workspaces. Until they create or join one, every call that needs a workspace answers `409` with code `no_workspace` (`isNoWorkspaceError(err)`), and `GET /v1/accounts` answers `[]`.
 
-`createWorkspace(input, onEvent?, options?)` (also `kortix.projects.createWorkspace`) creates the whole workspace in one call. It sends `new_workspace: true` to `POST /v1/projects/provision`.
+`createWorkspace(input, onEvent?, options?)` (also `kortix.workspaces.create` and `kortix.projects.createWorkspace`) creates the whole workspace in one call. It sends `new_workspace: true` to `POST /v1/projects/provision`.
 
 - The server reuses the caller's newest owned account that has no active project, so a plan or credits it holds stay. Else it creates an account. The account takes the workspace name.
 - `input` takes the provision fields below except `account_id`. `new_workspace` with `account_id` answers `400` `new_workspace_with_account_id`.
@@ -8062,7 +8087,7 @@ In a Kortix session, an agent reads a reference with `kortix system-skills file 
 
 ## SDK reference
 
-This section is for lookup. Each table gives the name, the arguments, what the call returns and the errors it adds. The guides in [SDK](/docs/developers#sdk), [Sessions from code](/docs/developers#sessions-from-code), [Workspaces from code](/docs/developers#projects-from-code) and [React](/docs/developers#react) show each call in use.
+This section is for lookup. Each table gives the name, the arguments, what the call returns and the errors it adds. The guides in [SDK](/docs/developers#sdk), [Sessions from code](/docs/developers#sessions-from-code), [Workspaces from code](/docs/developers#workspaces-from-code) and [React](/docs/developers#react) show each call in use.
 
 Conventions in this section:
 
@@ -8116,8 +8141,10 @@ Stable entry points follow semver. A deep path into `dist/` has no semver.
 | `accounts` | Accounts, members, invites, API keys, connected apps, account secrets, branding, audit log. | `/accounts/…` |
 | `iam` | Assignments, roles, permissions, groups, agent identities, OAuth clients, permission probes. | `/accounts/{accountId}/iam/…` |
 | `accountInvites` | The invitee's side of an account invite. | `/account-invites/…` |
-| `projects` | Workspace list, create, provision, model access and custom model providers. | `/projects/…` |
-| `project(projectId)` | The [workspace handle](#the-project-handle). | `/projects/{projectId}/…` |
+| `workspaces` | `list` · `get` · `update` · `create`: the caller's workspaces. | `/accounts`, `/projects/…` |
+| `workspace(workspaceId)` | The [workspace handle](#the-workspace-handle) with its members, billing, personal access keys and IAM. | `/projects/{workspaceId}/…`, `/accounts/{accountId}/…` |
+| `projects` | The project names of the workspace list, create, provision, model access and custom model providers. Kept permanently. | `/projects/…` |
+| `project(projectId)` | The [workspace handle](#the-workspace-handle) without the workspace-level members. | `/projects/{projectId}/…` |
 | `session(projectId, sessionId)` | The [session handle](#the-session-handle). | `/projects/{projectId}/sessions/{sessionId}/…` |
 | `connectors` · `connector(slug)` | Connector calls with a token that carries its workspace, such as a session token. Same methods as the data-plane half of `p.connectors` and as `p.connector(slug)`. | `/connectors/…` |
 | `github` | GitHub App installations and repository links, per account. | `/projects/github/…` |
@@ -8131,6 +8158,17 @@ Stable entry points follow semver. A deep path into `dist/` has no semver.
 | `mobileClientPolicy()` | `{ minimum_version, store_url_ios, store_url_android }`. A `null` field means the operator set no value. Needs no token. | `/clients/mobile` |
 | `validateToken()` | Checks a pasted API key. Never throws. | `/accounts/me` |
 | `runtime()` | Escape hatch: the runtime client of the process-wide active sandbox. It throws on a scoped client. Use the [session handle](#the-session-handle) instead. | sandbox |
+
+#### `kortix.workspaces`
+
+| Method | What it does |
+| --- | --- |
+| `list()` | Every workspace the caller can open, `WorkspaceSummary[]`, most recently opened first. |
+| `get(workspaceId)` | One `Workspace`: the summary plus the caller's `role` and the settings the caller may read. |
+| `update(workspaceId, input)` | Same input as `p.update(input)`. Returns the `WorkspaceSummary`. |
+| `create(input, onEvent?)` | Same as `createWorkspace`. |
+
+The same calls exist as functions: `listWorkspaces`, `getWorkspace`, `updateWorkspace`, `createWorkspace`. The workspace-level functions take the workspace id: `listWorkspaceMembers`, `inviteWorkspaceMember`, `updateWorkspaceMemberRole`, `removeWorkspaceMember`, `listWorkspaceInvites`, `cancelWorkspaceInvite`, `resendWorkspaceInvite`, `leaveWorkspace`, `listWorkspaceTokens`, `createWorkspaceToken`, `revokeWorkspaceToken`, `getWorkspaceBillingState`, `listWorkspaceAssignments`, `createWorkspaceAssignment`, `revokeWorkspaceAssignment`, `listWorkspaceRoles`, `listWorkspaceGroups`, `probeWorkspacePermission(s)`. `resolveWorkspaceAccountId(id)` returns the account behind a workspace, for an older `Account*` call.
 
 #### `kortix.projects`
 
@@ -8291,7 +8329,19 @@ Capture belongs to the account. `kortix.capture.account(accountId)` binds one ac
 
 ### The workspace handle
 
-`kortix.project(projectId)` returns `p`. Every method has the workspace id bound. `p.session(sessionId)` returns the [session handle](#the-session-handle). Task guides for this handle are in [Workspaces from code](/docs/developers#projects-from-code).
+`kortix.workspace(workspaceId)` returns the workspace handle. `kortix.project(projectId)` returns `p`: the same handle without the workspace-level members in the first table. Every method has the workspace id bound. `p.session(sessionId)` returns the [session handle](#the-session-handle). Task guides for this handle are in [Workspaces from code](/docs/developers#workspaces-from-code).
+
+#### Workspace-level members (`kortix.workspace(id)` only)
+
+| Member | What it does |
+| --- | --- |
+| `id` | The workspace id. |
+| `get()` · `update(input)` | The `Workspace` with role and settings · rename or change the icon. |
+| `accountId()` | The account behind the workspace. |
+| `members.list()` · `.invite(input)` · `.updateRole(userId, role)` · `.remove(userId)` · `.invites()` · `.cancelInvite(inviteId)` · `.resendInvite(inviteId)` · `leave()` | People and invites. |
+| `billing.state(options?)` | Plan, credits and limits (`AccountState`). |
+| `tokens.list({ mine? })` · `.create({ name, expiresAt?, projectId? })` · `.revoke(tokenId, { deleteRevoked? })` | The workspace's personal access keys. On `p`, `tokens` is the narrower workspace CLI token list. |
+| `iam.assignments.list(filter?)` · `.create(input)` · `.revoke(id)` · `iam.roles()` · `iam.groups()` · `iam.can(userId, probe)` · `iam.canBatch(userId, probes)` | Identity and access. |
 
 #### Workspace
 
