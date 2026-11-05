@@ -180,3 +180,12 @@ test('a drained test event leaves last_event_at alone: only the App\'s own posts
   await drainMonitorEvents();
   expect((await heard())!.getTime()).toBeGreaterThan(Date.now() - 60_000);
 });
+
+test('a test event over the size cap keeps its test mark when its line is truncated', async () => {
+  const appId = crypto.randomUUID();
+  await ingestAppEvents({ projectId: project.project_id, appId, appSlug: 'watcher', events: [{ name: 'reply.received', id: 'test-big', data: { body: 'x'.repeat(10_000) } }], test: true });
+  const [row] = await rows(appId);
+  expect(row?.line).toMatchObject({ truncated: true, test: true });
+  const listed = await listAppEventLog({ projectId: project.project_id, appId, limit: 10 });
+  expect(listed.events.map((e) => [e.id, e.test])).toEqual([[null, true]]);
+});
