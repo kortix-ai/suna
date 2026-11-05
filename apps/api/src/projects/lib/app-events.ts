@@ -228,7 +228,7 @@ export function encodeAppEventCursor(row: { receivedAt: Date; logId: string }): 
 export function decodeAppEventCursor(cursor: string): { receivedAt: Date; logId: string } | null {
   const [at, logId] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
   const receivedAt = new Date(at ?? '');
-  if (!logId || Number.isNaN(receivedAt.getTime()) || !/^[0-9a-f-]{36}$/i.test(logId)) return null;
+  if (!logId || Number.isNaN(receivedAt.getTime()) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(logId)) return null;
   return { receivedAt, logId };
 }
 
