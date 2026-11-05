@@ -554,7 +554,8 @@ export async function resolveCandidates(
         accountId: principal.accountId, projectId: principal.projectId, userId: principal.userId,
         sessionId: principal.sessionId, keyId: principal.keyId, personalUserId,
       }, { probe: true }).catch((err: unknown) => {
-        if (err instanceof GatewayResolutionError && err.code === 'provider_pool_rate_limited') throw err;
+        // A resting pool starts the chain with its own reason; another typed refusal falls through.
+        if (!(err instanceof GatewayResolutionError) || err.code === 'provider_pool_rate_limited') throw err;
       });
     }
     throw new GatewayResolutionError(

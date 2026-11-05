@@ -201,11 +201,34 @@ describe('relayStream', () => {
     while (!seen.includes('[DONE]')) seen += decoder.decode((await reader.read()).value);
     await reader.cancel();
     expect(settlements).toHaveLength(1);
+    // Not an error, and still a client close: settlement estimates usage the upstream did not report.
     expect(settlements[0]).toMatchObject({
       usage: { promptTokens: 5, completionTokens: 1 },
       error: null,
-      observed: { clientStopped: false },
+      observed: { clientStopped: true },
     });
+  });
+
+  test('an empty answer without a usage frame, closed after [DONE], still settles as a client close so its prompt is estimated', async () => {
+    const settlements: Array<{ usage: unknown; error: unknown; observed: unknown }> = [];
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));
+      },
+    });
+    const reader = relayStream({
+      upstreamBody: upstream,
+      requestId: 'req_empty_done_close',
+      logger: console,
+      settle: async (usage, error, observed) => {
+        settlements.push({ usage, error, observed });
+      },
+    }).getReader();
+    const decoder = new TextDecoder();
+    let seen = '';
+    while (!seen.includes('[DONE]')) seen += decoder.decode((await reader.read()).value);
+    await reader.cancel();
+    expect(settlements).toEqual([{ usage: null, error: null, observed: { outputChars: 0, clientStopped: true } }]);
   });
 
   test('a client that closes after finish_reason but before [DONE] is still a client stop', async () => {

@@ -139,6 +139,8 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
   // cancelled: cancelling resolves the pending read as `done`, and that branch
   // must settle as a client stop, not as a clean end of stream.
   let clientStop: SseErrorFrame | null = null;
+  /** The client closed the response, before or after `[DONE]`: settlement estimates usage the upstream did not report. */
+  let clientClosed = false;
 
   const reportFramingRepair = (): void => {
     if (framingRepairLogged) return;
@@ -233,7 +235,7 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
     try {
       await options.settle(scanner.usage, error ?? scanner.error, {
         outputChars: scanner.outputChars,
-        clientStopped: error?.code === 'client_aborted',
+        clientStopped: clientClosed || error?.code === 'client_aborted',
       });
     } catch (settlementError) {
       // A settlement failure means REVENUE WAS NOT RECORDED for a turn that
@@ -451,6 +453,7 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
       }
     },
     async cancel(reason) {
+      clientClosed = true;
       // A client that closes after the relayed `[DONE]` got the whole answer: the OpenAI SDK
       // (pi's model client) closes on `[DONE]`, often before the upstream's end of body arrives.
       // A close after `finish_reason` but before `[DONE]` is still a stop: the usage chunk may not have arrived.
