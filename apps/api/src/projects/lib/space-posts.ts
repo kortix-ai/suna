@@ -35,6 +35,7 @@ import { deliver } from '../../notifications/notifier';
 import { loadSessionAccessRows, maySeeSessions } from '../../notifications/access';
 import { mentionTokens } from './mentions';
 import { loadProjectRosterIds } from './project-access-view';
+import { isWatcherOfSpace } from './space-watch/store';
 import { resolveUserIdentities } from './user-identity';
 
 /** Session metadata: the agent that wrote a top-level post (its name), when it was not the thread's agent. */
@@ -229,7 +230,9 @@ export async function postIntoSpace(input: {
   const space = isUuid(input.spaceId) ? await findLiveSpace(projectId, input.spaceId) : null;
   // Another person's DM, or a channel this session cannot see, does not exist for it.
   if (!space || (space.kind === 'dm' && space.dmUserId !== person)) return notFound;
-  if (!canSeeSpace(space, await spaceAccessFor(projectId, person, callerSessionId))) return notFound;
+  // The space's own watcher (`spaces_proactive`) is filed in no space: it sees its space as its person does.
+  const bound = (await isWatcherOfSpace(callerSessionId, space.spaceId)) ? null : callerSessionId;
+  if (!canSeeSpace(space, await spaceAccessFor(projectId, person, bound))) return notFound;
   // A DM is the person's own: only a session whose prompts come from them alone writes there.
   if (space.kind === 'dm' && !(await threadWorksOnlyForPerson(projectId, thread))) {
     return { status: 403, body: { error: 'Only a private session that works only for this person posts into their private space', code: 'not_the_persons_chat' } };

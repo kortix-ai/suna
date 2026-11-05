@@ -95,6 +95,7 @@ import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext, reservedRuntimeContextRefusal } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { FRONT_THREAD_CONTEXT_KEY, FRONT_THREAD_METADATA_KEY, sessionIsFrontThread, startsFrontThread } from './front-thread';
+import { SPACE_WATCHER_SOURCE, WATCHER_CONTEXT_KEY } from './space-watch/keys';
 import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
 import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, forkSourceVisibility, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
@@ -1947,9 +1948,13 @@ export async function createProjectSession(input: {
     source: (input.metadata as Record<string, unknown> | undefined)?.source,
   });
   const sessionMetadata = front ? { ...metadata, [FRONT_THREAD_METADATA_KEY]: true } : metadata;
+  // A space's watcher (flag `spaces_proactive`, space-watch/): only the API's own create sets this source.
+  const watcher = (input.metadata as Record<string, unknown> | undefined)?.source === SPACE_WATCHER_SOURCE;
   const runtimeContext = front
     ? { ...parsedRuntimeContext.context, [FRONT_THREAD_CONTEXT_KEY]: true }
-    : parsedRuntimeContext.context;
+    : watcher
+      ? { ...parsedRuntimeContext.context, [WATCHER_CONTEXT_KEY]: true }
+      : parsedRuntimeContext.context;
 
   let sessionRow: ProjectSessionRow | null = null;
   try {

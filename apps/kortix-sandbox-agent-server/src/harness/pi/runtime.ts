@@ -40,6 +40,7 @@ import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './e
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import { SUBAGENT_SPEC_REQUIRED, TASK_STOP_TOOL, type KortixHost, type SpawnSessionInput, type SpawnSessionResult } from './extensions/subagents'
 import { FRONT_AGENTS_TTL_MS, FRONT_PROMPT, FRONT_TOOLS, FRONT_WORKER_NOTE, fetchFrontAgents, frontAgentsSection, frontThreadFilesFrom, type FrontAgent, type FrontThreadFiles } from './front'
+import { WATCHER_PROMPT } from './watcher'
 import { cloudChildReport, cloudChildToolDetails, cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import type { ControlPlane } from './extensions/control-plane'
 import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
@@ -2051,6 +2052,8 @@ export class PiRuntime {
   private rootToolAllowed(name: string): boolean {
     // A router has only its three messaging tools (front.ts).
     if (this.subagentContext.front) return FRONT_TOOLS.includes(name)
+    // A space's watcher has none: the API carries out its decision (watcher.ts).
+    if (this.subagentContext.watcher) return false
     // A workflow runs `agent` calls, and the multi-agent tools talk to the sessions it starts: they follow the
     // agent tool's grant, unless the agent's `tools` names them.
     if (DELEGATION_TOOLS.includes(name) && !Object.hasOwn(this.compiledAgent()?.tools ?? {}, name)) {
@@ -2497,6 +2500,7 @@ export class PiRuntime {
     child?: { base: string; tools: AgentTool<any, any>[]; policy: PermissionPolicy; interactive: false; codemode?: CodemodeMode },
   ): string {
     if (!child && this.subagentContext.front) return this.frontSystemPrompt()
+    if (!child && this.subagentContext.watcher) return WATCHER_PROMPT
     const parts = [child?.base || this.compiledAgent()?.prompt?.trim() || DEFAULT_SYSTEM_PROMPT]
     // pi's own context-file format. pi's own loader stays off (`noContextFiles`): it reads `/workspace` and its ancestors, for the root only.
     if (this.instructions) parts.push(`<project_instructions path="${this.instructions.name}">\n${this.instructions.text}\n</project_instructions>`)

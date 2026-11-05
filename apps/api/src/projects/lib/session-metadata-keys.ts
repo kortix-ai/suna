@@ -25,6 +25,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Space posts: the agent that wrote a top-level post, and its mentions (space-posts.ts).
   'chat_root_author',
   'chat_root_mentions',
+  // Space watcher (`spaces_proactive`): the space a watcher watches, and the posts it made (space-watch/keys.ts).
+  'space_watcher',
+  'space_watcher_post',
   // Soft delete (`deleteSession`).
   'forkedFromSessionId',
   'deletedAt',

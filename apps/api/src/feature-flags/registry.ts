@@ -573,6 +573,26 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '`thread_files`, which only the API sets (memory/thread-files.ts, with `chat`). WEB: a front thread\'s "Open full ' +
       'session" opens its worker.',
   },
+  {
+    key: 'spaces_proactive',
+    name: 'Spaces-Proactive',
+    description:
+      'With Spaces on, a space can watch itself: turn on Proactive in its details, and an agent reads what happens there (finished threads, questions left open, people who join) and writes in the chat only when it matters: a result worth sharing, a decision you need to make, or something overdue. It can also start a thread that does the work. Optional daily brief at 9:00.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Off ⇒ nothing is recorded and no watcher wakes. API: with `chat` and this flag on and a space\'s Proactive on ' +
+      '(`project_space_watchers`, PUT /projects/:id/spaces/:spaceId/proactive), each finished turn of a top-level thread, ' +
+      'an ask open over 2 h, and a person or agent joining write one row to `project_space_events` (projects/lib/space-watch/). ' +
+      'The `space-watcher` job wakes the space\'s one watcher session (source `system:space-watcher`, private to the space\'s ' +
+      'owner, not filed in the space) at most once per 10 min and 24 times a day, at once for an overdue ask. It mirrors the ' +
+      'feed to events.md in the space folder. BOX: runtime_context `kortix.watcher` gives the watcher no tools ' +
+      '(harness/pi/watcher.ts); its answer is one JSON decision that the API carries out at turn end through the space post ' +
+      'path, in that space only, with the owner\'s rights. WEB: the Proactive and Daily brief rows in Space details.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(
