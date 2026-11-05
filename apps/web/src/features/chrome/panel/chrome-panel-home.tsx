@@ -28,7 +28,6 @@ import { Checkbox } from '@kortix/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
@@ -211,18 +210,11 @@ export function ChromePanelHome() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="max-h-80 w-64">
               <DropdownMenuRadioGroup value={projectId ?? ''} onValueChange={pickProject}>
-                {sections
-                  .filter((section) => section.projects.length)
-                  .map((section) => (
-                    <div key={section.accountId}>
-                      {sections.length > 1 ? <DropdownMenuLabel>{section.accountName}</DropdownMenuLabel> : null}
-                      {section.projects.map((p) => (
-                        <DropdownMenuRadioItem key={p.project_id} value={p.project_id}>
-                          <span className="truncate">{p.name}</span>
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </div>
-                  ))}
+                {projects.map((p) => (
+                  <DropdownMenuRadioItem key={p.project_id} value={p.project_id}>
+                    <span className="truncate">{p.name}</span>
+                  </DropdownMenuRadioItem>
+                ))}
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
