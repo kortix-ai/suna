@@ -374,6 +374,7 @@
     "./item": "./src/primitives/item.tsx",
     "./kbd": "./src/primitives/kbd.tsx",
     "./kortix-asterisk": "./src/primitives/kortix-asterisk.tsx",
+    "./kortix-glyphs": "./src/primitives/kortix-glyphs.tsx",
     "./kortix-icons": "./src/primitives/kortix-icons.ts",
     "./kortix-loader": "./src/primitives/kortix-loader.tsx",
     "./kortix-logo": "./src/primitives/kortix-logo.tsx",
@@ -1959,6 +1960,10 @@
       "./kortix-asterisk": {
         "types": "./dist/primitives/kortix-asterisk.d.ts",
         "import": "./dist/primitives/kortix-asterisk.js"
+      },
+      "./kortix-glyphs": {
+        "types": "./dist/primitives/kortix-glyphs.d.ts",
+        "import": "./dist/primitives/kortix-glyphs.js"
       },
       "./kortix-icons": {
         "types": "./dist/primitives/kortix-icons.d.ts",
