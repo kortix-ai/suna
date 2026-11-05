@@ -562,8 +562,14 @@ jobs:
             # IaC finding whose detail exists only in the Drata dashboard, while
             # Checkov and Trivy on the same files pass. Restore it to blocking once
             # that finding is resolved.
+            # Advisory: `Strix Security Review`. Owner decision 2026-11-05 (v0.15.0):
+            # Strix reviews the whole release diff, and its findings on that diff
+            # are triaged on the thread and fixed on `dev` like any other bug; the
+            # same review also runs on each PR into `dev`. Its HIGH on the first
+            # release it reviewed was a pre-existing daemon-auth gap with its own
+            # issue, not a regression of the release.
             latest="$(RID="$RUN_ID" gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" --paginate \
-              --jq '.check_runs[] | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not) | select(.name != "compliance-as-code-action")' \
+              --jq '.check_runs[] | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not) | select(.name != "compliance-as-code-action" and .name != "Strix Security Review")' \
               | jq -s 'group_by(.name) | map(max_by(.started_at // ""))')"
             pending="$(jq -r '.[] | select(.status != "completed") | .name' <<<"$latest")"
             red="$(jq -r '.[] | select(.status == "completed") | select((.conclusion // "") | IN("success","skipped","neutral") | not) | "\(.name): \(.conclusion)"' <<<"$latest")"
