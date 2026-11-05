@@ -1,17 +1,15 @@
-import { accountMembers } from "@kortix/db";
+import { accountMembers, accounts } from "@kortix/db";
 import { and, eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
-import { profileNameFromMetadata } from "../accounts/core/account-name";
-import { bootstrapPersonalAccount } from "../accounts/core/bootstrap-personal-account";
 import { syncLegacyStripeSubscription } from "../billing/services/legacy-stripe-sync";
 import { db } from "./db";
 import {
   IMPERSONATION_INVALID_CODE,
   impersonatedAccountFor,
 } from "./impersonation";
-import { getSupabase } from "./supabase";
 import { ttlMemo } from "./ttl-memo";
 import { isUuid } from "./validate";
+import { noWorkspaceError } from "./no-workspace";
 import { withTimeout } from "./with-timeout";
 
 // Legacy Stripe recovery sync — throttled to once per account per hour and
@@ -60,11 +58,18 @@ async function syncLegacySubscription(accountId: string): Promise<void> {
  *
  *   1. A named account → verify the caller is a member of it, then return it.
  *      403 on miss.
- *   2. Otherwise `resolveAccountId(userId)` — the user's primary membership.
+ *   2. Otherwise the account the credential is bound to (`boundAccountId`:
+ *      a PAT's, an API key's, a service account's), when there is one.
+ *   3. Otherwise the user's primary MEMBERSHIP. Never the bare-id fallback
+ *      `resolveAccountId` keeps for API keys: a person whose id happens to
+ *      name an account they no longer belong to (a legacy personal account
+ *      they left) must not read or bill it. 409 `no_workspace` when the user
+ *      belongs to no account.
  */
 export async function scopedAccountIdFor(
   userId: string,
   requested: string | undefined,
+  boundAccountId?: string,
 ): Promise<string> {
   // Acting as an account: the target IS the scope. An explicit `account_id`
   // that disagrees is refused rather than honoured — a console still holding a
@@ -88,7 +93,8 @@ export async function scopedAccountIdFor(
   }
 
   if (!requested) {
-    return resolveAccountId(userId);
+    if (boundAccountId) return boundAccountId;
+    return resolveAccountId(userId, { allowAccountCredential: false });
   }
 
   // A malformed account id must not reach the uuid-typed account_members
@@ -121,7 +127,32 @@ export async function scopedAccountIdFor(
   return requested;
 }
 
-export async function resolveAccountId(userId: string): Promise<string> {
+async function accountExists(accountId: string): Promise<boolean> {
+  if (!isUuid(accountId)) return false;
+  const [row] = await db
+    .select({ accountId: accounts.accountId })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  return Boolean(row);
+}
+
+/**
+ * The caller's default account: their earliest-joined membership.
+ *
+ * Throws `noWorkspaceError()` (409 `no_workspace`) when the caller belongs to
+ * no account. Nothing is created here: account creation is always explicit.
+ *
+ * One exception keeps machine credentials working: a sandbox / account API
+ * key authenticates with `userId = accountId` (middleware/auth.ts,
+ * `resolveSandboxToken`). That id has no `account_members` row, so when the
+ * id IS an existing account it is returned as-is — the same answer the
+ * removed bootstrap gave such callers (its insert was a conflict no-op).
+ */
+export async function resolveAccountId(
+  userId: string,
+  options: { allowAccountCredential?: boolean } = {},
+): Promise<string> {
   // Impersonation is resolved BEFORE the membership lookup, not after: the
   // operator has no `account_members` row in the target account, so falling
   // through would return their OWN account and quietly mis-scope every write
@@ -135,7 +166,7 @@ export async function resolveAccountId(userId: string): Promise<string> {
 
   // NOTE: a failing membership lookup must THROW, not fall through — silently
   // treating a DB error as "no membership" would mis-scope a multi-account
-  // user to their personal account id below.
+  // user.
   const [membership] = await db
     .select({ accountId: accountMembers.accountId })
     .from(accountMembers)
@@ -151,40 +182,8 @@ export async function resolveAccountId(userId: string): Promise<string> {
     return membership.accountId;
   }
 
-  // First-time signup → create the user's personal account (id == userId) and a
-  // self-membership. Pending account invitations are auto-claimed on the first
-  // /v1/accounts call (see accounts/index.ts:autoClaimPendingInvites).
-  //
-  // GUARD: only self-provision the membership when we ACTUALLY created the
-  // account. Kortix tokens (PAT/session/sandbox) map accountId→userId in the auth
-  // middleware (middleware/auth.ts: `c.set('userId', result.accountId)`), so a
-  // token-authed caller reaches here with `userId` == an EXISTING account_id.
-  // Without this guard we'd insert a phantom account_members row
-  // (user_id == account_id, owner, super) — a "shadow user" that shows as a bare
-  // UUID in the members list (no auth email) AND inflates the per-seat count
-  // (countActiveMembers). Creating the membership only on a fresh account keeps
-  // genuine new-user signup working while never minting a self-membership for an
-  // account that already exists.
-  try {
-    // Resolve the signup email and profile name so the account gets a real,
-    // suggested name ("Ada's workspace" — never the email, KRTX-638). A
-    // token-authed caller reaches here with userId == an existing account_id,
-    // which is not an auth user — the lookup misses and the placeholder
-    // fallback inside bootstrapPersonalAccount still applies (the insert is a
-    // conflict no-op for those anyway).
-    let email: string | null = null;
-    let fullName: string | null = null;
-    try {
-      const { data } = await getSupabase().auth.admin.getUserById(userId);
-      email = data?.user?.email ?? null;
-      fullName = profileNameFromMetadata(data?.user?.user_metadata);
-    } catch {
-      /* name falls back to the email-derived suggestion */
-    }
-    await bootstrapPersonalAccount(userId, email, fullName);
-  } catch (err) {
-    console.warn("[resolve-account] Failed to initialize first account:", err);
-  }
+  // A sandbox / account API key: `userId` is the account id itself.
+  if (options.allowAccountCredential !== false && (await accountExists(userId))) return userId;
 
-  return userId;
+  throw noWorkspaceError();
 }

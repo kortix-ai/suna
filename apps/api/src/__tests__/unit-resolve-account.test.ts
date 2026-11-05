@@ -23,6 +23,8 @@ const state = {
   // before the resolver guard (KRTX-211: a non-uuid `?account_id=` surfaced as
   // an opaque 500). The guard must answer 403 before any read happens.
   membershipThrows: false,
+  /** An `accounts` row whose id equals the caller id (an API-key credential). */
+  accountRow: null as { accountId: string } | null,
   creditAccount: null as { tier?: string | null; stripeSubscriptionId?: string | null } | null,
   legacyCustomer: null as { id?: string | null; email?: string | null } | null,
   customerSearchResults: [] as Array<{ id: string }>,
@@ -49,6 +51,8 @@ function rowsForTable(table: { __table: string }) {
       return state.membership ? [state.membership] : [];
     case 'creditAccounts':
       return state.creditAccount ? [state.creditAccount] : [];
+    case 'accounts':
+      return state.accountRow ? [state.accountRow] : [];
     default:
       return [];
   }
@@ -183,6 +187,7 @@ const { setImpersonationContext } = await import('../shared/impersonation');
 beforeEach(() => {
   state.membership = null;
   state.membershipThrows = false;
+  state.accountRow = null;
   membershipReads = 0;
   state.creditAccount = null;
   state.legacyCustomer = null;
@@ -263,6 +268,69 @@ describe('resolveAccountId legacy billing sync', () => {
     expect(stripeListCalls).toHaveLength(0);
     expect(upsertCreditAccountCalls).toHaveLength(0);
     expect(insertCalls).toHaveLength(0);
+  });
+});
+
+// ─── No workspace ────────────────────────────────────────────────────────────
+// No account is ever created implicitly (Workspaces D3). A person with no
+// membership gets the typed 409, and nothing is inserted.
+
+const NO_ACCOUNT_USER = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+async function refusal(run: () => Promise<unknown>): Promise<{ status?: number; code?: string }> {
+  try {
+    await run();
+  } catch (error) {
+    const httpError = error as { status?: number; res?: Response };
+    return { status: httpError.status, code: (await httpError.res?.clone().json())?.code };
+  }
+  return {};
+}
+
+describe('resolveAccountId for a person with no workspace', () => {
+  test('answers 409 no_workspace and creates nothing', async () => {
+    expect(await refusal(() => resolveAccountId(NO_ACCOUNT_USER))).toEqual({ status: 409, code: 'no_workspace' });
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  test('an API-key caller whose id IS an existing account gets that account', async () => {
+    state.accountRow = { accountId: NO_ACCOUNT_USER };
+    expect(await resolveAccountId(NO_ACCOUNT_USER)).toBe(NO_ACCOUNT_USER);
+  });
+
+  test('the account-credential fallback is refused when the caller asks for a membership', async () => {
+    state.accountRow = { accountId: NO_ACCOUNT_USER };
+    expect(
+      await refusal(() => resolveAccountId(NO_ACCOUNT_USER, { allowAccountCredential: false })),
+    ).toEqual({ status: 409, code: 'no_workspace' });
+  });
+});
+
+describe('resolveScopedAccountId without account_id', () => {
+  function scopedRequest(userId: string, boundAccountId?: string) {
+    return {
+      req: { query: () => undefined, json: async () => ({}) },
+      get: (key: string) => (key === 'userId' ? userId : key === 'accountId' ? boundAccountId : undefined),
+    } as never;
+  }
+
+  test('a person whose id names an account they are not a member of is refused', async () => {
+    // A legacy personal account the person left: the id still names a row.
+    state.accountRow = { accountId: NO_ACCOUNT_USER };
+    expect(await refusal(() => resolveScopedAccountId(scopedRequest(NO_ACCOUNT_USER), 'query'))).toEqual({
+      status: 409,
+      code: 'no_workspace',
+    });
+  });
+
+  test('the account the credential is bound to wins over the earliest membership', async () => {
+    state.membership = { accountId: 'acct_earliest' };
+    expect(await resolveScopedAccountId(scopedRequest(NO_ACCOUNT_USER, 'acct_bound'), 'query')).toBe('acct_bound');
+  });
+
+  test('a member resolves to their earliest membership', async () => {
+    state.membership = { accountId: 'acct_earliest' };
+    expect(await resolveScopedAccountId(scopedRequest(NO_ACCOUNT_USER), 'query')).toBe('acct_earliest');
   });
 });
 

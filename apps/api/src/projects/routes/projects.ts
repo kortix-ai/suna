@@ -34,6 +34,7 @@ import {
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { isNoWorkspaceError } from '../../shared/no-workspace';
 
 /**
  * Reads the request body and resolves the caller's account scope — the part
@@ -62,7 +63,15 @@ export function registerProjectsRoutes(): void {
       },
     }),
     async (c) => {
-    const scope = await resolveProjectAccount(c);
+    // A person with no workspace has no projects. The list is `[]`, like
+    // GET /v1/accounts, never a 409: the switcher reads it on every page.
+    let scope: Awaited<ReturnType<typeof resolveProjectAccount>>;
+    try {
+      scope = await resolveProjectAccount(c);
+    } catch (err) {
+      if (isNoWorkspaceError(err) && !c.req.query('account_id') && !c.req.query('accountId')) return c.json([]);
+      throw err;
+    }
     // Reach through `any` for non-typed context keys set by the auth
     // middleware (the AppEnv only types userId/userEmail).
     // Ask the engine which projects the caller can READ. It returns one of:

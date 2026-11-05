@@ -10,6 +10,7 @@ import { clientKeyFromHeaders } from '../shared/client-ip';
 import { isOAuthAccessToken, OAUTH_SCOPE_KORTIX, validateOAuthAccessToken } from '../oauth/access-token';
 import { isAccountToken } from '../shared/crypto';
 import { validateAccountToken } from '../repositories/account-tokens';
+import { isNoWorkspaceError } from '../shared/no-workspace';
 import { resolveAccountId } from '../shared/resolve-account';
 import { tunnelRateLimiter } from '../tunnel/core/rate-limiter';
 import { toChromeDto } from './logic';
@@ -126,6 +127,8 @@ async function authenticate(ws: Socket, frame: Record<string, unknown>): Promise
   try {
     principal = token ? await resolvePrincipal(token) : null;
   } catch (err) {
+    // A person with no workspace has no account to attach the browser to.
+    if (isNoWorkspaceError(err)) return safeClose(ws, BAD_TOKEN, 'no workspace');
     logger.error('[chrome-ws] auth failed', { error: err instanceof Error ? err.message : String(err) });
     return safeClose(ws, 1011, 'auth unavailable');
   }

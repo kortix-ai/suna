@@ -12,9 +12,10 @@ import { scopedAccountIdFor } from '../shared/resolve-account';
  * Resolution order:
  *   1. `?account_id=` (query) or `body.account_id` if provided → verify the
  *      caller is a member of that account, then return it. 403 on miss.
- *   2. Fall back to `resolveAccountId(userId)` — the user's primary
- *      membership. Preserves legacy behaviour for surfaces that haven't
- *      been migrated to send `account_id` yet.
+ *   2. The account the credential is bound to (`c.get('accountId')`: a PAT,
+ *      an API key, a service account), when set.
+ *   3. The user's primary membership. 409 `no_workspace` when the user
+ *      belongs to no account (`shared/resolve-account.ts`).
  *
  * Pass `source: 'body'` for POST/PUT/PATCH/DELETE routes (we read the JSON
  * body once and look for `account_id`). Pass `source: 'query'` for GETs.
@@ -43,5 +44,5 @@ export async function resolveScopedAccountId(
     }
   }
 
-  return scopedAccountIdFor(userId, requested);
+  return scopedAccountIdFor(userId, requested, c.get('accountId') as string | undefined);
 }

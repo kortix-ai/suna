@@ -20,6 +20,7 @@ import { registerBrandingRoutes } from './branding';
 import { registerSecretResourceRoutes } from './secret-resources';
 import { registerCaptureRoutes } from '../capture/account-routes';
 import { registerCaptureEnrollmentRoutes } from '../capture/enrollment-routes';
+import { isNoWorkspaceError } from '../shared/no-workspace';
 import { resolveAccountId } from '../shared/resolve-account';
 
 accountsRouter.use('/*', supabaseAuth);
@@ -31,7 +32,14 @@ accountsRouter.use('/*', async (c, next) => {
     const userId = c.get('userId') as string | undefined;
     const sessionId = c.get('sessionId') as string | undefined;
     if (userId && sessionId) {
-      c.set('accountId', await resolveAccountId(userId));
+      // A user with no workspace has no account policy to enforce: the gate
+      // below stays a no-op for them, and the handler answers for itself
+      // (GET /v1/accounts → []). Nothing is created here.
+      try {
+        c.set('accountId', await resolveAccountId(userId, { allowAccountCredential: false }));
+      } catch (err) {
+        if (!isNoWorkspaceError(err)) throw err;
+      }
     }
   }
   return accountSessionGate()(c, next);
