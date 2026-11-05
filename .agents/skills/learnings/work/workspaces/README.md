@@ -146,26 +146,39 @@ See `decisions.md`.
 - Prod numbers: read-only `DATABASE_URL` from `apps/api/.env.prod`,
   aggregates only, no IDs or names in tracked files.
 
-## Next PR: one workspace fence (asked by Marko 2026-11-05)
+## Next PR: one scope — the workspace (Marko 2026-11-05)
 
-Problem: an agent in a session ran `kortix feedback` and got 403. The session
-credential is a project+session-scoped PAT, and `enforceTokenProjectScope`
-(`apps/api/src/middleware/auth-scope.ts`) denies every account-level route by
-default. The function has grown a per-route allowlist (skills, runtime assets,
-Capture, Drive, Chrome, cost routes, feedback in PR 1). With 1 workspace =
-1 account + 1 project, "project scope" and "account scope" are one fence.
+Marko: "there will just be Workspace scopes not the account level or project
+level, just 1 type & then agent either can or cannot, no more of this confusion
+having 2 sys".
 
-Plan:
+Today there are two scope systems:
 
-1. A project or session token may reach every route of its own workspace:
-   `/v1/accounts/:accountId/*` where `accountId` is the token project's account
-   and that account has exactly 1 active project. The allowlist is deleted.
-2. Authorization moves fully into IAM. The session actor is `agent_session`
-   (`iam/actor.ts`): in agent-principal mode it holds the agent's own grants;
-   otherwise it acts on behalf of the person. Workspace administration
-   (billing writes, members, roles, SSO, keys) needs an explicit grant: an
-   agent never inherits it from the person who started the session.
-3. Legacy accounts with 2+ projects keep today's fence until the split.
-4. Proof: a verdict table (credential kind × route class × legacy/1:1) before
-   and after, generated from the route manifest, with no widening outside the
-   token's own workspace.
+- IAM: `role_assignments.scope_type` is `account` or `project`; the action
+  catalog has `account.*` and `project.*` actions; owners and admins are
+  implicit managers of every project.
+- Credentials: account tokens vs project/session-scoped PATs, fenced by a
+  per-route allowlist in `enforceTokenProjectScope`
+  (`apps/api/src/middleware/auth-scope.ts`). An agent in a session ran
+  `kortix feedback` and got 403 from that fence (PR 1 allows `POST /v1/feedback`
+  as the stopgap).
+
+Target:
+
+1. One scope: the workspace (id = `project_id`). Every grant, role and
+   credential names one workspace. Account-scope assignments become workspace
+   assignments; `account.*` and `project.*` actions become `workspace.*`
+   (old names kept as aliases on the wire for old CLIs and daemons).
+2. One fence: a credential reaches its own workspace and nothing else. The
+   allowlist is deleted.
+3. One decision: `authorize(actor, action, workspace)`. A person or an agent
+   (`agent_session` in `iam/actor.ts`) either holds the grant or does not. An
+   agent never inherits workspace administration (billing, members, roles,
+   SSO, keys) from the person who started its session.
+4. Legacy accounts with 2+ projects: each project is a workspace for IAM;
+   actions on the shared account rows (billing, members, SSO) need the grant
+   on every project of the account, or the owner role, until the split.
+5. Proof before cutover: a verdict-parity table over every route in
+   `tests/spec/routes.generated.json` × credential kind × (1:1, legacy) ×
+   role, old engine vs new, with every difference listed and approved. The
+   2026-08 RBAC cutover (#6554) used the same harness shape.
