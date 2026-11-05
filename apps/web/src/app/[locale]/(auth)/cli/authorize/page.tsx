@@ -8,7 +8,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@kortix/ui/button';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import { Input } from '@kortix/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@kortix/ui/select';
 import Loading from '@kortix/ui/loading';
 import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import {
@@ -74,6 +76,39 @@ function CliAuthorizeInner() {
   // `no_workspace`. Say so up front instead of after a failed approve.
   const directory = useWorkspaceDirectory();
   const withoutWorkspace = noWorkspace || (!directory.loading && directory.workspaces.length === 0);
+  // A CLI key acts in ONE workspace. With 2+ the person picks which; the
+  // most recently opened one is preselected. The key is account-scoped, so
+  // the choice is sent as the workspace's `account_id`.
+  const [pickedWorkspaceId, setPickedWorkspaceId] = useState<string | null>(null);
+  const pickedRow =
+    directory.workspaces.find((row) => row.workspaceId === pickedWorkspaceId) ?? directory.workspaces[0] ?? null;
+  const targetAccountId = pickedRow?.accountId;
+  const workspacePicker =
+    directory.workspaces.length > 1 ? (
+      <div className="space-y-2">
+        <FieldLabel htmlFor="cli-workspace">{tCli('workspaceLabel')}</FieldLabel>
+        <Select value={pickedRow?.workspaceId ?? ''} onValueChange={setPickedWorkspaceId}>
+          <SelectTrigger id="cli-workspace" size="md" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {directory.workspaces.map((row) => (
+              <SelectItem key={row.workspaceId} value={row.workspaceId} size="md">
+                <span className="flex min-w-0 items-center gap-2">
+                  <EntityAvatar
+                    label={row.project.name}
+                    glyph={row.project.icon_glyph}
+                    emoji={row.project.icon}
+                    size="xs"
+                  />
+                  <span className="truncate">{row.project.name}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    ) : null;
 
   useEffect(() => {
     if (isLoading) return;
@@ -135,7 +170,7 @@ function CliAuthorizeInner() {
               setPhase('authorizing');
               setError(null);
               try {
-                await approveCliDevice(userCode);
+                await approveCliDeviceIn(userCode, targetAccountId);
                 setPhase('success');
               } catch (err) {
                 if (isNoWorkspaceError(err)) setNoWorkspace(true);
@@ -144,6 +179,7 @@ function CliAuthorizeInner() {
               }
             }}
           >
+            {workspacePicker}
             <FieldLabel htmlFor="cli-user-code">{tI18nComplete.raw('cliDeviceCode')}</FieldLabel>
             <Input
               id="cli-user-code"
@@ -198,7 +234,7 @@ function CliAuthorizeInner() {
     try {
       const name = label ? `CLI · ${label}` : `CLI · ${new Date().toLocaleString()}`;
       const minted = await withTimeout(
-        createAccountToken({ name }),
+        createAccountToken({ name, accountId: targetAccountId }),
         MINT_TIMEOUT_MS,
         'Timed out asking the Kortix API to mint an API key. Is the API reachable?',
       );
@@ -286,6 +322,8 @@ function CliAuthorizeInner() {
           {label ? <DetailRow label={tI18nComplete.raw('text6ba0bdeccb42')} value={label} /> : null}
         </DetailPanel>
 
+        {workspacePicker ? <div className="mt-5">{workspacePicker}</div> : null}
+
         <Button size="lg" className="mt-5 w-full" onClick={authorize} disabled={busy}>
           {busy ? <Loading className="size-4 shrink-0" /> : null}
           {tI18nComplete.raw('textb6741b4ccf6d')}
@@ -307,6 +345,20 @@ function CliAuthorizeInner() {
         </div>
       </Rise>
     </AuthFrame>
+  );
+}
+
+/**
+ * Approve a CLI device login for one workspace: `account_id` names the
+ * workspace's account (`POST /v1/cli/device/decide`, optional field). The
+ * SDK's `approveCliDevice` takes the code only until it gains the field; the
+ * extra argument is ignored by it until then, and the API then picks the
+ * person's default workspace.
+ */
+function approveCliDeviceIn(userCode: string, accountId: string | undefined) {
+  return (approveCliDevice as (code: string, options?: { accountId?: string }) => ReturnType<typeof approveCliDevice>)(
+    userCode,
+    accountId ? { accountId } : undefined,
   );
 }
 

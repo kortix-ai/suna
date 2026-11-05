@@ -25941,7 +25941,8 @@
     "cli": {
       "noWorkspaceTitle": "Crea un workspace per accedere con la CLI",
       "noWorkspaceBody": "La CLI accede a un workspace. Creane uno, poi approva questo accesso.",
-      "createAction": "Crea workspace"
+      "createAction": "Crea workspace",
+      "workspaceLabel": "Workspace"
     },
     "models": {
       "yourDefault": "Predefinito del workspace",

@@ -25941,7 +25941,8 @@
     "cli": {
       "noWorkspaceTitle": "CLI にサインインするにはワークスペースを作成してください",
       "noWorkspaceBody": "CLI はワークスペースにサインインします。ワークスペースを作成してから、このサインインを承認してください。",
-      "createAction": "ワークスペースを作成"
+      "createAction": "ワークスペースを作成",
+      "workspaceLabel": "ワークスペース"
     },
     "models": {
       "yourDefault": "ワークスペースの既定",

@@ -25941,7 +25941,8 @@
     "cli": {
       "noWorkspaceTitle": "Crea un espacio de trabajo para iniciar sesión en la CLI",
       "noWorkspaceBody": "La CLI inicia sesión en un espacio de trabajo. Crea uno y luego aprueba este inicio de sesión.",
-      "createAction": "Crear espacio de trabajo"
+      "createAction": "Crear espacio de trabajo",
+      "workspaceLabel": "Espacio de trabajo"
     },
     "models": {
       "yourDefault": "Predeterminado del espacio de trabajo",
