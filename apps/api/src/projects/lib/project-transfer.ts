@@ -16,7 +16,12 @@
  * user-facing history belong to the account that lived them). The
  * completeness test in `project-transfer.integration.test.ts` fails when a
  * schema table carrying both columns is in neither list, so a future table
- * cannot be silently forgotten here.
+ * cannot be silently forgotten here. App hosting rows that carry only
+ * `account_id` follow by `app_id` ({@link PROJECT_TRANSFER_APP_TABLES}).
+ *
+ * The workspace split (Workspaces design.md §2) reuses this engine in split
+ * mode (`workspace-split-copy.ts`): the target is a fresh account holding a
+ * copy of the source directory, so grants are remapped instead of dropped.
  */
 import { and, eq, getTableName, inArray, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
