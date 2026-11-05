@@ -10,7 +10,7 @@ import { chargeStt } from './cost'
 import { ISO, family, serbianLatin } from './lang'
 import { mediaDir } from './meta'
 import { sttFetch, viaModels } from './models'
-import { type Seg, heard, inworldVoice, inworldVoices, modelsSpeech, ttsDefault, ttss } from './speech'
+import { type Seg, heard, inworldVoice, inworldVoices, modelsSpeech, ttsDefault, ttss, vocab } from './speech'
 
 /** What the relay answers: a JSON body and its status. */
 export type Reply = { status: number; body: Record<string, unknown> }
@@ -134,6 +134,10 @@ export async function transcribe(ask: { file?: unknown; language?: unknown }, o:
   form.append('file', new Blob([await readFile(path)]), `audio.${as}`)
   form.append('model', model)
   if (language) form.append('language', language)
+  // The product's and the project's names, spelled as they are, as a call's Whisper gets them: a dev voice note's
+  // "Hello from Kortix voice" came back "Hello from Cordix Voice." without them.
+  const hint = vocab()
+  if (hint.length) form.append('prompt', hint.join(', '))
   form.append('temperature', '0')
   form.append('response_format', 'verbose_json')
   let res: Response
@@ -147,7 +151,11 @@ export async function transcribe(ask: { file?: unknown; language?: unknown }, o:
   const seconds = Math.round((Number(j.duration) || 0) * 10) / 10
   chargeStt(model, seconds)
   const lang = j.language ? ISO[j.language.toLowerCase()] ?? j.language.toLowerCase() : language
-  const words = (Array.isArray(j.segments) ? j.segments.filter(heard).map((s) => s.text).join('') : String(j.text ?? '')).trim()
+  const heardWords = (Array.isArray(j.segments) ? j.segments.filter(heard).map((s) => s.text).join('') : String(j.text ?? '')).trim()
+  // On unclear audio Whisper can read its prompt back ("Kortix, OpenCode, Bun"): words that are all the hint's are none.
+  const hinted = new Set(hint.join(' ').toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [])
+  const said = heardWords.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []
+  const words = said.length && said.every((w) => hinted.has(w)) ? '' : heardWords
   const text = family(lang ?? '') === 'sh' ? serbianLatin(words) : words
   return { status: 200, body: { text: text || '(no speech in it)', ...(lang && { language: lang }), seconds } }
 }
