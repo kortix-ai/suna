@@ -417,12 +417,14 @@ function GeneralWorkspaceCard({
   const iconSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingIcon = useRef<ProjectIconValue | undefined>(undefined);
   const iconSaveChain = useRef<Promise<unknown>>(Promise.resolve());
+  const iconSaveSeq = useRef(0);
   const flushIcon = () => {
     if (iconSaveTimer.current) clearTimeout(iconSaveTimer.current);
     iconSaveTimer.current = null;
     const next = pendingIcon.current;
     if (next === undefined) return;
     pendingIcon.current = undefined;
+    const seq = ++iconSaveSeq.current;
     const patch: Partial<ProjectInput> =
       next === null
         ? { icon: null, icon_glyph: null }
@@ -435,7 +437,9 @@ function GeneralWorkspaceCard({
       // The mutation's own onError already toasts the failure.
       .catch(() => undefined)
       .finally(() => {
-        if (pendingIcon.current === undefined) setDraftIcon(undefined);
+        // Only the latest save may drop the draft: an earlier one settling
+        // while a later save is queued would flash the older icon.
+        if (seq === iconSaveSeq.current && pendingIcon.current === undefined) setDraftIcon(undefined);
       });
   };
   const flushIconRef = useRef(flushIcon);
