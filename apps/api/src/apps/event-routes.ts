@@ -48,7 +48,7 @@ export function registerAppEventRoutes(): void {
   // same path (the event log, ./event-log-routes.ts) never spends it.
   const limit = createAppEventRateLimitMiddleware();
   appEventsApp.on('POST', '/:projectId/apps/:appId/events', limit);
-  appEventsApp.on(['POST', 'DELETE'], '/:projectId/apps/:appId/runs', limit);
+  appEventsApp.on('POST', '/:projectId/apps/:appId/runs', limit);
   appEventsApp.on('DELETE', '/:projectId/apps/:appId/runs/:runId', limit);
 
   appEventsApp.openapi(
