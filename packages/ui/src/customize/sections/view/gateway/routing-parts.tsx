@@ -9,7 +9,14 @@
 
 import { CaretDownIcon, CheckIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
-import { type ComponentProps, type ReactNode, useState } from 'react';
+import {
+  type ComponentProps,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import { useTranslations } from '../../../../i18n';
 import { Button } from '../../../../primitives/button';
@@ -352,10 +359,34 @@ export function ConditionSelect({
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
 /**
- * The floating save bar: the `SelectionBar` shape (popover surface, one line,
- * actions on the right), pinned to the bottom of the column while the draft
- * differs from what is saved.
+ * The left edge and width of the nearest scrolling ancestor, kept current on
+ * resize. The save bar is `fixed` to the window bottom; this keeps it centred
+ * over the content column instead of the whole window (the sidebar).
  */
+function useScrollColumnFrame(anchor: RefObject<HTMLElement | null>) {
+  const [frame, setFrame] = useState<{ left: number; width: number } | null>(null);
+  useEffect(() => {
+    let column = anchor.current?.parentElement ?? null;
+    while (column && !/(auto|scroll)/.test(getComputedStyle(column).overflowY)) {
+      column = column.parentElement;
+    }
+    const target = column ?? document.documentElement;
+    const update = () => {
+      const rect = target.getBoundingClientRect();
+      setFrame({ left: rect.left, width: rect.width });
+    };
+    // A ResizeObserver reports once on observe, so this also sets the first frame.
+    const observer = new ResizeObserver(update);
+    observer.observe(target);
+    window.addEventListener('resize', update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [anchor]);
+  return frame;
+}
+
 export function RoutingSaveBar({
   message,
   saving,
@@ -371,46 +402,54 @@ export function RoutingSaveBar({
 }) {
   const t = useTranslations('gatewayRouting');
   const reduceMotion = useReducedMotion();
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const frame = useScrollColumnFrame(anchorRef);
   return (
-    <div className="pointer-events-none sticky bottom-4 z-10 mt-10 flex justify-center">
-      <m.div
-        initial={{
-          opacity: 0,
-          transform: reduceMotion ? 'translateY(0px)' : 'translateY(8px)',
-        }}
-        animate={{
-          opacity: 1,
-          transform: 'translateY(0px)',
-          transition: { duration: 0.18, ease: EASE_OUT },
-        }}
-        className="bg-popover text-popover-foreground border-border pointer-events-auto flex w-full max-w-xl items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-md"
+    <>
+      <span ref={anchorRef} aria-hidden className="hidden" />
+      <div
+        style={frame ? { left: frame.left, width: frame.width } : { visibility: 'hidden' }}
+        className="pointer-events-none fixed bottom-4 z-30 flex justify-center px-4"
       >
-        <span className="min-w-0 flex-1 truncate text-sm font-medium" aria-live="polite">
-          {message}
-        </span>
-        <ButtonGroup className="shrink-0">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="h-8"
-            disabled={saving}
-            onClick={onDiscard}
-          >
-            {t('discard')}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            className="h-8"
-            disabled={!canSave || saving}
-            onClick={onSave}
-          >
-            {saving ? <Loading className="size-4 shrink-0" /> : null}
-            {t('save')}
-          </Button>
-        </ButtonGroup>
-      </m.div>
-    </div>
+        <m.div
+          initial={{
+            opacity: 0,
+            transform: reduceMotion ? 'translateY(0px)' : 'translateY(8px)',
+          }}
+          animate={{
+            opacity: 1,
+            transform: 'translateY(0px)',
+            transition: { duration: 0.18, ease: EASE_OUT },
+          }}
+          className="bg-popover text-popover-foreground border-border pointer-events-auto flex w-full max-w-xl items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-md"
+        >
+          <span className="min-w-0 flex-1 truncate text-sm font-medium" aria-live="polite">
+            {message}
+          </span>
+          <ButtonGroup className="shrink-0">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-8"
+              disabled={saving}
+              onClick={onDiscard}
+            >
+              {t('discard')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-8"
+              disabled={!canSave || saving}
+              onClick={onSave}
+            >
+              {saving ? <Loading className="size-4 shrink-0" /> : null}
+              {t('save')}
+            </Button>
+          </ButtonGroup>
+        </m.div>
+      </div>
+    </>
   );
 }
