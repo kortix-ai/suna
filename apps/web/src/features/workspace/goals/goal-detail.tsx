@@ -737,14 +737,21 @@ function GoalControls({ projectId, goal, onChanged, onShare }: { projectId: stri
     onError: () => errorToast(t('pauseError')),
   });
   // A stopped goal starts again in place: same folder, same owner session, same history.
-  const restartable = goal.goal?.status === 'stopped' && goal.goal.format === 'goal.md';
+  // An open goal nothing wakes (a start again whose wake failed) gets the same control: it only wakes the owner.
+  const restartable =
+    goal.goal?.format === 'goal.md' &&
+    (goal.goal.status === 'stopped' || (writable && !paused && goal.health.issues.includes('no_heartbeat')));
   const restart = useMutation({
     mutationFn: () => restartProjectGoal(projectId, goal, t('restartReason')),
     onSuccess: async () => {
       await onChanged();
       successToast(t('restartedToast'));
     },
-    onError: () => errorToast(t('restartError')),
+    // GOAL.md may already read open: the page shows what was written.
+    onError: async () => {
+      errorToast(t('restartError'));
+      await onChanged();
+    },
   });
   const stop = useMutation({
     mutationFn: () => stopProjectGoal(projectId, goal, t('stopReason')),
@@ -760,7 +767,7 @@ function GoalControls({ projectId, goal, onChanged, onShare }: { projectId: stri
     <>
       {/* Pause or Resume and the ⋯ menu: one secondary button group. */}
       <ButtonGroup>
-        {writable && !paused ? (
+        {writable && !paused && !restartable ? (
           <Button size="sm" variant="secondary" className="gap-1.5" disabled={pause.isPending} aria-busy={pause.isPending} onClick={() => pause.mutate()} data-testid="goal-pause">
             <PauseIcon weight="fill" className="size-3.5 shrink-0" aria-hidden />
             {t('pause')}

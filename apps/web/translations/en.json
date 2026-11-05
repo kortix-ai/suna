@@ -24370,7 +24370,7 @@
     "criteriaMet": "{met} of {total} done criteria met",
     "state": {
       "done": "Done. An independent check confirmed every criterion.",
-      "stopped": "Stopped. Nothing wakes it again.",
+      "stopped": "Stopped. Nothing wakes it until you start it again.",
       "abandoned": "Abandoned.",
       "paused": "Paused {time}. Nothing wakes it until you resume it.",
       "waitingOn": "Waiting for an answer.",

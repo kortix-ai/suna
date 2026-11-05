@@ -738,7 +738,17 @@ describe('person controls: create, pause, resume', () => {
     expect(doc.status).toBe('draft');
   });
 
-  test('restartProjectGoal refuses a goal that is not stopped', async () => {
+  test('a retry of a restart whose wake failed writes nothing and wakes the owner with the same id', async () => {
+    const restarted = { ...STOPPED_DOC, status: 'active' as const, transitions: [...STOPPED_DOC.transitions, { from: 'stopped' as const, to: 'active' as const, at: '2026-11-03T09:00:00Z', reason: 'again', by: 'person' }] };
+    goalRoutes(restarted);
+    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
+    const doc = await restartProjectGoal('p1', { ...goalRef, heartbeat: null }, 'again');
+    expect(doc.status).toBe('active');
+    expect(requested.filter((r) => r.method === 'PUT')).toEqual([]);
+    expect(JSON.parse(requested.find((r) => r.method === 'POST')!.body).client_message_id).toBe('goal-restart:s-owner:2026-11-02T09:00:00Z');
+  });
+
+  test('restartProjectGoal refuses a goal that is not stopped and still has a live heartbeat', async () => {
     goalRoutes(OPEN_DOC);
     await expect(restartProjectGoal('p1', goalRef, 'x')).rejects.toThrow('not stopped');
     goalRoutes({ ...OPEN_DOC, status: 'done' });
@@ -751,12 +761,15 @@ describe('person controls: create, pause, resume', () => {
     put('/Users/u1/Goals/draft-our-investor-update-for/GOAL.md');
     put('/Users/u1/Goals/draft-our-investor-update-for/log.md');
     sessionCreated();
-    const brief = 'Draft our investor update for October.\n\n- Highlights: two launches\n- Asks: intros to CFOs';
+    const brief = 'Draft our investor update for October.\n- Highlights: two launches\n- Asks: intros to CFOs\nCompare every number with the prior period.';
     const created = await createProjectGoal('p1', { outcome: brief, sessionId: SESSION });
     expect(created.slug).toBe('draft-our-investor-update-for');
     const doc = parseGoalFile(requested.find((r) => r.method === 'PUT' && r.key.endsWith('GOAL.md'))!.body)!;
     expect(doc.objective).toBe('Draft our investor update for October.');
-    expect(doc.body).toContain('- Highlights: two launches\n- Asks: intros to CFOs');
+    // The title is the heading, not repeated; a sentence after the list stays its own paragraph.
+    expect(doc.body).toBe(
+      '# Draft our investor update for October.\n\n## Context\n\n- Highlights: two launches\n- Asks: intros to CFOs\n\nCompare every number with the prior period.\n',
+    );
     expect(JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/projects/p1/sessions')!.body).name).toBe('Draft our investor update for October.');
   });
 

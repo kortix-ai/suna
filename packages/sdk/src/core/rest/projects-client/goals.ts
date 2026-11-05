@@ -471,8 +471,9 @@ export async function resumeProjectGoal(
  * them first) on the version it read (a concurrent write throws `ApiError`
  * 409), `log.md` records the move, and then the owner session wakes. Its turn
  * end (`kortix goals check --enforce`) arms the heartbeat the stop removed.
- * The wake id names the stop, so a retry is deduped. Throws on a goal that is
- * not stopped.
+ * The wake id names the stop, so a retry is deduped. A retry after the wake
+ * failed (the goal is open again, but no live heartbeat wakes it) writes
+ * nothing and only wakes the owner. Throws on any other goal.
  */
 export async function restartProjectGoal(
   projectId: string,
@@ -480,24 +481,26 @@ export async function restartProjectGoal(
   reason: string,
 ): Promise<ProjectGoalDocument> {
   const { doc: current, version } = await readGoalForWrite(goal);
-  if (current.status !== 'stopped') throw new Error(`The goal is ${current.status}, not stopped.`);
-  const stoppedAt = [...current.transitions].reverse().find((t) => t.to === 'stopped')?.at ?? 'unknown';
-  const to: ProjectGoalStatus = current.success_criteria.length ? 'active' : 'draft';
-  const at = new Date().toISOString();
-  const next: ProjectGoalDocument = {
-    ...current,
-    status: to,
-    transitions: [...current.transitions, { from: 'stopped', to, at, reason, by: 'person' }],
-  };
-  await uploadDriveFile(goal.driveId, `${goal.folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
-  await appendGoalLog(goal, `- ${at} stopped → ${to}: ${reason}`);
+  const heartbeatLive = !!goal.heartbeat?.session_id && goal.heartbeat.state !== 'done';
+  const retry = !CLOSED.has(current.status) && !current.paused_at && !heartbeatLive;
+  if (current.status !== 'stopped' && !retry) throw new Error(`The goal is ${current.status}, not stopped.`);
+  const stoppedAt = [...current.transitions].reverse().find((t) => t.to === 'stopped')?.at ?? null;
+  const to: ProjectGoalStatus = retry ? current.status : current.success_criteria.length ? 'active' : 'draft';
+  let next = current;
+  if (!retry) {
+    const at = new Date().toISOString();
+    next = { ...current, status: to, transitions: [...current.transitions, { from: 'stopped', to, at, reason, by: 'person' }] };
+    await uploadDriveFile(goal.driveId, `${goal.folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
+    await appendGoalLog(goal, `- ${at} stopped → ${to}: ${reason}`);
+  }
   const owner = ownerSessionId(current) ?? goal.coordinatorSessionId;
   if (owner) {
     const first =
       to === 'draft'
         ? 'A person started it again: write 1 to 8 done criteria someone else can check into GOAL.md, then move it to active and continue the work.'
         : 'A person started it again: read log.md for where it stopped and continue the work.';
-    await queueText(projectId, owner, `${goalWakePrompt(goalBoxFolder(goal))} ${first}`, `goal-restart:${owner}:${stoppedAt}`);
+    const wakeId = stoppedAt ? `goal-restart:${owner}:${stoppedAt}` : generateSessionId();
+    await queueText(projectId, owner, `${goalWakePrompt(goalBoxFolder(goal))} ${first}`, wakeId);
   }
   return next;
 }
@@ -612,9 +615,10 @@ export interface CreatedProjectGoal {
 export async function createProjectGoal(projectId: string, input: CreateProjectGoalInput): Promise<CreatedProjectGoal> {
   const brief = input.outcome.trim();
   if (!brief) throw new Error('Describe the outcome.');
-  // A brief (a template filled in) names the goal by its first line; the whole brief is the Context.
-  const outcome = brief.split('\n')[0]!.trim();
-  const context = brief === outcome ? "The request in the person's words, constraints, and what was learned." : brief;
+  // A brief (a template filled in) names the goal by its first line; the lines after it are the Context.
+  const [firstLine = '', ...rest] = brief.split('\n');
+  const outcome = firstLine.trim();
+  const context = briefContext(rest) || "The request in the person's words, constraints, and what was learned.";
   const criteria = (input.criteria ?? []).map((c) => c.trim()).filter(Boolean);
   if (criteria.length > MAX_GOAL_CRITERIA) throw new Error(`A goal has at most ${MAX_GOAL_CRITERIA} done criteria.`);
   const agent = await resolveGoalAgent(projectId, input.agent);
@@ -699,6 +703,22 @@ export async function createProjectGoal(projectId: string, input: CreateProjectG
     : 'It is new: write 1 to 8 done criteria someone else can check into GOAL.md, then move it to active and start the work.';
   await queueText(projectId, sessionId, `${goalWakePrompt(boxFolder)} ${first}`, `goal-start:${sessionId}`);
   return { slug, scope: 'personal', driveId: drive.driveId, folder, sessionId };
+}
+
+/**
+ * A brief's lines after its first, as Markdown that reads as written: a plain
+ * line right after a list item gets a blank line before it, so it is not
+ * folded into that item (Markdown's lazy continuation).
+ */
+function briefContext(lines: string[]): string {
+  const out: string[] = [];
+  const item = /^\s*([-*+]|\d+[.)])\s/;
+  for (const line of lines) {
+    const previous = out.at(-1);
+    if (previous !== undefined && item.test(previous) && line.trim() && !item.test(line) && !/^\s/.test(line)) out.push('');
+    out.push(line.trimEnd());
+  }
+  return out.join('\n').trim();
 }
 
 /**
