@@ -1498,7 +1498,7 @@ A result that arrives later must wake the session that waits for it. Every agent
 | A change request | `kortix triggers add "<text>" --on cr-merged --cr <id>` | `wake_on` with `cr_merged` |
 | A deploy, a CI run, a job | `--on webhook --secret-env <NAME>` (prints the URL to give the system), else a loop every 10 to 30 minutes | `wake_on` with `webhook` (returns the URL) |
 | A person's answer, a slow vendor | A loop | `follow_up` |
-| A page or a status with no events | A loop, or a watcher App and `--on app --app <slug>` | `wake_on` with `app_event` |
+| A page, a status or a price with no events | A watcher App and `--on app --app <slug> --expect-event-within 1h`: no model runs until it changes. A loop only for a wait that ends within a day | `wake_on` with `app_event` and `expect_event_within` |
 | A hand-off, a teammate, a workflow | Nothing: each reports back by itself | nothing |
 
 - **The fallback loop.** When the event may never come, the agent also sets a loop. The cadence fits the wait: a reply is checked first 2 to 4 hours later in the recipient's working hours, then 2 to 4 times a day; a deploy every 10 to 30 minutes; a slow vendor daily.
@@ -3347,13 +3347,14 @@ An App can start agents, and triggers can call it.
 | The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/guide#triggers). |
 | The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/guide#triggers). |
 
-To react to the outside world, try a webhook first, then a connector event,
-then a schedule. Build a watcher App when the source sends nothing and must be
-watched around the clock: an `every` trigger calls the App's `/tick`, the App
-posts an App event only when the source changed (an `id` built from the content
-fires once per trigger for 30 days), and a session trigger
-(`kortix triggers add "<text>" --on app --app <slug>`) wakes the session that
-waits, or a `kortix.yaml` trigger starts an agent. An App never starts an agent
+To react to the outside world, try a webhook first, then a connector event.
+Build a watcher App when the source sends nothing (a page, a status, a price,
+an API): an `every` trigger calls the App's `/tick`, the App posts an App event
+only when the source changed (an `id` built from the content fires once per
+trigger for 30 days), and a session trigger
+(`kortix triggers add "<text>" --on app --app <slug> --expect-event-within 1h`)
+wakes the session that waits, or a `kortix.yaml` trigger starts an agent. No
+App event within the `expect_event_within` window tells the person once. An App never starts an agent
 itself: it posts events, and a trigger decides. Deploy a watcher App unlisted
 and on demand: it belongs in the Background list.
 
