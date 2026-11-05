@@ -9,7 +9,7 @@ import { useEffect, useLayoutEffect, useRef, type ReactElement, type ReactNode }
 import { createPortal } from 'react-dom';
 import { useTranslations } from '../../i18n';
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
-import { goalHref, GoalStatusBadge } from '../../internal/goals/goal-meta';
+import { goalHref, goalPaused, GoalStatusBadge } from '../../internal/goals/goal-meta';
 import { reviewHref } from '../../internal/lib/capability-tab-routes';
 import {
   sessionRowHoverHandlers,
@@ -187,6 +187,16 @@ function SessionBriefContent({
   const SourceIcon = source.kind === 'chat' ? null : SOURCE_ICONS[source.kind];
   const statusLabel = useStatusLabel(status, waitingOn);
   const t = useTranslations('sidebar.sessionList.brief');
+  const goalClassName = 'text-muted-foreground flex min-w-0 items-center gap-2 text-xs';
+  const goalContent = goal ? (
+    <>
+      <TargetIcon aria-hidden className="size-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">
+        {tGoals('sessionChip')}: {goal.goal?.objective ?? goal.slug}
+      </span>
+      <GoalStatusBadge status={goal.goal?.status} paused={goalPaused(goal)} />
+    </>
+  ) : null;
 
   return (
     <>
@@ -205,26 +215,14 @@ function SessionBriefContent({
           <span>{statusLabel}</span>
         </div>
 
-        {goal &&
-          (() => {
-            const content = (
-              <>
-                <TargetIcon aria-hidden className="size-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">
-                  {tGoals('sessionChip')}: {goal.goal?.objective ?? goal.slug}
-                </span>
-                <GoalStatusBadge status={goal.goal?.status} />
-              </>
-            );
-            const className = 'text-muted-foreground flex min-w-0 items-center gap-2 text-xs';
-            return goalLink ? (
-              <HoverPrefetchLink href={goalLink} onClick={onDismiss} className={className}>
-                {content}
-              </HoverPrefetchLink>
-            ) : (
-              <div className={className}>{content}</div>
-            );
-          })()}
+        {goalContent &&
+          (goalLink ? (
+            <HoverPrefetchLink href={goalLink} onClick={onDismiss} className={goalClassName}>
+              {goalContent}
+            </HoverPrefetchLink>
+          ) : (
+            <div className={goalClassName}>{goalContent}</div>
+          ))}
 
         {spawned && (
           <div className="text-muted-foreground flex items-center gap-2 text-xs">
@@ -322,19 +320,25 @@ export function SessionBriefCardHost() {
       shown.current = false;
       return;
     }
-    const rect = anchor.getBoundingClientRect();
-    const top = Math.max(
-      CARD_EDGE_PX,
-      Math.min(rect.top, window.innerHeight - CARD_EDGE_PX - el.offsetHeight),
-    );
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    // A move between rows glides; the first open fades in, as the reminders card does.
-    el.style.transition =
-      shown.current && via === 'pointer' && !reduce
-        ? 'transform var(--duration-normal) var(--ease-in-out)'
-        : 'opacity var(--duration-fast) var(--ease-out)';
-    el.style.transform = `translate(${rect.right}px, ${top}px)`;
-    shown.current = true;
+    const position = () => {
+      const rect = anchor.getBoundingClientRect();
+      const top = Math.max(
+        CARD_EDGE_PX,
+        Math.min(rect.top, window.innerHeight - CARD_EDGE_PX - el.offsetHeight),
+      );
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      // A move between rows glides; the first open fades in, as the reminders card does.
+      el.style.transition =
+        shown.current && via === 'pointer' && !reduce
+          ? 'transform var(--duration-normal) var(--ease-in-out)'
+          : 'opacity var(--duration-fast) var(--ease-out)';
+      el.style.transform = `translate(${rect.right}px, ${top}px)`;
+      shown.current = true;
+    };
+    position();
+    const observer = new ResizeObserver(position);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [visible, activeSessionId, anchor, via]);
 
   // Native listeners, not React's `onPointerEnter/Leave`. The card's content is
@@ -463,18 +467,26 @@ export function SessionBriefHoverCard({
  * the visual HoverCard is absent or intentionally ignored by assistive tech.
  */
 export function SessionBriefDescription({
+  projectId,
+  sessionId,
   id,
   status,
   createdAt,
   source,
   changeRequests,
   waitingOn,
-}: Omit<SessionBrief, 'title'> & { id: string }) {
+}: Omit<SessionBrief, 'title'> & { id: string; projectId: string }) {
   const t = useTranslations('sidebar.sessionList.brief');
+  const tGoals = useTranslations('goals');
+  const gate = useFeatureFlag(projectId, 'goals');
+  const { goal } = useSessionGoal(gate.enabled ? projectId : null, sessionId);
   const statusLabel = useStatusLabel(status, waitingOn);
 
   return (
     <span id={id} className="sr-only">
+      {goal
+        ? `${tGoals('sessionChip')}: ${goal.goal?.objective ?? goal.slug}. ${goalPaused(goal) ? tGoals('paused') : tGoals(`status.${goal.goal?.status ?? 'draft'}`)}. `
+        : null}
       {t('status')}: {statusLabel}. {t('created')}: <SessionCreatedTime createdAt={createdAt} />.
       {source.kind !== 'chat'
         ? ` ${t('source')}: ${source.label}${source.triggerSlug ? `, ${source.triggerSlug}` : ''}.`

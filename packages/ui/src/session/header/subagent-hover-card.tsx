@@ -3,15 +3,15 @@
 import type { ProjectRuntimeSession, ProjectSession } from '@kortix/sdk';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { Slot } from 'radix-ui';
-import { useState, type ReactElement } from 'react';
+import { useRef, useState, type ReactElement } from 'react';
 import { useTranslations } from '../../i18n';
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
 import { uiRoutes } from '../../lib/routes';
-import { Button } from '../../primitives/button';
 import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
 import { menuRow } from '../../primitives/menu-recipe';
 import { Popover, PopoverAnchor, PopoverContent } from '../../primitives/popover';
+import { ShowMoreButton } from '../../workspace/sidebar/session-list-chrome';
 import { getSessionDisplayTitle, shortRelative } from '../actions/project-session-list-helpers';
 import { subagentTitle } from '../agents/agent-model';
 import { childSessionHref } from '../tool/tools/session-spawn-urls';
@@ -46,6 +46,7 @@ export function SubagentHoverCard({
   loadingMore?: boolean;
   children: ReactElement;
 }) {
+  const titleRef = useRef<HTMLElement>(null);
   const t = useTranslations('sidebar.sessionList');
   const [open, setOpen] = useState(false);
   const [keyboard, setKeyboard] = useState(false);
@@ -57,18 +58,19 @@ export function SubagentHoverCard({
 
   const content = (
     <>
-      {' '}
       <div className="text-muted-foreground flex items-center justify-between px-3.5 pt-2.5 pb-1 text-xs">
         <span>
           {[
-            subsessions.length > 0 && t('brief.subAgentCount', { count: subsessions.length }),
-            spawnedSessions.length > 0 &&
-              t('brief.spawnedCount', { count: spawnedSessions.length }),
+            subsessions.length > 0 && t('brief.subAgent'),
+            spawnedSessions.length > 0 && t('brief.spawned'),
           ]
             .filter(Boolean)
             .join(' · ')}
         </span>
-        <span className="tabular-nums">{subsessions.length + spawnedSessions.length}</span>
+        <span className="tabular-nums">
+          {subsessions.length + spawnedSessions.length}
+          {onLoadMore ? '+' : ''}
+        </span>
       </div>
       {/* Capped at `max-h-64` (~8 rows); a long list scrolls inside the card.
             The fades mark the clipped edges: the top one appears once the list
@@ -79,17 +81,6 @@ export function SubagentHoverCard({
         className="max-h-64 overscroll-contain"
       >
         <ul className="p-1 pt-0">
-          {spawnedSessions.map((child) => (
-            <li key={child.session_id}>
-              <HoverPrefetchLink
-                href={uiRoutes().session(projectId, child.session_id)}
-                onClick={close}
-                className={menuRow('sm', 'default', 'cursor-pointer')}
-              >
-                <span className="min-w-0 flex-1 truncate">{getSessionDisplayTitle(child)}</span>
-              </HoverPrefetchLink>
-            </li>
-          ))}
           {subsessions.map((child) => (
             <li key={child.id}>
               <HoverPrefetchLink
@@ -116,11 +107,25 @@ export function SubagentHoverCard({
               </HoverPrefetchLink>
             </li>
           ))}
+          {spawnedSessions.map((child) => (
+            <li key={child.session_id}>
+              <HoverPrefetchLink
+                href={uiRoutes().session(projectId, child.session_id)}
+                onClick={close}
+                className={menuRow('sm', 'default', 'cursor-pointer')}
+              >
+                <span className="min-w-0 flex-1 truncate">{getSessionDisplayTitle(child)}</span>
+              </HoverPrefetchLink>
+            </li>
+          ))}
           {onLoadMore && (
             <li>
-              <Button variant="ghost" size="sm" disabled={loadingMore} onClick={onLoadMore}>
-                {t('showMore')}
-              </Button>
+              <ShowMoreButton
+                loading={!!loadingMore}
+                failed={false}
+                label={t('showMore')}
+                onClick={onLoadMore}
+              />
             </li>
           )}
         </ul>
@@ -145,6 +150,8 @@ export function SubagentHoverCard({
         <PopoverAnchor asChild>
           <HoverCardTrigger asChild>
             <Slot.Root
+              ref={titleRef}
+              aria-keyshortcuts="ArrowDown"
               onKeyDown={(event) => {
                 if (event.key === 'ArrowDown') {
                   event.preventDefault();
@@ -159,6 +166,16 @@ export function SubagentHoverCard({
         </PopoverAnchor>
         {keyboard ? (
           <PopoverContent
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              (event.currentTarget as HTMLElement)
+                .querySelector<HTMLAnchorElement>('a[href]')
+                ?.focus();
+            }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              titleRef.current?.focus();
+            }}
             side="bottom"
             align="start"
             sideOffset={6}
