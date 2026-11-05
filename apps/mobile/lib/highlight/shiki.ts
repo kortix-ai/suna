@@ -46,7 +46,7 @@ import {
 
 export type { CodeScheme } from '@/lib/code-theme';
 
-export interface CodeToken {
+interface CodeToken {
   content: string;
   color: string;
 }
@@ -130,7 +130,7 @@ const TOKENIZE_TIME_LIMIT_MS = 5_000;
 
 const CACHE_MAX = 64;
 
-export interface HighlighterOptions {
+interface HighlighterOptions {
   /**
    * Skip patterns the JavaScript engine cannot translate instead of throwing.
    * The app runs forgiving so one bad pattern degrades one scope, never the
