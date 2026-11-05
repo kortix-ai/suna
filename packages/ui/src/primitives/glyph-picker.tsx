@@ -4,6 +4,8 @@ import { CheckIcon } from '@phosphor-icons/react';
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { GLYPH_SEARCH, glyphComponent } from './glyph-registry';
+import { brandIconSources } from './kortix-glyphs';
+import { useUiBrand } from '../providers/ui-provider';
 import { glyphForeground, glyphHoverWash, glyphStyle } from './glyph-tint';
 import { cn } from '../lib/utils';
 import {
@@ -93,10 +95,16 @@ export function GlyphPicker({
   const [customOpen, setCustomOpen] = useState(isCustom);
   const query = search.trim().toLowerCase();
 
-  const groups = PROJECT_GLYPH_GROUPS.map((group) => ({
-    label: group.label,
-    names: (group.names as readonly string[]).filter((name) => matchesSearch(name, query)),
-  })).filter((group) => group.names.length > 0);
+  // The Brand group (the account's own icon) shows only when the account has
+  // a branding image, and takes the brand's name as its heading.
+  const brand = useUiBrand();
+  const hasBrandIcon = brandIconSources(brand) !== null;
+  const groups = PROJECT_GLYPH_GROUPS.filter((group) => group.label !== 'Brand' || hasBrandIcon)
+    .map((group) => ({
+      label: group.label === 'Brand' ? (brand?.app_name?.trim() || 'Your brand') : group.label,
+      names: (group.names as readonly string[]).filter((name) => matchesSearch(name, query)),
+    }))
+    .filter((group) => group.names.length > 0);
 
   return (
     <div

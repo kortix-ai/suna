@@ -9,9 +9,9 @@ import {
 } from './project-glyphs';
 
 describe('the glyph catalogue', () => {
-  test('is 948 unique names in 38 non-empty groups, the Kortix marks first', () => {
-    expect(PROJECT_GLYPH_NAMES).toHaveLength(948);
-    expect(PROJECT_GLYPH_GROUPS).toHaveLength(38);
+  test('is 949 unique names in 39 non-empty groups, the Kortix marks first', () => {
+    expect(PROJECT_GLYPH_NAMES).toHaveLength(949);
+    expect(PROJECT_GLYPH_GROUPS).toHaveLength(39);
     expect(new Set(PROJECT_GLYPH_NAMES).size).toBe(PROJECT_GLYPH_NAMES.length);
     for (const group of PROJECT_GLYPH_GROUPS) expect(group.names.length).toBeGreaterThan(0);
     expect(PROJECT_GLYPH_GROUPS[0]?.names).toEqual(['KortixMark', 'KortixPixel', 'KortixDither']);

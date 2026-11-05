@@ -1,7 +1,10 @@
 import { PROJECT_GLYPH_COLORS, PROJECT_GLYPH_NAMES } from '@kortix/shared';
 import { describe, expect, test } from 'bun:test';
+import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { GlyphPicker, matchesSearch } from './glyph-picker';
+import { glyphFace } from './glyph-face';
+import { UiProvider } from '../providers/ui-provider';
 
 describe('matchesSearch', () => {
   test('an empty query matches everything', () => {
@@ -38,10 +41,10 @@ const render = (color: string) =>
   renderToStaticMarkup(<GlyphPicker color={color} onColorChange={() => {}} onGlyphSelect={() => {}} />);
 
 describe('GlyphPicker', () => {
-  test('renders every catalogue glyph, the three Kortix marks first', () => {
+  test('without branding, renders every catalogue glyph except the brand icon, Kortix marks first', () => {
     const html = render('grey');
     const glyphs = [...html.matchAll(/data-glyph="([^"]+)"/g)].map((m) => m[1]);
-    expect(glyphs).toEqual([...PROJECT_GLYPH_NAMES]);
+    expect(glyphs).toEqual(PROJECT_GLYPH_NAMES.filter((name) => name !== 'BrandIcon'));
     expect(glyphs.slice(0, 3)).toEqual(['KortixMark', 'KortixPixel', 'KortixDither']);
   });
 
@@ -66,5 +69,28 @@ describe('GlyphPicker', () => {
   test('an unknown colour resolves to grey', () => {
     const html = render('chartreuse');
     expect(html).toMatch(/data-swatch="grey" aria-pressed="true"/);
+  });
+});
+
+describe('GlyphPicker — Enterprise brand icon', () => {
+  const useBrand = () => ({ app_name: 'Acme', icon_url: 'data:image/svg+xml,acme' });
+  const renderBranded = () =>
+    renderToStaticMarkup(
+      <UiProvider useBrand={useBrand}>
+        <GlyphPicker color="grey" onColorChange={() => {}} onGlyphSelect={() => {}} />
+      </UiProvider>,
+    );
+
+  test('shows the brand group, named after the brand, right after the Kortix marks', () => {
+    const html = renderBranded();
+    const glyphs = [...html.matchAll(/data-glyph="([^"]+)"/g)].map((m) => m[1]);
+    expect(glyphs.slice(0, 4)).toEqual(['KortixMark', 'KortixPixel', 'KortixDither', 'BrandIcon']);
+    expect(html).toContain('>Acme</h3>');
+    expect(html).toContain('src="data:image/svg+xml,acme"');
+  });
+
+  test('the brand icon falls back to the Kortix mark when the account has no branding', () => {
+    const plain = renderToStaticMarkup(createElement(glyphFace('BrandIcon')!, {}));
+    expect(plain).toBe(renderToStaticMarkup(createElement(glyphFace('KortixMark')!, {})));
   });
 });

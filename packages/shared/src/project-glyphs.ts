@@ -40,6 +40,12 @@ export const PROJECT_GLYPH_GROUPS = [
     names: ['KortixMark', 'KortixPixel', 'KortixDither'],
   },
   {
+    // An Enterprise account's own icon (account branding). The picker shows
+    // this group only when the account has a branding icon or logo.
+    label: 'Brand',
+    names: ['BrandIcon'],
+  },
+  {
     label: 'Work',
     names: [
       'Calendar',

@@ -13,6 +13,9 @@ import type { Icon, IconProps } from '@phosphor-icons/react';
 import { PIXEL_KORTIX_ROWS } from '@kortix/shared/pixel-mark';
 import { createElement, forwardRef, useId } from 'react';
 
+import { cn } from '../lib/utils';
+import { useUiBrand, type UiBrand } from '../providers/ui-provider';
+
 /** The Kortix symbol path, 30 x 25 (apps/web/public/kortix-symbol.svg). */
 const SYMBOL_PATH =
   'M25.5614 24.916H29.8268C29.8268 19.6306 26.9378 15.0039 22.6171 12.4587C26.9377 9.91355 29.8267 5.28685 29.8267 0.00146484H25.5613C25.5613 5.00287 21.8906 9.18692 17.0654 10.1679V0.00146484H12.8005V10.1679C7.9526 9.20401 4.3046 5.0186 4.3046 0.00146484H0.0391572C0.0391572 5.28685 2.92822 9.91355 7.24884 12.4587C2.92818 15.0039 0.0390625 19.6306 0.0390625 24.916H4.30451C4.30451 19.8989 7.95259 15.7135 12.8005 14.7496V24.9206H17.0654V14.7496C21.9133 15.7134 25.5614 19.8989 25.5614 24.916Z';
@@ -145,14 +148,58 @@ const KortixDither = forwardRef<SVGSVGElement, IconProps>((props, ref) => {
 }) as Icon;
 KortixDither.displayName = 'KortixDitherGlyph';
 
+/** The square brand image an Enterprise account set, light and dark, or null. */
+export function brandIconSources(brand: UiBrand | null): { light: string; dark: string | null } | null {
+  const light = brand?.icon_url ?? brand?.logo_url ?? null;
+  if (!light) return null;
+  const dark = brand?.icon_dark_url ?? brand?.logo_dark_url ?? null;
+  return { light, dark: dark && dark !== light ? dark : null };
+}
+
+/**
+ * The organization's own icon (Enterprise branding), drawn as its image: a
+ * brand mark keeps its own colours, so it is not tinted; the tile wash under
+ * it still takes the chosen colour. A dark-scheme variant swaps by the theme
+ * class, like `KortixLogo`. Without branding (outside an Enterprise account,
+ * or after the branding was removed) it draws the Kortix mark instead.
+ */
+const BrandIcon = forwardRef<SVGSVGElement, IconProps>((props, ref) => {
+  const sources = brandIconSources(useUiBrand());
+  if (!sources) return createElement(KortixMark, { ...props, ref });
+  const { size = '1em', className, style } = props;
+  const img = (src: string, extra: string) =>
+    // eslint-disable-next-line @next/next/no-img-element
+    createElement('img', {
+      src,
+      alt: '',
+      draggable: false,
+      className: cn('size-full object-contain select-none', extra),
+    });
+  return createElement(
+    'span',
+    {
+      'aria-hidden': true,
+      'data-brand-icon': '',
+      className: cn('inline-flex shrink-0 items-center justify-center', className),
+      style: { width: size, height: size, ...style },
+    },
+    img(sources.light, sources.dark ? 'dark:hidden' : ''),
+    sources.dark ? img(sources.dark, 'hidden dark:block') : null,
+  );
+}) as Icon;
+BrandIcon.displayName = 'BrandIconGlyph';
+
+/** Glyphs drawn by their own component rather than one generated path. */
 export const KORTIX_GLYPH_COMPONENTS: Readonly<Record<string, Icon>> = {
   KortixMark,
   KortixPixel,
   KortixDither,
+  BrandIcon,
 };
 
 export const KORTIX_GLYPH_SEARCH: Readonly<Record<string, string[]>> = {
   KortixMark: ['kortixmark', 'kortix', 'logo', 'brand', 'mark'],
   KortixPixel: ['kortixpixel', 'kortix', 'pixel', 'logo', 'brand', 'retro'],
   KortixDither: ['kortixdither', 'kortix', 'dither', 'logo', 'brand', 'gradient'],
+  BrandIcon: ['brandicon', 'brand', 'logo', 'company', 'organization', 'org'],
 };
