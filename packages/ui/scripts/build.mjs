@@ -51,7 +51,14 @@ function fail(message) {
 // 1–3. Clean (keep the committed stylesheet), compile, fix specifiers, copy CSS.
 mkdirSync(DIST, { recursive: true });
 for (const name of readdirSync(DIST)) if (!KEEP.has(name)) rmSync(join(DIST, name), { recursive: true, force: true });
-const tsc = (bin, args) => execFileSync(join(BIN, bin), args, { cwd: PKG_DIR, stdio: 'inherit' });
+// tsc's whole-program type graph for @kortix/ui outgrows Node's default ~2 GB
+// old-space heap, so the build OOMs; raise the cap for the compiler steps.
+const tsc = (bin, args) =>
+  execFileSync(join(BIN, bin), args, {
+    cwd: PKG_DIR,
+    stdio: 'inherit',
+    env: { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=6144`.trim() },
+  });
 tsc('tsc', ['-p', 'tsconfig.build.json']);
 tsc('tsc-alias', ['-p', 'tsconfig.build.json', '--resolve-full-paths']);
 mkdirSync(join(DIST, 'styles'), { recursive: true });
