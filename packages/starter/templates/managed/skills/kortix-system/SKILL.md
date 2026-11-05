@@ -228,12 +228,12 @@ agents:
     prompt_file: agents/kortix.md         # or prompt: "…"
     permission: { bash: { "git push --force *": ask, "*": allow } }
     workspace: { project_repository: true }
-    tools: all
-    skills: all                           # omitted = none, Kortix skills too
+    tools: "*"                            # "*" is every name; `all` is the same
+    skills: "*"                           # omitted = none, Kortix skills too
     subagents: [researcher]
     commands: [standup]
     extensions: [audit]
-    connectors: all
+    connectors: "*"
     secrets: [ORDERS_API_KEY]
     kortix_permissions: [project.read, project.gitops.push]
   researcher:

@@ -98,7 +98,7 @@
     "react-native-keyboard-controller": "1.22.7",
     "react-native-markdown-display": "7.0.2",
     "react-native-purchases": "^9.6.5",
-    "react-native-purchases-ui": "^9.6.5",
+    "react-native-purchases-ui": "9.15.2",
     "react-native-reanimated": "4.7.1",
     "react-native-safe-area-context": "5.11.0",
     "react-native-screens": "~4.30.1",

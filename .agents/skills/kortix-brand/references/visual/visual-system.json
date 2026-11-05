@@ -221,6 +221,7 @@
     },
     "glyph": {
       "rule": "Project glyph icon palette, CHOSEN by the user. Separate from emoji on purpose. The ring token paints both the inset ring and the glyph, tuned (L only) to clear 3:1 against the fill and --popover/--card in both themes.",
+      "solid_rule": "Project glyph SOLID colour: the icon itself and the base of its tile wash (glyph-tint.ts mixes it at 14% light / 20% dark). Brighter than the ring tokens so a solid icon reads on its own wash with no border.",
       "fill": {
         "grey": ["hsl(220 8% 88%)", "hsl(220 6% 26%)"],
         "red": ["hsl(4 46% 88%)", "hsl(4 28% 26%)"],

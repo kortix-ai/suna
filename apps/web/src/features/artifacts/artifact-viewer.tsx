@@ -240,6 +240,18 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const clearSelection = selection.clear;
   const query = useArtifact(projectId, artifactId, version);
   const artifact = query.data;
+  useLayoutEffect(() => {
+    if (embedded || !artifact?.title) return;
+    const title = artifact.title;
+    const syncTitle = () => {
+      if (document.title !== title) document.title = title;
+    };
+    syncTitle();
+    // Streamed route metadata can arrive after the artifact query resolves.
+    const observer = new MutationObserver(syncTitle);
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [embedded, artifact?.title]);
   const mutations = useArtifactMutations(projectId);
   const frame = useRef<HTMLDivElement>(null);
   const [claimedFrame, setClaimedFrame] = useState<HTMLIFrameElement | null>(null);

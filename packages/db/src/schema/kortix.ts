@@ -4992,7 +4992,7 @@ export const sessionPendingPermissions = kortixSchema.table(
       foreignColumns: [projectSessions.sessionId],
     }).onDelete('cascade'),
   ],
-);
+).enableRLS();
 
 export const sandboxComputeSessions = kortixSchema.table(
   'sandbox_compute_sessions',

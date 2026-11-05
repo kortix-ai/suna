@@ -53,6 +53,10 @@ mock.module('../../secrets/account-resource', () => ({
   resolveProjectSharedProviderSecrets,
   encryptAccountSecret: (_accountId: string, value: string) => value,
   decryptAccountSecret: (_accountId: string, value: string) => value,
+  // Imported by modules this suite loads (subscription usage, #11816); never called here.
+  readAccountSecret: () => null,
+  resolveDefaultProviderAccountSecret: async () => null,
+  listUsableGatewaySecrets: async () => [],
 }));
 const getProjectSecretValueForConsumer = mock(async (input: { name: string }) => {
   const name = input.name;

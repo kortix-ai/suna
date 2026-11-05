@@ -72,7 +72,7 @@ HarnessBlockSchema = {
   id: string(min1)
   harness: string(min1)
   kind: string(min1)
-  data: unknown
+  data: unknown | absent
   model_visible: boolean
   fallback_text: string | absent
 }
@@ -450,7 +450,7 @@ ToolCallBlockSchema = {
   call_id: string
   name: string
   kind: ToolKindSchema
-  input: unknown
+  input: unknown | absent
   input_format: enum(json | text) | absent
   status: enum(pending | running | complete | error)
   result: {

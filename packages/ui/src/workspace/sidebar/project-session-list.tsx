@@ -73,7 +73,7 @@ import {
   SESSION_ROW_HEIGHT_CLASS,
   SIDEBAR_PAGE_SIZE,
   ShowMoreButton,
-} from './session-list-chrome';
+} from '../../session/list/session-list-chrome';
 import {
   SessionGroupNameModal,
   SessionGroupSections,
@@ -86,7 +86,7 @@ import {
   type SessionSection,
 } from './session-grouping';
 import { useSessionOpenIntent } from './session-open-intent';
-import { GoalStatusMark, isReviewOverdue, SessionStatusMark } from './session-status-mark';
+import { GoalStatusMark, isReviewOverdue, SessionStatusMark } from '../../session/list/session-status-mark';
 import { SessionTitle } from './session-title';
 import { useMediaQuery } from '../../internal/hooks';
 import { cn } from '../../internal/lib/utils';

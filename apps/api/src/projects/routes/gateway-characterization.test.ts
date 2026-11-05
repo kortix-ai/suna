@@ -261,6 +261,7 @@ describe('GET /gateway/overview (characterization)', () => {
 describe('route registration (characterization)', () => {
   const GATEWAY_ROUTES: Array<[string, string]> = [
     ['get', '/:projectId/gateway/logs'],
+    ['get', '/:projectId/gateway/logs/facets'],
     ['get', '/:projectId/gateway/logs/:logId'],
     ['get', '/:projectId/gateway/overview'],
     ['get', '/:projectId/gateway/series'],
@@ -282,7 +283,7 @@ describe('route registration (characterization)', () => {
     ['post', '/:projectId/gateway/routing-policy/preview'],
   ];
 
-  test('importing ./gateway registers all 20 gateway routes on projectsApp', () => {
+  test('importing ./gateway registers all 21 gateway routes on projectsApp', () => {
     const registered = new Set(
       (projectsApp.routes as Array<{ method: string; path: string }>)
         .filter((r) => r.path.includes('/gateway/'))
@@ -291,7 +292,7 @@ describe('route registration (characterization)', () => {
     for (const [method, path] of GATEWAY_ROUTES) {
       expect(registered.has(`${method} ${path}`)).toBe(true);
     }
-    // Nothing extra: exactly the 20 pinned registrations, no ghost route.
+    // Nothing extra: exactly the 21 pinned registrations, no ghost route.
     expect(registered.size).toBe(GATEWAY_ROUTES.length);
   });
 });

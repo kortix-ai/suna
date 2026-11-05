@@ -126,6 +126,9 @@ const accountResource = {
   // Imported by the OpenCode Console login module; never called by this suite.
   encryptAccountSecret: (_accountId: string, value: string) => value,
   decryptAccountSecret: (_accountId: string, value: string) => value,
+  // Imported by the subscription-usage reader (#11816); never called by this suite.
+  readAccountSecret: () => null,
+  resolveDefaultProviderAccountSecret: async () => null,
   listUsableGatewaySecrets: async (input: {
     accountId: string;
     projectId: string;

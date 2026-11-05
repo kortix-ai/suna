@@ -64,7 +64,7 @@ function startFakeApi(parent = PARENT_SESSION) {
   const followUps: Array<{ id: string; text: string }> = []
   const children = new Map<string, FakeChild>()
   const files = new Map<string, string>()
-  /** The tool parts each child's saved transcript holds (`GET …/transcript?shape=sync`, the API's mirror). */
+  /** The settled tool calls each child's stored session log holds (`GET …/sessions/:id/log`, the API's copy). */
   const savedParts = new Map<string, Array<Record<string, unknown>>>()
   let behave: (prompt: string, turn: number, child: FakeChild) => ChildBehavior = () => ({})
   let settled = true
@@ -110,8 +110,21 @@ function startFakeApi(parent = PARENT_SESSION) {
         const end = now.lastEnd
         return Response.json({ turns: [], ...(end ? { last_ended: { turn_token: 't1', end_reason: end.reason, ended_at: null, ...(end.error ? { error: { name: 'WorkflowError', message: end.error } } : {}) } } : {}) })
       }
-      if (path.endsWith('/transcript') && url.searchParams.get('shape') === 'sync') {
-        return Response.json({ available: true, source: 'mirror', messages: [{ info: { id: 'msg-1', role: 'assistant' }, parts: savedParts.get(id) ?? [] }] })
+      if (req.method === 'GET' && path === `${base}/${id}/log`) {
+        // The session-log page: each saved call is a pi tool_call block whose result carries its details.
+        const blocks = (savedParts.get(id) ?? []).map((part, i) => {
+          const state = part.state as ToolState
+          const failed = state.status === 'error'
+          return {
+            id: `blk_${i}`, type: 'tool_call', call_id: `call_${i}`, name: part.tool, kind: 'other', input: {}, status: failed ? 'error' : 'complete',
+            result: { content: [{ type: 'text', text: (failed ? state.error : state.output) ?? '' }], is_error: failed, ...(state.metadata ? { details: state.metadata } : {}) },
+          }
+        })
+        const message = {
+          message_id: 'msg-1', thread_id: id, seq: 1, role: 'assistant', kind: 'turn', status: 'complete', in_context: true, model: null, usage: null,
+          finish: 'stop', error: null, created_at: since(1), completed_at: since(1), producer: { harness: 'pi', version: '1.4.0' }, blocks,
+        }
+        return Response.json({ session: { title: null, created_at: since(0) }, generation: 1, threads: [{ thread_id: id, parent_thread_id: null }], thread_id: id, messages: [message], has_more: false })
       }
       if (path.endsWith('/transcript')) {
         const user = { role: 'user', text: child.prompts.at(-1) }

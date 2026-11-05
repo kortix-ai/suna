@@ -637,7 +637,7 @@ describe('pi harness', () => {
     expect(newest.headers.get('x-next-cursor')).toBe(ids[1]!)
   })
 
-  test('the Kortix turn verbs start, read, refuse to remove and stop a turn, and list the agents (W5 E4)', async () => {
+  test('the Kortix turn verbs start, read, refuse to retract and stop a turn, and list the agents (W5 E4)', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'printf kortix > note.txt' } }, { tool: 'bash', args: { command: 'sleep 20' } }, { text: 'unreachable' }],
       env: { KORTIX_AGENT_NAME: 'coder', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { coder: { description: 'Writes code', mode: 'primary' }, reviewer: { mode: 'subagent' } } }) },
@@ -670,11 +670,14 @@ describe('pi harness', () => {
     // note.txt empty before printf writes it, so wait for the content.
     const note = join(r.workspace, 'note.txt')
     await waitFor(() => existsSync(note) && readFileSync(note, 'utf8') === 'kortix')
-    const message = (await r.user(`/kortix/runtime/messages/${root}/${messageId}`).then((res) => res.json())) as { info: { id: string; role: string } }
-    expect(message.info).toMatchObject({ id: messageId, role: 'user' })
-    expect((await r.user(`/kortix/runtime/messages/${root}/msg_missing`)).status).toBe(404)
-    expect((await r.user(`/kortix/runtime/messages/${root}/${messageId}`, { method: 'DELETE' })).status).toBe(409)
-    expect((await r.user(`/kortix/runtime/messages/${root}/msg_missing`, { method: 'DELETE' })).status).toBe(404)
+    // The transcript page is the one read; the single-message GET and DELETE verbs left with #11821.
+    const page = (await r.user(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ info: { id: string; role: string } }> }
+    expect(page.messages.find((m) => m.info.id === messageId)?.info).toMatchObject({ id: messageId, role: 'user' })
+    expect((await r.user(`/kortix/runtime/messages/${root}/${messageId}`)).status).toBe(404)
+    expect((await r.user(`/kortix/runtime/messages/${root}/${messageId}`, { method: 'DELETE' })).status).toBe(404)
+    // The running prompt was read by a model call: retract refuses it; an unknown id is 404.
+    expect((await post(`/kortix/runtime/messages/${root}/${messageId}/retract`, {})).status).toBe(409)
+    expect((await post(`/kortix/runtime/messages/${root}/msg_missing/retract`, {})).status).toBe(404)
 
     const agents = (await r.user('/kortix/runtime/agents').then((res) => res.json())) as { agents: Array<{ name: string }> }
     expect(agents.agents.map((agent) => agent.name)).toEqual(['coder', 'reviewer'])
@@ -3900,7 +3903,7 @@ describe('pi steering', () => {
     const dump = JSON.parse(readFileSync(join(r.workspace, '.state', 'sess-pi-test.json'), 'utf8')) as { entries: unknown[] }
     expect(JSON.stringify(dump.entries)).toContain('STEER-ONE')
     // Read: it cannot be withdrawn any more.
-    const removed = await r.user(`/kortix/runtime/messages/${root}/${steered}`, { method: 'DELETE' })
+    const removed = await post(r, `/kortix/runtime/messages/${root}/${steered}/retract`, {})
     expect(removed.status).toBe(409)
     expect(await removed.json()).toEqual({ code: 'message_read', error: 'a model call read this message' })
   })
@@ -3938,14 +3941,14 @@ describe('pi steering', () => {
     await Bun.sleep(2)
     const kept = await sendTimeId(r)
     expect((await steer(r, kept, 'STEER-KEPT')).status).toBe(202)
-    const removed = await r.user(`/kortix/runtime/messages/${root}/${withdrawn}`, { method: 'DELETE' })
+    const removed = await post(r, `/kortix/runtime/messages/${root}/${withdrawn}/retract`, {})
     expect(removed.status).toBe(200)
     await waitFor(() => seen.ends.length === 1)
     expect(sentText(before + 1)).toContain('STEER-KEPT')
     expect(sentText(before + 1)).not.toContain('STEER-GONE')
     expect(seen.reads).toEqual([kept])
     expect((await page(r)).messages.some((m) => m.info.id === withdrawn)).toBe(false)
-    expect((await r.user(`/kortix/runtime/messages/${root}/${withdrawn}`, { method: 'DELETE' })).status).toBe(404)
+    expect((await post(r, `/kortix/runtime/messages/${root}/${withdrawn}/retract`, {})).status).toBe(404)
   })
 
   test('a message steered after the last step starts the next turn when the turn ends', async () => {
@@ -4158,14 +4161,16 @@ describe('pi retract (R7.1)', () => {
     expect((await retract(r, kept)).status).toBe(409)
   })
 
-  test('the DELETE verb an older API sends retracts a queued prompt too', async () => {
+  test('the compatibility DELETE retracts a queued prompt too; the Kortix DELETE verb is retired', async () => {
+    // #11821 removed DELETE /kortix/runtime/messages/:sid/:mid: retract is the Kortix verb.
     const { seen, hooks } = turnRelays()
     const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo done' } }, { text: 'first done' }], hooks })
     expect((await send(r, TURN, 'run the tool')).status).toBe(202)
     await waitForRunningTool(r, root(r))
     const queued = await sendTimeId(r)
     expect((await send(r, queued, 'QUEUED-DELETED')).status).toBe(202)
-    expect((await r.user(`/kortix/runtime/messages/${root(r)}/${queued}`, { method: 'DELETE' })).status).toBe(200)
+    expect((await r.user(`/kortix/runtime/messages/${root(r)}/${queued}`, { method: 'DELETE' })).status).toBe(404)
+    expect(await retract(r, queued).then((res) => res.json())).toEqual({ retracted: true })
     const legacy = await sendTimeId(r)
     expect((await send(r, legacy, 'QUEUED-LEGACY')).status).toBe(202)
     expect((await r.user(`/session/${root(r)}/message/${legacy}`, { method: 'DELETE' })).status).toBe(200)
@@ -4746,17 +4751,15 @@ describe('pi session log on the v2 stream (P4.3)', () => {
   })
 
   test('a prompt queued behind a running turn is on the stream at its queued seq from admission, then at its real seq; GET /log shows the seqs the API stores', async () => {
-    const r = await boot({
-      script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'first done' }, { text: 'second done' }],
-      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
-    })
+    // A running tool holds the turn: an open ask would not, a new prompt parks it (#11797).
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 1.5; echo held' } }, { text: 'first done' }, { text: 'second done' }] })
     const rt = r.service.runtime()!
     const root = rt.rootId
     // A 422 re-sequenced this thread on an earlier boot: the API stores every seq 5 higher.
     expect(startSessionLogJournal(createPiSessionLogPort(() => r.service.runtime()?.sessionLogSnapshot() ?? null), { generation: 3, seq_offsets: { [root]: 5 } })).not.toBeNull()
     const stream = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
     expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
-    await waitFor(() => rt.permissions.list().length === 1)
+    await waitForRunningTool(r, root)
     const queued = 'msg_0198e2a4b0f1QUEUEDPROMPTBC'
     expect((await prompt(r, root, { messageID: queued, parts: [{ type: 'text', text: 'second' }] })).status).toBe(204)
     const page = (await r.user('/kortix/runtime/log').then((res) => res.json())) as { generation: number; messages: SessionLogMessage[] }
@@ -4775,8 +4778,7 @@ describe('pi session log on the v2 stream (P4.3)', () => {
     // Unshifted: the queued seq is above every real one already.
     expect(puts(admitted).map((m) => m.seq)).toEqual([Number.MAX_SAFE_INTEGER])
     expect(puts(admitted)[0]).toMatchObject({ role: 'user', blocks: [{ type: 'text', text: 'second' }] })
-    expect((await r.user(`/kortix/runtime/permissions/${rt.permissions.list()[0]!.id}/reply`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reply: 'once' }) })).status).toBe(200)
-    await waitFor(() => !rt.busy())
+    await waitFor(() => !rt.busy(), 10_000)
     const replay = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
     const started = await readSse(replay, (t) => puts(t).some((m) => m.seq < 1_000_000))
     // Its turn started: the next put carries its real seq, shifted as the API stores it, before the journal collects.
@@ -6038,13 +6040,14 @@ describe('session-log actions (runtime.actions.v1)', () => {
   })
 
   test('GET /log answers a whole page; a prompt queued behind a running turn is in the log from admission, then at its real seq', async () => {
-    const r = await boot({ script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'first done' }, { text: 'second done' }], env: { KORTIX_COMPILED_AGENT_CONFIG: askBash } })
+    // A running tool holds the turn: an open ask would not, a new prompt parks it (#11797).
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 1.5; echo held' } }, { text: 'first done' }, { text: 'second done' }] })
     const rt = r.service.runtime()!
     const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[]; harness: { session: { root_thread_id?: string | null } } }
     expect(health.capabilities).toContain('runtime.log.v1')
     expect(health.harness.session.root_thread_id).toBe(rt.rootId)
     expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
-    await waitFor(() => rt.permissions.list().length === 1)
+    await waitForRunningTool(r, rt.rootId)
     const queued = 'msg_0198e2a4b0f1QUEUEDPROMPTAB'
     expect((await prompt(r, rt.rootId, { messageID: queued, parts: [{ type: 'text', text: 'second' }] })).status).toBe(204)
     type Page = LogPage & { session: Record<string, unknown>; generation: number; threads: Array<Record<string, unknown>> }
@@ -6062,8 +6065,7 @@ describe('session-log actions (runtime.actions.v1)', () => {
     // An older page never holds a queued prompt.
     const older = (await call(r, `/log?before_seq=${page.messages[0]!.seq + 1}`, undefined, 'GET').then((res) => res.json())) as Page
     expect(older.messages.some((m) => m.message_id === queued)).toBe(false)
-    expect((await call(r, `/permissions/${rt.permissions.list()[0]!.id}/reply`, { reply: 'once' })).status).toBe(200)
-    await waitFor(() => !rt.busy())
+    await waitFor(() => !rt.busy(), 10_000)
     const settled = (await call(r, '/log', undefined, 'GET').then((res) => res.json())) as Page
     const prompts = settled.messages.filter((m) => m.message_id === queued)
     expect(prompts).toHaveLength(1)

@@ -29,7 +29,7 @@ import {
 import { CR_ID_PREFIX } from '../review/review-actions';
 import { SessionLabelBadges } from '../sessions/session-label-badges';
 import { SOURCE_ICONS } from './session-source-icons';
-import { isReviewOverdue, SessionStatusMark } from './session-status-mark';
+import { isReviewOverdue, SessionStatusMark } from '../../session/list/session-status-mark';
 
 const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
   year: 'numeric',

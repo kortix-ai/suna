@@ -11,7 +11,8 @@
  */
 
 import type { ReactNode } from 'react';
-import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
+import { View, type StyleProp, type ViewStyle } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { webSpace } from '@/lib/session/user-message';
@@ -44,7 +45,7 @@ export function AgentCard({
   };
   if (onPress) {
     return (
-      <Pressable
+      <PressableSurface
         testID={testID}
         accessibilityRole="button"
         accessibilityLabel={label}
@@ -57,7 +58,7 @@ export function AgentCard({
         ]}
       >
         {children}
-      </Pressable>
+      </PressableSurface>
     );
   }
   return (
