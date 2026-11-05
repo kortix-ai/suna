@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { Hint } from './hint';
 import { emojiTint } from './emoji-tint';
 import { glyphFace } from './glyph-face';
-import { glyphForeground, glyphTint } from './glyph-tint';
+import { glyphForeground, glyphStyle, glyphTint } from './glyph-tint';
 import type { Icon } from './kortix-icons';
 import { cn } from '../lib/utils';
 import { chalkColors } from '@kortix/shared';
@@ -113,7 +113,9 @@ export function EntityAvatar({
       // emoji tile drops the style entirely and rebuilds itself from its own
       // tint tokens. See the class list.
       style={
-        resolvedGlyph || emoji
+        resolvedGlyph
+          ? glyphStyle(resolvedGlyph.color)
+          : emoji
           ? undefined
           : {
               backgroundColor: chalk.background,
@@ -159,6 +161,7 @@ export function EntityAvatar({
         // sized like the plain `icon` prop below, not like a text-rendered
         // emoji grapheme.
         <resolvedGlyph.GlyphComponent
+          weight="fill"
           className={cn(sizes.icon, glyphForeground(resolvedGlyph.color))}
         />
       ) : emoji ? (

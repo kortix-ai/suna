@@ -1,10 +1,8 @@
 'use client';
 
-import { MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { EmojiPicker as Frimousse } from 'frimousse';
 
 import Hint from './hint';
-import { InputGroupSearch, InputGroupSearchIcon } from './input-group';
 import Loading from './loading';
 import { cn } from '../lib/utils';
 
@@ -14,130 +12,24 @@ export interface EmojiSelection {
 }
 
 /**
- * Emoji picker built on frimousse.
+ * Emoji picker built on frimousse: 12 columns of `size-8` cells at `text-xl`
+ * (20px), so about 80 emoji show at once inside the 388px panel.
  *
- * The hovered/keyboard-active cell takes one of six tints, rotated by three on
- * alternating rows so a tint never sits directly above itself. Rotation by
- * three within a six-cycle guarantees that for ANY column count — frimousse
- * defaults to 9 columns (its own JSDoc says 10, but the shipped default is
- * `columns = 9`, and we pass no override), and the guarantee does not depend on
- * that number. The repeating tile is 6 x 2 = 12 cells: the tint is a pure
- * function of (nth-child mod 6, row parity).
- *
- * Colours come from two paired token families in globals.css: a pale
- * `--color-emoji-fill-*` and a stronger `--color-emoji-ring-*` per hue. The
- * active cell is the ONLY visible cue for which emoji is selected — frimousse
- * gives every emoji button tabIndex={-1} and no focus ring — so the state
- * indicator has to clear WCAG 1.4.11's 3:1 against --popover. A pale fill
- * cannot reach that on white at any saturation, so the 1px inset ring carries
- * the contrast (measured 3.03–3.19:1) and the fill stays quiet.
- */
-
-/**
- * Every variant is written out as a LITERAL string. Do not generate these with
- * a template literal or a .map() — Tailwind v4 extracts class names by scanning
- * source text, so an interpolated class name produces no CSS at all and the
- * hover backgrounds silently never appear.
- *
- * There is no `dark:` set: every token is a light-dark() pair, and :root /
- * .dark set color-scheme, so one class covers both themes.
- *
- * The ring GEOMETRY is declared once, as a single `data-[active]:inset-ring-1`
- * — only the colour is slot-specific. Repeating the width on all twelve slots
- * would be twelve chances for one to drift.
- *
- * VARIANT ORDER: `data-[active]` LAST, i.e.
- * `group-data-[row=even]/row:nth-[6n+1]:data-[active]:bg-…`. Verified against
- * tailwindcss 4.3.2, which compiles that to
- * `:is(:where(.group\/row)[data-row="even"] *):nth-child(6n+1)[data-active]`.
- * Leading with `data-[active]` also compiles to a working selector, so either
- * order emits CSS — this one just reads in the order the cascade applies.
- *
- * `nth-[6n+k]` counts the emoji button among its row's children, which is
- * exactly the column: frimousse renders nothing into a row but emoji buttons.
- *
- * WHY `data-row` AND NOT `group-odd/row:` / `group-even/row:` (the obvious
- * CSS-only choice): frimousse virtualises the list, so a row's `:nth-child()`
- * index counts only the rows currently mounted, offset by a hidden measurement
- * <div> that is always the first child and by a spacer <div> inserted before
- * every row that starts a category. `:nth-child(odd)` on a row therefore tracks
- * neither the logical row nor any stable value — it flips as you scroll.
- * `aria-rowindex`, which frimousse derives from the logical row index, is the
- * one stable source, so `<Row>` reads it and stamps the parity as an attribute.
+ * The hovered or keyboard-active cell takes a neutral wash
+ * (`bg-foreground/8`). It replaced a six-hue tinted fill with a 1px ring: the
+ * new picker draws no borders on cells. The wash is the only cue for the
+ * keyboard-active emoji, and it is below WCAG 1.4.11's 3:1, which the old ring
+ * cleared.
  */
 const EMOJI_BUTTON = cn(
-  'flex size-8 items-center justify-center rounded-md text-lg leading-none',
+  'flex size-8 items-center justify-center rounded-md text-xl leading-none',
   'cursor-pointer select-none',
-  // `scale` not `transform`: Tailwind v4's scale-* utility sets the standalone
-  // `scale` property, which `transition-property: transform` does not cover.
-  // box-shadow is in the list because Tailwind draws inset-ring-* with it.
-  'transition-[background-color,box-shadow,scale] duration-fast active:scale-[0.96]',
-
-  // Ring geometry, declared once. Only the colour varies per slot below.
-  'data-[active]:inset-ring-1',
-
-  // Fill — even rows: 1→red, 2→amber, 3→green, 4→teal, 5→blue, 6→violet
-  'group-data-[row=even]/row:nth-[6n+1]:data-[active]:bg-emoji-fill-red',
-  'group-data-[row=even]/row:nth-[6n+2]:data-[active]:bg-emoji-fill-amber',
-  'group-data-[row=even]/row:nth-[6n+3]:data-[active]:bg-emoji-fill-green',
-  'group-data-[row=even]/row:nth-[6n+4]:data-[active]:bg-emoji-fill-teal',
-  'group-data-[row=even]/row:nth-[6n+5]:data-[active]:bg-emoji-fill-blue',
-  'group-data-[row=even]/row:nth-[6n+6]:data-[active]:bg-emoji-fill-violet',
-
-  // Fill — odd rows: same six, rotated by three
-  'group-data-[row=odd]/row:nth-[6n+1]:data-[active]:bg-emoji-fill-teal',
-  'group-data-[row=odd]/row:nth-[6n+2]:data-[active]:bg-emoji-fill-blue',
-  'group-data-[row=odd]/row:nth-[6n+3]:data-[active]:bg-emoji-fill-violet',
-  'group-data-[row=odd]/row:nth-[6n+4]:data-[active]:bg-emoji-fill-red',
-  'group-data-[row=odd]/row:nth-[6n+5]:data-[active]:bg-emoji-fill-amber',
-  'group-data-[row=odd]/row:nth-[6n+6]:data-[active]:bg-emoji-fill-green',
-
-  // Ring colour — same rotation, paired with the fill by hue
-  'group-data-[row=even]/row:nth-[6n+1]:data-[active]:inset-ring-emoji-ring-red',
-  'group-data-[row=even]/row:nth-[6n+2]:data-[active]:inset-ring-emoji-ring-amber',
-  'group-data-[row=even]/row:nth-[6n+3]:data-[active]:inset-ring-emoji-ring-green',
-  'group-data-[row=even]/row:nth-[6n+4]:data-[active]:inset-ring-emoji-ring-teal',
-  'group-data-[row=even]/row:nth-[6n+5]:data-[active]:inset-ring-emoji-ring-blue',
-  'group-data-[row=even]/row:nth-[6n+6]:data-[active]:inset-ring-emoji-ring-violet',
-  'group-data-[row=odd]/row:nth-[6n+1]:data-[active]:inset-ring-emoji-ring-teal',
-  'group-data-[row=odd]/row:nth-[6n+2]:data-[active]:inset-ring-emoji-ring-blue',
-  'group-data-[row=odd]/row:nth-[6n+3]:data-[active]:inset-ring-emoji-ring-violet',
-  'group-data-[row=odd]/row:nth-[6n+4]:data-[active]:inset-ring-emoji-ring-red',
-  'group-data-[row=odd]/row:nth-[6n+5]:data-[active]:inset-ring-emoji-ring-amber',
-  'group-data-[row=odd]/row:nth-[6n+6]:data-[active]:inset-ring-emoji-ring-green',
+  'transition-[background-color,scale] duration-fast active:scale-[0.96]',
+  'data-[active]:bg-foreground/8',
 );
 
-let warnedMissingRowIndex = false;
-
-/**
- * Row parity, from frimousse's `aria-rowindex`.
- *
- * The fallback is deliberately noisy rather than silent: if frimousse ever
- * stopped emitting `aria-rowindex`, every row would fall back to `even`, the
- * rotation would collapse to a single set, and nothing would fail. The hidden
- * measurement row legitimately has neither `role` nor `aria-rowindex`, so only
- * a real row (`role="row"`) missing the index is a regression worth warning on.
- *
- * Note frimousse's `aria-rowindex` is 0-based, which is against ARIA's 1-based
- * convention. This code is correct against what it ships today; if frimousse
- * ever conforms, every parity flips and the rotation shifts by three.
- */
-function rowParity(props: { role?: string; 'aria-rowindex'?: number }): 'even' | 'odd' {
-  const rowIndex = props['aria-rowindex'];
-
-  if (typeof rowIndex !== 'number') {
-    if (process.env.NODE_ENV !== 'production' && props.role === 'row' && !warnedMissingRowIndex) {
-      warnedMissingRowIndex = true;
-      console.warn(
-        '[EmojiPicker] a frimousse row is missing aria-rowindex; the active-cell ' +
-          'tint rotation has collapsed to one set. Check the frimousse version.',
-      );
-    }
-    return 'even';
-  }
-
-  return rowIndex % 2 === 0 ? 'even' : 'odd';
-}
+/** 12 columns of size-8 cells: 20px emoji, about 80 visible at once. */
+const EMOJI_COLUMNS = 12;
 
 export function EmojiPicker({
   onEmojiSelect,
@@ -180,28 +72,18 @@ export function EmojiPicker({
       // the coupling is visible at the place someone would change it.
       emojibaseUrl={emojibaseUrl}
       locale="en"
-      className={cn('isolate flex h-[368px] w-full flex-col', className)}
+      columns={EMOJI_COLUMNS}
+      className={cn('isolate flex h-[388px] w-full flex-col', className)}
     >
-      <div className="p-1">
-        <InputGroupSearch>
-          <InputGroupSearchIcon>
-            <MagnifyingGlassIcon />
-          </InputGroupSearchIcon>
-          <Frimousse.Search
-            aria-label="Search emoji"
-            placeholder="Search emoji"
-            className={cn(
-              'border-border bg-popover text-foreground placeholder:text-muted-foreground/60',
-              'h-9 w-full rounded-md border pr-3 pl-9 text-sm font-medium transition-[color] outline-none',
-              'focus:border-kortix-blue focus:border focus:outline-none',
-              // frimousse hardcodes type="search". Tailwind's preflight resets
-              // ::-webkit-search-decoration but not ::-webkit-search-cancel-button,
-              // so without this WebKit paints its native clear X inside the field.
-              // Same reset input.tsx already carries for type="search".
-              '[&::-webkit-search-cancel-button]:appearance-none',
-            )}
-          />
-        </InputGroupSearch>
+      <div className="border-border flex h-11 shrink-0 items-center border-b px-4">
+        <Frimousse.Search
+          aria-label="Search emoji"
+          placeholder="Search emoji…"
+          className={cn(
+            'text-foreground placeholder:text-muted-foreground/70 h-full w-full bg-transparent text-sm outline-none',
+            '[&::-webkit-search-cancel-button]:appearance-none',
+          )}
+        />
       </div>
 
       <Frimousse.Viewport className="relative flex-1 overflow-y-auto outline-none">
@@ -226,7 +108,7 @@ export function EmojiPicker({
               <div
                 {...props}
                 className={cn(
-                  'bg-popover text-muted-foreground px-2 pt-3 pb-1.5 text-xs font-medium',
+                  'bg-popover text-muted-foreground px-4 pt-3 pb-1.5 text-xs font-medium',
                   props.className,
                 )}
               >
@@ -234,11 +116,7 @@ export function EmojiPicker({
               </div>
             ),
             Row: ({ children, ...props }) => (
-              <div
-                {...props}
-                data-row={rowParity(props)}
-                className={cn('group/row flex px-1.5', props.className)}
-              >
+              <div {...props} className={cn('flex px-3', props.className)}>
                 {children}
               </div>
             ),
@@ -251,7 +129,7 @@ export function EmojiPicker({
         />
       </Frimousse.Viewport>
 
-      <div className="border-border/60 flex h-11 items-center gap-2 border-t px-2">
+      <div className="border-border flex h-11 shrink-0 items-center gap-2 border-t px-4">
         <Frimousse.ActiveEmoji>
           {({ emoji }) =>
             emoji ? (

@@ -7,12 +7,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { glyphFace } from './glyph-face';
 import { GLYPH_PATHS, GLYPH_PATHS_WEIGHT } from './glyph-paths.generated';
-import { renderGlyphPathsModule } from './glyph-paths-source';
+import { GLYPH_WEIGHT, renderGlyphPathsModule } from './glyph-paths-source';
 import { GLYPH_COMPONENTS, glyphComponent } from './glyph-registry';
 import { DEFAULT_ICON_SIZE } from './icon-provider';
-import { DEFAULT_ICON_WEIGHT } from '../lib/icon-config';
+import { KORTIX_GLYPH_COMPONENTS } from './kortix-glyphs';
 
-const APP_ICON_CONTEXT = { weight: DEFAULT_ICON_WEIGHT, size: DEFAULT_ICON_SIZE };
+const APP_ICON_CONTEXT = { weight: GLYPH_WEIGHT, size: DEFAULT_ICON_SIZE };
+const PHOSPHOR_NAMES = Object.keys(GLYPH_COMPONENTS).filter((name) => !Object.hasOwn(KORTIX_GLYPH_COMPONENTS, name));
 
 function markup(component: React.ComponentType<Record<string, unknown>>, props: Record<string, unknown>) {
   return renderToStaticMarkup(
@@ -21,8 +22,8 @@ function markup(component: React.ComponentType<Record<string, unknown>>, props: 
 }
 
 describe('glyphFace', () => {
-  test('draws every catalogue glyph exactly as its Phosphor component does in the app weight', () => {
-    const names = Object.keys(GLYPH_COMPONENTS);
+  test('draws every Phosphor catalogue glyph exactly as its component does in the solid weight', () => {
+    const names = PHOSPHOR_NAMES;
     expect(names.length).toBeGreaterThan(200);
     for (const name of names) {
       const props = { className: 'size-4 text-glyph-blue' };
@@ -35,14 +36,21 @@ describe('glyphFace', () => {
     expect(markup(glyphFace('Rocket')!, props)).toBe(markup(glyphComponent('Rocket')!, props));
   });
 
+  test('the three Kortix marks resolve to their own components', () => {
+    for (const name of Object.keys(KORTIX_GLYPH_COMPONENTS)) {
+      expect(glyphFace(name)).toBe(glyphComponent(name));
+      expect(renderToStaticMarkup(createElement(glyphFace(name)!, {}))).toContain('fill="currentColor"');
+    }
+  });
+
   test('an unknown name resolves to null, like the registry', () => {
     expect(glyphFace('NoSuchGlyph')).toBeNull();
     expect(glyphComponent('NoSuchGlyph')).toBeNull();
   });
 
   test('the generated paths are current: regenerate with bun packages/ui/scripts/generate-glyph-paths.tsx', () => {
-    expect(GLYPH_PATHS_WEIGHT).toBe(DEFAULT_ICON_WEIGHT);
-    expect(Object.keys(GLYPH_PATHS).sort()).toEqual(Object.keys(GLYPH_COMPONENTS).sort());
+    expect(GLYPH_PATHS_WEIGHT).toBe(GLYPH_WEIGHT);
+    expect(Object.keys(GLYPH_PATHS).sort()).toEqual([...PHOSPHOR_NAMES].sort());
     const onDisk = readFileSync(join(import.meta.dir, 'glyph-paths.generated.ts'), 'utf8');
     expect(onDisk).toBe(renderGlyphPathsModule());
   });

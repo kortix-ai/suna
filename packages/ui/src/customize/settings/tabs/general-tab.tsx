@@ -405,13 +405,37 @@ function GeneralWorkspaceCard({
   // the local `name` draft above — so an icon pick can never accidentally
   // also send a half-typed, not-yet-debounced rename. See this file's header
   // comment.
+  // The picker stays open while you try icons and colours, so the trigger
+  // shows a local draft at once and the PATCH waits for a 400 ms pause: a
+  // colour drag sends one request, not one per pointer move. The draft drops
+  // once the last save settles and the server value takes over.
+  const [draftIcon, setDraftIcon] = useState<ProjectIconValue | undefined>(undefined);
+  const iconSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (iconSaveTimer.current) clearTimeout(iconSaveTimer.current);
+    },
+    [],
+  );
   const applyIcon = (nextIcon: ProjectIconValue) => {
-    const edit = buildProjectEditPatch(
-      { name: project.name, icon: project.icon, icon_glyph: project.icon_glyph },
-      { name: project.name, icon: nextIcon },
-    );
-    if (edit.status !== 'ready') return;
-    iconMutation.mutate(edit.patch);
+    setDraftIcon(nextIcon);
+    if (iconSaveTimer.current) clearTimeout(iconSaveTimer.current);
+    iconSaveTimer.current = setTimeout(() => {
+      iconSaveTimer.current = null;
+      const edit = buildProjectEditPatch(
+        { name: project.name, icon: project.icon, icon_glyph: project.icon_glyph },
+        { name: project.name, icon: nextIcon },
+      );
+      if (edit.status !== 'ready') {
+        setDraftIcon(undefined);
+        return;
+      }
+      iconMutation.mutate(edit.patch, {
+        onSettled: () => {
+          if (!iconSaveTimer.current) setDraftIcon(undefined);
+        },
+      });
+    }, 400);
   };
 
   const saving = isDebouncing || isRenamePending;
@@ -424,11 +448,11 @@ function GeneralWorkspaceCard({
     <SettingsRowGroup>
       <SettingsRow label={t('icon')} description={t('iconDescription')}>
         <ProjectIconField
-          value={toIconValue(project.icon, project.icon_glyph)}
+          value={draftIcon !== undefined ? draftIcon : toIconValue(project.icon, project.icon_glyph)}
           onChange={(emoji) => applyIcon({ emoji })}
           onGlyphChange={(glyph) => applyIcon({ glyph })}
           onClear={() => applyIcon(null)}
-          disabled={!canManage || iconMutation.isPending}
+          disabled={!canManage}
           align="end"
         />
       </SettingsRow>
