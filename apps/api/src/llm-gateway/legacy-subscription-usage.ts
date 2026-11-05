@@ -96,7 +96,7 @@ Promise<{ usage: SubscriptionUsage | null; provider_account: SubscriptionAccount
     if (!credential?.access) return { usage: null, provider_account: codexAccountFromLogin(login.value) };
     const headers: Record<string, string> = { authorization: `Bearer ${credential.access}`, 'user-agent': CODEX_USER_AGENT, accept: 'application/json' };
     if (credential.accountId) headers['chatgpt-account-id'] = credential.accountId;
-    const cacheKey = `${input.accountId}:${input.projectId}:${input.secretId}:${login.updatedAt.getTime()}`;
+    const cacheKey = `${login.secretId}:${login.updatedAt.getTime()}`;
     const cached = recentReads.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.pending;
     recentReads.delete(cacheKey);

@@ -124,3 +124,12 @@ test('cached usage never bypasses tenant validation and a minute allows a fresh 
   await read();
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
+
+test('equivalent account and project UUID casing cannot bypass the provider read window', async () => {
+  const canonical = { ...input, accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' };
+  codex = { accountId: canonical.accountId, secretId, ownerUserId: null, updatedAt: at, value: JSON.stringify({ openai: { access: 'synthetic-access' } }) };
+  const fetcher = mock(async (_url: string, _init: RequestInit) => Response.json({}));
+  await refreshLegacySubscriptionUsage({ ...canonical, secretId, storage: 'project' }, fetcher);
+  await refreshLegacySubscriptionUsage({ ...canonical, accountId: canonical.accountId.toUpperCase(), projectId: canonical.projectId.toUpperCase(), secretId, storage: 'project' }, fetcher);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
