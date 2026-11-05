@@ -1,7 +1,7 @@
-import { provisionProject, type KortixProject, type ProvisionProjectInput } from '@kortix/sdk';
+import { createWorkspace, type CreateWorkspaceInput, type KortixProject } from '@kortix/sdk';
 
 /** A new workspace's provision input: no `account_id`, the server picks it. */
-export type NewWorkspaceInput = Omit<ProvisionProjectInput, 'account_id'>;
+export type NewWorkspaceInput = CreateWorkspaceInput;
 
 /**
  * Create a whole workspace in one request: `POST /v1/projects/provision` with
@@ -11,9 +11,8 @@ export type NewWorkspaceInput = Omit<ProvisionProjectInput, 'account_id'>;
  * `403 account_creation_restricted` when a new account would be needed.
  *
  * For the hosts that create a workspace outside `/new` (a marketplace item, a
- * use-case template). The SDK's `createWorkspace` (Workspaces stage 6) will
- * carry the flag itself; this is the one place to swap it in.
+ * use-case template). The SDK's `createWorkspace` carries the flag.
  */
 export function provisionNewWorkspace(input: NewWorkspaceInput): Promise<KortixProject> {
-  return provisionProject({ ...input, new_workspace: true } as ProvisionProjectInput);
+  return createWorkspace(input);
 }

@@ -20,7 +20,7 @@ import {
 } from '@kortix/ui/internal/auth/auth-consent';
 import { ErrorStrip, FieldLabel, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
-import { approveCliDevice, createAccountToken, revokeAccountToken } from '@kortix/sdk';
+import { approveCliDevice, createAccountToken, isNoWorkspaceError, revokeAccountToken } from '@kortix/sdk';
 import { PlusIcon } from '@phosphor-icons/react';
 import { useWorkspaceDirectory } from '@kortix/ui/workspace/sidebar/use-workspace-directory';
 import { validateCallback } from './validate-callback';
@@ -138,7 +138,7 @@ function CliAuthorizeInner() {
                 await approveCliDevice(userCode);
                 setPhase('success');
               } catch (err) {
-                if (isNoWorkspace(err)) setNoWorkspace(true);
+                if (isNoWorkspaceError(err)) setNoWorkspace(true);
                 setError((err as Error).message);
                 setPhase('error');
               }
@@ -240,7 +240,7 @@ function CliAuthorizeInner() {
 
       setPhase('success');
     } catch (err) {
-      if (isNoWorkspace(err)) setNoWorkspace(true);
+      if (isNoWorkspaceError(err)) setNoWorkspace(true);
       setError((err as Error).message);
       setPhase('error');
     }
@@ -308,12 +308,6 @@ function CliAuthorizeInner() {
       </Rise>
     </AuthFrame>
   );
-}
-
-/** The API's typed refusal for a person with no workspace (Workspaces D3). */
-function isNoWorkspace(err: unknown): boolean {
-  const e = err as { status?: number; code?: string } | null;
-  return e?.status === 409 && e.code === 'no_workspace';
 }
 
 /** Race a promise against a timeout. Rejects with `message` if the

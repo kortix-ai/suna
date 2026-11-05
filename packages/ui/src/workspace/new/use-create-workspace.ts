@@ -27,8 +27,7 @@ import {
   linkRepository,
   PROVISION_IN_FLIGHT_CODE,
   PROVISION_STREAM_UNTERMINATED_CODE,
-  provisionProject,
-  provisionProjectStream,
+  createWorkspace,
   setProjectOnboardingComplete,
   type CreateProjectRepoInput,
   type KortixProject,
@@ -96,8 +95,8 @@ export function resolveTargetAccountId(
  * The exact `POST /projects/provision` request body for one managed create:
  * a whole new workspace (`new_workspace: true`), never an `account_id`.
  *
- * The SDK's `createWorkspace` (Workspaces stage 6) will carry the flag
- * itself; until it ships, the provision transport carries it.
+ * `createWorkspace` (the transport, `defaultClient`) sends the flag too;
+ * the body states it so a test reads the request it sends.
  */
 export function buildCreatePayload(
   state: NewWorkspaceFormState,
@@ -360,9 +359,11 @@ export type CreateWorkspaceClient = {
   wait: (ms: number) => Promise<void>;
 };
 
+// A managed create is a whole new workspace: the SDK's `createWorkspace`
+// sends `new_workspace: true` and never an `account_id`, streamed or plain.
 const defaultClient: CreateWorkspaceClient = {
-  provisionProject,
-  provisionProjectStream,
+  provisionProject: (input) => createWorkspace(input),
+  provisionProjectStream: (input, onEvent) => createWorkspace(input, onEvent),
   wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
 
