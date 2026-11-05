@@ -858,6 +858,10 @@ const catalog = {
         "chat_front": {
           "name": "Spaces-Router",
           "description": "With Spaces on, the agent you chat with in a thread is a router: it hands the work to your agents and writes back like a person, in short messages with the result, a link or the decision you need to make. Your agents share the thread through its files, so the router passes file paths, not retyped text. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml."
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "With Spaces on, a space can watch itself: turn on Proactive in its details, and an agent reads what happens there (finished threads, questions left open, people who join) and writes in the chat only when it matters: a result worth sharing, a decision you need to make, or something overdue. It can also start a thread that does the work. Optional daily brief at 9:00."
         }
       },
       "channelsSwitch": {
@@ -9304,6 +9308,12 @@ const catalog = {
       "routines": "Routines",
       "addRoutine": "Add routine",
       "routinesPrivate": "A private space takes no routines yet.",
+      "proactive": "Proactive",
+      "proactiveWatch": "Watch this space",
+      "proactiveWatchHint": "An agent reads what happens here and writes only when it matters.",
+      "proactiveBrief": "Daily brief",
+      "proactiveBriefHint": "A short summary at 9:00 on days with news.",
+      "proactiveFailed": "The setting was not saved. Try again.",
       "allSettings": "All settings",
       "askHint": "You can also ask in chat: \"add an agent here\", \"pin the launch doc as a tab\"."
     },

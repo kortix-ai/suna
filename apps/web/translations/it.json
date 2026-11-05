@@ -1347,6 +1347,10 @@
         "chat_front": {
           "name": "Spaces-Router",
           "description": "Con gli Spazi attivi, l'agente con cui chatti in un thread è un router: affida il lavoro ai tuoi agenti e ti risponde come una persona, con messaggi brevi con il risultato, un link o la decisione da prendere. I tuoi agenti condividono il thread tramite i suoi file, quindi il router passa percorsi di file, non testo ricopiato. «Mostra lavoro» sotto un messaggio apre il lavoro che c'è dietro. Richiede My Kortix attivo in kortix.yaml."
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "Con gli Spazi attivi, uno spazio può sorvegliarsi da solo: attiva Proattivo nei suoi dettagli e un agente legge cosa succede (thread conclusi, domande rimaste aperte, persone che entrano) e scrive in chat solo quando conta: un risultato da condividere, una decisione da prendere o qualcosa in ritardo. Può anche avviare un thread che fa il lavoro. Riepilogo giornaliero facoltativo alle 9:00."
         }
       },
       "channelsSwitch": {
@@ -25281,6 +25285,12 @@
       "routines": "Routine",
       "addRoutine": "Aggiungi routine",
       "routinesPrivate": "Uno spazio privato non accetta ancora routine.",
+      "proactive": "Proattivo",
+      "proactiveWatch": "Sorveglia questo spazio",
+      "proactiveWatchHint": "Un agente legge cosa succede qui e scrive solo quando conta.",
+      "proactiveBrief": "Riepilogo giornaliero",
+      "proactiveBriefHint": "Un breve riepilogo alle 9:00 nei giorni con novità.",
+      "proactiveFailed": "L'impostazione non è stata salvata. Riprova.",
       "allSettings": "Tutte le impostazioni",
       "askHint": "Puoi anche chiederlo in chat: «aggiungi un agente qui», «fissa il documento del lancio come scheda»."
     },

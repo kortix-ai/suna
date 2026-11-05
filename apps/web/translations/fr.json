@@ -1347,6 +1347,10 @@
         "chat_front": {
           "name": "Spaces-Router",
           "description": "Avec les Espaces activés, l’agent avec qui vous discutez dans un fil est un routeur : il confie le travail à vos agents et vous répond comme une personne, en messages courts avec le résultat, un lien ou la décision à prendre. Vos agents partagent le fil par ses fichiers : le routeur transmet des chemins de fichiers, pas du texte recopié. « Voir le travail » sous un message ouvre le travail derrière. Nécessite My Kortix activé dans kortix.yaml."
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "Avec les Espaces activés, un espace peut se surveiller lui-même : activez Proactif dans ses détails, et un agent lit ce qui s’y passe (fils terminés, questions restées ouvertes, personnes qui arrivent) et n’écrit dans le chat que lorsque c’est utile : un résultat à partager, une décision à prendre ou un retard. Il peut aussi lancer un fil qui fait le travail. Point quotidien facultatif à 9 h."
         }
       },
       "channelsSwitch": {
@@ -25281,6 +25285,12 @@
       "routines": "Routines",
       "addRoutine": "Ajouter une routine",
       "routinesPrivate": "Un espace privé n’accepte pas encore de routines.",
+      "proactive": "Proactif",
+      "proactiveWatch": "Surveiller cet espace",
+      "proactiveWatchHint": "Un agent lit ce qui se passe ici et n’écrit que lorsque c’est utile.",
+      "proactiveBrief": "Point quotidien",
+      "proactiveBriefHint": "Un court résumé à 9 h les jours où il y a du nouveau.",
+      "proactiveFailed": "Le réglage n’a pas été enregistré. Réessayez.",
       "allSettings": "Tous les réglages",
       "askHint": "Vous pouvez aussi le demander dans le chat : « ajoute un agent ici », « épingle le document du lancement en onglet »."
     },

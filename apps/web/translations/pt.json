@@ -1347,6 +1347,10 @@
         "chat_front": {
           "name": "Spaces-Router",
           "description": "Com os Espaços ativados, o agente com quem você conversa numa thread é um roteador: passa o trabalho aos seus agentes e responde como uma pessoa, em mensagens curtas com o resultado, um link ou a decisão que você precisa tomar. Seus agentes compartilham a thread pelos arquivos dela, então o roteador passa caminhos de arquivo, não texto redigitado. \"Ver trabalho\" abaixo de uma mensagem abre o trabalho por trás dela. Requer o My Kortix ativado no kortix.yaml."
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "Com os Espaços ativados, um espaço pode vigiar a si mesmo: ative Proativo nos detalhes dele, e um agente lê o que acontece ali (threads concluídas, perguntas em aberto, pessoas que entram) e escreve no chat só quando importa: um resultado que vale compartilhar, uma decisão que você precisa tomar ou algo atrasado. Ele também pode iniciar uma thread que faz o trabalho. Resumo diário opcional às 9:00."
         }
       },
       "channelsSwitch": {
@@ -25281,6 +25285,12 @@
       "routines": "Rotinas",
       "addRoutine": "Adicionar rotina",
       "routinesPrivate": "Um espaço privado ainda não aceita rotinas.",
+      "proactive": "Proativo",
+      "proactiveWatch": "Vigiar este espaço",
+      "proactiveWatchHint": "Um agente lê o que acontece aqui e escreve só quando importa.",
+      "proactiveBrief": "Resumo diário",
+      "proactiveBriefHint": "Um resumo curto às 9:00 nos dias com novidades.",
+      "proactiveFailed": "A configuração não foi salva. Tente de novo.",
       "allSettings": "Todas as configurações",
       "askHint": "Você também pode pedir no chat: \"adicione um agente aqui\", \"fixe o documento do lançamento como aba\"."
     },

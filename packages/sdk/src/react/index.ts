@@ -272,6 +272,8 @@ export {
   useRemoveProjectSpaceLink,
   useSetProjectSpaceTabs,
   useUpdateProjectSpace,
+  useProjectSpaceProactive,
+  useSetProjectSpaceProactive,
 } from './use-project-spaces';
 // Session groups (`session_groups`): the project's shared folders of sessions.
 export {

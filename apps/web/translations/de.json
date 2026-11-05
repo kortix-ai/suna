@@ -1347,6 +1347,10 @@
         "chat_front": {
           "name": "Spaces-Router",
           "description": "Mit Spaces ist der Agent, mit dem Sie in einem Thread chatten, ein Router: Er gibt die Arbeit an Ihre Agenten weiter und schreibt zurück wie ein Mensch, in kurzen Nachrichten mit dem Ergebnis, einem Link oder der Entscheidung, die Sie treffen müssen. Ihre Agenten teilen den Thread über seine Dateien, daher gibt der Router Dateipfade weiter statt abgetippten Text. „Arbeit anzeigen“ unter einer Nachricht öffnet die Arbeit dahinter. Benötigt My Kortix in kortix.yaml."
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "Mit Spaces kann ein Space sich selbst beobachten: Schalten Sie in seinen Details Proaktiv ein, und ein Agent liest, was dort passiert (fertige Threads, offene Fragen, neue Mitglieder), und schreibt nur dann in den Chat, wenn es wichtig ist: ein Ergebnis, das sich zu teilen lohnt, eine Entscheidung, die Sie treffen müssen, oder etwas Überfälliges. Er kann auch einen Thread starten, der die Arbeit erledigt. Optional ein tägliches Briefing um 9:00."
         }
       },
       "channelsSwitch": {
@@ -25281,6 +25285,12 @@
       "routines": "Routinen",
       "addRoutine": "Routine hinzufügen",
       "routinesPrivate": "Ein privater Space nimmt noch keine Routinen an.",
+      "proactive": "Proaktiv",
+      "proactiveWatch": "Diesen Space beobachten",
+      "proactiveWatchHint": "Ein Agent liest, was hier passiert, und schreibt nur, wenn es wichtig ist.",
+      "proactiveBrief": "Tägliches Briefing",
+      "proactiveBriefHint": "Eine kurze Zusammenfassung um 9:00 an Tagen mit Neuigkeiten.",
+      "proactiveFailed": "Die Einstellung wurde nicht gespeichert. Versuchen Sie es erneut.",
       "allSettings": "Alle Einstellungen",
       "askHint": "Du kannst auch im Chat fragen: „füge hier einen Agenten hinzu“, „heft das Launch-Dokument als Tab an“."
     },
