@@ -54,7 +54,7 @@ describe('ApprovalRequest', () => {
         onDecision={() => undefined}
       />,
     );
-    expect(named).toContain('Waiting for Ada or anyone who manages this project to approve or deny it.');
+    expect(named).toContain('Waiting for Ada or anyone who manages this workspace to approve or deny it.');
     expect(named).not.toContain('Approve this call');
     expect(named).not.toContain('>Deny<');
     expect(named).toContain('sam@example.test');
@@ -62,7 +62,7 @@ describe('ApprovalRequest', () => {
     const plain = renderToStaticMarkup(
       <ApprovalRequest request={{ ...request, canResolve: false }} onDecision={() => undefined} />,
     );
-    expect(plain).toContain('Waiting for the person who started this session or anyone who manages this project to approve or deny it.');
+    expect(plain).toContain('Waiting for the person who started this session or anyone who manages this workspace to approve or deny it.');
 
     // A session started with an API token: its launcher does not decide.
     const managers = renderToStaticMarkup(
@@ -72,7 +72,7 @@ describe('ApprovalRequest', () => {
         onDecision={() => undefined}
       />,
     );
-    expect(managers).toContain('Waiting for anyone who manages this project to approve or deny it.');
+    expect(managers).toContain('Waiting for anyone who manages this workspace to approve or deny it.');
     expect(managers).not.toContain('Ada');
   });
 

@@ -53,14 +53,14 @@ in Linear. Anything customer-facing waits for a person before it sends.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the email-triage skill and the
 15-minute trigger, and opens a change request for you to review.
 Prefer clicks? Choose **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a shared inbox triage agent in this project.
+  code={`Set up a shared inbox triage agent in this workspace.
 
 1. Create the agent agents/inbox-triage.md. Its job is to label every new message in the shared Gmail inbox, draft replies from the help doc and file tickets in Linear. It may use the Gmail, Linear and Notion connectors.
 
@@ -81,7 +81,7 @@ Prefer clicks? Choose **Use this template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect Gmail, Linear and Notion.
+Open **Connectors** in your workspace and connect Gmail, Linear and Notion.
 Credentials are brokered server-side and never enter the agent's machine.
 
 <ToolList>
@@ -119,7 +119,7 @@ the schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every 15 minutes, each run in a new session on its own cloud computer.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

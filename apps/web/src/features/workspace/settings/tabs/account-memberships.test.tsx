@@ -41,7 +41,7 @@ describe('AccountMembershipsSection', () => {
    * No `accountTab`. `account-hub-content.tsx` falls back to `members` when the
    * param is absent or unknown (`VALID_TABS`), which is the section a reader
    * arriving from "which organizations am I in" is asking about — and it is
-   * the same bare target the workspace switcher's "Account settings" row and
+   * the same bare target the workspace switcher's "Workspace settings" row and
    * the Members pane's "Organization account settings" row already use. One
    * account link in the product, one destination.
    */
@@ -53,7 +53,7 @@ describe('AccountMembershipsSection', () => {
 
   test('names the section and states what lives behind the link', () => {
     const out = renderToStaticMarkup(<AccountMembershipsSection accounts={[account()]} />);
-    expect(out).toMatch(/<h3[^>]*>Organizations<\/h3>/);
+    expect(out).toMatch(/<h3[^>]*>Workspaces<\/h3>/);
     expect(out).toMatch(/Members, billing, roles, and audit/);
   });
 
@@ -85,7 +85,7 @@ describe('AccountMembershipsSection', () => {
     const out = renderToStaticMarkup(
       <AccountMembershipsSection accounts={[account({ name: '   ' })]} />,
     );
-    expect(rowLabels(out)).toEqual(['Account']);
+    expect(rowLabels(out)).toEqual(['Workspace']);
   });
 
   /**
@@ -102,7 +102,7 @@ describe('AccountMembershipsSection', () => {
 
   test('while loading it holds the section open with one shape-matched skeleton row', () => {
     const out = renderToStaticMarkup(<AccountMembershipsSection isLoading accounts={[]} />);
-    expect(out).toMatch(/<h3[^>]*>Organizations<\/h3>/);
+    expect(out).toMatch(/<h3[^>]*>Workspaces<\/h3>/);
     expect(out).toContain('animate-pulse');
     // No row and no link may be claimed before the list answers.
     expect(rowLabels(out)).toEqual([]);

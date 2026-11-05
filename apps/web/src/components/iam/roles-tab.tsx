@@ -399,7 +399,7 @@ function RoleRow({
       meta={
         <div className="space-y-0.5">
           <InlineMeta>
-            <span>{role.resource_type === 'account' ? 'Account' : 'Project'}</span>
+            <span>{role.resource_type === 'account' ? 'Account' : 'Workspace'}</span>
             <span>{capabilityLabel}</span>
             {usageLabel ? <span>{usageLabel}</span> : null}
           </InlineMeta>

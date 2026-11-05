@@ -16,7 +16,7 @@ Kortix is open source. Read it, fork it, audit it ([Kortix on GitHub](https://gi
 
 ## What the Free plan includes
 
-The cloud Free plan is $0 and asks for no card. It includes 500 credits a month and 1 project, and it runs on your own provider keys or the ChatGPT subscription you already pay for ([Kortix pricing](https://kortix.com/pricing), checked October 2026). Managed models are a Credits feature: on Free, every Kortix-managed model returns `plan_upgrade_required`, and the monthly credits pay for compute and your own models only ([plans and credits](https://kortix.com/docs/credits), checked October 2026). On Credits, the balance pays for the agent computer and for Kortix models, which are DeepSeek and GLM, with zero data retention at the model provider. The grant refills every month. It buys agent-computer time the same way a paid balance does.
+The cloud Free plan is $0 and asks for no card. It includes 500 credits a month and 1 workspace, and it runs on your own provider keys or the ChatGPT subscription you already pay for ([Kortix pricing](https://kortix.com/pricing), checked October 2026). Managed models are a Credits feature: on Free, every Kortix-managed model returns `plan_upgrade_required`, and the monthly credits pay for compute and your own models only ([plans and credits](https://kortix.com/docs/credits), checked October 2026). On Credits, the balance pays for the agent computer and for Kortix models, which are DeepSeek and GLM, with zero data retention at the model provider. The grant refills every month. It buys agent-computer time the same way a paid balance does.
 
 ## Credits buy work, not headcount
 

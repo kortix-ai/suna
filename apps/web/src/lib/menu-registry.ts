@@ -411,7 +411,7 @@ export const menuRegistry: MenuItemDef[] = [
     // (`/v1/projects`), the CLI (`kortix projects`), `kortix.yaml` and the DB
     // all say it, and renaming those would break a published SDK's public
     // surface and every existing link.
-    label: 'Switch project',
+    label: 'Switch workspace',
     icon: FolderGit2,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -447,7 +447,7 @@ export const menuRegistry: MenuItemDef[] = [
     // A keyword belongs on a row only when it names that row — a synonym, an
     // alias, or something the row itself contains. Words that name a
     // neighbouring row's subject are removed on sight.
-    keywords: 'accounts teams organizations switch manage',
+    keywords: 'workspaces accounts teams organizations switch manage',
   },
   {
     id: 'proj-home',
@@ -701,7 +701,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-members',
-    label: 'Project members',
+    label: 'Workspace members',
     icon: UsersSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -1096,7 +1096,7 @@ export const menuRegistry: MenuItemDef[] = [
     // heading both say Settings, and a palette row must not promise a name the
     // page does not use. `general` and `organization` stay in the keyword bag,
     // which is where the overlay-era names belong.
-    label: 'Account · Settings',
+    label: 'Workspace · Settings',
     icon: CogOne,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1105,11 +1105,11 @@ export const menuRegistry: MenuItemDef[] = [
     // preview, and deletion.
     accountTab: 'settings',
     keywords:
-      'general organization org company name sign in rules teams manage security mfa danger zone rename delete',
+      'general workspace organization org company name sign in rules teams manage security mfa danger zone rename delete',
   },
   {
     id: 'account-members',
-    label: 'Account · Members',
+    label: 'Workspace · Members',
     icon: UsersSolid,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1118,11 +1118,11 @@ export const menuRegistry: MenuItemDef[] = [
     // 'members' alone stays off this row: it names the project settings
     // Members tab, which is a different roster. These words name the ACCOUNT
     // roster specifically.
-    keywords: 'account members organization roster owners admins',
+    keywords: 'workspace account members organization roster owners admins',
   },
   {
     id: 'account-billing',
-    label: 'Account · Billing',
+    label: 'Workspace · Billing',
     icon: CreditCardSolid,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1134,7 +1134,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-usage',
-    label: 'Account · Usage',
+    label: 'Workspace · Usage',
     icon: Coins,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1155,7 +1155,7 @@ export const menuRegistry: MenuItemDef[] = [
     // agents". Both were reachable from the palette as one word — "members" —
     // which returned the organization list only. `proj-members` is the same
     // pane pre-scoped to the workspace you are standing in.
-    label: 'Account · Projects',
+    label: 'Workspace · Workspaces',
     icon: FolderOpen,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1165,7 +1165,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-git',
-    label: 'Account · Git',
+    label: 'Workspace · Git',
     icon: FolderGit2,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1175,7 +1175,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-groups',
-    label: 'Account · Groups',
+    label: 'Workspace · Groups',
     icon: UsersSolid,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1185,7 +1185,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-roles',
-    label: 'Account · Roles',
+    label: 'Workspace · Roles',
     icon: ShieldCheck,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1195,7 +1195,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-identity',
-    label: 'Account · Identity',
+    label: 'Workspace · Identity',
     icon: ShieldCheck,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1205,7 +1205,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-branding',
-    label: 'Account · Branding',
+    label: 'Workspace · Branding',
     icon: PaintBrush,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1219,7 +1219,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-audit',
-    label: 'Account · Audit log',
+    label: 'Workspace · Audit log',
     icon: ScrollText,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1229,7 +1229,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-help',
-    label: 'Account · Permissions help',
+    label: 'Workspace · Permissions help',
     icon: QuestionMark,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1242,7 +1242,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-tokens',
-    label: 'Account · Service account tokens',
+    label: 'Workspace · Service account tokens',
     icon: KeyRound,
     group: 'account',
     showIn: ['commandPalette'],

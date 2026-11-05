@@ -45,7 +45,7 @@ describe('the plan access notice', () => {
   test('a member sees the offer and who accepts it', () => {
     const markup = render({ enterprise_offer: offer, can_manage_billing: false });
     expect(markup).not.toContain('Accept and pay');
-    expect(markup).toContain('An account owner or admin accepts the offer.');
+    expect(markup).toContain('A workspace owner or admin accepts the offer.');
   });
 
   test('an invoiced offer has no Accept button', () => {

@@ -97,7 +97,7 @@ describe('accountHubCrumbs', () => {
         { accountId: id, activeSection: 'access-projects', accountName: 'Acme' },
         testUiTranslator,
       ),
-    ).toEqual([root, account, { label: 'Projects' }]);
+    ).toEqual([root, account, { label: 'Workspaces' }]);
   });
 
   test('the account crumb is pending until the record has loaded', () => {
@@ -159,7 +159,7 @@ describe('accountHubCrumbs', () => {
     ).toEqual([
       root,
       account,
-      { label: 'Projects', to: { accountId: id, params: { tab: 'access-projects' } } },
+      { label: 'Workspaces', to: { accountId: id, params: { tab: 'access-projects' } } },
       { label: 'Website' },
     ]);
   });

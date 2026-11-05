@@ -1607,7 +1607,7 @@ const OVERRIDE_ENTITLEMENT_ROWS: {
   title: string;
   description: string;
 }[] = [
-  { key: 'sso', title: 'SSO', description: 'SAML / OIDC single sign-on for the account.' },
+  { key: 'sso', title: 'SSO', description: 'SAML / OIDC single sign-on for the workspace.' },
   { key: 'scim', title: 'SCIM', description: 'Directory-driven user provisioning.' },
   {
     key: 'rbac',
@@ -1617,11 +1617,11 @@ const OVERRIDE_ENTITLEMENT_ROWS: {
   {
     key: 'auditAccess',
     title: 'Audit log access',
-    description: "Read access to the account's own audit trail.",
+    description: "Read access to the workspace's own audit trail.",
   },
   {
     key: 'branding',
-    title: 'Organization branding',
+    title: 'Workspace branding',
     description: 'Own logo, icon, favicon, and product name for every member.',
   },
   {

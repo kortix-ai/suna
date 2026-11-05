@@ -54,13 +54,13 @@ review and send.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the recap skill and the 15-minute trigger, and opens a change request for you to review. Prefer
 clicks? Choose **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a sales call follow-up agent in this project.
+  code={`Set up a sales call follow-up agent in this workspace.
 
 1. Create the agent agents/sales-call-followup.md. Its job is to turn each finished sales call into an updated deal, follow-up tasks and a drafted recap email. It may use the Google Drive, HubSpot and Linear connectors.
 
@@ -81,7 +81,7 @@ clicks? Choose **Use this template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect the Drive folder your call
+Open **Connectors** in your workspace and connect the Drive folder your call
 recorder writes to, your CRM and your task tracker. Credentials are brokered
 server-side and never enter the agent's machine.
 
@@ -120,7 +120,7 @@ before you let the schedule take over.
 The change request added this trigger to `kortix.yaml`. From now on the agent
 checks for new transcripts every 15 minutes, and each call runs in a new
 session on its own cloud computer. To change the interval, edit the cron line,
-or open **Triggers** in the project.
+or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

@@ -59,7 +59,7 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
       {
         tab: 'profile',
         label: 'Profile',
-        description: 'Your picture, name, email, and organizations.',
+        description: 'Your picture, name, email, and workspaces.',
         icon: User,
       },
       {
@@ -197,13 +197,13 @@ export const RETIRED_RAIL_ITEMS: readonly RailItem[] = [
   {
     tab: 'credits',
     label: 'Credits',
-    description: 'What this account has left to spend, and what it spent this period.',
+    description: 'What this workspace has left to spend, and what it spent this period.',
     icon: Coins,
   },
   {
     tab: 'plan',
     label: 'Plan',
-    description: 'Your plan, credits, and billing for this account.',
+    description: 'Your plan, credits, and billing for this workspace.',
     icon: CreditCard,
   },
 ];

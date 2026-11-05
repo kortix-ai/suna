@@ -594,7 +594,7 @@ const BINDING_SEARCH_MIN = 7;
 
 const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']; label: string }> =
   [
-    { value: 'project_open', label: 'Project members can join' },
+    { value: 'project_open', label: 'Workspace members can join' },
     { value: 'owner_only', label: 'Owner only' },
     { value: 'owner_approval', label: 'Owner approval' },
   ];
@@ -611,7 +611,7 @@ function policyDescription(
 
 /** Label for the synthetic agent-picker entry meaning "inherit the project's default agent". */
 function agentDefaultLabel(projectDefaultAgent: string | null): string {
-  return projectDefaultAgent ? `Project default (${projectDefaultAgent})` : 'Project default';
+  return projectDefaultAgent ? `Project default (${projectDefaultAgent})` : 'Workspace default';
 }
 
 /** Bare model id → the compact form callers below already assume (`kortix/x` → `x`). */
@@ -633,7 +633,7 @@ function describeEffectiveModel(binding: ChannelBinding): string {
       : `${label} (unavailable — using default)`;
   }
   const resolved = binding.effectiveModel.model;
-  return resolved ? `Project default (${stripGatewayNamespace(resolved)})` : 'Project default';
+  return resolved ? `Project default (${stripGatewayNamespace(resolved)})` : 'Workspace default';
 }
 
 function BindingBrandMark({ platform }: { platform: string }) {

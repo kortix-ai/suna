@@ -279,7 +279,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       mark: 'kortix',
       category: 'Software',
       title: 'Kortix, run on Kortix.',
-      body: 'Our company is one Kortix project. Agents triage and fix issues, keep SOC 2 evidence current and run sales and support. People approve.',
+      body: 'Our company is one Kortix workspace. Agents triage and fix issues, keep SOC 2 evidence current and run sales and support. People approve.',
       facts: [
         'Issues triaged by an intake agent',
         'Up to 16 worker agents at once',

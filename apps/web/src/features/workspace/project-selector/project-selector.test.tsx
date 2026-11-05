@@ -55,10 +55,10 @@ describe('ProjectSelectorView', () => {
     expect(html).toContain('Welcome to Kortix CompanyOS');
     expect(html).toContain('data-testid="selector-create"');
     expect(html).toContain('href="/new?account=a"');
-    expect(html).not.toContain('Project name');
-    expect(html).not.toContain('or open an existing project');
+    expect(html).not.toContain('Workspace name');
+    expect(html).not.toContain('or open an existing workspace');
     // The empty account the card targets is not listed a second time.
-    expect(html).not.toContain('No projects in this workspace yet.');
+    expect(html).not.toContain('No workspaces yet.');
   });
 
   test('a second empty account the card does not target keeps its own create row', () => {
@@ -73,7 +73,7 @@ describe('ProjectSelectorView', () => {
       }),
     });
     expect(html).toContain('href="/new?account=b"');
-    expect(html).toContain('No projects in this workspace yet.');
+    expect(html).toContain('No workspaces yet.');
   });
 
   test('returning user: every project is a link to its page, grouped under the account', () => {
@@ -85,10 +85,10 @@ describe('ProjectSelectorView', () => {
     });
     expect(html).toContain('Welcome back');
     expect(html).toContain('Acme');
-    expect(html).toContain('Owner · 2 projects');
+    expect(html).toContain('Owner · 2 workspaces');
     expect(html).toContain('href="/projects/p1"');
     expect(html).toContain('href="/projects/p2"');
-    expect(html).toContain('or open an existing project');
+    expect(html).toContain('or open an existing workspace');
   });
 
   test('invites render first with Join and the recipient email', () => {
@@ -112,7 +112,7 @@ describe('ProjectSelectorView', () => {
 
   test('no account, no invite, no create right: the no-access message names the email', () => {
     const html = render({ createHref: null, sections: [] });
-    expect(html).toContain('No projects yet');
+    expect(html).toContain('No workspaces yet');
     expect(html).toContain('Ask an owner or admin to invite user@example.com.');
   });
 
@@ -129,9 +129,9 @@ describe('ProjectSelectorView', () => {
     const partial = render({
       sections: buildAccountSections({ accounts: [account('a', 'owner', 'Acme')], lists: [{ accountId: 'a', data: undefined, isError: true }] }),
     });
-    expect(partial).toContain('Could not load these projects.');
+    expect(partial).toContain('Could not load these workspaces.');
     const total = render({ loadFailed: true });
-    expect(total).toContain('Could not load your projects');
+    expect(total).toContain('Could not load your workspaces');
     expect(total).not.toContain('data-testid="selector-create"');
   });
 

@@ -26,7 +26,7 @@ import { MANIFEST } from './content';
 export const hero = {
   title: 'Company as code.',
   titleMuted: 'A backend framework and server for agents.',
-  sub: 'A project is a git repo. Every agent in it is a custom pi agent: a minimal open-source harness you extend with pi extensions. kortix.yaml declares the agents, connectors, triggers and rules. Kortix deploys them to the cloud and runs every session on its own computer. Build your own experience with @kortix/sdk and @kortix/ui.',
+  sub: 'A workspace is backed by a git repo. Every agent in it is a custom pi agent: a minimal open-source harness you extend with pi extensions. kortix.yaml declares the agents, connectors, triggers and rules. Kortix deploys them to the cloud and runs every session on its own computer. Build your own experience with @kortix/sdk and @kortix/ui.',
   caption: 'One file in one repo.',
   captionMuted: 'Kortix runs what it declares.',
 } as const;
@@ -388,7 +388,7 @@ export const architecture = {
     v: 'Decides who may run which agent, starts sessions, holds connector logins and change requests.',
   },
   repo: {
-    k: 'Project repository',
+    k: 'Workspace repository',
     v: 'kortix.yaml, agents, skills and memory. Kortix hosts it, or you link GitHub.',
   },
   computer: {

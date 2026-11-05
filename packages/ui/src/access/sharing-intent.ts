@@ -30,7 +30,7 @@ export interface SharingCopy {
 
 export const DEFAULT_COPY: SharingCopy = {
   heading: 'Who can access this',
-  project: { label: 'Project-wide', desc: 'Every member of this project' },
+  project: { label: 'Workspace-wide', desc: 'Every member of this workspace' },
   private: { label: 'Only me', desc: 'Just you' },
   members: {
     label: 'Specific members or groups',

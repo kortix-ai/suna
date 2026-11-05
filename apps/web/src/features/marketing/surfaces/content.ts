@@ -368,7 +368,7 @@ const CLI: SurfaceContent = {
     tabs: [
       {
         id: 'start',
-        title: 'Start a project',
+        title: 'Start a workspace',
         description: 'init, then ship.',
         body: [
           '`kortix init` creates a project folder with its `kortix.yaml`. `kortix ship` validates it, commits, and on the first run creates the cloud project.',

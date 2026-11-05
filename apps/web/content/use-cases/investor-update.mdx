@@ -54,14 +54,14 @@ usual format as a document. A founder edits it and sends it.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the investor-update-draft skill and the
 monthly trigger, and opens a change request for you to review.
 Prefer clicks? Choose **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a monthly investor update agent in this project.
+  code={`Set up a monthly investor update agent in this workspace.
 
 1. Create the agent agents/investor-update.md. Its job is to draft the monthly investor update from our metrics. It may use the PostgreSQL, Stripe and Google Docs connectors.
 
@@ -82,7 +82,7 @@ Prefer clicks? Choose **Use this template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect PostgreSQL, Stripe and
+Open **Connectors** in your workspace and connect PostgreSQL, Stripe and
 Google Docs. Use a read-only database user for PostgreSQL. Credentials are
 brokered server-side and never enter the agent's machine.
 
@@ -121,7 +121,7 @@ before you let the schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs on the 1st of every month at 06:00, each run in a new session on its own cloud computer.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

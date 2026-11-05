@@ -94,9 +94,9 @@ describe('ProfileTabView', () => {
     });
 
     test('sits under the identity rows and above Danger zone', () => {
-      expect(headings(withAccounts())).toEqual(['Profile', 'Organizations', 'Danger zone']);
+      expect(headings(withAccounts())).toEqual(['Profile', 'Workspaces', 'Danger zone']);
       expect(withAccounts().indexOf('>Email<')).toBeLessThan(
-        withAccounts().indexOf('Organizations'),
+        withAccounts().indexOf('Workspaces'),
       );
     });
 

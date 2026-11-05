@@ -88,8 +88,8 @@ afterEach(() => {
 test('accounts load only on open; an account failure is retryable without enabling transfer', async () => {
   expect(listAccounts).not.toHaveBeenCalled();
   listAnswer = async () => { throw new Error('accounts unavailable'); };
-  await click('Transfer project');
-  expect(button('Move project').disabled).toBe(true);
+  await click('Transfer workspace');
+  expect(button('Move workspace').disabled).toBe(true);
   expect(document.querySelector('[role="combobox"]')).toBeNull();
   listAnswer = async () => accounts;
   await click('Retry');
@@ -100,13 +100,13 @@ test('accounts load only on open; an account failure is retryable without enabli
 });
 
 test('cancel closes the real dialog and resets the selected destination on reopen', async () => {
-  await click('Transfer project');
+  await click('Transfer workspace');
   await chooseDestination();
-  await click('Keep project');
+  await click('Keep workspace');
   expect(document.querySelector('[role="alertdialog"]')).toBeNull();
-  await click('Transfer project');
-  expect(button('Move project').disabled).toBe(true);
-  expect(document.querySelector('[role="combobox"]')?.textContent).toContain('Choose an organization');
+  await click('Transfer workspace');
+  expect(button('Move workspace').disabled).toBe(true);
+  expect(document.querySelector('[role="combobox"]')?.textContent).toContain('Choose a workspace');
   expect(transferProject).not.toHaveBeenCalled();
 });
 
@@ -115,17 +115,17 @@ test('confirmation sends SDK IDs, blocks duplicate/cancel while pending, invalid
   transferAnswer = () => new Promise((done) => { resolve = done; });
   const invalidate = mock(client.invalidateQueries.bind(client));
   client.invalidateQueries = invalidate;
-  await click('Transfer project');
+  await click('Transfer workspace');
   await chooseDestination();
   await click('Move to Destination');
   expect(transferProject).toHaveBeenCalledWith('project-1', 'destination');
   expect(button('Move to Destination…').disabled).toBe(true);
-  expect(button('Keep project').disabled).toBe(true);
+  expect(button('Keep workspace').disabled).toBe(true);
   expect(replace).not.toHaveBeenCalled();
   await act(async () => resolve({ success: true }));
   await flush();
   expect(transferProject).toHaveBeenCalledTimes(1);
-  expect(success).toHaveBeenCalledWith('Project transferred');
+  expect(success).toHaveBeenCalledWith('Workspace transferred');
   expect(forget).toHaveBeenCalledWith('user-1', 'project-1');
   expect(close).toHaveBeenCalledTimes(1);
   expect(invalidate).toHaveBeenCalledWith({ queryKey: qk.projects.scope() });
@@ -136,7 +136,7 @@ test('confirmation sends SDK IDs, blocks duplicate/cancel while pending, invalid
 
 test('a rejected transfer reports the API error and keeps the destination available for retry without leaving', async () => {
   transferAnswer = async () => { throw new Error('Target project limit reached'); };
-  await click('Transfer project');
+  await click('Transfer workspace');
   await chooseDestination();
   await click('Move to Destination');
   expect(error).toHaveBeenCalledWith('Target project limit reached');

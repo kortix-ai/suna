@@ -135,12 +135,12 @@ describe('ProjectIconField trigger', () => {
   test('names the control for assistive tech in all three states', () => {
     // frimousse/the glyph grid give the trigger no visible text, so the
     // aria-label is the control's only accessible name.
-    expect(render({ value: null })).toContain('aria-label="Choose project icon"');
+    expect(render({ value: null })).toContain('aria-label="Choose workspace icon"');
     expect(render({ value: { emoji: '🚀' } })).toContain(
-      'aria-label="Project icon: 🚀. Change it"',
+      'aria-label="Workspace icon: 🚀. Change it"',
     );
     expect(render({ value: { glyph: ROCKET_BLUE } })).toContain(
-      'aria-label="Project icon: Rocket. Change it"',
+      'aria-label="Workspace icon: Rocket. Change it"',
     );
   });
 

@@ -405,10 +405,11 @@ describe('copy quality', () => {
 
   test('no internal navigation paths or product jargon reach the user', () => {
     // "Customize → Members" and "Kortix workspace" both shipped in the previous
-    // copy. Neither means anything to someone who cannot open the project.
+    // copy. Neither means anything to someone who cannot open the workspace.
+    // Since 2026-11-05 "workspace" is the product noun and "project" is retired.
     const banned = [
       /customize/i,
-      /workspace/i,
+      /\bprojects?\b/i,
       /→/,
       /viewer/i,
       /endpoint/i,
