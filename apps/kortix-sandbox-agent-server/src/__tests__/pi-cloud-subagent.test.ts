@@ -18,6 +18,7 @@ import { describe, expect, test } from 'bun:test'
 import { FRONT_TOOLS, fetchFrontAgents, frontAgentsFromDetail, frontAgentsSection, frontCall, frontContextBlock, frontTaskName, frontThreadFilesFrom } from '@/harness/pi/front'
 import {
   childToolAllowlist,
+  cloudChildToolDetails,
   cloudSpawnSession,
   cloudStopChild,
   cloudSubagentApiFrom,
@@ -707,5 +708,61 @@ describe('the router (front.ts) — routing', () => {
       throw new Error('network')
     }) as unknown as typeof fetch
     expect(await fetchFrontAgents({ apiUrl: 'http://api.test', projectId: 'p', token: 't' }, thrown)).toBeNull()
+  })
+})
+
+describe('cloudChildToolDetails: a child\'s saved tool details come from its session log', () => {
+  const CHILD = '00000000-0000-4000-8000-0000000000c1'
+  const call = (id: string, name: string, status: 'complete' | 'error' | 'running', details?: Record<string, unknown>) => ({
+    id: `blk_${id}`, type: 'tool_call', call_id: `call_${id}`, name, kind: 'other', input: {}, status,
+    ...(status === 'running' ? {} : { result: { content: [{ type: 'text', text: 'done' }], is_error: status === 'error', ...(details ? { details } : {}) } }),
+  })
+  const message = (id: string, seq: number, role: 'user' | 'assistant', blocks: unknown[]) => ({
+    message_id: id, thread_id: 'ses_child', seq, role, kind: 'turn', status: 'complete', in_context: true,
+    model: null, usage: null, finish: role === 'assistant' ? 'stop' : null, error: null,
+    created_at: `2026-11-05T10:00:0${seq}.000Z`, completed_at: `2026-11-05T10:00:0${seq}.500Z`,
+    producer: { harness: 'pi', version: '1.4.0' }, blocks,
+  })
+  const page = {
+    session: { title: 'runner', created_at: '2026-11-05T10:00:00.000Z' },
+    generation: 1,
+    threads: [{ thread_id: 'ses_child', parent_thread_id: null, spawned_by: null, agent: 'workflow-runner', title: null, created_at: '2026-11-05T10:00:00.000Z' }],
+    thread_id: 'ses_child',
+    messages: [
+      message('msg_1', 1, 'user', [{ id: 'blk_t', type: 'text', text: 'run it' }]),
+      message('msg_2', 2, 'assistant', [
+        call('a', 'workflow', 'complete', { run: 'doc-1' }),
+        call('b', 'bash', 'complete', { exit: 0 }),
+        call('c', 'workflow', 'error', { run: 'doc-2', failed: true }),
+        call('d', 'workflow', 'running'),
+      ]),
+    ],
+    has_more: false,
+  }
+
+  function fake(parent: string | null) {
+    const urls: string[] = []
+    const impl = (async (input: string | URL | Request) => {
+      const url = String(input)
+      urls.push(url.replace('https://api.example.com', ''))
+      if (url.endsWith(`/sessions/${CHILD}`)) return Response.json({ session_id: CHILD, parent_session_id: parent })
+      if (url.includes(`/sessions/${CHILD}/log?`)) return Response.json(page)
+      return new Response('not found', { status: 404 })
+    }) as typeof fetch
+    return { impl, urls }
+  }
+
+  // The details `toV1` gives each call, as the API's v1 view (`transcript?shape=sync`) gave them:
+  // a completed call keeps its details; a pi call that failed without an exit code carries none.
+  test('returns the details of each completed call of the tool, oldest first, and reads only the log', async () => {
+    const { impl, urls } = fake(PARENT)
+    expect(await cloudChildToolDetails(api(impl), CHILD, 'workflow')).toEqual([{ run: 'doc-1' }])
+    expect(urls).toEqual([`/v1/projects/proj-1/sessions/${CHILD}`, `/v1/projects/proj-1/sessions/${CHILD}/log?limit=40`])
+  })
+
+  test('a session that is not this session\'s child answers null and reads no log', async () => {
+    const { impl, urls } = fake('00000000-0000-4000-8000-0000000000ff')
+    expect(await cloudChildToolDetails(api(impl), CHILD, 'workflow')).toBeNull()
+    expect(urls).toHaveLength(1)
   })
 })
