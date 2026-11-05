@@ -45,10 +45,10 @@ always `pi`. `pi`, `opencode` and an unset value select pi; any other value
 fails the boot. Images built after 2026-10-30 carry no OpenCode binary, its
 config deps or its config dir. `loadConfig` reads the id BEFORE pi loads its
 own environment. There is no per-request switching: one box, one harness, for
-the life of the box. A new box of a session that OpenCode ran boots pi. With
-`session_log_restore` on, that box restores the log into pi and records the
-switch in `harness.history` ("Harness history, a switch" below). A box that
-OpenCode booted always restores ("OpenCode is deleted" above).
+the life of the box. A new box of a session that OpenCode ran boots pi. That
+box restores the log into pi and records the switch in `harness.history`
+("Harness history, a switch" below), as a box that OpenCode booted does
+("OpenCode is deleted" above).
 `POST /v1/projects/:p/sessions/:s/log/switch-preflight` (apps/api) answers
 before that happens: whether the switch can happen (`available`, `reason`:
 `same_harness`), whether the new box restores the
@@ -277,14 +277,13 @@ awaits it before `lifecycle.start()`; the runtime adopts the root the dump names
 at start, so a service built before the restore runs under the log's root. No
 turn runs at that point.
 
-- **The flag.** apps/api sets `KORTIX_SESSION_LOG_RESTORE=1` when the hidden
-  project flag `session_log_restore` is on (every provisioning path:
-  `buildSessionSandboxEnvVars`). Off: no manifest read, no restore; the box
-  keeps its native state and journals at its persisted generation (0 when it
-  never restored). The env is built when a box is provisioned, so a change of
-  the flag reaches the next new box of a session; a box that is already running
-  (or resumed in place) keeps the value it booted with. `loadConfig` also sets
-  it on a box that OpenCode booted ("OpenCode is deleted" above).
+- **Every boot.** The project flag `session_log_restore` graduated on
+  2026-11-05: every box reads the manifest at boot. apps/api still sets
+  `KORTIX_SESSION_LOG_RESTORE=1` on every box (`buildSessionSandboxEnvVars`),
+  because a daemon older than the graduation skips the reconcile without it.
+  Delete that line once the runtime floor excludes those daemons. The off
+  switch is the API's `SESSION_LOG_RESTORE_ENABLED=false`: `POST …/log/restore`
+  answers 503, which claims nothing, and the box keeps its native state.
 - **Behind.** `GET …/log/manifest` lists every stored message id (`deleted` for
   a tombstone) and the session generation. The store is behind when the log
   holds a live message and: `held()` is null (no store), or the manifest
@@ -299,10 +298,8 @@ turn runs at that point.
   sends the batch again, so the session log keeps the old history and the new
   turns after it. The offsets persist in `session-log-restore.json` for a
   restarted daemon; a restore writes the store at the log's seqs and clears
-  them. This path runs only where `session_log_restore` is off: a project
-  that stores `false`, or a deployment that sets
-  `SESSION_LOG_RESTORE_DEFAULT_ENABLED=false` (the default is on since
-  2026-10-28).
+  them. This path runs only where the restore answers 503: a deployment that
+  sets `SESSION_LOG_RESTORE_ENABLED=false`.
 - **Unsent work never reads as behind.** Only ids are compared, one way: a
   message the store holds that the log lacks (a turn not yet journaled) and a
   newer version of a stored message leave the store current.
@@ -441,9 +438,9 @@ store a box already holds: a box with a large store loads it at boot (`held()`)
 before any restore. A fresh box drops only an attachment whose record still
 says `blob:` (P2.13 uploads the bytes). Precondition for prod default-on: a
 release whose kortixd handles the 413 (an older kortixd boots without the
-restore and its journal stops at 409). `session_log_restore` is on for every
-project without a stored value: dev since 2026-10-15, every deployment since
-2026-10-28 (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` defaults to true).
+restore and its journal stops at 409). The restore was on by default on dev
+from 2026-10-15 and on every deployment from 2026-10-28, and it is no flag
+since 2026-11-05.
 
 Known limits of the boot reconcile:
 - Losing `session-log-restore.json` after a restore reads as behind (the

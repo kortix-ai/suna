@@ -99,7 +99,7 @@
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
  *
- * The same state also serves INTERNAL-ONLY surfaces (`session_log_restore`):
+ * The same state also serves INTERNAL-ONLY surfaces (`workspace_volume`):
  * not offered in Settings, enabled per project by a
  * Kortix operator on request. Their 403 says "contact Kortix" instead of
  * naming a toggle the caller cannot see (gate.ts).
@@ -389,28 +389,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // `session_log` graduated (2026-10-22, P8.2): the session log is every session's
   // saved history and the v1 transcript mirror is no longer read. No flag and no
   // operator lever. A stored `experimental.session_log` override is inert.
-  {
-    key: 'session_log_restore',
-    name: 'Session log restore',
-    description:
-      'Rebuild a session from its saved session log when its computer lost the conversation. Not a Settings toggle: on by default; Kortix turns it off per project, or for a whole deployment.',
-    stability: 'experimental',
-    available: () => true,
-    // On unless the deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED=false (on by default since 2026-10-28).
-    platformDefault: () => config.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
-    // Internal-only (2026-10-13): not a Settings toggle. A Kortix operator sets it per project
-    // (PUT /v1/admin/api/projects/:id/features). While on, Settings lists it read-only.
-    catalogHidden: true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only. Session provisioning sets KORTIX_SESSION_LOG_RESTORE=1 in the box env ' +
-      '(projects/lib/session-sandbox-env-build.ts). On, kortixd restores the harness native store ' +
-      'from the session log at boot when the store is missing or behind the log ' +
-      '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
-      'attachment bytes (P2.13), so a restore keeps images and files. On by default; a deployment ' +
-      'turns the default off with SESSION_LOG_RESTORE_DEFAULT_ENABLED=false. A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
-      '(24 MiB) answers 413 with what the model sees of it, else the newest turns, else the D3 note alone (harness/README.md).',
-  },
+  // `session_log_restore` graduated (2026-11-05): every box reads the session-log
+  // manifest at boot and restores its native store when it is missing or behind
+  // (kortixd harness/shared/session-log-boot.ts). The only off switch is the
+  // deployment's SESSION_LOG_RESTORE_ENABLED (the restore answers 503). A stored
+  // `experimental.session_log_restore` override is inert; the serializer keeps
+  // sending `true` for older SDKs and hosts.
   // `connectors_v2` graduated (2026-10-24): the Kortix catalog (MCP apps,
   // integrations.sh, Composio), Telegram as a channel connector, the Kortix
   // app-event source (under `event_triggers`) and no seeded empty project
@@ -462,9 +446,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'workspace_volume',
-    name: 'Workspace volume',
+    // The key keeps its name: it is in the SDK's FeatureFlagKey and stored on projects.
+    name: 'Stateless sandboxes',
     description:
-      "Keep each new Platinum session's /workspace on its own Platinum volume instead of the sandbox disk, so the sandbox is disposable: one stopped for an hour is deleted, and the next open boots a new sandbox on the same files and conversation. Not a Settings toggle: Kortix enables it per project.",
+      "Every new Platinum session keeps only /workspace, on its own Platinum volume, so the sandbox is disposable: one stopped for an hour (KORTIX_SANDBOX_IDLE_DELETE_MINUTES) is deleted, and the next open boots a new sandbox on the same files and conversation. Programs that ran in the old sandbox are not running, and the agent is told so. Not a Settings toggle: Kortix enables it per project.",
     stability: 'experimental',
     // Every workspace volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),

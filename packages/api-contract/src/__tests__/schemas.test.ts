@@ -865,7 +865,6 @@ describe('envelopes', () => {
       'us_region',
       'event_triggers',
       'notification_center',
-      'session_log_restore',
       'chat',
       'shared_drives',
       'goals',

@@ -1832,6 +1832,34 @@ describe('pi extensions', () => {
     expect(child).toContain("Today's date: Tue Mar 10 2026 (")
   })
 
+  test('a box whose /workspace is a volume tells the model, a subagent included, that the computer is temporary; on a new computer it also says programs from before are not running; a box on its own disk says neither', async () => {
+    const r = await boot({
+      script: [{ text: 'a' }, { tool: 'task', args: { description: 'Check', prompt: 'check it', subagent_type: 'general' } }, { text: 'child done' }, { text: 'parent done' }],
+      env: { KORTIX_WORKSPACE_VOLUME: '1' },
+    })
+    const sentBefore = gateway.sent.length
+    await promptAndSettle(r, 'one')
+    // What the boot does when its reconcile restored the log onto this box (pi/boot.ts).
+    r.service.runtime()!.markNewComputer()
+    await promptAndSettle(r, 'delegate it')
+    const [one, two, child] = gateway.sent.slice(sentBefore).map(systemSent)
+    for (const prompt of [one, two, child]) {
+      expect(prompt).toContain('## This computer is temporary')
+      expect(prompt).toContain('Only /workspace is kept')
+      expect(prompt).toContain('Every program you start stops when the session goes idle')
+    }
+    expect(one).not.toContain('This is a new computer')
+    expect(two).toContain('This is a new computer')
+    expect(child).toContain('This is a new computer')
+
+    const disk = await boot({ script: [{ text: 'b' }] })
+    const diskBefore = gateway.sent.length
+    await promptAndSettle(disk, 'one')
+    const [plain] = gateway.sent.slice(diskBefore).map(systemSent)
+    expect(plain).not.toContain('## This computer is temporary')
+    expect(plain).not.toContain('This is a new computer')
+  })
+
   test('an extension that throws is reported and skipped; lifecycle events reach the others', async () => {
     let log = ''
     const r = await boot({

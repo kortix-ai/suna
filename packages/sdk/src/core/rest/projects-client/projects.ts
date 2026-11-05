@@ -99,6 +99,7 @@ export type FeatureFlagKey =
   | 'ephemeral_sandboxes'
   /** Not a flag since P8.2 (2026-10-22): the session log is every session's saved history, and the API sends `true` for every project. Absent from {@link FEATURE_FLAG_KEYS}. */
   | 'session_log'
+  /** @deprecated Graduated 2026-11-05 — every box restores the conversation from the session log when its own copy is missing or behind. The API sends `true` for every project. Removed in the next major. */
   | 'session_log_restore'
   /** @deprecated Graduated — the Kortix connectors catalog is the only connectors path. Removed in the next major. */
   | 'connectors_v2'
@@ -131,7 +132,7 @@ export type FeatureFlagKey =
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`, `genui`, `meta_agent`) sends a constant `true`, or (`volumes`, `drives`) sends whether the platform stores a Drive. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `session_log_restore`, `pi_harness`, `genui`, `meta_agent`) sends a constant `true`, or (`volumes`, `drives`) sends whether the platform stores a Drive. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -148,6 +149,7 @@ type GraduatedFeatureFlagKey =
   | 'stateless_sessions'
   | 'ephemeral_sandboxes'
   | 'session_log'
+  | 'session_log_restore'
   | 'pi_harness'
   | 'genui'
   | 'agentmail_email'
@@ -174,7 +176,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'us_region',
   'event_triggers',
   'notification_center',
-  'session_log_restore',
   'chat',
   'shared_drives',
   'goals',
@@ -210,8 +211,7 @@ export interface FeatureFlagView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
   /**
-   * True for an internal-only flag (`session_log`, `session_log_restore`,
-   * `workspace_volume`). The
+   * True for an internal-only flag (`workspace_volume`). The
    * catalog lists one only while it is on, so agents and people can see it.
    * Only a Kortix platform operator can change it: `PATCH /features` answers
    * `403` with `feature_operator_only`. Absent on servers older than this field.

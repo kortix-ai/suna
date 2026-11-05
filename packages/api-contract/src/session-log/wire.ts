@@ -195,7 +195,7 @@ export const SessionLogSwitchPreflightSchema = z.object({
   available: z.boolean(),
   /** `same_harness`: the log already runs on `to`. */
   reason: z.enum(['same_harness']).nullable(),
-  /** The new box restores the model's context (`session_log_restore` on, the log or its model view under the restore cap). False: it starts without the earlier conversation (`losses` begins with `history`). */
+  /** The new box restores the model's context (the deployment's restore switch on, the log or its model view under the restore cap). False: it starts without the earlier conversation (`losses` begins with `history`). */
   restores: z.boolean(),
   /** What the session uses that `to` handles worse, with counts. */
   losses: z.array(SessionLogSwitchLossSchema),
