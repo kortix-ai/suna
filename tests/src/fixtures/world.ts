@@ -24,7 +24,7 @@ import type { ProjectFixtureOptions,
 import type { RegisteredFlow } from '../core/flow';
 import { ResourceStack } from './registry';
 import { adminDeleteUser } from './supabase';
-import { provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from './principals';
+import { createAccountFor, provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from './principals';
 import { stopAllSessionRefresh, type SupabaseSessionAuth } from './supabase-session';
 import { provisionProject } from './provision';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
@@ -357,25 +357,19 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     async user(opts) {
       const u = await synthUser(env, opts?.label ?? 'USER', runId);
       extraUserIds.push(u.user.id);
-      // Personal accounts are lazy. Minting a PAT forces the personal account
-      // and owner membership into existence without joining this user to any
-      // team, which is exactly what account-deletion flows require.
-      await mintAccountToken(
-        new Client(env.apiUrl).as(u.principal),
-        `e2e-${runId}-user-bootstrap${suffix}`,
-      );
+      // No account exists at sign-up (Workspaces D3). By default the user gets
+      // one account of its own, created explicitly, without joining any team:
+      // what account-deletion flows require. `noAccount` keeps it at zero.
+      if (!opts?.noAccount) await createAccountFor(env, u.principal, `e2e-${runId}-user-${rand()}${suffix}`);
       return u.principal;
     },
     async userWithEmail(email, opts) {
       const u = await synthUserWithEmail(env, email.toLowerCase(), opts?.label ?? 'ADDRESSEE');
       extraUserIds.push(u.user.id);
-      // Same lazy-personal-account bootstrap as `user()` — minting a PAT forces
-      // the personal account + owner membership into existence so subsequent
-      // account-scoped reads (e.g. /v1/accounts/me) work for this identity.
-      await mintAccountToken(
-        new Client(env.apiUrl).as(u.principal),
-        `e2e-${runId}-user-email-bootstrap${suffix}`,
-      );
+      // Same explicit account as `user()`, so account-scoped reads work for
+      // this identity; `noAccount` keeps it at zero (an invitee who has
+      // nothing but the invite).
+      if (!opts?.noAccount) await createAccountFor(env, u.principal, `e2e-${runId}-addressee-${rand()}${suffix}`);
       return u.principal;
     },
     async session(project, opts) {

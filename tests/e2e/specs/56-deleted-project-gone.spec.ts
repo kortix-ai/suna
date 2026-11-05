@@ -5,6 +5,7 @@ import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures
 import { createApiJsonClient } from '../helpers/http';
 import { createAuthUser, deleteAuthUser, installBrowserSessionDirect, signIn } from '../helpers/session-auth';
 import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
+import { ensureOwnedAccount } from '../helpers/accounts';
 
 // KRTX-2760: a cached shell must not navigate away when its detail refetch 404s.
 test('56 — a deleted remembered project shows the gone page on every visit @local-only', async ({ page }) => {
@@ -19,11 +20,7 @@ test('56 — a deleted remembered project shows the gone page on every visit @lo
   let projectId: string | undefined;
   try {
     const session = await signIn(email, authOptions);
-    const accounts = await api<Array<{ account_id: string; personal_account?: boolean; is_primary_owner?: boolean }>>(
-      session.access_token, 'GET', '/accounts',
-    );
-    const account = accounts.find((entry) => entry.personal_account || entry.is_primary_owner);
-    if (!account) throw new Error('Synthetic owner has no account');
+    const account = { account_id: await ensureOwnedAccount(api, session.access_token) };
     const project = await createDatabaseProject(env, { accountId: account.account_id, userId: user.id, name: 'Delete journey' });
     projectId = project.id;
     await installBrowserSessionDirect(page, session, `/projects/${project.id}`, authOptions);

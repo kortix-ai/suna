@@ -2066,7 +2066,7 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
-    // A signed-in user who owns (and is super-admin of) only their personal account.
+    // A signed-in user who owns (and is super-admin of) only their own account.
     const outsider = await ctx.fixtures.user({ label: 'OUTSIDER' });
     const ownAccount = { accountId: outsider.accountId! };
 
