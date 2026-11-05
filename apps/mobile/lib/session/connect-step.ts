@@ -117,10 +117,8 @@ export function startPollDelayMs(attempt: number): number {
 export function shouldAwaitHealthProbe(start: {
   stage: string;
   runtime_session_id?: string | null;
-  /** The pre-W4 name of `runtime_session_id`; an older API answers only this. */
-  opencode_session_id?: string | null;
 }): boolean {
-  return !(start.stage === 'ready' && Boolean(start.runtime_session_id ?? start.opencode_session_id));
+  return !(start.stage === 'ready' && Boolean(start.runtime_session_id));
 }
 
 /** The sandbox image step of a provisioning `/start` answer (`boot.image`). */

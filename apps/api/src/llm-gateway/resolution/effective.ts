@@ -30,13 +30,13 @@ export function toWireModel(ref: string): string {
  *
  * Every other stored model is the wire id (`toWireModel`): channel bindings,
  * triggers, account and agent defaults. Only a session's
- * `metadata.opencode_model` keeps this form, because released clients (the
+ * `metadata.model` keeps this form, because released clients (the
  * CLI, `@kortix/sdk` `send()`) split it on the first `/` into the prompt's
  * `{providerID, modelID}`; a bare wire id there would send no model, and a
  * BYOK id the wrong provider. It goes when those clients read the model from
  * the API instead of parsing the pin.
  */
-export function toOpencodeModelRef(model: string): string {
+export function toSessionModelRef(model: string): string {
   // A Claude subscription model is not a gateway model: the box reads its
   // provider from the ref itself (`claude-agent/<id>`).
   if (isClaudeAgentModelRef(model)) return model.trim();

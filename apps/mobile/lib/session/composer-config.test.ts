@@ -188,7 +188,7 @@ describe('agents — the SDK resolver over the thread roster', () => {
       modelID: id,
       modelName: id,
     }));
-    const pinned = { metadata: { opencode_model: 'kortix/model-b', opencode_model_source: 'explicit' } };
+    const pinned = { metadata: { model: 'kortix/model-b', model_source: 'explicit' } };
     const thread = (picked: ReturnType<typeof k> | undefined) =>
       resolveComposerModel({
         models,

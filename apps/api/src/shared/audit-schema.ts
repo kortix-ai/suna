@@ -23,7 +23,7 @@ export const AuditEventSchema = z
     account_id: z.string().uuid().nullable(),
     project_id: z.string().uuid().nullable(),
     session_id: z.string().nullable(),
-    opencode_session_id: z.string().nullable(),
+    runtime_session_id: z.string().nullable(),
     turn_id: z.string().nullable(),
     message_id: z.string().nullable(),
     tool_call_id: z.string().nullable(),

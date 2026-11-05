@@ -5,7 +5,7 @@ import {
   chooseEffectiveAgent,
   chooseEffectiveModel,
   degradeUnservableDefault,
-  toOpencodeModelRef,
+  toSessionModelRef,
   toWireModel,
 } from './effective';
 
@@ -68,7 +68,7 @@ describe('chooseEffectiveModel', () => {
   });
 });
 
-describe('toWireModel / toOpencodeModelRef', () => {
+describe('toWireModel / toSessionModelRef', () => {
   test('strips the opencode-only kortix/ prefix to the bare wire id', () => {
     expect(toWireModel('kortix/claude-sonnet-4.6')).toBe('claude-sonnet-4.6');
     expect(toWireModel('anthropic/claude-sonnet-4.6')).toBe('anthropic/claude-sonnet-4.6');
@@ -82,18 +82,18 @@ describe('toWireModel / toOpencodeModelRef', () => {
     const first = TEST_MANAGED_LINEUP[0]!.id;
     expect(toWireModel('morph-dsv41flash')).toBe(first);
     expect(toWireModel('kortix/morph-kimik3')).toBe(first);
-    expect(toOpencodeModelRef('kortix/morph-kimik3-fast')).toBe(`kortix/${first}`);
+    expect(toSessionModelRef('kortix/morph-kimik3-fast')).toBe(`kortix/${first}`);
     expect(toWireModel('deepseek-v4-flash')).toBe(first);
   });
 
   test('puts every gateway model under the kortix OpenCode provider', () => {
-    expect(toOpencodeModelRef('glm-5.3-flash')).toBe('kortix/glm-5.3-flash');
-    expect(toOpencodeModelRef('claude-opus-4.8')).toBe('kortix/claude-opus-4.8');
-    expect(toOpencodeModelRef('kortix/glm-5.3-flash')).toBe('kortix/glm-5.3-flash');
-    expect(toOpencodeModelRef('anthropic/claude-sonnet-4.6')).toBe(
+    expect(toSessionModelRef('glm-5.3-flash')).toBe('kortix/glm-5.3-flash');
+    expect(toSessionModelRef('claude-opus-4.8')).toBe('kortix/claude-opus-4.8');
+    expect(toSessionModelRef('kortix/glm-5.3-flash')).toBe('kortix/glm-5.3-flash');
+    expect(toSessionModelRef('anthropic/claude-sonnet-4.6')).toBe(
       'kortix/anthropic/claude-sonnet-4.6',
     );
-    expect(toOpencodeModelRef('codex/gpt-5.6-sol')).toBe('kortix/codex/gpt-5.6-sol');
+    expect(toSessionModelRef('codex/gpt-5.6-sol')).toBe('kortix/codex/gpt-5.6-sol');
   });
 });
 

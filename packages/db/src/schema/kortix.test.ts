@@ -168,7 +168,7 @@ describe('canonical audit ledger', () => {
   test('exposes reconstruction, provenance, source-ledger, redaction, and integrity columns', () => {
     expect(columnNames(auditEvents)).toEqual(
       expect.arrayContaining([
-        'opencode_session_id',
+        'runtime_session_id',
         'turn_id',
         'message_id',
         'tool_call_id',

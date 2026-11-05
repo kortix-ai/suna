@@ -122,7 +122,7 @@ export async function slackFollowUpModel(input: {
         .where(eq(projectSessions.sessionId, input.sessionId))
         .limit(1)
     )[0];
-  const raw = (row?.metadata as Record<string, unknown> | null)?.opencode_model;
+  const raw = (row?.metadata as Record<string, unknown> | null)?.model;
   const pinned = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
   const hasImage = slackMessageHasImage(input.event);
   const model = await planChannelFollowUp({
@@ -249,7 +249,7 @@ async function launchSlackSession(
     body: {
       base_ref: project.defaultBranch,
       agent_name: launchAgent,
-      ...(start.model ? { opencode_model: start.model } : {}),
+      ...(start.model ? { model: start.model } : {}),
       ...(start.pools ? { provider_secret_pools: start.pools } : {}),
       initial_prompt: renderAgentPrompt(envelope, event, revived, labels),
       // Keep scaffolded prompt details out of the project-visible title, and
@@ -321,7 +321,7 @@ async function planSlackLaunch(
     accountId: project.accountId,
     userId,
     scope: await slackTurnScope(project, event, userId),
-    chosenModel: selection?.opencodeModel,
+    chosenModel: selection?.sessionModel,
     agentName: launchAgent,
     hasImage: slackMessageHasImage(event),
   });

@@ -297,9 +297,9 @@ async function provisionReplacementRuntime(
       ? (session.metadata.initial_prompt as string)
       : null;
   const initialTurn = initialPrompt ? prepareInitialSandboxTurn() : null;
-  const opencodeModel =
-    typeof session.metadata?.opencode_model === 'string'
-      ? (session.metadata.opencode_model as string)
+  const sessionModel =
+    typeof session.metadata?.model === 'string'
+      ? (session.metadata.model as string)
       : null;
 
   await transitionSession('provision', sessionId, { error: null, sandboxUrl: null });
@@ -336,7 +336,7 @@ async function provisionReplacementRuntime(
         repoUrl: loaded.row.repoUrl,
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
-        opencodeModel,
+        sessionModel,
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         // A restarted My Kortix session must keep its runtime: without this

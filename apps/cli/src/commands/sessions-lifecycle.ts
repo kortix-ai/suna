@@ -395,16 +395,14 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
 
   if (action === 'get') {
     const metadata = session.metadata ?? {};
-    const model = typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null;
+    const model = typeof metadata.model === 'string' ? metadata.model : null;
     if (json) emitJson({ model });
     else process.stdout.write(`${model ?? 'default'}\n`);
     return 0;
   }
 
   let result: {
-    /** `model` since W4; an older API answers only `opencode_model`. */
     model?: string;
-    opencode_model: string;
     applied_live: boolean;
     push_failed?: true;
     detail?: string;
@@ -412,7 +410,6 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   try {
     result = await client.put(`/projects/${projectId}/sessions/${session.session_id}/model`, {
       model,
-      opencode_model: model,
       ...(prompt && retryKey ? { prompt, idempotency_key: retryKey } : {}),
     });
   } catch (err) {
@@ -428,15 +425,15 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   // mechanism there.
   if (result.push_failed) {
     process.stderr.write(
-      `${status.err(`Stored ${result.model ?? result.opencode_model}, but the live push FAILED — the running agent still answers from the old model${result.detail ? `: ${result.detail}` : ''}.`)}\n`,
+      `${status.err(`Stored ${result.model}, but the live push FAILED — the running agent still answers from the old model${result.detail ? `: ${result.detail}` : ''}.`)}\n`,
     );
     return 1;
   }
   process.stdout.write(
     `${status.ok(
       result.applied_live
-        ? `Now running ${C.bold}${result.model ?? result.opencode_model}${C.reset}${C.dim} — applies to the next turn without restarting${C.reset}`
-        : `Stored ${C.bold}${result.model ?? result.opencode_model}${C.reset}${C.dim} — it applies when this session next starts${C.reset}`,
+        ? `Now running ${C.bold}${result.model}${C.reset}${C.dim} — applies to the next turn without restarting${C.reset}`
+        : `Stored ${C.bold}${result.model}${C.reset}${C.dim} — it applies when this session next starts${C.reset}`,
     )}\n`,
   );
   return 0;
@@ -492,7 +489,6 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
     emitJson({
       session_id: resolved.session.session_id,
       runtime_session_id: resolved.runtimeSessionId,
-      opencode_session_id: resolved.runtimeSessionId,
       model: `${model.providerID}/${model.modelID}`,
       compacted: true,
       mode: record ? 'record' : 'summary',

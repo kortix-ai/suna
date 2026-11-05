@@ -129,7 +129,7 @@ function hostileEvent() {
     source_revision: 'd7600000-0000-4000-a000-000000000001',
     type: 'tool.execute.after',
     occurred_at: '2026-08-08T12:00:00.000Z',
-    opencode_session_id: 'ses_forged',
+    runtime_session_id: 'ses_forged',
     agent_id: 'forged-agent',
     agent_name: 'forged-agent',
     initiator_actor_type: 'service_account',

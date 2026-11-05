@@ -483,8 +483,8 @@ export async function markTurnStopRequested(
          WHERE session_id = ${sessionId}
            AND state <> 'ended'
            AND (${scope.opencodeSessionId ?? null}::text IS NULL
-             OR opencode_session_id IS NULL
-             OR opencode_session_id = ${scope.opencodeSessionId ?? null})
+             OR runtime_session_id IS NULL
+             OR runtime_session_id = ${scope.opencodeSessionId ?? null})
            AND (${scope.messageId ?? null}::text IS NULL
              OR message_id = ${scope.messageId ?? null})`,
     `mark ${name} ${sessionId}`,
@@ -648,8 +648,8 @@ export async function recordUnidentifiedTurnCause(
 ): Promise<UnidentifiedTurnCauseOutcome> {
   const causeJson = JSON.stringify(cause);
   const sameRoot = sql`(${opencodeSessionId ?? null}::text IS NULL
-                         OR t.opencode_session_id IS NULL
-                         OR t.opencode_session_id = ${opencodeSessionId ?? null})`;
+                         OR t.runtime_session_id IS NULL
+                         OR t.runtime_session_id = ${opencodeSessionId ?? null})`;
   const refined = normalizeRows(
     await execute(sql`
       UPDATE kortix.session_turns
@@ -745,7 +745,7 @@ export function endedTurnLedger(
   );
   return sql`INSERT INTO kortix.session_turns
         (turn_token, session_id, sandbox_id, project_id, account_id,
-         opencode_session_id, message_id, state, end_reason, end_error, started_at,
+         runtime_session_id, message_id, state, end_reason, end_error, started_at,
          ended_at, created_at, updated_at)
       VALUES ${values}
       ON CONFLICT (turn_token) DO UPDATE SET
@@ -761,8 +761,8 @@ export function endedTurnLedger(
               ELSE EXCLUDED.end_error
             END,
             ended_at = now(),
-            opencode_session_id = coalesce(kortix.session_turns.opencode_session_id,
-                                           EXCLUDED.opencode_session_id),
+            runtime_session_id = coalesce(kortix.session_turns.runtime_session_id,
+                                           EXCLUDED.runtime_session_id),
             message_id = coalesce(kortix.session_turns.message_id, EXCLUDED.message_id),
             updated_at = now()
       WHERE kortix.session_turns.state <> 'ended'`;
@@ -915,8 +915,8 @@ export function refineEndedTurnError(
        AND t.state = 'ended'
        AND t.end_reason = 'failed'
        AND (${identity.runtimeSessionId ?? null}::text IS NULL
-         OR t.opencode_session_id IS NULL
-         OR t.opencode_session_id = ${identity.runtimeSessionId ?? null})
+         OR t.runtime_session_id IS NULL
+         OR t.runtime_session_id = ${identity.runtimeSessionId ?? null})
        AND NOT ${protectedEndErrorPredicate(sql`t.end_error`)}`;
 }
 
@@ -957,8 +957,8 @@ export function reviveAbandonedTurnOnCompletion(
        AND t.state = 'ended'
        AND t.end_reason = 'abandoned'
        AND (${identity.runtimeSessionId ?? null}::text IS NULL
-         OR t.opencode_session_id IS NULL
-         OR t.opencode_session_id = ${identity.runtimeSessionId ?? null})`;
+         OR t.runtime_session_id IS NULL
+         OR t.runtime_session_id = ${identity.runtimeSessionId ?? null})`;
 }
 
 export async function wasSandboxTurnAlreadyClosed(
@@ -974,8 +974,8 @@ export async function wasSandboxTurnAlreadyClosed(
          AND t.message_id = ${identity.messageId}
          AND t.state = 'ended'
          AND (${identity.runtimeSessionId ?? null}::text IS NULL
-           OR t.opencode_session_id IS NULL
-           OR t.opencode_session_id = ${identity.runtimeSessionId ?? null})
+           OR t.runtime_session_id IS NULL
+           OR t.runtime_session_id = ${identity.runtimeSessionId ?? null})
     ) AS already_ended`);
   return normalizeRows(result)?.[0]?.already_ended === true;
 }

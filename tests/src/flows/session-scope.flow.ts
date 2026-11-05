@@ -286,13 +286,13 @@ flow(
       'sandbox_slug',
       // The gateway fallback record. The turn-end revert writes `_from` into
       // the model pin, so a client value would pick the session's model.
-      'opencode_model_fallback_from',
-      'opencode_model_fallback_from_source',
-      'opencode_model_fallback_reason',
-      'opencode_model_fallback_at',
-      'opencode_model_fallback_until',
-      'opencode_model_picked_at',
-      'opencode_model_restored',
+      'model_fallback_from',
+      'model_fallback_from_source',
+      'model_fallback_reason',
+      'model_fallback_at',
+      'model_fallback_until',
+      'model_picked_at',
+      'model_restored',
       // Telegram write confinement follows a reminder successor to the
       // session it replaces: a client value would add or drop a chat.
       'reminder_successor_of',

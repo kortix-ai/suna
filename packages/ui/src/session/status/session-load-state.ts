@@ -62,10 +62,9 @@ export function canMountSessionChat(input: {
  * whole, where the list trims it.
  */
 export function findInitialSessionPin(
-  // `runtime_session_id` since W4; an older API answers only `opencode_session_id`.
-  session: { runtime_session_id?: string | null; opencode_session_id?: string | null } | undefined | null,
+  session: { runtime_session_id?: string | null } | undefined | null,
 ) {
-  return session?.runtime_session_id ?? session?.opencode_session_id ?? null;
+  return session?.runtime_session_id ?? null;
 }
 
 /**

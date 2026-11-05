@@ -169,8 +169,9 @@ route, the body, the credential, the retries and the dead-token breaker.
 | `shared/session-log-restore.ts` | `GET /projects/:id/sessions/:id/attachments/:id`: the full text of each text a restore answer (P6.1) stores by reference (`sessionLogFromRestore`, `apiTextReader`), see "Restore" below |
 | `shared/session-log-boot.ts` | `GET /projects/:id/sessions/:id/log/manifest` and `POST …/log/restore`: the boot reconcile (P6.4), see "When the boot restores" below |
 
-The API accepts the pre-W3
-spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
+The API accepts only these names. Since 0.15.0 it no longer reads the pre-W3
+spellings (`opencode_session_id`, kind `opencode_session`): the runtime floor
+keeps every daemon that still sent them from opening a session.
 
 ## Session log (P2.4, P2.5, P4.3, P4.3b, P6.2, P6.4, P6.5)
 
