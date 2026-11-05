@@ -1616,6 +1616,8 @@ function ProjectSessionRow({
         )}
 
         <SessionBriefDescription
+          projectId={session.project_id}
+          sessionId={session.session_id}
           id={descriptionId}
           status={displayStatus}
           createdAt={session.created_at}

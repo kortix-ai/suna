@@ -69,6 +69,7 @@ import {
   useHasSessionDesktop,
   useProjectSession,
   useRuntimeSupports,
+  useSessionChildren,
   useSessionParticipants,
   useSessionWatch,
 } from '@kortix/sdk/react';
@@ -274,6 +275,10 @@ export function SessionSiteHeader({
   const renameMutation = useRenameSession(projectId ?? '', projectSessionId ?? null);
   const canRename = isProjectSession && !!projectSession && !parent;
   const subsessions = projectSession && !parent ? directSubsessions(projectSession) : [];
+  const childSessions = useSessionChildren(projectId ?? '', projectSessionId ?? '', {
+    enabled: isProjectSession && !parent,
+    refetchInterval: 5_000,
+  });
   const startRename = () => {
     if (canRename) setIsRenaming(true);
   };
@@ -605,7 +610,7 @@ export function SessionSiteHeader({
                 // No name yet: `SavedSessionSkeleton` renders this header
                 // before the session row has answered.
                 <Skeleton className="mx-2.5 h-3.5 w-24 py-0 motion-reduce:animate-none" />
-              ) : canRename && subsessions.length > 0 ? (
+              ) : isProjectSession && !parent && (subsessions.length > 0 || childSessions.sessions.length > 0) ? (
                 // A parent session: hovering its name lists the subagents it
                 // spawned. The card replaces the "Rename" hint — two floating
                 // surfaces on one hover is one too many; a click still renames.
@@ -613,6 +618,9 @@ export function SessionSiteHeader({
                   projectId={projectId!}
                   projectSessionId={projectSessionId!}
                   subsessions={subsessions}
+                  spawnedSessions={childSessions.sessions}
+                  onLoadMore={childSessions.hasNextPage ? () => { void childSessions.fetchNextPage(); } : undefined}
+                  loadingMore={childSessions.isFetchingNextPage}
                 >
                   {titleButton}
                 </SubagentHoverCard>
