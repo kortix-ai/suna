@@ -19,21 +19,16 @@
  * and the `drives` flag (`PROJECT_ADMIN_RESOURCES`).
  */
 
-import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
-import { ArrowUpRightIcon } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
+import { useFeatureFlag } from '@kortix/sdk/react';
 import { createContext, type ReactNode, useContext } from 'react';
 
 import { useTranslations } from '../../i18n';
-import { HubLink } from '../../internal/account-hub/account-hub-location';
 import { useCapabilityAccess } from '../../internal/layout/project-settings-nav';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { capabilityTabHref } from '../../internal/lib/capability-tab-routes';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectPageCans } from '../../internal/lib/use-project-can';
 import { cn } from '../../internal/lib/utils';
-import { hubTarget } from '../../internal/stores/account-panel-store';
 import { adminPath } from '../../lib/routes';
 import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { useOptionalSidebar } from '../../primitives/sidebar';
@@ -80,21 +75,15 @@ function activeTab(pathname: string): string {
   return isProjectAdminResource(key) ? key : 'settings';
 }
 
+/** Members: Workspace settings › People › Access, this workspace's roster. */
 function MembersLink({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { data } = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-  });
   const canReadMembers = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_MEMBERS_READ];
-  const accountId = data?.project?.account_id;
-  if (receivedDenial(canReadMembers) || !accountId) return null;
+  if (receivedDenial(canReadMembers)) return null;
   return (
-    <HubLink to={hubTarget(accountId, { tab: 'access-projects', project: projectId })} className={MEMBERS_LINK_CLASS}>
+    <Link href={projectAdminHref(projectId, 'access')} prefetch className={MEMBERS_LINK_CLASS}>
       {tI18nComplete.raw('text1044a4c056d0')}
-      <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
-    </HubLink>
+    </Link>
   );
 }
 
@@ -146,7 +135,7 @@ export function CustomizeTabBar({ projectId }: { projectId: string }) {
               return tab(r.key, projectAdminHref(projectId, r.key), legacy ? tI18nComplete.raw(legacy) : tAdmin(r.key));
             })}
             {allowed.has('review') ? tab('review', capabilityTabHref(projectId, 'review'), tTabs('review')) : null}
-            {/* The right edge: Members (the account hub) and Settings, together so Settings stays right when Members hides. */}
+            {/* The right edge: Members (People › Access) and Settings, together so Settings stays right when Members hides. */}
             <span className="ml-auto flex items-center gap-5">
               <MembersLink projectId={projectId} />
               {allowed.has('config') ? tab('settings', adminPath(projectId, 'general'), tTabs('settings')) : null}

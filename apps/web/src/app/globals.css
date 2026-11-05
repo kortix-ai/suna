@@ -1477,20 +1477,8 @@ html[data-desktop-platform='macos'] .kx-overlay-sidebar-titlebar {
   padding-left: var(--kx-titlebar-control-left);
   justify-content: flex-end;
 }
-/* With the account sidebar hidden, its opener occupies the first web-control
-   slot. The breadcrumb follows it, rather than starting under the lights. */
-html[data-desktop-titlebar='overlay'] .kx-account-hub-header[data-sidebar-collapsed],
-html[data-desktop-platform='macos'] .kx-account-hub-header[data-sidebar-collapsed] {
-  padding-left: var(--kx-titlebar-control-left);
-}
 html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true'] .kx-overlay-sidebar-titlebar,
 html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-overlay-sidebar-titlebar {
-  padding-left: 0.5rem;
-}
-html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true']
-  .kx-account-hub-header[data-sidebar-collapsed],
-html[data-desktop-platform='macos'][data-desktop-fullscreen='true']
-  .kx-account-hub-header[data-sidebar-collapsed] {
   padding-left: 0.5rem;
 }
 /* The mobile Settings headers (list and pane) share the native titlebar band:

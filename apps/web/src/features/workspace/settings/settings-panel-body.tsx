@@ -14,7 +14,7 @@ import { Button } from '@kortix/ui/button';
 import { Modal, ModalClose, ModalContent, ModalTitle } from '@kortix/ui/modal';
 import { SettingsSectionHeader } from '@kortix/ui/settings-section-header';
 import { Tabs, TabsContent } from '@kortix/ui/tabs';
-import { SETTINGS_SIDEBAR_WIDTH_PX } from '@kortix/ui/internal/account-hub/account-settings-shell';
+import { SETTINGS_SIDEBAR_WIDTH_PX } from '@kortix/ui/internal/components/nav-rail';
 import { Close } from '@kortix/ui/icons';
 import {
   SettingsNavProvider,

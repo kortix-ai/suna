@@ -10,6 +10,7 @@ import {
   type Icon,
 } from '@phosphor-icons/react';
 
+import type { AccountSection } from '../../internal/account-hub/sections';
 import type { CapabilityTab } from '../../internal/lib/capability-tab-routes';
 import { adminPath } from '../../lib/routes';
 import {
@@ -18,20 +19,24 @@ import {
 } from './project-settings-sections';
 
 /**
- * The sections of Project admin (`/projects/<id>/admin`).
+ * The sections of Workspace settings (`/projects/<id>/admin`), the one
+ * settings surface per workspace (Workspaces ux.md section 4). It absorbed
+ * the account hub's panes: a workspace is one account and its project, so
+ * the account's members, roles, billing and keys are the workspace's.
  *
- * Customize is agent-first: each agent's page configures what THAT agent draws
- * on. Project admin is the other view: the project-wide libraries an agent is
- * granted from, plus every project setting. Two rail groups:
+ * Four rail groups (`WORKSPACE_SETTINGS_GROUPS`):
  *
- *  1. **Project resources** — the global variant of each library page. Tools
- *     and Extensions have none (Jay, 2026-11-03): they are switched per agent,
- *     on the agent's own page, and a project-wide list changed nothing.
- *  2. **Settings** — the sections of `project-settings-sections.ts`, unchanged.
+ *  1. **Workspace** — General (name, icon, and the account's security
+ *     policy), Branding, Git repo (with the account's GitHub connections),
+ *     Sandbox templates, Feature flags, API keys.
+ *  2. **Library** — the global variant of each library page. Tools and
+ *     Extensions have none (Jay, 2026-11-03): they are switched per agent.
+ *  3. **People** — Members, Groups, Access, Roles, Identity, Audit log, Help.
+ *  4. **Billing** — Plan, Usage.
  *
- * A key IS its URL segment (`/admin/<key>`), so renaming one breaks live links. The
- * settings keys are the Settings page's own keys, so `?section=git` means the
- * same section on both surfaces.
+ * A key IS its URL segment (`/admin/<key>`), so renaming one breaks live links.
+ * The settings keys are the Settings page's own keys, so `?section=git` means
+ * the same section on both surfaces.
  */
 export type ProjectAdminResourceKey =
   | 'connectors'
@@ -49,7 +54,93 @@ export type ProjectAdminResourceKey =
  */
 export type ProjectAdminSettingsKey = Exclude<ProjectSettingsSectionKey, 'review'>;
 
-export type ProjectAdminSectionKey = ProjectAdminResourceKey | ProjectAdminSettingsKey;
+/** The sections whose pane is an account pane (the old account hub). */
+export type WorkspaceAccountSectionKey =
+  | 'branding'
+  | 'api-keys'
+  | 'members'
+  | 'groups'
+  | 'access'
+  | 'roles'
+  | 'identity'
+  | 'audit'
+  | 'help'
+  | 'plan'
+  | 'usage';
+
+export type ProjectAdminSectionKey =
+  | ProjectAdminResourceKey
+  | ProjectAdminSettingsKey
+  | WorkspaceAccountSectionKey;
+
+export type WorkspaceSettingsGroupId = 'workspace' | 'library' | 'people' | 'billing';
+
+/** The rail, in order. Each row still follows its own visibility rule. */
+export const WORKSPACE_SETTINGS_GROUPS: readonly {
+  id: WorkspaceSettingsGroupId;
+  sections: readonly ProjectAdminSectionKey[];
+}[] = [
+  { id: 'workspace', sections: ['general', 'branding', 'git', 'sandbox', 'feature-flags', 'api-keys'] },
+  { id: 'library', sections: ['connectors', 'secrets', 'skills', 'drives', 'apps', 'triggers', 'models', 'repo'] },
+  { id: 'people', sections: ['members', 'groups', 'access', 'roles', 'identity', 'audit', 'help'] },
+  { id: 'billing', sections: ['plan', 'usage'] },
+];
+
+/**
+ * The account hub section each workspace section shows. General and Git repo
+ * are project sections that ALSO carry an account pane (the account Settings
+ * pane's security policy, the account's GitHub connections).
+ */
+export const ACCOUNT_TAB_FOR_SECTION: Partial<Record<ProjectAdminSectionKey, AccountSection>> = {
+  general: 'settings',
+  git: 'git',
+  branding: 'branding',
+  'api-keys': 'tokens',
+  members: 'members',
+  groups: 'groups',
+  access: 'access-projects',
+  roles: 'roles',
+  identity: 'identity',
+  audit: 'audit',
+  help: 'help',
+  plan: 'billing',
+  usage: 'transactions',
+};
+
+/** Old account hub link (`?accountTab=`) → the workspace section that took it over. */
+export const SECTION_FOR_ACCOUNT_TAB: Record<AccountSection, ProjectAdminSectionKey> = {
+  settings: 'general',
+  git: 'git',
+  branding: 'branding',
+  tokens: 'api-keys',
+  members: 'members',
+  groups: 'groups',
+  'access-projects': 'access',
+  roles: 'roles',
+  identity: 'identity',
+  audit: 'audit',
+  help: 'help',
+  billing: 'plan',
+  transactions: 'usage',
+};
+
+const ACCOUNT_SECTION_KEYS: readonly WorkspaceAccountSectionKey[] = [
+  'branding',
+  'api-keys',
+  'members',
+  'groups',
+  'access',
+  'roles',
+  'identity',
+  'audit',
+  'help',
+  'plan',
+  'usage',
+];
+
+export function isWorkspaceAccountSection(key: ProjectAdminSectionKey): key is WorkspaceAccountSectionKey {
+  return (ACCOUNT_SECTION_KEYS as readonly string[]).includes(key);
+}
 
 export interface ProjectAdminResource {
   key: ProjectAdminResourceKey;
@@ -88,8 +179,8 @@ export const PROJECT_ADMIN_RESOURCES: readonly ProjectAdminResource[] = [
 /** Sections that no longer exist here: their links open the Agents list. */
 export const RETIRED_SECTIONS: readonly string[] = ['tools', 'extensions'];
 
-/** `/projects/<id>/admin` with no section opens the first resource. */
-export const DEFAULT_PROJECT_ADMIN_SECTION: ProjectAdminSectionKey = 'connectors';
+/** `/projects/<id>/admin` with no section opens General, else the first row the caller may open. */
+export const DEFAULT_PROJECT_ADMIN_SECTION: ProjectAdminSectionKey = 'general';
 
 export function isProjectAdminResource(key: ProjectAdminSectionKey): key is ProjectAdminResourceKey {
   return PROJECT_ADMIN_RESOURCES.some((r) => r.key === key);
@@ -105,6 +196,8 @@ export function parseProjectAdminSection(
   if (raw === 'loops') return 'triggers';
   const resource = PROJECT_ADMIN_RESOURCES.find((r) => r.key === raw);
   if (resource) return resource.key;
+  const account = ACCOUNT_SECTION_KEYS.find((key) => key === raw);
+  if (account) return account;
   const setting = parseProjectSettingsSection(raw);
   return setting === 'review' ? null : setting;
 }
@@ -131,7 +224,9 @@ export function projectAdminHref(
  */
 export function projectAdminNavTarget(tab: string): ProjectAdminSectionKey | null {
   const direct = parseProjectAdminSection(tab);
-  if (direct) return direct;
+  // An account section id (`members`, …) means something else in the overlay
+  // vocabulary (`members` is the project roster): it keeps resolving there.
+  if (direct && !isWorkspaceAccountSection(direct)) return direct;
   if (tab.startsWith('llm-')) return 'models';
   if (tab === 'channels') return 'connectors';
   if (tab === 'reminders') return 'triggers';

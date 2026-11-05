@@ -226,12 +226,12 @@
     "./input-group": "./src/primitives/input-group.tsx",
     "./internal/account-hub/account-hub-entry": "./src/internal/account-hub/account-hub-entry.tsx",
     "./internal/account-hub/account-hub-location": "./src/internal/account-hub/account-hub-location.tsx",
-    "./internal/account-hub/account-settings-shell": "./src/internal/account-hub/account-settings-shell.tsx",
     "./internal/account-hub/hub-sheet": "./src/internal/account-hub/hub-sheet.tsx",
     "./internal/account-hub/sections": "./src/internal/account-hub/sections.ts",
     "./internal/account-hub/use-account-detail": "./src/internal/account-hub/use-account-detail.ts",
     "./internal/account-hub/use-account-hub-access": "./src/internal/account-hub/use-account-hub-access.ts",
     "./internal/account-hub/use-account-members": "./src/internal/account-hub/use-account-members.ts",
+    "./internal/account-hub/workspace-settings-route": "./src/internal/account-hub/workspace-settings-route.ts",
     "./internal/auth/auth-card-shell": "./src/internal/auth/auth-card-shell.tsx",
     "./internal/auth/auth-consent": "./src/internal/auth/auth-consent.tsx",
     "./internal/auth/auth-primitives": "./src/internal/auth/auth-primitives.tsx",
@@ -250,6 +250,7 @@
     "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
     "./internal/components/hover-prefetch-link": "./src/internal/components/hover-prefetch-link.tsx",
     "./internal/components/mobile-store-qr": "./src/internal/components/mobile-store-qr.tsx",
+    "./internal/components/nav-rail": "./src/internal/components/nav-rail.tsx",
     "./internal/desktop/desktop-back-button": "./src/internal/desktop/desktop-back-button.tsx",
     "./internal/desktop/titlebar-control": "./src/internal/desktop/titlebar-control.ts",
     "./internal/files/session-drive-files": "./src/internal/files/session-drive-files.ts",
@@ -1369,10 +1370,6 @@
         "types": "./dist/internal/account-hub/account-hub-location.d.ts",
         "import": "./dist/internal/account-hub/account-hub-location.js"
       },
-      "./internal/account-hub/account-settings-shell": {
-        "types": "./dist/internal/account-hub/account-settings-shell.d.ts",
-        "import": "./dist/internal/account-hub/account-settings-shell.js"
-      },
       "./internal/account-hub/hub-sheet": {
         "types": "./dist/internal/account-hub/hub-sheet.d.ts",
         "import": "./dist/internal/account-hub/hub-sheet.js"
@@ -1392,6 +1389,10 @@
       "./internal/account-hub/use-account-members": {
         "types": "./dist/internal/account-hub/use-account-members.d.ts",
         "import": "./dist/internal/account-hub/use-account-members.js"
+      },
+      "./internal/account-hub/workspace-settings-route": {
+        "types": "./dist/internal/account-hub/workspace-settings-route.d.ts",
+        "import": "./dist/internal/account-hub/workspace-settings-route.js"
       },
       "./internal/auth/auth-card-shell": {
         "types": "./dist/internal/auth/auth-card-shell.d.ts",
@@ -1464,6 +1465,10 @@
       "./internal/components/mobile-store-qr": {
         "types": "./dist/internal/components/mobile-store-qr.d.ts",
         "import": "./dist/internal/components/mobile-store-qr.js"
+      },
+      "./internal/components/nav-rail": {
+        "types": "./dist/internal/components/nav-rail.d.ts",
+        "import": "./dist/internal/components/nav-rail.js"
       },
       "./internal/desktop/desktop-back-button": {
         "types": "./dist/internal/desktop/desktop-back-button.d.ts",

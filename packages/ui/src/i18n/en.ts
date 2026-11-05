@@ -9944,6 +9944,36 @@ const catalog = {
       "loadError": "Could not load every workspace.",
       "retry": "Try again",
       "heading": "Workspaces"
+    },
+    "settings": {
+      "title": "Workspace settings",
+      "groups": {
+        "workspace": "Workspace",
+        "library": "Library",
+        "people": "People",
+        "billing": "Billing"
+      },
+      "sections": {
+        "general": "General",
+        "branding": "Branding",
+        "git": "Git repo",
+        "sandbox": "Sandbox templates",
+        "featureFlags": "Feature flags",
+        "apiKeys": "API keys",
+        "members": "Members",
+        "groups": "Groups",
+        "access": "Access",
+        "roles": "Roles",
+        "identity": "Identity",
+        "audit": "Audit log",
+        "help": "Help",
+        "plan": "Plan",
+        "usage": "Usage"
+      },
+      "accessTitle": "Access",
+      "accessDescription": "Who can open this workspace, and with which role.",
+      "securityTitle": "Security",
+      "githubTitle": "GitHub connections"
     }
   }
 };

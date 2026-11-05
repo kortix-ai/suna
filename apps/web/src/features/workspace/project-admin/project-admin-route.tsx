@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 
 import { ConnectorsAppReturnBar } from '@kortix/ui/customize/connectors/connectors-app-return-bar';
 import { CustomizeFrame } from '@kortix/ui/customize/shared/customize-tab-bar';
@@ -9,15 +9,19 @@ import {
   type ProjectAdminHostSections,
 } from '@kortix/ui/workspace/admin/project-admin-dashboard';
 
-/* Project admin sections whose page lives in this app, not in `@kortix/ui`.
-   None today: the Loops page (and its calendar) was removed on 2026-10-28;
-   loops are triggers on the package's Triggers page (`/admin/triggers`,
-   `/admin/loops` resolves there). Apps is not one either: its page is the
-   sidebar's Apps (`/projects/:id/apps`), and `/admin/apps` redirects there. */
-const HOST_SECTIONS: ProjectAdminHostSections = {};
+/* The account panes (People, Billing, Branding, API keys, and the account
+   halves of General and Git repo) live in this app: one lazy chunk, loaded
+   when a section that shows one opens. Apps is not a host section: its page
+   is the sidebar's Apps (`/projects/:id/apps`), and `/admin/apps` redirects. */
+const WorkspaceAccountPane = lazy(() =>
+  import('@/features/workspace/settings/workspace-account-pane').then((mod) => ({
+    default: mod.WorkspaceAccountPane,
+  })),
+);
+const HOST_SECTIONS: ProjectAdminHostSections = { account: WorkspaceAccountPane };
 
 /**
- * Every `/projects/[id]/admin/**` route: Project admin on one section, and
+ * Every `/projects/[id]/admin/**` route: Workspace settings on one section, and
  * optionally a page below it (a connector) in that section's pane.
  *
  * `h-svh` bounds the page so each section scrolls inside its own pane; see

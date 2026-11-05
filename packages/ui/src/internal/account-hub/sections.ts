@@ -7,7 +7,7 @@ import type { UiTranslator } from '../../i18n';
  * and what each section is called. A section id is the `?accountTab=` value.
  *
  * Shared by the hub body (`account-hub-content.tsx`, which renders the pane)
- * and the settings shell (`account-settings-shell.tsx`, which renders the
+ * and Workspace settings (`project-admin-dashboard.tsx`, which renders the
  * sidebar nav and the breadcrumb). Nothing here fetches — it is names, icons,
  * and order.
  */

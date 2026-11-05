@@ -45,12 +45,7 @@ const chrome = require_(join(repoRoot, 'apps/desktop-electron/src/window-chrome.
 
 const css = readFileSync(join(repoRoot, 'apps/web/src/app/globals.css'), 'utf8');
 
-test('account settings keeps Back to app left and utilities right in web browsers', () => {
-  const sidebar = readFileSync(
-    join(repoRoot, 'packages/ui/src/internal/account-hub/account-settings-sidebar.tsx'),
-    'utf8',
-  );
-  expect(codeOnly(sidebar)).toMatch(/kx-overlay-sidebar-titlebar[^'"\n]*justify-between/);
+test('the overlay sidebar titlebar puts its utilities right on macOS', () => {
   expect(css).toMatch(/html\[data-desktop-platform='macos'\] \.kx-overlay-sidebar-titlebar\s*\{[^}]*justify-content:\s*flex-end/);
 });
 
@@ -453,10 +448,6 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
       join(repoRoot, 'apps/web/src/app/[locale]/admin/_components/admin-shell.tsx'),
       'utf8',
     ),
-    accountHub: readFileSync(
-      join(repoRoot, 'apps/web/src/features/accounts/hub/account-hub-panel.tsx'),
-      'utf8',
-    ),
     presentation: readFileSync(
       join(
         repoRoot,
@@ -482,21 +473,8 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
     expect(sources.presentation).toContain('kx-titlebar-row');
   });
 
-  test('the account hub starts with its titlebar row, not a blank strip', () => {
-    expect(codeOnly(sources.accountHub)).not.toContain('className="kx-titlebar-spacer"');
-  });
-
-  test('account hub actions and breadcrumb share the titlebar band', () => {
-    const sidebar = codeOnly(readFileSync(join(repoRoot, 'packages/ui/src/internal/account-hub/account-settings-sidebar.tsx'), 'utf8'));
-    const shell = codeOnly(readFileSync(join(repoRoot, 'packages/ui/src/internal/account-hub/account-settings-shell.tsx'), 'utf8'));
-    expect(sidebar).toContain('kx-titlebar-row kx-titlebar-band-height');
-    expect(shell).toContain('kx-titlebar-row kx-titlebar-band-height');
-    expect(shell).toContain('data-sidebar-collapsed={open ? undefined :');
-  });
-
-  test('overlay sidebar and collapsed account header clear the native lights', () => {
+  test('the overlay sidebar clears the native lights', () => {
     expect(css).toMatch(/html\[data-desktop-platform='macos'\] \.kx-overlay-sidebar-titlebar\s*\{[^}]*padding-left:\s*var\(--kx-titlebar-control-left\)/);
-    expect(css).toMatch(/html\[data-desktop-platform='macos'\] \.kx-account-hub-header\[data-sidebar-collapsed\]\s*\{[^}]*padding-left:\s*var\(--kx-titlebar-control-left\)/);
     expect(css).toMatch(/html\[data-desktop-platform='macos'\]\[data-desktop-fullscreen='true'\] \.kx-overlay-sidebar-titlebar\s*\{[^}]*padding-left:\s*0/);
   });
 
