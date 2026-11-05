@@ -25930,6 +25930,11 @@
       "accessDescription": "Ko može da otvori ovaj radni prostor i sa kojom ulogom.",
       "securityTitle": "Bezbednost",
       "githubTitle": "GitHub veze"
+    },
+    "cli": {
+      "noWorkspaceTitle": "Napravite radni prostor da biste prijavili CLI",
+      "noWorkspaceBody": "CLI se prijavljuje u radni prostor. Napravite ga, zatim odobrite ovu prijavu.",
+      "createAction": "Napravi radni prostor"
     }
   }
 }

@@ -25930,6 +25930,11 @@
       "accessDescription": "Wer diesen Workspace öffnen kann, und mit welcher Rolle.",
       "securityTitle": "Sicherheit",
       "githubTitle": "GitHub-Verbindungen"
+    },
+    "cli": {
+      "noWorkspaceTitle": "Erstelle einen Workspace, um die CLI anzumelden",
+      "noWorkspaceBody": "Die CLI meldet sich bei einem Workspace an. Erstelle einen und bestätige dann diese Anmeldung.",
+      "createAction": "Workspace erstellen"
     }
   }
 }

@@ -352,3 +352,18 @@ test('retry resends the failed attempt and retains the computer destination', as
   await unmount(renderer);
   query = '';
 });
+
+test('a same-origin returnUrl gets the person back after the create; a foreign one does not', async () => {
+  for (const [value, expected] of [
+    [`returnUrl=${encodeURIComponent('/cli/authorize?user_code=ABCD-EFGH')}`, '/cli/authorize?user_code=ABCD-EFGH'],
+    [`returnUrl=${encodeURIComponent('//example.test/steal')}`, '/projects/created-project'],
+    [`returnUrl=${encodeURIComponent('https://example.test/')}`, '/projects/created-project'],
+  ] as const) {
+    query = value;
+    const renderer = await renderPage();
+    await act(async () => { findForm(renderer).props.onSubmit({ preventDefault: () => {} }); });
+    expect(destinations.at(-1)).toBe(expected);
+    await unmount(renderer);
+  }
+  query = '';
+});

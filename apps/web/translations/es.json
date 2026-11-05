@@ -25930,6 +25930,11 @@
       "accessDescription": "Quién puede abrir este espacio de trabajo y con qué rol.",
       "securityTitle": "Seguridad",
       "githubTitle": "Conexiones de GitHub"
+    },
+    "cli": {
+      "noWorkspaceTitle": "Crea un espacio de trabajo para iniciar sesión en la CLI",
+      "noWorkspaceBody": "La CLI inicia sesión en un espacio de trabajo. Crea uno y luego aprueba este inicio de sesión.",
+      "createAction": "Crear espacio de trabajo"
     }
   }
 }

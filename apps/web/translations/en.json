@@ -26594,6 +26594,11 @@
       "accessDescription": "Who can open this workspace, and with which role.",
       "securityTitle": "Security",
       "githubTitle": "GitHub connections"
+    },
+    "cli": {
+      "noWorkspaceTitle": "Create a workspace to sign in the CLI",
+      "noWorkspaceBody": "The CLI signs in to a workspace. Create one, then approve this sign-in.",
+      "createAction": "Create workspace"
     }
   }
 }

@@ -25930,6 +25930,11 @@
       "accessDescription": "このワークスペースを開ける人と、そのロール。",
       "securityTitle": "セキュリティ",
       "githubTitle": "GitHub 接続"
+    },
+    "cli": {
+      "noWorkspaceTitle": "CLI にサインインするにはワークスペースを作成してください",
+      "noWorkspaceBody": "CLI はワークスペースにサインインします。ワークスペースを作成してから、このサインインを承認してください。",
+      "createAction": "ワークスペースを作成"
     }
   }
 }

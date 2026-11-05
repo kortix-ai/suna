@@ -25930,6 +25930,11 @@
       "accessDescription": "谁可以打开此工作区，以及使用哪个角色。",
       "securityTitle": "安全",
       "githubTitle": "GitHub 连接"
+    },
+    "cli": {
+      "noWorkspaceTitle": "创建工作区以登录 CLI",
+      "noWorkspaceBody": "CLI 会登录到一个工作区。请先创建工作区，然后批准此次登录。",
+      "createAction": "创建工作区"
     }
   }
 }

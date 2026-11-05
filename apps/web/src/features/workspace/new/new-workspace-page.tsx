@@ -36,6 +36,7 @@ import { canCreateWorkspace } from '@kortix/ui/workspace/project-selector/projec
 import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
+import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { cn } from '@kortix/ui';
 import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
 
@@ -112,6 +113,11 @@ export function NewWorkspacePage() {
   const cloneItemId = readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''));
   const router = useRouter();
   const connectComputer = searchParams?.get('connect') === 'computer';
+  // `?returnUrl=` sends the person back where a workspace was missing (the
+  // CLI sign-in page) once it exists. Same-origin paths only
+  // (`sanitizeAuthReturnUrl`); anything else falls back to the workspace.
+  const rawReturnUrl = searchParams?.get('returnUrl');
+  const returnUrl = rawReturnUrl ? sanitizeAuthReturnUrl(rawReturnUrl, '') : '';
 
   useSignedOutRedirect();
 
@@ -154,9 +160,11 @@ export function NewWorkspacePage() {
     limitReached,
     phase,
   } = useCreateWorkspace({
-    enterProject: connectComputer
-      ? (projectId) => router.replace(`/projects/${encodeURIComponent(projectId)}/settings/computer`)
-      : undefined,
+    enterProject: returnUrl
+      ? () => router.replace(returnUrl)
+      : connectComputer
+        ? (projectId) => router.replace(`/projects/${encodeURIComponent(projectId)}/settings/computer`)
+        : undefined,
   });
   const openUpgradeDialog = useUpgradeDialogStore((store) => store.openUpgradeDialog);
   const submitting = status === 'creating';
