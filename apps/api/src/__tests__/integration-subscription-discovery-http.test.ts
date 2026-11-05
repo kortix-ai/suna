@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { Hono } from 'hono';
+import { and, eq } from 'drizzle-orm';
 import { accountMembers, accountSecretResources, claudeSubscriptionLogins, projectMembers, projectSecrets } from '@kortix/db';
 import { db } from '../shared/db';
 import { encryptAccountSecret } from '../secrets/account-resource';
@@ -87,9 +88,13 @@ test('project context cannot expose private or foreign subscriptions or bypass p
   expect((await app.request(`${path()}/${ids.claude}/usage`, { method: 'POST' })).status).toBe(403);
 });
 
-test('disconnect removes the caller legacy Claude login so discovery cannot resurrect it', async () => {
+test('disconnect deletes the caller retired Claude login from storage', async () => {
+  const storedLogin = () => db.select({ userId: claudeSubscriptionLogins.userId }).from(claudeSubscriptionLogins).where(and(
+    eq(claudeSubscriptionLogins.accountId, project.account_id),
+    eq(claudeSubscriptionLogins.userId, MEMBER),
+  ));
+  expect(await storedLogin()).toHaveLength(1);
   const disconnected = await app.request(`/v1/projects/${project.project_id}/claude-subscription`, { method: 'DELETE' });
   expect(disconnected.status).toBe(200);
-  const response = await app.request(`/v1/accounts/${project.account_id}/subscription-connections?project_id=${project.project_id}`);
-  expect((await response.json()).subscriptions.some((s: { storage: string }) => s.storage === 'claude_login')).toBe(false);
+  expect(await storedLogin()).toHaveLength(0);
 });
