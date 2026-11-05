@@ -363,31 +363,20 @@ export function createProjectWebhookRateLimitMiddleware() {
 }
 
 /**
- * Guards the routes an App calls with its own token (`POST …/apps/:appId/events`,
- * `POST|DELETE …/apps/:appId/runs`), keyed on the App. An App in a tight loop
- * would otherwise write up to 50 event-log rows per request without bound;
- * past the limit it gets a 429 with `retry_after_seconds` and writes nothing.
+ * The per-App request limit on the routes an App calls with its own token
+ * (`POST …/apps/:appId/events`, `POST …/runs`, `DELETE …/runs/:runId`).
+ * An App in a tight loop would otherwise write up to 50 event-log rows per
+ * request without bound. Call it AFTER the token is verified: a limiter in
+ * front of auth would let anyone who knows an App id spend its budget and
+ * block its real events. Sets the rate headers; returns the wait when the App is over.
  */
-export function createAppEventRateLimitMiddleware() {
-  return async (c: Context, next: Next) => {
-    const key = `${c.req.param('projectId') || 'unknown'}:${c.req.param('appId') || 'unknown'}`;
-    const result = appEventLimiter.check(key, {
-      limit: positiveInt((config as any).KORTIX_APP_EVENT_REQS_PER_MIN, 120),
-      windowMs: 60_000,
-    });
-    setHeaders(c, result);
-    if (!result.allowed) {
-      return c.json(
-        {
-          error: 'rate_limit_exceeded',
-          message: 'This App sent more than its requests per minute. Send events in batches ({ "events": [...] }, at most 50) and retry shortly.',
-          retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
-        },
-        429,
-      );
-    }
-    await next();
-  };
+export function appEventRateLimited(c: Context, projectId: string, appId: string): { retryAfterSeconds: number } | null {
+  const result = appEventLimiter.check(`${projectId}:${appId}`, {
+    limit: positiveInt((config as any).KORTIX_APP_EVENT_REQS_PER_MIN, 120),
+    windowMs: 60_000,
+  });
+  setHeaders(c, result);
+  return result.allowed ? null : { retryAfterSeconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000) };
 }
 
 /**

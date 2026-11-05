@@ -16,7 +16,7 @@ import { bearerToken } from '../shared/bearer-token';
 import { readJsonObject } from '../shared/http-body';
 import { appEventTokenMatches } from './events';
 import { scopedApp } from './route-access';
-import { createAppEventRateLimitMiddleware } from '../middleware/rate-limit';
+import { appEventRateLimited } from '../middleware/rate-limit';
 
 export const appEventsApp = makeOpenApiApp();
 
@@ -42,15 +42,13 @@ async function tokenApp(authorization: string | undefined, projectId: string, ap
   return (await scopedApp(projectId, appId)) ?? 404;
 }
 const TOKEN_ERROR = { error: 'Send the App token: Authorization: Bearer $KORTIX_APP_TOKEN', code: 'app_token_invalid' } as const;
+const rateLimitBody = (retryAfterSeconds: number) => ({
+  error: 'This App sent too many requests this minute. Send events in batches ({ "events": [...] }, at most 50) and retry shortly.',
+  code: 'rate_limit_exceeded',
+  retry_after_seconds: retryAfterSeconds,
+});
 
 export function registerAppEventRoutes(): void {
-  // Per-App request limit on the token routes only: a person's GET of the
-  // same path (the event log, ./event-log-routes.ts) never spends it.
-  const limit = createAppEventRateLimitMiddleware();
-  appEventsApp.on('POST', '/:projectId/apps/:appId/events', limit);
-  appEventsApp.on('POST', '/:projectId/apps/:appId/runs', limit);
-  appEventsApp.on('DELETE', '/:projectId/apps/:appId/runs/:runId', limit);
-
   appEventsApp.openapi(
     createRoute({
       method: 'post', path: '/{projectId}/apps/{appId}/events', tags: ['apps'],
@@ -84,6 +82,8 @@ export function registerAppEventRoutes(): void {
       const { projectId, appId } = c.req.valid('param');
       const app = await tokenApp(c.req.header('authorization'), projectId, appId);
       if (app === 401) return c.json(TOKEN_ERROR, 401);
+      const limited = appEventRateLimited(c, projectId, appId);
+      if (limited) return c.json(rateLimitBody(limited.retryAfterSeconds), 429);
       if (app === 404) return c.json({ error: 'Not found' }, 404);
       const events = parseAppEventsBody(await readJsonObject(c));
       if ('error' in events) return c.json({ error: events.error }, 400);
@@ -106,6 +106,8 @@ export function registerAppEventRoutes(): void {
       const { projectId, appId } = c.req.valid('param');
       const app = await tokenApp(c.req.header('authorization'), projectId, appId);
       if (app === 401) return c.json(TOKEN_ERROR, 401);
+      const limited = appEventRateLimited(c, projectId, appId);
+      if (limited) return c.json(rateLimitBody(limited.retryAfterSeconds), 429);
       if (app === 404) return c.json({ error: 'Not found' }, 404);
       const body = RunRequest.safeParse(await readJsonObject(c));
       if (!body.success) return c.json({ error: body.error.issues[0]?.message ?? 'invalid body' }, 400);
@@ -134,6 +136,8 @@ export function registerAppEventRoutes(): void {
       const { projectId, appId, runId } = c.req.valid('param');
       const app = await tokenApp(c.req.header('authorization'), projectId, appId);
       if (app === 401) return c.json(TOKEN_ERROR, 401);
+      const limited = appEventRateLimited(c, projectId, appId);
+      if (limited) return c.json(rateLimitBody(limited.retryAfterSeconds), 429);
       if (app === 404 || !(await cancelAppRun(projectId, app.slug, runId))) return c.json({ error: 'Not found' }, 404);
       return c.json({ cancelled: true as const }, 200);
     },
