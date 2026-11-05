@@ -35,8 +35,11 @@ beforeAll(async () => {
   });
   browser = await chromium.launch({
     headless: true,
-    executablePath: Bun.which('chromium') ?? undefined,
+    // CI installs Playwright's Chromium (PLAYWRIGHT_BROWSERS_PATH); a system `chromium`
+    // on the runner image is used only where Playwright has none.
+    executablePath: process.env.PLAYWRIGHT_BROWSERS_PATH ? undefined : (Bun.which('chromium') ?? undefined),
     args: ['--no-sandbox'],
+    timeout: 20_000,
   });
 }, 30_000);
 
