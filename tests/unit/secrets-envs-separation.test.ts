@@ -137,11 +137,13 @@ describe('scripts/secrets-envs-separation.py', () => {
         A: 'POSTGRES://user:pw@api.kortix.com:5432/kortix',
         B: `${long}postgres://user:pw@gateway.kortix.com:5432/k`,
         C: '"postgres://user:pw@supa.kortix.com:5432/k"',
-        D: `postgres://user:pw@dev-db.kortix.internal:5432/k,POSTGRES://user:pw@api-ecs-fargate.kortix.com:5432/k`,
+        D: 'postgres://user:pw@dev-db.kortix.internal:5432/k,POSTGRES://user:pw@api-ecs-fargate.kortix.com:5432/k',
       }),
     });
     expect(r.code, r.out).toBe(1);
-    expect(r.out).toMatch(/A +names api\.kortix\.com[^\n]*\n[^\n]*B +names gateway\.kortix\.com[^\n]*\n[^\n]*C +names supa\.kortix\.com/);
+    expect(r.out).toMatch(
+      /A +names api\.kortix\.com[^\n]*\n[^\n]*B +names gateway\.kortix\.com[^\n]*\n[^\n]*C +names supa\.kortix\.com/,
+    );
     expect(r.out).toMatch(/D +names api-ecs-fargate\.kortix\.com/);
     expect(r.out).not.toMatch(/dev-db\.kortix\.internal/);
   });
@@ -149,7 +151,11 @@ describe('scripts/secrets-envs-separation.py', () => {
   it('never matches a bare boolean against a prod one (self-review B)', () => {
     const r = run({
       prod: { KORTIX_X_ENABLED: 'true', KORTIX_Y_ENABLED: 'false' },
-      nonProd: nonProd({ KORTIX_X_ENABLED: 'true', KORTIX_Y_ENABLED: 'false', DATABASE_URL: 'postgres://local-db/main' }),
+      nonProd: nonProd({
+        KORTIX_X_ENABLED: 'true',
+        KORTIX_Y_ENABLED: 'false',
+        DATABASE_URL: 'postgres://local-db/main',
+      }),
     });
     expect(r.code, r.out).toBe(0);
     expect(r.out).not.toMatch(/KORTIX_X_ENABLED|KORTIX_Y_ENABLED/);
@@ -233,7 +239,10 @@ describe('scripts/secrets-envs-separation.py', () => {
       KORTIX_PREVIEW_BASE_DOMAIN: 'p.kortix.com',
     };
     const r = run(
-      { prod: brand, nonProd: nonProd({ ...brand, DATABASE_URL: 'postgres://dev-db:5432/kortix' }) },
+      {
+        prod: brand,
+        nonProd: nonProd({ ...brand, DATABASE_URL: 'postgres://dev-db:5432/kortix' }),
+      },
       'CLOUDFLARE_ZONE_NAME one DNS zone\nMAILTRAP_FROM_EMAIL one mail domain\n' +
         'RESEND_FROM_EMAIL one mail domain\nRESEND_MANAGED_DOMAIN one sending domain\n' +
         'KORTIX_PREVIEW_BASE_DOMAIN one preview domain\n',
@@ -249,11 +258,16 @@ describe('scripts/secrets-envs-separation.py', () => {
   // or a LIVE key, because an entry waives the shared-value class only.
   it('a brand allowlist entry still fails a prod host (KRTX-4108 item 1)', () => {
     const r = run(
-      { prod: {}, nonProd: nonProd({ CLOUDFLARE_ZONE_NAME: 'postgres://u:p@api.kortix.com:5432/x' }) },
+      {
+        prod: {},
+        nonProd: nonProd({ CLOUDFLARE_ZONE_NAME: 'postgres://u:p@api.kortix.com:5432/x' }),
+      },
       'CLOUDFLARE_ZONE_NAME one DNS zone\n',
     );
     expect(r.code, r.out).toBe(1);
-    expect(r.out).toMatch(/✗ local +CLOUDFLARE_ZONE_NAME +names api\.kortix\.com \u2014 split it$/m);
+    expect(r.out).toMatch(
+      /✗ local +CLOUDFLARE_ZONE_NAME +names api\.kortix\.com \u2014 split it$/m,
+    );
   });
 
   it('still fails a credential DSN that points at a prod host (KRTX-4108 item 1)', () => {
@@ -285,7 +299,9 @@ describe('scripts/secrets-envs-separation.py', () => {
       'BETTERSTACK_CLICKHOUSE_HOST same Better Stack source\nBETTERSTACK_MCP_URL one MCP endpoint\n',
     );
     expect(r.code, r.out).toBe(1);
-    expect(r.out).toMatch(/✗ local +BETTERSTACK_CLICKHOUSE_HOST +names api\.kortix\.com — split it$/m);
+    expect(r.out).toMatch(
+      /✗ local +BETTERSTACK_CLICKHOUSE_HOST +names api\.kortix\.com — split it$/m,
+    );
     expect(r.out).toMatch(/✗ local +BETTERSTACK_MCP_URL +names a LIVE Stripe key/);
   });
 
@@ -298,7 +314,8 @@ describe('scripts/secrets-envs-separation.py', () => {
         SUPABASE_URL: 'postgres://u:p@supa.kortix.com:5432/db',
         KORTIX_GATEWAY_URL: 'postgres://u:p@gateway.kortix.com:6543/db',
         DATABASE_URL: 'postgres://u:p@API.KORTIX.COM.:5432/db',
-        PIPEDREAM: 'postgres://u:p@api-ecs-fargate.kortix.com:5432/db|postgres://u:p@dev.kortix.com:5432/db',
+        PIPEDREAM:
+          'postgres://u:p@api-ecs-fargate.kortix.com:5432/db|postgres://u:p@dev.kortix.com:5432/db',
         DEV_DB: 'postgres://u:p@dev-api.kortix.com:5432/db',
         STAGE_DB: 'postgres://u:p@staging.kortix.com:5432/db',
         LOCAL_DB: 'postgres://u:p@db.kortix.internal:5432/db',
@@ -328,7 +345,10 @@ describe('scripts/secrets-envs-separation.py', () => {
   // The committed profiles are the ones `pnpm test:envs` reads on a host that can decrypt
   // prod: a brand key missing from the shipped allowlist fails dev and staging there.
   it('ships an allowlist entry for every brand value the committed profiles hold', () => {
-    const shipped = readFileSync(resolve(root, 'scripts/secrets-shared-with-prod.allowlist'), 'utf8');
+    const shipped = readFileSync(
+      resolve(root, 'scripts/secrets-shared-with-prod.allowlist'),
+      'utf8',
+    );
     const listed = new Set(
       shipped
         .split('\n')
