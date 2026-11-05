@@ -412,8 +412,11 @@ this trigger and status-watch-tick once it reads Operational." --on app --app st
 
 A watcher hand-off names the source, what counts as a change, the event `name`,
 the `data` fields, the content-built `id`, the cadence and the secrets. The builder deploys it on demand and proves it with one test
-event (`id` starting `test-`), not a real `/tick`: each `id` fires once, so a
-real event posted before the work trigger exists is spent. Wire the work first
+event, not a real `/tick`: `kortix apps events emit <app> <name> --data '{…}'
+--wait` takes the real path with an id starting `test-` and exits 0 only when
+a trigger fired. When nothing runs, read `kortix apps events <app>`: each row
+says fired (and the session), skipped and why, or unmatched (no trigger
+listens yet). Wire the work first
 (`--type app --app <app> --event <name>`, filtered, keyed and capped as in
 "Automations"), then the check (`--every 15m --target-app <app> --target-path
 /tick`: it POSTs, so `/tick` takes POST), then fire it once and read the runs. A system
