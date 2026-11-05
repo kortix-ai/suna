@@ -581,8 +581,8 @@ importers:
   apps/mobile:
     dependencies:
       '@expensify/react-native-live-markdown':
-        specifier: 0.1.339
-        version: 0.1.339(expensify-common@2.0.204)(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0)
+        specifier: 0.1.364
+        version: 0.1.364(expensify-common@2.0.224)(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0)
       '@expo/ui':
         specifier: 58.0.26
         version: 58.0.26(@babel/core@7.29.7)(expo@58.0.22)(react-dom@19.3.0)(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0)
@@ -653,8 +653,8 @@ importers:
         specifier: ^1.5.2
         version: 1.5.2(@types/react@19.2.18)(react-dom@19.3.0)(react-native-web@0.21.4)(react-native@0.88.1)(react@19.3.0)
       '@shopify/react-native-skia':
-        specifier: 2.6.9
-        version: 2.6.9(react-native-reanimated@4.7.1)(react-native@0.88.1)(react@19.3.0)
+        specifier: 2.14.0
+        version: 2.14.0(react-native-reanimated@4.7.1)(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0)
       '@supabase/supabase-js':
         specifier: ^2.75.0
         version: 2.116.0(@opentelemetry/api@1.9.0)
@@ -668,8 +668,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       expensify-common:
-        specifier: ^2.0.204
-        version: 2.0.204
+        specifier: 2.0.224
+        version: 2.0.224
       expo:
         specifier: 58.0.22
         version: 58.0.22(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(@expo/metro-runtime@58.0.17)(expo-router@58.0.29)(react-dom@19.3.0)(react-native-web@0.21.4)(react-native-webview@14.0.1)(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0)(typescript@6.0.3)
@@ -6713,15 +6713,15 @@ packages:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  /@expensify/react-native-live-markdown@0.1.339(expensify-common@2.0.204)(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0):
-    resolution: {integrity: sha512-ijeLa87cFI/odfJ78GeL6mmJJK9mdpDw9G81kEl6dU5mHwcoPq7rAeSqYLW7hrqaSoCT5pR/UNU6S+9sKKa8Qg==}
+  /@expensify/react-native-live-markdown@0.1.364(expensify-common@2.0.224)(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0):
+    resolution: {integrity: sha512-S6bX1sAXjC/AgwJ0SrAVS1vXG4z1HzrX09pn5OveSwTT7ZeNC9n+4MCVAXc9x+yBm2ePEhDjKor3aUGKDIRQCA==}
     peerDependencies:
-      expensify-common: '>=2.0.201'
+      expensify-common: '>=2.0.207'
       react: '*'
       react-native: '*'
       react-native-worklets: '>=0.7.0'
     dependencies:
-      expensify-common: 2.0.204
+      expensify-common: 2.0.224
       react: 19.3.0
       react-native: 0.88.1(@babel/core@7.29.7)(@react-native/metro-config@0.88.0)(@types/react@19.2.18)(react@19.3.0)
       react-native-worklets: 0.13.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0)(react-native@0.88.1)(react@19.3.0)
@@ -13569,27 +13569,31 @@ packages:
   /@shikijs/vscode-textmate@10.0.2:
     resolution: {integrity: sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg==}
 
-  /@shopify/react-native-skia@2.6.9(react-native-reanimated@4.7.1)(react-native@0.88.1)(react@19.3.0):
-    resolution: {integrity: sha512-x+16pwmnW9ZQKy4/B7Npc1b5Qli9vZCAiWn9uU58tLylJity8qV+fUb4gf6Qolqsw/u6FPaNTaAnHVCvu3LnRw==}
+  /@shopify/react-native-skia@2.14.0(react-native-reanimated@4.7.1)(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0):
+    resolution: {integrity: sha512-mzizcTeUAgvam+m1BsxTs+K8ujUXkzoCmwumUhV5NWcoImmKJiWUMfQYgw2OOt1p6qpr7+G5pPOELAmNzZRvlw==}
     hasBin: true
     peerDependencies:
       react: '>=19.0'
       react-native: '>=0.78'
-      react-native-reanimated: '>=3.19.1'
+      react-native-reanimated: '>=4.0.0'
+      react-native-worklets: '>=0.7.0'
     peerDependenciesMeta:
       react-native:
         optional: true
       react-native-reanimated:
+        optional: true
+      react-native-worklets:
         optional: true
     dependencies:
       canvaskit-wasm: 0.41.0
       react: 19.3.0
       react-native: 0.88.1(@babel/core@7.29.7)(@react-native/metro-config@0.88.0)(@types/react@19.2.18)(react@19.3.0)
       react-native-reanimated: 4.7.1(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0)
-      react-native-skia-android: 150.0.0
-      react-native-skia-apple-ios: 150.0.0
-      react-native-skia-apple-macos: 150.0.0
-      react-native-skia-apple-tvos: 150.0.0
+      react-native-skia-android: 154.0.0
+      react-native-skia-apple-ios: 154.0.0
+      react-native-skia-apple-macos: 154.0.0
+      react-native-skia-apple-tvos: 154.0.0
+      react-native-worklets: 0.13.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0)(react-native@0.88.1)(react@19.3.0)
       react-reconciler: 0.31.0(react@19.3.0)
     dev: false
 
@@ -21013,8 +21017,8 @@ packages:
     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
     engines: {node: '>=12.0.0'}
 
-  /expensify-common@2.0.204:
-    resolution: {integrity: sha512-Myewoj4qwrIoPRbDJl/ywEZlTdg+h470RwXo0HTffbMtEpdgIlS5OZXpkerDSmCkjKgDS6qrpMELDP/kyUX0ow==}
+  /expensify-common@2.0.224:
+    resolution: {integrity: sha512-18TWqwFPmr64szAl+JKA7+g4IBP0/fvuNRPWV1vIFLdQs1tvg4VRk97s3K599iuLCa1I4/29zX+Fjh8HHt/TxQ==}
     dependencies:
       awesome-phonenumber: 5.11.0
       classnames: 2.5.0
@@ -28225,20 +28229,20 @@ packages:
       react-native: 0.88.1(@babel/core@7.29.7)(@react-native/metro-config@0.88.0)(@types/react@19.2.18)(react@19.3.0)
       warn-once: 0.1.1
 
-  /react-native-skia-android@150.0.0:
-    resolution: {integrity: sha512-Eiv52NT6Y1eB8ZGmM8Uz01SQ+U8OAaDy2WSpPQQCpvfCWid1ufpsh1YhWVGrW55IJdJWm6/8DJTDEyQsJLH5ew==}
+  /react-native-skia-android@154.0.0:
+    resolution: {integrity: sha512-brjJaJcrYguSOwdbvMBlh+tHJdIvzOMUZSjTmIpiIe4/V9x0HsBZM9sy3q32+WGoSPWibylR7hbDmaO12EYAUA==}
     dev: false
 
-  /react-native-skia-apple-ios@150.0.0:
-    resolution: {integrity: sha512-RrJHQEcsPUN8i/KqBwqEIQ6MmbMvL3nWtlJPQ+K5n6Nw4SF0W9VhL2yf2/jguX0WWydMyR5R4pSrJprfWFBMAg==}
+  /react-native-skia-apple-ios@154.0.0:
+    resolution: {integrity: sha512-7xq2XYEbcfQYcqyXEnTDXF9GjQzKHuDiUep6wOvOXzoK62108DR8dM3VYgOqJqCTqspPHC9fEJeT52fK3UU5Qg==}
     dev: false
 
-  /react-native-skia-apple-macos@150.0.0:
-    resolution: {integrity: sha512-CBqQvaWRl5U+jBjUPbTGrf3g6M0GM7S0g6Ia6QK91K2G5xkMwrzs9l03zheYSdLzTtRCnW+Tkyws7K4whDJc3g==}
+  /react-native-skia-apple-macos@154.0.0:
+    resolution: {integrity: sha512-0BE6/oVMXYOKsxI4JJP1MwwrgmaDnZAl9l6N+7q434MFiT+w0z96a0gTilZukzo1y+35sDi/sA+iAdTz16ElYA==}
     dev: false
 
-  /react-native-skia-apple-tvos@150.0.0:
-    resolution: {integrity: sha512-W1oDsSGK+nRvPu2/b1tUWvOorbYTjhJ3SLWDPAIWH43mSgfdn3zws3AZttfJO81Qmqpf3blJrFCoCzASRdi7qg==}
+  /react-native-skia-apple-tvos@154.0.0:
+    resolution: {integrity: sha512-W06tUa+O3TJTYg5G+Lly/pwxE+2zKsmwJ/23yeR+25zSu7VmfdSz3VqFN3BM0jEioN4ASMm/0cMECocV7vxbMQ==}
     dev: false
 
   /react-native-sse@1.2.1:

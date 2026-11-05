@@ -22,7 +22,7 @@
     "test": "node ../../scripts/test-guard.mjs \"bun test --isolate\""
   },
   "dependencies": {
-    "@expensify/react-native-live-markdown": "0.1.339",
+    "@expensify/react-native-live-markdown": "0.1.364",
     "@expo/ui": "58.0.26",
     "@gorhom/bottom-sheet": "^5.2.6",
     "@kortix/sdk": "workspace:*",
@@ -46,12 +46,12 @@
     "@rn-primitives/slot": "^1.5.2",
     "@rn-primitives/switch": "^1.5.2",
     "@rn-primitives/tabs": "^1.5.2",
-    "@shopify/react-native-skia": "2.6.9",
+    "@shopify/react-native-skia": "2.14.0",
     "@supabase/supabase-js": "^2.75.0",
     "@tanstack/react-query": "^5.90.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "expensify-common": "^2.0.204",
+    "expensify-common": "2.0.224",
     "expo": "58.0.22",
     "expo-apple-authentication": "~58.0.2",
     "expo-asset": "58.0.19",
@@ -141,12 +141,5 @@
   "private": true,
   "overrides": {
     "html-entities": "2.5.3"
-  },
-  "expo": {
-    "install": {
-      "exclude": [
-        "@shopify/react-native-skia"
-      ]
-    }
   }
 }

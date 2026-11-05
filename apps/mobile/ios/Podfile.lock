@@ -1752,7 +1752,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - react-native-skia (2.6.9):
+  - react-native-skia (2.14.0):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2290,7 +2290,7 @@ PODS:
     - ReactNativeDependencies
     - RNWorklets (>= 0.8.0)
     - Yoga
-  - RNLiveMarkdown (0.1.339):
+  - RNLiveMarkdown (0.1.364):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2697,7 +2697,7 @@ DEPENDENCIES:
   - "React-mutationobservernativemodule (from `../../../node_modules/.pnpm/react-native@0.88.1_@babel+core@7.29.7_@react-native+metro-config@0.88.0_@types+react@19.2.18_react@19.3.0/node_modules/react-native/ReactCommon/react/nativemodule/mutationobserver`)"
   - "react-native-keyboard-controller (from `../../../node_modules/.pnpm/react-native-keyboard-controller@1.22.7_react-native-reanimated@4.7.1_react-native@0.88.1_react@19.3.0/node_modules/react-native-keyboard-controller`)"
   - "react-native-safe-area-context (from `../../../node_modules/.pnpm/react-native-safe-area-context@5.11.0_react-native@0.88.1_react@19.3.0/node_modules/react-native-safe-area-context`)"
-  - "react-native-skia (from `../../../node_modules/.pnpm/@shopify+react-native-skia@2.6.9_react-native-reanimated@4.7.1_react-native@0.88.1_react@19.3.0/node_modules/@shopify/react-native-skia`)"
+  - "react-native-skia (from `../../../node_modules/.pnpm/@shopify+react-native-skia@2.14.0_react-native-reanimated@4.7.1_react-native-worklets@0.13.0__wfoqfpnaroe3zi6dcjdmabefiy/node_modules/@shopify/react-native-skia`)"
   - "react-native-uitextview (from `../../../node_modules/.pnpm/react-native-uitextview@2.7.1_react-native@0.88.1_react@19.3.0/node_modules/react-native-uitextview`)"
   - "react-native-webview (from `../../../node_modules/.pnpm/react-native-webview@14.0.1_react-native@0.88.1_react@19.3.0/node_modules/react-native-webview`)"
   - "React-NativeModulesApple (from `../../../node_modules/.pnpm/react-native@0.88.1_@babel+core@7.29.7_@react-native+metro-config@0.88.0_@types+react@19.2.18_react@19.3.0/node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)"
@@ -2740,7 +2740,7 @@ DEPENDENCIES:
   - "RNCAsyncStorage (from `../../../node_modules/.pnpm/@react-native-async-storage+async-storage@2.2.0_react-native@0.88.1/node_modules/@react-native-async-storage/async-storage`)"
   - "RNCMaskedView (from `../../../node_modules/.pnpm/@react-native-masked-view+masked-view@0.3.2_react-native@0.88.1_react@19.3.0/node_modules/@react-native-masked-view/masked-view`)"
   - "RNGestureHandler (from `../../../node_modules/.pnpm/react-native-gesture-handler@3.3.0_react-native@0.88.1_react@19.3.0/node_modules/react-native-gesture-handler`)"
-  - "RNLiveMarkdown (from `../../../node_modules/.pnpm/@expensify+react-native-live-markdown@0.1.339_expensify-common@2.0.204_react-native-worklets@_kzmfntvhubj5pzlpz6bpzmwcgq/node_modules/@expensify/react-native-live-markdown`)"
+  - "RNLiveMarkdown (from `../../../node_modules/.pnpm/@expensify+react-native-live-markdown@0.1.364_expensify-common@2.0.224_react-native-worklets@_hepglmxyh7zydqqnuenlov4rk4/node_modules/@expensify/react-native-live-markdown`)"
   - "RNPaywalls (from `../../../node_modules/.pnpm/react-native-purchases-ui@9.15.2_react-native-purchases@9.15.2_react-native-web@0.21.4_react-native@0.88.1_react@19.3.0/node_modules/react-native-purchases-ui`)"
   - "RNPurchases (from `../../../node_modules/.pnpm/react-native-purchases@9.15.2_react-native-web@0.21.4_react-native@0.88.1_react@19.3.0/node_modules/react-native-purchases`)"
   - "RNReanimated (from `../../../node_modules/.pnpm/react-native-reanimated@4.7.1_react-native-worklets@0.13.0_react-native@0.88.1_react@19.3.0/node_modules/react-native-reanimated`)"
@@ -2952,7 +2952,7 @@ EXTERNAL SOURCES:
   react-native-safe-area-context:
     :path: "../../../node_modules/.pnpm/react-native-safe-area-context@5.11.0_react-native@0.88.1_react@19.3.0/node_modules/react-native-safe-area-context"
   react-native-skia:
-    :path: "../../../node_modules/.pnpm/@shopify+react-native-skia@2.6.9_react-native-reanimated@4.7.1_react-native@0.88.1_react@19.3.0/node_modules/@shopify/react-native-skia"
+    :path: "../../../node_modules/.pnpm/@shopify+react-native-skia@2.14.0_react-native-reanimated@4.7.1_react-native-worklets@0.13.0__wfoqfpnaroe3zi6dcjdmabefiy/node_modules/@shopify/react-native-skia"
   react-native-uitextview:
     :path: "../../../node_modules/.pnpm/react-native-uitextview@2.7.1_react-native@0.88.1_react@19.3.0/node_modules/react-native-uitextview"
   react-native-webview:
@@ -3038,7 +3038,7 @@ EXTERNAL SOURCES:
   RNGestureHandler:
     :path: "../../../node_modules/.pnpm/react-native-gesture-handler@3.3.0_react-native@0.88.1_react@19.3.0/node_modules/react-native-gesture-handler"
   RNLiveMarkdown:
-    :path: "../../../node_modules/.pnpm/@expensify+react-native-live-markdown@0.1.339_expensify-common@2.0.204_react-native-worklets@_kzmfntvhubj5pzlpz6bpzmwcgq/node_modules/@expensify/react-native-live-markdown"
+    :path: "../../../node_modules/.pnpm/@expensify+react-native-live-markdown@0.1.364_expensify-common@2.0.224_react-native-worklets@_hepglmxyh7zydqqnuenlov4rk4/node_modules/@expensify/react-native-live-markdown"
   RNPaywalls:
     :path: "../../../node_modules/.pnpm/react-native-purchases-ui@9.15.2_react-native-purchases@9.15.2_react-native-web@0.21.4_react-native@0.88.1_react@19.3.0/node_modules/react-native-purchases-ui"
   RNPurchases:
@@ -3156,7 +3156,7 @@ SPEC CHECKSUMS:
   React-mutationobservernativemodule: b85faf3c54644c0ef2c758cd8c4e6ce16fb1f8ae
   react-native-keyboard-controller: 8da3439009d9bea47a38462af94227c2c228708e
   react-native-safe-area-context: e7f23745246a0cd164fd478373874fd7872788bf
-  react-native-skia: ddbdd4fa255abcd9b47d72942ee35c59d1922d5f
+  react-native-skia: b9d6b324ab6b97c66a00d9b3ab26fade8bf72132
   react-native-uitextview: b5c63822d1725259398a8bc694507ee1ba694631
   react-native-webview: 0350e63d9eff606d9923619409987b6cd1ac58f5
   React-NativeModulesApple: 8cfb2f308f48c48068c96b932e7f0e4297c23342
@@ -3201,7 +3201,7 @@ SPEC CHECKSUMS:
   RNCAsyncStorage: 47ffec1d3f091c4a21881654bbd5e2e7f62efbc9
   RNCMaskedView: a9c7c7992c85d8073707286fb59a857bc786cbd5
   RNGestureHandler: ddbdf3f293a498368803f8181ff157271ac05c48
-  RNLiveMarkdown: 5eef56172621e297fea7d9100c47e9bd94468aed
+  RNLiveMarkdown: 79376f82e805eed833eced8e2f870822f87f367c
   RNPaywalls: 26e03d5c8ca04e9d89319eebbe8d26c14faa0a5e
   RNPurchases: 4f6b0209e2fb4152bda0d0276a2a46d2b3416752
   RNReanimated: 021c235c9ea63f10de24bd6b30551131e563346d
