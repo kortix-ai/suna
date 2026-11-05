@@ -55,9 +55,9 @@ const st = {
   h1: { margin: `0 0 ${L.gap.title_after}px`, color: C.ink, fontFamily: EMAIL_FONT_SANS, fontSize: T.title, lineHeight: L.lineHeight.title, fontWeight: W.title, letterSpacing: L.letterSpacing.title, textAlign: 'left', textWrap: 'balance' },
   footer: { padding: '32px 0 16px', textAlign: 'left' },
   slogan: { ...small, fontSize: T.label, margin: '0 0 16px' },
-  // A table cell, not link padding: Outlook desktop ignores padding on <a>.
+  // A table cell, not link padding or table margin: Outlook desktop ignores both.
   // Right padding only, so the first icon sits on the footer's left edge.
-  socialCell: { padding: '0 16px 0 0', verticalAlign: 'middle' },
+  socialCell: { padding: '0 16px 16px 0', verticalAlign: 'middle' },
   small,
   smallLink: { color: C.inkMuted, textDecoration: 'underline' },
   button: { display: 'inline-block', backgroundColor: C.ink, color: C.canvas, padding: L.buttonPadding, borderRadius: L.buttonRadius, fontFamily: EMAIL_FONT_SANS, fontSize: T.body, lineHeight: '20px', fontWeight: W.strong, textDecoration: 'none', textAlign: 'center' },
@@ -98,7 +98,7 @@ function Shell(props: { title: string; body: string; preview: string }) {
 
             <Section style={st.footer}>
               <Text style={st.slogan}>{BRAND_FOOTER}</Text>
-              <table role="presentation" cellPadding={0} cellSpacing={0} border={0} style={{ marginBottom: 16 }}>
+              <table role="presentation" cellPadding={0} cellSpacing={0} border={0}>
                 <tbody>
                   <tr>
                     {SOCIALS.map((s) => (
