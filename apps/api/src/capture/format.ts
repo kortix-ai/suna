@@ -8,6 +8,7 @@
  * (every Kortix prefix is written by a schema-2 engine); unknown fields are
  * ignored.
  */
+import { cleanOsVersion } from './diagnostics';
 import { z } from 'zod';
 import {
   CAPTURE_EXCLUSION_GROUPS,
@@ -395,7 +396,7 @@ export function deviceFields(raw: Record<string, unknown>): {
   return {
     name: clip(raw.computer_name) ?? clip(raw.hostname),
     os: clip(raw.os),
-    osVersion: clip(raw.os_version),
+    osVersion: cleanOsVersion(clip(raw.os_version)),
     arch: clip(raw.arch),
     appVersion: clip(raw.app_version),
   };

@@ -290,6 +290,21 @@ const FIXTURES: Fixture[] = [
     input: 'triggers:\n  - slug: t\n    type: app\n    app: bank-replies\n    event: X\n    prompt: go\n',
   },
   {
+    name: 'app: expect_event_within on an app trigger is valid',
+    valid: true,
+    input: 'triggers:\n  - slug: t\n    type: app\n    app: bank-replies\n    expect_event_within: 30m\n    prompt: go\n',
+  },
+  {
+    name: 'app: expect_event_within in the on/run shape is valid',
+    valid: true,
+    input: 'triggers:\n  - slug: t\n    on: { event: reply.received, app: bank-replies }\n    run: { prompt: go }\n    expect_event_within: 2h\n',
+  },
+  {
+    name: 'app: expect_event_within on a cron trigger is rejected',
+    valid: false,
+    input: 'triggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    expect_event_within: 1h\n    prompt: go\n',
+  },
+  {
     name: 'app: app key on a cron trigger is rejected',
     valid: false,
     input: 'triggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    app: bank-replies\n    prompt: go\n',

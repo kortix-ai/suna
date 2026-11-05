@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { featureFlagDef, resolveFeatureFlag } from '../../feature-flags/registry';
 import { startsFrontThread } from './front-thread';
 
 // A talk-only thread (`chat_front`) is decided from server-side state only.
@@ -30,5 +31,15 @@ describe('startsFrontThread', () => {
     expect(startsFrontThread({ ...base, parentSessionId: 'sess-parent' })).toBe(false);
     expect(startsFrontThread({ ...base, forkFromSessionId: 'sess-source' })).toBe(false);
     expect(startsFrontThread({ ...base, source: 'trigger:daily' })).toBe(false);
+  });
+});
+
+describe('the chat_front flag', () => {
+  test('is the router, off by default', () => {
+    const def = featureFlagDef('chat_front');
+    expect(def.name).toBe('Router');
+    expect(def.description).toContain('is a router: it hands the work to your agents and writes back like a person');
+    expect(def.description).toContain('the router passes file paths, not retyped text');
+    expect(resolveFeatureFlag({}, 'chat_front')).toBe(false);
   });
 });

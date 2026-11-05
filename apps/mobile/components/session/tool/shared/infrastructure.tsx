@@ -481,7 +481,7 @@ function BasicToolRow({ icon, trigger, running, outcome, triggerAction, onSubtit
 
   if (press || (activates && activate)) {
     return (
-      <Pressable accessibilityRole="button" onPress={press ? (locked ? undefined : press) : activate} style={rowStyle}>
+      <Pressable accessibilityRole="button" onPress={press ? (locked ? undefined : press) : (activate ?? undefined)} style={rowStyle}>
         {header}
       </Pressable>
     );

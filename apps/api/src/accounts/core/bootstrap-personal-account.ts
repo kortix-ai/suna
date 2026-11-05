@@ -24,6 +24,17 @@ async function profileName(userId: string): Promise<string | null> {
   }
 }
 
+/** The provider the user signed up with (`email`, `google`, …), or `unknown`. */
+async function signupMethod(userId: string): Promise<string> {
+  try {
+    const { data } = await getSupabase().auth.admin.getUserById(userId);
+    const provider = data?.user?.app_metadata?.provider;
+    return typeof provider === 'string' && /^[a-z0-9_-]{1,32}$/.test(provider) ? provider : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 /**
  * Idempotent personal-account bootstrap for a new auth user.
  *
@@ -83,12 +94,17 @@ export async function bootstrapPersonalAccount(
       console.warn('[accounts] Mailtrap contact sync failed for %s:', userId, err),
     );
 
-    captureProductEvent({
-      userId,
-      accountId: userId,
-      event: 'account_created',
-      dedupeKey: userId,
-    });
+    // `method` is the auth provider (email, google, github, apple). The lookup
+    // runs in the background and never delays the sign-up.
+    void signupMethod(userId).then((method) =>
+      captureProductEvent({
+        userId,
+        accountId: userId,
+        event: 'user_signed_up',
+        dedupeKey: userId,
+        properties: { method },
+      }),
+    );
 
     return { accountId: userId, created: true };
   }

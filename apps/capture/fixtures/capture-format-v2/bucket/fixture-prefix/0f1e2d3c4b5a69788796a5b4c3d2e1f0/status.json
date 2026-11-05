@@ -19,5 +19,23 @@
   "reportedAtMs": 1790845320000,
   "sync": {
     "state": "off"
+  },
+  "update": {
+    "status": "current",
+    "installed": "0.1.0",
+    "channel": "stable",
+    "latest": "0.1.0",
+    "lastCheckMs": 1790845300000,
+    "lastCheck": "up to date (0.1.0; newest is 0.1.0)",
+    "updatingTo": null,
+    "lastResult": {
+      "at_ms": 1790841900000,
+      "from": "0.0.9",
+      "to": "0.1.0",
+      "outcome": "updated",
+      "detail": null
+    },
+    "badVersions": [],
+    "skipped": []
   }
 }

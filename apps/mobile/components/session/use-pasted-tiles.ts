@@ -12,7 +12,7 @@
  * Tiles are not part of the saved draft: mobile drafts stay text-only.
  */
 import * as React from 'react';
-import type { NativeSyntheticEvent, TextInputSelectionChangeEventData } from 'react-native';
+import type { TextInputSelectionChangeEvent } from 'react-native';
 import {
   PASTED_INLINE_MAX_BYTES,
   newPastedContentId,
@@ -45,7 +45,7 @@ export function usePastedTiles(addFile: (files: AttachedFile[]) => void, initial
   // The last selection the field reported. At a change it is still the one from before it.
   const selectionRef = React.useRef<TextSelection | null>(null);
   const onSelectionChange = React.useCallback(
-    (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+    (e: TextInputSelectionChangeEvent) => {
       selectionRef.current = e.nativeEvent.selection;
     },
     [],

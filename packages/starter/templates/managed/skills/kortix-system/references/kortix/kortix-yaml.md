@@ -206,13 +206,16 @@ triggers:
 - `type: change_request` fires once per merged change request of the
   project. `filter.base` is the branch it must merge into (any when absent);
   other `filter` keys match the payload as on any trigger.
-- Webhook auth: `X-Kortix-Signature: sha256=<hex>` or GitHub's
-  `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the secret), or the
-  secret as `X-Kortix-Token` or `Authorization: Bearer`. Add
-  `X-Kortix-Timestamp` (epoch seconds, within 5 minutes) and sign
-  `<timestamp>.<body>` to stop replay. Answers: `202` queued, `200` skipped
-  (paused or capped), `401` for every miss before authentication (no such
-  enabled webhook trigger, bad signature), `402` no usable model.
+- Webhook auth: `X-Kortix-Signature: sha256=<hex>` (or `X-Hub-Signature-256`)
+  = HMAC-SHA256 of `<timestamp>.<body>` with the secret, plus the
+  **required** `X-Kortix-Timestamp` (epoch seconds, within 5 minutes), so a
+  captured delivery cannot replay. A signature without the timestamp, or of
+  the bare body, is refused `401`. Or the static token: the secret as
+  `X-Kortix-Token` or `Authorization: Bearer`, no timestamp. A plain GitHub
+  webhook signs the bare body, so it uses the static token. Answers: `202`
+  queued, `200` skipped (paused or capped), `401` for every miss before
+  authentication (no such enabled webhook trigger, bad signature, missing or
+  stale timestamp), `402` no usable model.
 - `kortix triggers pause` stops every trigger of the project; `resume`
   starts them again. `enabled: false` stops one.
 

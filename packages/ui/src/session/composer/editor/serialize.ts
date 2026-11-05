@@ -33,8 +33,11 @@ export function collectMentions(nodes: SerializableNode[]): TrackedMention[] {
     // named after the command and the agent would be asked to read a path
     // that does not exist.
     if (node.attrs?.kind === 'command') continue;
+    // A person is plain `@token` text, not a reference block.
+    if (node.attrs?.kind === 'person') continue;
     const kind = (node.attrs?.kind ?? 'file') as MentionKind;
-    const label = node.attrs?.label ?? '';
+    // A space's agent chip shows the display name and carries the slug in `value`.
+    const label = kind === 'agent' ? node.attrs?.value || node.attrs?.label || '' : (node.attrs?.label ?? '');
     // Only sessions round-trip an id — files and agents are addressed by
     // label, matching TrackedMention's existing shape (types.ts) and what
     // session-chat.tsx's send path already expects.
@@ -160,6 +163,10 @@ export function serializeDocument(doc: ProseMirrorNode): {
     // A command chip contributes no text — see `MentionNode.renderText`'s
     // doc comment. The remainder of the paragraph is the args verbatim.
     if (node.type.name === 'mention' && node.attrs.kind === 'command') return '';
+    // A person or a space's agent chip shows a name and sends its token (`value`).
+    if (node.type.name === 'mention' && (node.attrs.kind === 'person' || node.attrs.kind === 'agent')) {
+      return `@${node.attrs.value || node.attrs.label}`;
+    }
     if (node.type.name === 'mention') return `@${node.attrs.label}`;
     // Shift+Enter (and Mod+Enter) insert a `hardBreak` inline leaf —
     // `@tiptap/extension-hard-break`'s keymap, and the node

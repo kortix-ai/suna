@@ -13,10 +13,10 @@
  * exactly one winner.
  */
 import { projectMonitorEvents, projectTriggerRuntime, projects } from '@kortix/db';
-import { and, asc, eq, lt } from 'drizzle-orm';
+import { and, asc, eq, lt, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { GitTriggerSpec } from '../triggers';
-import { APP_EVENT_PROMPT_PREAMBLE, buildAppEventPayload } from './monitor-events';
+import { appEventPromptPreamble, buildAppEventPayload } from './monitor-events';
 import { renderPromptTemplate, triggerFilterMatches } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
 import { takeThrottledRunSlot } from './trigger-run-caps';
@@ -157,7 +157,7 @@ export async function processMonitorEvent(
     await touchMonitorLastEvent(row.projectId, row.slug, row.emittedAt, now);
     return 'skipped';
   }
-  const renderedPrompt = `${APP_EVENT_PROMPT_PREAMBLE}${renderPromptTemplate(spec.promptTemplate, payload)}`;
+  const renderedPrompt = `${appEventPromptPreamble(row.line)}${renderPromptTemplate(spec.promptTemplate, payload)}`;
 
   // Per (project, slug, epoch, seq) — the same key the log dedups on, so a
   // re-claimed event can never mint a second session.
@@ -232,7 +232,8 @@ async function touchMonitorLastEvent(
 ): Promise<void> {
   await db
     .update(projectTriggerRuntime)
-    .set({ lastEventAt: emittedAt, updatedAt: now })
+    // Ingest stamps the time an App posted (app-events.ts); never move it back.
+    .set({ lastEventAt: sql`greatest(coalesce(${projectTriggerRuntime.lastEventAt}, ${emittedAt.toISOString()}::timestamptz), ${emittedAt.toISOString()}::timestamptz)`, updatedAt: now })
     .where(
       and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
     );

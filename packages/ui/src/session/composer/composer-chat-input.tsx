@@ -1,6 +1,7 @@
 'use client';
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { ComposerAutoFocusContext } from './composer-focus-context';
 
 import { SessionOverridesComposer } from '../overrides/session-overrides-composer';
 import type { SessionOverrideSlot } from '../overrides/session-overrides-toolbar';
@@ -152,6 +153,7 @@ export function ComposerChatInput({
   /** Up in an empty composer: open the latest queued message for editing. */
   onArrowUpAtStart?: SessionChatInputProps['onArrowUpAtStart'];
 }) {
+  const contextAutoFocus = useContext(ComposerAutoFocusContext);
   const { data: rosterAgents } = useRuntimeAgents({ projectId });
   const agents = useMemo(() => withChannelAgents(rosterAgents, channelAgentNames), [rosterAgents, channelAgentNames]);
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
@@ -319,7 +321,8 @@ export function ComposerChatInput({
       stopDisabled={stopDisabled}
       isSending={isSending}
       disabled={disabled}
-      autoFocus={autoFocus}
+      // A thread a space's chat opened by itself does not take the focus (`ComposerAutoFocusContext`).
+      autoFocus={autoFocus ?? (contextAutoFocus ? undefined : false)}
       placeholder={placeholder}
       hint={hint}
       prefill={deliveredPrefill}

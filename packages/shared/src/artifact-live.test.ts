@@ -61,6 +61,8 @@ describe('artifact live server frames and agent signals', () => {
     };
     expect(parseArtifactLiveServerFrame(JSON.stringify(frame))).toEqual(frame as never);
     expect(parseArtifactLiveServerFrame(JSON.stringify({ v: 1, t: 'changed', what: 'comments', version: null }))).not.toBeNull();
+    // A co-edited doc's new update (KRTX-3670): the version is its seq.
+    expect(parseArtifactLiveServerFrame(JSON.stringify({ v: 1, t: 'changed', what: 'doc', version: '42' }))).not.toBeNull();
     expect(parseArtifactLiveServerFrame(JSON.stringify({ v: 1, t: 'changed', what: 'secrets', version: null }))).toBeNull();
   });
 

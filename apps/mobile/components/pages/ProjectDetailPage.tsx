@@ -15,6 +15,7 @@ import {
   Platform,
   Image,
   Text as RNText,
+  type ScrollViewInstance
 } from 'react-native';
 import { Pressable as GestureHandlerPressable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
@@ -172,7 +173,7 @@ export function ProjectDetailPage({
   const taskSheetRef = useRef<BottomSheetModal>(null);
   const newTaskSheetRef = useRef<BottomSheetModal>(null);
   const sheetPadding = useSheetBottomPadding();
-  const tabScrollRef = useRef<ScrollView>(null);
+  const tabScrollRef = useRef<ScrollViewInstance>(null);
   const tabLayoutsRef = useRef<Record<number, { x: number; width: number }>>({});
   const [editField, setEditField] = useState<'name' | 'description'>('name');
   const [editValue, setEditValue] = useState('');
@@ -709,7 +710,7 @@ export function ProjectDetailPage({
       {/* Content */}
       <ScrollView
         style={{ flex: 1 }}
-        refreshControl={<RefreshControl refreshing={false} onRefresh={refetch} tintColor={muted} />}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={() => void refetch()} tintColor={muted} />}
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
         {/* ── Files Tab ── */}
         {tab === 'files' &&

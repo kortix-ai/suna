@@ -7,6 +7,7 @@ import {
   parseAuthMethods,
   passwordFailureCopy,
   resolveEmailFlowMode,
+  resolveEmailRetryAfter,
 } from './unified-auth-flow';
 
 describe('parseAuthMethods', () => {
@@ -49,6 +50,21 @@ describe('resolveEmailFlowMode', () => {
     expect(resolveEmailFlowMode('signin')).toBe('unknown');
     expect(resolveEmailFlowMode({ mode: 'weird' })).toBe('unknown');
     expect(resolveEmailFlowMode({})).toBe('unknown');
+  });
+});
+
+describe('resolveEmailRetryAfter', () => {
+  test('reads the seconds left from a check-email body', () => {
+    expect(resolveEmailRetryAfter({ mode: 'signin', email_retry_after_seconds: 42 })).toBe(42);
+  });
+  test('no field, an older API, or a nonsense value means no cooldown', () => {
+    expect(resolveEmailRetryAfter({ mode: 'signin' })).toBeNull();
+    expect(resolveEmailRetryAfter(null)).toBeNull();
+    expect(resolveEmailRetryAfter({ email_retry_after_seconds: 0 })).toBeNull();
+    expect(resolveEmailRetryAfter({ email_retry_after_seconds: '42' })).toBeNull();
+  });
+  test('never holds the form longer than the one-minute window', () => {
+    expect(resolveEmailRetryAfter({ email_retry_after_seconds: 3600 })).toBe(60);
   });
 });
 

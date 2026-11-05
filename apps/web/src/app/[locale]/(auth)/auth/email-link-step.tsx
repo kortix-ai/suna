@@ -120,6 +120,7 @@ export function EmailLinkStep({
               </button>
             )}
           </p>
+          <p>{t('link.checkSpam')}</p>
           <p className="flex items-center gap-2">
             <button
               type="button"

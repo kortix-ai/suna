@@ -5,6 +5,7 @@ import { Button } from '../../primitives/button';
 import { warningToast } from '../../primitives/toast';
 import { Home } from '../../internal/icons/home';
 import { useSessionDrives } from './use-drives';
+import { type ConflictMarks, readConflictMarks } from './conflict-marks';
 import type { SessionDrive, SessionDrives } from '@kortix/sdk';
 import { useLocale, useTranslations } from '../../i18n';
 import { formatStorageBytes } from './drive-storage';
@@ -99,8 +100,7 @@ export function SessionDrivesList({ projectId, sessionId }: { projectId: string;
  */
 export function SessionDrivesWatch({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const session = useSessionDrives(projectId, sessionId);
-  const conflicts = (session.data?.drives ?? []).reduce((sum, row) => sum + (row.openConflicts ?? 0), 0);
-  useConflictToast(conflicts, sessionId);
+  useConflictToast(session.data?.drives, sessionId);
   return null;
 }
 
@@ -139,14 +139,19 @@ function SessionFolderRow({ driveHref, row }: { driveHref: string | null; row: S
   );
 }
 
-/** One toast per rise in the session's open conflicts, never on the first read. */
-function useConflictToast(count: number, sessionId: string) {
+/**
+ * One toast per read that finds conflicts detected while this session watched
+ * (readConflictMarks): never for the conflicts a folder already had when it
+ * mounted, which is every folder of a new session.
+ */
+function useConflictToast(drives: SessionDrive[] | undefined, sessionId: string) {
   const t = useTranslations('drives');
-  const seen = useRef<{ sessionId: string; count: number } | null>(null);
+  const seen = useRef<{ sessionId: string; marks: ConflictMarks } | null>(null);
   useEffect(() => {
-    const last = seen.current;
-    seen.current = { sessionId, count };
-    if (!last || last.sessionId !== sessionId) return;
-    if (count > last.count) warningToast(t('conflictToast', { count: count - last.count }));
-  }, [count, sessionId, t]);
+    if (!drives) return;
+    const last = seen.current?.sessionId === sessionId ? seen.current.marks : {};
+    const { marks, fresh } = readConflictMarks(last, drives);
+    seen.current = { sessionId, marks };
+    if (fresh > 0) warningToast(t('conflictToast', { count: fresh }));
+  }, [drives, sessionId, t]);
 }

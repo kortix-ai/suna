@@ -180,6 +180,10 @@ export {
   artifactCommentScreenshotObjects,
   artifactCommentWriteLimits,
   artifactEvents,
+  artifactDocState,
+  artifactDocUpdates,
+  artifactDocRoots,
+  artifactDocClients,
   driveCommitAuthors,
   sessionSandboxIdentities,
   claudeSubscriptionLogins,
@@ -206,6 +210,7 @@ export {
   appSiteBlobs,
   appDeploymentEvents,
   sessionPendingQuestions,
+  sessionPendingPermissions,
   yoloMemberTokens,
   stripeWebhookEventsProcessed,
   // Tunnel

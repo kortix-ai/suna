@@ -97,6 +97,14 @@ export interface ArtifactLiveParticipant {
 /** What changed: the host refetches it through REST. */
 export type ArtifactLiveChange = 'comments' | 'activity' | 'content';
 
+/**
+ * What a `changed` frame names on the wire. `doc`: a co-edited doc has a new
+ * update (KRTX-3670) and `version` is its seq, or `'0'` after a reset. The
+ * connection hands it to `onDoc` only, so the public `ArtifactLiveChange`
+ * keeps its three members. Internal: not in the public barrel.
+ */
+export type ArtifactLiveWireChange = ArtifactLiveChange | 'doc';
+
 /** An agent names its place: reading a thread, editing near a quote, writing a reply, or idle (it leaves). */
 export interface ArtifactLiveAgentSignal {
   status: 'reading' | 'editing' | 'writing' | 'idle';
@@ -123,7 +131,7 @@ export type ArtifactLiveClientFrame =
 export type ArtifactLiveServerFrame =
   | Frame<'welcome', { you: string; sends: boolean }>
   | Frame<'presence', { participants: ArtifactLiveParticipant[] }>
-  | Frame<'changed', { what: ArtifactLiveChange; version: string | null }>
+  | Frame<'changed', { what: ArtifactLiveWireChange; version: string | null }>
   | Frame<'pong'>;
 
 // ── Validation: the same rules as the shared zod schemas ───────────────────
@@ -206,7 +214,7 @@ const serverFrame = byKind('t', {
   presence: frame('presence', {
     participants: (value) => Array.isArray(value) && value.length <= 200 && value.every(participant),
   }),
-  changed: frame('changed', { what: oneOf(['comments', 'activity', 'content']), version: nullable(text(512)) }),
+  changed: frame('changed', { what: oneOf(['comments', 'activity', 'content', 'doc']), version: nullable(text(512)) }),
   pong: frame('pong'),
 });
 

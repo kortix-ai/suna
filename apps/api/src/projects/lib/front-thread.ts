@@ -1,6 +1,7 @@
-// Talk-only threads (flag `chat_front`): a space thread whose My Kortix agent
-// only talks and hands every request to one hidden My Kortix worker. kortixd
-// reads the runtime_context key (`harness/pi/front.ts`, FRONT_CONTEXT_KEY).
+// The router (flag `chat_front`): a space thread whose My Kortix agent
+// only talks. It routes each request to a hidden worker (any project agent,
+// else My Kortix) and writes back like a person. kortixd reads the
+// runtime_context key (`harness/pi/front.ts`, FRONT_CONTEXT_KEY).
 import { projectSessionRuntimeContexts } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
@@ -35,8 +36,9 @@ export function startsFrontThread(input: {
 
 /**
  * True when this session is a front: its runtime_context carries
- * `kortix.front`, which only the platform sets. A front may start one My
- * Kortix session, its worker (the META_AGENT_RECURSION exception).
+ * `kortix.front`, which only the platform sets. A front may start My Kortix
+ * workers (the META_AGENT_RECURSION exception); a worker of any other
+ * project agent is an ordinary hand-off.
  */
 export async function sessionIsFrontThread(sessionId: string): Promise<boolean> {
   const [row] = await db

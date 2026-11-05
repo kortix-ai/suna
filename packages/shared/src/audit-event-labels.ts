@@ -20,6 +20,7 @@
 // biome-ignore format: one action per line, so a diff names exactly the action that changed
 export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'api.rate_limit.exceeded': 'Hit API rate limit',
+  'project.artifact.doc.edit': 'Edited a live artifact doc',
   'drive.folder.admin_access': "Admin opened a person's own folder",
   'audit.anonymous.suppressed': 'Suppressed anonymous audit rows',
   'audit.reconciliation.completed': 'Completed audit reconciliation',
@@ -48,6 +49,9 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'enterprise_demo.enable': 'Turned the Enterprise demo on',
   'enterprise_demo.disable': 'Turned the Enterprise demo off',
   'space.visibility.changed': 'Made a channel private',
+  'space.updated': 'An agent changed a space for its person',
+  'space.members.added': 'An agent added people to a space for its person',
+  'space.members.removed': 'An agent removed a person from a space for its person',
   'iam.assignment.granted': 'Granted a role',
   'iam.assignment.revoked': 'Revoked a role assignment',
   'iam.assignment.expired': 'Expired a role',

@@ -1317,8 +1317,8 @@
           "description": "Da al agente una bandeja de correo en Resend: el correo entrante inicia y continúa sesiones, y el agente lee, responde y envía desde la bandeja. Usa tu propia clave de API y dominio de Resend."
         },
         "chat": {
-          "name": "Chat",
-          "description": "Chat con Kortix al estilo de Slack: cada mensaje es un hilo, la respuesta más reciente de Kortix aparece debajo, Kortix puede iniciar hilos y los espacios se comparten con otras personas. Sustituye la lista de sesiones en la barra lateral."
+          "name": "Espacios",
+          "description": "Espacios con Kortix al estilo de Slack: cada mensaje es un hilo, la respuesta más reciente de Kortix aparece debajo, Kortix puede iniciar hilos y los espacios se comparten con otras personas. Sustituye la lista de sesiones en la barra lateral."
         },
         "session_groups": {
           "name": "Grupos de sesiones",
@@ -1349,13 +1349,13 @@
           "description": "Un solo control bajo el editor para quién responde y cómo: elige el agente y todos los demás ajustes quedan en Automático, heredados de ese agente. Abre una fila para sobrescribir el modelo, el esfuerzo de razonamiento, los secretos, las claves de proveedor o el sandbox de esta sesión, y vuelve a Automático con un clic."
         },
         "chat_front": {
-          "name": "Hilos solo de conversación",
-          "description": "Con Chat activado, un mensaje nuevo en un espacio inicia un hilo cuyo agente solo conversa. Pasa cada petición a una sesión oculta de My Kortix que hace el trabajo y responde con mensajes breves, solo con lo que importa. Requiere My Kortix activado en kortix.yaml."
+          "name": "Enrutador",
+          "description": "Con Espacios activado, el agente con el que conversas en un hilo es un enrutador: pasa el trabajo a tus agentes y te responde como una persona, con mensajes breves con el resultado, un enlace o la decisión que debes tomar. Tus agentes comparten el hilo a través de sus archivos, así que el enrutador pasa rutas de archivo, no texto copiado. «Ver trabajo» bajo un mensaje abre el trabajo que hay detrás. Requiere My Kortix activado en kortix.yaml."
         }
       },
       "channelsSwitch": {
         "onTitle": "¿Activar Espacios para {project}?",
-        "onBody": "Todos en este proyecto obtienen Espacios y Mensajes directos en lugar de la lista de sesiones. Todas las sesiones existentes pasan a #general. Puedes desactivarlo cuando quieras; no se elimina nada.",
+        "onBody": "Todos en este proyecto reciben Espacios en lugar de la lista de sesiones. Todas las sesiones existentes pasan a #general. Puedes desactivarlo cuando quieras; no se borra nada.",
         "drive": "Activar también Drive, para que los espacios tengan Archivos.",
         "turnOn": "Activar",
         "cancel": "Cancelar",
@@ -1870,10 +1870,15 @@
     "appsNoMatches": "Sin resultados",
     "spaces": {
       "channels": "Espacios",
-      "directMessages": "Mensajes directos",
       "addChannel": "Nuevo espacio",
       "loadError": "No se pudieron cargar los espacios.",
-      "newAgent": "Nuevo agente"
+      "newAgent": "Nuevo agente",
+      "review": "Revisar",
+      "personal": "Tu espacio",
+      "personalNamed": "Espacio de {name}",
+      "private": "Privado",
+      "noMessages": "Aún no hay mensajes",
+      "more": "Más"
     }
   },
   "dashboard": {
@@ -2118,7 +2123,8 @@
       "noCommandMatch": "No hay ningún comando, archivo o acción coincidente",
       "commandsAndActions": "Comandos y acciones",
       "toUse": "para usar",
-      "use": "Usar"
+      "use": "Usar",
+      "noOneMatches": "Nadie coincide"
     },
     "history": {
       "restoreTitle": "No se pudo restaurar parte del contenido anterior",
@@ -2142,7 +2148,23 @@
       "fullTextRetry": "Intentar de nuevo"
     },
     "turn": {
-      "autoRetried": "Kortix reintentó el modelo automáticamente {count, plural, one {una vez} other {# veces}} antes de este fallo."
+      "autoRetried": "Kortix reintentó el modelo automáticamente {count, plural, one {una vez} other {# veces}} antes de este fallo.",
+      "typing": "{name} está escribiendo…",
+      "showWork": "Ver trabajo",
+      "hideWork": "Ocultar trabajo",
+      "starting": "Iniciando…",
+      "workingFor": "Trabajando · {time}",
+      "agentWorking": "está trabajando",
+      "agentWorkingFor": "está trabajando · {time}",
+      "stopped": "Detenido",
+      "agentWorkingOn": "trabaja en {task}",
+      "agentWorkingOnFor": "trabaja en {task} · {time}",
+      "somethingWrong": "Algo salió mal",
+      "notSent": "No enviado",
+      "retry": "Reintentar",
+      "resume": "Reanudar",
+      "agentIsWorking": "{agent} está trabajando",
+      "needsYouOn": "Te necesita: {header}"
     }
   },
   "agents": {
@@ -2950,7 +2972,8 @@
         "notReceived": "¿No recibiste el enlace?",
         "confirmNotReceived": "¿No recibiste el correo de confirmación?",
         "resendIn": "Reenviar en {seconds}",
-        "resend": "Reenviar"
+        "resend": "Reenviar",
+        "checkSpam": "¿No está? Revisa la carpeta de spam o correo no deseado."
       },
       "credentials": {
         "signin": {
@@ -19774,6 +19797,8 @@
       "text7a84bdb22767": "Despliegue de Kortix App consultado",
       "text516e80d9f8dc": "Despliegue de Kortix App eliminado",
       "text2d430c4c81a2": "Registros del despliegue de Kortix App consultados",
+      "text567cd42b6a31": "Eventos de Kortix App consultados",
+      "textcd413277c842": "Evento de prueba de Kortix App enviado",
       "textea0b84c2ddf0": "Habilidad del sistema de Kortix consultada",
       "text16faff6ae525": "Archivo de habilidad del sistema de Kortix consultado",
       "text04a6fbab3598": "Catálogo de LLM consultado",
@@ -21190,7 +21215,8 @@
       "text507c24b6792d": "Cuando una solicitud de cambio se fusiona en {branch}, {agent} ejecuta tu instrucción.",
       "text05ee1d6181f3": "Cuando se fusiona una solicitud de cambio, {agent} ejecuta tu instrucción.",
       "texte608495c45ce": "Fusionada en {branch}",
-      "text80ca527b0d55": "Activador de solicitud de cambio creado"
+      "text80ca527b0d55": "Activador de solicitud de cambio creado",
+      "authEmailAlreadySent": "Enviamos este correo hace menos de un minuto. Revisa tu bandeja de entrada y la carpeta de spam antes de pedir otro."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -21279,6 +21305,39 @@
       "prCommits": "{count, plural, one {# commit} other {# commits}}",
       "prCommitsBy": "{count, plural, one {# commit} other {# commits}} de {author}",
       "prDraft": "Pull request en borrador"
+    },
+    "askDeck": {
+      "label": "Lo que te espera",
+      "remaining": "{count, plural, one {# te espera} other {# te esperan}}",
+      "yes": "Sí",
+      "no": "No",
+      "skip": "Omitir",
+      "send": "Enviar respuesta",
+      "approve": "Aprobar",
+      "deny": "Denegar",
+      "dismiss": "Descartar",
+      "undo": "Deshacer",
+      "allowSession": "Permitir {tool} en la sesión",
+      "typeAnswer": "O escribe tu respuesta",
+      "answered": "Respuesta enviada",
+      "dismissed": "Pregunta descartada",
+      "approved": "Aprobado",
+      "denied": "Denegado",
+      "failed": "La decisión no se aplicó",
+      "askedAgo": "Preguntado hace {time}",
+      "fromWorker": "de una sesión de trabajo",
+      "inSession": "En {title}",
+      "permissionTitle": "¿Ejecutar {tool}?",
+      "approvalTitle": "¿Ejecutar esta llamada al conector?",
+      "emptyTitle": "Nada te espera",
+      "emptyDescription": "Las preguntas y aprobaciones de tus agentes aparecen aquí.",
+      "loadFailed": "No se pudo cargar lo que te espera",
+      "retry": "Reintentar",
+      "kind": {
+        "question": "Pregunta",
+        "permission": "Permiso",
+        "approval": "Aprobación de conector"
+      }
     },
     "reviewBulk": {
       "approve": "Aprobar",
@@ -23058,7 +23117,8 @@
         "status": "Estado",
         "lastFrame": "Última grabación",
         "layers": "Graba",
-        "actions": "Acciones"
+        "actions": "Acciones",
+        "version": "Versión"
       },
       "layer": {
         "screen": "Pantalla",
@@ -23099,7 +23159,86 @@
         "sync_error": "Fallan las subidas",
         "backlog": "{count, plural, one {# elemento espera} other {# elementos esperan}} para subirse",
         "behind_version": "Actualiza de {current} a {version}",
-        "asleep": "Suspendido o apagado. Visto por última vez {time}"
+        "asleep": "Suspendido o apagado. Visto por última vez {time}",
+        "update_failed": "Falló la actualización a {version}"
+      },
+      "version": {
+        "current": "Al día",
+        "behind": "Actualización disponible",
+        "failed": "Error de actualización",
+        "updating": "Actualizando",
+        "disabled": "Actualizaciones desactivadas"
+      },
+      "details": {
+        "open": "Detalles del dispositivo",
+        "title": "{name}",
+        "description": "Lo que este equipo informa a Kortix. Cópialo en una solicitud de soporte.",
+        "capture": "Capture",
+        "version": "Versión",
+        "channel": "Canal",
+        "latest": "Versión más reciente",
+        "lastCheck": "Última comprobación de actualización",
+        "lastCheckSaid": "Resultado de la última comprobación",
+        "noUpdater": "No hay servicio de actualización en este equipo",
+        "lastResult": "Última actualización",
+        "reason": "Motivo",
+        "skipped": "Versiones omitidas",
+        "skippedUntil": "{version}, se reintenta el {time}",
+        "none": "Ninguna",
+        "machine": "Equipo",
+        "os": "Sistema operativo",
+        "build": "Compilación",
+        "hostname": "Nombre de host",
+        "cpu": "Procesador",
+        "cpuCores": "{cpu} · {count, plural, one {# núcleo} other {# núcleos}}",
+        "memory": "Memoria",
+        "disk": "Disco libre",
+        "diskOf": "{free} libres de {total}",
+        "gpus": "Gráficos",
+        "booted": "Iniciado",
+        "timezone": "Zona horaria",
+        "locale": "Configuración regional",
+        "recordingSync": "Grabación y sincronización",
+        "status": "Estado",
+        "lastFrame": "Último fotograma",
+        "permissions": "Permisos que faltan",
+        "sync": "Sincronización",
+        "syncError": "Error de sincronización",
+        "recordingError": "Error de grabación",
+        "lastUpload": "Última subida",
+        "reported": "Último informe",
+        "policy": "Política",
+        "policySource": "Archivo de política",
+        "noPolicy": "Sin política de cuenta",
+        "policyRead": "Política leída",
+        "enrolled": "Configurado por",
+        "managed": "Despliegue de TI",
+        "personal": "La persona inició sesión",
+        "encrypted": "Subidas cifradas",
+        "yes": "Sí",
+        "no": "No",
+        "lastCredentials": "Últimas credenciales",
+        "deviceId": "ID del dispositivo",
+        "notReported": "No informado",
+        "close": "Cerrar",
+        "copy": "Copiar diagnóstico",
+        "copied": "Copiado",
+        "copiedToast": "Diagnóstico copiado",
+        "copyFailed": "No se pudo copiar el diagnóstico",
+        "outcome": {
+          "updated": "Actualizado de {from} a {to}",
+          "rolled_back": "{to} no superó la comprobación de estado; se volvió a {from}",
+          "failed": "{to} no superó la comprobación de estado y no se pudo revertir",
+          "install_failed": "El instalador de {to} no se ejecutó",
+          "other": "{from} a {to}"
+        },
+        "syncState": {
+          "ok": "Al día",
+          "queued": "{count, plural, one {# elemento en espera} other {# elementos en espera}}",
+          "error": "Con errores",
+          "off": "Desactivada",
+          "other": "Desconocido"
+        }
       }
     },
     "settings": {
@@ -23537,10 +23676,6 @@
     "stopError": "No se pudo detener el objetivo. Inténtalo de nuevo.",
     "needsAttention": "Requiere atención",
     "newGoal": "Nuevo objetivo",
-    "newGoalTitle": "Nuevo objetivo",
-    "newGoalDescription": "Describe el resultado. Un agente trabaja en él hasta que una revisión independiente confirme que está hecho.",
-    "newGoalPlaceholder": "Por ejemplo: nuestro sitio de documentación está en línea en docs.example.com",
-    "newGoalStart": "Iniciar objetivo",
     "cancel": "Cancelar",
     "forPerson": "para {person}",
     "answerInChat": "Responder en el chat",
@@ -23565,14 +23700,6 @@
       "workingNoWake": "En curso."
     },
     "startedToast": "Objetivo iniciado",
-    "outcomeLabel": "Resultado",
-    "doneWhenLabel": "Hecho cuando",
-    "doneWhenHint": "Opcional. Déjalo vacío y el agente escribe los criterios antes de empezar.",
-    "criterionPlaceholder": "Por ejemplo: el sitio carga en docs.example.com",
-    "criterionLabel": "Criterio de finalización {n}",
-    "removeCriterion": "Quitar criterio",
-    "removeCriterionN": "Quitar criterio de finalización {n}",
-    "addCriterion": "Añadir criterio",
     "startError": "No se pudo iniciar el objetivo. Inténtalo de nuevo.",
     "updated": "actualizado {time}",
     "attentionTitle": "Necesita atención",
@@ -23606,8 +23733,16 @@
     "messageError": "No se pudo enviar la nota. Inténtalo de nuevo.",
     "messageSent": "Nota enviada. El agente la recoge ahora.",
     "sendMessage": "Enviar nota",
-    "showLog": "Mostrar registro completo",
-    "hideLog": "Ocultar registro completo",
+    "send": "Enviar",
+    "agentLog": "Registro del agente",
+    "shareAccessLabel": "Quién tiene acceso",
+    "shareOwner": "Propietario",
+    "shareAdminsRole": "Puede abrirlo",
+    "shareLoadError": "No se pudo cargar quién tiene acceso.",
+    "shareVisibility": "Visible para: {scope}. Compartir objetivo",
+    "copyLink": "Copiar enlace",
+    "linkCopied": "Enlace copiado",
+    "linkCopyError": "No se pudo copiar el enlace",
     "properties": "Propiedades",
     "stateLabel": "Estado",
     "nextCheck": "Próxima revisión",
@@ -24291,6 +24426,14 @@
       "typingTwo": "{first} y {second} están escribiendo…",
       "typingMany": "{count, plural, one {# persona está escribiendo…} other {# personas están escribiendo…}}",
       "writing": "{name} está redactando…"
+    },
+    "coedit": {
+      "offLarge": "La edición en vivo está desactivada: este documento supera 1 MiB. Los cambios se guardan al escribir.",
+      "offLineEndings": "La edición en vivo está desactivada: este documento mezcla finales de línea CRLF y LF. Los cambios se guardan al escribir.",
+      "offShape": "La edición en vivo está desactivada: el editor reescribiría parte del Markdown. Los cambios se guardan al escribir.",
+      "stoppedLarge": "La edición en vivo se detuvo: un cambio era demasiado grande para compartirlo. Los cambios se guardan al escribir.",
+      "stoppedFailed": "La edición en vivo se detuvo: la conexión falló. Los cambios se guardan al escribir.",
+      "stoppedHistory": "La edición en vivo se detuvo: el historial de ediciones de este documento es demasiado grande. Los cambios se guardan al escribir."
     }
   },
   "emailConnect": {
@@ -24609,9 +24752,9 @@
     },
     "create": {
       "title": "Crear un espacio",
-      "description": "Todos en este proyecto pueden ver y usar el espacio.",
+      "description": "Un espacio organiza un área de trabajo, como Marketing, Contratación u Operaciones. Personas y agentes trabajan en sus hilos.",
       "nameLabel": "Nombre",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "nombre-del-espacio",
       "descriptionLabel": "Descripción (opcional)",
       "descriptionPlaceholder": "Para qué sirve este espacio",
@@ -24640,9 +24783,9 @@
     },
     "view": {
       "welcomeTitle": "Te damos la bienvenida a #{name}",
-      "welcomeEmpty": "Empieza el primer hilo en #{name}. Cada mensaje empieza un hilo nuevo.",
+      "welcomeEmpty": "Un espacio organiza un área de trabajo. Personas y agentes trabajan aquí en hilos: cada mensaje inicia uno.",
       "welcomeStart": "Aquí empieza #{name}.",
-      "dmIntro": "Esta conversación es solo entre tú y {agent}.",
+      "dmIntro": "Solo tú y {agent} veis este espacio.",
       "today": "Hoy",
       "yesterday": "Ayer",
       "openThread": "Abrir hilo",
@@ -24866,7 +25009,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "Detalles de {name}"
     },
     "details": {
       "about": "Información",
@@ -24922,7 +25066,7 @@
       "memory": "Memoria",
       "loadError": "No se pudo cargar esta carpeta",
       "memoryNoteChannel": "Lo que recuerdan los agentes de {place}. Los agentes lo leen al inicio de cada hilo.",
-      "memoryNoteDm": "Lo que {agent} recuerda de este DM. Lo lee al inicio de cada hilo.",
+      "memoryNoteDm": "Lo que {agent} recuerda de este espacio. Lo lee al empezar cada hilo.",
       "off": {
         "title": "No hay Drive aquí",
         "description": "Los archivos y la memoria de {place} están en el Drive. Esta instancia de Kortix no guarda un Drive: necesita Platinum."
@@ -25095,7 +25239,66 @@
     },
     "filter": "Filtrar por espacio",
     "all": "Todos",
-    "projectWide": "En todo el proyecto"
+    "projectWide": "En todo el proyecto",
+    "panel": {
+      "title": "Detalles de {name}",
+      "heading": "Detalles",
+      "close": "Cerrar detalles",
+      "private": "Privado",
+      "rename": "Renombrar y describir",
+      "personalDescription": "Tu espacio privado con My Kortix. Solo tú lo ves.",
+      "privateDescription": "Solo las personas y los agentes que están en él ven este espacio.",
+      "noDescription": "Aún sin descripción.",
+      "agents": "Agentes",
+      "addAgent": "Añadir agente",
+      "default": "Predeterminado",
+      "projectDefault": "Predeterminado del proyecto",
+      "people": "Personas",
+      "addPeople": "Añadir personas",
+      "you": "Tú",
+      "tabs": "Pestañas",
+      "addTab": "Añadir pestaña",
+      "routines": "Rutinas",
+      "addRoutine": "Añadir rutina",
+      "routinesPrivate": "Un espacio privado aún no admite rutinas.",
+      "allSettings": "Todos los ajustes",
+      "askHint": "También puedes pedirlo en el chat: «añade un agente aquí», «fija el documento del lanzamiento como pestaña»."
+    },
+    "profile": {
+      "viewProfile": "Ver el perfil de {name}",
+      "viewProfileShort": "Ver perfil",
+      "agent": "Agente",
+      "openProfile": "Abrir perfil",
+      "you": "(tú)",
+      "message": "Mensaje",
+      "messageFailed": "No se pudo abrir un espacio privado. Inténtalo de nuevo.",
+      "dmSpaceName": "{a} y {b}",
+      "heading": "Perfil",
+      "close": "Cerrar perfil",
+      "model": "Modelo",
+      "modelDefault": "El modelo predeterminado del proyecto",
+      "connectors": "Conectores",
+      "connectorsAll": "Todos los conectores",
+      "connectorsNone": "Ningún conector",
+      "projectDefault": "Predeterminado del proyecto",
+      "projectDefaultYes": "Responde los hilos nuevos sin agente asignado",
+      "email": "Correo",
+      "sharedSpaces": "Espacios en común",
+      "yourSpaces": "Tus espacios",
+      "addTo": "Añadir a {space}",
+      "addedTo": "{agent} se añadió a {space}",
+      "addFailed": "No se pudo añadir el agente. Inténtalo de nuevo.",
+      "spacesIn": "Espacios en los que está",
+      "spacesInNone": "Aún en ningún espacio",
+      "default": "Predeterminado"
+    },
+    "mentions": {
+      "people": "Personas",
+      "agents": "Agentes",
+      "addToSpace": "Aún no está en {space}: mencionarlo lo añade",
+      "added": "{agent} se añadió a {space}",
+      "addFailed": "No se pudo añadir el agente. Inténtalo de nuevo."
+    }
   },
   "imageGen": {
     "generating": "Generando imagen",
@@ -25549,5 +25752,49 @@
     "googleSlides": "Google Slides",
     "pullRequest": "PR #{number}",
     "issue": "Incidencia #{number}"
+  },
+  "subscriptionUsage": {
+    "fiveHour": "5-hour limit",
+    "weekly": "Weekly limit",
+    "weeklyModel": "Weekly · {model}",
+    "reconnect": "Reconnect",
+    "disabledTitle": "Subscription usage is unavailable",
+    "disabledDescription": "Subscription connections are not enabled for this project.",
+    "text0": "Reconnect needed",
+    "text1": "Inactive",
+    "text2": "Refresh failed",
+    "text3": "Awaiting usage",
+    "text4": "Limit reached",
+    "text5": "Last known usage",
+    "text6": "Usage reported",
+    "text7": "Subscription",
+    "text8": "used",
+    "text9": "Reset time passed · refresh for current usage",
+    "text10": "Reset time not reported",
+    "text11": "Checking provider usage…",
+    "text12": "No usage reported yet. Refresh after using this subscription.",
+    "text13": "Could not update. Showing last known data.",
+    "text14": "Waiting for provider data",
+    "text15": "Checking…",
+    "text16": "Refresh",
+    "text17": "Subscription usage",
+    "text18": "Track the limits of your connected ChatGPT and Claude subscriptions.",
+    "text19": "Usage could not load",
+    "text20": "Try loading your connected subscriptions again.",
+    "text21": "Retry",
+    "text22": "No connected subscriptions",
+    "text23": "Connect ChatGPT or Claude in Providers to see reported usage and reset times.",
+    "text24": "Connect a subscription",
+    "text25": "Usage is shared across apps that use the same subscription. Checks automatically every minute while this tab is open.",
+    "text26": "Limits vary by plan. Only windows reported by your connection appear here; missing data does not mean unlimited usage. File limits are not reported. API spend appears in Costs.",
+    "resets": "Resets {time}",
+    "observed": "Observed {time}",
+    "meterLabel": "{label}: {percent}% used",
+    "refreshLabel": "Refresh {label} usage",
+    "fiveHourNotReported": "Five-hour window not reported by this connection.",
+    "fableIncluded": "Fable usage also counts toward your overall weekly allowance.",
+    "chatgptUsage": "ChatGPT subscription usage",
+    "claudeUsage": "Claude subscription usage",
+    "allSubscriptions": "All subscriptions"
   }
 }

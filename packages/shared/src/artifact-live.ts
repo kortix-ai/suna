@@ -120,7 +120,7 @@ export const artifactLiveParticipantSchema = z.object({
 export type ArtifactLiveParticipant = z.infer<typeof artifactLiveParticipantSchema>;
 
 /** What changed: the client refetches it through REST. */
-export const artifactLiveChangeSchema = z.enum(['comments', 'activity', 'content']);
+export const artifactLiveChangeSchema = z.enum(['comments', 'activity', 'content', 'doc']);
 export type ArtifactLiveChange = z.infer<typeof artifactLiveChangeSchema>;
 
 export const artifactLiveServerFrameSchema = z.discriminatedUnion('t', [

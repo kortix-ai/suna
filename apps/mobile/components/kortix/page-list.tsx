@@ -117,7 +117,7 @@ export function PageList<T = unknown>({
               />
             )
           }
-          ListFooterComponent={footer ? <>{footer}</> : null}
+          ListFooterComponent={footer ? <>{footer}</> : undefined}
           onScroll={onScroll}
           scrollEventThrottle={16}
           contentContainerStyle={contentContainerStyle}

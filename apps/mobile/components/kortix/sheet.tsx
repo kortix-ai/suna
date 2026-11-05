@@ -28,7 +28,7 @@ import { sheetScrimColor } from '@/lib/ui/sheet-scrim';
 import { SurfaceContext } from '@/components/kortix/surface-context';
 import { PinnedBarShiftContext } from '@/components/kortix/pinned-bar';
 import { SheetSettledContext } from '@/components/kortix/sheet-settled';
-import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
+import { GlassButtons, LIQUID_GLASS_AVAILABLE } from '@/components/kortix/liquid-glass';
 
 /**
  * Shared bottom-sheet backdrop. Every gorhom sheet creator in the app
@@ -241,8 +241,9 @@ function TitledHandle({
  * Copy). The slot mirrors the leading one, so the title stays centred.
  *
  * iOS 26+ (Jay, 2026-10-20): the close button, `leading` and `trailing` each
- * sit on a Liquid Glass capsule (`GlassSlot`): a circle behind a 40pt icon
- * button, a pill behind a wider one. The visible glass then sits on the 16pt
+ * sit on the system Liquid Glass (`GlassSlot`): each `Button` in the slot
+ * draws its content inside the glass, so it gets the system press
+ * response. The visible glass then sits on the 16pt
  * edge, so the `-ml-2.5` / `-mr-2.5` pulls go and the balance spacer is the
  * full 40pt. `trailingGlass={false}` keeps a trailing slot that is not a
  * button (the participants count) off the glass. Android and older iOS keep
@@ -323,15 +324,13 @@ export function SheetTitleRow({
 }
 
 /**
- * A title-row control on iOS 26+ Liquid Glass: the capsule fills the slot
- * behind the child (a circle for a 40pt icon button). Elsewhere a plain
- * wrapper. `className` carries the non-glass edge pull.
+ * A title-row control on iOS 26+ Liquid Glass (`GlassButtons`: a 40pt icon
+ * button becomes a glass circle). `className` carries the non-glass edge pull.
  */
 function GlassSlot({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <View className={cn(LIQUID_GLASS_AVAILABLE && 'rounded-full', className)}>
-      {LIQUID_GLASS_AVAILABLE ? <LiquidGlassCapsule /> : null}
-      {children}
+    <View className={className}>
+      <GlassButtons>{children}</GlassButtons>
     </View>
   );
 }

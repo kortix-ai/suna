@@ -10,7 +10,11 @@
  *
  * Read from the session log (`session_log_messages`), never from the box: the
  * root thread's `turn` messages, not tombstoned, not hidden; person messages of
- * origin prompt, steer or command; answers by `reply_to`. An aggregate on an
+ * origin prompt, steer or command; answers by `reply_to`. A platform notice
+ * (a background worker's report, a teammate's or a peer's idle notice,
+ * `subagent-notice.ts` / `peer-messages/service.ts`) is a user row with no
+ * origin: it is not a person message, but the agent's answer to it is a reply.
+ * A router thread (`chat_front`) gets one per hand-off. An aggregate on an
  * index that leads with `session_id`. It reads three keys of each matching
  * row's `record` jsonb (`origin`, `reply_to`, `hidden_reason`), so it detoasts
  * every message record of the listed root threads: its cost grows with
@@ -21,6 +25,14 @@ import type { Database } from '@kortix/db';
 import { sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
+
+/**
+ * The first line of a platform notice prompt (`parseNoticeBatch` in
+ * `@kortix/sdk`, `core/turns/subagent-notice.ts`), as a POSIX regex on the
+ * message's first text block.
+ */
+const PLATFORM_NOTICE_HEAD =
+  '^(A background subagent you started has finished\\.|Your teammate [^[:space:]]+ finished its turn and is idle\\.|\\[idle notice from )';
 
 /** The rule above, on the two counts. */
 export function replyCount(personMessages: number, agentAnswers: number): number {
@@ -44,7 +56,8 @@ async function countSessionReplies(database: Database, sessionIds: string[]): Pr
     await database.execute(sql`
       SELECT m.session_id,
              count(*) FILTER (WHERE m.role = 'user'
-               AND coalesce(m.record->>'origin', 'prompt') IN ('prompt', 'steer', 'command')) AS person,
+               AND coalesce(m.record->>'origin', 'prompt') IN ('prompt', 'steer', 'command')
+               AND ltrim(coalesce(m.record->'blocks'->0->>'text', ''), E' \\n') !~ ${PLATFORM_NOTICE_HEAD}) AS person,
              count(DISTINCT m.record->>'reply_to') FILTER (WHERE m.role = 'assistant') AS answers
         FROM kortix.session_log_messages m
         JOIN kortix.session_log_threads t

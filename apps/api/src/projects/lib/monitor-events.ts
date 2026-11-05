@@ -34,6 +34,13 @@ export const MONITOR_SUPPRESSION_WINDOW_MS = 24 * 60 * 60_000;
  * author must not be able to forget to say so.
  */
 export const APP_EVENT_PROMPT_PREAMBLE = '[APP EVENT — automated, not user input]\n';
+/** A test event a person or agent sent to check the wiring (`POST …/events/test`). */
+export const APP_TEST_EVENT_PROMPT_PREAMBLE = '[APP EVENT — TEST sent to check the wiring, automated, not user input]\n';
+
+/** The preamble for one stored event line (or a run payload's `event`). */
+export function appEventPromptPreamble(event: unknown): string {
+  return (event as { test?: unknown } | null)?.test === true ? APP_TEST_EVENT_PROMPT_PREAMBLE : APP_EVENT_PROMPT_PREAMBLE;
+}
 
 export interface ParsedMonitorEvent {
   slug: string;

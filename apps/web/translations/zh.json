@@ -1317,8 +1317,8 @@
           "description": "为智能体提供一个 Resend 邮箱：收到的邮件会启动并延续会话，智能体从该邮箱阅读、回复和发送邮件。使用你自己的 Resend API 密钥和域名。"
         },
         "chat": {
-          "name": "聊天",
-          "description": "像 Slack 一样与 Kortix 聊天：每条消息都是一个话题，Kortix 的最新回复显示在其下方，Kortix 也可以发起话题，空间可与他人共享。取代侧边栏中的会话列表。"
+          "name": "空间",
+          "description": "像 Slack 一样与 Kortix 使用空间：每条消息都是一个话题，Kortix 的最新回复显示在其下方，Kortix 也可以发起话题，空间可与他人共享。取代侧边栏中的会话列表。"
         },
         "session_groups": {
           "name": "会话分组",
@@ -1349,13 +1349,13 @@
           "description": "输入框下方的一个控件，决定由谁回答以及如何回答：选择智能体后，其他所有设置都保持自动，继承自该智能体。打开某一行即可为本会话覆盖模型、思考强度、密钥、提供商密钥或沙盒，并一键恢复为自动。"
         },
         "chat_front": {
-          "name": "仅对话线程",
-          "description": "开启聊天后，空间中的新消息会启动一个线程，其智能体只负责对话。它把每个请求交给一个隐藏的 My Kortix 会话去完成，并只用简短消息回复重要内容。需要在 kortix.yaml 中开启 My Kortix。"
+          "name": "路由器",
+          "description": "开启空间后，你在话题中对话的智能体是一个路由器：它把工作交给你的智能体，并像人一样回复，用简短消息告诉你结果、链接或需要你做的决定。你的智能体通过话题的文件共享内容，所以路由器传递文件路径，而不是重写的文本。消息下方的「查看过程」可展开其背后的工作。需要在 kortix.yaml 中开启 My Kortix。"
         }
       },
       "channelsSwitch": {
         "onTitle": "为 {project} 开启空间？",
-        "onBody": "此项目中的所有人将看到空间和私信，而不是会话列表。所有现有会话都会移入 #general。你可以随时关闭；不会删除任何内容。",
+        "onBody": "此项目中的所有人都会看到空间，而不是会话列表。所有现有会话都会移到 #general。你可以随时关闭；不会删除任何内容。",
         "drive": "同时开启云盘，让空间拥有文件。",
         "turnOn": "开启",
         "cancel": "取消",
@@ -1870,10 +1870,15 @@
     "appsNoMatches": "无匹配项",
     "spaces": {
       "channels": "空间",
-      "directMessages": "私信",
       "addChannel": "新建空间",
       "loadError": "无法加载空间。",
-      "newAgent": "新建智能体"
+      "newAgent": "新建智能体",
+      "review": "审核",
+      "personal": "你的空间",
+      "personalNamed": "{name} 的空间",
+      "private": "私密",
+      "noMessages": "还没有消息",
+      "more": "更多"
     }
   },
   "dashboard": {
@@ -2118,7 +2123,8 @@
       "noCommandMatch": "没有匹配的命令、文件或操作",
       "commandsAndActions": "命令和操作",
       "toUse": "以使用",
-      "use": "使用"
+      "use": "使用",
+      "noOneMatches": "没有匹配的人"
     },
     "history": {
       "restoreTitle": "部分较早的内容无法恢复",
@@ -2142,7 +2148,23 @@
       "fullTextRetry": "重试"
     },
     "turn": {
-      "autoRetried": "Kortix 在此失败前已自动重试该模型 {count, plural, other {# 次}}。"
+      "autoRetried": "Kortix 在此失败前已自动重试该模型 {count, plural, other {# 次}}。",
+      "typing": "{name} 正在输入…",
+      "showWork": "查看过程",
+      "hideWork": "隐藏过程",
+      "starting": "启动中…",
+      "workingFor": "处理中 · {time}",
+      "agentWorking": "正在处理",
+      "agentWorkingFor": "正在处理 · {time}",
+      "stopped": "已停止",
+      "agentWorkingOn": "正在处理 {task}",
+      "agentWorkingOnFor": "正在处理 {task} · {time}",
+      "somethingWrong": "出了点问题",
+      "notSent": "未发送",
+      "retry": "重试",
+      "resume": "继续",
+      "agentIsWorking": "{agent} 正在处理",
+      "needsYouOn": "需要你：{header}"
     }
   },
   "agents": {
@@ -2950,7 +2972,8 @@
         "notReceived": "未收到链接？",
         "confirmNotReceived": "未收到确认邮件？",
         "resendIn": "{seconds} 秒后重新发送",
-        "resend": "重新发送"
+        "resend": "重新发送",
+        "checkSpam": "没有收到？请检查垃圾邮件文件夹。"
       },
       "credentials": {
         "signin": {
@@ -19774,6 +19797,8 @@
       "text7a84bdb22767": "已查看 Kortix App 部署",
       "text516e80d9f8dc": "已删除 Kortix App 部署",
       "text2d430c4c81a2": "已查看 Kortix App 部署日志",
+      "text567cd42b6a31": "已查看 Kortix App 事件",
+      "textcd413277c842": "已发送 Kortix App 测试事件",
       "textea0b84c2ddf0": "已查看 Kortix 系统技能",
       "text16faff6ae525": "已查看 Kortix 系统技能文件",
       "text04a6fbab3598": "已查看 LLM 目录",
@@ -21190,7 +21215,8 @@
       "text507c24b6792d": "变更请求合并到 {branch} 时，{agent} 会执行你的指令。",
       "text05ee1d6181f3": "变更请求合并时，{agent} 会执行你的指令。",
       "texte608495c45ce": "合并到 {branch}",
-      "text80ca527b0d55": "已创建变更请求触发器"
+      "text80ca527b0d55": "已创建变更请求触发器",
+      "authEmailAlreadySent": "我们在一分钟内已发送过这封邮件。请先检查收件箱和垃圾邮件文件夹，再申请重新发送。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -21279,6 +21305,39 @@
       "prCommits": "{count, plural, other {# 个提交}}",
       "prCommitsBy": "{author} 的 {count, plural, other {# 个提交}}",
       "prDraft": "草稿拉取请求"
+    },
+    "askDeck": {
+      "label": "等待你处理",
+      "remaining": "{count, plural, other {# 项等待你处理}}",
+      "yes": "是",
+      "no": "否",
+      "skip": "跳过",
+      "send": "发送回答",
+      "approve": "批准",
+      "deny": "拒绝",
+      "dismiss": "忽略",
+      "undo": "撤销",
+      "allowSession": "在本会话中允许 {tool}",
+      "typeAnswer": "或输入你的回答",
+      "answered": "回答已发送",
+      "dismissed": "问题已忽略",
+      "approved": "已批准",
+      "denied": "已拒绝",
+      "failed": "决定未能生效",
+      "askedAgo": "{time} 前提问",
+      "fromWorker": "来自工作会话",
+      "inSession": "在 {title} 中",
+      "permissionTitle": "运行 {tool}？",
+      "approvalTitle": "运行此连接器调用？",
+      "emptyTitle": "没有等待你处理的事项",
+      "emptyDescription": "来自智能体的问题和审批会显示在这里。",
+      "loadFailed": "无法加载等待你处理的事项",
+      "retry": "重试",
+      "kind": {
+        "question": "问题",
+        "permission": "权限",
+        "approval": "连接器审批"
+      }
     },
     "reviewBulk": {
       "approve": "批准",
@@ -23058,7 +23117,8 @@
         "status": "状态",
         "lastFrame": "最近录制",
         "layers": "录制内容",
-        "actions": "操作"
+        "actions": "操作",
+        "version": "版本"
       },
       "layer": {
         "screen": "屏幕",
@@ -23099,7 +23159,86 @@
         "sync_error": "上传失败",
         "backlog": "{count, plural, other {# 项等待上传}}",
         "behind_version": "请从 {current} 更新到 {version}",
-        "asleep": "已休眠或关机。上次在线：{time}"
+        "asleep": "已休眠或关机。上次在线：{time}",
+        "update_failed": "更新到 {version} 失败"
+      },
+      "version": {
+        "current": "已是最新",
+        "behind": "有可用更新",
+        "failed": "更新失败",
+        "updating": "正在更新",
+        "disabled": "更新已关闭"
+      },
+      "details": {
+        "open": "设备详情",
+        "title": "{name}",
+        "description": "此电脑向 Kortix 报告的信息。可复制到支持请求中。",
+        "capture": "Capture",
+        "version": "版本",
+        "channel": "通道",
+        "latest": "最新版本",
+        "lastCheck": "上次检查更新",
+        "lastCheckSaid": "上次检查结果",
+        "noUpdater": "此电脑上没有更新服务",
+        "lastResult": "上次更新",
+        "reason": "原因",
+        "skipped": "已跳过的版本",
+        "skippedUntil": "{version}，将于 {time} 重试",
+        "none": "无",
+        "machine": "电脑",
+        "os": "操作系统",
+        "build": "内部版本",
+        "hostname": "主机名",
+        "cpu": "处理器",
+        "cpuCores": "{cpu} · {count, plural, other {# 核}}",
+        "memory": "内存",
+        "disk": "可用磁盘",
+        "diskOf": "{total} 中可用 {free}",
+        "gpus": "显卡",
+        "booted": "启动时间",
+        "timezone": "时区",
+        "locale": "区域设置",
+        "recordingSync": "录制与同步",
+        "status": "状态",
+        "lastFrame": "上一帧",
+        "permissions": "缺少的权限",
+        "sync": "同步",
+        "syncError": "同步错误",
+        "recordingError": "录制错误",
+        "lastUpload": "上次上传",
+        "reported": "上次报告",
+        "policy": "策略",
+        "policySource": "策略文件",
+        "noPolicy": "没有账户策略",
+        "policyRead": "读取策略",
+        "enrolled": "设置方式",
+        "managed": "IT 部署",
+        "personal": "本人登录",
+        "encrypted": "加密上传",
+        "yes": "是",
+        "no": "否",
+        "lastCredentials": "上次凭据",
+        "deviceId": "设备 ID",
+        "notReported": "未报告",
+        "close": "关闭",
+        "copy": "复制诊断信息",
+        "copied": "已复制",
+        "copiedToast": "诊断信息已复制",
+        "copyFailed": "无法复制诊断信息",
+        "outcome": {
+          "updated": "已从 {from} 更新到 {to}",
+          "rolled_back": "{to} 未通过健康检查，已回滚到 {from}",
+          "failed": "{to} 未通过健康检查，且无法回滚",
+          "install_failed": "{to} 的安装程序未运行",
+          "other": "{from} 到 {to}"
+        },
+        "syncState": {
+          "ok": "已同步",
+          "queued": "{count, plural, other {# 项等待中}}",
+          "error": "失败",
+          "off": "已关闭",
+          "other": "未知"
+        }
       }
     },
     "settings": {
@@ -23537,10 +23676,6 @@
     "stopError": "无法停止目标。请重试。",
     "needsAttention": "需要关注",
     "newGoal": "新目标",
-    "newGoalTitle": "新目标",
-    "newGoalDescription": "描述期望结果。智能体会持续推进，直到独立检查确认完成。",
-    "newGoalPlaceholder": "例如：我们的文档站已在 docs.example.com 上线",
-    "newGoalStart": "开始目标",
     "cancel": "取消",
     "forPerson": "负责人：{person}",
     "answerInChat": "在对话中回答",
@@ -23565,14 +23700,6 @@
       "workingNoWake": "进行中。"
     },
     "startedToast": "目标已开始",
-    "outcomeLabel": "期望结果",
-    "doneWhenLabel": "完成条件",
-    "doneWhenHint": "可选。留空时，智能体会在开始前写好条件。",
-    "criterionPlaceholder": "例如：网站可以在 docs.example.com 打开",
-    "criterionLabel": "完成条件 {n}",
-    "removeCriterion": "移除条件",
-    "removeCriterionN": "移除完成条件 {n}",
-    "addCriterion": "添加条件",
     "startError": "无法开始目标。请重试。",
     "updated": "{time}更新",
     "attentionTitle": "需要关注",
@@ -23606,8 +23733,16 @@
     "messageError": "无法发送备注。请重试。",
     "messageSent": "备注已发送。智能体现在会处理。",
     "sendMessage": "发送备注",
-    "showLog": "显示完整日志",
-    "hideLog": "隐藏完整日志",
+    "send": "发送",
+    "agentLog": "智能体日志",
+    "shareAccessLabel": "谁有访问权限",
+    "shareOwner": "所有者",
+    "shareAdminsRole": "可打开",
+    "shareLoadError": "无法加载访问权限。",
+    "shareVisibility": "可见范围：{scope}。共享目标",
+    "copyLink": "复制链接",
+    "linkCopied": "链接已复制",
+    "linkCopyError": "无法复制链接",
     "properties": "属性",
     "stateLabel": "状态",
     "nextCheck": "下次检查",
@@ -24291,6 +24426,14 @@
       "typingTwo": "{first} 和 {second} 正在输入…",
       "typingMany": "{count, plural, other {# 人正在输入…}}",
       "writing": "{name} 正在撰写…"
+    },
+    "coedit": {
+      "offLarge": "实时协同编辑已关闭：此文档超过 1 MiB。更改会在输入时保存。",
+      "offLineEndings": "实时协同编辑已关闭：此文档混用了 CRLF 和 LF 换行符。更改会在输入时保存。",
+      "offShape": "实时协同编辑已关闭：编辑器会改写此文档的部分 Markdown。更改会在输入时保存。",
+      "stoppedLarge": "实时协同编辑已停止：有一处更改太大，无法共享。更改会在输入时保存。",
+      "stoppedFailed": "实时协同编辑已停止：连接失败。更改会在输入时保存。",
+      "stoppedHistory": "实时协同编辑已停止：此文档的编辑历史过大。更改会在输入时保存。"
     }
   },
   "emailConnect": {
@@ -24609,9 +24752,9 @@
     },
     "create": {
       "title": "创建空间",
-      "description": "此项目中的所有人都可以查看和使用该空间。",
+      "description": "空间用于整理一个工作领域，例如市场、招聘或运营。成员和智能体在它的话题中协作。",
       "nameLabel": "名称",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "市场",
       "slugPlaceholder": "space-name",
       "descriptionLabel": "描述（可选）",
       "descriptionPlaceholder": "这个空间的用途",
@@ -24640,9 +24783,9 @@
     },
     "view": {
       "welcomeTitle": "欢迎来到 #{name}",
-      "welcomeEmpty": "在 #{name} 中开始第一个话题。每条消息都会开始一个新话题。",
+      "welcomeEmpty": "空间用于整理一个工作领域。成员和智能体在这里按话题协作：每条消息都会开启一个话题。",
       "welcomeStart": "这里是 #{name} 的开始。",
-      "dmIntro": "这段对话只在你和 {agent} 之间。",
+      "dmIntro": "只有你和 {agent} 能看到这个空间。",
       "today": "今天",
       "yesterday": "昨天",
       "openThread": "打开话题",
@@ -24866,7 +25009,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "{name} 详情"
     },
     "details": {
       "about": "关于",
@@ -24922,7 +25066,7 @@
       "memory": "记忆",
       "loadError": "无法加载此文件夹",
       "memoryNoteChannel": "{place} 中的智能体记住的内容。智能体会在每个线程开始时阅读这些内容。",
-      "memoryNoteDm": "{agent} 在此私信中记住的内容。它会在每个线程开始时阅读这些内容。",
+      "memoryNoteDm": "{agent} 从这个空间记住的内容。它会在每个话题开始时读取。",
       "off": {
         "title": "这里没有 Drive",
         "description": "{place} 的文件和记忆存放在 Drive 中。此 Kortix 不存储 Drive：它需要 Platinum。"
@@ -25095,7 +25239,66 @@
     },
     "filter": "按空间筛选",
     "all": "全部",
-    "projectWide": "项目范围"
+    "projectWide": "项目范围",
+    "panel": {
+      "title": "{name} 详情",
+      "heading": "详情",
+      "close": "关闭详情",
+      "private": "私密",
+      "rename": "重命名并添加描述",
+      "personalDescription": "你与 My Kortix 的私密空间。只有你能看到。",
+      "privateDescription": "只有其中的成员和智能体能看到这个空间。",
+      "noDescription": "还没有描述。",
+      "agents": "智能体",
+      "addAgent": "添加智能体",
+      "default": "默认",
+      "projectDefault": "项目默认",
+      "people": "成员",
+      "addPeople": "添加成员",
+      "you": "你",
+      "tabs": "标签页",
+      "addTab": "添加标签页",
+      "routines": "例行任务",
+      "addRoutine": "添加例行任务",
+      "routinesPrivate": "私密空间暂不支持例行任务。",
+      "allSettings": "所有设置",
+      "askHint": "你也可以在聊天中直接说：“在这里添加一个智能体”、“把发布文档固定为标签页”。"
+    },
+    "profile": {
+      "viewProfile": "查看 {name} 的资料",
+      "viewProfileShort": "查看资料",
+      "agent": "智能体",
+      "openProfile": "打开资料",
+      "you": "(你)",
+      "message": "发消息",
+      "messageFailed": "无法打开私密空间。请重试。",
+      "dmSpaceName": "{a} 和 {b}",
+      "heading": "资料",
+      "close": "关闭资料",
+      "model": "模型",
+      "modelDefault": "项目默认模型",
+      "connectors": "连接器",
+      "connectorsAll": "全部连接器",
+      "connectorsNone": "无连接器",
+      "projectDefault": "项目默认",
+      "projectDefaultYes": "回复未指定智能体的新话题",
+      "email": "邮箱",
+      "sharedSpaces": "共同的空间",
+      "yourSpaces": "你的空间",
+      "addTo": "添加到 {space}",
+      "addedTo": "已将 {agent} 添加到 {space}",
+      "addFailed": "无法添加智能体。请重试。",
+      "spacesIn": "所在空间",
+      "spacesInNone": "尚未加入任何空间",
+      "default": "默认"
+    },
+    "mentions": {
+      "people": "成员",
+      "agents": "智能体",
+      "addToSpace": "尚未在 {space} 中：提及即会添加",
+      "added": "已将 {agent} 添加到 {space}",
+      "addFailed": "无法添加智能体。请重试。"
+    }
   },
   "imageGen": {
     "generating": "正在生成图像",
@@ -25549,5 +25752,49 @@
     "googleSlides": "Google 幻灯片",
     "pullRequest": "PR #{number}",
     "issue": "议题 #{number}"
+  },
+  "subscriptionUsage": {
+    "fiveHour": "5-hour limit",
+    "weekly": "Weekly limit",
+    "weeklyModel": "Weekly · {model}",
+    "reconnect": "Reconnect",
+    "disabledTitle": "Subscription usage is unavailable",
+    "disabledDescription": "Subscription connections are not enabled for this project.",
+    "text0": "Reconnect needed",
+    "text1": "Inactive",
+    "text2": "Refresh failed",
+    "text3": "Awaiting usage",
+    "text4": "Limit reached",
+    "text5": "Last known usage",
+    "text6": "Usage reported",
+    "text7": "Subscription",
+    "text8": "used",
+    "text9": "Reset time passed · refresh for current usage",
+    "text10": "Reset time not reported",
+    "text11": "Checking provider usage…",
+    "text12": "No usage reported yet. Refresh after using this subscription.",
+    "text13": "Could not update. Showing last known data.",
+    "text14": "Waiting for provider data",
+    "text15": "Checking…",
+    "text16": "Refresh",
+    "text17": "Subscription usage",
+    "text18": "Track the limits of your connected ChatGPT and Claude subscriptions.",
+    "text19": "Usage could not load",
+    "text20": "Try loading your connected subscriptions again.",
+    "text21": "Retry",
+    "text22": "No connected subscriptions",
+    "text23": "Connect ChatGPT or Claude in Providers to see reported usage and reset times.",
+    "text24": "Connect a subscription",
+    "text25": "Usage is shared across apps that use the same subscription. Checks automatically every minute while this tab is open.",
+    "text26": "Limits vary by plan. Only windows reported by your connection appear here; missing data does not mean unlimited usage. File limits are not reported. API spend appears in Costs.",
+    "resets": "Resets {time}",
+    "observed": "Observed {time}",
+    "meterLabel": "{label}: {percent}% used",
+    "refreshLabel": "Refresh {label} usage",
+    "fiveHourNotReported": "Five-hour window not reported by this connection.",
+    "fableIncluded": "Fable usage also counts toward your overall weekly allowance.",
+    "chatgptUsage": "ChatGPT subscription usage",
+    "claudeUsage": "Claude subscription usage",
+    "allSubscriptions": "All subscriptions"
   }
 }

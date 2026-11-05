@@ -6,6 +6,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { verifyProviderConnection } from '../../llm-gateway/provider-verify';
 import { assertGatewayBudget, GatewayBudgetExceededError } from '../../llm-gateway/hooks';
+import { capturePersonEvent } from './product-events';
 
 export function registerGatewayProvidersRoutes(): void {
   // GAP C1 — "Connected" (a secret row exists) is not the same claim as "the
@@ -63,6 +64,7 @@ export function registerGatewayProvidersRoutes(): void {
         });
       }
       const result = await verifyProviderConnection(principal, providerId);
+      capturePersonEvent(c, loaded, projectId, 'provider_verified', { provider: providerId, state: result.status });
       return c.json({ ...result, checked_at: new Date().toISOString() });
     },
   );

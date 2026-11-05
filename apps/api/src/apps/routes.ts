@@ -58,12 +58,15 @@ import { commitAppFields, commitAppRemoval, manifestFieldsOf } from './app-manif
 import { probeFrameable } from './external';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
+import { registerAppEventLogRoutes } from './event-log-routes';
 import { registerAppFleetRoutes } from './fleet-routes';
 import {
   DEPRECATED_PROVIDER_CODE,
   DEPRECATED_PROVIDER_ERROR,
   isDeprecatedProvider,
 } from '../platform/providers/deprecated';
+import { captureProductEvent } from '../shared/product-analytics';
+import { analyticsSource } from '../middleware/analytics-source';
 
 /** The machine bounds an App shares with a session sandbox. Stated here so the
  *  published OpenAPI schema carries the real ceiling instead of a number the
@@ -295,6 +298,7 @@ async function linkOrRefuse(c: Context<AppEnv>, app: typeof apps.$inferSelect, u
 
 export function registerAppsRoutes(): void {
   registerAppCapabilityRoutes();
+  registerAppEventLogRoutes();
   registerAppFleetRoutes();
   projectsApp.openapi(
     createRoute({
@@ -913,6 +917,21 @@ export function registerAppsRoutes(): void {
         return row!;
       });
       triggerAppDeploymentWorker();
+      // Agents deploy most apps: the event counts every deploy, attributed to the
+      // session owner, and `actor_type` says who asked (human, agent, …).
+      captureProductEvent({
+        userId: loaded.userId,
+        accountId: loaded.row.accountId,
+        event: 'app_deployed',
+        dedupeKey: deployment.deploymentId,
+        properties: {
+          project_id: projectId,
+          app_kind: source.kind,
+          hosting_provider: hostingProvider ?? null,
+          actor_type: deployment.actorType ?? null,
+          source: analyticsSource(c),
+        },
+      });
       return c.json(serializeDeployment(deployment), 202);
     },
   );
