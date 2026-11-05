@@ -828,8 +828,8 @@ const catalog = {
           "description": "Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain."
         },
         "chat": {
-          "name": "Chat",
-          "description": "Slack-style chat with Kortix: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces you share with people. Replaces the session list in the sidebar."
+          "name": "Spaces",
+          "description": "Spaces with Kortix, the way Slack works: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and you share spaces with people. Replaces the session list in the sidebar."
         },
         "session_groups": {
           "name": "Session groups",
@@ -860,13 +860,13 @@ const catalog = {
           "description": "One control under the composer for who answers and how: pick the agent, and every other setting stays on Auto, inherited from that agent. Open a row to override the model, thinking effort, secrets, provider keys or sandbox for this session, and reset it to Auto in one click."
         },
         "chat_front": {
-          "name": "Talk-only threads",
-          "description": "With Chat on, a new message in a space starts a thread whose agent only talks. It hands every request to one hidden My Kortix session that does the work, and answers in short messages with only what matters. Needs My Kortix on in kortix.yaml."
+          "name": "Router",
+          "description": "With Spaces on, the agent you chat with in a thread is a router: it hands the work to your agents and writes back like a person, in short messages with the result, a link or the decision you need to make. Your agents share the thread through its files, so the router passes file paths, not retyped text. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml."
         }
       },
       "channelsSwitch": {
         "onTitle": "Turn on Spaces for {project}?",
-        "onBody": "Everyone in this project gets Spaces and Direct messages instead of the session list. All existing sessions move into #general. You can turn it off any time; nothing is deleted.",
+        "onBody": "Everyone in this project gets Spaces instead of the session list. All existing sessions move into #general. You can turn it off any time; nothing is deleted.",
         "drive": "Turn on Drive too, so spaces get Files.",
         "turnOn": "Turn on",
         "cancel": "Cancel",
@@ -1349,10 +1349,15 @@ const catalog = {
     "appsNoMatches": "No matches",
     "spaces": {
       "channels": "Spaces",
-      "directMessages": "Direct messages",
       "addChannel": "New space",
       "loadError": "Could not load spaces.",
-      "newAgent": "New agent"
+      "newAgent": "New agent",
+      "review": "Review",
+      "personal": "Your space",
+      "personalNamed": "{name}'s space",
+      "private": "Private",
+      "noMessages": "No messages yet",
+      "more": "More"
     }
   },
   "sessionPage": {
@@ -1497,7 +1502,8 @@ const catalog = {
       "noCommandMatch": "No matching command, file, or action",
       "commandsAndActions": "Commands and actions",
       "toUse": "to use",
-      "use": "Use"
+      "use": "Use",
+      "noOneMatches": "No one matches"
     },
     "history": {
       "restoreTitle": "Some earlier content could not be restored",
@@ -1521,7 +1527,23 @@ const catalog = {
       "fullTextRetry": "Try again"
     },
     "turn": {
-      "autoRetried": "Kortix automatically retried the model {count, plural, one {once} other {# times}} before this failure."
+      "autoRetried": "Kortix automatically retried the model {count, plural, one {once} other {# times}} before this failure.",
+      "typing": "{name} is typing…",
+      "showWork": "Show work",
+      "hideWork": "Hide work",
+      "starting": "Starting…",
+      "workingFor": "Working · {time}",
+      "agentWorking": "is working",
+      "agentWorkingFor": "is working · {time}",
+      "stopped": "Stopped",
+      "agentWorkingOn": "is working on {task}",
+      "agentWorkingOnFor": "is working on {task} · {time}",
+      "somethingWrong": "Something went wrong",
+      "notSent": "Not sent",
+      "retry": "Retry",
+      "resume": "Resume",
+      "agentIsWorking": "{agent} is working",
+      "needsYouOn": "Needs you: {header}"
     }
   },
   "agents": {
@@ -1748,7 +1770,8 @@ const catalog = {
         "notReceived": "Didn't receive the link?",
         "confirmNotReceived": "Didn't receive the confirmation email?",
         "resendIn": "Resend in {seconds}",
-        "resend": "Resend"
+        "resend": "Resend",
+        "checkSpam": "Not there? Check your spam or junk folder."
       },
       "credentials": {
         "signin": {
@@ -6186,6 +6209,39 @@ const catalog = {
       "prCommitsBy": "{count, plural, one {# commit} other {# commits}} by {author}",
       "prDraft": "Draft pull request"
     },
+    "askDeck": {
+      "label": "What waits on you",
+      "remaining": "{count, plural, one {# waits on you} other {# wait on you}}",
+      "yes": "Yes",
+      "no": "No",
+      "skip": "Skip",
+      "send": "Send answer",
+      "approve": "Approve",
+      "deny": "Deny",
+      "dismiss": "Dismiss",
+      "undo": "Undo",
+      "allowSession": "Allow {tool} for the session",
+      "typeAnswer": "Or type your answer",
+      "answered": "Answer sent",
+      "dismissed": "Question dismissed",
+      "approved": "Approved",
+      "denied": "Denied",
+      "failed": "The decision did not go through",
+      "askedAgo": "Asked {time} ago",
+      "fromWorker": "from a worker session",
+      "inSession": "In {title}",
+      "permissionTitle": "Run {tool}?",
+      "approvalTitle": "Run this connector call?",
+      "emptyTitle": "Nothing waits on you",
+      "emptyDescription": "Questions and approvals from your agents show up here.",
+      "loadFailed": "Could not load what waits on you",
+      "retry": "Retry",
+      "kind": {
+        "question": "Question",
+        "permission": "Permission",
+        "approval": "Connector approval"
+      }
+    },
     "reviewBulk": {
       "approve": "Approve",
       "deny": "Deny",
@@ -9230,10 +9286,10 @@ const catalog = {
     },
     "create": {
       "title": "Create a space",
-      "description": "Everyone in this project can see and use the space.",
+      "description": "A space organises one area of work, like Marketing, Hiring or Ops. People and agents work in its threads.",
       "nameLabel": "Name",
       "name": "Name",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "space-name",
       "descriptionLabel": "Description (optional)",
       "descriptionPlaceholder": "What this space is for",
@@ -9261,9 +9317,9 @@ const catalog = {
     },
     "view": {
       "welcomeTitle": "Welcome to #{name}",
-      "welcomeEmpty": "Start the first thread in #{name}. Every message starts a new thread.",
+      "welcomeEmpty": "A space organises one area of work. People and agents work here in threads: every message starts one.",
       "welcomeStart": "This is the start of #{name}.",
-      "dmIntro": "This conversation is just between you and {agent}.",
+      "dmIntro": "Only you and {agent} see this space.",
       "today": "Today",
       "yesterday": "Yesterday",
       "openThread": "Open thread",
@@ -9487,7 +9543,8 @@ const catalog = {
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "{name} details"
     },
     "details": {
       "about": "About",
@@ -9543,7 +9600,7 @@ const catalog = {
       "memory": "Memory",
       "loadError": "Couldn't load this folder",
       "memoryNoteChannel": "What agents in {place} remember. Agents read this at the start of every thread.",
-      "memoryNoteDm": "What {agent} remembers from this DM. It reads this at the start of every thread.",
+      "memoryNoteDm": "What {agent} remembers from this space. It reads this at the start of every thread.",
       "off": {
         "title": "No Drive here",
         "description": "Files and memory for {place} live in the Drive. This Kortix stores no Drive: it needs Platinum."
@@ -9640,6 +9697,65 @@ const catalog = {
       "noApp": "No app selected yet.",
       "noFile": "No file yet.",
       "loadingApp": "Loading app…"
+    },
+    "panel": {
+      "title": "{name} details",
+      "heading": "Details",
+      "close": "Close details",
+      "private": "Private",
+      "rename": "Rename and describe",
+      "personalDescription": "Your private space with My Kortix. Only you see it.",
+      "privateDescription": "Only the people and agents in it see this space.",
+      "noDescription": "No description yet.",
+      "agents": "Agents",
+      "addAgent": "Add agent",
+      "default": "Default",
+      "projectDefault": "Project default",
+      "people": "People",
+      "addPeople": "Add people",
+      "you": "You",
+      "tabs": "Tabs",
+      "addTab": "Add tab",
+      "routines": "Routines",
+      "addRoutine": "Add routine",
+      "routinesPrivate": "A private space takes no routines yet.",
+      "allSettings": "All settings",
+      "askHint": "You can also ask in chat: \"add an agent here\", \"pin the launch doc as a tab\"."
+    },
+    "profile": {
+      "viewProfile": "Show the profile of {name}",
+      "viewProfileShort": "View profile",
+      "agent": "Agent",
+      "openProfile": "Open profile",
+      "you": "(you)",
+      "message": "Message",
+      "messageFailed": "Could not open a private space. Try again.",
+      "dmSpaceName": "{a} and {b}",
+      "heading": "Profile",
+      "close": "Close profile",
+      "model": "Model",
+      "modelDefault": "The project's default model",
+      "connectors": "Connectors",
+      "connectorsAll": "All connectors",
+      "connectorsNone": "No connectors",
+      "projectDefault": "Project default",
+      "projectDefaultYes": "Answers new threads where no agent is set",
+      "email": "Email",
+      "sharedSpaces": "Spaces you share",
+      "yourSpaces": "Your spaces",
+      "addTo": "Add to {space}",
+      "addedTo": "{agent} added to {space}",
+      "addFailed": "Could not add the agent. Try again.",
+      "spacesIn": "Spaces it is in",
+      "spacesInNone": "Not in a space yet",
+      "default": "Default"
+    },
+    "mentions": {
+      "people": "People",
+      "agents": "Agents",
+      "addToSpace": "Not in {space} yet: mentioning adds it",
+      "added": "{agent} added to {space}",
+      "addFailed": "Could not add the agent. Try again."
     }
   },
   "imageGen": {

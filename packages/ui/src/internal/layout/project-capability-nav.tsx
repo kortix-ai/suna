@@ -2,7 +2,7 @@
 
 import { adminPath } from '../../lib/routes';
 
-import { useProjectConfig } from '@kortix/sdk/react';
+import { useProjectConfig, useSessionAsks } from '@kortix/sdk/react';
 
 import { CpuIcon, GearSixIcon, ListIcon, TrayIcon } from '@phosphor-icons/react';
 import { createContext, type ReactNode, useContext } from 'react';
@@ -77,7 +77,11 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
   const pathname = useUiPathname();
   const config = useProjectConfig(projectId);
   const access = useCapabilityAccess(projectId);
-  const needsYou = useReviewSessionSummary(projectId, { enabled: true }).totalNeedsYou;
+  const reviewNeedsYou = useReviewSessionSummary(projectId, { enabled: true }).totalNeedsYou;
+  // Questions and permission asks wait in Review too (its deck). Connector
+  // approvals are already in the review summary, so they are not added twice.
+  const asks = useSessionAsks(projectId).data?.asks;
+  const needsYou = reviewNeedsYou + (asks?.filter((ask) => ask.kind !== 'approval').length ?? 0);
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
   const tTabs = useI18nTranslations('agentEditor.tabs');

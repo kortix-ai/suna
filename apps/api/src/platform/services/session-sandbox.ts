@@ -431,6 +431,10 @@ interface SessionProvisionContext {
   // Drive sync (operator switch): a session off Platinum gets its drives
   // copied in and synced by the box's daemon instead of failing to boot.
   drivesSyncAllowed: boolean;
+  // A My Kortix box mounts no Files, except in a space thread with `chat` on:
+  // there it mounts them on Platinum like any session (its thread files,
+  // memory/thread-files.ts). Off Platinum it boots without them, as before.
+  myKortixSpaceDrives?: boolean;
 }
 
 /** Insert the `provisioning` row, or claim an authorized recovery placeholder. */
@@ -608,6 +612,11 @@ export async function provisionSessionSandbox(opts: {
       .catch(() => false));
   const drivesSyncAllowed =
     drivesRequirePlatinum && (await import('../../drives/sync').then((m) => m.driveSyncEnabled()).catch(() => false));
+  const myKortixSpaceDrives =
+    isMyKortixSandboxSlug(slug) &&
+    (await import('../../drives/service')
+      .then((m) => m.sessionDriveMountEnabled() && m.sessionMountsSpaceFiles(projectId, sandboxId))
+      .catch(() => false));
   const resolveImage = (
     gitProject: GitBackedProject,
     targetProvider: string,
@@ -772,6 +781,7 @@ export async function provisionSessionSandbox(opts: {
       slug,
       drivesRequirePlatinum,
       drivesSyncAllowed,
+      myKortixSpaceDrives,
     },
     state,
   );
@@ -820,7 +830,7 @@ async function resolveAttemptImage(
 
 /** The session's drives this attempt's box mounts (on Platinum) or syncs (elsewhere). */
 async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: SessionProvisionState): Promise<void> {
-  const { opts, sandbox, providerCreateInput, slug, drivesRequirePlatinum, drivesSyncAllowed } = ctx;
+  const { opts, sandbox, providerCreateInput, slug, drivesRequirePlatinum, drivesSyncAllowed, myKortixSpaceDrives } = ctx;
   const { accountId, projectId, userId } = opts;
   const { providerName } = state;
   // Drive sync: on any other provider the session's drives are copied
@@ -833,7 +843,7 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
   }
   // The entrypoint starts its drive-owner helper only for a session with
   // drives; a box without them boots as it did before drives.
-  if (drivesRequirePlatinum && providerCreateInput.envVars?.KORTIX_DRIVES !== '1') {
+  if ((drivesRequirePlatinum || (myKortixSpaceDrives && providerName === 'platinum')) && providerCreateInput.envVars?.KORTIX_DRIVES !== '1') {
     providerCreateInput.envVars = { ...(providerCreateInput.envVars ?? {}), KORTIX_DRIVES: '1' };
   }
   const planDrives = () =>
@@ -877,7 +887,7 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
     // A box anywhere else would boot without the session's files.
     throw new Error('[workspace] This session’s files are on a Platinum volume, and this box would not mount it, so the session did not start.');
   }
-  if (providerName !== 'platinum' || isMyKortixSandboxSlug(slug)) {
+  if (providerName !== 'platinum' || (isMyKortixSandboxSlug(slug) && !myKortixSpaceDrives)) {
     providerCreateInput.volumes = undefined;
     return;
   }

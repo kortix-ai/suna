@@ -1317,8 +1317,8 @@
           "description": "Donnez à l'agent une boîte e-mail sur Resend : les e-mails reçus démarrent et poursuivent des sessions, et l'agent lit, répond et envoie depuis la boîte. Utilisez votre propre clé API Resend et votre domaine."
         },
         "chat": {
-          "name": "Chat",
-          "description": "Un chat avec Kortix façon Slack : chaque message est un fil, la dernière réponse de Kortix s'affiche dessous, Kortix peut lancer des fils et vous partagez des espaces avec d'autres personnes. Remplace la liste des sessions dans la barre latérale."
+          "name": "Espaces",
+          "description": "Des Espaces avec Kortix façon Slack : chaque message est un fil, la dernière réponse de Kortix s'affiche dessous, Kortix peut lancer des fils et vous partagez des espaces avec d'autres personnes. Remplace la liste des sessions dans la barre latérale."
         },
         "session_groups": {
           "name": "Groupes de sessions",
@@ -1349,13 +1349,13 @@
           "description": "Un seul contrôle sous la zone de saisie pour qui répond et comment : choisissez l’agent, et tous les autres réglages restent sur Automatique, hérités de cet agent. Ouvrez une ligne pour remplacer le modèle, l’effort de raisonnement, les secrets, les clés de fournisseur ou la sandbox de cette session, et revenez à Automatique en un clic."
         },
         "chat_front": {
-          "name": "Fils de conversation seule",
-          "description": "Avec Chat activé, un nouveau message dans un espace démarre un fil dont l’agent ne fait que parler. Il transmet chaque demande à une session My Kortix cachée qui fait le travail, et répond en messages courts avec seulement ce qui compte. Nécessite My Kortix activé dans kortix.yaml."
+          "name": "Routeur",
+          "description": "Avec les Espaces activés, l’agent avec qui vous discutez dans un fil est un routeur : il confie le travail à vos agents et vous répond comme une personne, en messages courts avec le résultat, un lien ou la décision à prendre. Vos agents partagent le fil par ses fichiers : le routeur transmet des chemins de fichiers, pas du texte recopié. « Voir le travail » sous un message ouvre le travail derrière. Nécessite My Kortix activé dans kortix.yaml."
         }
       },
       "channelsSwitch": {
         "onTitle": "Activer les Espaces pour {project} ?",
-        "onBody": "Tout le monde dans ce projet obtient les Espaces et les Messages directs à la place de la liste des sessions. Toutes les sessions existantes passent dans #general. Vous pouvez désactiver à tout moment ; rien n’est supprimé.",
+        "onBody": "Tout le monde dans ce projet obtient les Espaces à la place de la liste des sessions. Toutes les sessions existantes passent dans #general. Vous pouvez le désactiver à tout moment ; rien n’est supprimé.",
         "drive": "Activer aussi Drive, pour que les espaces aient des Fichiers.",
         "turnOn": "Activer",
         "cancel": "Annuler",
@@ -1870,10 +1870,15 @@
     "appsNoMatches": "Aucun résultat",
     "spaces": {
       "channels": "Espaces",
-      "directMessages": "Messages directs",
       "addChannel": "Nouvel espace",
       "loadError": "Impossible de charger les espaces.",
-      "newAgent": "Nouvel agent"
+      "newAgent": "Nouvel agent",
+      "review": "Vérifier",
+      "personal": "Votre espace",
+      "personalNamed": "Espace de {name}",
+      "private": "Privé",
+      "noMessages": "Aucun message pour l’instant",
+      "more": "Plus"
     }
   },
   "dashboard": {
@@ -2118,7 +2123,8 @@
       "noCommandMatch": "Aucune commande, aucun fichier ni aucune action correspondante",
       "commandsAndActions": "Commandes et actions",
       "toUse": "à utiliser",
-      "use": "Utiliser"
+      "use": "Utiliser",
+      "noOneMatches": "Personne ne correspond"
     },
     "history": {
       "restoreTitle": "Une partie du contenu précédent n’a pas pu être restaurée",
@@ -2142,7 +2148,23 @@
       "fullTextRetry": "Réessayer"
     },
     "turn": {
-      "autoRetried": "Kortix a automatiquement réessayé le modèle {count, plural, one {une fois} other {# fois}} avant cet échec."
+      "autoRetried": "Kortix a automatiquement réessayé le modèle {count, plural, one {une fois} other {# fois}} avant cet échec.",
+      "typing": "{name} écrit…",
+      "showWork": "Voir le travail",
+      "hideWork": "Masquer le travail",
+      "starting": "Démarrage…",
+      "workingFor": "En cours · {time}",
+      "agentWorking": "travaille",
+      "agentWorkingFor": "travaille · {time}",
+      "stopped": "Arrêté",
+      "agentWorkingOn": "travaille sur {task}",
+      "agentWorkingOnFor": "travaille sur {task} · {time}",
+      "somethingWrong": "Un problème est survenu",
+      "notSent": "Non envoyé",
+      "retry": "Réessayer",
+      "resume": "Reprendre",
+      "agentIsWorking": "{agent} travaille",
+      "needsYouOn": "Vous attend : {header}"
     }
   },
   "agents": {
@@ -2950,7 +2972,8 @@
         "notReceived": "Vous n’avez pas reçu le lien ?",
         "confirmNotReceived": "Vous n’avez pas reçu l’e-mail de confirmation ?",
         "resendIn": "Renvoyer dans {seconds}",
-        "resend": "Renvoyer"
+        "resend": "Renvoyer",
+        "checkSpam": "Vous ne le trouvez pas ? Vérifiez vos spams ou courriers indésirables."
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21213,8 @@
       "text507c24b6792d": "Quand une demande de modification est fusionnée dans {branch}, {agent} exécute votre instruction.",
       "text05ee1d6181f3": "Quand une demande de modification est fusionnée, {agent} exécute votre instruction.",
       "texte608495c45ce": "Fusionnée dans {branch}",
-      "text80ca527b0d55": "Déclencheur de demande de modification créé"
+      "text80ca527b0d55": "Déclencheur de demande de modification créé",
+      "authEmailAlreadySent": "Nous avons envoyé cet e-mail il y a moins d'une minute. Vérifiez votre boîte de réception et vos spams avant d'en demander un autre."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -21279,6 +21303,39 @@
       "prCommits": "{count, plural, one {# commit} other {# commits}}",
       "prCommitsBy": "{count, plural, one {# commit} other {# commits}} par {author}",
       "prDraft": "Pull request en brouillon"
+    },
+    "askDeck": {
+      "label": "Ce qui vous attend",
+      "remaining": "{count, plural, one {# vous attend} other {# vous attendent}}",
+      "yes": "Oui",
+      "no": "Non",
+      "skip": "Passer",
+      "send": "Envoyer la réponse",
+      "approve": "Approuver",
+      "deny": "Refuser",
+      "dismiss": "Ignorer",
+      "undo": "Annuler",
+      "allowSession": "Autoriser {tool} pour la session",
+      "typeAnswer": "Ou saisissez votre réponse",
+      "answered": "Réponse envoyée",
+      "dismissed": "Question ignorée",
+      "approved": "Approuvé",
+      "denied": "Refusé",
+      "failed": "La décision n'a pas abouti",
+      "askedAgo": "Demandé il y a {time}",
+      "fromWorker": "depuis une session de travail",
+      "inSession": "Dans {title}",
+      "permissionTitle": "Exécuter {tool} ?",
+      "approvalTitle": "Exécuter cet appel de connecteur ?",
+      "emptyTitle": "Rien ne vous attend",
+      "emptyDescription": "Les questions et approbations de vos agents apparaissent ici.",
+      "loadFailed": "Impossible de charger ce qui vous attend",
+      "retry": "Réessayer",
+      "kind": {
+        "question": "Question",
+        "permission": "Autorisation",
+        "approval": "Approbation de connecteur"
+      }
     },
     "reviewBulk": {
       "approve": "Approuver",
@@ -24693,9 +24750,9 @@
     },
     "create": {
       "title": "Créer un espace",
-      "description": "Tout le monde dans ce projet peut voir et utiliser l’espace.",
+      "description": "Un espace organise un domaine de travail, comme Marketing, Recrutement ou Ops. Les personnes et les agents travaillent dans ses fils.",
       "nameLabel": "Nom",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "nom-de-l-espace",
       "descriptionLabel": "Description (facultative)",
       "descriptionPlaceholder": "À quoi sert cet espace",
@@ -24724,9 +24781,9 @@
     },
     "view": {
       "welcomeTitle": "Bienvenue dans #{name}",
-      "welcomeEmpty": "Lancez le premier fil dans #{name}. Chaque message lance un nouveau fil.",
+      "welcomeEmpty": "Un espace organise un domaine de travail. Les personnes et les agents y travaillent en fils : chaque message en démarre un.",
       "welcomeStart": "Voici le début de #{name}.",
-      "dmIntro": "Cette conversation est entre vous et {agent} uniquement.",
+      "dmIntro": "Seuls vous et {agent} voyez cet espace.",
       "today": "Aujourd'hui",
       "yesterday": "Hier",
       "openThread": "Ouvrir le fil",
@@ -24950,7 +25007,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "Détails de {name}"
     },
     "details": {
       "about": "À propos",
@@ -25006,7 +25064,7 @@
       "memory": "Mémoire",
       "loadError": "Impossible de charger ce dossier",
       "memoryNoteChannel": "Ce dont les agents de {place} se souviennent. Ils le lisent au début de chaque fil.",
-      "memoryNoteDm": "Ce dont {agent} se souvient de ce DM. Il le lit au début de chaque fil.",
+      "memoryNoteDm": "Ce que {agent} retient de cet espace. Il le lit au début de chaque fil.",
       "off": {
         "title": "Pas de Drive ici",
         "description": "Les fichiers et la mémoire de {place} sont dans le Drive. Cette instance Kortix ne stocke pas de Drive : il lui faut Platinum."
@@ -25179,7 +25237,66 @@
     },
     "filter": "Filtrer par espace",
     "all": "Tous",
-    "projectWide": "À l’échelle du projet"
+    "projectWide": "À l’échelle du projet",
+    "panel": {
+      "title": "Détails de {name}",
+      "heading": "Détails",
+      "close": "Fermer les détails",
+      "private": "Privé",
+      "rename": "Renommer et décrire",
+      "personalDescription": "Votre espace privé avec My Kortix. Vous seul le voyez.",
+      "privateDescription": "Seules les personnes et les agents qui en font partie voient cet espace.",
+      "noDescription": "Pas encore de description.",
+      "agents": "Agents",
+      "addAgent": "Ajouter un agent",
+      "default": "Par défaut",
+      "projectDefault": "Par défaut du projet",
+      "people": "Personnes",
+      "addPeople": "Ajouter des personnes",
+      "you": "Vous",
+      "tabs": "Onglets",
+      "addTab": "Ajouter un onglet",
+      "routines": "Routines",
+      "addRoutine": "Ajouter une routine",
+      "routinesPrivate": "Un espace privé n’accepte pas encore de routines.",
+      "allSettings": "Tous les réglages",
+      "askHint": "Vous pouvez aussi le demander dans le chat : « ajoute un agent ici », « épingle le document du lancement en onglet »."
+    },
+    "profile": {
+      "viewProfile": "Afficher le profil de {name}",
+      "viewProfileShort": "Voir le profil",
+      "agent": "Agent",
+      "openProfile": "Ouvrir le profil",
+      "you": "(vous)",
+      "message": "Message",
+      "messageFailed": "Impossible d’ouvrir un espace privé. Réessayez.",
+      "dmSpaceName": "{a} et {b}",
+      "heading": "Profil",
+      "close": "Fermer le profil",
+      "model": "Modèle",
+      "modelDefault": "Le modèle par défaut du projet",
+      "connectors": "Connecteurs",
+      "connectorsAll": "Tous les connecteurs",
+      "connectorsNone": "Aucun connecteur",
+      "projectDefault": "Par défaut du projet",
+      "projectDefaultYes": "Répond aux nouveaux fils sans agent défini",
+      "email": "E-mail",
+      "sharedSpaces": "Espaces en commun",
+      "yourSpaces": "Vos espaces",
+      "addTo": "Ajouter à {space}",
+      "addedTo": "{agent} ajouté à {space}",
+      "addFailed": "Impossible d’ajouter l’agent. Réessayez.",
+      "spacesIn": "Espaces dont il fait partie",
+      "spacesInNone": "Dans aucun espace pour l’instant",
+      "default": "Par défaut"
+    },
+    "mentions": {
+      "people": "Personnes",
+      "agents": "Agents",
+      "addToSpace": "Pas encore dans {space} : le mentionner l’ajoute",
+      "added": "{agent} ajouté à {space}",
+      "addFailed": "Impossible d’ajouter l’agent. Réessayez."
+    }
   },
   "imageGen": {
     "generating": "Génération de l’image",

@@ -488,6 +488,13 @@ export type KortixSessionEvent =
       properties: { sessionID: string; requestID: string; answers: RuntimeQuestionAnswer[] };
     }
   | { type: 'question.rejected'; properties: { sessionID: string; requestID: string } }
+  /**
+   * Nobody answered live, so the call stopped waiting and the turn went on. The
+   * request stays open server-side (Review, "Needs you"); its answer arrives
+   * as a new message. A client drops its live card and shows the stored ask.
+   */
+  | { type: 'question.parked'; properties: { sessionID: string; requestID: string } }
+  | { type: 'permission.parked'; properties: { sessionID: string; requestID: string } }
   | { type: 'todo.updated'; properties: { sessionID: string; todos: KortixTodo[] } };
 
 export type KortixSessionEventType = KortixSessionEvent['type'];

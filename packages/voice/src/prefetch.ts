@@ -67,11 +67,29 @@ function cardOf(c: Card): Promise<string | undefined> {
   return result
 }
 
-function search(q: string): Promise<string> {
+// pages: the top results' pages are read behind it (src/pages.ts), each a paid scrape ($0.01 through the Kortix router).
+function search(q: string, pages = true): Promise<string> {
   const key = norm(q).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim()
   const hit = searches.get(key)
   if (hit && Date.now() - hit.at < ttl(key)) return hit.result
-  const result = race(q)
+  const result = race(q, pages)
+  searches.set(key, { at: Date.now(), words: content(q), result })
+  result.then((r) => r || searches.delete(key))
+  return result
+}
+
+/** The search beside the router, before it has decided a lookup is needed at all: one provider, the cheapest at hand
+ * (Serper, $0.001 through the Kortix router, against Tavily's $0.005 and Firecrawl's $0.01), and no page read. The full
+ * race of all three ran on every turn of two content words, "12 times 11" and "change your name" too: about two thirds
+ * of a call's model cost. A web turn still races them all once the router says so. */
+// A lookup ahead (src/anticipate.ts: the likely next questions, "Who is the CEO of Meta?" after Microsoft's) is a glance
+// too: it runs before anyone asks, so one provider's tail costs nothing, and four of them raced 3 providers each.
+function glance(q: string): Promise<string> {
+  const key = norm(q).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim()
+  const hit = searches.get(key)
+  if (hit && Date.now() - hit.at < ttl(key)) return hit.result
+  const one = router() || process.env.SERPER_API_KEY ? serper : process.env.TAVILY_API_KEY ? tavily : firecrawl
+  const result = one(q, AbortSignal.timeout(BUDGET + 3000)).catch(() => '')
   searches.set(key, { at: Date.now(), words: content(q), result })
   result.then((r) => r || searches.delete(key))
   return result
@@ -92,7 +110,7 @@ function reuse(q: string): Promise<string> | undefined {
 
 // The providers, raced, the first usable result wins: Tavily, Serper (Google results) and Firecrawl. Alone each
 // is ~1.26–1.35 s p50, 2.0–3.1 s p90; raced, 1.14 s / 1.48 s with the fact in the data 81% (n = 21, measured).
-async function race(q: string): Promise<string> {
+async function race(q: string, pages = true): Promise<string> {
   const ac = new AbortController()
   const tries = [tavily(q, ac.signal), serper(q, ac.signal), firecrawl(q, ac.signal)].map((p) => p.catch(() => ''))
   const first = await new Promise<string>((resolve) => {
@@ -100,7 +118,7 @@ async function race(q: string): Promise<string> {
     for (const t of tries) t.then((r) => (r ? resolve(r) : --left || resolve('')))
   })
   ac.abort()
-  if (first) readPages(first)
+  if (first && pages) readPages(first)
   return first
 }
 
@@ -244,7 +262,10 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
   // (and a turn routed to no lookup has it ready if the agent reaches for the web itself).
   const searching = searchOn()
   // ahead: a question looked up before it is asked (src/anticipate.ts) waits for its route; no extra search on its words.
-  const raw = searching && !ahead && content(q).size >= 2 ? search(q) : undefined
+  // (words: the search itself, the full race; else a glance beside the routing, see glance()).
+  const raw = searching && !ahead && content(q).size >= 2 ? (words ? search(q) : glance(q)) : undefined
+  let glanced = false // the glance is in, with something in it
+  void raw?.then((r) => (glanced = !!r))
   // words: a search on the words themselves, no routing (the agent is about to search on its own; ours is faster).
   const r = words ? { need: 'web' as const, query: q } : await within(route(q, context, projectFor(q)), remaining())
   if (!words) mark?.('routed')
@@ -262,7 +283,11 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
     return [state && `<data source="git of ${of}, read just now">\n${state}\n</data>`, data && `<data source="workspace: ${of}">\nThis project: ${of}\n${data}\n</data>`].filter(Boolean).join('\n')
   }
   let fallback: Promise<string> | undefined
-  const searchNow = () => fallback ??= searching ? (raw ? firstUseful([words ? raw : reuse(r.query) ?? search(r.query), raw]) : reuse(r.query) ?? search(r.query)) : Promise.resolve('')
+  // A web turn: the glance when it is in and useful; else the full race on the router's query beside it (the glance is one
+  // provider, its p90 2-3 s; raced, 1.5 s), never the glance taken for the search (a query inside its words reused it).
+  const searchNow = () => fallback ??= searching
+    ? (raw ? (words ? raw : glanced ? raw : firstUseful([raw, search(r.query)])) : reuse(r.query) ?? (ahead ? glance(r.query) : search(r.query)))
+    : Promise.resolve('')
   const web = async () => {
     const data = await searchNow()
     const found = data ? `<data source="web search" query="${r.query.replace(/"/g, "'")}">\n${data.replace(/<\/?data\b[^>]*>/gi, '')}\n</data>` : '' // untrusted: cannot close its envelope
@@ -281,7 +306,9 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
       // card alone the answer was "I don't have the specific changelog for Bun 1.4.4" (a traced real round).
       if (got && r.card.type === 'version' && CHANGES.test(r.query)) return [got, await web()].filter(Boolean).join('\n')
       if (got) return got
-      return firstUseful([primary, web()])
+      // Late, the primary races the search; the search yields a tick, so an exact fact already in hand when the snippets
+      // land wins ("1 CAD = 0.72 USD", not "this estimate is not a live quote": the one-provider glance settles sooner).
+      return firstUseful([primary, web().then((w) => new Promise<string>((ok) => setImmediate(ok, w)))])
     }
     return web()
   }

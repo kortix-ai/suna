@@ -1317,8 +1317,8 @@
           "description": "Dajte agentu poštansko sanduče na Resend-u: dolazna pošta pokreće i nastavlja sesije, a agent čita, odgovara i šalje iz sandučeta. Koristite sopstveni Resend API ključ i domen."
         },
         "chat": {
-          "name": "Čet",
-          "description": "Čet sa Kortixom kao u Slacku: svaka poruka je nit, najnoviji odgovor Kortixa prikazuje se ispod nje, Kortix može da započne niti, a prostore delite sa drugim ljudima. Zamenjuje listu sesija u bočnoj traci."
+          "name": "Prostori",
+          "description": "Prostori sa Kortixom kao u Slacku: svaka poruka je nit, najnoviji odgovor Kortixa prikazuje se ispod nje, Kortix može da započne niti, a prostore delite sa drugim ljudima. Zamenjuje listu sesija u bočnoj traci."
         },
         "session_groups": {
           "name": "Групе сесија",
@@ -1349,13 +1349,13 @@
           "description": "Jedna kontrola ispod polja za unos za to ko odgovara i kako: izaberi agenta, a sva ostala podešavanja ostaju na Automatski, nasleđena od tog agenta. Otvori red da zameniš model, nivo razmišljanja, tajne, ključeve provajdera ili sandbox za ovu sesiju, i vrati na Automatski jednim klikom."
         },
         "chat_front": {
-          "name": "Niti samo za razgovor",
-          "description": "Kada je Čet uključen, nova poruka u prostoru pokreće nit čiji agent samo razgovara. Svaki zahtev prosleđuje jednoj skrivenoj My Kortix sesiji koja obavlja posao, i odgovara kratkim porukama samo sa onim što je važno. Zahteva uključen My Kortix u kortix.yaml."
+          "name": "Ruter",
+          "description": "Kada su Prostori uključeni, agent sa kojim razgovarate u niti je ruter: prosleđuje posao vašim agentima i odgovara kao čovek, kratkim porukama sa rezultatom, linkom ili odlukom koju treba da donesete. Vaši agenti dele nit kroz njene fajlove, pa ruter prosleđuje putanje fajlova, a ne prepisan tekst. „Prikaži rad“ ispod poruke otvara rad iza nje. Zahteva uključen My Kortix u kortix.yaml."
         }
       },
       "channelsSwitch": {
         "onTitle": "Укључити просторе за {project}?",
-        "onBody": "Сви у овом пројекту добијају просторе и директне поруке уместо листе сесија. Све постојеће сесије прелазе у #general. Можете их искључити било када; ништа се не брише.",
+        "onBody": "Сви у овом пројекту добијају Просторе уместо листе сесија. Све постојеће сесије прелазе у #general. Можеш то искључити кад год желиш; ништа се не брише.",
         "drive": "Укључи и Drive, да простори добију датотеке.",
         "turnOn": "Укључи",
         "cancel": "Откажи",
@@ -1870,10 +1870,15 @@
     "appsNoMatches": "Nema rezultata",
     "spaces": {
       "channels": "Простори",
-      "directMessages": "Директне поруке",
       "addChannel": "Нови простор",
       "loadError": "Учитавање простора није успело.",
-      "newAgent": "Нови агент"
+      "newAgent": "Нови агент",
+      "review": "Преглед",
+      "personal": "Твој простор",
+      "personalNamed": "Простор корисника {name}",
+      "private": "Приватно",
+      "noMessages": "Још нема порука",
+      "more": "Још"
     }
   },
   "dashboard": {
@@ -2118,7 +2123,8 @@
       "noCommandMatch": "Нема одговарајуће команде, датотеке или радње",
       "commandsAndActions": "Команде и радње",
       "toUse": "за коришћење",
-      "use": "Користи"
+      "use": "Користи",
+      "noOneMatches": "Нико се не поклапа"
     },
     "history": {
       "restoreTitle": "Део ранијег садржаја није могао да се врати",
@@ -2142,7 +2148,23 @@
       "fullTextRetry": "Покушај поново"
     },
     "turn": {
-      "autoRetried": "Kortix је аутоматски поново покушао са моделом {count, plural, one {једном} other {# пута}} пре ове грешке."
+      "autoRetried": "Kortix је аутоматски поново покушао са моделом {count, plural, one {једном} other {# пута}} пре ове грешке.",
+      "typing": "{name} kuca…",
+      "showWork": "Prikaži rad",
+      "hideWork": "Sakrij rad",
+      "starting": "Покреће се…",
+      "workingFor": "Ради · {time}",
+      "agentWorking": "ради",
+      "agentWorkingFor": "ради · {time}",
+      "stopped": "Заустављено",
+      "agentWorkingOn": "ради на: {task}",
+      "agentWorkingOnFor": "ради на: {task} · {time}",
+      "somethingWrong": "Нешто није у реду",
+      "notSent": "Није послато",
+      "retry": "Покушај поново",
+      "resume": "Настави",
+      "agentIsWorking": "{agent} ради",
+      "needsYouOn": "Потребан си: {header}"
     }
   },
   "agents": {
@@ -2950,7 +2972,8 @@
         "notReceived": "Нисте добили линк?",
         "confirmNotReceived": "Нисте добили имејл за потврду?",
         "resendIn": "Поново пошаљи за {seconds}",
-        "resend": "Пошаљи поново"
+        "resend": "Пошаљи поново",
+        "checkSpam": "Nije stigla? Proverite fasciklu za neželjenu poštu."
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21213,8 @@
       "text507c24b6792d": "Када се захтев за измену споји у {branch}, {agent} извршава ваше упутство.",
       "text05ee1d6181f3": "Када се захтев за измену споји, {agent} извршава ваше упутство.",
       "texte608495c45ce": "Спојено у {branch}",
-      "text80ca527b0d55": "Окидач за захтев за измену је направљен"
+      "text80ca527b0d55": "Окидач за захтев за измену је направљен",
+      "authEmailAlreadySent": "Ovu e-poruku smo poslali pre manje od minut. Proverite prijemno sanduče i fasciklu za neželjenu poštu pre nego što zatražite novu."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -21279,6 +21303,39 @@
       "prCommits": "{count, plural, one {# commit} few {# commita} other {# commitova}}",
       "prCommitsBy": "{count, plural, one {# commit} few {# commita} other {# commitova}} od {author}",
       "prDraft": "Nacrt pull requesta"
+    },
+    "askDeck": {
+      "label": "Šta čeka na tebe",
+      "remaining": "{count, plural, one {# čeka na tebe} few {# čekaju na tebe} other {# čeka na tebe}}",
+      "yes": "Da",
+      "no": "Ne",
+      "skip": "Preskoči",
+      "send": "Pošalji odgovor",
+      "approve": "Odobri",
+      "deny": "Odbij",
+      "dismiss": "Odbaci",
+      "undo": "Poništi",
+      "allowSession": "Dozvoli {tool} za sesiju",
+      "typeAnswer": "Ili upiši svoj odgovor",
+      "answered": "Odgovor je poslat",
+      "dismissed": "Pitanje je odbačeno",
+      "approved": "Odobreno",
+      "denied": "Odbijeno",
+      "failed": "Odluka nije sprovedena",
+      "askedAgo": "Pitano pre {time}",
+      "fromWorker": "iz radne sesije",
+      "inSession": "U {title}",
+      "permissionTitle": "Pokrenuti {tool}?",
+      "approvalTitle": "Pokrenuti ovaj poziv konektora?",
+      "emptyTitle": "Ništa ne čeka na tebe",
+      "emptyDescription": "Pitanja i odobrenja tvojih agenata pojavljuju se ovde.",
+      "loadFailed": "Nije moguće učitati šta čeka na tebe",
+      "retry": "Pokušaj ponovo",
+      "kind": {
+        "question": "Pitanje",
+        "permission": "Dozvola",
+        "approval": "Odobrenje konektora"
+      }
     },
     "reviewBulk": {
       "approve": "Одобри",
@@ -24693,9 +24750,9 @@
     },
     "create": {
       "title": "Направи простор",
-      "description": "Сви у овом пројекту могу да виде и користе простор.",
+      "description": "Простор организује једну област рада, као што су маркетинг, запошљавање или операције. Људи и агенти раде у његовим нитима.",
       "nameLabel": "Назив",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Маркетинг",
       "slugPlaceholder": "naziv-prostora",
       "descriptionLabel": "Опис (опционо)",
       "descriptionPlaceholder": "За шта служи овај простор",
@@ -24724,9 +24781,9 @@
     },
     "view": {
       "welcomeTitle": "Добро дошао у #{name}",
-      "welcomeEmpty": "Започни прву тему у #{name}. Свака порука започиње нову тему.",
+      "welcomeEmpty": "Простор организује једну област рада. Људи и агенти овде раде у нитима: свака порука покреће нову.",
       "welcomeStart": "Овде почиње #{name}.",
-      "dmIntro": "Овај разговор је само између тебе и агента {agent}.",
+      "dmIntro": "Само ти и агент {agent} видите овај простор.",
       "today": "Данас",
       "yesterday": "Јуче",
       "openThread": "Отвори тему",
@@ -24950,7 +25007,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "Детаљи: {name}"
     },
     "details": {
       "about": "О каналу",
@@ -25006,7 +25064,7 @@
       "memory": "Меморија",
       "loadError": "Учитавање ове фасцикле није успело",
       "memoryNoteChannel": "Шта агенти у {place} памте. Агенти ово читају на почетку сваке теме.",
-      "memoryNoteDm": "Шта {agent} памти из ове DM поруке. Ово чита на почетку сваке теме.",
+      "memoryNoteDm": "Шта {agent} памти из овог простора. Чита то на почетку сваке нити.",
       "off": {
         "title": "Овде нема Drive-а",
         "description": "Датотеке и меморија за {place} налазе се у Drive-у. Ова Kortix инстанца не чува Drive: потребан јој је Platinum."
@@ -25179,7 +25237,66 @@
     },
     "filter": "Филтрирај по простору",
     "all": "Све",
-    "projectWide": "На нивоу пројекта"
+    "projectWide": "На нивоу пројекта",
+    "panel": {
+      "title": "Детаљи: {name}",
+      "heading": "Детаљи",
+      "close": "Затвори детаље",
+      "private": "Приватно",
+      "rename": "Преименуј и опиши",
+      "personalDescription": "Твој приватни простор са My Kortix. Само ти га видиш.",
+      "privateDescription": "Овај простор виде само људи и агенти који су у њему.",
+      "noDescription": "Још нема описа.",
+      "agents": "Агенти",
+      "addAgent": "Додај агента",
+      "default": "Подразумевани",
+      "projectDefault": "Подразумевани за пројекат",
+      "people": "Људи",
+      "addPeople": "Додај људе",
+      "you": "Ти",
+      "tabs": "Картице",
+      "addTab": "Додај картицу",
+      "routines": "Рутине",
+      "addRoutine": "Додај рутину",
+      "routinesPrivate": "Приватни простор још не прима рутине.",
+      "allSettings": "Сва подешавања",
+      "askHint": "Можеш и да питаш у ћаскању: „додај агента овде“, „закачи документ за лансирање као картицу“."
+    },
+    "profile": {
+      "viewProfile": "Прикажи профил: {name}",
+      "viewProfileShort": "Погледај профил",
+      "agent": "Агент",
+      "openProfile": "Отвори профил",
+      "you": "(ти)",
+      "message": "Порука",
+      "messageFailed": "Приватни простор није могао да се отвори. Покушај поново.",
+      "dmSpaceName": "{a} и {b}",
+      "heading": "Профил",
+      "close": "Затвори профил",
+      "model": "Модел",
+      "modelDefault": "Подразумевани модел пројекта",
+      "connectors": "Конектори",
+      "connectorsAll": "Сви конектори",
+      "connectorsNone": "Нема конектора",
+      "projectDefault": "Подразумевани за пројекат",
+      "projectDefaultYes": "Одговара на нове нити без задатог агента",
+      "email": "Е-пошта",
+      "sharedSpaces": "Заједнички простори",
+      "yourSpaces": "Твоји простори",
+      "addTo": "Додај у {space}",
+      "addedTo": "{agent} је додат у {space}",
+      "addFailed": "Агент није могао да се дода. Покушај поново.",
+      "spacesIn": "Простори у којима је",
+      "spacesInNone": "Још ни у једном простору",
+      "default": "Подразумевани"
+    },
+    "mentions": {
+      "people": "Људи",
+      "agents": "Агенти",
+      "addToSpace": "Још није у {space}: помињање га додаје",
+      "added": "{agent} је додат у {space}",
+      "addFailed": "Агент није могао да се дода. Покушај поново."
+    }
   },
   "imageGen": {
     "generating": "Generisanje slike",

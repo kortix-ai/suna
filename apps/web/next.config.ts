@@ -524,9 +524,8 @@ const nextConfig = (): NextConfig => ({
       // top-level segments were shared in Slack, saved as bookmarks and baked
       // into agent transcripts, so every one keeps resolving. `agent` became
       // `agents`, `config` became `settings`; the rest kept their names.
-      // `review` is NOT in this list: Review left Customize on 2026-10-02 and
-      // `/projects/:id/review` is its own page again. Redirecting it here
-      // would loop with `customize/review/page.tsx`, which sends it back.
+      // `review` is NOT in this list: `/projects/:id/review` is Review's own
+      // page (2026-11-04), and `customize/review/page.tsx` redirects to it.
       {
         source: '/projects/:id/agent/:path*',
         destination: '/projects/:id/customize/agents/:path*',

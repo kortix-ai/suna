@@ -1317,8 +1317,8 @@
           "description": "为智能体提供一个 Resend 邮箱：收到的邮件会启动并延续会话，智能体从该邮箱阅读、回复和发送邮件。使用你自己的 Resend API 密钥和域名。"
         },
         "chat": {
-          "name": "聊天",
-          "description": "像 Slack 一样与 Kortix 聊天：每条消息都是一个话题，Kortix 的最新回复显示在其下方，Kortix 也可以发起话题，空间可与他人共享。取代侧边栏中的会话列表。"
+          "name": "空间",
+          "description": "像 Slack 一样与 Kortix 使用空间：每条消息都是一个话题，Kortix 的最新回复显示在其下方，Kortix 也可以发起话题，空间可与他人共享。取代侧边栏中的会话列表。"
         },
         "session_groups": {
           "name": "会话分组",
@@ -1349,13 +1349,13 @@
           "description": "输入框下方的一个控件，决定由谁回答以及如何回答：选择智能体后，其他所有设置都保持自动，继承自该智能体。打开某一行即可为本会话覆盖模型、思考强度、密钥、提供商密钥或沙盒，并一键恢复为自动。"
         },
         "chat_front": {
-          "name": "仅对话线程",
-          "description": "开启聊天后，空间中的新消息会启动一个线程，其智能体只负责对话。它把每个请求交给一个隐藏的 My Kortix 会话去完成，并只用简短消息回复重要内容。需要在 kortix.yaml 中开启 My Kortix。"
+          "name": "路由器",
+          "description": "开启空间后，你在话题中对话的智能体是一个路由器：它把工作交给你的智能体，并像人一样回复，用简短消息告诉你结果、链接或需要你做的决定。你的智能体通过话题的文件共享内容，所以路由器传递文件路径，而不是重写的文本。消息下方的「查看过程」可展开其背后的工作。需要在 kortix.yaml 中开启 My Kortix。"
         }
       },
       "channelsSwitch": {
         "onTitle": "为 {project} 开启空间？",
-        "onBody": "此项目中的所有人将看到空间和私信，而不是会话列表。所有现有会话都会移入 #general。你可以随时关闭；不会删除任何内容。",
+        "onBody": "此项目中的所有人都会看到空间，而不是会话列表。所有现有会话都会移到 #general。你可以随时关闭；不会删除任何内容。",
         "drive": "同时开启云盘，让空间拥有文件。",
         "turnOn": "开启",
         "cancel": "取消",
@@ -1870,10 +1870,15 @@
     "appsNoMatches": "无匹配项",
     "spaces": {
       "channels": "空间",
-      "directMessages": "私信",
       "addChannel": "新建空间",
       "loadError": "无法加载空间。",
-      "newAgent": "新建智能体"
+      "newAgent": "新建智能体",
+      "review": "审核",
+      "personal": "你的空间",
+      "personalNamed": "{name} 的空间",
+      "private": "私密",
+      "noMessages": "还没有消息",
+      "more": "更多"
     }
   },
   "dashboard": {
@@ -2118,7 +2123,8 @@
       "noCommandMatch": "没有匹配的命令、文件或操作",
       "commandsAndActions": "命令和操作",
       "toUse": "以使用",
-      "use": "使用"
+      "use": "使用",
+      "noOneMatches": "没有匹配的人"
     },
     "history": {
       "restoreTitle": "部分较早的内容无法恢复",
@@ -2142,7 +2148,23 @@
       "fullTextRetry": "重试"
     },
     "turn": {
-      "autoRetried": "Kortix 在此失败前已自动重试该模型 {count, plural, other {# 次}}。"
+      "autoRetried": "Kortix 在此失败前已自动重试该模型 {count, plural, other {# 次}}。",
+      "typing": "{name} 正在输入…",
+      "showWork": "查看过程",
+      "hideWork": "隐藏过程",
+      "starting": "启动中…",
+      "workingFor": "处理中 · {time}",
+      "agentWorking": "正在处理",
+      "agentWorkingFor": "正在处理 · {time}",
+      "stopped": "已停止",
+      "agentWorkingOn": "正在处理 {task}",
+      "agentWorkingOnFor": "正在处理 {task} · {time}",
+      "somethingWrong": "出了点问题",
+      "notSent": "未发送",
+      "retry": "重试",
+      "resume": "继续",
+      "agentIsWorking": "{agent} 正在处理",
+      "needsYouOn": "需要你：{header}"
     }
   },
   "agents": {
@@ -2950,7 +2972,8 @@
         "notReceived": "未收到链接？",
         "confirmNotReceived": "未收到确认邮件？",
         "resendIn": "{seconds} 秒后重新发送",
-        "resend": "重新发送"
+        "resend": "重新发送",
+        "checkSpam": "没有收到？请检查垃圾邮件文件夹。"
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21213,8 @@
       "text507c24b6792d": "变更请求合并到 {branch} 时，{agent} 会执行你的指令。",
       "text05ee1d6181f3": "变更请求合并时，{agent} 会执行你的指令。",
       "texte608495c45ce": "合并到 {branch}",
-      "text80ca527b0d55": "已创建变更请求触发器"
+      "text80ca527b0d55": "已创建变更请求触发器",
+      "authEmailAlreadySent": "我们在一分钟内已发送过这封邮件。请先检查收件箱和垃圾邮件文件夹，再申请重新发送。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -21279,6 +21303,39 @@
       "prCommits": "{count, plural, other {# 个提交}}",
       "prCommitsBy": "{author} 的 {count, plural, other {# 个提交}}",
       "prDraft": "草稿拉取请求"
+    },
+    "askDeck": {
+      "label": "等待你处理",
+      "remaining": "{count, plural, other {# 项等待你处理}}",
+      "yes": "是",
+      "no": "否",
+      "skip": "跳过",
+      "send": "发送回答",
+      "approve": "批准",
+      "deny": "拒绝",
+      "dismiss": "忽略",
+      "undo": "撤销",
+      "allowSession": "在本会话中允许 {tool}",
+      "typeAnswer": "或输入你的回答",
+      "answered": "回答已发送",
+      "dismissed": "问题已忽略",
+      "approved": "已批准",
+      "denied": "已拒绝",
+      "failed": "决定未能生效",
+      "askedAgo": "{time} 前提问",
+      "fromWorker": "来自工作会话",
+      "inSession": "在 {title} 中",
+      "permissionTitle": "运行 {tool}？",
+      "approvalTitle": "运行此连接器调用？",
+      "emptyTitle": "没有等待你处理的事项",
+      "emptyDescription": "来自智能体的问题和审批会显示在这里。",
+      "loadFailed": "无法加载等待你处理的事项",
+      "retry": "重试",
+      "kind": {
+        "question": "问题",
+        "permission": "权限",
+        "approval": "连接器审批"
+      }
     },
     "reviewBulk": {
       "approve": "批准",
@@ -24693,9 +24750,9 @@
     },
     "create": {
       "title": "创建空间",
-      "description": "此项目中的所有人都可以查看和使用该空间。",
+      "description": "空间用于整理一个工作领域，例如市场、招聘或运营。成员和智能体在它的话题中协作。",
       "nameLabel": "名称",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "市场",
       "slugPlaceholder": "space-name",
       "descriptionLabel": "描述（可选）",
       "descriptionPlaceholder": "这个空间的用途",
@@ -24724,9 +24781,9 @@
     },
     "view": {
       "welcomeTitle": "欢迎来到 #{name}",
-      "welcomeEmpty": "在 #{name} 中开始第一个话题。每条消息都会开始一个新话题。",
+      "welcomeEmpty": "空间用于整理一个工作领域。成员和智能体在这里按话题协作：每条消息都会开启一个话题。",
       "welcomeStart": "这里是 #{name} 的开始。",
-      "dmIntro": "这段对话只在你和 {agent} 之间。",
+      "dmIntro": "只有你和 {agent} 能看到这个空间。",
       "today": "今天",
       "yesterday": "昨天",
       "openThread": "打开话题",
@@ -24950,7 +25007,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "{name} 详情"
     },
     "details": {
       "about": "关于",
@@ -25006,7 +25064,7 @@
       "memory": "记忆",
       "loadError": "无法加载此文件夹",
       "memoryNoteChannel": "{place} 中的智能体记住的内容。智能体会在每个线程开始时阅读这些内容。",
-      "memoryNoteDm": "{agent} 在此私信中记住的内容。它会在每个线程开始时阅读这些内容。",
+      "memoryNoteDm": "{agent} 从这个空间记住的内容。它会在每个话题开始时读取。",
       "off": {
         "title": "这里没有 Drive",
         "description": "{place} 的文件和记忆存放在 Drive 中。此 Kortix 不存储 Drive：它需要 Platinum。"
@@ -25179,7 +25237,66 @@
     },
     "filter": "按空间筛选",
     "all": "全部",
-    "projectWide": "项目范围"
+    "projectWide": "项目范围",
+    "panel": {
+      "title": "{name} 详情",
+      "heading": "详情",
+      "close": "关闭详情",
+      "private": "私密",
+      "rename": "重命名并添加描述",
+      "personalDescription": "你与 My Kortix 的私密空间。只有你能看到。",
+      "privateDescription": "只有其中的成员和智能体能看到这个空间。",
+      "noDescription": "还没有描述。",
+      "agents": "智能体",
+      "addAgent": "添加智能体",
+      "default": "默认",
+      "projectDefault": "项目默认",
+      "people": "成员",
+      "addPeople": "添加成员",
+      "you": "你",
+      "tabs": "标签页",
+      "addTab": "添加标签页",
+      "routines": "例行任务",
+      "addRoutine": "添加例行任务",
+      "routinesPrivate": "私密空间暂不支持例行任务。",
+      "allSettings": "所有设置",
+      "askHint": "你也可以在聊天中直接说：“在这里添加一个智能体”、“把发布文档固定为标签页”。"
+    },
+    "profile": {
+      "viewProfile": "查看 {name} 的资料",
+      "viewProfileShort": "查看资料",
+      "agent": "智能体",
+      "openProfile": "打开资料",
+      "you": "(你)",
+      "message": "发消息",
+      "messageFailed": "无法打开私密空间。请重试。",
+      "dmSpaceName": "{a} 和 {b}",
+      "heading": "资料",
+      "close": "关闭资料",
+      "model": "模型",
+      "modelDefault": "项目默认模型",
+      "connectors": "连接器",
+      "connectorsAll": "全部连接器",
+      "connectorsNone": "无连接器",
+      "projectDefault": "项目默认",
+      "projectDefaultYes": "回复未指定智能体的新话题",
+      "email": "邮箱",
+      "sharedSpaces": "共同的空间",
+      "yourSpaces": "你的空间",
+      "addTo": "添加到 {space}",
+      "addedTo": "已将 {agent} 添加到 {space}",
+      "addFailed": "无法添加智能体。请重试。",
+      "spacesIn": "所在空间",
+      "spacesInNone": "尚未加入任何空间",
+      "default": "默认"
+    },
+    "mentions": {
+      "people": "成员",
+      "agents": "智能体",
+      "addToSpace": "尚未在 {space} 中：提及即会添加",
+      "added": "已将 {agent} 添加到 {space}",
+      "addFailed": "无法添加智能体。请重试。"
+    }
   },
   "imageGen": {
     "generating": "正在生成图像",

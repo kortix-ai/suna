@@ -31,6 +31,8 @@ export type RuntimeRequest =
   | { kind: 'message-list'; runtimeSessionId: string; prefix: string }
   /** A client answers (`reply`) or dismisses (`reject`) an agent question. Both harnesses serve it. */
   | { kind: 'question-answer'; requestId: string; prefix: string }
+  /** A client answers an agent permission request (`once`, `always`, `reject` in the body). */
+  | { kind: 'permission-reply'; requestId: string; prefix: string }
   | { kind: 'other' };
 
 const OTHER: RuntimeRequest = { kind: 'other' };
@@ -40,6 +42,8 @@ const KORTIX_QUESTION = /^\/kortix\/runtime\/questions\/([^/?#]+)\/(?:reply|reje
 const NATIVE = /^\/session\/([^/?#]+)\/(prompt_async|message|command|summarize|abort)(?=$|[/?#])(.*)$/;
 const REVERT = /^\/session\/([^/?#]+)\/revert\/?(?:$|[?#])/;
 const QUESTION = /^\/question\/([^/?#]+)\/(?:reply|reject)\/?(?:$|[?#])/;
+const PERMISSION = /^\/permission\/([^/?#]+)\/reply\/?(?:$|[?#])/;
+const KORTIX_PERMISSION = /^\/kortix\/runtime\/permissions\/([^/?#]+)\/reply\/?$/;
 
 /**
  * Drop the in-box dynamic-port nesting a client may address through, so one
@@ -77,6 +81,12 @@ export function classifyRuntimeRequest(method: string, path: string): RuntimeReq
   if (question) {
     const requestId = decodeSegment(question[1]!);
     return verb === 'POST' && requestId ? { kind: 'question-answer', requestId, prefix } : OTHER;
+  }
+
+  const permission = PERMISSION.exec(bare) ?? KORTIX_PERMISSION.exec(bare);
+  if (permission) {
+    const requestId = decodeSegment(permission[1]!);
+    return verb === 'POST' && requestId ? { kind: 'permission-reply', requestId, prefix } : OTHER;
   }
 
   const revert = REVERT.exec(bare);

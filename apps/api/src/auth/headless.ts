@@ -26,6 +26,7 @@ import type { AppEnv } from '../types';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { auditLoginFail } from '../middleware/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueUser } from './gotrue';
+import { authEmailState } from './email-cooldown';
 import { ssoEnforcedForEmail } from '../repositories/sso';
 import { isLoopbackHost } from '../repositories/oauth-clients';
 import { canSignUp } from '../shared/access-control-cache';
@@ -63,6 +64,24 @@ function throttled(c: Context): Response | null {
     { error: 'over_request_rate_limit', error_description: 'Too many authentication attempts. Try again shortly.' },
     429,
     { 'retry-after': String(Math.ceil((verdict.retryAfterMs ?? verdict.resetMs) / 1000)) },
+  );
+}
+
+/**
+ * 429 `over_email_send_rate_limit` when an auth email went to this address less
+ * than a minute ago (auth/email-cooldown.ts). GoTrue answers the same code for
+ * its own per-user interval, so a client handles both the same way.
+ */
+async function emailCoolingDown(c: Context, email: string): Promise<Response | null> {
+  const { retryAfterSeconds } = await authEmailState(email);
+  if (!retryAfterSeconds) return null;
+  return c.json(
+    {
+      error: 'over_email_send_rate_limit',
+      error_description: `An email was sent to this address less than a minute ago. Check the inbox and the spam folder, or retry in ${retryAfterSeconds} s.`,
+    },
+    429,
+    { 'retry-after': String(retryAfterSeconds) },
   );
 }
 
@@ -239,6 +258,8 @@ headlessAuthRouter.openapi(
       auditLoginFail({ c, reason: 'signup_closed', authType: 'supabase' });
       return c.json({ error: 'signup_closed', error_description: 'Sign-ups are closed for this email address.' }, 403);
     }
+    const coolingDown = await emailCoolingDown(c, email);
+    if (coolingDown) return coolingDown;
     const result = await gotrue<Record<string, unknown>>('/signup', {
       body: { email, password: body.password, data: body.data ?? {} },
       clientIp: requestClientIp(c),
@@ -316,6 +337,8 @@ headlessAuthRouter.openapi(
     const body = c.req.valid('json');
     const denied = await ssoRequired(c, body.email);
     if (denied) return denied;
+    const coolingDown = await emailCoolingDown(c, body.email);
+    if (coolingDown) return coolingDown;
     const result = await gotrue('/otp', {
       body: { email: body.email.trim().toLowerCase(), create_user: body.create_user ?? true, data: body.data ?? {} },
       clientIp: requestClientIp(c),
@@ -546,6 +569,11 @@ headlessAuthRouter.openapi(
     const limited = throttled(c);
     if (limited) return limited;
     const body = c.req.valid('json');
+    // One auth email per address per minute, the same guard /signup and
+    // /sign-in/magic-link already apply (CWE-770): a reset is exactly the flow
+    // a user clicks repeatedly while waiting for the mail.
+    const coolingDown = await emailCoolingDown(c, body.email);
+    if (coolingDown) return coolingDown;
     const result = await gotrue('/recover', {
       body: { email: body.email.trim().toLowerCase() },
       clientIp: requestClientIp(c),

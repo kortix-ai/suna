@@ -66,6 +66,7 @@ function toPrompt(input: RuntimePromptInput): PromptInput | HarnessTurnResponse 
       ...(input.variant ? { variant: input.variant } : {}),
       ...(input.noReply ? { noReply: true } : {}),
       ...(input.system ? { system: input.system } : {}),
+      ...(input.threadFiles ? { thread_files: input.threadFiles } : {}),
     })
   } catch (err) {
     return answer(400, { error: err instanceof Error ? err.message : String(err) })
@@ -166,6 +167,12 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       const rt = runtime()
       if (!rt) return NOT_STARTED
       return rt.questions.reject(requestId) ? OK : answer(404, { error: 'no such question' })
+    },
+
+    async parkAsks() {
+      const rt = runtime()
+      if (!rt) return answer(200, { parked: 0 })
+      return answer(200, { parked: rt.parkOpenAsks() })
     },
 
     async compact(sessionId) {

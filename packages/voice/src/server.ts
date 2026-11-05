@@ -71,8 +71,9 @@ async function open(ws: WS) {
   const provider = providers[q.get('provider') ?? process.env.PROVIDER ?? 'cascade']
   if (!provider) return emit({ type: 'closed', why: 'unknown provider' }), ws.close()
   const lang = (q.get('lang') ?? process.env.VOICE_LANG ?? 'en').toLowerCase().split('-')[0]!
-  // The assistant's name in this call (?agent=, the call page's persona), else this deployment's (VOICE_NAME).
-  const agent = q.get('agent')?.replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 32) || NAME
+  // The assistant's name in this call: the call page's persona (?agent=), else the agent the session runs (a host binds it:
+  // a call placed from the engineering agent's page greeted as "Kortix"), else this deployment's (VOICE_NAME).
+  const agent = q.get('agent')?.replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 32) || brain.nameOf?.(q.get('session')) || NAME
   let named = agent // her name in the lines she says (a persona change renames the ones after it)
   // In a meeting the disclosure (its exact words kept) says who it is, to everyone, and nothing more.
   const ROOM_HELLO: Record<string, string> = {

@@ -32,13 +32,18 @@ export function use(next: Agent | undefined) {
 }
 
 /** Binds one session of a many-session host under `id`; undefined unbinds it (the session shut down). `tools`: the
- * host gave that session's agent the voice's tools. */
-export function bind(id: string, next: Agent | undefined, o: { tools?: boolean } = {}) {
+ * host gave that session's agent the voice's tools. `name`: the agent's own, the call's name unless the call names one. */
+export function bind(id: string, next: Agent | undefined, o: { tools?: boolean; name?: string } = {}) {
   if (next) sessions.set(id, next)
   else sessions.delete(id)
   if (next && o.tools) withTools.add(id)
   else withTools.delete(id)
+  if (next && o.name) names.set(id, o.name)
+  else names.delete(id)
 }
+const names = new Map<string, string>()
+/** The name of the agent bound under `sid`, if its host gave one. */
+export const nameOf = (sid: string | null | undefined): string | undefined => (sid ? names.get(sid) : undefined)
 
 /** The session's agent has the voice's tools: its turns name them in place of the tag list. */
 export const tools = (sid: string | null | undefined) => !!sid && withTools.has(sid)
