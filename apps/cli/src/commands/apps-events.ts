@@ -10,6 +10,15 @@ const STATUSES: readonly AppEventStatus[] = ['pending', 'fired', 'skipped', 'sup
 const row = (cells: Array<[string, number]>) => `  ${cells.map(([text, width]) => pad(text, width)).join('')}`;
 const dim = (text: string) => `${C.dim}${text}${C.reset}`;
 
+/**
+ * An App writes the event id and data, so a crafted value could carry
+ * terminal escapes (move the cursor, retitle the window, fake a link) or
+ * bidi overrides. Every App-written field is printed through this.
+ */
+export function printable(text: string): string {
+  return text.replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '?');
+}
+
 /** The outcome, padded before it is colored so the columns stay aligned. */
 function outcome(event: AppEvent, width: number): string {
   const text = pad(event.status, width);
@@ -19,8 +28,8 @@ function outcome(event: AppEvent, width: number): string {
 
 /** What to read next to the outcome: the session it started, or why it did not run. */
 function detail(event: AppEvent): string {
-  if (event.session_id) return `session ${event.session_id}`;
-  return event.reason ?? '';
+  if (event.session_id) return `session ${printable(event.session_id)}`;
+  return printable(event.reason ?? '');
 }
 
 /** `HH:MM:SS` today, the date otherwise. */
@@ -67,9 +76,9 @@ export async function eventsCommand(rest: string[], options: ContextOptions, jso
     process.stdout.write(
       `${row([
         [when(event.received_at), 18],
-        [trim(event.name ?? '(truncated)', 23), 24],
-        [trim(event.id ?? '-', 17), 18],
-        [trim(event.trigger ?? '-', 19), 20],
+        [trim(printable(event.name ?? '(truncated)'), 23), 24],
+        [trim(printable(event.id ?? '-'), 17), 18],
+        [trim(printable(event.trigger ?? '-'), 19), 20],
       ])}${outcome(event, 12)}${detail(event)}\n`,
     );
   }
