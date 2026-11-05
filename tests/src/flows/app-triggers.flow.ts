@@ -7,7 +7,7 @@ import { withDb } from "../fixtures/chat";
 
 type Listed = { triggers: Array<{ slug: string; type: string; app?: string | null }> };
 type EventLog = {
-  events: Array<{ name: string | null; id: string | null; trigger: string | null; status: string; reason: string | null; data: Record<string, unknown> | null }>;
+  events: Array<{ name: string | null; id: string | null; test: boolean; trigger: string | null; status: string; reason: string | null; data: Record<string, unknown> | null }>;
   next_cursor: string | null;
 };
 
@@ -24,6 +24,7 @@ flow(
       "DELETE /v1/projects/:projectId/triggers/:slug",
       "GET /v1/projects/:projectId/apps/:appId/events/credentials",
       "GET /v1/projects/:projectId/apps/:appId/events",
+      "POST /v1/projects/:projectId/apps/:appId/events/test",
       "POST /v1/projects/:projectId/apps/:appId/events",
       "POST /v1/projects/:projectId/apps/:appId/runs",
       "DELETE /v1/projects/:projectId/apps/:appId/runs/:runId",
@@ -97,13 +98,30 @@ flow(
       (await anon.get(eventsPath, { params: { ...params, appId } })).status(401);
     });
 
+    await ctx.step("the owner sends a test event: 202 with a test- id, listed as a test under the trigger; the real id stays unspent; ANON 401", async () => {
+      const testPath = "/v1/projects/:projectId/apps/:appId/events/test";
+      const sent = (await owner.post(testPath, { name: "reply.received", id: "msg-5", data: { subject: "Wiring check" } }, { params: { ...params, appId } })).status(202);
+      sent.body().has("$.triggers", 1).has("$.accepted", 1);
+      const ids = sent.json<{ ids: string[] }>().ids;
+      if (ids.length !== 1 || ids[0] !== "test-msg-5") throw new Error(`test ids: ${sent.text()}`);
+      const listed = (await owner.get(eventsPath, { params: { ...params, appId }, query: { id: "test-msg-5" } })).status(200).json<EventLog>();
+      const [entry] = listed.events;
+      if (listed.events.length !== 1 || entry?.test !== true || entry.trigger !== slug || entry.status !== "pending" || entry.data?.subject !== "Wiring check") {
+        throw new Error(`test event: ${JSON.stringify(listed)}`);
+      }
+      // The App's own msg-5 is not deduplicated against the test.
+      (await emit({ name: "reply.received", id: "msg-5" })).status(202).body().has("$.accepted", 1).has("$.deduped", 0);
+      (await owner.post(testPath, { name: "bad name!" }, { params: { ...params, appId } })).status(400);
+      (await anon.post(testPath, { name: "reply.received" }, { params: { ...params, appId } })).status(401);
+    });
+
     await ctx.step("the event waits in the trigger's event log for the drain: one pending row per trigger", async () => {
       // The local profile runs no scheduler (KORTIX_TRIGGER_SCHEDULER_ENABLED=false), so the
       // drain that fires it is covered by apps/api/src/projects/lib/app-events.integration.test.ts.
       if (!ctx.env.capabilities.database) return;
       const rows = await withDb(ctx, (db) =>
         db.query(
-          "SELECT slug, status, kind, line FROM kortix.project_monitor_events WHERE project_id = $1 AND box_epoch = $2",
+          "SELECT slug, status, kind, line FROM kortix.project_monitor_events WHERE project_id = $1 AND box_epoch = $2 AND line->>'id' = 'msg-1'",
           [project.id, `app:${appId}`],
         ),
       );

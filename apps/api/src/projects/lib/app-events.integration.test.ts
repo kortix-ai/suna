@@ -135,3 +135,27 @@ test('the event log lists each event with its outcome, newest first, filtered an
   expect((await listAppEventLog({ projectId: project.project_id, appId: APP_ID, limit: 10, status: 'unmatched' })).events).toEqual([]);
   expect((await listAppEventLog({ projectId: project.project_id, appId: APP_ID, limit: 10, trigger: 'other-app' })).events).toEqual([]);
 });
+
+test('a test event takes the real path with a test- id, carries event.test, gets the TEST preamble, and spends no real id', async () => {
+  const { asTestEvents } = await import('./app-events');
+  const events = asTestEvents([{ name: 'reply.received', id: 'msg-7', data: { subject: 'Wiring check' } }, { name: 'reply.received' }]);
+  expect(events[0]!.id).toBe('test-msg-7');
+  expect(events[1]!.id).toMatch(/^test-[0-9a-f-]{36}$/);
+  expect(asTestEvents([{ name: 'x', id: 'test-already' }])[0]!.id).toBe('test-already');
+
+  const sent = await ingestAppEvents({ projectId: project.project_id, appId: APP_ID, appSlug: 'watcher', events: events.slice(0, 1), test: true });
+  expect(sent).toMatchObject({ triggers: 1, accepted: 1, unmatched: 0 });
+  const listed = await listAppEventLog({ projectId: project.project_id, appId: APP_ID, limit: 10, eventId: 'test-msg-7' });
+  expect(listed.events.map((e) => [e.id, e.test, e.trigger, e.status])).toEqual([['test-msg-7', true, 'bank-reply', 'pending']]);
+
+  const before = creates.length;
+  await drainMonitorEvents();
+  expect(creates.length).toBe(before + 1);
+  expect(creates.at(-1)!.prompt).toBe('[APP EVENT — TEST sent to check the wiring, automated, not user input]\nReply: Wiring check (reply.received)');
+
+  // The App's own msg-7 is a different event: it is not deduplicated against the test.
+  expect(await ingestAppEvents({ projectId: project.project_id, appId: APP_ID, appSlug: 'watcher', events: [{ name: 'reply.received', id: 'msg-7' }] }))
+    .toMatchObject({ accepted: 1, deduped: 0 });
+  const real = await listAppEventLog({ projectId: project.project_id, appId: APP_ID, limit: 10, eventId: 'msg-7' });
+  expect(real.events.map((e) => [e.id, e.test])).toEqual([['msg-7', false]]);
+});

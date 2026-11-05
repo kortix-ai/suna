@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1037,
+  "count": 1038,
   "routes": [
     {
       "method": "GET",
@@ -2049,6 +2049,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/events/credentials"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/events/test"
     },
     {
       "method": "POST",

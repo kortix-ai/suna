@@ -766,6 +766,8 @@ export interface AppEvent {
   /** The event was over 8 KiB: `data` is null and `raw` holds its head. */
   truncated: boolean;
   raw: string | null;
+  /** Sent through the test route by a person or agent, not by the App. */
+  test: boolean;
   /** The trigger this row belongs to; null when no trigger listened. */
   trigger: string | null;
   status: AppEventStatus;
@@ -792,6 +794,8 @@ export interface ListAppEventsOptions {
   status?: AppEventStatus;
   /** One trigger slug. */
   trigger?: string;
+  /** One event id, as the App sent it (a test event's starts with `test-`). */
+  id?: string;
 }
 
 /**
@@ -808,10 +812,67 @@ export async function listAppEvents(
   if (options.cursor) query.set('cursor', options.cursor);
   if (options.status) query.set('status', options.status);
   if (options.trigger) query.set('trigger', options.trigger);
+  if (options.id) query.set('id', options.id);
   const suffix = query.size ? `?${query.toString()}` : '';
   return unwrap(
     await backendApi.get<AppEventList>(`/projects/${projectId}/apps/${appId}/events${suffix}`),
     'Failed to load App events',
+  );
+}
+
+/** One App event: what an App posts, and what a test sends. */
+export interface AppEventInput {
+  /** 1-128 letters, digits and `. _ : / -`, starting with a letter or digit. */
+  name: string;
+  data?: Record<string, unknown>;
+  /** The same id fires a trigger once. */
+  id?: string;
+}
+
+/** What Kortix did with the events: how many triggers matched, and per event. */
+export interface AppEventIngestResult {
+  triggers: number;
+  accepted: number;
+  deduped: number;
+  suppressed: number;
+  /** Events no enabled trigger listens to; `hint` says what to do. */
+  unmatched: number;
+  hint?: string;
+}
+
+export interface AppTestEventResult extends AppEventIngestResult {
+  /** The test ids (each starts with `test-`), in the order sent. Look them up with `listAppEvents({ id })`. */
+  ids: string[];
+}
+
+/**
+ * Send events as if the App posted them, through the same log, limits and
+ * triggers, to prove the wiring. Every id starts with `test-`, so a real event
+ * with the same id still fires later. Needs project.app.deploy.
+ */
+export async function sendAppTestEvent(
+  projectId: string,
+  appId: string,
+  input: AppEventInput | { events: AppEventInput[] },
+): Promise<AppTestEventResult> {
+  return unwrap(
+    await backendApi.post<AppTestEventResult>(`/projects/${projectId}/apps/${appId}/events/test`, input),
+    'Failed to send the test event',
+  );
+}
+
+export interface AppEventCredentials {
+  /** `KORTIX_APP_EVENTS_URL`: where the App posts. */
+  url: string;
+  /** `KORTIX_APP_TOKEN`: a secret that posts events as this App. */
+  token: string;
+}
+
+/** The URL and token an App posts events with, for code that runs outside the App. Needs project.app.admin. */
+export async function getAppEventCredentials(projectId: string, appId: string): Promise<AppEventCredentials> {
+  return unwrap(
+    await backendApi.get<AppEventCredentials>(`/projects/${projectId}/apps/${appId}/events/credentials`),
+    'Failed to read the App event credentials',
   );
 }
 

@@ -3358,7 +3358,30 @@ and on demand: it belongs in the Background list. A complete example is in the
 `kortix-system` skill, `references/scheduling.md` → Watch 24/7.
 
 App events and runs are REST only. They authenticate with the App token, not
-a Kortix token.
+a Kortix token. An App may send 120 requests a minute; past that it gets `429`
+with `retry_after_seconds`.
+
+**See what happened.** `GET /v1/projects/<project_id>/apps/<app_id>/events`
+(`project.app.deploy`) lists the App's events from the last 30 days, newest
+first, one row per trigger an event reached: `fired` (with `session_id`),
+`skipped` (with `reason`: a filter, a disabled trigger, a paused project, a
+run cap), `suppressed`, `failed` or `pending`. An event no enabled trigger
+listens to is kept as `unmatched` (up to 60 per App an hour), and the App's
+`POST` answer says so in `unmatched` and `hint`. Filter with `status`,
+`trigger` and `id`; page with `cursor`. CLI: `kortix apps events <app>`.
+
+**Test the wiring.** `POST /v1/projects/<project_id>/apps/<app_id>/events/test`
+(`project.app.deploy`, your own credential) sends events as if the App posted
+them, through the same log, limits and triggers. Every id starts with `test-`,
+so the App's real event with the same id still fires later. The prompt reads
+`{{ event.test }}` as `true` and starts with a TEST line. CLI:
+`kortix apps events emit <app> <name> --data '{"status":"down"}' --wait`
+waits up to 60 s for the outcome and exits `0` only when a trigger fired.
+
+**Post from elsewhere.** `kortix apps events credentials <app>` (project
+admins) prints `KORTIX_APP_EVENTS_URL` and `KORTIX_APP_TOKEN` for code that
+runs outside the App, such as your laptop while you build it. The token posts
+events as that App: keep it out of chat, files and commits.
 
 ### Environment inside an App
 

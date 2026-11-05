@@ -575,6 +575,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Searched project files': 'textfc8e70e84fe4',
   'Searched the web': 'text7d2580ce3dea',
   'Sent Microsoft Teams message': 'text339fc4766ad6',
+  'Sent a Kortix App test event': 'textcd413277c842',
   'Sent audit webhook test': 'textcac716114be6',
   'Sent operation to computer tunnel': 'text94885cfd8efd',
   'Sent request via secret broker': 'text2a7c9fb85462',

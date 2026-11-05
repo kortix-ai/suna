@@ -16,6 +16,8 @@ import {
   listAppAgents,
   listAppDeployments,
   listAppEvents,
+  sendAppTestEvent,
+  getAppEventCredentials,
   listApps,
   registerAppArtifact,
   rollbackApp,
@@ -536,6 +538,7 @@ test('listAppEvents reads the App event log with its filters and cursor', async 
         data: { subject: 'Term sheet' },
         truncated: false,
         raw: null,
+        test: false,
         trigger: 'handle-reply',
         status: 'fired',
         reason: null,
@@ -552,8 +555,31 @@ test('listAppEvents reads the App event log with its filters and cursor', async 
 
   expect(await listAppEvents('project-1', 'app-1')).toEqual(page);
   expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/projects/project-1/apps/app-1/events' });
-  await listAppEvents('project-1', 'app-1', { limit: 20, cursor: 'c2', status: 'unmatched', trigger: 'handle-reply' });
+  await listAppEvents('project-1', 'app-1', { limit: 20, cursor: 'c2', status: 'unmatched', trigger: 'handle-reply', id: 'test-1' });
   expect(last().url).toBe(
-    'http://backend.test/v1/projects/project-1/apps/app-1/events?limit=20&cursor=c2&status=unmatched&trigger=handle-reply',
+    'http://backend.test/v1/projects/project-1/apps/app-1/events?limit=20&cursor=c2&status=unmatched&trigger=handle-reply&id=test-1',
   );
+});
+
+test('sendAppTestEvent posts one event or a batch to the test route and returns the test ids', async () => {
+  const answer = { triggers: 1, accepted: 1, deduped: 0, suppressed: 0, unmatched: 0, ids: ['test-msg-1'] };
+  responses.push({ status: 202, body: answer }, { status: 202, body: { ...answer, ids: ['test-a', 'test-b'] } });
+
+  expect(await sendAppTestEvent('project-1', 'app-1', { name: 'reply.received', id: 'msg-1', data: { subject: 'Hi' } })).toEqual(answer);
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1/events/test',
+    body: { name: 'reply.received', id: 'msg-1', data: { subject: 'Hi' } },
+  });
+  await sendAppTestEvent('project-1', 'app-1', { events: [{ name: 'a' }, { name: 'b' }] });
+  expect(last().body).toEqual({ events: [{ name: 'a' }, { name: 'b' }] });
+});
+
+test('getAppEventCredentials reads the URL and token an App posts with', async () => {
+  responses.push({ body: { url: 'http://backend.test/v1/projects/project-1/apps/app-1/events', token: 'a'.repeat(64) } });
+  expect(await getAppEventCredentials('project-1', 'app-1')).toEqual({
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1/events',
+    token: 'a'.repeat(64),
+  });
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/projects/project-1/apps/app-1/events/credentials' });
 });
