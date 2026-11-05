@@ -261,7 +261,7 @@ test('projects info --host --json keeps stdout machine-pure when it fails', asyn
   // Nothing on stdout: a failing --json command must not pollute the JSON
   // stream with host or error lines (KRTX-1936 source update).
   expect(result.stdout).toBe('');
-  expect(result.stderr).toContain('No project linked');
+  expect(result.stderr).toContain('No workspace selected');
   expect(result.stderr).not.toContain('proj_env');
 });
 

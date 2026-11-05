@@ -44,7 +44,7 @@ export async function accessLs(client: ApiClient, base: string, json: boolean): 
   const emailW = Math.max(...resp.members.map((m) => (m.email ?? m.user_id).length), 6);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('MEMBER', emailW)}   ACCOUNT   PROJECT ROLE   SOURCE${C.reset}\n`,
+    `  ${C.dim}${pad('MEMBER', emailW)}   ${pad('ROLE', 7)}   ${pad('ACCESS', 12)}   SOURCE${C.reset}\n`,
   );
   for (const m of resp.members) {
     const eff = m.effective_project_role ?? '—';

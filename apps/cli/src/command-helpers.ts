@@ -13,6 +13,7 @@ import {
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { loadLink, resolveProjectRef } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
+import { NO_WORKSPACE_CODE, NO_WORKSPACE_LINE } from './api/no-workspace.ts';
 import { denialDetailFromBody, machineErrors, recordPermissionDenial, withIssues, writeMachineError } from './token-denial.ts';
 import { C, status } from './style.ts';
 import type { MeResponse, ProjectSession, ProjectSummary } from './api/types.ts';
@@ -198,8 +199,8 @@ export async function resolveProjectContext(
       if (!opts.quietWhenUnresolved) {
         const source = opts.hostArg ? '(--host)' : '(the active host)';
         process.stderr.write(
-          `${status.err(`No project context on host "${scopedHost}" ${source}.`)} Pass ` +
-            `${C.cyan}--project <id>${C.reset} (${C.cyan}kortix projects ls${opts.hostArg ? ` --host ${opts.hostArg}` : ''}${C.reset} lists them).\n`,
+          `${status.err(`No workspace context on host "${scopedHost}" ${source}.`)} Pass ` +
+            `${C.cyan}--workspace <id>${C.reset} (${C.cyan}kortix workspaces ls${opts.hostArg ? ` --host ${opts.hostArg}` : ''}${C.reset} lists them).\n`,
         );
       }
       return null;
@@ -227,7 +228,7 @@ export async function resolveProjectContext(
           : 'a host with no stored credentials';
         process.stderr.write(
           `${status.err(
-            `Project is bound to ${hostLabel} (.kortix/link.json) but only the ambient sandbox session token is available here — it cannot act on that project.`,
+            `This directory is linked to a workspace on ${hostLabel} (.kortix/link.json), but only the ambient sandbox session token is available here. It cannot act on that workspace.`,
           )} Run ${C.cyan}kortix login --host ${configHostName ?? '<host>'}${C.reset} first.\n`,
         );
         return null;
@@ -239,7 +240,7 @@ export async function resolveProjectContext(
       // always carries KORTIX_PROJECT_ID, so this never fires there; on a
       // non-TTY it degrades to a hint and the error below.)
       const outcome = await ensureDefaultProjectBinding(auth, {
-        promptTitle: 'No project bound — pick one for this command',
+        promptTitle: 'No workspace selected. Pick one for this command',
         quiet: opts.quietWhenUnresolved,
       });
       projectId = outcome.project?.project_id ?? null;
@@ -248,8 +249,8 @@ export async function resolveProjectContext(
   if (!projectId) {
     if (!opts.quietWhenUnresolved) {
       process.stderr.write(
-        `${status.err('No project linked.')} Run \`kortix projects use\`, ` +
-          `\`kortix projects link\`, or pass ${C.cyan}--project <id>${C.reset}.\n`,
+        `${status.err('No workspace selected.')} Run \`kortix workspaces use\`, ` +
+          `\`kortix workspaces link\`, or pass ${C.cyan}--workspace <id>${C.reset}.\n`,
       );
     }
     return null;
@@ -317,7 +318,7 @@ export function resolveAccountContext(opts: {
     '';
   if (!accountId && !opts.accountOptional) {
     process.stderr.write(
-      `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
+      `${status.err('No active workspace. Run `kortix workspaces use` or pass --account <id>.')}\n`,
     );
     return null;
   }
@@ -432,19 +433,19 @@ export async function locateSessionAnywhere(
   }
 
   if (projectPinned) {
-    process.stderr.write(`${status.err(`Session ${sessionId} not found in this project.`)}\n`);
+    process.stderr.write(`${status.err(`Session ${sessionId} not found in this workspace.`)}\n`);
     return null;
   }
 
   process.stderr.write(
-    `${C.dim}Not in the active project — checking ` +
-      `${opts.hostArg ? `other accounts on "${opts.hostArg}"` : 'your other logged-in hosts'}…${C.reset}\n`,
+    `${C.dim}Not in the active workspace. Checking ` +
+      `${opts.hostArg ? `other workspaces on "${opts.hostArg}"` : 'your other logged-in hosts'}…${C.reset}\n`,
   );
   const found = opts.hostArg
     ? await scanHostForSession(opts.hostArg, sessionId)
     : await scanAllHostsForSession(sessionId);
   if (!found) {
-    process.stderr.write(`${status.err(`Session ${sessionId} not found in any project you can access.`)}\n`);
+    process.stderr.write(`${status.err(`Session ${sessionId} not found in any workspace you can access.`)}\n`);
     if (!opts.hostArg) printHostRetryHints(retryCommand);
     return null;
   }
@@ -490,7 +491,7 @@ export async function locateProjectAnywhere(
       return null;
     }
     if (pinned) {
-      process.stderr.write(`${status.err(`Project ${projectId} not found on host "${opts.hostArg}".`)}\n`);
+      process.stderr.write(`${status.err(`Workspace ${projectId} not found on host "${opts.hostArg}".`)}\n`);
       return null;
     }
   }
@@ -512,7 +513,7 @@ export async function locateProjectAnywhere(
     };
   }
 
-  process.stderr.write(`${status.err(`Project ${projectId} not found on any host you're logged into.`)}\n`);
+  process.stderr.write(`${status.err(`Workspace ${projectId} not found on any host you're logged into.`)}\n`);
   printHostRetryHints(retryCommand);
   return null;
 }
@@ -713,19 +714,39 @@ function issueLines(err: unknown): string {
   return issues.map((issue: { path?: string; message?: string }) => `    ${issue.path ? `${issue.path}: ` : ''}${issue.message ?? ''}\n`).join('');
 }
 
-/** True for the API's 409 `repository_disconnected`, from the CLI client (`.body`) or an SDK handle (`.code`). */
-function repositoryDisconnectedCode(err: unknown): boolean {
+/** True when an API refusal carries `code`, from the CLI client (`.body`) or an SDK handle (`.code`). */
+function hasApiErrorCode(err: unknown, code: string): boolean {
   if (!err || typeof err !== 'object') return false;
   const e = err as { code?: unknown; body?: { code?: unknown } | null; details?: { code?: unknown } | null };
-  return [e.code, e.body?.code, e.details?.code].includes('repository_disconnected');
+  return [e.code, e.body?.code, e.details?.code].includes(code);
+}
+
+/** True for the API's 409 `repository_disconnected`. */
+function repositoryDisconnectedCode(err: unknown): boolean {
+  return hasApiErrorCode(err, 'repository_disconnected');
+}
+
+export { NO_WORKSPACE_LINE };
+
+/** True for the API's 409 `no_workspace`. */
+export function isNoWorkspaceError(err: unknown): boolean {
+  return hasApiErrorCode(err, NO_WORKSPACE_CODE);
+}
+
+/** Print the no-workspace line and return exit code 1 (a state, not a usage error). */
+export function noWorkspace(): number {
+  process.stderr.write(`${status.err(NO_WORKSPACE_LINE)}\n`);
+  return 1;
 }
 
 export function surfaceApiError(err: unknown): number {
+  // The person belongs to no workspace yet: name the two ways in.
+  if (isNoWorkspaceError(err)) return noWorkspace();
   // The project's GitHub repository cannot be reached (KRTX-2955). The
   // server's sentence names the cause and who fixes it; add where to look.
   if (repositoryDisconnectedCode(err)) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
-    process.stderr.write(`  Run ${C.cyan}kortix projects info${C.reset} for the reconnect link.\n`);
+    process.stderr.write(`  Run ${C.cyan}kortix workspaces info${C.reset} for the reconnect link.\n`);
     return 1;
   }
   // The feature-flag gate is actionable on its own — never let it fall through
@@ -756,7 +777,7 @@ export function surfaceApiError(err: unknown): number {
       // backend-only secrets 403 tells you to use an API key or PAT);
       // fall back to the generic role message otherwise.
       process.stderr.write(
-        `${status.err(err.message || 'Forbidden — you may not have permission on this project.')}\n`,
+        `${status.err(err.message || 'Forbidden — you may not have permission in this workspace.')}\n`,
       );
     } else if (err.status === 404) {
       process.stderr.write(`${status.err(err.message || 'Not found.')}\n`);
@@ -827,7 +848,24 @@ export function resolveSpanInstant(input: string, now: Date, sign: 1 | -1): stri
 
 /** Find and pull out a flag value from argv (`--project foo` or
  *  `--project=foo`). Mutates the array — caller passes a sliced copy. */
-export function takeFlagValue(argv: string[], names: string[]): string | undefined {
+/**
+ * `--workspace` is the primary name of the workspace flag; `--project` stays
+ * accepted (Deprecated). A caller that asks for `--project` or `--project-id`
+ * also gets the `--workspace` / `--workspace-id` spelling, so every command
+ * that takes the flag accepts both without listing them.
+ */
+const FLAG_ALIASES: Record<string, string> = {
+  '--project': '--workspace',
+  '--project-id': '--workspace-id',
+};
+
+function withFlagAliases(names: string[]): string[] {
+  const extra = names.map((n) => FLAG_ALIASES[n]).filter((n): n is string => !!n && !names.includes(n));
+  return extra.length === 0 ? names : [...names, ...extra];
+}
+
+export function takeFlagValue(argv: string[], requested: string[]): string | undefined {
+  const names = withFlagAliases(requested);
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     for (const n of names) {

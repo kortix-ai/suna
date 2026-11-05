@@ -7,6 +7,7 @@ import { loadLocalManifest } from './manifest.ts';
 import { type ProjectGitTarget, projectIsManaged } from './project-git.ts';
 import { loadLink } from './project-link.ts';
 import { confirm } from './prompts.ts';
+import { NO_WORKSPACE_LINE } from './api/no-workspace.ts';
 import { C, status } from './style.ts';
 import { selectFromList } from './tui-select.ts';
 
@@ -196,8 +197,8 @@ export function currentBranch(): string {
 function managedShipRecovery(projectId: string): void {
   process.stderr.write(
     `\n${status.err('The managed repository could not be updated. Nothing was pushed.')}\n` +
-      `  If it contains commits missing from this folder, clone the project into a new folder with the same --host used for this ship:\n` +
-      `    kortix projects clone ${projectId} ../kortix-integrated\n` +
+      `  If it contains commits missing from this folder, clone the workspace's repo into a new folder with the same --host used for this ship:\n` +
+      `    kortix workspaces clone ${projectId} ../kortix-integrated\n` +
       `  Copy your local files into that clone (not .git), review the differences, then run kortix ship there.\n` +
       `  Keep this folder until you have verified the shipped result.\n`,
   );
@@ -408,24 +409,24 @@ export function explainLinkedProjectError(
       ? ` ${C.faded}(account ${link.account_id.slice(0, 8)})${C.reset}`
       : '';
     process.stderr.write(
-      `\n${status.err("This folder is linked to a project on an account you can't access.")}\n` +
-        `  ${C.dim}linked project ${C.reset}${projectId}${linkedAccount}\n` +
-        `  ${C.dim}logged in as   ${C.reset}account ${auth.account_id.slice(0, 8)} ${C.faded}(host "${host}")${C.reset} — no access to that account\n\n` +
+      `\n${status.err("This folder is linked to a workspace you can't access.")}\n` +
+        `  ${C.dim}linked workspace ${C.reset}${projectId}${linkedAccount}\n` +
+        `  ${C.dim}logged in as     ${C.reset}account ${auth.account_id.slice(0, 8)} ${C.faded}(host "${host}")${C.reset}, no access to it\n\n` +
         `  ${C.dim}The link lives in ${C.reset}.kortix/link.json${C.dim}. Fix it one way:${C.reset}\n` +
-        `    ${C.dim}• Log in with the account that has access:${C.reset}  ${C.cyan}kortix logout && kortix login${C.reset}\n` +
-        `    ${C.dim}• Or get invited / granted access to that project, then retry.${C.reset}\n` +
-        `    ${C.dim}• Or register this folder as a new project:${C.reset}  ${C.cyan}kortix projects unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n\n`,
+        `    ${C.dim}• Log in as a person who has access:${C.reset}  ${C.cyan}kortix logout && kortix login${C.reset}\n` +
+        `    ${C.dim}• Or get invited to that workspace, then retry.${C.reset}\n` +
+        `    ${C.dim}• Or ship this folder as a new workspace:${C.reset}  ${C.cyan}kortix workspaces unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n\n`,
     );
     return 1;
   }
 
   if (err.status === 404) {
     process.stderr.write(
-      `\n${status.err('The linked project no longer exists (or was archived).')}\n` +
-        `  ${C.dim}linked project ${C.reset}${projectId} ${C.faded}(host "${host}")${C.reset}\n\n` +
+      `\n${status.err('The linked workspace no longer exists (or was archived).')}\n` +
+        `  ${C.dim}linked workspace ${C.reset}${projectId} ${C.faded}(host "${host}")${C.reset}\n\n` +
         `  ${C.dim}Re-point this folder:${C.reset}\n` +
-        `    ${C.dim}• New project under your account:${C.reset}  ${C.cyan}kortix projects unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n` +
-        `    ${C.dim}• Existing project:${C.reset}  ${C.cyan}kortix projects link <id>${C.reset}\n\n`,
+        `    ${C.dim}• A new workspace:${C.reset}  ${C.cyan}kortix workspaces unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n` +
+        `    ${C.dim}• An existing workspace:${C.reset}  ${C.cyan}kortix workspaces link <id>${C.reset}\n\n`,
     );
     return 1;
   }
@@ -457,25 +458,27 @@ export async function resolveShipAccount(
     const match = accounts.find((a) => a.account_id === flags.account || a.slug === flags.account);
     if (!match) {
       const known = accounts.map((a) => a.slug).join(', ') || '(none)';
-      throw new Error(`No account "${flags.account}" — you belong to: ${known}`);
+      throw new Error(`No account "${flags.account}". You belong to: ${known}.`);
     }
     return match.account_id;
   }
 
-  if (accounts.length <= 1) return accounts[0]?.account_id ?? auth.account_id;
+  // A new user belongs to no workspace yet: `ship` needs one to create in.
+  if (accounts.length === 0) throw new Error(NO_WORKSPACE_LINE);
+  if (accounts.length === 1) return accounts[0].account_id;
 
   // Multiple accounts: only prompt in an interactive run.
   if (flags.yes || flags.dryRun || process.stdout.isTTY !== true) {
     return auth.account_id;
   }
   const picked = await selectFromList<AccountMembership>({
-    title: 'Ship to which account?',
+    title: 'Ship into which workspace?',
     items: accounts.map((a) => ({
       value: a,
       label: a.name,
       sublabel: `${a.slug} · ${a.role}`,
     })),
   });
-  if (!picked) throw new Error('No account selected.');
+  if (!picked) throw new Error('No workspace selected.');
   return picked.account_id;
 }
