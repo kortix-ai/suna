@@ -14,7 +14,6 @@
 import {
   SESSION_LIST_STATUS,
   sessionListStatus,
-  sessionParentId,
   type SessionListStatus,
 } from '@kortix/sdk';
 

@@ -4,7 +4,7 @@
  * Single hook for all billing data with proper invalidation
  */
 
-import { useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAccountState } from '@kortix/sdk';
 import { dollarsToCredits } from '@kortix/shared';
 import { accountStateSelectors, type AccountState } from './api';

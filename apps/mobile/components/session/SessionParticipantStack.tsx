@@ -10,7 +10,6 @@
  * of web's hover card (Jay, 2026-10-01). Screen readers read the names from
  * its label.
  */
-import * as React from 'react';
 import { Pressable, View } from 'react-native';
 import type { SessionParticipants } from '@kortix/sdk';
 

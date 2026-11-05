@@ -55,7 +55,6 @@ import Markdown, { MarkdownIt, type MarkdownProps } from 'react-native-markdown-
 import { useColorScheme } from 'nativewind';
 import { MOTION } from '@/lib/utils/theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
-import { Text } from '@/components/ui/text';
 import { isMathFenceLanguage, isMermaidCode, prepareMarkdownForMath } from '@kortix/shared';
 import { genuiVersionOf, separateGenuiClosers } from '@kortix/sdk/genui/fence';
 import { CodeBlock, fenceCode, fenceLanguage } from '@/components/markdown/code-block';
