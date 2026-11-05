@@ -306,7 +306,9 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
       // card alone the answer was "I don't have the specific changelog for Bun 1.4.4" (a traced real round).
       if (got && r.card.type === 'version' && CHANGES.test(r.query)) return [got, await web()].filter(Boolean).join('\n')
       if (got) return got
-      return firstUseful([primary, web()])
+      // Late, the primary races the search; the search yields a tick, so an exact fact already in hand when the snippets
+      // land wins ("1 CAD = 0.72 USD", not "this estimate is not a live quote": the one-provider glance settles sooner).
+      return firstUseful([primary, web().then((w) => new Promise<string>((ok) => setImmediate(ok, w)))])
     }
     return web()
   }
