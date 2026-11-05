@@ -19,7 +19,11 @@ import { supabaseAuth } from '../middleware/auth';
 import { eq, sql } from 'drizzle-orm';
 import { accounts } from '@kortix/db';
 import { db, hasDatabase } from '../shared/db';
+import { isNoWorkspaceError } from '../shared/no-workspace';
 import { resolveAccountId } from '../shared/resolve-account';
+import { createOwnedAccount } from '../accounts/core/create-account';
+import { suggestAccountName } from '../accounts/core/account-name';
+import { logger } from '../lib/logger';
 import { getSupabase } from '../shared/supabase';
 import { hasInternalServiceKey } from '../shared/internal-service-key';
 import { rethrowDatabaseError } from '../shared/database-errors';
@@ -244,14 +248,18 @@ setupApp.openapi(
 
     const userId = data.user?.id;
     if (userId) {
+      // The owner's workspace account, created EXPLICITLY: nothing creates an
+      // account implicitly any more (Workspaces D3). The wizard resumes at
+      // step 2 on it. Best effort: a miss leaves the owner on the
+      // create-a-workspace screen, which works the same way.
       try {
-        const accountId = await resolveAccountId(userId);
+        const account = await createOwnedAccount({ userId, name: suggestAccountName({ email }), email });
         await db
           .update(accounts)
           .set({ setupCompleteAt: null, setupWizardStep: 2, updatedAt: new Date() })
-          .where(eq(accounts.accountId, accountId));
-      } catch {
-        // best effort
+          .where(eq(accounts.accountId, account.accountId));
+      } catch (err) {
+        logger.warn('[setup] Failed to create the owner account', { error: err instanceof Error ? err.message : String(err) });
       }
     }
 
@@ -381,6 +389,7 @@ setupApp.openapi(
   } catch (e) {
     console.error('[setup] setup-complete-status failed:', e);
     rethrowDatabaseError(e);
+    if (isNoWorkspaceError(e)) throw e;
     return c.json({ complete: false, completedAt: null, error: e instanceof Error ? e.message : String(e) }, 500);
   }
   },
@@ -418,6 +427,7 @@ setupApp.openapi(
   } catch (e) {
     console.error('[setup] setup-complete failed:', e);
     rethrowDatabaseError(e);
+    if (isNoWorkspaceError(e)) throw e;
     return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
   },
@@ -461,6 +471,7 @@ setupApp.openapi(
   } catch (e) {
     console.error('[setup] setup-wizard-step (get) failed:', e);
     rethrowDatabaseError(e);
+    if (isNoWorkspaceError(e)) throw e;
     return c.json({ step: 0, error: e instanceof Error ? e.message : String(e) }, 500);
   }
   },
@@ -504,6 +515,7 @@ setupApp.openapi(
   } catch (e) {
     console.error('[setup] setup-wizard-step (set) failed:', e);
     rethrowDatabaseError(e);
+    if (isNoWorkspaceError(e)) throw e;
     return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
   },

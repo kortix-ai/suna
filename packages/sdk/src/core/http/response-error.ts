@@ -11,6 +11,7 @@ import type { ApiResponse, ErrorContext } from './api-client';
 import {
   ApiError,
   FEATURE_DISABLED_CODE,
+  NO_WORKSPACE_CODE,
   REPOSITORY_DISCONNECTED_CODE,
   RequestTooLargeError,
   parseBillingError,
@@ -136,7 +137,9 @@ function isExpectedResponse(status: number, data: any, message: string): boolean
         // A stale save: the editor that sent it shows the conflict.
         data?.code === 'version_conflict' ||
         // A state a GitHub owner fixes, not a defect: the host shows the fix.
-        data?.code === REPOSITORY_DISCONNECTED_CODE)) ||
+        data?.code === REPOSITORY_DISCONNECTED_CODE ||
+        // No workspace yet: the host shows "Create a workspace or join one".
+        data?.code === NO_WORKSPACE_CODE)) ||
     (status === 503 &&
       (data?.code === ANALYTICS_UNAVAILABLE_CODE || data?.code === ACCOUNTS_LIST_UNAVAILABLE_CODE))
   );
