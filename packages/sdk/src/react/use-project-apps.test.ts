@@ -11,7 +11,7 @@ mock.module('@tanstack/react-query', () => ({
   }),
 }));
 
-const { appDeploymentKey, appDeploymentsKey, projectAppsKey, useAppAccess, useAppDeployment, useAppDeployments, useProjectApps } =
+const { appDeploymentKey, appDeploymentsKey, appEventsKey, projectAppsKey, useAppAccess, useAppDeployment, useAppDeployments, useAppEvents, useProjectApps } =
   await import('./use-project-apps');
 
 beforeEach(() => {
@@ -38,6 +38,17 @@ describe('Kortix Apps React Query bindings', () => {
     // A deployment in progress is polled; a finished one is not.
     expect(detail.refetchInterval({ state: { data: { deployment: { status: 'building' } } } })).toBe(2_000);
     expect(detail.refetchInterval({ state: { data: { deployment: { status: 'failed' } } } })).toBe(false);
+  });
+
+  test('the App event log: keyed under the App, off without both ids, refreshed every 10 s', () => {
+    const events = useAppEvents('project-1', 'app-1') as any;
+    expect(events.queryKey).toEqual(appEventsKey('project-1', 'app-1'));
+    expect(events.queryKey.slice(0, qk.project.apps('project-1').length)).toEqual([...qk.project.apps('project-1')]);
+    expect(events.enabled).toBe(true);
+    expect(events.refetchInterval).toBe(10_000);
+    expect((useAppEvents('project-1', null) as any).enabled).toBe(false);
+    // A viewer without the operations view gets 403: the hook stays off.
+    expect((useAppEvents('project-1', 'app-1', { enabled: false }) as any).enabled).toBe(false);
   });
 
   test('App mutations invalidate the App list and deployment history', () => {
