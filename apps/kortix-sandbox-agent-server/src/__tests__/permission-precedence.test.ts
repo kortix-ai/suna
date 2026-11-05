@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { compilePermissionPolicy, resolvePolicyRule, toolCapability } from '@/harness/pi/interactions'
+import { bashCommands, compilePermissionPolicy, resolvePolicyRule, toolCapability } from '@/harness/pi/interactions'
 
 /**
  * Kortix guarantees one precedence: the most specific matching rule wins,
@@ -34,5 +34,64 @@ describe('`edit` governs every Kortix tool that writes the workspace', () => {
   test.each(WORKSPACE_WRITERS)('%s answers to `edit`', (tool) => {
     expect(toolCapability(tool, { command: 'create' })).toBe('edit')
     expect(resolvePolicyRule(compilePermissionPolicy({ edit: 'deny' }), tool, { command: 'create' }, '/workspace')).toBe('deny')
+  })
+})
+
+describe('bashCommands reads heredocs and comments', () => {
+  test.each([
+    ['a quoted heredoc body is data', "cat <<'EOF' > notes.md\nit's done\nEOF\nls", ["cat <<'EOF' > notes.md", 'ls']],
+    ['a <<- heredoc ends at a tab-indented delimiter', 'cat <<-EOF\n\tdon\'t\n\tEOF', ['cat <<-EOF']],
+    ['an unquoted heredoc without substitutions is data', 'cat <<EOF\nit\'s fine\nEOF', ['cat <<EOF']],
+    ["a comment's apostrophe is not a quote", "ls # don't list hidden\npwd", ['ls', 'pwd']],
+    ['a # inside a word is not a comment', 'echo a#b', ['echo a#b']],
+    ['a # inside quotes is not a comment', 'echo "# it\'s"', ['echo "# it\'s"']],
+    ['a here-string is not a heredoc', 'grep x <<< "a b"', ['grep x <<< "a b"']],
+  ])('%s', (_name, line, expected) => {
+    expect(bashCommands(line)).toEqual(expected)
+  })
+
+  // bash expands `$(…)` and `` `…` `` in an unquoted heredoc body, so the body
+  // stays commands: `rm *: deny` must still deny it, not ask.
+  test.each([
+    ['$(…)', 'cat <<EOF\n$(rm -rf /)\nEOF'],
+    ['`…`', 'cat <<EOF\n`rm -rf /`\nEOF'],
+  ])('an unquoted heredoc body that runs %s is decided as commands', (_name, line) => {
+    expect(bashCommands(line)).toContain('rm -rf /')
+    expect(resolvePolicyRule(compilePermissionPolicy({ bash: { '*': 'allow', 'rm *': 'deny' } }), 'bash', { command: line }, '/workspace')).toBe('deny')
+  })
+
+  test.each([
+    ['a heredoc with no delimiter line', "cat <<'EOF'\nit's"],
+    ['an unbalanced quote', "echo 'it"],
+  ])('%s does not parse', (_name, line) => {
+    expect(bashCommands(line)).toBeNull()
+  })
+})
+
+/**
+ * A line that still does not parse is decided by the restricted patterns
+ * that could match it: one whose first word appears in the line asks, else
+ * the `*` rule decides. A deny pattern no longer turns every unparseable
+ * command into a prompt that blocks an unattended session.
+ */
+const POLICY = { bash: { '*': 'allow', 'rm *': 'deny', 'git push *': 'ask' } }
+describe('a bash line that does not parse', () => {
+  test.each([
+    ['no restricted word in the line: the `*` rule', "grep -oE \"x\" '([^']+)'", 'allow'],
+    ['a restricted command name in the line asks', "echo 'x; rm -rf /", 'ask'],
+    ['a restricted first word in the line asks', "git push origin 'main", 'ask'],
+    ['the word inside another word does not count', "echo 'firmware", 'allow'],
+  ])('%s', (_name, command, expected) => {
+    expect(resolvePolicyRule(compilePermissionPolicy(POLICY), 'bash', { command }, '/workspace')).toBe(expected as never)
+  })
+
+  test('a pattern that starts with a wildcard asks', () => {
+    const policy = compilePermissionPolicy({ bash: { '*': 'allow', '* --force': 'deny' } })
+    expect(resolvePolicyRule(policy, 'bash', { command: "echo 'x" }, '/workspace')).toBe('ask')
+  })
+
+  test('a catch-all ask stays ask', () => {
+    const policy = compilePermissionPolicy({ bash: { '*': 'ask', 'ls *': 'allow' } })
+    expect(resolvePolicyRule(policy, 'bash', { command: "ls 'x" }, '/workspace')).toBe('ask')
   })
 })
