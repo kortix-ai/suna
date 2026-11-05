@@ -30,6 +30,7 @@ import { CHAT_AGENT, CHAT_ROOT_TEXT_KEY } from '../chat-threads';
 import { listOpenAsks } from '../session-asks';
 import type { ProjectRow } from '../serializers';
 import { resolveUserIdentities } from '../user-identity';
+import { mentionOf } from './act';
 import { SPACE_WATCHER_SOURCE, WATCHER_POST_METADATA_KEY, WATCHER_SPACE_METADATA_KEY } from './keys';
 import { decideWake, eventLine, eventsFileText, EVENTS_FILE_LINES, WAKE_EVENTS_MAX, wakePromptText, type WakeReason } from './policy';
 import {
@@ -137,9 +138,12 @@ async function writeEventsFile(place: { drive: DriveRow; folder: string } | null
   }
 }
 
+/** The owner as the watcher reads them: their name and the exact `@` token that mentions them. */
 async function ownerName(userId: string): Promise<string> {
   const who = (await resolveUserIdentities([userId])).get(userId);
-  return who?.displayName?.trim() || who?.email?.split('@')[0] || 'the space owner';
+  const name = who?.displayName?.trim() || who?.email?.split('@')[0] || 'the space owner';
+  const token = await mentionOf(userId);
+  return token ? `${name} (mention them as ${token})` : name;
 }
 
 /** One wake of one space. Returns the session it went to, or null. */

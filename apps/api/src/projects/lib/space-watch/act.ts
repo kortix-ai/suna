@@ -89,13 +89,13 @@ async function actOnWatcherAnswer(watch: WatcherRow, sessionId: string): Promise
   const { decision, invalid } = parseWatcherDecision(answer.text);
   if (!(await claimDecision(watch.spaceId, answer.id ?? `text:${answer.text.slice(0, 120)}`))) return;
   if (invalid) logger.warn('[space-watch] the watcher answered no valid decision; staying quiet', { space_id: watch.spaceId, session_id: sessionId });
-  logger.info('[space-watch] decision', { space_id: watch.spaceId, session_id: sessionId, action: decision.action });
+  logger.info('[space-watch] decision', { space_id: watch.spaceId, session_id: sessionId, action: decision.action, ...(decision.action === 'quiet' && decision.why ? { why: decision.why.slice(0, 120) } : {}) });
   if (decision.action === 'quiet') return;
   await carryOut({ project, watch, sessionId, decision, decisionId: answer.id ?? sessionId });
 }
 
 /** The person's mention token: their display name as a slug, else their email's local part. */
-async function mentionOf(userId: string): Promise<string | null> {
+export async function mentionOf(userId: string): Promise<string | null> {
   const who = (await resolveUserIdentities([userId])).get(userId);
   const name = who?.displayName?.trim();
   if (name) return `@${name.toLowerCase().replace(/[^a-z0-9._@+-]+/g, '-').replace(/^-+|-+$/g, '')}`;
