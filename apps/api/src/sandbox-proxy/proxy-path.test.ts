@@ -41,7 +41,8 @@ describe('canonicalProxyPath', () => {
   test('every encoded spelling of a gated path gets the verdict of the plain spelling', () => {
     const gated: Array<[string, string]> = [
       ['POST', '/kortix/runtime/sessions/s1/prompt'],
-      ['POST', '/kortix/opencode/sessions/s1/abort'],
+      // The pre-W3 `/kortix/opencode` mount is gone from the daemon (#11200) and the classifier (#11821).
+      ['POST', '/kortix/runtime/sessions/s1/abort'],
       ['POST', '/session/s1/prompt_async'],
       ['POST', '/session/s1/command'],
       ['POST', '/session/s1/summarize'],

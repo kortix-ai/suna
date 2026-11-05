@@ -11,7 +11,10 @@ import { captureProductEvent, type ProductEventInput } from '../shared/product-a
 export function captureAccountProductEvent(
   input: Omit<ProductEventInput, 'userId'> & { accountId: string },
 ): void {
-  void accountOwnersByJoinDate([input.accountId])
+  // Inside a .then, so even a synchronous throw while building the query lands
+  // in the .catch: an analytics lookup never fails the caller (a Stripe webhook).
+  void Promise.resolve()
+    .then(() => accountOwnersByJoinDate([input.accountId]))
     .then((owners) => owners[0]?.userId ?? input.accountId)
     .catch(() => input.accountId)
     .then((userId) => captureProductEvent({ ...input, userId }));

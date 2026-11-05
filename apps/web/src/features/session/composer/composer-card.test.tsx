@@ -69,6 +69,8 @@ function render(props?: {
               animatePlaceholder={false}
               handleSubmit={asyncNoop}
               handleArrowUpAtStart={() => false}
+              handleArrowDownAtEnd={() => false}
+              historyPosition={null}
               setIsEmpty={noop}
               handleDocChange={noop}
               allSessions={undefined}

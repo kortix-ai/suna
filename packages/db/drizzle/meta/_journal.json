@@ -1555,6 +1555,13 @@
       "when": 1793821307989,
       "tag": "20261104194147_session_asks",
       "breakpoints": true
+    },
+    {
+      "idx": 222,
+      "version": "7",
+      "when": 1793890011113,
+      "tag": "20261105144651_session_pending_permissions_rls",
+      "breakpoints": true
     }
   ]
 }

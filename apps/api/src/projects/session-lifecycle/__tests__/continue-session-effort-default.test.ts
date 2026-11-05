@@ -150,7 +150,13 @@ function awakeSession(extra: Record<string, unknown> = {}) {
     opencodeSessionId: OC_SESSION_ID,
     ...extra,
   };
-  boxRow = { status: 'active', externalId: EXTERNAL_ID };
+  // An open proved this box at the runtime floor (#11748): only then does a
+  // delivery take the fast path instead of waiting for a full open.
+  boxRow = {
+    status: 'active',
+    externalId: EXTERNAL_ID,
+    metadata: { runtimeFloor: { current: { externalId: EXTERNAL_ID, at: new Date().toISOString() } } },
+  };
 }
 
 const lastVariant = (): unknown => forwardedBodies.at(-1)?.variant;
