@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAssistantMessageEventStream, type AssistantMessageEvent, type Message } from '@earendil-works/pi-ai'
 import runtimeVersions from '../../../../packages/shared/src/runtime-versions.json' with { type: 'json' }
-import { claudeModelFor, processDied } from '@/harness/pi/claude/provider'
+import { claudeModelFor, processDied, relayFallbackStep } from '@/harness/pi/claude/provider'
 import { CLAUDE_AGENT_SDK_VERSION, CLAUDE_CODE_INTEGRITY, ensureClaudeExecutable, installedClaudeExecutable } from '@/harness/pi/claude/install'
 import { CLAUDE_GATEWAY_PLACEHOLDER_TOKEN, claudeEnv, claudeLoginKey, ClaudeLoginMissing } from '@/harness/pi/claude/sdk'
 import { ClaudeReply } from '@/harness/pi/claude/stream'
@@ -255,5 +255,42 @@ describe('Claude history sync with screenshots', () => {
     const started = performance.now()
     for (let i = 0; i < 200; i++) groups([message])
     expect(performance.now() - started).toBeLessThan(200)
+  })
+})
+
+describe('the fallback step after a Claude usage limit', () => {
+  const partial = { role: 'assistant', content: [], api: 'openai-completions', provider: 'kortix', model: 'claude-agent/opus', usage, stopReason: 'stop', timestamp: 1 } as never
+  const source = (events: AssistantMessageEvent[]) => {
+    const stream = createAssistantMessageEventStream()
+    for (const event of events) stream.push(event)
+    stream.end(partial)
+    return stream
+  }
+  const drained = async (stream: ReturnType<typeof createAssistantMessageEventStream>) => {
+    const seen: string[] = []
+    stream.end()
+    for await (const event of stream) seen.push(event.type)
+    return seen
+  }
+
+  test('a fallback that answers is relayed whole', async () => {
+    const out = createAssistantMessageEventStream()
+    const served = await relayFallbackStep(source([
+      { type: 'start', partial },
+      { type: 'text_start', contentIndex: 0, partial },
+      { type: 'done', reason: 'stop', message: partial },
+    ]), out)
+    expect(served).toBe(true)
+    expect(await drained(out)).toEqual(['start', 'text_start', 'done'])
+  })
+
+  test('no fallback (no Routing chain, or every link failed) relays nothing, so the step keeps Claude\'s own limit message', async () => {
+    const out = createAssistantMessageEventStream()
+    const served = await relayFallbackStep(source([
+      { type: 'start', partial },
+      { type: 'error', reason: 'error', error: { ...(partial as object), stopReason: 'error', errorMessage: '429: {"message":"…"}' } as never },
+    ]), out)
+    expect(served).toBe(false)
+    expect(await drained(out)).toEqual([])
   })
 })
