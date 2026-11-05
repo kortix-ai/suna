@@ -34,3 +34,19 @@ never got a project.
 4. The 36 accounts that ever purchased credits are split only after their
    owner chooses the workspace that keeps billing. 0 have an enterprise
    contract.
+
+**D3 (decided, Marko 2026-11-05).** No auto-created account at signup. A new
+user sees the existing chooser as "Create a workspace or join one".
+
+**D2, D4 defaults (Marko: "go execute", 2026-11-05).** Workspace id =
+`project_id`. Legacy multi-project accounts are grandfathered in PR 1; the
+split comes later.
+
+**D5 (open). Does joining a workspace grant access to it?** Today account
+membership and project access are separate grants (the account hub's
+"Projects" tab manages project access). In a Slack workspace, joining is
+access. Proposed: a workspace invite always carries the project grant (role
+chosen at invite), and Members shows one list with each person's project role;
+a member without a grant shows "No access" with "Grant access". No IAM engine
+change, so the 11 accounts with several members and several projects keep
+their per-project privacy.

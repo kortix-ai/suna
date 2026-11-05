@@ -67,7 +67,8 @@ workspace, and the sandbox ("The workspace went to sleep").
 | Word | Means | Never means |
 |---|---|---|
 | Workspace | the company's Kortix (account + project) | a sandbox, a Slack workspace, a folder |
-| Computer | the session's machine/sandbox | a workspace |
+| Sandbox / cloud computer | the session's machine (brand kit noun table) | a workspace |
+| Computer | a person's own machine connected to Kortix (brand kit) | a sandbox, a workspace |
 | Slack workspace / Teams tenant | the chat platform's own unit; always qualified | a Kortix workspace |
 | Space | a channel-like room inside a workspace (`project_spaces`) | a workspace |
 
