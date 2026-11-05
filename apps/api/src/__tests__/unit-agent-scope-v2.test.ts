@@ -46,14 +46,15 @@ describe('applyAgentScopeV2 — agents map scope edit', () => {
     expect(scout.env).toBeUndefined(); // never writes the retired `env` key
   });
 
-  test("'all' is written explicitly (the default is none, not all)", () => {
+  test("'all' is written explicitly as the canonical \"*\" (the default is none, not all)", () => {
     const m = manifest();
     const r = applyAgentScopeV2(m, 'scout', { env: 'all', connectors: 'all' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const scout = (r.raw.agents as Record<string, any>).scout;
-    expect(scout.secrets).toBe('all');
-    expect(scout.connectors).toBe('all');
+    expect(scout.secrets).toBe('*');
+    expect(scout.connectors).toBe('*');
+    expect(serializeManifest({ ...m, raw: r.raw })).toContain('secrets: "*"');
   });
 
   test('empty selection ([] = none) OMITS the key (deny-by-default idiom)', () => {

@@ -9,6 +9,7 @@ import {
   setCapabilityGranted,
 } from './agent-capabilities';
 import type { AgentConfigBlock } from './agent-config';
+import type { AgentCapabilityGrant } from './agent-capabilities';
 
 let urls: string[] = [];
 const CATALOG: AgentCapabilities = {
@@ -54,6 +55,14 @@ describe('capabilityGranted', () => {
     expect(capabilityGranted(['a'], 'b', 'all')).toBe(false);
     expect(capabilityGranted('none', 'a', 'all')).toBe(false);
     expect(capabilityGranted(['*'], 'a', 'none')).toBe(true);
+  });
+
+  test('kortix.yaml\'s "*" (and any-case all) grants every id, like all', () => {
+    // The wire spells it `all`; a block read straight from kortix.yaml may say "*".
+    const star = '*' as unknown as AgentCapabilityGrant;
+    expect(capabilityGranted(star, 'a', 'none')).toBe(true);
+    expect(capabilityGranted('ALL' as unknown as AgentCapabilityGrant, 'a', 'none')).toBe(true);
+    expect(setCapabilityGranted(star, 'bash', false, 'all')).toEqual({ exclude: ['bash'] });
   });
 
   test('an omitted grant reads as the default the caller names', () => {

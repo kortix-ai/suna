@@ -15,6 +15,9 @@
  */
 import {
   defaultAgentFile,
+  EVERY_GRANT,
+  isEveryGrant,
+  normalizePermissionConfig,
   resolveGrantSet,
   resolveProjectRepository,
   SLUG_RE,
@@ -74,7 +77,7 @@ function normalizeGovernanceAliases(block: Record<string, unknown>): NormalizeRe
   return normalizeKortixPermissionAliases(connectors.block);
 }
 
-/** One grant-set write: `all` writes the keyword, `[]` writes deny-by-default
+/** One grant-set write: `all` writes `"*"` (`writeEveryGrant`), `[]` writes deny-by-default
  *  by omitting the key (v2 is deny-by-default), a list writes verbatim. */
 function writeGrantSet(
   block: Record<string, unknown>,
@@ -82,10 +85,22 @@ function writeGrantSet(
   value: readonly string[] | 'all' | undefined,
 ): void {
   if (value === undefined) return;
-  if (value === 'all') block[key] = 'all';
+  if (value === 'all') writeEveryGrant(block, key);
   else if (value.length === 0) delete block[key];
   else block[key] = value;
 }
+
+/**
+ * Write "every name" on `block[key]`: `"*"`, the canonical spelling. A value
+ * that already means every name (`all`, `["*"]`) is kept, so a save never
+ * rewrites a line that says the same thing.
+ */
+function writeEveryGrant(block: Record<string, unknown>, key: string, current: unknown = block[key]): void {
+  block[key] = isEveryGrant(current) ? current : EVERY_GRANT;
+}
+
+/** The grant keys the editor's wire spells `all` for "every name" (`GrantSetV2`). The file spells it `"*"`. */
+const EVERY_GRANT_WIRE_KEYS: readonly string[] = ['tools', 'skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets', 'apps', 'kortix_permissions', 'kortix_cli'];
 
 function normalizeConnectorList(value: unknown, field: string): string[] | string {
   if (!Array.isArray(value)) return `${field} must be a list of connector slugs`;
@@ -610,9 +625,11 @@ export function agentConfigViewV3(
   const behavior: Record<string, unknown> = {};
   const governance: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(block)) {
-    if (BEHAVIOR_KEYS_V3.includes(key) || key === 'prompt') behavior[key] = value;
+    // The wire has one spelling per meaning: `permission` holds only allow/ask/deny, "every name" is `all`.
+    if (key === 'permission') behavior[key] = normalizePermissionConfig(value);
+    else if (BEHAVIOR_KEYS_V3.includes(key) || key === 'prompt') behavior[key] = value;
     else if (key === 'prompt_file') governance.file = value;
-    else governance[key] = value;
+    else governance[key] = EVERY_GRANT_WIRE_KEYS.includes(key) && isEveryGrant(value) ? 'all' : value;
   }
   if (block.prompt_file !== undefined && promptText?.trim()) behavior.prompt = promptText;
   const repository = normalizeRepositoryAccess(governance, true);
@@ -657,7 +674,10 @@ export function applyAgentConfigV3(
   const next: Record<string, unknown> = { ...current };
   for (const key of GOVERNANCE_KEYS_V3) delete next[key];
   for (const [key, value] of Object.entries(governance)) {
-    if (value !== undefined) next[key] = value;
+    if (value === undefined) continue;
+    // The wire's `all` is written `"*"`, unless the file already says every name another way.
+    if (EVERY_GRANT_WIRE_KEYS.includes(key) && isEveryGrant(value)) writeEveryGrant(next, key, current[key]);
+    else next[key] = value;
   }
 
   let promptWrite: { path: string; content: string } | null = null;
@@ -665,7 +685,10 @@ export function applyAgentConfigV3(
     const { prompt, ...behavior } = input.behavior;
     for (const key of BEHAVIOR_KEYS_V3) delete next[key];
     for (const [key, value] of Object.entries(behavior)) {
-      if (value !== undefined) next[key] = value;
+      if (value === undefined) continue;
+      // The view served `permission: all` as `allow`: an unchanged rule keeps the file's spelling.
+      if (key === 'permission' && isDeepStrictEqual(normalizePermissionConfig(current.permission), normalizePermissionConfig(value))) next[key] = current.permission;
+      else next[key] = value;
     }
     const text = typeof prompt === 'string' ? prompt : '';
     if (currentFile) {

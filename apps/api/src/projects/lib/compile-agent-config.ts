@@ -34,6 +34,8 @@ import {
   OPENCODE_BUILTIN_AGENTS_V3,
   excludedNamesV3,
   grantedNamesV3,
+  isEveryGrant,
+  normalizePermissionConfig,
   type ManifestIssue,
   parseManifestText,
   type PermissionActionV2,
@@ -152,10 +154,13 @@ function projectTools(tools: unknown): Record<string, string> {
 
 /** `agents.<name>.tools` as the map a harness reads (`CompiledAgent.tools`): tool name → visible, `*` for every tool not named. Undefined: every tool. */
 function agentToolsMap(value: AgentToolsV3 | undefined): Record<string, boolean> | undefined {
-  if (value === undefined || value === 'all') return undefined;
+  // `"*"`, `all` and a list that holds `"*"`: every tool.
+  if (value === undefined || isEveryGrant(value)) return undefined;
   if (value === 'none') return { '*': false };
-  if (Array.isArray(value)) return value.includes('*') ? undefined : Object.fromEntries([['*', false], ...value.map((name) => [name, true])]);
-  return Object.fromEntries(value.exclude.map((name) => [name, false]));
+  if (Array.isArray(value)) return Object.fromEntries([['*', false], ...value.map((name) => [name, true])]);
+  const excluded = excludedNamesV3(value);
+  // A shape `validateManifest` rejects (the agent is then off) never throws here.
+  return excluded ? Object.fromEntries(excluded.map((name) => [name, false])) : { '*': false };
 }
 
 /** Every action of a rule is `deny`: the tool is off, not just filtered by pattern. */
@@ -377,7 +382,8 @@ function compileAgent(
   if (tools) out.tools = tools;
 
   // Omitted permission is `allow`: a tool never waits for an answer unless the agent says `ask`.
-  let permission = withPermissionRule(block.permission ?? 'allow', 'skill', skillsRule(block.skills, universe.skills));
+  // `"*"` and `all` as an action are `allow`: the harness sees only allow, ask and deny.
+  let permission = withPermissionRule(normalizePermissionConfig(block.permission) ?? 'allow', 'skill', skillsRule(block.skills, universe.skills));
   permission = withPermissionRule(permission, 'task', allowlistRule(grantedNames(block.subagents, universe.subagents)));
   out.permission = orderPermissionRules(denyToolsBehindDeniedPermission(permission));
 

@@ -84,7 +84,7 @@ describe('PUT /agents/:name/config keeps the keys a body omits', () => {
     const yaml = committedManifest();
     expect(yaml).toContain('codemode: only');
     expect(yaml).toContain('network_egress:');
-    expect(yaml).not.toContain('connectors: all');
+    expect(yaml).not.toMatch(/connectors: (all|"\*")/);
     expect(yaml).not.toContain('kortix_version');
   });
 
@@ -102,6 +102,6 @@ describe('PUT /agents/:name/config keeps the keys a body omits', () => {
     const yaml = committedManifest();
     expect(yaml).toContain('codemode: only');
     expect(yaml).toContain('network_egress:');
-    expect(yaml).toContain('connectors: all');
+    expect(yaml).toContain('connectors: "*"');
   });
 });
