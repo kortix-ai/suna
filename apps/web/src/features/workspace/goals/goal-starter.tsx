@@ -1,18 +1,21 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@kortix/ui';
+import { defaultGoalAgent } from '@kortix/sdk';
+import { useProjectConfig } from '@kortix/sdk/react';
+import { cn, useIsMobile } from '@kortix/ui';
 import { InfoBanner } from '@kortix/ui/info-banner';
-import { InputGroup, InputGroupAddon, InputGroupButton } from '@kortix/ui/input-group';
-import Loading from '@kortix/ui/loading';
-import { ArrowRightIcon, ArrowUpIcon } from '@phosphor-icons/react';
-import { useId, useRef, useState, type KeyboardEvent } from 'react';
+import { ComposerChatInput } from '@kortix/ui/session/composer/composer-chat-input';
+import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
+import { errorToast } from '@kortix/ui/toast';
+import { ArrowRightIcon } from '@phosphor-icons/react';
+import { useRef, useState } from 'react';
 import {
-  GOAL_TEMPLATE_CATEGORIES,
-  goalTemplatesIn,
+  GOAL_TEMPLATE_ROLES,
+  goalTemplatesFor,
   type GoalTemplate,
   type GoalTemplateAccent,
-  type GoalTemplateCategory,
+  type GoalTemplateRole,
 } from './goal-templates';
 import { useStartGoal } from './use-start-goal';
 
@@ -27,184 +30,109 @@ const ACCENT: Record<GoalTemplateAccent, string> = {
 };
 
 /**
- * What the person has written so far, and the template it came from. The
- * owner keeps it, so "Start fresh" opens the form with the same text.
- */
-export interface GoalDraft {
-  outcome: string;
-  templateId: string | null;
-  /** Done criteria written out in the form. Unset: the template's criterion, if any. */
-  criteria?: string[];
-}
-
-export const EMPTY_GOAL_DRAFT: GoalDraft = { outcome: '', templateId: null };
-
-/**
- * The template behind a draft, while the draft still opens with its prompt:
- * the prompt, and the done criterion it sends. Rewrite the opening and the
- * draft is the person's own, with no criterion.
- */
-export function useDraftTemplate(draft: GoalDraft) {
-  const t = useTranslations('goals');
-  if (!draft.templateId) return null;
-  const prompt = t(`templates.${draft.templateId}.prompt`);
-  // Matched without the trailing space: deleting it keeps the template.
-  const opening = prompt.trimEnd();
-  if (!draft.outcome.startsWith(opening)) return null;
-  return { opening, criterion: t(`templates.${draft.templateId}.criterion`) };
-}
-
-/** The done criteria a draft starts with: the ones written out in the form, else its template's. */
-export function draftCriteria(
-  draft: GoalDraft,
-  template: ReturnType<typeof useDraftTemplate>,
-): string[] {
-  if (draft.criteria) return draft.criteria.map((c) => c.trim()).filter(Boolean);
-  return template ? [template.criterion] : [];
-}
-
-/**
- * The goal composer and the template gallery under it: the empty Goals page
- * and the New goal modal show the same thing. A template writes its prompt
- * ("Fix this bug: ") into the composer with the caret at the end, so the
- * person names the subject; the goal is named from those first words. Its
- * done criterion goes with the start, so the agent does not write one.
- * Enter (or ↑) starts the goal; the prompt alone does not.
+ * The goal composer and the role templates under it: the empty Goals page
+ * and the New goal modal show the same thing. The composer is the project
+ * home's chat input, so the agent picker is the same one; its agent owns the
+ * goal. A template writes its opening ("Research these accounts: ") into the
+ * composer, and the person names the subject: the goal is named from those
+ * first words. While the text still opens with the template's opening, the
+ * template's done criterion goes with the start, so the agent does not write one.
  */
 export function GoalStarter({
   projectId,
-  draft,
-  onDraftChange,
   onStarted,
   onPendingChange,
   autoFocus = false,
   className,
 }: {
   projectId: string;
-  draft: GoalDraft;
-  onDraftChange: (draft: GoalDraft) => void;
   /** After the goal is created, before its page opens. */
   onStarted?: () => void;
-  /** While a start is in flight: a modal holds itself open and locks Start fresh. */
+  /** While a start is in flight: a modal holds itself open. */
   onPendingChange?: (pending: boolean) => void;
   autoFocus?: boolean;
   className?: string;
 }) {
   const t = useTranslations('goals');
-  const [category, setCategory] = useState<GoalTemplateCategory>('featured');
-  const composer = useRef<HTMLTextAreaElement>(null);
-  const hintId = useId();
-  const criterionId = useId();
-  const template = useDraftTemplate(draft);
-  const criteria = draftCriteria(draft, template);
+  const isMobile = useIsMobile();
+  // The picker opens on an agent that can work a goal: My Kortix has no Files.
+  const projectConfig = useProjectConfig(projectId);
+  const goalAgent = projectConfig ? defaultGoalAgent(projectConfig) : null;
+  const [role, setRole] = useState<GoalTemplateRole>(GOAL_TEMPLATE_ROLES[0]);
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
+  // The outcome the last failed start sent: a retry of the same text reuses its session.
+  const failedOutcome = useRef<string | null>(null);
   const { start, reset } = useStartGoal(projectId, () => {
-    onDraftChange(EMPTY_GOAL_DRAFT);
+    setPickedId(null);
+    failedOutcome.current = null;
     onPendingChange?.(false);
     onStarted?.();
   });
-  const specifics = template ? draft.outcome.slice(template.opening.length) : draft.outcome;
-  const pending = start.isPending;
-  const ready = specifics.trim() !== '' && !pending;
-  const submit = () => {
-    if (!ready) return;
+  const criterion = pickedId ? t(`templates.${pickedId}.criterion`) : null;
+
+  const send = async (text: string, files: unknown[] | undefined, agent: string | undefined) => {
+    const outcome = text.trim();
+    if (!outcome) return;
+    // A goal starts from words: rejecting keeps the files in the composer.
+    if (files?.length) {
+      errorToast(t('startNoFiles'));
+      throw new Error(t('startNoFiles'));
+    }
+    const opening = pickedId ? t(`templates.${pickedId}.prompt`).trimEnd() : null;
+    if (opening && outcome === opening) {
+      errorToast(t('startNeedsSubject'));
+      throw new Error(t('startNeedsSubject'));
+    }
+    // A new outcome is a new goal: it must not reuse a failed start's session.
+    if (failedOutcome.current !== null && failedOutcome.current !== outcome) reset();
     onPendingChange?.(true);
-    start.mutate({ outcome: draft.outcome, criteria }, { onError: () => onPendingChange?.(false) });
+    try {
+      await start.mutateAsync({
+        outcome,
+        criteria: criterion && opening && outcome.startsWith(opening) ? [criterion] : [],
+        agent,
+      });
+    } catch {
+      failedOutcome.current = outcome;
+      onPendingChange?.(false);
+    }
   };
-  const pick = (next: GoalTemplate) => {
-    if (pending) return;
-    const prompt = t(`templates.${next.id}.prompt`);
-    // Switching templates keeps what the person wrote after the old prompt.
-    const text = prompt + specifics.trimStart();
-    // The same template again keeps the criteria written out in the form.
-    onDraftChange({
-      outcome: text,
-      templateId: next.id,
-      criteria: next.id === draft.templateId ? draft.criteria : undefined,
-    });
-    // A new outcome is a new goal: a retry must not reuse the failed start's session.
-    reset();
-    const field = composer.current;
-    if (!field) return;
-    requestAnimationFrame(() => {
-      field.focus({ preventScroll: true });
-      field.setSelectionRange(text.length, text.length);
-      field.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    });
+
+  const pick = (template: GoalTemplate) => {
+    if (start.isPending) return;
+    setPickedId(template.id);
+    setPrefill((previous) => ({
+      text: t(`templates.${template.id}.prompt`),
+      id: (previous?.id ?? 0) + 1,
+    }));
   };
 
   return (
     <div className={cn('flex flex-col gap-6', className)}>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-        className="flex flex-col gap-2"
-      >
-        {/* The prompt-input shape: the text, then the round send inside the same box. */}
-        <InputGroup className="items-stretch rounded-xl shadow-xs has-[[data-slot=input-group-control]:focus]:ring-0">
-          <textarea
-            ref={composer}
-            data-slot="input-group-control"
-            autoFocus={autoFocus}
-            rows={3}
-            value={draft.outcome}
-            onChange={(event) => {
-              onDraftChange({ ...draft, outcome: event.target.value });
-              // Edited after a failed start: a new outcome is a new goal, with its own session.
-              if (start.isError) reset();
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
-              event.preventDefault();
-              submit();
-            }}
-            placeholder={t('composerPlaceholder')}
-            aria-label={t('composerLabel')}
-            aria-describedby={criteria.length > 0 ? `${hintId} ${criterionId}` : hintId}
-            // Read-only, not disabled, while starting: focus stays here, so a failed start resumes in place.
-            readOnly={pending}
-            aria-busy={pending}
-            className="text-foreground placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-28 w-full resize-none bg-transparent px-4 pt-4 text-base outline-none aria-busy:opacity-60"
-            data-testid="goal-composer"
-          />
-          <span id={hintId} className="sr-only">
-            {t('composerHint')}
-          </span>
-          <InputGroupAddon
-            align="block-end"
-            className="justify-end px-3 pt-0 pb-3"
-            onClick={(event) => {
-              if (!(event.target as HTMLElement).closest('button')) composer.current?.focus();
-            }}
-          >
-            <InputGroupButton
-              type="submit"
-              size="icon-sm"
-              variant={ready || start.isPending ? 'default' : 'outline'}
-              className="rounded-full"
-              aria-label={t('newGoalStart')}
-              aria-busy={start.isPending}
-              disabled={!ready}
-              data-testid="goal-composer-send"
-            >
-              {start.isPending ? (
-                <Loading className="size-3.5" />
-              ) : (
-                <ArrowUpIcon weight="bold" className="size-3.5" aria-hidden />
-              )}
-            </InputGroupButton>
-          </InputGroupAddon>
-        </InputGroup>
-        {criteria.length > 0 ? (
+      <div className="flex flex-col gap-2">
+        <ComposerChatInput
+          onSend={(text, files, options) => send(text, files, options.agent)}
+          projectId={projectId}
+          defaultAgentName={goalAgent}
+          // A start in flight: spinner in the send slot, input locked; the text stays until the goal page opens.
+          isSending={start.isPending}
+          disabled={start.isPending}
+          clearOnSend={false}
+          autoFocus={autoFocus}
+          placeholder={t('composerPlaceholder')}
+          prefill={prefill}
+          underbarPlacement={isMobile ? 'below' : 'inline'}
+          slashMenuPlacement="below"
+          // The home's composer, at the gallery's width: it lines up with the tabs and the cards.
+          parentClassName="max-w-none px-0"
+        />
+        {criterion ? (
           <p
-            id={criterionId}
             className="text-muted-foreground px-1 text-xs text-pretty"
             data-testid="goal-composer-criterion"
           >
-            {t('templateCriterion', {
-              criterion: criteria.map((c) => c.replace(/\.$/, '')).join(' · '),
-            })}
+            {t('templateCriterion', { criterion })}
           </p>
         ) : null}
         {start.isError ? (
@@ -212,117 +140,45 @@ export function GoalStarter({
             {start.error instanceof Error ? start.error.message : null}
           </InfoBanner>
         ) : null}
-      </form>
+      </div>
 
-      <TemplateGallery
-        category={category}
-        onCategoryChange={setCategory}
-        pickedId={template ? draft.templateId : null}
-        disabled={pending}
-        onPick={pick}
-      />
-    </div>
-  );
-}
-
-/**
- * The category row and the cards of the active category. The row is a
- * WAI-ARIA tablist (automatic activation): arrow keys, Home and End move
- * between categories; the active one sits on a soft fill.
- */
-function TemplateGallery({
-  category,
-  onCategoryChange,
-  pickedId,
-  disabled,
-  onPick,
-}: {
-  category: GoalTemplateCategory;
-  onCategoryChange: (category: GoalTemplateCategory) => void;
-  pickedId: string | null;
-  /** While a start is in flight: the composer's text is fixed. */
-  disabled: boolean;
-  onPick: (template: GoalTemplate) => void;
-}) {
-  const t = useTranslations('goals');
-  const baseId = useId();
-  const tabId = (value: GoalTemplateCategory) => `${baseId}-tab-${value}`;
-  const panelId = `${baseId}-panel`;
-  const list = useRef<HTMLDivElement>(null);
-  const move = (event: KeyboardEvent<HTMLDivElement>) => {
-    const index = GOAL_TEMPLATE_CATEGORIES.indexOf(category);
-    const last = GOAL_TEMPLATE_CATEGORIES.length - 1;
-    const next =
-      event.key === 'ArrowRight'
-        ? index === last
-          ? 0
-          : index + 1
-        : event.key === 'ArrowLeft'
-          ? index === 0
-            ? last
-            : index - 1
-          : event.key === 'Home'
-            ? 0
-            : event.key === 'End'
-              ? last
-              : null;
-    if (next === null) return;
-    event.preventDefault();
-    onCategoryChange(GOAL_TEMPLATE_CATEGORIES[next]);
-    list.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
-  };
-
-  return (
-    <section className="flex flex-col gap-3" aria-label={t('templatesLabel')}>
-      <div
-        ref={list}
-        role="tablist"
-        aria-label={t('categoriesLabel')}
-        onKeyDown={move}
-        // The scroller clips on both axes: the padding keeps the focus ring inside it.
-        className="-m-1 flex [scrollbar-width:none] items-center gap-1 overflow-x-auto p-1"
+      <Tabs
+        value={role}
+        onValueChange={(value) => setRole(value as GoalTemplateRole)}
+        className="flex flex-col gap-3"
       >
-        {GOAL_TEMPLATE_CATEGORIES.map((value) => {
-          const active = value === category;
-          return (
-            <button
-              key={value}
-              id={tabId(value)}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              aria-controls={panelId}
-              tabIndex={active ? 0 : -1}
-              onClick={() => onCategoryChange(value)}
-              className={cn(
-                'focus-visible:ring-ring/15 h-8 shrink-0 rounded-full px-3 text-sm whitespace-nowrap outline-none focus-visible:ring-3',
-                'transition-[color,background-color] duration-(--duration-normal) ease-out',
-                active
-                  ? 'bg-foreground/6 text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-              data-testid={`goal-templates-tab-${value}`}
-            >
-              {t(`category.${value}`)}
-            </button>
-          );
-        })}
-      </div>
-      <div id={panelId} role="tabpanel" aria-labelledby={tabId(category)}>
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="goal-templates">
-          {goalTemplatesIn(category).map((template) => (
-            <li key={template.id} className="flex">
-              <TemplateCard
-                template={template}
-                picked={pickedId === template.id}
-                disabled={disabled}
-                onPick={() => onPick(template)}
-              />
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
+        {/* Eight roles outgrow a phone: the row scrolls sideways. */}
+        <div className="-m-1 [scrollbar-width:none] overflow-x-auto p-1">
+          <TabsListCompact aria-label={t('rolesLabel')} className="w-max">
+            {GOAL_TEMPLATE_ROLES.map((value) => (
+              <TabsTriggerCompact
+                key={value}
+                value={value}
+                data-testid={`goal-templates-tab-${value}`}
+              >
+                {t(`roleTab.${value}`)}
+              </TabsTriggerCompact>
+            ))}
+          </TabsListCompact>
+        </div>
+        {GOAL_TEMPLATE_ROLES.map((value) => (
+          <TabsContent key={value} value={value} className="mt-0">
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="goal-templates">
+              {goalTemplatesFor(value).map((template) => (
+                <li key={template.id} className="flex">
+                  <TemplateCard
+                    template={template}
+                    picked={pickedId === template.id}
+                    disabled={start.isPending}
+                    onPick={() => pick(template)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </TabsContent>
+        ))}
+      </Tabs>
+    </div>
   );
 }
 

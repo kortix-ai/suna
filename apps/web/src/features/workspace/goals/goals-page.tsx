@@ -35,8 +35,8 @@ import {
 import { PlusIcon, TargetIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useState } from 'react';
-import { EMPTY_GOAL_DRAFT, GoalStarter, type GoalDraft } from './goal-starter';
-import { NewGoalModal, type NewGoalView } from './new-goal-modal';
+import { GoalStarter } from './goal-starter';
+import { NewGoalModal } from './new-goal-modal';
 
 /**
  * /projects/[id]/goals — every goal the viewer can see, grouped by who acts
@@ -66,16 +66,7 @@ export function GoalsPage({ projectId }: { projectId: string }) {
   const [space, setSpace] = useSpaceFilter(projectId);
   const viewerId = useUiViewerId();
   const [mine, setMine] = useState(false);
-  // The modal opens on the templates from the header, on the written-out form from the empty page's Start fresh.
   const [creating, setCreating] = useState(false);
-  const [createView, setCreateView] = useState<NewGoalView>('templates');
-  // The empty page's composer: Start fresh carries it into the form.
-  const [draft, setDraft] = useState<GoalDraft>(EMPTY_GOAL_DRAFT);
-  const [starting, setStarting] = useState(false);
-  const openCreate = (view: NewGoalView) => {
-    setCreateView(view);
-    setCreating(true);
-  };
   const all = (goals.data ?? []).filter(
     (goal) =>
       (space === ALL_SPACES || spaceOf(goal) === space) &&
@@ -97,7 +88,7 @@ export function GoalsPage({ projectId }: { projectId: string }) {
       size="sm"
       variant="outline"
       className="gap-1.5"
-      onClick={() => openCreate('templates')}
+      onClick={() => setCreating(true)}
       data-testid="goals-new"
     >
       <PlusIcon className="size-3.5 shrink-0" aria-hidden />
@@ -108,14 +99,7 @@ export function GoalsPage({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-svh flex-col overflow-hidden">
       <ProjectPageHeader title={t('title')}>{hasGoals ? newGoal : null}</ProjectPageHeader>
-      <NewGoalModal
-        projectId={projectId}
-        open={creating}
-        initialView={createView}
-        initialDraft={createView === 'form' ? draft : EMPTY_GOAL_DRAFT}
-        onOpenChange={setCreating}
-        onDraftChange={setDraft}
-      />
+      <NewGoalModal projectId={projectId} open={creating} onOpenChange={setCreating} />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-8 px-4 py-6 pb-20 md:px-8">
           {goals.isError ? (
@@ -140,35 +124,18 @@ export function GoalsPage({ projectId }: { projectId: string }) {
               aria-labelledby="goals-start-title"
               data-testid="goals-empty"
             >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex min-w-0 flex-col gap-1">
-                  <h2
-                    id="goals-start-title"
-                    className="text-foreground text-lg font-medium text-balance"
-                  >
-                    {t('galleryTitle')}
-                  </h2>
-                  <p className="text-muted-foreground text-sm text-pretty">
-                    {t('galleryDescription')}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0 rounded-full"
-                  disabled={starting}
-                  onClick={() => openCreate('form')}
-                  data-testid="goals-start-fresh"
+              <div className="flex min-w-0 flex-col gap-1">
+                <h2
+                  id="goals-start-title"
+                  className="text-foreground text-lg font-medium text-balance"
                 >
-                  {t('startFresh')}
-                </Button>
+                  {t('galleryTitle')}
+                </h2>
+                <p className="text-muted-foreground text-sm text-pretty">
+                  {t('galleryDescription')}
+                </p>
               </div>
-              <GoalStarter
-                projectId={projectId}
-                draft={draft}
-                onDraftChange={setDraft}
-                onPendingChange={setStarting}
-              />
+              <GoalStarter projectId={projectId} />
             </section>
           ) : (
             <>

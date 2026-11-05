@@ -23,21 +23,24 @@ export function useStartGoal(projectId: string, onStarted?: () => void) {
   const viewerId = useUiViewerId();
   const sessionId = useRef(generateSessionId());
   const start = useMutation({
-    mutationFn: (input: { outcome: string; criteria?: string[] }) =>
+    mutationFn: (input: { outcome: string; criteria?: string[]; agent?: string }) =>
       createProjectGoal(projectId, {
         outcome: input.outcome,
         criteria: input.criteria ?? [],
+        // The composer's agent owns the goal; unset, the SDK picks the project's default.
+        agent: input.agent ?? null,
         assignedUser: viewerId ?? null,
         sessionId: sessionId.current,
       }),
-    onSuccess: (created) => {
+    onSuccess: async (created) => {
+      // The goal page reads the goals list: it opens after the list holds the new goal,
+      // or it shows "This goal no longer exists" for a moment.
+      await queryClient.invalidateQueries({ queryKey: qk.project.goals(projectId) });
       sessionId.current = generateSessionId();
       onStarted?.();
-      // The goal's page opens at once; the list refreshes behind it.
       const href = goalHref(projectId, created);
       if (href) router.push(href);
       successToast(t('startedToast'));
-      void queryClient.invalidateQueries({ queryKey: qk.project.goals(projectId) });
     },
   });
   const reset = () => {
