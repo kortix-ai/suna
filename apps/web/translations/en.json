@@ -21285,7 +21285,15 @@
       "text05ee1d6181f3": "When a change request merges, {agent} runs your instruction.",
       "texte608495c45ce": "Merged into {branch}",
       "text80ca527b0d55": "Change request trigger created",
-      "authEmailAlreadySent": "We sent this email less than a minute ago. Check your inbox and your spam folder before you ask for another one."
+      "authEmailAlreadySent": "We sent this email less than a minute ago. Check your inbox and your spam folder before you ask for another one.",
+      "textfe0dab79db43": "Talk to Kortix in one chat: every message is a thread, and Kortix's newest reply shows under it.",
+      "text2e914b62b832": "Markdown links",
+      "text7bed093239f3": "Recognised resources show an app icon and compact label. Hover to inspect the original URL.",
+      "textaf4df8fff726": "Finish streaming",
+      "textc5bb2bbce674": "Show streaming",
+      "textfc19d1c660c8": "GitHub profiles, repositories, pull requests, issues and commits; Linear issues; Slack messages and conversations; Figma designs, boards and slides; Notion pages; Google Docs, Sheets and Slides. Labels use the URL only. Titles, permissions and live status are not fetched.",
+      "textba98740fde39": "ChatGPT subscription usage",
+      "text856bf8853b69": "Claude subscription usage"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -26522,5 +26530,10 @@
     "projectDefault": "Project default · every request",
     "kortixPicks": "Kortix picks",
     "useMyOwn": "Use my own"
+  },
+  "sessionModelSwitch": {
+    "agentSession": "Agent session · {id}",
+    "human": "Human",
+    "listLabel": "Model switches"
   }
 }

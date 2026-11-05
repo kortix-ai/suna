@@ -218,7 +218,7 @@ describe('taps and the v2 bus (P4.3b)', () => {
     const source = readFileSync(join(import.meta.dir, '../../../../packages/api-contract/src/transcript.ts'), 'utf8')
     const union = source.slice(source.indexOf('export type KortixSessionEvent ='), source.indexOf('export type KortixSessionEventType'))
     const declared = [...union.matchAll(/type: '([^']+)'/g)].map((m) => m[1]!).sort()
-    const kept = ['permission.asked', 'permission.replied', 'question.asked', 'question.rejected', 'question.replied', 'session.error', 'session.idle', 'session.status', 'todo.updated']
+    const kept = ['permission.asked', 'permission.parked', 'permission.replied', 'question.asked', 'question.parked', 'question.rejected', 'question.replied', 'session.error', 'session.idle', 'session.status', 'todo.updated']
     expect([...[...V1_TRANSCRIPT_EVENTS], ...kept].sort()).toEqual(declared)
   })
 

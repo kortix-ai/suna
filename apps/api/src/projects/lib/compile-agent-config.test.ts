@@ -339,6 +339,31 @@ describe('agent tools', () => {
     expect(config.agent.unset!.tools).toBeUndefined();
   });
 
+  test('"*", ["*"] and ALL compile exactly like `all`: every tool; `permission: all` / "*" is allow', () => {
+    const yaml = (tools: string, permission: string) =>
+      `default_agent: a\nskills:\n  review: skills/review\nagents:\n  a:\n    prompt: x\n    permission: ${permission}\n    tools: ${tools}\n    skills: ${tools}\n`;
+    const reference = compileAgentConfig(parseManifestText(yaml('all', 'allow'))).agent.a!;
+    expect(reference.tools).toBeUndefined();
+    for (const [tools, permission] of [['"*"', 'all'], ['["*"]', '"*"'], ['ALL', 'ALL'], ['[bash, "*"]', 'allow']] as const) {
+      const text = yaml(tools, permission);
+      expect(validateManifest(text).issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+      expect(compileAgentConfig(parseManifestText(text)).agent.a).toEqual(reference);
+    }
+    // An omitted `tools` reads as `tools: "*"` (the tools-explicit rewrite) and compiles the same.
+    const omitted = parseManifestText('default_agent: a\nagents:\n  a:\n    prompt: x\n');
+    expect((omitted.agents as Record<string, { tools?: unknown }>).a!.tools).toBe('*');
+    expect(compileAgentConfig(omitted).agent.a!.tools).toBeUndefined();
+  });
+
+  test('a per-tool rule and a pattern action of all / "*" compile to allow', () => {
+    const permission = compileAgentConfig(
+      parseManifestText('default_agent: a\nagents:\n  a:\n    prompt: x\n    tools: "*"\n    permission:\n      bash: all\n      edit:\n        "*": "*"\n        "secret/*": deny\n'),
+    ).agent.a!.permission as Record<string, unknown>;
+    expect(permission.bash).toBe('allow');
+    expect(permission.edit).toEqual({ '*': 'allow', 'secret/*': 'deny' });
+    expect(JSON.stringify(permission)).not.toMatch(/"all"|:"\*"/);
+  });
+
   test("an agent's exclude turns image_gen off for that agent only", () => {
     const compiled = compileAgentConfig({ default_agent: 'worker', agents: { worker: { prompt: 'x', tools: { exclude: ['image_gen'] } }, other: { prompt: 'y' } } });
     expect(compiled.agent.worker!.tools).toEqual({ image_gen: false });

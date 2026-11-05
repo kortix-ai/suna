@@ -20,6 +20,14 @@ describe('agentsGrantingApp — kortix.yaml agents.<name>.apps', () => {
     ]);
   });
 
+  test('"*" and a list holding "*" grant every App, like `all`', () => {
+    expect(agentsGrantingApp({ a: { apps: '*' }, b: { apps: ['*'] }, c: { apps: 'ALL' } }, 'x', 'kortix.yaml').map((g) => [g.agent_name, g.grant])).toEqual([
+      ['a', 'all'],
+      ['b', 'all'],
+      ['c', 'all'],
+    ]);
+  });
+
   test('uses the imported file an agent is declared in', () => {
     expect(
       agentsGrantingApp({ ops: { apps: 'all' } }, 'x', 'kortix.yaml', { ops: 'agents/ops.yaml' }),

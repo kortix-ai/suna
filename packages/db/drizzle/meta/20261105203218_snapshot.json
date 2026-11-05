@@ -1,6 +1,6 @@
 {
-  "id": "1bd1ed19-fed5-4c86-b522-12133d9864ea",
-  "prevId": "302c7b7c-6bed-48af-b419-eb92fde170cb",
+  "id": "abf0af45-bab4-4ff3-b822-e55ab213281c",
+  "prevId": "6ca4356d-a45c-4fde-b9e7-87256e1689c2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -29159,7 +29159,7 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.session_pending_questions": {
       "name": "session_pending_questions",

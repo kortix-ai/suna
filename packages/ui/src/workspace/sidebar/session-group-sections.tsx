@@ -65,7 +65,7 @@ import {
   SESSION_ROW_HEIGHT_CLASS,
   SIDEBAR_PAGE_SIZE,
   ShowMoreButton,
-} from './session-list-chrome';
+} from '../../session/list/session-list-chrome';
 
 /** A dragged session row carries its id under this type. */
 const SESSION_DRAG_TYPE = 'application/x-kortix-session';

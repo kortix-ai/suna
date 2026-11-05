@@ -200,7 +200,8 @@ const RETIRED_NAMES = [
 test('both public-surface snapshots still list every retired platform-client name', () => {
   const surfaces = [publicSurface, publicTypeSurface] as Array<Record<string, string[]>>;
   for (const surface of surfaces) {
-    for (const entry of ['.', './platform-client']) {
+    // `./platform-client` left the package exports with the OpenCode-era surface (#11821); the root entry keeps these names.
+    for (const entry of ['.']) {
       expect(surface[entry]).toEqual(expect.arrayContaining(RETIRED_NAMES));
     }
   }

@@ -39,15 +39,20 @@ defaults keep today's behavior, so a valid file stays valid.
 | `model`, `variant` | Model id and reasoning tier. Omitted: the project default. |
 | `temperature`, `top_p`, `steps` | Sampling, and the most model steps in one turn. |
 | `hidden` | `true` hides the agent from pickers. (`color` and `options` validate; pi ignores them.) |
-| `permission` | Tool rules (`../pi.md` → Permissions). Omitted: `allow`. No `skill` or `task` key. |
+| `permission` | Tool rules (`../pi.md` → Permissions): `allow`, `ask` or `deny`; `"*"` and `all` also mean `allow`. Omitted: `allow`. No `skill` or `task` key. |
 | `enabled` | `false`: no session can start with this agent. Default `true`. |
 | `codemode` | `on` (default), `only`, `off`. |
-| `tools` | `all`, `none`, a list, or `{ exclude: [names] }`. Set it on every agent: omitted is every tool, with a warning. |
-| `skills`, `extensions` | `all`, `none` (default), registered names, or `{ exclude: [names] }`: every one but those. Kortix skills count as registered. |
-| `subagents`, `commands` | `all`, `none` (default) or registered names. `subagents` is who this agent may call with the `agent` tool. |
-| `connectors`, `secrets`, `apps` | `all`, `none` (default) or names. |
+| `tools` | `"*"`, `none`, a list, or `{ exclude: [names] }`. Set it on every agent: omitted is every tool, with a warning. |
+| `skills`, `extensions` | `"*"`, `none` (default), registered names, or `{ exclude: [names] }`: every one but those. Kortix skills count as registered. |
+| `subagents`, `commands` | `"*"`, `none` (default) or registered names. `subagents` is who this agent may call with the `agent` tool. |
+| `connectors`, `secrets`, `apps` | `"*"`, `none` (default) or names. |
 | `policy_sets` | Connector slug → policy set name for this agent. |
-| `kortix_permissions` | `all`, `none` (default) or a list of `project.*` values. |
+| `kortix_permissions` | `"*"`, `none` (default) or a list of `project.*` values. |
+
+`"*"` is every name, on every grant above. Quote it: a bare `*` is a YAML
+alias, so `tools: *` does not parse and `kortix validate` prints the quoted
+line. `all` is the accepted alias, and a list that holds `"*"` is every name
+too.
 | `workspace` | `{ project_repository: true }` checks out the repository in `/workspace`. Default `false`. |
 | `sandbox` | A template slug, or `default`. |
 | `space` | Work in progress: the space the agent works in. Grouping only, never a grant. |
@@ -68,7 +73,7 @@ unless the user asks and `kortix projects features` lists
 spaces:
   sales: { label: Sales, order: 1, tabs: [{ type: apps }, { type: files, path: sales }] }
 agents:
-  closer: { space: sales, prompt: You run the sales pipeline., tools: all }
+  closer: { space: sales, prompt: You run the sales pipeline., tools: "*" }
 ```
 
 ## Registries
@@ -88,8 +93,8 @@ agents:
 
 What an agent may do to the project through the CLI, the API and Git.
 
-- `kortix validate --scopes` prints every grantable value. `all` or `"*"`
-  is every value. Account actions (`member.*`, `billing.*`) are never
+- `kortix validate --scopes` prints every grantable value. `"*"` (alias
+  `all`) is every value. Account actions (`member.*`, `billing.*`) are never
   grantable.
 - Your effective grant is your `kortix_permissions` within your ceiling role.
   `project.read` in your own project is always granted.

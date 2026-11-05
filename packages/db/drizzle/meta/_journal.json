@@ -1566,8 +1566,15 @@
     {
       "idx": 223,
       "version": "7",
-      "when": 1793908079848,
-      "tag": "20261105194759_space_watchers",
+      "when": 1793906231460,
+      "tag": "20261105191711_session_pending_permissions_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1793910739001,
+      "tag": "20261105203218_youthful_adam_destine",
       "breakpoints": true
     }
   ]

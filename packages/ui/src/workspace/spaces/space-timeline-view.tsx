@@ -35,7 +35,7 @@ import { formatDuration } from '../../internal/session-types';
 import { MESSAGE_TEXT_CLASS, MessageRow } from '../../session/turn/message-row';
 import { SolidCheckIcon } from '../../internal/icons/solid-check-icon';
 import { RememberThisButton } from '../memory/remember-this';
-import { SessionStatusMark } from '../sidebar/session-status-mark';
+import { SessionStatusMark } from '../../session/list/session-status-mark';
 import {
   agentLabel,
   buildSpaceTimeline,

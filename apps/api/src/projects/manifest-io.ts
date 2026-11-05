@@ -4,6 +4,7 @@ import {
   type ManifestIssue,
   ManifestImportError,
   ManifestSyntaxError,
+  EVERY_GRANT,
   isManifestSyntaxError,
   isTable,
   manifestCandidatePaths,
@@ -209,13 +210,14 @@ export function synthesizeBlankManifest(project: {
       agents: {
         [SYNTHESIZED_DEFAULT_AGENT_NAME]: {
           mode: 'primary',
-          skills: 'all',
-          subagents: 'all',
-          commands: 'all',
-          extensions: 'all',
-          connectors: 'all',
-          secrets: 'all',
-          kortix_permissions: 'all',
+          // `"*"`: every name, kortix.yaml's canonical spelling (a first write commits this block).
+          skills: EVERY_GRANT,
+          subagents: EVERY_GRANT,
+          commands: EVERY_GRANT,
+          extensions: EVERY_GRANT,
+          connectors: EVERY_GRANT,
+          secrets: EVERY_GRANT,
+          kortix_permissions: EVERY_GRANT,
           // Nobody declared this agent, so it keeps the project checkout
           // (KRTX-165). Without it a blank project's first session boots with
           // no repo and fails to compile.

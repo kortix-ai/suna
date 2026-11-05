@@ -257,7 +257,9 @@ describe('kortix apps — capabilities and links', () => {
       expect(r.stdout).toContain(sub);
     }
     // Retired: the convex kind's subcommands and flags. `convex` survives only as a template name.
-    expect(r.stdout).not.toMatch(/backends|--kind|credentials|^ {2}(dashboard|snapshots?|restore|delete-snapshot)\b|--confirm/im);
+    // `credentials` is retired as a top-level subcommand; `events credentials` (#11815) is App events.
+    expect(r.stdout).not.toMatch(/backends|--kind|^ {2}(credentials|dashboard|snapshots?|restore|delete-snapshot)\b|--confirm/im);
+    expect(r.stdout).not.toMatch(/apps credentials/);
   });
 
   test('`kortix backends` is gone', async () => {
