@@ -114,6 +114,7 @@ export function GoalsPage({ projectId }: { projectId: string }) {
         initialView={createView}
         initialDraft={createView === 'form' ? draft : EMPTY_GOAL_DRAFT}
         onOpenChange={setCreating}
+        onDraftChange={setDraft}
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-8 px-4 py-6 pb-20 md:px-8">

@@ -115,7 +115,12 @@ export function GoalStarter({
     const prompt = t(`templates.${next.id}.prompt`);
     // Switching templates keeps what the person wrote after the old prompt.
     const text = prompt + specifics.trimStart();
-    onDraftChange({ outcome: text, templateId: next.id });
+    // The same template again keeps the criteria written out in the form.
+    onDraftChange({
+      outcome: text,
+      templateId: next.id,
+      criteria: next.id === draft.templateId ? draft.criteria : undefined,
+    });
     // A new outcome is a new goal: a retry must not reuse the failed start's session.
     reset();
     const field = composer.current;
@@ -144,7 +149,11 @@ export function GoalStarter({
             autoFocus={autoFocus}
             rows={3}
             value={draft.outcome}
-            onChange={(event) => onDraftChange({ ...draft, outcome: event.target.value })}
+            onChange={(event) => {
+              onDraftChange({ ...draft, outcome: event.target.value });
+              // Edited after a failed start: a new outcome is a new goal, with its own session.
+              if (start.isError) reset();
+            }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
               event.preventDefault();
@@ -153,8 +162,10 @@ export function GoalStarter({
             placeholder={t('composerPlaceholder')}
             aria-label={t('composerLabel')}
             aria-describedby={criteria.length > 0 ? `${hintId} ${criterionId}` : hintId}
-            disabled={pending}
-            className="text-foreground placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-28 w-full resize-none bg-transparent px-4 pt-4 text-base outline-none disabled:opacity-60"
+            // Read-only, not disabled, while starting: focus stays here, so a failed start resumes in place.
+            readOnly={pending}
+            aria-busy={pending}
+            className="text-foreground placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-28 w-full resize-none bg-transparent px-4 pt-4 text-base outline-none aria-busy:opacity-60"
             data-testid="goal-composer"
           />
           <span id={hintId} className="sr-only">
@@ -191,7 +202,9 @@ export function GoalStarter({
             className="text-muted-foreground px-1 text-xs text-pretty"
             data-testid="goal-composer-criterion"
           >
-            {t('templateCriterion', { criterion: criteria.join(' · ') })}
+            {t('templateCriterion', {
+              criterion: criteria.map((c) => c.replace(/\.$/, '')).join(' · '),
+            })}
           </p>
         ) : null}
         {start.isError ? (
@@ -266,7 +279,8 @@ function TemplateGallery({
         role="tablist"
         aria-label={t('categoriesLabel')}
         onKeyDown={move}
-        className="-mx-1 flex [scrollbar-width:none] items-center gap-1 overflow-x-auto px-1"
+        // The scroller clips on both axes: the padding keeps the focus ring inside it.
+        className="-m-1 flex [scrollbar-width:none] items-center gap-1 overflow-x-auto p-1"
       >
         {GOAL_TEMPLATE_CATEGORIES.map((value) => {
           const active = value === category;

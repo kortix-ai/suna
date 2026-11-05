@@ -19,7 +19,7 @@ import {
 } from '@kortix/ui/modal';
 import { Textarea } from '@kortix/ui/textarea';
 import { ArrowLeftIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import {
   EMPTY_GOAL_DRAFT,
   GoalStarter,
@@ -47,12 +47,15 @@ export function NewGoalModal({
   onOpenChange,
   initialView = 'templates',
   initialDraft = EMPTY_GOAL_DRAFT,
+  onDraftChange,
 }: {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialView?: NewGoalView;
   initialDraft?: GoalDraft;
+  /** Opened on `form`: every edit goes back to the caller, so closing the form keeps it. */
+  onDraftChange?: (draft: GoalDraft) => void;
 }) {
   const t = useTranslations('goals');
   const [view, setView] = useState<NewGoalView>(initialView);
@@ -72,7 +75,12 @@ export function NewGoalModal({
   const dismiss = (next: boolean) => {
     if (!pending) onOpenChange(next);
   };
+  const formEdited = (edited: GoalDraft) => {
+    setDraft(edited);
+    if (initialView === 'form') onDraftChange?.(edited);
+  };
   const started = () => {
+    if (initialView === 'form') onDraftChange?.(EMPTY_GOAL_DRAFT);
     setPending(false);
     onOpenChange(false);
   };
@@ -82,6 +90,8 @@ export function NewGoalModal({
       {/* One size for both views, anchored at the top: switching views never moves the title. */}
       <ModalContent
         variant="base"
+        // A start in flight holds the modal open: no close control that does nothing.
+        showCloseButton={!pending}
         className={cn(
           'flex max-h-[min(88svh,56rem)] flex-col lg:top-[6svh] lg:translate-y-0',
           // Opened on the form, it never switches views: it takes a form's width.
@@ -92,14 +102,8 @@ export function NewGoalModal({
           <NewGoalForm
             projectId={projectId}
             draft={draft}
-            onBack={
-              initialView === 'templates'
-                ? (edited) => {
-                    setDraft(edited);
-                    setView('templates');
-                  }
-                : undefined
-            }
+            onEdit={formEdited}
+            onBack={initialView === 'templates' ? () => setView('templates') : undefined}
             onCancel={() => dismiss(false)}
             onStarted={started}
             onPendingChange={setPending}
@@ -152,6 +156,7 @@ export function NewGoalModal({
 function NewGoalForm({
   projectId,
   draft,
+  onEdit,
   onBack,
   onCancel,
   onStarted,
@@ -160,8 +165,9 @@ function NewGoalForm({
   projectId: string;
   /** The composer's text, and its template's criterion as the first one. */
   draft: GoalDraft;
-  /** Back to the templates with what was written here. */
-  onBack?: (draft: GoalDraft) => void;
+  /** Every edit, so Back, Cancel and a close all keep what was written here. */
+  onEdit: (draft: GoalDraft) => void;
+  onBack?: () => void;
   onCancel: () => void;
   onStarted: () => void;
   onPendingChange: (pending: boolean) => void;
@@ -181,15 +187,26 @@ function NewGoalForm({
       { onError: () => onPendingChange(false) },
     );
   };
+  const formId = useId();
+  const outcomeId = `${formId}-outcome`;
+  const criterionId = (index: number) => `${formId}-criterion-${index}`;
+  const write = (nextOutcome: string, nextCriteria: string[]) => {
+    setOutcome(nextOutcome);
+    setCriteria(nextCriteria);
+    onEdit({ outcome: nextOutcome, templateId: draft.templateId, criteria: nextCriteria });
+  };
   const setCriterion = (index: number, value: string) =>
-    setCriteria((list) => list.map((c, i) => (i === index ? value : c)));
+    write(
+      outcome,
+      criteria.map((c, i) => (i === index ? value : c)),
+    );
   const removeCriterion = (index: number) =>
-    setCriteria((list) => (list.length === 1 ? [''] : list.filter((_, i) => i !== index)));
+    write(outcome, criteria.length === 1 ? [''] : criteria.filter((_, i) => i !== index));
   const canAdd = criteria.length < MAX_CRITERIA && (criteria.at(-1) ?? '').trim() !== '';
   const focusCriterion = (index: number) =>
-    requestAnimationFrame(() => document.getElementById(`new-goal-criterion-${index}`)?.focus());
+    requestAnimationFrame(() => document.getElementById(criterionId(index))?.focus());
   const addCriterion = () => {
-    setCriteria((list) => [...list, '']);
+    write(outcome, [...criteria, '']);
     focusCriterion(criteria.length);
   };
 
@@ -208,13 +225,13 @@ function NewGoalForm({
         <ModalBody className="max-h-[60vh] overflow-y-auto">
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="new-goal-outcome">{t('outcomeLabel')}</FieldLabel>
+              <FieldLabel htmlFor={outcomeId}>{t('outcomeLabel')}</FieldLabel>
               <Textarea
-                id="new-goal-outcome"
+                id={outcomeId}
                 autoFocus
                 rows={3}
                 value={outcome}
-                onChange={(event) => setOutcome(event.target.value)}
+                onChange={(event) => write(event.target.value, criteria)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && (event.metaKey || event.ctrlKey))
                     event.currentTarget.form?.requestSubmit();
@@ -224,19 +241,19 @@ function NewGoalForm({
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="new-goal-criterion-0">{t('doneWhenLabel')}</FieldLabel>
+              <FieldLabel htmlFor={criterionId(0)}>{t('doneWhenLabel')}</FieldLabel>
               <FieldDescription>{t('doneWhenHint')}</FieldDescription>
               <ol className="flex flex-col gap-2">
                 {criteria.map((value, index) => (
                   <li key={index} className="flex items-center gap-2">
                     <Textarea
-                      id={`new-goal-criterion-${index}`}
+                      id={criterionId(index)}
                       rows={1}
                       className="field-sizing-content min-h-0 resize-none"
                       value={value}
                       onChange={(event) => setCriterion(index, event.target.value)}
                       onKeyDown={(event) => {
-                        if (event.key !== 'Enter') return;
+                        if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
                         // ⌘/Ctrl+Enter starts the goal; a plain Enter never does: it moves to the next criterion.
                         if (event.metaKey || event.ctrlKey) {
                           event.currentTarget.form?.requestSubmit();
@@ -267,16 +284,19 @@ function NewGoalForm({
                 ))}
               </ol>
               {canAdd ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="w-fit gap-1.5 self-start"
-                  onClick={addCriterion}
-                >
-                  <PlusIcon className="size-3.5 shrink-0" aria-hidden />
-                  {t('addCriterion')}
-                </Button>
+                // The field stretches its direct children; the wrapper keeps the button at its own width.
+                <div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={addCriterion}
+                  >
+                    <PlusIcon className="size-3.5 shrink-0" aria-hidden />
+                    {t('addCriterion')}
+                  </Button>
+                </div>
               ) : null}
             </Field>
           </FieldGroup>
@@ -293,7 +313,7 @@ function NewGoalForm({
               variant="outline-ghost"
               className="gap-1.5"
               disabled={create.isPending}
-              onClick={() => onBack({ outcome, templateId: draft.templateId, criteria })}
+              onClick={onBack}
             >
               <ArrowLeftIcon className="size-3.5 shrink-0" aria-hidden />
               {t('backToTemplates')}

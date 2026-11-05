@@ -33,10 +33,10 @@ export type GoalTemplateAccent = 'blue' | 'green' | 'orange' | 'purple' | 'red' 
 
 /**
  * One starting point for a goal. The card says what the agent does first and
- * what proves the goal done (`steps`). Picking it puts `id`'s outcome text in
+ * what proves the goal done (`steps`). Picking it puts `id`'s prompt in
  * the composer for the person to finish; nothing starts until they send.
  * The copy lives in `goals.templates.<id>` (`title`, `description`,
- * `outcome`, `start`, `done`).
+ * `prompt`, `criterion`, `start`, `done`).
  */
 export interface GoalTemplate {
   id: string;
