@@ -1,3 +1,4 @@
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import {
   isRepositoryDisconnectedError,
   repositoryDisconnectedBody,
@@ -451,7 +452,7 @@ function handleDatabaseOrUnknownError(
     if (
       databaseError.pgCode === '57014'
       && method === 'GET'
-      && /^\/v1\/projects\/[^/]+\/gateway\/(overview|series|breakdown|sessions)\/?$/.test(path)
+      && /^\/v1\/projects\/[^/]+\/gateway\/(overview|series|breakdown|sessions)\/?$/.test(asLegacyWorkspaceRoute(path))
     ) {
       appLogger.warn(`${method} ${path} -> 503 [gateway-analytics-timeout]`, {
         method, path, pgCode: databaseError.pgCode,

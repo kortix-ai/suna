@@ -31,7 +31,7 @@ import { captureSchemaErrors, deleteCaptureObjects, FIXTURE_DISPLAYS, localCaptu
 import { createHash } from 'node:crypto';
 import { CliSandbox } from '../fixtures/cli';
 
-const A = '/v1/accounts/:accountId/capture';
+const A = '/v1/workspaces/:accountId/capture';
 const R = {
   authorize: 'POST /v1/capture/device/authorize',
   token: 'POST /v1/capture/device/token',

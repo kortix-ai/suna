@@ -28,6 +28,7 @@ import { readSessionTurnState } from '../lib/session-turn-read';
 import { canStopTurns } from '../session-lifecycle/turn-stop-authority';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { capturePersonEvent } from './product-events';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerSessionRuntimeRoutes(): void {
   // POST /v1/projects/:projectId/sessions/:sessionId/start
@@ -39,12 +40,12 @@ export function registerSessionRuntimeRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/start',
+      path: '/{workspaceId}/sessions/{sessionId}/start',
       tags: ['sessions'],
       summary: 'Start a session sandbox and its runtime',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         query: z.object({
           wait_ms: z.string().optional(),
           repository_mode: z.enum(['previous']).optional(),
@@ -58,7 +59,7 @@ export function registerSessionRuntimeRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -171,12 +172,12 @@ export function registerSessionRuntimeRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/restart',
+      path: '/{workspaceId}/sessions/{sessionId}/restart',
       tags: ['sessions'],
       summary: 'Restart a session sandbox',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
       },
       responses: {
         202: json(z.any(), 'OK'),
@@ -184,7 +185,7 @@ export function registerSessionRuntimeRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
       if (binding.kind === 'error') return binding.response as never;
@@ -231,7 +232,7 @@ export function registerSessionRuntimeRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/recover',
+      path: '/{workspaceId}/sessions/{sessionId}/recover',
       tags: ['sessions'],
       summary: 'Continue a lost session on a new computer',
       description:
@@ -240,7 +241,7 @@ export function registerSessionRuntimeRoutes(): void {
         '409 `session_not_lost`, `session_transcript_missing` (nothing changed) or `session_sandbox_removal_pending` (retry).',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
       },
       responses: {
         200: json(z.object({ ok: z.literal(true) }), 'The next /start boots a new computer'),
@@ -248,7 +249,7 @@ export function registerSessionRuntimeRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
       if (binding.kind === 'error') return binding.response as never;
@@ -273,12 +274,12 @@ export function registerSessionRuntimeRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/stop',
+      path: '/{workspaceId}/sessions/{sessionId}/stop',
       tags: ['sessions'],
       summary: 'Stop a session (interrupt the running turn)',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
       },
       responses: {
         200: json(z.any(), 'OK'),
@@ -286,7 +287,7 @@ export function registerSessionRuntimeRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
       if (binding.kind === 'error') return binding.response as never;
@@ -357,12 +358,12 @@ export function registerSessionRuntimeRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/turn',
+      path: '/{workspaceId}/sessions/{sessionId}/turn',
       tags: ['sessions'],
       summary: 'Get the current turn state of a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
       },
       responses: {
         200: json(SessionTurnStatusSchema, 'Current turn'),
@@ -370,7 +371,7 @@ export function registerSessionRuntimeRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 

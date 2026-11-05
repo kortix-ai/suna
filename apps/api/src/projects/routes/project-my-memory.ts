@@ -34,7 +34,7 @@ import { auth, errors, json } from '../../openapi';
 import { projectsApp } from '../lib/app';
 import { memoryValidationHook, withMemoryCaller } from './project-memory';
 
-const agentParams = z.object({ projectId: z.string(), agent: z.string() });
+const agentParams = z.object({ workspaceId: z.string(), agent: z.string() });
 const pageParams = agentParams.extend({ name: z.string() });
 const ERRORS = errors(400, 403, 404, 409, 413, 422, 503);
 const MINE = { myKortixSession: true } as const;
@@ -44,7 +44,7 @@ export function registerProjectMyMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/memory/me/agent/{agent}',
+      path: '/{workspaceId}/memory/me/agent/{agent}',
       tags: ['memory'],
       summary: 'List what My Kortix remembers about you',
       description:
@@ -70,7 +70,7 @@ export function registerProjectMyMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/memory/me/agent/{agent}/pages/{name}',
+      path: '/{workspaceId}/memory/me/agent/{agent}/pages/{name}',
       tags: ['memory'],
       summary: 'Read one thing My Kortix remembers about you',
       description: '`name` is the page’s slug. 404 `memory_not_found` when no page of the caller has it.',
@@ -96,7 +96,7 @@ export function registerProjectMyMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/memory/me/agent/{agent}/pages/{name}',
+      path: '/{workspaceId}/memory/me/agent/{agent}/pages/{name}',
       tags: ['memory'],
       summary: 'Save one thing My Kortix remembers about you',
       description:
@@ -128,7 +128,7 @@ export function registerProjectMyMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/memory/me/agent/{agent}/pages/{name}',
+      path: '/{workspaceId}/memory/me/agent/{agent}/pages/{name}',
       tags: ['memory'],
       summary: 'Forget one thing My Kortix remembers about you',
       description: 'Deletes the caller’s page with that `name` for good (a Drive delete). 404 `memory_not_found` when there is none.',

@@ -2,11 +2,11 @@ import { flow } from '../core/flow';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
 import { CliSandbox, type CliResult } from '../fixtures/cli';
 
-const ARTIFACTS = '/v1/projects/:projectId/artifacts';
+const ARTIFACTS = '/v1/workspaces/:projectId/artifacts';
 const ONE = `${ARTIFACTS}/:artifactId`;
 const COMMENTS = `${ONE}/comments`;
-const LOOKUP = '/v1/projects/:projectId/artifact-comment-threads/:threadId';
-const FEATURES = '/v1/projects/:projectId/features';
+const LOOKUP = '/v1/workspaces/:projectId/artifact-comment-threads/:threadId';
+const FEATURES = '/v1/workspaces/:projectId/features';
 type Author = { kind: 'user'; user_id: string; name: string | null } | { kind: 'session'; session_id: string; agent_name: string; title: string | null };
 type Comment = { comment_id: string; body: string; author: Author; author_user_id: string | null; author_session_id: string | null };
 type Thread = { thread_id: string; artifact_id: string; status: string; anchor: Record<string, unknown>; comments: Comment[] };

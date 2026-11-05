@@ -33,6 +33,7 @@ import { iamRouter, AccountIdParam } from './app';
 import { requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
+import { accountIdParam } from '../../shared/route-params';
 
 const PRINCIPAL_TYPES = ['user', 'group', 'service_account', 'pending', 'project'] as const;
 const SCOPE_TYPES = ['account', 'project'] as const;
@@ -115,7 +116,7 @@ export function registerIamAssignmentsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/assignments',
+      path: '/{workspaceId}/iam/assignments',
       tags: ['iam'],
       summary: 'List role assignments',
       ...auth,
@@ -138,7 +139,7 @@ export function registerIamAssignmentsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
 
       const principalType = oneOf(PRINCIPAL_TYPES, c.req.query('principal_type'));
@@ -186,7 +187,7 @@ export function registerIamAssignmentsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/assignments',
+      path: '/{workspaceId}/iam/assignments',
       tags: ['iam'],
       summary: 'Grant a role to a principal, at a scope, optionally on one object',
       ...auth,
@@ -200,7 +201,7 @@ export function registerIamAssignmentsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const body = await readJsonObject(c);
 
       const principalType = oneOf(PRINCIPAL_TYPES, body.principal_type ?? body.principalType);
@@ -296,12 +297,12 @@ export function registerIamAssignmentsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/iam/assignments/{assignmentId}',
+      path: '/{workspaceId}/iam/assignments/{assignmentId}',
       tags: ['iam'],
       summary: 'Revoke one assignment',
       ...auth,
       request: {
-        params: z.object({ accountId: z.string(), assignmentId: z.string() }),
+        params: z.object({ workspaceId: z.string(), assignmentId: z.string() }),
       },
       responses: {
         200: json(z.object({ revoked: z.boolean(), assignment: AssignmentSchema }), 'Revoked'),
@@ -309,7 +310,7 @@ export function registerIamAssignmentsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const assignmentId = c.req.param('assignmentId');
       if (!isUuid(assignmentId)) return c.json({ error: 'assignment not found' }, 404);
       // The last-owner guard lives in revokeAssignment, not here — it is the only
@@ -329,7 +330,7 @@ export function registerIamAssignmentsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/permissions',
+      path: '/{workspaceId}/iam/permissions',
       tags: ['iam'],
       summary: 'The permission catalog (action, scope, delegability, implications)',
       ...auth,
@@ -343,7 +344,7 @@ export function registerIamAssignmentsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
       const scopeType = oneOf(SCOPE_TYPES, c.req.query('scope_type'));
       const catalog = await loadPermissionCatalog();

@@ -19,6 +19,7 @@ import { invalidateSessionOversight } from '../../iam/session-oversight';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
 
 const SessionOversightStatus = z.object({
   enabled: z.boolean(),
@@ -34,7 +35,7 @@ export function registerIamSessionOversightRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/session-oversight',
+      path: '/{workspaceId}/iam/session-oversight',
       tags: ['iam'],
       summary: 'Get whether account owners and admins can open every session',
       ...auth,
@@ -46,7 +47,7 @@ export function registerIamSessionOversightRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
       const [row] = await db
@@ -62,7 +63,7 @@ export function registerIamSessionOversightRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/session-oversight',
+      path: '/{workspaceId}/iam/session-oversight',
       tags: ['iam'],
       summary: 'Enable or disable owner/admin access to every session (owner only)',
       ...auth,
@@ -80,7 +81,7 @@ export function registerIamSessionOversightRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
       if (!(await callerIsOwner(accountId, userId))) {
         return c.json(

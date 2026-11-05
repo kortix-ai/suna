@@ -9,13 +9,13 @@ import { waitFor } from "../core/poll";
 import { AgentPrincipalsWorld } from "../fixtures/agent-principals";
 import { createDatabaseSession, fundDatabaseAccount } from "../fixtures/database-project";
 
-flow("PROJ-1", { domain: "projects", tags: ["deployed", "smoke"], routes: ["GET /v1/projects"] }, async (ctx) => {
+flow("PROJ-1", { domain: "projects", tags: ["deployed", "smoke"], routes: ["GET /v1/workspaces"] }, async (ctx) => {
   await ctx.step("OWNER lists projects; every row matches the contract Project", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects");
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces");
     r.status(200).body().schema(ProjectSchema.array());
   });
   await ctx.step("ANON → 401", async () => {
-    const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects");
+    const r = await ctx.client.as(ctx.P.ANON).get("/v1/workspaces");
     r.status(401);
   });
   await ctx.step("the account owner lists every active project as manager; a member lists only the project granted to them", async () => {
@@ -25,14 +25,14 @@ flow("PROJ-1", { domain: "projects", tags: ["deployed", "smoke"], routes: ["GET 
     const member = await team.addMember("member");
     await team.grantProjectRole(granted.id, member.userId!, "member");
     type Row = { project_id: string; project_role: string | null; effective_project_role: string };
-    const asOwner = await ctx.client.as(ctx.P.OWNER).get("/v1/projects", { query: { account_id: team.id } });
+    const asOwner = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces", { query: { account_id: team.id } });
     asOwner.status(200);
     const ownerRows = asOwner.json<Row[]>();
     const ids = ownerRows.map((p) => p.project_id).sort();
     if (JSON.stringify(ids) !== JSON.stringify([granted.id, other.id].sort()) || !ownerRows.every((p) => p.effective_project_role === "manager")) {
       throw new Error(`owner list: ${JSON.stringify(ownerRows)}`);
     }
-    const asMember = await ctx.client.as(member).get("/v1/projects", { query: { account_id: team.id } });
+    const asMember = await ctx.client.as(member).get("/v1/workspaces", { query: { account_id: team.id } });
     asMember.status(200);
     const rows = asMember.json<Row[]>();
     if (rows.length !== 1 || rows[0]!.project_id !== granted.id || rows[0]!.project_role !== "member" || rows[0]!.effective_project_role !== "member") {
@@ -41,12 +41,12 @@ flow("PROJ-1", { domain: "projects", tags: ["deployed", "smoke"], routes: ["GET 
   });
 });
 
-flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v1/projects/provision", "GET /v1/projects/managed-git/status"] }, async (ctx) => {
+flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v1/workspaces/provision", "GET /v1/workspaces/managed-git/status"] }, async (ctx) => {
   await ctx.step("managed-git status reports configured:true on a managed-git target", async () => {
-    (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/managed-git/status")).status(200).body().has("$.configured", true);
+    (await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/managed-git/status")).status(200).body().has("$.configured", true);
   });
   await ctx.step("managed provision → 201 with repo", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("prov") });
+    const r = await ctx.client.as(ctx.P.OWNER).post("/v1/workspaces/provision", { name: ctx.fixtures.name("prov") });
     // 502 can occur transiently when the managed git host is rate-limited/unavailable.
     r.status([200, 201, 502]);
     if (r.statusCode < 400) r.body().exists("$.project_id").exists("$.repo_url");
@@ -55,7 +55,7 @@ flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v
   await ctx.step("name over 120 chars → 400, nothing provisioned upstream", async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
-      .post("/v1/projects/provision", { name: `pasted prompt as name ${"word ".repeat(30)}end` });
+      .post("/v1/workspaces/provision", { name: `pasted prompt as name ${"word ".repeat(30)}end` });
     r.status(400);
   });
 });
@@ -64,13 +64,13 @@ flow(
   "PROJ-14",
   {
     domain: "projects",
-    routes: ["POST /v1/projects/provision-stream"],
+    routes: ["POST /v1/workspaces/provision-stream"],
   },
   async (ctx) => {
     await ctx.step("unsupported provider streams validating, then a terminal 400 error", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/provision-stream", {
+        .post("/v1/workspaces/provision-stream", {
           name: ctx.fixtures.name("stream-invalid-provider"),
           provider: "unsupported-provider",
         });
@@ -100,7 +100,7 @@ flow(
     await ctx.step("ANON is rejected before an SSE stream opens", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/provision-stream", { name: "anonymous" });
+        .post("/v1/workspaces/provision-stream", { name: "anonymous" });
       r.status(401);
       if (r.header("content-type")?.includes("text/event-stream")) {
         throw new Error("anonymous provision opened an SSE stream");
@@ -109,44 +109,44 @@ flow(
   },
 );
 
-flow("PROJ-5", { domain: "projects", routes: ["GET /v1/projects/:projectId"] }, async (ctx) => {
+flow("PROJ-5", { domain: "projects", routes: ["GET /v1/workspaces/:projectId"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
   await ctx.step("OWNER reads project; the body matches the contract Project", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params: { projectId: p.id } });
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId", { params: { projectId: p.id } });
     r.status(200).body().has("$.project_id", p.id).schema(ProjectSchema);
   });
   await ctx.step("NONMEMBER → 403/404", async () => {
-    const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId", { params: { projectId: p.id } });
+    const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/workspaces/:projectId", { params: { projectId: p.id } });
     r.status([403, 404]);
   });
   await ctx.step("unknown project → 404", async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
-      .get("/v1/projects/:projectId", { params: { projectId: "00000000-0000-4000-a000-000000000000" } });
+      .get("/v1/workspaces/:projectId", { params: { projectId: "00000000-0000-4000-a000-000000000000" } });
     r.status(404);
   });
   await ctx.step("a read stamps last_opened_at → a later read carries it", async () => {
     await waitFor(
-      async () => (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params: { projectId: p.id } })).json<{ last_opened_at: string | null }>(),
+      async () => (await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId", { params: { projectId: p.id } })).json<{ last_opened_at: string | null }>(),
       { until: (b) => typeof b.last_opened_at === "string", timeoutMs: 5_000, intervalMs: 250, description: "last_opened_at stamp" },
     );
   });
 });
 
-flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detail"] }, async (ctx) => {
+flow("PROJ-6", { domain: "projects", routes: ["GET /v1/workspaces/:projectId/detail"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
   await ctx.step("detail returns project + manifest", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/detail", { params: { projectId: p.id } });
     r.status(200);
   });
   await ctx.step("NONMEMBER → 403", async () => {
-    const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
+    const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/workspaces/:projectId/detail", { params: { projectId: p.id } });
     r.status(403);
   });
   if (ctx.env.target === "local") {
     await ctx.step("detail of a git-backed project: manager role, a config block, and file_count equal to the files listed", async () => {
       const g = await ctx.fixtures.project({ managedGit: true });
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/detail", { params: { projectId: g.id } });
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/detail", { params: { projectId: g.id } });
       r.status(200).body().has("$.project.project_id", g.id).has("$.project.effective_project_role", "manager").exists("$.config");
       const { file_count, files } = r.json<{ file_count: number; files: Array<{ path: string }> }>();
       const paths = files.map((f) => f.path);
@@ -158,13 +158,13 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
   if (ctx.env.capabilities.admin) {
     const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
     await ctx.step("platform admin WITHOUT the bypass header → still 403 (no standing access)", async () => {
-      const r = await admin.get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
+      const r = await admin.get("/v1/workspaces/:projectId/detail", { params: { projectId: p.id } });
       r.status(403);
     });
     // The header is retired (#10246): an admin opens a project by acting as
     // its account (IMP-2), so the header must grant nothing here either.
     await ctx.step("platform admin WITH the retired x-kortix-admin-bypass header → still 403", async () => {
-      const r = await admin.get("/v1/projects/:projectId/detail", {
+      const r = await admin.get("/v1/workspaces/:projectId/detail", {
         params: { projectId: p.id },
         headers: { "x-kortix-admin-bypass": "1" },
       });
@@ -173,16 +173,16 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
   }
 });
 
-flow("PROJ-7", { domain: "projects", routes: ["PATCH /v1/projects/:projectId"] }, async (ctx) => {
+flow("PROJ-7", { domain: "projects", routes: ["PATCH /v1/workspaces/:projectId"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
   // A rename commits project.name to kortix.yaml first (#10883), so it needs a
   // reachable repository: APP-15 covers it. This fixture has none.
   await ctx.step("OWNER patches default_branch and manifest_path; repo_url in the body is ignored", async () => {
-    const before = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params: { projectId: p.id } });
+    const before = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId", { params: { projectId: p.id } });
     before.status(200);
     const { name, repo_url: repoUrl } = before.json<{ name: string; repo_url: string }>();
     const r = await ctx.client.as(ctx.P.OWNER).patch(
-      "/v1/projects/:projectId",
+      "/v1/workspaces/:projectId",
       { default_branch: "release", manifest_path: "ops/kortix.yaml", repo_url: "https://github.com/example-org/should-not-change.git" },
       { params: { projectId: p.id } },
     );
@@ -193,12 +193,12 @@ flow("PROJ-7", { domain: "projects", routes: ["PATCH /v1/projects/:projectId"] }
     const tp = await team.project();
     const member = await team.addMember("member");
     await team.grantProjectRole(tp.id, member.userId!, "member");
-    (await ctx.client.as(member).patch("/v1/projects/:projectId", { name: "nope" }, { params: { projectId: tp.id } })).status(403);
+    (await ctx.client.as(member).patch("/v1/workspaces/:projectId", { name: "nope" }, { params: { projectId: tp.id } })).status(403);
   });
   await ctx.step("NONMEMBER cannot patch → 403/404", async () => {
     const r = await ctx.client
       .as(ctx.P.NONMEMBER)
-      .patch("/v1/projects/:projectId", { name: "nope" }, { params: { projectId: p.id } });
+      .patch("/v1/workspaces/:projectId", { name: "nope" }, { params: { projectId: p.id } });
     r.status([403, 404]);
   });
 });
@@ -211,11 +211,11 @@ flow(
     // project; `managedGit` ⇒ managed provisioning is available to reach the cap.
     requires: ["managedGit", "stripe"],
     serial: true,
-    routes: ["GET /v1/projects", "POST /v1/projects/provision"],
+    routes: ["GET /v1/workspaces", "POST /v1/workspaces/provision"],
   },
   async (ctx) => {
     // NONMEMBER is a fresh, UNFUNDED (free) account → its project cap is 1.
-    const list = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects");
+    const list = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/workspaces");
     list.status(200);
     const existing = list.json<any[]>()?.length ?? 0;
 
@@ -223,7 +223,7 @@ flow(
       await ctx.step(`free account: project ${index + 1} of 1 allowed (201)`, async () => {
         let r = await ctx.client
           .as(ctx.P.NONMEMBER)
-          .post("/v1/projects/provision", {
+          .post("/v1/workspaces/provision", {
             name: ctx.fixtures.name(`free-${index + 1}`),
           });
         // The managed Git host can return a transient 502. Retry the same quota
@@ -232,7 +232,7 @@ flow(
           await Bun.sleep(2_000 * attempt);
           r = await ctx.client
             .as(ctx.P.NONMEMBER)
-            .post("/v1/projects/provision", {
+            .post("/v1/workspaces/provision", {
               name: ctx.fixtures.name(`free-${index + 1}-retry-${attempt}`),
             });
         }
@@ -244,7 +244,7 @@ flow(
     await ctx.step("free account: 2nd project rejected (403 project_limit_reached)", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/provision", { name: ctx.fixtures.name("free-2") });
+        .post("/v1/workspaces/provision", { name: ctx.fixtures.name("free-2") });
       // The quota gate runs before any repository is provisioned.
       r.status(403)
         .body()
@@ -258,9 +258,9 @@ flow(
 flow("PROJ-8", {
   domain: "projects",
   routes: [
-    "DELETE /v1/projects/:projectId",
-    "POST /v1/connectors/projects/:projectId/connectors",
-    "GET /v1/connectors/projects/:projectId/connectors",
+    "DELETE /v1/workspaces/:projectId",
+    "POST /v1/connectors/workspaces/:projectId/connectors",
+    "GET /v1/connectors/workspaces/:projectId/connectors",
   ],
 }, async (ctx) => {
   // Local uses a database fixture so deletion remains hermetic. Remote targets
@@ -272,7 +272,7 @@ flow("PROJ-8", {
     id = (await ctx.fixtures.project({ name: ctx.fixtures.name("del"), managedGit: true })).id;
   } else {
     await ctx.step("OWNER provisions a project to archive", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("del") });
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/workspaces/provision", { name: ctx.fixtures.name("del") });
       r.status([200, 201]).body().exists("$.project_id");
       id = r.json<any>().project_id;
     });
@@ -281,7 +281,7 @@ flow("PROJ-8", {
     const r = await ctx.client
       .as(ctx.P.OWNER)
       .post(
-        "/v1/connectors/projects/:projectId/connectors",
+        "/v1/connectors/workspaces/:projectId/connectors",
         {
           slug: `ke2e-proj8-${Date.now().toString(36)}`,
           provider: "http",
@@ -296,7 +296,7 @@ flow("PROJ-8", {
     const r = await ctx.client
       .as(ctx.P.OWNER)
       .post(
-        "/v1/connectors/projects/:projectId/connectors",
+        "/v1/connectors/workspaces/:projectId/connectors",
         { slug: "kortix_telegram", provider: "http", baseUrl: "https://fixture.example.test", auth: { type: "none" } },
         { params: { projectId: id } },
       );
@@ -305,22 +305,22 @@ flow("PROJ-8", {
   await ctx.step("the project lists exactly its one connector", async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
-      .get("/v1/connectors/projects/:projectId/connectors", { params: { projectId: id } });
+      .get("/v1/connectors/workspaces/:projectId/connectors", { params: { projectId: id } });
     const rows = r.status(200).json<{ connectors: unknown[] }>().connectors;
     if (rows.length !== 1) throw new Error(`expected the project to list 1 connector, listed ${rows.length}`);
   });
   await ctx.step("OWNER deletes the project → 200 deleted: true (permanent; archived kept for older clients)", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:projectId", { params: { projectId: id } });
+    const r = await ctx.client.as(ctx.P.OWNER).del("/v1/workspaces/:projectId", { params: { projectId: id } });
     r.status(200).body().has("$.ok", true).has("$.deleted", true).has("$.archived", true).exists("$.repo_deleted");
   });
   await ctx.step("archived project reads 404", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params: { projectId: id } });
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId", { params: { projectId: id } });
     r.status(404);
   });
   await ctx.step("the purged project lists no connectors (its connector rows were purged)", async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
-      .get("/v1/connectors/projects/:projectId/connectors", { params: { projectId: id } });
+      .get("/v1/connectors/workspaces/:projectId/connectors", { params: { projectId: id } });
     const rows = r.status(200).json<{ connectors: unknown[] }>().connectors;
     if (rows.length !== 0) {
       throw new Error(`expected the purged project to list 0 connectors, listed ${rows.length}`);
@@ -328,13 +328,13 @@ flow("PROJ-8", {
   });
 });
 
-flow("PROJ-36", { domain: "projects", routes: ["PUT /v1/projects/:projectId/git/repository", "GET /v1/projects/:projectId"] }, async (ctx) => {
+flow("PROJ-36", { domain: "projects", routes: ["PUT /v1/workspaces/:projectId/git/repository", "GET /v1/workspaces/:projectId"] }, async (ctx) => {
   const project = await ctx.fixtures.project({ name: ctx.fixtures.name("repo-replace") });
-  const path = "/v1/projects/:projectId/git/repository";
+  const path = "/v1/workspaces/:projectId/git/repository";
   const params = { projectId: project.id };
   let expectedRepoUrl = "";
   await ctx.step("OWNER reads the repository before attempting replacement", async () => {
-    const response = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params });
+    const response = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId", { params });
     response.status(200).body().exists("$.repo_url");
     expectedRepoUrl = response.json<any>().repo_url;
   });
@@ -346,7 +346,7 @@ flow("PROJ-36", { domain: "projects", routes: ["PUT /v1/projects/:projectId/git/
   await ctx.step("OWNER cannot replace the repository with a non-GitHub URL", async () => {
     const response = await ctx.client.as(ctx.P.OWNER).put(path, body(), { params });
     response.status(400);
-    const current = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params });
+    const current = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId", { params });
     current.status(200).body().has("$.repo_url", expectedRepoUrl);
   });
   await ctx.step("OWNER must choose one GitHub authorization method", async () => {
@@ -361,7 +361,7 @@ flow("PROJ-36", { domain: "projects", routes: ["PUT /v1/projects/:projectId/git/
       github_token: "unused-token", installation_id: "123", github_user_token: "unused-user-token",
     }, { params });
     ambiguous.status(400);
-    const current = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params });
+    const current = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId", { params });
     current.status(200).body().has("$.repo_url", expectedRepoUrl);
   });
   await ctx.step("NONMEMBER cannot replace another project's repository", async () => {
@@ -379,7 +379,7 @@ flow("PROJ-36", { domain: "projects", routes: ["PUT /v1/projects/:projectId/git/
 // the disabled one with `enabled: false`, anchored at the file that declares it.
 flow(
   "PROJ-39",
-  { domain: "projects", routes: ["GET /v1/projects/:projectId/detail"] },
+  { domain: "projects", routes: ["GET /v1/workspaces/:projectId/detail"] },
   async (ctx) => {
     if (ctx.env.target !== "local") return; // the manifest is pushed straight to the local bare repo; deployed targets push through the git proxy
     const { execFileSync } = await import("node:child_process");
@@ -412,7 +412,7 @@ flow(
         execFileSync("git", ["push", "-q", "origin", `HEAD:refs/heads/${base}`], { cwd: work, stdio: "pipe" });
       });
       await ctx.step("GET detail lists every registered agent — the disabled one with enabled:false, attributed to its declaring file", async () => {
-        const r = await owner.get("/v1/projects/:projectId/detail", { params: { projectId: project.id } });
+        const r = await owner.get("/v1/workspaces/:projectId/detail", { params: { projectId: project.id } });
         r.status(200);
         const config =
           r.json<{ config: { agent_discovery: string; agents?: Array<{ name: string; enabled?: boolean; path: string }> } }>().config;
@@ -450,7 +450,7 @@ const HEALTHY_MANIFEST =
 
 flow(
   "PROJ-47",
-  { domain: "projects", requires: ["database"], timeoutMs: 180_000, routes: ["GET /v1/projects/:projectId/detail"] },
+  { domain: "projects", requires: ["database"], timeoutMs: 180_000, routes: ["GET /v1/workspaces/:projectId/detail"] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project({ managedGit: true });
@@ -460,7 +460,7 @@ flow(
       await world.writeManifest(text, message);
       const config = await waitFor(
         async () =>
-          (await world.owner.get("/v1/projects/:projectId/detail", { params: { projectId: project.id } }))
+          (await world.owner.get("/v1/workspaces/:projectId/detail", { params: { projectId: project.id } }))
             .status(200)
             .json<{ config: { manifest_raw: string | null; manifest_health: ManifestHealth } }>().config,
         { until: (c) => c.manifest_raw === text, timeoutMs: 60_000, intervalMs: 1_000, description: `detail to serve "${message}"` },
@@ -516,24 +516,24 @@ flow(
 
 flow(
   "PROJ-42",
-  { domain: "projects", routes: ["GET /v1/projects/managed-git/status", "POST /v1/projects/provision", "GET /v1/projects"] },
+  { domain: "projects", routes: ["GET /v1/workspaces/managed-git/status", "POST /v1/workspaces/provision", "GET /v1/workspaces"] },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
     await ctx.step("provision into an account the caller is not a member of → 403", async () => {
       const foreign = ctx.P.NONMEMBER.accountId;
       if (!foreign) throw new Error("NONMEMBER fixture has no account id");
-      const r = await owner.post("/v1/projects/provision", { name: ctx.fixtures.name("foreign-acct"), account_id: foreign });
+      const r = await owner.post("/v1/workspaces/provision", { name: ctx.fixtures.name("foreign-acct"), account_id: foreign });
       r.status(403).body().has("$.message", "You do not have access to this account");
     });
-    const status = await owner.get("/v1/projects/managed-git/status");
+    const status = await owner.get("/v1/workspaces/managed-git/status");
     status.status(200);
     const { configured, provider } = status.json<{ configured: boolean; provider: string }>();
     if (!configured) {
       await ctx.step("managed git unconfigured → POST /provision 503 naming the provider; no project registered", async () => {
         const name = ctx.fixtures.name("unconfigured");
-        const r = await owner.post("/v1/projects/provision", { name });
+        const r = await owner.post("/v1/workspaces/provision", { name });
         r.status(503).body().has("$.error", `Managed git provider "${provider}" is not configured on this server`);
-        const list = await owner.get("/v1/projects");
+        const list = await owner.get("/v1/workspaces");
         list.status(200);
         if (list.json<Array<{ name: string }>>().some((project) => project.name === name)) throw new Error("a refused provision registered a project");
       });
@@ -546,14 +546,14 @@ flow(
 // deployed cap through /provision; the local profile enforces billing itself.
 flow(
   "PROJ-41",
-  { domain: "projects", requires: ["database"], routes: ["POST /v1/projects", "DELETE /v1/projects/:projectId"] },
+  { domain: "projects", requires: ["database"], routes: ["POST /v1/workspaces", "DELETE /v1/workspaces/:projectId"] },
   async (ctx) => {
     if (ctx.env.target !== "local") return;
     const team = await ctx.fixtures.team();
     const first = await team.project();
     const owner = ctx.client.as(ctx.P.OWNER);
     const create = () =>
-      owner.post("/v1/projects", { account_id: team.id, name: ctx.fixtures.name("quota-probe"), repo_url: "https://github.com/example-org/quota-probe" });
+      owner.post("/v1/workspaces", { account_id: team.id, name: ctx.fixtures.name("quota-probe"), repo_url: "https://github.com/example-org/quota-probe" });
     await ctx.step("free team account at its 1-project cap → 403 project_limit_reached {limit:1,count:1}", async () => {
       (await create())
         .status(403)
@@ -564,7 +564,7 @@ flow(
         .has("$.error", "Free accounts are limited to 1 project. Upgrade to a paid plan to create more.");
     });
     await ctx.step("archiving the one project frees the slot → the create passes the cap and stops at the GitHub App check (409)", async () => {
-      (await owner.del("/v1/projects/:projectId", { params: { projectId: first.id } })).status(200);
+      (await owner.del("/v1/workspaces/:projectId", { params: { projectId: first.id } })).status(200);
       const r = await create();
       r.status(409);
       if (r.json<any>()?.code === "project_limit_reached") throw new Error("an archived project still consumed the slot");
@@ -589,11 +589,11 @@ flow(
     domain: "projects",
     requires: ["database"],
     routes: [
-      "POST /v1/projects/:projectId/gateway/keys",
-      "POST /v1/projects/:projectId/sessions/:sessionId/public-shares",
+      "POST /v1/workspaces/:projectId/gateway/keys",
+      "POST /v1/workspaces/:projectId/sessions/:sessionId/public-shares",
       "GET /v1/p/public-share/:token",
       "POST /v1/llm/chat/completions",
-      "DELETE /v1/projects/:projectId",
+      "DELETE /v1/workspaces/:projectId",
     ],
   },
   async (ctx) => {
@@ -613,11 +613,11 @@ flow(
     let key = "";
     let token = "";
     await ctx.step("the owner mints a kgw_ key and a public file link", async () => {
-      const minted = await owner.post("/v1/projects/:projectId/gateway/keys", { name: "ci" }, { params });
+      const minted = await owner.post("/v1/workspaces/:projectId/gateway/keys", { name: "ci" }, { params });
       minted.status(200).body().exists("$.secret_key");
       key = minted.json<{ secret_key: string }>().secret_key;
       const share = await owner.post(
-        "/v1/projects/:projectId/sessions/:sessionId/public-shares",
+        "/v1/workspaces/:projectId/sessions/:sessionId/public-shares",
         { file: { path: "/workspace/notes.md" } },
         { params: { ...params, sessionId } },
       );
@@ -637,7 +637,7 @@ flow(
     });
 
     await ctx.step("the owner deletes the workspace", async () => {
-      (await owner.del("/v1/projects/:projectId", { params })).status(200).body().has("$.archived", true);
+      (await owner.del("/v1/workspaces/:projectId", { params })).status(200).body().has("$.archived", true);
     });
 
     await ctx.step("after the delete: the kgw_ key → 401 and the link → 410", async () => {

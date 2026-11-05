@@ -7,12 +7,12 @@ import { Client } from '../core/client';
 flow('GW-CUSTOM-1', {
   domain: 'llm-gateway',
   routes: [
-    'GET /v1/projects/:projectId/custom-providers',
-    'PUT /v1/projects/:projectId/custom-providers/:providerId',
-    'DELETE /v1/projects/:projectId/custom-providers/:providerId',
-    'POST /v1/projects/:projectId/secrets',
-    'GET /v1/projects/:projectId/model-picker',
-    'POST /v1/projects/:projectId/gateway/keys',
+    'GET /v1/workspaces/:projectId/custom-providers',
+    'PUT /v1/workspaces/:projectId/custom-providers/:providerId',
+    'DELETE /v1/workspaces/:projectId/custom-providers/:providerId',
+    'POST /v1/workspaces/:projectId/secrets',
+    'GET /v1/workspaces/:projectId/model-picker',
+    'POST /v1/workspaces/:projectId/gateway/keys',
     'POST /v1/llm/chat/completions',
   ],
 }, async (ctx) => {
@@ -43,8 +43,8 @@ flow('GW-CUSTOM-1', {
   const params = { projectId: project.id };
   const id = `stub-${Date.now().toString(36)}`;
   const one = { projectId: project.id, providerId: id };
-  const path = '/v1/projects/:projectId/custom-providers/:providerId';
-  const list = '/v1/projects/:projectId/custom-providers';
+  const path = '/v1/workspaces/:projectId/custom-providers/:providerId';
+  const list = '/v1/workspaces/:projectId/custom-providers';
   const secretName = `CUSTOM_${id.toUpperCase().replace(/-/g, '_')}_API_KEY`;
   const body = { name: 'Stub LLM', base_url: `http://127.0.0.1:${port}/v1/`, models: [{ id: 'm1', name: 'Model One' }] };
   const gateway = new Client(ctx.env.gatewayUrl);
@@ -74,12 +74,12 @@ flow('GW-CUSTOM-1', {
       (await owner.put(path, body, { params: one })).status(200).body()
         .has('$.id', id).has('$.base_url', `http://127.0.0.1:${port}/v1`).has('$.secret_name', secretName)
         .has('$.has_key', false).has('$.configured', true).has('$.models', [{ id: 'm1', name: 'Model One' }]);
-      (await owner.post('/v1/projects/:projectId/secrets', {
+      (await owner.post('/v1/workspaces/:projectId/secrets', {
         name: secretName, value: 'sk-stub-key', strategy: 'broker', consumer: 'llm_gateway',
       }, { params })).status(200);
       (await owner.get(list, { params })).status(200).body()
         .has('$.providers[0].id', id).has('$.providers[0].has_key', true);
-      const picker = (await owner.get('/v1/projects/:projectId/model-picker', { params }))
+      const picker = (await owner.get('/v1/workspaces/:projectId/model-picker', { params }))
         .status(200).json<{ models: Record<string, { provider?: string; provider_name?: string; enabled?: boolean }> }>();
       const model = picker.models[`${id}/m1`];
       if (model?.provider !== id || model.provider_name !== 'Stub LLM' || model.enabled !== true) {
@@ -88,7 +88,7 @@ flow('GW-CUSTOM-1', {
     });
 
     await ctx.step('a gateway request reaches the endpoint with the key and the bare model id', async () => {
-      const minted = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'custom provider' }, { params });
+      const minted = await owner.post('/v1/workspaces/:projectId/gateway/keys', { name: 'custom provider' }, { params });
       minted.status(200);
       key = minted.json<{ secret_key: string }>().secret_key;
       // KRTX-3369: the answer names the requested and the serving model.
@@ -105,7 +105,7 @@ flow('GW-CUSTOM-1', {
     });
 
     await ctx.step('a key with no endpoint lists as configured: false', async () => {
-      (await owner.post('/v1/projects/:projectId/secrets', {
+      (await owner.post('/v1/workspaces/:projectId/secrets', {
         name: 'CUSTOM_LEGACY_API_KEY', value: 'sk-legacy', strategy: 'broker', consumer: 'llm_gateway',
       }, { params })).status(200);
       const providers = (await owner.get(list, { params })).status(200).json<{ providers: Array<{ id: string; configured: boolean; base_url: string | null }> }>().providers;
@@ -117,7 +117,7 @@ flow('GW-CUSTOM-1', {
       (await ctx.client.as(member).del(path, { params: one })).status(403);
       (await owner.del(path, { params: one })).status(204);
       (await owner.del(path, { params: one })).status(404);
-      const picker = (await owner.get('/v1/projects/:projectId/model-picker', { params })).status(200).json<{ models: Record<string, unknown> }>();
+      const picker = (await owner.get('/v1/workspaces/:projectId/model-picker', { params })).status(200).json<{ models: Record<string, unknown> }>();
       if (picker.models[`${id}/m1`]) throw new Error('removed custom model is still in the picker');
       (await chat(`${id}/m1`)).status(400).body().has('$.error.code', 'model_not_found');
     });

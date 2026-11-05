@@ -1,3 +1,4 @@
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import { createHash } from 'node:crypto';
 import { type Database, auditEvents } from '@kortix/db';
 import {
@@ -80,7 +81,9 @@ export interface AuditEventInput {
   metadata?: Record<string, unknown>;
 }
 
-function pathIds(path: string): { projectId: string | null; sessionId: string | null } {
+function pathIds(rawPath: string): { projectId: string | null; sessionId: string | null } {
+  // `/v1/workspaces/<id>/…` names the same workspace as `/v1/projects/<id>/…`.
+  const path = asLegacyWorkspaceRoute(rawPath);
   const projectMatch = path.match(/\/projects\/([^/]+)/);
   const sessionMatch = path.match(/\/projects\/[^/]+\/sessions\/([^/]+)/);
   const projectId = projectMatch?.[1] && isUuid(projectMatch[1]) ? projectMatch[1] : null;
@@ -95,7 +98,8 @@ function inferResource(path: string): { resourceType: string; resourceId: string
   if (ids.sessionId) return { resourceType: 'project_session', resourceId: ids.sessionId };
   if (ids.projectId) return { resourceType: 'project', resourceId: ids.projectId };
 
-  const parts = path.split('/').filter(Boolean);
+  // A canonical name records the resource its legacy twin always recorded.
+  const parts = asLegacyWorkspaceRoute(path).split('/').filter(Boolean);
   const v1Index = parts.indexOf('v1');
   const root = v1Index >= 0 ? parts[v1Index + 1] : parts[0];
   const id = v1Index >= 0 ? parts[v1Index + 2] : parts[1];

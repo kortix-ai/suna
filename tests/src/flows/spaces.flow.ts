@@ -31,18 +31,18 @@ const TAB_ROUTES = {
   removeLink: 'DELETE /v1/projects/:projectId/spaces/:spaceId/links/:linkId',
   pinLink: 'PATCH /v1/projects/:projectId/spaces/:spaceId/links/:linkId',
 };
-const SPACE_APPS = '/v1/projects/:projectId/spaces/:spaceId/apps';
-const SPACE_LINKS = '/v1/projects/:projectId/spaces/:spaceId/links';
-const SPACE_LINK = '/v1/projects/:projectId/spaces/:spaceId/links/:linkId';
+const SPACE_APPS = '/v1/workspaces/:projectId/spaces/:spaceId/apps';
+const SPACE_LINKS = '/v1/workspaces/:projectId/spaces/:spaceId/links';
+const SPACE_LINK = '/v1/workspaces/:projectId/spaces/:spaceId/links/:linkId';
 const FEATURES_ROUTE = 'PATCH /v1/projects/:projectId/features';
 const SESSION_ROUTES = {
   create: 'POST /v1/projects/:projectId/sessions',
   list: 'GET /v1/projects/:projectId/sessions',
 };
-const SESSIONS = '/v1/projects/:projectId/sessions';
-const SPACES = '/v1/projects/:projectId/spaces';
-const SPACE = '/v1/projects/:projectId/spaces/:spaceId';
-const DM = '/v1/projects/:projectId/spaces/dm';
+const SESSIONS = '/v1/workspaces/:projectId/sessions';
+const SPACES = '/v1/workspaces/:projectId/spaces';
+const SPACE = '/v1/workspaces/:projectId/spaces/:spaceId';
+const DM = '/v1/workspaces/:projectId/spaces/dm';
 const MANIFEST =
   'project:\n  name: ke2e-spaces\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
 
@@ -899,8 +899,8 @@ const TRIGGER_ROUTES = {
   update: 'PATCH /v1/projects/:projectId/triggers/:slug',
   fire: 'POST /v1/projects/:projectId/triggers/:slug/fire',
 };
-const TRIGGERS = '/v1/projects/:projectId/triggers';
-const TRIGGER = '/v1/projects/:projectId/triggers/:slug';
+const TRIGGERS = '/v1/workspaces/:projectId/triggers';
+const TRIGGER = '/v1/workspaces/:projectId/triggers/:slug';
 type ListedTrigger = { slug: string; space_id?: string | null; session_access: { mode: string; memberIds: string[] } };
 
 /** A daily cron trigger body; `extra` adds `space_id` or `session_access`. */
@@ -1091,7 +1091,7 @@ flow(
       await world.fund();
       // A BYOK key gives the account a usable model, so the fire passes the no-usable-model gate.
       (await world.owner.post(
-        '/v1/projects/:projectId/secrets',
+        '/v1/workspaces/:projectId/secrets',
         { name: 'ANTHROPIC_API_KEY', value: 'sk-ant-ke2e-spaces', strategy: 'broker', consumer: 'llm_gateway' },
         { params },
       )).status(200);
@@ -1138,7 +1138,7 @@ flow(
   },
 );
 
-const PROMPTS = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+const PROMPTS = '/v1/workspaces/:projectId/sessions/:sessionId/prompts';
 type Link = {
   link_id: string;
   url: string;
@@ -1426,9 +1426,9 @@ const MEMBER_ROUTES = {
   remove: 'DELETE /v1/projects/:projectId/spaces/:spaceId/members/:userId',
   join: 'POST /v1/projects/:projectId/spaces/:spaceId/join',
 };
-const SPACE_MEMBERS = '/v1/projects/:projectId/spaces/:spaceId/members';
-const SPACE_MEMBER = '/v1/projects/:projectId/spaces/:spaceId/members/:userId';
-const SPACE_JOIN = '/v1/projects/:projectId/spaces/:spaceId/join';
+const SPACE_MEMBERS = '/v1/workspaces/:projectId/spaces/:spaceId/members';
+const SPACE_MEMBER = '/v1/workspaces/:projectId/spaces/:spaceId/members/:userId';
+const SPACE_JOIN = '/v1/workspaces/:projectId/spaces/:spaceId/join';
 type MemberList = { members: { user_id: string; name: string; can_remove: boolean }[]; implicit: boolean; can_add: boolean };
 const memberIds = (list: MemberList) => list.members.map((m) => m.user_id).sort();
 

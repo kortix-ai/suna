@@ -78,8 +78,9 @@ import {
 import { canSeeSpace, PRIVATE_CHANNELS_UNAVAILABLE, privateChannelsAvailable, spaceAccessFor } from '../../shared/space-access';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sessionPerson } from '../lib/chat-threads';
+import { workspaceIdParam } from '../../shared/route-params';
 
-const projectParams = z.object({ projectId: z.string() });
+const projectParams = z.object({ workspaceId: z.string() });
 const spaceParams = projectParams.extend({ spaceId: z.string() });
 
 /**
@@ -105,7 +106,7 @@ type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>
 
 /** The project (`session` access) and the `chat` flag: the gate of every route here. */
 async function loadSpacesProject(c: Context<AppEnv>) {
-  const loaded = await loadProjectForUser(c, c.req.param('projectId')!, 'session');
+  const loaded = await loadProjectForUser(c, workspaceIdParam(c)!, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   const gate = requireFeatureFlag(c, loaded.row.metadata, 'chat');
   if (gate) return gate;
@@ -210,7 +211,7 @@ function registerSpaceRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/spaces',
+      path: '/{workspaceId}/spaces',
       tags: ['spaces'],
       summary: 'List the channels of a project and the caller’s direct messages',
       ...auth,
@@ -241,7 +242,7 @@ function registerSpaceRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/spaces/private',
+      path: '/{workspaceId}/spaces/private',
       tags: ['spaces'],
       summary: 'List the private channels the caller is not in (project managers)',
       description:
@@ -266,7 +267,7 @@ function registerSpaceRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/spaces',
+      path: '/{workspaceId}/spaces',
       tags: ['spaces'],
       summary: 'Create a channel',
       ...auth,
@@ -301,7 +302,7 @@ function registerSpaceRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/spaces/dm',
+      path: '/{workspaceId}/spaces/dm',
       tags: ['spaces'],
       summary: 'Open the caller’s direct message with an agent',
       ...auth,
@@ -336,7 +337,7 @@ function registerSpaceRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/spaces/{spaceId}',
+      path: '/{workspaceId}/spaces/{spaceId}',
       tags: ['spaces'],
       summary: 'Update a channel',
       description:
@@ -401,7 +402,7 @@ function registerSpaceRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/spaces/{spaceId}/tabs',
+      path: '/{workspaceId}/spaces/{spaceId}/tabs',
       tags: ['spaces'],
       summary: 'Replace the tabs of a space',
       description:
@@ -448,7 +449,7 @@ function registerSpaceRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/spaces/{spaceId}/apps',
+      path: '/{workspaceId}/spaces/{spaceId}/apps',
       tags: ['spaces'],
       summary: 'List the Apps of a channel',
       description:
@@ -480,7 +481,7 @@ function registerSpaceLinkRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/spaces/{spaceId}/links',
+      path: '/{workspaceId}/spaces/{spaceId}/links',
       tags: ['spaces'],
       summary: 'List the links of a channel',
       ...auth,
@@ -503,7 +504,7 @@ function registerSpaceLinkRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/spaces/{spaceId}/links',
+      path: '/{workspaceId}/spaces/{spaceId}/links',
       tags: ['spaces'],
       summary: 'Add a link to a channel',
       description:
@@ -534,7 +535,7 @@ function registerSpaceLinkRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/spaces/{spaceId}/links/{linkId}',
+      path: '/{workspaceId}/spaces/{spaceId}/links/{linkId}',
       tags: ['spaces'],
       summary: 'Pin or unpin a link of a channel',
       description:
@@ -568,7 +569,7 @@ function registerSpaceLinkRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/spaces/{spaceId}/links/{linkId}',
+      path: '/{workspaceId}/spaces/{spaceId}/links/{linkId}',
       tags: ['spaces'],
       summary: 'Remove a link from a channel',
       ...auth,
@@ -597,7 +598,7 @@ function registerSpaceMemberRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/spaces/{spaceId}/members',
+      path: '/{workspaceId}/spaces/{spaceId}/members',
       tags: ['spaces'],
       summary: 'List the people in a channel',
       description:
@@ -619,7 +620,7 @@ function registerSpaceMemberRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/spaces/{spaceId}/members',
+      path: '/{workspaceId}/spaces/{spaceId}/members',
       tags: ['spaces'],
       summary: 'Add people to a channel',
       description:
@@ -656,7 +657,7 @@ function registerSpaceMemberRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/spaces/{spaceId}/members/{userId}',
+      path: '/{workspaceId}/spaces/{spaceId}/members/{userId}',
       tags: ['spaces'],
       summary: 'Remove a person from a channel, or leave it',
       description:
@@ -693,7 +694,7 @@ function registerSpaceMemberRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/spaces/{spaceId}/join',
+      path: '/{workspaceId}/spaces/{spaceId}/join',
       tags: ['spaces'],
       summary: 'Join a channel',
       description: 'Any member of the project joins a public channel; a private channel they are not in is 404 `space_not_found`. Idempotent. `#general` is 400 `default_channel`.',
@@ -719,7 +720,7 @@ function registerChannelsOnboardingRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/onboarding/channels',
+      path: '/{workspaceId}/onboarding/channels',
       tags: ['spaces'],
       summary: 'Read the caller’s Channels onboarding state',
       description:
@@ -741,7 +742,7 @@ function registerChannelsOnboardingRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/onboarding/channels/marks',
+      path: '/{workspaceId}/onboarding/channels/marks',
       tags: ['spaces'],
       summary: 'Record a Channels onboarding mark for the caller',
       ...auth,

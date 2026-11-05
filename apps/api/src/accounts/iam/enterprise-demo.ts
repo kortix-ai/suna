@@ -18,6 +18,7 @@ import { enterpriseStateOf } from '../../billing/services/resolve-billing';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './http-helpers';
+import { accountIdParam } from '../../shared/route-params';
 
 const DemoState = z
   .object({
@@ -35,7 +36,7 @@ export function registerIamEnterpriseDemoRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/enterprise-demo',
+      path: '/{workspaceId}/iam/enterprise-demo',
       tags: ['iam'],
       summary: 'Get the Enterprise demo and Enterprise state',
       ...auth,
@@ -46,7 +47,7 @@ export function registerIamEnterpriseDemoRoutes(): void {
       },
     }),
     async (c) => {
-      const { accountId } = c.req.valid('param');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
       return c.json(await stateOf(accountId), 200);
     },
@@ -55,7 +56,7 @@ export function registerIamEnterpriseDemoRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'put',
-      path: '/{accountId}/iam/enterprise-demo',
+      path: '/{workspaceId}/iam/enterprise-demo',
       tags: ['iam'],
       summary: 'Turn the Enterprise demo on or off (owners and admins)',
       ...auth,
@@ -69,7 +70,7 @@ export function registerIamEnterpriseDemoRoutes(): void {
       },
     }),
     async (c) => {
-      const { accountId } = c.req.valid('param');
+      const accountId = accountIdParam(c);
       const { enabled } = c.req.valid('json');
       const userId = c.get('userId') as string;
       // A platform admin switches any account (support, or withdrawing a

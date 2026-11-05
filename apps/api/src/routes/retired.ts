@@ -68,8 +68,8 @@ export const RETIRED_ROUTES: ReadonlyArray<readonly [method: string, path: strin
   // but one internal project since 2026-10-21. Older web, SDK, CLI and mobile
   // builds call these only while `experimental.warm_sessions` reads true, and
   // the API now always sends false. A send then takes the ordinary create.
-  ['POST', '/v1/projects/:projectId/sessions/warm'],
-  ['POST', '/v1/projects/:projectId/sessions/warm/claim'],
+  ['POST', '/v1/projects/:workspaceId/sessions/warm'],
+  ['POST', '/v1/projects/:workspaceId/sessions/warm/claim'],
 ];
 
 function gone(c: Context) {

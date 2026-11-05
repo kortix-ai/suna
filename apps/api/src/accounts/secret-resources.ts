@@ -16,6 +16,7 @@ import { AccountIdParam, accountsRouter, getMembership } from './core/app';
 import { readJsonObject } from '../shared/http-body';
 import { projectInAccount } from '../secrets/project-account';
 import { listLegacySubscriptionConnections, refreshLegacySubscriptionUsage } from '../llm-gateway/legacy-subscription-usage';
+import { accountIdParam } from '../shared/route-params';
 
 const SecretIdParam = AccountIdParam.extend({ secretId: z.string().uuid() });
 const GrantParam = SecretIdParam.extend({ userId: z.string().uuid() });
@@ -85,12 +86,12 @@ async function view(row: typeof accountSecretResources.$inferSelect, actorId: st
 export function registerSecretResourceRoutes() {
   const SubscriptionQuery = z.object({ project_id: z.string().uuid() });
   accountsRouter.openapi(createRoute({
-    method: 'get', path: '/{accountId}/subscription-connections', tags: ['secrets'],
+    method: 'get', path: '/{workspaceId}/subscription-connections', tags: ['secrets'],
     summary: 'List subscription logins, including existing legacy connections', ...auth,
     request: { params: AccountIdParam, query: SubscriptionQuery },
     responses: { 200: json(z.object({ subscriptions: z.array(View.extend({ storage: z.enum(['account_resource', 'project']) })) }), 'Connected subscriptions'), ...errors(403) },
   }), async (c) => {
-    const { accountId } = c.req.valid('param');
+    const accountId = accountIdParam(c);
     const { project_id: projectId } = c.req.valid('query');
     const userId = c.get('userId') as string;
     if (!(await getMembership(userId, accountId)) || !(await projectInAccount(accountId, projectId)) || !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) return c.json({ error: 'Forbidden' }, 403);
@@ -106,12 +107,13 @@ export function registerSecretResourceRoutes() {
   });
 
   accountsRouter.openapi(createRoute({
-    method: 'post', path: '/{accountId}/subscription-connections/{secretId}/usage', tags: ['secrets'],
+    method: 'post', path: '/{workspaceId}/subscription-connections/{secretId}/usage', tags: ['secrets'],
     summary: 'Read usage from an existing subscription without reconnecting', ...auth,
     request: { params: SecretIdParam, query: SubscriptionQuery.extend({ storage: z.enum(['account_resource', 'project']) }) },
     responses: { 200: json(z.object({ usage: SubscriptionUsageSchema.nullable(), provider_account: SubscriptionAccountSchema.nullable() }), 'Subscription usage'), ...errors(403, 404) },
   }), async (c) => {
-    const { accountId, secretId } = c.req.valid('param');
+    const { secretId } = c.req.valid('param');
+    const accountId = accountIdParam(c);
     const { project_id: projectId, storage } = c.req.valid('query');
     const userId = c.get('userId') as string;
     if (!(await getMembership(userId, accountId)) || !(await projectInAccount(accountId, projectId)) || !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) return c.json({ error: 'Forbidden' }, 403);
@@ -128,12 +130,12 @@ export function registerSecretResourceRoutes() {
   });
 
   accountsRouter.openapi(createRoute({
-    method: 'get', path: '/{accountId}/secret-resources', tags: ['secrets'],
+    method: 'get', path: '/{workspaceId}/secret-resources', tags: ['secrets'],
     summary: 'List account secret resources granted to the caller', ...auth,
     request: { params: AccountIdParam },
     responses: { 200: json(z.object({ secrets: z.array(View) }), 'Granted secret resources'), ...errors(403) },
   }), async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const userId = c.get('userId') as string;
     const membership = await getMembership(userId, accountId);
     if (!membership) return c.json({ error: 'Forbidden' }, 403);
@@ -151,12 +153,12 @@ export function registerSecretResourceRoutes() {
   });
 
   accountsRouter.openapi(createRoute({
-    method: 'post', path: '/{accountId}/secret-resources', tags: ['secrets'],
+    method: 'post', path: '/{workspaceId}/secret-resources', tags: ['secrets'],
     summary: 'Create an account secret resource', ...auth,
     request: { params: AccountIdParam, body: { content: { 'application/json': { schema: Create } } } },
     responses: { 201: json(View, 'Created secret metadata'), ...errors(400, 403) },
   }), async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const userId = c.get('userId') as string;
     if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
     const parsed = Create.safeParse(await readJsonObject(c));
@@ -208,14 +210,14 @@ export function registerSecretResourceRoutes() {
   });
 
   accountsRouter.openapi(createRoute({
-    method: 'put', path: '/{accountId}/secret-resources/{secretId}/access', tags: ['secrets'],
+    method: 'put', path: '/{workspaceId}/secret-resources/{secretId}/access', tags: ['secrets'],
     summary: 'Set project or selected-member access for one resource', ...auth,
     request: { params: SecretIdParam, body: { content: { 'application/json': { schema: z.object({
       mode: z.enum(['project', 'members']), user_ids: z.array(z.string().uuid()).max(200),
     }).strict() } } } },
     responses: { 200: json(View, 'Updated access'), ...errors(400, 403, 404) },
   }), async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const actorId = c.get('userId') as string;
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
@@ -250,12 +252,12 @@ export function registerSecretResourceRoutes() {
   });
 
   accountsRouter.openapi(createRoute({
-    method: 'put', path: '/{accountId}/secret-resources/{secretId}/value', tags: ['secrets'],
+    method: 'put', path: '/{workspaceId}/secret-resources/{secretId}/value', tags: ['secrets'],
     summary: 'Rotate one secret value', ...auth,
     request: { params: SecretIdParam, body: { content: { 'application/json': { schema: z.object({ value: z.string().min(1).max(65536) }) } } } },
     responses: { 200: json(View, 'Rotated secret metadata'), ...errors(400, 403, 404) },
   }), async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const userId = c.get('userId') as string;
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
@@ -276,12 +278,13 @@ export function registerSecretResourceRoutes() {
   // An owner's "retry now": a ChatGPT plan's usage can be reset before the reset
   // the provider named; the rest ends now instead of on the next 15-min re-try.
   accountsRouter.openapi(createRoute({
-    method: 'post', path: '/{accountId}/secret-resources/{secretId}/retry', tags: ['secrets'],
+    method: 'post', path: '/{workspaceId}/secret-resources/{secretId}/retry', tags: ['secrets'],
     summary: 'End the rate-limit rest of one stored account', ...auth,
     request: { params: SecretIdParam },
     responses: { 200: json(View, 'Secret metadata with no cooldown'), ...errors(403, 404) },
   }), async (c) => {
-    const { accountId, secretId } = c.req.valid('param');
+    const { secretId } = c.req.valid('param');
+    const accountId = accountIdParam(c);
     const userId = c.get('userId') as string;
     const row = await loadSecret(accountId, secretId);
     if (!row) return c.json({ error: 'Not found' }, 404);
@@ -293,12 +296,13 @@ export function registerSecretResourceRoutes() {
   // The account list shows each login's plan usage. Opening it asks the
   // provider again when the last read is over a minute old (no plan quota).
   accountsRouter.openapi(createRoute({
-    method: 'post', path: '/{accountId}/secret-resources/{secretId}/usage', tags: ['secrets'],
+    method: 'post', path: '/{workspaceId}/secret-resources/{secretId}/usage', tags: ['secrets'],
     summary: 'Refresh the plan usage of one subscription login (ChatGPT, Claude)', ...auth,
     request: { params: SecretIdParam, query: z.object({ project_id: z.string().uuid().optional() }) },
     responses: { 200: json(z.object({ usage: SubscriptionUsageSchema.nullable(), provider_account: SubscriptionAccountSchema.nullable() }), 'Current plan usage and who the login signs in as; null when the provider does not say'), ...errors(400, 403, 404) },
   }), async (c) => {
-    const { accountId, secretId } = c.req.valid('param');
+    const { secretId } = c.req.valid('param');
+    const accountId = accountIdParam(c);
     const userId = c.get('userId') as string;
     if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
     const row = await loadSecret(accountId, secretId);
@@ -318,12 +322,12 @@ export function registerSecretResourceRoutes() {
   });
 
   accountsRouter.openapi(createRoute({
-    method: 'delete', path: '/{accountId}/secret-resources/{secretId}', tags: ['secrets'],
+    method: 'delete', path: '/{workspaceId}/secret-resources/{secretId}', tags: ['secrets'],
     summary: 'Delete one secret resource and its grants', ...auth,
     request: { params: SecretIdParam },
     responses: { 200: json(z.object({ ok: z.boolean() }), 'Deleted'), ...errors(403, 404) },
   }), async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const userId = c.get('userId') as string;
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
@@ -338,12 +342,12 @@ export function registerSecretResourceRoutes() {
   });
 
   accountsRouter.openapi(createRoute({
-    method: 'put', path: '/{accountId}/secret-resources/{secretId}/grants/{userId}', tags: ['secrets'],
+    method: 'put', path: '/{workspaceId}/secret-resources/{secretId}/grants/{userId}', tags: ['secrets'],
     summary: 'Grant a member use of one secret', ...auth,
     request: { params: GrantParam },
     responses: { 200: json(View, 'Updated secret grants'), ...errors(403, 404) },
   }), async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const actorId = c.get('userId') as string;
     const userId = c.req.param('userId');
     const row = await loadSecret(accountId, c.req.param('secretId'));
@@ -371,12 +375,12 @@ export function registerSecretResourceRoutes() {
   });
 
   accountsRouter.openapi(createRoute({
-    method: 'delete', path: '/{accountId}/secret-resources/{secretId}/grants/{userId}', tags: ['secrets'],
+    method: 'delete', path: '/{workspaceId}/secret-resources/{secretId}/grants/{userId}', tags: ['secrets'],
     summary: 'Revoke a member secret grant', ...auth,
     request: { params: GrantParam },
     responses: { 200: json(View, 'Updated secret grants'), ...errors(403, 404) },
   }), async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const actorId = c.get('userId') as string;
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);

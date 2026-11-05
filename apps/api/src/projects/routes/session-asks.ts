@@ -31,6 +31,7 @@ import { getPendingQuestionById, renderAnswerPrompt, resolvePendingQuestion, dis
 import { releaseRuntimeQuestion } from '../session-lifecycle/release-runtime-question';
 import { rejectRuntimeQuestion, replyRuntimePermission } from '../session-lifecycle/runtime-asks';
 import { deliverThroughQueue } from '../session-lifecycle';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /** May this caller decide asks of `session`, or of the session a person opens for it? */
 function mayDecide(caller: ApprovalCaller, sessions: Map<string, AskSessionRow>, ask: Pick<SessionAsk, 'session_id' | 'surface_session_id'>): boolean {
@@ -47,7 +48,7 @@ export function registerSessionAsksRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/asks',
+      path: '/{workspaceId}/asks',
       tags: ['sessions'],
       summary: 'List the open asks that wait on a person',
       description:
@@ -56,13 +57,13 @@ export function registerSessionAsksRoutes(): void {
         '`surface_session_id` keeps the asks shown on that session (a hidden worker\'s asks show on its root).',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({ surface_session_id: z.string().optional(), limit: z.string().optional() }),
       },
       responses: { 200: json(AnyObject, 'Open asks'), ...errors(404) },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const surface = c.req.query('surface_session_id')?.trim() || undefined;
@@ -88,7 +89,7 @@ export function registerSessionAsksRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/asks/{askId}/answer',
+      path: '/{workspaceId}/asks/{askId}/answer',
       tags: ['sessions'],
       summary: 'Answer a question or decide a permission ask',
       description:
@@ -98,13 +99,13 @@ export function registerSessionAsksRoutes(): void {
         'A connector approval is decided over POST /approvals/:executionId.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), askId: z.string() }),
+        params: z.object({ workspaceId: z.string(), askId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: { 200: json(AnyObject, 'Decided'), ...errors(400, 403, 404, 409) },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const parsed = parseAskId(c.req.param('askId'));
       if (!parsed) return c.json({ error: 'Unknown ask id' }, 400);
       if (parsed.kind === 'approval') {

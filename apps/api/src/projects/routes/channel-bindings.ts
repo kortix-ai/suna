@@ -42,6 +42,7 @@ import { PROJECT_ACTIONS } from "../../iam";
 import { auth, errors, json } from "../../openapi";
 import { loadProjectForUser, assertProjectCapability } from "../lib/access";
 import { projectsApp } from "../lib/app";
+import { workspaceIdParam } from '../../shared/route-params';
 
 /** The three Slack conversation-join policies (channels/slack/participants.ts). */
 const CONVERSATION_POLICIES = ["owner_approval", "owner_only", "project_open"] as const;
@@ -235,15 +236,15 @@ export function registerChannelBindingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: "get",
-      path: "/{projectId}/channels/bindings",
+      path: "/{workspaceId}/channels/bindings",
       tags: ["channels"],
       summary: "List channel bindings of a project",
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(z.any(), "OK"), ...errors(404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param("projectId");
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, "read");
       if (!loaded) return c.json({ error: "Not found" }, 404);
       // Listing channel↔agent bindings exposes which connectors the project's
@@ -336,18 +337,18 @@ export function registerChannelBindingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: "patch",
-      path: "/{projectId}/channels/bindings/{bindingId}",
+      path: "/{workspaceId}/channels/bindings/{bindingId}",
       tags: ["channels"],
       summary: "Update a channel binding",
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), bindingId: z.string() }),
+        params: z.object({ workspaceId: z.string(), bindingId: z.string() }),
         body: { content: { "application/json": { schema: ChannelBindingPatchBody } } },
       },
       responses: { 200: json(z.any(), "OK"), ...errors(400, 403, 404, 409) },
     }),
     async (c: any) => {
-      const projectId = c.req.param("projectId");
+      const projectId = workspaceIdParam(c);
       const bindingId = c.req.param("bindingId");
       // Floor 'read'; project.connector.write below is the real gate (was 'manage'
       // → project.write, which over-gated a custom connector.write-only role).

@@ -42,6 +42,7 @@ import {
 } from './app';
 import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
 
 /**
  * WHICH principal `/effective` answers about, and with WHICH credential.
@@ -91,7 +92,7 @@ export function registerIamMembersRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/members/{userId}/super-admin',
+      path: '/{workspaceId}/iam/members/{userId}/super-admin',
       tags: ['iam'],
       summary: 'Grant or revoke super-admin',
       ...auth,
@@ -102,7 +103,7 @@ export function registerIamMembersRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const targetUserId = c.req.param('userId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);
 
@@ -178,7 +179,7 @@ export function registerIamMembersRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/members/{userId}/groups',
+      path: '/{workspaceId}/iam/members/{userId}/groups',
       tags: ['iam'],
       summary: 'List group memberships for a member',
       ...auth,
@@ -190,7 +191,7 @@ export function registerIamMembersRoutes(): void {
     }),
     async (c: any) => {
     const callerId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const targetUserId = c.req.param('userId');
 
     // Users can always see their own group memberships; otherwise gate on
@@ -221,7 +222,7 @@ export function registerIamMembersRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/members/{userId}/project-access',
+      path: '/{workspaceId}/iam/members/{userId}/project-access',
       tags: ['iam'],
       summary: 'List effective project access for a member',
       ...auth,
@@ -233,7 +234,7 @@ export function registerIamMembersRoutes(): void {
     }),
     async (c: any) => {
     const callerId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const targetUserId = c.req.param('userId');
 
     if (callerId !== targetUserId) {
@@ -391,7 +392,7 @@ export function registerIamMembersRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/members/{userId}/effective',
+      path: '/{workspaceId}/iam/members/{userId}/effective',
       tags: ['iam'],
       summary: 'Probe effective permission for a member',
       ...auth,
@@ -403,7 +404,7 @@ export function registerIamMembersRoutes(): void {
     }),
     async (c: any) => {
     const callerId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const targetUserId = c.req.param('userId');
 
     // Anyone with member.read can probe anyone; users can always probe themselves.
@@ -437,7 +438,7 @@ export function registerIamMembersRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/members/{userId}/effective:batch',
+      path: '/{workspaceId}/iam/members/{userId}/effective:batch',
       tags: ['iam'],
       summary: 'Batch-probe effective permissions for a member',
       ...auth,
@@ -449,7 +450,7 @@ export function registerIamMembersRoutes(): void {
     }),
     async (c: any) => {
     const callerId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const targetUserId = c.req.param('userId');
 
     if (callerId !== targetUserId) {

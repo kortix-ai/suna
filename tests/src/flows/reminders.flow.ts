@@ -25,8 +25,8 @@ const ROUTES = {
   remove: 'DELETE /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId',
   run: 'POST /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run',
 };
-const REMINDERS = '/v1/projects/:projectId/sessions/:sessionId/reminders';
-const REMINDER = '/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId';
+const REMINDERS = '/v1/workspaces/:projectId/sessions/:sessionId/reminders';
+const REMINDER = '/v1/workspaces/:projectId/sessions/:sessionId/reminders/:reminderId';
 const MANIFEST =
   'project:\n  name: ke2e-reminders\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
 
@@ -47,7 +47,7 @@ flow(
     domain: 'reminders',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [...Object.values(ROUTES), 'POST /v1/projects/:projectId/triggers', 'GET /v1/projects/:projectId/triggers'],
+    routes: [...Object.values(ROUTES), 'POST /v1/workspaces/:projectId/triggers', 'GET /v1/workspaces/:projectId/triggers'],
   },
   async (ctx) => {
     const { team, project, world } = await openWorld(ctx);
@@ -101,11 +101,11 @@ flow(
       });
 
       await ctx.step('a kortix.yaml trigger write reconciles the catalog and the reminder survives; /triggers never lists it', async () => {
-        (await owner.post('/v1/projects/:projectId/triggers', {
+        (await owner.post('/v1/workspaces/:projectId/triggers', {
           name: 'Nightly', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'nightly',
         }, { params: { projectId: project.id }, timeoutMs: 60_000 })).status(201);
         (await owner.get(REMINDERS, { params })).status(200).body().has('$.reminders[0].id', id);
-        const triggers = (await owner.get('/v1/projects/:projectId/triggers', { params: { projectId: project.id } })).text();
+        const triggers = (await owner.get('/v1/workspaces/:projectId/triggers', { params: { projectId: project.id } })).text();
         if (triggers.includes(id)) throw new Error('GET /triggers lists a reminder');
       });
 
@@ -237,12 +237,12 @@ flow(
     domain: 'reminders',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: ['GET /v1/projects/:projectId/reminders', ROUTES.create],
+    routes: ['GET /v1/workspaces/:projectId/reminders', ROUTES.create],
   },
   async (ctx) => {
     const { team, project, world } = await openWorld(ctx);
     const owner = ctx.client.as(ctx.P.OWNER);
-    const PROJECT_REMINDERS = '/v1/projects/:projectId/reminders';
+    const PROJECT_REMINDERS = '/v1/workspaces/:projectId/reminders';
     try {
       const mine = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER });
       const shared = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER, visibility: 'project' });
@@ -325,8 +325,8 @@ flow(
       ROUTES.create,
       ROUTES.update,
       ROUTES.remove,
-      'GET /v1/projects/:projectId/reminders',
-      'PATCH /v1/projects/:projectId/features',
+      'GET /v1/workspaces/:projectId/reminders',
+      'PATCH /v1/workspaces/:projectId/features',
     ],
   },
   async (ctx) => {
@@ -349,7 +349,7 @@ flow(
           await owner.post(REMINDERS, { prompt: 'x', in: '1h' }, { params }),
           await owner.patch(REMINDER, { enabled: false }, { params: { ...params, reminderId: id } }),
           await owner.del(REMINDER, { params: { ...params, reminderId: id } }),
-          await owner.get('/v1/projects/:projectId/reminders', { params: { projectId: project.id } }),
+          await owner.get('/v1/workspaces/:projectId/reminders', { params: { projectId: project.id } }),
           await session.client.post(REMINDERS, { prompt: 'x', in: '1h' }, { params }),
         ];
         for (const r of denied) r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'reminders');
@@ -461,7 +461,7 @@ flow(
     requires: ['sandbox', 'funded'],
     // A cold image build can take ~7 min; the fire lands within ~2 min of its time.
     timeoutMs: 1_200_000,
-    routes: ['POST /v1/projects/:projectId/sessions', 'GET /v1/projects/:projectId/sessions/:sessionId/transcript'],
+    routes: ['POST /v1/workspaces/:projectId/sessions', 'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -477,7 +477,7 @@ flow(
 
     await ctx.step("an admin's private session; its agent sets a one-minute reminder with the real CLI", async () => {
       const created = await asAdmin.post(
-        '/v1/projects/:projectId/sessions',
+        '/v1/workspaces/:projectId/sessions',
         {
           initial_prompt:
             `Run this shell command: kortix remind "Reply with exactly ${nonce}-fired and nothing else." --in 1m ` +
@@ -494,7 +494,7 @@ flow(
     await ctx.step('the fire reaches the session and the agent answers it', async () => {
       await waitFor(
         async () => {
-          const r = await asAdmin.get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
+          const r = await asAdmin.get('/v1/workspaces/:projectId/sessions/:sessionId/transcript', {
             params: { projectId: project.id, sessionId },
             query: { limit: '200' },
           });

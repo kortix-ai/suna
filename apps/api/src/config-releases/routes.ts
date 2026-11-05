@@ -42,6 +42,7 @@ import { notePublishedTip } from './publish';
 import { ownerMayUseAgent, repointSessionAgentToDeclaredDefault } from './repoint';
 import { serveConfigArchive } from './serve-archive';
 import { configReleaseSnapshot } from './snapshot';
+import { workspaceIdParam } from '../shared/route-params';
 
 const HEX40 = /^[0-9a-f]{40}$/;
 
@@ -173,15 +174,15 @@ export function registerConfigReleaseRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/config-release',
+      path: '/{workspaceId}/sessions/{sessionId}/config-release',
       tags: ['sessions'],
       summary: "A session's desired config release descriptor",
       ...auth,
-      request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), sessionId: z.string() }) },
       responses: { 200: json(z.any(), 'Release descriptor'), ...errors(400, 403, 404, 409) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(projectId) || !isUuid(sessionId)) {
         return c.json({ error: 'Invalid project or session id' }, 400);
@@ -291,12 +292,12 @@ export function registerConfigReleaseRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/config-archives/{configTreeId}',
+      path: '/{workspaceId}/config-archives/{configTreeId}',
       tags: ['sessions'],
       summary: 'Download a config archive',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), configTreeId: z.string() }),
+        params: z.object({ workspaceId: z.string(), configTreeId: z.string() }),
         // Set on a composed release tree (an agent variant's plugin selection):
         // the commit it is rebuilt from when the store cannot serve it.
         query: z.object({ commit: z.string().optional() }),
@@ -308,7 +309,7 @@ export function registerConfigReleaseRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const configTreeId = c.req.param('configTreeId');
       if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
       if (!HEX40.test(configTreeId)) return c.json({ error: 'Not found' }, 404);

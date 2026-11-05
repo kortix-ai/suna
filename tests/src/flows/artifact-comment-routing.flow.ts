@@ -4,13 +4,13 @@ import { waitFor } from '../core/poll';
 import { AgentPrincipalsWorld, type AgentSession } from '../fixtures/agent-principals';
 import { createDatabaseSession } from '../fixtures/database-project';
 
-const ARTIFACTS = '/v1/projects/:projectId/artifacts';
+const ARTIFACTS = '/v1/workspaces/:projectId/artifacts';
 const ONE = `${ARTIFACTS}/:artifactId`;
 const COMMENTS = `${ONE}/comments`;
 const REPLIES = `${COMMENTS}/:threadId/replies`;
 const COMMENT = `${COMMENTS}/:threadId/:commentId`;
 const SEND = `${COMMENTS}/send`;
-const FEATURES = '/v1/projects/:projectId/features';
+const FEATURES = '/v1/workspaces/:projectId/features';
 type Mention = { kind: 'user'; user_id: string } | { kind: 'session'; session_id: string; agent_name: string } | { kind: 'agent'; agent_name: string };
 type Comment = { comment_id: string; body: string; mentions: Mention[] };
 type Thread = { thread_id: string; agent_state: string; sent_session_id: string | null; comments: Comment[] };

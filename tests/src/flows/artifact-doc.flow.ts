@@ -16,7 +16,7 @@ import type { FlowContext } from '../core/types';
 import { waitFor } from '../core/poll';
 import { withDb } from '../fixtures/chat';
 
-const ARTIFACT = '/v1/projects/:projectId/artifacts/:artifactId';
+const ARTIFACT = '/v1/workspaces/:projectId/artifacts/:artifactId';
 const DOC = `${ARTIFACT}/doc`;
 const SEED = `${DOC}/seed`;
 const UPDATES = `${DOC}/updates`;
@@ -25,7 +25,7 @@ const FLUSHED = `${DOC}/flushed`;
 const RESET = `${DOC}/reset`;
 const LIVE = `${ARTIFACT}/live`;
 const TICKET = `${LIVE}/ticket`;
-const FEATURES = '/v1/projects/:projectId/features';
+const FEATURES = '/v1/workspaces/:projectId/features';
 
 const SEED_UPDATE = 'AQPpBwAHAQdkZWZhdWx0AwlwYXJhZ3JhcGgHAOkHAAYEAOkHAQtMYXVuY2ggcGxhbgA=';
 const EDITS = ['AQHSDwCE6QcMByBmb3IgUTMA', 'AQPSDweH6QcAAwlwYXJhZ3JhcGgHANIPBwYEANIPCApPd25lcjogQWRhAA==', 'AQHSDxOE0g8SAS4A'];

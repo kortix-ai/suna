@@ -59,6 +59,7 @@ import { loadManifestForEdit } from '../lib/triggers';
 import { allowStaleMirrorReads } from '../git/mirror';
 import { MANIFEST_FILENAME, manifestWrites } from '../triggers';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 // A grant set on the wire: an allowlist, or the "all"/"none" sentinels. The
 // deep per-entry validation (grantable kortix_permissions actions, etc.) happens in
@@ -187,15 +188,15 @@ export function registerAgentConfigRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/agents/{agentName}/config',
+      path: '/{workspaceId}/agents/{agentName}/config',
       tags: ['projects'],
       summary: 'Get an agent\'s configuration',
       ...auth,
-      request: { params: z.object({ projectId: z.string(), agentName: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), agentName: z.string() }) },
       responses: { 200: json(z.any(), 'The agent config block'), ...errors(400, 403, 404, 409) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const agentName = c.req.param('agentName');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -276,12 +277,12 @@ export function registerAgentConfigRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/default-agent',
+      path: '/{workspaceId}/default-agent',
       tags: ['projects'],
       summary: 'Set the project default agent',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: {
             'application/json': { schema: DefaultAgentBodySchema },
@@ -294,7 +295,7 @@ export function registerAgentConfigRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
@@ -385,12 +386,12 @@ export function registerAgentConfigRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/agents/{agentName}/config',
+      path: '/{workspaceId}/agents/{agentName}/config',
       tags: ['projects'],
       summary: 'Set an agent\'s configuration',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), agentName: z.string() }),
+        params: z.object({ workspaceId: z.string(), agentName: z.string() }),
         body: { content: { 'application/json': { schema: AgentBlockSchema } } },
       },
       responses: {
@@ -399,7 +400,7 @@ export function registerAgentConfigRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const agentName = c.req.param('agentName');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);

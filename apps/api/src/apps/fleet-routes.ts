@@ -49,7 +49,7 @@ import {
 import type { AppVolumeInfo } from './volume-store';
 import { AppLimitError, AppAccountUnfundedError } from './limits';
 
-const AppParams = z.object({ projectId: z.string().uuid(), appId: z.string().uuid() });
+const AppParams = z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() });
 const MachineParams = AppParams.extend({ machineId: z.string().uuid() });
 const VolumeParams = AppParams.extend({ volumeId: z.string().uuid() });
 const Open = z.object({}).passthrough();
@@ -106,7 +106,7 @@ async function answer(c: RouteContext, body: () => Promise<Response>): Promise<n
 export function registerAppFleetRoutes(): void {
   projectsApp.openapi(
     createRoute({
-      method: 'get', path: '/{projectId}/apps/{appId}/machines', tags: ['apps'], summary: 'List an App\'s machines', ...auth,
+      method: 'get', path: '/{workspaceId}/apps/{appId}/machines', tags: ['apps'], summary: 'List an App\'s machines', ...auth,
       description: 'Every machine of the App: its process group, state (started, starting, stopped, stopping), release, VM and volume.',
       request: { params: AppParams },
       responses: { 200: json(Open, 'Machines'), ...errors(403, 404) },
@@ -121,7 +121,7 @@ export function registerAppFleetRoutes(): void {
   for (const action of ['start', 'stop', 'restart'] as const) {
     projectsApp.openapi(
       createRoute({
-        method: 'post', path: `/{projectId}/apps/{appId}/machines/{machineId}/${action}`, tags: ['apps'],
+        method: 'post', path: `/{workspaceId}/apps/{appId}/machines/{machineId}/${action}`, tags: ['apps'],
         summary: `${action[0]!.toUpperCase()}${action.slice(1)} an App machine`, ...auth,
         request: { params: MachineParams },
         responses: { 200: json(Open, 'Machines'), ...errors(402, 403, 404, 409, 429) },
@@ -142,7 +142,7 @@ export function registerAppFleetRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'delete', path: '/{projectId}/apps/{appId}/machines/{machineId}', tags: ['apps'], summary: 'Destroy an App machine', ...auth,
+      method: 'delete', path: '/{workspaceId}/apps/{appId}/machines/{machineId}', tags: ['apps'], summary: 'Destroy an App machine', ...auth,
       description: 'Destroys the machine. Its volume stays (a later machine of the group takes it), and its group runs one machine fewer.',
       request: { params: MachineParams },
       responses: { 200: json(Open, 'Machines'), ...errors(403, 404, 409) },
@@ -159,7 +159,7 @@ export function registerAppFleetRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'put', path: '/{projectId}/apps/{appId}/scale', tags: ['apps'], summary: 'Scale an App', ...auth,
+      method: 'put', path: '/{workspaceId}/apps/{appId}/scale', tags: ['apps'], summary: 'Scale an App', ...auth,
       description:
         `Machines per process group (0 to ${MAX_GROUP_SCALE}). Applied in the background: answers 202 with the new ` +
         'scale. A group that mounts a volume runs one machine (409 `volume_single_machine`) unless `new_volumes` ' +
@@ -184,7 +184,7 @@ export function registerAppFleetRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/exec', tags: ['apps'], summary: 'Run a command in an App machine', ...auth,
+      method: 'post', path: '/{workspaceId}/apps/{appId}/exec', tags: ['apps'], summary: 'Run a command in an App machine', ...auth,
       description:
         'Runs one command in a machine (a running machine of the active release unless `machine_id` names one) and ' +
         'answers with its exit code and output (each stream up to 1 MiB; `truncated` says when it was cut). ' +
@@ -213,7 +213,7 @@ export function registerAppFleetRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'get', path: '/{projectId}/apps/{appId}/volumes', tags: ['apps'], summary: 'List an App\'s volumes', ...auth,
+      method: 'get', path: '/{workspaceId}/apps/{appId}/volumes', tags: ['apps'], summary: 'List an App\'s volumes', ...auth,
       request: { params: AppParams },
       responses: { 200: json(Open, 'Volumes'), ...errors(403, 404) },
     }),
@@ -228,7 +228,7 @@ export function registerAppFleetRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/volumes', tags: ['apps'], summary: 'Create an App volume', ...auth,
+      method: 'post', path: '/{workspaceId}/apps/{appId}/volumes', tags: ['apps'], summary: 'Create an App volume', ...auth,
       description: 'Pre-creates a volume. A machine of its process group whose mount names it takes it. Volumes need Platinum.',
       request: {
         params: AppParams,
@@ -258,7 +258,7 @@ export function registerAppFleetRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'patch', path: '/{projectId}/apps/{appId}/volumes/{volumeId}', tags: ['apps'], summary: 'Update an App volume', ...auth,
+      method: 'patch', path: '/{workspaceId}/apps/{appId}/volumes/{volumeId}', tags: ['apps'], summary: 'Update an App volume', ...auth,
       description:
         '`snapshot_retention_days` is 1 to 60. A volume has the fixed size the provider allots at create (100 GB on ' +
         'Platinum today): a `size_gb` above it is refused with 400 `volume_fixed_size`.',
@@ -284,7 +284,7 @@ export function registerAppFleetRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'delete', path: '/{projectId}/apps/{appId}/volumes/{volumeId}', tags: ['apps'], summary: 'Destroy an App volume', ...auth,
+      method: 'delete', path: '/{workspaceId}/apps/{appId}/volumes/{volumeId}', tags: ['apps'], summary: 'Destroy an App volume', ...auth,
       description:
         'Needs `?confirm=<volume name>`. Refused with 409 `volume_attached` while a machine mounts it. A final ' +
         'snapshot is taken; the data is purged after 7 days. Project admins only.',
@@ -308,7 +308,7 @@ export function registerAppFleetRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'get', path: '/{projectId}/apps/{appId}/volumes/{volumeId}/snapshots', tags: ['apps'], summary: 'List a volume\'s snapshots', ...auth,
+      method: 'get', path: '/{workspaceId}/apps/{appId}/volumes/{volumeId}/snapshots', tags: ['apps'], summary: 'List a volume\'s snapshots', ...auth,
       description: 'Daily automatic snapshots (kept `snapshot_retention_days`), manual ones, and the final one of a destroyed volume.',
       request: { params: VolumeParams },
       responses: { 200: json(Open, 'Snapshots'), ...errors(403, 404) },
@@ -322,7 +322,7 @@ export function registerAppFleetRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/volumes/{volumeId}/snapshots', tags: ['apps'], summary: 'Snapshot a volume', ...auth,
+      method: 'post', path: '/{workspaceId}/apps/{appId}/volumes/{volumeId}/snapshots', tags: ['apps'], summary: 'Snapshot a volume', ...auth,
       request: { params: VolumeParams },
       responses: { 201: json(Open, 'Snapshot'), ...errors(403, 404) },
     }),
@@ -335,7 +335,7 @@ export function registerAppFleetRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/volumes/{volumeId}/restore', tags: ['apps'], summary: 'Restore a volume', ...auth,
+      method: 'post', path: '/{workspaceId}/apps/{appId}/volumes/{volumeId}/restore', tags: ['apps'], summary: 'Restore a volume', ...auth,
       description:
         'Makes a snapshot the volume\'s contents again (nothing is lost: it is a new version). The machine that mounts ' +
         'the volume is stopped first and comes back on it in the background (202). Project admins only.',
@@ -355,7 +355,7 @@ export function registerAppFleetRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/volumes/{volumeId}/fork', tags: ['apps'], summary: 'Fork a volume', ...auth,
+      method: 'post', path: '/{workspaceId}/apps/{appId}/volumes/{volumeId}/fork', tags: ['apps'], summary: 'Fork a volume', ...auth,
       description: 'A new, unattached volume of the App from a snapshot (or the current contents): instant, whatever the size.',
       request: { params: VolumeParams, body: { content: { 'application/json': { schema: z.object({ name: z.string().max(30), snapshot_id: z.string().max(64).optional() }) } } } },
       responses: { 201: json(Open, 'Volume'), ...errors(400, 403, 404, 409) },

@@ -50,7 +50,7 @@ flow(
   'SEC-4',
   {
     domain: 'security',
-    routes: ['GET /v1/projects/:projectId/secrets', 'POST /v1/projects/:projectId/secrets'],
+    routes: ['GET /v1/workspaces/:projectId/secrets', 'POST /v1/workspaces/:projectId/secrets'],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
@@ -58,7 +58,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/secrets',
+          '/v1/workspaces/:projectId/secrets',
           { name: 'ke2e_inject_probe', value: 'super-secret-value' },
           { params: { projectId: p.id } },
         );
@@ -67,7 +67,7 @@ flow(
     await ctx.step('list secrets returns NAMES only — no plaintext values leak', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/secrets', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/secrets', { params: { projectId: p.id } });
       r.status(200);
       // The stored value must never be reflected anywhere in the response.
       if (r.text().includes('super-secret-value')) {
@@ -80,7 +80,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(
-            '/v1/projects/:projectId/secrets',
+            '/v1/workspaces/:projectId/secrets',
             { name: 'KORTIX_TOKEN', value: 'attacker-controlled' },
             { params: { projectId: p.id } },
           );
@@ -90,7 +90,7 @@ flow(
     await ctx.step("NONMEMBER cannot read the project's secret env → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/secrets', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/secrets', { params: { projectId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -103,25 +103,25 @@ flow(
     domain: 'security',
     tags: ['smoke'],
     routes: [
-      'GET /v1/accounts/me',
-      'GET /v1/projects',
-      'GET /v1/accounts/:accountId/audit',
+      'GET /v1/me',
+      'GET /v1/workspaces',
+      'GET /v1/workspaces/:accountId/audit',
       'GET /v1/user-roles',
     ],
   },
   async (ctx) => {
     await ctx.step('ANON GET /accounts/me → 401', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/accounts/me');
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/me');
       r.status(401);
     });
     await ctx.step('ANON GET /projects → 401', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/projects');
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/workspaces');
       r.status(401);
     });
     await ctx.step('ANON GET /accounts/:id/audit → 401 (before authz)', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/accounts/:accountId/audit', { params: { accountId: NIL_UUID } });
+        .get('/v1/workspaces/:accountId/audit', { params: { accountId: NIL_UUID } });
       r.status(401);
     });
     await ctx.step('ANON GET /user-roles → 401', async () => {
@@ -138,7 +138,7 @@ flow(
     domain: 'security',
     serial: true,
     routes: [
-      'GET /v1/accounts/me',
+      'GET /v1/me',
       'POST /v1/accounts/tokens',
       'DELETE /v1/accounts/tokens/:tokenId',
     ],
@@ -147,21 +147,21 @@ flow(
     await ctx.step('garbage bearer (no recognized prefix) → 401', async () => {
       const r = await ctx.client
         .withBearer('totally-garbage-token', 'GARBAGE')
-        .get('/v1/accounts/me');
+        .get('/v1/me');
       r.status(401);
     });
     await ctx.step('forged kortix PAT prefix, bad secret → 401', async () => {
       const r = await ctx.client
         .withBearer('kortix_pat_deadbeefdeadbeefdeadbeef', 'FORGED_PAT')
-        .get('/v1/accounts/me');
+        .get('/v1/me');
       r.status(401);
     });
     await ctx.step('forged/expired Supabase JWT (bad signature) → 401', async () => {
-      const r = await ctx.client.withBearer(FORGED_JWT, 'FORGED_JWT').get('/v1/accounts/me');
+      const r = await ctx.client.withBearer(FORGED_JWT, 'FORGED_JWT').get('/v1/me');
       r.status(401);
     });
     await ctx.step('empty bearer token → 401', async () => {
-      const r = await ctx.client.withBearer('', 'EMPTY').get('/v1/accounts/me');
+      const r = await ctx.client.withBearer('', 'EMPTY').get('/v1/me');
       r.status(401);
     });
     // Revoked-PAT boundary: mint → confirm it works → revoke → confirm 401.
@@ -177,7 +177,7 @@ flow(
       tokenId = j.token_id;
     });
     await ctx.step('PAT authenticates before revoke → 200', async () => {
-      const r = await ctx.client.withBearer(secret, 'PAT').get('/v1/accounts/me');
+      const r = await ctx.client.withBearer(secret, 'PAT').get('/v1/me');
       r.status(200);
     });
     await ctx.step('revoke the PAT → 200', async () => {
@@ -187,7 +187,7 @@ flow(
       r.status(200);
     });
     await ctx.step('revoked PAT on a protected route → 401', async () => {
-      const r = await ctx.client.withBearer(secret, 'REVOKED_PAT').get('/v1/accounts/me');
+      const r = await ctx.client.withBearer(secret, 'REVOKED_PAT').get('/v1/me');
       r.status(401);
     });
   },
@@ -206,9 +206,9 @@ flow(
     routes: [
       'GET /v1/accounts/:accountId',
       'PATCH /v1/accounts/:accountId',
-      'GET /v1/projects/:projectId',
-      'PATCH /v1/projects/:projectId',
-      'DELETE /v1/projects/:projectId',
+      'GET /v1/workspaces/:projectId',
+      'PATCH /v1/workspaces/:projectId',
+      'DELETE /v1/workspaces/:projectId',
     ],
   },
   async (ctx) => {
@@ -233,25 +233,25 @@ flow(
     await ctx.step('NONMEMBER GET a foreign project → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId', { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step('NONMEMBER PATCH a foreign project → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .patch('/v1/projects/:projectId', { name: 'ke2e-hijack' }, { params: { projectId: p.id } });
+        .patch('/v1/workspaces/:projectId', { name: 'ke2e-hijack' }, { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step('NONMEMBER DELETE a foreign project → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .del('/v1/projects/:projectId', { params: { projectId: p.id } });
+        .del('/v1/workspaces/:projectId', { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step('IDOR: random project id → 403/404 (no enumeration)', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId', { params: { projectId: NIL_UUID } });
+        .get('/v1/workspaces/:projectId', { params: { projectId: NIL_UUID } });
       r.status([403, 404]);
     });
   },
@@ -266,11 +266,11 @@ flow(
   {
     domain: 'security',
     routes: [
-      'POST /v1/projects/:projectId/cli-token',
-      'DELETE /v1/projects/:projectId/cli-token/:tokenId',
-      'GET /v1/projects/:projectId',
-      'GET /v1/accounts/me',
-      'GET /v1/projects',
+      'POST /v1/workspaces/:projectId/cli-token',
+      'DELETE /v1/workspaces/:projectId/cli-token/:tokenId',
+      'GET /v1/workspaces/:projectId',
+      'GET /v1/me',
+      'GET /v1/workspaces',
       'GET /v1/accounts/:accountId',
       'GET /v1/accounts/tokens',
     ],
@@ -284,7 +284,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/cli-token',
+          '/v1/workspaces/:projectId/cli-token',
           { name: ctx.fixtures.name('sec-d-pat') },
           { params: { projectId: projA.id } },
         );
@@ -295,23 +295,23 @@ flow(
     });
     const pat = () => ctx.client.withBearer(secret, 'PAT_PROJ');
     await ctx.step('allowed: GET its own project → 200', async () => {
-      const r = await pat().get('/v1/projects/:projectId', { params: { projectId: projA.id } });
+      const r = await pat().get('/v1/workspaces/:projectId', { params: { projectId: projA.id } });
       r.status(200);
     });
     await ctx.step('current alias returns the bound project → 200', async () => {
-      const r = await pat().get('/v1/projects/:projectId', { params: { projectId: 'current' } });
+      const r = await pat().get('/v1/workspaces/:projectId', { params: { projectId: 'current' } });
       r.status(200).body().has('$.project_id', projA.id);
     });
     await ctx.step('allowed: self-identity probe GET /accounts/me → 200', async () => {
-      const r = await pat().get('/v1/accounts/me');
+      const r = await pat().get('/v1/me');
       r.status(200);
     });
     await ctx.step('denied: a DIFFERENT project → 403', async () => {
-      const r = await pat().get('/v1/projects/:projectId', { params: { projectId: projB.id } });
+      const r = await pat().get('/v1/workspaces/:projectId', { params: { projectId: projB.id } });
       r.status(403);
     });
     await ctx.step('denied: enumerate /projects → 403', async () => {
-      const r = await pat().get('/v1/projects');
+      const r = await pat().get('/v1/workspaces');
       r.status(403);
     });
     await ctx.step('denied: account-level GET /accounts/:id → 403', async () => {
@@ -325,7 +325,7 @@ flow(
       r.status(403);
     });
     await ctx.step('revoke the project token → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/workspaces/:projectId/cli-token/:tokenId', {
         params: { projectId: projA.id, tokenId },
       });
       r.status(200);
@@ -339,7 +339,7 @@ flow(
 // unmatched path to assert the global 404 envelope.
 flow(
   'SEC-E',
-  { domain: 'security', tags: ['smoke'], routes: ['GET /v1/accounts/me'] },
+  { domain: 'security', tags: ['smoke'], routes: ['GET /v1/me'] },
   async (ctx) => {
     await ctx.step('unknown /v1 route → 404 with the standard envelope', async () => {
       const r = await ctx.client.as(ctx.P.ANON).get('/v1/ke2e-nonexistent-route');
@@ -350,7 +350,7 @@ flow(
       r.status(404).body().has('$.error', true).has('$.message', 'Not found').has('$.status', 404);
     });
     await ctx.step('authed control: GET /accounts/me → 200 (route exists + matches)', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/me');
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/me');
       r.status(200);
     });
   },
@@ -506,7 +506,7 @@ flow(
   'SEC-H',
   {
     domain: 'security',
-    routes: ['POST /v1/accounts/:accountId/iam/groups', 'GET /v1/accounts/:accountId/audit'],
+    routes: ['POST /v1/workspaces/:accountId/iam/groups', 'GET /v1/workspaces/:accountId/audit'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
@@ -514,7 +514,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/accounts/:accountId/iam/groups',
+          '/v1/workspaces/:accountId/iam/groups',
           { name: ctx.fixtures.name('sec-h-grp') },
           { params: { accountId: team.id } },
         );
@@ -523,7 +523,7 @@ flow(
     await ctx.step('audit log reflects activity → 200 with events array', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/audit', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/audit', { params: { accountId: team.id } });
       r.status(200).body().exists('$.events');
       const events = r.json<{ events?: unknown[] }>()?.events;
       if (!Array.isArray(events) || events.length === 0) {
@@ -533,7 +533,7 @@ flow(
     await ctx.step('NONMEMBER cannot read the audit log → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/audit', { params: { accountId: team.id } });
+        .get('/v1/workspaces/:accountId/audit', { params: { accountId: team.id } });
       r.status([403, 404]);
     });
   },
@@ -553,7 +553,7 @@ flow(
   {
     domain: 'security',
     serial: true,
-    routes: ['POST /v1/account-invites/:inviteId/accept'],
+    routes: ['POST /v1/invites/:inviteId/accept'],
   },
   async (ctx) => {
     await ctx.step(
@@ -565,7 +565,7 @@ flow(
         for (let i = 0; i < 8; i++) {
           const r = await ctx.client
             .as(ctx.P.OWNER)
-            .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId: NIL_UUID } });
+            .post('/v1/invites/:inviteId/accept', {}, { params: { inviteId: NIL_UUID } });
           // Unknown invite → 404; rate-limited → 429. Either proves the boundary:
           // the route never silently succeeds for a forged invite id.
           r.status([403, 404, 429]);
@@ -592,10 +592,10 @@ flow(
       'GET /v1/health',
       'POST /v1/access/check-email',
       'POST /v1/access/request-access',
-      'GET /v1/accounts/me',
-      'POST /v1/projects/:projectId/turn-permission',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/apps/:appId/events',
+      'GET /v1/me',
+      'POST /v1/workspaces/:projectId/turn-permission',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/apps/:appId/events',
     ],
   },
   async (ctx) => {
@@ -714,7 +714,7 @@ flow(
     await ctx.step('5,000 invalid array elements → 400 with the first 20 issues and issue_count, never one issue each (KRTX-3419)', async () => {
       const project = await ctx.fixtures.project();
       const response = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/turn-permission',
+        '/v1/workspaces/:projectId/turn-permission',
         { session_id: NIL_UUID, request_id: 'perm_bounded', permission: 'bash', patterns: Array(5000).fill(1) },
         { params: { projectId: project.id } },
       );
@@ -727,7 +727,7 @@ flow(
     await ctx.step('an anonymous App-events body with 20,000 bad elements under a union → 400 under 20 KB, not one error per element', async () => {
       // Zod nests a union branch's whole issue list in ONE issue (`errors`); a count cap alone kept it.
       const response = await ctx.client.post(
-        '/v1/projects/:projectId/apps/:appId/events',
+        '/v1/workspaces/:projectId/apps/:appId/events',
         { events: Array(20000).fill({}) },
         { params: { projectId: NIL_UUID, appId: NIL_UUID } },
       );
@@ -738,7 +738,7 @@ flow(
     await ctx.step("a session create with a wrong-typed field → the shared 400 envelope, not zod's raw result", async () => {
       const project = await ctx.fixtures.project();
       const response = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/sessions',
+        '/v1/workspaces/:projectId/sessions',
         { fork_from_session_id: 123 },
         { params: { projectId: project.id } },
       );

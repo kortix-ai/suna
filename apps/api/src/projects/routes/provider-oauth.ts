@@ -43,6 +43,7 @@ import {
 import { readJsonObject } from '../../shared/http-body';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 import { capturePersonEvent } from './product-events';
+import { workspaceIdParam } from '../../shared/route-params';
 
 // ─── Provider OAuth device flow (poll-based) ───────────────────────────────
 //
@@ -261,12 +262,12 @@ export function registerProviderOauthRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/oauth/{provider}/start',
+      path: '/{workspaceId}/oauth/{provider}/start',
       tags: ['secrets'],
       summary: 'Start an LLM provider OAuth login',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), provider: z.string() }),
+          params: z.object({ workspaceId: z.string(), provider: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               resource_label: z.string().optional().openapi({ description: 'Label of the connection.' }),
               resource_id: z.string().optional().openapi({ description: 'Existing connection to re-authorize.' }),
@@ -279,7 +280,7 @@ export function registerProviderOauthRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const provider = c.req.param('provider');
     const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -412,12 +413,12 @@ export function registerProviderOauthRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/oauth/{provider}/poll',
+      path: '/{workspaceId}/oauth/{provider}/poll',
       tags: ['secrets'],
       summary: 'Poll an LLM provider OAuth login',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), provider: z.string() }),
+          params: z.object({ workspaceId: z.string(), provider: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               flow_id: z.string().openapi({ description: 'Flow id returned by start.' }),
             }) } } },
@@ -428,7 +429,7 @@ export function registerProviderOauthRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const provider = c.req.param('provider');
     const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -536,18 +537,18 @@ export function registerProviderOauthRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/oauth',
+      path: '/{workspaceId}/oauth',
       tags: ['secrets'],
       summary: 'List connected LLM provider logins',
       ...auth,
-        request: { params: z.object({ projectId: z.string() }) },
+        request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
           200: json(z.any(), 'Configured OAuth credentials'),
           ...errors(401, 404),
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
@@ -587,18 +588,18 @@ export function registerProviderOauthRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/oauth/{provider}',
+      path: '/{workspaceId}/oauth/{provider}',
       tags: ['secrets'],
       summary: 'Disconnect an LLM provider login',
       ...auth,
-        request: { params: z.object({ projectId: z.string(), provider: z.string() }) },
+        request: { params: z.object({ workspaceId: z.string(), provider: z.string() }) },
       responses: {
           200: json(z.any(), 'OK'),
           ...errors(401, 403, 404),
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const provider = c.req.param('provider');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);

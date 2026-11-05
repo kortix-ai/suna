@@ -11,6 +11,7 @@ import { actorOf } from '../../iam/actor';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, HttpError } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
 
 // ─── Session policy ───────────────────────────────────────────────────────
 // Per-account ceilings on session age + idle gap. Null on either field
@@ -33,7 +34,7 @@ export function registerIamPoliciesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/session-policy',
+      path: '/{workspaceId}/iam/session-policy',
       tags: ['iam'],
       summary: 'Get the account session policy',
       ...auth,
@@ -44,7 +45,7 @@ export function registerIamPoliciesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
     const [row] = await db
@@ -67,7 +68,7 @@ export function registerIamPoliciesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/session-policy',
+      path: '/{workspaceId}/iam/session-policy',
       tags: ['iam'],
       summary: 'Update the account session policy',
       ...auth,
@@ -78,7 +79,7 @@ export function registerIamPoliciesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
     const body = await readJsonObject(c);
@@ -164,7 +165,7 @@ export function registerIamPoliciesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/sessions',
+      path: '/{workspaceId}/iam/sessions',
       tags: ['iam'],
       summary: 'List recent account sessions',
       ...auth,
@@ -175,7 +176,7 @@ export function registerIamPoliciesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
 
     const rows = await db
@@ -212,11 +213,11 @@ export function registerIamPoliciesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/sessions/{sessionId}/revoke',
+      path: '/{workspaceId}/iam/sessions/{sessionId}/revoke',
       tags: ['iam'],
       summary: 'Revoke (force-logout) a session',
       ...auth,
-      request: { params: z.object({ accountId: z.string(), sessionId: z.string() }), body: { content: { 'application/json': { schema: z.object({}).partial() } } } },
+      request: { params: z.object({ workspaceId: z.string(), sessionId: z.string() }), body: { content: { 'application/json': { schema: z.object({}).partial() } } } },
       responses: {
         200: json(z.object({ revoked: z.boolean() }), 'Revocation result'),
         ...errors(401, 403, 404),
@@ -224,7 +225,7 @@ export function registerIamPoliciesRoutes(): void {
     }),
     async (c: any) => {
     const actorUserId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const sessionId = c.req.param('sessionId');
     // Gate on member.remove — force-logout is roughly "kick this user off
     // for now"; reuses the same capability admins already grant.
@@ -266,7 +267,7 @@ export function registerIamPoliciesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/pat-policy',
+      path: '/{workspaceId}/iam/pat-policy',
       tags: ['iam'],
       summary: 'Get the account PAT policy',
       ...auth,
@@ -277,7 +278,7 @@ export function registerIamPoliciesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
     const [row] = await db
@@ -302,7 +303,7 @@ export function registerIamPoliciesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/pat-policy',
+      path: '/{workspaceId}/iam/pat-policy',
       tags: ['iam'],
       summary: 'Update the account PAT policy',
       ...auth,
@@ -313,7 +314,7 @@ export function registerIamPoliciesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
     const body = await readJsonObject(c);

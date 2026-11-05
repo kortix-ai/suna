@@ -11,6 +11,7 @@ import { projectReadView } from '../lib/project-read-view';
 import { splitLlmSpend } from '../../shared/llm-spend';
 import { normalizeString } from '../lib/serializers';
 import { classifyGatewayLogReference } from './gateway-log-reference';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const LIST_LIMIT_DEFAULT = 50;
 const LIST_LIMIT_MAX = 100;
@@ -207,12 +208,12 @@ export function registerGatewayLogsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/gateway/logs',
+      path: '/{workspaceId}/gateway/logs',
       tags: ['gateway'],
       summary: 'List LLM gateway request logs',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({
           limit: queryText(
             `Logs per page, an integer from 1 to ${LIST_LIMIT_MAX}. Default ${LIST_LIMIT_DEFAULT}. Anything else is a 400.`,
@@ -224,7 +225,7 @@ export function registerGatewayLogsRoutes(): void {
       responses: { 200: json(z.any(), 'Gateway request logs'), ...errors(400, 404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -276,12 +277,12 @@ export function registerGatewayLogsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/gateway/logs/facets',
+      path: '/{workspaceId}/gateway/logs/facets',
       tags: ['gateway'],
       summary: 'List the values the gateway log filters can take',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({
           hours: queryText(`The window, an integer from 1 to ${FACET_HOURS_MAX} hours. Default ${FACET_HOURS_DEFAULT}.`),
         }),
@@ -289,7 +290,7 @@ export function registerGatewayLogsRoutes(): void {
       responses: { 200: json(z.any(), 'Gateway log filter values with request counts'), ...errors(400, 404) },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -366,15 +367,15 @@ export function registerGatewayLogsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/gateway/logs/{logId}',
+      path: '/{workspaceId}/gateway/logs/{logId}',
       tags: ['gateway'],
       summary: 'Get an LLM gateway request log',
       ...auth,
-      request: { params: z.object({ projectId: z.string(), logId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), logId: z.string() }) },
       responses: { 200: json(z.any(), 'Gateway request log detail'), ...errors(400, 404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const logReference = c.req.param('logId');
       const referenceKind = classifyGatewayLogReference(logReference);
       if (referenceKind === 'invalid') {
@@ -427,18 +428,18 @@ export function registerGatewayLogsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/gateway/errors',
+      path: '/{workspaceId}/gateway/errors',
       tags: ['gateway'],
       summary: 'List LLM gateway errors',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({ days: z.string().optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway error breakdown'), ...errors(404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(

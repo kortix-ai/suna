@@ -17,12 +17,13 @@ import { invalidateIamCacheForAccount } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
 
 export function registerIamMfaRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/mfa-required',
+      path: '/{workspaceId}/iam/mfa-required',
       tags: ['iam'],
       summary: 'Get account MFA-required status',
       ...auth,
@@ -33,7 +34,7 @@ export function registerIamMfaRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
     const [row] = await db
@@ -54,7 +55,7 @@ export function registerIamMfaRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/mfa-required/preview',
+      path: '/{workspaceId}/iam/mfa-required/preview',
       tags: ['iam'],
       summary: 'Preview who would be locked out by MFA enforcement',
       ...auth,
@@ -65,7 +66,7 @@ export function registerIamMfaRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     // The same leaf as the toggle it previews: the list names every member
     // without MFA, which a plain member may not see.
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -123,7 +124,7 @@ export function registerIamMfaRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/mfa-required',
+      path: '/{workspaceId}/iam/mfa-required',
       tags: ['iam'],
       summary: 'Enable or disable account MFA requirement',
       ...auth,
@@ -134,7 +135,7 @@ export function registerIamMfaRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     // Gate on account.write — same level as renaming the account or
     // flipping strict mode. Avoids inventing a new role action.
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);

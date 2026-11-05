@@ -38,6 +38,7 @@ import type { ProjectRow } from '../lib/serializers';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 import { claudeSubscriptionPickerGroup } from '../claude-subscription/picker';
 import { checkClaudeAgentRef } from '../../llm-gateway/resolution/claude-agent';
+import { workspaceIdParam } from '../../shared/route-params';
 
 // Explicit inference controls are separate from legacy picker visibility.
 const modelAccessChangeBody = z.object({
@@ -103,12 +104,12 @@ export function registerModelsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/llm-catalog',
+      path: '/{workspaceId}/llm-catalog',
       tags: ['projects'],
       summary: 'List the models available to a project',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
       },
       responses: {
         200: {
@@ -119,7 +120,7 @@ export function registerModelsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const accountId = c.get('accountId') as string | undefined;
       const sandboxId = c.get('sandboxId') as string | undefined;
       let ownerAccountId: string | undefined;
@@ -169,18 +170,18 @@ export function registerModelsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/model-picker',
+      path: '/{workspaceId}/model-picker',
       tags: ['projects'],
       summary: 'List models for the project model picker',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
         ...errors(403, 404),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -217,12 +218,12 @@ export function registerModelsRoutes(): void {
   );
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/model-access', tags: ['projects'],
+    method: 'get', path: '/{workspaceId}/model-access', tags: ['projects'],
     summary: 'Read project provider and model access', ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
+    request: { params: z.object({ workspaceId: z.string() }) },
     responses: { 200: { description: 'OK', content: { 'application/json': { schema: z.any() } } }, ...errors(403, 404) },
   }), async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId, await requestPersonalOwner(c, loaded));
@@ -235,13 +236,13 @@ export function registerModelsRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'put', path: '/{projectId}/model-access', tags: ['projects'],
+    method: 'put', path: '/{workspaceId}/model-access', tags: ['projects'],
     summary: 'Enable or disable a project provider or model', ...auth,
-    request: { params: z.object({ projectId: z.string() }),
+    request: { params: z.object({ workspaceId: z.string() }),
       body: { content: { 'application/json': { schema: modelAccessChangeBody } } } },
     responses: { 200: { description: 'OK', content: { 'application/json': { schema: z.any() } } }, ...errors(400, 403, 404, 409) },
   }), async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MODEL_WRITE);
@@ -270,12 +271,12 @@ export function registerModelsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/model-enablement',
+      path: '/{workspaceId}/model-enablement',
       tags: ['projects'],
       summary: 'Enable or disable project models',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: modelEnablementBody } } },
       },
       responses: {
@@ -284,7 +285,7 @@ export function registerModelsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -346,11 +347,11 @@ export function registerModelsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/llm-catalog/providers',
+      path: '/{workspaceId}/llm-catalog/providers',
       tags: ['projects'],
       summary: 'List LLM providers of a project',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
         // The catalog is identical for every project — only the auth check is
@@ -361,7 +362,7 @@ export function registerModelsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Global, project-independent data (see comment above): the ETag is
@@ -390,11 +391,11 @@ export function registerModelsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/model-defaults',
+      path: '/{workspaceId}/model-defaults',
       tags: ['projects'],
       summary: 'Get the project default model',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: {
           description: 'OK',
@@ -404,7 +405,7 @@ export function registerModelsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
           const ownerAccountId = loaded.row.accountId as string;
@@ -438,12 +439,12 @@ export function registerModelsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/model-defaults',
+      path: '/{workspaceId}/model-defaults',
       tags: ['projects'],
       summary: 'Set the project default model',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: ModelDefaultBody } } },
       },
       responses: {
@@ -455,7 +456,7 @@ export function registerModelsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const writer = await loadModelDefaultsWriter(c, projectId);
       if (writer instanceof Response) return writer;
       const { ownerAccountId, userId } = writer;
@@ -542,12 +543,12 @@ export function registerModelsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/model-defaults',
+      path: '/{workspaceId}/model-defaults',
       tags: ['projects'],
       summary: 'Clear the project default model',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({
           scope: z.enum(['account', 'agent', 'project']),
           agentName: z.string().min(1).max(128).optional(),
@@ -562,7 +563,7 @@ export function registerModelsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const writer = await loadModelDefaultsWriter(c, projectId);
       if (writer instanceof Response) return writer;
       const { ownerAccountId } = writer;

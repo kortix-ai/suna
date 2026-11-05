@@ -38,6 +38,7 @@ import {
   connectionAuthorized,
   serializeConnection,
 } from '../lib/connection-view';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /**
  * The owner/admin roster shape is narrower than Connection.
@@ -158,18 +159,18 @@ export function registerConnectionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/connections',
+      path: '/{workspaceId}/connections',
       tags: ['connectors'],
       summary: 'List connections',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: json(z.object({ connections: z.array(ConnectionViewSchema) }), 'Connections'),
         ...errors(403, 404),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const actor: ConnectionReachabilityActor = {
@@ -285,11 +286,11 @@ export function registerConnectionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/connections/all',
+      path: '/{workspaceId}/connections/all',
       tags: ['connectors'],
       summary: "List every member's connections",
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: json(
           z.object({ connections: z.array(ConnectionRosterEntrySchema) }),
@@ -299,7 +300,7 @@ export function registerConnectionsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // A read-only roster of EVERY member's connection for this project: WHO has
@@ -353,12 +354,12 @@ export function registerConnectionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/connections/me',
+      path: '/{workspaceId}/connections/me',
       tags: ['connectors'],
       summary: "Create or reconcile the calling member's connection",
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: {
             'application/json': {
@@ -380,7 +381,7 @@ export function registerConnectionsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       if (c.get('authType') === 'service_account') {
@@ -450,12 +451,12 @@ export function registerConnectionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/connections',
+      path: '/{workspaceId}/connections',
       tags: ['connectors'],
       summary: 'Create or reconcile a connection',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: {
             'application/json': { schema: ReconcileConnectionInputSchema },
@@ -469,7 +470,7 @@ export function registerConnectionsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(

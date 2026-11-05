@@ -26,6 +26,7 @@ import { loadConfigWithFilesCached } from '../../projects/lib/project-resources'
 import { ACTION_CATALOG_WIRE, validateActions } from './role-presets';
 import { mapLimit } from '@kortix/registry';
 import { TimeoutError, withTimeout } from '../../shared/with-timeout';
+import { accountIdParam } from '../../shared/route-params';
 
 // ─── Serializers (match iam-client.ts wire shapes exactly) ──────────────────
 
@@ -104,7 +105,7 @@ function serializeCustomRole(r: typeof iamRoles.$inferSelect) {
 }
 
 const Any = z.any();
-const RoleIdParam = z.object({ accountId: z.string(), roleId: z.string() });
+const RoleIdParam = z.object({ workspaceId: z.string(), roleId: z.string() });
 
 // ─── Auto-provisioned agent identities (picker principal source) ───────────
 //
@@ -221,7 +222,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/actions',
+      path: '/{workspaceId}/iam/actions',
       tags: ['iam'],
       summary: 'List the action catalog (for the role permission matrix)',
       ...auth,
@@ -229,7 +230,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ actions: z.array(Any) }), 'Action catalog'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
       return c.json({ actions: ACTION_CATALOG_WIRE });
     },
@@ -240,7 +241,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/roles',
+      path: '/{workspaceId}/iam/roles',
       tags: ['iam'],
       summary: 'List built-in presets + custom roles',
       ...auth,
@@ -248,7 +249,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ roles: z.array(Any) }), 'Roles'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
       // Both halves from `kortix.iam_roles`: the seeded system rows (account_id
       // IS NULL) and this account's own. `is_system` is the column, not a
@@ -269,7 +270,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/roles',
+      path: '/{workspaceId}/iam/roles',
       tags: ['iam'],
       summary: 'Create a custom role',
       ...auth,
@@ -278,7 +279,7 @@ export function registerIamCustomRolesRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_CREATE);
       const denied = await requireEntitlement(c, accountId, 'rbac');
       if (denied) return denied;
@@ -327,7 +328,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/roles/{roleId}',
+      path: '/{workspaceId}/iam/roles/{roleId}',
       tags: ['iam'],
       summary: 'Rename / describe a custom role',
       ...auth,
@@ -335,7 +336,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(Any, 'Updated role'), ...errors(400, 401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
       const denied = await requireEntitlement(c, accountId, 'rbac');
@@ -365,7 +366,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/iam/roles/{roleId}',
+      path: '/{workspaceId}/iam/roles/{roleId}',
       tags: ['iam'],
       summary: 'Delete a custom role (cascades its policies)',
       ...auth,
@@ -373,7 +374,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ deleted: z.boolean() }), 'Deleted'), ...errors(400, 401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_DELETE);
       // No entitlement gate: deleting a role is cleanup — a downgraded account
@@ -400,7 +401,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/roles/{roleId}/permissions',
+      path: '/{workspaceId}/iam/roles/{roleId}/permissions',
       tags: ['iam'],
       summary: 'Get a role’s action set',
       ...auth,
@@ -408,7 +409,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ role_id: z.string(), key: z.string(), actions: z.array(z.string()) }), 'Actions'), ...errors(401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
 
@@ -435,7 +436,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'put',
-      path: '/{accountId}/iam/roles/{roleId}/permissions',
+      path: '/{workspaceId}/iam/roles/{roleId}/permissions',
       tags: ['iam'],
       summary: 'Replace a custom role’s action set (the capability matrix)',
       ...auth,
@@ -443,7 +444,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ role_id: z.string(), actions: z.array(z.string()) }), 'Updated'), ...errors(400, 401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
       const denied = await requireEntitlement(c, accountId, 'rbac');
@@ -480,7 +481,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/roles/{roleId}/usage',
+      path: '/{workspaceId}/iam/roles/{roleId}/usage',
       tags: ['iam'],
       summary: 'How many policies reference this role',
       ...auth,
@@ -488,7 +489,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ role_id: z.string(), policy_count: z.number() }), 'Usage'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
       if (await isSystemRoleId(roleId)) return c.json({ role_id: roleId, policy_count: 0 });
@@ -503,7 +504,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/agent-identities',
+      path: '/{workspaceId}/iam/agent-identities',
       tags: ['iam'],
       summary: 'List agent service-account identities (policy principal picker)',
       ...auth,
@@ -511,7 +512,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ agents: z.array(Any) }), 'Agent identities'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
 
       const byKey = new Map<string, AgentIdentity>();

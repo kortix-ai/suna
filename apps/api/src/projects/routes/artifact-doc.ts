@@ -51,7 +51,7 @@ import { entryVersion } from '../../artifacts/service';
 import { loadArtifactForCaller } from '../lib/artifact-access';
 import { projectsApp } from '../lib/app';
 
-const ArtifactParams = z.object({ projectId: z.string().uuid(), artifactId: z.string().uuid() });
+const ArtifactParams = z.object({ workspaceId: z.string().uuid(), artifactId: z.string().uuid() });
 const COMMENT_FLAGS = ['artifact_comments'] as const;
 const Version = z.string().min(1).max(200).openapi({ description: 'The entry version (`entry_version`) of the file.' });
 const Holder = z.string().regex(/^[A-Za-z0-9._:-]{1,64}$/, 'an opaque client id: 1 to 64 of A-Z a-z 0-9 . _ : -')
@@ -156,14 +156,14 @@ function failure(c: Context, err: unknown) {
 const CHECKS = `Scanned byte by byte before anything decodes it: only the content the doc editor emits (text, formats, XML elements and text, attributes; \`reason: content_not_allowed\` otherwise), at most ${DOC_MAX_STRUCTS} structs and ${DOC_MAX_DELETES} delete ranges, and no item may name its own client at its own clock or later as origin, right origin or parent. Then the root rule, against the doc's index of root items: an item at the root \`default\` (named as its parent, or placed next to a root item by its origin or right origin) must be an XML element (\`root_not_element\`); every origin outside the update must be a stored item (\`unknown_origin\`); a client's structs stay contiguous (\`clock_gap\`); and stored clocks sent again (a retry) must sit where they sit (\`clock_overlap\`). A seed carries the structs of one client. Otherwise 400 \`invalid_update\` with a \`reason\`.`;
 
 export function registerArtifactDocRoutes(): void {
-  limitBody('/:projectId/artifacts/:artifactId/doc/seed', 8 * MiB, 'doc_too_large');
-  limitBody('/:projectId/artifacts/:artifactId/doc/updates', MiB, 'update_too_large');
-  limitBody('/:projectId/artifacts/:artifactId/doc/lease', 4 * 1024, 'request_too_large');
-  limitBody('/:projectId/artifacts/:artifactId/doc/flushed', 8 * MiB, 'markdown_too_large');
-  limitBody('/:projectId/artifacts/:artifactId/doc/reset', 4 * 1024, 'request_too_large');
+  limitBody('/:workspaceId/artifacts/:artifactId/doc/seed', 8 * MiB, 'doc_too_large');
+  limitBody('/:workspaceId/artifacts/:artifactId/doc/updates', MiB, 'update_too_large');
+  limitBody('/:workspaceId/artifacts/:artifactId/doc/lease', 4 * 1024, 'request_too_large');
+  limitBody('/:workspaceId/artifacts/:artifactId/doc/flushed', 8 * MiB, 'markdown_too_large');
+  limitBody('/:workspaceId/artifacts/:artifactId/doc/reset', 4 * 1024, 'request_too_large');
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/artifacts/{artifactId}/doc', tags: ['artifacts'],
+    method: 'get', path: '/{workspaceId}/artifacts/{artifactId}/doc', tags: ['artifacts'],
     summary: 'Read the live document of a doc Artifact: its epoch, the Yjs updates after a seq, the last flush and the lease',
     ...auth,
     request: {
@@ -195,7 +195,7 @@ export function registerArtifactDocRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts/{artifactId}/doc/seed', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts/{artifactId}/doc/seed', tags: ['artifacts'],
     summary: 'Seed the live document with its first update, built from the file',
     description: `The update is the whole doc built from \`markdown\`, the file text at \`version\` (at most ${DOC_SEED_UPDATE_MAX_BYTES / MiB} MiB decoded; the Markdown at most 1 MiB). It becomes seq 1 of a new \`epoch\` and counts as flushed. It may carry several clients. ${CHECKS} 429 \`rate_limited\` past the same byte rate as pushes. 409 \`doc_seeded\` when the doc already has a live state: GET it instead.`,
     ...auth,
@@ -220,7 +220,7 @@ export function registerArtifactDocRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts/{artifactId}/doc/updates', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts/{artifactId}/doc/updates', tags: ['artifacts'],
     summary: 'Push one Yjs update to the live document',
     description: `Appends the update with the next seq and pings every live socket on the Artifact with \`changed {what: "doc", version: "<seq>"}\`. A push carries the structs of one client at most (a tab pushes only its own changes). ${CHECKS} One update is at most ${DOC_UPDATE_MAX_BYTES / 1024} KiB decoded (413 \`update_too_large\`); past ${DOC_MAX_BYTES_TOTAL / MiB} MiB stored for the doc (each update's bytes plus ${DOC_UPDATE_ROW_BYTES} per stored row, and ${DOC_INDEX_ROW_BYTES} per row of its root and clients indexes), past ${DOC_MAX_ROOTS} blocks placed at the root, or past ${DOC_MAX_CLIENTS} writing tabs (Yjs clients) → 413 \`doc_too_large\` (fall back to saving the file); the same caps apply to a seed; 409 \`doc_not_seeded\` before the seed or after a reset; 409 \`epoch_mismatch\` (with the current \`epoch\`) when \`epoch\` names another epoch; 429 \`rate_limited\` past ${PUSH_POLICY.limit / (PUSH_POLICY.windowMs / 1000)} pushes or ${DOC_BYTE_RATE.bytesPerSecond / MiB} MiB a second per person.`,
     ...auth,
@@ -246,7 +246,7 @@ export function registerArtifactDocRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts/{artifactId}/doc/lease', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts/{artifactId}/doc/lease', tags: ['artifacts'],
     summary: 'Acquire, renew or release the lease of the tab that writes the file',
     description: 'Acquires when the lease is free, expired or already this holder\'s (the same `holder` from the same person); renews when it is; `release: true` gives it up. Another live holder → `leader: false` and that holder. The lease lasts 15 s; renew it every 5 s. A successful renewal writes no audit row; an acquire, a release, a contested call and a failure do. 409 `doc_not_seeded` before the seed; 409 `epoch_mismatch` (with the current `epoch`) when `epoch` names another epoch.',
     ...auth,
@@ -266,7 +266,7 @@ export function registerArtifactDocRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts/{artifactId}/doc/flushed', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts/{artifactId}/doc/flushed', tags: ['artifacts'],
     summary: 'Record that the lease holder wrote the file',
     description: 'After a save of the file (`PUT …/artifacts/{artifactId}`), the lease holder records which updates the file now holds (`seq`), its new `version` and its text. The flush moves only forward: an older `seq` sets nothing. Each person who pushed since the last flush gets one `project.artifact.doc.edit` audit row with the seq range: the file is saved by the leader, the text is theirs. 409 `not_leader` from a tab that does not hold the lease; 400 `invalid_seq` past the newest update; 409 `version_mismatch` (with `current_version`) unless `version` is the entry version of the file now, read from Files: a replay of an older flush is refused, and a repeat of the same seq names no writer; 413 `markdown_too_large` past 1 MiB; 409 `epoch_mismatch` (with the current `epoch`) when `epoch` names another epoch.',
     ...auth,
@@ -301,7 +301,7 @@ export function registerArtifactDocRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts/{artifactId}/doc/reset', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts/{artifactId}/doc/reset', tags: ['artifacts'],
     summary: 'Reset the live document: delete its state and every update',
     description: 'For a doc whose live state a client cannot apply (a poisoned update). The lease holder may reset, and anyone while the lease is free or expired; another live holder → 409 `not_leader`. Deletes the state and every update in one transaction and pings every live socket with `changed {what: "doc", version: "0"}`; every client then rebuilds, and the next open seeds from the file with a new epoch. A doc with no live state answers 200 as well. 429 `rate_limited` past 10 resets a minute per person.',
     ...auth,

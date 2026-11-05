@@ -3,7 +3,7 @@ import { flow } from '../core/flow';
 import { withDb } from '../fixtures/chat';
 import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixtures/database-project';
 
-const ARTIFACTS = '/v1/projects/:projectId/artifacts';
+const ARTIFACTS = '/v1/workspaces/:projectId/artifacts';
 const ONE = `${ARTIFACTS}/:artifactId`;
 const ACTIVITY = `${ONE}/activity`;
 const CONTENT = `${ONE}/content`;
@@ -13,10 +13,10 @@ const COMMENTS = `${ONE}/comments`;
 const THREAD = `${COMMENTS}/:threadId`;
 const REPLIES = `${THREAD}/replies`;
 const COMMENT = `${THREAD}/:commentId`;
-const FEATURES = '/v1/projects/:projectId/features';
+const FEATURES = '/v1/workspaces/:projectId/features';
 const DRIVE_FILES = '/v1/drives/:driveId/files/content';
-const TOKEN = '/v1/projects/:projectId/cli-token';
-const ACCESS = '/v1/projects/:projectId/access/:userId';
+const TOKEN = '/v1/workspaces/:projectId/cli-token';
+const ACCESS = '/v1/workspaces/:projectId/access/:userId';
 
 type Item = {
   id: string;
@@ -36,7 +36,7 @@ flow('ART-6', {
     `PATCH ${FEATURES}`, `POST ${ARTIFACTS}`, `GET ${ONE}`, `PUT ${ONE}`, `PATCH ${ONE}`, `DELETE ${ONE}`,
     `GET ${CONTENT}`, `GET ${VERSIONS}`, `POST ${RESTORE}`, `GET ${ACTIVITY}`, 'GET /v1/drives', `PUT ${DRIVE_FILES}`,
     `POST ${COMMENTS}`, `POST ${REPLIES}`, `PATCH ${THREAD}`, `DELETE ${COMMENT}`,
-    `POST ${TOKEN}`, 'DELETE /v1/projects/:projectId/cli-token/:tokenId', `DELETE ${ACCESS}`,
+    `POST ${TOKEN}`, 'DELETE /v1/workspaces/:projectId/cli-token/:tokenId', `DELETE ${ACCESS}`,
   ],
 }, async (ctx) => {
   const providerBase = process.env.PLATINUM_API_URL?.replace(/\/+$/, '');
@@ -245,7 +245,7 @@ flow('ART-6', {
       (await owner.get(ACTIVITY, { params })).status(404);
     });
   } finally {
-    if (tokenId) await owner.del('/v1/projects/:projectId/cli-token/:tokenId', { params: { ...projectParams, tokenId } });
+    if (tokenId) await owner.del('/v1/workspaces/:projectId/cli-token/:tokenId', { params: { ...projectParams, tokenId } });
     if (volumeName) await ctx.step('delete the synthetic Files volume → 204; provider read-back → 404', async () => {
       const removed = await provider('DELETE', `/v1/volumes/${volumeName}?missing_ok=true`);
       if (removed.status !== 204) throw new Error(`Synthetic Files volume cleanup returned ${removed.status}`);

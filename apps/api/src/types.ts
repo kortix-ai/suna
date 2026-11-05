@@ -62,6 +62,13 @@ export interface AuthVariables {
   impersonatorUserId?: string;
   /** Platform role, set by requireAdmin on /v1/admin routes. */
   platformRole?: string;
+  /** The account key the path id of an account-key route resolves to
+   *  (middleware/workspace-account.ts). Read it through `accountIdParam(c)`. */
+  workspaceAccountId?: string;
+  /** The workspace id (`project_id`) when the path of an account-key route named one. */
+  pathWorkspaceId?: string;
+  /** True when that workspace's account still holds other active projects (`split_pending`). */
+  pathWorkspaceSplitPending?: boolean;
 }
 
 // Hono environment type — Variables match exactly what the auth middleware sets.

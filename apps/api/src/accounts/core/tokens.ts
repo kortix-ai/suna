@@ -21,6 +21,7 @@ import { loadProjectForUser } from '../../projects/lib/access';
 import {
   accountsRouter,
   accountDisplayName,
+  AccountIdParam,
   AccountTokenSchema,
   MeSchema,
   autoClaimPendingInvites,
@@ -29,6 +30,9 @@ import {
   lookupEmailsByUserIds,
 } from './app';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
+import { workspaceIdsForAccounts } from '../../shared/resolve-account';
+import type { Context } from 'hono';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 
 /**
@@ -56,6 +60,14 @@ export function actsAsFullIdentity(authType: string | undefined, actor: Actor): 
   if (authType === 'supabase') return credential.kind === 'jwt';
   if (authType === 'pat') return credential.kind === 'pat' && credential.projectId === null;
   return false;
+}
+
+/** `/tokens` (the caller's default or `account_id` account) and its workspace-scoped twin. */
+const TOKEN_LIST_PATHS = ['/tokens', '/{workspaceId}/tokens'] as const;
+
+/** The account key of the workspace in the path, on the workspace-scoped token routes. */
+function pathAccountOf(c: Context): string | undefined {
+  return c.req.param('workspaceId') ? accountIdParam(c) : undefined;
 }
 
 // Routes are registered via this function (called by the orchestrator AFTER
@@ -121,6 +133,7 @@ accountsRouter.openapi(
     userId,
     email: userEmail,
   });
+  const workspaceIds = await workspaceIdsForAccounts(memberships.map((m) => m.accountId));
 
   return c.json({
     user_id: userId,
@@ -132,6 +145,7 @@ accountsRouter.openapi(
       // `kortix tokens rm` refuses to revoke it by accident (KRTX-1842).
       token_id: (c.get('iamTokenBinding') as { tokenId?: string } | undefined)?.tokenId ?? null,
       project_id: (c.get('tokenProjectId') as string | undefined) ?? null,
+      workspace_id: (c.get('tokenProjectId') as string | undefined) ?? null,
       session_id: (c.get('sessionId') as string | undefined) ?? null,
       agent: (c.get('agentGrant') as { agent?: string } | null | undefined)?.agent ?? null,
       connectors: (c.get('agentGrant') as { connectors?: string[] | 'all' } | null | undefined)?.connectors ?? null,
@@ -143,6 +157,7 @@ accountsRouter.openapi(
     },
     accounts: memberships.map((m) => ({
       account_id: m.accountId,
+      workspace_id: workspaceIds.get(m.accountId) ?? null,
       slug: m.accountId.slice(0, 8),
       name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
       role: m.accountRole,
@@ -152,14 +167,17 @@ accountsRouter.openapi(
 );
 
 // GET /v1/accounts/tokens — list CLI PATs for the active account
+// GET /v1/workspaces/:workspaceId/tokens — the same list, for the workspace in the path
+for (const path of TOKEN_LIST_PATHS) {
 accountsRouter.openapi(
   createRoute({
     method: 'get',
-    path: '/tokens',
+    path,
     tags: ['accounts'],
-    summary: 'List CLI PATs for the active account',
+    summary: path === '/tokens' ? 'List CLI PATs for the active account' : 'List CLI PATs of a workspace',
     ...auth,
     request: {
+      ...(path === '/tokens' ? {} : { params: AccountIdParam }),
       query: z
         .object({
           account_id: z.string(),
@@ -181,7 +199,7 @@ accountsRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
-  const queryAccount = c.req.query('account_id') ?? undefined;
+  const queryAccount = pathAccountOf(c) ?? c.req.query('account_id') ?? undefined;
 
   let accountId: string;
   try {
@@ -218,16 +236,20 @@ accountsRouter.openapi(
   );
   },
 );
+}
 
 // POST /v1/accounts/tokens — mint a new PAT (plaintext returned ONCE)
+// POST /v1/workspaces/:workspaceId/tokens — mint into the workspace in the path
+for (const path of TOKEN_LIST_PATHS) {
 accountsRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/tokens',
+    path,
     tags: ['accounts'],
     summary: 'Mint a new PAT (plaintext returned once)',
     ...auth,
     request: {
+      ...(path === '/tokens' ? {} : { params: AccountIdParam }),
       body: {
         content: {
           'application/json': {
@@ -261,7 +283,8 @@ accountsRouter.openapi(
     return c.json({ error: 'name too long (max 255 chars)' }, 400);
   }
   const accountOverride =
-    typeof body.account_id === 'string' && body.account_id.trim() ? body.account_id.trim() : undefined;
+    pathAccountOf(c) ??
+    (typeof body.account_id === 'string' && body.account_id.trim() ? body.account_id.trim() : undefined);
 
   let accountId: string;
   try {
@@ -336,17 +359,23 @@ accountsRouter.openapi(
   );
   },
 );
+}
 
 // DELETE /v1/accounts/tokens/:tokenId — revoke a PAT
+// DELETE /v1/workspaces/:workspaceId/tokens/:tokenId — the same, in the workspace in the path
+for (const path of ['/tokens/{tokenId}', '/{workspaceId}/tokens/{tokenId}'] as const) {
 accountsRouter.openapi(
   createRoute({
     method: 'delete',
-    path: '/tokens/{tokenId}',
+    path,
     tags: ['accounts'],
     summary: 'Revoke a PAT, or explicitly delete a revoked personal key',
     ...auth,
     request: {
-      params: z.object({ tokenId: z.string() }),
+      params:
+        path === '/tokens/{tokenId}'
+          ? z.object({ tokenId: z.string() })
+          : z.object({ workspaceId: z.string().uuid(), tokenId: z.string() }),
       query: z.object({ account_id: z.string(), delete_revoked: z.enum(['true', 'false']) }).partial(),
     },
     responses: {
@@ -363,7 +392,7 @@ accountsRouter.openapi(
   if (!isUuid(tokenId)) {
     return c.json({ error: `"${tokenId}" is not a valid token id (a token id is a UUID)` }, 400);
   }
-  const queryAccount = c.req.query('account_id') ?? undefined;
+  const queryAccount = pathAccountOf(c) ?? c.req.query('account_id') ?? undefined;
 
   let accountId: string;
   try {
@@ -403,4 +432,5 @@ accountsRouter.openapi(
   return c.json({ ok: true });
   },
 );
+}
 }

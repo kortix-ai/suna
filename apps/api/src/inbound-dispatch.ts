@@ -1,3 +1,4 @@
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import { config } from './config';
 import { getRequestUrl } from './lib/request-url';
 import { runInboundAudit } from './shared/audit-edge';
@@ -113,7 +114,7 @@ export async function dispatchInbound(
   // ── Artifact live presence ──────────────────────────────────────────
   // Presence and change pings for one Artifact. The ticket is the credential;
   // the view check runs again at the upgrade and every 60 s after it.
-  const artifactLive = isWsUpgrade ? ARTIFACT_LIVE_PATH.exec(url.pathname) : null;
+  const artifactLive = isWsUpgrade ? ARTIFACT_LIVE_PATH.exec(asLegacyWorkspaceRoute(url.pathname)) : null;
   if (artifactLive) {
     return upgradeArtifactLiveWs(req, url, artifactLive[1]!, artifactLive[2]!, server);
   }
@@ -144,7 +145,7 @@ function applyStreamTimeouts(req: Request, url: URL, server: any): void {
   // into a 502 with no CORS headers — the same shape as the gateway
   // idleTimeout incident. The global `idleTimeout: 0` above is necessary but
   // not sufficient: `server.timeout(req, …)` is the PER-REQUEST budget.
-  if (SECRET_RELAY_PATH.test(url.pathname)) {
+  if (SECRET_RELAY_PATH.test(asLegacyWorkspaceRoute(url.pathname))) {
     server.timeout(req, 0);
   }
 

@@ -27,6 +27,7 @@ import { actorOf } from '../../iam/actor';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { isUuid } from '../../shared/validate';
 import { iamRouter, AccountIdParam } from './app';
+import { accountIdParam } from '../../shared/route-params';
 
 const ResourceGrantRowSchema = z
   .object({
@@ -48,7 +49,7 @@ export function registerIamResourceGrantsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/resource-grants',
+      path: '/{workspaceId}/iam/resource-grants',
       tags: ['iam'],
       summary: 'List every resource grant across the account (optionally filtered)',
       ...auth,
@@ -59,7 +60,7 @@ export function registerIamResourceGrantsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       // Read-only account-wide access-footprint view — same gate the member
       // detail page already uses for "which projects does this person reach"
       // (members.ts's /project-access route). No entitlement check: this

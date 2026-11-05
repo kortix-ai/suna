@@ -10,6 +10,7 @@
  * `kortix` scope. Without that scope the token stays an identity credential
  * and reaches only the two identity probes.
  */
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import { and, eq, isNull } from 'drizzle-orm';
 import { oauthAccessTokens, oauthClients } from '@kortix/db';
 import { db } from '../shared/db';
@@ -61,7 +62,8 @@ const DELEGATED_WRITE_DENIED: readonly RegExp[] = [
 ];
 
 export function oauthScopeAllowsPath(scopes: readonly string[], path: string, method = 'GET'): boolean {
-  const p = path.replace(/\/+$/, '');
+  // `/v1/me`, `/v1/workspaces/…`: judged as their legacy names.
+  const p = asLegacyWorkspaceRoute(path.replace(/\/+$/, ''));
   if (scopes.includes(OAUTH_SCOPE_KORTIX)) {
     return method === 'GET' || method === 'HEAD' || !DELEGATED_WRITE_DENIED.some((re) => re.test(p));
   }

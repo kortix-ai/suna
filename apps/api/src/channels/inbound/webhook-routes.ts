@@ -80,14 +80,14 @@ export function channelWebhookRoutes<V extends { projectId: string }>(channel: C
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}',
+      path: '/{workspaceId}',
       tags: ['channels'],
       summary: channel.summary,
       request: {
         // A project id is always a UUID. Without this, a non-UUID path segment
         // reached the projects DB lookup, which threw on the invalid input and
         // surfaced as a 500 to an anonymous caller (pentest 2026-10-22).
-        params: z.object({ projectId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid() }),
         // Declared so the spec documents a JSON body. The JSON check reads the
         // body as text first, so `c.req.text()` still returns the raw bytes.
         body: { content: { 'application/json': { schema: z.any() } } },
@@ -99,7 +99,7 @@ export function channelWebhookRoutes<V extends { projectId: string }>(channel: C
       },
     }),
     async (c) => {
-      const { projectId } = c.req.valid('param');
+      const { workspaceId: projectId } = c.req.valid('param');
       const rawBody = await c.req.text();
       const verdict = await channel.verify({ projectId, header: (name) => c.req.header(name), rawBody });
       if (!('verified' in verdict)) {

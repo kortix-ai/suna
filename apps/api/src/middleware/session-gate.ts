@@ -6,6 +6,7 @@ import { evaluateSessionGate, loadPolicyAndActivity, markRevoked, touchActivity 
 import { auditSessionFirstSight } from './auth-audit';
 import { requestClientIp } from './client-ip';
 import { deadCredential401 } from '../shared/dead-credential-log';
+import { accountIdParam } from '../shared/route-params';
 
 /**
  * Mount this on /v1/accounts/:accountId/* AFTER auth middleware. It
@@ -14,7 +15,7 @@ import { deadCredential401 } from '../shared/dead-credential-log';
 export function accountSessionGate(): MiddlewareHandler {
   return async (c: Context, next) => {
     const accountId =
-      c.req.param('accountId') ?? c.req.param('id') ?? (c.get('accountId') as string | undefined);
+      accountIdParam(c) ?? c.req.param('id') ?? (c.get('accountId') as string | undefined);
     if (!accountId) {
       // Routes without an :accountId can't be gated; nothing to do.
       await next();

@@ -22,6 +22,7 @@ import {
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { encryptProjectSecret, isValidSecretName } from '../secrets';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerSecretPersonalRoutes(): void {
   // PUT /v1/projects/:projectId/secrets/:name/personal
@@ -32,12 +33,12 @@ export function registerSecretPersonalRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/secrets/{name}/personal',
+      path: '/{workspaceId}/secrets/{name}/personal',
       tags: ['secrets'],
       summary: 'Set your personal override of a project secret',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), name: z.string() }),
+          params: z.object({ workspaceId: z.string(), name: z.string() }),
           body: {
             content: {
               'application/json': {
@@ -55,7 +56,7 @@ export function registerSecretPersonalRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -151,12 +152,12 @@ export function registerSecretPersonalRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/secrets/{name}/personal',
+      path: '/{workspaceId}/secrets/{name}/personal',
       tags: ['secrets'],
       summary: 'Delete your personal override of a project secret',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), name: z.string() }),
+          params: z.object({ workspaceId: z.string(), name: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -164,7 +165,7 @@ export function registerSecretPersonalRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const name = c.req.param('name')?.trim().toUpperCase();
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);

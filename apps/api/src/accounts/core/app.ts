@@ -12,7 +12,7 @@ import { accountOwnersByJoinDate, userAccountMembershipRow } from '../../iam/mem
 import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { trustedEmailForUser } from '../../iam/email-trust';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { accountKeyForWorkspaceId, resolveAccountId } from '../../shared/resolve-account';
 import { isUuid } from '../../shared/validate';
 import { suggestAccountName } from './account-name';
 import { lookupEmailsByUserIds } from './owner-emails';
@@ -72,6 +72,8 @@ export const AccountSummarySchema = ContractAccountSummarySchema.openapi('Accoun
 export const AccountDetailSchema = z
   .object({
     account_id: z.string(),
+    /** The account's workspace (its one active project); null for none or several. */
+    workspace_id: z.string().nullable().optional(),
     name: z.string(),
     member_count: z.number(),
     project_count: z.number(),
@@ -139,6 +141,8 @@ export const MeSchema = z
         auth_type: z.string().nullable(),
         token_id: z.string().nullable(),
         project_id: z.string().nullable(),
+        /** The workspace the token is bound to. Equal to `project_id`. */
+        workspace_id: z.string().nullable().optional(),
         session_id: z.string().nullable(),
         agent: z.string().nullable(),
         connectors: z.union([z.literal('all'), z.array(z.string())]).nullable(),
@@ -151,6 +155,8 @@ export const MeSchema = z
     accounts: z.array(
       z.object({
         account_id: z.string(),
+        /** The account's workspace (its one active project); null for none or several. */
+        workspace_id: z.string().nullable().optional(),
         slug: z.string(),
         name: z.string(),
         role: z.string(),
@@ -164,7 +170,7 @@ export const MeSchema = z
 // route) reaches the `accounts.account_id` uuid cast, dies as SQLSTATE 22P02
 // and surfaces as an opaque 500 (Better Stack pattern 97669531, KRTX-211).
 // Let the OpenAPI validation answer 400 before any handler or DB read.
-export const AccountIdParam = z.object({ accountId: z.string().uuid() });
+export const AccountIdParam = z.object({ workspaceId: z.string().uuid() });
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
 
@@ -176,10 +182,14 @@ export async function resolveAccountForUser(
 ): Promise<string> {
   if (override) {
     const [membership] = await userAccountMembershipRow(userId, override);
-    if (!membership) {
+    if (membership) return membership.accountId;
+    // The override may name the workspace by its public id (`project_id`).
+    const accountKey = await accountKeyForWorkspaceId(override);
+    const [viaWorkspace] = accountKey ? await userAccountMembershipRow(userId, accountKey) : [];
+    if (!viaWorkspace) {
       throw new Error('not a member of the requested account');
     }
-    return membership.accountId;
+    return viaWorkspace.accountId;
   }
   return resolveAccountId(userId);
 }

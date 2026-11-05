@@ -33,7 +33,7 @@ async function saveProvider(
   body: { supabaseProviderId: string; domain: string; enforceSso?: boolean; autoCreateMembers?: boolean },
 ) {
   const r = await ctx.client.as(ctx.P.OWNER).put(
-    '/v1/accounts/:accountId/iam/sso/provider',
+    '/v1/workspaces/:accountId/iam/sso/provider',
     {
       supabase_sso_provider_id: body.supabaseProviderId,
       name: 'Synthetic IdP',
@@ -66,9 +66,9 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'PUT /v1/accounts/:accountId/iam/sso/provider',
-      'GET /v1/accounts/:accountId/iam/sso/provider',
-      'POST /v1/accounts/:accountId/iam/sso/provider/verify-domain',
+      'PUT /v1/workspaces/:accountId/iam/sso/provider',
+      'GET /v1/workspaces/:accountId/iam/sso/provider',
+      'POST /v1/workspaces/:accountId/iam/sso/provider/verify-domain',
       'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
       'POST /v1/access/check-email',
       'POST /v1/auth/signup',
@@ -121,12 +121,12 @@ flow(
     await ctx.step('self-serve DNS verification without the TXT record → 422 naming the record to publish', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/accounts/:accountId/iam/sso/provider/verify-domain', {}, { params });
+        .post('/v1/workspaces/:accountId/iam/sso/provider/verify-domain', {}, { params });
       r.status(422)
         .body()
         .has('$.code', 'sso_domain_unverified')
         .has('$.record_name', `_kortix-verification.${domain}`);
-      const read = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/sso/provider', { params });
+      const read = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/iam/sso/provider', { params });
       read.status(200).body().has('$.provider.domain_verified', false);
     });
 
@@ -134,13 +134,13 @@ flow(
       const member = await team.addMember('member');
       const r = await ctx.client
         .as(member)
-        .post('/v1/accounts/:accountId/iam/sso/provider/verify-domain', {}, { params });
+        .post('/v1/workspaces/:accountId/iam/sso/provider/verify-domain', {}, { params });
       r.status(403);
     });
 
     await ctx.step('an operator records the domain as verified → provider reads back verified', async () => {
       (await operatorVerifies(ctx, team.id, true)).status(200).body().has('$.domain_verified', true);
-      const read = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/sso/provider', { params });
+      const read = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/iam/sso/provider', { params });
       read.status(200).body().has('$.provider.domain_verified', true).exists('$.provider.domain_verified_at');
     });
 
@@ -167,7 +167,7 @@ flow(
       (await operatorVerifies(ctx, rival.id, true)).status(409).body().has('$.code', 'sso_domain_claimed');
       (await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/accounts/:accountId/iam/sso/provider/verify-domain', {}, { params: { accountId: rival.id } }))
+        .post('/v1/workspaces/:accountId/iam/sso/provider/verify-domain', {}, { params: { accountId: rival.id } }))
         .status(409)
         .body()
         .has('$.code', 'sso_domain_claimed');
@@ -185,7 +185,7 @@ flow(
 
     await ctx.step('cleanup: remove both providers', async () => {
       for (const accountId of [team.id, rival.id]) {
-        (await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId } })).status(200);
+        (await ctx.client.as(ctx.P.OWNER).del('/v1/workspaces/:accountId/iam/sso/provider', { params: { accountId } })).status(200);
       }
     });
   },
@@ -196,14 +196,14 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'PUT /v1/workspaces/:accountId/iam/sso/provider',
       'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
-      'POST /v1/accounts/:accountId/members',
-      'GET /v1/accounts/:accountId/members',
-      'GET /v1/account-invites',
-      'GET /v1/account-invites/:inviteId',
-      'POST /v1/account-invites/:inviteId/accept',
-      'POST /v1/account-invites/:inviteId/decline',
+      'POST /v1/workspaces/:accountId/members',
+      'GET /v1/workspaces/:accountId/members',
+      'GET /v1/invites',
+      'GET /v1/invites/:inviteId',
+      'POST /v1/invites/:inviteId/accept',
+      'POST /v1/invites/:inviteId/decline',
       'GET /v1/accounts/:accountId',
     ],
   },
@@ -227,7 +227,7 @@ flow(
 
     await ctx.step('another account adds the address: the unverified SSO identity does not match, so it is a pending invite', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/accounts/:accountId/members',
+        '/v1/workspaces/:accountId/members',
         { email: invitee.email, role: 'admin' },
         { params: { accountId: inviter.id } },
       );
@@ -236,27 +236,27 @@ flow(
     });
 
     await ctx.step('the SSO identity cannot list, read, accept, or decline the invite', async () => {
-      const list = await sso.get('/v1/account-invites');
+      const list = await sso.get('/v1/invites');
       list.status(200);
       const ids = list.json<{ invites: Array<{ invite_id: string }> }>().invites.map((i) => i.invite_id);
       if (ids.includes(inviteId)) throw new Error('an unverified SSO email listed the invite');
-      (await sso.get('/v1/account-invites/:inviteId', { params: { inviteId } }))
+      (await sso.get('/v1/invites/:inviteId', { params: { inviteId } }))
         .status(200)
         .body()
         .has('$.email_matches_caller', false)
         .has('$.account_id', null);
-      (await sso.post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+      (await sso.post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } }))
         .status(403)
         .body()
         .has('$.code', 'sso_email_domain_unverified');
-      (await sso.post('/v1/account-invites/:inviteId/decline', {}, { params: { inviteId } }))
+      (await sso.post('/v1/invites/:inviteId/decline', {}, { params: { inviteId } }))
         .status(403)
         .body()
         .has('$.code', 'sso_email_domain_unverified');
       (await sso.get('/v1/accounts/:accountId', { params: { accountId: inviter.id } })).status(403);
       const members = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/members', { params: { accountId: inviter.id } });
+        .get('/v1/workspaces/:accountId/members', { params: { accountId: inviter.id } });
       members.status(200);
       if (members.json<Array<{ user_id: string }>>().some((m) => m.user_id === invitee.userId)) {
         throw new Error('the unverified SSO identity became a member');
@@ -266,11 +266,11 @@ flow(
     await ctx.step('once the IdP account verifies the invitee domain, the same SSO identity lists and accepts the invite', async () => {
       await saveProvider(ctx, idpTeam.id, { supabaseProviderId, domain: inviteeDomain });
       (await operatorVerifies(ctx, idpTeam.id, true)).status(200).body().has('$.domain_verified', true);
-      const list = await sso.get('/v1/account-invites');
+      const list = await sso.get('/v1/invites');
       list.status(200);
       const ids = list.json<{ invites: Array<{ invite_id: string }> }>().invites.map((i) => i.invite_id);
       if (!ids.includes(inviteId)) throw new Error('a verified SSO email must list its invite');
-      (await sso.post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+      (await sso.post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } }))
         .status(200)
         .body()
         .has('$.account_id', inviter.id)
@@ -281,7 +281,7 @@ flow(
     await ctx.step('cleanup: remove the provider', async () => {
       (await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: idpTeam.id } }))
+        .del('/v1/workspaces/:accountId/iam/sso/provider', { params: { accountId: idpTeam.id } }))
         .status(200);
     });
   },
@@ -292,13 +292,13 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'PUT /v1/workspaces/:accountId/iam/sso/provider',
       'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
-      'POST /v1/accounts/:accountId/iam/scim/tokens',
-      'POST /scim/v2/accounts/:accountId/Users',
-      'PATCH /scim/v2/accounts/:accountId/Users/:userId',
-      'PATCH /v1/accounts/:accountId/members/:userId',
-      'GET /v1/accounts/:accountId/members',
+      'POST /v1/workspaces/:accountId/iam/scim/tokens',
+      'POST /scim/v2/workspaces/:accountId/Users',
+      'PATCH /scim/v2/workspaces/:accountId/Users/:userId',
+      'PATCH /v1/workspaces/:accountId/members/:userId',
+      'GET /v1/workspaces/:accountId/members',
       'GET /v1/accounts/:accountId',
       'POST /v1/access/check-email',
     ],
@@ -310,7 +310,7 @@ flow(
     const domain = `${ctx.fixtures.name('sso-merge')}.test`.toLowerCase();
     const owner = ctx.client.as(ctx.P.OWNER);
     const tokenRes = await owner.post(
-      '/v1/accounts/:accountId/iam/scim/tokens',
+      '/v1/workspaces/:accountId/iam/scim/tokens',
       { name: ctx.fixtures.name('scim') },
       { params },
     );
@@ -318,7 +318,7 @@ flow(
     const scim = ctx.client.withBearer(tokenRes.json<{ secret: string }>().secret, 'SCIM');
 
     const members = async () => {
-      const r = await owner.get('/v1/accounts/:accountId/members', { params });
+      const r = await owner.get('/v1/workspaces/:accountId/members', { params });
       r.status(200);
       return new Map(
         r.json<Array<{ user_id: string; account_role: string }>>().map((m) => [m.user_id, m.account_role]),
@@ -331,11 +331,11 @@ flow(
      * proposes merging the existing member into the SSO identity.
      */
     const ssoSignInAgainst = async (existing: Principal, label: string): Promise<Principal> => {
-      const created = await scim.post('/scim/v2/accounts/:accountId/Users', { userName: existing.email }, { params });
+      const created = await scim.post('/scim/v2/workspaces/:accountId/Users', { userName: existing.email }, { params });
       created.status([200, 201]).body().has('$.id', existing.userId!);
       const person = await ctx.fixtures.userWithEmail(`${ctx.fixtures.name(label)}@${domain}`);
       (await scim.patch(
-        '/scim/v2/accounts/:accountId/Users/:userId',
+        '/scim/v2/workspaces/:accountId/Users/:userId',
         { Operations: [{ op: 'replace', value: { userName: person.email } }] },
         { params: { ...params, userId: existing.userId! } },
       )).status(200);
@@ -369,7 +369,7 @@ flow(
     await ctx.step('verified domain: an owner is never merged; the SSO identity joins as a plain member', async () => {
       const existing = await team.addMember('admin');
       (await owner.patch(
-        '/v1/accounts/:accountId/members/:userId',
+        '/v1/workspaces/:accountId/members/:userId',
         { role: 'owner' },
         { params: { ...params, userId: existing.userId! } },
       )).status(200).body().has('$.account_role', 'owner');
@@ -388,7 +388,7 @@ flow(
     });
 
     await ctx.step('cleanup: remove the provider', async () => {
-      (await owner.del('/v1/accounts/:accountId/iam/sso/provider', { params })).status(200);
+      (await owner.del('/v1/workspaces/:accountId/iam/sso/provider', { params })).status(200);
     });
   },
 );
@@ -398,13 +398,13 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'PUT /v1/workspaces/:accountId/iam/sso/provider',
       'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
-      'POST /v1/accounts/:accountId/members',
-      'GET /v1/accounts/:accountId/invites',
+      'POST /v1/workspaces/:accountId/members',
+      'GET /v1/workspaces/:accountId/invites',
       'GET /v1/accounts',
-      'POST /v1/accounts/:accountId/iam/scim/tokens',
-      'POST /scim/v2/accounts/:accountId/Users',
+      'POST /v1/workspaces/:accountId/iam/scim/tokens',
+      'POST /scim/v2/workspaces/:accountId/Users',
     ],
   },
   async (ctx) => {
@@ -426,7 +426,7 @@ flow(
       return new Set(r.json<Array<{ account_id: string }>>().map((a) => a.account_id));
     };
     const pendingEmails = async () => {
-      const r = await owner.get('/v1/accounts/:accountId/invites', { params });
+      const r = await owner.get('/v1/workspaces/:accountId/invites', { params });
       r.status(200);
       return new Set(r.json<Array<{ email: string }>>().map((i) => i.email.toLowerCase()));
     };
@@ -438,7 +438,7 @@ flow(
 
     await ctx.step('another account invites the SSO address and a not-yet-registered address (plain account invites)', async () => {
       for (const email of [invitee.email!, passwordEmail]) {
-        const r = await owner.post('/v1/accounts/:accountId/members', { email, role: 'member' }, { params });
+        const r = await owner.post('/v1/workspaces/:accountId/members', { email, role: 'member' }, { params });
         r.status(201).body().has('$.status', 'pending');
       }
     });
@@ -451,10 +451,10 @@ flow(
     });
 
     await ctx.step('a SCIM directory entry for the address does not link the unverified SSO identity', async () => {
-      const tokenRes = await owner.post('/v1/accounts/:accountId/iam/scim/tokens', { name: ctx.fixtures.name('scim') }, { params });
+      const tokenRes = await owner.post('/v1/workspaces/:accountId/iam/scim/tokens', { name: ctx.fixtures.name('scim') }, { params });
       tokenRes.status(201);
       const scim = ctx.client.withBearer(tokenRes.json<{ secret: string }>().secret, 'SCIM');
-      const created = await scim.post('/scim/v2/accounts/:accountId/Users', { userName: invitee.email }, { params });
+      const created = await scim.post('/scim/v2/workspaces/:accountId/Users', { userName: invitee.email }, { params });
       created.status([200, 201]);
       if (created.json<{ id: string }>().id === invitee.userId) {
         throw new Error('SCIM linked the address to the unverified SSO identity');
@@ -474,7 +474,7 @@ flow(
     });
 
     await ctx.step('cleanup: remove the provider', async () => {
-      (await owner.del('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: idpTeam.id } })).status(200);
+      (await owner.del('/v1/workspaces/:accountId/iam/sso/provider', { params: { accountId: idpTeam.id } })).status(200);
     });
   },
 );
@@ -491,9 +491,9 @@ flow(
     requires: ['database'],
     routes: [
       'GET /v1/accounts',
-      'GET /v1/accounts/:accountId/iam/sso/provider',
-      'PUT /v1/accounts/:accountId/iam/sso/provider',
-      'POST /v1/accounts/:accountId/iam/sso/provider/from-metadata',
+      'GET /v1/workspaces/:accountId/iam/sso/provider',
+      'PUT /v1/workspaces/:accountId/iam/sso/provider',
+      'POST /v1/workspaces/:accountId/iam/sso/provider/from-metadata',
     ],
   },
   async (ctx) => {
@@ -514,13 +514,13 @@ flow(
 
     await ctx.step('setting up SAML on it → 403 sso_personal_account, on both routes', async () => {
       const put = await owner.put(
-        '/v1/accounts/:accountId/iam/sso/provider',
+        '/v1/workspaces/:accountId/iam/sso/provider',
         { supabase_sso_provider_id: crypto.randomUUID(), name: 'Synthetic IdP', primary_domain: 'personal-sso.test' },
         { params: { accountId: personal } },
       );
       put.status(403).body().has('$.code', 'sso_personal_account');
       const fromMetadata = await owner.post(
-        '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
+        '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
         { name: 'Synthetic IdP', primary_domain: 'personal-sso.test', metadata_url: 'https://idp.personal-sso.test/metadata' },
         { params: { accountId: personal } },
       );
@@ -528,7 +528,7 @@ flow(
     });
 
     await ctx.step('no provider was recorded on the personal account', async () => {
-      const r = await owner.get('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: personal } });
+      const r = await owner.get('/v1/workspaces/:accountId/iam/sso/provider', { params: { accountId: personal } });
       if (r.statusCode === 200) {
         const provider = r.json<{ provider: unknown }>().provider;
         if (provider) throw new Error(`a provider was recorded: ${JSON.stringify(provider)}`);
@@ -543,7 +543,7 @@ flow(
 async function reads(client: Client, accountId: string, projectId: string): Promise<string> {
   return [
     (await client.get('/v1/accounts/:accountId', { params: { accountId } })).statusCode,
-    (await client.get('/v1/projects/:projectId', { params: { projectId } })).statusCode,
+    (await client.get('/v1/workspaces/:projectId', { params: { projectId } })).statusCode,
   ].join();
 }
 
@@ -587,7 +587,7 @@ async function assertSignedOut(ctx: FlowContext, signIn: SignIn, accountId: stri
 async function auditAfters(ctx: FlowContext, accountId: string, action: string, count: number) {
   const events = await waitFor(
     async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
         params: { accountId },
         query: { action, limit: '50' },
       });
@@ -609,16 +609,16 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'POST /v1/accounts/:accountId/members',
-      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'POST /v1/workspaces/:accountId/members',
+      'PUT /v1/workspaces/:accountId/iam/sso/provider',
       'POST /v1/accounts/tokens',
       'POST /v1/auth/sign-in/password',
       'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
       'POST /v1/auth/refresh',
       'GET /v1/accounts/:accountId',
-      'GET /v1/projects/:projectId',
-      'GET /v1/accounts/:accountId/audit',
-      'DELETE /v1/accounts/:accountId/iam/sso/provider',
+      'GET /v1/workspaces/:projectId',
+      'GET /v1/workspaces/:accountId/audit',
+      'DELETE /v1/workspaces/:accountId/iam/sso/provider',
     ],
   },
   async (ctx) => {
@@ -640,7 +640,7 @@ flow(
 
     await ctx.step('two people on the domain join the account; one of them signs in through the IdP', async () => {
       for (const person of [passwordPerson, ssoPerson]) {
-        const r = await owner.post('/v1/accounts/:accountId/members', { email: person.email, role: 'admin' }, { params });
+        const r = await owner.post('/v1/workspaces/:accountId/members', { email: person.email, role: 'admin' }, { params });
         r.status([200, 201]);
       }
       sso = ctx.client.withBearer(await ssoFixtureToken(ctx.env, ssoPerson, supabaseProviderId, []), 'SSO-only');
@@ -678,7 +678,7 @@ flow(
       for (const [label, client] of [['PAT', pat], ['GoTrue password grant', grant]] as const) {
         await settledReads(client, team.id, project.id, '403,403', `${label} after verification`);
         (await client.get('/v1/accounts/:accountId', { params })).status(403).body().has('$.code', 'sso_required');
-        (await client.get('/v1/projects/:projectId', { params: { projectId: project.id } }))
+        (await client.get('/v1/workspaces/:projectId', { params: { projectId: project.id } }))
           .status(403)
           .body()
           .has('$.code', 'sso_required');
@@ -708,7 +708,7 @@ flow(
     });
 
     await ctx.step('cleanup: remove the provider', async () => {
-      (await owner.del('/v1/accounts/:accountId/iam/sso/provider', { params })).status(200);
+      (await owner.del('/v1/workspaces/:accountId/iam/sso/provider', { params })).status(200);
     });
   },
 );
@@ -721,15 +721,15 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'POST /v1/accounts/:accountId/members',
-      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'POST /v1/workspaces/:accountId/members',
+      'PUT /v1/workspaces/:accountId/iam/sso/provider',
       'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
       'POST /v1/auth/sign-in/password',
       'POST /v1/auth/refresh',
       'GET /v1/accounts/:accountId',
-      'GET /v1/projects/:projectId',
-      'GET /v1/accounts/:accountId/audit',
-      'DELETE /v1/accounts/:accountId/iam/sso/provider',
+      'GET /v1/workspaces/:projectId',
+      'GET /v1/workspaces/:accountId/audit',
+      'DELETE /v1/workspaces/:accountId/iam/sso/provider',
     ],
   },
   async (ctx) => {
@@ -748,7 +748,7 @@ flow(
 
     await ctx.step('two people on the domain join the account; one of them signs in through the IdP', async () => {
       for (const person of [passwordPerson, ssoPerson]) {
-        const r = await owner.post('/v1/accounts/:accountId/members', { email: person.email, role: 'admin' }, { params });
+        const r = await owner.post('/v1/workspaces/:accountId/members', { email: person.email, role: 'admin' }, { params });
         r.status([200, 201]);
       }
       sso = ctx.client.withBearer(await ssoFixtureToken(ctx.env, ssoPerson, supabaseProviderId, []), 'SSO-only');
@@ -789,7 +789,7 @@ flow(
     });
 
     await ctx.step('cleanup: remove the provider', async () => {
-      (await owner.del('/v1/accounts/:accountId/iam/sso/provider', { params })).status(200);
+      (await owner.del('/v1/workspaces/:accountId/iam/sso/provider', { params })).status(200);
     });
   },
 );
