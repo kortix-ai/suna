@@ -31,3 +31,4 @@ export * from './pasted-content';
 export * from './space-slug';
 export * from './artifact-comments';
 export * from './artifact-annotations';
+export * from './workspace-actions';
