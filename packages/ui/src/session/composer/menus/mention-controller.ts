@@ -186,9 +186,8 @@ export function createMentionSuggestion(
     ...baseSuggestion('@', MENTION_PLUGIN_KEY, controller),
     command: ({ editor, range, props: row }) => {
       editor.chain().focus().deleteRange(range).run();
+      // An agent from outside the space only gets named: the composer asks to add it after the send.
       insertMention(editor, { kind: row.kind, label: row.label, value: row.value });
-      // An agent mentioned from outside the space joins it.
-      if (row.addToSpace) opts.getSpaceMentions?.()?.onAddAgent?.(row.value);
     },
   };
 }

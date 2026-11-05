@@ -97,7 +97,8 @@ const CASES: Case[] = [
       error: true,
       message: 'Validation failed',
       status: 400,
-      issues: [{ validation: 'uuid', code: 'invalid_string', message: 'Invalid uuid', path: ['projectId'] }],
+      // zod 4's issue; its `pattern` is the library's UUID regex, so only the stable fields are pinned.
+      issues: [expect.objectContaining({ code: 'invalid_format', format: 'uuid', message: 'Invalid UUID', path: ['projectId'] })],
       issue_count: 1,
     },
     stored: [],

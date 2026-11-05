@@ -207,7 +207,7 @@ connectors:
             action: block
 agents:
   support:
-    tools: all
+    tools: "*"
     connectors: [gmail]
     policy_sets:
       gmail: read_only

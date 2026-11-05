@@ -37,6 +37,7 @@ import { deleteFromView, insertIntoView } from '../../__tests__/helpers/compat-v
 import { projectsApp } from '../../projects/surface';
 import * as projectSurface from '../../projects/surface';
 import { registerTurnQuestionsRoutes } from '../../projects/routes/turn-questions';
+import { ASK_LIVE_WAIT_MS } from '../../projects/lib/session-asks';
 import { questionReleaseSentinel } from '../question-release';
 import { relayTurnQuestion } from '../turn-relay';
 import { ensureDefaultConnection } from '../../connectors/credentials';
@@ -1341,15 +1342,15 @@ describe('POST /turn-question for a Telegram session — migrated PostgreSQL', (
 
     const member = await request({ userId: OWNER, authType: 'jwt' }, body('que_member'));
     expect(member.status).toBe(200);
-    expect(await member.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed' });
+    expect(await member.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed', live_wait_ms: ASK_LIVE_WAIT_MS });
     // No runtime request id: the shared `q-<session>` row names no single question.
     const unnamed = await request(sandbox, body(), tokens.get(sessionId));
-    expect(await unnamed.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed' });
+    expect(await unnamed.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed', live_wait_ms: ASK_LIVE_WAIT_MS });
     expect(calls).toEqual([]);
 
     const posted = await request(sandbox, body('que_sandbox'), tokens.get(sessionId));
     expect(posted.status).toBe(200);
-    expect(await posted.json()).toEqual({ ok: true, persisted: true, answers: POSTED });
+    expect(await posted.json()).toEqual({ ok: true, persisted: true, answers: POSTED, live_wait_ms: ASK_LIVE_WAIT_MS });
     const stored = await db
       .select({ id: sessionPendingQuestions.id, requestId: sessionPendingQuestions.requestId })
       .from(sessionPendingQuestions)

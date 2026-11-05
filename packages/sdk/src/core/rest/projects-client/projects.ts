@@ -129,6 +129,8 @@ export type FeatureFlagKey =
   | 'chat_input'
   /** Talk-only threads: with `chat` on, a new space thread's agent only talks and hands the work to one hidden My Kortix session. Experimental, off by default. */
   | 'chat_front'
+  /** Proactive spaces: with `chat` on, a space's watcher reads what happens in the space and posts, starts a thread or asks only when it matters. Experimental, off by default. */
+  | 'spaces_proactive'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -189,6 +191,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'voice_call',
   'chat_input',
   'chat_front',
+  'spaces_proactive',
 ] as const;
 
 /**

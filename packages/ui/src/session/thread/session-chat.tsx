@@ -135,7 +135,7 @@ import { inboxHoldsLivePrompt } from '../composer/inbox-live-prompt';
 import { type TurnSpan } from '../outcomes/anchor-outcomes';
 import type { Outcome } from '../../internal/outcomes/outcome-types';
 import { SessionOutcomesProvider } from '../outcomes/session-outcomes-provider';
-import { deleteMessageLinkParams, readMessageLinkParams, resolveMessageLinkTurn } from './message-link';
+import { deleteMessageLinkParams, readMessageLinkParams, resolveMessageLinkTurn } from '../../internal/lib/navigation/message-link';
 
 /** How long a message link waits for the transcript's turns to mount before it jumps anyway. */
 const MESSAGE_LINK_MOUNT_WAIT_MS = 8_000;

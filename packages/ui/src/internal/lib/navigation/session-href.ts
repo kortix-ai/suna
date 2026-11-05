@@ -2,8 +2,8 @@
 
 import { uiRoutes } from '../../../lib/routes';
 import { useSessionIds } from '../../../providers/session-ids';
-import { MESSAGE_LINK_AT_PARAM, MESSAGE_LINK_PARAM } from '../../../session/thread/message-link';
-import { RUNTIME_SESSION_PARAM } from '../../../session/tool/tools/session-spawn-urls';
+import { MESSAGE_LINK_AT_PARAM, MESSAGE_LINK_PARAM } from './message-link';
+import { RUNTIME_SESSION_PARAM } from './session-spawn-urls';
 
 /**
  * The real, routable URL for a session.

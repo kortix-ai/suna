@@ -20,12 +20,15 @@ import {
   listPrivateChannelsNotIn,
   pinProjectSpaceLink,
   removeProjectSpaceLink,
+  getProjectSpaceProactive,
+  setProjectSpaceProactive,
   setProjectSpaceTabs,
   updateProjectSpace,
   type ChannelsOnboarding,
   type ProjectSpace,
   type ProjectSpaceLink,
   type ProjectSpaceMemberList,
+  type ProjectSpaceProactive,
   type ProjectSpaceTab,
   type ProjectSpaceTabKind,
 } from './spaces';
@@ -380,6 +383,28 @@ test('setProjectSpaceTabs PUTs the whole ordered list and returns the space with
   ]);
   // The server sets a link tab's embeddable.
   expect(space.tabs).toEqual([tabs[0]!, { ...tabs[1]!, embeddable: false }]);
+});
+
+test('getProjectSpaceProactive GETs the space watcher settings', async () => {
+  const settings: ProjectSpaceProactive = { space_id: general.space_id, enabled: false, daily_brief: false, brief_timezone: 'UTC', can_edit: true };
+  nextResponse = { status: 200, body: settings };
+  expect(await getProjectSpaceProactive('P1', general.space_id)).toEqual(settings);
+  expect(calls).toEqual([{ url: `http://test.local/v1/projects/P1/spaces/${general.space_id}/proactive`, method: 'GET', body: undefined }]);
+});
+
+test('setProjectSpaceProactive PUTs only the fields given and returns the stored settings', async () => {
+  nextResponse = { status: 200, body: { space_id: general.space_id, enabled: true, daily_brief: true, brief_timezone: 'Europe/Berlin', can_edit: true } };
+  const stored = await setProjectSpaceProactive('P1', general.space_id, { daily_brief: true, brief_timezone: 'Europe/Berlin' });
+  expect(calls).toEqual([
+    { url: `http://test.local/v1/projects/P1/spaces/${general.space_id}/proactive`, method: 'PUT', body: { daily_brief: true, brief_timezone: 'Europe/Berlin' } },
+  ]);
+  expect(stored.enabled).toBe(true);
+});
+
+test('setProjectSpaceProactive rejects with the API error code (403 forbidden)', async () => {
+  nextResponse = { status: 403, body: { error: 'Only the space’s creator, a project manager or the DM’s owner can change Proactive.', code: 'forbidden' } };
+  const error = (await setProjectSpaceProactive('P1', general.space_id, { enabled: true }).catch((e: unknown) => e)) as { code?: string };
+  expect(error.code).toBe('forbidden');
 });
 
 test('ProjectSpaceTabKind is file | folder | artifact | app | link, and every tab has a ref', () => {

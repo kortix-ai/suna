@@ -176,7 +176,7 @@ describe('Models page chrome', () => {
   });
 
   /**
-   * The dialog's three tabs are a SLICE of the page's seven — same ids, same
+   * The dialog's three tabs are a SLICE of the page's eight — same ids, same
    * labels, same order. A second hand-written list is how "API keys" vs
    * "Providers" happened.
    */
@@ -207,8 +207,8 @@ describe('Models page chrome', () => {
   });
 });
 
-describe('Models page — the seven tabs', () => {
-  test('the bar is Providers → Logs, in work order', () => {
+describe('Models page — the eight tabs', () => {
+  test('the bar is Providers → Usage, in work order', () => {
     // Pinned as id+label PAIRS, not bare labels — a bare-label check could
     // pass against a comment or against the wrong tab.
     for (const pair of [
@@ -219,6 +219,8 @@ describe('Models page — the seven tabs', () => {
       "{ id: 'routing', label: 'Routing' }",
       "{ id: 'overview', label: 'Costs' }",
       "{ id: 'logs', label: 'Logs' }",
+      // Connected ChatGPT/Claude plan usage (#11816).
+      "{ id: 'usage', label: 'Usage' }",
     ]) {
       expect(gatewaySource).toContain(pair);
     }
@@ -230,6 +232,7 @@ describe('Models page — the seven tabs', () => {
       'routing',
       'overview',
       'logs',
+      'usage',
     ]);
     // "API keys" named a tab that held keys pointing in both directions. Two
     // tabs name their direction now, and neither reuses the old label.

@@ -45,6 +45,7 @@ import { startRetentionErasureWorker, stopRetentionErasureWorker } from './reten
 import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './session-log-purge';
 import { startStorageBillingWorker, stopStorageBillingWorker } from './storage-billing';
 import { startSessionModelFallbackWorker, stopSessionModelFallbackWorker } from './session-model-fallback';
+import { startSpaceWatcher, stopSpaceWatcher } from './space-watcher';
 import { startSlackTurnGc, stopSlackTurnGc } from './slack-turn-gc';
 import { startTeamsTurnGc, stopTeamsTurnGc } from './teams-turn-gc';
 import { startProjectTriggerScheduler, stopProjectTriggerScheduler, triggerSweepStalled } from './trigger-scheduler';
@@ -126,6 +127,8 @@ export const JOBS: readonly Job[] = [
   { ticks: { 'session-log-purge': 3 * HOUR }, start: startSessionLogPurgeWorker, stop: stopSessionLogPurgeWorker },
   // The 90-day retention backstop: closures still open 80 days after their date. Daily; a minute apart while a backlog lasts.
   { ticks: { 'retention-erasure': 26 * HOUR }, start: startRetentionErasureWorker, stop: stopRetentionErasureWorker },
+  // Proactive spaces (flag `spaces_proactive`): wake each watched space's watcher on new events, at most every 10 min.
+  { ticks: { 'space-watcher': 10 * MIN }, start: startSpaceWatcher, stop: stopSpaceWatcher },
   // Idle sessions off a fallback model once their own model serves again.
   { ticks: { 'session-model-fallback': 10 * MIN }, start: startSessionModelFallbackWorker, stop: stopSessionModelFallbackWorker },
   // Closed pending days of the gateway spend running total.

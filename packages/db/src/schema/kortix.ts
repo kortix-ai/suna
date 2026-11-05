@@ -1430,6 +1430,88 @@ export const projectSpaceMembers = kortixSchema.table(
   ],
 );
 
+// ─── Space watcher (flag `spaces_proactive`) ────────────────────────────────
+// A space's proactive watcher: one hidden session per space that reads what
+// happened in the space (`project_space_events`) and decides to stay quiet,
+// post, start a thread or ask (apps/api/src/projects/lib/space-watch/). Only
+// the API reads these tables (RLS on, no policy).
+
+/**
+ * A space's watcher settings and wake state. One row per space that someone
+ * turned Proactive on for; no row means off. `cursor` is the last event the
+ * watcher was shown; `wakes_on_day` counts the wakes of `wake_day` (UTC) for
+ * the daily budget.
+ */
+export const projectSpaceWatchers = kortixSchema.table(
+  'project_space_watchers',
+  {
+    spaceId: uuid('space_id')
+      .primaryKey()
+      .references(() => projectSpaces.spaceId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    enabled: boolean('enabled').default(false).notNull(),
+    /** A short brief at 09:00 in `brief_timezone`, on a day with events. */
+    dailyBrief: boolean('daily_brief').default(false).notNull(),
+    /** IANA zone of the daily brief, from the browser of the person who turned it on. */
+    briefTimezone: text('brief_timezone').default('UTC').notNull(),
+    /** The person the watcher works for: the space's creator (a DM: its owner), else who turned it on. */
+    ownerUserId: uuid('owner_user_id').notNull(),
+    /** The watcher's session; null until its first wake. Not filed in the space, so no thread list shows it. */
+    watcherSessionId: text('watcher_session_id'),
+    /** The newest `project_space_events.event_id` the watcher has been shown. */
+    cursor: bigint('cursor', { mode: 'number' }).default(0).notNull(),
+    lastWakeAt: timestamp('last_wake_at', { withTimezone: true }),
+    /** UTC day of `wakes_on_day`. */
+    wakeDay: date('wake_day', { mode: 'string' }),
+    wakesOnDay: integer('wakes_on_day').default(0).notNull(),
+    /** Local day (in `brief_timezone`) of the last daily brief. */
+    lastBriefOn: date('last_brief_on', { mode: 'string' }),
+    /** The watcher answer last carried out (its message id): a repeated turn-end report acts once. */
+    lastDecisionId: text('last_decision_id'),
+    updatedBy: uuid('updated_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // The tick's scan: the enabled watchers only.
+    index('idx_project_space_watchers_enabled').on(table.spaceId).where(sql`${table.enabled}`),
+    // Serves the project_id FK: a project delete cascades without a scan.
+    index('idx_project_space_watchers_project').on(table.projectId),
+  ],
+).enableRLS();
+
+/**
+ * One line of a space's event feed: a thread's turn finished, an ask waits
+ * too long, someone joined. Written only while the space's watcher is on, at
+ * most `SPACE_EVENTS_KEEP` rows per space and none older than 14 days.
+ * `dedupe_key` makes a repeated report write nothing.
+ */
+export const projectSpaceEvents = kortixSchema.table(
+  'project_space_events',
+  {
+    eventId: bigint('event_id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => projectSpaces.spaceId, { onDelete: 'cascade' }),
+    kind: text('kind').$type<'turn_finished' | 'ask_overdue' | 'member_joined' | 'agent_joined'>().notNull(),
+    /** The line as `events.md` shows it. */
+    line: text('line').notNull(),
+    /** Wakes the watcher at once instead of at the next debounce window. */
+    urgent: boolean('urgent').default(false).notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('project_space_events_kind_check', sql`${table.kind} in ('turn_finished', 'ask_overdue', 'member_joined', 'agent_joined')`),
+    uniqueIndex('uniq_project_space_events_dedupe').on(table.spaceId, table.dedupeKey),
+    index('idx_project_space_events_space').on(table.spaceId, table.eventId),
+    // The retention sweep: rows older than 14 days.
+    index('idx_project_space_events_created').on(table.createdAt),
+  ],
+).enableRLS();
+
 // ─── Memory ──────────────────────────────────────────────────────────────────
 // Memory is Markdown files in the project's Drive; the database holds only
 // what a thread's first turn was listed ("Used memory"). Only the API reads it
@@ -5109,7 +5191,7 @@ export const sessionPendingPermissions = kortixSchema.table(
       foreignColumns: [projectSessions.sessionId],
     }).onDelete('cascade'),
   ],
-);
+).enableRLS();
 
 export const sandboxComputeSessions = kortixSchema.table(
   'sandbox_compute_sessions',

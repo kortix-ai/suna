@@ -96,7 +96,7 @@ export const ToolCallBlockSchema = z.object({
   call_id: str,
   name: str,
   kind: ToolKindSchema,
-  input: z.unknown(),
+  input: z.unknown().optional(), // zod 4 rejects a missing z.unknown() key; zod 3 accepted it
   input_format: z.enum(['json', 'text']).optional(),
   status: z.enum(['pending', 'running', 'complete', 'error']),
   result: z
@@ -150,7 +150,7 @@ export const HarnessBlockSchema = z.object({
   id,
   harness: nonEmpty,
   kind: nonEmpty,
-  data: z.unknown(),
+  data: z.unknown().optional(),
   model_visible: z.boolean(),
   fallback_text: str.optional(),
 });

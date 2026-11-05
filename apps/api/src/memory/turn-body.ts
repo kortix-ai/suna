@@ -54,9 +54,22 @@ const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value
  */
 export function withoutClientSystem(body: ArrayBuffer | undefined): ArrayBuffer | undefined {
   const parsed = jsonObject(body);
-  if (!parsed || (!('system' in parsed) && !(THREAD_FILES_BODY_KEY in parsed))) return body;
-  const { system: _client, [THREAD_FILES_BODY_KEY]: _files, ...rest } = parsed;
+  if (!parsed || (!('system' in parsed) && !(THREAD_FILES_BODY_KEY in parsed) && !(SPACE_AGENTS_BODY_KEY in parsed))) return body;
+  const { system: _client, [THREAD_FILES_BODY_KEY]: _files, [SPACE_AGENTS_BODY_KEY]: _agents, ...rest } = parsed;
   return encode(rest);
+}
+
+/**
+ * The prompt body key of the thread's space agents (a router routes only to
+ * them, kortixd `harness/pi/front-space.ts`); only the API sets it.
+ */
+export const SPACE_AGENTS_BODY_KEY = 'space_agents';
+
+/** The JSON object body with `space_agents` set; any other body is returned as it is. */
+export function withSpaceAgents(body: ArrayBuffer | undefined, agents: readonly string[]): ArrayBuffer | undefined {
+  const parsed = jsonObject(body);
+  if (!parsed) return body;
+  return encode({ ...parsed, [SPACE_AGENTS_BODY_KEY]: [...agents] });
 }
 
 /** The prompt body key of a thread's sandbox file paths (`memory/thread-files.ts`); only the API sets it. kortixd's router reads it. */

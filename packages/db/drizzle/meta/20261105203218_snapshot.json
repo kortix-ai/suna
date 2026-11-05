@@ -1,6 +1,6 @@
 {
-  "id": "dd6dccdb-6e03-4b16-ab0a-eae102a166c5",
-  "prevId": "efe35d29-d725-4a35-832f-02c617b30e81",
+  "id": "abf0af45-bab4-4ff3-b822-e55ab213281c",
+  "prevId": "6ca4356d-a45c-4fde-b9e7-87256e1689c2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12844,13 +12844,6 @@
           "notNull": false,
           "default": false
         },
-        "free_credits_eligible": {
-          "name": "free_credits_eligible",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
         "last_processed_invoice_id": {
           "name": "last_processed_invoice_id",
           "type": "varchar(255)",
@@ -14753,38 +14746,6 @@
         }
       },
       "isRLSEnabled": false
-    },
-    "kortix.free_credit_claims": {
-      "name": "free_credit_claims",
-      "schema": "kortix",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "claimed_at": {
-          "name": "claimed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": true
     },
     "kortix.gateway_api_keys": {
       "name": "gateway_api_keys",
@@ -21942,6 +21903,152 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "kortix.project_space_events": {
+      "name": "project_space_events",
+      "schema": "kortix",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "project_space_events_event_id_seq",
+            "schema": "kortix",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "line": {
+          "name": "line",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "urgent": {
+          "name": "urgent",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "dedupe_key": {
+          "name": "dedupe_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uniq_project_space_events_dedupe": {
+          "name": "uniq_project_space_events_dedupe",
+          "columns": [
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "dedupe_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_space_events_space": {
+          "name": "idx_project_space_events_space",
+          "columns": [
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_space_events_created": {
+          "name": "idx_project_space_events_created",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_space_events_space_id_project_spaces_space_id_fk": {
+          "name": "project_space_events_space_id_project_spaces_space_id_fk",
+          "tableFrom": "project_space_events",
+          "tableTo": "project_spaces",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "space_id"
+          ],
+          "columnsTo": [
+            "space_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "project_space_events_kind_check": {
+          "name": "project_space_events_kind_check",
+          "value": "\"kortix\".\"project_space_events\".\"kind\" in ('turn_finished', 'ask_overdue', 'member_joined', 'agent_joined')"
+        }
+      },
+      "isRLSEnabled": true
+    },
     "kortix.project_space_links": {
       "name": "project_space_links",
       "schema": "kortix",
@@ -22265,6 +22372,183 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
+    },
+    "kortix.project_space_watchers": {
+      "name": "project_space_watchers",
+      "schema": "kortix",
+      "columns": {
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "daily_brief": {
+          "name": "daily_brief",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "brief_timezone": {
+          "name": "brief_timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'UTC'"
+        },
+        "owner_user_id": {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "watcher_session_id": {
+          "name": "watcher_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cursor": {
+          "name": "cursor",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_wake_at": {
+          "name": "last_wake_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wake_day": {
+          "name": "wake_day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wakes_on_day": {
+          "name": "wakes_on_day",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_brief_on": {
+          "name": "last_brief_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_decision_id": {
+          "name": "last_decision_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_project_space_watchers_enabled": {
+          "name": "idx_project_space_watchers_enabled",
+          "columns": [
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"project_space_watchers\".\"enabled\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_space_watchers_project": {
+          "name": "idx_project_space_watchers_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_space_watchers_space_id_project_spaces_space_id_fk": {
+          "name": "project_space_watchers_space_id_project_spaces_space_id_fk",
+          "tableFrom": "project_space_watchers",
+          "tableTo": "project_spaces",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "space_id"
+          ],
+          "columnsTo": [
+            "space_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_space_watchers_project_id_projects_project_id_fk": {
+          "name": "project_space_watchers_project_id_projects_project_id_fk",
+          "tableFrom": "project_space_watchers",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
     },
     "kortix.project_spaces": {
       "name": "project_spaces",
@@ -24005,32 +24289,9 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "split_pending": {
-          "name": "split_pending",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         }
       },
       "indexes": {
-        "uq_projects_workspace_account": {
-          "name": "uq_projects_workspace_account",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"projects\".\"status\" = 'active' AND NOT \"kortix\".\"projects\".\"split_pending\"",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_projects_account": {
           "name": "idx_projects_account",
           "columns": [
@@ -28898,7 +29159,7 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.session_pending_questions": {
       "name": "session_pending_questions",
@@ -33407,201 +33668,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.workspace_name_backups": {
-      "name": "workspace_name_backups",
-      "schema": "kortix",
-      "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "old_name": {
-          "name": "old_name",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "new_name": {
-          "name": "new_name",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "backfilled_at": {
-          "name": "backfilled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": true
-    },
-    "kortix.workspace_split_runs": {
-      "name": "workspace_split_runs",
-      "schema": "kortix",
-      "columns": {
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "from_account_id": {
-          "name": "from_account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "to_account_id": {
-          "name": "to_account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "phase": {
-          "name": "phase",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'planned'"
-        },
-        "mode": {
-          "name": "mode",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'dry_run'"
-        },
-        "plan": {
-          "name": "plan",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "copied_ids": {
-          "name": "copied_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "heartbeat_at": {
-          "name": "heartbeat_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "completed_at": {
-          "name": "completed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_workspace_split_runs_project": {
-          "name": "idx_workspace_split_runs_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_workspace_split_runs_from_account": {
-          "name": "idx_workspace_split_runs_from_account",
-          "columns": [
-            {
-              "expression": "from_account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_workspace_split_runs_phase_heartbeat": {
-          "name": "idx_workspace_split_runs_phase_heartbeat",
-          "columns": [
-            {
-              "expression": "phase",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "heartbeat_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": true
-    },
     "kortix.yolo_member_tokens": {
       "name": "yolo_member_tokens",
       "schema": "kortix",
@@ -34828,172 +34894,6 @@
         }
       },
       "name": "project_members",
-      "schema": "kortix",
-      "isExisting": true,
-      "materialized": false
-    },
-    "kortix.workspaces": {
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "repo_url": {
-          "name": "repo_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "default_branch": {
-          "name": "default_branch",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "manifest_path": {
-          "name": "manifest_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "project_status",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "secret_default_strategy": {
-          "name": "secret_default_strategy",
-          "type": "project_secret_strategy",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "metadata": {
-          "name": "metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sandbox_provider_generation": {
-          "name": "sandbox_provider_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_opened_at": {
-          "name": "last_opened_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "split_pending": {
-          "name": "split_pending",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "setup_complete_at": {
-          "name": "setup_complete_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "setup_wizard_step": {
-          "name": "setup_wizard_step",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "mfa_required": {
-          "name": "mfa_required",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_max_lifetime_minutes": {
-          "name": "session_max_lifetime_minutes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "session_idle_timeout_minutes": {
-          "name": "session_idle_timeout_minutes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pat_max_lifetime_days": {
-          "name": "pat_max_lifetime_days",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pat_require_expiry": {
-          "name": "pat_require_expiry",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "pat_idle_revoke_days": {
-          "name": "pat_idle_revoke_days",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "admins_see_all_sessions": {
-          "name": "admins_see_all_sessions",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "automations_paused_at": {
-          "name": "automations_paused_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "automations_paused_by": {
-          "name": "automations_paused_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "branding": {
-          "name": "branding",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "name": "workspaces",
       "schema": "kortix",
       "isExisting": true,
       "materialized": false

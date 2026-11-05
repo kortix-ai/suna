@@ -1,5 +1,5 @@
 {
-  "id": "efe35d29-d725-4a35-832f-02c617b30e81",
+  "id": "6ca4356d-a45c-4fde-b9e7-87256e1689c2",
   "prevId": "302c7b7c-6bed-48af-b419-eb92fde170cb",
   "version": "7",
   "dialect": "postgresql",
@@ -12844,13 +12844,6 @@
           "notNull": false,
           "default": false
         },
-        "free_credits_eligible": {
-          "name": "free_credits_eligible",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
         "last_processed_invoice_id": {
           "name": "last_processed_invoice_id",
           "type": "varchar(255)",
@@ -14753,38 +14746,6 @@
         }
       },
       "isRLSEnabled": false
-    },
-    "kortix.free_credit_claims": {
-      "name": "free_credit_claims",
-      "schema": "kortix",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "claimed_at": {
-          "name": "claimed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": true
     },
     "kortix.gateway_api_keys": {
       "name": "gateway_api_keys",
@@ -28875,7 +28836,7 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.session_pending_questions": {
       "name": "session_pending_questions",

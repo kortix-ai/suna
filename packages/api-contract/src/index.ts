@@ -73,6 +73,7 @@ export const FeatureFlagMapSchema = z.object({
   voice_call: z.boolean(),
   chat_input: z.boolean(),
   chat_front: z.boolean(),
+  spaces_proactive: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 

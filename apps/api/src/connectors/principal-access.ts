@@ -115,7 +115,7 @@ export function connectorDenialBody(
         manifest_revision: grant?.manifestRevision ?? null,
         manifest_commit: grant?.manifestCommit ?? null,
         hint: grant
-          ? `Agent "${grant.agent}" is not granted connector "${input.connector}". Add it to agents.${grant.agent}.connectors in kortix.yaml (or set connectors: all), then send another message so the session re-reads the manifest.`
+          ? `Agent "${grant.agent}" is not granted connector "${input.connector}". Add it to agents.${grant.agent}.connectors in kortix.yaml (or set connectors: "*"), then send another message so the session re-reads the manifest.`
           : `Connector "${input.connector}" is not assigned to this principal.`,
       };
     case 'connector_not_connected': {

@@ -30,8 +30,8 @@ test('addSpaceToManifest creates the spaces map when absent, keeps the rest, and
   const text = addSpaceToManifest(yaml, { slug: 'sales', label: 'Sales', description: 'Deals.', tabs: [{ type: 'goals' }] });
   const next = parseYaml(text);
   expect(next.spaces.sales).toEqual({ label: 'Sales', description: 'Deals.', tabs: [{ type: 'goals' }] });
-  // Deprecated shapes are rewritten on the way: the version line goes, a missing `tools` is written as `all`.
-  expect(next.agents).toEqual({ a: { mode: 'primary', tools: 'all' } });
+  // Deprecated shapes are rewritten on the way: the version line goes, a missing `tools` is written as `"*"`.
+  expect(next.agents).toEqual({ a: { mode: 'primary', tools: '*' } });
   expect(next.kortix_version).toBeUndefined();
   expect(text).toContain('# keep me');
 });
