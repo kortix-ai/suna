@@ -465,6 +465,43 @@ export async function resumeProjectGoal(
   return next;
 }
 
+/**
+ * A person starts a stopped goal again, in place: GOAL.md moves `stopped` →
+ * `active` (→ `draft` when it has no done criteria yet, so the owner writes
+ * them first) on the version it read (a concurrent write throws `ApiError`
+ * 409), `log.md` records the move, and then the owner session wakes. Its turn
+ * end (`kortix goals check --enforce`) arms the heartbeat the stop removed.
+ * The wake id names the stop, so a retry is deduped. Throws on a goal that is
+ * not stopped.
+ */
+export async function restartProjectGoal(
+  projectId: string,
+  goal: Pick<ProjectGoal, 'driveId' | 'folder' | 'heartbeat' | 'scope' | 'slug' | 'coordinatorSessionId'>,
+  reason: string,
+): Promise<ProjectGoalDocument> {
+  const { doc: current, version } = await readGoalForWrite(goal);
+  if (current.status !== 'stopped') throw new Error(`The goal is ${current.status}, not stopped.`);
+  const stoppedAt = [...current.transitions].reverse().find((t) => t.to === 'stopped')?.at ?? 'unknown';
+  const to: ProjectGoalStatus = current.success_criteria.length ? 'active' : 'draft';
+  const at = new Date().toISOString();
+  const next: ProjectGoalDocument = {
+    ...current,
+    status: to,
+    transitions: [...current.transitions, { from: 'stopped', to, at, reason, by: 'person' }],
+  };
+  await uploadDriveFile(goal.driveId, `${goal.folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
+  await appendGoalLog(goal, `- ${at} stopped → ${to}: ${reason}`);
+  const owner = ownerSessionId(current) ?? goal.coordinatorSessionId;
+  if (owner) {
+    const first =
+      to === 'draft'
+        ? 'A person started it again: write 1 to 8 done criteria someone else can check into GOAL.md, then move it to active and continue the work.'
+        : 'A person started it again: read log.md for where it stopped and continue the work.';
+    await queueText(projectId, owner, `${goalWakePrompt(goalBoxFolder(goal))} ${first}`, `goal-restart:${owner}:${stoppedAt}`);
+  }
+  return next;
+}
+
 /** The prompt every wake of a goal starts with; the API finds a goal's heartbeat by it. Same text as `kortix goals`. */
 function goalWakePrompt(boxFolder: string): string {
   return `Goal wake: ${boxFolder}. Load the kortix-goals skill and run one wake.`;
@@ -573,8 +610,11 @@ export interface CreatedProjectGoal {
  * exists, a folder it owns is reused, and the first wake is deduped.
  */
 export async function createProjectGoal(projectId: string, input: CreateProjectGoalInput): Promise<CreatedProjectGoal> {
-  const outcome = input.outcome.trim();
-  if (!outcome) throw new Error('Describe the outcome.');
+  const brief = input.outcome.trim();
+  if (!brief) throw new Error('Describe the outcome.');
+  // A brief (a template filled in) names the goal by its first line; the whole brief is the Context.
+  const outcome = brief.split('\n')[0]!.trim();
+  const context = brief === outcome ? "The request in the person's words, constraints, and what was learned." : brief;
   const criteria = (input.criteria ?? []).map((c) => c.trim()).filter(Boolean);
   if (criteria.length > MAX_GOAL_CRITERIA) throw new Error(`A goal has at most ${MAX_GOAL_CRITERIA} done criteria.`);
   const agent = await resolveGoalAgent(projectId, input.agent);
@@ -644,7 +684,7 @@ export async function createProjectGoal(projectId: string, input: CreateProjectG
       next_wake_at: heartbeat.next_fire_at ?? null,
       verified_by: null,
       transitions: [{ from: null, to: 'draft', at, reason: 'goal created', by: 'person' }],
-      body: `# ${outcome}\n\n## Context\n\nThe request in the person's words, constraints, and what was learned.\n`,
+      body: `# ${outcome}\n\n## Context\n\n${context}\n`,
     };
     await uploadDriveFile(drive.driveId, `${folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(doc)));
     await uploadDriveFile(drive.driveId, `${folder}/log.md`, new TextEncoder().encode(`# Log\n\n- ${at} Goal created: ${outcome}\n`));

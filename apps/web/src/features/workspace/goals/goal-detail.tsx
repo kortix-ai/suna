@@ -34,6 +34,7 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
   pauseProjectGoal,
   replyToProjectGoal,
+  restartProjectGoal,
   resumeProjectGoal,
   stopProjectGoal,
   type ProjectGoal,
@@ -604,7 +605,7 @@ function GoalRail({ projectId, goal, onShare }: { projectId: string; goal: Proje
         <SectionTitle>{t('properties')}</SectionTitle>
         <ul className="flex flex-col text-sm">
           <Property icon={<GoalStatusIcon state={goalIconState(goal)} progress={progress.total ? progress.met / progress.total : 0} />}>{stateLabel}</Property>
-          <Property icon={agent ? <AgentMark slug={agent} size={14} tile={16} /> : <RobotlessIcon />} muted={!agent}>
+          <Property icon={agent ? <AgentMark slug={agent} size={14} tile={16} className="ring-0" /> : <RobotlessIcon />} muted={!agent}>
             {agent ?? t('noAgent')}
           </Property>
           <Property icon={<ClockIcon className="size-4" aria-hidden />} muted={!scheduled}>
@@ -715,8 +716,8 @@ function useResume(projectId: string, goal: ProjectGoal, onChanged: () => Promis
 }
 
 /**
- * The goal's controls: Pause or Resume visible (the one frequent control),
- * the rest in one menu: the chat, sharing, and Stop.
+ * The goal's controls: Pause, Resume or Start goal again visible (the one
+ * frequent control), the rest in one menu: the chat, sharing, and Stop.
  */
 function GoalControls({ projectId, goal, onChanged, onShare }: { projectId: string; goal: ProjectGoal; onChanged: () => Promise<unknown>; onShare: () => void }) {
   const t = useTranslations('goals');
@@ -734,6 +735,16 @@ function GoalControls({ projectId, goal, onChanged, onShare }: { projectId: stri
       successToast(t('pausedToast'));
     },
     onError: () => errorToast(t('pauseError')),
+  });
+  // A stopped goal starts again in place: same folder, same owner session, same history.
+  const restartable = goal.goal?.status === 'stopped' && goal.goal.format === 'goal.md';
+  const restart = useMutation({
+    mutationFn: () => restartProjectGoal(projectId, goal, t('restartReason')),
+    onSuccess: async () => {
+      await onChanged();
+      successToast(t('restartedToast'));
+    },
+    onError: () => errorToast(t('restartError')),
   });
   const stop = useMutation({
     mutationFn: () => stopProjectGoal(projectId, goal, t('stopReason')),
@@ -753,6 +764,12 @@ function GoalControls({ projectId, goal, onChanged, onShare }: { projectId: stri
           <Button size="sm" variant="secondary" className="gap-1.5" disabled={pause.isPending} aria-busy={pause.isPending} onClick={() => pause.mutate()} data-testid="goal-pause">
             <PauseIcon weight="fill" className="size-3.5 shrink-0" aria-hidden />
             {t('pause')}
+          </Button>
+        ) : null}
+        {restartable ? (
+          <Button size="sm" variant="secondary" className="gap-1.5" disabled={restart.isPending} aria-busy={restart.isPending} onClick={() => restart.mutate()} data-testid="goal-restart">
+            <PlayIcon weight="fill" className="size-3.5 shrink-0" aria-hidden />
+            {t('restart')}
           </Button>
         ) : null}
         {writable && paused ? (

@@ -11,6 +11,7 @@ import {
   makeSessionGoal,
   pauseProjectGoal,
   replyToProjectGoal,
+  restartProjectGoal,
   resumeProjectGoal,
   setProjectGoalBinding,
   stopProjectGoal,
@@ -696,6 +697,67 @@ describe('person controls: create, pause, resume', () => {
     routes[`DELETE /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ok: true } };
     const doc = await stopProjectGoal('p1', goalRef, 'Dropped');
     expect(doc).toMatchObject({ status: 'stopped', paused_at: null, paused_by: null });
+  });
+
+  const STOPPED_DOC: ProjectGoalDocument = {
+    ...OPEN_DOC,
+    status: 'stopped',
+    reminder_id: null,
+    next_wake_at: null,
+    transitions: [
+      ...OPEN_DOC.transitions,
+      { from: 'active', to: 'stopped', at: '2026-11-02T09:00:00Z', reason: 'Stopped from the Goal page', by: 'person' },
+    ],
+  };
+
+  test('restartProjectGoal moves a stopped goal back to active on the version it read, logs it and wakes the owner once per stop', async () => {
+    goalRoutes(STOPPED_DOC);
+    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
+    const doc = await restartProjectGoal('p1', { ...goalRef, heartbeat: null }, 'Started again from the Goal page');
+    expect(doc.status).toBe('active');
+    expect(doc.transitions.at(-1)).toMatchObject({ from: 'stopped', to: 'active', reason: 'Started again from the Goal page', by: 'person' });
+    const goalPut = requested.find((r) => r.method === 'PUT' && r.key.endsWith('GOAL.md'))!;
+    expect(goalPut.ifMatch).toBe('v1');
+    expect(parseGoalFile(goalPut.body)?.status).toBe('active');
+    expect(requested.find((r) => r.method === 'PUT' && r.key.endsWith('log.md'))!.body).toContain('stopped → active: Started again from the Goal page');
+    // GOAL.md first, then the wake: the owner never wakes on a goal that still reads stopped.
+    expect(requested.filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.key.split('?')[0]}`)).toEqual([
+      'PUT /drives/d1/files/content',
+      'PUT /drives/d1/files/content',
+      'POST /projects/p1/sessions/s-owner/prompts',
+    ]);
+    const wake = JSON.parse(requested.find((r) => r.method === 'POST')!.body);
+    expect(wake.parts[0].text).toContain('Goal wake: /drives/company/Goals/bank-close.');
+    expect(wake.client_message_id).toBe('goal-restart:s-owner:2026-11-02T09:00:00Z');
+  });
+
+  test('restartProjectGoal sends a stopped goal with no done criteria back to draft, so the owner writes them first', async () => {
+    goalRoutes({ ...STOPPED_DOC, success_criteria: [] });
+    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
+    const doc = await restartProjectGoal('p1', { ...goalRef, heartbeat: null }, 'again');
+    expect(doc.status).toBe('draft');
+  });
+
+  test('restartProjectGoal refuses a goal that is not stopped', async () => {
+    goalRoutes(OPEN_DOC);
+    await expect(restartProjectGoal('p1', goalRef, 'x')).rejects.toThrow('not stopped');
+    goalRoutes({ ...OPEN_DOC, status: 'done' });
+    await expect(restartProjectGoal('p1', goalRef, 'x')).rejects.toThrow('not stopped');
+    expect(requested.some((r) => r.method !== 'GET')).toBe(false);
+  });
+
+  test('createProjectGoal names the goal after the first line of a brief and keeps the whole brief in GOAL.md', async () => {
+    drive();
+    put('/Users/u1/Goals/draft-our-investor-update-for/GOAL.md');
+    put('/Users/u1/Goals/draft-our-investor-update-for/log.md');
+    sessionCreated();
+    const brief = 'Draft our investor update for October.\n\n- Highlights: two launches\n- Asks: intros to CFOs';
+    const created = await createProjectGoal('p1', { outcome: brief, sessionId: SESSION });
+    expect(created.slug).toBe('draft-our-investor-update-for');
+    const doc = parseGoalFile(requested.find((r) => r.method === 'PUT' && r.key.endsWith('GOAL.md'))!.body)!;
+    expect(doc.objective).toBe('Draft our investor update for October.');
+    expect(doc.body).toContain('- Highlights: two launches\n- Asks: intros to CFOs');
+    expect(JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/projects/p1/sessions')!.body).name).toBe('Draft our investor update for October.');
   });
 
   test('paused_at and paused_by round-trip through GOAL.md', () => {
