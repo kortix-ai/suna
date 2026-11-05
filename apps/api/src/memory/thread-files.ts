@@ -189,6 +189,8 @@ export interface ThreadPlaceRow {
   space_slug: string | null;
   space_name: string | null;
   space_visibility: 'public' | 'private' | null;
+  /** The thread root's own sharing: a channel thread forked from a private or restricted transcript is not `project`. */
+  thread_visibility?: 'project' | 'private' | 'restricted' | null;
   space_dm_user_id: string | null;
   space_dm_agent: string | null;
 }
@@ -208,6 +210,7 @@ export async function readThreadPlace(sessionId: string): Promise<ThreadPlaceRow
     root AS (SELECT session_id FROM chain ORDER BY depth DESC LIMIT 1)
     SELECT s.session_id, s.project_id, pr.account_id, s.parent_session_id, s.agent_name, s.metadata,
            r.session_id AS root_session_id, r.metadata AS root_metadata, r.agent_name AS root_agent_name, r.created_by AS root_created_by,
+           r.visibility::text AS thread_visibility,
            sp.space_id, sp.kind::text AS space_kind, sp.slug AS space_slug, sp.name AS space_name,
            sp.visibility::text AS space_visibility, sp.dm_user_id AS space_dm_user_id, sp.dm_agent_name AS space_dm_agent
       FROM kortix.project_sessions s
@@ -234,6 +237,9 @@ export function spaceFolderOf(row: ThreadPlaceRow, personalFolder: (userId: stri
   if (!row.space_id || !row.space_kind) return null;
   if (row.space_kind === 'channel') {
     if (!row.space_slug) return null;
+    // Every session filed in the channel mounts this folder read-write, so a thread
+    // the channel does not publish keeps its files out of it.
+    if (row.thread_visibility != null && row.thread_visibility !== 'project') return null;
     return spaceDriveFolders('channel', row.space_slug, null, row.space_visibility === 'private' ? row.space_id : null)?.files ?? null;
   }
   if (!row.space_dm_user_id || !row.space_dm_agent) return null;
