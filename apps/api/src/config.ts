@@ -883,6 +883,11 @@ const envSchema = z.object({
   // its stopped box after this many minutes (projects/reaping/idle-volume-retire.ts);
   // the next open boots a fresh box on the volume. -1 keeps every stopped box.
   KORTIX_SANDBOX_IDLE_DELETE_MINUTES: optInt(60),
+  // Platinum writes per second the worker's background sweeps may send from one process (the
+  // reaper, the idle lane, the active-turn renewal; shared/platinum-write-lane.ts). Platinum gives
+  // an org 20 writes/s in all (`org_mutation`), so 8 leaves 12/s for session starts and previews.
+  // 0 turns the pacing off.
+  KORTIX_PLATINUM_BACKGROUND_WRITES_PER_SECOND: optInt(8),
   // The PROVIDER-NATIVE idle timer (Daytona autoStopInterval / Platinum
   // auto_stop_minutes) — a LAST-RESORT backstop for boxes this API can no
   // longer reach, NOT the primary stop. It used to be derived from
@@ -1626,6 +1631,7 @@ export const config = {
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
   KORTIX_SANDBOX_IDLE_DELETE_MINUTES: env.KORTIX_SANDBOX_IDLE_DELETE_MINUTES,
+  KORTIX_PLATINUM_BACKGROUND_WRITES_PER_SECOND: env.KORTIX_PLATINUM_BACKGROUND_WRITES_PER_SECOND,
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,

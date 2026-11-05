@@ -1,5 +1,6 @@
 import { logger } from '../../lib/logger';
 import { runWorkerTick } from '../../shared/audit-scope';
+import { inPlatinumBackgroundLane } from '../../shared/platinum-write-lane';
 import {
   type ActiveTurnRenewalDependencies,
   activeTurnRenewalIntervalMs,
@@ -31,7 +32,8 @@ async function tick(
   const monotonicNowMs = dependencies.monotonicNowMs ?? (() => performance.now());
   const startedAtMs = monotonicNowMs();
   try {
-    const result = await runActiveTurnRenewal(dependencies);
+    // Each renewal is a Platinum `exec` (a write): paced with the maintenance sweeps.
+    const result = await inPlatinumBackgroundLane(() => runActiveTurnRenewal(dependencies));
     if (result.candidates > 0 || result.errors > 0 || result.transient > 0) {
       logger.info('[active-turn-renewal] pass', {
         candidates: result.candidates,
