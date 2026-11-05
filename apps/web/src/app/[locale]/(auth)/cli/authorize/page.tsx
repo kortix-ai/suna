@@ -170,7 +170,7 @@ function CliAuthorizeInner() {
               setPhase('authorizing');
               setError(null);
               try {
-                await approveCliDeviceIn(userCode, targetAccountId);
+                await approveCliDevice(userCode, targetAccountId ? { accountId: targetAccountId } : undefined);
                 setPhase('success');
               } catch (err) {
                 if (isNoWorkspaceError(err)) setNoWorkspace(true);
@@ -345,20 +345,6 @@ function CliAuthorizeInner() {
         </div>
       </Rise>
     </AuthFrame>
-  );
-}
-
-/**
- * Approve a CLI device login for one workspace: `account_id` names the
- * workspace's account (`POST /v1/cli/device/decide`, optional field). The
- * SDK's `approveCliDevice` takes the code only until it gains the field; the
- * extra argument is ignored by it until then, and the API then picks the
- * person's default workspace.
- */
-function approveCliDeviceIn(userCode: string, accountId: string | undefined) {
-  return (approveCliDevice as (code: string, options?: { accountId?: string }) => ReturnType<typeof approveCliDevice>)(
-    userCode,
-    accountId ? { accountId } : undefined,
   );
 }
 

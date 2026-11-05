@@ -166,6 +166,17 @@ test('approveCliDevice(code) approves that device login', async () => {
   expect(JSON.parse(String(last().body))).toEqual({ user_code: 'abcd-ef01-2345-6789', approve: true });
 });
 
+test('approveCliDevice(code, { accountId }) binds the CLI key to that workspace', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  const accountId = '00000000-0000-4000-8000-0000000000aa';
+  expect(await approveCliDevice('abcd-ef01-2345-6789', { accountId })).toEqual({ ok: true });
+  expect(JSON.parse(String(last().body))).toEqual({
+    user_code: 'abcd-ef01-2345-6789',
+    approve: true,
+    account_id: accountId,
+  });
+});
+
 test('approveCliDevice rejects with the API sentence on an expired code', async () => {
   nextResponse = { status: 404, body: { error: 'Login code expired or already used.' } };
   await expect(approveCliDevice('abcd-ef01-2345-6789')).rejects.toThrow('Login code expired or already used.');

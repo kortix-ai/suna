@@ -77,10 +77,17 @@ export async function listAccountTokens(
 /** Approve a CLI device login (`kortix login` on a machine with no browser
  *  callback): the signed-in browser confirms the code the terminal shows. The
  *  API answers 404 for an expired or used code and 403 for a non-browser
- *  caller; both reject with the API's sentence. */
-export async function approveCliDevice(userCode: string) {
+ *  caller; both reject with the API's sentence. `accountId` names the
+ *  workspace's account the CLI key belongs to; omitted, the API picks the
+ *  person's default workspace. A person with no workspace gets the 409
+ *  `no_workspace` error (`isNoWorkspaceError`). */
+export async function approveCliDevice(userCode: string, options?: { accountId?: string }) {
   return unwrap(
-    await backendApi.post<{ ok: boolean }>('/cli/device/decide', { user_code: userCode, approve: true }),
+    await backendApi.post<{ ok: boolean }>('/cli/device/decide', {
+      user_code: userCode,
+      approve: true,
+      ...(options?.accountId ? { account_id: options.accountId } : {}),
+    }),
   );
 }
 
