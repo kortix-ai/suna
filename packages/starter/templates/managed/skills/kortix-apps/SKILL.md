@@ -135,9 +135,10 @@ An App never starts an agent itself. It posts an **App event**; a trigger in
 can call a URL), (2) a connector event, (3) a schedule (an hourly or daily
 check is enough). Build a watcher App when none fits: the source sends
 nothing and must be watched around the clock, code must decide what deserves
-an agent, or the watch needs a connection that stays open. A complete
-watcher (App, poll, App event, session wake-up): `kortix-system` →
-`references/scheduling.md` → Watch 24/7.
+an agent, or the watch needs a connection that stays open. Start it with
+`kortix apps launch --template watcher --name <slug>` and edit
+`apps/<slug>/watch.js`: `check()` returns what is true now. The whole recipe:
+`kortix-system` → `references/scheduling.md` → Watch 24/7.
 
 1. Post one event `{name, data?, id?}` or `{events: [...]}` (at most 50):
    ```bash
