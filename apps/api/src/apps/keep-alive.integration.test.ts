@@ -19,6 +19,9 @@ const renewals: string[] = [];
 const alive: Array<{ runtimeId: string; at: Date }> = [];
 /** Provider status by external id; unset means running. */
 let providerStatus: Record<string, string> = {};
+/** kortix-appd's /v1/status by external id: 'down' throws (connection refused); unset is running. */
+let appdStatus: Record<string, { status: string; ready: boolean; reason?: string } | 'down'> = {};
+const revivals: string[] = [];
 let unfundedAccounts = new Set<string>();
 
 mock.module('./hosting', () => ({
@@ -26,6 +29,12 @@ mock.module('./hosting', () => ({
     async stop(_provider: string, externalId: string) { stops.push(externalId); }
     async providerStatus(_provider: string, externalId: string) { return providerStatus[externalId] ?? 'running'; }
     async renewLifecycle(_provider: string, externalId: string) { renewals.push(externalId); }
+    async status(_provider: string, externalId: string) {
+      const answer = appdStatus[externalId];
+      if (answer === 'down') throw new Error('connect ECONNREFUSED');
+      return answer ?? { status: 'running', ready: true };
+    }
+    async startSupervisor(_provider: string, externalId: string) { revivals.push(externalId); }
   },
 }));
 // The wake gate is real: a start runs assertAppComputeAllowed first.
@@ -55,7 +64,7 @@ mock.module('../billing/services/compute-metering', () => ({
 }));
 
 const { db } = await import('../shared/db');
-const { runAppIdleReaper, runAppKeepAlive, KEEP_ALIVE_REFRESHES_PER_PASS } = await import('./idle-reaper');
+const { runAppIdleReaper, runAppKeepAlive, KEEP_ALIVE_REFRESHES_PER_PASS, APPD_REVIVES_PER_HOUR, resetAppdRevivesForTest } = await import('./idle-reaper');
 const { APP_RUNTIME_VERSION, REFRESH_RETRY_AFTER_MS } = await import('./deployment-worker');
 
 const confirmed = Boolean(
@@ -145,6 +154,9 @@ function reset(): void {
   renewals.length = 0;
   alive.length = 0;
   providerStatus = {};
+  appdStatus = {};
+  revivals.length = 0;
+  resetAppdRevivesForTest();
   unfundedAccounts = new Set();
 }
 
@@ -155,6 +167,28 @@ withDb('always-on Apps', () => {
     await seedTenant(ACCOUNT_ID, PROJECT_ID, ARTIFACT_ID);
   });
   afterEach(cleanup);
+
+  test('a running always-on App whose supervisor is down is started again, at most 3 times an hour', async () => {
+    await seed(ALWAYS, { alwaysOn: true, status: 'running' });
+    appdStatus[box(ALWAYS)] = 'down';
+    const first = await runAppKeepAlive(new Date(), true);
+    expect(first).toMatchObject({ confirmed: 1, revived: 1 });
+    for (let pass = 0; pass < APPD_REVIVES_PER_HOUR + 1; pass += 1) await runAppKeepAlive(new Date(), true);
+    expect(revivals).toEqual(Array.from({ length: APPD_REVIVES_PER_HOUR }, () => box(ALWAYS)));
+    // The VM stays up and billed throughout: no wake, no stop.
+    expect(wakes).toEqual([]);
+    expect(stops).toEqual([]);
+  });
+
+  test('a healthy supervisor, and one failed for a named reason a restart cannot fix, are left alone', async () => {
+    await seed(ALWAYS, { alwaysOn: true, status: 'running' });
+    expect(await runAppKeepAlive(new Date(), true)).toMatchObject({ confirmed: 1, revived: 0 });
+    appdStatus[box(ALWAYS)] = { status: 'failed', ready: false, reason: 'mount_missing' };
+    expect(await runAppKeepAlive(new Date(), true)).toMatchObject({ revived: 0 });
+    appdStatus[box(ALWAYS)] = { status: 'failed', ready: false };
+    expect(await runAppKeepAlive(new Date(), true)).toMatchObject({ revived: 1 });
+    expect(revivals).toEqual([box(ALWAYS)]);
+  });
 
   test('the idle reaper stops an idle on-demand App and leaves an idle always-on App running', async () => {
     const past = new Date(Date.now() - 60_000);
