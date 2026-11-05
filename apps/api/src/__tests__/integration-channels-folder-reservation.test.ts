@@ -108,7 +108,7 @@ beforeAll(async () => {
   );
   for (const [mode, f] of Object.entries(fixtures) as Array<['off' | 'on', Fixture]>) {
     const metadata = { experimental: { drives: true, shared_drives: true, chat: mode === 'on' } };
-    await db.insert(projects).values({ projectId: f.projectId, accountId: ACCOUNT, name: `reservation-${mode}`, repoUrl: 'https://example.test/r.git', metadata });
+    await db.insert(projects).values({ splitPending: true, projectId: f.projectId, accountId: ACCOUNT, name: `reservation-${mode}`, repoUrl: 'https://example.test/r.git', metadata });
     await insertIntoView(db, projectMembers, [
       { accountId: ACCOUNT, projectId: f.projectId, userId: MANAGER, projectRole: 'manager' },
       ...[ALICE, BOB, CAROL].map((userId) => ({ accountId: ACCOUNT, projectId: f.projectId, userId, projectRole: 'member' as const })),

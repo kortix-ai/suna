@@ -19,6 +19,7 @@ beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'agent-sa-race' });
   await db.insert(projects).values(
     FRESH_PROJECTS.map((projectId, index) => ({
+      splitPending: true,
       projectId,
       accountId: ACCOUNT,
       name: `fresh-${index}`,

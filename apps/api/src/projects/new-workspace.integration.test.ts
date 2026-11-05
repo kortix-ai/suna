@@ -37,6 +37,8 @@ async function account(userId: string, role: 'owner' | 'member', opts: { created
       accountId,
       name: `nw-p${i}`,
       repoUrl: `https://example.invalid/${accountId}-${i}.git`,
+      // 2+ projects = a legacy multi-project account (Workspaces split_pending).
+      splitPending: (opts.projects ?? 0) > 1,
       ...(opts.key && i === 0 ? { idempotencyKey: opts.key } : {}),
     });
   }

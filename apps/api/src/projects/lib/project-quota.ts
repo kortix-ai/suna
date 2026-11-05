@@ -2,6 +2,35 @@ import { and, eq, sql } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { FREE_TIER_PROJECT_LIMIT, maxProjectsForAccount } from '../../shared/account-limits';
+import { type WorkspaceHasProjectBody, workspaceHasProjectDenial } from '../../workspaces/one-project';
+
+/** The 403 body of `projectQuotaDenial`. */
+export type ProjectQuotaDenialBody = NonNullable<Awaited<ReturnType<typeof projectQuotaDenial>>>;
+
+export type ProjectCreationDenial =
+  | { status: 409; body: WorkspaceHasProjectBody }
+  | { status: 403; body: ProjectQuotaDenialBody };
+
+/**
+ * Every refusal to create one more project in `accountId`, in the order a
+ * client should see them:
+ *
+ *   1. `409 workspace_has_project`: the account already holds its one active
+ *      project (Workspaces 1:1, `workspaces/one-project.ts`). Applies on every
+ *      plan, Enterprise included. A new workspace (`new_workspace: true`) gets
+ *      an empty account and never meets it.
+ *   2. `403 project_limit_reached`: the plan's project cap (`projectQuotaDenial`).
+ *
+ * `null` when the account may create a project. Every create path calls this
+ * before any upstream side effect: `POST /v1/projects`, `/link-repository`,
+ * `/create-repo`, `/provision`, `/provision-stream`, and the transfer target.
+ */
+export async function projectCreationDenial(accountId: string): Promise<ProjectCreationDenial | null> {
+  const occupied = await workspaceHasProjectDenial(accountId);
+  if (occupied) return { status: 409, body: occupied };
+  const quota = await projectQuotaDenial(accountId);
+  return quota ? { status: 403, body: quota } : null;
+}
 
 /**
  * The per-account project cap (free → 1, paid → effectively uncapped). Returns

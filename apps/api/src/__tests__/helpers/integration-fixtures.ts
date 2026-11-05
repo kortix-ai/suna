@@ -5,7 +5,7 @@
 // template: it holds no account and no project. A suite seeds the rows it needs
 // here instead of borrowing a row some other writer created.
 import { accounts, projectSessions, projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
 const TEST_DB_CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
@@ -44,18 +44,37 @@ export async function seedAccount(label: string): Promise<string> {
   return accountId;
 }
 
-/** One project, in `accountId` or in a new synthetic account. */
+/**
+ * One project, in a new synthetic account (a 1:1 workspace), or in `accountId`.
+ *
+ * A project added to an account that already holds an active project makes it
+ * a legacy multi-project account: an account holds one active project that is not split-pending
+ * (`uq_projects_workspace_account`, Workspaces). So every active project of that
+ * account, the new one included, is marked `split_pending`, the state the
+ * workspace migration gives a real legacy account.
+ */
 export async function seedProject(
   label: string,
   options: { accountId?: string; metadata?: Record<string, unknown> } = {},
 ): Promise<SeededProject> {
   const account_id = options.accountId ?? (await seedAccount(label));
   const project_id = crypto.randomUUID();
+  // Marks the account's active projects; true when there were any.
+  const legacy =
+    options.accountId !== undefined &&
+    (
+      await db
+        .update(projects)
+        .set({ splitPending: true })
+        .where(and(eq(projects.accountId, account_id), eq(projects.status, 'active')))
+        .returning({ projectId: projects.projectId })
+    ).length > 0;
   await db.insert(projects).values({
     projectId: project_id,
     accountId: account_id,
     name: label,
     repoUrl: `https://example.test/${label}.git`,
+    splitPending: legacy,
     ...(options.metadata ? { metadata: options.metadata } : {}),
   });
   return { account_id, project_id };

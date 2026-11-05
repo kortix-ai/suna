@@ -102,6 +102,7 @@ const projectRow: typeof projects.$inferSelect = {
   accountId: ACCOUNT_ID,
   name: 'Trigger Project',
   sandboxProviderGeneration: 0,
+  splitPending: false,
   secretDefaultStrategy: 'runtime' as const,
   repoUrl: 'https://github.com/kortix-ai/trigger-project.git',
   defaultBranch: 'main',

@@ -25,7 +25,7 @@ let accountId: string;
 async function freshProject(): Promise<string> {
   const [row] = await db
     .insert(projects)
-    .values({ accountId, name: 'meta', repoUrl: 'https://example.test/r.git', metadata: {} })
+    .values({ splitPending: true, accountId, name: 'meta', repoUrl: 'https://example.test/r.git', metadata: {} })
     .returning();
   return row!.projectId;
 }

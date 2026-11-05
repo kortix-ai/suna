@@ -13,6 +13,7 @@ beforeAll(async () => {
   await db.insert(accounts).values({ accountId, name: 'LLM value test' });
   await db.insert(projects).values(
     [projectId, otherProjectId].map((id) => ({
+      splitPending: true,
       projectId: id,
       accountId,
       name: 'Synthetic',
@@ -89,6 +90,7 @@ test('SQL values reconcile with sources; estimates never alter charges or duplic
 test('an unsupported-only window remains unknown, never a guessed zero', async () => {
   const id = crypto.randomUUID();
   await db.insert(projects).values({
+    splitPending: true,
     projectId: id,
     accountId,
     name: 'Unknown rates',

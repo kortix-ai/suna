@@ -42,6 +42,7 @@ import {
 import { readJsonObject } from '../../shared/http-body';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 import { isNoWorkspaceError } from '../../shared/no-workspace';
+import { workspaceHasProjectDenial } from '../../workspaces/one-project';
 
 /**
  * Reads the request body and resolves the caller's account scope — the part
@@ -423,7 +424,7 @@ export function registerProjectsRoutes(): void {
               '`done` or `error` frame — never a bare close.',
             content: { 'text/event-stream': { schema: z.any() } },
           },
-          ...errors(400, 403, 503),
+          ...errors(400, 403, 409, 503),
       },
     }),
     async (c) => {
@@ -438,6 +439,14 @@ export function registerProjectsRoutes(): void {
     // clients learn to keep reading a 200 body to find out whether they were.
     if (!(await authorize(await actorOf(c, ctx.scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
       return c.json({ error: 'Owner or admin role required' }, 403);
+    }
+    // Same reason: an account that already holds its one active project
+    // (Workspaces 1:1) is a plain JSON 409 `workspace_has_project`, never a 200
+    // stream with an error frame. A new workspace picked an empty account.
+    // `runProvision` checks again, after the idempotency replay.
+    if (!ctx.newWorkspace && !normalizeString(ctx.body.idempotency_key ?? ctx.body.idempotencyKey)) {
+      const occupied = await workspaceHasProjectDenial(ctx.scope.accountId);
+      if (occupied) return c.json(occupied, 409);
     }
 
     return new Response(

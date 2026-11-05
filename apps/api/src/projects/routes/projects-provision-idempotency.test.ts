@@ -91,7 +91,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
     const handler = await runProvisionSource();
 
     expect(handler.indexOf('findIdempotentProvision(')).toBeLessThan(
-      handler.indexOf('projectQuotaDenial('),
+      handler.indexOf('projectCreationDenial('),
     );
   });
 

@@ -1569,6 +1569,13 @@
       "when": 1793906643787,
       "tag": "20261105192403_free_credits_once_per_person",
       "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1793911036804,
+      "tag": "20261105203716_workspaces_expand",
+      "breakpoints": true
     }
   ]
 }

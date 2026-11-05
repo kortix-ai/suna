@@ -533,8 +533,22 @@ export const projects = kortixSchema.table(
     lastOpenedAt: timestamp('last_opened_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces: true on the active projects of a legacy account that holds
+    // 2+ active projects (marked by 20261105203911000_workspaces_mark_and_name).
+    // Such an account is not one workspace yet; the split worker moves each
+    // extra project into its own account and clears the flag. A marked row is
+    // exempt from `uq_projects_workspace_account`. New rows are never marked.
+    splitPending: boolean('split_pending').default(false).notNull(),
   },
   (table) => [
+    // Workspaces 1:1: an account holds at most ONE active project that is not
+    // split-pending. Permanent. Built CONCURRENTLY by
+    // 20261105203912000_workspaces_one_per_account.concurrent.ts. A second
+    // active project answers 409 `workspace_has_project` in the API before it
+    // reaches this index (apps/api/src/workspaces/one-project.ts).
+    uniqueIndex('uq_projects_workspace_account')
+      .on(table.accountId)
+      .where(sql`${table.status} = 'active' AND NOT ${table.splitPending}`),
     index('idx_projects_account').on(table.accountId),
     index('idx_projects_status').on(table.status),
     index('idx_projects_updated').on(table.updatedAt),
@@ -549,6 +563,104 @@ export const projects = kortixSchema.table(
       .where(sql`${table.idempotencyKey} is not null`),
   ],
 );
+
+// ─── Workspaces ─────────────────────────────────────────────────────────────
+// A workspace is ONE account and its ONE active project (the Slack model,
+// .agents/skills/learnings/work/workspaces/design.md §0). The public
+// workspace id is `project_id`; `account_id` stays the internal billing and
+// directory key. Both physical tables keep their names permanently.
+
+/**
+ * READ-ONLY VIEW: one row per active project, joined to its account. Built by
+ * 20261105203716882_workspaces_expand.sql (`security_invoker`, so the base
+ * tables' RLS applies). `accounts.name` is not exposed: triggers mirror it
+ * from `projects.name`. Writes go through `apps/api/src/workspaces/store.ts`,
+ * which writes both base tables. A `split_pending` row belongs to a legacy
+ * multi-project account that is not split yet, so its `account_id` is shared.
+ */
+export const workspaces = kortixSchema
+  .view('workspaces', {
+    workspaceId: uuid('workspace_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    repoUrl: text('repo_url').notNull(),
+    defaultBranch: varchar('default_branch', { length: 255 }).notNull(),
+    manifestPath: text('manifest_path').notNull(),
+    status: projectStatusEnum('status').notNull(),
+    secretDefaultStrategy: projectSecretStrategyEnum('secret_default_strategy').notNull(),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    sandboxProviderGeneration: integer('sandbox_provider_generation').notNull(),
+    lastOpenedAt: timestamp('last_opened_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    splitPending: boolean('split_pending').notNull(),
+    setupCompleteAt: timestamp('setup_complete_at', { withTimezone: true }),
+    setupWizardStep: integer('setup_wizard_step').notNull(),
+    mfaRequired: boolean('mfa_required').notNull(),
+    sessionMaxLifetimeMinutes: integer('session_max_lifetime_minutes'),
+    sessionIdleTimeoutMinutes: integer('session_idle_timeout_minutes'),
+    patMaxLifetimeDays: integer('pat_max_lifetime_days'),
+    patRequireExpiry: boolean('pat_require_expiry').notNull(),
+    patIdleRevokeDays: integer('pat_idle_revoke_days'),
+    adminsSeeAllSessions: boolean('admins_see_all_sessions').notNull(),
+    automationsPausedAt: timestamp('automations_paused_at', { withTimezone: true }),
+    automationsPausedBy: uuid('automations_paused_by'),
+    branding: jsonb('branding').$type<AccountBrandingRecord>().notNull(),
+  })
+  .existing();
+
+/**
+ * The account name each 1:1 workspace had before the name backfill
+ * (20261105203911000_workspaces_mark_and_name.concurrent.ts) set it to the
+ * project name. One row per renamed account; the first backfill wins
+ * (`ON CONFLICT DO NOTHING`), so `old_name` is always the original. Reverse:
+ * `UPDATE kortix.accounts a SET name = b.old_name FROM kortix.workspace_name_backups b
+ * WHERE a.account_id = b.account_id`. No foreign key: the record outlives a
+ * deleted account.
+ */
+export const workspaceNameBackups = kortixSchema
+  .table('workspace_name_backups', {
+    accountId: uuid('account_id').primaryKey().notNull(),
+    oldName: varchar('old_name', { length: 255 }).notNull(),
+    newName: varchar('new_name', { length: 255 }).notNull(),
+    backfilledAt: timestamp('backfilled_at', { withTimezone: true }).defaultNow().notNull(),
+  })
+  .enableRLS();
+
+/**
+ * The split ledger: one row per project the workspace split moves out of a
+ * legacy multi-project account into its own account. Same durable-runner
+ * shape as `legacy_sandbox_migrations`: `phase` is the step a resume
+ * continues from, `heartbeat_at` the lease that reclaims a stalled run,
+ * `copied_ids` every row the split copied (the reverse deletes exactly
+ * these). `mode` is `dry_run` (plan only) or `apply`.
+ */
+export const workspaceSplitRuns = kortixSchema
+  .table(
+    'workspace_split_runs',
+    {
+      runId: uuid('run_id').defaultRandom().primaryKey(),
+      projectId: uuid('project_id').notNull(),
+      fromAccountId: uuid('from_account_id').notNull(),
+      toAccountId: uuid('to_account_id'),
+      phase: varchar('phase', { length: 32 }).default('planned').notNull(),
+      mode: varchar('mode', { length: 16 }).default('dry_run').notNull(),
+      plan: jsonb('plan').default({}).$type<Record<string, unknown>>().notNull(),
+      copiedIds: jsonb('copied_ids').default({}).$type<Record<string, unknown>>().notNull(),
+      attempts: integer('attempts').default(0).notNull(),
+      heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+      error: text('error'),
+      createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+      updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+      completedAt: timestamp('completed_at', { withTimezone: true }),
+    },
+    (table) => [
+      index('idx_workspace_split_runs_project').on(table.projectId),
+      index('idx_workspace_split_runs_from_account').on(table.fromAccountId),
+      index('idx_workspace_split_runs_phase_heartbeat').on(table.phase, table.heartbeatAt),
+    ],
+  )
+  .enableRLS();
 
 export const projectGitConnections = kortixSchema.table(
   'project_git_connections',

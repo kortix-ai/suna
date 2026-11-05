@@ -17,7 +17,8 @@ import {
   ProjectTransferError,
   transferProjectOwnership,
 } from '../lib/project-transfer';
-import { projectQuotaDenial } from '../lib/project-quota';
+import { projectCreationDenial } from '../lib/project-quota';
+import { isWorkspaceOnePerAccountConflict, workspaceHasProjectBody } from '../../workspaces/one-project';
 import {
   AnyObject,
   SandboxProviderPatchResultSchema,
@@ -398,10 +399,11 @@ export function registerProjectSettingsRoutes(): void {
           403,
         );
       }
-      // Target entitlements: the same per-account project cap a fresh
-      // project would hit (free tier = 1 project).
-      const denial = await projectQuotaDenial(targetAccountId);
-      if (denial) return c.json(denial, 403);
+      // The target must be able to take one more project, exactly as a fresh
+      // create there: 409 `workspace_has_project` when it already holds its one
+      // active project (Workspaces 1:1), else 403 at the plan's project cap.
+      const denial = await projectCreationDenial(targetAccountId);
+      if (denial) return c.json(denial.body, denial.status);
 
       try {
         const result = await transferProjectOwnership({
@@ -411,6 +413,10 @@ export function registerProjectSettingsRoutes(): void {
         });
         return c.json({ ok: true, project_id: result.projectId, account_id: result.accountId });
       } catch (error) {
+        // A create in the target won the race past the check above.
+        if (isWorkspaceOnePerAccountConflict(error)) {
+          return c.json(workspaceHasProjectBody(targetAccountId, null), 409);
+        }
         if (error instanceof ProjectTransferError) {
           const status =
             error.code === 'project_missing' || error.code === 'target_missing'

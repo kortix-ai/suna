@@ -125,6 +125,7 @@ const projectRow: typeof projects.$inferSelect = {
   projectId: PROJECT_ID,
   accountId: ACCOUNT_ID,
   sandboxProviderGeneration: 0,
+  splitPending: false,
   secretDefaultStrategy: 'runtime' as const,
   name: 'Contract Project',
   repoUrl: `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`,

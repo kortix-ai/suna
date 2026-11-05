@@ -92,9 +92,9 @@ const introMarks = async (projectId: string) =>
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'channels-onboarding' });
   await db.insert(projects).values([
-    { projectId: PROJECT, accountId: ACCOUNT, name: 'Northwind', repoUrl: 'https://example.test/n.git', metadata: { experimental: { chat: true } } },
-    { projectId: OFF_PROJECT, accountId: ACCOUNT, name: 'Acme', repoUrl: 'https://example.test/a.git' },
-    { projectId: FIRST_PROJECT, accountId: ACCOUNT, name: 'Globex', repoUrl: 'https://example.test/g.git' },
+    { splitPending: true, projectId: PROJECT, accountId: ACCOUNT, name: 'Northwind', repoUrl: 'https://example.test/n.git', metadata: { experimental: { chat: true } } },
+    { splitPending: true, projectId: OFF_PROJECT, accountId: ACCOUNT, name: 'Acme', repoUrl: 'https://example.test/a.git' },
+    { splitPending: true, projectId: FIRST_PROJECT, accountId: ACCOUNT, name: 'Globex', repoUrl: 'https://example.test/g.git' },
   ]);
   await insertIntoView(db, accountMembers, [
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },

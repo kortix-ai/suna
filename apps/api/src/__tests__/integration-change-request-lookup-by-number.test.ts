@@ -26,12 +26,14 @@ beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'cr-lookup-by-number-test' });
   await db.insert(projects).values([
     {
+      splitPending: true,
       projectId: PROJECT,
       accountId: ACCOUNT,
       name: 'cr-lookup-by-number-test',
       repoUrl: 'https://example.test/cr-lookup.git',
     },
     {
+      splitPending: true,
       projectId: OTHER_PROJECT,
       accountId: ACCOUNT,
       name: 'cr-lookup-other-project-test',

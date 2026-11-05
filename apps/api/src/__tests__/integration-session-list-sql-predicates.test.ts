@@ -146,7 +146,7 @@ async function walk(input: Omit<Parameters<typeof page>[0], 'cursor'>) {
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'session-list-sql-predicates-test' });
   for (const projectId of [PROJECT_A, PROJECT_B, PROJECT_RULES]) {
-    await db.insert(projects).values({ projectId, accountId: ACCOUNT, name: projectId, repoUrl: 'https://example.test/p.git' });
+    await db.insert(projects).values({ splitPending: true, projectId, accountId: ACCOUNT, name: projectId, repoUrl: 'https://example.test/p.git' });
   }
   await db.insert(accountGroups).values([
     { groupId: GROUP_WITH_B, accountId: ACCOUNT, name: 'with-b' },

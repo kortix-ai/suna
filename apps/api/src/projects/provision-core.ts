@@ -49,7 +49,7 @@ import { db } from '../shared/db';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { getProjectMemberRole, grantProjectRole, projectQuotaDenial } from './lib/access';
+import { getProjectMemberRole, grantProjectRole, projectCreationDenial } from './lib/access';
 import {
   buildConnectionRef,
   getProjectGitConnection,
@@ -59,6 +59,11 @@ import {
 } from './lib/git';
 import { metadataMerge } from './lib/metadata-merge';
 import { renameAccountOfSoleProject } from './lib/workspace-name';
+import {
+  isWorkspaceOnePerAccountConflict,
+  workspaceHasProjectBody,
+  workspaceHasProjectDenial,
+} from '../workspaces/one-project';
 import {
   buildCachedFastBootGitHint,
   resolveFastBootGitHintWithCache,
@@ -580,11 +585,12 @@ async function replayOrEnforceProjectQuota(
     };
   }
 
-  const provisionQuota = await projectQuotaDenial(scope.accountId);
-  if (provisionQuota) {
-    // The body `enforceProjectQuota` sends as its 403 (see `lib/project-quota.ts`).
-    return { status: 403, body: provisionQuota };
-  }
+  // 409 `workspace_has_project` (the account already holds its one active
+  // project), else 403 `project_limit_reached` — the bodies
+  // `enforceProjectQuota` sends (see `lib/project-quota.ts`). Above
+  // `createRepo`, so a refused create mints no repo.
+  const denial = await projectCreationDenial(scope.accountId);
+  if (denial) return denial;
   return null;
 }
 
@@ -628,6 +634,50 @@ async function createManagedRepo(
         : {}),
     });
     return { result: createRepoFailureResult(error) };
+  }
+}
+
+/**
+ * Delete the managed repo a refused INSERT minted. The DELETE MUST LEAVE A
+ * RECORD EITHER WAY: this path exists to prevent an orphaned managed repo, so a
+ * failure that logs nothing turns "no orphan is left behind" into a claim
+ * nobody can check. `stage` names the race that lost.
+ */
+async function deleteMintedRepo(
+  backend: ProvisionRequest['backend'],
+  provider: ProvisionRequest['provider'],
+  provisioned: ProvisionedRepo,
+  orphanContext: string,
+  stage: 'idempotency_race' | 'workspace_has_project',
+): Promise<void> {
+  if (!provisioned.repoOwner || !provisioned.repoName) {
+    // git-backends/github.ts `deleteRepo` returns silently without an owner
+    // and name — the repo would survive with no trace of why.
+    console.error(
+      `[projects] ORPHANED MANAGED REPO — provision cannot delete the repo it minted, the ` +
+        `backend ref has no owner/name ${orphanContext} stage=${stage}`,
+    );
+    return;
+  }
+  try {
+    await backend.deleteRepo({
+      provider,
+      upstreamUrl: provisioned.upstreamUrl,
+      externalRepoId: provisioned.externalRepoId,
+      repoOwner: provisioned.repoOwner,
+      repoName: provisioned.repoName,
+      installationId: provisioned.installationId,
+      credentialRef: provisioned.credentialRef,
+      defaultBranch: provisioned.defaultBranch,
+      managed: true,
+      metadata: {},
+    } satisfies GitConnectionRef);
+  } catch (deleteError) {
+    console.error(
+      `[projects] ORPHANED MANAGED REPO — provision failed to delete the repo it minted ` +
+        `${orphanContext} stage=${stage}:`,
+      deleteError instanceof Error ? deleteError.message : deleteError,
+    );
   }
 }
 
@@ -708,16 +758,34 @@ async function insertProvisionedProject(
   try {
     [row] = await insertProjectRow();
   } catch (error) {
-    // Two provisions carrying one key raced past the pre-check above and this
-    // one lost the partial unique index. The winner's project exists; this
-    // request's upstream repo does not belong to anything and must not be left
-    // behind — that orphan is the exact outcome the key exists to prevent.
-    if (!isProvisionIdempotencyConflict(error)) throw error;
+    // Two unique indexes can refuse this INSERT:
+    //   - `uq_projects_workspace_account`: the account gained its one active
+    //     project between the pre-check and here (Workspaces 1:1);
+    //   - `idx_projects_account_idempotency_key`: two provisions carrying one
+    //     key raced past the pre-check, and this one lost.
+    // Either way this request's upstream repo belongs to nothing and must not
+    // be left behind. When both apply, Postgres names whichever index it
+    // checked first, so a workspace conflict whose key has a winner is the key
+    // race: the caller retried one create, and gets the winner's project.
+    const workspaceConflict = isWorkspaceOnePerAccountConflict(error);
+    if (!workspaceConflict && !isProvisionIdempotencyConflict(error)) throw error;
     const winner = await findIdempotentProvision(
       lookupProvisionByIdempotencyKey,
       scope.accountId,
       idempotencyKey,
     );
+    if (workspaceConflict && !winner) {
+      await deleteMintedRepo(
+        backend,
+        provider,
+        provisioned,
+        `account=${scope.accountId} repo=${provisioned.repoName ?? provisioned.upstreamUrl} ` +
+          `owner=${provisioned.repoOwner ?? 'unknown'} repo_id=${provisioned.externalRepoId ?? 'unknown'}`,
+        'workspace_has_project',
+      );
+      const occupied = await workspaceHasProjectDenial(scope.accountId);
+      return { result: { status: 409, body: occupied ?? workspaceHasProjectBody(scope.accountId, null) } };
+    }
     const mintedRepo = provisioned.repoName ?? provisioned.upstreamUrl;
     const orphanContext =
       `account=${scope.accountId} key=${idempotencyKey} ` +
@@ -727,40 +795,7 @@ async function insertProvisionedProject(
       `[projects] provision lost an idempotency-key race ${orphanContext} — deleting the repo ` +
         `this request minted`,
     );
-    // The DELETE MUST LEAVE A RECORD EITHER WAY. This is the one path whose
-    // entire purpose is preventing an orphaned managed repo, so a failure here
-    // that logs nothing turns "no orphan is left behind" into a claim nobody
-    // can check. The warn above states intent; these state outcome. Same shape
-    // as the seed rollback below (console.error, repo identity, stage).
-    if (!provisioned.repoOwner || !provisioned.repoName) {
-      // git-backends/github.ts `deleteRepo` returns silently without an owner
-      // and name — the repo would survive with no trace of why.
-      console.error(
-        `[projects] ORPHANED MANAGED REPO — provision cannot delete the repo it minted, the ` +
-          `backend ref has no owner/name ${orphanContext} stage=idempotency_race`,
-      );
-    } else {
-      try {
-        await backend.deleteRepo({
-          provider,
-          upstreamUrl: provisioned.upstreamUrl,
-          externalRepoId: provisioned.externalRepoId,
-          repoOwner: provisioned.repoOwner,
-          repoName: provisioned.repoName,
-          installationId: provisioned.installationId,
-          credentialRef: provisioned.credentialRef,
-          defaultBranch: provisioned.defaultBranch,
-          managed: true,
-          metadata: {},
-        } satisfies GitConnectionRef);
-      } catch (deleteError) {
-        console.error(
-          `[projects] ORPHANED MANAGED REPO — provision failed to delete the repo it minted ` +
-            `${orphanContext} stage=idempotency_race:`,
-          deleteError instanceof Error ? deleteError.message : deleteError,
-        );
-      }
-    }
+    await deleteMintedRepo(backend, provider, provisioned, orphanContext, 'idempotency_race');
     // ONE RULE, BOTH CALL SITES — the winner goes through the SAME classifier
     // the pre-check uses. This path is MORE exposed to the in-flight problem,
     // not less: we re-read the winner milliseconds after its own INSERT, while
