@@ -1345,11 +1345,11 @@
           "description": "Drives für das ganze Team: Ein Admin legt ein Drive an und fügt ihm Agenten hinzu. Jede Session dieser Agenten bindet es ein, und alle, die einen davon nutzen dürfen, können es öffnen. Aus: Jede Person hat nur Meine Dateien."
         },
         "chat_input": {
-          "name": "Chat-Eingabe",
+          "name": "Spaces-ChatInput",
           "description": "Ein Steuerelement unter dem Eingabefeld dafür, wer antwortet und wie: Wähle den Agenten, und jede andere Einstellung bleibt auf Automatisch, geerbt von diesem Agenten. Öffne eine Zeile, um Modell, Denkaufwand, Secrets, Anbieterschlüssel oder Sandbox für diese Sitzung zu überschreiben, und setze sie mit einem Klick auf Automatisch zurück."
         },
         "chat_front": {
-          "name": "Router",
+          "name": "Spaces-Router",
           "description": "Mit Spaces ist der Agent, mit dem Sie in einem Thread chatten, ein Router: Er gibt die Arbeit an Ihre Agenten weiter und schreibt zurück wie ein Mensch, in kurzen Nachrichten mit dem Ergebnis, einem Link oder der Entscheidung, die Sie treffen müssen. Ihre Agenten teilen den Thread über seine Dateien, daher gibt der Router Dateipfade weiter statt abgetippten Text. „Arbeit anzeigen“ unter einer Nachricht öffnet die Arbeit dahinter. Benötigt My Kortix in kortix.yaml."
         }
       },

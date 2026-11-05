@@ -1345,11 +1345,11 @@
           "description": "Drajvovi koje ceo tim može da koristi: administrator pravi drajv i dodaje mu agente. Svaka sesija tih agenata ga montira, a svako ko sme da koristi nekog od njih može da ga otvori. Isključeno, svaka osoba ima samo Moje fajlove."
         },
         "chat_input": {
-          "name": "Unos u četu",
+          "name": "Spaces-ChatInput",
           "description": "Jedna kontrola ispod polja za unos za to ko odgovara i kako: izaberi agenta, a sva ostala podešavanja ostaju na Automatski, nasleđena od tog agenta. Otvori red da zameniš model, nivo razmišljanja, tajne, ključeve provajdera ili sandbox za ovu sesiju, i vrati na Automatski jednim klikom."
         },
         "chat_front": {
-          "name": "Ruter",
+          "name": "Spaces-Router",
           "description": "Kada su Prostori uključeni, agent sa kojim razgovarate u niti je ruter: prosleđuje posao vašim agentima i odgovara kao čovek, kratkim porukama sa rezultatom, linkom ili odlukom koju treba da donesete. Vaši agenti dele nit kroz njene fajlove, pa ruter prosleđuje putanje fajlova, a ne prepisan tekst. „Prikaži rad“ ispod poruke otvara rad iza nje. Zahteva uključen My Kortix u kortix.yaml."
         }
       },

@@ -267,6 +267,10 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
   let glanced = false // the glance is in, with something in it
   void raw?.then((r) => (glanced = !!r))
   // words: a search on the words themselves, no routing (the agent is about to search on its own; ours is faster).
+  // Words searched as they are (the search kept ready for an agent's turn, cascade standby()) need something to search:
+  // the glance's own gate. "You decide." went around it (words mode is a web route) and raced three providers and read
+  // two pages on a Kortix dev call, $0.03 for a hand-back.
+  if (words && content(q).size < 2) return ''
   const r = words ? { need: 'web' as const, query: q } : await within(route(q, context, projectFor(q)), remaining())
   if (!words) mark?.('routed')
   if (!r || r.need === 'none') return ''
