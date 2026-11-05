@@ -140,7 +140,10 @@ flow(
       (await asMember.get('/v1/drives/:driveId/access', files(ownerFolder))).status(404);
     });
 
-    await ctx.step('shared_drives off (the default): Drive is My files only; every share → 403 feature_disabled; no Company folder', async () => {
+    await ctx.step('shared_drives is on by default; a project turns it off: Drive is My files only; every share → 403 feature_disabled; no Company folder', async () => {
+      const before = (await asMember.get('/v1/drives', listFiles)).status(200).json<{ drives: any[] }>().drives[0];
+      if (before.sharedDrives !== true) throw new Error(`shared Drives are not on by default: ${JSON.stringify(before)}`);
+      (await owner.patch('/v1/projects/:projectId/features', { feature: 'shared_drives', enabled: false }, { params: { projectId: project.id } })).status(200);
       const drive = (await asMember.get('/v1/drives', listFiles)).status(200).json<{ drives: any[] }>().drives[0];
       if (drive.sharedDrives !== false || drive.sharedWithMe?.length) throw new Error(`member Drive ${JSON.stringify(drive)}`);
       (await owner.put('/v1/drives/:driveId/access', { path: '/Sales', principalType: 'agent', principalId: 'worker', level: 'read' }, { params: { driveId } }))

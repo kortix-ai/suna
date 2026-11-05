@@ -271,9 +271,11 @@ export const DEPRECATIONS: readonly Deprecation[] = [
 ];
 
 /**
- * Rewrites of a valid shape to its canonical spelling. `--fix` applies them
- * (`fixManifestText`); unlike `DEPRECATIONS`, validate does not warn and a
- * reader keeps the file's value, because the old spelling stays valid.
+ * Rewrites of a valid shape to its canonical spelling. Only `--fix` and a
+ * legacy conversion apply them (`fixManifestText(text, { canonical: true })`);
+ * unlike `DEPRECATIONS`, validate does not warn, a reader keeps the file's
+ * value, and an ordinary write (CLI edit, API save) keeps the line, because
+ * the old spelling stays valid.
  */
 export const CANONICAL_REWRITES: readonly Deprecation[] = [
   {
@@ -300,15 +302,18 @@ export function applyDeprecations(doc: Document): AppliedFix[] {
 }
 
 /**
- * `text` rewritten to the latest shape and its canonical spelling
- * (`CANONICAL_REWRITES`), comments kept. Unchanged (the same bytes) when
- * nothing is deprecated or the YAML does not parse. Every line a
- * deprecation does not change keeps its bytes (`keepUnchangedLines`).
+ * `text` rewritten to the latest shape, comments kept. With `canonical`
+ * (`kortix validate --fix`, a legacy conversion) the canonical spellings
+ * (`CANONICAL_REWRITES`) are written too; every other writer leaves them
+ * alone. Unchanged (the same bytes) when nothing is deprecated or the YAML
+ * does not parse. Every line a deprecation does not change keeps its bytes
+ * (`keepUnchangedLines`).
  */
-export function fixManifestText(text: string): { text: string; fixed: AppliedFix[] } {
+export function fixManifestText(text: string, options: { canonical?: boolean } = {}): { text: string; fixed: AppliedFix[] } {
   const doc = parseDocument(text);
   if (doc.errors.length > 0) return { text, fixed: [] };
-  const fixed = [...applyDeprecations(doc), ...CANONICAL_REWRITES.flatMap((rewrite) => rewrite.apply(doc).map((path) => ({ id: rewrite.id, path })))];
+  const rewrites = options.canonical ? CANONICAL_REWRITES : [];
+  const fixed = [...applyDeprecations(doc), ...rewrites.flatMap((rewrite) => rewrite.apply(doc).map((path) => ({ id: rewrite.id, path })))];
   if (fixed.length === 0) return { text, fixed };
   // No folding of long lines, no padding inside `[a, b]`.
   const rendered = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
