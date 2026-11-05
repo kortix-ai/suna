@@ -798,8 +798,8 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // The Customize Review tab (`reviewHref`).
-    href: '/projects/{projectId}/customize/review',
+    // Review's own page (`reviewHref`), outside Customize since 2026-11-04.
+    href: '/projects/{projectId}/review',
     requiresProject: true,
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },

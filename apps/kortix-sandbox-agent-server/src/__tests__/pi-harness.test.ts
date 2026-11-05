@@ -36,6 +36,8 @@ import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { createEnvRouter } from '@/routes/kortix/env'
 import { expandCommandTemplate, type PiRuntimeHooks } from '@/harness/pi/runtime'
 import { MessageIdClock } from '@/harness/pi/message-id'
+import { permissionArgsHash } from '@/harness/pi/interactions'
+import { PARKED_QUESTION_RESULT } from '@/harness/pi/tools'
 import { createPiSessionLogPort, piSessionLog } from '@/harness/pi/session-log'
 import { PLATFORM_EXTENSION_IDS } from '@kortix/api-contract/runtime-relay'
 import { restorePiSessionLog } from '@/harness/pi/session-log-restore'
@@ -815,7 +817,7 @@ describe('pi harness', () => {
     expect(res.status).toBe(400)
   })
 
-  test('a new prompt dismisses an open question, so an unattended session never wedges behind it', async () => {
+  test('a new prompt parks an open question, so an unattended session never wedges behind it', async () => {
     // Prod 2026-10-09: a keyed cron session called `question`, nobody answered,
     // and every later fire queued behind the blocked turn for 5 days.
     const r = await boot({
@@ -833,11 +835,14 @@ describe('pi harness', () => {
     await waitFor(() => runtime.questions.list().length === 0 && !runtime.busy() && runtime.idle())
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ info: { role: string }; parts: Array<Record<string, any>> }> }
     const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'question')!
-    expect(tool.state.status).not.toBe('running')
+    // Parked, not dismissed: the call returns, and the model reads that the answer comes later.
+    expect(tool.state.status).toBe('completed')
+    expect(tool.state.output).toBe(PARKED_QUESTION_RESULT)
     const texts = page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'text').map((p) => p.text)
     expect(texts).toContain('second prompt answered')
-    const text = await readSse(await r.bearer('/kortix/runtime/events?since=0'), (t) => t.includes('event: question.rejected'))
-    expect(text).toContain('event: question.rejected')
+    const text = await readSse(await r.bearer('/kortix/runtime/events?since=0'), (t) => t.includes('event: question.parked'))
+    expect(text).toContain('event: question.parked')
+    expect(text).not.toContain('event: question.rejected')
   })
 
   test('steers reach pi in arrival order, and a retract during image loading cancels the steer', async () => {
@@ -865,7 +870,7 @@ describe('pi harness', () => {
     expect(sent).not.toContain('STEER-GONE')
   })
 
-  test('a steered message dismisses an open question, so the turn reads it', async () => {
+  test('a steered message parks an open question, so the turn reads it', async () => {
     const r = await boot({
       script: [
         { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
@@ -880,7 +885,7 @@ describe('pi harness', () => {
     await waitFor(() => runtime.questions.list().length === 0 && runtime.idle())
   })
 
-  test('a synthetic steer leaves an open question open', async () => {
+  test('a synthetic steer (a peer message, a subagent report) parks an open question, so it never waits behind it', async () => {
     const r = await boot({
       script: [
         { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
@@ -891,9 +896,81 @@ describe('pi harness', () => {
     const root = runtime.rootId
     expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
     await waitFor(() => runtime.questions.list().length === 1)
-    expect(await runtime.steer({ messageID: siblingId(runtime.activeTurnMessageId()!, 'z'), text: 'The linear connector was just connected', parts: [], synthetic: true } as never)).toBe('steered')
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    expect(runtime.questions.list()).toHaveLength(1)
+    const before = gateway.sent.length
+    expect(await runtime.steer({ messageID: siblingId(runtime.activeTurnMessageId()!, 'z'), text: 'A background subagent you started has finished', files: [], synthetic: true } as never)).toBe('steered')
+    expect(runtime.questions.list()).toEqual([])
+    await waitFor(() => gateway.sent.length > before && runtime.idle(), 5_000)
+    expect(JSON.stringify(gateway.sent.slice(before))).toContain('A background subagent you started has finished')
+  })
+
+  test('a question nobody answers within its live window parks, and the turn goes on', async () => {
+    const relayed: Array<{ parkable: boolean }> = []
+    const r = await boot({
+      script: [
+        { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
+        { text: 'went on' },
+      ],
+      // apps/api says nobody watches this session: park at once.
+      hooks: { onQuestionAsked: async (_request, ask) => (relayed.push(ask), { liveWaitMs: 0 }) },
+    })
+    const runtime = r.service.runtime()!
+    expect((await prompt(r, runtime.rootId, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => !runtime.busy() && runtime.idle())
+    expect(relayed).toEqual([{ parkable: true }])
+    const page = (await r.bearer(`/kortix/runtime/messages/${runtime.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, any>> }> }
+    const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'question')!
+    expect(tool.state.output).toBe(PARKED_QUESTION_RESULT)
+  })
+
+  test('POST /kortix/runtime/asks/park parks every open ask; nothing open parks nothing', async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'went on' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
+    })
+    const runtime = r.service.runtime()!
+    expect((await prompt(r, runtime.rootId, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => runtime.permissions.list().length === 1)
+    expect(await r.bearer('/kortix/runtime/asks/park', { method: 'POST' }).then((res) => res.json())).toEqual({ parked: 1 })
+    await waitFor(() => !runtime.busy() && runtime.idle())
+    expect(await r.bearer('/kortix/runtime/asks/park', { method: 'POST' }).then((res) => res.json())).toEqual({ parked: 0 })
+    const page = (await r.bearer(`/kortix/runtime/messages/${runtime.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, any>> }> }
+    const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'bash')!
+    expect(tool.state.status).toBe('error')
+    expect(JSON.stringify(tool.state)).toContain('did not run')
+    const text = await readSse(await r.bearer('/kortix/runtime/events?since=0'), (t) => t.includes('event: permission.parked'))
+    expect(text).toContain('event: permission.parked')
+  })
+
+  test('a new prompt parks a permission ask: the call does not run and the prompt runs', async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo never > parked.txt' } }, { text: 'went on' }, { text: 'second answered' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
+    })
+    const runtime = r.service.runtime()!
+    expect((await prompt(r, runtime.rootId, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => runtime.permissions.list().length === 1)
+    expect((await prompt(r, runtime.rootId, { parts: [{ type: 'text', text: 'second' }] })).status).toBe(204)
+    await waitFor(() => runtime.permissions.list().length === 0 && !runtime.busy() && runtime.idle())
+    expect(existsSync(join(r.workspace, 'parked.txt'))).toBe(false)
+    const page = (await r.bearer(`/kortix/runtime/messages/${runtime.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, any>> }> }
+    expect(page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'text').map((p) => p.text)).toContain('second answered')
+  })
+
+  test('a call a person approved while it was parked runs on the re-run without asking', async () => {
+    const calls: Array<{ tool: string; argsHash: string }> = []
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo approved > ran.txt' } }, { text: 'ran it' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
+      hooks: { onPermissionAsked: async (_request, call) => (calls.push(call), { approved: true, grant: 'bash' }) },
+    })
+    const runtime = r.service.runtime()!
+    expect((await prompt(r, runtime.rootId, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => !runtime.busy() && runtime.idle())
+    expect(existsSync(join(r.workspace, 'ran.txt'))).toBe(true)
+    expect(calls).toEqual([{ tool: 'bash', argsHash: permissionArgsHash('bash', { command: 'echo approved > ran.txt' }) }])
+    expect(runtime.permissions.list()).toEqual([])
+    // "Always": the capability is granted for the rest of the session.
+    expect(runtime.permissions.grantList()).toEqual(['bash'])
   })
 
   test('a rejected permission blocks the tool and the turn still ends', async () => {
@@ -1137,7 +1214,7 @@ describe('pi harness', () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'done' }],
       env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
-      hooks: { onPermissionAsked: (request) => asked.push(request) },
+      hooks: { onPermissionAsked: async (request) => (asked.push(request), null) },
     })
     const root = r.service.runtime()!.rootId
     expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
@@ -2156,25 +2233,43 @@ describe('pi subagents extension', () => {
     }
   })
 
-  test('a talk-only front (kortix.front) has only agent, send_message and task_stop; every agent call starts its one My Kortix worker, not narrowed', async () => {
+  test('a router (kortix.front) has only agent, send_message and task_stop; it routes each task to a roster agent or My Kortix, as a named background worker, not narrowed', async () => {
     const creates: Array<Record<string, any>> = []
+    let detailReads = 0
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url)
         if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
           creates.push((await req.json()) as Record<string, any>)
-          return Response.json({ session_id: 'front-worker-1' }, { status: 201 })
+          return Response.json({ session_id: `front-worker-${creates.length}` }, { status: 201 })
         }
         if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([])
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/detail') {
+          detailReads++
+          return Response.json({
+            config: {
+              agents: [
+                { name: 'mykortix', description: 'My Kortix', platform: true },
+                { name: 'researcher', description: 'Finds facts on the web\nand cites sources.' },
+                { name: 'retired', description: 'Off', enabled: false },
+                { name: 'cron-bot', description: 'Internal', hidden: true },
+              ],
+            },
+          })
+        }
         return new Response('not found', { status: 404 })
       },
     })
     try {
       const r = await boot({
-        // The model asks for another agent, in the same session, in the foreground: the front overrides all of it.
         script: [
-          { tool: 'agent', args: { description: 'Check the logs', prompt: 'check the logs', subagent_type: 'general', session: 'same', run_in_background: false } },
+          // A roster agent, in the same session, in the foreground: the router keeps the agent and overrides the rest.
+          { tool: 'agent', args: { description: 'Find flights', prompt: 'find flights to Lisbon', subagent_type: 'researcher', name: 'flights', session: 'same', run_in_background: false } },
+          // No agent named and no name: My Kortix, named after the description.
+          { tool: 'agent', args: { description: 'Draft the invite', prompt: 'draft the invite' } },
+          // An agent the roster does not hold: refused with the roster.
+          { tool: 'agent', args: { description: 'Do it', prompt: 'do it', subagent_type: 'nope' } },
           { text: 'On it.' },
         ],
         env: {
@@ -2186,18 +2281,85 @@ describe('pi subagents extension', () => {
       })
       expect((await toolIds(r)).sort()).toEqual(['agent', 'send_message', 'task_stop'])
       const sentBefore = gateway.sent.length
-      await promptAndSettle(r, 'check the logs')
+      await promptAndSettle(r, 'find flights to Lisbon and draft the invite')
+      expect(creates).toHaveLength(2)
+      const [routed, fallback] = creates as [Record<string, any>, Record<string, any>]
+      expect(routed.agent_name).toBe('researcher')
+      expect(routed.initial_prompt).toBe('find flights to Lisbon')
+      expect(routed.metadata).toMatchObject({ notify_parent: true, agent_handle: 'flights' })
+      expect(routed.runtime_context['kortix.front.thread']).toBe(true)
+      expect(routed.runtime_context['kortix.agent.handle']).toBe('flights')
+      // The worker is not narrowed to the router's three tools.
+      expect(routed.runtime_context['kortix.subagent.tools']).toBeUndefined()
+      expect(fallback.agent_name).toBe('mykortix')
+      expect(fallback.metadata).toMatchObject({ notify_parent: true, agent_handle: 'draft-the-invite' })
+      expect(fallback.runtime_context['kortix.front.thread']).toBe(true)
+      const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      const refused = toolParts(page, 'agent')[2]!
+      expect(refused.state.status).toBe('error')
+      expect(JSON.stringify(refused.state)).toContain('\\"nope\\" is not an agent of this project. Pick one of: mykortix, researcher.')
+      // The roster is read once (boot warm-up and first turn share the read) and is cached across the turn.
+      expect(detailReads).toBe(1)
+      const systems = gateway.sent.slice(sentBefore).map(systemSent)
+      // The router's own prompt replaces the agent's: it only talks and routes.
+      expect(systems.every((system) => system.startsWith('You are Kortix, talking with a person in a chat thread.'))).toBe(true)
+      expect(systems[0]).toContain('## Agents you can hand work to\n- mykortix (the default)')
+      expect(systems[0]).toContain('- researcher: Finds facts on the web and cites sources.')
+      expect(systems[0]).not.toContain('retired')
+      expect(systems[0]).not.toContain('cron-bot')
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test("a router's prompt body thread_files end every worker prompt with the Context files block, kept across a notice turn", async () => {
+    const creates: Array<Record<string, any>> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url)
+        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+          creates.push((await req.json()) as Record<string, any>)
+          return Response.json({ session_id: `files-worker-${creates.length}` }, { status: 201 })
+        }
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([])
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/detail') return Response.json({ config: { agents: [] } })
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const r = await boot({
+        script: [
+          { tool: 'agent', args: { description: 'Write a poem', prompt: 'Write the poem the person asked for.', name: 'poem' } },
+          { text: 'On it.' },
+          { tool: 'agent', args: { description: 'Shorter', prompt: 'Make it shorter.', name: 'poem-short' } },
+          { text: 'Sure.' },
+        ],
+        env: {
+          KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1`,
+          KORTIX_SESSION_CONTEXT: JSON.stringify({ 'kortix.front': true }),
+          KORTIX_META_AGENT: '1',
+        },
+      })
+      const root = r.service.runtime()!.rootId
+      const files = { folder: '/drives/general/threads/a-poem-1a2b3c4d', context: '/drives/general/context.md', message: '/drives/general/threads/a-poem-1a2b3c4d/messages/0001-ana.md' }
+      // The route the API forwards a prompt to: thread_files rides beside system.
+      const sent = await r.user(`/kortix/runtime/sessions/${root}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ parts: [{ type: 'text', text: 'a poem about rain' }], thread_files: files }) })
+      expect(sent.status).toBe(202)
+      await waitFor(() => !r.service.runtime()!.busy())
       expect(creates).toHaveLength(1)
-      const create = creates[0]!
-      expect(create.agent_name).toBe('mykortix')
-      expect(create.initial_prompt).toBe('check the logs')
-      expect(create.metadata).toMatchObject({ notify_parent: true, agent_handle: 'kortix' })
-      expect(create.runtime_context['kortix.front.thread']).toBe(true)
-      expect(create.runtime_context['kortix.agent.handle']).toBe('kortix')
-      // The worker is not narrowed to the front's three tools.
-      expect(create.runtime_context['kortix.subagent.tools']).toBeUndefined()
-      // The front's own prompt replaces the agent's: it only talks.
-      expect(gateway.sent.slice(sentBefore).map(systemSent).every((system) => system.startsWith('You are Kortix in a chat thread.'))).toBe(true)
+      const prompt = creates[0]!.initial_prompt as string
+      expect(prompt.startsWith('Write the poem the person asked for.\n\n## Context files\n')).toBe(true)
+      expect(prompt).toContain("- The person's latest message: /drives/general/threads/a-poem-1a2b3c4d/messages/0001-ana.md")
+      expect(prompt).toContain('- Your work folder: /drives/general/threads/a-poem-1a2b3c4d/work/poem/ (keep your files here; write your final report to /drives/general/threads/a-poem-1a2b3c4d/work/poem/result.md)')
+      // A notice turn carries the folder but no message: the newest message file stays.
+      const notice = { folder: files.folder, context: files.context }
+      const again = await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'worker done', synthetic: true }], thread_files: notice }) })
+      expect(again.status).toBe(204)
+      await waitFor(() => !r.service.runtime()!.busy())
+      expect(creates).toHaveLength(2)
+      expect(creates[1]!.initial_prompt).toContain("- The person's latest message: /drives/general/threads/a-poem-1a2b3c4d/messages/0001-ana.md")
+      expect(creates[1]!.initial_prompt).toContain('/work/poem-short/result.md')
     } finally {
       server.stop(true)
     }
@@ -5781,7 +5943,7 @@ describe('session-log actions (runtime.actions.v1)', () => {
     gateway.script([{ tool: 'bash', args: { command: 'echo asked' } }, { text: 'three' }])
     expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'again' }] })).status).toBe(204)
     await waitFor(() => rt.permissions.list().length === 1)
-    rt.permissions.rejectAll()
+    rt.permissions.parkAll()
     await waitFor(() => !rt.busy())
     expect((await call(r, '/sessions/ses_other/grants', { grants: ['*'] }, 'PUT')).status).toBe(404)
   })

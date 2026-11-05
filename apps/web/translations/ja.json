@@ -1317,8 +1317,8 @@
           "description": "エージェントに Resend のメール受信箱を用意します。届いたメールでセッションを開始・継続し、エージェントはその受信箱で読み、返信し、送信します。自分の Resend API キーとドメインを使います。"
         },
         "chat": {
-          "name": "チャット",
-          "description": "Slack のような Kortix とのチャット：各メッセージがスレッドになり、Kortix の最新の返信がその下に表示されます。Kortix もスレッドを開始でき、スペースは他の人と共有できます。サイドバーのセッション一覧を置き換えます。"
+          "name": "スペース",
+          "description": "Slack のような Kortix とのスペース：各メッセージがスレッドになり、Kortix の最新の返信がその下に表示されます。Kortix もスレッドを開始でき、スペースは他の人と共有できます。サイドバーのセッション一覧を置き換えます。"
         },
         "session_groups": {
           "name": "セッショングループ",
@@ -1349,13 +1349,13 @@
           "description": "入力欄の下にある 1 つのコントロールで、誰がどう答えるかを決めます。エージェントを選ぶと、他の設定はすべてそのエージェントから引き継ぐ自動のままです。行を開くと、このセッションのモデル、思考レベル、シークレット、プロバイダーキー、サンドボックスを上書きでき、1 クリックで自動に戻せます。"
         },
         "chat_front": {
-          "name": "会話専用スレッド",
-          "description": "チャットがオンのとき、スペースの新しいメッセージは、会話だけを行うエージェントのスレッドを開始します。エージェントはすべての依頼を、作業を行う非表示の My Kortix セッション 1 つに渡し、大事なことだけを短いメッセージで答えます。kortix.yaml で My Kortix をオンにする必要があります。"
+          "name": "ルーター",
+          "description": "スペースがオンのとき、スレッドで話すエージェントはルーターです：作業をあなたのエージェントに渡し、人のように返信します。結果、リンク、または必要な判断を短いメッセージで伝えます。エージェントはスレッドのファイルを通じて内容を共有するため、ルーターは本文を書き直さずファイルパスを渡します。メッセージの下の「作業を表示」でその裏の作業を開けます。kortix.yaml で My Kortix をオンにする必要があります。"
         }
       },
       "channelsSwitch": {
         "onTitle": "{project} でスペースをオンにしますか？",
-        "onBody": "このプロジェクトの全員に、セッション一覧の代わりにスペースとダイレクトメッセージが表示されます。既存のセッションはすべて #general に移動します。いつでもオフにでき、何も削除されません。",
+        "onBody": "このプロジェクトの全員に、セッション一覧の代わりにスペースが表示されます。既存のセッションはすべて #general に移動します。いつでもオフにでき、何も削除されません。",
         "drive": "ドライブもオンにして、スペースでファイルを使えるようにする。",
         "turnOn": "オンにする",
         "cancel": "キャンセル",
@@ -1870,10 +1870,15 @@
     "appsNoMatches": "一致するものはありません",
     "spaces": {
       "channels": "スペース",
-      "directMessages": "ダイレクトメッセージ",
       "addChannel": "新しいスペース",
       "loadError": "スペースを読み込めませんでした。",
-      "newAgent": "新しいエージェント"
+      "newAgent": "新しいエージェント",
+      "review": "レビュー",
+      "personal": "あなたのスペース",
+      "personalNamed": "{name} のスペース",
+      "private": "非公開",
+      "noMessages": "まだメッセージはありません",
+      "more": "その他"
     }
   },
   "dashboard": {
@@ -2118,7 +2123,8 @@
       "noCommandMatch": "一致するコマンド、ファイル、アクションはありません",
       "commandsAndActions": "コマンドとアクション",
       "toUse": "使用するには",
-      "use": "使用"
+      "use": "使用",
+      "noOneMatches": "一致する人はいません"
     },
     "history": {
       "restoreTitle": "以前の内容の一部を復元できませんでした",
@@ -2142,7 +2148,23 @@
       "fullTextRetry": "再試行"
     },
     "turn": {
-      "autoRetried": "Kortix はこの失敗の前にモデルを自動で {count, plural, other {# 回}}再試行しました。"
+      "autoRetried": "Kortix はこの失敗の前にモデルを自動で {count, plural, other {# 回}}再試行しました。",
+      "typing": "{name} が入力中…",
+      "showWork": "作業を表示",
+      "hideWork": "作業を隠す",
+      "starting": "起動中…",
+      "workingFor": "作業中 · {time}",
+      "agentWorking": "が作業中",
+      "agentWorkingFor": "が作業中 · {time}",
+      "stopped": "停止しました",
+      "agentWorkingOn": "が {task} に取り組み中",
+      "agentWorkingOnFor": "が {task} に取り組み中 · {time}",
+      "somethingWrong": "問題が発生しました",
+      "notSent": "未送信",
+      "retry": "再試行",
+      "resume": "再開",
+      "agentIsWorking": "{agent} が作業中",
+      "needsYouOn": "あなたの対応が必要: {header}"
     }
   },
   "agents": {
@@ -2950,7 +2972,8 @@
         "notReceived": "リンクが届きませんか？",
         "confirmNotReceived": "確認メールが届きませんか？",
         "resendIn": "{seconds}秒後に再送信",
-        "resend": "再送信"
+        "resend": "再送信",
+        "checkSpam": "見つからない場合は、迷惑メールフォルダを確認してください。"
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21213,8 @@
       "text507c24b6792d": "変更リクエストが {branch} にマージされると、{agent}があなたの指示を実行します。",
       "text05ee1d6181f3": "変更リクエストがマージされると、{agent}があなたの指示を実行します。",
       "texte608495c45ce": "{branch} にマージ",
-      "text80ca527b0d55": "変更リクエストのトリガーを作成しました"
+      "text80ca527b0d55": "変更リクエストのトリガーを作成しました",
+      "authEmailAlreadySent": "このメールは1分以内に送信済みです。再送信する前に、受信トレイと迷惑メールフォルダを確認してください。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -21279,6 +21303,39 @@
       "prCommits": "{count, plural, other {# 件のコミット}}",
       "prCommitsBy": "{author} による {count, plural, other {# 件のコミット}}",
       "prDraft": "ドラフトのプルリクエスト"
+    },
+    "askDeck": {
+      "label": "あなたの対応待ち",
+      "remaining": "{count, plural, other {# 件が対応待ち}}",
+      "yes": "はい",
+      "no": "いいえ",
+      "skip": "スキップ",
+      "send": "回答を送信",
+      "approve": "承認",
+      "deny": "拒否",
+      "dismiss": "却下",
+      "undo": "元に戻す",
+      "allowSession": "このセッションで {tool} を許可",
+      "typeAnswer": "または回答を入力",
+      "answered": "回答を送信しました",
+      "dismissed": "質問を却下しました",
+      "approved": "承認しました",
+      "denied": "拒否しました",
+      "failed": "決定を反映できませんでした",
+      "askedAgo": "{time} 前に質問",
+      "fromWorker": "ワーカーセッションから",
+      "inSession": "{title} 内",
+      "permissionTitle": "{tool} を実行しますか？",
+      "approvalTitle": "このコネクタ呼び出しを実行しますか？",
+      "emptyTitle": "対応待ちはありません",
+      "emptyDescription": "エージェントからの質問と承認はここに表示されます。",
+      "loadFailed": "対応待ちを読み込めませんでした",
+      "retry": "再試行",
+      "kind": {
+        "question": "質問",
+        "permission": "権限",
+        "approval": "コネクタ承認"
+      }
     },
     "reviewBulk": {
       "approve": "承認",
@@ -24705,9 +24762,9 @@
     },
     "create": {
       "title": "スペースを作成",
-      "description": "このプロジェクトの全員がスペースを表示して使用できます。",
+      "description": "スペースは、マーケティング、採用、運用などの 1 つの業務領域を整理します。メンバーとエージェントはそのスレッドで作業します。",
       "nameLabel": "名前",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "マーケティング",
       "slugPlaceholder": "space-name",
       "descriptionLabel": "説明（任意）",
       "descriptionPlaceholder": "このスペースの用途",
@@ -24736,9 +24793,9 @@
     },
     "view": {
       "welcomeTitle": "#{name} へようこそ",
-      "welcomeEmpty": "#{name} で最初のスレッドを始めましょう。メッセージごとに新しいスレッドが始まります。",
+      "welcomeEmpty": "スペースは 1 つの業務領域を整理する場所です。メンバーとエージェントはここでスレッドごとに作業し、各メッセージが新しいスレッドになります。",
       "welcomeStart": "ここが #{name} の始まりです。",
-      "dmIntro": "この会話はあなたと {agent} だけのものです。",
+      "dmIntro": "このスペースを見られるのはあなたと {agent} だけです。",
       "today": "今日",
       "yesterday": "昨日",
       "openThread": "スレッドを開く",
@@ -24962,7 +25019,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "{name} の詳細"
     },
     "details": {
       "about": "概要",
@@ -25018,7 +25076,7 @@
       "memory": "メモリ",
       "loadError": "このフォルダを読み込めませんでした",
       "memoryNoteChannel": "{place} のエージェントが覚えていること。エージェントはスレッドの開始時に毎回これを読みます。",
-      "memoryNoteDm": "{agent} がこの DM から覚えていること。スレッドの開始時に毎回これを読みます。",
+      "memoryNoteDm": "{agent} がこのスペースから覚えていること。各スレッドの開始時に読み込みます。",
       "off": {
         "title": "ここに Drive はありません",
         "description": "{place} のファイルとメモリーは Drive にあります。この Kortix は Drive を保存しません。Platinum が必要です。"
@@ -25191,7 +25249,66 @@
     },
     "filter": "スペースで絞り込み",
     "all": "すべて",
-    "projectWide": "プロジェクト全体"
+    "projectWide": "プロジェクト全体",
+    "panel": {
+      "title": "{name} の詳細",
+      "heading": "詳細",
+      "close": "詳細を閉じる",
+      "private": "非公開",
+      "rename": "名前と説明を変更",
+      "personalDescription": "My Kortix とのあなた専用の非公開スペースです。見られるのはあなただけです。",
+      "privateDescription": "このスペースを見られるのは、参加しているメンバーとエージェントだけです。",
+      "noDescription": "まだ説明はありません。",
+      "agents": "エージェント",
+      "addAgent": "エージェントを追加",
+      "default": "デフォルト",
+      "projectDefault": "プロジェクトのデフォルト",
+      "people": "メンバー",
+      "addPeople": "メンバーを追加",
+      "you": "あなた",
+      "tabs": "タブ",
+      "addTab": "タブを追加",
+      "routines": "ルーティン",
+      "addRoutine": "ルーティンを追加",
+      "routinesPrivate": "非公開スペースではまだルーティンを使えません。",
+      "allSettings": "すべての設定",
+      "askHint": "チャットで頼むこともできます:「ここにエージェントを追加して」「ローンチ資料をタブに固定して」。"
+    },
+    "profile": {
+      "viewProfile": "{name} のプロフィールを表示",
+      "viewProfileShort": "プロフィールを見る",
+      "agent": "エージェント",
+      "openProfile": "プロフィールを開く",
+      "you": "(あなた)",
+      "message": "メッセージ",
+      "messageFailed": "非公開スペースを開けませんでした。もう一度お試しください。",
+      "dmSpaceName": "{a} と {b}",
+      "heading": "プロフィール",
+      "close": "プロフィールを閉じる",
+      "model": "モデル",
+      "modelDefault": "プロジェクトのデフォルトモデル",
+      "connectors": "コネクタ",
+      "connectorsAll": "すべてのコネクタ",
+      "connectorsNone": "コネクタなし",
+      "projectDefault": "プロジェクトのデフォルト",
+      "projectDefaultYes": "エージェント未指定の新しいスレッドに応答します",
+      "email": "メール",
+      "sharedSpaces": "共通のスペース",
+      "yourSpaces": "あなたのスペース",
+      "addTo": "{space} に追加",
+      "addedTo": "{agent} を {space} に追加しました",
+      "addFailed": "エージェントを追加できませんでした。もう一度お試しください。",
+      "spacesIn": "参加しているスペース",
+      "spacesInNone": "まだどのスペースにも参加していません",
+      "default": "デフォルト"
+    },
+    "mentions": {
+      "people": "メンバー",
+      "agents": "エージェント",
+      "addToSpace": "まだ {space} にいません。メンションすると追加されます",
+      "added": "{agent} を {space} に追加しました",
+      "addFailed": "エージェントを追加できませんでした。もう一度お試しください。"
+    }
   },
   "imageGen": {
     "generating": "画像を生成中",

@@ -1317,8 +1317,8 @@
           "description": "Gib dem Agenten ein E-Mail-Postfach bei Resend: eingehende Mails starten und setzen Sessions fort, und der Agent liest, antwortet und sendet aus dem Postfach. Bring deinen eigenen Resend-API-Schlüssel und deine Domain mit."
         },
         "chat": {
-          "name": "Chat",
-          "description": "Chat mit Kortix wie in Slack: Jede Nachricht ist ein Thread, die neueste Antwort von Kortix steht darunter, Kortix kann selbst Threads starten, und Spaces teilen Sie mit anderen. Ersetzt die Sitzungsliste in der Seitenleiste."
+          "name": "Spaces",
+          "description": "Spaces mit Kortix wie in Slack: Jede Nachricht ist ein Thread, die neueste Antwort von Kortix steht darunter, Kortix kann selbst Threads starten, und Spaces teilen Sie mit anderen. Ersetzt die Sitzungsliste in der Seitenleiste."
         },
         "session_groups": {
           "name": "Sitzungsgruppen",
@@ -1349,13 +1349,13 @@
           "description": "Ein Steuerelement unter dem Eingabefeld dafür, wer antwortet und wie: Wähle den Agenten, und jede andere Einstellung bleibt auf Automatisch, geerbt von diesem Agenten. Öffne eine Zeile, um Modell, Denkaufwand, Secrets, Anbieterschlüssel oder Sandbox für diese Sitzung zu überschreiben, und setze sie mit einem Klick auf Automatisch zurück."
         },
         "chat_front": {
-          "name": "Nur-Gesprächs-Threads",
-          "description": "Mit Chat startet eine neue Nachricht in einem Space einen Thread, dessen Agent nur spricht. Er gibt jede Anfrage an eine verborgene My-Kortix-Sitzung weiter, die die Arbeit erledigt, und antwortet in kurzen Nachrichten nur mit dem, was zählt. Benötigt My Kortix in kortix.yaml."
+          "name": "Router",
+          "description": "Mit Spaces ist der Agent, mit dem Sie in einem Thread chatten, ein Router: Er gibt die Arbeit an Ihre Agenten weiter und schreibt zurück wie ein Mensch, in kurzen Nachrichten mit dem Ergebnis, einem Link oder der Entscheidung, die Sie treffen müssen. Ihre Agenten teilen den Thread über seine Dateien, daher gibt der Router Dateipfade weiter statt abgetippten Text. „Arbeit anzeigen“ unter einer Nachricht öffnet die Arbeit dahinter. Benötigt My Kortix in kortix.yaml."
         }
       },
       "channelsSwitch": {
         "onTitle": "Spaces für {project} einschalten?",
-        "onBody": "Alle in diesem Projekt erhalten Spaces und Direktnachrichten statt der Sitzungsliste. Alle bestehenden Sitzungen ziehen nach #general um. Du kannst es jederzeit ausschalten; nichts wird gelöscht.",
+        "onBody": "Alle in diesem Projekt bekommen Spaces statt der Sitzungsliste. Alle bestehenden Sitzungen ziehen nach #general um. Du kannst es jederzeit ausschalten; nichts wird gelöscht.",
         "drive": "Auch Drive einschalten, damit Spaces Dateien bekommen.",
         "turnOn": "Einschalten",
         "cancel": "Abbrechen",
@@ -1870,10 +1870,15 @@
     "appsNoMatches": "Keine Treffer",
     "spaces": {
       "channels": "Spaces",
-      "directMessages": "Direktnachrichten",
       "addChannel": "Neuer Space",
       "loadError": "Spaces konnten nicht geladen werden.",
-      "newAgent": "Neuer Agent"
+      "newAgent": "Neuer Agent",
+      "review": "Prüfen",
+      "personal": "Dein Space",
+      "personalNamed": "Space von {name}",
+      "private": "Privat",
+      "noMessages": "Noch keine Nachrichten",
+      "more": "Mehr"
     }
   },
   "dashboard": {
@@ -2118,7 +2123,8 @@
       "noCommandMatch": "Kein passender Befehl, keine passende Datei oder Aktion",
       "commandsAndActions": "Befehle und Aktionen",
       "toUse": "zur Verwendung",
-      "use": "Verwenden"
+      "use": "Verwenden",
+      "noOneMatches": "Niemand passt"
     },
     "history": {
       "restoreTitle": "Einige frühere Inhalte konnten nicht wiederhergestellt werden",
@@ -2142,7 +2148,23 @@
       "fullTextRetry": "Erneut versuchen"
     },
     "turn": {
-      "autoRetried": "Kortix hat das Modell vor diesem Fehler {count, plural, one {einmal} other {#-mal}} automatisch wiederholt."
+      "autoRetried": "Kortix hat das Modell vor diesem Fehler {count, plural, one {einmal} other {#-mal}} automatisch wiederholt.",
+      "typing": "{name} schreibt…",
+      "showWork": "Arbeit anzeigen",
+      "hideWork": "Arbeit ausblenden",
+      "starting": "Startet…",
+      "workingFor": "Arbeitet · {time}",
+      "agentWorking": "arbeitet",
+      "agentWorkingFor": "arbeitet · {time}",
+      "stopped": "Gestoppt",
+      "agentWorkingOn": "arbeitet an {task}",
+      "agentWorkingOnFor": "arbeitet an {task} · {time}",
+      "somethingWrong": "Etwas ist schiefgelaufen",
+      "notSent": "Nicht gesendet",
+      "retry": "Erneut versuchen",
+      "resume": "Fortsetzen",
+      "agentIsWorking": "{agent} arbeitet",
+      "needsYouOn": "Braucht dich: {header}"
     }
   },
   "agents": {
@@ -2950,7 +2972,8 @@
         "notReceived": "Keinen Link erhalten?",
         "confirmNotReceived": "Keine Bestätigungs-E-Mail erhalten?",
         "resendIn": "Erneut senden in {seconds}",
-        "resend": "Erneut senden"
+        "resend": "Erneut senden",
+        "checkSpam": "Nicht da? Prüfe deinen Spam- oder Junk-Ordner."
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21213,8 @@
       "text507c24b6792d": "Wenn eine Änderungsanfrage in {branch} zusammengeführt wird, führt {agent} deine Anweisung aus.",
       "text05ee1d6181f3": "Wenn eine Änderungsanfrage zusammengeführt wird, führt {agent} deine Anweisung aus.",
       "texte608495c45ce": "In {branch} zusammengeführt",
-      "text80ca527b0d55": "Änderungsanfrage-Trigger erstellt"
+      "text80ca527b0d55": "Änderungsanfrage-Trigger erstellt",
+      "authEmailAlreadySent": "Wir haben diese E-Mail vor weniger als einer Minute gesendet. Prüfe deinen Posteingang und deinen Spam-Ordner, bevor du eine neue anforderst."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -21279,6 +21303,39 @@
       "prCommits": "{count, plural, one {# Commit} other {# Commits}}",
       "prCommitsBy": "{count, plural, one {# Commit} other {# Commits}} von {author}",
       "prDraft": "Pull Request im Entwurf"
+    },
+    "askDeck": {
+      "label": "Was auf dich wartet",
+      "remaining": "{count, plural, one {# wartet auf dich} other {# warten auf dich}}",
+      "yes": "Ja",
+      "no": "Nein",
+      "skip": "Überspringen",
+      "send": "Antwort senden",
+      "approve": "Genehmigen",
+      "deny": "Ablehnen",
+      "dismiss": "Verwerfen",
+      "undo": "Rückgängig",
+      "allowSession": "{tool} für die Sitzung erlauben",
+      "typeAnswer": "Oder eigene Antwort eingeben",
+      "answered": "Antwort gesendet",
+      "dismissed": "Frage verworfen",
+      "approved": "Genehmigt",
+      "denied": "Abgelehnt",
+      "failed": "Die Entscheidung wurde nicht übernommen",
+      "askedAgo": "Vor {time} gefragt",
+      "fromWorker": "aus einer Worker-Sitzung",
+      "inSession": "In {title}",
+      "permissionTitle": "{tool} ausführen?",
+      "approvalTitle": "Diesen Connector-Aufruf ausführen?",
+      "emptyTitle": "Nichts wartet auf dich",
+      "emptyDescription": "Fragen und Freigaben deiner Agenten erscheinen hier.",
+      "loadFailed": "Konnte nicht laden, was auf dich wartet",
+      "retry": "Erneut versuchen",
+      "kind": {
+        "question": "Frage",
+        "permission": "Berechtigung",
+        "approval": "Connector-Freigabe"
+      }
     },
     "reviewBulk": {
       "approve": "Genehmigen",
@@ -24705,9 +24762,9 @@
     },
     "create": {
       "title": "Space erstellen",
-      "description": "Alle in diesem Projekt können den Space sehen und nutzen.",
+      "description": "Ein Space ordnet einen Arbeitsbereich, etwa Marketing, Recruiting oder Ops. Personen und Agenten arbeiten in seinen Threads.",
       "nameLabel": "Name",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "space-name",
       "descriptionLabel": "Beschreibung (optional)",
       "descriptionPlaceholder": "Wofür dieser Space da ist",
@@ -24736,9 +24793,9 @@
     },
     "view": {
       "welcomeTitle": "Willkommen in #{name}",
-      "welcomeEmpty": "Starte den ersten Thread in #{name}. Jede Nachricht startet einen neuen Thread.",
+      "welcomeEmpty": "Ein Space ordnet einen Arbeitsbereich. Personen und Agenten arbeiten hier in Threads: jede Nachricht startet einen.",
       "welcomeStart": "Hier beginnt #{name}.",
-      "dmIntro": "Diese Unterhaltung führst nur du mit {agent}.",
+      "dmIntro": "Nur du und {agent} sehen diesen Space.",
       "today": "Heute",
       "yesterday": "Gestern",
       "openThread": "Thread öffnen",
@@ -24962,7 +25019,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "Details zu {name}"
     },
     "details": {
       "about": "Info",
@@ -25018,7 +25076,7 @@
       "memory": "Speicher",
       "loadError": "Dieser Ordner konnte nicht geladen werden",
       "memoryNoteChannel": "Was sich Agenten in {place} merken. Agenten lesen das zu Beginn jedes Threads.",
-      "memoryNoteDm": "Was sich {agent} aus dieser DM merkt. Der Agent liest das zu Beginn jedes Threads.",
+      "memoryNoteDm": "Was {agent} aus diesem Space behält. Es liest das zu Beginn jedes Threads.",
       "off": {
         "title": "Hier gibt es kein Drive",
         "description": "Dateien und Erinnerungen für {place} liegen im Drive. Diese Kortix-Instanz speichert kein Drive: dafür braucht sie Platinum."
@@ -25191,7 +25249,66 @@
     },
     "filter": "Nach Bereich filtern",
     "all": "Alle",
-    "projectWide": "Projektweit"
+    "projectWide": "Projektweit",
+    "panel": {
+      "title": "Details zu {name}",
+      "heading": "Details",
+      "close": "Details schließen",
+      "private": "Privat",
+      "rename": "Umbenennen und beschreiben",
+      "personalDescription": "Dein privater Space mit My Kortix. Nur du siehst ihn.",
+      "privateDescription": "Nur die Personen und Agenten darin sehen diesen Space.",
+      "noDescription": "Noch keine Beschreibung.",
+      "agents": "Agenten",
+      "addAgent": "Agent hinzufügen",
+      "default": "Standard",
+      "projectDefault": "Projektstandard",
+      "people": "Personen",
+      "addPeople": "Personen hinzufügen",
+      "you": "Du",
+      "tabs": "Tabs",
+      "addTab": "Tab hinzufügen",
+      "routines": "Routinen",
+      "addRoutine": "Routine hinzufügen",
+      "routinesPrivate": "Ein privater Space nimmt noch keine Routinen an.",
+      "allSettings": "Alle Einstellungen",
+      "askHint": "Du kannst auch im Chat fragen: „füge hier einen Agenten hinzu“, „heft das Launch-Dokument als Tab an“."
+    },
+    "profile": {
+      "viewProfile": "Profil von {name} anzeigen",
+      "viewProfileShort": "Profil ansehen",
+      "agent": "Agent",
+      "openProfile": "Profil öffnen",
+      "you": "(du)",
+      "message": "Nachricht",
+      "messageFailed": "Privater Space konnte nicht geöffnet werden. Versuch es noch einmal.",
+      "dmSpaceName": "{a} und {b}",
+      "heading": "Profil",
+      "close": "Profil schließen",
+      "model": "Modell",
+      "modelDefault": "Das Standardmodell des Projekts",
+      "connectors": "Connectoren",
+      "connectorsAll": "Alle Connectoren",
+      "connectorsNone": "Keine Connectoren",
+      "projectDefault": "Projektstandard",
+      "projectDefaultYes": "Beantwortet neue Threads ohne festgelegten Agenten",
+      "email": "E-Mail",
+      "sharedSpaces": "Gemeinsame Spaces",
+      "yourSpaces": "Deine Spaces",
+      "addTo": "Zu {space} hinzufügen",
+      "addedTo": "{agent} zu {space} hinzugefügt",
+      "addFailed": "Agent konnte nicht hinzugefügt werden. Versuch es noch einmal.",
+      "spacesIn": "In diesen Spaces",
+      "spacesInNone": "Noch in keinem Space",
+      "default": "Standard"
+    },
+    "mentions": {
+      "people": "Personen",
+      "agents": "Agenten",
+      "addToSpace": "Noch nicht in {space}: Erwähnen fügt ihn hinzu",
+      "added": "{agent} zu {space} hinzugefügt",
+      "addFailed": "Agent konnte nicht hinzugefügt werden. Versuch es noch einmal."
+    }
   },
   "imageGen": {
     "generating": "Bild wird erstellt",

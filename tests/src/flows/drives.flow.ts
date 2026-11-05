@@ -299,14 +299,19 @@ flow(
     const route = '/v1/projects/:projectId/sessions/:sessionId/drives';
     const params = { params: { projectId: p.id, sessionId: s.id } };
 
-    await ctx.step("OWNER lists the session's drives → 200, each at a distinct /drives path", async () => {
+    await ctx.step("OWNER lists the session's drives → 200, each at a distinct /drives path, with its open conflicts and the newest one's time", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get(route, params);
       r.status(200);
-      const drives = r.json<{ drives: { mountPath: string }[] }>().drives;
+      const drives = r.json<{ drives: { mountPath: string; openConflicts: number; latestConflictAt: string | null }[] }>().drives;
       const paths = drives.map((d) => d.mountPath);
       if (new Set(paths).size !== paths.length || paths.some((m) => !m.startsWith('/drives/'))) {
         throw new Error(`bad mount paths ${paths.join(',')}`);
       }
+      // The conflict notice compares latestConflictAt across reads: null with no open conflict.
+      const badConflicts = drives.filter((d) =>
+        d.openConflicts === 0 ? d.latestConflictAt !== null : Number.isNaN(Date.parse(d.latestConflictAt ?? '')),
+      );
+      if (badConflicts.length) throw new Error(`bad conflict fields ${JSON.stringify(badConflicts)}`);
     });
     await ctx.step('non-uuid session id → 400; unknown session → 404', async () => {
       (await ctx.client.as(ctx.P.OWNER).get(route, { params: { projectId: p.id, sessionId: 'nope' } })).status(400);

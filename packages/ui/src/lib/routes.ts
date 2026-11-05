@@ -51,6 +51,12 @@ export interface UiRoutes {
   dm: (projectId: string, agentName: string) => string;
   /** The project's Company memory (`chat` flag); a page is `?page=<page_id>`. */
   memory: (projectId: string) => string | null;
+  /**
+   * Review: everything that waits on a person (asks, approvals, changes), as
+   * its own page beside the app sidebar. Absent: the host serves Review only
+   * inside its `customize` route.
+   */
+  review?: (projectId: string) => string | null;
 }
 
 const DEFAULT_ROUTES = {
@@ -70,6 +76,7 @@ const DEFAULT_ROUTES = {
   channel: (p: string, slug: string) => `/projects/${p}/c/${slug}`,
   dm: (p: string, agentName: string) => `/projects/${p}/dm/${encodeURIComponent(agentName)}`,
   memory: (p: string) => `/projects/${p}/memory`,
+  review: (p: string) => `/projects/${p}/review`,
 };
 
 export const defaultUiRoutes: UiRoutes = DEFAULT_ROUTES;
@@ -84,7 +91,9 @@ let routes: UiRoutes = DEFAULT_ROUTES;
  */
 export function setUiRoutes(overrides: Partial<UiRoutes>): void {
   const admin = overrides.admin ?? overrides.customize;
-  routes = { ...DEFAULT_ROUTES, ...overrides, ...(admin ? { admin } : {}) };
+  // A host that routes its own customize pages serves Review there unless it also routes `review`.
+  const review = overrides.review ?? (overrides.customize ? undefined : DEFAULT_ROUTES.review);
+  routes = { ...DEFAULT_ROUTES, ...overrides, ...(admin ? { admin } : {}), review };
 }
 
 export function uiRoutes(): UiRoutes {

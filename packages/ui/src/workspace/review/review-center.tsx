@@ -71,7 +71,7 @@ import {
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { statusToVerdict } from './map';
 import { getLocalizedMockItems } from './mock-data';
 import {
@@ -564,7 +564,10 @@ export function ReviewCenter({
   isError,
   sessionLabels,
   verdictAllowed = EVERY_VERDICT,
+  needsYouDeck,
 }: {
+  /** Shown at the top of Needs you: the asks deck (questions and approvals agents wait on). */
+  needsYouDeck?: ReactNode;
   /** When provided, the inbox renders real data instead of the mock fixtures. */
   initialItems?: ReviewItem[];
   /** Connected mode: the segment is the server's filter, so the parent owns it. */
@@ -1471,6 +1474,7 @@ export function ReviewCenter({
               </InputGroupSearch>
             </div>
           </div>
+          {segment === 'needs_you' && needsYouDeck ? <div className="pb-4">{needsYouDeck}</div> : null}
 
           {/* List */}
           {isError && items.length === 0 ? (
@@ -1491,6 +1495,10 @@ export function ReviewCenter({
             // Nothing on the pages read so far matches, and more pages exist:
             // offer them, never the empty state (KRTX-1727).
             <div className="pt-6">{loadMoreButton}</div>
+          ) : visible.length === 0 && segment === 'needs_you' && needsYouDeck && !query ? (
+            // The deck above owns the Needs you empty state: an empty list
+            // under open asks must not say "all caught up".
+            null
           ) : visible.length === 0 ? (
             <EmptyState
               icon={CheckCircleSolid}

@@ -2,38 +2,24 @@ import { describe, expect, test } from 'bun:test';
 
 import { resolveHomeLanding } from './home-landing';
 
-const base = { flagLoading: false, channelsOn: false, spacesLoaded: false, spacesFailed: false, defaultSlug: null };
+const base = { flagLoading: false, channelsOn: false };
 
 describe('resolveHomeLanding', () => {
   test('waits while the flag loads: home never mounts under a redirect', () => {
     expect(resolveHomeLanding({ ...base, flagLoading: true })).toEqual({ kind: 'wait' });
-    expect(resolveHomeLanding({ ...base, flagLoading: true, channelsOn: true, defaultSlug: 'general' })).toEqual({
-      kind: 'wait',
-    });
+    expect(resolveHomeLanding({ ...base, flagLoading: true, channelsOn: true })).toEqual({ kind: 'wait' });
   });
 
-  test('channels off: project home', () => {
+  test('spaces off: project home', () => {
     expect(resolveHomeLanding(base)).toEqual({ kind: 'home' });
   });
 
-  test('channels on: waits for the list, then the default channel by its current slug', () => {
-    expect(resolveHomeLanding({ ...base, channelsOn: true })).toEqual({ kind: 'wait' });
-    expect(resolveHomeLanding({ ...base, channelsOn: true, spacesLoaded: true, defaultSlug: 'team' })).toEqual({
-      kind: 'channel',
-      slug: 'team',
-    });
+  test("spaces on: the person's own space, at once", () => {
+    expect(resolveHomeLanding({ ...base, channelsOn: true })).toEqual({ kind: 'space' });
   });
 
-  test('channels on with a new-session request (`?new=1`): project home, never the default channel', () => {
-    expect(
-      resolveHomeLanding({ ...base, channelsOn: true, newSessionRequested: true, spacesLoaded: true, defaultSlug: 'general' }),
-    ).toEqual({ kind: 'home' });
+  test('spaces on with a new-session request (`?new=1`): project home, never the space', () => {
     expect(resolveHomeLanding({ ...base, channelsOn: true, newSessionRequested: true })).toEqual({ kind: 'home' });
     expect(resolveHomeLanding({ ...base, flagLoading: true, newSessionRequested: true })).toEqual({ kind: 'wait' });
-  });
-
-  test('channels on but the list failed or has no default: project home stays usable', () => {
-    expect(resolveHomeLanding({ ...base, channelsOn: true, spacesFailed: true })).toEqual({ kind: 'home' });
-    expect(resolveHomeLanding({ ...base, channelsOn: true, spacesLoaded: true })).toEqual({ kind: 'home' });
   });
 });

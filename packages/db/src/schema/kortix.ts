@@ -4901,6 +4901,21 @@ export const sessionPendingQuestions = kortixSchema.table(
      * Written only by compare-and-set on its previous value.
      */
     chatSteps: jsonb('chat_steps'),
+    /**
+     * The runtime parks this ask instead of holding the turn (api
+     * projects/lib/session-asks.ts): it stays open past the turn end and past
+     * later prompts until a person answers or dismisses it, or `expires_at`.
+     * False: the old contract, closed with the turn (a workflow run approval).
+     */
+    parkable: boolean().default(false).notNull(),
+    /**
+     * The session a person sees for this ask: the nearest ancestor of a hidden
+     * worker (`spawned_by_session`), else the session itself. Review and the
+     * "Needs you" state key on it. Null on rows written before it existed.
+     */
+    surfaceSessionId: text('surface_session_id'),
+    /** A parkable ask closes as expired at this time. Null: never. */
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'string' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
@@ -4920,6 +4935,62 @@ export const sessionPendingQuestions = kortixSchema.table(
     index('session_pending_questions_open_idx')
       .on(table.sessionId)
       .where(sql`answered_at IS NULL`),
+  ],
+);
+
+/**
+ * A tool call the permission policy sent to a person (`ask`), kept beyond the
+ * sandbox (api projects/lib/pending-permissions.ts). The runtime parks the call
+ * instead of holding the turn; a person decides it later from Review or the
+ * session. An approval is consumed by the agent's re-run of the same call
+ * (`args_hash`), on any box of the session.
+ */
+export const sessionPendingPermissions = kortixSchema.table(
+  'session_pending_permissions',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    /** `project_sessions.session_id` of the session whose call waits. */
+    sessionId: text('session_id').notNull(),
+    /** As `session_pending_questions.surface_session_id`. */
+    surfaceSessionId: text('surface_session_id'),
+    /** The runtime's `permission.asked` request id: the dedupe key with sessionId. */
+    requestId: text('request_id').notNull(),
+    runtimeSessionId: text('runtime_session_id'),
+    /** The tool the call runs (`bash`, `edit`, a hosted tool). */
+    tool: text().notNull(),
+    /** The capability an "always" reply grants (`toolCapability`). */
+    permission: text().notNull(),
+    /** What the call touches: the command or the path. */
+    patterns: jsonb().default([]).notNull(),
+    /** The call's arguments, size-capped by the relay. */
+    args: jsonb(),
+    /** sha256 of the call's tool and canonical arguments: matches the re-run. */
+    argsHash: text('args_hash').notNull(),
+    askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'string' }),
+    /** Null while open. */
+    decidedAt: timestamp('decided_at', { withTimezone: true, mode: 'string' }),
+    /** once | always | reject | expired | withdrawn. */
+    decision: text(),
+    decidedBy: uuid('decided_by'),
+    /** An approval the agent's re-run used, or the live call it released. */
+    consumedAt: timestamp('consumed_at', { withTimezone: true, mode: 'string' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('session_pending_permissions_session_request_uniq').on(table.sessionId, table.requestId),
+    index('session_pending_permissions_open_idx').on(table.projectId).where(sql`decided_at IS NULL`),
+    index('session_pending_permissions_approved_idx')
+      .on(table.sessionId, table.argsHash)
+      .where(sql`consumed_at IS NULL AND decision IN ('once', 'always')`),
+    foreignKey({
+      name: 'session_pending_permissions_session_fk',
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+    }).onDelete('cascade'),
   ],
 );
 

@@ -23,6 +23,12 @@ const SessionDriveSchema = z.object({
   /** `me`: the session owner's own folder, their desktop. */
   role: z.enum(['me', 'drive']).optional(),
   openConflicts: z.number(),
+  /**
+   * When the newest open conflict copy in this folder was detected (ISO 8601),
+   * null with none. A client compares it across reads to tell a conflict that
+   * is new from one that was already there when the folder mounted.
+   */
+  latestConflictAt: z.string().nullable(),
 });
 
 const SessionDrivesBody = z.object({
@@ -65,6 +71,7 @@ async function sessionView(sessionId: string, callerId: string | undefined) {
       subdir: m.subdir,
       ...(m.role ? { role: m.role } : {}),
       openConflicts: m.openConflicts,
+      latestConflictAt: m.latestConflictAt,
     })),
     personal: await isCallersPersonalSession(sessionId, callerId ?? null),
     skipped: skipped.skipped.map((d) => ({

@@ -9,12 +9,15 @@ import {
 } from './triggers';
 
 describe('trigger split characterization', () => {
-  test('webhook HMAC accepts the exact body and rejects tampering', () => {
+  test('webhook HMAC accepts the exact signed timestamp and body and rejects tampering', () => {
     const body = '{"event":"synthetic"}';
-    const signature = createHmac('sha256', 'test-secret').update(body).digest('hex');
-    expect(verifyWebhookSignature(body, 'test-secret', `sha256=${signature}`)).toBe(true);
-    expect(verifyWebhookSignature(`${body} `, 'test-secret', signature)).toBe(false);
-    expect(verifyWebhookSignature(body, 'test-secret', 'sha256=bad')).toBe(false);
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = createHmac('sha256', 'test-secret').update(`${timestamp}.${body}`).digest('hex');
+    expect(verifyWebhookSignature(body, timestamp, 'test-secret', `sha256=${signature}`)).toBe(true);
+    // The signature is bound to the timestamp: a replayed body cannot pair it with a newer one.
+    expect(verifyWebhookSignature(body, String(Number(timestamp) + 1), 'test-secret', `sha256=${signature}`)).toBe(false);
+    expect(verifyWebhookSignature(`${body} `, timestamp, 'test-secret', signature)).toBe(false);
+    expect(verifyWebhookSignature(body, timestamp, 'test-secret', 'sha256=bad')).toBe(false);
   });
 
   test('webhook payload keeps parsed body and selected headers', async () => {

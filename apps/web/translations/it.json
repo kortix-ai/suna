@@ -1317,8 +1317,8 @@
           "description": "Dai all'agente una casella email su Resend: la posta in arrivo avvia e continua le sessioni, e l'agente legge, risponde e invia dalla casella. Usa la tua chiave API Resend e il tuo dominio."
         },
         "chat": {
-          "name": "Chat",
-          "description": "Chat con Kortix in stile Slack: ogni messaggio è un thread, l'ultima risposta di Kortix appare sotto, Kortix può avviare thread e gli spazi si condividono con altre persone. Sostituisce l'elenco delle sessioni nella barra laterale."
+          "name": "Spazi",
+          "description": "Spazi con Kortix in stile Slack: ogni messaggio è un thread, l'ultima risposta di Kortix appare sotto, Kortix può avviare thread e gli spazi si condividono con altre persone. Sostituisce l'elenco delle sessioni nella barra laterale."
         },
         "session_groups": {
           "name": "Gruppi di sessioni",
@@ -1349,13 +1349,13 @@
           "description": "Un solo controllo sotto il compositore per chi risponde e come: scegli l’agente e ogni altra impostazione resta su Automatico, ereditata da quell’agente. Apri una riga per sostituire modello, sforzo di ragionamento, segreti, chiavi del provider o sandbox per questa sessione, e torna ad Automatico con un clic."
         },
         "chat_front": {
-          "name": "Thread solo conversazione",
-          "description": "Con Chat attivo, un nuovo messaggio in uno spazio avvia un thread il cui agente si limita a parlare. Passa ogni richiesta a una sessione My Kortix nascosta che fa il lavoro e risponde con messaggi brevi, solo con ciò che conta. Richiede My Kortix attivo in kortix.yaml."
+          "name": "Router",
+          "description": "Con gli Spazi attivi, l'agente con cui chatti in un thread è un router: affida il lavoro ai tuoi agenti e ti risponde come una persona, con messaggi brevi con il risultato, un link o la decisione da prendere. I tuoi agenti condividono il thread tramite i suoi file, quindi il router passa percorsi di file, non testo ricopiato. «Mostra lavoro» sotto un messaggio apre il lavoro che c'è dietro. Richiede My Kortix attivo in kortix.yaml."
         }
       },
       "channelsSwitch": {
         "onTitle": "Attivare gli Spazi per {project}?",
-        "onBody": "Tutti in questo progetto ottengono Spazi e Messaggi diretti al posto dell’elenco delle sessioni. Tutte le sessioni esistenti passano in #general. Puoi disattivarlo in qualsiasi momento; non viene eliminato nulla.",
+        "onBody": "Tutti in questo progetto ottengono gli Spazi al posto dell’elenco delle sessioni. Tutte le sessioni esistenti passano in #general. Puoi disattivarlo in qualsiasi momento; non viene eliminato nulla.",
         "drive": "Attiva anche Drive, così gli spazi hanno i File.",
         "turnOn": "Attiva",
         "cancel": "Annulla",
@@ -1870,10 +1870,15 @@
     "appsNoMatches": "Nessun risultato",
     "spaces": {
       "channels": "Spazi",
-      "directMessages": "Messaggi diretti",
       "addChannel": "Nuovo spazio",
       "loadError": "Impossibile caricare gli spazi.",
-      "newAgent": "Nuovo agente"
+      "newAgent": "Nuovo agente",
+      "review": "Revisione",
+      "personal": "Il tuo spazio",
+      "personalNamed": "Spazio di {name}",
+      "private": "Privato",
+      "noMessages": "Ancora nessun messaggio",
+      "more": "Altro"
     }
   },
   "dashboard": {
@@ -2118,7 +2123,8 @@
       "noCommandMatch": "Nessun comando, file o azione corrispondente",
       "commandsAndActions": "Comandi e azioni",
       "toUse": "da usare",
-      "use": "Usa"
+      "use": "Usa",
+      "noOneMatches": "Nessuno corrisponde"
     },
     "history": {
       "restoreTitle": "Non è stato possibile ripristinare parte del contenuto precedente",
@@ -2142,7 +2148,23 @@
       "fullTextRetry": "Riprova"
     },
     "turn": {
-      "autoRetried": "Kortix ha riprovato automaticamente il modello {count, plural, one {una volta} other {# volte}} prima di questo errore."
+      "autoRetried": "Kortix ha riprovato automaticamente il modello {count, plural, one {una volta} other {# volte}} prima di questo errore.",
+      "typing": "{name} sta scrivendo…",
+      "showWork": "Mostra lavoro",
+      "hideWork": "Nascondi lavoro",
+      "starting": "Avvio…",
+      "workingFor": "Al lavoro · {time}",
+      "agentWorking": "sta lavorando",
+      "agentWorkingFor": "sta lavorando · {time}",
+      "stopped": "Interrotto",
+      "agentWorkingOn": "sta lavorando a {task}",
+      "agentWorkingOnFor": "sta lavorando a {task} · {time}",
+      "somethingWrong": "Qualcosa è andato storto",
+      "notSent": "Non inviato",
+      "retry": "Riprova",
+      "resume": "Riprendi",
+      "agentIsWorking": "{agent} sta lavorando",
+      "needsYouOn": "Serve a te: {header}"
     }
   },
   "agents": {
@@ -2950,7 +2972,8 @@
         "notReceived": "Non hai ricevuto il link?",
         "confirmNotReceived": "Non hai ricevuto l'email di conferma?",
         "resendIn": "Invia di nuovo tra {seconds}",
-        "resend": "Invia di nuovo"
+        "resend": "Invia di nuovo",
+        "checkSpam": "Non c'è? Controlla la cartella spam o posta indesiderata."
       },
       "credentials": {
         "signin": {
@@ -21190,7 +21213,8 @@
       "text507c24b6792d": "Quando una richiesta di modifica viene unita in {branch}, {agent} esegue la tua istruzione.",
       "text05ee1d6181f3": "Quando una richiesta di modifica viene unita, {agent} esegue la tua istruzione.",
       "texte608495c45ce": "Unita in {branch}",
-      "text80ca527b0d55": "Trigger della richiesta di modifica creato"
+      "text80ca527b0d55": "Trigger della richiesta di modifica creato",
+      "authEmailAlreadySent": "Abbiamo inviato questa email meno di un minuto fa. Controlla la posta in arrivo e la cartella spam prima di richiederne un'altra."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -21279,6 +21303,39 @@
       "prCommits": "{count, plural, one {# commit} other {# commit}}",
       "prCommitsBy": "{count, plural, one {# commit} other {# commit}} di {author}",
       "prDraft": "Pull request in bozza"
+    },
+    "askDeck": {
+      "label": "Cosa ti aspetta",
+      "remaining": "{count, plural, one {# ti aspetta} other {# ti aspettano}}",
+      "yes": "Sì",
+      "no": "No",
+      "skip": "Salta",
+      "send": "Invia risposta",
+      "approve": "Approva",
+      "deny": "Nega",
+      "dismiss": "Ignora",
+      "undo": "Annulla",
+      "allowSession": "Consenti {tool} per la sessione",
+      "typeAnswer": "Oppure scrivi la tua risposta",
+      "answered": "Risposta inviata",
+      "dismissed": "Domanda ignorata",
+      "approved": "Approvato",
+      "denied": "Negato",
+      "failed": "La decisione non è andata a buon fine",
+      "askedAgo": "Chiesto {time} fa",
+      "fromWorker": "da una sessione worker",
+      "inSession": "In {title}",
+      "permissionTitle": "Eseguire {tool}?",
+      "approvalTitle": "Eseguire questa chiamata al connettore?",
+      "emptyTitle": "Niente ti aspetta",
+      "emptyDescription": "Le domande e le approvazioni dei tuoi agenti compaiono qui.",
+      "loadFailed": "Impossibile caricare cosa ti aspetta",
+      "retry": "Riprova",
+      "kind": {
+        "question": "Domanda",
+        "permission": "Permesso",
+        "approval": "Approvazione connettore"
+      }
     },
     "reviewBulk": {
       "approve": "Approva",
@@ -24705,9 +24762,9 @@
     },
     "create": {
       "title": "Crea uno spazio",
-      "description": "Tutti in questo progetto possono vedere e usare lo spazio.",
+      "description": "Uno spazio organizza un’area di lavoro, come Marketing, Assunzioni o Ops. Persone e agenti lavorano nei suoi thread.",
       "nameLabel": "Nome",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "nome-spazio",
       "descriptionLabel": "Descrizione (facoltativa)",
       "descriptionPlaceholder": "A cosa serve questo spazio",
@@ -24736,9 +24793,9 @@
     },
     "view": {
       "welcomeTitle": "Benvenuto in #{name}",
-      "welcomeEmpty": "Avvia il primo thread in #{name}. Ogni messaggio avvia un nuovo thread.",
+      "welcomeEmpty": "Uno spazio organizza un’area di lavoro. Persone e agenti lavorano qui nei thread: ogni messaggio ne avvia uno.",
       "welcomeStart": "Qui inizia #{name}.",
-      "dmIntro": "Questa conversazione è solo tra te e {agent}.",
+      "dmIntro": "Solo tu e {agent} vedete questo spazio.",
       "today": "Oggi",
       "yesterday": "Ieri",
       "openThread": "Apri thread",
@@ -24962,7 +25019,8 @@
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "Dettagli di {name}"
     },
     "details": {
       "about": "Informazioni",
@@ -25018,7 +25076,7 @@
       "memory": "Memoria",
       "loadError": "Impossibile caricare questa cartella",
       "memoryNoteChannel": "Ciò che ricordano gli agenti in {place}. Gli agenti lo leggono all’inizio di ogni thread.",
-      "memoryNoteDm": "Ciò che {agent} ricorda di questo DM. Lo legge all’inizio di ogni thread.",
+      "memoryNoteDm": "Ciò che {agent} ricorda di questo spazio. Lo legge all’inizio di ogni thread.",
       "off": {
         "title": "Nessun Drive qui",
         "description": "File e memoria di {place} sono nel Drive. Questa istanza Kortix non archivia un Drive: serve Platinum."
@@ -25191,7 +25249,66 @@
     },
     "filter": "Filtra per spazio",
     "all": "Tutti",
-    "projectWide": "A livello di progetto"
+    "projectWide": "A livello di progetto",
+    "panel": {
+      "title": "Dettagli di {name}",
+      "heading": "Dettagli",
+      "close": "Chiudi dettagli",
+      "private": "Privato",
+      "rename": "Rinomina e descrivi",
+      "personalDescription": "Il tuo spazio privato con My Kortix. Lo vedi solo tu.",
+      "privateDescription": "Solo le persone e gli agenti al suo interno vedono questo spazio.",
+      "noDescription": "Ancora nessuna descrizione.",
+      "agents": "Agenti",
+      "addAgent": "Aggiungi agente",
+      "default": "Predefinito",
+      "projectDefault": "Predefinito del progetto",
+      "people": "Persone",
+      "addPeople": "Aggiungi persone",
+      "you": "Tu",
+      "tabs": "Schede",
+      "addTab": "Aggiungi scheda",
+      "routines": "Routine",
+      "addRoutine": "Aggiungi routine",
+      "routinesPrivate": "Uno spazio privato non accetta ancora routine.",
+      "allSettings": "Tutte le impostazioni",
+      "askHint": "Puoi anche chiederlo in chat: «aggiungi un agente qui», «fissa il documento del lancio come scheda»."
+    },
+    "profile": {
+      "viewProfile": "Mostra il profilo di {name}",
+      "viewProfileShort": "Vedi profilo",
+      "agent": "Agente",
+      "openProfile": "Apri profilo",
+      "you": "(tu)",
+      "message": "Messaggio",
+      "messageFailed": "Impossibile aprire uno spazio privato. Riprova.",
+      "dmSpaceName": "{a} e {b}",
+      "heading": "Profilo",
+      "close": "Chiudi profilo",
+      "model": "Modello",
+      "modelDefault": "Il modello predefinito del progetto",
+      "connectors": "Connettori",
+      "connectorsAll": "Tutti i connettori",
+      "connectorsNone": "Nessun connettore",
+      "projectDefault": "Predefinito del progetto",
+      "projectDefaultYes": "Risponde ai nuovi thread senza agente impostato",
+      "email": "Email",
+      "sharedSpaces": "Spazi in comune",
+      "yourSpaces": "I tuoi spazi",
+      "addTo": "Aggiungi a {space}",
+      "addedTo": "{agent} aggiunto a {space}",
+      "addFailed": "Impossibile aggiungere l’agente. Riprova.",
+      "spacesIn": "Spazi di cui fa parte",
+      "spacesInNone": "Ancora in nessuno spazio",
+      "default": "Predefinito"
+    },
+    "mentions": {
+      "people": "Persone",
+      "agents": "Agenti",
+      "addToSpace": "Non ancora in {space}: menzionarlo lo aggiunge",
+      "added": "{agent} aggiunto a {space}",
+      "addFailed": "Impossibile aggiungere l’agente. Riprova."
+    }
   },
   "imageGen": {
     "generating": "Generazione immagine",

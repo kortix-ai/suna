@@ -11,6 +11,7 @@
  *
  * `board_state`, first match wins:
  *   attention (a question or an approval)        needs_input
+ *     (an approval: a connector call or a permission ask)
  *   a live turn, or a prompt on its way           working
  *   the session never started (status failed)     failed
  *   the newest turn ended by a requested stop     stopped
@@ -28,8 +29,8 @@ import {
   type SessionInbound,
 } from '@kortix/api-contract/multi-agent';
 import type { SessionWorking } from '@kortix/api-contract';
-import { connectorCalls, sessionPendingQuestions, sessionTurns } from '@kortix/db';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { connectorCalls, sessionPendingPermissions, sessionPendingQuestions, sessionTurns } from '@kortix/db';
+import { and, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { approvalNotExpired } from '../../connectors/approval-expiry';
 import { db } from '../../shared/db';
 import { isUuid } from '../../shared/validate';
@@ -122,14 +123,31 @@ export function deriveSessionBoard(input: {
   };
 }
 
-/** What each session waits for from its person: an open question first, else a pending approval. */
+/**
+ * What each session waits for from its person: an open question first, else a
+ * pending approval (a connector call, or a tool call the permission policy
+ * asks about). A hidden worker's open ask counts on the session a person
+ * opens for it too (`surface_session_id`, lib/session-asks.ts).
+ */
 async function readAttention(sessionIds: string[]): Promise<Map<string, SessionAttention>> {
   const out = new Map<string, SessionAttention>();
   const uuids = sessionIds.filter(isUuid);
-  const [questions, approvals] = await Promise.all([
-    db.selectDistinct({ sessionId: sessionPendingQuestions.sessionId })
+  const askOpen = (expiresAt: typeof sessionPendingQuestions.expiresAt | typeof sessionPendingPermissions.expiresAt) => or(isNull(expiresAt), gt(expiresAt, sql`NOW()`));
+  const [questions, permissions, approvals] = await Promise.all([
+    db.select({ sessionId: sessionPendingQuestions.sessionId, surfaceSessionId: sessionPendingQuestions.surfaceSessionId })
       .from(sessionPendingQuestions)
-      .where(and(inArray(sessionPendingQuestions.sessionId, sessionIds), isNull(sessionPendingQuestions.answeredAt))),
+      .where(and(
+        or(inArray(sessionPendingQuestions.sessionId, sessionIds), inArray(sessionPendingQuestions.surfaceSessionId, sessionIds)),
+        isNull(sessionPendingQuestions.answeredAt),
+        askOpen(sessionPendingQuestions.expiresAt),
+      )),
+    db.select({ sessionId: sessionPendingPermissions.sessionId, surfaceSessionId: sessionPendingPermissions.surfaceSessionId })
+      .from(sessionPendingPermissions)
+      .where(and(
+        or(inArray(sessionPendingPermissions.sessionId, sessionIds), inArray(sessionPendingPermissions.surfaceSessionId, sessionIds)),
+        isNull(sessionPendingPermissions.decidedAt),
+        askOpen(sessionPendingPermissions.expiresAt),
+      )),
     uuids.length === 0
       ? Promise.resolve([] as { sessionId: string | null }[])
       : db.selectDistinct({ sessionId: connectorCalls.sessionId })
@@ -142,8 +160,12 @@ async function readAttention(sessionIds: string[]): Promise<Map<string, SessionA
           approvalNotExpired,
         )),
   ]);
-  for (const row of approvals) if (row.sessionId) out.set(String(row.sessionId), 'approval');
-  for (const row of questions) out.set(row.sessionId, 'question');
+  const mark = (ids: Array<string | null>, kind: SessionAttention) => {
+    for (const id of ids) if (id && (kind === 'question' || !out.has(id))) out.set(id, kind);
+  };
+  for (const row of approvals) mark([row.sessionId ? String(row.sessionId) : null], 'approval');
+  for (const row of permissions) mark([row.sessionId, row.surfaceSessionId], 'approval');
+  for (const row of questions) mark([row.sessionId, row.surfaceSessionId], 'question');
   return out;
 }
 

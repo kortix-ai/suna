@@ -67,7 +67,7 @@ import {
   paletteRowPermitted,
 } from '@/features/workspace/command-palette-visibility';
 import { useAppsRowVisible } from '@kortix/ui/workspace/sidebar/footer/project-apps-nav';
-import { agentLabel, ChannelGlyph, useMemoryPageHref } from '@kortix/ui/workspace';
+import { ChannelGlyph, useMemoryPageHref } from '@kortix/ui/workspace';
 import { ModelCapabilityIcons } from '@kortix/ui/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
 import {
@@ -1635,9 +1635,10 @@ export function CommandPalette() {
       .filter((space) => space.kind === 'channel' && !space.archived_at && space.slug)
       .filter((space) => `${space.slug} ${space.name}`.toLowerCase().includes(q))
       .slice(0, 5);
-    const dms = agents.filter((agent) => `${agentLabel(agent.name)} ${agent.name}`.toLowerCase().includes(q)).slice(0, 5);
+    // Spaces only: an agent is a member of spaces, never a place of its own (no DM results).
+    const dms: typeof agents = [];
     return { channels, dms };
-  }, [query, projectId, channelsOn, projectSpaces.data, agents]);
+  }, [query, projectId, channelsOn, projectSpaces.data]);
   const sessionsHeading = channelsOn ? tPalette('threads') : 'Sessions';
 
   const tFirstChat = useTranslations('firstChat');
@@ -2772,23 +2773,6 @@ export function CommandPalette() {
                       </CommandGroup>
                     )}
 
-                    {rootSpaceResults.dms.length > 0 && projectId && (
-                      <CommandGroup heading={tSidebar('spaces.directMessages')} forceMount>
-                        {rootSpaceResults.dms.map((agent) => (
-                          <CommandItem
-                            key={agent.name}
-                            value={sanitizeCmdkValue(`dm ${agentLabel(agent.name)} ${agent.name}`)}
-                            onSelect={() => {
-                              router.push(uiRoutes().dm(projectId, agent.name));
-                              close();
-                            }}
-                          >
-                            <AgentMark slug={agent.name} />
-                            <span className="flex-1 truncate">{agentLabel(agent.name)}</span>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    )}
 
                     {hasSessionActionResults && (
                       <CommandGroup heading="Session" forceMount>

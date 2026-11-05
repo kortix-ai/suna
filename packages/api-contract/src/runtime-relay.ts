@@ -71,8 +71,28 @@ export const TurnQuestionRelayBodySchema = z.object({
   request_id: z.string(),
   runtime_session_id: z.string().optional(),
   questions: z.array(z.unknown()),
+  /**
+   * The runtime parks this question instead of dismissing it when nobody
+   * answers live: apps/api keeps it open past the turn. Omitted (a daemon
+   * built before parking): false.
+   */
+  parkable: z.boolean().optional(),
 });
 export type TurnQuestionRelayBody = z.infer<typeof TurnQuestionRelayBodySchema>;
+
+/**
+ * What apps/api answers a `turn-question` or `turn-permission` relay with,
+ * beside its older fields. A daemon built before parking ignores it.
+ */
+export const AskRelayResponseSchema = z.object({
+  /** How long the call waits for a live answer before it parks. 0: park at once (an unattended session). */
+  live_wait_ms: z.number().int().nonnegative().optional(),
+  /** Permission: a person approved this exact call (`args_hash`) while it was parked; it runs now. */
+  approved: z.boolean().optional(),
+  /** Permission: the capability the approval granted for the session (an "always" reply). */
+  grant: z.string().optional(),
+});
+export type AskRelayResponse = z.infer<typeof AskRelayResponseSchema>;
 
 /** `POST /v1/projects/:projectId/turn-permission`. apps/api reads `session_id` and `request_id`. */
 export const TurnPermissionRelayBodySchema = z.object({
@@ -81,7 +101,14 @@ export const TurnPermissionRelayBodySchema = z.object({
   runtime_session_id: z.string().optional(),
   permission: z.string(),
   patterns: z.array(z.string()),
+  /** The tool the call runs. Omitted by a daemon built before parking. */
+  tool: z.string().optional(),
+  /** sha256 of the tool and its canonical arguments: an approval matches the agent's re-run of the same call. */
+  args_hash: z.string().optional(),
+  /** The call's arguments, at most `PERMISSION_ARGS_RELAY_MAX_BYTES` of JSON; larger ones arrive as `{ truncated: true, preview }`. */
+  args: z.unknown().optional(),
 });
+export const PERMISSION_ARGS_RELAY_MAX_BYTES = 16_384;
 export type TurnPermissionRelayBody = z.infer<typeof TurnPermissionRelayBodySchema>;
 
 /** `POST /v1/platform/runtime-projection` (gzip). `projection` is the `/kortix/runtime/state` document. */

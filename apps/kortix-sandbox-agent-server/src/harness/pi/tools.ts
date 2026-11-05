@@ -27,7 +27,7 @@ import { Type } from 'typebox'
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript'
 import { runTool, sessionEnv, type HostedTool } from '@/services/tools/host'
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
-import type { QuestionBroker } from './interactions'
+import { PARKED, type QuestionBroker } from './interactions'
 
 /** pi's own grep cap for one matching line. */
 const GREP_MAX_LINE_LENGTH = 500
@@ -171,20 +171,31 @@ export function createGrepTool(cwd: string): AgentTool<typeof grepSchema> {
   }
 }
 
-/** Ask the user; the turn blocks until the product answers over the wire. */
+/** What the model reads when its question parked: nobody answered live, and the answer arrives as a message. */
+export const PARKED_QUESTION_RESULT =
+  'Nobody answered yet. The question waits in the person\'s Review inbox, and their answer arrives later as a new message that quotes it. ' +
+  'Continue with work that does not depend on the answer. If nothing else is left, end your turn and say in one line what you wait for. Do not ask the same question again.'
+
+/**
+ * Ask the user. The call waits for a live answer for a short window, then parks:
+ * it returns `PARKED_QUESTION_RESULT`, the turn goes on, and the answer arrives
+ * as a new message (interactions.ts).
+ */
 export function createQuestionTool(
   questions: QuestionBroker,
   ref: (toolCallId: string) => { messageID: string; callID: string } | undefined,
-): AgentTool<typeof questionSchema, { answers: string[][] }> {
+): AgentTool<typeof questionSchema, { answers: string[][] } | { parked: true }> {
   return {
     name: 'question',
     label: 'question',
     description:
-      'Ask the user one or more questions and wait for the answers. Use it when a decision needs the user, not to narrate progress. Each question has a short header, the full question, and 2-5 options.',
+      'Ask the user one or more questions. Use it when a decision needs the user, not to narrate progress. Each question has a short header, the full question, and 2-5 options. ' +
+      'The answer comes back here when the person answers within a few minutes. Otherwise the question waits in their Review inbox, you continue, and the answer arrives later as a new message.',
     parameters: questionSchema,
     async execute(toolCallId, params) {
       const asked = params.questions as RuntimeQuestion[]
       const answers = await questions.ask(asked, ref(toolCallId))
+      if (answers === PARKED) return { content: [{ type: 'text', text: PARKED_QUESTION_RESULT }], details: { parked: true } }
       if (answers === null) throw new Error('The user dismissed the question.')
       const text = asked.map((q, i) => `${q.header}: ${(answers[i] ?? []).join(', ') || '(no answer)'}`).join('\n')
       // `details` becomes the part's `state.metadata`: the answers a client shows.
