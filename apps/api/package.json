@@ -30,7 +30,7 @@
     "@composio/client": "0.1.0-alpha.76",
     "@composio/core": "0.17.0",
     "@daytonaio/sdk": "^0.184.0",
-    "@hono/zod-openapi": "^1.6.3",
+    "@hono/zod-openapi": "1.6.2",
     "@kortix/api-contract": "workspace:*",
     "@kortix/db": "workspace:*",
     "@kortix/llm-catalog": "workspace:*",

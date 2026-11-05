@@ -256,8 +256,8 @@ importers:
         specifier: ^0.184.0
         version: 0.184.0(ws@8.22.0)
       '@hono/zod-openapi':
-        specifier: ^1.6.3
-        version: 1.6.3(hono@4.13.11)(zod@4.6.7)
+        specifier: 1.6.2
+        version: 1.6.2(hono@4.13.11)(zod@4.6.7)
       '@kortix/api-contract':
         specifier: workspace:*
         version: link:../../packages/api-contract
@@ -7469,8 +7469,8 @@ packages:
       hono: 4.13.11
     dev: false
 
-  /@hono/zod-openapi@1.6.3(hono@4.13.11)(zod@4.6.7):
-    resolution: {integrity: sha512-VYR82Y60plu8g3pN60OUXMVKpmxh3R04Qs++3DY9vtwZ9/sA/BRY0PcRIR+Z37/3itWtM7pYwT9bKiH9JhqV6Q==}
+  /@hono/zod-openapi@1.6.2(hono@4.13.11)(zod@4.6.7):
+    resolution: {integrity: sha512-ktnBqVgvIlopiiB9ab6hqoYefhcb0DUZU5QJ1F5UtDu8w6+cIORENz93sTZT6G0mQNes0/TbbadfrOpdehioPA==}
     engines: {node: '>=16.0.0'}
     peerDependencies:
       hono: 4.13.11
