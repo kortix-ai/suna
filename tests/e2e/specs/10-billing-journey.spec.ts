@@ -14,6 +14,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
+import { ensureOwnedAccount } from '../helpers/accounts';
 
 const enabled = process.env.E2E_ENABLE_BILLING_JOURNEY === '1';
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
@@ -22,10 +23,6 @@ const password = 'BillingJourney123!';
 const api = createApiJsonClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
-interface AccountSummary {
-  account_id: string;
-  personal_account?: boolean;
-}
 
 interface CheckoutResult {
   checkout_url: string;
@@ -114,9 +111,7 @@ test.describe
       const email = `billing-browser-${Date.now()}-${randomUUID().slice(0, 8)}@example.test`;
       user = await createAuthUser(email, authOptions);
       session = await signIn(email, authOptions);
-      const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
-      const account = accounts.find((candidate) => candidate.personal_account) ?? accounts[0];
-      accountId = account?.account_id ?? '';
+      accountId = await ensureOwnedAccount(api, session.access_token);
       expect(accountId).toBeTruthy();
     });
 

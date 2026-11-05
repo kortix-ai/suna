@@ -7,6 +7,7 @@ import { getRevenueCatPeriodType, isRevenueCatAnonymous, planMonthlyUsd, revenue
 import { wallet } from '../wallet';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
+import { isNoWorkspaceError } from '../../shared/no-workspace';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { config } from '../../config';
 import { formatUsdAsCredits } from '@kortix/shared';
@@ -93,7 +94,18 @@ export async function processRevenueCatWebhook(body: any) {
     return { received: true, event_type: eventType, skipped: true };
   }
 
-  const accountId = await resolveAccountId(appUserId);
+  // A store user with no workspace has no account to credit. Acknowledge
+  // (200) and skip: RevenueCat retries a non-2xx for days, and an account is
+  // never created from a webhook. The event is not marked processed, so a
+  // later redelivery after the person creates a workspace is handled then.
+  let accountId: string;
+  try {
+    accountId = await resolveAccountId(appUserId);
+  } catch (err) {
+    if (!isNoWorkspaceError(err)) throw err;
+    logger.warn(`[RevenueCat] Skipping ${eventType} (${eventId}): app user has no workspace`);
+    return { received: true, event_type: eventType, skipped: true };
+  }
 
   console.log(`[RevenueCat] Processing ${eventType} for ${appUserId} -> ${accountId}`);
 

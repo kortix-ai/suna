@@ -5,6 +5,7 @@ import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures
 import { createApiJsonClient } from '../helpers/http';
 import { createAuthUser, deleteAuthUser, installBrowserSessionDirect, signIn } from '../helpers/session-auth';
 import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
+import { ensureOwnedAccount } from '../helpers/accounts';
 
 /**
  * KRTX-1731: accepting a project invite from its email link went to the
@@ -20,19 +21,7 @@ const authOptions = {
 };
 const api = createApiJsonClient(apiBase);
 
-interface AccountSummary {
-  account_id: string;
-  personal_account?: boolean;
-  is_primary_owner?: boolean;
-  account_role?: string;
-}
 
-/** The account a fresh user owns (spec 22's rule). */
-const ownedAccount = (accounts: AccountSummary[]) => {
-  const own = accounts.find((a) => a.personal_account || a.is_primary_owner || a.account_role === 'owner');
-  if (!own) throw new Error('the seeded user owns no account');
-  return own.account_id;
-};
 
 test('45 — accepting a project invite lands in the invited project, not the remembered one', async ({ page }) => {
   test.setTimeout(180_000);
@@ -47,7 +36,7 @@ test('45 — accepting a project invite lands in the invited project, not the re
 
   try {
     const ownerAuth = await signIn(ownerEmail, authOptions);
-    const ownerAccount = ownedAccount(await api<AccountSummary[]>(ownerAuth.access_token, 'GET', '/accounts'));
+    const ownerAccount = await ensureOwnedAccount(api, ownerAuth.access_token);
 
     // The project the invitee is invited to, in the owner's account. The email
     // link (`/invites/<id>`) exists for someone with no Kortix account yet: an
@@ -70,7 +59,7 @@ test('45 — accepting a project invite lands in the invited project, not the re
     // The invitee signs up, and has a project of their own open in this browser.
     invitee = await createAuthUser(inviteeEmail, authOptions);
     const inviteeAuth = await signIn(inviteeEmail, authOptions);
-    const inviteeAccount = ownedAccount(await api<AccountSummary[]>(inviteeAuth.access_token, 'GET', '/accounts'));
+    const inviteeAccount = await ensureOwnedAccount(api, inviteeAuth.access_token);
 
     const scratch = await createDatabaseProject(env, {
       accountId: inviteeAccount,

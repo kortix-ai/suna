@@ -5,6 +5,7 @@ import {
   isImpersonatingAccount,
   isImpersonationBlockedAccount,
 } from '../../shared/impersonation';
+import { isNoWorkspaceError } from '../../shared/no-workspace';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { ACCOUNT_ACTIONS, actorOf, authorize } from '../../iam';
@@ -57,7 +58,19 @@ export async function getTunnelReadContext(c: any) {
 
   const userId = c.get('userId') as string | undefined;
   const ctxAccountId = c.get('accountId') as string | undefined;
-  const accountId = ctxAccountId || (userId ? await resolveAccountId(userId) : undefined);
+  let accountId: string | undefined = ctxAccountId;
+  if (!accountId && userId) {
+    try {
+      accountId = await resolveAccountId(userId);
+    } catch (err) {
+      if (!isNoWorkspaceError(err)) throw err;
+      // A person with no workspace (offboarded, removed from their only
+      // team, or not joined yet) still owns their machines: they list,
+      // reach and unpair only those. Pairing a new one needs an account
+      // (device-auth answers 409 no_workspace).
+      return { userId, accountId: undefined, ownerClause: eq(tunnelConnections.ownerUserId, userId) };
+    }
+  }
 
   if (!accountId) {
     throw new HTTPException(401, {

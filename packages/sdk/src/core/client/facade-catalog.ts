@@ -10,6 +10,8 @@ export function bindCatalog() {
     /** Create a project backed by a brand-new Kortix-managed GitHub repo. */
     createRepo: P.createProjectRepo,
     provision: P.provisionProject,
+    /** Create a whole workspace (its account and its project) in one call. */
+    createWorkspace: P.createWorkspace,
     update: P.updateProject,
     archive: P.archiveProject,
     llmCatalog: P.getProjectLlmCatalog,

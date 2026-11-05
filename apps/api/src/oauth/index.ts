@@ -60,6 +60,7 @@ import {
 import { isUuid } from '../shared/validate';
 import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../iam/actor';
+import { noWorkspaceError } from '../shared/no-workspace';
 import { resolveAccountId } from '../shared/resolve-account';
 import { bearerToken } from '../shared/bearer-token';
 import { hasOnlyExtensionRedirect, KORTIX_EXTENSION_REDIRECT_URI } from './extension-client';
@@ -605,7 +606,7 @@ oauthApp.openapi(
     },
     responses: {
       200: json(z.object({ redirect_uri: z.string() }), 'Redirect URI to send the user back to'),
-      ...errors(400, 401),
+      ...errors(400, 401, 409),
     },
   }),
   async (c: any) => {
@@ -644,7 +645,11 @@ oauthApp.openapi(
 
     const userId = (c as any).get('userId') as string;
     const [membership] = await anyAccountMembershipOf(userId);
-    const accountId = membership?.accountId ?? userId;
+    // A grant acts in an account. A person with no workspace has none to
+    // grant, so the consent is refused (409 `no_workspace`), never issued
+    // against a made-up account id.
+    if (!membership) throw noWorkspaceError();
+    const accountId = membership.accountId;
 
     const code = generateAuthCode();
     await db.insert(oauthAuthorizationCodes).values({

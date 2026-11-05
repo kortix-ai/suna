@@ -3937,7 +3937,7 @@ kortix self-host start
 | Reachability | `domain` (domain, API subdomain, ACME email) or `tunnel` (quick or named tunnel). |
 | Admin email | `KORTIX_PLATFORM_ADMIN_EMAILS`, comma-separated. These people are platform admins. Also `--admin-email <email>`. |
 | Enterprise license | `ENTERPRISE_LICENSE_AVAILABLE`. With a license, it unlocks SSO, SCIM, role-based access control, audit and branding. The oldest branded company account, or personal account of an admin in `KORTIX_PLATFORM_ADMIN_EMAILS`, also brands the sign-in page (`GET /v1/access/branding`). Also `--enterprise-license`. |
-| Restrict account creation | On by default. Only a platform admin can create a new account. Others get `403` `account_creation_restricted`. Sign-ups, invites, SSO and each person's personal account still work. Also `--no-restrict-account-creation` and `--restrict-account-creation`. |
+| Restrict account creation | On by default. Only a platform admin can create a new account or a new workspace. Others get `403` `account_creation_restricted`. Sign-ups, invites and SSO still work. Sign-up creates no account, so a new person joins through an invite. The owner that `POST /v1/setup/bootstrap-owner` creates gets their workspace account at once. Also `--no-restrict-account-creation` and `--restrict-account-creation`. |
 | Platinum | `PLATINUM_API_KEY`, `PLATINUM_API_URL` (default `https://api.platinum.dev`) and `PLATINUM_TEMPLATE` (optional). |
 | Apps hosting | `KORTIX_APPS_BASE_DOMAIN`, which needs a `*.apps.<domain>` record. A new instance on a domain gets `apps.<domain>`. |
 | Preview origins | `KORTIX_PREVIEW_BASE_DOMAIN`, which needs a `*.p.<domain>` record. A new instance on a domain gets `p.<domain>`. |
@@ -5882,6 +5882,7 @@ Helpers that classify an error:
 | `isAuthFailure(err)` | The error is an `AuthError`, or its `status` is `401` or `403`. |
 | `isFeatureDisabledError(err)` | A flag-gated route refused: `403` with `code` `FEATURE_DISABLED_CODE` (`feature_disabled`). `featureDisabledKey(err)` names the flag. |
 | `isRepositoryDisconnectedError(err)` | The GitHub App can no longer reach the repository: the `code` is `REPOSITORY_DISCONNECTED_CODE` (`repository_disconnected`). The API sends it with `409`. |
+| `isNoWorkspaceError(err)` | The caller belongs to no workspace: `409` with `code` `NO_WORKSPACE_CODE` (`no_workspace`). No account is created at sign-up. Create one with `createWorkspace`, or accept an invite. |
 | `isSandboxNotReadyError(err)`, `isRuntimeStartingError(err)` | The sandbox is starting, stopped or parked. Show a waiting state and retry. |
 | `formatBillingErrorForUI(err)` | Returns `{ alertTitle, alertSubtitle }` for a `BillingError`, else `null`. |
 
@@ -5917,6 +5918,30 @@ const kortix = createKortix({
 const p = kortix.project(process.env.KORTIX_PROJECT_ID!);
 ```
 
+### Create a workspace
+
+A workspace is one account and its one project. The workspace id is the `project_id`. Sign-up creates no account: a new person has 0 workspaces. Until they create or join one, every call that needs a workspace answers `409` with code `no_workspace` (`isNoWorkspaceError(err)`), and `GET /v1/accounts` answers `[]`.
+
+`createWorkspace(input, onEvent?, options?)` (also `kortix.projects.createWorkspace`) creates the whole workspace in one call. It sends `new_workspace: true` to `POST /v1/projects/provision`.
+
+- The server reuses the caller's newest owned account that has no active project, so a plan or credits it holds stay. Else it creates an account. The account takes the workspace name.
+- `input` takes the provision fields below except `account_id`. `new_workspace` with `account_id` answers `400` `new_workspace_with_account_id`.
+- With `onEvent`, it streams `POST /v1/projects/provision-stream` and reports the phases `validating`, `creating_repository`, `registering` and `seeding`. On React Native, omit `onEvent`.
+- `403` `account_creation_restricted`: the deployment lets only its admin create accounts. Ask an admin for an invite.
+- `403` `new_workspace_requires_person`: only a signed-in person or an unscoped personal access token creates a workspace.
+
+```ts
+import { createWorkspace, isNoWorkspaceError } from '@kortix/sdk';
+
+const workspace = await createWorkspace(
+  { name: 'Northwind', idempotency_key: crypto.randomUUID() },
+  (event) => { if (event.type === 'phase') console.log(event.phase); },
+);
+console.log(workspace.project_id, workspace.account_id);
+```
+
+Renaming the workspace renames both rows: `PATCH /v1/projects/:id` with a new `name` renames the account when the project is its only active project, and `PATCH /v1/accounts/:id` renames that project.
+
 ### Provision and update a project
 
 `kortix.projects.provision(input)` creates a project with a Kortix-managed git repository. It seeds the Kortix starter, so a session can start at once. The request timeout is 120,000 ms.
@@ -5925,7 +5950,7 @@ const p = kortix.project(process.env.KORTIX_PROJECT_ID!);
 | --- | --- |
 | `name` | Required. |
 | `idempotency_key` | Send the same key on every attempt at one create. A retry then returns the project of the first attempt. The key is scoped to the account. It identifies the attempt, not the payload: a reused key with a different `name` returns the first project. |
-| `account_id` | The account that owns the project. Omit it for the caller's default account. |
+| `account_id` | The account that owns the project. Omit it for the caller's default account. A caller with no account gets `409` `no_workspace`: use `createWorkspace`. |
 | `starter_template` | `general-knowledge-worker` or `minimal`. |
 | `source_item_id` | Clone a `registry:project` marketplace item instead of the starter. It wins over `starter_template`. |
 | `marketplace_items` | Marketplace item ids to install. |

@@ -23,6 +23,7 @@ import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { MANIFEST_PROJECT_NAME_KEY, commitProjectName } from '../lib/manifest-project-name';
+import { renameAccountOfSoleProject } from '../lib/workspace-name';
 import { MANIFEST_SYNTAX_ISSUE_PATH } from '@kortix/manifest-schema';
 import { addMyKortixAgent, projectBuiltinAgents } from '../lib/my-kortix-agent';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
@@ -409,6 +410,9 @@ export function registerProjectDetailRoutes(): void {
         .returning();
 
       if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+      // Workspace name = account name = project name: the account's only
+      // project renames the account with it.
+      if (name && name !== loaded.row.name) await renameAccountOfSoleProject(row, name);
       return c.json(
         serializeProject(row, {
           projectRole: loaded.projectRole,

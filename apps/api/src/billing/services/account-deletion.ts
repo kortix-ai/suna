@@ -183,7 +183,7 @@ export async function cancelAccountDeletion(accountId: string) {
  *      account.
  *
  * The requester's login goes only with their personal account, whose id is
- * the user id (`bootstrapPersonalAccount`). Deleting any other account keeps
+ * the user id (a legacy account: sign-up created one until Workspaces D3). Deleting any other account keeps
  * the requester's login and leaves the sandboxes of their other accounts
  * alone: a team account the requester owns, or a request an operator made
  * while acting as a customer (impersonation refuses these routes now, but a
@@ -197,21 +197,40 @@ export async function runAccountDeletion(accountId: string, userId?: string, req
   const requester = userId === accountId ? userId : undefined;
   await performDeletion(accountId, requester);
   await deleteAccountData(accountId, requestId);
-  if (requester) {
-    await deleteUserAvatars(requester);
-    await clearLegacyAuthUserReferences(requester);
-    // A device token is the person's data; it has no foreign key to cascade.
-    await db.delete(pushDeviceTokens).where(eq(pushDeviceTokens.userId, requester));
-    // So are their notifications, watcher rows, preferences and browser push
-    // subscriptions, in every account (KRTX-1742).
-    await deleteUserNotificationData(requester);
-    // Their session pins and archive, in every account (KRTX-2418).
-    await deleteUserSessionStates(requester);
-    const { error } = await getSupabase().auth.admin.deleteUser(requester);
-    // A user the auth schema no longer has (an admin-side delete, or a retry
-    // after step 3 already ran) is the state this step produces.
-    if (error && !isAuthUserNotFound(error)) throw error;
-  }
+  if (requester) await deleteLogin(requester);
+}
+
+/**
+ * Delete a person's login and the personal data that has no account: avatars,
+ * legacy auth references, device tokens, notifications, session pins, then
+ * the Supabase auth user. Step 3 of `runAccountDeletion`, and the whole
+ * deletion for a person who belongs to no workspace (`deleteLoginWithoutAccount`).
+ * Idempotent: a retry after the auth user is gone succeeds.
+ */
+async function deleteLogin(userId: string): Promise<void> {
+  await deleteUserAvatars(userId);
+  await clearLegacyAuthUserReferences(userId);
+  // A device token is the person's data; it has no foreign key to cascade.
+  await db.delete(pushDeviceTokens).where(eq(pushDeviceTokens.userId, userId));
+  // So are their notifications, watcher rows, preferences and browser push
+  // subscriptions, in every account (KRTX-1742).
+  await deleteUserNotificationData(userId);
+  // Their session pins and archive, in every account (KRTX-2418).
+  await deleteUserSessionStates(userId);
+  const { error } = await getSupabase().auth.admin.deleteUser(userId);
+  // A user the auth schema no longer has (an admin-side delete, or a retry
+  // after step 3 already ran) is the state this step produces.
+  if (error && !isAuthUserNotFound(error)) throw error;
+}
+
+/**
+ * Delete the login of a person with no workspace. No account exists to
+ * delete or to keep for a grace period (no account is created at sign-up,
+ * Workspaces D3), so this is the immediate path's whole job.
+ */
+export async function deleteLoginWithoutAccount(userId: string) {
+  await deleteLogin(userId);
+  return { success: true, message: 'Account deleted' };
 }
 
 /** Storage objects must go before GoTrue removes their owner. */

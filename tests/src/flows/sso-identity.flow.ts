@@ -25,6 +25,7 @@ import type { FlowContext, Principal } from '../core/types';
 import { asPlatformAdmin } from '../fixtures/enterprise-access';
 import { PASSWORD } from '../fixtures/principals';
 import { passwordGrant, refreshGrant, ssoFixtureToken } from '../fixtures/supabase';
+import { withDb } from '../fixtures/chat';
 
 async function saveProvider(
   ctx: FlowContext,
@@ -480,11 +481,14 @@ flow(
 
 // SSO-5 — SAML belongs to an organization. On a personal account its owner
 // could register an IdP that asserts any address (an operator's, say); Supabase
-// creates a separate SSO user for it (KRTX-1715).
+// creates a separate SSO user for it (KRTX-1715). Sign-up no longer creates
+// personal accounts (Workspaces D3), so the flow seeds a LEGACY one (account id
+// == user id) in the database, the shape every pre-D3 user still holds.
 flow(
   'SSO-5',
   {
     domain: 'iam',
+    requires: ['database'],
     routes: [
       'GET /v1/accounts',
       'GET /v1/accounts/:accountId/iam/sso/provider',
@@ -493,13 +497,19 @@ flow(
     ],
   },
   async (ctx) => {
-    const owner = ctx.client.as(ctx.P.OWNER);
-    let personal = '';
-    await ctx.step("the owner's personal account is the one whose id is their user id", async () => {
+    const legacy = await ctx.fixtures.user({ label: 'SSO-5', noAccount: true });
+    const owner = ctx.client.as(legacy);
+    const personal = legacy.userId!;
+    await ctx.step("a legacy personal account (its id is its owner's user id) is listed for its owner", async () => {
+      await withDb(ctx, async (db) => {
+        await db.query('INSERT INTO kortix.accounts (account_id, name) VALUES ($1, $2)', [personal, ctx.fixtures.name('legacy-personal')]);
+        await db.query("INSERT INTO kortix.account_members (account_id, user_id, account_role) VALUES ($1, $1, 'owner')", [personal]);
+      });
       const r = await owner.get('/v1/accounts');
       r.status(200);
-      personal = r.json<Array<{ account_id: string }>>().find((a) => a.account_id === ctx.P.OWNER.userId)?.account_id ?? '';
-      if (!personal) throw new Error('the owner has no personal account');
+      if (!r.json<Array<{ account_id: string }>>().some((a) => a.account_id === personal)) {
+        throw new Error('the seeded personal account is not listed');
+      }
     });
 
     await ctx.step('setting up SAML on it → 403 sso_personal_account, on both routes', async () => {

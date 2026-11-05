@@ -30,6 +30,7 @@ import { config } from '../../config';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelReadContext, requireUserCredential } from './auth';
+import { noWorkspaceError } from '../../shared/no-workspace';
 import { isValidCapability } from '../core/scope-validator';
 import { ensureComputerConnector } from '../../connectors/sync';
 import { attachComputerConnection } from '../../connectors/computers';
@@ -467,6 +468,8 @@ function registerDeviceAuthApproveRoute(router: OpenAPIHono<AppEnv>): void {
       const userId = (loaded?.userId ?? context?.userId) as string;
       const accountId = (loaded?.row.accountId ?? context?.accountId) as string;
       if (!userId) return c.json({ error: 'A user credential is required' }, 403);
+      // A person with no workspace has no account to pair a machine into.
+      if (!accountId) throw noWorkspaceError();
       if (
         loaded &&
         share === 'project' &&

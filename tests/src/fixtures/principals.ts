@@ -4,14 +4,15 @@
  * Global principals (provisioned once per run): OWNER, NONMEMBER, PAT_ACCT, ANON.
  * Each gets a synthesized Supabase user (service-role admin create+confirm) and a
  * real JWT (password grant) that renews itself before it expires (see
- * supabase-session.ts). Personal account_id == user_id, created lazily by the
- * API on first token/project call (verified empirically).
+ * supabase-session.ts). No account is created at sign-up (Workspaces D3): each
+ * principal that needs one gets it explicitly through POST /v1/accounts
+ * (`createAccountFor`), and its `accountId` is the id that call returns.
  *
  * Team-scoped principals (ADMIN, MEMBER, the M_ project roles, BILLING, AUDITOR,
  * RO_ADMIN, DENY_USER) are per-team-account, so they're provisioned by the
  * `team()` fixture inside the flows that exercise them — not globally.
  */
-import { Client, mintAccountToken } from '../core/client';
+import { Client, expectApi, mintAccountToken } from '../core/client';
 import type { Env } from '../core/env';
 import { log } from '../core/log';
 import type { Principal, Principals } from '../core/types';
@@ -71,9 +72,28 @@ export async function synthUserWithEmail(
     auth: session,
     email,
     userId: user.id,
-    accountId: user.id, // personal account_id == user_id
+    // No account yet: `createAccountFor` sets it when the fixture needs one.
+    accountId: undefined,
   };
   return { user, session, principal };
+}
+
+/**
+ * Create an account owned by `principal` (POST /v1/accounts) and record its id
+ * on the principal. The explicit replacement for the personal account sign-up
+ * used to create: nothing creates an account implicitly any more.
+ */
+export async function createAccountFor(env: Env, principal: Principal, name: string): Promise<string> {
+  const client = new Client(env.apiUrl).as(principal);
+  const created = await retryBootstrapCreate(`account create (${principal.label})`, async (attempt) => {
+    const r = await client.post('/v1/accounts', { name: attempt > 1 ? `${name}-r${attempt}` : name });
+    expectApi(r, `account create (${principal.label})`, 201);
+    const id = r.json<{ account_id?: string }>()?.account_id;
+    if (!id) throw new Error(`account create returned no account_id: ${r.text()}`);
+    return id;
+  });
+  principal.accountId = created;
+  return created;
 }
 
 /**
@@ -110,9 +130,9 @@ async function provisionOwner(
   runId: string,
 ): Promise<{ owner: SynthUser; patAcctSecret: string | undefined }> {
   const owner = await synthUser(env, 'OWNER', runId);
-  // Force the personal account into existence + capture its id (== userId).
-  // Funding must follow this call, not race it: the account row is created
-  // lazily on the first token/project call.
+  // The OWNER's account, created explicitly (no account exists at sign-up).
+  // Funding and the PAT mint must follow it, not race it.
+  await createAccountFor(env, owner.principal, `e2e-${runId}-owner`);
   const ownerClient = new Client(env.apiUrl).as(owner.principal);
   // Fresh name per attempt: if a laundered 5xx hid a committed create, the
   // orphan token is inert (revoked by gc) and the retry cannot 409 on it.
@@ -120,7 +140,7 @@ async function provisionOwner(
     mintAccountToken(ownerClient, `e2e-${runId}-owner-bootstrap${attempt > 1 ? `-r${attempt}` : ''}`),
   );
 
-  // Fund the OWNER's personal account so flows aren't blocked by the free-tier
+  // Fund the OWNER's account so flows aren't blocked by the free-tier
   // 1-project / 402 limits — real Stripe test-mode subscribe → paid tier + credits.
   if (env.capabilities.stripe) {
     try {
@@ -146,7 +166,12 @@ export async function provisionMatrix(env: Env, runId: string): Promise<Provisio
   // NONMEMBER as an unreclaimed Supabase user.
   const [ownerSettled, nonmemberSettled] = await Promise.allSettled([
     provisionOwner(env, runId),
-    synthUser(env, 'NONMEMBER', runId),
+    // NONMEMBER owns an account of its own, never OWNER's: the "someone else's
+    // workspace" principal. Explicit, as nothing is created at sign-up.
+    synthUser(env, 'NONMEMBER', runId).then(async (u) => {
+      await createAccountFor(env, u.principal, `e2e-${runId}-nonmember`);
+      return u;
+    }),
   ]);
 
   if (ownerSettled.status === 'rejected') {
