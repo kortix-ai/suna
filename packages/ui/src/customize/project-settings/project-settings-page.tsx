@@ -16,7 +16,7 @@ import { CountBadge } from '../../primitives/count-badge';
 import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { SettingsSectionHeader } from '../../primitives/settings-section-header';
 import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
-import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../internal/account-hub/account-settings-shell';
+import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../internal/components/nav-rail';
 import { useReviewSessionSummary } from '../../internal/hooks/use-review-session-summary';
 
 import { GitView } from '../sections/view/git-view';

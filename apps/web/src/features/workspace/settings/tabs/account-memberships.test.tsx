@@ -125,3 +125,15 @@ describe('accountRoleLabel', () => {
     expect(accountRoleLabel('superuser')).toBeUndefined();
   });
 });
+
+describe('AccountMembershipsSection — a workspace row', () => {
+  test('links to that workspace\'s settings, not the account hub', () => {
+    const out = renderToStaticMarkup(
+      <AccountMembershipsSection
+        accounts={[{ account_id: 'acc_1', name: 'Acme', account_role: 'owner', workspace_id: 'p_1' }]}
+      />,
+    );
+    expect(out).toContain('href="/projects/p_1/admin"');
+    expect(out).not.toContain('accountId=');
+  });
+});

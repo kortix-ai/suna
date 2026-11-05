@@ -282,12 +282,9 @@ describe('the signed-out route guards do not race the exit', () => {
     // deletion of a guard reads as a failure rather than as a passing regex.
     for (const file of [
       'features/workspace/project-layout/project-shell.tsx',
-      // The `/accounts/**` routes were deleted on 2026-09-08 — the account hub
-      // is a modal over the current page now — so the two surfaces that
-      // survived them are the hub's own bodies. The two guided-setup pages
-      // went with the routes; their wizards are panes of the Identity section
-      // and inherit this guard from `account-hub-content.tsx`.
-      'features/accounts/hub/account-list-content.tsx',
+      // The account panes (Workspace settings › People, Billing, …). The
+      // guided-setup wizards are panes of the Identity section and inherit
+      // this guard from `account-hub-content.tsx`.
       'features/accounts/hub/account-hub-content.tsx',
       'app/[locale]/(app)/projects/start/page.tsx',
       'features/workspace/new/new-workspace-page.tsx',

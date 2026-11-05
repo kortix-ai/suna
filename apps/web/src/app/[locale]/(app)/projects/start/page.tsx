@@ -34,8 +34,8 @@ function withCurrentQuery(path: string): string {
   return search ? `${path}?${search}` : path;
 }
 
-/** `/projects/start?account=<id>`: the account an account switch or an invite
- *  accept asked for (KRTX-1731). */
+/** `/projects/start?account=<id>`: the account an invite accept asked for
+ *  (KRTX-1731). */
 const REQUESTED_ACCOUNT_PARAM = 'account';
 
 function requestedAccountId(): string | null {
@@ -48,16 +48,16 @@ function requestedAccountId(): string | null {
  *
  * Every default entry point (post-auth redirect, `/`, the desktop shell) sends
  * the user here when the destination project id is not already known. It
- * paints the project chrome on the first frame with zero network, then asks
- * one question: is there a single obvious project to open?
+ * paints the loading mark on the first frame with zero network, then asks
+ * one question: is there a single obvious workspace to open?
  *
- *  - the project this browser last had open, if it still exists, or
- *  - the user's only project.
+ *  - the workspace this browser last had open, if it still exists, or
+ *  - the user's only workspace.
  *
- * Yes: replace the URL with `/projects/<id>`. No — several projects and no
- * memory, no project at all, or a pending invite — replace it with
- * `/projects`, the selector (`decideDoor`). The door never creates a project
- * and never renders a form of its own.
+ * Yes: replace the URL with `/projects/<id>`. No — several workspaces and no
+ * memory, no workspace at all, or a pending invite — replace it with
+ * `/projects`, the create-or-join chooser (`decideDoor`). The door never
+ * creates a workspace and never renders a form of its own.
  */
 export default function ProjectStartPage() {
   const router = useRouter();
@@ -78,7 +78,7 @@ export default function ProjectStartPage() {
     if (!ready) return;
     if (!decided.current) {
       const decision = decideDoor({
-        sections: data.sections,
+        workspaces: data.workspaces,
         inviteCount: data.invites.length,
         rememberedProjectId: readLastProjectId(user?.id),
         requestedAccountId: requestedAccountId(),
@@ -90,8 +90,6 @@ export default function ProjectStartPage() {
         writeLastProjectId(user?.id, decision.projectId);
         decided.current = withCurrentQuery(`/projects/${decision.projectId}`);
       } else {
-        // An account switch that lands on the selector keeps the account chosen.
-        if (decision.accountId) setSelectedAccountId(decision.accountId);
         decided.current = withCurrentQuery('/projects');
       }
     }
@@ -102,7 +100,7 @@ export default function ProjectStartPage() {
     // until this component unmounts.
     const timer = setTimeout(() => setNudge((n) => n + 1), 3000);
     return () => clearTimeout(timer);
-  }, [ready, nudge, data.sections, data.invites.length, user?.id, router, setSelectedAccountId]);
+  }, [ready, nudge, data.workspaces, data.invites.length, user?.id, router, setSelectedAccountId]);
 
   if (failed) {
     return (

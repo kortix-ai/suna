@@ -61,12 +61,10 @@ describe('the project settings [tab] route resolves legacy segments', () => {
     expect(code).toContain('if (legacy.pending) return;');
     // And the resolution it waits on really does classify those ids.
     expect(isAccountGraduatedSection('billing')).toBe(true);
-    // `api-keys` is NOT account-graduated any more — the personal keys came
-    // back into the overlay as `tokens` (see `settings-tabs.ts`), so the id
-    // resolves synchronously and the route never waits on an account id for
-    // it. `groups` stands in as a second still-graduated id.
+    // `api-keys` is account-graduated again: personal keys live in
+    // Workspace settings › API keys (Workspaces, PR 1).
     expect(isAccountGraduatedSection('groups')).toBe(true);
-    expect(isAccountGraduatedSection('api-keys')).toBe(false);
+    expect(isAccountGraduatedSection('api-keys')).toBe(true);
     expect(isAccountGraduatedSection('computers')).toBe(false);
   });
 
@@ -115,7 +113,7 @@ describe('every account redirect names a tab the account hub accepts', () => {
     expect(legacySectionRedirect('p1', 'groups', 'acc1')).toBe(
       '/projects/p1?accountId=acc1&accountTab=groups',
     );
-    expect(legacySectionRedirect('p1', 'api-keys', 'acc1')).toBe('/projects/p1/settings/tokens');
+    expect(legacySectionRedirect('p1', 'api-keys', 'acc1')).toBe('/projects/p1?accountId=acc1&accountTab=tokens');
     expect(legacySectionRedirect('p1', 'usage', 'acc1')).toBe(
       '/projects/p1?accountId=acc1&accountTab=transactions',
     );

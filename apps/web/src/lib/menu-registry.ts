@@ -430,24 +430,19 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'switch workspace workspaces project projects change move open all list',
   },
   {
-    id: 'nav-accounts',
-    label: 'Accounts',
-    icon: UsersSolid,
+    id: 'nav-workspace-settings',
+    // The switcher's bottom action: the one settings surface per workspace
+    // (`/projects/<id>/admin`), which opens on the first section the caller
+    // may see. It replaced the "Accounts" switcher row: a workspace is one
+    // account and its project, so there is no account to switch to.
+    label: 'Workspace settings',
+    icon: CogOne,
     group: 'navigation',
     showIn: ['commandPalette'],
-    // Selecting this in the palette opens the in-palette account switcher
-    // (`SUBMENU_PAGE_BY_ID` in command-palette.tsx); `kind: 'account'` with no
-    // `accountTab` is the fallback for any surface that consumes the registry
-    // without that picker — it opens the hub on its account LIST, which is the
-    // same choice by another route.
-    kind: 'account',
-    // 'members' is deliberately absent. It names the SETTINGS MEMBERS TAB and
-    // the 'proj-invite' action, not the account switcher, so typing "member"
-    // used to return Accounts ahead of the two rows that actually answer it.
-    // A keyword belongs on a row only when it names that row — a synonym, an
-    // alias, or something the row itself contains. Words that name a
-    // neighbouring row's subject are removed on sight.
-    keywords: 'workspaces accounts teams organizations switch manage',
+    kind: 'navigate',
+    href: '/projects/{projectId}/admin',
+    requiresProject: true,
+    keywords: 'workspace settings organizations teams manage',
   },
   {
     id: 'proj-home',
@@ -1242,7 +1237,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-tokens',
-    label: 'Workspace · Service account tokens',
+    label: 'Workspace · API keys',
     icon: KeyRound,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1255,8 +1250,11 @@ export const menuRegistry: MenuItemDef[] = [
     // them here would make this row the answer to a query it is the wrong
     // answer to.
     accountTab: 'tokens',
+    // Workspaces (PR 1): a person's own access keys came back here from
+    // `/settings` — Workspace settings › API keys holds both kinds — so the
+    // words for them (`personal`, `pat`, `cli`) are this row's again.
     keywords:
-      'service account tokens machine identity automation ci cd bot integration key rules expiry policy',
+      'api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy',
   },
 
   // ──────────────────────────────────────────────────────────────────────────

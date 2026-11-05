@@ -58,7 +58,7 @@ export const PRICING_PLANS: PricingPlan[] = [
       'Unlimited members, one shared credit pool',
       'Unused credits roll over one month',
       'Top up any time. Top-ups never expire',
-      'Up to 200 workspaces and higher model rate limits',
+      'Higher model rate limits',
       'Support via email',
     ],
   },

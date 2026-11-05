@@ -1,5 +1,9 @@
 // Generated from the user-visible labels and search terms in menu-registry.ts.
 export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
+  'Workspace settings': 'text2590cd62a747',
+  'workspace settings organizations teams manage': 'text276261b1e03d',
+  'Workspace · API keys': 'text634ebc515b7f',
+  'api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy': 'text15dad401c76f',
   'Workspace · Audit log': 'texte5fd643538b9',
   'Workspace · Billing': 'text3b664be41417',
   'Workspace · Branding': 'textd54cae0781a0',
@@ -10,7 +14,6 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Workspace · Permissions help': 'text7b390afe6940',
   'Workspace · Workspaces': 'text7b4b05dee831',
   'Workspace · Roles': 'textc56833290910',
-  'Workspace · Service account tokens': 'text786d9e105bf3',
   'Workspace · Settings': 'textc61d3d5725a1',
   'Workspace · Usage': 'text74c8cd7e9f4a',
   Accounts: 'text8a7c8b67fe8b',
@@ -74,7 +77,6 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Workspace: 'text87bb59ba2f92',
   'Workspace members': 'textab95d456c6bb',
   'workspace account members organization roster owners admins': 'textf651529d7e60',
-  'workspaces accounts teams organizations switch manage': 'textb6bb289a7a2c',
   'agent sync branch base pull merge conflict resolve reconcile reload restart refresh workspace':
     'textcb97e7f77a44',
   'agents subagents ai': 'text2cda01a9e9be',
@@ -126,8 +128,6 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring':
     'text60b5535b6518',
   'secrets secret env environment variables credentials vault egress store': 'texte2a2f537aa0c',
-  'service account tokens machine identity automation ci cd bot integration key rules expiry policy':
-    'textf96aa8af0a6f',
   'service manager services orchestration process manager sandbox active restart reload':
     'text5844ecb027f7',
   'sessions runs threads conversations open': 'text390ae89f8320',

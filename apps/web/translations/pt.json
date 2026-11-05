@@ -2695,7 +2695,7 @@
           "f3": "Membros ilimitados, um único pool de créditos compartilhado",
           "f4": "Créditos não usados são transferidos por um mês",
           "f5": "Recarregue quando quiser. Recargas nunca expiram",
-          "f6": "Até 200 espaços de trabalho e limites de taxa de modelos mais altos",
+          "f6": "Limites de taxa de modelos mais altos",
           "f7": "Suporte por e-mail"
         },
         "enterprise": {
@@ -21240,7 +21240,11 @@
       "text05ee1d6181f3": "Quando uma solicitação de mudança é mesclada, {agent} executa sua instrução.",
       "texte608495c45ce": "Mesclada em {branch}",
       "text80ca527b0d55": "Gatilho de solicitação de mudança criado",
-      "authEmailAlreadySent": "Enviamos este e-mail há menos de um minuto. Verifique a sua caixa de entrada e a pasta de spam antes de pedir outro."
+      "authEmailAlreadySent": "Enviamos este e-mail há menos de um minuto. Verifique a sua caixa de entrada e a pasta de spam antes de pedir outro.",
+      "text2590cd62a747": "Configurações do espaço de trabalho",
+      "text276261b1e03d": "espaço de trabalho configurações organizações equipes gerenciar",
+      "text634ebc515b7f": "Espaço de trabalho · Chaves de API",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -25852,5 +25856,114 @@
     "projectDefault": "Padrão do espaço de trabalho · toda solicitação",
     "kortixPicks": "O Kortix escolhe",
     "useMyOwn": "Usar os meus"
+  },
+  "workspaces": {
+    "chooser": {
+      "createTitle": "Criar um espaço de trabalho",
+      "createBody": "Um espaço de trabalho é onde sua empresa trabalha com o Kortix: pessoas, agentes e tudo o que eles criam.",
+      "createAction": "Criar espaço de trabalho",
+      "invitedHint": "Foi convidado? Abra o link de convite do seu e-mail ou peça a um administrador para convidar {email}.",
+      "restrictedTitle": "Nenhum espaço de trabalho ainda",
+      "restrictedBody": "Peça a um administrador para convidar {email}.",
+      "listTitle": "Escolha um espaço de trabalho",
+      "listBody": "Abra um espaço de trabalho ou crie um novo.",
+      "invitesTitle": "Você foi convidado",
+      "invitesBody": "Entre em um espaço de trabalho ou crie o seu.",
+      "workspacesHeading": "Espaços de trabalho",
+      "invitations": "Convites",
+      "sentTo": "Enviado para {email}",
+      "invitedBy": "Convidado por {email}",
+      "join": "Entrar",
+      "joinError": "Não foi possível entrar no espaço de trabalho. Tente novamente.",
+      "unnamedWorkspace": "Espaço de trabalho",
+      "search": "Encontrar um espaço de trabalho",
+      "noMatches": "Nenhum espaço de trabalho corresponde a “{query}”.",
+      "role": {
+        "owner": "Proprietário",
+        "admin": "Administrador",
+        "member": "Membro"
+      },
+      "loadErrorTitle": "Não foi possível carregar seus espaços de trabalho",
+      "loadErrorBody": "Verifique sua conexão e tente novamente.",
+      "partialError": "Não foi possível carregar todos os espaços de trabalho.",
+      "retry": "Tentar novamente"
+    },
+    "switcher": {
+      "switch": "Trocar de espaço de trabalho",
+      "find": "Encontrar um espaço de trabalho…",
+      "noMatches": "Nenhum espaço de trabalho correspondente",
+      "create": "Criar espaço de trabalho",
+      "settings": "Configurações do espaço de trabalho",
+      "loadError": "Não foi possível carregar todos os espaços de trabalho.",
+      "retry": "Tentar novamente",
+      "heading": "Espaços de trabalho"
+    },
+    "create": {
+      "title": "Criar um espaço de trabalho",
+      "description": "Um espaço de trabalho é onde sua empresa trabalha com o Kortix: pessoas, agentes e tudo o que eles criam.",
+      "submit": "Criar espaço de trabalho",
+      "restricted": "Este servidor cria espaços de trabalho apenas para pessoas convidadas. Peça a um administrador para convidar {email}.",
+      "limitReached": "O limite de espaços de trabalho do seu plano foi atingido. Faça upgrade para criar outro."
+    },
+    "settings": {
+      "title": "Configurações do espaço de trabalho",
+      "groups": {
+        "workspace": "Espaço de trabalho",
+        "library": "Biblioteca",
+        "people": "Pessoas",
+        "billing": "Cobrança"
+      },
+      "sections": {
+        "general": "Geral",
+        "branding": "Marca",
+        "git": "Repositório Git",
+        "sandbox": "Modelos de sandbox",
+        "featureFlags": "Recursos experimentais",
+        "apiKeys": "Chaves de API",
+        "members": "Membros",
+        "groups": "Grupos",
+        "access": "Acesso",
+        "roles": "Funções",
+        "identity": "Identidade",
+        "audit": "Log de auditoria",
+        "help": "Ajuda",
+        "plan": "Plano",
+        "usage": "Uso"
+      },
+      "accessTitle": "Acesso",
+      "accessDescription": "Quem pode abrir este espaço de trabalho e com qual função.",
+      "securityTitle": "Segurança",
+      "githubTitle": "Conexões do GitHub",
+      "deleteKeepsLogin": "Seu login continua: você pode criar ou entrar em outro espaço de trabalho.",
+      "personalKeysTitle": "Suas chaves de acesso pessoais",
+      "personalKeysDescription": "Chaves de API que agem como você neste espaço de trabalho: para a CLI, um script ou um job de CI."
+    },
+    "cli": {
+      "noWorkspaceTitle": "Crie um espaço de trabalho para entrar na CLI",
+      "noWorkspaceBody": "A CLI entra em um espaço de trabalho. Crie um e depois aprove este acesso.",
+      "createAction": "Criar espaço de trabalho",
+      "workspaceLabel": "Espaço de trabalho"
+    },
+    "models": {
+      "yourDefault": "Padrão do espaço de trabalho",
+      "defaultAria": "{model} é o modelo padrão deste espaço de trabalho",
+      "defaultTitle": "Modelo padrão do espaço de trabalho",
+      "setDefaultTitle": "Definir como modelo padrão do espaço de trabalho",
+      "setDefaultAria": "Definir {model} como modelo padrão deste espaço de trabalho",
+      "setWorkspaceDefault": "Definir como padrão do espaço de trabalho"
+    },
+    "profile": {
+      "deleteLogin": "Excluir meu login",
+      "deleteLoginDescription": "Exclui seu login do Kortix. Você não pertence a nenhum espaço de trabalho, então nada mais é excluído.",
+      "deleteLoginTitle": "Excluir seu login?",
+      "deleteLoginWarning": "Seu login é excluído imediatamente. Isso não pode ser desfeito."
+    },
+    "capture": {
+      "noWorkspaceTitle": "Primeiro crie um espaço de trabalho ou entre em um.",
+      "noWorkspaceBody": "O Kortix Capture grava em um espaço de trabalho. Depois abra este login de novo.",
+      "openChooser": "Criar ou entrar em um espaço de trabalho",
+      "workspaceLabel": "Espaço de trabalho",
+      "noCaptureWorkspace": "Nenhum dos seus espaços de trabalho tem o Kortix Capture ativado. Um proprietário ou administrador pode ativá-lo."
+    }
   }
 }

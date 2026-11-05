@@ -6601,18 +6601,6 @@ const catalog = {
     "appReturn": "Back to the Kortix app",
     "appReturnConnected": "Provider connected. Back to the Kortix app"
   },
-  "projectChooser": {
-    "invitations": "Invitations",
-    "invitedBy": "Invited by {email}",
-    "join": "Join",
-    "joinError": "Could not join. Try again.",
-    "unnamedWorkspace": "Workspace",
-    "noPermissionTitle": "No workspace yet",
-    "noPermissionBody": "Ask an owner or admin to invite {email}.",
-    "invitesTitle": "You're invited",
-    "invitesDescription": "Join a workspace your team shared, or start your own.",
-    "createProjectInstead": "Create a new workspace instead"
-  },
   "projectSelector": {
     "welcome": "Welcome to {name}",
     "welcomeBack": "Welcome back",
@@ -9915,6 +9903,89 @@ const catalog = {
     "projectDefault": "Workspace default · every request",
     "kortixPicks": "Kortix picks",
     "useMyOwn": "Use my own"
+  },
+  "workspaces": {
+    "chooser": {
+      "createTitle": "Create a workspace",
+      "createBody": "A workspace is where your company works with Kortix: people, agents and everything they make.",
+      "createAction": "Create workspace",
+      "invitedHint": "Invited? Open the invite link from your email, or ask an admin to invite {email}.",
+      "restrictedTitle": "No workspace yet",
+      "restrictedBody": "Ask an admin to invite {email}.",
+      "listTitle": "Choose a workspace",
+      "listBody": "Open a workspace, or create a new one.",
+      "invitesTitle": "You're invited",
+      "invitesBody": "Join a workspace, or create your own.",
+      "workspacesHeading": "Workspaces",
+      "invitations": "Invitations",
+      "sentTo": "Sent to {email}",
+      "invitedBy": "Invited by {email}",
+      "join": "Join",
+      "joinError": "Could not join the workspace. Try again.",
+      "unnamedWorkspace": "Workspace",
+      "search": "Find a workspace",
+      "noMatches": "No workspace matches “{query}”.",
+      "role": {
+        "owner": "Owner",
+        "admin": "Admin",
+        "member": "Member"
+      },
+      "loadErrorTitle": "Could not load your workspaces",
+      "loadErrorBody": "Check your connection and try again.",
+      "partialError": "Could not load every workspace.",
+      "retry": "Try again"
+    },
+    "switcher": {
+      "switch": "Switch workspace",
+      "find": "Find a workspace…",
+      "noMatches": "No matching workspaces",
+      "create": "Create workspace",
+      "settings": "Workspace settings",
+      "loadError": "Could not load every workspace.",
+      "retry": "Try again",
+      "heading": "Workspaces"
+    },
+    "settings": {
+      "title": "Workspace settings",
+      "groups": {
+        "workspace": "Workspace",
+        "library": "Library",
+        "people": "People",
+        "billing": "Billing"
+      },
+      "sections": {
+        "general": "General",
+        "branding": "Branding",
+        "git": "Git repo",
+        "sandbox": "Sandbox templates",
+        "featureFlags": "Feature flags",
+        "apiKeys": "API keys",
+        "members": "Members",
+        "groups": "Groups",
+        "access": "Access",
+        "roles": "Roles",
+        "identity": "Identity",
+        "audit": "Audit log",
+        "help": "Help",
+        "plan": "Plan",
+        "usage": "Usage"
+      },
+      "accessTitle": "Access",
+      "accessDescription": "Who can open this workspace, and with which role.",
+      "securityTitle": "Security",
+      "githubTitle": "GitHub connections",
+      "deleteKeepsLogin": "Your login stays: you can create or join another workspace.",
+      "personalKeysTitle": "Your personal access keys",
+      "personalKeysDescription": "API keys that act as you in this workspace: for the CLI, a script, or a CI job."
+    },
+    "models": {
+      "yourDefault": "Workspace default",
+      "defaultAria": "{model} is the default model for this workspace",
+      "defaultTitle": "Workspace default model",
+      "setDefaultTitle": "Set as the workspace default model",
+      "setDefaultAria": "Set {model} as the default model for this workspace",
+      "setWorkspaceDefault": "Set as workspace default"
+    }
   }
 };
 

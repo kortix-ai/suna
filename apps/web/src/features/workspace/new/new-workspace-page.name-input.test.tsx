@@ -37,9 +37,18 @@ mock.module('@kortix/ui/internal/hooks/account/use-accounts-list', () => ({
     isLoading: false,
   }),
 }));
-mock.module('@kortix/ui/workspace/new/use-creatable-accounts', () => ({
-  useCreatableAccounts: (accounts: unknown[]) => accounts,
+// The owned empty account the create fills (`reusableEmptyAccount`).
+mock.module('@kortix/ui/workspace/sidebar/use-workspace-directory', () => ({
+  useWorkspaceDirectory: () => ({
+    accounts: [{ account_id: 'user-1', name: 'Personal', account_role: 'owner' }],
+    workspaces: [],
+    loading: false,
+    failedAccountIds: [],
+    reusableAccount: { account_id: 'user-1', name: 'Personal', account_role: 'owner' },
+    retryFailed: () => {},
+  }),
 }));
+mock.module('@kortix/ui/internal/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
 // The quota pre-check is this file's sibling test's subject (`plan-cap.test.tsx`);
 // here it only has to stay out of the render — no data, no cap UI, no provider.
 mock.module('@kortix/ui/workspace/new/use-project-quota', () => ({

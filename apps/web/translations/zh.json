@@ -2695,7 +2695,7 @@
           "f3": "成员不限数量，共用一个积分池",
           "f4": "未用完的积分可顺延一个月",
           "f5": "随时充值，充值的积分永不过期",
-          "f6": "最多 200 个工作区，更高的模型速率限制",
+          "f6": "更高的模型速率限制",
           "f7": "邮件支持"
         },
         "enterprise": {
@@ -21240,7 +21240,11 @@
       "text05ee1d6181f3": "变更请求合并时，{agent} 会执行你的指令。",
       "texte608495c45ce": "合并到 {branch}",
       "text80ca527b0d55": "已创建变更请求触发器",
-      "authEmailAlreadySent": "我们在一分钟内已发送过这封邮件。请先检查收件箱和垃圾邮件文件夹，再申请重新发送。"
+      "authEmailAlreadySent": "我们在一分钟内已发送过这封邮件。请先检查收件箱和垃圾邮件文件夹，再申请重新发送。",
+      "text2590cd62a747": "工作区设置",
+      "text276261b1e03d": "工作区 设置 组织 团队 管理",
+      "text634ebc515b7f": "工作区 · API 密钥",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -25852,5 +25856,114 @@
     "projectDefault": "工作区默认 · 所有请求",
     "kortixPicks": "Kortix 选择",
     "useMyOwn": "使用我的"
+  },
+  "workspaces": {
+    "chooser": {
+      "createTitle": "创建工作区",
+      "createBody": "工作区是你的公司使用 Kortix 工作的地方：成员、智能体以及他们创建的一切。",
+      "createAction": "创建工作区",
+      "invitedHint": "收到邀请了吗？打开邮件中的邀请链接，或请管理员邀请 {email}。",
+      "restrictedTitle": "还没有工作区",
+      "restrictedBody": "请管理员邀请 {email}。",
+      "listTitle": "选择工作区",
+      "listBody": "打开一个工作区，或创建新的工作区。",
+      "invitesTitle": "你收到了邀请",
+      "invitesBody": "加入一个工作区，或创建你自己的工作区。",
+      "workspacesHeading": "工作区",
+      "invitations": "邀请",
+      "sentTo": "发送至 {email}",
+      "invitedBy": "由 {email} 邀请",
+      "join": "加入",
+      "joinError": "无法加入工作区。请重试。",
+      "unnamedWorkspace": "工作区",
+      "search": "查找工作区",
+      "noMatches": "没有与“{query}”匹配的工作区。",
+      "role": {
+        "owner": "所有者",
+        "admin": "管理员",
+        "member": "成员"
+      },
+      "loadErrorTitle": "无法加载你的工作区",
+      "loadErrorBody": "请检查网络连接后重试。",
+      "partialError": "无法加载全部工作区。",
+      "retry": "重试"
+    },
+    "switcher": {
+      "switch": "切换工作区",
+      "find": "查找工作区…",
+      "noMatches": "没有匹配的工作区",
+      "create": "创建工作区",
+      "settings": "工作区设置",
+      "loadError": "无法加载全部工作区。",
+      "retry": "重试",
+      "heading": "工作区"
+    },
+    "create": {
+      "title": "创建工作区",
+      "description": "工作区是你的公司使用 Kortix 工作的地方：成员、智能体以及他们创建的一切。",
+      "submit": "创建工作区",
+      "restricted": "此服务器仅为受邀人员创建工作区。请管理员邀请 {email}。",
+      "limitReached": "你的套餐已达到工作区上限。升级后即可再创建一个。"
+    },
+    "settings": {
+      "title": "工作区设置",
+      "groups": {
+        "workspace": "工作区",
+        "library": "资源库",
+        "people": "成员",
+        "billing": "账单"
+      },
+      "sections": {
+        "general": "常规",
+        "branding": "品牌",
+        "git": "Git 仓库",
+        "sandbox": "沙盒模板",
+        "featureFlags": "功能开关",
+        "apiKeys": "API 密钥",
+        "members": "成员",
+        "groups": "群组",
+        "access": "访问权限",
+        "roles": "角色",
+        "identity": "身份",
+        "audit": "审计日志",
+        "help": "帮助",
+        "plan": "套餐",
+        "usage": "用量"
+      },
+      "accessTitle": "访问权限",
+      "accessDescription": "谁可以打开此工作区，以及使用哪个角色。",
+      "securityTitle": "安全",
+      "githubTitle": "GitHub 连接",
+      "deleteKeepsLogin": "你的登录保留：你可以创建或加入另一个工作区。",
+      "personalKeysTitle": "你的个人访问密钥",
+      "personalKeysDescription": "在此工作区中代表你操作的 API 密钥：用于 CLI、脚本或 CI 任务。"
+    },
+    "cli": {
+      "noWorkspaceTitle": "创建工作区以登录 CLI",
+      "noWorkspaceBody": "CLI 会登录到一个工作区。请先创建工作区，然后批准此次登录。",
+      "createAction": "创建工作区",
+      "workspaceLabel": "工作区"
+    },
+    "models": {
+      "yourDefault": "工作区默认",
+      "defaultAria": "{model} 是此工作区的默认模型",
+      "defaultTitle": "工作区默认模型",
+      "setDefaultTitle": "设为工作区默认模型",
+      "setDefaultAria": "将 {model} 设为此工作区的默认模型",
+      "setWorkspaceDefault": "设为工作区默认"
+    },
+    "profile": {
+      "deleteLogin": "删除我的登录",
+      "deleteLoginDescription": "删除你的 Kortix 登录。你不属于任何工作区，因此不会删除其他内容。",
+      "deleteLoginTitle": "删除你的登录？",
+      "deleteLoginWarning": "你的登录将立即删除。此操作无法撤销。"
+    },
+    "capture": {
+      "noWorkspaceTitle": "请先创建或加入一个工作区。",
+      "noWorkspaceBody": "Kortix Capture 会录制到工作区中。之后请再次打开此登录。",
+      "openChooser": "创建或加入工作区",
+      "workspaceLabel": "工作区",
+      "noCaptureWorkspace": "你的工作区都未开启 Kortix Capture。所有者或管理员可以开启它。"
+    }
   }
 }

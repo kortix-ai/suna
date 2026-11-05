@@ -2695,7 +2695,7 @@
           "f3": "Membres illimités, un seul pool de crédits partagé",
           "f4": "Les crédits inutilisés sont reportés d'un mois",
           "f5": "Rechargez à tout moment. Les recharges n'expirent jamais",
-          "f6": "Jusqu’à 200 espaces de travail et des limites de débit plus élevées",
+          "f6": "Des limites de débit plus élevées",
           "f7": "Support par e-mail"
         },
         "enterprise": {
@@ -21240,7 +21240,11 @@
       "text05ee1d6181f3": "Quand une demande de modification est fusionnée, {agent} exécute votre instruction.",
       "texte608495c45ce": "Fusionnée dans {branch}",
       "text80ca527b0d55": "Déclencheur de demande de modification créé",
-      "authEmailAlreadySent": "Nous avons envoyé cet e-mail il y a moins d'une minute. Vérifiez votre boîte de réception et vos spams avant d'en demander un autre."
+      "authEmailAlreadySent": "Nous avons envoyé cet e-mail il y a moins d'une minute. Vérifiez votre boîte de réception et vos spams avant d'en demander un autre.",
+      "text2590cd62a747": "Paramètres de l'espace de travail",
+      "text276261b1e03d": "espace de travail paramètres organisations équipes gérer",
+      "text634ebc515b7f": "Espace de travail · Clés API",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -25852,5 +25856,114 @@
     "projectDefault": "Défaut de l’espace de travail · chaque requête",
     "kortixPicks": "Kortix choisit",
     "useMyOwn": "Utiliser les miens"
+  },
+  "workspaces": {
+    "chooser": {
+      "createTitle": "Créer un espace de travail",
+      "createBody": "Un espace de travail est l'endroit où votre entreprise travaille avec Kortix : les personnes, les agents et tout ce qu'ils créent.",
+      "createAction": "Créer un espace de travail",
+      "invitedHint": "Invité ? Ouvrez le lien d'invitation reçu par e-mail, ou demandez à un administrateur d'inviter {email}.",
+      "restrictedTitle": "Pas encore d'espace de travail",
+      "restrictedBody": "Demandez à un administrateur d'inviter {email}.",
+      "listTitle": "Choisir un espace de travail",
+      "listBody": "Ouvrez un espace de travail ou créez-en un nouveau.",
+      "invitesTitle": "Vous êtes invité",
+      "invitesBody": "Rejoignez un espace de travail ou créez le vôtre.",
+      "workspacesHeading": "Espaces de travail",
+      "invitations": "Invitations",
+      "sentTo": "Envoyée à {email}",
+      "invitedBy": "Invité par {email}",
+      "join": "Rejoindre",
+      "joinError": "Impossible de rejoindre l'espace de travail. Réessayez.",
+      "unnamedWorkspace": "Espace de travail",
+      "search": "Rechercher un espace de travail",
+      "noMatches": "Aucun espace de travail ne correspond à « {query} ».",
+      "role": {
+        "owner": "Propriétaire",
+        "admin": "Administrateur",
+        "member": "Membre"
+      },
+      "loadErrorTitle": "Impossible de charger vos espaces de travail",
+      "loadErrorBody": "Vérifiez votre connexion et réessayez.",
+      "partialError": "Impossible de charger tous les espaces de travail.",
+      "retry": "Réessayer"
+    },
+    "switcher": {
+      "switch": "Changer d'espace de travail",
+      "find": "Rechercher un espace de travail…",
+      "noMatches": "Aucun espace de travail correspondant",
+      "create": "Créer un espace de travail",
+      "settings": "Paramètres de l'espace de travail",
+      "loadError": "Impossible de charger tous les espaces de travail.",
+      "retry": "Réessayer",
+      "heading": "Espaces de travail"
+    },
+    "create": {
+      "title": "Créer un espace de travail",
+      "description": "Un espace de travail est l'endroit où votre entreprise travaille avec Kortix : les personnes, les agents et tout ce qu'ils créent.",
+      "submit": "Créer un espace de travail",
+      "restricted": "Ce serveur crée des espaces de travail uniquement pour les personnes invitées. Demandez à un administrateur d'inviter {email}.",
+      "limitReached": "La limite d'espaces de travail de votre forfait est atteinte. Passez à un forfait supérieur pour en créer un autre."
+    },
+    "settings": {
+      "title": "Paramètres de l'espace de travail",
+      "groups": {
+        "workspace": "Espace de travail",
+        "library": "Bibliothèque",
+        "people": "Personnes",
+        "billing": "Facturation"
+      },
+      "sections": {
+        "general": "Général",
+        "branding": "Image de marque",
+        "git": "Dépôt Git",
+        "sandbox": "Modèles de sandbox",
+        "featureFlags": "Fonctionnalités expérimentales",
+        "apiKeys": "Clés API",
+        "members": "Membres",
+        "groups": "Groupes",
+        "access": "Accès",
+        "roles": "Rôles",
+        "identity": "Identité",
+        "audit": "Journal d'audit",
+        "help": "Aide",
+        "plan": "Forfait",
+        "usage": "Utilisation"
+      },
+      "accessTitle": "Accès",
+      "accessDescription": "Qui peut ouvrir cet espace de travail, et avec quel rôle.",
+      "securityTitle": "Sécurité",
+      "githubTitle": "Connexions GitHub",
+      "deleteKeepsLogin": "Votre connexion reste : vous pouvez créer ou rejoindre un autre espace de travail.",
+      "personalKeysTitle": "Vos clés d’accès personnelles",
+      "personalKeysDescription": "Des clés API qui agissent en votre nom dans cet espace de travail : pour la CLI, un script ou une tâche CI."
+    },
+    "cli": {
+      "noWorkspaceTitle": "Créez un espace de travail pour connecter la CLI",
+      "noWorkspaceBody": "La CLI se connecte à un espace de travail. Créez-en un, puis approuvez cette connexion.",
+      "createAction": "Créer un espace de travail",
+      "workspaceLabel": "Espace de travail"
+    },
+    "models": {
+      "yourDefault": "Par défaut de l'espace de travail",
+      "defaultAria": "{model} est le modèle par défaut de cet espace de travail",
+      "defaultTitle": "Modèle par défaut de l'espace de travail",
+      "setDefaultTitle": "Définir comme modèle par défaut de l'espace de travail",
+      "setDefaultAria": "Définir {model} comme modèle par défaut de cet espace de travail",
+      "setWorkspaceDefault": "Définir par défaut pour l'espace de travail"
+    },
+    "profile": {
+      "deleteLogin": "Supprimer ma connexion",
+      "deleteLoginDescription": "Supprime votre connexion Kortix. Vous n'appartenez à aucun espace de travail : rien d'autre n'est supprimé.",
+      "deleteLoginTitle": "Supprimer votre connexion ?",
+      "deleteLoginWarning": "Votre connexion est supprimée immédiatement. Cette action est irréversible."
+    },
+    "capture": {
+      "noWorkspaceTitle": "Créez ou rejoignez d'abord un espace de travail.",
+      "noWorkspaceBody": "Kortix Capture enregistre dans un espace de travail. Rouvrez ensuite cette connexion.",
+      "openChooser": "Créer ou rejoindre un espace de travail",
+      "workspaceLabel": "Espace de travail",
+      "noCaptureWorkspace": "Kortix Capture n'est activé dans aucun de vos espaces de travail. Un propriétaire ou un administrateur peut l'activer."
+    }
   }
 }

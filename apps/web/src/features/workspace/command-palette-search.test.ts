@@ -311,7 +311,10 @@ describe('queries return the rows they name', () => {
     expect(result.sort()).toEqual([
       'nav:account-members',
       'nav:account-tokens',
-      'nav:nav-accounts',
+      'nav:account-usage',
+      // Credits and Plan left the overlay for the account page on 2026-09-03;
+      // their `nav:account-usage` / `nav:account-billing` rows above own the
+      // word now.
       'settings:profile',
     ]);
   });
@@ -446,7 +449,7 @@ describe('genuine synonyms still answer', () => {
     ['abilities', 'nav:proj-skills'],
     ['drive', 'nav:proj-files'],
     ['threads', 'nav:proj-sessions'],
-    ['organizations', 'nav:nav-accounts'],
+    ['organizations', 'nav:nav-workspace-settings'],
     ['conflict', 'nav:sync-session-branch'],
     ['reconcile', 'nav:sync-session-branch'],
     ['restart', 'nav:restart-config'],
@@ -467,7 +470,7 @@ describe('genuine synonyms still answer', () => {
     // answered by a registry row. `api-keys` came BACK on 2026-08-18 as the
     // `tokens` tab (the personal half only), so `pat` reaches a settings row
     // again — `nav:account-tokens` answers for service account tokens.
-    ['pat', 'settings:tokens'],
+    ['pat', 'nav:account-tokens'],
     ['hotkeys', 'settings:preferences'],
     ['ledger', 'nav:account-usage'],
     ['configure', 'nav:proj-customize'],

@@ -89,7 +89,6 @@ import { useSettingsAccountId } from '@/features/workspace/settings/use-settings
 import {
   type WorkspacePaletteRow,
   buildWorkspacePaletteRows,
-  groupWorkspacePaletteRows,
   recentWorkspaceRows,
   rootWorkspaceResults,
   workspacePageResults,
@@ -103,7 +102,12 @@ import { useTranslations } from '@/i18n/use-translations';
 import { copyToClipboard } from '@kortix/ui/internal/lib/utils/clipboard';
 import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { isBillingEnabled } from '@/lib/config';
+import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
+import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
+import {
+  canCreateWorkspace,
+  reusableEmptyAccount,
+} from '@kortix/ui/workspace/project-selector/project-selector-model';
 import type { InterfaceThemeId } from '@/lib/interface-themes';
 import {
   type MenuItemDef,
@@ -111,7 +115,6 @@ import {
   getItemsForSurface,
   translateMenuItem,
 } from '@/lib/menu-registry';
-import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { track } from '@/lib/track';
 import { useProjectFeatureFlags } from '@kortix/ui/internal/lib/use-project-feature-flags';
 import { cn, uiRoutes } from '@kortix/ui';
@@ -128,7 +131,6 @@ import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog
 import { type ConversationDensity, useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import {
   type FeatureFlagKey,
-  type KortixAccount,
   type KortixProject,
   type ProjectDetail,
   type ProjectSession,
@@ -179,7 +181,8 @@ import {
   MagnifyingGlassIcon as Search,
   SunDimIcon,
   TextAlignLeftIcon as TextAlignLeft,
-  UsersIcon as UsersSolid,
+  GearSixIcon as CogOne,
+  PlusIcon,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -196,7 +199,6 @@ type PalettePage =
   | 'agents'
   | 'models'
   | 'workspaces'
-  | 'accounts'
   | 'sessions'
   | 'files'
   | 'density'
@@ -358,7 +360,7 @@ export const SUGGESTION_PRIORITY: readonly string[] = [
   'open-session-terminal',
   'view-changes',
   'review-changes',
-  'nav-accounts',
+  'nav-workspace-settings',
 ];
 
 /**
@@ -410,7 +412,6 @@ export const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
   // routed fallback for the same reason every other entry here keeps one — if
   // this map loses the id, the row navigates instead of dead-ending.
   'nav-projects': 'workspaces',
-  'nav-accounts': 'accounts',
   'proj-sessions': 'sessions',
   'conversation-density': 'density',
   // "Review changes" lists this workspace's OPEN change requests in-palette;
@@ -471,19 +472,15 @@ const DENSITY_PAGE_OPTIONS: {
  * and passing only `emoji` (as the sidebar still does) silently renders a
  * glyph-iconed workspace as bare initials.
  *
- * The account label is trailing, muted and conditional — see
- * `showAccount`. With one account it is the same word on every row, which is
- * noise; with two it is the only thing separating two workspaces that share a
- * name.
+ * No account label: a workspace is one account and its project, so the
+ * row is the workspace's icon and name, the same as the sidebar switcher.
  */
 function WorkspaceCommandItem({
   row,
-  showAccount,
   onSelect,
   trailing,
 }: {
   row: WorkspacePaletteRow;
-  showAccount: boolean;
   onSelect: () => void;
   trailing?: React.ReactNode;
 }) {
@@ -496,11 +493,6 @@ function WorkspaceCommandItem({
         size="sm"
       />
       <span className="min-w-0 flex-1 truncate">{row.workspace.name}</span>
-      {showAccount && (
-        <span className="text-muted-foreground/40 max-w-[9rem] shrink-0 truncate text-xs">
-          {row.accountName}
-        </span>
-      )}
       {trailing}
     </CommandItem>
   );
@@ -883,6 +875,7 @@ export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tPalette = useTranslations('commandPalette');
+  const tWorkspaces = useTranslations('workspaces.switcher');
   const { user } = useAuth();
   const tSettingsRail = useTranslations('settings.rail');
   const densityPageOptions = useLocalizedUiCatalog(DENSITY_PAGE_OPTIONS);
@@ -944,11 +937,6 @@ export function CommandPalette() {
 
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const { data: accountsList } = useAccountsList({ enabled: open });
-  const activeAccount =
-    accountsList?.find((account) => account.account_id === selectedAccountId) ??
-    accountsList?.[0] ??
-    null;
-  const activeAccountId = activeAccount?.account_id ?? null;
   /**
    * EVERY account's workspaces, not just the active account's.
    *
@@ -981,8 +969,31 @@ export function CommandPalette() {
   // rows; the palette's per-keystroke cost is dominated by cmdk scoring every
   // row in the list, not by this.
   const allWorkspaces = workspaceQueries.flatMap((q) => q.data ?? []);
+  // The account of the workspace on screen; the persisted selection off one.
+  // Never the first account in the list: that is a guess, and the wrong one
+  // for anyone in two workspaces.
+  const activeAccountId =
+    allWorkspaces.find((workspace) => workspace.project_id === projectId)?.account_id ??
+    selectedAccountId ??
+    null;
   const workspacesLoading =
     workspaceQueries.length === 0 || workspaceQueries.some((q) => q.isLoading);
+  const { data: adminRole } = useAdminRole({ enabled: open });
+  // The sidebar switcher's rule (`canCreateWorkspace`): a restricted self-host
+  // offers Create workspace only to a platform admin or the owner of an
+  // empty account.
+  const canCreateNewWorkspace = canCreateWorkspace({
+    restricted: isAccountCreationRestricted(),
+    isPlatformAdmin: Boolean(adminRole?.isAdmin),
+    reusableAccount: reusableEmptyAccount({
+      accounts: accountsList ?? [],
+      lists: (accountsList ?? []).map((account, index) => ({
+        accountId: account.account_id,
+        data: workspaceQueries[index]?.data,
+        isError: workspaceQueries[index]?.isError ?? false,
+      })),
+    }),
+  });
   const { data: paletteSessions, isPending: projectSessionsPending } = useQuery({
     queryKey: qk.project.sessions(projectId ?? ''),
     queryFn: () => listProjectSessions(projectId!, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
@@ -1518,21 +1529,6 @@ export function CommandPalette() {
     [beginSwitch, selectedAccountId, setSelectedAccountId, router, close],
   );
 
-  const handleSelectAccount = useCallback(
-    (a: KortixAccount) => {
-      setSelectedAccountId(a.account_id);
-      // The landing door for THIS account (`?account=`). The plain door
-      // reopened the project the browser remembered, in the account just
-      // left, and set the selected account back to it (KRTX-1731).
-      // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
-      // push must follow `setSelectedAccountId`. The 'accounts' page effect
-      // warms it.
-      router.push(`${PROJECT_LANDING_PATH}?account=${encodeURIComponent(a.account_id)}`);
-      close();
-    },
-    [setSelectedAccountId, router, close],
-  );
-
   const handleSelectProjectSession = useCallback(
     (s: ProjectSession) => {
       if (!projectId) return close();
@@ -1573,17 +1569,10 @@ export function CommandPalette() {
     [allPaletteItems],
   );
 
-  /** Whether a row should say which account it is in. One account, no noise. */
-  const showWorkspaceAccount = (accountsList?.length ?? 0) > 1;
 
   const workspacePageRows = useMemo(
     () => workspacePageResults(workspaceRows, query),
     [workspaceRows, query],
-  );
-
-  const workspacePageGroups = useMemo(
-    () => groupWorkspacePaletteRows(workspacePageRows),
-    [workspacePageRows],
   );
 
   const recentProjectSessions = useMemo(() => {
@@ -1592,13 +1581,6 @@ export function CommandPalette() {
 
   const recentWorkspaces = useMemo(() => recentWorkspaceRows(workspaceRows), [workspaceRows]);
 
-  const filteredAccountsList = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const sorted = [...(accountsList ?? [])].sort((a, b) =>
-      (a.name || '').localeCompare(b.name || ''),
-    );
-    return q ? sorted.filter((a) => (a.name || '').toLowerCase().includes(q)) : sorted;
-  }, [accountsList, query]);
 
   const filteredDensityOptions = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1738,8 +1720,11 @@ export function CommandPalette() {
   // page opens.
   useEffect(() => {
     if (!open) return;
-    if (page === 'accounts') router.prefetch(PROJECT_LANDING_PATH);
     if (page === 'files' && projectId) router.prefetch(`/projects/${projectId}/files`);
+    if (page === 'workspaces') {
+      router.prefetch('/new');
+      if (projectId) router.prefetch(`/projects/${projectId}/admin`);
+    }
   }, [open, page, projectId, router]);
 
   // "Invite members" and "Workspace members". The account id arrives from
@@ -2399,7 +2384,6 @@ export function CommandPalette() {
     if (page === 'agents') return filteredAgents.length;
     if (page === 'models') return visibleModels.length;
     if (page === 'workspaces') return workspacePageRows.length;
-    if (page === 'accounts') return filteredAccountsList.length;
     if (page === 'sessions') return filteredProjectSessionsList.length;
     if (page === 'density') return filteredDensityOptions.length;
     // 0: these pages fetch and filter their own rows, so the count lives
@@ -2433,7 +2417,6 @@ export function CommandPalette() {
     filteredAgents,
     visibleModels,
     workspacePageRows,
-    filteredAccountsList,
     filteredProjectSessionsList,
     filteredDensityOptions,
     rootCopyResults,
@@ -2443,27 +2426,25 @@ export function CommandPalette() {
     if (page === 'agents') return tI18nComplete.raw('text32f4468b0b6f');
     if (page === 'models') return tI18nComplete.raw('text37b90680b842');
     if (page === 'files') return tI18nComplete.raw('text19608ade89b8');
-    if (page === 'workspaces') return tI18nComplete.raw('text5c192a3e6f23');
-    if (page === 'accounts') return tI18nComplete.raw('text72eb3689cab9');
+    if (page === 'workspaces') return tWorkspaces('find');
     if (page === 'sessions') return tI18nComplete.raw('textf41875714fdc');
     if (page === 'density') return tI18nComplete.raw('textf0f41388d721');
     if (page === 'changes') return tI18nComplete.raw('text3db1f0d55a5b');
     if (page === 'flags') return tI18nComplete.raw('textfd20bd366efb');
     return channelsOn ? tPalette('searchChannels') : tI18nComplete.raw('text7b355872be1c');
-  }, [page, tI18nComplete, channelsOn, tPalette]);
+  }, [page, tI18nComplete, channelsOn, tPalette, tWorkspaces]);
 
   const pageTitle = useMemo(() => {
     if (page === 'agents') return tI18nComplete.raw('text6fb2caa0ee1c');
     if (page === 'models') return tI18nComplete.raw('text9cb6d01d8b29');
     if (page === 'files') return tI18nComplete.raw('text5a5bc0c4ce6e');
-    if (page === 'workspaces') return tI18nComplete.raw('text9ad6baffd025');
-    if (page === 'accounts') return tI18nComplete.raw('text4ecda5e7a644');
+    if (page === 'workspaces') return tWorkspaces('switch');
     if (page === 'sessions') return tI18nComplete.raw('text113463edeb06');
     if (page === 'density') return tI18nComplete.raw('textd0fffb7fa940');
     if (page === 'changes') return tI18nComplete.raw('text6a47708f4e14');
     if (page === 'flags') return tI18nComplete.raw('text20a2e59ba129');
     return null;
-  }, [page, tI18nComplete]);
+  }, [page, tI18nComplete, tWorkspaces]);
 
   return (
     <>
@@ -2733,7 +2714,6 @@ export function CommandPalette() {
                           <WorkspaceCommandItem
                             key={row.workspace.project_id}
                             row={row}
-                            showAccount={showWorkspaceAccount}
                             onSelect={() => handleSelectWorkspace(row.workspace)}
                             trailing={
                               (row.workspace.last_opened_at || row.workspace.updated_at) && (
@@ -2965,7 +2945,6 @@ export function CommandPalette() {
                           <WorkspaceCommandItem
                             key={row.workspace.project_id}
                             row={row}
-                            showAccount={showWorkspaceAccount}
                             onSelect={() => handleSelectWorkspace(row.workspace)}
                             trailing={
                               (row.workspace.last_opened_at || row.workspace.updated_at) && (
@@ -3175,42 +3154,26 @@ export function CommandPalette() {
               <FileSearchPage query={query} onSelect={handleSelectFile} />
             )}
 
-            {/* The dedicated directory. Grouped by account like the sidebar
-                switcher, and for the same reason: two workspaces can share a
-                name, and the account is the only thing that tells them apart.
-                One account gets a single "Workspaces" heading instead — a lone
-                account heading over the only list is noise, not structure.
-
-                Like the root results this includes the workspace you are in,
-                marked here with a check. */}
-            {page === 'workspaces' &&
-              (workspacePageRows.length > 0 ? (
-                workspacePageGroups.map((group) => (
-                  <CommandGroup
-                    key={group.accountId}
-                    heading={workspacePageGroups.length > 1 ? group.accountName : 'Workspaces'}
-                    forceMount
-                  >
-                    {group.rows.map((row) => (
+            {/* The dedicated directory: one flat list like the sidebar
+                switcher (a workspace is one account and its project), the
+                workspace you are in checked, then Create workspace and
+                Workspace settings — the switcher's two bottom actions. */}
+            {page === 'workspaces' && (
+              <>
+                {workspacePageRows.length > 0 ? (
+                  <CommandGroup heading={tWorkspaces('heading')} forceMount>
+                    {workspacePageRows.map((row) => (
                       <WorkspaceCommandItem
                         key={row.workspace.project_id}
                         row={row}
-                        // Never on this page: the heading already says which
-                        // account, so repeating it on every row under it is
-                        // the same word twice.
-                        showAccount={false}
                         onSelect={() => handleSelectWorkspace(row.workspace)}
                         trailing={
-                          row.isActive ? (
-                            <Check className="text-primary h-3.5 w-3.5 shrink-0" />
-                          ) : null
+                          row.isActive ? <Check className="text-foreground size-3.5 shrink-0" /> : null
                         }
                       />
                     ))}
                   </CommandGroup>
-                ))
-              ) : (
-                workspacesLoading ? (
+                ) : workspacesLoading ? (
                   // "No workspaces yet" over a list that has not arrived is a
                   // lie the sidebar already learned not to tell.
                   <div className="flex justify-center py-8">
@@ -3220,41 +3183,39 @@ export function CommandPalette() {
                   <PaletteEmpty>
                     {query
                       ? tI18nComplete('textbe27a86a69e5', { value0: query })
-                      : tHardcodedUi.raw('i18nComplete.text97d0b1171f3e')}
+                      : tWorkspaces('noMatches')}
                   </PaletteEmpty>
-                )
-              ))}
-
-            {page === 'accounts' &&
-              (filteredAccountsList.length > 0 ? (
-                <CommandGroup heading="Accounts" forceMount>
-                  {filteredAccountsList.map((account) => {
-                    const label = account.name || 'Account';
-                    return (
-                      <CommandItem
-                        key={account.account_id}
-                        value={sanitizeCmdkValue(`account ${label} ${account.account_id}`)}
-                        onSelect={() => handleSelectAccount(account)}
-                      >
-                        <UsersSolid
-                          weight="fill"
-                          className="text-muted-foreground size-4 shrink-0"
-                        />
-                        <span className="flex-1 truncate">{label}</span>
-                        {account.account_id === activeAccountId && (
-                          <Check className="text-primary h-3.5 w-3.5 shrink-0" />
-                        )}
-                      </CommandItem>
-                    );
-                  })}
+                )}
+                <CommandGroup forceMount>
+                  {canCreateNewWorkspace ? (
+                    <CommandItem
+                      value={sanitizeCmdkValue(`create workspace new ${tWorkspaces('create')}`)}
+                      onSelect={() => {
+                        // nav-contract: prefetch-only — a cmdk row activated by keyboard; the 'workspaces' page effect warms it.
+                        router.push('/new');
+                        close();
+                      }}
+                    >
+                      <PlusIcon className="text-muted-foreground size-4 shrink-0" />
+                      <span className="flex-1 truncate">{tWorkspaces('create')}</span>
+                    </CommandItem>
+                  ) : null}
+                  {projectId ? (
+                    <CommandItem
+                      value={sanitizeCmdkValue(`workspace settings ${tWorkspaces('settings')}`)}
+                      onSelect={() => {
+                        // nav-contract: prefetch-only — a cmdk row activated by keyboard; the 'workspaces' page effect warms it.
+                        router.push(`/projects/${projectId}/admin`);
+                        close();
+                      }}
+                    >
+                      <CogOne className="text-muted-foreground size-4 shrink-0" />
+                      <span className="flex-1 truncate">{tWorkspaces('settings')}</span>
+                    </CommandItem>
+                  ) : null}
                 </CommandGroup>
-              ) : (
-                <PaletteEmpty>
-                  {query
-                    ? tI18nComplete('text7433280153b9', { value0: query })
-                    : tHardcodedUi.raw('i18nComplete.text177116ee5177')}
-                </PaletteEmpty>
-              ))}
+              </>
+            )}
 
             {page === 'density' &&
               (filteredDensityOptions.length > 0 ? (

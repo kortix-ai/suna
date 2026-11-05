@@ -1,17 +1,8 @@
 'use client';
 
-import {
-  acceptAccountInviteAndLand,
-  type KortixProject,
-  type MyAccountInvite,
-} from '@kortix/sdk';
+import { acceptAccountInviteAndLand, type MyAccountInvite } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
-import {
-  ArrowRightIcon,
-  CaretRightIcon,
-  MagnifyingGlassIcon,
-  PlusIcon,
-} from '@phosphor-icons/react';
+import { ArrowRightIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -19,6 +10,7 @@ import { useMemo, useState, type MouseEvent } from 'react';
 
 import { Button } from '@kortix/ui/button';
 import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { InlineMeta } from '@kortix/ui/inline-meta';
 import { Input } from '@kortix/ui/input';
 import { KortixLogo } from '@kortix/ui/kortix-logo';
 import { Label } from '@kortix/ui/label';
@@ -26,34 +18,40 @@ import Loading from '@kortix/ui/loading';
 import { errorToast } from '@kortix/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { AccountTopBar } from '@/features/workspace/account-top-bar';
-import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-param';
-import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { useTranslations } from '@/i18n/use-translations';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
+import { isAccountCreationRestricted } from '@/lib/config';
 import { isModifiedClick } from '@kortix/ui/internal/lib/navigation/modified-click';
 import { writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
-import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
 import { cn } from '@kortix/ui';
+import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
 import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
-import { useBrandName } from '@kortix/ui/internal/branding/branding-provider';
 
 import {
-  COLLAPSED_PROJECT_LIMIT,
   SEARCH_THRESHOLD,
-  countProjects,
-  filterSections,
+  canCreateWorkspace,
+  filterWorkspaceRows,
   inviteLandingPath,
-  type AccountSection,
+  type WorkspaceRow,
 } from '@kortix/ui/workspace/project-selector/project-selector-model';
 import { useProjectSelectorData } from './use-project-selector-data';
 
 /**
- * `/projects` — choose a project, Slack-style.
+ * `/projects` — create a workspace or join one, Slack-style.
  *
- * One column, top to bottom: the create card, pending invites, then every
- * account the user belongs to with its projects. Every user state renders
- * here — see `project-selector-model.ts` for the list — so nobody is ever
- * pushed into the create form when they have something to open.
+ * One column, three states (`project-selector-model.ts`):
+ *
+ *  - 0 workspaces, 0 invites — "Create a workspace", one primary button, and
+ *    one quiet line for the person who expected an invite;
+ *  - invites pending        — the invitations first, each with Join, then
+ *    the create action;
+ *  - 1+ workspaces          — one flat list, one row per workspace, search
+ *    at 8+ rows, and one "Create workspace" action under it.
+ *
+ * No account headings: a workspace is one account and its one project. Self
+ * host with account creation restricted shows no create action, only
+ * "Ask an admin to invite {email}" (`canCreateWorkspace`).
  */
 export interface ProjectSelectorViewProps {
   connectComputer?: boolean;
@@ -61,65 +59,55 @@ export interface ProjectSelectorViewProps {
   name?: string | null;
   loading: boolean;
   loadFailed: boolean;
-  sections: AccountSection[];
+  /** Some account's project list failed: the list may be missing rows. */
+  partialFailure?: boolean;
+  workspaces: WorkspaceRow[];
   invites: MyAccountInvite[];
-  /** Any account where the user may create a project. */
+  /** `/new`, or null when this caller may not create a workspace. */
   createHref: string | null;
   joiningInviteId: string | null;
   openingProjectId: string | null;
   signingOut: boolean;
   onJoin: (invite: MyAccountInvite) => void;
-  onOpenProject: (event: MouseEvent<HTMLAnchorElement>, project: KortixProject) => void;
-  onRetryAccount: (accountId: string) => void;
+  onOpenProject: (event: MouseEvent<HTMLAnchorElement>, row: WorkspaceRow) => void;
   onRetryAll: () => void;
   onLogOut: () => void;
 }
 
 export function ProjectSelectorView(props: ProjectSelectorViewProps) {
-  const t = useTranslations('projectSelector');
-  const brandName = useBrandName();
-  const { email, loading, loadFailed, sections, invites } = props;
-  const createHref = props.createHref && props.connectComputer
-    ? `${props.createHref}&connect=computer`
-    : props.createHref;
+  const t = useTranslations('workspaces.chooser');
+  const { email, loading, loadFailed, workspaces, invites } = props;
+  const createHref =
+    props.createHref && props.connectComputer ? `${props.createHref}?connect=computer` : props.createHref;
   const [query, setQuery] = useState('');
+  const visible = useMemo(() => filterWorkspaceRows(workspaces, query), [workspaces, query]);
+  const trimmed = query.trim();
 
-  const total = countProjects(sections);
-  const visible = useMemo(() => filterSections(sections, query), [sections, query]);
-  const hasAnything = total > 0 || invites.length > 0;
-  // The create card already targets one account; its empty row would say the
-  // same thing twice. Other empty accounts keep their own create row.
-  const listed = sections.filter(
-    (section) =>
-      !(
-        section.state === 'empty-creatable' &&
-        newWorkspacePathForAccount(section.accountId) === props.createHref
-      ),
-  );
-  const noAccess = !loading && !loadFailed && !createHref && !hasAnything;
+  const hasWorkspaces = workspaces.length > 0;
+  const hasInvites = invites.length > 0;
+  const restricted = !createHref && !hasWorkspaces && !hasInvites;
 
-  const title = total > 0 ? t('welcomeBack') : t('welcome', { name: brandName });
-  const description = noAccess
-    ? t('noAccessBody', { email: email ?? '' })
-    : total > 0
-      ? t('descriptionReturning')
-      : t('descriptionNew');
+  const [title, description] = restricted
+    ? [t('restrictedTitle'), t('restrictedBody', { email: email ?? '' })]
+    : hasWorkspaces
+      ? [t('listTitle'), t('listBody')]
+      : hasInvites
+        ? [t('invitesTitle'), t('invitesBody')]
+        : [t('createTitle'), t('createBody')];
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-lg flex-col px-6 py-20">
       <AccountTopBar email={email} name={props.name} signingOut={props.signingOut} onLogOut={props.onLogOut} />
 
       {/* `my-auto` centers the block in the viewport while it fits, and lets
-          it start at the top and scroll once the project list is taller.
-          Blank while the reads resolve (one round trip): a centered block
-          that changes height would slide the header down under the eye. */}
+          it start at the top and scroll once the list is taller. Blank while
+          the reads resolve (one round trip): a centered block that changes
+          height would slide the header down under the eye. */}
       {loading ? null : (
         <div className="my-auto w-full">
           <header className="flex flex-col items-center gap-2 text-center">
             <KortixLogo size={28} variant="icon" className="mb-3" />
-            <h1 className="text-foreground text-2xl font-semibold tracking-tight">
-              {noAccess ? t('noAccessTitle') : title}
-            </h1>
+            <h1 className="text-foreground text-2xl font-semibold tracking-tight">{title}</h1>
             <p className="text-muted-foreground text-sm text-balance">{description}</p>
           </header>
 
@@ -135,22 +123,9 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
             </div>
           ) : (
             <div className="mt-10 flex flex-col gap-8">
-              {createHref ? <CreateCard href={createHref} /> : null}
-
-              {createHref && hasAnything ? (
-                <div className="flex items-center gap-3" aria-hidden>
-                  <span className="bg-border h-px flex-1" />
-                  <span className="text-muted-foreground text-xs">{t('orContinue')}</span>
-                  <span className="bg-border h-px flex-1" />
-                </div>
-              ) : null}
-
-              {invites.length > 0 ? (
+              {hasInvites ? (
                 <section className="space-y-3" data-testid="selector-invites">
-                  <SectionHeading
-                    title={t('invitations')}
-                    meta={email ? t('sentTo', { email }) : null}
-                  />
+                  <SectionHeading title={t('invitations')} meta={email ? t('sentTo', { email }) : null} />
                   <ul className="space-y-2">
                     {invites.map((invite) => (
                       <InviteRow
@@ -165,36 +140,70 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
                 </section>
               ) : null}
 
-              {total > SEARCH_THRESHOLD ? (
-                <div className="relative">
-                  <MagnifyingGlassIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-                  <Input
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder={t('search')}
-                    aria-label={t('search')}
-                    className="pl-9"
-                  />
+              {hasWorkspaces ? (
+                <section className="space-y-3" data-testid="selector-workspaces">
+                  {hasInvites ? <SectionHeading title={t('workspacesHeading')} meta={null} /> : null}
+                  {workspaces.length > SEARCH_THRESHOLD ? (
+                    <div className="relative">
+                      <MagnifyingGlassIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                      <Input
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder={t('search')}
+                        aria-label={t('search')}
+                        className="pl-9"
+                      />
+                    </div>
+                  ) : null}
+                  {trimmed && visible.length === 0 ? (
+                    <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+                      {t('noMatches', { query: trimmed })}
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {visible.map((row) => (
+                        <WorkspaceRowLink
+                          key={row.workspaceId}
+                          row={row}
+                          connectComputer={props.connectComputer}
+                          opening={props.openingProjectId === row.workspaceId}
+                          onOpen={props.onOpenProject}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              ) : null}
+
+              {props.partialFailure ? (
+                <div className="flex items-center justify-between gap-3 rounded-md border border-dashed px-4 py-3">
+                  <p className="text-muted-foreground text-xs">{t('partialError')}</p>
+                  <Button size="sm" variant="outline" onClick={props.onRetryAll}>
+                    {t('retry')}
+                  </Button>
                 </div>
               ) : null}
 
-              {query.trim() && visible.length === 0 ? (
-                <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                  {t('noMatches', { query: query.trim() })}
-                </p>
+              {createHref ? (
+                <div className="space-y-3">
+                  <Button
+                    asChild
+                    size="lg"
+                    variant={hasWorkspaces || hasInvites ? 'outline' : 'default'}
+                    className="w-full gap-1.5"
+                  >
+                    <Link href={createHref} prefetch data-testid="selector-create">
+                      <PlusIcon className="size-4 shrink-0" />
+                      {t('createAction')}
+                    </Link>
+                  </Button>
+                  {!hasWorkspaces && !hasInvites ? (
+                    <p className="text-muted-foreground text-center text-xs text-balance">
+                      {t('invitedHint', { email: email ?? '' })}
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
-
-              {(query.trim() ? visible : listed).map((section) => (
-                <AccountBlock
-                  key={section.accountId}
-                  section={section}
-                  connectComputer={props.connectComputer}
-                  expandedByQuery={query.trim().length > 0}
-                  openingProjectId={props.openingProjectId}
-                  onOpenProject={props.onOpenProject}
-                  onRetry={props.onRetryAccount}
-                />
-              ))}
             </div>
           )}
         </div>
@@ -212,26 +221,7 @@ function SectionHeading({ title, meta }: { title: string; meta: string | null })
   );
 }
 
-function CreateCard({ href }: { href: string }) {
-  const t = useTranslations('projectSelector');
-  return (
-    <Link
-      href={href}
-      prefetch
-      data-testid="selector-create"
-      className="group bg-popover hover:bg-hover focus-visible:ring-ring flex items-center gap-3 rounded-md border px-4 py-3.5 transition-colors outline-none focus-visible:ring-2"
-    >
-      <span className="bg-foreground text-background flex size-10 shrink-0 items-center justify-center rounded-md">
-        <PlusIcon className="size-5" />
-      </span>
-      <span className="min-w-0 flex-1 space-y-0.5">
-        <span className="text-foreground block text-sm font-medium">{t('createTitle')}</span>
-        <span className="text-muted-foreground block text-xs">{t('createBody')}</span>
-      </span>
-      <CaretRightIcon className="text-muted-foreground group-hover:text-foreground size-4 shrink-0 transition-colors" />
-    </Link>
-  );
-}
+const KNOWN_ROLES = new Set(['owner', 'admin', 'member']);
 
 function InviteRow({
   invite,
@@ -244,32 +234,29 @@ function InviteRow({
   disabled: boolean;
   onJoin: (invite: MyAccountInvite) => void;
 }) {
-  const t = useTranslations('projectSelector');
-  const workspace = invite.account_name ?? t('unnamedWorkspace');
-  // A project invite leads with the project: that is where Join lands.
-  const hasProjects = invite.projects.length > 0;
-  const title = hasProjects ? invite.projects.map((p) => p.name).join(', ') : workspace;
+  const t = useTranslations('workspaces.chooser');
+  // A workspace is the account and its project: an invite that names the
+  // project shows the project's name, the name the workspace shows once joined.
+  const title =
+    invite.projects.length > 0
+      ? invite.projects.map((p) => p.name).join(', ')
+      : (invite.account_name ?? t('unnamedWorkspace'));
+  const role = KNOWN_ROLES.has(invite.initial_role) ? t(`role.${invite.initial_role}`) : null;
 
   return (
-    <li className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
+    <li className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3" data-testid="selector-invite">
       <EntityAvatar label={title} size="lg" />
       <div className="min-w-0 flex-1 space-y-0.5">
         <p className="text-foreground truncate text-sm font-medium">{title}</p>
-        <p className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
-          {hasProjects ? <span className="shrink-0">{workspace}</span> : null}
-          {hasProjects && invite.inviter_email ? (
-            <span aria-hidden className="text-muted-foreground/40">
-              {'•'}
-            </span>
-          ) : null}
-          {invite.inviter_email ? (
-            <span className="truncate">{t('invitedBy', { email: invite.inviter_email })}</span>
-          ) : null}
-        </p>
+        <InlineMeta>
+          {invite.inviter_email ? t('invitedBy', { email: invite.inviter_email }) : null}
+          {role}
+        </InlineMeta>
       </div>
       <Button
         size="sm"
         disabled={disabled}
+        aria-busy={joining || undefined}
         onClick={() => onJoin(invite)}
         className="shrink-0 gap-1.5"
       >
@@ -280,132 +267,31 @@ function InviteRow({
   );
 }
 
-function AccountBlock({
-  section,
-  connectComputer,
-  expandedByQuery,
-  openingProjectId,
-  onOpenProject,
-  onRetry,
-}: {
-  section: AccountSection;
-  connectComputer?: boolean;
-  expandedByQuery: boolean;
-  openingProjectId: string | null;
-  onOpenProject: (event: MouseEvent<HTMLAnchorElement>, project: KortixProject) => void;
-  onRetry: (accountId: string) => void;
-}) {
-  const t = useTranslations('projectSelector');
-  const [expanded, setExpanded] = useState(false);
-  const showAll = expanded || expandedByQuery;
-  const shown = showAll ? section.projects : section.projects.slice(0, COLLAPSED_PROJECT_LIMIT);
-  const hidden = section.projects.length - shown.length;
-
-  const meta = [
-    t(`role.${section.role}`),
-    section.projects.length > 0 ? t('projectCount', { count: section.projects.length }) : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-
-  return (
-    <section
-      className="space-y-3"
-      data-testid="selector-account"
-      data-account-id={section.accountId}
-    >
-      <SectionHeading title={section.accountName} meta={meta} />
-
-      {section.state === 'projects' ? (
-        <ul className="space-y-2">
-          {shown.map((project) => (
-            <ProjectRow
-              key={project.project_id}
-              project={project}
-              connectComputer={connectComputer}
-              opening={openingProjectId === project.project_id}
-              onOpen={onOpenProject}
-            />
-          ))}
-          {hidden > 0 ||
-          (expanded && section.projects.length > COLLAPSED_PROJECT_LIMIT && !expandedByQuery) ? (
-            <li>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-foreground w-full"
-                onClick={() => setExpanded((value) => !value)}
-              >
-                {hidden > 0 ? t('showAll', { count: section.projects.length }) : t('showFewer')}
-              </Button>
-            </li>
-          ) : null}
-        </ul>
-      ) : section.state === 'empty-creatable' ? (
-        <Link
-          href={`${newWorkspacePathForAccount(section.accountId)}${connectComputer ? '&connect=computer' : ''}`}
-          className="group hover:bg-hover focus-visible:ring-ring flex items-center gap-3 rounded-md border border-dashed px-4 py-3 transition-colors outline-none focus-visible:ring-2"
-        >
-          <span className="text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-md border border-dashed">
-            <PlusIcon className="size-4" />
-          </span>
-          <span className="min-w-0 flex-1 space-y-0.5">
-            <span className="text-foreground block text-sm font-medium">{t('createIn')}</span>
-            <span className="text-muted-foreground block text-xs">{t('emptyCreatable')}</span>
-          </span>
-        </Link>
-      ) : section.state === 'empty-member' ? (
-        <p
-          className="text-muted-foreground rounded-md border border-dashed px-4 py-3 text-xs"
-          data-testid="selector-empty-member"
-        >
-          {t('emptyMember')}
-        </p>
-      ) : (
-        <div className="flex items-center justify-between gap-3 rounded-md border border-dashed px-4 py-3">
-          <p className="text-muted-foreground text-xs">{t('failed')}</p>
-          <Button size="sm" variant="outline" onClick={() => onRetry(section.accountId)}>
-            {t('retry')}
-          </Button>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function ProjectRow({
-  project,
+function WorkspaceRowLink({
+  row,
   connectComputer,
   opening,
   onOpen,
 }: {
-  project: KortixProject;
+  row: WorkspaceRow;
   connectComputer?: boolean;
   opening: boolean;
-  onOpen: (event: MouseEvent<HTMLAnchorElement>, project: KortixProject) => void;
+  onOpen: (event: MouseEvent<HTMLAnchorElement>, row: WorkspaceRow) => void;
 }) {
-  const t = useTranslations('projectSelector');
-  const locale = useLocale();
-  const opened = relativeTime(project.last_opened_at, locale);
+  const t = useTranslations('workspaces.chooser');
+  const { project } = row;
   return (
     <li>
       <Link
         href={`/projects/${project.project_id}${connectComputer ? '/settings/computer' : ''}`}
-        onClick={(event) => onOpen(event, project)}
+        onClick={(event) => onOpen(event, row)}
         data-testid="selector-project"
         className="group bg-popover hover:bg-hover focus-visible:ring-ring duration-fast flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors outline-none focus-visible:ring-2"
       >
-        <EntityAvatar
-          label={project.name}
-          glyph={project.icon_glyph}
-          emoji={project.icon}
-          size="md"
-        />
+        <EntityAvatar label={project.name} glyph={project.icon_glyph} emoji={project.icon} size="md" />
         <span className="min-w-0 flex-1 space-y-0.5">
           <span className="text-foreground block truncate text-sm font-medium">{project.name}</span>
-          <span className="text-muted-foreground block truncate text-xs">
-            {opened ? t('openedAgo', { time: opened }) : t('neverOpened')}
-          </span>
+          <span className="text-muted-foreground block truncate text-xs">{t(`role.${row.role}`)}</span>
         </span>
         {opening ? (
           <Loading className="text-muted-foreground size-4 shrink-0" />
@@ -422,22 +308,28 @@ function ProjectRow({
   );
 }
 
-/** The stateful half: reads, Join, open-project bookkeeping, sign-out. */
+/** The stateful half: reads, Join, open-workspace bookkeeping, sign-out. */
 export function ProjectSelector({ connectComputer }: { connectComputer?: boolean } = {}) {
-  const t = useTranslations('projectSelector');
+  const t = useTranslations('workspaces.chooser');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const setSelectedAccountId = useCurrentAccountStore((state) => state.setSelectedAccountId);
   const data = useProjectSelectorData();
+  const { data: adminRole } = useAdminRole();
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
   // Never cleared: `performSignOut` replaces the document.
   const [signingOut, setSigningOut] = useState(false);
 
   useSignedOutRedirect();
 
-  const createAccount = data.sections.find((section) => section.canCreate);
-  const createHref = createAccount ? newWorkspacePathForAccount(createAccount.accountId) : null;
+  const createHref = canCreateWorkspace({
+    restricted: isAccountCreationRestricted(),
+    isPlatformAdmin: Boolean(adminRole?.isAdmin),
+    reusableAccount: data.reusableAccount,
+  })
+    ? '/new'
+    : null;
 
   const join = useMutation({
     mutationFn: (invite: MyAccountInvite) => acceptAccountInviteAndLand(invite.invite_id, invite),
@@ -447,12 +339,12 @@ export function ProjectSelector({ connectComputer }: { connectComputer?: boolean
         queryClient.invalidateQueries({ queryKey: qk.projects.scope() }),
       ]);
       setSelectedAccountId(landing.accountId);
-      // A workspace invite with no project stays here: the joined account now
-      // appears in the list below with its own state.
-      if (landing.kind === 'project') router.push(inviteLandingPath(landing));
+      // Joining a workspace opens it. The door resolves an account landing to
+      // its project (`inviteLandingPath`).
+      router.push(inviteLandingPath(landing));
     },
     onError: (error: unknown) => {
-      errorToast(error instanceof Error ? error.message : t('joinError'));
+      errorToast(error instanceof Error && error.message ? error.message : t('joinError'));
     },
   });
 
@@ -463,21 +355,21 @@ export function ProjectSelector({ connectComputer }: { connectComputer?: boolean
       name={user?.user_metadata?.name}
       loading={data.listsLoading || data.invitesQuery.isLoading}
       loadFailed={data.accountsQuery.isError || data.allListsFailed}
-      sections={data.sections}
+      partialFailure={data.failedAccountIds.length > 0}
+      workspaces={data.workspaces}
       invites={data.invites}
       createHref={createHref}
       joiningInviteId={join.isPending ? (join.variables?.invite_id ?? null) : null}
       openingProjectId={openingProjectId}
       signingOut={signingOut}
       onJoin={(invite) => join.mutate(invite)}
-      onOpenProject={(event, project) => {
+      onOpenProject={(event, row) => {
         // A modified click opens a new tab; this tab's state must not move.
         if (isModifiedClick(event)) return;
-        setOpeningProjectId(project.project_id);
-        setSelectedAccountId(project.account_id);
-        writeLastProjectId(user?.id, project.project_id);
+        setOpeningProjectId(row.workspaceId);
+        setSelectedAccountId(row.accountId);
+        writeLastProjectId(user?.id, row.workspaceId);
       }}
-      onRetryAccount={data.retryAccount}
       onRetryAll={data.retryAll}
       onLogOut={() => {
         setSigningOut(true);

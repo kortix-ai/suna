@@ -73,8 +73,12 @@ export default function SettingsTabPage() {
     (tab ? !PALETTE_ACCOUNT_SCOPED_TABS.includes(tab) : isProjectGraduatedSection(params?.tab));
   const { user, isLoading: authLoading } = useAuth();
   const lastProjectId = needsProject && !authLoading ? readLastProjectId(user?.id) : null;
-  const href =
-    graduated && accountId && !accounts.isError
+  // A workspace section (`tokens`, `plan`, `credits`, `connected`, …) with no
+  // workspace to open it in goes to the chooser: create or join one first.
+  const noWorkspace = graduated && accounts.isSuccess && (accounts.data ?? []).length === 0;
+  const href = noWorkspace
+    ? '/projects'
+    : graduated && accountId && !accounts.isError
       ? legacySectionRedirect('', params?.tab, accountId)
       : needsProject && !authLoading
         ? (lastProjectId && legacySectionRedirect(lastProjectId, params?.tab)) ||

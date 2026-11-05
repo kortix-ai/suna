@@ -1,5 +1,6 @@
 'use client';
 
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
 import { localizedCopy } from './localized-copy';
 import { removeProfileAvatar } from './profile-avatar';
 
@@ -243,6 +244,12 @@ export interface ProfileTabViewProps {
   accountsLoading?: boolean;
 
   // Delete account
+  /**
+   * The person belongs to no workspace (Workspaces, PR 1): the row deletes
+   * only their login, immediately (`DELETE /v1/account/delete-immediately`,
+   * flow DEL-6). No grace period and no list of workspace data to lose.
+   */
+  loginOnly?: { label: string; description: string; title: string; warning: string } | null;
   accountDeletionSupported?: boolean;
   hasPendingDeletion?: boolean;
   deletionScheduledForLabel?: string | null;
@@ -295,6 +302,7 @@ export function ProfileTabView({
   userEmail = '',
   accounts = NO_ACCOUNTS,
   accountsLoading = false,
+  loginOnly = null,
   accountDeletionSupported = true,
   hasPendingDeletion = false,
   deletionScheduledForLabel = null,
@@ -338,7 +346,9 @@ export function ProfileTabView({
   // failed fetch cannot know. It states the check failed and offers Retry.
   // The check comes first so no later branch can render a destructive
   // control off an unknown answer.
-  const deleteAccountDescription = isDeletionStatusError
+  const deleteAccountDescription = loginOnly
+    ? loginOnly.description
+    : isDeletionStatusError
     ? copy.deletionStatusCheckFailed
     : !accountDeletionSupported
       ? copy.deletionUnavailable
@@ -451,7 +461,7 @@ export function ProfileTabView({
       <section className="space-y-3">
         <SettingsSubsectionHeader title={copy.dangerZone} />
         <SettingsRowGroup>
-          <SettingsRow label={copy.deleteAccount} description={deleteAccountDescription}>
+          <SettingsRow label={loginOnly?.label ?? copy.deleteAccount} description={deleteAccountDescription}>
             {isDeletionStatusError ? (
               <Button variant="outline" size="sm" onClick={onRetryDeletionStatus}>
                 {copy.retry}
@@ -478,7 +488,7 @@ export function ProfileTabView({
                 className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                 onClick={onOpenDeleteDialog}
               >
-                {copy.deleteAccount}
+                {loginOnly?.label ?? copy.deleteAccount}
               </Button>
             )}
           </SettingsRow>
@@ -489,11 +499,13 @@ export function ProfileTabView({
             <Modal open={showDeleteDialog} onOpenChange={(open) => !open && onCloseDeleteDialog()}>
               <ModalContent className="lg:max-w-md" variant="base">
                 <ModalHeader>
-                  <ModalTitle>{copy.deleteDialogTitle}</ModalTitle>
+                  <ModalTitle>{loginOnly?.title ?? copy.deleteDialogTitle}</ModalTitle>
                 </ModalHeader>
                 <ModalBody className="space-y-4">
                   <InfoBanner tone="warning">
-                    {deletionType === 'immediate' ? (
+                    {loginOnly ? (
+                      loginOnly.warning
+                    ) : deletionType === 'immediate' ? (
                       copy.immediateWarning
                     ) : (
                       <>
@@ -502,6 +514,8 @@ export function ProfileTabView({
                       </>
                     )}
                   </InfoBanner>
+                  {loginOnly ? null : (
+                  <>
                   <div className="space-y-2">
                     <p className="text-sm font-medium">{copy.whenDeleted}</p>
                     <ul className="text-muted-foreground list-disc space-y-1.5 pl-5 text-sm">
@@ -536,6 +550,8 @@ export function ProfileTabView({
                       />
                     </RadioGroup>
                   </div>
+                  </>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="profile-delete-confirm" className="text-sm">
                       {copy.typeDeleteToConfirm}
@@ -571,7 +587,7 @@ export function ProfileTabView({
                     disabled={isDeletingAccount || deleteConfirmText !== 'delete'}
                     className="w-full sm:w-auto"
                   >
-                    {isDeletingAccount ? copy.processing : copy.deleteAccount}
+                    {isDeletingAccount ? copy.processing : (loginOnly?.label ?? copy.deleteAccount)}
                   </Button>
                 </ModalFooter>
               </ModalContent>
@@ -743,6 +759,20 @@ export function ProfileTab() {
   // Same account-list entry `WorkspaceSwitcher` already primed on mount, so
   // this costs no extra request inside a project shell.
   const { accounts, isLoading: accountsLoading } = useAccountMemberships();
+  // No account at all (Workspaces D3: nothing is created at sign-up). The
+  // deletion routes then answer 409 `no_workspace` for status and the grace
+  // period, and `delete-immediately` deletes only the login (flow DEL-6).
+  const accountList = useAccountsList();
+  const tWorkspaces = useTranslations('workspaces.profile');
+  const loginOnly =
+    accountList.isSuccess && (accountList.data ?? []).length === 0
+      ? {
+          label: tWorkspaces('deleteLogin'),
+          description: tWorkspaces('deleteLoginDescription'),
+          title: tWorkspaces('deleteLoginTitle'),
+          warning: tWorkspaces('deleteLoginWarning'),
+        }
+      : null;
 
   // --- Delete account ---------------------------------------------------
   const {
@@ -765,7 +795,7 @@ export function ProfileTab() {
   // the row already renders the unavailable shape while the check runs, and a
   // definitive `supported: false` answer renders the same shape, so neither
   // branch changes.
-  const accountDeletionSupported = deletionStatus?.supported === true;
+  const accountDeletionSupported = !!loginOnly || deletionStatus?.supported === true;
   // "The freshest known outcome is a failure." A bare `isError` is not enough:
   // the moment a retry starts, query-core clears the error of a data-less query
   // (fetchState sets `status: 'pending'`), and the row would flash the
@@ -777,6 +807,7 @@ export function ProfileTab() {
   // query-core keeps the previous answer, and a user with a scheduled
   // deletion must keep that row (schedule + cancel) over a network blip.
   const isDeletionStatusFailed =
+    !loginOnly &&
     !deletionStatus &&
     (isDeletionStatusError ||
       (deletionStatusFetchStatus !== 'idle' && deletionStatusFailedAt > deletionStatusAnsweredAt));
@@ -796,7 +827,7 @@ export function ProfileTab() {
     // Match the API's fourteen-day elapsed-time grace period.
     setDeletionPreviewDate(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString());
     setDeleteConfirmText('');
-    setDeletionType('grace-period');
+    setDeletionType(loginOnly ? 'immediate' : 'grace-period');
     setShowDeleteDialog(true);
   };
 
@@ -855,8 +886,9 @@ export function ProfileTab() {
       userEmail={profileQuery.data?.email ?? ''}
       accounts={accounts}
       accountsLoading={accountsLoading}
+      loginOnly={loginOnly}
       accountDeletionSupported={accountDeletionSupported}
-      hasPendingDeletion={deletionStatus?.has_pending_deletion ?? false}
+      hasPendingDeletion={!loginOnly && (deletionStatus?.has_pending_deletion ?? false)}
       deletionScheduledForLabel={formatDate(deletionStatus?.deletion_scheduled_for)}
       deletionPreviewDateLabel={formatDate(deletionPreviewDate)}
       isDeletionStatusError={isDeletionStatusFailed}

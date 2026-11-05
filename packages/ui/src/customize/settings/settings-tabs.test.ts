@@ -10,11 +10,11 @@ import {
   resolveSettingsOverlayHref,
 } from './settings-tabs';
 
-describe('personal connected-account destinations', () => {
-  test('opens the personal profile without waiting for an organization', () => {
-    expect(isAccountGraduatedSection('connected')).toBe(false);
-    expect(resolveOverlayTab('connected')).toBe('profile');
-    expect(legacySectionRedirect('p1', 'connected')).toBe('/projects/p1/settings/profile');
+describe('Workspaces: workspace things leave /settings', () => {
+  test('connected opens Workspace settings › Git repo, never an overlay tab', () => {
+    expect(isAccountGraduatedSection('connected')).toBe(true);
+    expect(resolveOverlayTab('connected')).toBeNull();
+    expect(legacySectionRedirect('p1', 'connected', 'acc1')).toBe('/projects/p1?accountId=acc1&accountTab=git');
   });
 });
 
@@ -48,7 +48,6 @@ describe('SETTINGS_TABS', () => {
       'sessions',
       'preferences',
       'chrome',
-      'tokens',
       // The Connect pages (KRTX-1997).
       'mcp',
       'computer',
@@ -327,6 +326,11 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
     // The overlay's Account group (Credits, Plan) left on 2026-09-03.
     credits: 'transactions',
     plan: 'billing',
+    // Workspaces: personal access keys and GitHub connections are the
+    // workspace's (Workspace settings › API keys, Git repo).
+    tokens: 'tokens',
+    'api-keys': 'tokens',
+    connected: 'git',
   };
 
   test('the mirror above is the whole map', () => {
@@ -377,20 +381,16 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
    * `api-keys` because `RENAMED` carries the old name to the new one. Neither
    * needs an account id any more, which is the observable difference.
    */
-  test('api-keys and tokens resolve INTO the overlay, with or without an account id', () => {
+  test('api-keys and tokens open Workspace settings › API keys', () => {
     for (const legacyId of ['api-keys', 'tokens']) {
-      expect(isAccountGraduatedSection(legacyId)).toBe(false);
-      expect(legacySectionRedirect('p1', legacyId)).toBe('/projects/p1/settings/tokens');
-      expect(legacySectionRedirect('p1', legacyId, 'acc1')).toBe('/projects/p1/settings/tokens');
+      expect(isAccountGraduatedSection(legacyId)).toBe(true);
+      expect(legacySectionRedirect('p1', legacyId, 'acc1')).toBe('/projects/p1?accountId=acc1&accountTab=tokens');
     }
   });
 
-  test('`tokens` is a live settings tab; `api-keys` is only ever a redirect', () => {
-    expect(parseSettingsTab('tokens')).toBe('tokens');
-    // The rename is one-way: `api-keys` never becomes a tab id, so nothing
-    // renders a pane for it and no rail row can claim it.
+  test('neither `tokens` nor `api-keys` is a settings tab any more', () => {
+    expect(parseSettingsTab('tokens')).toBeNull();
     expect(parseSettingsTab('api-keys')).toBeNull();
-    expect(SETTINGS_TABS).not.toContain('api-keys' as never);
   });
 
   test('an account id does not divert a project-scoped section', () => {

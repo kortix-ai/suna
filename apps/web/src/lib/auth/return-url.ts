@@ -1,8 +1,9 @@
 import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
-// Post-auth landing goes to a project, never to the projects list. The landing
-// door paints immediately and resolves (or provisions) the project behind the
-// UI, so no auth path has to block on the backend to build this redirect.
+// Post-auth landing goes to the door, never to the chooser directly. The door
+// paints immediately and opens the one obvious workspace or the create-or-join
+// chooser, so no auth path has to block on the backend to build this redirect.
+// Nothing is created at sign-up (Workspaces D3).
 const DEFAULT_AUTH_RETURN_URL = PROJECT_LANDING_PATH;
 const LEGACY_AUTH_RETURN_PREFIXES = [
   // Not legacy — but the same rule applies: a sign-in must never RETURN here.
@@ -92,9 +93,9 @@ export function sanitizeAuthReturnUrl(
   }
 
   // Middleware preserves an unauthenticated request as the post-auth return
-  // path. A request for the bare list must still enter through the landing
-  // door. Otherwise a new account renders /projects while its first project is
-  // being provisioned.
+  // path. A request for the bare chooser still enters through the landing
+  // door, so a returning user with one workspace opens it instead of a list
+  // of one.
   if (normalizedValue === '/projects') return PROJECT_LANDING_PATH;
 
   if (LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => matchesReturnPrefix(normalizedValue, prefix))) {
@@ -178,8 +179,8 @@ export function shouldDemoteReturnUrl({
 /**
  * True when a (already-sanitized) return URL points at an invite acceptance
  * page. Invited users must land here verbatim after sign-up so they see the
- * accept/decline dialog — they must NOT be bounced to a freshly-provisioned
- * first project, which would skip the dialog and leave the invite unaccepted.
+ * accept/decline dialog — they must NOT be bounced to the door, which would
+ * skip the dialog and leave the invite unaccepted.
  */
 export function isInviteReturnUrl(returnUrl: string | null | undefined): boolean {
   return typeof returnUrl === 'string' && returnUrl.startsWith('/invites/');

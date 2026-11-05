@@ -7,11 +7,16 @@ import { useMemo } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
-import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
 import { useMyInvites } from '@kortix/ui/internal/hooks/account/use-my-invites';
 import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 
-import { buildAccountSections, type AccountSection } from '@kortix/ui/workspace/project-selector/project-selector-model';
+import {
+  buildWorkspaceRows,
+  failedAccountIds,
+  reusableEmptyAccount,
+  type ProjectListResult,
+  type WorkspaceRow,
+} from '@kortix/ui/workspace/project-selector/project-selector-model';
 
 /**
  * The account whose project list may be read BEFORE `GET /accounts` answers.
@@ -36,8 +41,9 @@ export function speculativeProjectListAccountId(input: {
 }
 
 /**
- * Every read the selector and the `/projects/start` door need: the accounts,
- * one project list per account, and the caller's pending invites.
+ * Every read the chooser and the `/projects/start` door need: the accounts,
+ * one project list per account, and the caller's pending invites — folded
+ * into one flat workspace list (`buildWorkspaceRows`).
  *
  * `GET /projects` without `account_id` scopes to ONE default account
  * server-side, so the lists fan out per account. The query keys are the
@@ -51,8 +57,6 @@ export function useProjectSelectorData() {
   const invitesQuery = useMyInvites();
   const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
 
-  const creatableAccounts = useCreatableAccounts(accounts);
-  const creatableAccountIds = useMemo(() => new Set(creatableAccounts.map((a) => a.account_id)), [creatableAccounts]);
   const { user } = useAuth();
   const cachedAccountId = useCurrentAccountStore((state) => state.selectedAccountId);
   const speculativeAccountId = speculativeProjectListAccountId({
@@ -80,37 +84,34 @@ export function useProjectSelectorData() {
   const listsLoading = accountsQuery.isLoading || listQueries.some((query) => query.isLoading);
   const listSignature = listQueries.map((query) => `${query.dataUpdatedAt}:${query.isError}`).join('|');
 
-  const sections: AccountSection[] = useMemo(
+  const lists: ProjectListResult[] = useMemo(
     () =>
-      buildAccountSections({
-        accounts,
-        creatableAccountIds,
-        lists: accounts.map((account, index) => ({
-          accountId: account.account_id,
-          data: listQueries[index]?.data,
-          isError: listQueries[index]?.isError ?? false,
-        })),
-      }),
+      accounts.map((account, index) => ({
+        accountId: account.account_id,
+        data: listQueries[index]?.data,
+        isError: listQueries[index]?.isError ?? false,
+      })),
     // `listQueries` is a new array every render; the signature is its identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accounts, creatableAccountIds, listSignature],
+    [accounts, listSignature],
   );
-
-  const retryAccount = (accountId: string) => {
-    const index = accounts.findIndex((account) => account.account_id === accountId);
-    if (index >= 0) void listQueries[index]?.refetch();
-  };
+  const workspaces: WorkspaceRow[] = useMemo(() => buildWorkspaceRows({ accounts, lists }), [accounts, lists]);
+  const reusableAccount = useMemo(() => reusableEmptyAccount({ accounts, lists }), [accounts, lists]);
+  const failedAccounts = useMemo(() => failedAccountIds(lists), [lists]);
 
   return {
     accountsQuery,
     invitesQuery,
     invites: invitesQuery.data ?? [],
-    sections,
+    workspaces,
+    /** The owned empty account a create fills, or null (the server makes one). */
+    reusableAccount,
+    /** Accounts whose project list failed: their workspaces are unknown. */
+    failedAccountIds: failedAccounts,
     /** Accounts and every project list are known. Invites load separately. */
     listsLoading,
     /** Every project list failed — nothing trustworthy to show. */
     allListsFailed: listQueries.length > 0 && listQueries.every((query) => query.isError),
-    retryAccount,
     retryAll: () => {
       if (accountsQuery.isError) void accountsQuery.refetch();
       for (const query of listQueries) if (query.isError) void query.refetch();

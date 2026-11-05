@@ -2695,7 +2695,7 @@
           "f3": "Membri illimitati, un unico pool di crediti condiviso",
           "f4": "I crediti non usati si trasferiscono di un mese",
           "f5": "Ricarica quando vuoi. Le ricariche non scadono mai",
-          "f6": "Fino a 200 workspace e limiti di frequenza dei modelli più alti",
+          "f6": "Limiti di frequenza dei modelli più alti",
           "f7": "Assistenza via email"
         },
         "enterprise": {
@@ -21240,7 +21240,11 @@
       "text05ee1d6181f3": "Quando una richiesta di modifica viene unita, {agent} esegue la tua istruzione.",
       "texte608495c45ce": "Unita in {branch}",
       "text80ca527b0d55": "Trigger della richiesta di modifica creato",
-      "authEmailAlreadySent": "Abbiamo inviato questa email meno di un minuto fa. Controlla la posta in arrivo e la cartella spam prima di richiederne un'altra."
+      "authEmailAlreadySent": "Abbiamo inviato questa email meno di un minuto fa. Controlla la posta in arrivo e la cartella spam prima di richiederne un'altra.",
+      "text2590cd62a747": "Impostazioni del workspace",
+      "text276261b1e03d": "workspace impostazioni organizzazioni team gestire",
+      "text634ebc515b7f": "Workspace · Chiavi API",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -25852,5 +25856,114 @@
     "projectDefault": "Predefinito del workspace · ogni richiesta",
     "kortixPicks": "Kortix sceglie",
     "useMyOwn": "Usa i miei"
+  },
+  "workspaces": {
+    "chooser": {
+      "createTitle": "Crea un workspace",
+      "createBody": "Un workspace è il luogo in cui la tua azienda lavora con Kortix: persone, agenti e tutto ciò che creano.",
+      "createAction": "Crea workspace",
+      "invitedHint": "Hai ricevuto un invito? Apri il link d'invito nella tua email, oppure chiedi a un amministratore di invitare {email}.",
+      "restrictedTitle": "Ancora nessun workspace",
+      "restrictedBody": "Chiedi a un amministratore di invitare {email}.",
+      "listTitle": "Scegli un workspace",
+      "listBody": "Apri un workspace o creane uno nuovo.",
+      "invitesTitle": "Sei stato invitato",
+      "invitesBody": "Unisciti a un workspace o creane uno tuo.",
+      "workspacesHeading": "Workspace",
+      "invitations": "Inviti",
+      "sentTo": "Inviato a {email}",
+      "invitedBy": "Invitato da {email}",
+      "join": "Partecipa",
+      "joinError": "Impossibile unirsi al workspace. Riprova.",
+      "unnamedWorkspace": "Workspace",
+      "search": "Cerca un workspace",
+      "noMatches": "Nessun workspace corrisponde a “{query}”.",
+      "role": {
+        "owner": "Proprietario",
+        "admin": "Amministratore",
+        "member": "Membro"
+      },
+      "loadErrorTitle": "Impossibile caricare i tuoi workspace",
+      "loadErrorBody": "Controlla la connessione e riprova.",
+      "partialError": "Impossibile caricare tutti i workspace.",
+      "retry": "Riprova"
+    },
+    "switcher": {
+      "switch": "Cambia workspace",
+      "find": "Cerca un workspace…",
+      "noMatches": "Nessun workspace corrispondente",
+      "create": "Crea workspace",
+      "settings": "Impostazioni del workspace",
+      "loadError": "Impossibile caricare tutti i workspace.",
+      "retry": "Riprova",
+      "heading": "Workspace"
+    },
+    "create": {
+      "title": "Crea un workspace",
+      "description": "Un workspace è il luogo in cui la tua azienda lavora con Kortix: persone, agenti e tutto ciò che creano.",
+      "submit": "Crea workspace",
+      "restricted": "Questo server crea workspace solo per le persone invitate. Chiedi a un amministratore di invitare {email}.",
+      "limitReached": "Hai raggiunto il limite di workspace del tuo piano. Esegui l'upgrade per crearne un altro."
+    },
+    "settings": {
+      "title": "Impostazioni del workspace",
+      "groups": {
+        "workspace": "Workspace",
+        "library": "Libreria",
+        "people": "Persone",
+        "billing": "Fatturazione"
+      },
+      "sections": {
+        "general": "Generale",
+        "branding": "Branding",
+        "git": "Repository Git",
+        "sandbox": "Modelli sandbox",
+        "featureFlags": "Feature flag",
+        "apiKeys": "Chiavi API",
+        "members": "Membri",
+        "groups": "Gruppi",
+        "access": "Accesso",
+        "roles": "Ruoli",
+        "identity": "Identità",
+        "audit": "Registro di audit",
+        "help": "Aiuto",
+        "plan": "Piano",
+        "usage": "Utilizzo"
+      },
+      "accessTitle": "Accesso",
+      "accessDescription": "Chi può aprire questo workspace e con quale ruolo.",
+      "securityTitle": "Sicurezza",
+      "githubTitle": "Connessioni GitHub",
+      "deleteKeepsLogin": "Il tuo accesso resta: puoi creare un altro workspace o unirti a uno.",
+      "personalKeysTitle": "Le tue chiavi di accesso personali",
+      "personalKeysDescription": "Chiavi API che agiscono come te in questo workspace: per la CLI, uno script o un job CI."
+    },
+    "cli": {
+      "noWorkspaceTitle": "Crea un workspace per accedere con la CLI",
+      "noWorkspaceBody": "La CLI accede a un workspace. Creane uno, poi approva questo accesso.",
+      "createAction": "Crea workspace",
+      "workspaceLabel": "Workspace"
+    },
+    "models": {
+      "yourDefault": "Predefinito del workspace",
+      "defaultAria": "{model} è il modello predefinito di questo workspace",
+      "defaultTitle": "Modello predefinito del workspace",
+      "setDefaultTitle": "Imposta come modello predefinito del workspace",
+      "setDefaultAria": "Imposta {model} come modello predefinito di questo workspace",
+      "setWorkspaceDefault": "Imposta come predefinito del workspace"
+    },
+    "profile": {
+      "deleteLogin": "Elimina il mio accesso",
+      "deleteLoginDescription": "Elimina il tuo accesso a Kortix. Non appartieni a nessun workspace, quindi non viene eliminato nient'altro.",
+      "deleteLoginTitle": "Eliminare il tuo accesso?",
+      "deleteLoginWarning": "Il tuo accesso viene eliminato subito. Non si può annullare."
+    },
+    "capture": {
+      "noWorkspaceTitle": "Prima crea un workspace o unisciti a uno.",
+      "noWorkspaceBody": "Kortix Capture registra in un workspace. Poi riapri questo accesso.",
+      "openChooser": "Crea o unisciti a un workspace",
+      "workspaceLabel": "Workspace",
+      "noCaptureWorkspace": "Kortix Capture non è attivo in nessuno dei tuoi workspace. Un proprietario o un amministratore può attivarlo."
+    }
   }
 }

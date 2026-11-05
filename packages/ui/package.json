@@ -226,12 +226,12 @@
     "./input-group": "./src/primitives/input-group.tsx",
     "./internal/account-hub/account-hub-entry": "./src/internal/account-hub/account-hub-entry.tsx",
     "./internal/account-hub/account-hub-location": "./src/internal/account-hub/account-hub-location.tsx",
-    "./internal/account-hub/account-settings-shell": "./src/internal/account-hub/account-settings-shell.tsx",
     "./internal/account-hub/hub-sheet": "./src/internal/account-hub/hub-sheet.tsx",
     "./internal/account-hub/sections": "./src/internal/account-hub/sections.ts",
     "./internal/account-hub/use-account-detail": "./src/internal/account-hub/use-account-detail.ts",
     "./internal/account-hub/use-account-hub-access": "./src/internal/account-hub/use-account-hub-access.ts",
     "./internal/account-hub/use-account-members": "./src/internal/account-hub/use-account-members.ts",
+    "./internal/account-hub/workspace-settings-route": "./src/internal/account-hub/workspace-settings-route.ts",
     "./internal/auth/auth-card-shell": "./src/internal/auth/auth-card-shell.tsx",
     "./internal/auth/auth-consent": "./src/internal/auth/auth-consent.tsx",
     "./internal/auth/auth-primitives": "./src/internal/auth/auth-primitives.tsx",
@@ -250,6 +250,7 @@
     "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
     "./internal/components/hover-prefetch-link": "./src/internal/components/hover-prefetch-link.tsx",
     "./internal/components/mobile-store-qr": "./src/internal/components/mobile-store-qr.tsx",
+    "./internal/components/nav-rail": "./src/internal/components/nav-rail.tsx",
     "./internal/desktop/desktop-back-button": "./src/internal/desktop/desktop-back-button.tsx",
     "./internal/desktop/titlebar-control": "./src/internal/desktop/titlebar-control.ts",
     "./internal/files/session-drive-files": "./src/internal/files/session-drive-files.ts",
@@ -527,12 +528,11 @@
     "./workspace/layout/project-home": "./src/workspace/layout/project-home.tsx",
     "./workspace/layout/sidebar-cookie": "./src/workspace/layout/sidebar-cookie.ts",
     "./workspace/new/account-param": "./src/workspace/new/account-param.ts",
-    "./workspace/new/account-picker": "./src/workspace/new/account-picker.tsx",
     "./workspace/new/advanced-fields": "./src/workspace/new/advanced-fields.tsx",
     "./workspace/new/clone-param": "./src/workspace/new/clone-param.ts",
     "./workspace/new/new-workspace-form": "./src/workspace/new/new-workspace-form.ts",
+    "./workspace/new/provision-new-workspace": "./src/workspace/new/provision-new-workspace.ts",
     "./workspace/new/source-param": "./src/workspace/new/source-param.ts",
-    "./workspace/new/use-creatable-accounts": "./src/workspace/new/use-creatable-accounts.ts",
     "./workspace/new/use-create-workspace": "./src/workspace/new/use-create-workspace.ts",
     "./workspace/new/use-project-quota": "./src/workspace/new/use-project-quota.ts",
     "./workspace/new/workspace-handoff": "./src/workspace/new/workspace-handoff.tsx",
@@ -560,6 +560,7 @@
     "./workspace/sidebar/project-sidebar": "./src/workspace/sidebar/project-sidebar.tsx",
     "./workspace/sidebar/session-section-labels": "./src/workspace/sidebar/session-section-labels.ts",
     "./workspace/sidebar/session-source-icons": "./src/workspace/sidebar/session-source-icons.ts",
+    "./workspace/sidebar/use-workspace-directory": "./src/workspace/sidebar/use-workspace-directory.ts",
     "./workspace/sidebar/workspace-grouping": "./src/workspace/sidebar/workspace-grouping.ts",
     "./workspace/sidebar/workspace-menu-section": "./src/workspace/sidebar/workspace-menu-section.tsx",
     "./workspace/space/space-page": "./src/workspace/space/space-page.tsx"
@@ -1369,10 +1370,6 @@
         "types": "./dist/internal/account-hub/account-hub-location.d.ts",
         "import": "./dist/internal/account-hub/account-hub-location.js"
       },
-      "./internal/account-hub/account-settings-shell": {
-        "types": "./dist/internal/account-hub/account-settings-shell.d.ts",
-        "import": "./dist/internal/account-hub/account-settings-shell.js"
-      },
       "./internal/account-hub/hub-sheet": {
         "types": "./dist/internal/account-hub/hub-sheet.d.ts",
         "import": "./dist/internal/account-hub/hub-sheet.js"
@@ -1392,6 +1389,10 @@
       "./internal/account-hub/use-account-members": {
         "types": "./dist/internal/account-hub/use-account-members.d.ts",
         "import": "./dist/internal/account-hub/use-account-members.js"
+      },
+      "./internal/account-hub/workspace-settings-route": {
+        "types": "./dist/internal/account-hub/workspace-settings-route.d.ts",
+        "import": "./dist/internal/account-hub/workspace-settings-route.js"
       },
       "./internal/auth/auth-card-shell": {
         "types": "./dist/internal/auth/auth-card-shell.d.ts",
@@ -1464,6 +1465,10 @@
       "./internal/components/mobile-store-qr": {
         "types": "./dist/internal/components/mobile-store-qr.d.ts",
         "import": "./dist/internal/components/mobile-store-qr.js"
+      },
+      "./internal/components/nav-rail": {
+        "types": "./dist/internal/components/nav-rail.d.ts",
+        "import": "./dist/internal/components/nav-rail.js"
       },
       "./internal/desktop/desktop-back-button": {
         "types": "./dist/internal/desktop/desktop-back-button.d.ts",
@@ -2555,10 +2560,6 @@
         "types": "./dist/workspace/new/account-param.d.ts",
         "import": "./dist/workspace/new/account-param.js"
       },
-      "./workspace/new/account-picker": {
-        "types": "./dist/workspace/new/account-picker.d.ts",
-        "import": "./dist/workspace/new/account-picker.js"
-      },
       "./workspace/new/advanced-fields": {
         "types": "./dist/workspace/new/advanced-fields.d.ts",
         "import": "./dist/workspace/new/advanced-fields.js"
@@ -2571,13 +2572,13 @@
         "types": "./dist/workspace/new/new-workspace-form.d.ts",
         "import": "./dist/workspace/new/new-workspace-form.js"
       },
+      "./workspace/new/provision-new-workspace": {
+        "types": "./dist/workspace/new/provision-new-workspace.d.ts",
+        "import": "./dist/workspace/new/provision-new-workspace.js"
+      },
       "./workspace/new/source-param": {
         "types": "./dist/workspace/new/source-param.d.ts",
         "import": "./dist/workspace/new/source-param.js"
-      },
-      "./workspace/new/use-creatable-accounts": {
-        "types": "./dist/workspace/new/use-creatable-accounts.d.ts",
-        "import": "./dist/workspace/new/use-creatable-accounts.js"
       },
       "./workspace/new/use-create-workspace": {
         "types": "./dist/workspace/new/use-create-workspace.d.ts",
@@ -2686,6 +2687,10 @@
       "./workspace/sidebar/session-source-icons": {
         "types": "./dist/workspace/sidebar/session-source-icons.d.ts",
         "import": "./dist/workspace/sidebar/session-source-icons.js"
+      },
+      "./workspace/sidebar/use-workspace-directory": {
+        "types": "./dist/workspace/sidebar/use-workspace-directory.d.ts",
+        "import": "./dist/workspace/sidebar/use-workspace-directory.js"
       },
       "./workspace/sidebar/workspace-grouping": {
         "types": "./dist/workspace/sidebar/workspace-grouping.d.ts",

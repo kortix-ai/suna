@@ -3868,15 +3868,15 @@ export function SessionChat({
     [local.model],
   );
 
-  // Only the ACCOUNT default is settable from the picker now — it is the one
-  // scope with no screen of its own. The project default lives in the provider
-  // modal's Models tab and the agent default on the agent's detail page, both
-  // of which also SHOW and can CLEAR what is set. See ModelDefaultControls.
+  // The picker's star sets the WORKSPACE default — the project default, since
+  // a workspace is one account and its project (Workspaces, PR 1). An
+  // account-wide default set earlier still applies as the fallback. See
+  // ModelDefaultControls.
   const chatModelDefaultControls: ModelDefaultControls = useMemo(
     () => ({
-      accountDefault: local.model.defaults.accountDefault ?? null,
+      accountDefault: local.model.defaults.projectDefault ?? null,
       onSetAccountDefault: (m) => {
-        void local.model.defaults.setAccountDefault(m);
+        void local.model.defaults.setProjectDefault(m);
       },
     }),
     [local.model.defaults],

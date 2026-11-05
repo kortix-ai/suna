@@ -80,9 +80,18 @@ mock.module('@kortix/ui/internal/hooks/account/use-accounts-list', () => ({
     isLoading: false,
   }),
 }));
-mock.module('@kortix/ui/workspace/new/use-creatable-accounts', () => ({
-  useCreatableAccounts: (accounts: unknown[]) => accounts,
+// The owned empty account the create fills (`reusableEmptyAccount`).
+mock.module('@kortix/ui/workspace/sidebar/use-workspace-directory', () => ({
+  useWorkspaceDirectory: () => ({
+    accounts: [{ account_id: 'user-1', name: 'Personal', account_role: 'owner' }],
+    workspaces: [],
+    loading: false,
+    failedAccountIds: [],
+    reusableAccount: { account_id: 'user-1', name: 'Personal', account_role: 'owner' },
+    retryFailed: () => {},
+  }),
 }));
+mock.module('@kortix/ui/internal/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
 // The upgrade modal's content runs react-query git/billing queries against no
 // provider; which plans it offers is not what these tests assert. The dialog
 // STORE stays real — the Upgrade click is asserted through it.
@@ -335,8 +344,26 @@ test('retry resends the failed attempt and retains the computer destination', as
   failCreate = false;
   await act(async () => { findButtonWithText(renderer, 'Try again')?.props.onClick(); });
   expect(JSON.parse(payloads.at(-1) ?? '{}').name).toBe('Original name');
+  // A whole new workspace: the server picks the account, so none is sent.
+  expect(JSON.parse(payloads.at(-1) ?? '{}').new_workspace).toBe(true);
+  expect(JSON.parse(payloads.at(-1) ?? '{}').account_id).toBeUndefined();
   expect(JSON.parse(payloads.at(-1) ?? '{}').idempotency_key).toBe(JSON.parse(payloads.at(-2) ?? '{}').idempotency_key);
   expect(destinations.at(-1)).toBe('/projects/created-project/settings/computer');
   await unmount(renderer);
+  query = '';
+});
+
+test('a same-origin returnUrl gets the person back after the create; a foreign one does not', async () => {
+  for (const [value, expected] of [
+    [`returnUrl=${encodeURIComponent('/cli/authorize?user_code=ABCD-EFGH')}`, '/cli/authorize?user_code=ABCD-EFGH'],
+    [`returnUrl=${encodeURIComponent('//example.test/steal')}`, '/projects/created-project'],
+    [`returnUrl=${encodeURIComponent('https://example.test/')}`, '/projects/created-project'],
+  ] as const) {
+    query = value;
+    const renderer = await renderPage();
+    await act(async () => { findForm(renderer).props.onSubmit({ preventDefault: () => {} }); });
+    expect(destinations.at(-1)).toBe(expected);
+    await unmount(renderer);
+  }
   query = '';
 });

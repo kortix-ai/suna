@@ -28,7 +28,6 @@ import { Checkbox } from '@kortix/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
@@ -90,8 +89,8 @@ export function ChromePanelHome() {
   const { user } = useAuth();
   const userId = user?.id ?? null;
 
-  const { sections, listsLoading } = useProjectSelectorData();
-  const projects = useMemo(() => sections.flatMap((section) => section.projects), [sections]);
+  const { workspaces, listsLoading } = useProjectSelectorData();
+  const projects = useMemo(() => workspaces.map((row) => row.project), [workspaces]);
   const [picked, setPicked] = useState<string | null>(null);
   const projectId = useMemo(() => {
     const known = (id: string | null) => (id && projects.some((p) => p.project_id === id) ? id : null);
@@ -211,18 +210,11 @@ export function ChromePanelHome() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="max-h-80 w-64">
               <DropdownMenuRadioGroup value={projectId ?? ''} onValueChange={pickProject}>
-                {sections
-                  .filter((section) => section.projects.length)
-                  .map((section) => (
-                    <div key={section.accountId}>
-                      {sections.length > 1 ? <DropdownMenuLabel>{section.accountName}</DropdownMenuLabel> : null}
-                      {section.projects.map((p) => (
-                        <DropdownMenuRadioItem key={p.project_id} value={p.project_id}>
-                          <span className="truncate">{p.name}</span>
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </div>
-                  ))}
+                {projects.map((p) => (
+                  <DropdownMenuRadioItem key={p.project_id} value={p.project_id}>
+                    <span className="truncate">{p.name}</span>
+                  </DropdownMenuRadioItem>
+                ))}
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>

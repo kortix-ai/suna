@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 import { BackPillBody, backPillClass } from '@kortix/ui/back-pill';
 import { Button } from '@kortix/ui/button';
 import { ModalClose } from '@kortix/ui/modal';
@@ -83,34 +85,39 @@ export function RailNav({
             {organizationCopy.title}
           </div>
           <ul className="flex flex-col gap-0.5">
-            {organizations.map((account) => (
-              <li key={account.account_id}>
-                <ModalClose asChild>
-                  <HubLink
-                    to={hubTarget(account.account_id)}
-                    className={cn(
-                      'flex w-full items-center gap-2 rounded-md px-2.5 pt-1 pb-1.5 text-sm font-medium',
-                      'text-sidebar-foreground/75 hover:bg-hover hover:text-sidebar-foreground transition-colors',
+            {organizations.map((account) => {
+              const rowClass = cn(
+                'flex w-full items-center gap-2 rounded-md px-2.5 pt-1 pb-1.5 text-sm font-medium',
+                'text-sidebar-foreground/75 hover:bg-hover hover:text-sidebar-foreground transition-colors',
+              );
+              const role = accountRoleLabel(account.account_role, organizationCopy);
+              const body = (
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">
+                    {workspaceAccountLabel(account.name, organizationCopy.fallbackAccountName, false)}
+                  </span>
+                  {role ? (
+                    <span className="text-muted-foreground block truncate text-xs font-normal">{role}</span>
+                  ) : null}
+                </span>
+              );
+              return (
+                <li key={account.workspace_id ?? account.account_id}>
+                  <ModalClose asChild>
+                    {/* A workspace row opens that workspace's settings. */}
+                    {account.workspace_id ? (
+                      <Link href={`/projects/${account.workspace_id}/admin`} className={rowClass}>
+                        {body}
+                      </Link>
+                    ) : (
+                      <HubLink to={hubTarget(account.account_id)} className={rowClass}>
+                        {body}
+                      </HubLink>
                     )}
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate">
-                        {workspaceAccountLabel(
-                          account.name,
-                          organizationCopy.fallbackAccountName,
-                          false,
-                        )}
-                      </span>
-                      {accountRoleLabel(account.account_role, organizationCopy) ? (
-                        <span className="text-muted-foreground block truncate text-xs font-normal">
-                          {accountRoleLabel(account.account_role, organizationCopy)}
-                        </span>
-                      ) : null}
-                    </span>
-                  </HubLink>
-                </ModalClose>
-              </li>
-            ))}
+                  </ModalClose>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}

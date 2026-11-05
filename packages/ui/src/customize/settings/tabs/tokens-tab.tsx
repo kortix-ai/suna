@@ -95,6 +95,7 @@ import { KeyIcon, PlusIcon, ProhibitIcon, TrashIcon } from '@phosphor-icons/reac
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { SettingsTabHeader } from '../settings-tab-header';
+import { SettingsSubsectionHeader } from '../../../primitives/settings-subsection-header';
 import { ConnectedApps } from './connected-apps';
 
 /** Sentinel Select value for "not scoped to one project". */
@@ -175,7 +176,16 @@ export function localizedRelativeTime(
   return relativeTime(input, locale, now, { zero: 'minute' });
 }
 
-export function TokensTab({ accountId }: { accountId: string | undefined }) {
+export function TokensTab({
+  accountId,
+  embedded = false,
+}: {
+  accountId: string | undefined;
+  /** Inside Workspace settings › API keys: a subsection under the page's own
+   *  title, and no pointer to the service-account keys below it. */
+  embedded?: boolean;
+}) {
+  const tWorkspaces = useTranslations('workspaces.settings');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.tokens');
   const locale = useLocale();
@@ -266,7 +276,11 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
     // uses (`tab-content-width.test.ts`). The list is one card of flat rows, not a
     // table, so nothing here needs the wide tier.
     <div className="mx-auto w-full max-w-2xl space-y-5">
-      <SettingsTabHeader tab="tokens" hideDescription />
+      {embedded ? (
+        <SettingsSubsectionHeader title={tWorkspaces('personalKeysTitle')} description={tWorkspaces('personalKeysDescription')} />
+      ) : (
+        <SettingsTabHeader tab="tokens" hideDescription />
+      )}
 
       {!accountId ? (
         <div className="space-y-2">
@@ -426,6 +440,7 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
       {/* Where the OTHER kind of key lives. One line, because a person who
           came here for a CI credential has to be able to find it without
           reading the account hub's whole rail. */}
+      {embedded ? null : (
       <p className="text-muted-foreground text-xs">
         {t.rich('serviceAccountTokens', {
           link: (chunks) =>
@@ -441,6 +456,7 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
             ),
         })}
       </p>
+      )}
 
       <ConnectedApps relativeTime={(iso) => localizedRelativeTime(iso, locale, renderedAt)} />
 

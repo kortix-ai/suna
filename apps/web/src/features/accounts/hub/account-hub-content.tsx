@@ -1,9 +1,15 @@
 'use client';
 
 /**
- * The account hub's body — everything to the right of the settings sidebar at
- * `/accounts/<id>`: the section catalog's panes, their drill-downs, and the
- * mutations each one owns.
+ * The account panes of Workspace settings — People, Billing, Branding, API
+ * keys, and the account halves of General and Git repo — with their
+ * drill-downs and the mutations each one owns. `ProjectAdminDashboard` mounts
+ * it inside `EmbeddedAccountHubProvider`, which names the account (the
+ * workspace's) and the section. Workspaces ux.md section 4.
+ *
+ * History below: this was the account hub's body, the full-screen modal over
+ * a page (`?accountId=`). The modal is now only a router for old links
+ * (`account-hub-router.tsx`).
  *
  * **One body, two mounts.** This used to BE `features/accounts/hub/account-hub-content.tsx`.
  * It moved here on 2026-09-08 so the same component can render in two places:
@@ -39,9 +45,10 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 're
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AccessHelp } from '@/components/iam/access-help';
-import { AccessProjectsTab } from '@/components/iam/access-projects-tab';
+import { WorkspaceAccessSection } from '@/features/workspace/settings/workspace-access-section';
 import { AddGitHubAccountDialog } from '@kortix/ui/access/iam/add-github-account-dialog';
 import { ApiKeysSection } from '@/components/iam/api-keys-card';
+import { TokensTab } from '@kortix/ui/customize/settings/tabs/tokens-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
@@ -161,7 +168,15 @@ async function copyInviteLink(url: string, copiedMessage: string, fallbackMessag
   }
 }
 
-export function AccountHubContent() {
+export function AccountHubContent({
+  companion = false,
+  title: titleOverride,
+}: {
+  /** Drawn under a project pane in the same section: no title, no account name. */
+  companion?: boolean;
+  /** The section label, when the pane stands alone in a section a project pane would lead. */
+  title?: string;
+} = {}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tAutomations = useTranslations('automationsPause');
   // `?accountId=` and the hub's own params, both off the URL the modal writes
@@ -315,9 +330,9 @@ export function AccountHubContent() {
 
   return (
     <AccountPane
-      back={{ to: hubTarget(null), label: tI18nComplete.raw('text68d8e728a8ad') }}
-      title={paneMeta?.title}
-      description={paneMeta?.description}
+      companion={companion}
+      title={companion ? undefined : (titleOverride ?? paneMeta?.title)}
+      description={companion || titleOverride ? undefined : paneMeta?.description}
       /* A wizard is a full-width surface wherever it renders — it was a
          `width="full"` page of its own before it became a pane. */
       width={activeSetup && activeSection === 'identity' ? 'full' : paneWidth(activeSection)}
@@ -437,7 +452,7 @@ export function AccountHubContent() {
           ) : null}
 
           {activeSection === 'access-projects' ? (
-            <AccessProjectsTab
+            <WorkspaceAccessSection
               accountId={account.account_id}
               selectedProjectId={selectedAccessProjectId}
               onSelectProject={(id) => navigate('access-projects', { project: id })}
@@ -502,6 +517,12 @@ export function AccountHubContent() {
               above is the only other chrome. */}
           {activeSection === 'tokens' && sectionVisible.tokens ? (
             <div className="space-y-10">
+              {/* A person's own keys first: every member has them (Workspaces,
+                  PR 1 — they left `/settings`). The machine keys below need
+                  `token.create`. */}
+              <TokensTab accountId={account.account_id} embedded />
+              {canCreateToken === true ? (
+                <>
               <ApiKeysSection accountId={account.account_id} canManage={canCreateToken === true} />
               {/* OAuth apps — "Sign in with Kortix" clients. A client secret
                   is a credential the account issues to a machine, so it
@@ -509,6 +530,8 @@ export function AccountHubContent() {
                   `token.*` permissions. */}
               <OAuthAppsCard accountId={account.account_id} canManage={canCreateToken === true} />
               <KeyRulesCard accountId={account.account_id} canManage={canWriteAccount} />
+                </>
+              ) : null}
             </div>
           ) : null}
 
@@ -566,13 +589,19 @@ export function AccountHubContent() {
 
           {activeSection === 'settings' && canWriteAccount ? (
             <div className="space-y-10">
-              <SettingsGroup title={tI18nComplete.raw('textc910d474dcd7')}>
-                <GeneralCard
-                  account={account}
-                  queryClient={queryClient}
-                  canWrite={canWriteAccount}
-                />
-              </SettingsGroup>
+              {/* Under the workspace's General pane the name field is the
+                  workspace's own: renaming the workspace renames its account
+                  (one active project, the API keeps them one). A legacy
+                  account with several projects keeps its own name here. */}
+              {companion && account.project_count <= 1 ? null : (
+                <SettingsGroup title={tI18nComplete.raw('textc910d474dcd7')}>
+                  <GeneralCard
+                    account={account}
+                    queryClient={queryClient}
+                    canWrite={canWriteAccount}
+                  />
+                </SettingsGroup>
+              )}
 
               {/* MFA and the session policy are one decision — how hard it
                   is to hold a session here — so they share one bordered
@@ -604,7 +633,9 @@ export function AccountHubContent() {
                 </SettingsRowGroup>
               </SettingsGroup>
 
-              {canDeleteAccount ? (
+              {/* Under the workspace's General pane its own Danger zone (delete
+                  the workspace) follows: one Danger zone per page. */}
+              {canDeleteAccount && !companion ? (
                 <SettingsGroup title={tI18nComplete.raw('textfd8b8dae4421')}>
                   <DangerZoneCard />
                 </SettingsGroup>

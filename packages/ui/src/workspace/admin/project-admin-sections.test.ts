@@ -6,13 +6,17 @@ import { useSettingsPanelStore } from '../../internal/stores/settings-panel-stor
 
 import { buildProjectAdminNav } from './project-admin-nav';
 import {
+  ACCOUNT_TAB_FOR_SECTION,
   DEFAULT_PROJECT_ADMIN_SECTION,
   parseProjectAdminSection,
   PROJECT_ADMIN_RESOURCES,
   projectAdminHref,
   projectAdminNavTarget,
+  SECTION_FOR_ACCOUNT_TAB,
+  WORKSPACE_SETTINGS_GROUPS,
   type ProjectAdminSectionKey,
 } from '../../customize/project-settings/project-admin-sections';
+import { VALID_TABS } from '../../internal/account-hub/sections';
 
 const PID = 'project-test-1';
 
@@ -27,9 +31,10 @@ describe('Project admin /admin/<section> scheme', () => {
     }
   });
 
-  test('the default section is the first resource', () => {
-    expect(DEFAULT_PROJECT_ADMIN_SECTION).toBe(PROJECT_ADMIN_RESOURCES[0]!.key);
-    expect(projectAdminHref(PID)).toBe(`/projects/${PID}/admin/connectors`);
+  test('the default section is General, the first row of the Workspace group', () => {
+    expect(DEFAULT_PROJECT_ADMIN_SECTION).toBe('general');
+    expect(WORKSPACE_SETTINGS_GROUPS[0]!.sections[0]).toBe('general');
+    expect(projectAdminHref(PID)).toBe(`/projects/${PID}/admin/general`);
     expect(projectAdminHref(PID, 'git')).toBe(`/projects/${PID}/admin/git`);
     expect(projectAdminHref(PID, 'repo')).toBe(`/projects/${PID}/admin/repo`);
     expect(projectAdminHref(PID, 'connectors', { scope: 'channels' })).toBe(
@@ -56,6 +61,33 @@ describe('Project admin /admin/<section> scheme', () => {
     expect(projectAdminNavTarget('settings')).toBe('general');
     expect(projectAdminNavTarget('members')).toBeNull();
     expect(projectAdminNavTarget('profile')).toBeNull();
+  });
+});
+
+describe('Workspace settings rail — four groups', () => {
+  test('Workspace, Library, People, Billing, in the order of the spec', () => {
+    expect(WORKSPACE_SETTINGS_GROUPS.map((group) => [group.id, [...group.sections]])).toEqual([
+      ['workspace', ['general', 'branding', 'git', 'sandbox', 'feature-flags', 'api-keys']],
+      ['library', ['connectors', 'secrets', 'skills', 'drives', 'apps', 'triggers', 'models', 'repo']],
+      ['people', ['members', 'groups', 'access', 'roles', 'identity', 'audit', 'help']],
+      ['billing', ['plan', 'usage']],
+    ]);
+  });
+
+  test('every rail row is a deep link that parses back, and no row is listed twice', () => {
+    const rows = WORKSPACE_SETTINGS_GROUPS.flatMap((group) => group.sections);
+    expect(new Set(rows).size).toBe(rows.length);
+    for (const key of rows) expect(parseProjectAdminSection(key)).toBe(key);
+  });
+
+  test('every old account hub tab lands on a workspace section that shows that pane', () => {
+    for (const tab of VALID_TABS) {
+      const section = SECTION_FOR_ACCOUNT_TAB[tab];
+      expect({ tab, section, back: ACCOUNT_TAB_FOR_SECTION[section] }).toEqual({ tab, section, back: tab });
+    }
+    expect(SECTION_FOR_ACCOUNT_TAB.members).toBe('members');
+    expect(SECTION_FOR_ACCOUNT_TAB['access-projects']).toBe('access');
+    expect(SECTION_FOR_ACCOUNT_TAB.billing).toBe('plan');
   });
 });
 

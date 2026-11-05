@@ -638,19 +638,22 @@ interface EditTarget {
   inheritedFrom?: string[];
 }
 
-function ProjectAccessPanel({
+export function ProjectAccessPanel({
   accountId,
   projectId,
   rbacEnabled,
   canManageRoles,
   onBack,
+  heading,
 }: {
   accountId: string;
   projectId: string;
   rbacEnabled: boolean;
   canManageRoles: boolean;
-  /** Back to the project list. */
-  onBack: () => void;
+  /** Back to the project list. Absent: there is no list to go back to. */
+  onBack?: () => void;
+  /** Replaces the project's avatar and name above the table (a one-workspace account). */
+  heading?: ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
@@ -1010,14 +1013,22 @@ function ProjectAccessPanel({
       {/* "‹ Projects" above the project's tile: the same link the member and
           group pages draw (`AccessDetailShell`). The breadcrumb stays too. */}
       <div className="space-y-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-sm transition-colors"
-        >
-          <CaretLeftIcon className="size-4" />
-          {tI18nComplete.raw('text04e2a9728af7')}
-        </button>
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-sm transition-colors"
+          >
+            <CaretLeftIcon className="size-4" />
+            {tI18nComplete.raw('text04e2a9728af7')}
+          </button>
+        ) : null}
+        {heading ? (
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 space-y-1">{heading}</div>
+            {grantButton}
+          </div>
+        ) : (
         <div className="flex min-w-0 items-center gap-3">
           {projectQuery.isLoading ? (
             <Skeleton className="size-8 rounded-md" />
@@ -1045,6 +1056,7 @@ function ProjectAccessPanel({
             {grantButton}
           </div>
         </div>
+        )}
       </div>
 
       {/* ── People: one table, the account Members table's rows ──────────

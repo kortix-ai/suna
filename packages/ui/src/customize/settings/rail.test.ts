@@ -25,8 +25,8 @@ describe('railGroups', () => {
     expect(translated[0]?.label).toBe('translated:groups.personal');
     expect(translated[0]?.items[0]?.label).toBe('translated:items.profile.label');
     expect(translated[0]?.items[0]?.description).toBe('translated:items.profile.description');
-    expect(translated[0]?.items.find((entry) => entry.tab === 'tokens')?.description).toBe(
-      'translated:items.tokens.description',
+    expect(translated[0]?.items.find((entry) => entry.tab === 'mcp')?.description).toBe(
+      'translated:items.mcp.description',
     );
   });
 
@@ -53,7 +53,6 @@ describe('railGroups', () => {
       'sessions',
       'preferences',
       'chrome',
-      'tokens',
       'mcp',
       'computer',
     ]);

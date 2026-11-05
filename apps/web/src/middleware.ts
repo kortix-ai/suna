@@ -828,10 +828,10 @@ export async function middleware(request: NextRequest) {
     user = null;
   }
 
-  // The default destination is a PROJECT, not the projects list. When the
-  // browser remembers which project was open last we jump straight there;
-  // otherwise the id-free landing door resolves (or provisions) one behind an
-  // instant paint. The cookie is browser-written, so `resolveDefaultLandingPath`
+  // The default destination is a WORKSPACE, not the chooser. When the
+  // browser remembers which workspace was open last we jump straight there;
+  // otherwise the id-free landing door opens the only one, or the
+  // create-or-join chooser, behind an instant paint. It never creates one. The cookie is browser-written, so `resolveDefaultLandingPath`
   // only accepts a well-formed project id and falls back to the door.
   const defaultLandingPath = resolveDefaultLandingPath(
     request.cookies.get(LAST_PROJECT_COOKIE)?.value,

@@ -2695,7 +2695,7 @@
           "f3": "メンバー無制限、クレジットプールは 1 つを共有",
           "f4": "未使用のクレジットは 1 か月繰り越し",
           "f5": "いつでもチャージ可能。チャージ分は無期限",
-          "f6": "最大 200 ワークスペースと、より高いモデルのレート制限",
+          "f6": "より高いモデルのレート制限",
           "f7": "メールサポート"
         },
         "enterprise": {
@@ -21240,7 +21240,11 @@
       "text05ee1d6181f3": "変更リクエストがマージされると、{agent}があなたの指示を実行します。",
       "texte608495c45ce": "{branch} にマージ",
       "text80ca527b0d55": "変更リクエストのトリガーを作成しました",
-      "authEmailAlreadySent": "このメールは1分以内に送信済みです。再送信する前に、受信トレイと迷惑メールフォルダを確認してください。"
+      "authEmailAlreadySent": "このメールは1分以内に送信済みです。再送信する前に、受信トレイと迷惑メールフォルダを確認してください。",
+      "text2590cd62a747": "ワークスペースの設定",
+      "text276261b1e03d": "ワークスペース 設定 組織 チーム 管理",
+      "text634ebc515b7f": "ワークスペース · API キー",
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -25852,5 +25856,114 @@
     "projectDefault": "ワークスペースの既定 · すべてのリクエスト",
     "kortixPicks": "Kortix が選択",
     "useMyOwn": "自分で選ぶ"
+  },
+  "workspaces": {
+    "chooser": {
+      "createTitle": "ワークスペースを作成",
+      "createBody": "ワークスペースは、会社が Kortix と働く場所です。メンバー、エージェント、そして彼らが作るすべてがここにあります。",
+      "createAction": "ワークスペースを作成",
+      "invitedHint": "招待されましたか？メールの招待リンクを開くか、管理者に {email} の招待を依頼してください。",
+      "restrictedTitle": "ワークスペースはまだありません",
+      "restrictedBody": "管理者に {email} の招待を依頼してください。",
+      "listTitle": "ワークスペースを選択",
+      "listBody": "ワークスペースを開くか、新しく作成してください。",
+      "invitesTitle": "招待が届いています",
+      "invitesBody": "ワークスペースに参加するか、自分のワークスペースを作成してください。",
+      "workspacesHeading": "ワークスペース",
+      "invitations": "招待",
+      "sentTo": "{email} 宛て",
+      "invitedBy": "{email} からの招待",
+      "join": "参加",
+      "joinError": "ワークスペースに参加できませんでした。もう一度お試しください。",
+      "unnamedWorkspace": "ワークスペース",
+      "search": "ワークスペースを検索",
+      "noMatches": "「{query}」に一致するワークスペースはありません。",
+      "role": {
+        "owner": "オーナー",
+        "admin": "管理者",
+        "member": "メンバー"
+      },
+      "loadErrorTitle": "ワークスペースを読み込めませんでした",
+      "loadErrorBody": "接続を確認して、もう一度お試しください。",
+      "partialError": "一部のワークスペースを読み込めませんでした。",
+      "retry": "再試行"
+    },
+    "switcher": {
+      "switch": "ワークスペースを切り替え",
+      "find": "ワークスペースを検索…",
+      "noMatches": "一致するワークスペースはありません",
+      "create": "ワークスペースを作成",
+      "settings": "ワークスペースの設定",
+      "loadError": "一部のワークスペースを読み込めませんでした。",
+      "retry": "再試行",
+      "heading": "ワークスペース"
+    },
+    "create": {
+      "title": "ワークスペースを作成",
+      "description": "ワークスペースは、会社が Kortix と働く場所です。メンバー、エージェント、そして彼らが作るすべてがここにあります。",
+      "submit": "ワークスペースを作成",
+      "restricted": "このサーバーでは招待された人だけがワークスペースを作成できます。管理者に {email} の招待を依頼してください。",
+      "limitReached": "プランのワークスペース上限に達しました。別のワークスペースを作成するにはアップグレードしてください。"
+    },
+    "settings": {
+      "title": "ワークスペースの設定",
+      "groups": {
+        "workspace": "ワークスペース",
+        "library": "ライブラリ",
+        "people": "メンバー",
+        "billing": "請求"
+      },
+      "sections": {
+        "general": "一般",
+        "branding": "ブランディング",
+        "git": "Git リポジトリ",
+        "sandbox": "サンドボックステンプレート",
+        "featureFlags": "機能フラグ",
+        "apiKeys": "API キー",
+        "members": "メンバー",
+        "groups": "グループ",
+        "access": "アクセス",
+        "roles": "ロール",
+        "identity": "ID 管理",
+        "audit": "監査ログ",
+        "help": "ヘルプ",
+        "plan": "プラン",
+        "usage": "使用量"
+      },
+      "accessTitle": "アクセス",
+      "accessDescription": "このワークスペースを開ける人と、そのロール。",
+      "securityTitle": "セキュリティ",
+      "githubTitle": "GitHub 接続",
+      "deleteKeepsLogin": "ログインは残ります。別のワークスペースを作成するか、参加できます。",
+      "personalKeysTitle": "あなたの個人アクセスキー",
+      "personalKeysDescription": "このワークスペースであなたとして動作する API キー。CLI、スクリプト、CI ジョブに使います。"
+    },
+    "cli": {
+      "noWorkspaceTitle": "CLI にサインインするにはワークスペースを作成してください",
+      "noWorkspaceBody": "CLI はワークスペースにサインインします。ワークスペースを作成してから、このサインインを承認してください。",
+      "createAction": "ワークスペースを作成",
+      "workspaceLabel": "ワークスペース"
+    },
+    "models": {
+      "yourDefault": "ワークスペースの既定",
+      "defaultAria": "{model} はこのワークスペースの既定モデルです",
+      "defaultTitle": "ワークスペースの既定モデル",
+      "setDefaultTitle": "ワークスペースの既定モデルに設定",
+      "setDefaultAria": "{model} をこのワークスペースの既定モデルに設定",
+      "setWorkspaceDefault": "ワークスペースの既定に設定"
+    },
+    "profile": {
+      "deleteLogin": "ログインを削除",
+      "deleteLoginDescription": "Kortix のログインを削除します。どのワークスペースにも属していないため、他には何も削除されません。",
+      "deleteLoginTitle": "ログインを削除しますか？",
+      "deleteLoginWarning": "ログインはすぐに削除されます。元に戻すことはできません。"
+    },
+    "capture": {
+      "noWorkspaceTitle": "まずワークスペースを作成するか、参加してください。",
+      "noWorkspaceBody": "Kortix Capture はワークスペースに記録します。その後、このサインインをもう一度開いてください。",
+      "openChooser": "ワークスペースを作成または参加",
+      "workspaceLabel": "ワークスペース",
+      "noCaptureWorkspace": "どのワークスペースでも Kortix Capture はオフです。オーナーまたは管理者がオンにできます。"
+    }
   }
 }
