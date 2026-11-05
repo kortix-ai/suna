@@ -75,7 +75,7 @@ flow(
   },
   async (ctx) => {
     await ctx.step(
-      'fresh personal account is repaired to free tier with usable credits',
+      'a freshly created account is on the free tier with usable credits',
       async () => {
         const r = await ctx.client.as(ctx.P.NONMEMBER).get('/v1/billing/account-state');
         r.status(200)
@@ -685,7 +685,7 @@ flow(
     ],
   },
   async (ctx) => {
-    // Throwaway user whose only account is its own personal account.
+    // Throwaway user whose only account is the one it created (POST /v1/accounts).
     const victim = await ctx.fixtures.user({ label: 'DEL-2' });
     let asVictim = ctx.client.as(victim);
     const signInAgain = async () => {
@@ -701,7 +701,10 @@ flow(
     await ctx.step('throwaway user schedules deletion (/account mount) → 200', async () => {
       const r = await asVictim.post('/v1/account/request-deletion', { reason: 'ke2e' });
       r.status(200);
-      (await asVictim.get('/v1/account/deletion-status')).status(401);
+      // The account is not a personal one (its id is not the user id: no
+      // account is created at sign-up), so scheduling its deletion keeps the
+      // requester's sign-ins. Only a legacy personal account signs them out.
+      (await asVictim.get('/v1/account/deletion-status')).status(200).body().has('$.has_pending_deletion', true);
       await signInAgain();
     });
     await ctx.step(
@@ -762,7 +765,7 @@ flow(
 
 /**
  * DEL-5 — deletion is an owner act. `addMember` inserts the membership
- * directly, so the member has no personal account and resolves the TEAM as
+ * directly, so the member has no account of its own and resolves the TEAM as
  * its primary account. Every deletion route refuses the member with 403
  * `account.delete`, and the team survives.
  */

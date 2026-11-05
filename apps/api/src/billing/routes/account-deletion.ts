@@ -1,11 +1,14 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import type { AppEnv } from '../../types';
 import {
   requestAccountDeletion,
   getAccountDeletionStatus,
   cancelAccountDeletion,
   deleteAccountImmediately,
+  deleteLoginWithoutAccount,
 } from '../services/account-deletion';
+import { isNoWorkspaceError, noWorkspaceError } from '../../shared/no-workspace';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { makeOpenApiApp, json, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
@@ -20,6 +23,27 @@ async function resolveDeletionContext(c: any) {
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_DELETE);
   return { userId, accountId };
 }
+
+/**
+ * The deletion context, or `null` for a person who belongs to no workspace
+ * (no account is created at sign-up). Such a person still deletes their
+ * login: the routes below answer for that case instead of a 409.
+ */
+async function deletionContextOrNone(c: Context<AppEnv>): Promise<{ userId: string; accountId: string } | null> {
+  try {
+    return await resolveDeletionContext(c);
+  } catch (err) {
+    if (isNoWorkspaceError(err) && c.get('authType') === 'supabase') return null;
+    throw err;
+  }
+}
+
+const NO_PENDING_DELETION = {
+  has_pending_deletion: false,
+  deletion_scheduled_for: null,
+  requested_at: null,
+  can_cancel: false,
+};
 
 // Opaque service results (status / success payloads) — permissive on purpose.
 const ResultSchema = z.record(z.string(), z.any());
@@ -36,8 +60,9 @@ accountDeletionRouter.openapi(
     },
   }),
   async (c: any) => {
-    const { accountId } = await resolveDeletionContext(c);
-    const result = await getAccountDeletionStatus(accountId);
+    const context = await deletionContextOrNone(c);
+    if (!context) return c.json(NO_PENDING_DELETION);
+    const result = await getAccountDeletionStatus(context.accountId);
     return c.json(result);
   },
 );
@@ -60,7 +85,13 @@ accountDeletionRouter.openapi(
     },
   }),
   async (c: any) => {
-    const { accountId, userId } = await resolveDeletionContext(c);
+    const context = await deletionContextOrNone(c);
+    // A login with no workspace has nothing to keep for a grace period: the
+    // client deletes it immediately instead (DELETE /delete-immediately).
+    if (!context) {
+      throw noWorkspaceError('You belong to no workspace, so nothing waits for a grace period. Delete your account immediately instead.');
+    }
+    const { accountId, userId } = context;
     // Manual parse: the body is optional and tolerant of missing/invalid JSON
     // (defaults to {}); only `reason` is read. valid('json') would reject a
     // bodyless request, changing the contract.
@@ -104,7 +135,10 @@ accountDeletionRouter.openapi(
     },
   }),
   async (c: any) => {
-    const { accountId, userId } = await resolveDeletionContext(c);
+    const context = await deletionContextOrNone(c);
+    // A person with no workspace deletes only their login.
+    if (!context) return c.json(await deleteLoginWithoutAccount(c.get('userId') as string));
+    const { accountId, userId } = context;
     // Pass `userId`: `resolveAccountId` above returns only the earliest-joined
     // account, so without it every sandbox in a team account this user owns
     // survives the deletion, still running and still billing.

@@ -10,6 +10,7 @@ import {
   signIn,
 } from '../helpers/session-auth';
 import { dismissOnboarding, dismissWelcomeCard, selectAccountForUi } from '../helpers/ui';
+import { ensureOwnedAccount } from '../helpers/accounts';
 
 /**
  * KRTX-1810 + KRTX-1975: inside a project the shell had no signed-in user
@@ -27,21 +28,7 @@ const authOptions = {
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const api = createApiJsonClient(apiBase);
 
-interface AccountSummary {
-  account_id: string;
-  personal_account?: boolean;
-  is_primary_owner?: boolean;
-  account_role?: string;
-}
 
-/** The account a fresh user owns (spec 45's rule). */
-const ownedAccount = (accounts: AccountSummary[]) => {
-  const own = accounts.find(
-    (a) => a.personal_account || a.is_primary_owner || a.account_role === 'owner',
-  );
-  if (!own) throw new Error('the seeded user owns no account');
-  return own.account_id;
-};
 
 test.describe('38 — The project shell knows who you are', () => {
   test('the switcher menu opens on the identity, and its Settings row opens the personal one', async ({
@@ -58,7 +45,7 @@ test.describe('38 — The project shell knows who you are', () => {
 
     try {
       const session = await signIn(email, authOptions);
-      const account = ownedAccount(await api<AccountSummary[]>(session.access_token, 'GET', '/accounts'));
+      const account = await ensureOwnedAccount(api, session.access_token);
       const project = await createDatabaseProject(env, {
         accountId: account,
         userId: user.id,

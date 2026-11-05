@@ -1040,6 +1040,47 @@ export async function provisionProjectStream(
   return settled;
 }
 
+/**
+ * What {@link createWorkspace} takes: the provision fields without
+ * `account_id`. A new workspace names no account; the server picks it.
+ */
+export type CreateWorkspaceInput = Omit<ProvisionProjectInput, 'account_id'>;
+
+/**
+ * Create a whole workspace in one call: its account and its project.
+ *
+ * A workspace is one account and its one project, and the workspace id is the
+ * returned `project_id`. The server (`new_workspace: true` on
+ * `POST /projects/provision`) reuses the caller's newest OWNED account that has
+ * no active project — an empty account they already hold keeps its plan and
+ * credits — else creates an account named after the workspace, then
+ * provisions the project into it. The account takes the project's name.
+ *
+ * - `onEvent` given: streams `POST /projects/provision-stream` and reports the
+ *   same {@link ProvisionStreamEvent}s as {@link provisionProjectStream}
+ *   (`validating` → `creating_repository` → `registering` → `seeding`). Needs a
+ *   streaming `fetch`; on React Native omit `onEvent`.
+ * - `onEvent` omitted: one `POST /projects/provision` request and response.
+ *
+ * Send an `idempotency_key` and reuse it on retries: a retry returns the same
+ * workspace instead of creating a second one.
+ *
+ * Rejects with an `ApiError`. Codes a host handles: `account_creation_restricted`
+ * (403: this deployment lets only its admin create workspaces; ask for an
+ * invite), `new_workspace_requires_person` (403: a project, session or agent
+ * token), `provision_in_flight` (409: retry with the same key).
+ */
+export async function createWorkspace(
+  input: CreateWorkspaceInput,
+  onEvent?: (event: ProvisionStreamEvent) => void,
+  options: ApiClientOptions = {},
+): Promise<KortixProject> {
+  const { account_id: _ignored, ...fields } = input as CreateWorkspaceInput & { account_id?: unknown };
+  const body = { ...fields, new_workspace: true } as ProvisionProjectInput & { new_workspace: true };
+  if (onEvent) return provisionProjectStream(body, onEvent, options);
+  return provisionProject(body, options);
+}
+
 export interface ProjectQuota {
   /** True when the account cannot create another project right now. */
   capped: boolean;

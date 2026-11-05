@@ -186,6 +186,8 @@ export {
   featureDisabledKey,
   REPOSITORY_DISCONNECTED_CODE,
   isRepositoryDisconnectedError,
+  NO_WORKSPACE_CODE,
+  isNoWorkspaceError,
   repositoryDisconnectedReason,
   type RepositoryDisconnectedReason,
   type ApiErrorFields,

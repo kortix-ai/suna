@@ -12,16 +12,6 @@
       "count": 5
     }
   },
-  "src/accounts/core/accounts.ts": {
-    "no-console": {
-      "count": 2
-    }
-  },
-  "src/accounts/core/bootstrap-personal-account.ts": {
-    "no-console": {
-      "count": 2
-    }
-  },
   "src/accounts/core/invites.ts": {
     "kortix-api/projects-surface": {
       "count": 1
@@ -2975,10 +2965,10 @@
   },
   "src/shared/resolve-account.ts": {
     "kortix-api/layers": {
-      "count": 3
+      "count": 1
     },
     "no-console": {
-      "count": 2
+      "count": 1
     }
   },
   "src/shared/self-host-operator.ts": {

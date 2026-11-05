@@ -123,6 +123,8 @@ export { disableRemindersAuthoredBy } from './lib/session-reminders';
 // Nested `projects.metadata` writes (consumed by ../feature-flags/write).
 export { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from './lib/metadata-merge';
 export { MANIFEST_PROJECT_NAME_KEY, projectNameAction } from './lib/manifest-project-name';
+// Workspace name = account name = project name (consumed by account rename and manifest sync).
+export { renameAccountOfSoleProject, renameSoleProjectOfAccount } from './lib/workspace-name';
 
 // Whether any app-event adapter is configured (consumed by ../feature-flags/registry).
 

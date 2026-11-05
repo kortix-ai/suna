@@ -2,7 +2,8 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { userAccountNameRows } from '../../iam/membership-read';
 import { accountRolesForUser } from '../../iam/read-models';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { reportSignupWithoutWorkspace } from './signup-event';
+import { isNoWorkspaceError } from '../../shared/no-workspace';
 import {
   PatPolicyError,
   checkTokenMintExpiry,
@@ -104,19 +105,12 @@ accountsRouter.openapi(
     }
   };
 
-  // Bootstrap BEFORE claiming pending invites (R3 — see
-  // accounts/core/accounts.ts:registerAccountRoutes, GET /). Decide on the
-  // PRE-claim membership count, not the post-claim one: the old order
-  // claimed first, so an invite-first caller of THIS route also never got a
-  // personal account — whichever of /accounts or /accounts/me a client hit
-  // first silently decided the user's fate, which is exactly the coupling
-  // R3 was chosen to remove. `resolveAccountId` re-checks membership itself
-  // and bootstraps only when it is still zero, so reading it here before
-  // the claim is what makes the bootstrap actually fire.
+  // No account is created here (Workspaces D3, 2026-11-05): a person with
+  // no membership gets `accounts: []`. The pre-claim read decides only
+  // whether to report the `user_signed_up` event.
   let memberships = await loadMemberships();
   if (memberships.length === 0 && authType === 'supabase') {
-    await resolveAccountId(userId);
-    memberships = await loadMemberships();
+    reportSignupWithoutWorkspace(userId);
   }
   if (authType === 'supabase' && userEmail) {
     await autoClaimPendingInvites(userId, userEmail);
@@ -182,7 +176,7 @@ accountsRouter.openapi(
     },
     responses: {
       200: json(z.array(AccountTokenSchema), 'Personal access tokens'),
-      ...errors(401, 403),
+      ...errors(401, 403, 409),
     },
   }),
   async (c: any) => {
@@ -194,6 +188,8 @@ accountsRouter.openapi(
     accountId = await resolveAccountForUser(userId, queryAccount);
   } catch (err) {
     rethrowDatabaseError(err);
+    // 409 `no_workspace`: a person with no account has nowhere to mint into.
+    if (isNoWorkspaceError(err)) throw err;
     return c.json({ error: (err as Error).message }, 403);
   }
 
@@ -247,7 +243,7 @@ accountsRouter.openapi(
     },
     responses: {
       201: json(AccountTokenSchema, 'The newly minted token (secret_key returned once)'),
-      ...errors(400, 401, 403),
+      ...errors(400, 401, 403, 409),
     },
   }),
   async (c: any) => {
@@ -272,6 +268,8 @@ accountsRouter.openapi(
     accountId = await resolveAccountForUser(userId, accountOverride);
   } catch (err) {
     rethrowDatabaseError(err);
+    // 409 `no_workspace`: a person with no account has nowhere to mint into.
+    if (isNoWorkspaceError(err)) throw err;
     return c.json({ error: (err as Error).message }, 403);
   }
 
@@ -353,7 +351,7 @@ accountsRouter.openapi(
     },
     responses: {
       200: json(z.object({ ok: z.literal(true), deleted: z.boolean().optional() }), 'Revocation or deletion result'),
-      ...errors(400, 401, 403, 404),
+      ...errors(400, 401, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -372,6 +370,8 @@ accountsRouter.openapi(
     accountId = await resolveAccountForUser(userId, queryAccount);
   } catch (err) {
     rethrowDatabaseError(err);
+    // 409 `no_workspace`: a person with no account has nowhere to mint into.
+    if (isNoWorkspaceError(err)) throw err;
     return c.json({ error: (err as Error).message }, 403);
   }
 

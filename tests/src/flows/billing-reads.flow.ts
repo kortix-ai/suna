@@ -181,7 +181,7 @@ flow(
 );
 
 // BILL-15 — a team's balance is read through account_id (KRTX-2989). The two
-// credit routes used the caller's personal account, so a team member saw their
+// credit routes used the caller's first account, so a team member saw their
 // own zero balance as the team's, and a non-member could not be refused.
 flow(
   "BILL-15",

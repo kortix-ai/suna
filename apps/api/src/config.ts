@@ -412,10 +412,11 @@ const envSchema = z.object({
   // shared/platform-roles.ts's isPlatformAdmin). Deliberately narrower than
   // the removed KORTIX_SINGLE_ACCOUNT_MODE: signups still work, teams/orgs
   // still fully function, SSO/JIT still lands users in their org — only the
-  // CREATION of new accounts by ordinary users is gated. The personal-account
-  // bootstrap path (bootstrapPersonalAccount, called directly from GET
-  // /v1/accounts on first login) does NOT route through this gate — every
-  // user still gets their own landing account. Off by default (cloud is
+  // CREATION of new accounts by ordinary users is gated: POST /v1/accounts and
+  // a new workspace (`new_workspace: true` on POST /v1/projects/provision)
+  // that would need a new account answer 403 `account_creation_restricted`.
+  // No account is created at sign-up (Workspaces D3), so on such a
+  // deployment a new user joins through an invite. Off by default (cloud is
   // unaffected); the self-host CLI defaults this to 'true'
   // (SHARED_FEATURE_FLAG_DEFAULTS) since a VPS operator usually wants to be
   // the only one who can spin up new organizations. The frontend mirrors this

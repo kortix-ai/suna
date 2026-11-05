@@ -36,7 +36,7 @@ import {
 } from '../projects/connectors';
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
-import { MANIFEST_PROJECT_NAME_KEY, metadataMerge, projectNameAction, withProjectGitAuth } from '../projects/surface';
+import { MANIFEST_PROJECT_NAME_KEY, metadataMerge, projectNameAction, renameAccountOfSoleProject, withProjectGitAuth } from '../projects/surface';
 import { extractProjectPolicies } from '../projects/policies';
 import { hideSupersededSlack } from './channel-rules';
 import {
@@ -780,9 +780,11 @@ async function syncProjectConnectorsFenced(
     const action = current ? projectNameAction(project?.name, marker, current.name) : 'none';
     if (action !== 'none') {
       const declaredName = String(project!.name).trim();
-      await db.update(projects)
+      const [renamed] = await db.update(projects)
         .set({ ...(action === 'apply' ? { name: declaredName } : {}), metadata: metadataMerge({ [MANIFEST_PROJECT_NAME_KEY]: declaredName }) })
-        .where(eq(projects.projectId, projectId));
+        .where(eq(projects.projectId, projectId))
+        .returning({ projectId: projects.projectId, accountId: projects.accountId });
+      if (action === 'apply' && renamed) await renameAccountOfSoleProject(renamed, declaredName);
     }
   }
 

@@ -1043,7 +1043,7 @@ flow(
       const generation = randomUUID();
       let newTip = '';
       await ctx.step("the project repository is replaced by a second project's repository with a new generation", async () => {
-        // OWNER's funded personal account: the free team account holds one project.
+        // OWNER's funded account: the free team account holds one project.
         const other = await ctx.fixtures.project({ managedGit: true });
         const otherRepo = await fixture.openRepo(other.id);
         newTip = await commitTo(
