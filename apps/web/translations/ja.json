@@ -25852,5 +25852,84 @@
     "projectDefault": "プロジェクトの既定 · すべてのリクエスト",
     "kortixPicks": "Kortix が選択",
     "useMyOwn": "自分で選ぶ"
+  },
+  "workspaces": {
+    "chooser": {
+      "createTitle": "ワークスペースを作成",
+      "createBody": "ワークスペースは、会社が Kortix と働く場所です。メンバー、エージェント、そして彼らが作るすべてがここにあります。",
+      "createAction": "ワークスペースを作成",
+      "invitedHint": "招待されましたか？メールの招待リンクを開くか、管理者に {email} の招待を依頼してください。",
+      "restrictedTitle": "ワークスペースはまだありません",
+      "restrictedBody": "管理者に {email} の招待を依頼してください。",
+      "listTitle": "ワークスペースを選択",
+      "listBody": "ワークスペースを開くか、新しく作成してください。",
+      "invitesTitle": "招待が届いています",
+      "invitesBody": "ワークスペースに参加するか、自分のワークスペースを作成してください。",
+      "workspacesHeading": "ワークスペース",
+      "invitations": "招待",
+      "sentTo": "{email} 宛て",
+      "invitedBy": "{email} からの招待",
+      "join": "参加",
+      "joinError": "ワークスペースに参加できませんでした。もう一度お試しください。",
+      "unnamedWorkspace": "ワークスペース",
+      "search": "ワークスペースを検索",
+      "noMatches": "「{query}」に一致するワークスペースはありません。",
+      "role": {
+        "owner": "オーナー",
+        "admin": "管理者",
+        "member": "メンバー"
+      },
+      "loadErrorTitle": "ワークスペースを読み込めませんでした",
+      "loadErrorBody": "接続を確認して、もう一度お試しください。",
+      "partialError": "一部のワークスペースを読み込めませんでした。",
+      "retry": "再試行"
+    },
+    "switcher": {
+      "switch": "ワークスペースを切り替え",
+      "find": "ワークスペースを検索…",
+      "noMatches": "一致するワークスペースはありません",
+      "create": "ワークスペースを作成",
+      "settings": "ワークスペースの設定",
+      "loadError": "一部のワークスペースを読み込めませんでした。",
+      "retry": "再試行",
+      "heading": "ワークスペース"
+    },
+    "create": {
+      "title": "ワークスペースを作成",
+      "description": "ワークスペースは、会社が Kortix と働く場所です。メンバー、エージェント、そして彼らが作るすべてがここにあります。",
+      "submit": "ワークスペースを作成",
+      "restricted": "このサーバーでは招待された人だけがワークスペースを作成できます。管理者に {email} の招待を依頼してください。",
+      "limitReached": "プランのワークスペース上限に達しました。別のワークスペースを作成するにはアップグレードしてください。"
+    },
+    "settings": {
+      "title": "ワークスペースの設定",
+      "groups": {
+        "workspace": "ワークスペース",
+        "library": "ライブラリ",
+        "people": "メンバー",
+        "billing": "請求"
+      },
+      "sections": {
+        "general": "一般",
+        "branding": "ブランディング",
+        "git": "Git リポジトリ",
+        "sandbox": "サンドボックステンプレート",
+        "featureFlags": "機能フラグ",
+        "apiKeys": "API キー",
+        "members": "メンバー",
+        "groups": "グループ",
+        "access": "アクセス",
+        "roles": "ロール",
+        "identity": "ID 管理",
+        "audit": "監査ログ",
+        "help": "ヘルプ",
+        "plan": "プラン",
+        "usage": "使用量"
+      },
+      "accessTitle": "アクセス",
+      "accessDescription": "このワークスペースを開ける人と、そのロール。",
+      "securityTitle": "セキュリティ",
+      "githubTitle": "GitHub 接続"
+    }
   }
 }

@@ -4,49 +4,36 @@ import type { AccountInviteLanding, KortixAccount, KortixProject } from '@kortix
 import { workspaceAccountLabel } from '../sidebar/workspace-grouping';
 
 /**
- * The pure half of `/projects`, the project selector.
+ * The pure half of every workspace list: the `/projects` chooser, the
+ * `/projects/start` door, the sidebar switcher and the command palette.
  *
- * `/projects` is the Slack-style "choose a workspace" step: create a project,
- * join an invite, or open a project in any account the user belongs to. This
- * module turns the raw reads (accounts, one project list per account, pending
- * invites) into the sections the page renders, so every user state is
- * decided in one tested place:
+ * A workspace is ONE `projects` row and the `accounts` row that owns it — the
+ * Slack model (`.agents/skills/learnings/work/workspaces/ux.md`). So the list is
+ * flat: one row per project, no account headings. An account with 0 projects
+ * is not a workspace and is never listed; a legacy account with several
+ * projects shows each project as its own row.
  *
- *  - new user            — no project anywhere, no invite: the create card only.
- *  - invited             — pending invites, each with Join, above everything.
- *  - account member      — member of an account that shares no project with
- *                          them: the account is listed with an "ask an admin"
- *                          line, never silently dropped.
- *  - project member      — sees exactly the projects granted to them, grouped
- *                          under the owning account.
- *  - owner / admin       — every project in the account, plus a create row
- *                          for an account that has none yet.
+ * Every user state is decided here, from the raw reads (accounts, one project
+ * list per account, pending invites):
+ *
+ *  - new user        — 0 workspaces, 0 invites: create.
+ *  - invited         — pending invites, each with Join, above everything.
+ *  - returning       — 1+ workspaces: one flat list, most recently opened first.
  */
 
-/** Rows shown per account before "Show all". */
-export const COLLAPSED_PROJECT_LIMIT = 5;
-
-/** The search field appears once the full list stops fitting on one screen. */
+/** The search field appears once the list stops fitting on one screen. */
 export const SEARCH_THRESHOLD = 8;
 
-export type AccountSectionState =
-  /** The account lists at least one project for this user. */
-  | 'projects'
-  /** No project yet, and the user may create one here. */
-  | 'empty-creatable'
-  /** No project shared with this user, and they may not create one. */
-  | 'empty-member'
-  /** The project list request failed. */
-  | 'failed';
-
-export interface AccountSection {
+export interface WorkspaceRow {
+  /** The workspace id in every URL (decision D2): the project id. */
+  workspaceId: string;
+  project: KortixProject;
   accountId: string;
+  /** Display-ready — see `workspaceAccountLabel`. Search text only, never a heading. */
   accountName: string;
-  role: KortixAccount['account_role'];
-  canCreate: boolean;
-  state: AccountSectionState;
-  /** Most recently opened first. Empty unless `state === 'projects'`. */
-  projects: KortixProject[];
+  /** The caller's role in the owning account. `member` for a project shared
+   *  into an account the caller does not belong to. */
+  role: NonNullable<KortixAccount['account_role']>;
 }
 
 export interface ProjectListResult {
@@ -59,106 +46,107 @@ function openedAt(project: KortixProject): number {
   return project.last_opened_at ? new Date(project.last_opened_at).getTime() : 0;
 }
 
-function sortByRecent(projects: KortixProject[]): KortixProject[] {
-  return [...projects].sort(
-    (a, b) => openedAt(b) - openedAt(a) || a.name.localeCompare(b.name),
+function roleOf(account: KortixAccount | undefined): WorkspaceRow['role'] {
+  const role = account?.account_role;
+  return role === 'owner' || role === 'admin' ? role : 'member';
+}
+
+/**
+ * One row per active project the caller can open, most recently opened first,
+ * then by name. A project whose account is missing from `accounts` (shared into
+ * an account the caller is not a member of) still gets a row: the list must
+ * never hide a workspace the caller can open. The same project listed by two
+ * reads is listed once.
+ */
+export function buildWorkspaceRows(input: {
+  accounts: KortixAccount[];
+  lists: ProjectListResult[];
+}): WorkspaceRow[] {
+  const accountById = new Map(input.accounts.map((account) => [account.account_id, account]));
+  const seen = new Set<string>();
+  const rows: WorkspaceRow[] = [];
+  for (const list of input.lists) {
+    for (const project of list.data ?? []) {
+      if (project.status === 'archived' || seen.has(project.project_id)) continue;
+      seen.add(project.project_id);
+      const account = accountById.get(project.account_id);
+      rows.push({
+        workspaceId: project.project_id,
+        project,
+        accountId: project.account_id,
+        accountName: workspaceAccountLabel(account?.name ?? null),
+        role: roleOf(account),
+      });
+    }
+  }
+  return rows.sort(
+    (a, b) =>
+      openedAt(b.project) - openedAt(a.project) || a.project.name.localeCompare(b.project.name),
   );
 }
 
-const STATE_ORDER: Record<AccountSectionState, number> = {
-  projects: 0,
-  'empty-creatable': 1,
-  'empty-member': 2,
-  failed: 3,
-};
+/**
+ * Case-insensitive, every word required, order irrelevant. Matches the
+ * workspace name only: the account is not a separate thing the user sees.
+ */
+export function filterWorkspaceRows(rows: WorkspaceRow[], query: string): WorkspaceRow[] {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return rows;
+  return rows.filter((row) => {
+    const haystack = row.project.name.toLowerCase();
+    return words.every((word) => haystack.includes(word));
+  });
+}
+
+/** Accounts whose project list failed: their workspaces are unknown, not absent. */
+export function failedAccountIds(lists: ProjectListResult[]): string[] {
+  return lists.filter((list) => list.isError).map((list) => list.accountId);
+}
 
 /**
- * One section per account the user belongs to.
+ * The account "Create workspace" reuses: the newest account the caller OWNS
+ * whose project list loaded and holds no active project. A plan or credits the
+ * caller already holds there stay with the new workspace. `null`: the server
+ * creates a fresh account (`createWorkspace`, `new_workspace: true`).
  *
- * Order: accounts with projects first, ranked by their most recently opened
- * project, so the account the user works in sits at the top. Empty and failed
- * accounts follow. A project whose account is missing from `accounts` (a
- * project shared into an account the user is not a member of) still gets a
- * section: the selector must never hide a project the user can open.
+ * Ownership is the account role, never `account_id === user_id`: an account a
+ * user created explicitly has its own id, and the identity rule locked those
+ * users out of creating anything.
+ *
+ * The server makes the same choice for the managed source. The client needs it
+ * only for the GitHub sources, whose installations are account-scoped.
  */
-export function buildAccountSections(input: {
+export function reusableEmptyAccount(input: {
   accounts: KortixAccount[];
   lists: ProjectListResult[];
-  creatableAccountIds?: ReadonlySet<string>;
-}): AccountSection[] {
+}): KortixAccount | null {
   const listByAccount = new Map(input.lists.map((list) => [list.accountId, list]));
-  const projectsByAccount = new Map<string, KortixProject[]>();
-  for (const list of input.lists) {
-    for (const project of list.data ?? []) {
-      if (project.status === 'archived') continue;
-      const bucket = projectsByAccount.get(project.account_id);
-      if (bucket) bucket.push(project);
-      else projectsByAccount.set(project.account_id, [project]);
-    }
-  }
-
-  const sections: AccountSection[] = input.accounts.map((account) => {
-    const canCreate = input.creatableAccountIds?.has(account.account_id) === true;
-    const projects = sortByRecent(projectsByAccount.get(account.account_id) ?? []);
-    projectsByAccount.delete(account.account_id);
+  const empty = input.accounts.filter((account) => {
+    if (account.account_role !== 'owner') return false;
     const list = listByAccount.get(account.account_id);
-    const state: AccountSectionState =
-      projects.length > 0
-        ? 'projects'
-        : list?.isError
-          ? 'failed'
-          : canCreate
-            ? 'empty-creatable'
-            : 'empty-member';
-    return {
-      accountId: account.account_id,
-      accountName: workspaceAccountLabel(account.name),
-      role: account.account_role,
-      canCreate,
-      state,
-      projects,
-    };
+    if (!list || list.isError || !list.data) return false;
+    return !list.data.some((project) => project.status !== 'archived');
   });
-
-  for (const [accountId, projects] of projectsByAccount) {
-    sections.push({
-      accountId,
-      accountName: workspaceAccountLabel(null),
-      role: 'member',
-      canCreate: false,
-      state: 'projects',
-      projects: sortByRecent(projects),
-    });
-  }
-
-  return sections.sort((a, b) => {
-    const byState = STATE_ORDER[a.state] - STATE_ORDER[b.state];
-    if (byState !== 0) return byState;
-    return latestOpenedAt(b) - latestOpenedAt(a);
-  });
+  if (empty.length === 0) return null;
+  const created = (account: KortixAccount) =>
+    account.created_at ? new Date(account.created_at).getTime() : 0;
+  return [...empty].sort((a, b) => created(b) - created(a))[0] ?? null;
 }
 
-function latestOpenedAt(section: AccountSection): number {
-  const first = section.projects[0];
-  return first ? openedAt(first) : 0;
-}
-
-/** Case-insensitive match on the project name and the account name. */
-export function filterSections(sections: AccountSection[], query: string): AccountSection[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return sections;
-  return sections.flatMap((section) => {
-    if (section.state !== 'projects') return [];
-    const accountHit = section.accountName.toLowerCase().includes(needle);
-    const projects = accountHit
-      ? section.projects
-      : section.projects.filter((project) => project.name.toLowerCase().includes(needle));
-    return projects.length > 0 ? [{ ...section, projects }] : [];
-  });
-}
-
-export function countProjects(sections: AccountSection[]): number {
-  return sections.reduce((total, section) => total + section.projects.length, 0);
+/**
+ * Whether the caller may create a workspace at all.
+ *
+ * Self-host with `KORTIX_RESTRICT_ACCOUNT_CREATION` refuses a new account to
+ * anyone but a platform admin (`account_creation_restricted`, 403). A caller
+ * who already owns an empty account can still fill it, because that create
+ * makes no account.
+ */
+export function canCreateWorkspace(input: {
+  restricted: boolean;
+  isPlatformAdmin: boolean;
+  reusableAccount: KortixAccount | null;
+}): boolean {
+  return !input.restricted || input.isPlatformAdmin || input.reusableAccount !== null;
 }
 
 /**
@@ -175,42 +163,39 @@ export function inviteLandingPath(landing: AccountInviteLanding): string {
 }
 
 /**
- * `/projects/start` — open a project directly, or show the selector.
+ * `/projects/start` — open a workspace directly, or show the chooser.
  *
- * The selector is skipped only when there is exactly one obvious answer:
- *  - the project the browser last had open still exists, or
- *  - the user has exactly one project in total.
- * A pending invite always shows the selector, so an invite is never skipped
- * past on the way into a project.
+ * The chooser is skipped only when there is exactly one obvious answer:
+ *  - the workspace the browser last had open still exists, or
+ *  - the user has exactly one workspace.
+ * A pending invite always shows the chooser, so an invite is never skipped
+ * past on the way into a workspace.
  *
- * `requestedAccountId` (`/projects/start?account=<id>`, after an account
- * switch or an invite accept) bounds both answers to that account, and wins
- * over a pending invite: the user just chose where to go (KRTX-1731).
+ * `requestedAccountId` (`/projects/start?account=<id>`, after an invite
+ * accept) bounds both answers to that account, and wins over a pending
+ * invite: the user just chose where to go (KRTX-1731).
  */
 export type DoorDecision =
   | { kind: 'open'; projectId: string; accountId: string }
-  | { kind: 'select'; accountId?: string };
+  | { kind: 'select' };
 
 export function decideDoor(input: {
-  sections: AccountSection[];
+  workspaces: WorkspaceRow[];
   inviteCount: number;
   rememberedProjectId: string | null;
   requestedAccountId?: string | null;
 }): DoorDecision {
   const requested = input.requestedAccountId ?? null;
-  const select: DoorDecision = requested ? { kind: 'select', accountId: requested } : { kind: 'select' };
-  if (input.inviteCount > 0 && !requested) return select;
-  const all = input.sections
-    .flatMap((section) => section.projects)
-    .filter((project) => !requested || project.account_id === requested);
+  if (input.inviteCount > 0 && !requested) return { kind: 'select' };
+  const all = input.workspaces.filter((row) => !requested || row.accountId === requested);
   if (input.rememberedProjectId) {
-    const remembered = all.find((project) => project.project_id === input.rememberedProjectId);
+    const remembered = all.find((row) => row.workspaceId === input.rememberedProjectId);
     if (remembered) {
-      return { kind: 'open', projectId: remembered.project_id, accountId: remembered.account_id };
+      return { kind: 'open', projectId: remembered.workspaceId, accountId: remembered.accountId };
     }
   }
   if (all.length === 1) {
-    return { kind: 'open', projectId: all[0].project_id, accountId: all[0].account_id };
+    return { kind: 'open', projectId: all[0].workspaceId, accountId: all[0].accountId };
   }
-  return select;
+  return { kind: 'select' };
 }

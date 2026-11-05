@@ -25852,5 +25852,84 @@
     "projectDefault": "Projektstandard · jede Anfrage",
     "kortixPicks": "Kortix wählt",
     "useMyOwn": "Eigene nutzen"
+  },
+  "workspaces": {
+    "chooser": {
+      "createTitle": "Workspace erstellen",
+      "createBody": "In einem Workspace arbeitet dein Unternehmen mit Kortix: Menschen, Agents und alles, was sie erstellen.",
+      "createAction": "Workspace erstellen",
+      "invitedHint": "Eingeladen? Öffne den Einladungslink aus deiner E-Mail oder bitte einen Admin, {email} einzuladen.",
+      "restrictedTitle": "Noch kein Workspace",
+      "restrictedBody": "Bitte einen Admin, {email} einzuladen.",
+      "listTitle": "Workspace auswählen",
+      "listBody": "Öffne einen Workspace oder erstelle einen neuen.",
+      "invitesTitle": "Du wurdest eingeladen",
+      "invitesBody": "Tritt einem Workspace bei oder erstelle deinen eigenen.",
+      "workspacesHeading": "Workspaces",
+      "invitations": "Einladungen",
+      "sentTo": "Gesendet an {email}",
+      "invitedBy": "Eingeladen von {email}",
+      "join": "Beitreten",
+      "joinError": "Beitritt zum Workspace fehlgeschlagen. Versuche es erneut.",
+      "unnamedWorkspace": "Workspace",
+      "search": "Workspace suchen",
+      "noMatches": "Kein Workspace passt zu „{query}“.",
+      "role": {
+        "owner": "Inhaber",
+        "admin": "Admin",
+        "member": "Mitglied"
+      },
+      "loadErrorTitle": "Deine Workspaces konnten nicht geladen werden",
+      "loadErrorBody": "Prüfe deine Verbindung und versuche es erneut.",
+      "partialError": "Nicht alle Workspaces konnten geladen werden.",
+      "retry": "Erneut versuchen"
+    },
+    "switcher": {
+      "switch": "Workspace wechseln",
+      "find": "Workspace suchen…",
+      "noMatches": "Keine passenden Workspaces",
+      "create": "Workspace erstellen",
+      "settings": "Workspace-Einstellungen",
+      "loadError": "Nicht alle Workspaces konnten geladen werden.",
+      "retry": "Erneut versuchen",
+      "heading": "Workspaces"
+    },
+    "create": {
+      "title": "Workspace erstellen",
+      "description": "In einem Workspace arbeitet dein Unternehmen mit Kortix: Menschen, Agents und alles, was sie erstellen.",
+      "submit": "Workspace erstellen",
+      "restricted": "Dieser Server erstellt Workspaces nur für eingeladene Personen. Bitte einen Admin, {email} einzuladen.",
+      "limitReached": "Das Workspace-Limit deines Plans ist erreicht. Führe ein Upgrade durch, um einen weiteren zu erstellen."
+    },
+    "settings": {
+      "title": "Workspace-Einstellungen",
+      "groups": {
+        "workspace": "Workspace",
+        "library": "Bibliothek",
+        "people": "Personen",
+        "billing": "Abrechnung"
+      },
+      "sections": {
+        "general": "Allgemein",
+        "branding": "Branding",
+        "git": "Git-Repo",
+        "sandbox": "Sandbox-Vorlagen",
+        "featureFlags": "Feature-Flags",
+        "apiKeys": "API-Schlüssel",
+        "members": "Mitglieder",
+        "groups": "Gruppen",
+        "access": "Zugriff",
+        "roles": "Rollen",
+        "identity": "Identität",
+        "audit": "Audit-Log",
+        "help": "Hilfe",
+        "plan": "Plan",
+        "usage": "Nutzung"
+      },
+      "accessTitle": "Zugriff",
+      "accessDescription": "Wer diesen Workspace öffnen kann, und mit welcher Rolle.",
+      "securityTitle": "Sicherheit",
+      "githubTitle": "GitHub-Verbindungen"
+    }
   }
 }

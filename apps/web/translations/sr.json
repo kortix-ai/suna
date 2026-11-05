@@ -25852,5 +25852,84 @@
     "projectDefault": "Podrazumevano za projekat · svaki zahtev",
     "kortixPicks": "Kortix bira",
     "useMyOwn": "Koristi svoje"
+  },
+  "workspaces": {
+    "chooser": {
+      "createTitle": "Napravi radni prostor",
+      "createBody": "Radni prostor je mesto gde vaša kompanija radi sa Kortixom: ljudi, agenti i sve što naprave.",
+      "createAction": "Napravi radni prostor",
+      "invitedHint": "Pozvani ste? Otvorite link za poziv iz e-pošte ili zamolite administratora da pozove {email}.",
+      "restrictedTitle": "Još nema radnog prostora",
+      "restrictedBody": "Zamolite administratora da pozove {email}.",
+      "listTitle": "Izaberi radni prostor",
+      "listBody": "Otvorite radni prostor ili napravite novi.",
+      "invitesTitle": "Pozvani ste",
+      "invitesBody": "Pridružite se radnom prostoru ili napravite svoj.",
+      "workspacesHeading": "Radni prostori",
+      "invitations": "Pozivnice",
+      "sentTo": "Poslato na {email}",
+      "invitedBy": "Pozvao/la {email}",
+      "join": "Pridruži se",
+      "joinError": "Pridruživanje radnom prostoru nije uspelo. Pokušajte ponovo.",
+      "unnamedWorkspace": "Radni prostor",
+      "search": "Pronađi radni prostor",
+      "noMatches": "Nijedan radni prostor ne odgovara „{query}“.",
+      "role": {
+        "owner": "Vlasnik",
+        "admin": "Administrator",
+        "member": "Član"
+      },
+      "loadErrorTitle": "Nije moguće učitati vaše radne prostore",
+      "loadErrorBody": "Proverite vezu i pokušajte ponovo.",
+      "partialError": "Nije moguće učitati sve radne prostore.",
+      "retry": "Pokušaj ponovo"
+    },
+    "switcher": {
+      "switch": "Promeni radni prostor",
+      "find": "Pronađi radni prostor…",
+      "noMatches": "Nema odgovarajućih radnih prostora",
+      "create": "Napravi radni prostor",
+      "settings": "Podešavanja radnog prostora",
+      "loadError": "Nije moguće učitati sve radne prostore.",
+      "retry": "Pokušaj ponovo",
+      "heading": "Radni prostori"
+    },
+    "create": {
+      "title": "Napravi radni prostor",
+      "description": "Radni prostor je mesto gde vaša kompanija radi sa Kortixom: ljudi, agenti i sve što naprave.",
+      "submit": "Napravi radni prostor",
+      "restricted": "Ovaj server pravi radne prostore samo za pozvane osobe. Zamolite administratora da pozove {email}.",
+      "limitReached": "Dostignut je limit radnih prostora vašeg plana. Nadogradite plan da biste napravili još jedan."
+    },
+    "settings": {
+      "title": "Podešavanja radnog prostora",
+      "groups": {
+        "workspace": "Radni prostor",
+        "library": "Biblioteka",
+        "people": "Ljudi",
+        "billing": "Naplata"
+      },
+      "sections": {
+        "general": "Opšte",
+        "branding": "Brendiranje",
+        "git": "Git repozitorijum",
+        "sandbox": "Šabloni sandboksa",
+        "featureFlags": "Eksperimentalne funkcije",
+        "apiKeys": "API ključevi",
+        "members": "Članovi",
+        "groups": "Grupe",
+        "access": "Pristup",
+        "roles": "Uloge",
+        "identity": "Identitet",
+        "audit": "Dnevnik revizije",
+        "help": "Pomoć",
+        "plan": "Plan",
+        "usage": "Potrošnja"
+      },
+      "accessTitle": "Pristup",
+      "accessDescription": "Ko može da otvori ovaj radni prostor i sa kojom ulogom.",
+      "securityTitle": "Bezbednost",
+      "githubTitle": "GitHub veze"
+    }
   }
 }

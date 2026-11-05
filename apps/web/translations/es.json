@@ -25852,5 +25852,84 @@
     "projectDefault": "Predeterminado del proyecto · cada solicitud",
     "kortixPicks": "Kortix elige",
     "useMyOwn": "Usar los míos"
+  },
+  "workspaces": {
+    "chooser": {
+      "createTitle": "Crear un espacio de trabajo",
+      "createBody": "Un espacio de trabajo es donde tu empresa trabaja con Kortix: personas, agentes y todo lo que crean.",
+      "createAction": "Crear espacio de trabajo",
+      "invitedHint": "¿Te invitaron? Abre el enlace de invitación de tu correo o pide a un administrador que invite a {email}.",
+      "restrictedTitle": "Aún no tienes un espacio de trabajo",
+      "restrictedBody": "Pide a un administrador que invite a {email}.",
+      "listTitle": "Elige un espacio de trabajo",
+      "listBody": "Abre un espacio de trabajo o crea uno nuevo.",
+      "invitesTitle": "Te invitaron",
+      "invitesBody": "Únete a un espacio de trabajo o crea el tuyo.",
+      "workspacesHeading": "Espacios de trabajo",
+      "invitations": "Invitaciones",
+      "sentTo": "Enviada a {email}",
+      "invitedBy": "Invitación de {email}",
+      "join": "Unirse",
+      "joinError": "No se pudo unir al espacio de trabajo. Inténtalo de nuevo.",
+      "unnamedWorkspace": "Espacio de trabajo",
+      "search": "Buscar un espacio de trabajo",
+      "noMatches": "Ningún espacio de trabajo coincide con «{query}».",
+      "role": {
+        "owner": "Propietario",
+        "admin": "Administrador",
+        "member": "Miembro"
+      },
+      "loadErrorTitle": "No se pudieron cargar tus espacios de trabajo",
+      "loadErrorBody": "Comprueba tu conexión e inténtalo de nuevo.",
+      "partialError": "No se pudieron cargar todos los espacios de trabajo.",
+      "retry": "Reintentar"
+    },
+    "switcher": {
+      "switch": "Cambiar de espacio de trabajo",
+      "find": "Buscar un espacio de trabajo…",
+      "noMatches": "No hay espacios de trabajo que coincidan",
+      "create": "Crear espacio de trabajo",
+      "settings": "Configuración del espacio de trabajo",
+      "loadError": "No se pudieron cargar todos los espacios de trabajo.",
+      "retry": "Reintentar",
+      "heading": "Espacios de trabajo"
+    },
+    "create": {
+      "title": "Crear un espacio de trabajo",
+      "description": "Un espacio de trabajo es donde tu empresa trabaja con Kortix: personas, agentes y todo lo que crean.",
+      "submit": "Crear espacio de trabajo",
+      "restricted": "Este servidor solo crea espacios de trabajo para personas invitadas. Pide a un administrador que invite a {email}.",
+      "limitReached": "Alcanzaste el límite de espacios de trabajo de tu plan. Mejora tu plan para crear otro."
+    },
+    "settings": {
+      "title": "Configuración del espacio de trabajo",
+      "groups": {
+        "workspace": "Espacio de trabajo",
+        "library": "Biblioteca",
+        "people": "Personas",
+        "billing": "Facturación"
+      },
+      "sections": {
+        "general": "General",
+        "branding": "Marca",
+        "git": "Repositorio Git",
+        "sandbox": "Plantillas de sandbox",
+        "featureFlags": "Funciones experimentales",
+        "apiKeys": "Claves de API",
+        "members": "Miembros",
+        "groups": "Grupos",
+        "access": "Acceso",
+        "roles": "Roles",
+        "identity": "Identidad",
+        "audit": "Registro de auditoría",
+        "help": "Ayuda",
+        "plan": "Plan",
+        "usage": "Uso"
+      },
+      "accessTitle": "Acceso",
+      "accessDescription": "Quién puede abrir este espacio de trabajo y con qué rol.",
+      "securityTitle": "Seguridad",
+      "githubTitle": "Conexiones de GitHub"
+    }
   }
 }

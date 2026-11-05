@@ -25852,5 +25852,84 @@
     "projectDefault": "项目默认 · 所有请求",
     "kortixPicks": "Kortix 选择",
     "useMyOwn": "使用我的"
+  },
+  "workspaces": {
+    "chooser": {
+      "createTitle": "创建工作区",
+      "createBody": "工作区是你的公司使用 Kortix 工作的地方：成员、智能体以及他们创建的一切。",
+      "createAction": "创建工作区",
+      "invitedHint": "收到邀请了吗？打开邮件中的邀请链接，或请管理员邀请 {email}。",
+      "restrictedTitle": "还没有工作区",
+      "restrictedBody": "请管理员邀请 {email}。",
+      "listTitle": "选择工作区",
+      "listBody": "打开一个工作区，或创建新的工作区。",
+      "invitesTitle": "你收到了邀请",
+      "invitesBody": "加入一个工作区，或创建你自己的工作区。",
+      "workspacesHeading": "工作区",
+      "invitations": "邀请",
+      "sentTo": "发送至 {email}",
+      "invitedBy": "由 {email} 邀请",
+      "join": "加入",
+      "joinError": "无法加入工作区。请重试。",
+      "unnamedWorkspace": "工作区",
+      "search": "查找工作区",
+      "noMatches": "没有与“{query}”匹配的工作区。",
+      "role": {
+        "owner": "所有者",
+        "admin": "管理员",
+        "member": "成员"
+      },
+      "loadErrorTitle": "无法加载你的工作区",
+      "loadErrorBody": "请检查网络连接后重试。",
+      "partialError": "无法加载全部工作区。",
+      "retry": "重试"
+    },
+    "switcher": {
+      "switch": "切换工作区",
+      "find": "查找工作区…",
+      "noMatches": "没有匹配的工作区",
+      "create": "创建工作区",
+      "settings": "工作区设置",
+      "loadError": "无法加载全部工作区。",
+      "retry": "重试",
+      "heading": "工作区"
+    },
+    "create": {
+      "title": "创建工作区",
+      "description": "工作区是你的公司使用 Kortix 工作的地方：成员、智能体以及他们创建的一切。",
+      "submit": "创建工作区",
+      "restricted": "此服务器仅为受邀人员创建工作区。请管理员邀请 {email}。",
+      "limitReached": "你的套餐已达到工作区上限。升级后即可再创建一个。"
+    },
+    "settings": {
+      "title": "工作区设置",
+      "groups": {
+        "workspace": "工作区",
+        "library": "资源库",
+        "people": "成员",
+        "billing": "账单"
+      },
+      "sections": {
+        "general": "常规",
+        "branding": "品牌",
+        "git": "Git 仓库",
+        "sandbox": "沙盒模板",
+        "featureFlags": "功能开关",
+        "apiKeys": "API 密钥",
+        "members": "成员",
+        "groups": "群组",
+        "access": "访问权限",
+        "roles": "角色",
+        "identity": "身份",
+        "audit": "审计日志",
+        "help": "帮助",
+        "plan": "套餐",
+        "usage": "用量"
+      },
+      "accessTitle": "访问权限",
+      "accessDescription": "谁可以打开此工作区，以及使用哪个角色。",
+      "securityTitle": "安全",
+      "githubTitle": "GitHub 连接"
+    }
   }
 }
