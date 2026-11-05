@@ -13,7 +13,7 @@
  *   code block.
  */
 import * as Clipboard from 'expo-clipboard';
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { Pressable, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 import { WebView } from 'react-native-webview';
 

@@ -51,7 +51,6 @@ import {
   showDisplayTitle,
   showHeaderIconType,
   showInlineToolbarKind,
-  showOpenTarget,
   showRowModel,
   showUnavailableLabel,
 } from '@/lib/session/tools/web-show';

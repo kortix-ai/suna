@@ -29,7 +29,10 @@ export function useFieldRefocus(ref: React.RefObject<TextInputInstance | null>, 
     let previous = AppState.currentState;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active' && previous !== 'active') timer = setTimeout(refocus, 300);
+      if (next === 'active' && previous !== 'active') {
+        if (timer !== undefined) clearTimeout(timer);
+        timer = setTimeout(refocus, 300);
+      }
       previous = next;
     });
     return () => {

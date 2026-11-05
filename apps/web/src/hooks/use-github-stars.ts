@@ -5,12 +5,8 @@ import { useEffect, useState } from 'react';
 /**
  * The live star count on `kortix-ai/CompanyOS`, read from `/api/github-stars`.
  *
- * ONE REQUEST PER PAGE LOAD. Two components mount this hook on every marketing
- * page — the navbar chip and the home page's `StarCount` — and each mount used
- * to fire its own `fetch`, so the page asked for the same number twice. The
- * in-flight promise is shared at module scope instead, which is per-tab and
- * lives as long as the client bundle: the second caller awaits the first
- * caller's request, and a client-side route change does not re-ask.
+ * The navbar reads this hook. The module-level in-flight promise shares one
+ * request across mounts and client-side route changes.
  *
  * NEVER SUBSTITUTE A NUMBER. This used to fall back to a hardcoded `20000` when
  * the route failed, so an outage printed an invented figure under the caption

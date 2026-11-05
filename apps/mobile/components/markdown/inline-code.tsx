@@ -22,7 +22,7 @@
  * Cost: the chip's text is its own selectable `Text`. Selecting or copying
  * the surrounding paragraph does not include the code.
  */
-import React, { createContext, useContext } from 'react';
+import { createContext, useContext } from 'react';
 import { Platform, Text as RNText, useWindowDimensions, View } from 'react-native';
 
 import { classifyInlineCode, splitInlineCode } from '@/lib/markdown/inline-code';

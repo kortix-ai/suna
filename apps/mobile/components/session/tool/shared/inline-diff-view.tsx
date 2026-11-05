@@ -15,7 +15,7 @@ import { useTone } from '@/lib/utils/tone';
  * frameless: wrap it in `ToolResultCard`, as web's edit and memory tools do.
  */
 
-import React, { memo, useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { Text as RNText, ScrollView, View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { normalizeLanguage } from '@/lib/code-theme';

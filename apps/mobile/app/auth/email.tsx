@@ -22,7 +22,7 @@
  */
 
 import * as React from 'react';
-import { BackHandler, View, type TextInput, type TextInputInstance } from 'react-native';
+import { BackHandler, View, type TextInputInstance } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';

@@ -12,7 +12,6 @@
  * (the query client's `focusManager` follows `AppState`).
  */
 
-import * as React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useQuery } from '@tanstack/react-query';

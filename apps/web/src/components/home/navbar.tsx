@@ -406,7 +406,9 @@ export function Navbar({ solidAtTop = false }: { solidAtTop?: boolean } = {}) {
         ? `/brandkit/Logo/Brandmark/SVG/Brandmark ${color}.svg`
         : `/brandkit/Logo/Logomark/SVG/Logomark ${color}.svg`;
     try {
-      const svg = await (await fetch(path)).text();
+      const response = await fetch(path);
+      if (!response.ok) throw new Error(`Brand SVG fetch failed: ${response.status}`);
+      const svg = await response.text();
       await navigator.clipboard.writeText(svg);
       successToast(tHardcodedUi.raw('i18nComplete.textc46a054cc5d2'));
     } catch {

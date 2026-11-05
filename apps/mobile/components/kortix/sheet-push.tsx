@@ -16,7 +16,6 @@
  * come back from a detail. `SheetBackButton` is the pushed view's leading
  * control: `SheetTitleRow leading={<SheetBackButton onPress={back} />}`.
  */
-import * as React from 'react';
 import { Easing, ReduceMotion, SlideInLeft, SlideInRight } from 'react-native-reanimated';
 
 import { Button } from '@/components/ui/button';
