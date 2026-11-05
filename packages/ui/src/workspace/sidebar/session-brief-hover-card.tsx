@@ -1,28 +1,32 @@
 'use client';
 
+import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
+import { useFeatureFlag, useSessionGoal } from '@kortix/sdk/react';
+import { ArrowsSplitIcon, GitDiffIcon, RobotIcon, TargetIcon } from '@phosphor-icons/react';
+import { formatDistanceToNowStrict } from 'date-fns';
+import { Slot } from 'radix-ui';
+import { useEffect, useLayoutEffect, useRef, type ReactElement, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useTranslations } from '../../i18n';
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
+import { goalHref, GoalStatusBadge } from '../../internal/goals/goal-meta';
+import { reviewHref } from '../../internal/lib/capability-tab-routes';
+import {
+  sessionRowHoverHandlers,
+  useSessionHoverStore,
+} from '../../internal/stores/session-hover-store';
+import { usePortalContainer } from '../../lib/portal-container';
+import { cn } from '../../lib/utils';
+import { floatingZ, useDialogDepth } from '../../lib/z-stack';
+import { LocalTime } from '../../primitives/local-time';
+import { FLOATING_PANEL_SURFACE, menuRow } from '../../primitives/menu-recipe';
+import { shortRelative } from '../../session/actions/project-session-list-helpers';
 import {
   SESSION_STATUS_TRANSLATION_KEY,
   type SessionDisplayStatus,
   type SessionSource,
 } from '../../session/actions/session-label';
-import { FLOATING_PANEL_SURFACE } from '../../primitives/menu-recipe';
-import { usePortalContainer } from '../../lib/portal-container';
-import { cn } from '../../lib/utils';
-import { floatingZ, useDialogDepth } from '../../lib/z-stack';
-import { LocalTime } from '../../primitives/local-time';
-import { menuRow } from '../../primitives/menu-recipe';
 import { CR_ID_PREFIX } from '../review/review-actions';
-import { reviewHref } from '../../internal/lib/capability-tab-routes';
-import { useTranslations } from '../../i18n';
-import { sessionRowHoverHandlers, useSessionHoverStore } from '../../internal/stores/session-hover-store';
-import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
-import { ArrowsSplitIcon, GitDiffIcon, RobotIcon } from '@phosphor-icons/react';
-import { formatDistanceToNowStrict } from 'date-fns';
-import { Slot } from 'radix-ui';
-import { useEffect, useLayoutEffect, useRef, type ReactElement, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
-import { shortRelative } from '../../session/actions/project-session-list-helpers';
 import { SessionLabelBadges } from '../sessions/session-label-badges';
 import { SOURCE_ICONS } from './session-source-icons';
 import { isReviewOverdue, SessionStatusMark } from './session-status-mark';
@@ -58,6 +62,7 @@ const CHANGE_REQUEST_STATUS_KEY: Record<
 };
 
 interface SessionBrief {
+  sessionId?: string;
   title: string;
   status: SessionDisplayStatus;
   createdAt: string;
@@ -161,6 +166,7 @@ function ChangeRequestRow({
  * title and the change titles share one left edge.
  */
 function SessionBriefContent({
+  sessionId,
   title,
   status,
   createdAt,
@@ -174,6 +180,10 @@ function SessionBriefContent({
   projectId,
   onDismiss,
 }: SessionBrief & SessionBriefInteractionProps & { onDismiss: () => void }) {
+  const gate = useFeatureFlag(projectId, 'goals');
+  const { goal } = useSessionGoal(gate.enabled ? projectId : null, sessionId);
+  const goalLink = goal ? goalHref(projectId, goal) : null;
+  const tGoals = useTranslations('goals');
   const SourceIcon = source.kind === 'chat' ? null : SOURCE_ICONS[source.kind];
   const statusLabel = useStatusLabel(status, waitingOn);
   const t = useTranslations('sidebar.sessionList.brief');
@@ -194,6 +204,27 @@ function SessionBriefContent({
           />
           <span>{statusLabel}</span>
         </div>
+
+        {goal &&
+          (() => {
+            const content = (
+              <>
+                <TargetIcon aria-hidden className="size-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">
+                  {tGoals('sessionChip')}: {goal.goal?.objective ?? goal.slug}
+                </span>
+                <GoalStatusBadge status={goal.goal?.status} />
+              </>
+            );
+            const className = 'text-muted-foreground flex min-w-0 items-center gap-2 text-xs';
+            return goalLink ? (
+              <HoverPrefetchLink href={goalLink} onClick={onDismiss} className={className}>
+                {content}
+              </HoverPrefetchLink>
+            ) : (
+              <div className={className}>{content}</div>
+            );
+          })()}
 
         {spawned && (
           <div className="text-muted-foreground flex items-center gap-2 text-xs">
@@ -228,7 +259,9 @@ function SessionBriefContent({
           </div>
         ) : null}
 
-        {labels?.length ? <SessionLabelBadges session={{ labels: [...labels] }} max={6} className="flex-wrap" /> : null}
+        {labels?.length ? (
+          <SessionLabelBadges session={{ labels: [...labels] }} max={6} className="flex-wrap" />
+        ) : null}
       </div>
 
       {changeRequests.length > 0 ? (
@@ -290,7 +323,10 @@ export function SessionBriefCardHost() {
       return;
     }
     const rect = anchor.getBoundingClientRect();
-    const top = Math.max(CARD_EDGE_PX, Math.min(rect.top, window.innerHeight - CARD_EDGE_PX - el.offsetHeight));
+    const top = Math.max(
+      CARD_EDGE_PX,
+      Math.min(rect.top, window.innerHeight - CARD_EDGE_PX - el.offsetHeight),
+    );
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     // A move between rows glides; the first open fades in, as the reminders card does.
     el.style.transition =
@@ -351,7 +387,10 @@ export function SessionBriefCardHost() {
       className={cn('fixed top-0 left-0 pl-3.5 starting:opacity-0', !visible && 'hidden')}
       style={{ zIndex: floatingZ(depth) }}
     >
-      <div ref={setSlot} className={cn(FLOATING_PANEL_SURFACE, 'w-72 overflow-hidden rounded-md shadow-xs')} />
+      <div
+        ref={setSlot}
+        className={cn(FLOATING_PANEL_SURFACE, 'w-72 overflow-hidden rounded-md shadow-xs')}
+      />
     </div>,
     container ?? document.body,
   );
@@ -403,10 +442,17 @@ export function SessionBriefHoverCard({
   sessionId,
   children,
   ...brief
-}: SessionBrief & SessionBriefInteractionProps & { sessionId: string; children: ReactElement }) {
+}: SessionBrief &
+  SessionBriefInteractionProps & {
+    sessionId: string;
+    children: ReactElement;
+  }) {
   const dismiss = useSessionHoverStore((state) => state.dismiss);
   return (
-    <SessionBriefCard id={sessionId} content={<SessionBriefContent {...brief} onDismiss={dismiss} />}>
+    <SessionBriefCard
+      id={sessionId}
+      content={<SessionBriefContent {...brief} sessionId={sessionId} onDismiss={dismiss} />}
+    >
       {children}
     </SessionBriefCard>
   );
