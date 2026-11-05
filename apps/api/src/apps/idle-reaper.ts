@@ -5,7 +5,7 @@ import { type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
-import { AppHostingProvider } from './hosting';
+import { type AppdStatus, AppHostingProvider } from './hosting';
 import { groupAlwaysOn, groupMinRunning, releaseConfigOf } from './release-config';
 
 /** Does keep-alive look after this release: an always-on group, or a group with `min_machines_running`? */
@@ -131,6 +131,43 @@ export interface AppKeepAliveResult {
   confirmed: number;
   /** Rows that said running while the provider said otherwise. */
   lost: number;
+  /** Running VMs whose supervisor (kortix-appd) was down and was started again. */
+  revived: number;
+}
+
+/** Supervisor restarts per runtime in any hour; past it the App stays down until a person or a deploy acts. */
+export const APPD_REVIVES_PER_HOUR = 3;
+const HOUR_MS = 60 * 60_000;
+// replica-local: only the scheduler leader runs keep-alive. A leader change
+// forgets the count, which allows at most one extra hour of restarts.
+const appdRevives = new Map<string, number[]>();
+
+/** Forget every revive (a DB suite that reuses runtime ids between tests). */
+export function resetAppdRevivesForTest(): void {
+  appdRevives.clear();
+}
+
+/** Record a revive of `runtimeId` at `now` unless the hour's budget is spent. Pure on the map. */
+export function takeAppdRevive(runtimeId: string, now: number, revives: Map<string, number[]> = appdRevives): boolean {
+  const recent = (revives.get(runtimeId) ?? []).filter((at) => now - at < HOUR_MS);
+  if (recent.length >= APPD_REVIVES_PER_HOUR) {
+    revives.set(runtimeId, recent);
+    return false;
+  }
+  revives.set(runtimeId, [...recent, now]);
+  return true;
+}
+
+/**
+ * Whether a running VM's supervisor needs a start. kortix-appd exits once its
+ * App used its restart budget, and an always-on App takes no wake on a
+ * request, so nothing else would start it again: unreachable means down. A
+ * `failed` status that names a reason (a missing volume) is not fixed by a
+ * restart and is left alone.
+ */
+export function supervisorNeedsStart(status: AppdStatus | null): boolean {
+  if (!status) return true;
+  return status.status === 'failed' && !status.reason;
 }
 
 /**
@@ -243,6 +280,7 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
   let refreshDeferred = 0;
   let confirmed = 0;
   let lost = 0;
+  let revived = 0;
 
   const keepInstanceRunning = async (app: AppRow, deployment: typeof appDeployments.$inferSelect, instance: RuntimeRow) => {
     let runtime = instance;
@@ -259,6 +297,20 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
             logger.warn('[apps] always-on lifecycle renewal failed', { appId: app.appId, error: String(error) }));
         }
         confirmed += 1;
+        // The VM runs; does its App? A crash-looping App ends its supervisor.
+        const appd = await hosting.status(provider, runtime.externalId, runtime.runtimeId).catch(() => null);
+        if (supervisorNeedsStart(appd)) {
+          if (!takeAppdRevive(runtime.runtimeId, now.getTime())) {
+            logger.warn('[apps] always-on App supervisor is down and its restart budget is spent', { appId: app.appId, runtimeId: runtime.runtimeId });
+            return;
+          }
+          // Only the supervisor: a VM that stopped meanwhile refuses it, and the
+          // next pass starts that VM through the wake gate.
+          await hosting.startSupervisor(provider, runtime.externalId).then(
+            () => { revived += 1; },
+            (error) => logger.warn('[apps] always-on App supervisor could not be started', { appId: app.appId, error: String(error) }),
+          );
+        }
         return;
       }
       // The row says running; the provider says it is not. Record the truth,
@@ -334,5 +386,6 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
     },
   );
   if (refreshDeferred > 0) logger.info('[apps] keep-alive deferred runtime refreshes', { refreshed, refreshDeferred });
-  return { started, refreshed, refreshDeferred, confirmed, lost };
+  if (revived > 0) logger.info('[apps] keep-alive started stopped supervisors', { revived });
+  return { started, refreshed, refreshDeferred, confirmed, lost, revived };
 }
