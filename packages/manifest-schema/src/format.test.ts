@@ -66,6 +66,17 @@ describe('parseManifestText on text that is not YAML', () => {
     expect(thrown).toMatchObject({ code: 'manifest_invalid', line: 4, column: 12 });
     expect((thrown as Error).message).toBe('Alias cannot be an empty string at line 4, column 12: YAML reads a bare `*` as an alias. Quote it: `tools: "*"`');
     expect(() => parseManifestText('agents:\n  a:\n    skills: [*]\n')).toThrow('Quote it: `skills: ["*"]`');
+    // The hint quotes the source line: no terminal control character, at most 120 characters (Strix, PR #11853).
+    let escaped: unknown;
+    try {
+      parseManifestText(`agents:\n  a:\n    tools: * # \u001b]0;pwned\u0007\u001b[2J${'x'.repeat(300)}\n`);
+    } catch (err) {
+      escaped = err;
+    }
+    const hint = (escaped as Error).message.split('Quote it: ')[1]!;
+    expect(hint).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+    expect(hint.length).toBeLessThanOrEqual(124);
+    expect(hint.startsWith('`tools: "*" #')).toBe(true);
   });
 
   test('isManifestSyntaxError is false for any other error', () => {

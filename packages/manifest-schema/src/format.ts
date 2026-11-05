@@ -58,8 +58,9 @@ function bareStarHint(lines: string[]): string | null {
   const source = caret > 0 ? lines[caret - 1]! : undefined;
   const column = caret > 0 ? lines[caret]!.indexOf('^') : -1;
   if (source === undefined || source[column] !== '*') return null;
-  const fixed = `${source.slice(0, column)}"*"${source.slice(column + 1)}`.trim();
-  return `: YAML reads a bare \`*\` as an alias. Quote it: \`${fixed}\``;
+  // The line is file content: no control character reaches a terminal, and a long line is cut.
+  const fixed = `${source.slice(0, column)}"*"${source.slice(column + 1)}`.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim();
+  return `: YAML reads a bare \`*\` as an alias. Quote it: \`${fixed.length > 120 ? `${fixed.slice(0, 119)}…` : fixed}\``;
 }
 
 /** The `path` of the issue `validateManifest` reports for text that is not YAML. */
