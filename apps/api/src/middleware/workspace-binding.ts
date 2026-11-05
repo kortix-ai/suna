@@ -85,7 +85,10 @@ export interface WorkspaceBindingRule {
   sessionBoundOnly?: boolean;
 }
 
-const PATH_PROJECT: WorkspaceBinding = { kind: 'path', param: 'projectId' };
+// The legacy `/v1/projects/*` names carry the same `:workspaceId` param as the
+// canonical names (scripts/codemods/workspace-route-params.ts renames every
+// route param). The two constants stay apart so a legacy family reads as one.
+const PATH_PROJECT: WorkspaceBinding = { kind: 'path', param: 'workspaceId' };
 const PATH_WORKSPACE: WorkspaceBinding = { kind: 'path', param: 'workspaceId' };
 const OWN_WORKSPACE: WorkspaceBinding = { kind: 'ambient', reach: 'credential' };
 const ACCOUNT_SURFACE: WorkspaceBinding = { kind: 'ambient', reach: 'account' };
@@ -166,10 +169,10 @@ export const WORKSPACE_BINDINGS: readonly WorkspaceBindingRule[] = [
   ]),
 
   // ── path: the workspace is in the URL ──────────────────────────────────
-  { pattern: '/v1/projects/:projectId', binding: PATH_PROJECT },
-  { pattern: '/v1/projects/:projectId/*', binding: PATH_PROJECT },
-  { pattern: '/v1/connectors/projects/:projectId', binding: PATH_PROJECT },
-  { pattern: '/v1/connectors/projects/:projectId/*', binding: PATH_PROJECT },
+  { pattern: '/v1/projects/:workspaceId', binding: PATH_PROJECT },
+  { pattern: '/v1/projects/:workspaceId/*', binding: PATH_PROJECT },
+  { pattern: '/v1/connectors/projects/:workspaceId', binding: PATH_PROJECT },
+  { pattern: '/v1/connectors/projects/:workspaceId/*', binding: PATH_PROJECT },
   { pattern: '/v1/workspaces/:workspaceId', binding: PATH_WORKSPACE },
   { pattern: '/v1/workspaces/:workspaceId/*', binding: PATH_WORKSPACE },
   { pattern: '/v1/connectors/workspaces/:workspaceId', binding: PATH_WORKSPACE },

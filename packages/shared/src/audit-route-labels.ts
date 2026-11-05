@@ -878,6 +878,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'DELETE /v1/projects/:workspaceId/spaces/:spaceId/members/:userId': { action: 'project.space.member.remove', title: 'Removed person from channel' },
   'POST /v1/projects/:workspaceId/spaces/:spaceId/join': { action: 'project.space.join', title: 'Joined channel' },
   'PUT /v1/projects/:workspaceId/spaces/:spaceId/tabs': { action: 'project.space.tabs.update', title: 'Changed space tabs' },
+  'GET /v1/projects/:workspaceId/spaces/:spaceId/proactive': { action: 'project.space.proactive.read', title: 'Viewed space Proactive settings' },
+  'PUT /v1/projects/:workspaceId/spaces/:spaceId/proactive': { action: 'project.space.proactive.update', title: 'Changed space Proactive settings' },
   'GET /v1/projects/:workspaceId/onboarding/channels': { action: 'project.space.onboarding.read', title: 'Read Channels onboarding state' },
   'POST /v1/projects/:workspaceId/onboarding/channels/marks': { action: 'project.space.onboarding.mark', title: 'Marked a Channels onboarding step' },
   'GET /v1/projects/:workspaceId/memory/layers/:layerKey': { action: 'project.memory.layer.read', title: 'Viewed memory' },

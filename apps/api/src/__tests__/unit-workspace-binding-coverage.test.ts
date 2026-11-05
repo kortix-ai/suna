@@ -12,7 +12,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   WORKSPACE_ADMIN_SUBTREES,
+  WORKSPACE_BINDINGS,
   bindingFor,
+  compileBindingPattern,
   workspaceFenceVerdict,
   type WorkspaceCredential,
 } from '../middleware/workspace-binding';
@@ -154,4 +156,23 @@ describe('the cases the old per-route allowlist decided keep their verdict', () 
       else expect(v).toMatchObject({ allowed: false, check: expected });
     });
   }
+});
+
+describe('path bindings read a param their pattern declares', () => {
+  // scripts/codemods/workspace-route-params.ts renames `:projectId` in every
+  // route literal, this table included. A path binding that names a param its
+  // pattern no longer has would refuse every workspace PAT as cross-project.
+  test('every path rule names one of its pattern params', () => {
+    const broken = WORKSPACE_BINDINGS.filter(
+      (rule) => rule.binding.kind === 'path' && !compileBindingPattern(rule.pattern).params.includes(rule.binding.param),
+    ).map((rule) => rule.pattern);
+    expect(broken).toEqual([]);
+  });
+
+  test('a workspace PAT reaches its own workspace under both names, and no other', async () => {
+    for (const prefix of ['/v1/projects', '/v1/workspaces', '/v1/connectors/projects', '/v1/connectors/workspaces']) {
+      expect(await workspaceFenceVerdict('GET', `${prefix}/${WS}/sessions`, projectPat, deps)).toEqual({ allowed: true });
+      expect((await workspaceFenceVerdict('GET', `${prefix}/${OTHER}/sessions`, projectPat, deps)).allowed).toBe(false);
+    }
+  });
 });
