@@ -92,6 +92,7 @@ const artifactContentLimiter = new TokenBucketRateLimiter('artifact_content');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
+const appEventLimiter = new TokenBucketRateLimiter('app_event');
 const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter(
   'project_webhook_manifest_refresh',
 );
@@ -362,6 +363,23 @@ export function createProjectWebhookRateLimitMiddleware() {
 }
 
 /**
+ * The per-App request limit on the routes an App calls with its own token
+ * (`POST …/apps/:appId/events`, `POST …/runs`, `DELETE …/runs/:runId`).
+ * An App in a tight loop would otherwise write up to 50 event-log rows per
+ * request without bound. Call it AFTER the token is verified: a limiter in
+ * front of auth would let anyone who knows an App id spend its budget and
+ * block its real events. Sets the rate headers; returns the wait when the App is over.
+ */
+export function appEventRateLimited(c: Context, projectId: string, appId: string): { retryAfterSeconds: number } | null {
+  const result = appEventLimiter.check(`${projectId}:${appId}`, {
+    limit: positiveInt((config as any).KORTIX_APP_EVENT_REQS_PER_MIN, 120),
+    windowMs: 60_000,
+  });
+  setHeaders(c, result);
+  return result.allowed ? null : { retryAfterSeconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000) };
+}
+
+/**
  * Guards the public `POST /v1/notifications/device-token/release`. Keyed on
  * client IP; a signed-out app calls it once per sign-out. The rejection path
  * writes no audit row, so a flood cannot become a database-write flood.
@@ -460,6 +478,7 @@ export function resetRateLimiters() {
   demoRequestLimiter.reset();
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();
+  appEventLimiter.reset();
   projectWebhookManifestRefreshLimiter.reset();
   projectWebhookRejectedRunLimiter.reset();
   projectSecretWriteLimiter.reset();
