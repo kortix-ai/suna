@@ -359,6 +359,17 @@ export class PlatinumHttpError extends Error {
   }
 }
 
+/**
+ * The wait Platinum asked for when it refused a call with 429 (its org write budget,
+ * `rate_limited`): the `retry-after=<seconds>` the request helper appends, capped at
+ * `maxMs`, or `fallbackMs` without one. Null when `err` is not a 429.
+ */
+export function platinumRateLimitWaitMs(err: unknown, { fallbackMs = 1_000, maxMs = 5_000 } = {}): number | null {
+  if (Number((err as { status?: unknown } | null)?.status) !== 429) return null;
+  const seconds = /retry-after=(\d+)/.exec(err instanceof Error ? err.message : '')?.[1];
+  return seconds === undefined ? fallbackMs : Math.min(Number(seconds) * 1_000, maxMs);
+}
+
 /** A timed-out exec may already have run. Never replay it automatically. */
 export class PlatinumExecOutcomeUnknownError extends PlatinumHttpError {
   constructor() {
