@@ -80,6 +80,8 @@ flow(
       if (typeof ws.workspace.mfa_required !== 'boolean' || typeof ws.workspace.member_count !== 'number') {
         throw new Error(`settings fields ${JSON.stringify(ws.workspace)}`);
       }
+      // The caller's own account role: the SDK's getWorkspace derives the role from it in one request.
+      if (ws.workspace.account_role !== 'owner') throw new Error(`account_role ${ws.workspace.account_role}`);
       const legacy = (await ctx.client.as(ctx.P.OWNER).get(`/v1/projects/${p.id}`)).status(200).json<any>();
       if ('workspace' in legacy || legacy.workspace_id !== p.id) throw new Error('legacy record shape changed');
     });

@@ -18,7 +18,7 @@ export function bindWorkspaces() {
 /**
  * The workspace-level members of `kortix.workspace(id)`: the workspace
  * itself, its people, billing, personal access tokens and IAM. Each call takes
- * the workspace id; the SDK resolves the account behind it.
+ * the workspace id and calls `/v1/workspaces/:workspaceId/*` directly.
  */
 export function bindWorkspaceCore(workspaceId: string) {
   return {

@@ -15,7 +15,7 @@ beforeEach(() => {
     calls.push({ url: path, method, body: typeof opts.body === 'string' ? JSON.parse(opts.body) : undefined });
     const json = (body: unknown) =>
       new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-    if (path === `/projects/${WS}`) {
+    if (path === `/workspaces/${WS}`) {
       return json({
         project_id: WS,
         account_id: ACC,
@@ -28,9 +28,9 @@ beforeEach(() => {
         last_opened_at: null,
         created_at: '',
         updated_at: '',
+        workspace: { workspace_id: WS, account_id: ACC, account_role: 'owner', member_count: 1 },
       });
     }
-    if (path === `/accounts/${ACC}`) return json({ account_id: ACC, name: 'ws', role: 'owner', member_count: 1, project_count: 1 });
     if (path === '/accounts') return json([]);
     return json([]);
   }) as unknown as typeof fetch;
@@ -63,23 +63,22 @@ describe('kortix.workspace(id)', () => {
     expect(handle.id).toBe(WS);
   });
 
-  test('members, billing, tokens and IAM resolve the workspace account', async () => {
+  test('members, billing, tokens and IAM call the workspace routes, one request each', async () => {
     const ws = kortix.workspace(WS);
     await ws.members.list();
     await ws.billing.state();
     await ws.tokens.list();
     await ws.iam.assignments.list();
-    const scoped = calls.filter((c) => c.url !== `/projects/${WS}`).map((c) => c.url);
-    expect(scoped).toEqual([
-      `/accounts/${ACC}/members`,
-      `/billing/account-state?account_id=${ACC}`,
-      `/accounts/tokens?account_id=${ACC}`,
-      `/accounts/${ACC}/iam/assignments`,
+    expect(calls.map((c) => c.url)).toEqual([
+      `/workspaces/${WS}/members`,
+      `/billing/account-state?account_id=${WS}`,
+      `/workspaces/${WS}/tokens`,
+      `/workspaces/${WS}/iam/assignments`,
     ]);
   });
 
   test('update() PATCHes the workspace', async () => {
     await kortix.workspace(WS).update({ name: 'New' }).catch(() => undefined);
-    expect(calls.at(-1)).toMatchObject({ method: 'PATCH', url: `/projects/${WS}`, body: { name: 'New' } });
+    expect(calls.at(-1)).toMatchObject({ method: 'PATCH', url: `/workspaces/${WS}`, body: { name: 'New' } });
   });
 });

@@ -63,19 +63,19 @@ Module: `projects-client/workspaces.ts`. Facade: `kortix.workspaces.{list,get,up
 `kortix.workspace(id)` (the whole `project(id)` handle plus `get`, `update`, `accountId`,
 `members.*`, `leave`, `billing.state`, `tokens.*`, `iam.*`). Hooks: `useWorkspaces`, `useWorkspace`.
 
-| Capability | Route today | SDK |
+| Capability | Route | SDK |
 |---|---|---|
-| list | `GET /v1/accounts`, then `GET /v1/projects?account_id=` per account | `listWorkspaces` ✅ |
-| get (role + settings) | `GET /v1/projects/:id`, then `GET /v1/accounts/:accountId` (skipped when the response already carries `role`) | `getWorkspace` ✅ |
-| update | `PATCH /v1/projects/:id` | `updateWorkspace` ✅ |
+| list | `GET /v1/accounts`, then `GET /v1/projects?account_id=` per account (`GET /v1/workspaces` lists one account's workspace) | `listWorkspaces` ✅ |
+| get (role + settings) | `GET /v1/workspaces/:workspaceId` (the project record plus its `workspace` settings block and `account_role`) | `getWorkspace` ✅ |
+| update | `PATCH /v1/workspaces/:workspaceId` | `updateWorkspace` ✅ |
 | create | `POST /v1/projects/provision{,-stream}` with `new_workspace: true` | `createWorkspace` ✅ |
-| members / invites / leave | `/v1/accounts/:accountId/{members,invites,leave}` | `*WorkspaceMember*`, `*WorkspaceInvite*`, `leaveWorkspace` ✅ |
-| personal access tokens | `/v1/accounts/tokens?account_id=` | `list/create/revokeWorkspaceToken` ✅ |
-| billing state | `GET /v1/billing/account-state?account_id=` | `getWorkspaceBillingState` ✅ |
-| IAM | `/v1/accounts/:accountId/iam/{assignments,roles,groups,effective}` | `*WorkspaceAssignment*`, `listWorkspaceRoles`, `listWorkspaceGroups`, `probeWorkspacePermission(s)` ✅ |
+| members / invites / leave | `/v1/workspaces/:workspaceId/{members,invites,leave}` | `*WorkspaceMember*`, `*WorkspaceInvite*`, `leaveWorkspace` ✅ |
+| personal access tokens | `/v1/workspaces/:workspaceId/tokens` | `list/create/revokeWorkspaceToken` ✅ |
+| billing state | `GET /v1/billing/account-state?account_id=<workspaceId>` (the billing routes accept either id) | `getWorkspaceBillingState` ✅ |
+| IAM | `/v1/workspaces/:workspaceId/iam/{assignments,roles,groups,members/:userId/effective:batch}` | `*WorkspaceAssignment*`, `listWorkspaceRoles`, `listWorkspaceGroups`, `probeWorkspacePermission(s)` ✅ |
 
-Each workspace-scoped call resolves the account with `GET /v1/projects/:id` first. When the API
-serves `/v1/workspaces/:workspaceId/*`, only the paths change; the signatures and response types stay.
+Each workspace-scoped call is one request keyed by the workspace id; none resolves the account first.
+The older `/v1/projects/*` and `/v1/accounts/*` routes stay permanently, and the older functions keep calling them.
 Every `Project*`/`Account*` name stays permanently; exact equivalents carry `@deprecated`.
 "Workspace files" (section 10) is the sandbox's `/workspace` directory, not this entity.
 

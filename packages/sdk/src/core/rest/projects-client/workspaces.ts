@@ -15,10 +15,10 @@
 // mean the session sandbox's `/workspace` directory. `CaptureWorkspace` is a
 // Kortix Capture tenant. Neither is a Kortix workspace.
 //
-// Routes: these functions call `/projects/:id` and `/accounts/:accountId/*`
-// today and resolve the workspace's account themselves. When the API serves
-// `/v1/workspaces/:workspaceId/*`, only the paths below change; every
-// signature and response type stays.
+// Routes: every function here calls the canonical `/v1/workspaces/:workspaceId/*`
+// name with the workspace id; none resolves the account first. The API serves
+// the older `/v1/projects/*` and `/v1/accounts/*` names permanently, and the
+// older `Project*` / `Account*` functions keep calling them.
 
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import {
@@ -30,46 +30,17 @@ import {
   type InviteProjectGrant,
   type KortixAccount,
   type ResendInviteResult,
-  cancelAccountInvite,
-  inviteAccountMember,
-  leaveAccount,
-  listAccountInvites,
-  listAccountMembers,
   listAccounts,
-  removeAccountMember,
-  resendAccountInvite,
-  updateAccountMemberRole,
 } from './accounts';
-import {
-  type AssignmentInput,
-  type ListAssignmentsFilter,
-  createAssignment,
-  listAssignments,
-  revokeAssignment,
-} from './assignments';
+import type { AssignmentInput, ListAssignmentsFilter, RoleAssignment } from './assignments';
+import { assignmentBody, assignmentQuery } from './assignments-at';
 import { type GetAccountStateOptions, getAccountState } from './billing';
-import { listGroups } from './iam-groups';
-import {
-  type PermissionProbeInput,
-  probeEffectivePermission,
-  probeEffectivePermissions,
-} from './iam-probe';
-import { listRoles } from './iam-roles';
-import {
-  type KortixProject,
-  type ProjectInput,
-  getProject,
-  listProjectsForAccount,
-  updateProject,
-} from './projects';
-import type { AccountRole, ProjectRole } from './shared';
-import {
-  type CreateAccountTokenInput,
-  type ListAccountTokensOptions,
-  createAccountToken,
-  listAccountTokens,
-  revokeAccountToken,
-} from './tokens';
+import { iamGet, iamUnwrap } from './iam-shared';
+import type { PermissionProbeInput, PermissionProbeResult } from './iam-probe';
+import type { AccountGroup, IamRole } from './iam-types';
+import { type KortixProject, type ProjectInput, listProjectsForAccount } from './projects';
+import { type AccountRole, type ProjectRole, unwrap } from './shared';
+import type { AccountToken, CreateAccountTokenInput, CreatedAccountToken, ListAccountTokensOptions } from './tokens';
 
 /**
  * The caller's role in a workspace. `owner` and `admin` administer it
@@ -259,18 +230,32 @@ function settingsFromAccount(detail: AccountDetail): WorkspaceSettings & { role:
   return settings;
 }
 
+/** The `workspace` block `GET /v1/workspaces/:id` adds to the project record. */
+interface ServedWorkspaceBlock extends WorkspaceSettings {
+  workspace_id?: string;
+  account_id?: string;
+  /** The caller's account role; null when the caller holds project grants only. */
+  account_role?: string | null;
+}
+
+type ServedWorkspace = KortixProject & Partial<Workspace> & { workspace?: ServedWorkspaceBlock | null };
+
 /**
- * One workspace with the caller's role and the workspace settings.
- *
- * Today this is `GET /projects/:id` and then `GET /accounts/:accountId`. A
- * caller who may open the workspace but is not a member of its account still
- * gets the workspace, without the settings. Rejects with the project read's
- * `ApiError` (404: no such workspace, or no access).
+ * One workspace with the caller's role and the workspace settings: one
+ * `GET /v1/workspaces/:id`. A caller who may open the workspace but is not a
+ * member of its account gets the workspace with role `manager` or `member`.
+ * Rejects with the API's `ApiError` (404: no such workspace, or no access).
  */
 export async function getWorkspace(workspaceId: string, options?: ApiClientOptions): Promise<Workspace> {
-  const project = await getProject(workspaceId, options);
-  const served = project as KortixProject & Partial<Workspace>;
-  if (served.role !== undefined) return workspaceFromProject(project) as Workspace;
+  const served = unwrap(await backendApi.get<ServedWorkspace>(`/workspaces/${workspaceId}`, options));
+  const { workspace: block, ...project } = served;
+  if (project.role !== undefined) return workspaceFromProject(project) as Workspace;
+  if (block) {
+    const { account_role: accountRole, workspace_id: _id, account_id: _account, ...settings } = block;
+    return { ...workspaceFromProject(project, accountRole ? { account_role: accountRole } : null), ...settings };
+  }
+  // No settings block (the workspace row is not readable as a workspace):
+  // read the account the older way, quietly.
   let settings: (WorkspaceSettings & { role: AccountRole }) | null = null;
   try {
     settings = settingsFromAccount(await getAccountQuietly(project.account_id));
@@ -301,7 +286,7 @@ export async function updateWorkspace(
   workspaceId: string,
   input: WorkspaceUpdateInput,
 ): Promise<WorkspaceSummary> {
-  return workspaceFromProject(await updateProject(workspaceId, input));
+  return workspaceFromProject(unwrap(await backendApi.patch<KortixProject>(`/workspaces/${workspaceId}`, input)));
 }
 
 /**
@@ -310,14 +295,14 @@ export async function updateWorkspace(
  * function takes the workspace id.
  */
 export async function resolveWorkspaceAccountId(workspaceId: string): Promise<string> {
-  return (await getProject(workspaceId)).account_id;
+  return unwrap(await backendApi.get<KortixProject>(`/workspaces/${workspaceId}`)).account_id;
 }
 
 // ── Members and invites ─────────────────────────────────────────────────────
 
 /** Everyone in the workspace, with their role, groups and direct grants. */
 export async function listWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
-  return listAccountMembers(await resolveWorkspaceAccountId(workspaceId));
+  return unwrap(await backendApi.get<AccountMember[]>(`/workspaces/${workspaceId}/members`));
 }
 
 /** Invite a person by email. 409 when they are already a member. */
@@ -325,7 +310,12 @@ export async function inviteWorkspaceMember(
   workspaceId: string,
   input: InviteWorkspaceMemberInput,
 ): Promise<InviteMemberResult> {
-  return inviteAccountMember(await resolveWorkspaceAccountId(workspaceId), input);
+  return unwrap(
+    await backendApi.post<InviteMemberResult>(`/workspaces/${workspaceId}/members`, input, {
+      // 409 (already a member) is an expected business error; the page shows it inline.
+      showErrors: false,
+    }),
+  );
 }
 
 export async function updateWorkspaceMemberRole(
@@ -333,43 +323,55 @@ export async function updateWorkspaceMemberRole(
   userId: string,
   role: AccountRole,
 ): Promise<WorkspaceMember> {
-  return updateAccountMemberRole(await resolveWorkspaceAccountId(workspaceId), userId, role);
+  return unwrap(
+    await backendApi.patch<AccountMember>(`/workspaces/${workspaceId}/members/${userId}`, { role }),
+  );
 }
 
 export async function removeWorkspaceMember(workspaceId: string, userId: string) {
-  return removeAccountMember(await resolveWorkspaceAccountId(workspaceId), userId);
+  return unwrap(await backendApi.delete<{ ok: boolean }>(`/workspaces/${workspaceId}/members/${userId}`));
 }
 
 /** The caller leaves the workspace. */
 export async function leaveWorkspace(workspaceId: string) {
-  return leaveAccount(await resolveWorkspaceAccountId(workspaceId));
+  return unwrap(await backendApi.post<{ ok: boolean }>(`/workspaces/${workspaceId}/leave`, {}));
 }
 
 export async function listWorkspaceInvites(workspaceId: string): Promise<WorkspaceInvitation[]> {
-  return listAccountInvites(await resolveWorkspaceAccountId(workspaceId));
+  return unwrap(await backendApi.get<AccountInvitation[]>(`/workspaces/${workspaceId}/invites`));
 }
 
 export async function cancelWorkspaceInvite(workspaceId: string, inviteId: string) {
-  return cancelAccountInvite(await resolveWorkspaceAccountId(workspaceId), inviteId);
+  return unwrap(await backendApi.delete<{ ok: boolean }>(`/workspaces/${workspaceId}/invites/${inviteId}`));
 }
 
 export async function resendWorkspaceInvite(
   workspaceId: string,
   inviteId: string,
 ): Promise<ResendInviteResult> {
-  return resendAccountInvite(await resolveWorkspaceAccountId(workspaceId), inviteId);
+  return unwrap(
+    await backendApi.post<ResendInviteResult>(`/workspaces/${workspaceId}/invites/${inviteId}/resend`, {}),
+  );
 }
 
 // ── Personal access tokens ──────────────────────────────────────────────────
 
 /** The workspace's personal access tokens (`kortix_pat_…`). `mine` narrows to the caller's own. */
 export async function listWorkspaceTokens(workspaceId: string, options?: ListAccountTokensOptions) {
-  return listAccountTokens(await resolveWorkspaceAccountId(workspaceId), options);
+  const qs = options?.mine ? '?mine=true' : '';
+  return unwrap(await backendApi.get<AccountToken[]>(`/workspaces/${workspaceId}/tokens${qs}`));
 }
 
 /** Mint a personal access token for the workspace. `secret_key` is returned once. */
 export async function createWorkspaceToken(workspaceId: string, input: CreateWorkspaceTokenInput) {
-  return createAccountToken({ ...input, accountId: await resolveWorkspaceAccountId(workspaceId) });
+  const { expiresAt, projectId, name } = input;
+  return unwrap(
+    await backendApi.post<CreatedAccountToken>(`/workspaces/${workspaceId}/tokens`, {
+      name,
+      ...(expiresAt ? { expires_at: expiresAt } : {}),
+      ...(projectId ? { project_id: projectId } : {}),
+    }),
+  );
 }
 
 export async function revokeWorkspaceToken(
@@ -377,42 +379,60 @@ export async function revokeWorkspaceToken(
   tokenId: string,
   options?: { deleteRevoked?: boolean },
 ) {
-  return revokeAccountToken(tokenId, await resolveWorkspaceAccountId(workspaceId), options);
+  const qs = options?.deleteRevoked ? '?delete_revoked=true' : '';
+  return unwrap(
+    await backendApi.delete<{ ok: boolean; deleted?: boolean }>(
+      `/workspaces/${workspaceId}/tokens/${encodeURIComponent(tokenId)}${qs}`,
+    ),
+  );
 }
 
 // ── Billing ─────────────────────────────────────────────────────────────────
 
-/** The workspace's plan, credits and limits (`AccountState`). */
+/**
+ * The workspace's plan, credits and limits (`AccountState`). The billing
+ * routes take `?account_id=` and accept a workspace id there.
+ */
 export async function getWorkspaceBillingState(
   workspaceId: string,
   options?: Omit<GetAccountStateOptions, 'accountId'>,
 ) {
-  return getAccountState({ ...options, accountId: await resolveWorkspaceAccountId(workspaceId) });
+  return getAccountState({ ...options, accountId: workspaceId });
 }
 
 // ── Identity and access ─────────────────────────────────────────────────────
 
 /** The workspace's role assignments, optionally narrowed. */
 export async function listWorkspaceAssignments(workspaceId: string, filter?: ListAssignmentsFilter) {
-  return listAssignments(await resolveWorkspaceAccountId(workspaceId), filter);
+  return iamUnwrap(
+    await iamGet<{ assignments: RoleAssignment[] }>(
+      `/workspaces/${workspaceId}/iam/assignments${assignmentQuery(filter)}`,
+    ),
+  ).assignments;
 }
 
 export async function createWorkspaceAssignment(workspaceId: string, input: AssignmentInput) {
-  return createAssignment(await resolveWorkspaceAccountId(workspaceId), input);
+  return unwrap(
+    await backendApi.post<RoleAssignment>(`/workspaces/${workspaceId}/iam/assignments`, assignmentBody(input)),
+  );
 }
 
 export async function revokeWorkspaceAssignment(workspaceId: string, assignmentId: string) {
-  return revokeAssignment(await resolveWorkspaceAccountId(workspaceId), assignmentId);
+  return unwrap(
+    await backendApi.delete<{ revoked: boolean; assignment: RoleAssignment }>(
+      `/workspaces/${workspaceId}/iam/assignments/${assignmentId}`,
+    ),
+  ).assignment;
 }
 
 /** The workspace's built-in and custom roles. */
 export async function listWorkspaceRoles(workspaceId: string) {
-  return listRoles(await resolveWorkspaceAccountId(workspaceId));
+  return iamUnwrap(await iamGet<{ roles: IamRole[] }>(`/workspaces/${workspaceId}/iam/roles`)).roles;
 }
 
 /** The workspace's groups. */
 export async function listWorkspaceGroups(workspaceId: string) {
-  return listGroups(await resolveWorkspaceAccountId(workspaceId));
+  return iamUnwrap(await iamGet<{ groups: AccountGroup[] }>(`/workspaces/${workspaceId}/iam/groups`)).groups;
 }
 
 /** Ask the engine whether `userId` may do one thing in the workspace. */
@@ -420,8 +440,10 @@ export async function probeWorkspacePermission(
   workspaceId: string,
   userId: string,
   args: PermissionProbeInput,
-) {
-  return probeEffectivePermission(await resolveWorkspaceAccountId(workspaceId), userId, args);
+): Promise<PermissionProbeResult> {
+  const [result] = await probeWorkspacePermissions(workspaceId, userId, [args]);
+  if (!result) throw new Error('Unexpected empty response');
+  return result;
 }
 
 /** Batch form of {@link probeWorkspacePermission}: one request for N actions. */
@@ -431,5 +453,12 @@ export async function probeWorkspacePermissions(
   probes: PermissionProbeInput[],
   options?: { showErrors?: boolean },
 ) {
-  return probeEffectivePermissions(await resolveWorkspaceAccountId(workspaceId), userId, probes, options);
+  if (probes.length === 0) return [] as PermissionProbeResult[];
+  return iamUnwrap(
+    await backendApi.post<{ results: PermissionProbeResult[] }>(
+      `/workspaces/${workspaceId}/iam/members/${userId}/effective:batch`,
+      { probes },
+      { showErrors: options?.showErrors ?? true },
+    ),
+  ).results;
 }

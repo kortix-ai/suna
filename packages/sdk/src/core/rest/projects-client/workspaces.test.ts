@@ -21,6 +21,11 @@ import {
   updateWorkspace,
   updateWorkspaceMemberRole,
   removeWorkspaceMember,
+  cancelWorkspaceInvite,
+  resendWorkspaceInvite,
+  listWorkspaceRoles,
+  listWorkspaceGroups,
+  probeWorkspacePermissions,
   workspaceFromProject,
   workspaceRole,
 } from './workspaces';
@@ -212,32 +217,77 @@ describe('listWorkspaces', () => {
 });
 
 describe('getWorkspace', () => {
-  test('reads the project, then its account, and merges role and settings', async () => {
-    route('GET', new RegExp(`^/projects/${WS_A}$`), project(WS_A, ACC_A));
-    route('GET', new RegExp(`^/accounts/${ACC_A}$`), {
+  function settingsBlock(extra: Record<string, unknown> = {}) {
+    return {
+      workspace_id: WS_A,
       account_id: ACC_A,
-      name: 'acc',
+      split_pending: false,
       member_count: 3,
-      project_count: 1,
-      role: 'admin',
+      account_role: 'admin',
       mfa_required: true,
+      session_max_lifetime_minutes: null,
+      session_idle_timeout_minutes: null,
+      pat_max_lifetime_days: null,
+      pat_require_expiry: false,
+      pat_idle_revoke_days: null,
+      admins_see_all_sessions: false,
+      automations_paused_at: null,
+      setup_complete_at: '2026-01-02T00:00:00.000Z',
       branding: null,
-      created_at: '2026-01-01T00:00:00.000Z',
-      updated_at: '2026-01-01T00:00:00.000Z',
+      ...extra,
+    };
+  }
+
+  test('one GET /workspaces/:id: the workspace with its settings block and the caller role', async () => {
+    route('GET', new RegExp(`^/workspaces/${WS_A}$`), {
+      ...project(WS_A, ACC_A),
+      workspace_id: WS_A,
+      workspace: settingsBlock(),
     });
     const ws = await getWorkspace(WS_A);
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([`GET /workspaces/${WS_A}`]);
     expect(ws.workspace_id).toBe(WS_A);
     expect(ws.account_id).toBe(ACC_A);
     expect(ws.role).toBe('admin');
     expect(ws.mfa_required).toBe(true);
     expect(ws.member_count).toBe(3);
     expect(ws.branding).toBeNull();
+    expect(ws.split_pending).toBe(false);
+    expect(ws.setup_complete_at).toBe('2026-01-02T00:00:00.000Z');
+    expect((ws as unknown as Record<string, unknown>).workspace).toBeUndefined();
+    expect((ws as unknown as Record<string, unknown>).account_role).toBeUndefined();
   });
 
-  test('a member with a project grant but no account membership still gets the workspace', async () => {
+  test('a caller with a project grant and no account role is the project role', async () => {
+    route('GET', new RegExp(`^/workspaces/${WS_A}$`), {
+      ...project(WS_A, ACC_A, { effective_project_role: 'manager' }),
+      workspace: settingsBlock({ account_role: null }),
+    });
+    const ws = await getWorkspace(WS_A);
+    expect(ws.role).toBe('manager');
+  });
+
+  test('a response with no settings block falls back to the account read', async () => {
+    route('GET', new RegExp(`^/workspaces/${WS_A}$`), project(WS_A, ACC_A));
+    route('GET', new RegExp(`^/accounts/${ACC_A}$`), {
+      account_id: ACC_A,
+      name: 'acc',
+      member_count: 3,
+      project_count: 1,
+      role: 'owner',
+      mfa_required: false,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    });
+    const ws = await getWorkspace(WS_A);
+    expect(ws.role).toBe('owner');
+    expect(calls.map((c) => c.url)).toEqual([`/workspaces/${WS_A}`, `/accounts/${ACC_A}`]);
+  });
+
+  test('no settings block and no account membership: the workspace without settings', async () => {
     route(
       'GET',
-      new RegExp(`^/projects/${WS_A}$`),
+      new RegExp(`^/workspaces/${WS_A}$`),
       project(WS_A, ACC_A, { effective_project_role: 'member' }),
     );
     route('GET', new RegExp(`^/accounts/${ACC_A}$`), { error: 'forbidden' }, 403);
@@ -247,13 +297,13 @@ describe('getWorkspace', () => {
     expect(ws.mfa_required).toBeUndefined();
   });
 
-  test('a missing workspace rejects with the project 404', async () => {
-    route('GET', new RegExp(`^/projects/${WS_A}$`), { error: 'not found' }, 404);
+  test('a missing workspace rejects with the 404', async () => {
+    route('GET', new RegExp(`^/workspaces/${WS_A}$`), { error: 'not found' }, 404);
     await expect(getWorkspace(WS_A)).rejects.toMatchObject({ status: 404 });
   });
 
-  test('a canonical response that already names its role and settings needs no second read', async () => {
-    route('GET', new RegExp(`^/projects/${WS_A}$`), {
+  test('a response that already names its role needs no second read', async () => {
+    route('GET', new RegExp(`^/workspaces/${WS_A}$`), {
       ...project(WS_A, ACC_A),
       workspace_id: WS_A,
       role: 'owner',
@@ -261,84 +311,101 @@ describe('getWorkspace', () => {
     });
     const ws = await getWorkspace(WS_A);
     expect(ws.role).toBe('owner');
-    expect(calls.map((c) => c.url)).toEqual([`/projects/${WS_A}`]);
+    expect(calls.map((c) => c.url)).toEqual([`/workspaces/${WS_A}`]);
   });
 });
 
 describe('updateWorkspace', () => {
-  test('PATCHes the workspace and answers with a workspace', async () => {
-    route('PATCH', new RegExp(`^/projects/${WS_A}$`), project(WS_A, ACC_A, { name: 'Renamed' }));
+  test('PATCHes /workspaces/:id and answers with a workspace', async () => {
+    route('PATCH', new RegExp(`^/workspaces/${WS_A}$`), project(WS_A, ACC_A, { name: 'Renamed' }));
     const ws = await updateWorkspace(WS_A, { name: 'Renamed' });
-    expect(calls[0]).toMatchObject({ method: 'PATCH', url: `/projects/${WS_A}`, body: { name: 'Renamed' } });
+    expect(calls[0]).toMatchObject({ method: 'PATCH', url: `/workspaces/${WS_A}`, body: { name: 'Renamed' } });
     expect(ws.workspace_id).toBe(WS_A);
     expect(ws.name).toBe('Renamed');
   });
 });
 
-describe('workspace-scoped clients resolve the workspace account', () => {
-  beforeEach(() => {
-    route('GET', new RegExp(`^/projects/${WS_A}$`), project(WS_A, ACC_A));
-  });
-
+describe('workspace-scoped clients call /workspaces/:id with no account lookup', () => {
   test('resolveWorkspaceAccountId reads the workspace and returns its account', async () => {
+    route('GET', new RegExp(`^/workspaces/${WS_A}$`), project(WS_A, ACC_A));
     expect(await resolveWorkspaceAccountId(WS_A)).toBe(ACC_A);
+    expect(calls.map((c) => c.url)).toEqual([`/workspaces/${WS_A}`]);
   });
 
-  test('members', async () => {
-    route('GET', new RegExp(`^/accounts/${ACC_A}/members$`), []);
-    route('POST', new RegExp(`^/accounts/${ACC_A}/members$`), { status: 'added', user_id: 'u1' });
-    route('PATCH', new RegExp(`^/accounts/${ACC_A}/members/u1$`), { user_id: 'u1' });
-    route('DELETE', new RegExp(`^/accounts/${ACC_A}/members/u1$`), { ok: true });
-    route('GET', new RegExp(`^/accounts/${ACC_A}/invites$`), []);
-    route('POST', new RegExp(`^/accounts/${ACC_A}/leave$`), { ok: true });
+  test('members, invites and leave: one request each, keyed by the workspace id', async () => {
+    route('GET', new RegExp(`^/workspaces/${WS_A}/members$`), []);
+    route('POST', new RegExp(`^/workspaces/${WS_A}/members$`), { status: 'added', user_id: 'u1' });
+    route('PATCH', new RegExp(`^/workspaces/${WS_A}/members/u1$`), { user_id: 'u1' });
+    route('DELETE', new RegExp(`^/workspaces/${WS_A}/members/u1$`), { ok: true });
+    route('GET', new RegExp(`^/workspaces/${WS_A}/invites$`), []);
+    route('DELETE', new RegExp(`^/workspaces/${WS_A}/invites/i1$`), { ok: true });
+    route('POST', new RegExp(`^/workspaces/${WS_A}/invites/i1/resend$`), { ok: true });
+    route('POST', new RegExp(`^/workspaces/${WS_A}/leave$`), { ok: true });
 
     await listWorkspaceMembers(WS_A);
     await inviteWorkspaceMember(WS_A, { email: 'person@example.invalid', role: 'member' });
     await updateWorkspaceMemberRole(WS_A, 'u1', 'admin');
     await removeWorkspaceMember(WS_A, 'u1');
     await listWorkspaceInvites(WS_A);
+    await cancelWorkspaceInvite(WS_A, 'i1');
+    await resendWorkspaceInvite(WS_A, 'i1');
     await leaveWorkspace(WS_A);
 
-    const writes = calls.filter((c) => !c.url.startsWith('/projects/'));
-    expect(writes.map((c) => `${c.method} ${c.url}`)).toEqual([
-      `GET /accounts/${ACC_A}/members`,
-      `POST /accounts/${ACC_A}/members`,
-      `PATCH /accounts/${ACC_A}/members/u1`,
-      `DELETE /accounts/${ACC_A}/members/u1`,
-      `GET /accounts/${ACC_A}/invites`,
-      `POST /accounts/${ACC_A}/leave`,
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET /workspaces/${WS_A}/members`,
+      `POST /workspaces/${WS_A}/members`,
+      `PATCH /workspaces/${WS_A}/members/u1`,
+      `DELETE /workspaces/${WS_A}/members/u1`,
+      `GET /workspaces/${WS_A}/invites`,
+      `DELETE /workspaces/${WS_A}/invites/i1`,
+      `POST /workspaces/${WS_A}/invites/i1/resend`,
+      `POST /workspaces/${WS_A}/leave`,
     ]);
-    expect(writes[1].body).toEqual({ email: 'person@example.invalid', role: 'member' });
-    expect(writes[2].body).toEqual({ role: 'admin' });
+    expect(calls[1].body).toEqual({ email: 'person@example.invalid', role: 'member' });
+    expect(calls[2].body).toEqual({ role: 'admin' });
   });
 
-  test('tokens name the workspace account', async () => {
-    route('GET', /^\/accounts\/tokens\?/, []);
-    route('POST', /^\/accounts\/tokens$/, { token_id: 't1', secret_key: 'kortix_pat_x' });
-    route('DELETE', /^\/accounts\/tokens\/t1\?/, { ok: true });
+  test('tokens live under the workspace', async () => {
+    route('GET', new RegExp(`^/workspaces/${WS_A}/tokens(\\?|$)`), []);
+    route('POST', new RegExp(`^/workspaces/${WS_A}/tokens$`), { token_id: 't1', secret_key: 'kortix_pat_x' });
+    route('DELETE', new RegExp(`^/workspaces/${WS_A}/tokens/t1(\\?|$)`), { ok: true });
 
     await listWorkspaceTokens(WS_A, { mine: true });
-    await createWorkspaceToken(WS_A, { name: 'ci' });
+    await listWorkspaceTokens(WS_A);
+    await createWorkspaceToken(WS_A, { name: 'ci', expiresAt: '2027-01-01T00:00:00.000Z' });
     await revokeWorkspaceToken(WS_A, 't1');
+    await revokeWorkspaceToken(WS_A, 't1', { deleteRevoked: true });
 
-    const tokenCalls = calls.filter((c) => c.url.startsWith('/accounts/tokens'));
-    expect(tokenCalls.map((c) => `${c.method} ${c.url}`)).toEqual([
-      `GET /accounts/tokens?account_id=${ACC_A}&mine=true`,
-      'POST /accounts/tokens',
-      `DELETE /accounts/tokens/t1?account_id=${ACC_A}`,
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET /workspaces/${WS_A}/tokens?mine=true`,
+      `GET /workspaces/${WS_A}/tokens`,
+      `POST /workspaces/${WS_A}/tokens`,
+      `DELETE /workspaces/${WS_A}/tokens/t1`,
+      `DELETE /workspaces/${WS_A}/tokens/t1?delete_revoked=true`,
     ]);
-    expect(tokenCalls[1].body).toEqual({ name: 'ci', account_id: ACC_A });
+    expect(calls[2].body).toEqual({ name: 'ci', expires_at: '2027-01-01T00:00:00.000Z' });
   });
 
-  test('billing reads the workspace account state', async () => {
+  test('billing passes the workspace id as account_id (the API accepts either id)', async () => {
     route('GET', /^\/billing\/account-state\?/, { credits: {} });
     await getWorkspaceBillingState(WS_A);
-    expect(calls.at(-1)?.url).toBe(`/billing/account-state?account_id=${ACC_A}`);
+    expect(calls.map((c) => c.url)).toEqual([`/billing/account-state?account_id=${WS_A}`]);
   });
 
-  test('IAM assignments are the workspace account\'s', async () => {
-    route('GET', new RegExp(`^/accounts/${ACC_A}/iam/assignments`), { assignments: [] });
+  test('IAM: assignments, roles, groups and probes under /workspaces/:id/iam', async () => {
+    route('GET', new RegExp(`^/workspaces/${WS_A}/iam/assignments`), { assignments: [] });
+    route('GET', new RegExp(`^/workspaces/${WS_A}/iam/roles$`), { roles: [] });
+    route('GET', new RegExp(`^/workspaces/${WS_A}/iam/groups$`), { groups: [] });
+    route('POST', new RegExp(`^/workspaces/${WS_A}/iam/members/u1/effective:batch$`), { results: [] });
     expect(await listWorkspaceAssignments(WS_A)).toEqual([]);
-    expect(calls.at(-1)?.url).toBe(`/accounts/${ACC_A}/iam/assignments`);
+    expect(await listWorkspaceRoles(WS_A)).toEqual([]);
+    expect(await listWorkspaceGroups(WS_A)).toEqual([]);
+    expect(await probeWorkspacePermissions(WS_A, 'u1', [{ action: 'project.read' }])).toEqual([]);
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET /workspaces/${WS_A}/iam/assignments`,
+      `GET /workspaces/${WS_A}/iam/roles`,
+      `GET /workspaces/${WS_A}/iam/groups`,
+      `POST /workspaces/${WS_A}/iam/members/u1/effective:batch`,
+    ]);
   });
 });

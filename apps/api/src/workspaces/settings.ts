@@ -4,7 +4,7 @@
  * automations, setup state), read from `kortix.workspaces`.
  */
 import { effectiveBranding } from '../accounts/branding';
-import { countBillableAccountMembers } from '../iam/membership-read';
+import { accountMemberRoleRow, countBillableAccountMembers } from '../iam/membership-read';
 import { getWorkspace } from './store';
 
 export interface WorkspaceSettings {
@@ -13,6 +13,12 @@ export interface WorkspaceSettings {
   /** True while the workspace's legacy account still holds other projects. */
   split_pending: boolean;
   member_count: number;
+  /**
+   * The caller's role in the workspace's account (`owner`, `admin`, `member`),
+   * or null when the caller reaches the workspace through a project grant
+   * only. The SDK derives the workspace role from it and the project role.
+   */
+  account_role: string | null;
   mfa_required: boolean;
   session_max_lifetime_minutes: number | null;
   session_idle_timeout_minutes: number | null;
@@ -28,12 +34,16 @@ export interface WorkspaceSettings {
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 
 /** `null` when the id is not an active workspace. */
-export async function readWorkspaceSettings(workspaceId: string): Promise<WorkspaceSettings | null> {
+export async function readWorkspaceSettings(
+  workspaceId: string,
+  callerUserId?: string | null,
+): Promise<WorkspaceSettings | null> {
   const row = await getWorkspace(workspaceId);
   if (!row) return null;
-  const [members, branding] = await Promise.all([
+  const [members, branding, roleRows] = await Promise.all([
     countBillableAccountMembers(row.accountId),
     effectiveBranding(row.accountId, row.branding),
+    callerUserId ? accountMemberRoleRow(row.accountId, callerUserId) : Promise.resolve([]),
   ]);
   const countRows =
     (members as unknown as { rows?: Array<{ n: number }> }).rows ??
@@ -43,6 +53,7 @@ export async function readWorkspaceSettings(workspaceId: string): Promise<Worksp
     account_id: row.accountId,
     split_pending: row.splitPending,
     member_count: Number(countRows?.[0]?.n ?? 0),
+    account_role: roleRows[0]?.accountRole ?? null,
     mfa_required: row.mfaRequired ?? false,
     session_max_lifetime_minutes: row.sessionMaxLifetimeMinutes ?? null,
     session_idle_timeout_minutes: row.sessionIdleTimeoutMinutes ?? null,

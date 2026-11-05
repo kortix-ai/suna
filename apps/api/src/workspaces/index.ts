@@ -159,7 +159,8 @@ export function workspaceDetailSettings(): MiddlewareHandler {
     const body = (await c.res.clone().json()) as Record<string, unknown> | null;
     const workspaceId = typeof body?.project_id === 'string' ? body.project_id : null;
     if (!body || !workspaceId) return;
-    const settings = await readWorkspaceSettings(workspaceId);
+    const userId = c.get('userId') as string | undefined;
+    const settings = await readWorkspaceSettings(workspaceId, userId ?? null);
     if (!settings) return;
     const headers = new Headers(c.res.headers);
     headers.delete('content-length');

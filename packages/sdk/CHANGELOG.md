@@ -26,6 +26,12 @@ project id. New names:
   `workspaceQueryOptions`; key `qk.project.workspace(id)`.
 - Optional `workspace_id` on `KortixProject`, `ProjectSession`, `KortixAccount`,
   `AccountDetail`, `MyAccountInvite`.
+- Every `Workspace*` function calls the canonical `/v1/workspaces/:workspaceId/*` route with
+  the workspace id: one request per call, no account lookup first. `getWorkspace` reads the
+  `workspace` settings block and the caller's `account_role` from `GET /v1/workspaces/:id`.
+  `getWorkspaceBillingState` passes the workspace id as `account_id`. These functions need an
+  API that serves `/v1/workspaces` (this release); the older `Project*`/`Account*` functions
+  keep calling `/v1/projects` and `/v1/accounts`, which stay permanently.
 
 ### Deprecated (kept permanently)
 `updateProject`, `updateAccountName`, `listAccountMembers`, `inviteAccountMember`,
