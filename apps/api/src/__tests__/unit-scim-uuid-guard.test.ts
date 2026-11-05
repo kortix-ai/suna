@@ -40,6 +40,9 @@ const tables = [
   // scim/app.ts imports the iam membership/group read models (dev's directory
   // sync), and membership-read.ts reads the accounts view.
   'accounts',
+  // The SCIM chain resolves `/scim/v2/workspaces/:workspaceId` through the
+  // kortix.workspaces view (middleware/workspace-account.ts).
+  'workspaces',
 ] as const;
 const tableStubs = Object.fromEntries(tables.map((name) => [name, { __table: name }]));
 

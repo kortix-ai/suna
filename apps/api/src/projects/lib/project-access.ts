@@ -17,7 +17,7 @@ import { buildDenialError, denialReasonMessage } from '../../iam/denial-message'
 import { projectRoleForUser } from '../../iam/read-models';
 import { db } from '../../shared/db';
 import { IMPERSONATION_INVALID_CODE, impersonatedAccountFor } from '../../shared/impersonation';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { accountKeyForWorkspaceId, resolveAccountId } from '../../shared/resolve-account';
 import { isUuid } from '../../shared/validate';
 import { logger } from '../../lib/logger';
 import { setContextField } from '../../lib/request-context';
@@ -178,7 +178,12 @@ export async function resolveRequestedProjectAccount(userId: string, requested: 
   // here and write to the operator's account while the banner named the
   // customer's. Refuse instead.
   const impersonated = impersonatedAccountFor(userId);
-  if (impersonated && requested && requested !== impersonated) {
+  if (
+    impersonated &&
+    requested &&
+    requested !== impersonated &&
+    (await accountKeyForWorkspaceId(requested)) !== impersonated
+  ) {
     throw new HTTPException(403, {
       message: 'Impersonated requests cannot target another account',
       res: new Response(
@@ -192,7 +197,12 @@ export async function resolveRequestedProjectAccount(userId: string, requested: 
   }
   const accountId = impersonated ?? requested ?? await resolveAccountId(userId);
 
-  const membership = await getAccountMembership(userId, accountId);
+  let membership = await getAccountMembership(userId, accountId);
+  // `account_id` may name the workspace by its public id (`project_id`).
+  if (!membership && requested && !impersonated) {
+    const accountKey = await accountKeyForWorkspaceId(requested);
+    if (accountKey) membership = await getAccountMembership(userId, accountKey);
+  }
   if (!membership) {
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }

@@ -12,6 +12,7 @@
  * tool call runs through the real API routes in-process with that token, so
  * authorization is exactly the API's.
  */
+import { canonicalWorkspaceRoute, renameWorkspaceRouteParams } from '@kortix/shared/workspace-routes';
 import { Hono, type Context, type Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { mintWireMessageId } from '@kortix/sdk';
@@ -1097,8 +1098,15 @@ async function kortixCliTool(ctx: ToolContext, input: Record<string, unknown>): 
 async function describeApiTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {
   const { ops, doc } = await loadCatalog(ctx);
   const method = arg(input, 'method').toUpperCase();
-  const path = arg(input, 'path').replace(/:([A-Za-z_]+)/g, '{$1}');
-  const op = ops.find((o) => o.method === method && o.path === path);
+  const asked = arg(input, 'path');
+  // A legacy name (`/v1/projects/:projectId/secrets`) finds its canonical route
+  // (`/v1/workspaces/{workspaceId}/secrets`): search lists only canonical names.
+  const renamed = renameWorkspaceRouteParams(asked);
+  const candidates = [asked, renamed, canonicalWorkspaceRoute(renamed)]
+    .filter((p): p is string => typeof p === 'string')
+    .map((p) => p.replace(/:([A-Za-z_]+)/g, '{$1}'));
+  const op = ops.find((o) => o.method === method && candidates.includes(o.path));
+  const path = op?.path ?? candidates[0]!;
   if (!op) return text(`No route ${method} ${path}. Use search_api to find it.`, true);
   const responses = op.spec.responses ?? {};
   const success = responses['200'] ?? responses['201'] ?? responses['202'];
@@ -1176,7 +1184,7 @@ function instructions(): string {
     'Platform knowledge: read_skill lists the Kortix guides; read_skill name=kortix-system is the complete reference.',
     'Connectors (Gmail, Slack, GitHub, MCP servers, APIs a project connected): list_connectors shows what is connected and its accounts → search_connector_actions finds an action by intent → describe_connector_action reads its arguments → call_connector runs it as you (pass `reason` for a write whose args are only ids; a `pending_approval` result carries a link the human opens, then call again). A connector that is not connected: connect_connector returns the url the human opens. upload_connector_attachment stages a file for a call; search_connector_apps finds an app (every MCP server, API and Composio app), get_connector_app lists its ways to connect and their tools, and add_connector installs one.',
     'The kortix CLI itself: the `kortix` tool runs any CLI command as you, e.g. args ["secrets","ls","--json"] (discover with ["--help"] and ["<group>","--help"]; project_id and session_id set the context). Login, hosts, ship, tui and other machine-local commands are refused with the alternative. read_skill with project_id also lists the project\'s own skills.',
-    'Everything else the web app and the kortix CLI can do is the Kortix API: search_api finds a route, describe_api reads it, call_api runs it (project_id fills {projectId}).',
+    'Everything else the web app and the kortix CLI can do is the Kortix API: search_api finds a route, describe_api reads it, call_api runs it (project_id fills {workspaceId}).',
   ].join('\n');
 }
 

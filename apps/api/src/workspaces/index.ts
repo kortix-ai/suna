@@ -55,7 +55,8 @@ export interface AliasOptions {
 
 const CATCH_ALL = new Set(['/*', '*']);
 const openApiToRouting = (path: string) => path.replace(/\{([^}]+)\}/g, ':$1');
-const routingToOpenApi = (path: string) => path.replace(/:([A-Za-z0-9_]+)/g, '{$1}');
+// Only a whole segment is a param: `/policies:bulk-delete` is a custom verb, not `{bulk}`.
+const routingToOpenApi = (path: string) => path.replace(/(^|\/):([A-Za-z0-9_]+)/g, '$1{$2}');
 
 /** A new app holding the selected routes of `source`. Mount it with `app.route(prefix, …)`. */
 export function aliasApp(source: AnyApp, opts: AliasOptions): AnyApp {
@@ -74,13 +75,17 @@ export function aliasApp(source: AnyApp, opts: AliasOptions): AnyApp {
     if (opts.include(r.path, r.method)) add(r.method, rewrite(r.path), r.handler);
   }
 
-  const registry = (out as unknown as { openAPIRegistry: { definitions: RegistryDefinition[] } }).openAPIRegistry;
-  for (const def of (source as unknown as { openAPIRegistry: { definitions: RegistryDefinition[] } }).openAPIRegistry
-    .definitions) {
+  // `openAPIRegistry.definitions` is a getter that returns a copy: register
+  // through the registry's own methods. Schemas and components reach the
+  // parent through the source app's own mount.
+  const registry = (out as unknown as { openAPIRegistry: { registerPath(route: object): void } }).openAPIRegistry;
+  const sourceDefs = (source as unknown as { openAPIRegistry: { definitions: RegistryDefinition[] } }).openAPIRegistry
+    .definitions;
+  for (const def of sourceDefs) {
     if (def.type !== 'route' || !def.route) continue;
     const routing = openApiToRouting(def.route.path);
     if (!opts.include(routing, String(def.route.method ?? '').toUpperCase())) continue;
-    registry.definitions.push({ ...def, route: { ...def.route, path: routingToOpenApi(rewrite(routing)) } });
+    registry.registerPath({ ...def.route, path: routingToOpenApi(rewrite(routing)) });
   }
   return out;
 }
