@@ -202,6 +202,8 @@ export {
   projectAppsKey,
   appDeploymentsKey,
   appDeploymentKey,
+  useAppEvents,
+  appEventsKey,
 } from './use-project-apps';
 
 // The expected "no compaction model configured" configuration state thrown by
