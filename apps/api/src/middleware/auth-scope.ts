@@ -144,10 +144,10 @@ export async function enforceTokenProjectScope(
   // (`sessionFilesRefusal`, drives/routes.ts).
   if (path === '/v1/drives' || path.startsWith('/v1/drives/')) return;
 
-  // `POST /v1/feedback` — `kortix feedback` inside a session sandbox, whose only
-  // credential is this project+session-scoped PAT. Write-only and rate limited
-  // per user; the row records the token's own account (feedback/index.ts).
-  // Reading feedback stays denied.
+  // `POST /v1/feedback` — `kortix feedback`, the agent's way to report a Kortix
+  // bug from the session it hit it in. The handler writes one row for the
+  // token's own user and reads nothing back, and the route is rate limited per
+  // user. Without this branch the one caller it exists for got a 403.
   if (c.req.method === 'POST' && path === '/v1/feedback') return;
 
   const deny = (check: string, reason: string): never => {
