@@ -46,8 +46,11 @@ export function SubagentHoverCard({
   loadingMore?: boolean;
   children: ReactElement;
 }) {
+  const suppressFocusOpen = useRef(false);
+  const interactedOutside = useRef(false);
   const titleRef = useRef<HTMLElement>(null);
   const t = useTranslations('sidebar.sessionList');
+  const tContext = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
   const [open, setOpen] = useState(false);
   const [keyboard, setKeyboard] = useState(false);
   const close = () => {
@@ -61,8 +64,8 @@ export function SubagentHoverCard({
       <div className="text-muted-foreground flex items-center justify-between px-3.5 pt-2.5 pb-1 text-xs">
         <span>
           {[
-            subsessions.length > 0 && t('brief.subAgent'),
-            spawnedSessions.length > 0 && t('brief.spawned'),
+            subsessions.length > 0 && tContext('subAgentsLabel'),
+            spawnedSessions.length > 0 && tContext('spawnedLabel'),
           ]
             .filter(Boolean)
             .join(' · ')}
@@ -142,7 +145,7 @@ export function SubagentHoverCard({
       <HoverCard
         open={!keyboard && open}
         onOpenChange={(value) => {
-          if (!keyboard) setOpen(value);
+          if (!keyboard && (!value || !suppressFocusOpen.current)) setOpen(value);
         }}
         openDelay={300}
         closeDelay={100}
@@ -152,9 +155,16 @@ export function SubagentHoverCard({
             <Slot.Root
               ref={titleRef}
               aria-keyshortcuts="ArrowDown"
+              onPointerEnter={() => {
+                suppressFocusOpen.current = false;
+              }}
+              onBlur={() => {
+                suppressFocusOpen.current = false;
+              }}
               onKeyDown={(event) => {
                 if (event.key === 'ArrowDown') {
                   event.preventDefault();
+                  interactedOutside.current = false;
                   setKeyboard(true);
                   setOpen(true);
                 }
@@ -166,6 +176,9 @@ export function SubagentHoverCard({
         </PopoverAnchor>
         {keyboard ? (
           <PopoverContent
+            onInteractOutside={() => {
+              interactedOutside.current = true;
+            }}
             onOpenAutoFocus={(event) => {
               event.preventDefault();
               (event.currentTarget as HTMLElement)
@@ -174,7 +187,11 @@ export function SubagentHoverCard({
             }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
-              titleRef.current?.focus();
+              if (!interactedOutside.current) {
+                // Restoring focus must not schedule another hover card.
+                suppressFocusOpen.current = true;
+                titleRef.current?.focus();
+              }
             }}
             side="bottom"
             align="start"
