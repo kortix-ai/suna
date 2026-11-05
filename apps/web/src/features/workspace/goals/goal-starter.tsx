@@ -33,11 +33,14 @@ const ACCENT: Record<GoalTemplateAccent, string> = {
  * The goal composer and the role templates under it: the empty Goals page
  * and the New goal modal show the same thing. The composer is the project
  * home's chat input, so the agent picker is the same one; its agent owns the
- * goal. A template writes its opening ("Research these accounts: ") into the
- * composer, and the person names the subject: the goal is named from those
- * first words. While the text still opens with the template's opening, the
- * template's done criterion goes with the start, so the agent does not write one;
- * the goal page shows it under Done when.
+ * goal. A template writes a brief into the composer: a first line that names
+ * the goal ("Draft our investor update for [last month].") and lines with
+ * optional `[slots]` the person can fill in, then a line that tells the agent
+ * to work out any slot left from the project's tools and Files. The person
+ * must fill the first line's slot: the goal is named after that line. While
+ * the text still opens with the words before that slot, the template's done
+ * criterion goes with the start, so the agent does not write one; the goal
+ * page shows it under Done when.
  */
 export function GoalStarter({
   projectId,
@@ -80,8 +83,8 @@ export function GoalStarter({
       errorToast(t('startNoFiles'));
       throw new Error(t('startNoFiles'));
     }
-    const opening = pickedId ? t(`templates.${pickedId}.prompt`).trimEnd() : null;
-    if (opening && outcome === opening) {
+    const opening = pickedId ? templateOpening(t(`templates.${pickedId}.prompt`)) : null;
+    if (opening !== null && /\[[^\]]*\]/.test(outcome.split('\n')[0] ?? '')) {
       errorToast(t('startNeedsSubject'));
       throw new Error(t('startNeedsSubject'));
     }
@@ -91,7 +94,7 @@ export function GoalStarter({
     try {
       await start.mutateAsync({
         outcome,
-        criteria: criterion && opening && outcome.startsWith(opening) ? [criterion] : [],
+        criteria: criterion && opening !== null && outcome.startsWith(opening) ? [criterion] : [],
         agent,
       });
     } catch {
@@ -104,7 +107,7 @@ export function GoalStarter({
     if (start.isPending) return;
     setPickedId(template.id);
     setPrefill((previous) => ({
-      text: t(`templates.${template.id}.prompt`),
+      text: `${t(`templates.${template.id}.prompt`)}\n${t('templateFooter')}`,
       id: (previous?.id ?? 0) + 1,
     }));
   };
@@ -169,6 +172,13 @@ export function GoalStarter({
       </Tabs>
     </div>
   );
+}
+
+/** A template's first-line words before its first `[slot]`: a brief that still opens with them is that template. */
+function templateOpening(prompt: string): string {
+  const first = prompt.split('\n')[0] ?? '';
+  const slot = first.indexOf('[');
+  return (slot === -1 ? first : first.slice(0, slot)).trim();
 }
 
 /** One template: its glyph, name, what the agent does, then the first step → what proves it done. */
