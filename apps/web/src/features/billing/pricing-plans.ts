@@ -39,8 +39,8 @@ export const PRICING_PLANS: PricingPlan[] = [
     price: '$0',
     note: 'Start with real sandbox credits.',
     features: [
-      '500 credits / month, no card needed',
-      '1 workspace',
+      '500 credits / month on your first workspace',
+      'No card needed',
       'Bring your own API key for any premium model',
       'Connect your ChatGPT subscription',
     ],

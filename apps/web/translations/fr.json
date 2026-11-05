@@ -2681,8 +2681,8 @@
         "free": {
           "name": "Free",
           "note": "Démarrez avec de vrais crédits sandbox.",
-          "f1": "500 crédits / mois, sans carte",
-          "f2": "1 espace de travail",
+          "f1": "500 crédits / mois sur votre premier espace de travail",
+          "f2": "Aucune carte requise",
           "f3": "Apportez votre propre clé API pour n'importe quel modèle premium",
           "f4": "Connectez votre abonnement ChatGPT"
         },
