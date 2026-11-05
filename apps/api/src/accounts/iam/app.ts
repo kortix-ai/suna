@@ -16,9 +16,9 @@ export const iamRouter = makeOpenApiApp<AppEnv>();
 // ─── Reusable OpenAPI schemas ────────────────────────────────────────────────
 // Permissive shapes: these power the docs, not runtime validation of responses.
 
-export const AccountIdParam = z.object({ accountId: z.string() });
-export const GroupParams = z.object({ accountId: z.string(), groupId: z.string() });
-export const MemberParams = z.object({ accountId: z.string(), userId: z.string() });
+export const AccountIdParam = z.object({ workspaceId: z.string() });
+export const GroupParams = z.object({ workspaceId: z.string(), groupId: z.string() });
+export const MemberParams = z.object({ workspaceId: z.string(), userId: z.string() });
 
 export const GroupSchema = z
   .object({

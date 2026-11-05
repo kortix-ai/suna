@@ -63,6 +63,7 @@ import {
 import { SessionPromptDeliverySchema } from '@kortix/api-contract';
 import { WIRE_MESSAGE_ID, isWireIdAheadOf, mintWireMessageId } from '../wire-message-id';
 import { capturePersonEvent } from './product-events';
+import { workspaceIdParam } from '../../shared/route-params';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
 //
@@ -144,14 +145,14 @@ export function registerSessionPromptsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/prompts',
+      path: '/{workspaceId}/sessions/{sessionId}/prompts',
       tags: ['sessions'],
       summary: 'Send a prompt (message) to a session',
       description:
         'Send a message to a session. The prompt queues and delivers in order.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             client_message_id: z.string().openapi({ description: 'Caller-chosen id, 1-128 chars, unique per prompt. Reuse it to retry safely.' }),
             message_id: z.string().optional().openapi({ description: 'Wire message id (starts with msg_). Omit it and the server mints one and places it in order on delivery.' }),
@@ -171,7 +172,7 @@ export function registerSessionPromptsRoutes(): void {
     }),
     async (c) => {
       const receivedAtMs = Date.now();
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -509,12 +510,12 @@ export function registerSessionPromptsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/prompts',
+      path: '/{workspaceId}/sessions/{sessionId}/prompts',
       tags: ['sessions'],
       summary: 'List queued prompts of a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
       },
       responses: {
         200: json(SessionPromptListSchema, 'Pending prompts'),
@@ -522,7 +523,7 @@ export function registerSessionPromptsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -553,13 +554,13 @@ export function registerSessionPromptsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}',
+      path: '/{workspaceId}/sessions/{sessionId}/prompts/{promptId}',
       tags: ['sessions'],
       summary: 'Cancel a queued prompt',
       ...auth,
       request: {
         params: z.object({
-          projectId: z.string(),
+          workspaceId: z.string(),
           sessionId: z.string(),
           promptId: z.string(),
         }),
@@ -570,7 +571,7 @@ export function registerSessionPromptsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const promptId = c.req.param('promptId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -664,7 +665,7 @@ export function registerSessionPromptsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}',
+      path: '/{workspaceId}/sessions/{sessionId}/prompts/{promptId}',
       tags: ['sessions'],
       summary: 'Edit a queued prompt',
       description:
@@ -672,7 +673,7 @@ export function registerSessionPromptsRoutes(): void {
       ...auth,
       request: {
         params: z.object({
-          projectId: z.string(),
+          workspaceId: z.string(),
           sessionId: z.string(),
           promptId: z.string(),
         }),
@@ -687,7 +688,7 @@ export function registerSessionPromptsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const promptId = c.req.param('promptId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -755,13 +756,13 @@ export function registerSessionPromptsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}/retry',
+      path: '/{workspaceId}/sessions/{sessionId}/prompts/{promptId}/retry',
       tags: ['sessions'],
       summary: 'Retry a failed prompt',
       ...auth,
       request: {
         params: z.object({
-          projectId: z.string(),
+          workspaceId: z.string(),
           sessionId: z.string(),
           promptId: z.string(),
         }),
@@ -772,7 +773,7 @@ export function registerSessionPromptsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const promptId = c.req.param('promptId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -813,14 +814,14 @@ export function registerSessionPromptsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/prompts/hold',
+      path: '/{workspaceId}/sessions/{sessionId}/prompts/hold',
       tags: ['sessions'],
       summary: 'Hold or release the prompt queue of a session',
       description:
         'A hold is the Stop button: it also stops the running turn. Only the member who prompted that turn, the session owner or a project manager may hold while a turn runs; anyone else gets `403` with `code: "not_turn_prompter"`. With no running turn, anyone who may send may hold. Releasing is always open.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             held: z.boolean().openapi({ description: 'true holds the prompt queue; false releases it.' }),
           }) } }, required: true },
@@ -843,7 +844,7 @@ export function registerSessionPromptsRoutes(): void {
     // ahead of. A hold is released by an action (any new send, or "send now" on a
     // row), never by a timer.
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 

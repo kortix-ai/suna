@@ -50,6 +50,7 @@ import {
   ProviderTransitionError,
 } from '../provider-transition/provider-transition-service';
 import { capturePersonEvent } from './product-events';
+import { workspaceIdParam } from '../../shared/route-params';
 
 // PATCH /v1/projects/:projectId/onboarding
 // Persist whether the project's guided onboarding wizard has been completed
@@ -110,7 +111,7 @@ function pickOnboardingProfile(input: unknown): Record<string, string> | null {
 // validate the body — so the body schema stays permissive (AnyObject) and the
 // handler returns the precise 400/403/404.
 const patchFeatureFlagHandler = async (c: any) => {
-  const projectId = c.req.param('projectId');
+  const projectId = workspaceIdParam(c);
   // Strict body: malformed JSON is a client error, not an empty object —
   // readJsonObject() would swallow the parse failure and mis-report "unknown flag".
   let body: unknown;
@@ -173,12 +174,12 @@ export function registerProjectSettingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/onboarding',
+      path: '/{workspaceId}/onboarding',
       tags: ['projects'],
       summary: 'Update project onboarding state',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               completed: z.boolean().optional().openapi({ description: 'true marks onboarding complete; false clears it.' }),
               profile: z.record(z.string(), z.any()).optional().openapi({ description: 'Onboarding answers to merge.' }),
@@ -190,7 +191,7 @@ export function registerProjectSettingsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -247,14 +248,14 @@ export function registerProjectSettingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}',
+      path: '/{workspaceId}',
       tags: ['projects'],
       summary: 'Delete a project',
       description:
         'Permanent: there is no restore. Deletes the project, its Kortix-managed repository (a connected repository is never touched), its connectors and its tokens. Afterwards the project answers 404.',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(
@@ -270,7 +271,7 @@ export function registerProjectSettingsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // project.delete is the gate; the load above only proves membership.
@@ -340,12 +341,12 @@ export function registerProjectSettingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/transfer',
+      path: '/{workspaceId}/transfer',
       tags: ['projects'],
       summary: 'Transfer the project to another account',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: { 'application/json': { schema: z.object({ account_id: z.string().min(1) }) } },
         },
@@ -363,7 +364,7 @@ export function registerProjectSettingsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const body = await readJsonObject(c);
       const targetAccountId = typeof body.account_id === 'string' ? body.account_id : '';
       if (!isUuid(targetAccountId)) {
@@ -434,19 +435,19 @@ export function registerProjectSettingsRoutes(): void {
     },
   );
 
-  for (const path of ['/{projectId}/features', '/{projectId}/experimental'] as const) {
+  for (const path of ['/{workspaceId}/features', '/{workspaceId}/experimental'] as const) {
     projectsApp.openapi(
       createRoute({
         method: 'patch',
         path,
         tags: ['projects'],
         summary:
-          path === '/{projectId}/features'
+          path === '/{workspaceId}/features'
             ? 'Set or clear a per-project feature-flag override'
             : 'Set or clear a per-project feature-flag override (deprecated alias of /features)',
         ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: AnyObject } } },
         },
         responses: {
@@ -469,12 +470,12 @@ export function registerProjectSettingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/sandbox-provider',
+      path: '/{workspaceId}/sandbox-provider',
       tags: ['projects'],
       summary: 'Set or clear the per-project sandbox provider override',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: {
@@ -486,7 +487,7 @@ export function registerProjectSettingsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const body = await readJsonObject(c);
       const raw = body.provider ?? body.sandbox_provider;
       // Floor 'read'; project.settings.write is the gate below.
@@ -555,12 +556,12 @@ export function registerProjectSettingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sandbox-provider/transition',
+      path: '/{workspaceId}/sandbox-provider/transition',
       tags: ['projects'],
       summary: 'Poll the per-project sandbox-provider migration transition',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
       },
       responses: {
         200: json(SandboxProviderTransitionStateSchema, 'Public provider-transition state'),
@@ -568,7 +569,7 @@ export function registerProjectSettingsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       return c.json(await readPublicProjectTransitionState(projectId));
@@ -586,12 +587,12 @@ export function registerProjectSettingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/default-reasoning-effort',
+      path: '/{workspaceId}/default-reasoning-effort',
       tags: ['projects'],
       summary: 'Set or clear the project default reasoning effort',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: {
@@ -600,7 +601,7 @@ export function registerProjectSettingsRoutes(): void {
       },
     }),
     async (c: Context<AppEnv>) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       if (!projectId) return c.json({ error: 'Not found' }, 404);
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');

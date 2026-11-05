@@ -21,6 +21,7 @@ import {
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { readJsonObject } from '../../shared/http-body';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerProjectInvitesRoutes(): void {
   // PUT /v1/projects/:projectId/access/:userId
@@ -32,12 +33,12 @@ export function registerProjectInvitesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/access/invite',
+      path: '/{workspaceId}/access/invite',
       tags: ['access'],
       summary: 'Invite a member to a project',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               email: z.string().openapi({ description: 'Email address to invite.' }),
               role: z.enum(['manager', 'member']).optional().openapi({ description: 'Project role.' }),
@@ -50,7 +51,7 @@ export function registerProjectInvitesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Inviting a member grants project access — members.manage, not plain write.
@@ -238,12 +239,12 @@ export function registerProjectInvitesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/access/pending-invites',
+      path: '/{workspaceId}/access/pending-invites',
       tags: ['access'],
       summary: 'List pending project invites',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -251,7 +252,7 @@ export function registerProjectInvitesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
@@ -327,12 +328,12 @@ export function registerProjectInvitesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/access/pending-invites/{inviteId}',
+      path: '/{workspaceId}/access/pending-invites/{inviteId}',
       tags: ['access'],
       summary: 'Cancel a pending project invite',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), inviteId: z.string() }),
+          params: z.object({ workspaceId: z.string(), inviteId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -340,7 +341,7 @@ export function registerProjectInvitesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const inviteId = c.req.param('inviteId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -402,12 +403,12 @@ export function registerProjectInvitesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/access/pending-invites/{inviteId}/resend',
+      path: '/{workspaceId}/access/pending-invites/{inviteId}/resend',
       tags: ['access'],
       summary: 'Resend a project invite',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), inviteId: z.string() }),
+          params: z.object({ workspaceId: z.string(), inviteId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -415,7 +416,7 @@ export function registerProjectInvitesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const inviteId = c.req.param('inviteId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);

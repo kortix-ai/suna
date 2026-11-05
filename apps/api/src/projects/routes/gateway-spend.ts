@@ -21,23 +21,24 @@ import {
   providerBilledSpendSql,
   totalSpendSql,
 } from '../../shared/llm-spend';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerGatewaySpendRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/gateway/overview',
+      path: '/{workspaceId}/gateway/overview',
       tags: ['gateway'],
       summary: 'Get LLM gateway usage overview',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({ days: z.string().refine((value) => Number.isInteger(Number(value))).optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway usage overview'), ...errors(404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -88,18 +89,18 @@ export function registerGatewaySpendRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/gateway/series',
+      path: '/{workspaceId}/gateway/series',
       tags: ['gateway'],
       summary: 'Get LLM gateway usage time series',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({ days: z.string().refine((value) => Number.isInteger(Number(value))).optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway daily usage series'), ...errors(404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -181,18 +182,18 @@ export function registerGatewaySpendRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/gateway/sessions',
+      path: '/{workspaceId}/gateway/sessions',
       tags: ['gateway'],
       summary: 'List LLM gateway usage per session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({ days: z.string().refine((value) => Number.isInteger(Number(value))).optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway spend by session'), ...errors(404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -219,18 +220,18 @@ export function registerGatewaySpendRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/gateway/sources',
+      path: '/{workspaceId}/gateway/sources',
       tags: ['gateway'],
       summary: 'List LLM gateway spend by source (trigger, member, channel, API)',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({ hours: z.string().optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway spend by source'), ...errors(404) },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -254,18 +255,18 @@ export function registerGatewaySpendRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/gateway/breakdown',
+      path: '/{workspaceId}/gateway/breakdown',
       tags: ['gateway'],
       summary: 'Get LLM gateway usage breakdown',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({ days: z.string().refine((value) => Number.isInteger(Number(value))).optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway usage by model'), ...errors(404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -284,15 +285,15 @@ export function registerGatewaySpendRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/gateway/budgets',
+      path: '/{workspaceId}/gateway/budgets',
       tags: ['gateway'],
       summary: 'List LLM gateway budgets',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(z.any(), 'Gateway budgets + per-member spend'), ...errors(404) },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -366,12 +367,12 @@ export function registerGatewaySpendRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/gateway/budgets',
+      path: '/{workspaceId}/gateway/budgets',
       tags: ['gateway'],
       summary: 'Set an LLM gateway budget',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: {
             'application/json': {
@@ -389,7 +390,7 @@ export function registerGatewaySpendRoutes(): void {
       responses: { 200: json(z.any(), 'Budget upserted'), ...errors(400, 403, 404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       if (!(await projectCapabilityAllowed(
@@ -449,17 +450,17 @@ export function registerGatewaySpendRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/gateway/budgets/{budgetId}',
+      path: '/{workspaceId}/gateway/budgets/{budgetId}',
       tags: ['gateway'],
       summary: 'Delete an LLM gateway budget',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), budgetId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string(), budgetId: z.string().uuid() }),
       },
       responses: { 200: json(z.any(), 'Budget removed'), ...errors(403, 404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const budgetId = c.req.param('budgetId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);

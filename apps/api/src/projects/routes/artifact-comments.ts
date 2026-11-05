@@ -30,10 +30,10 @@ import {
 import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
 
-const ArtifactParams = z.object({ projectId: z.string().uuid(), artifactId: z.string().uuid() });
+const ArtifactParams = z.object({ workspaceId: z.string().uuid(), artifactId: z.string().uuid() });
 const ThreadParams = ArtifactParams.extend({ threadId: z.string().uuid() });
 const CommentParams = ThreadParams.extend({ commentId: z.string().uuid() });
-const ThreadLookupParams = z.object({ projectId: z.string().uuid(), threadId: z.string().uuid() });
+const ThreadLookupParams = z.object({ workspaceId: z.string().uuid(), threadId: z.string().uuid() });
 const Status = z.enum(['open', 'resolved']);
 const Version = z.string().min(1).max(80).regex(/^[A-Za-z0-9_-]+$/);
 const Body = z.string().min(1).max(10_000).refine((value) => value.trim().length > 0 && !value.includes('\0'));
@@ -106,12 +106,12 @@ function failure(c: Context, error: unknown) {
 
 export function registerArtifactCommentRoutes(): void {
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/artifact-comment-threads/{threadId}', tags: ['artifacts'],
+    method: 'get', path: '/{workspaceId}/artifact-comment-threads/{threadId}', tags: ['artifacts'],
     summary: 'Read a visible Artifact comment thread by its project-scoped id', ...auth,
     request: { params: ThreadLookupParams },
     responses: { 200: json(z.object({ thread: ThreadSchema }), 'The thread and comments'), ...responses },
   }), async (c) => {
-    const { projectId, threadId } = c.req.valid('param');
+    const { workspaceId: projectId, threadId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, { threadId }, false);
     if (!access.ok) return access.response;
     try {
@@ -120,7 +120,7 @@ export function registerArtifactCommentRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/artifacts/{artifactId}/activity', tags: ['artifacts'],
+    method: 'get', path: '/{workspaceId}/artifacts/{artifactId}/activity', tags: ['artifacts'],
     summary: 'Read Artifact activity and saves from Files history', ...auth,
     request: { params: ArtifactParams, query: z.object({ limit: z.string().optional(), cursor: z.string().optional() }) },
     responses: { 200: json(z.object({
@@ -129,7 +129,7 @@ export function registerArtifactCommentRoutes(): void {
       })), next_cursor: nullableId, older_versions: z.boolean(),
     }), 'The activity page'), ...responses },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, false);
     if (!access.ok) return access.response;
     try {
@@ -137,7 +137,7 @@ export function registerArtifactCommentRoutes(): void {
     } catch (error) { return failure(c, error); }
   });
 
-  projectsApp.use('/:projectId/artifacts/:artifactId/comments*', async (c, next) => {
+  projectsApp.use('/:workspaceId/artifacts/:artifactId/comments*', async (c, next) => {
     const imageBody = c.req.method === 'POST' && (c.req.path.endsWith('/comments') || c.req.path.endsWith('/replies'));
     return bodyLimit({
       maxSize: imageBody ? 4 * 1024 * 1024 : 64 * 1024,
@@ -159,7 +159,7 @@ export function registerArtifactCommentRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/artifacts/{artifactId}/comments/context', tags: ['artifacts'],
+    method: 'get', path: '/{workspaceId}/artifacts/{artifactId}/comments/context', tags: ['artifacts'],
     summary: 'Read comment permissions, accepted mention tokens and the proposed Send target', ...auth,
     request: { params: ArtifactParams, query: z.object({ version: Version.optional(), agent: z.string().min(1).max(128).optional() }) },
     responses: { 200: json(z.object({
@@ -171,7 +171,7 @@ export function registerArtifactCommentRoutes(): void {
       send_thread_ids: z.array(z.string()).max(ARTIFACT_COMMENT_SEND_LIMIT), send_thread_count: z.number().int().nonnegative(), version: z.object({ commit_id: nullableId, entry_version: nullableId }),
     }), 'The current or historical comment context'), ...responses },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, false);
     if (!access.ok) return access.response;
     try { return c.json(await readArtifactCommentContext(access.scope, access.actor, c.req.valid('query')), 200); }
@@ -179,12 +179,12 @@ export function registerArtifactCommentRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts/{artifactId}/comments/send', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts/{artifactId}/comments/send', tags: ['artifacts'],
     summary: 'Send selected Artifact comment threads to an agent', ...auth,
     request: { params: ArtifactParams, body: body(z.object({ thread_ids: z.array(z.string().uuid()).min(1).max(ARTIFACT_COMMENT_SEND_LIMIT), batch_id: z.string().uuid().optional(), agent: z.string().min(1).max(128).optional() })) },
     responses: { 200: json(z.object({ session_id: z.string(), created: z.boolean() }), 'The selected or reserved agent session'), ...responses },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, true);
     if (!access.ok) return access.response;
     try {
@@ -193,12 +193,12 @@ export function registerArtifactCommentRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/artifacts/{artifactId}/comments', tags: ['artifacts'],
+    method: 'get', path: '/{workspaceId}/artifacts/{artifactId}/comments', tags: ['artifacts'],
     summary: 'Read comment threads on an Artifact', ...auth,
     request: { params: ArtifactParams, query: z.object({ status: z.enum(['open', 'resolved', 'all']).optional(), version: Version.optional() }) },
     responses: { 200: json(z.object({ threads: z.array(ThreadSchema) }), 'The threads and comments'), ...responses },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, false);
     if (!access.ok) return access.response;
     try {
@@ -207,12 +207,12 @@ export function registerArtifactCommentRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/artifacts/{artifactId}/comments/{commentId}/screenshot', tags: ['artifacts'],
+    method: 'get', path: '/{workspaceId}/artifacts/{artifactId}/comments/{commentId}/screenshot', tags: ['artifacts'],
     summary: 'Read a screenshot with current Artifact view access', ...auth,
     request: { params: ArtifactParams.extend({ commentId: z.string().uuid() }) },
     responses: { 200: { description: 'The private PNG or WebP bytes', content: { 'image/png': { schema: z.string().openapi({ format: 'binary' }) }, 'image/webp': { schema: z.string().openapi({ format: 'binary' }) } } }, ...responses },
   }), async (c) => {
-    const { projectId, artifactId, commentId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId, commentId } = c.req.valid('param');
     const notFound = () => c.json({ error: 'Screenshot not found', code: 'screenshot_not_found' }, 404);
     let access;
     try { access = await authorizeComments(c, projectId, artifactId, false); }
@@ -232,12 +232,12 @@ export function registerArtifactCommentRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts/{artifactId}/comments', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts/{artifactId}/comments', tags: ['artifacts'],
     summary: 'Open an anchored comment thread', ...auth,
     request: { params: ArtifactParams, body: body(z.object({ anchor: z.unknown(), body: Body, marks: z.unknown().optional(), screenshot_base64: z.unknown().optional() })) },
     responses: { 201: json(z.object({ thread: ThreadSchema }), 'The new thread'), ...responses },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, true);
     if (!access.ok) return access.response;
     try {
@@ -246,12 +246,12 @@ export function registerArtifactCommentRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts/{artifactId}/comments/{threadId}/replies', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts/{artifactId}/comments/{threadId}/replies', tags: ['artifacts'],
     summary: 'Reply in a comment thread', ...auth,
     request: { params: ThreadParams, body: body(z.object({ body: Body, marks: z.unknown().optional(), screenshot_base64: z.unknown().optional() })) },
     responses: { 201: json(z.object({ comment: CommentSchema }), 'The new reply'), ...responses },
   }), async (c) => {
-    const { projectId, artifactId, threadId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId, threadId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, true);
     if (!access.ok) return access.response;
     try {
@@ -260,12 +260,12 @@ export function registerArtifactCommentRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'patch', path: '/{projectId}/artifacts/{artifactId}/comments/{threadId}', tags: ['artifacts'],
+    method: 'patch', path: '/{workspaceId}/artifacts/{artifactId}/comments/{threadId}', tags: ['artifacts'],
     summary: 'Resolve or reopen a comment thread', ...auth,
     request: { params: ThreadParams, body: body(z.object({ status: Status })) },
     responses: { 200: json(z.object({ thread: ThreadSchema }), 'The updated thread'), ...responses },
   }), async (c) => {
-    const { projectId, artifactId, threadId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId, threadId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, true);
     if (!access.ok) return access.response;
     try {
@@ -274,12 +274,12 @@ export function registerArtifactCommentRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'patch', path: '/{projectId}/artifacts/{artifactId}/comments/{threadId}/{commentId}', tags: ['artifacts'],
+    method: 'patch', path: '/{workspaceId}/artifacts/{artifactId}/comments/{threadId}/{commentId}', tags: ['artifacts'],
     summary: 'Edit your own comment', ...auth,
     request: { params: CommentParams, body: body(z.object({ body: Body })) },
     responses: { 200: json(z.object({ comment: CommentSchema }), 'The edited comment'), ...responses },
   }), async (c) => {
-    const { projectId, artifactId, threadId, commentId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId, threadId, commentId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, true);
     if (!access.ok) return access.response;
     try {
@@ -288,12 +288,12 @@ export function registerArtifactCommentRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'delete', path: '/{projectId}/artifacts/{artifactId}/comments/{threadId}/{commentId}', tags: ['artifacts'],
+    method: 'delete', path: '/{workspaceId}/artifacts/{artifactId}/comments/{threadId}/{commentId}', tags: ['artifacts'],
     summary: 'Delete your own comment, or any comment as a manager', ...auth,
     request: { params: CommentParams },
     responses: { 200: json(z.object({ comment: CommentSchema }), 'The deleted comment'), ...responses },
   }), async (c) => {
-    const { projectId, artifactId, threadId, commentId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId, threadId, commentId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, true);
     if (!access.ok) return access.response;
     try {

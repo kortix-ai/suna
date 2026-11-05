@@ -29,6 +29,7 @@ import {
   serializeAccount,
 } from './app';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
@@ -215,7 +216,7 @@ export function registerAccountRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}',
+      path: '/{workspaceId}',
       tags: ['accounts'],
       summary: 'Get account details',
       ...auth,
@@ -227,7 +228,7 @@ export function registerAccountRoutes(): void {
     }),
     async (c) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
@@ -283,7 +284,7 @@ export function registerAccountRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}',
+      path: '/{workspaceId}',
       tags: ['accounts'],
       summary: 'Rename an account',
       ...auth,
@@ -302,7 +303,7 @@ export function registerAccountRoutes(): void {
     }),
     async (c) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);

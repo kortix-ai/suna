@@ -16,6 +16,7 @@ import { iamRouter, AccountIdParam } from './app';
 import { auditIam, requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { loadSystemRoles } from '../../iam/catalog';
+import { accountIdParam } from '../../shared/route-params';
 
 export function systemRoleWireId(scopeType: string, key: string): string {
   return scopeType === 'project' && key === 'member' ? 'builtin:user' : `builtin:${key}`;
@@ -41,7 +42,7 @@ export async function loadCustomRole(accountId: string, roleId: string) {
 }
 
 const Any = z.any();
-const PolicyIdParam = z.object({ accountId: z.string(), policyId: z.string() });
+const PolicyIdParam = z.object({ workspaceId: z.string(), policyId: z.string() });
 
 // Allow-only with no conditions: every binding is an unconditional allow. We
 // surface effect/conditions so the pre-built UI renders, but only 'allow' / {}
@@ -111,7 +112,7 @@ export function registerPolicyListRoute() {
   iamRouter.openapi(
   createRoute({
     method: 'get',
-    path: '/{accountId}/iam/policies',
+    path: '/{workspaceId}/iam/policies',
     tags: ['iam'],
     summary: 'List policies (optionally filtered)',
     ...auth,
@@ -119,7 +120,7 @@ export function registerPolicyListRoute() {
     responses: { 200: json(z.object({ policies: z.array(Any) }), 'Policies'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
 
     const pt = c.req.query('principalType');
@@ -150,7 +151,7 @@ export function registerPolicyWriteRoutes() {
   iamRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/{accountId}/iam/policies',
+    path: '/{workspaceId}/iam/policies',
     tags: ['iam'],
     summary: 'Bind a principal to a custom role at a scope',
     ...auth,
@@ -158,7 +159,7 @@ export function registerPolicyWriteRoutes() {
     responses: { 201: json(Any, 'Created policy'), ...errors(400, 401, 403, 404) },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_CREATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
@@ -202,7 +203,7 @@ export function registerPolicyWriteRoutes() {
   iamRouter.openapi(
   createRoute({
     method: 'delete',
-    path: '/{accountId}/iam/policies/{policyId}',
+    path: '/{workspaceId}/iam/policies/{policyId}',
     tags: ['iam'],
     summary: 'Delete a policy',
     ...auth,
@@ -210,7 +211,7 @@ export function registerPolicyWriteRoutes() {
     responses: { 200: json(z.object({ deleted: z.boolean() }), 'Deleted'), ...errors(401, 403, 404) },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const policyId = c.req.param('policyId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_DELETE);
     // No entitlement gate: revoking a policy binding is cleanup, always allowed.
@@ -242,7 +243,7 @@ export function registerPolicyWriteRoutes() {
   iamRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/{accountId}/iam/policies:bulk-delete',
+    path: '/{workspaceId}/iam/policies:bulk-delete',
     tags: ['iam'],
     summary: 'Delete multiple policies',
     ...auth,
@@ -250,7 +251,7 @@ export function registerPolicyWriteRoutes() {
     responses: { 200: json(z.object({ deleted: z.number() }), 'Deleted count'), ...errors(400, 401, 403) },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_DELETE);
     // No entitlement gate: bulk policy revocation is cleanup, always allowed.
     const body = await readJsonObject(c);
@@ -272,7 +273,7 @@ export function registerPolicyWriteRoutes() {
   iamRouter.openapi(
   createRoute({
     method: 'patch',
-    path: '/{accountId}/iam/policies/{policyId}',
+    path: '/{workspaceId}/iam/policies/{policyId}',
     tags: ['iam'],
     summary: 'Change a policy’s role / scope / expiry (principal is immutable)',
     ...auth,
@@ -280,7 +281,7 @@ export function registerPolicyWriteRoutes() {
     responses: { 200: json(Any, 'Updated policy'), ...errors(400, 401, 403, 404) },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const policyId = c.req.param('policyId');
     // Editing an assignment is a create-class action — gate on POLICY_CREATE.
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_CREATE);
@@ -330,7 +331,7 @@ export function registerPolicyWriteRoutes() {
   iamRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/{accountId}/iam/policies:bulk-import',
+    path: '/{workspaceId}/iam/policies:bulk-import',
     tags: ['iam'],
     summary: 'Create many policies, referencing roles by key (portable import)',
     ...auth,
@@ -338,7 +339,7 @@ export function registerPolicyWriteRoutes() {
     responses: { 200: json(Any, 'Import result'), ...errors(400, 401, 403) },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_CREATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;

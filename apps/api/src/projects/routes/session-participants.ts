@@ -31,11 +31,11 @@ export function registerSessionParticipantsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/participants',
+      path: '/{workspaceId}/sessions/{sessionId}/participants',
       tags: ['sessions'],
       summary: 'List who can open a session',
       ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), sessionId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string().uuid(), sessionId: z.string() }) },
       responses: {
         200: json(
           z.object({
@@ -49,7 +49,7 @@ export function registerSessionParticipantsRoutes(): void {
       },
     }),
     async (c) => {
-      const { projectId, sessionId } = c.req.valid('param');
+      const { workspaceId: projectId, sessionId } = c.req.valid('param');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const { accountId } = loaded.row;

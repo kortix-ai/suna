@@ -51,10 +51,11 @@ import type { AppEnv } from '../types';
 import { buildFilters } from './audit-filters';
 import { requireEntitlement } from './iam/http-helpers';
 import { readJsonObject } from '../shared/http-body';
+import { accountIdParam } from '../shared/route-params';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
 
-const AccountIdParam = z.object({ accountId: z.string().uuid() });
+const AccountIdParam = z.object({ workspaceId: z.string().uuid() });
 const AuditWebhookSchema = z
   .object({
     webhook_id: z.string(),
@@ -119,7 +120,7 @@ const DEFAULT_LIMIT = 50;
 auditRouter.openapi(
   createRoute({
     method: 'get',
-    path: '/{accountId}/audit',
+    path: '/{workspaceId}/audit',
     tags: ['accounts'],
     summary: 'List audit events (cursor-paginated)',
     ...auth,
@@ -151,7 +152,7 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
@@ -282,7 +283,7 @@ function parseActivityDay(value: string | null, name: string): string | null {
 auditRouter.openapi(
   createRoute({
     method: 'get',
-    path: '/{accountId}/audit/activity',
+    path: '/{workspaceId}/audit/activity',
     tags: ['accounts'],
     summary: 'Per-user activity by day (who was active, how often)',
     ...auth,
@@ -304,7 +305,7 @@ auditRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     // requireEntitlement builds an untyped 402 Response; the route declares it.
@@ -411,7 +412,7 @@ const CSV_HEADERS = [
 auditRouter.openapi(
   createRoute({
     method: 'get',
-    path: '/{accountId}/audit/export',
+    path: '/{workspaceId}/audit/export',
     tags: ['accounts'],
     summary: 'Export audit events as CSV or JSONL',
     description:
@@ -452,7 +453,7 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
@@ -567,7 +568,7 @@ auditRouter.openapi(
 auditRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/{accountId}/audit/reconcile',
+    path: '/{workspaceId}/audit/reconcile',
     tags: ['accounts'],
     summary: 'Reconcile durable source ledgers into the canonical audit log',
     ...auth,
@@ -579,7 +580,7 @@ auditRouter.openapi(
   }),
   async (c: any) => {
     const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
@@ -630,7 +631,7 @@ function serializeWebhook(w: typeof auditWebhooks.$inferSelect, includeSecret = 
 auditRouter.openapi(
   createRoute({
     method: 'get',
-    path: '/{accountId}/audit/webhooks',
+    path: '/{workspaceId}/audit/webhooks',
     tags: ['accounts'],
     summary: 'List audit webhooks',
     ...auth,
@@ -641,7 +642,7 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     // No entitlement gate on listing: a downgraded admin must be able to see
     // leftover webhooks to delete them. Creation/update stay gated below.
@@ -658,7 +659,7 @@ auditRouter.openapi(
 auditRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/{accountId}/audit/webhooks',
+    path: '/{workspaceId}/audit/webhooks',
     tags: ['accounts'],
     summary: 'Create an audit webhook',
     ...auth,
@@ -674,7 +675,7 @@ auditRouter.openapi(
   }),
   async (c: any) => {
     const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
@@ -758,12 +759,12 @@ auditRouter.openapi(
 auditRouter.openapi(
   createRoute({
     method: 'patch',
-    path: '/{accountId}/audit/webhooks/{webhookId}',
+    path: '/{workspaceId}/audit/webhooks/{webhookId}',
     tags: ['accounts'],
     summary: 'Update an audit webhook',
     ...auth,
     request: {
-      params: z.object({ accountId: z.string(), webhookId: z.string() }),
+      params: z.object({ workspaceId: z.string(), webhookId: z.string() }),
       body: { content: { 'application/json': { schema: AuditWebhookPatchSchema } } },
     },
     responses: {
@@ -773,7 +774,7 @@ auditRouter.openapi(
   }),
   async (c: any) => {
     const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const webhookId = c.req.param('webhookId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
@@ -831,12 +832,12 @@ auditRouter.openapi(
 auditRouter.openapi(
   createRoute({
     method: 'get',
-    path: '/{accountId}/audit/webhooks/{webhookId}/deliveries',
+    path: '/{workspaceId}/audit/webhooks/{webhookId}/deliveries',
     tags: ['accounts'],
     summary: 'List durable audit webhook deliveries',
     ...auth,
     request: {
-      params: z.object({ accountId: z.string().uuid(), webhookId: z.string().uuid() }),
+      params: z.object({ workspaceId: z.string().uuid(), webhookId: z.string().uuid() }),
       query: z.object({ status: z.string().optional(), limit: z.string().optional() }),
     },
     responses: {
@@ -845,7 +846,7 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const webhookId = c.req.param('webhookId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     let limit: number;
@@ -894,13 +895,13 @@ auditRouter.openapi(
 auditRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/{accountId}/audit/webhooks/{webhookId}/deliveries/{deliveryId}/replay',
+    path: '/{workspaceId}/audit/webhooks/{webhookId}/deliveries/{deliveryId}/replay',
     tags: ['accounts'],
     summary: 'Replay a durable audit webhook delivery',
     ...auth,
     request: {
       params: z.object({
-        accountId: z.string().uuid(),
+        workspaceId: z.string().uuid(),
         webhookId: z.string().uuid(),
         deliveryId: z.string().uuid(),
       }),
@@ -912,7 +913,7 @@ auditRouter.openapi(
   }),
   async (c: any) => {
     const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const webhookId = c.req.param('webhookId');
     const deliveryId = c.req.param('deliveryId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -941,12 +942,12 @@ auditRouter.openapi(
 auditRouter.openapi(
   createRoute({
     method: 'delete',
-    path: '/{accountId}/audit/webhooks/{webhookId}',
+    path: '/{workspaceId}/audit/webhooks/{webhookId}',
     tags: ['accounts'],
     summary: 'Delete an audit webhook',
     ...auth,
     request: {
-      params: z.object({ accountId: z.string(), webhookId: z.string() }),
+      params: z.object({ workspaceId: z.string(), webhookId: z.string() }),
     },
     responses: {
       200: json(z.object({ deleted: z.boolean() }), 'Deleted'),
@@ -955,7 +956,7 @@ auditRouter.openapi(
   }),
   async (c: any) => {
     const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const webhookId = c.req.param('webhookId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     // No entitlement gate: deleting a webhook is cleanup, always allowed — and

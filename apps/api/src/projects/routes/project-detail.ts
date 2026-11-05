@@ -36,6 +36,7 @@ import {
   serializeProject,
   serializeProjectGitConnection,
 } from '../lib/serializers';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /** `GET /:projectId/detail`: the project plus its git connection and the
  *  manifest summary the settings pages read. */
@@ -61,12 +62,12 @@ export function registerProjectDetailRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}',
+      path: '/{workspaceId}',
       tags: ['projects'],
       summary: 'Get a project',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
       },
       responses: {
         200: json(ProjectSchema, 'The project'),
@@ -74,7 +75,7 @@ export function registerProjectDetailRoutes(): void {
       },
     }),
     async (c) => {
-      const requestedProjectId = c.req.param('projectId');
+      const requestedProjectId = workspaceIdParam(c);
       const projectId = requestedProjectId === 'current'
         ? c.get('tokenProjectId')
         : requestedProjectId;
@@ -121,12 +122,12 @@ export function registerProjectDetailRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/detail',
+      path: '/{workspaceId}/detail',
       tags: ['projects'],
       summary: 'Get project detail with configuration',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
       },
       responses: {
         200: json(ProjectDetailSchema, 'Project detail'),
@@ -134,7 +135,7 @@ export function registerProjectDetailRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
@@ -290,12 +291,12 @@ export function registerProjectDetailRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}',
+      path: '/{workspaceId}',
       tags: ['projects'],
       summary: 'Update project name or settings',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             name: z.string().optional().openapi({ description: 'New project name.' }),
             default_branch: z.string().optional().openapi({ description: 'New default branch.' }),
@@ -310,7 +311,7 @@ export function registerProjectDetailRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);

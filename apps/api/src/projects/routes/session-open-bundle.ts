@@ -111,7 +111,7 @@ const sessionSnapshotRoute = (path: string, summary: string) =>
     summary,
     ...auth,
     request: {
-      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
       query: z.object({ transcript: z.string().optional() }),
     },
     responses: {
@@ -121,7 +121,7 @@ const sessionSnapshotRoute = (path: string, summary: string) =>
   });
 
 const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute>, AppEnv> = async (c) => {
-    const { projectId, sessionId } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId } = c.req.valid('param');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const transcriptLimit = parseBoundedPositiveInt(
@@ -371,7 +371,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
 export function registerSessionOpenBundleRoutes(): void {
   projectsApp.openapi(
     sessionSnapshotRoute(
-      '/{projectId}/sessions/{sessionId}/snapshot',
+      '/{workspaceId}/sessions/{sessionId}/snapshot',
       'Get the session snapshot (state, prompts, audit) in one read',
     ),
     handleSessionSnapshot,
@@ -383,7 +383,7 @@ export function registerSessionOpenBundleRoutes(): void {
   // handler, same contract; keep until no supported SDK requests it.
   projectsApp.openapi(
     sessionSnapshotRoute(
-      '/{projectId}/sessions/{sessionId}/open-bundle',
+      '/{workspaceId}/sessions/{sessionId}/open-bundle',
       'Get the session snapshot (legacy open-bundle path)',
     ),
     handleSessionSnapshot,

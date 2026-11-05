@@ -40,6 +40,7 @@ import {
   registerSupabaseSamlProvider,
   syncSupabaseSamlAttributeMapping,
 } from './sso-provisioning';
+import { accountIdParam } from '../../shared/route-params';
 
 function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProvider>>>) {
   return {
@@ -127,7 +128,7 @@ export function registerIamSsoRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/sso/provider',
+      path: '/{workspaceId}/iam/sso/provider',
       tags: ['iam'],
       summary: 'Get the account SSO provider',
       ...auth,
@@ -138,7 +139,7 @@ export function registerIamSsoRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
     const p = await getSsoProvider(accountId);
     if (!p) return c.json({ provider: null });
@@ -149,7 +150,7 @@ export function registerIamSsoRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'put',
-      path: '/{accountId}/iam/sso/provider',
+      path: '/{workspaceId}/iam/sso/provider',
       tags: ['iam'],
       summary: 'Create or update the SSO provider',
       ...auth,
@@ -161,7 +162,7 @@ export function registerIamSsoRoutes(): void {
     }),
     async (c: any) => {
     const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     const personal = await refusePersonalAccountSso(c, accountId);
     if (personal) return personal;
@@ -270,7 +271,7 @@ export function registerIamSsoRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/sso/provider/from-metadata',
+      path: '/{workspaceId}/iam/sso/provider/from-metadata',
       tags: ['iam'],
       summary: 'Register a SAML provider from IdP metadata (self-serve)',
       ...auth,
@@ -301,7 +302,7 @@ export function registerIamSsoRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
       const personal = await refusePersonalAccountSso(c, accountId);
       if (personal) return personal;
@@ -400,7 +401,7 @@ export function registerIamSsoRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/sso/provider/verify-domain',
+      path: '/{workspaceId}/iam/sso/provider/verify-domain',
       tags: ['iam'],
       summary: "Verify the SSO provider's primary domain via DNS",
       ...auth,
@@ -412,7 +413,7 @@ export function registerIamSsoRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
       const denied = await requireEntitlement(c, accountId, 'sso');
       if (denied) return denied;
@@ -498,7 +499,7 @@ export function registerIamSsoRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/iam/sso/provider',
+      path: '/{workspaceId}/iam/sso/provider',
       tags: ['iam'],
       summary: 'Delete the SSO provider',
       ...auth,
@@ -509,7 +510,7 @@ export function registerIamSsoRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     // Disconnecting SSO must never 402 — an account that lost its entitlement
     // still needs to be able to turn the IdP integration off.
@@ -554,7 +555,7 @@ export function registerIamSsoRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/sso/mappings',
+      path: '/{workspaceId}/iam/sso/mappings',
       tags: ['iam'],
       summary: 'List SSO group mappings',
       ...auth,
@@ -565,7 +566,7 @@ export function registerIamSsoRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const actor = await actorOf(c, accountId);
     await assertAuthorized(actor, ACCOUNT_ACTIONS.ACCOUNT_READ);
     // A mapping names its group: only the groups the caller may see
@@ -586,7 +587,7 @@ export function registerIamSsoRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/sso/mappings',
+      path: '/{workspaceId}/iam/sso/mappings',
       tags: ['iam'],
       summary: 'Create an SSO group mapping',
       ...auth,
@@ -598,7 +599,7 @@ export function registerIamSsoRoutes(): void {
     }),
     async (c: any) => {
     const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     const denied = await requireEntitlement(c, accountId, 'sso');
     if (denied) return denied;
@@ -661,18 +662,18 @@ export function registerIamSsoRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/iam/sso/mappings/{mappingId}',
+      path: '/{workspaceId}/iam/sso/mappings/{mappingId}',
       tags: ['iam'],
       summary: 'Delete an SSO group mapping',
       ...auth,
-      request: { params: z.object({ accountId: z.string(), mappingId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), mappingId: z.string() }) },
       responses: {
         200: json(z.object({ deleted: z.boolean() }), 'Deletion result'),
         ...errors(401, 403, 404),
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const mappingId = c.req.param('mappingId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     // Reduction-only action (removes a group mapping) — must never 402.

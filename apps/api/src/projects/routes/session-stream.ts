@@ -113,6 +113,7 @@ import {
   parseSseFrames,
 } from '../lib/session-runtime-transport';
 import { isV1TranscriptEvent } from '@kortix/api-contract/session-log';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /** Our own keepalive cadence. Matches the daemon's, so a stream with no box
  *  attached still proves liveness on the same clock a healthy one does. */
@@ -224,12 +225,12 @@ export function registerSessionStreamRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/events',
+      path: '/{workspaceId}/sessions/{sessionId}/events',
       tags: ['sessions'],
       summary: 'Stream live events of a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         query: z.object({
           since: z.string().optional(),
           epoch: z.string().optional(),
@@ -254,7 +255,7 @@ export function registerSessionStreamRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 

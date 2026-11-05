@@ -19,17 +19,18 @@ import { createMiddleware } from 'hono/factory';
 import type { AppEnv } from '../../types';
 import { projectsApp } from '../lib/app';
 import { forgetSessionListPollEtags } from '../lib/session-list-poll-memo';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const READS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 const forgetAfterWrite = createMiddleware<AppEnv>(async (c, next) => {
   await next();
   if (READS.has(c.req.method) || c.res.status >= 400) return;
-  const projectId = c.req.param('projectId');
+  const projectId = workspaceIdParam(c);
   if (projectId) forgetSessionListPollEtags(projectId);
 });
 
 export function registerSessionListFreshnessMiddleware(): void {
-  projectsApp.use('/:projectId/sessions', forgetAfterWrite);
-  projectsApp.use('/:projectId/sessions/' + '*', forgetAfterWrite);
+  projectsApp.use('/:workspaceId/sessions', forgetAfterWrite);
+  projectsApp.use('/:workspaceId/sessions/' + '*', forgetAfterWrite);
 }

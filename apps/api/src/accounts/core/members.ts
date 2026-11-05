@@ -35,6 +35,7 @@ import {
   parseRole,
 } from './app';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
 
 
 /**
@@ -106,7 +107,7 @@ export function registerMemberRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/members',
+      path: '/{workspaceId}/members',
       tags: ['accounts'],
       summary: 'List account members',
       ...auth,
@@ -118,7 +119,7 @@ export function registerMemberRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
@@ -307,11 +308,11 @@ export function registerMemberRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/members/{userId}',
+      path: '/{workspaceId}/members/{userId}',
       tags: ['accounts'],
       summary: 'Remove a member',
       ...auth,
-      request: { params: z.object({ accountId: z.string(), userId: z.string().uuid() }) },
+      request: { params: z.object({ workspaceId: z.string(), userId: z.string().uuid() }) },
       responses: {
         200: json(OkSchema, 'Removal result'),
         ...errors(401, 403, 404, 409),
@@ -319,7 +320,7 @@ export function registerMemberRoutes(): void {
     }),
     async (c: any) => {
       const callerUserId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const targetUserId = c.req.param('userId');
 
       const callerMembership = await getMembership(callerUserId, accountId);
@@ -350,12 +351,12 @@ export function registerMemberRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/members/{userId}',
+      path: '/{workspaceId}/members/{userId}',
       tags: ['accounts'],
       summary: "Change a member's role",
       ...auth,
       request: {
-        params: z.object({ accountId: z.string(), userId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string(), userId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({ role: z.string() }) } } },
       },
       responses: {
@@ -372,7 +373,7 @@ export function registerMemberRoutes(): void {
     }),
     async (c: any) => {
       const callerUserId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const targetUserId = c.req.param('userId');
 
       const callerMembership = await getMembership(callerUserId, accountId);
@@ -447,7 +448,7 @@ export function registerMemberRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/leave',
+      path: '/{workspaceId}/leave',
       tags: ['accounts'],
       summary: 'Leave an account',
       ...auth,
@@ -459,7 +460,7 @@ export function registerMemberRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Not a member' }, 404);

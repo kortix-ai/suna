@@ -164,7 +164,7 @@ export const MeSchema = z
 // route) reaches the `accounts.account_id` uuid cast, dies as SQLSTATE 22P02
 // and surfaces as an opaque 500 (Better Stack pattern 97669531, KRTX-211).
 // Let the OpenAPI validation answer 400 before any handler or DB read.
-export const AccountIdParam = z.object({ accountId: z.string().uuid() });
+export const AccountIdParam = z.object({ workspaceId: z.string().uuid() });
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
 

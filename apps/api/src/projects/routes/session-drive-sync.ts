@@ -149,7 +149,7 @@ const notFound = (): never => {
   throw new DriveStorageError(404, 'File or folder not found', 'path_not_found');
 };
 
-const base = '/:projectId/sessions/:sessionId/drive-sync';
+const base = '/:workspaceId/sessions/:sessionId/drive-sync';
 
 const REMOTE_CHANGED = Symbol('remote_changed');
 

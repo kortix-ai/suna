@@ -15,6 +15,7 @@ import { grantAccountRole } from './member-role-write';
 import { logger } from '../../lib/logger';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { captureProductEvent } from '../../shared/product-analytics';
+import { accountIdParam } from '../../shared/route-params';
 
 export function registerMemberInviteRoute(): void {
   // POST /v1/accounts/:accountId/members — invite a user by email. If the user
@@ -23,7 +24,7 @@ export function registerMemberInviteRoute(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/members',
+      path: '/{workspaceId}/members',
       tags: ['accounts'],
       summary: 'Invite a user by email (added immediately or pending invite)',
       ...auth,
@@ -56,7 +57,7 @@ export function registerMemberInviteRoute(): void {
     async (c: any) => {
       const userId = c.get('userId') as string;
       const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
@@ -254,7 +255,7 @@ export function registerInviteRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/invites',
+      path: '/{workspaceId}/invites',
       tags: ['accounts'],
       summary: 'List pending invitations',
       ...auth,
@@ -266,7 +267,7 @@ export function registerInviteRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
@@ -307,11 +308,11 @@ export function registerInviteRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/invites/{inviteId}',
+      path: '/{workspaceId}/invites/{inviteId}',
       tags: ['accounts'],
       summary: 'Cancel a pending invite',
       ...auth,
-      request: { params: z.object({ accountId: z.string(), inviteId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), inviteId: z.string() }) },
       responses: {
         200: json(OkSchema, 'Cancellation result'),
         ...errors(401, 403),
@@ -319,7 +320,7 @@ export function registerInviteRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const inviteId = c.req.param('inviteId');
 
       const membership = await getMembership(userId, accountId);
@@ -348,11 +349,11 @@ export function registerInviteRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/invites/{inviteId}/resend',
+      path: '/{workspaceId}/invites/{inviteId}/resend',
       tags: ['accounts'],
       summary: 'Resend an invite email and refresh its expiry',
       ...auth,
-      request: { params: z.object({ accountId: z.string(), inviteId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), inviteId: z.string() }) },
       responses: {
         200: json(
           z.object({
@@ -370,7 +371,7 @@ export function registerInviteRoutes(): void {
     async (c: any) => {
       const userId = c.get('userId') as string;
       const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const inviteId = c.req.param('inviteId');
 
       const membership = await getMembership(userId, accountId);

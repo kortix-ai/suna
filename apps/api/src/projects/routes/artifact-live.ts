@@ -22,7 +22,7 @@ import { decodeSupabaseJwtPayload } from '../../shared/jwt-verify';
 import { projectsApp } from '../lib/app';
 import { authorizeComments } from './artifact-comments';
 
-const ArtifactParams = z.object({ projectId: z.string().uuid(), artifactId: z.string().uuid() });
+const ArtifactParams = z.object({ workspaceId: z.string().uuid(), artifactId: z.string().uuid() });
 const notFound = (c: Context) => c.json({ error: 'Artifact not found', code: 'not_found' }, 404);
 
 /**
@@ -72,7 +72,7 @@ export function registerArtifactLiveRoutes(): void {
   // A WebSocket upgrade never reaches Hono: `inbound-dispatch.ts` takes it
   // first. This documents the socket and answers a plain request.
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/artifacts/{artifactId}/live', tags: ['artifacts'],
+    method: 'get', path: '/{workspaceId}/artifacts/{artifactId}/live', tags: ['artifacts'],
     summary: 'The Artifact\'s live presence WebSocket',
     description: 'Upgrade to a WebSocket with `?ticket=` from `POST …/live/ticket` (frames: `@kortix/shared/artifact-live`). Without a ticket, or with a used or expired one, the upgrade answers 401; a caller who cannot view the Artifact, 404. Close codes: 4400 bad frame, 4403 access lost (final), 4429 too many frames, 1000 silent for 45 s. A request without an upgrade answers 426.',
     ...auth,
@@ -81,14 +81,14 @@ export function registerArtifactLiveRoutes(): void {
   }), (c) => c.json({ error: 'Open this path as a WebSocket with a live ticket', code: 'websocket_required' as const }, 426));
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts/{artifactId}/live/ticket', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts/{artifactId}/live/ticket', tags: ['artifacts'],
     summary: 'Get a single-use ticket for the Artifact\'s live presence socket',
     description: `The ticket lives ${ARTIFACT_LIVE_LIMITS.ticketMs / 1000} s, works once, and is bound to you and this Artifact. A browser cannot send Authorization on a WebSocket, so the socket authenticates with the ticket and never with a JWT in its URL.`,
     ...auth,
     request: { params: ArtifactParams },
     responses: { 200: json(TicketSchema, 'The ticket'), ...errors(401, 403, 404, 503) },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, false);
     if (!access.ok) return access.response;
     const forbidden = () => c.json({ error: 'This credential cannot open live presence', code: 'artifact_live_forbidden' }, 403);
@@ -113,14 +113,14 @@ export function registerArtifactLiveRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts/{artifactId}/live/agent', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts/{artifactId}/live/agent', tags: ['artifacts'],
     summary: 'Show where an agent session works on the Artifact',
     description: `Session-bound tokens only (\`kortix artifacts focus\`); a person's token answers 403 \`artifact_live_session_only\`. reading/editing/writing show the session's agent at \`thread_id\` or near \`quote\`; writing shows "<agent> is writing…" there. With no signal for ${ARTIFACT_LIVE_LIMITS.agentIdleMs / 1000} s, or when its turn ends, the agent leaves; \`idle\` makes it leave now.`,
     ...auth,
     request: { params: ArtifactParams, body: { required: true, content: { 'application/json': { schema: AgentSignalBody } } } },
     responses: { 204: { description: 'Shown to everyone on the Artifact' }, ...errors(400, 401, 403, 404) },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     // The CLI reads a 403 other than `feature_disabled` as "a person's token":
     // every other refusal (no view, no artifact leaf, a project-level denial) is 404.
     let access;

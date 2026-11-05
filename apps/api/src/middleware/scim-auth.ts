@@ -11,6 +11,7 @@ import type { Context, Next } from 'hono';
 import { validateScimToken } from '../repositories/scim';
 import { accountHasEntitlement } from '../billing/services/entitlements';
 import { bindAuditPrincipal } from '../shared/audit-scope';
+import { accountIdParam } from '../shared/route-params';
 
 const SCIM_ERROR_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:Error';
 
@@ -48,7 +49,7 @@ export async function scimAuth(c: Context, next: Next) {
   // The URL also carries an accountId; refuse if the token is for a
   // different account. Prevents cross-tenant access via a leaked token
   // probing other accounts' SCIM endpoints.
-  const urlAccountId = c.req.param('accountId');
+  const urlAccountId = accountIdParam(c);
   if (urlAccountId && urlAccountId !== result.accountId) {
     return scimError(
       c,

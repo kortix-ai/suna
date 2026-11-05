@@ -22,13 +22,14 @@ import { registerCaptureRoutes } from '../capture/account-routes';
 import { registerCaptureEnrollmentRoutes } from '../capture/enrollment-routes';
 import { isNoWorkspaceError } from '../shared/no-workspace';
 import { resolveAccountId } from '../shared/resolve-account';
+import { accountIdParam } from '../shared/route-params';
 
 accountsRouter.use('/*', supabaseAuth);
 // Enforce per-account session policies (max lifetime / idle timeout /
 // force-logout) on every authenticated, account-scoped request. No-op
 // on routes without an :accountId param.
 accountsRouter.use('/*', async (c, next) => {
-  if (!c.req.param('accountId') && !c.get('accountId') && c.get('authType') === 'supabase') {
+  if (!accountIdParam(c) && !c.get('accountId') && c.get('authType') === 'supabase') {
     const userId = c.get('userId') as string | undefined;
     const sessionId = c.get('sessionId') as string | undefined;
     if (userId && sessionId) {

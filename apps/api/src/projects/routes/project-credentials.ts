@@ -24,6 +24,7 @@ import {
 } from '../lib/git';
 import { normalizeString, serializeProjectGitConnection } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerProjectCredentialsRoutes(): void {
   // ─── Project-scoped CLI tokens ─────────────────────────────────────────────
@@ -37,12 +38,12 @@ export function registerProjectCredentialsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/cli-token',
+      path: '/{workspaceId}/cli-token',
       tags: ['projects'],
       summary: 'List CLI tokens of a project',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -50,7 +51,7 @@ export function registerProjectCredentialsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     // The list names every member's project keys: it needs the leaf that
     // issues and revokes them (`project.credentials.issue`), not project.read.
     const loaded = await loadProjectForUser(c, projectId, 'credentials');
@@ -84,14 +85,14 @@ export function registerProjectCredentialsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/cli-token',
+      path: '/{workspaceId}/cli-token',
       tags: ['projects'],
       summary: 'Create a project CLI token (API key)',
       description:
         'Create a project-scoped API key. The token value is returned once, in the response.',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               name: z.string().optional().openapi({ description: 'Token label. Default "cli - <project name>".' }),
               expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry. Omit for a token that does not expire.' }),
@@ -107,7 +108,7 @@ export function registerProjectCredentialsRoutes(): void {
     if (c.get('authType') === 'oauth') {
       return c.json({ error: 'Connected apps cannot mint project tokens.' }, 403);
     }
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'credentials');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Authorization is enforced by loadProjectForUser(... 'credentials') above:
@@ -184,12 +185,12 @@ export function registerProjectCredentialsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/cli-token/{tokenId}',
+      path: '/{workspaceId}/cli-token/{tokenId}',
       tags: ['projects'],
       summary: 'Revoke a project CLI token',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), tokenId: z.string() }),
+          params: z.object({ workspaceId: z.string(), tokenId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -197,7 +198,7 @@ export function registerProjectCredentialsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const tokenId = c.req.param('tokenId');
     const loaded = await loadProjectForUser(c, projectId, 'credentials');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -223,12 +224,12 @@ export function registerProjectCredentialsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/git-credential',
+      path: '/{workspaceId}/git-credential',
       tags: ['github'],
       summary: 'Set the project Git credential',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               token: z.string().openapi({ description: 'Git access token for the repository. value is accepted as an alias.' }),
               provider: z.string().optional().openapi({ description: 'Git provider name. Defaults from the repository remote.' }),
@@ -240,7 +241,7 @@ export function registerProjectCredentialsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
