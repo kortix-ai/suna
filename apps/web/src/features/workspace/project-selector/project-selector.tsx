@@ -248,7 +248,9 @@ function InviteRow({
       <EntityAvatar label={title} size="lg" />
       <div className="min-w-0 flex-1 space-y-0.5">
         <p className="text-foreground truncate text-sm font-medium">{title}</p>
-        <InlineMeta>
+        {/* The role is short and always read in full; a long inviter email
+            truncates instead. */}
+        <InlineMeta className="[&>span:last-child]:shrink-0">
           {invite.inviter_email ? t('invitedBy', { email: invite.inviter_email }) : null}
           {role}
         </InlineMeta>
