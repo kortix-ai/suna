@@ -29,6 +29,7 @@ import {
   serializeAccount,
 } from './app';
 import { readJsonObject } from '../../shared/http-body';
+import { workspaceIdsForAccounts } from '../../shared/resolve-account';
 import { accountIdParam } from '../../shared/route-params';
 
 // Routes are registered via this function (called by the orchestrator in the
@@ -65,9 +66,11 @@ export function registerAccountRoutes(): void {
           .where(eq(accounts.accountId, impersonated))
           .limit(1);
         if (!row) return c.json([]);
+        const workspaceIds = await workspaceIdsForAccounts([row.accountId]);
         return c.json([
           {
             account_id: row.accountId,
+            workspace_id: workspaceIds.get(row.accountId) ?? null,
             name: accountDisplayName(row.name, null),
             slug: row.accountId.slice(0, 8),
             created_at: row.createdAt.toISOString(),
@@ -130,10 +133,12 @@ export function registerAccountRoutes(): void {
       // Branding is resolved per account — `effectiveBranding` only touches
       // billing for accounts that actually carry a record, so this stays a
       // no-op for the overwhelming majority of lists.
+      const workspaceIds = await workspaceIdsForAccounts(memberships.map((m) => m.accountId));
       return c.json(
         await Promise.all(
           sortAccountsForListing(memberships).map(async (m) => ({
             account_id: m.accountId,
+            workspace_id: workspaceIds.get(m.accountId) ?? null,
             name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
             slug: m.accountId.slice(0, 8),
             created_at: m.createdAt?.toISOString() ?? new Date().toISOString(),
@@ -200,6 +205,8 @@ export function registerAccountRoutes(): void {
       return c.json(
         {
           account_id: account.accountId,
+          // A new account has no project yet: it becomes a workspace when one is created.
+          workspace_id: null,
           name: account.name,
           slug: account.accountId.slice(0, 8),
           created_at: account.createdAt.toISOString(),
@@ -266,8 +273,10 @@ export function registerAccountRoutes(): void {
         { userId, email: c.get('userEmail') as string },
       );
 
+      const workspaceIds = await workspaceIdsForAccounts([row.accountId]);
       return c.json({
         account_id: row.accountId,
+        workspace_id: workspaceIds.get(row.accountId) ?? null,
         name: displayNames.get(row.accountId) ?? row.name,
         member_count: memberCount,
         project_count: Number(projectCountRow?.n ?? 0),
@@ -327,7 +336,8 @@ export function registerAccountRoutes(): void {
         .returning();
       if (!row) return c.json({ error: 'Not found' }, 404);
 
-      return c.json(serializeAccount(row));
+      const workspaceIds = await workspaceIdsForAccounts([row.accountId]);
+      return c.json({ ...serializeAccount(row), workspace_id: workspaceIds.get(row.accountId) ?? null });
     },
   );
 }

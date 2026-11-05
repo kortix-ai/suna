@@ -163,6 +163,8 @@ export type SharingIntent = z.infer<typeof SharingIntentSchema>;
 /** A project as serialized by `serializeProject`. */
 export const ProjectSchema = z.object({
   project_id: z.string(),
+  /** The workspace id. Equal to `project_id` (a workspace is its project); sent since 2026-11-05. */
+  workspace_id: z.string().optional(),
   account_id: z.string(),
   name: z.string(),
   repo_url: z.string(),
@@ -2597,6 +2599,9 @@ export type AccountBranding = z.infer<typeof AccountBrandingSchema>;
  *  plan no longer allows it; create and rename omit it. */
 export const AccountSummarySchema = z.object({
   account_id: z.string(),
+  /** The workspace this account key belongs to: its one active project. Null for an
+   *  account with no project, or a legacy account with several (not split yet). Sent since 2026-11-05. */
+  workspace_id: z.string().nullable().optional(),
   name: z.string(),
   slug: z.string(),
   created_at: z.string(),

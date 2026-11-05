@@ -312,6 +312,8 @@ export function serializeProject(
 ): Project {
   return {
     project_id: row.projectId,
+    // The workspace id is the project id (design §0): one entity, one public id.
+    workspace_id: row.projectId,
     account_id: row.accountId,
     name: row.name,
     repo_url: row.repoUrl,

@@ -148,6 +148,9 @@ function loadCatalog(ctx: ToolContext) {
         if (!path.startsWith('/v1/') || blockedPath(path)) continue;
         for (const [method, spec] of Object.entries<any>(methods)) {
           if (!['get', 'post', 'put', 'patch', 'delete'].includes(method)) continue;
+          // A legacy name (`/v1/projects/…`) of a canonical `/v1/workspaces/…`
+          // route: search shows the canonical one only, so every hit is one route.
+          if (spec?.['x-kortix-alias-of']) continue;
           ops.push({
             method: method.toUpperCase(),
             path,
@@ -624,7 +627,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         method: { type: 'string', description: 'GET, POST, PUT, PATCH or DELETE.' },
-        path: { type: 'string', description: 'The route as search_api printed it, e.g. /v1/projects/{projectId}/secrets.' },
+        path: { type: 'string', description: 'The route as search_api printed it, e.g. /v1/workspaces/{workspaceId}/secrets.' },
       },
       required: ['method', 'path'],
       additionalProperties: false,
@@ -635,13 +638,13 @@ const TOOLS = [
     name: 'call_api',
     title: 'Call the Kortix API',
     description:
-      'Call any Kortix API route as the signed-in user, with their permissions. {projectId} in the path is replaced with project_id; replace every other {placeholder} yourself, e.g. /v1/projects/{projectId}/secrets/MY_KEY. Returns `METHOD path → HTTP status` and the response body.',
+      'Call any Kortix API route as the signed-in user, with their permissions. {workspaceId} (or the older {projectId}) in the path is replaced with project_id; replace every other {placeholder} yourself, e.g. /v1/workspaces/{workspaceId}/secrets/MY_KEY. Returns `METHOD path → HTTP status` and the response body.',
     inputSchema: {
       type: 'object',
       properties: {
         method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
-        project_id: { type: 'string', description: 'Fills {projectId} in the path.' },
-        path: { type: 'string', description: 'Starts with /v1/, e.g. /v1/projects/{projectId}/sessions.' },
+        project_id: { type: 'string', description: 'Fills {workspaceId} (or {projectId}) in the path.' },
+        path: { type: 'string', description: 'Starts with /v1/, e.g. /v1/workspaces/{workspaceId}/sessions.' },
         query: { type: 'object', description: 'Query-string parameters; an array value repeats the parameter.' },
         body: { type: 'object', additionalProperties: true, description: 'JSON request body (an object; a JSON string is parsed).' },
       },
@@ -1122,14 +1125,19 @@ async function describeApiTool(ctx: ToolContext, input: Record<string, unknown>)
 async function callApiTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {
   const method = arg(input, 'method').toUpperCase();
   let path = arg(input, 'path');
-  if (/\{projectId\}|:projectId/.test(path)) {
+  // `{workspaceId}` is the route param since 2026-11-05; `{projectId}` is what
+  // older prompts and clients still send. Both name the workspace.
+  if (/\{(projectId|workspaceId)\}|:(projectId|workspaceId)\b/.test(path)) {
     const projectId = projectArg(input);
-    path = path.replaceAll('{projectId}', projectId).replaceAll(':projectId', projectId);
+    path = path
+      .replaceAll('{projectId}', projectId)
+      .replaceAll('{workspaceId}', projectId)
+      .replace(/:(projectId|workspaceId)\b/g, projectId);
   }
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) throw new ToolInputError(`method ${method} is not allowed`);
   if (!path.startsWith('/v1/')) throw new ToolInputError('path must start with /v1/ and not target /v1/oauth or an MCP endpoint');
   const open = /\{[^}/]+\}/.exec(path.split('?')[0]!)?.[0];
-  if (open) throw new ToolInputError(`path still has ${open}: replace it with the real value, e.g. /v1/projects/{projectId}/secrets/MY_KEY`);
+  if (open) throw new ToolInputError(`path still has ${open}: replace it with the real value, e.g. /v1/workspaces/{workspaceId}/secrets/MY_KEY`);
   const query = input.query && typeof input.query === 'object' ? (input.query as Record<string, unknown>) : undefined;
   let body = input.body;
   // A client that types `body` as a string sends JSON text: parse it, never double-encode it.

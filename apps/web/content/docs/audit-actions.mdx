@@ -41,9 +41,9 @@ One table per domain. The route column shows the method and route template. `any
 | `account.deletion.request` | Requested account deletion | `POST /v1/account/request-deletion` (also `POST /v1/billing/account/request-deletion`) |
 | `account.list` | Listed accounts | `GET /v1/accounts` |
 | `account.read` | Viewed account | `GET /v1/accounts/:workspaceId` |
-| `account.token.create` | Created personal access token | `POST /v1/accounts/tokens` |
-| `account.token.list` | Listed personal access tokens | `GET /v1/accounts/tokens` |
-| `account.token.revoke` | Revoked personal access token | `DELETE /v1/accounts/tokens/:tokenId` |
+| `account.token.create` | Created personal access token | `POST /v1/accounts/tokens` (also `POST /v1/accounts/:workspaceId/tokens`) |
+| `account.token.list` | Listed personal access tokens | `GET /v1/accounts/tokens` (also `GET /v1/accounts/:workspaceId/tokens`) |
+| `account.token.revoke` | Revoked personal access token | `DELETE /v1/accounts/tokens/:tokenId` (also `DELETE /v1/accounts/:workspaceId/tokens/:tokenId`) |
 | `account.update` | Renamed account | `PATCH /v1/accounts/:workspaceId` |
 
 ### `agent.`

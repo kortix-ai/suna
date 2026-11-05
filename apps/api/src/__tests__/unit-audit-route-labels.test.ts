@@ -21,6 +21,7 @@ import {
   AUDIT_ROUTE_LABELS,
   auditFamilyDetail,
   auditLabelForAction,
+  auditLabelForRoute,
 } from '@kortix/shared/audit-labels';
 
 const { app } = await import('../index');
@@ -56,12 +57,29 @@ describe('audit route labels', () => {
     expect(entrypointKeys.size).toBeGreaterThan(0);
   });
 
+  // A canonical `/v1/workspaces/…` route shares its legacy twin's line
+  // (`@kortix/shared/workspace-routes`), so both names write the same action.
+  const hasLabel = (key: string) => {
+    const space = key.indexOf(' ');
+    return labelled.has(key) || auditLabelForRoute(key.slice(0, space), key.slice(space + 1)) !== null;
+  };
+
   test('every live route has a label', () => {
-    expect([...liveKeys].filter((key) => !labelled.has(key)).sort()).toEqual([]);
+    expect([...liveKeys].filter((key) => !hasLabel(key)).sort()).toEqual([]);
   });
 
   test('every manifest route has a label', () => {
-    expect([...manifestKeys].filter((key) => !labelled.has(key)).sort()).toEqual([]);
+    expect([...manifestKeys].filter((key) => !hasLabel(key)).sort()).toEqual([]);
+  });
+
+  test('a canonical workspace route and its legacy name write the same action', () => {
+    expect(auditLabelForRoute('GET', '/v1/workspaces/:workspaceId/sessions')).toEqual(
+      auditLabelForRoute('GET', '/v1/projects/:workspaceId/sessions'),
+    );
+    expect(auditLabelForRoute('GET', '/v1/workspaces/:workspaceId/iam/groups')).toEqual(
+      auditLabelForRoute('GET', '/v1/accounts/:workspaceId/iam/groups'),
+    );
+    expect(auditLabelForRoute('GET', '/v1/me')).toEqual(auditLabelForRoute('GET', '/v1/accounts/me'));
   });
 
   test('every entrypoint the server dispatches before Hono has a label', () => {

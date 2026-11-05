@@ -16,7 +16,7 @@ import { callerKortixSessionId } from '../middleware/caller-session';
 import { redactHiddenChannelAuditRows } from '../shared/space-access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
@@ -210,6 +210,15 @@ auditRouter.openapi(
     // tie-break by event id (stable order). Cheaper than OFFSET on long lists.
     if (parsedCursor) {
       conditions.push(buildAuditCursorCondition(parsedCursor, accountId, 'descending'));
+    }
+
+    // `/v1/workspaces/<workspace id>/audit` of a legacy account that still
+    // holds other projects (`split_pending`): the workspace's own events and
+    // the account-wide ones, never another project's. A 1:1 workspace's
+    // account log already is exactly that.
+    const pathWorkspaceId = c.get('pathWorkspaceId') as string | undefined;
+    if (pathWorkspaceId && c.get('pathWorkspaceSplitPending') === true && !projectId) {
+      conditions.push(or(eq(auditEventsAll.projectId, pathWorkspaceId), isNull(auditEventsAll.projectId))!);
     }
 
     const rows = await db

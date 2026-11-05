@@ -549,7 +549,7 @@ describe('describeAuditAction — catalog labels', () => {
       kind: 'revoke',
       mapped: true,
       method: 'DELETE',
-      route: '/v1/projects/:projectId/gateway/keys/:keyId',
+      route: '/v1/projects/:workspaceId/gateway/keys/:keyId',
       area: 'AI gateway',
     });
   });

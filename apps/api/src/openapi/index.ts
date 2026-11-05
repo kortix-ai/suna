@@ -6,6 +6,7 @@
  * error contract. Routes are defined with `createRoute()` + zod; the spec is
  * served at /v1/openapi.json and rendered by Scalar at /v1/docs.
  */
+import { canonicalWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import { OpenAPIHono, z, type RouteConfig } from '@hono/zod-openapi';
 import { ErrorEnvelopeSchema } from '@kortix/api-contract';
 import type { Env } from 'hono';
@@ -165,6 +166,47 @@ export function filterSpecPaths<T extends { paths?: Record<string, unknown> }>(
   return { ...doc, paths: kept };
 }
 
+const OPENAPI_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
+
+/**
+ * Mark every legacy workspace name (`/v1/projects/{workspaceId}/…`,
+ * `/v1/accounts/{workspaceId}/iam/…`, `/v1/accounts/me`, …) whose canonical
+ * `/v1/workspaces/…` operation exists: `deprecated: true` and
+ * `x-kortix-alias-of: "<METHOD> <canonical path>"`. The legacy names stay
+ * served permanently; the spec points readers and generators at one name.
+ * Pure + exported for unit tests. Returns a shallow-cloned doc.
+ */
+export function markWorkspaceAliases<T extends { paths?: object }>(doc: T): T {
+  if (!doc.paths) return doc;
+  const all = doc.paths as Record<string, Record<string, unknown>>;
+  const paths: Record<string, Record<string, unknown>> = {};
+  for (const [path, item] of Object.entries(all)) {
+    const routing = path.replace(/\{([^}]+)\}/g, ':$1');
+    const canonicalRouting = canonicalWorkspaceRoute(routing);
+    const canonical = canonicalRouting?.replace(/:([A-Za-z0-9_]+)/g, '{$1}');
+    const target = canonical ? all[canonical] : undefined;
+    if (!canonical || !target) {
+      paths[path] = item;
+      continue;
+    }
+    const marked: Record<string, unknown> = { ...item };
+    for (const method of OPENAPI_METHODS) {
+      const op = item[method] as Record<string, unknown> | undefined;
+      if (!op || !target[method]) continue;
+      marked[method] = {
+        ...op,
+        deprecated: true,
+        'x-kortix-alias-of': `${method.toUpperCase()} ${canonical}`,
+        description: `Legacy name of \`${method.toUpperCase()} ${canonical}\`, served permanently.${
+          typeof op.description === 'string' && op.description ? `\n\n${op.description}` : ''
+        }`,
+      };
+    }
+    paths[path] = marked;
+  }
+  return { ...doc, paths };
+}
+
 /** Register security + serve the spec (/v1/openapi.json) and Scalar UI (/v1/docs). */
 export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: string): void {
   app.openAPIRegistry.registerComponent('securitySchemes', 'bearerAuth', {
@@ -186,7 +228,7 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
   let cachedSpec: { body: string; etag: string } | undefined;
   app.get('/v1/openapi.json', (c) => {
     if (!cachedSpec) {
-      const body = JSON.stringify(filterSpecPaths(buildSpec(version)));
+      const body = JSON.stringify(markWorkspaceAliases(filterSpecPaths(buildSpec(version))));
       cachedSpec = { body, etag: computeEtag(body) };
     }
     c.header('ETag', cachedSpec.etag);

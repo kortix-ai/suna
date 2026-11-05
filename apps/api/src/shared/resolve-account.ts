@@ -1,5 +1,5 @@
-import { accountMembers, accounts } from "@kortix/db";
-import { and, eq } from "drizzle-orm";
+import { accountMembers, accounts, projects } from "@kortix/db";
+import { and, eq, inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { syncLegacyStripeSubscription } from "../billing/services/legacy-stripe-sync";
 import { db } from "./db";
@@ -77,7 +77,11 @@ export async function scopedAccountIdFor(
   // banner says the operator is inside.
   const impersonated = impersonatedAccountFor(userId);
   if (impersonated) {
-    if (requested && requested !== impersonated) {
+    if (
+      requested &&
+      requested !== impersonated &&
+      (await accountKeyForWorkspaceId(requested)) !== impersonated
+    ) {
       throw new HTTPException(403, {
         message: "Impersonated requests cannot target another account",
         res: new Response(
@@ -118,13 +122,59 @@ export async function scopedAccountIdFor(
     )
     .limit(1);
 
-  if (!member) {
-    throw new HTTPException(403, {
-      message: "Not a member of the requested account",
-    });
+  if (member) return requested;
+
+  // `account_id` also accepts the workspace id (`project_id`): map it to the
+  // workspace's account key and check membership there. Only on a miss, so an
+  // account key costs no extra query.
+  const accountKey = await accountKeyForWorkspaceId(requested);
+  if (accountKey) {
+    const [viaWorkspace] = await db
+      .select({ accountId: accountMembers.accountId })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountKey)))
+      .limit(1);
+    if (viaWorkspace) return accountKey;
   }
 
-  return requested;
+  throw new HTTPException(403, {
+    message: "Not a member of the requested account",
+  });
+}
+
+/**
+ * The workspace id of each account key: its one active project. An account
+ * with 0 active projects (dormant) or several (`split_pending`, not split yet)
+ * maps to null. One query for the whole list.
+ */
+export async function workspaceIdsForAccounts(accountIds: readonly string[]): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  const ids = [...new Set(accountIds.filter(isUuid))];
+  if (ids.length === 0) return out;
+  const rows = await db
+    .select({ accountId: projects.accountId, projectId: projects.projectId })
+    .from(projects)
+    .where(and(inArray(projects.accountId, ids), eq(projects.status, "active")));
+  for (const id of ids) out.set(id, null);
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(row.accountId, (counts.get(row.accountId) ?? 0) + 1);
+  for (const row of rows) if (counts.get(row.accountId) === 1) out.set(row.accountId, row.projectId);
+  return out;
+}
+
+/**
+ * The account key of an active workspace, by its workspace id (`project_id`).
+ * Null for any other id (an account key, an archived project, garbage).
+ * Request fields named `account_id` accept either workspace key through this.
+ */
+export async function accountKeyForWorkspaceId(id: string): Promise<string | null> {
+  if (!isUuid(id)) return null;
+  const [row] = await db
+    .select({ accountId: projects.accountId })
+    .from(projects)
+    .where(and(eq(projects.projectId, id), eq(projects.status, "active")))
+    .limit(1);
+  return row?.accountId ?? null;
 }
 
 async function accountExists(accountId: string): Promise<boolean> {

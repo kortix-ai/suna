@@ -1,3 +1,4 @@
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { resolveSandboxProjectId } from '../shared/preview-ownership';
@@ -77,7 +78,11 @@ export async function enforceTokenProjectScope(
   tokenProjectId: string,
   opts: { sessionBound?: boolean } = {},
 ): Promise<void> {
-  const path = c.req.path;
+  // `/v1/workspaces/…`, `/v1/me` and the other canonical names are judged as
+  // their legacy twins (`@kortix/shared/workspace-routes`), so both names of a
+  // route get the same verdict.
+  const requestPath = c.req.path;
+  const path = asLegacyWorkspaceRoute(requestPath);
 
   // Daemon-only platform sinks (SESSION_BOUND_PLATFORM_SINKS). A session
   // sandbox holds exactly ONE credential — a project+SESSION-scoped PAT ("One
@@ -163,7 +168,7 @@ export async function enforceTokenProjectScope(
         `${reason} ` +
         `[check=token-project-scope:${check} ` +
         `principal=${opts.sessionBound ? 'session-scoped-pat' : 'project-scoped-pat'} ` +
-        `project=${tokenProjectId} path=${path}]`,
+        `project=${tokenProjectId} path=${requestPath}]`,
     });
   };
 

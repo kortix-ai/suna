@@ -18,7 +18,7 @@
  */
 import { AUDIT_EVENT_LABELS } from './audit-event-labels';
 import { AUDIT_ROUTE_LABELS } from './audit-route-labels';
-import { renameWorkspaceRouteParams } from './workspace-routes';
+import { legacyWorkspaceRoute, renameWorkspaceRouteParams } from './workspace-routes';
 
 export { AUDIT_EVENT_LABELS } from './audit-event-labels';
 export { AUDIT_ROUTE_LABELS } from './audit-route-labels';
@@ -85,7 +85,11 @@ export function auditLabelForRoute(method: string, route: string): AuditRouteLab
   if (label) return label;
   // A row written before the 2026-11-05 param rename names `:projectId` / `:accountId`.
   const renamed = renameWorkspaceRouteParams(route);
-  return renamed === route ? null : exact(renamed);
+  const byRename = renamed === route ? null : exact(renamed);
+  if (byRename) return byRename;
+  // `/v1/workspaces/…` and the other canonical names share their legacy route's label.
+  const legacy = legacyWorkspaceRoute(renamed);
+  return legacy ? exact(legacy) : null;
 }
 
 /** The label of a request the server dispatches before the API router. */

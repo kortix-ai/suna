@@ -12,6 +12,7 @@ import { accountInvitations, accountScimUsers } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { scimAuth } from '../middleware/scim-auth';
+import { resolveWorkspaceAccount } from '../middleware/workspace-account';
 import { makeOpenApiApp } from '../openapi';
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
@@ -31,6 +32,10 @@ export const scimRouter = makeOpenApiApp<any>();
 // Auth middleware in its original position: registered before any routes.
 // This module body runs when the first route module imports it, so this
 // `.use(...)` runs before registerScimRoutes() registers any route.
+// The path names the workspace by its account key (the URL every IdP has
+// registered) or by its public id (`/scim/v2/workspaces/:workspaceId`): map it
+// to the account key before the token check compares the two.
+scimRouter.use('/accounts/:workspaceId/*', resolveWorkspaceAccount());
 scimRouter.use('/accounts/:workspaceId/*', scimAuth);
 
 // A malformed :accountId must never reach a uuid-typed column: Postgres answers

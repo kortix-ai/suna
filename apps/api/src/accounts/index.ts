@@ -23,6 +23,7 @@ import { registerCaptureEnrollmentRoutes } from '../capture/enrollment-routes';
 import { isNoWorkspaceError } from '../shared/no-workspace';
 import { resolveAccountId } from '../shared/resolve-account';
 import { accountIdParam } from '../shared/route-params';
+import { resolveWorkspaceAccount, workspacePathSegment } from '../middleware/workspace-account';
 
 accountsRouter.use('/*', supabaseAuth);
 // Enforce per-account session policies (max lifetime / idle timeout /
@@ -45,6 +46,11 @@ accountsRouter.use('/*', async (c, next) => {
   }
   return accountSessionGate()(c, next);
 });
+// The path id may name the workspace by its public id or by its account key:
+// map it to the account key every handler below reads (`accountIdParam`).
+// After the session gate, which keeps its pre-workspace behavior, and before
+// the SSO gate, which must judge the account the path resolves to.
+accountsRouter.use('/*', resolveWorkspaceAccount(workspacePathSegment));
 accountsRouter.use('/*', accountSsoGate());
 
 // Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
