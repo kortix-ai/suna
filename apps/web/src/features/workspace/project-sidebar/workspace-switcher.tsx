@@ -25,11 +25,11 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * navigate to `/settings/<tab>` instead. `main` authored this row against the
  * deleted `SidePanelUserSettings` modal; this branch replaced that modal with
  * the panel (JAY-498), so the row was repointed rather than dropped.
- * Account settings (`/accounts/:id`) is reached from the "Switch Workspace"
- * submenu, at the top of it, above the workspace list — see
- * `workspace-menu-section.tsx`. That is the one view in this menu already
- * grouped BY account, so it is the only place where "which account" is not a
- * guess. This top-level menu stays about the user and the workspace.
+ * "Switch workspace" opens one flat list of every workspace (a workspace is
+ * one account and its project — no account headings), the current one
+ * checked, pending invitations on top, and two actions at the bottom: "Create
+ * workspace" and "Workspace settings" (`/projects/:id/admin`, the one settings
+ * surface per workspace). See `workspace-menu-section.tsx`.
  *
  * The rows that are genuinely account-level and have nowhere else to live in
  * this panel — Install App, Theme, Help, Log out — are shared with `UserMenu`
@@ -63,31 +63,26 @@ import {
   SidebarMenuItem,
 } from '@kortix/ui/sidebar';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { accountCreated } from '@/features/accounts/account-created';
-import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { DownloadModal } from '@/features/marketing/download/download-modal';
 import { Download } from '@kortix/ui/internal/icons/download';
 import { useAuth } from '@/features/providers/auth-provider';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import { COMPUTER_SETUP_EVENT } from '@kortix/ui/internal/tunnel/computer-connect';
 import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
-import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-param';
-import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
 import { PROJECT_ACTIONS } from '@kortix/sdk';
 import { useProjectCan } from '@kortix/ui/internal/lib/use-project-can';
 import { capabilityTabHref } from '@kortix/ui/workspace';
 import { WorkspaceMenuSection } from '@kortix/ui/workspace/sidebar/workspace-menu-section';
+import { canCreateWorkspace } from '@kortix/ui/workspace/project-selector/project-selector-model';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
 import { type SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
-import { useAccountsList, useAccountsQueryKey } from '@kortix/ui/internal/hooks/account/use-accounts-list';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
 import { cn } from '@kortix/ui';
-import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import { useAppsModalStore } from '@kortix/ui/internal/stores/apps-modal-store';
-import { getProject, type KortixAccount } from '@kortix/sdk';
+import { getProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
   ArrowsLeftRightIcon,
@@ -98,14 +93,14 @@ import {
   PlusIcon,
   PuzzlePieceIcon,
 } from '@phosphor-icons/react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
+  const tWorkspaces = useI18nTranslations('workspaces.switcher');
   const tUi = useI18nTranslations('hardcodedUi.i18nComplete');
   const canRename = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE).allowed;
   const tNewWorkspace = useI18nTranslations('newWorkspace');
@@ -129,13 +124,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   // all from one user-scoped fetch.
   useEnsureSelectedAccount();
 
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const { setSelectedAccountId } = useCurrentAccountStore();
-  // The exact key the account list reads, for the create-account seed below.
-  const accountsQueryKey = useAccountsQueryKey();
   const [downloadOpen, setDownloadOpen] = useState(false);
-  const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [computerSetupOpen, setComputerSetupOpen] = useState(false);
   // Right after this desktop pairs, setup opens on the spot (see COMPUTER_SETUP_EVENT).
   // The sidebar's computer row and the Connectors pages open the other dialogs.
@@ -145,15 +134,13 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
     return () => window.removeEventListener(COMPUTER_SETUP_EVENT, openSetup);
   }, []);
   const { data: adminRole } = useAdminRole();
-  // Self-host hides the row for non-admins when account creation is restricted
-  // — admins are exempt (see `isAccountCreationRestricted()` /
-  // KORTIX_RESTRICT_ACCOUNT_CREATION). The backend 403
-  // (`account_creation_restricted`) is the authoritative gate; this only avoids
-  // offering an affordance the person cannot use.
-  const canCreateAccount = !isAccountCreationRestricted() || Boolean(adminRole?.isAdmin);
-  // "New workspace" opens `/new`, which offers only the accounts where the
-  // caller holds `project.create`. With none, the row leads nowhere.
-  const canCreateWorkspace = useCreatableAccounts(useAccountsList().data ?? []).length > 0;
+  // "Create workspace" makes an account and its project, or fills an empty
+  // account the caller owns. Self-host can restrict account creation to
+  // platform admins (`KORTIX_RESTRICT_ACCOUNT_CREATION`); the backend 403
+  // (`account_creation_restricted`) stays the authoritative gate, this only
+  // avoids offering a row the person cannot use.
+  const restricted = isAccountCreationRestricted();
+  const isPlatformAdmin = Boolean(adminRole?.isAdmin);
 
   // For the rows that OPEN something in place — the settings panel, the log-out
   // confirmation. Navigating rows do not use it: they are anchors now, and an
@@ -196,7 +183,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
-                aria-label={t('workspace.switch')}
+                aria-label={tWorkspaces('switch')}
                 className={cn(
                   'group/workspace hover:bg-sidebar-row relative flex cursor-pointer items-center gap-2 rounded-md px-1',
                   'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
@@ -264,50 +251,39 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
                   <ArrowsLeftRightIcon weight="fill" />
-                  {t('workspace.switchMenu')}
+                  {tWorkspaces('switch')}
                 </DropdownMenuSubTrigger>
                 <DropdownMenuPortal>
                   <DropdownMenuSubContent className="w-[264px] space-y-0.5" sideOffset={6}>
-                    <WorkspaceMenuSection />
-
-                    {(canCreateWorkspace || canCreateAccount) && <DropdownMenuSeparator />}
-
-                    {/* An anchor, not a handler. `router.push` from a menu row
+                    {/* Anchors, not handlers. `router.push` from a menu row
                         runs the RSC fetch cold at click time, and that fetch
                         degrades into a full document load whenever it answers
-                        wrong — an auth bounce, a build-id skew mid-deploy, a
-                        network blip. `onSelect` keeps the explicit close and
-                        must not call `preventDefault`: that cancels the
-                        anchor. */}
-                    {canCreateWorkspace && (
-                      <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                        <Link href="/new" prefetch>
-                          <PlusIcon />
-                          {t('workspace.create')}
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
-
-                    {/* The account-level sibling of the row above, in the one
-                        menu already grouped BY account. A handler rather than
-                        an anchor: creating an account opens a modal, and the
-                        only other affordance that does so lives in the hub's
-                        account-list pane — which no live entry point reaches,
-                        because every one of them opens the hub ON an account
-                        (`hubTarget(accountId)`) and the list is `hubTarget(null)`.
-                        That pane is why this row is a second affordance rather
-                        than a move: reachable only by opening Account settings
-                        and then clicking the hub's root breadcrumb, it left the
-                        product with no discoverable way to create an account. */}
-                    {canCreateAccount && (
-                      <DropdownMenuItem
-                        onSelect={() => deferAfterClose(() => setCreateAccountOpen(true))}
-                        size="sm"
-                      >
-                        <PlusIcon />
-                        {t('workspace.createAccount')}
-                      </DropdownMenuItem>
-                    )}
+                        wrong. `onSelect` keeps the explicit close and must not
+                        call `preventDefault`: that cancels the anchor. */}
+                    <WorkspaceMenuSection
+                      actions={(directory) => (
+                        <>
+                          {canCreateWorkspace({
+                            restricted,
+                            isPlatformAdmin,
+                            reusableAccount: directory.reusableAccount,
+                          }) ? (
+                            <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                              <Link href="/new" prefetch>
+                                <PlusIcon />
+                                {tWorkspaces('create')}
+                              </Link>
+                            </DropdownMenuItem>
+                          ) : null}
+                          <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                            <Link href={`/projects/${projectId}/admin`} prefetch>
+                              <CogOne />
+                              {tWorkspaces('settings')}
+                            </Link>
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    />
                   </DropdownMenuSubContent>
                 </DropdownMenuPortal>
               </DropdownMenuSub>
@@ -401,15 +377,6 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
         onOpenChange={setComputerSetupOpen}
       />
 
-      <CreateAccountModal
-        open={createAccountOpen}
-        onOpenChange={setCreateAccountOpen}
-        onCreated={(account: KortixAccount) => {
-          accountCreated(account, queryClient, accountsQueryKey, setSelectedAccountId, (path) => {
-            router.push(path);
-          });
-        }}
-      />
     </>
   );
 }

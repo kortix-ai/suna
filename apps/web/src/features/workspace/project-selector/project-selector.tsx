@@ -343,8 +343,8 @@ export function ProjectSelector({ connectComputer }: { connectComputer?: boolean
       // its project (`inviteLandingPath`).
       router.push(inviteLandingPath(landing));
     },
-    onError: () => {
-      errorToast(t('joinError'));
+    onError: (error: unknown) => {
+      errorToast(error instanceof Error && error.message ? error.message : t('joinError'));
     },
   });
 

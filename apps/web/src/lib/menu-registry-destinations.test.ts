@@ -190,10 +190,6 @@ describe('every account section has a palette row', () => {
     });
   }
 
-  test('the account picker itself is reachable, as the row with no section', () => {
-    expect(paletteAccountTabs.has('')).toBe(true);
-  });
-
   // The other direction, and the one a deleted section walks through: a row
   // naming a section the hub does not have renders an empty pane.
   test('no account row names a section the hub cannot render', () => {

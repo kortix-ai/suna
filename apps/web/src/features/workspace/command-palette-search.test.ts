@@ -333,7 +333,6 @@ describe('queries return the rows they name', () => {
       'nav:account-roles',
       'nav:account-tokens',
       'nav:account-usage',
-      'nav:nav-accounts',
       // Credits and Plan left the overlay for the account page on 2026-09-03;
       // their `nav:account-usage` / `nav:account-billing` rows above own the
       // word now.
@@ -471,7 +470,7 @@ describe('genuine synonyms still answer', () => {
     ['abilities', 'nav:proj-skills'],
     ['drive', 'nav:proj-files'],
     ['threads', 'nav:proj-sessions'],
-    ['organizations', 'nav:nav-accounts'],
+    ['organizations', 'nav:nav-workspace-settings'],
     ['conflict', 'nav:sync-session-branch'],
     ['reconcile', 'nav:sync-session-branch'],
     ['restart', 'nav:restart-config'],

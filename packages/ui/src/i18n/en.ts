@@ -6601,18 +6601,6 @@ const catalog = {
     "appReturn": "Back to the Kortix app",
     "appReturnConnected": "Provider connected. Back to the Kortix app"
   },
-  "projectChooser": {
-    "invitations": "Invitations",
-    "invitedBy": "Invited by {email}",
-    "join": "Join",
-    "joinError": "Could not join. Try again.",
-    "unnamedWorkspace": "Workspace",
-    "noPermissionTitle": "No workspace yet",
-    "noPermissionBody": "Ask an owner or admin to invite {email}.",
-    "invitesTitle": "You're invited",
-    "invitesDescription": "Join a project your team shared, or start your own.",
-    "createProjectInstead": "Create a new project instead"
-  },
   "projectSelector": {
     "welcome": "Welcome to {name}",
     "welcomeBack": "Welcome back",
@@ -9915,6 +9903,48 @@ const catalog = {
     "projectDefault": "Project default · every request",
     "kortixPicks": "Kortix picks",
     "useMyOwn": "Use my own"
+  },
+  "workspaces": {
+    "chooser": {
+      "createTitle": "Create a workspace",
+      "createBody": "A workspace is where your company works with Kortix: people, agents and everything they make.",
+      "createAction": "Create workspace",
+      "invitedHint": "Invited? Open the invite link from your email, or ask an admin to invite {email}.",
+      "restrictedTitle": "No workspace yet",
+      "restrictedBody": "Ask an admin to invite {email}.",
+      "listTitle": "Choose a workspace",
+      "listBody": "Open a workspace, or create a new one.",
+      "invitesTitle": "You're invited",
+      "invitesBody": "Join a workspace, or create your own.",
+      "workspacesHeading": "Workspaces",
+      "invitations": "Invitations",
+      "sentTo": "Sent to {email}",
+      "invitedBy": "Invited by {email}",
+      "join": "Join",
+      "joinError": "Could not join the workspace. Try again.",
+      "unnamedWorkspace": "Workspace",
+      "search": "Find a workspace",
+      "noMatches": "No workspace matches “{query}”.",
+      "role": {
+        "owner": "Owner",
+        "admin": "Admin",
+        "member": "Member"
+      },
+      "loadErrorTitle": "Could not load your workspaces",
+      "loadErrorBody": "Check your connection and try again.",
+      "partialError": "Could not load every workspace.",
+      "retry": "Try again"
+    },
+    "switcher": {
+      "switch": "Switch workspace",
+      "find": "Find a workspace…",
+      "noMatches": "No matching workspaces",
+      "create": "Create workspace",
+      "settings": "Workspace settings",
+      "loadError": "Could not load every workspace.",
+      "retry": "Try again",
+      "heading": "Workspaces"
+    }
   }
 };
 

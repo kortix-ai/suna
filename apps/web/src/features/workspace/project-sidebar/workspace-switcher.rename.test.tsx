@@ -76,11 +76,10 @@ mock.module('@/features/tunnel/computer-connect', () => ({
 mock.module('@/features/tunnel/local-computer-modal', () => ({
   LocalComputerModal: () => null,
 }));
-mock.module('@/features/workspace/project-sidebar/workspace-menu-section', () => ({
+mock.module('@kortix/ui/workspace/sidebar/workspace-menu-section', () => ({
   WorkspaceMenuSection: () => null,
 }));
 
-mock.module('@/features/accounts/create-account-modal', () => ({ CreateAccountModal: () => null }));
 const { WorkspaceSwitcher } = await import('./workspace-switcher');
 Object.assign(globalThis, { window: new Window(), IS_REACT_ACT_ENVIRONMENT: true });
 for (const permission of [true, false, undefined]) {
