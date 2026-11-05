@@ -129,7 +129,7 @@ test('watcher runner: a tick posts what check() returns with ids built from the 
 test('watcher runner: nothing to report sends a heartbeat; 429 is retried; a failing check answers 502', async () => {
   const quiet = loadRunner(async () => [], [answer(429, { error: 'slow down' }, '1'), answer(202, { triggers: 1, accepted: 0, deduped: 0, suppressed: 0, unmatched: 0, heartbeats: 1 })]);
   expect((await quiet.call('POST', '/tick')).body).toMatchObject({ events: 0, triggers: 1 });
-  expect(quiet.posted.map((p) => p.body.events)).toEqual([[{ name: 'kortix.heartbeat' }], [{ name: 'kortix.heartbeat' }]]);
+  expect(quiet.posted.map((p) => p.body.events as unknown[])).toEqual([[{ name: 'kortix.heartbeat' }], [{ name: 'kortix.heartbeat' }]]);
 
   const broken = loadRunner(async () => { throw new Error('GET https://status.example.com answered 503'); }, []);
   expect(await broken.call('POST', '/tick')).toEqual({ status: 502, body: { error: 'GET https://status.example.com answered 503' } });
