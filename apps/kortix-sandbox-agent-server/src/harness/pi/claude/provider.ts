@@ -130,7 +130,9 @@ function stream(opts: ClaudeProviderOptions, model: Model<Api>, context: Transcr
       else if (outcome.kind === 'result' && opts.gatewayStep && reply.limitedBeforeOutput(outcome.result)) {
         // Every Claude account is at its limit: the project's fallback model takes the step.
         logger.warn('[claude] every Claude account is at its usage limit; the step goes to the gateway fallback', { model: model.id })
-        if (!(await relayFallbackStep(opts.gatewayStep(model, context, options), out))) reply.finishResult(outcome.result)
+        if (await relayFallbackStep(opts.gatewayStep(model, context, options), out)) return
+        if (options.signal?.aborted) reply.fail(new Error('Request was aborted'), 'aborted')
+        else reply.finishResult(outcome.result)
       } else if (outcome.kind === 'result') reply.finishResult(outcome.result)
       else reply.fail(new Error('Request was aborted'), 'aborted')
     } catch (err) {

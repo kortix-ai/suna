@@ -546,7 +546,9 @@ export async function resolveCandidates(
     // its limit (harness/pi/claude/provider.ts). A resting pool starts the
     // project's Routing chain with its own rest, so the session's fallback holds
     // until the plan resets. Any other refusal stays `model_not_found` below,
-    // which starts the chain too.
+    // which starts the chain too. So does a short per-minute 429 on an account
+    // with room: the fallback serves that step and the revert moves the session
+    // back at its next check.
     if (principal.projectId && principal.sessionId) {
       await resolveClaudeCredentials({
         accountId: principal.accountId, projectId: principal.projectId, userId: principal.userId,
