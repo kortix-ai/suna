@@ -7,7 +7,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { accountMembers, accountSecretResources, accounts, projectSessions, projects, sessionProviderSecretPools } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { CLAUDE_ACCOUNT, claudeCredentialsForGateway, countUsableClaudeAccounts, markClaudeAccountRefused, resolveClaudeCredentials } from '../claude-subscription/accounts';
+import { coolDownAccountSecret } from '../secrets/account-resource';
 import { writeProviderAccount } from '../secrets/provider-accounts';
+import { isModelServableForAccount } from '../llm-gateway/resolution/default-model';
+import { resolveCandidates } from '../llm-gateway/resolution/resolve-candidates';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
 
@@ -116,6 +119,29 @@ describe('the Claude account a request uses', () => {
     expect((await ids(session))[0]).toBe(SELECTED);
 
     await db.update(projectSessions).set({ metadata: {} }).where(eq(projectSessions.sessionId, SESSION));
+  });
+
+  test("a session's Claude step sent to the gateway while every Claude account rests is a resting pool, so the project's chain serves it", async () => {
+    const session = { ...principal(null), sessionId: SESSION };
+    const refusal = async () => resolveCandidates(session, 'claude-agent/opus').then(() => null, (err: { code?: string; restSeconds?: number }) => err);
+    const servable = (restingIsServable?: boolean) => isModelServableForAccount({
+      accountId: ACCOUNT, projectId: PROJECT, userId: OWNER, sessionId: SESSION, personalUserId: null, freeModelsOnly: false,
+      model: 'claude-agent/opus', restingIsServable,
+    });
+    // An account has room: the gateway still cannot run Claude Code.
+    expect((await refusal())?.code).toBe('model_not_found');
+    expect(await servable(false)).toBe(true);
+
+    for (const secretId of [SHARED, SELECTED]) await coolDownAccountSecret(secretId, ACCOUNT, 3 * 3600);
+    const resting = await refusal();
+    expect(resting?.code).toBe('provider_pool_rate_limited');
+    expect(resting?.restSeconds).toBeGreaterThan(3 * 3600 - 60);
+    // The fallback stays until an account has room; a turn gate still lets the person try.
+    expect(await servable(false)).toBe(false);
+    expect(await servable()).toBe(true);
+
+    await db.update(accountSecretResources).set({ cooldownUntil: null, cooldownProbeAt: null }).where(eq(accountSecretResources.accountId, ACCOUNT));
+    expect(await servable(false)).toBe(true);
   });
 
   test('the gateway answer: tokens to try, the provider turned off, or no account', async () => {
