@@ -137,7 +137,12 @@ Subcommands:
   events <id|slug>                  The App's events (30 days) and what came of each:
                                     fired → session, skipped → why, unmatched → no
                                     trigger listens. --status <s> --trigger <slug>
-                                    --limit N --cursor <c> --json.
+                                    --id <event-id> --limit N --cursor <c> --json.
+  events emit <id|slug> <name>      Send a test event on the real path (id test-…).
+                                    --data <json|@file> --id <id> --wait[=<s>]: wait
+                                    for the outcome; exit 0 only when a trigger fired.
+  events credentials <id|slug>      KORTIX_APP_EVENTS_URL and KORTIX_APP_TOKEN, for code
+                                    that runs outside the App. Project admins.
   start <id|slug>                   Permit requests and start the App.
   stop <id|slug>                    Suspend now. The next authorized request wakes it.
   rollback <id|slug> <id|vN>        Roll back: a NEW release from that release's artifact
