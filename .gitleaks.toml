@@ -128,3 +128,23 @@ paths = [
 regexes = [
   '''pbAXVjlIOE01xbut7YnAbkhMQIkcwoHO0ek2j4Q0''',
 ]
+
+[[allowlists]]
+description = "CocoaPods SPEC CHECKSUMS in the mobile Podfile.lock: each value is the SHA-1 of a pod's podspec, written by `pod install`, not a credential (#11736 tripped generic-api-key). Scoped to that file and a 40-hex value so any other secret there still fails."
+condition = "AND"
+paths = [
+  '''^apps/mobile/ios/Podfile\.lock$''',
+]
+regexes = [
+  '''^[0-9a-f]{40}$''',
+]
+
+[[allowlists]]
+description = "PostHog project key (`phc_…`) for kortix.com analytics (#11780). PostHog project keys are write-only client keys that ship in the browser bundle by design; they cannot read data. Scoped to the one config file and the `phc_` shape so any other secret there still fails."
+condition = "AND"
+paths = [
+  '''^apps/web/src/lib/analytics/posthog-config\.ts$''',
+]
+regexes = [
+  '''^phc_[A-Za-z0-9]{20,64}$''',
+]
