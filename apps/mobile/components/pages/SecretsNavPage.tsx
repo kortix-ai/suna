@@ -12,7 +12,7 @@ import React, { useMemo, useState } from 'react';
 import {
   View,
   Pressable,
-  } from 'react-native';
+} from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';

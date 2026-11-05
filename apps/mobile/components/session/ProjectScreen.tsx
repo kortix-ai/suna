@@ -65,7 +65,7 @@ import { ProjectSwitcherSheet } from '@/components/projects/ProjectSwitcherSheet
 import {
   pendingOpenedThread,
   threadSandboxReady,
-  } from '@/lib/session/session-sandbox';
+} from '@/lib/session/session-sandbox';
 import { ProjectHome } from '@/components/session/ProjectHome';
 import {
   sessionDisplayTitle,
