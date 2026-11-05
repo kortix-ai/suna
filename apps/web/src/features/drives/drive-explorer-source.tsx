@@ -73,7 +73,13 @@ const MAX_CACHED_ENTRIES = 1_000;
 
 /** `Users/ana` or `/Users/ana/` -> `/Users/ana`; the root is `/`. */
 export function toDrivePath(p: string | null | undefined): string {
-  const trimmed = (p ?? '').replace(/^\/+|\/+$/g, '');
+  // A loop, not `/^\/+|\/+$/`: that regex backtracks quadratically on a long run of `/`.
+  const raw = p ?? '';
+  let start = 0;
+  let end = raw.length;
+  while (start < end && raw[start] === '/') start += 1;
+  while (end > start && raw[end - 1] === '/') end -= 1;
+  const trimmed = raw.slice(start, end);
   return trimmed ? `/${trimmed}` : '/';
 }
 
