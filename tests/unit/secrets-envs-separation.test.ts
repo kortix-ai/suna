@@ -299,9 +299,9 @@ describe('scripts/secrets-envs-separation.py', () => {
     expect(r.out).toMatch(/prod did not decrypt/);
   });
 
-  // The shipped allowlist is the file the gate reads: a brand key that is not listed there
-  // fails the real dev/staging profiles on the one host that can decrypt prod.
-  it('ships an entry for every brand key the real dev and staging profiles hold', () => {
+  // The committed profiles are the ones `pnpm test:envs` reads on a host that can decrypt
+  // prod: a brand key missing from the shipped allowlist fails dev and staging there.
+  it('ships an allowlist entry for every brand value the committed profiles hold', () => {
     const shipped = readFileSync(resolve(root, 'scripts/secrets-shared-with-prod.allowlist'), 'utf8');
     const listed = new Set(
       shipped
@@ -309,6 +309,7 @@ describe('scripts/secrets-envs-separation.py', () => {
         .map((l) => /^([A-Z][A-Z0-9_]+)\s/.exec(l)?.[1])
         .filter(Boolean),
     );
+    // Brand values: one public zone, sender address or host name serves every environment.
     for (const key of [
       'CLOUDFLARE_ZONE_NAME',
       'MAILTRAP_FROM_EMAIL',
