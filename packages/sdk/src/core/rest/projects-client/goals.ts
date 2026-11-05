@@ -185,7 +185,12 @@ export function goalHealth(
   // that still runs means GOAL.md alone claims the pause (any session can write it): judge it as any other.
   if (goal.paused_at && heartbeat?.state !== 'active') return { state: 'healthy', issues: [] };
   const issues: ProjectGoalIssue[] = [];
-  if (!heartbeat || heartbeat.state === 'done') issues.push('no_heartbeat');
+  // Started again: the owner's turn end arms the heartbeat, so its absence is a problem only after the missed-wake window.
+  const restartedAt = [...(goal.transitions ?? [])].reverse().find((t) => t.from === 'stopped')?.at;
+  const waking = !!restartedAt && Date.parse(restartedAt) > now - MISSED_WAKE_MS;
+  if (!heartbeat || heartbeat.state === 'done') {
+    if (!waking) issues.push('no_heartbeat');
+  }
   else if (heartbeat.state === 'paused') issues.push('heartbeat_paused');
   else if (heartbeat.last_status === 'failed') issues.push('heartbeat_failed');
   else if (heartbeat.next_fire_at && Date.parse(heartbeat.next_fire_at) < now - MISSED_WAKE_MS) issues.push('missed_wake');

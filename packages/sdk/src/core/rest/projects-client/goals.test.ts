@@ -773,6 +773,12 @@ describe('person controls: create, pause, resume', () => {
     expect(JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/projects/p1/sessions')!.body).name).toBe('Draft our investor update for October.');
   });
 
+  test('a goal started again is waking, not broken, until the missed-wake window passes without a heartbeat', () => {
+    const restarted = { ...STOPPED_DOC, status: 'active' as const, transitions: [...STOPPED_DOC.transitions, { from: 'stopped' as const, to: 'active' as const, at: '2026-10-21T11:55:00Z', reason: 'again', by: 'person' }] };
+    expect(goalHealth(restarted, null, NOW)).toEqual({ state: 'healthy', issues: [] });
+    expect(goalHealth(restarted, null, NOW + 15 * 60_000).issues).toEqual(['no_heartbeat']);
+  });
+
   test('paused_at and paused_by round-trip through GOAL.md', () => {
     const doc = { ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person', body: '' };
     expect(parseGoalFile(formatGoalFile(doc))).toMatchObject({ paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
