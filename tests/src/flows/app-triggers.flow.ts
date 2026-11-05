@@ -5,7 +5,7 @@
 import { flow } from "../core/flow";
 import { withDb } from "../fixtures/chat";
 
-type Listed = { triggers: Array<{ slug: string; type: string; app?: string | null }> };
+type Listed = { triggers: Array<{ slug: string; type: string; app?: string | null; expect_event_within_seconds?: number | null }> };
 type EventLog = {
   events: Array<{ name: string | null; id: string | null; test: boolean; trigger: string | null; status: string; reason: string | null; data: Record<string, unknown> | null }>;
   next_cursor: string | null;
@@ -59,6 +59,16 @@ flow(
       const listed = (await owner.get("/v1/projects/:projectId/triggers", { params })).status(200).json<Listed>();
       const trigger = listed.triggers.find((t) => t.slug === slug);
       if (trigger?.type !== "app" || trigger.app !== appSlug) throw new Error(`listing: ${JSON.stringify(trigger)}`);
+    });
+
+    await ctx.step("expect_event_within: 10m on the app trigger is listed as 600 s; 1m, a cron trigger and a bad value are 400", async () => {
+      (await owner.patch("/v1/projects/:projectId/triggers/:slug", { expect_event_within: "10m" }, { params: { ...params, slug } })).status(200);
+      const listed = (await owner.get("/v1/projects/:projectId/triggers", { params })).status(200).json<Listed>();
+      const trigger = listed.triggers.find((t) => t.slug === slug);
+      if (trigger?.expect_event_within_seconds !== 600) throw new Error(`expect_event_within: ${JSON.stringify(trigger)}`);
+      (await owner.patch("/v1/projects/:projectId/triggers/:slug", { expect_event_within: "1m" }, { params: { ...params, slug } })).status(400);
+      (await owner.patch("/v1/projects/:projectId/triggers/:slug", { expect_event_within: "soon" }, { params: { ...params, slug } })).status(400);
+      (await owner.post("/v1/projects/:projectId/triggers", { name: "c", type: "cron", cron: "0 0 9 * * *", prompt_template: "go", expect_event_within: "1h" }, { params })).status(400);
     });
 
     await ctx.step("the owner reads the App's event credentials; ANON gets 401", async () => {

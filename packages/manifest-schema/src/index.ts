@@ -49,6 +49,8 @@ import {
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   reservedEnvNameReason,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
+  TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS,
   DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
   RESERVED_SANDBOX_SLUG,
@@ -241,6 +243,8 @@ export {
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
+  TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS,
   DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
   DURATION_RE,
@@ -1206,7 +1210,7 @@ export function validateAppsV2(node: unknown, path: string, issues: ManifestIssu
 }
 
 /**
- * A duration-literal field on a monitor (`interval`, `expect_event_within`).
+ * A duration-literal field (`every`, `max_lateness`, an app trigger's `expect_event_within`).
  * Returns the parsed seconds, or null when the value is absent/rejected.
  */
 function validateMonitorDuration(
@@ -1460,6 +1464,17 @@ export function validateTriggers(rawNode: unknown, path: string, issues: Manifes
         validateMonitorDuration(entry.max_lateness, `${where}.max_lateness`, TRIGGER_MIN_MAX_LATENESS_SECONDS, issues);
       } else {
         issues.push({ path: `${where}.max_lateness`, message: 'max_lateness is only valid on a cron trigger.', severity: 'error' });
+      }
+    }
+    // The silence alert: app triggers only, a duration of at least 5m.
+    if (entry.expect_event_within !== undefined) {
+      if (type === 'app') {
+        const seconds = validateMonitorDuration(entry.expect_event_within, `${where}.expect_event_within`, TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS, issues);
+        if (seconds !== null && seconds > TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS) {
+          issues.push({ path: `${where}.expect_event_within`, message: 'must be at most 30d.', severity: 'error' });
+        }
+      } else {
+        issues.push({ path: `${where}.expect_event_within`, message: 'expect_event_within is only valid on an app trigger.', severity: 'error' });
       }
     }
     if (type === 'cron') {

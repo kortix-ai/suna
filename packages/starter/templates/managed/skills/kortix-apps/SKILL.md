@@ -173,7 +173,12 @@ watcher (App, poll, App event, session wake-up): `kortix-system` →
    the reason, `suppressed`, `failed`, `pending`, or `unmatched` (no enabled
    trigger listens; the App's POST answer says so in `hint`). Read it before
    you guess why nothing ran.
-6. Code outside the App (your machine while you build it) gets the URL and
+6. Know when the watcher stops: add `expect_event_within: 30m` (5m or
+   more) to the work trigger, or `--expect-event-within 30m`. No post for that
+   long tells the trigger's watchers once; the App's next post clears it. A
+   deduplicated post counts, so post the content id on every check even when
+   nothing changed.
+7. Code outside the App (your machine while you build it) gets the URL and
    token from `kortix apps events credentials <app>` (project admins). The
    token posts as that App: keep it out of chat, files and commits.
 
