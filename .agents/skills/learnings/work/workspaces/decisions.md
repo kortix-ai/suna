@@ -50,3 +50,25 @@ chosen at invite), and Members shows one list with each person's project role;
 a member without a grant shows "No access" with "Grant access". No IAM engine
 change, so the 11 accounts with several members and several projects keep
 their per-project privacy.
+
+## 2026-11-05 (evening)
+
+**D6 (decided, Marko).** PR #11857 unifies everything end to end, not only the
+product: data, API, SDK, CLI and IAM all become "workspace" ("this pr should
+fully address it properly e2e").
+
+**D7 (decided, Marko).** Backward compatibility stays permanently: old routes
+(`/v1/projects/*`, `/v1/accounts/*`), SDK `Project*`/`Account*` exports, the CLI
+`projects` command, `KORTIX_PROJECT_ID` and the old DB names. There is no later
+drop step ("all compatibility & backwards comp should stay").
+
+**Constraint (measured 2026-11-05, prod estimates).** 205 tables carry
+`account_id` and/or `project_id`; `audit_events` is ~400 GB, `gateway_request_logs`
+48 GB, `credit_ledger` 8.6M rows. Rewriting id values on those tables is not
+feasible in one release; the identity design must avoid it.
+
+**Defaults taken (Marko may veto).** Project name wins in the account-name
+backfill (old names kept in a backup table). The 401 multi-project accounts are
+split automatically: the most recently opened project keeps the account, its
+credits and subscription; every move is logged and reversible. The 40,618 empty
+accounts stay as dormant records.
