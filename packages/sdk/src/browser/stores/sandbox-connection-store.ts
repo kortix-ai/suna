@@ -404,6 +404,3 @@ export function setRuntimeHealth(
 	}
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `setRuntimeHealth`. Removed in the next major. */
-export const setOpenCodeHealth = setRuntimeHealth;

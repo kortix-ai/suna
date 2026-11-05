@@ -35,7 +35,6 @@ export {
 export {
   isClientRequestTimeoutMessage,
   isExpectedBillingGateMessage,
-  isExpectedCompactionNoModelMessage,
   isGitMirrorUnavailableNoiseMessage,
   isModelNotServableNoise,
   isRuntimeNotReadyNoiseMessage,

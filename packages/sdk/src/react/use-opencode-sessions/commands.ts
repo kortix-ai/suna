@@ -1,12 +1,11 @@
 'use client';
 
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { getClient } from '../../core/runtime/client';
 import type { Command } from '../../core/runtime/runtime-types';
 import { activeRuntimeAction, runtimeActionError, runtimeActionPaths } from '../../core/session/runtime-actions';
 import { useRuntimeSupports } from '../use-runtime-supports';
 import { runtimeKeys, useRuntimeReady } from './keys';
-import { unwrap, asRuntimeList } from './shared';
+import { asRuntimeList } from './shared';
 
 // ============================================================================
 // Command Hooks
@@ -137,12 +136,3 @@ export function useExecuteRuntimeCommand() {
   });
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `ExecuteRuntimeCommandInput`. Removed in the next major. */
-export type ExecuteOpenCodeCommandInput = ExecuteRuntimeCommandInput;
-/** @deprecated Renamed to `executeRuntimeCommand`. Removed in the next major. */
-export const executeOpenCodeCommand = executeRuntimeCommand;
-/** @deprecated Renamed to `useRuntimeCommands`. Removed in the next major. */
-export const useOpenCodeCommands = useRuntimeCommands;
-/** @deprecated Renamed to `useExecuteRuntimeCommand`. Removed in the next major. */
-export const useExecuteOpenCodeCommand = useExecuteRuntimeCommand;

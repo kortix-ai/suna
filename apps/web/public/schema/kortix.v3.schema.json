@@ -562,6 +562,10 @@
                 "type": "string",
                 "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
               },
+              "expect_event_within": {
+                "type": "string",
+                "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+              },
               "max_runs_per_hour": {
                 "type": "integer",
                 "minimum": 1
@@ -922,6 +926,27 @@
                   "properties": {
                     "type": {
                       "enum": [
+                        "cron",
+                        "webhook",
+                        "event"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "expect_event_within": false
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "enum": [
                         "webhook",
                         "event",
                         "app"
@@ -1108,6 +1133,11 @@
                 "type": "string",
                 "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
                 "description": "Schedules only, `60s` or more. A missed fire later than this does not run."
+              },
+              "expect_event_within": {
+                "type": "string",
+                "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
+                "description": "App events only, `5m` or more. No event for this long tells the trigger's watchers once; the next event clears it."
               },
               "overlap": {
                 "type": "string",

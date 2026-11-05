@@ -5,7 +5,6 @@
  */
 import { MESSAGE_READ_CODE, STEER_NO_ACTIVE_TURN_CODE, type RuntimeCommandInfo } from '@kortix/api-contract/runtime-relay'
 import type { SessionLogMessage } from '@kortix/api-contract/session-log'
-import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type { HarnessTurnResponse, HarnessTurnService, RuntimePromptInput } from '../contract/turns'
 import { CommandNotEnabled, PromptRejected, parsePromptBody, type PiRuntime, type PromptInput } from './runtime'
 import { sessionLogView } from '../shared/session-log-journal'
@@ -122,25 +121,6 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       if (sessionId !== rt.rootId) return answer(404, { error: 'not the session root' })
       await rt.abort()
       return answer(200, true)
-    },
-
-    async readMessage(sessionId, messageId) {
-      const rt = runtime()
-      if (!rt) return NOT_STARTED
-      const message = transcriptOf(rt, sessionId)?.messageById(messageId)
-      if (!message) return answer(404, { error: 'unknown message' })
-      const ref = (id: string, partId: string) =>
-        `/kortix/part/${encodeURIComponent(sessionId)}/${encodeURIComponent(id)}/${encodeURIComponent(partId)}`
-      return answer(200, stripInlineAttachmentBytes(message, ref).value)
-    },
-
-    // pi removes only what no model call has read, so a removal is a retract.
-    async removeMessage(sessionId, messageId) {
-      const rt = runtime()
-      if (!rt) return NOT_STARTED
-      const outcome = retract(rt, sessionId, messageId)
-      if (outcome === 'retracted') return answer(200, true)
-      return outcome === 'read' ? READ : answer(404, { error: 'unknown message' })
     },
 
     async retractMessage(sessionId, messageId) {

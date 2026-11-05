@@ -1,42 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import * as kortixMaster from './core/runtime/kortix-master';
 import * as kortixMasterHooks from './react/use-kortix-master';
 
 /**
- * Exports that stay public until the next major but must carry `@deprecated`,
- * so a consumer's editor flags every call site before the name is removed.
- * The tag is read from the source through the TypeScript compiler, the same
- * way an editor and the emitted `.d.ts` see it.
+ * Exports that stay public for now but must carry `@deprecated`, so a
+ * consumer's editor flags every call site before the name is removed. A
+ * first-party host still calls each of them. The tag is read from the source
+ * through the TypeScript compiler, the same way an editor and the emitted
+ * `.d.ts` see it.
  */
-
-/** No host uses them. Each wraps an OpenCode-only REST route. */
-const UNUSED_RUNTIME_EXPORTS = [
-  'useOpenCodeMcpStatus',
-  'useAddMcpServer',
-  'useConnectMcpServer',
-  'useDisconnectMcpServer',
-  'useMcpAuthStart',
-  'useMcpAuthCallback',
-  'useMcpAuthRemove',
-  'useShareSession',
-  'useUnshareSession',
-  'useUpdatePart',
-  'useDeletePart',
-  'useOpenCodeSkills',
-  'useOpenCodeToolIds',
-  'useOpenCodeProjects',
-  'useDeleteOpenCodeSession',
-  'getRuntimeProviderAuthMethods',
-  'authorizeRuntimeProvider',
-  'completeRuntimeProviderOAuth',
-  'setRuntimeProviderApiKey',
-  'getRuntimeConfig',
-  'updateRuntimeConfig',
-  'refreshRuntimeConfiguration',
-];
 
 /**
  * The message-id clock arithmetic: an ordering detail of OpenCode's ids that
@@ -85,132 +59,6 @@ const TRANSCRIPT_SHARE_EXPORTS = [
   'PublicSessionTranscriptToolCall',
 ];
 
-/** Kortix orders prompts server-side; the client queue reducers are unused. */
-const MESSAGE_QUEUE_EXPORTS = [
-  'claimNext',
-  'completeInFlight',
-  'createSessionQueue',
-  'editQueued',
-  'enqueue',
-  'failInFlight',
-  'removeQueued',
-  'reorderQueued',
-  'retryFailed',
-  'QueuedMessage',
-  'QueuedMessageInput',
-  'SessionQueue',
-];
-
-/** Every export of these modules wraps a route the API removed. The modules go whole. */
-const RETIRED_MODULES = [
-  'react/use-admin-analytics.ts',
-  'react/use-admin-feedback.ts',
-  'react/use-system-status.ts',
-  'react/use-admin-billing.ts',
-];
-
-/** Retired hooks in modules that also hold live hooks. Each fails with `ENDPOINT_RETIRED`. */
-const RETIRED_HOOKS = [
-  'useAdminSandboxDetail',
-  'useAdminSandboxHealth',
-  'useAdminSandboxHealthBatch',
-  'useAdminSandboxExec',
-  'useAdminSandboxAction',
-  'useAdminSandboxRepair',
-  'useDeleteAdminSandbox',
-  'useAdminAccountSandboxes',
-  'useCreateTunnelConnection',
-  'useTunnelPermissions',
-  'useGrantTunnelPermission',
-  'useRevokeTunnelPermission',
-  'useTunnelPermissionRequests',
-  'useApprovePermissionRequest',
-  'useDenyPermissionRequest',
-  'useTunnelAuditLogs',
-];
-
-/** Types and helpers only the retired hooks above use. */
-const RETIRED_HOOK_TYPES = [
-  'AdminSandboxDetail',
-  'ProviderMachineDetail',
-  'AdminInstanceLayerStatus',
-  'AdminInstanceLayerAction',
-  'AdminInstanceLayerHealth',
-  'AdminSandboxHealth',
-  'AdminSandboxHealthBatchResponse',
-  'ExecResult',
-  'ProxyTokenResult',
-  'fetchAdminSandboxProxyToken',
-  'AdminAccountSandbox',
-];
-
-/** `react/use-opencode-sessions` hooks no first-party host calls. */
-const UNUSED_SESSION_HOOKS = [
-  'useOpenCodeRuntimeReady',
-  'useOpenCodeSessions',
-  'useOpenCodeSession',
-  'useCreateOpenCodeSession',
-  'useUpdateRuntimeSession',
-  'useUpdateOpenCodeSession',
-  'useDeleteOpenCodeSession',
-  'useRuntimeSessionDiff',
-  'useOpenCodeSessionDiff',
-  'useOpenCodeSessionTodo',
-  'useSummarizeOpenCodeSession',
-  'useInitSession',
-  'useOpenCodeMessages',
-  'useSendRuntimeMessage',
-  'useSendOpenCodeMessage',
-  'useAbortOpenCodeSession',
-  'useRuntimeAgent',
-  'useOpenCodeAgents',
-  'useOpenCodeAgent',
-  'useRuntimeTools',
-  'useOpenCodeTools',
-  'useOpenCodeToolIds',
-  'useOpenCodeSkills',
-  'useOpenCodeProjects',
-  'useOpenCodeCurrentProject',
-  'useOpenCodePathInfo',
-  'useOpenCodeCommands',
-  'useExecuteOpenCodeCommand',
-  'useOpenCodeProviders',
-  'useShareSession',
-  'useUnshareSession',
-  'useUpdatePart',
-  'useDeletePart',
-  'useOpenCodeVcsDiff',
-];
-
-/** Subpaths removed in the next major: the 20 legacy shims, 4 unused internal stores, the queue. */
-const NEXT_MAJOR_SUBPATHS = [
-  './opencode-client',
-  './config',
-  './auth',
-  './api-client',
-  './projects-client',
-  './feature-flags',
-  './fresh-sessions',
-  './instance-routes',
-  './opencode-errors',
-  './platform-client',
-  './event-stream',
-  './files',
-  './session',
-  './session/url',
-  './turns',
-  './sync-store',
-  './server-store',
-  './sandbox-connection-store',
-  './opencode-pending-store',
-  './idb-sync-cache',
-  './internal/sync-store',
-  './internal/server-store',
-  './internal/sandbox-connection-store',
-  './internal/opencode-pending-store',
-  './message-queue',
-];
-
 const program = ts.createProgram([join(import.meta.dir, 'index.ts'), join(import.meta.dir, 'react/index.ts')], {
   target: ts.ScriptTarget.ES2022,
   module: ts.ModuleKind.ESNext,
@@ -249,16 +97,11 @@ function deprecation(name: string): string {
   return ts.displayPartsToString(deprecatedTag(exported)?.text ?? []);
 }
 
-const RETIRED_MODULE_EXPORTS = RETIRED_MODULES.flatMap((entry) => [...exportedSymbols(entry).keys()]);
 const REMOVED_IN_NEXT_MAJOR = /Removed in the next major\./;
 
 describe('deprecated exports', () => {
   test('the kortix-master sweep is not empty', () => {
     expect(KORTIX_MASTER_EXPORTS.length).toBeGreaterThan(100);
-  });
-
-  test.each(UNUSED_RUNTIME_EXPORTS)('%s is @deprecated', (name) => {
-    expect(isDeprecated(name)).toBe(true);
   });
 
   test.each(KORTIX_MASTER_EXPORTS)('%s is @deprecated', (name) => {
@@ -269,27 +112,12 @@ describe('deprecated exports', () => {
     expect(isDeprecated(name)).toBe(true);
   });
 
-  test('the retired-module sweep is not empty', () => {
-    expect(RETIRED_MODULE_EXPORTS.length).toBeGreaterThan(80);
-  });
-
-  test.each([...MESSAGE_QUEUE_EXPORTS, ...RETIRED_MODULE_EXPORTS, ...RETIRED_HOOKS, ...RETIRED_HOOK_TYPES, ...UNUSED_SESSION_HOOKS, ...TRANSCRIPT_SHARE_EXPORTS])(
+  test.each(TRANSCRIPT_SHARE_EXPORTS)(
     '%s is @deprecated and removed in the next major',
     (name) => {
       expect(deprecation(name)).toMatch(REMOVED_IN_NEXT_MAJOR);
     },
   );
-
-  test.each(NEXT_MAJOR_SUBPATHS)('subpath %s is @deprecated and removed in the next major', (subpath) => {
-    const pkg = JSON.parse(readFileSync(join(import.meta.dir, '..', 'package.json'), 'utf8')) as {
-      exports: Record<string, string>;
-    };
-    const file = pkg.exports[subpath];
-    expect(file).toBeDefined();
-    const header = readFileSync(join(import.meta.dir, '..', file), 'utf8').match(/^\/\*\*[\s\S]*?\*\//)?.[0] ?? '';
-    expect(header).toContain('@deprecated');
-    expect(header).toMatch(REMOVED_IN_NEXT_MAJOR);
-  });
 
   test.each(['mintWireMessageId', 'WIRE_MESSAGE_ID'])('%s stays current (the Kortix message id format)', (name) => {
     expect(isDeprecated(name)).toBe(false);

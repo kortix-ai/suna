@@ -130,12 +130,13 @@ ship creates the cloud project and pushes in one step.
 
 ## Minimum version
 
-An API can refuse an old CLI. When the API sets `CLI_MIN_VERSION`
-(`major.minor.patch`), every `/v1` request from an older CLI answers `426`, and the
-CLI prints `This Kortix CLI (<version>) is older than this server supports
-(minimum <version>). Update it: kortix update`. A self-host operator sets it with
-`self-host env set CLI_MIN_VERSION=<version>`. Unset: no gate. Development builds
-(`cli/dev`) always pass.
+The API refuses a CLI older than `0.14.13`: an older CLI reads OpenCode routes the
+API and the session box no longer serve. Every `/v1` request from such a CLI answers
+`426`, and the CLI prints `This Kortix CLI (<version>) is older than this server
+supports (minimum <version>). Update it: kortix update`. An API can raise the
+minimum with `CLI_MIN_VERSION` (`major.minor.patch`); a self-host operator sets it
+with `self-host env set CLI_MIN_VERSION=<version>`. A value below `0.14.13` is
+ignored. Development builds (`cli/dev`) always pass.
 
 ## Self-host
 

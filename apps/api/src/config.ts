@@ -381,7 +381,8 @@ const envSchema = z.object({
   ),
   // A Kortix CLI older than CLI_MIN_VERSION (`major.minor.patch`) gets `426`
   // with the update command on every /v1 request (middleware/cli-min-version.ts).
-  // Unset: no gate. A malformed value is a boot error, as above.
+  // It only raises the built-in minimum (BUILT_IN_CLI_MIN_VERSION, 0.14.13);
+  // unset or lower: the built-in minimum. A malformed value is a boot error, as above.
   CLI_MIN_VERSION: optStr.refine(
     (v) => v.trim() === '' || /^v?\d+(\.\d+){0,2}$/.test(v.trim()),
     {

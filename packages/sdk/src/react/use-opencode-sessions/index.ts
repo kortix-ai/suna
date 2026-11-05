@@ -7,16 +7,12 @@ export * from './keys';
 export * from './sessions';
 export * from './messages';
 export * from './agents';
-export * from './tools';
 export * from './projects';
 export * from './commands';
 export * from './providers';
-export * from './mcp';
-export * from './sharing';
-export * from './parts';
 export * from './files';
 export * from './permissions';
 export * from './vcs';
 
 // Public session/cache helpers that live in ./shared (otherwise internal).
-export { canQueryOpenCodeSession, canQueryRuntimeSession, clearProjectProviderCache } from './shared';
+export { canQueryRuntimeSession } from './shared';
