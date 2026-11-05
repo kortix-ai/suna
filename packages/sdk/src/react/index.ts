@@ -134,6 +134,16 @@ export {
   type UseAccountsOptions,
   type UseProjectsOptions,
 } from './use-accounts';
+// The workspace names. Same queries and keys as useAccounts/useProjects.
+export {
+  useWorkspaces,
+  useWorkspace,
+  workspacesState,
+  workspaceQueryOptions,
+  type UseWorkspacesOptions,
+  type UseWorkspacesResult,
+  type UseWorkspaceOptions,
+} from './use-workspaces';
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useAccountSecretResources, useSessionProviderSecretPools, useSubscriptionUsage, useSubscriptionConnections } from './use-provider-secrets';
 export {

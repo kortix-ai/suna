@@ -308,6 +308,13 @@ export const qk = {
      * `executorPolicies` below are kept apart for the identical reason.
      */
     summary: (id: string) => [...qk.project.scope(id), 'summary'] as const,
+    /**
+     * The workspace — `getWorkspace`, a `Workspace` (the project row plus the
+     * caller's role and the workspace settings). Its own entry, not
+     * `summary(id)`: the two responses have different shapes. Under the
+     * project scope, so `invalidateProject` reaches it.
+     */
+    workspace: (id: string) => [...qk.project.scope(id), 'workspace'] as const,
 
     detail: (id: string) => [...qk.project.scope(id), 'detail'] as const,
     /**

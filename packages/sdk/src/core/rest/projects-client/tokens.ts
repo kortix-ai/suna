@@ -62,7 +62,10 @@ export interface ListAccountTokensOptions {
   mine?: boolean;
 }
 
-/** List CLI PATs for an account (defaults to the caller's resolved account). */
+/** List CLI PATs for an account (defaults to the caller's resolved account).
+ *
+ * @deprecated Use `listWorkspaceTokens(workspaceId, options)`. Kept permanently.
+ */
 export async function listAccountTokens(
   accountId?: string,
   options?: ListAccountTokensOptions,
@@ -92,7 +95,10 @@ export async function approveCliDevice(userCode: string, options?: { accountId?:
 }
 
 /** Mint a new account-scoped CLI PAT. The `secret_key` is returned once — the
- *  caller must persist it immediately; subsequent reads only ever see `public_key`. */
+ *  caller must persist it immediately; subsequent reads only ever see `public_key`.
+ *
+ * @deprecated Use `createWorkspaceToken(workspaceId, input)`. Kept permanently.
+ */
 export async function createAccountToken(input: CreateAccountTokenInput) {
   const { accountId, expiresAt, projectId, name } = input;
   return unwrap(
@@ -108,7 +114,10 @@ export async function createAccountToken(input: CreateAccountTokenInput) {
 /** Revoke an account-scoped CLI PAT. With `{ deleteRevoked: true }`, DELETE
  *  becomes "remove this dead row": the API only honors it for a personal key
  *  that is already revoked (the caller's own), and answers 404 otherwise —
- *  the settings page's Delete action for a revoked key rides on it. */
+ *  the settings page's Delete action for a revoked key rides on it.
+ *
+ * @deprecated Use `revokeWorkspaceToken(workspaceId, tokenId, options)`. Kept permanently.
+ */
 export async function revokeAccountToken(
   tokenId: string,
   accountId?: string,

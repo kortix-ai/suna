@@ -148,6 +148,9 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...projectSnapshotEnv,
     ...auditRelayEnvPassthrough(),
     KORTIX_PROJECT_ID: input.projectId,
+    // The workspace id is the project id. kortixd and the CLI read
+    // KORTIX_WORKSPACE_ID first; KORTIX_PROJECT_ID stays permanently.
+    KORTIX_WORKSPACE_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,

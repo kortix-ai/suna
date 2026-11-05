@@ -56,6 +56,29 @@ try/catching every call.
 ### 1c. Mobile release policy  ✅
 `kortix.mobileClientPolicy()` → `GET /v1/clients/mobile`. Public (no token): a mobile build reads it before login. Resolves `{minimum_version, store_url_ios, store_url_android}` (strings or `null`). `compareSemver(a, b)` compares versions.
 
+### 1d. Workspaces  ✅
+
+A workspace is one account and its one project; `workspace_id` = `project_id`.
+Module: `projects-client/workspaces.ts`. Facade: `kortix.workspaces.{list,get,update,create}`,
+`kortix.workspace(id)` (the whole `project(id)` handle plus `get`, `update`, `accountId`,
+`members.*`, `leave`, `billing.state`, `tokens.*`, `iam.*`). Hooks: `useWorkspaces`, `useWorkspace`.
+
+| Capability | Route today | SDK |
+|---|---|---|
+| list | `GET /v1/accounts`, then `GET /v1/projects?account_id=` per account | `listWorkspaces` ✅ |
+| get (role + settings) | `GET /v1/projects/:id`, then `GET /v1/accounts/:accountId` (skipped when the response already carries `role`) | `getWorkspace` ✅ |
+| update | `PATCH /v1/projects/:id` | `updateWorkspace` ✅ |
+| create | `POST /v1/projects/provision{,-stream}` with `new_workspace: true` | `createWorkspace` ✅ |
+| members / invites / leave | `/v1/accounts/:accountId/{members,invites,leave}` | `*WorkspaceMember*`, `*WorkspaceInvite*`, `leaveWorkspace` ✅ |
+| personal access tokens | `/v1/accounts/tokens?account_id=` | `list/create/revokeWorkspaceToken` ✅ |
+| billing state | `GET /v1/billing/account-state?account_id=` | `getWorkspaceBillingState` ✅ |
+| IAM | `/v1/accounts/:accountId/iam/{assignments,roles,groups,effective}` | `*WorkspaceAssignment*`, `listWorkspaceRoles`, `listWorkspaceGroups`, `probeWorkspacePermission(s)` ✅ |
+
+Each workspace-scoped call resolves the account with `GET /v1/projects/:id` first. When the API
+serves `/v1/workspaces/:workspaceId/*`, only the paths change; the signatures and response types stay.
+Every `Project*`/`Account*` name stays permanently; exact equivalents carry `@deprecated`.
+"Workspace files" (section 10) is the sandbox's `/workspace` directory, not this entity.
+
 ### 2. Projects  ✅
 | op | Kortix REST | SDK |
 |---|---|---|
@@ -107,7 +130,7 @@ Both hooks have a mounted 10-second polling fallback. Requires the default-off
 ### 5b. Token minting (CLI PATs) — Kortix-as-a-Backend-critical  ✅
 | op | REST | SDK |
 |---|---|---|
-| list / create / revoke (account-scoped) | `GET/POST /v1/accounts/tokens`, `DELETE /v1/accounts/tokens/:tokenId` | `projects-client/tokens.ts` ✅, facade `kortix.accounts.tokens.{list,create,revoke}` ✅ |
+| list / create / revoke (account-scoped) | `GET/POST /v1/accounts/tokens`, `DELETE /v1/accounts/tokens/:tokenId` | `projects-client/tokens.ts` ✅, facade `kortix.accounts.tokens.{list,create,revoke}` ✅; workspace names `kortix.workspace(id).tokens.{list,create,revoke}` ✅ |
 | list / create / revoke (project-scoped, `KORTIX_TOKEN`) | `GET/POST /v1/projects/:id/cli-token`, `DELETE .../cli-token/:tokenId` | ✅, facade `project(id).tokens.{list,create,revoke}` ✅ |
 
 ### 6. Session runtime  ✅
@@ -156,7 +179,7 @@ Kortix-native (`core/runtime/pty.ts`), independent of the agent runtime — daem
 → `getKortixPtyWebSocketUrl`. Hooks: `useRuntimePtyList`, `useCreatePty`,
 `useRemovePty`, `useUpdatePty`, `getPtyWebSocketUrl`.
 
-### 10. Workspace files  ✅ (client) · 🟡 (hooks)
+### 10. Workspace files (the sandbox's `/workspace` directory)  ✅ (client) · 🟡 (hooks)
 Daemon-direct, full 12-op client in the SDK root (`core/files/client.ts`; the session handle binds it as `s.files.*`):
 | op | daemon HTTP | SDK |
 |---|---|---|

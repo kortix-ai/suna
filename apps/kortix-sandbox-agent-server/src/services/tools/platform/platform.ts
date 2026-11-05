@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { workspaceIdFromEnv } from '@/lib/config/workspace-id'
 import type {
   KortixCardChange,
   KortixCardRow,
@@ -119,9 +120,9 @@ export function cliError(run: CliRun): KortixToolError {
   return { kind: 'failed', message }
 }
 
-/** The project the session belongs to. */
+/** The workspace (project) the session belongs to: KORTIX_WORKSPACE_ID, else KORTIX_PROJECT_ID. */
 export function projectId(env: PlatformToolContext['env']): string {
-  return env.KORTIX_PROJECT_ID?.trim() ?? ''
+  return workspaceIdFromEnv(env)
 }
 
 /** In-app path under the session's project. */

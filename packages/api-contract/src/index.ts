@@ -1159,6 +1159,8 @@ export const SessionWorkingSchema = z.object({
 export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
 
 export const ProjectSessionSchema = z.object({
+  /** The workspace id: the same value as `project_id`. Optional: older servers omit it. */
+  workspace_id: z.string().optional(),
   /** Durable conversation selection, falling back to the creation pin before a log exists. */
   model: z.string().nullable().optional(),
   /** Work activity, independent of the computer lifecycle status. Older servers may omit it. */

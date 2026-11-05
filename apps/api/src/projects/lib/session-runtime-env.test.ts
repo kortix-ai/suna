@@ -56,6 +56,15 @@ describe('buildSessionRuntimeEnv — server-claimed initial turn', () => {
 
 });
 
+describe('buildSessionRuntimeEnv — workspace id', () => {
+  test('KORTIX_WORKSPACE_ID carries the workspace id, next to the permanent KORTIX_PROJECT_ID', () => {
+    const env = buildSessionRuntimeEnv(BASE_INPUT);
+
+    expect(env.KORTIX_WORKSPACE_ID).toBe(BASE_INPUT.projectId);
+    expect(env.KORTIX_PROJECT_ID).toBe(BASE_INPUT.projectId);
+  });
+});
+
 describe('buildSessionRuntimeEnv — KORTIX_HARNESS', () => {
   test('every new box runs pi: KORTIX_HARNESS=pi, next to the same model and compiled config keys', () => {
     // An unset KORTIX_HARNESS boots OpenCode in kortixd, so the key is never left out.

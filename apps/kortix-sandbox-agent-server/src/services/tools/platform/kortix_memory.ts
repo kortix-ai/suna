@@ -12,6 +12,7 @@
  * replaces the page with that name, so the same fact is never saved twice.
  */
 import { fail, ok, type PlatformToolContext } from './platform'
+import { workspaceIdFromEnv } from '@/lib/config/workspace-id'
 
 const TOOL = 'kortix_memory' as const
 const ACTIONS = ['list', 'view', 'save', 'delete'] as const
@@ -42,7 +43,7 @@ async function call(context: PlatformToolContext, method: 'GET' | 'PUT' | 'DELET
   const env = context.env
   const origin = (env.KORTIX_API_URL ?? '').trim().replace(/\/+$/, '').replace(/\/v1$/, '')
   const token = env.KORTIX_TOKEN?.trim() ?? ''
-  const project = env.KORTIX_PROJECT_ID?.trim() ?? ''
+  const project = workspaceIdFromEnv(env)
   if (!origin || !token || !project) return { status: 0, body: { error: 'This computer has no connection to Kortix.' } }
   const timeout = AbortSignal.timeout(CALL_TIMEOUT_MS)
   try {

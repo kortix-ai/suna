@@ -1,5 +1,11 @@
 import { uiRoutes } from '../../lib/routes';
-import type { AccountInviteLanding, KortixAccount, KortixProject } from '@kortix/sdk';
+import {
+  buildWorkspaceSummaries,
+  compareWorkspacesByRecent,
+  type AccountInviteLanding,
+  type KortixAccount,
+  type KortixProject,
+} from '@kortix/sdk';
 
 import { workspaceAccountLabel } from '../sidebar/workspace-grouping';
 
@@ -42,10 +48,6 @@ export interface ProjectListResult {
   isError: boolean;
 }
 
-function openedAt(project: KortixProject): number {
-  return project.last_opened_at ? new Date(project.last_opened_at).getTime() : 0;
-}
-
 function roleOf(account: KortixAccount | undefined): WorkspaceRow['role'] {
   const role = account?.account_role;
   return role === 'owner' || role === 'admin' ? role : 'member';
@@ -56,33 +58,32 @@ function roleOf(account: KortixAccount | undefined): WorkspaceRow['role'] {
  * then by name. A project whose account is missing from `accounts` (shared into
  * an account the caller is not a member of) still gets a row: the list must
  * never hide a workspace the caller can open. The same project listed by two
- * reads is listed once.
+ * reads is listed once. The list itself is the SDK's (`buildWorkspaceSummaries`,
+ * `compareWorkspacesByRecent`); `role` stays the ACCOUNT role, which the
+ * memberships tab writes back as `account_role`.
  */
 export function buildWorkspaceRows(input: {
   accounts: KortixAccount[];
   lists: ProjectListResult[];
 }): WorkspaceRow[] {
   const accountById = new Map(input.accounts.map((account) => [account.account_id, account]));
-  const seen = new Set<string>();
-  const rows: WorkspaceRow[] = [];
-  for (const list of input.lists) {
-    for (const project of list.data ?? []) {
-      if (project.status === 'archived' || seen.has(project.project_id)) continue;
-      seen.add(project.project_id);
-      const account = accountById.get(project.account_id);
-      rows.push({
-        workspaceId: project.project_id,
-        project,
-        accountId: project.account_id,
+  // The row keeps the cached project object itself (same reference as the
+  // query data), not the summary copy.
+  const projectById = new Map(
+    input.lists.flatMap((list) => (list.data ?? []).map((project) => [project.project_id, project] as const)).reverse(),
+  );
+  return buildWorkspaceSummaries(input)
+    .sort(compareWorkspacesByRecent)
+    .map((workspace) => {
+      const account = accountById.get(workspace.account_id);
+      return {
+        workspaceId: workspace.workspace_id,
+        project: projectById.get(workspace.workspace_id) ?? workspace,
+        accountId: workspace.account_id,
         accountName: workspaceAccountLabel(account?.name ?? null),
         role: roleOf(account),
-      });
-    }
-  }
-  return rows.sort(
-    (a, b) =>
-      openedAt(b.project) - openedAt(a.project) || a.project.name.localeCompare(b.project.name),
-  );
+      };
+    });
 }
 
 /**
