@@ -3378,6 +3378,15 @@ so the App's real event with the same id still fires later. The prompt reads
 `kortix apps events emit <app> <name> --data '{"status":"down"}' --wait`
 waits up to 60 s for the outcome and exits `0` only when a trigger fired.
 
+**Know when a watcher stops.** Add `expect_event_within` (5m or more) to the
+App trigger: `on: { event: status.changed, app: status-watch }` plus
+`expect_event_within: 30m`, or `kortix triggers add … --expect-event-within
+30m`. When the App posts nothing to the trigger for that long, the trigger's
+watchers get one "automation failed" notice, with the `notification_center`
+flag on or off; the App's next post sends "recovered". Every post counts,
+including one Kortix deduplicates, so a watcher that sees no change should
+still post its content id on each check. A test event does not count.
+
 **Post from elsewhere.** `kortix apps events credentials <app>` (project
 admins) prints `KORTIX_APP_EVENTS_URL` and `KORTIX_APP_TOKEN` for code that
 runs outside the App, such as your laptop while you build it. The token posts
