@@ -144,6 +144,12 @@ export async function enforceTokenProjectScope(
   // (`sessionFilesRefusal`, drives/routes.ts).
   if (path === '/v1/drives' || path.startsWith('/v1/drives/')) return;
 
+  // `POST /v1/feedback` — `kortix feedback` inside a session sandbox, whose only
+  // credential is this project+session-scoped PAT. Write-only and rate limited
+  // per user; the row records the token's own account (feedback/index.ts).
+  // Reading feedback stays denied.
+  if (c.req.method === 'POST' && path === '/v1/feedback') return;
+
   const deny = (check: string, reason: string): never => {
     // NAME the principal and the check in the message. The global `app.onError`
     // logs `${method} ${path} -> ${status} [HTTPException] ${message}`, so a

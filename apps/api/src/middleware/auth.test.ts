@@ -198,6 +198,8 @@ function appWithProbe() {
   app.get('/v1/usage/cost-summary', (c) => c.json({ projectId: c.get('tokenProjectId' as never) }));
   app.get('/v1/usage/cost-by-project', (c) => c.json({ projectId: c.get('tokenProjectId' as never) }));
   app.post('/v1/usage/cost-summary', (c) => c.json({ ok: true }));
+  app.post('/v1/feedback', (c) => c.json({ ok: true }, 201));
+  app.get('/v1/feedback', (c) => c.json({ ok: true }));
   // The preview-ownership describe block's one non-sandbox-shaped route: it
   // must NOT be parsed as `/v1/p/:sandboxId/:port` (no ownership check applies).
   app.post('/v1/p/share', (c) => c.json({ ok: true }));
@@ -280,6 +282,26 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
 
   test('a sandbox lookup miss also denies (fail closed, not fail open)', async () => {
     const res = await appWithProbe().request('/v1/p/unknown-sandbox/8000/turn-stream', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  // `kortix feedback` runs inside a session sandbox, whose only credential is a
+  // project+session-scoped PAT. Filing feedback must work from there.
+  test('project-scoped PAT can file feedback (POST /v1/feedback)', async () => {
+    const res = await appWithProbe().request('/v1/feedback', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer kortix_pat_project_a', 'content-type': 'application/json' },
+      body: JSON.stringify({ source: 'cli', kind: 'bug', message: 'x' }),
+    });
+
+    expect(res.status).toBe(201);
+  });
+
+  test('project-scoped PAT still cannot read feedback (GET /v1/feedback)', async () => {
+    const res = await appWithProbe().request('/v1/feedback', {
       headers: { Authorization: 'Bearer kortix_pat_project_a' },
     });
 

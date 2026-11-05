@@ -145,3 +145,27 @@ See `decisions.md`.
   (`pnpm worktree start workspaces`).
 - Prod numbers: read-only `DATABASE_URL` from `apps/api/.env.prod`,
   aggregates only, no IDs or names in tracked files.
+
+## Next PR: one workspace fence (asked by Marko 2026-11-05)
+
+Problem: an agent in a session ran `kortix feedback` and got 403. The session
+credential is a project+session-scoped PAT, and `enforceTokenProjectScope`
+(`apps/api/src/middleware/auth-scope.ts`) denies every account-level route by
+default. The function has grown a per-route allowlist (skills, runtime assets,
+Capture, Drive, Chrome, cost routes, feedback in PR 1). With 1 workspace =
+1 account + 1 project, "project scope" and "account scope" are one fence.
+
+Plan:
+
+1. A project or session token may reach every route of its own workspace:
+   `/v1/accounts/:accountId/*` where `accountId` is the token project's account
+   and that account has exactly 1 active project. The allowlist is deleted.
+2. Authorization moves fully into IAM. The session actor is `agent_session`
+   (`iam/actor.ts`): in agent-principal mode it holds the agent's own grants;
+   otherwise it acts on behalf of the person. Workspace administration
+   (billing writes, members, roles, SSO, keys) needs an explicit grant: an
+   agent never inherits it from the person who started the session.
+3. Legacy accounts with 2+ projects keep today's fence until the split.
+4. Proof: a verdict table (credential kind × route class × legacy/1:1) before
+   and after, generated from the route manifest, with no widening outside the
+   token's own workspace.
