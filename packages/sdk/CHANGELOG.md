@@ -5,6 +5,34 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added: the Workspace surface (additive; nothing removed)
+A workspace is one account and its one project, like a Slack workspace. `workspace_id` is the
+project id. New names:
+- Types `Workspace`, `WorkspaceSummary`, `WorkspaceRole` (`owner | admin | manager | member`),
+  `WorkspaceSettings`, `WorkspaceUpdateInput`, `WorkspaceMember`, `WorkspaceInvitation`,
+  `InviteWorkspaceMemberInput`, `CreateWorkspaceTokenInput`, `WorkspaceProjectList`,
+  `WorkspaceHandle`.
+- `listWorkspaces`, `getWorkspace`, `updateWorkspace`; members (`listWorkspaceMembers`,
+  `inviteWorkspaceMember`, `updateWorkspaceMemberRole`, `removeWorkspaceMember`,
+  `listWorkspaceInvites`, `cancelWorkspaceInvite`, `resendWorkspaceInvite`, `leaveWorkspace`);
+  tokens (`listWorkspaceTokens`, `createWorkspaceToken`, `revokeWorkspaceToken`); billing
+  (`getWorkspaceBillingState`); IAM (`listWorkspaceAssignments`, `createWorkspaceAssignment`,
+  `revokeWorkspaceAssignment`, `listWorkspaceRoles`, `listWorkspaceGroups`,
+  `probeWorkspacePermission`, `probeWorkspacePermissions`); `resolveWorkspaceAccountId`; pure
+  helpers `buildWorkspaceSummaries`, `compareWorkspacesByRecent`, `workspaceFromProject`,
+  `workspaceRole`.
+- Facade `kortix.workspaces.{list,get,update,create}` and `kortix.workspace(id)`.
+- `@kortix/sdk/react`: `useWorkspaces`, `useWorkspace`, `workspacesState`,
+  `workspaceQueryOptions`; key `qk.project.workspace(id)`.
+- Optional `workspace_id` on `KortixProject`, `ProjectSession`, `KortixAccount`,
+  `AccountDetail`, `MyAccountInvite`.
+
+### Deprecated (kept permanently)
+`updateProject`, `updateAccountName`, `listAccountMembers`, `inviteAccountMember`,
+`removeAccountMember`, `updateAccountMemberRole`, `listAccountInvites`, `cancelAccountInvite`,
+`resendAccountInvite`, `leaveAccount`, `listAccountTokens`, `createAccountToken` and
+`revokeAccountToken` name their workspace equivalent. They are never removed.
+
 ### Removed (breaking: the OpenCode-era surface, 0.15.0)
 Every session runs pi; OpenCode is gone from the box. This release removes the names that
 only served OpenCode and the aliases kept "until the next major". No first-party host imports

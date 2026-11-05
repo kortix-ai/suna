@@ -28,6 +28,8 @@ export async function invalidateProjectIdentity(
     qc.invalidateQueries({ queryKey: qk.project.detail(projectId) }),
     // The name readers (`useProjectName`) read the bare row.
     qc.invalidateQueries({ queryKey: qk.project.summary(projectId) }),
+    // `useWorkspace` holds the same name.
+    qc.invalidateQueries({ queryKey: qk.project.workspace(projectId) }),
   ]);
 }
 

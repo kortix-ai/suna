@@ -242,6 +242,11 @@ export interface ProjectGlyph {
 
 export interface KortixProject {
   project_id: string;
+  /**
+   * The workspace id: the same value as `project_id`. Sent by servers that
+   * know workspaces; read `project_id` to support older ones.
+   */
+  workspace_id?: string;
   account_id: string;
   name: string;
   repo_url: string;
@@ -1139,6 +1144,8 @@ export async function getManagedGitStatus(): Promise<ManagedGitStatus> {
  * `icon` is the one member where present-and-null differs from absent: pass
  * `null` to REMOVE the project's emoji, omit the key to leave it as it is.
  * Everything else ignores an empty value.
+ *
+ * @deprecated Use `updateWorkspace(workspaceId, input)`. Kept permanently.
  */
 export async function updateProject(projectId: string, input: Partial<ProjectInput>) {
   return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}`, input));

@@ -67,6 +67,8 @@ export interface ProjectSessionInitiator {
 }
 
 export interface ProjectSession {
+  /** The workspace id: the same value as `project_id`. Absent on older APIs. */
+  workspace_id?: string;
   /** Conversation model from the durable log; creation pin until one is recorded. Absent on older APIs. */
   model?: string | null;
   /** The space (channel or DM) the session is filed in; null outside every space. Absent on older APIs. */

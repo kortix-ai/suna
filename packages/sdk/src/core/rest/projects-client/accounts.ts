@@ -52,6 +52,12 @@ export interface AccountBrandingState {
 
 export interface KortixAccount {
   account_id: string;
+  /**
+   * The workspace this account holds (its one active project's id). `null`
+   * for an account with no workspace (a dormant account) or a legacy account
+   * that still holds several projects. Absent from older servers.
+   */
+  workspace_id?: string | null;
   name: string;
   slug?: string;
   /** Absent from APIs older than these fields. */
@@ -67,6 +73,8 @@ export interface KortixAccount {
 
 export interface AccountDetail {
   account_id: string;
+  /** The workspace this account holds. Same semantics as `KortixAccount.workspace_id`. */
+  workspace_id?: string | null;
   name: string;
   member_count: number;
   project_count: number;
@@ -201,6 +209,8 @@ export type AccountInviteDescribe = AccountInviteDescribeFull | AccountInviteDes
 export interface MyAccountInvite {
   invite_id: string;
   account_id: string;
+  /** The workspace the invite joins. Absent from older servers. */
+  workspace_id?: string | null;
   account_name: string | null;
   initial_role: AccountRole;
   inviter_email: string | null;
@@ -222,6 +232,7 @@ export async function getAccount(accountId: string) {
   return unwrap(await backendApi.get<AccountDetail>(`/accounts/${accountId}`));
 }
 
+/** @deprecated Use `updateWorkspace(workspaceId, { name })`: the workspace has one name. Kept permanently. */
 export async function updateAccountName(accountId: string, name: string) {
   return unwrap(await backendApi.patch<AccountDetail>(`/accounts/${accountId}`, { name }));
 }
@@ -286,10 +297,12 @@ export async function resetAccountBranding(accountId: string) {
   return unwrap(await backendApi.delete<AccountBrandingState>(`/accounts/${accountId}/branding`));
 }
 
+/** @deprecated Use `listWorkspaceMembers(workspaceId)`. Kept permanently. */
 export async function listAccountMembers(accountId: string) {
   return unwrap(await backendApi.get<AccountMember[]>(`/accounts/${accountId}/members`));
 }
 
+/** @deprecated Use `inviteWorkspaceMember(workspaceId, input)`. Kept permanently. */
 export async function inviteAccountMember(
   accountId: string,
   input: { email: string; role?: AccountRole; project_grants?: InviteProjectGrant[] },
@@ -302,16 +315,19 @@ export async function inviteAccountMember(
   );
 }
 
+/** @deprecated Use `listWorkspaceInvites(workspaceId)`. Kept permanently. */
 export async function listAccountInvites(accountId: string) {
   return unwrap(await backendApi.get<AccountInvitation[]>(`/accounts/${accountId}/invites`));
 }
 
+/** @deprecated Use `cancelWorkspaceInvite(workspaceId, inviteId)`. Kept permanently. */
 export async function cancelAccountInvite(accountId: string, inviteId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/accounts/${accountId}/invites/${inviteId}`),
   );
 }
 
+/** @deprecated Use `resendWorkspaceInvite(workspaceId, inviteId)`. Kept permanently. */
 export async function resendAccountInvite(accountId: string, inviteId: string) {
   return unwrap(
     await backendApi.post<ResendInviteResult>(
@@ -394,12 +410,14 @@ export async function declineAccountInvite(inviteId: string) {
   return unwrap(await backendApi.post<{ ok: boolean }>(`/account-invites/${inviteId}/decline`, {}));
 }
 
+/** @deprecated Use `removeWorkspaceMember(workspaceId, userId)`. Kept permanently. */
 export async function removeAccountMember(accountId: string, userId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/accounts/${accountId}/members/${userId}`),
   );
 }
 
+/** @deprecated Use `updateWorkspaceMemberRole(workspaceId, userId, role)`. Kept permanently. */
 export async function updateAccountMemberRole(
   accountId: string,
   userId: string,
@@ -410,6 +428,7 @@ export async function updateAccountMemberRole(
   );
 }
 
+/** @deprecated Use `leaveWorkspace(workspaceId)`. Kept permanently. */
 export async function leaveAccount(accountId: string) {
   return unwrap(await backendApi.post<{ ok: boolean }>(`/accounts/${accountId}/leave`, {}));
 }
