@@ -2,6 +2,7 @@ import { BoundedMap } from '../shared/bounded-map';
 import {
   EVENT_FORBIDDEN_KEYS,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
+  TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS,
   formatDurationSeconds,
   normalizeTriggerList,
   parseChangeRequestFilter,
@@ -149,6 +150,22 @@ export function parseMaxLateness(
   if (type !== 'cron') return { error: 'max_lateness is only valid on a cron trigger' };
   const parsed = parseMonitorDuration(raw, 'max_lateness', TRIGGER_MIN_MAX_LATENESS_SECONDS);
   return 'error' in parsed ? parsed : { maxLatenessSeconds: parsed.seconds };
+}
+
+/**
+ * An app trigger's `expect_event_within`: the silence alert. Absent → `{}`, so
+ * a spec without it keeps its shape and schedule revision. Mirrors
+ * `@kortix/manifest-schema`: app only, at least 5m.
+ */
+export function parseExpectEventWithin(
+  row: Record<string, unknown>,
+  type: GitTriggerType,
+): { expectEventWithinSeconds?: number } | { error: string } {
+  const raw = row.expect_event_within;
+  if (raw === undefined || raw === null) return {};
+  if (type !== 'app') return { error: 'expect_event_within is only valid on an app trigger' };
+  const parsed = parseMonitorDuration(raw, 'expect_event_within', TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS);
+  return 'error' in parsed ? parsed : { expectEventWithinSeconds: parsed.seconds };
 }
 
 /**
@@ -379,6 +396,7 @@ export function triggerSpecToFlatEntry(spec: GitTriggerSpec): Record<string, unk
     }
     entry.timezone = spec.timezone;
     if (spec.maxLatenessSeconds) entry.max_lateness = formatDurationSeconds(spec.maxLatenessSeconds);
+  if (spec.expectEventWithinSeconds) entry.expect_event_within = formatDurationSeconds(spec.expectEventWithinSeconds);
   } else if (spec.type === 'event' && spec.event) {
     entry.connector = spec.event.connector;
     if (spec.event.account) entry.account = spec.event.account;
@@ -448,6 +466,7 @@ export function triggerSpecToOnRunEntry(spec: GitTriggerSpec): Record<string, un
     ...(spec.maxRunsPerDay ? { max_runs_per_day: spec.maxRunsPerDay } : {}),
     ...(spec.overlap ? { overlap: spec.overlap } : {}),
     ...(spec.maxLatenessSeconds ? { max_lateness: formatDurationSeconds(spec.maxLatenessSeconds) } : {}),
+    ...(spec.expectEventWithinSeconds ? { expect_event_within: formatDurationSeconds(spec.expectEventWithinSeconds) } : {}),
   };
 }
 
@@ -499,6 +518,8 @@ function parseTriggerEntry(
   const type = typeRaw as GitTriggerType;
   const lateness = parseMaxLateness(row, type);
   if ('error' in lateness) return err(slug, lateness.error);
+  const silence = parseExpectEventWithin(row, type);
+  if ('error' in silence) return err(slug, silence.error);
   const caps = parseRunCaps(row);
   if ('error' in caps) return err(slug, caps.error);
   const overlap = parseOverlap(row);
@@ -649,6 +670,7 @@ function parseTriggerEntry(
         timezone: 'UTC',
         secretEnv: null,
         app: parsed.app,
+        ...silence,
       },
     };
   }

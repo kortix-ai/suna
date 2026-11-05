@@ -13,7 +13,7 @@ import { MCP_SOURCE_ID, connectorEventApp } from '../trigger-events/mcp-source';
 import { streamSchedules } from '../trigger-events/poll-store';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { nextTriggerScheduleSlot, validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
-import { GIT_TRIGGER_SESSION_MODES, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseEvery, parseTargetField, readManifest, triggerSpecToFlatEntry, MONITOR_REMOVED } from '../triggers';
+import { GIT_TRIGGER_SESSION_MODES, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseExpectEventWithin, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseEvery, parseTargetField, readManifest, triggerSpecToFlatEntry, MONITOR_REMOVED } from '../triggers';
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from '../trigger-session-access';
 import { withProjectGitAuth } from './git';
 import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from './serializers';
@@ -149,7 +149,8 @@ export async function loadTriggersForResponse(
       run: null,
       mode: null,
       interval_seconds: null,
-      expect_event_within_seconds: null,
+      // An app trigger's silence alert (`expect_event_within`); null on every other type.
+      expect_event_within_seconds: spec.expectEventWithinSeconds ?? null,
       app: spec.app ?? null,
       target: spec.target ?? null,
       event: spec.event
@@ -283,6 +284,8 @@ export interface TriggerDraft {
   secretEnv: string | null;
   /** For type=cron only — the misfire bound (`max_lateness`), in whole seconds. */
   maxLatenessSeconds?: number;
+  /** For type=app only — the silence alert (`expect_event_within`), in whole seconds. */
+  expectEventWithinSeconds?: number;
   /** Any type — the run caps (`max_runs_per_hour`, `max_runs_per_day`, KRTX-1721). Omitted when unset. */
   maxRunsPerHour?: number;
   maxRunsPerDay?: number;
@@ -365,6 +368,8 @@ export function parseTriggerDraft(
   const common = { slug, name, agent, model, enabled, promptTemplate, sessionMode, pinnedSessionId, sessionKey, filter };
   const lateness = parseMaxLateness(body, type);
   if ('error' in lateness) return lateness;
+  const silence = parseExpectEventWithin(body, type);
+  if ('error' in silence) return silence;
   const caps = parseRunCaps(body);
   if ('error' in caps) return caps;
   const overlap = parseOverlap(body);
@@ -380,7 +385,7 @@ export function parseTriggerDraft(
             ? { ...common, type, cron: null, runAt: null, timezone: 'UTC', secretEnv: null, changeRequest: { crId: null, base: 'base' in parsedFilter ? (parsedFilter.base as string | null) : null } }
             : parseWebhookDraft(body, common);
   if ('error' in draft) return draft;
-  return { ...draft, ...(type === 'cron' ? lateness : {}), ...caps, ...overlap, ...parsedTarget };
+  return { ...draft, ...(type === 'cron' ? lateness : {}), ...(type === 'app' ? silence : {}), ...caps, ...overlap, ...parsedTarget };
 }
 
 function parseDraftSession(body: Record<string, unknown>, type: GitTriggerType):
@@ -538,6 +543,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     timezone: noCronWiring ? null : spec.timezone,
     secret_env: spec.secretEnv,
     max_lateness: spec.maxLatenessSeconds ? formatDurationSeconds(spec.maxLatenessSeconds) : null,
+    expect_event_within: spec.expectEventWithinSeconds ? formatDurationSeconds(spec.expectEventWithinSeconds) : null,
     // Kept on PATCH, like max_lateness: an edit of any other field keeps the caps.
     max_runs_per_hour: spec.maxRunsPerHour ?? null,
     max_runs_per_day: spec.maxRunsPerDay ?? null,
@@ -586,6 +592,7 @@ export function draftToSpec(
     timezone: draft.timezone,
     secretEnv: draft.secretEnv,
     ...(draft.maxLatenessSeconds ? { maxLatenessSeconds: draft.maxLatenessSeconds } : {}),
+    ...(draft.expectEventWithinSeconds ? { expectEventWithinSeconds: draft.expectEventWithinSeconds } : {}),
     ...(draft.maxRunsPerHour ? { maxRunsPerHour: draft.maxRunsPerHour } : {}),
     ...(draft.maxRunsPerDay ? { maxRunsPerDay: draft.maxRunsPerDay } : {}),
     ...(draft.overlap ? { overlap: draft.overlap } : {}),

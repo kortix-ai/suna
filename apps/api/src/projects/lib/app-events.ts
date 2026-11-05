@@ -11,11 +11,12 @@
  * spend the event's id: a trigger added later still fires on a retry.
  */
 import { projectMonitorEvents, projectTriggerRuntime } from '@kortix/db';
-import { and, desc, eq, gte, lt, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, ne, or, sql } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { db } from '../../shared/db';
 import { MONITOR_INGEST_MAX_EVENTS, MONITOR_RATE_WINDOW_MS, truncateMonitorLine, type ParsedMonitorEvent } from './monitor-events';
 import { type MonitorIngestResult, ingestMonitorEvents } from './monitor-ingest';
+import { clearTriggerAlert } from './trigger-alerts';
 
 export interface AppEventInput {
   name: string;
@@ -108,7 +109,12 @@ export async function ingestAppEvents(input: {
 }): Promise<AppEventIngestResult> {
   const now = input.now ?? new Date();
   const rows = await db
-    .select({ slug: projectTriggerRuntime.slug, enabled: projectTriggerRuntime.enabled, scheduleSpec: projectTriggerRuntime.scheduleSpec })
+    .select({
+      slug: projectTriggerRuntime.slug,
+      enabled: projectTriggerRuntime.enabled,
+      scheduleSpec: projectTriggerRuntime.scheduleSpec,
+      alertSource: projectTriggerRuntime.alertSource,
+    })
     .from(projectTriggerRuntime)
     .where(and(eq(projectTriggerRuntime.projectId, input.projectId), eq(projectTriggerRuntime.triggerType, 'app')));
   const named = rows.filter((row) => (row.scheduleSpec as { app?: string } | null)?.app === input.appSlug);
@@ -126,7 +132,30 @@ export async function ingestAppEvents(input: {
     return slugs.map((slug) => ({ slug, seq, kind: 'event' as const, line, emittedAt: now }));
   });
   const result = await ingestMonitorEvents({ projectId: input.projectId, boxEpoch: `app:${input.appId}`, events: parsed, now });
+  // The App is alive: a deduplicated event counts (a watcher posts the same
+  // content id while nothing changes). A test event is not the App speaking.
+  if (input.test !== true) {
+    const silent = named.filter((row) => row.enabled !== false && row.alertSource === 'silence').map((row) => row.slug);
+    await markAppTriggersHeard(input.projectId, slugs, silent, now);
+  }
   return { ...result, triggers: slugs.length, unmatched: 0 };
+}
+
+/**
+ * Stamp `last_event_at` on the triggers an App just posted to, so the silence
+ * check (app-trigger-silence.ts) knows the App is alive, and end the silence
+ * alert of each that had one. Never throws: the events are already stored.
+ */
+async function markAppTriggersHeard(projectId: string, slugs: readonly string[], silent: readonly string[], now: Date): Promise<void> {
+  try {
+    await db
+      .update(projectTriggerRuntime)
+      .set({ lastEventAt: now })
+      .where(and(eq(projectTriggerRuntime.projectId, projectId), inArray(projectTriggerRuntime.slug, [...slugs])));
+    for (const slug of silent) await clearTriggerAlert({ projectId, slug, source: 'silence' });
+  } catch {
+    // The next event stamps it again.
+  }
 }
 
 /**
