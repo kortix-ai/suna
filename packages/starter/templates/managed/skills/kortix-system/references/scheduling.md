@@ -25,8 +25,10 @@ wake-up is a promise nobody keeps: the session sleeps until someone types.
    - a system that can call a URL (CI, a payment provider, your own job):
      `kortix triggers add "<text>" --on webhook --secret-env <NAME>` prints
      the URL to give it;
-   - a source that sends nothing and must be watched around the clock: an App
-     that posts App events ("Watch 24/7" below), then `--on app --app <slug>`.
+   - a page, a status, a price or an API that sends nothing ("tell me whenever
+     it changes"): a watcher App that posts App events ("Watch 24/7" below),
+     then `--on app --app <slug>`. A loop wakes a model on every check; the
+     App wakes one only when something changed.
 2. **Add a fallback loop** whenever the event might not come: a reply may
    never arrive, a webhook may never be called. With no event, the loop is
    the signal.
@@ -38,7 +40,7 @@ wake-up is a promise nobody keeps: the session sleeps until someone types.
    | A reply from a person or a company | 2–4 h, in their working hours | 2–4 times a day: `--cron "0 0 10,14,17 * * 1-5" --timezone <their IANA zone>` |
    | A deploy, a CI run, a build | 10 min | every 10–30 min (`--every 15m`) |
    | A slow vendor, an approval, a delivery | 1 day | daily |
-   | A page or a status | its own rhythm | an App when it must be minutes, a daily loop when not |
+   | A page, a status, a price | — | not a loop: a watcher App ("Watch 24/7"), unless the wait ends within a day |
 
 4. **Write the loop text for the turn that wakes.** That turn has the whole
    conversation, but the text is what it acts on. Name what was sent, to
@@ -344,16 +346,16 @@ Start from the template, then edit one function:
 kortix apps launch --template watcher --name status-watch   # apps/status-watch/: runner.js, watch.js, Dockerfile; deployed on demand
 # edit apps/status-watch/watch.js: check() returns what is true now, [{ name, data }]
 kortix apps deploy apps/status-watch
-kortix triggers add "The status page changed. Read it, tell the person what changed, and remove \
-this trigger and status-watch-check once it reads Operational." --on app --app status-watch
+kortix triggers add "The status page changed. Tell the person in one line what changed." \
+  --on app --app status-watch --expect-event-within 1h
 kortix apps events emit status-watch status.changed --data '{"status":"Test"}' --wait
 kortix triggers add status-watch-check --every 15m --target-app status-watch --target-path /tick --apply
 ```
 
 The runner posts every event `check()` returns with an id built from its
 name and data, so the same state never fires twice; with nothing to report
-it posts `kortix.heartbeat`. A project trigger with `expect_event_within: 30m`
-tells its watchers when the watcher stops posting.
+it posts `kortix.heartbeat`. `--expect-event-within 1h` (or `expect_event_within`
+on a `kortix.yaml` trigger) tells the person once when the watcher stops posting.
 
 - Return only the part that matters. A time or a counter in `data` fires on
   every tick.
@@ -378,7 +380,7 @@ tells its watchers when the watcher stops posting.
     on: { event: status.changed, app: status-watch }
     run: { agent: ops, prompt: "Status is now {{ event.data.status }}." }
   ```
-- Done watching: `kortix triggers rm` the session trigger and `status-watch-tick`,
+- Done watching: `kortix triggers rm` the session trigger and `status-watch-check`,
   then `kortix apps delete status-watch --yes` if nothing else uses it.
 
 ### A watcher, specified; a relay App

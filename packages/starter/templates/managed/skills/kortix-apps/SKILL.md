@@ -126,16 +126,16 @@ config with `400 app_config_invalid` and `issues: [{path, message}]`.
 
 ## Start an agent from an App
 
-An App never starts an agent itself. It posts an **App event**; a trigger in
-`kortix.yaml` decides which agent runs. Every machine of a server App has
+An App never starts an agent itself. It posts an **App event**; a trigger
+decides which agent runs or which session wakes. Every machine of a server App has
 `KORTIX_APP_ID`, `KORTIX_APP_TOKEN` and `KORTIX_APP_EVENTS_URL`
 (`…/v1/projects/<project_id>/apps/<app_id>/events`).
 
-**Pick the watcher last.** Check in this order: (1) a webhook (the service
-can call a URL), (2) a connector event, (3) a schedule (an hourly or daily
-check is enough). Build a watcher App when none fits: the source sends
-nothing and must be watched around the clock, code must decide what deserves
-an agent, or the watch needs a connection that stays open. Start it with
+**Pick the source in this order:** (1) a webhook (the service can call a
+URL), (2) a connector event, (3) a watcher App when the source sends nothing
+(a page, a status, a price, an API): code checks it and an agent runs only on
+a change, so "tell me whenever it changes" is a watcher App, not a loop. A
+scheduled agent run fits only when a model must judge each check. Start it with
 `kortix apps launch --template watcher --name <slug>` and edit
 `apps/<slug>/watch.js`: `check()` returns what is true now. The whole recipe:
 `kortix-system` → `references/scheduling.md` → Watch 24/7.
