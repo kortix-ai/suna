@@ -228,6 +228,15 @@ describe('parseWorkflowResult — a JSON result that carries a document', () => 
     expect(parseWorkflowResult(`<workflow_result>${JSON.stringify({ download_url: `https://example.com/${'a'.repeat(140)}` })}</workflow_result>`)?.kind).toBe('json');
   });
 
+  test('a cut block of whitespace after a key reads in linear time (CodeQL js/polynomial-redos)', () => {
+    // Before the fix, 40 000 spaces took ~2.5 s: the tail check backtracked `\s*:?\s*` quadratically.
+    for (const body of [`{""${' '.repeat(40_000)}x`, `{${' '.repeat(40_000)}x`, `{"a":"b"${' '.repeat(40_000)}x`]) {
+      const started = performance.now();
+      expect(parseWorkflowResult(`<workflow_result>${body}`)).toEqual({ kind: 'markdown', text: body });
+      expect(performance.now() - started).toBeLessThan(250);
+    }
+  });
+
   test('a result cut inside its document still reads as the document, escapes decoded', () => {
     const full = JSON.stringify({ strategy: doc });
     const cut = full.slice(0, full.indexOf('Ten paid'));

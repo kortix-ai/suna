@@ -124,7 +124,7 @@ export function registerArtifactCommentRoutes(): void {
     summary: 'Read Artifact activity and saves from Files history', ...auth,
     request: { params: ArtifactParams, query: z.object({ limit: z.string().optional(), cursor: z.string().optional() }) },
     responses: { 200: json(z.object({
-      items: z.array(z.object({ id: z.string(), type: z.string(), at: z.string(), data: z.record(z.unknown()),
+      items: z.array(z.object({ id: z.string(), type: z.string(), at: z.string(), data: z.record(z.string(), z.unknown()),
         actor: z.object({ kind: z.enum(['user', 'session', 'system']), id: nullableId, name: z.string() }),
       })), next_cursor: nullableId, older_versions: z.boolean(),
     }), 'The activity page'), ...responses },

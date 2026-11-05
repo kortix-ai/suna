@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import en from '../../translations/en.json';
 
-// "Workspace" is the one container noun (brand kit decision D38, 2026-11-05):
+// "Workspace" is the one container noun (brand kit decision D39, 2026-11-05):
 // "project" left the English copy. This ratchet keeps it out. A new English
 // value that says "project" fails here, unless the word is code (a command,
 // a permission, a path, a placeholder name) or one of the few values below

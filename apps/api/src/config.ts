@@ -1146,7 +1146,9 @@ function validateEnv(): z.infer<typeof envSchema> {
   if (!result.success) {
     for (const issue of result.error.issues) {
       const varName = issue.path.join('.');
-      issues.push({ var: varName, message: issue.message, level: 'error' });
+      // zod 4 words a missing variable as "Invalid input: expected string, received undefined".
+      const missing = issue.code === 'invalid_type' && process.env[varName] === undefined;
+      issues.push({ var: varName, message: missing ? 'Required' : issue.message, level: 'error' });
     }
   }
 

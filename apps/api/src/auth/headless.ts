@@ -229,7 +229,7 @@ headlessAuthRouter.openapi(
             schema: z.object({
               email: Email,
               password: z.string().min(8).max(256),
-              data: z.record(z.unknown()).optional(),
+              data: z.record(z.string(), z.unknown()).optional(),
               redirect_to: z.string().optional(),
             }),
           },
@@ -323,7 +323,7 @@ headlessAuthRouter.openapi(
               email: Email,
               create_user: z.boolean().optional(),
               redirect_to: z.string().optional(),
-              data: z.record(z.unknown()).optional(),
+              data: z.record(z.string(), z.unknown()).optional(),
             }),
           },
         },

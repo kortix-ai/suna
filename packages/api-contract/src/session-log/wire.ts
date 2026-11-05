@@ -146,9 +146,9 @@ export const SessionLogRestoreBlobSchema = z.object({
 export const SessionLogRestoreSchema = z.object({
   generation: z.number().int().positive(),
   log: SessionLogSchema,
-  revs: z.record(rev),
+  revs: z.record(z.string(), rev),
   /** The highest seq each thread holds, tombstoned messages included; the box numbers new messages above it. Absent from an API before P6.2. */
-  seq_max: z.record(z.number().int().nonnegative()).optional(),
+  seq_max: z.record(z.string(), z.number().int().nonnegative()).optional(),
   blobs: z.array(SessionLogRestoreBlobSchema),
 });
 export const SessionLogRestoreMissingSchema = z.object({ error: z.literal('no_session_log') });

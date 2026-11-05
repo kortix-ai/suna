@@ -64,7 +64,7 @@ CompactionLayoutEntrySchema = union(
 ExtSchema = record({
   version: string
   native_id: string | absent
-  data: unknown
+  data: unknown | absent
 })
 
 HarnessBlockSchema = {
@@ -464,7 +464,7 @@ ToolCallBlockSchema = {
     exit_code: number | absent
     synthetic: boolean | absent
     cleared_at: string | absent
-    details: unknown
+    details: unknown | absent
   } | absent
   title: string | absent
   started_at: string | absent

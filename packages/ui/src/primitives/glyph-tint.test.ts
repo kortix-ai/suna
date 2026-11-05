@@ -1,47 +1,30 @@
 import { PROJECT_GLYPH_COLORS } from '@kortix/shared';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { glyphForeground, glyphTint, glyphTintHover } from './glyph-tint';
+import { glyphForeground, glyphStyle, glyphTint } from './glyph-tint';
 
 describe('glyph tint', () => {
-  test('every palette colour has a tint, a hover, and a foreground', () => {
+  test('a preset colour sets --glyph through its solid token and needs no inline style', () => {
     for (const color of PROJECT_GLYPH_COLORS) {
-      expect(glyphTint(color)).toContain(`bg-glyph-fill-${color}`);
-      expect(glyphTint(color)).toContain(`inset-ring-glyph-ring-${color}`);
-      expect(glyphTintHover(color)).toContain(`hover:bg-glyph-fill-${color}`);
-      expect(glyphForeground(color)).toContain(`text-glyph-ring-${color}`);
+      expect(glyphTint(color)).toContain(`[--glyph:var(--glyph-solid-${color})]`);
+      expect(glyphForeground(color)).toContain('text-[color:var(--glyph)]');
+      expect(glyphStyle(color)).toBeUndefined();
     }
   });
 
-  test('an unknown colour falls back to grey rather than returning nothing', () => {
-    // A missing class string leaves an untinted, unringed tile that reads as a
-    // rendering bug. Grey is a real member of the palette, so the fallback is
-    // indistinguishable from a deliberate choice.
+  test('a custom #rrggbb colour comes in as an inline --glyph style', () => {
+    expect(glyphStyle('#3fb6a8')).toEqual({ '--glyph': '#3fb6a8' } as never);
+    expect(glyphTint('#3fb6a8')).not.toContain('--glyph-solid');
+  });
+
+  test('an unknown colour falls back to grey', () => {
     expect(glyphTint('chartreuse')).toBe(glyphTint('grey'));
     expect(glyphForeground('')).toBe(glyphForeground('grey'));
+    expect(glyphStyle('#XYZ')).toBeUndefined();
   });
 
-  test('every class is a LITERAL in the source, never interpolated', () => {
-    // Tailwind v4 extracts class names by scanning source TEXT. A template
-    // literal or .map()-generated name emits no CSS at all and the tint
-    // silently never paints. This has already happened once on this feature.
-    const source = readFileSync(new URL('./glyph-tint.ts', import.meta.url), 'utf8');
-    expect(source).not.toMatch(/`[^`]*\$\{[^}]*\}[^`]*(bg-|text-|inset-ring-)/);
-    for (const color of PROJECT_GLYPH_COLORS) {
-      expect(source).toContain(`bg-glyph-fill-${color}`);
-      expect(source).toContain(`text-glyph-ring-${color}`);
-    }
-  });
-
-  test('every token used here is defined in @kortix/ui theme.css or tokens.css', () => {
-    // Catches a class naming a token nobody declared — which compiles to a
-    // valid-looking class with no colour behind it.
-    const css = ['../styles/theme.css', '../styles/tokens.css']
-      .map((path) => readFileSync(new URL(path, import.meta.url), 'utf8'))
-      .join('\n');
-    for (const color of PROJECT_GLYPH_COLORS) {
-      expect(css).toContain(`--color-glyph-fill-${color}:`);
-      expect(css).toContain(`--color-glyph-ring-${color}:`);
-    }
+  test('every solid token is declared in theme.css', () => {
+    const css = readFileSync(new URL('../styles/theme.css', import.meta.url), 'utf8');
+    for (const color of PROJECT_GLYPH_COLORS) expect(css).toContain(`--glyph-solid-${color}: light-dark(`);
   });
 });

@@ -436,7 +436,7 @@ export function registerProjectSessionsRoutes(): void {
       connector_bindings: 'INVALID_SESSION_CONNECTOR_BINDINGS',
       secrets: 'INVALID_SESSION_SECRETS',
     };
-    const issues: Array<{ path?: Array<string | number>; message?: string }> =
+    const issues: ReadonlyArray<{ path?: ReadonlyArray<PropertyKey>; message?: string }> =
       result.error?.issues ?? [];
     const coded = issues.filter((issue) => codes[String(issue.path?.[0] ?? '')]);
     // Returning nothing would send zod's raw, uncapped result: answer the shared envelope instead.
