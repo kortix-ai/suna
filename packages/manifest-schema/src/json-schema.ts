@@ -52,6 +52,7 @@ import {
   ENV_NAME_RE,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   GRANTABLE_KORTIX_PERMISSIONS,
+  GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS,
   RETIRED_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
   PI_PACKAGE_NAME_RE,
@@ -160,10 +161,10 @@ const APP_GRANT_ENTRY_PATTERN = '^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$';
  *  grantable-action enum. */
 function grantSetSchema(itemSchema: JsonSchemaFragment = NON_BLANK_STRING): JsonSchemaFragment {
   return {
-    description: '"*" (every name; `all` is its alias), "none", or a list of names. A list that holds "*" is every name.',
+    description: 'An allowlist of names, or the "all" / "none" sentinel. "*" (alone or in the list) means "all".',
     oneOf: [
       { type: 'array', items: itemSchema },
-      normalizedEnumSchema(['*', 'all', 'none', '']),
+      normalizedEnumSchema(['all', '*', 'none', '']),
     ],
   };
 }
@@ -182,13 +183,20 @@ function kortixPermissionsEnum(): readonly string[] {
   // `kortix validate`. They are absent from the grantable catalog, so nothing
   // presents them as a live choice.
   // The retired actions are in it for the same reason: `kortix validate` only warns on them.
-  return [...GRANTABLE_KORTIX_PERMISSIONS, ...Object.keys(DEPRECATED_KORTIX_PERMISSION_ALIASES), ...RETIRED_KORTIX_PERMISSIONS, '*'];
+  // The workspace names are accepted everywhere the legacy names are.
+  return [
+    ...GRANTABLE_KORTIX_PERMISSIONS,
+    ...GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS,
+    ...Object.keys(DEPRECATED_KORTIX_PERMISSION_ALIASES),
+    ...RETIRED_KORTIX_PERMISSIONS,
+    '*',
+  ];
 }
 
 function kortixPermissionsGrantSetSchema(): JsonSchemaFragment {
   return {
     ...grantSetSchema({ type: 'string', enum: [...kortixPermissionsEnum()] }),
-    description: 'Kortix permissions: the project.* IAM actions this agent may exercise, "*" (every one; alias `all`) or "none".',
+    description: 'Kortix permissions: the project.* IAM actions (or their workspace.* names) this agent may exercise, or "all" / "none".',
   };
 }
 
@@ -204,28 +212,14 @@ function deprecatedKortixCliGrantSetSchema(): JsonSchemaFragment {
   };
 }
 
-/** One permission action: `allow`, `ask` or `deny`. `"*"` and `all` (any case) also mean `allow` (`normalizePermissionAction`). */
-function permissionActionSchema(): JsonSchemaFragment {
-  return {
-    type: 'string',
-    description: '`allow`, `ask` or `deny`. `"*"` and `all` also mean `allow`.',
-    anyOf: [{ enum: [...PERMISSION_ACTIONS_V2] }, everyWordSchema()],
-  };
-}
-
-/** `"*"` or `all` in any case, padded or not: every name (`isEveryGrant`). */
-function everyWordSchema(): JsonSchemaFragment {
-  return { pattern: `^\\s*(?:\\*|${caseInsensitiveLiteral('all')})\\s*$(?![\\s\\S])` };
-}
-
 /** `PermissionRuleConfig`: a bare action, or a glob-pattern → action map. */
 function permissionRuleSchema(): JsonSchemaFragment {
   return {
     oneOf: [
-      permissionActionSchema(),
+      { type: 'string', enum: [...PERMISSION_ACTIONS_V2] },
       {
         type: 'object',
-        additionalProperties: permissionActionSchema(),
+        additionalProperties: { type: 'string', enum: [...PERMISSION_ACTIONS_V2] },
       },
     ],
   };
@@ -236,11 +230,11 @@ function permissionRuleSchema(): JsonSchemaFragment {
  *  `validatePermissionConfig` in `./index.ts`). */
 function permissionConfigSchema(): JsonSchemaFragment {
   const actionOnlyProps = Object.fromEntries(
-    PERMISSION_ACTION_ONLY_KEYS_V2.map((key) => [key, permissionActionSchema()]),
+    PERMISSION_ACTION_ONLY_KEYS_V2.map((key) => [key, { type: 'string', enum: [...PERMISSION_ACTIONS_V2] }]),
   );
   return {
     oneOf: [
-      permissionActionSchema(),
+      { type: 'string', enum: [...PERMISSION_ACTIONS_V2] },
       {
         type: 'object',
         properties: { ...actionOnlyProps },
@@ -915,20 +909,15 @@ function connectorSchema(): JsonSchemaFragment {
   };
 }
 
-/** `tools: "*"` (alias `all`, any case) or `none`. */
-function toolsWordSchema(): JsonSchemaFragment {
-  return { type: 'string', anyOf: [{ enum: ['*', 'all', 'none'] }, everyWordSchema()] };
-}
-
 /** `agents.<name>.tools` — which tools the agent may use (`AgentToolsV2`). */
 function agentToolsSchema(): JsonSchemaFragment {
   const names = { type: 'array', items: NON_BLANK_STRING };
   return {
     description:
       'Which tools this agent may use: harness tools (bash, read, edit, …), Kortix tools (web_search, memory, show, …) and project tools (top-level `tools`). ' +
-      '`"*"` (default; every tool; `all` is its alias) or `none`; a list allows only those; `{ exclude: [...] }` allows every tool but those. A map of tool name → boolean is the earlier form.',
+      '`all` (default) or `none`; a list allows only those; `{ exclude: [...] }` allows every tool but those. A map of tool name → boolean is the earlier form.',
     oneOf: [
-      toolsWordSchema(),
+      { type: 'string', enum: ['all', 'none'] },
       names,
       { type: 'object', required: ['exclude'], properties: { exclude: names }, additionalProperties: false },
       { type: 'object', not: { required: ['exclude'] }, additionalProperties: { type: 'boolean' } },
@@ -1213,7 +1202,7 @@ function namedGrantSchema(description: string, grant: JsonSchemaFragment = grant
 /** `agents.<name>.skills` / `.extensions` (v3): a named grant, or `{ exclude: [...] }`. */
 function excludableGrantSchema(description: string): JsonSchemaFragment {
   return {
-    description: `${description} "*" (every name; alias \`all\`), "none" (default), a list of names, or \`{ exclude: [names] }\` for every name but those.`,
+    description: `${description} "all", "none" (default), a list of names, or \`{ exclude: [names] }\` for every name but those.`,
     oneOf: [
       grantSetSchema(),
       { type: 'object', required: ['exclude'], properties: { exclude: { type: 'array', items: NON_BLANK_STRING } }, additionalProperties: false },
@@ -1263,7 +1252,7 @@ function agentBlockV3Schema(): JsonSchemaFragment {
       permission: {
         ...permission,
         default: 'allow',
-        description: 'Which tool calls run, ask a person, or never run: `allow`, `ask` or `deny` (`"*"` and `all` also mean `allow`). `skill` and `task` belong to `skills` and `subagents`.',
+        description: 'Which tool calls run, ask a person, or never run. `skill` and `task` belong to `skills` and `subagents`.',
       },
       prompt: { ...NON_BLANK_STRING, description: 'The system prompt. Set `prompt` or `prompt_file`, not both.' },
       prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN, description: 'A repository path to a `.md` file. The whole file is the system prompt.' },
@@ -1283,11 +1272,11 @@ function agentBlockV3Schema(): JsonSchemaFragment {
           "What happens when the session's context fills. `record`: the agent continues at once in a fresh context and searches the session's full record, word for word, when it needs a detail; nothing is summarized. `summary`: a model call writes a summary of the conversation and the agent continues from it.",
       },
       tools: {
-        default: '*',
+        default: 'all',
         description:
-          'The tools the agent may call: built-in tools, Kortix tools and registered tools. `"*"` (quoted; `all` is its alias) is every tool, `none` is none. A list allows only those. `{ exclude: [bash] }` allows every tool but those.',
+          'The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those.',
         oneOf: [
-          toolsWordSchema(),
+          { type: 'string', enum: ['all', 'none'] },
           names,
           { type: 'object', required: ['exclude'], properties: { exclude: names }, additionalProperties: false },
         ],

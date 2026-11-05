@@ -24,6 +24,7 @@ import { readJsonObject } from '../../shared/http-body';
 import { listAgentServiceAccounts, ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import { loadConfigWithFilesCached } from '../../projects/lib/project-resources';
 import { ACTION_CATALOG_WIRE, validateActions } from './role-presets';
+import { toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { mapLimit } from '@kortix/registry';
 import { TimeoutError, withTimeout } from '../../shared/with-timeout';
 import { accountIdParam } from '../../shared/route-params';
@@ -406,7 +407,7 @@ export function registerIamCustomRolesRoutes(): void {
       summary: 'Get a role’s action set',
       ...auth,
       request: { params: RoleIdParam },
-      responses: { 200: json(z.object({ role_id: z.string(), key: z.string(), actions: z.array(z.string()) }), 'Actions'), ...errors(401, 403, 404) },
+      responses: { 200: json(z.object({ role_id: z.string(), key: z.string(), actions: z.array(z.string()), workspace_actions: z.array(z.string()) }), 'Actions'), ...errors(401, 403, 404) },
     }),
     async (c: any) => {
       const accountId = accountIdParam(c);
@@ -419,17 +420,20 @@ export function registerIamCustomRolesRoutes(): void {
         // the same rows.
         const system = await systemRoleByWireId(roleId);
         if (!system) return c.json({ error: 'role not found' }, 404);
+        const actions = [...system.actions].sort();
         return c.json({
           role_id: roleId,
           key: system.key,
-          actions: [...system.actions].sort(),
+          actions,
+          workspace_actions: actions.map(toWorkspaceAction),
         });
       }
 
       const role = await loadCustomRole(accountId, roleId);
       if (!role) return c.json({ error: 'role not found' }, 404);
       const rows = await roleActionRows(roleId);
-      return c.json({ role_id: roleId, key: role.key, actions: rows.map((r) => r.action) });
+      const actions = rows.map((r) => r.action);
+      return c.json({ role_id: roleId, key: role.key, actions, workspace_actions: actions.map(toWorkspaceAction) });
     },
   );
 
@@ -441,7 +445,7 @@ export function registerIamCustomRolesRoutes(): void {
       summary: 'Replace a custom role’s action set (the capability matrix)',
       ...auth,
       request: { params: RoleIdParam, body: { content: { 'application/json': { schema: Any } } } },
-      responses: { 200: json(z.object({ role_id: z.string(), actions: z.array(z.string()) }), 'Updated'), ...errors(400, 401, 403, 404) },
+      responses: { 200: json(z.object({ role_id: z.string(), actions: z.array(z.string()), workspace_actions: z.array(z.string()) }), 'Updated'), ...errors(400, 401, 403, 404) },
     }),
     async (c: any) => {
       const accountId = accountIdParam(c);
@@ -474,7 +478,7 @@ export function registerIamCustomRolesRoutes(): void {
         resourceId: roleId,
         after: { action_count: v.actions.length },
       });
-      return c.json({ role_id: roleId, actions: v.actions });
+      return c.json({ role_id: roleId, actions: v.actions, workspace_actions: v.actions.map(toWorkspaceAction) });
     },
   );
 

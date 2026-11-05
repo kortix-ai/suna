@@ -89,6 +89,15 @@ describe('agents — kortix_permissions enum enforcement', () => {
     expect(specs[0].permissions).toEqual([]);
   });
 
+  // Workspaces: every grantable action has a workspace.* name, accepted forever.
+  test('a workspace name is grantable; an account-scoped workspace name is dropped like its legacy name', () => {
+    const { specs, errors } = parseAgents(
+      '  a:\n    kortix_permissions: [workspace.session.start, workspace.billing.read, project.file.read]\n',
+    );
+    expect(errors).toEqual([]);
+    expect(specs[0].permissions).toEqual(['workspace.session.start', 'project.file.read']);
+  });
+
   test('unknown action is dropped, the rest of the list stays', () => {
     const { specs, errors } = parseAgents('  a:\n    kortix_permissions: [project.frobnicate, project.file.read]\n');
     expect(errors).toEqual([]);

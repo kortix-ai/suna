@@ -1,6 +1,6 @@
 import type { ParsedManifest } from '../triggers';
 import { logger } from '../../lib/logger';
-import { PROJECT_ACTIONS, VALID_ACTIONS } from '../../iam/actions';
+import { PROJECT_ACTIONS, VALID_ACTIONS, toLegacyAction } from '../../iam/actions';
 import type { GitBackedProject, MirrorRefresh } from '../git';
 import {
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
@@ -290,7 +290,9 @@ function toGrantSet(value: GrantSetV2): GrantSet {
 }
 
 /** Returns an error message if the action is not grantable to an agent, else null. */
-function validateKortixAction(action: string): string | null {
+function validateKortixAction(raw: string): string | null {
+  // Either name: `workspace.session.start` is `project.session.start`.
+  const action = toLegacyAction(raw);
   if (GRANTABLE_KORTIX_PERMISSIONS.has(action)) return null;
   // A RENAMED action still resolves — `canonicalizeGrantActions` rewrites it to
   // the live leaf. Accept it here: rejecting it would push the spec into
@@ -301,9 +303,9 @@ function validateKortixAction(action: string): string | null {
   // A RETIRED action (its feature is gone) grants nothing; accepted for the same reason.
   if (RETIRED_KORTIX_PERMISSIONS.includes(action)) return null;
   if (VALID_ACTIONS.has(action)) {
-    return `\`kortix_permissions\` action "${action}" is account-scoped and can never be granted to an agent — only project-scoped actions are allowed`;
+    return `\`kortix_permissions\` action "${raw}" is account-scoped and can never be granted to an agent — only project-scoped actions are allowed`;
   }
-  return `\`kortix_permissions\` has unknown action "${action}" — see the grantable list (project.*)`;
+  return `\`kortix_permissions\` has unknown action "${raw}" — see the grantable list (project.* or workspace.*)`;
 }
 
 function makeAgentError(name: string, message: string, filename: string = MANIFEST_FILENAME): ParseErr {

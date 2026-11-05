@@ -3156,18 +3156,10 @@
             "oneOf": [
               {
                 "type": "string",
-                "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
-                "anyOf": [
-                  {
-                    "enum": [
-                      "ask",
-                      "allow",
-                      "deny"
-                    ]
-                  },
-                  {
-                    "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
-                  }
+                "enum": [
+                  "ask",
+                  "allow",
+                  "deny"
                 ]
               },
               {
@@ -3175,82 +3167,42 @@
                 "properties": {
                   "todowrite": {
                     "type": "string",
-                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "ask",
-                          "allow",
-                          "deny"
-                        ]
-                      },
-                      {
-                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
-                      }
+                    "enum": [
+                      "ask",
+                      "allow",
+                      "deny"
                     ]
                   },
                   "question": {
                     "type": "string",
-                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "ask",
-                          "allow",
-                          "deny"
-                        ]
-                      },
-                      {
-                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
-                      }
+                    "enum": [
+                      "ask",
+                      "allow",
+                      "deny"
                     ]
                   },
                   "webfetch": {
                     "type": "string",
-                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "ask",
-                          "allow",
-                          "deny"
-                        ]
-                      },
-                      {
-                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
-                      }
+                    "enum": [
+                      "ask",
+                      "allow",
+                      "deny"
                     ]
                   },
                   "websearch": {
                     "type": "string",
-                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "ask",
-                          "allow",
-                          "deny"
-                        ]
-                      },
-                      {
-                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
-                      }
+                    "enum": [
+                      "ask",
+                      "allow",
+                      "deny"
                     ]
                   },
                   "doom_loop": {
                     "type": "string",
-                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "ask",
-                          "allow",
-                          "deny"
-                        ]
-                      },
-                      {
-                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
-                      }
+                    "enum": [
+                      "ask",
+                      "allow",
+                      "deny"
                     ]
                   },
                   "skill": false,
@@ -3260,36 +3212,20 @@
                   "oneOf": [
                     {
                       "type": "string",
-                      "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
-                      "anyOf": [
-                        {
-                          "enum": [
-                            "ask",
-                            "allow",
-                            "deny"
-                          ]
-                        },
-                        {
-                          "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
-                        }
+                      "enum": [
+                        "ask",
+                        "allow",
+                        "deny"
                       ]
                     },
                     {
                       "type": "object",
                       "additionalProperties": {
                         "type": "string",
-                        "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
-                        "anyOf": [
-                          {
-                            "enum": [
-                              "ask",
-                              "allow",
-                              "deny"
-                            ]
-                          },
-                          {
-                            "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
-                          }
+                        "enum": [
+                          "ask",
+                          "allow",
+                          "deny"
                         ]
                       }
                     }
@@ -3298,7 +3234,7 @@
               }
             ],
             "default": "allow",
-            "description": "Which tool calls run, ask a person, or never run: `allow`, `ask` or `deny` (`\"*\"` and `all` also mean `allow`). `skill` and `task` belong to `skills` and `subagents`."
+            "description": "Which tool calls run, ask a person, or never run. `skill` and `task` belong to `skills` and `subagents`."
           },
           "prompt": {
             "type": "string",
@@ -3335,22 +3271,14 @@
             "description": "What happens when the session's context fills. `record`: the agent continues at once in a fresh context and searches the session's full record, word for word, when it needs a detail; nothing is summarized. `summary`: a model call writes a summary of the conversation and the agent continues from it."
           },
           "tools": {
-            "default": "*",
-            "description": "The tools the agent may call: built-in tools, Kortix tools and registered tools. `\"*\"` (quoted; `all` is its alias) is every tool, `none` is none. A list allows only those. `{ exclude: [bash] }` allows every tool but those.",
+            "default": "all",
+            "description": "The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those.",
             "oneOf": [
               {
                 "type": "string",
-                "anyOf": [
-                  {
-                    "enum": [
-                      "*",
-                      "all",
-                      "none"
-                    ]
-                  },
-                  {
-                    "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
-                  }
+                "enum": [
+                  "all",
+                  "none"
                 ]
               },
               {
@@ -3379,10 +3307,10 @@
             ]
           },
           "skills": {
-            "description": "Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. \"*\" (every name; alias `all`), \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
+            "description": "Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
             "oneOf": [
               {
-                "description": "\"*\" (every name; `all` is its alias), \"none\", or a list of names. A list that holds \"*\" is every name.",
+                "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
                 "oneOf": [
                   {
                     "type": "array",
@@ -3396,14 +3324,14 @@
                     "anyOf": [
                       {
                         "enum": [
-                          "*",
                           "all",
+                          "*",
                           "none",
                           ""
                         ]
                       },
                       {
-                        "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                       },
                       {
                         "pattern": "^\\s*$(?![\\s\\S])"
@@ -3445,14 +3373,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "*",
                       "all",
+                      "*",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3477,14 +3405,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "*",
                       "all",
+                      "*",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3495,10 +3423,10 @@
             "default": "none"
           },
           "extensions": {
-            "description": "Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. \"*\" (every name; alias `all`), \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
+            "description": "Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
             "oneOf": [
               {
-                "description": "\"*\" (every name; `all` is its alias), \"none\", or a list of names. A list that holds \"*\" is every name.",
+                "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
                 "oneOf": [
                   {
                     "type": "array",
@@ -3512,14 +3440,14 @@
                     "anyOf": [
                       {
                         "enum": [
-                          "*",
                           "all",
+                          "*",
                           "none",
                           ""
                         ]
                       },
                       {
-                        "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                       },
                       {
                         "pattern": "^\\s*$(?![\\s\\S])"
@@ -3561,14 +3489,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "*",
                       "all",
+                      "*",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3609,14 +3537,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "*",
                       "all",
+                      "*",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3641,14 +3569,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "*",
                       "all",
+                      "*",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3720,6 +3648,60 @@
                     "project.artifact.manage",
                     "project.artifact.public",
                     "project.credentials.issue",
+                    "workspace.read",
+                    "workspace.write",
+                    "workspace.delete",
+                    "workspace.session.read",
+                    "workspace.session.start",
+                    "workspace.session.stop",
+                    "workspace.session.bindings.write",
+                    "workspace.members.read",
+                    "workspace.members.manage",
+                    "workspace.trigger.read",
+                    "workspace.trigger.create",
+                    "workspace.trigger.update",
+                    "workspace.trigger.delete",
+                    "workspace.trigger.fire",
+                    "workspace.gateway.logs.read",
+                    "workspace.gateway.spend.read",
+                    "workspace.usage.read",
+                    "workspace.gateway.budget.set",
+                    "workspace.gateway.keys.manage",
+                    "workspace.agent.read",
+                    "workspace.agent.write",
+                    "workspace.skill.read",
+                    "workspace.skill.write",
+                    "workspace.command.read",
+                    "workspace.command.write",
+                    "workspace.file.read",
+                    "workspace.file.write",
+                    "workspace.settings.write",
+                    "workspace.sandbox.write",
+                    "workspace.model.read",
+                    "workspace.model.write",
+                    "workspace.gitops.read",
+                    "workspace.gitops.push",
+                    "workspace.gitops.merge",
+                    "workspace.gitops.ref.any",
+                    "workspace.gitops.ref.delete",
+                    "workspace.secret.read",
+                    "workspace.secret.write",
+                    "workspace.connector.read",
+                    "workspace.connector.connections.manage",
+                    "workspace.connector.write",
+                    "workspace.app.read",
+                    "workspace.app.write",
+                    "workspace.app.deploy",
+                    "workspace.app.admin",
+                    "workspace.review.read",
+                    "workspace.review.submit",
+                    "workspace.review.act",
+                    "workspace.artifact.read",
+                    "workspace.artifact.comment",
+                    "workspace.artifact.write",
+                    "workspace.artifact.manage",
+                    "workspace.artifact.public",
+                    "workspace.credentials.issue",
                     "project.cr.open",
                     "project.cr.merge",
                     "project.customize.read",
@@ -3735,14 +3717,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "*",
                       "all",
+                      "*",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3830,14 +3812,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "*",
                       "all",
+                      "*",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3909,6 +3891,60 @@
                     "project.artifact.manage",
                     "project.artifact.public",
                     "project.credentials.issue",
+                    "workspace.read",
+                    "workspace.write",
+                    "workspace.delete",
+                    "workspace.session.read",
+                    "workspace.session.start",
+                    "workspace.session.stop",
+                    "workspace.session.bindings.write",
+                    "workspace.members.read",
+                    "workspace.members.manage",
+                    "workspace.trigger.read",
+                    "workspace.trigger.create",
+                    "workspace.trigger.update",
+                    "workspace.trigger.delete",
+                    "workspace.trigger.fire",
+                    "workspace.gateway.logs.read",
+                    "workspace.gateway.spend.read",
+                    "workspace.usage.read",
+                    "workspace.gateway.budget.set",
+                    "workspace.gateway.keys.manage",
+                    "workspace.agent.read",
+                    "workspace.agent.write",
+                    "workspace.skill.read",
+                    "workspace.skill.write",
+                    "workspace.command.read",
+                    "workspace.command.write",
+                    "workspace.file.read",
+                    "workspace.file.write",
+                    "workspace.settings.write",
+                    "workspace.sandbox.write",
+                    "workspace.model.read",
+                    "workspace.model.write",
+                    "workspace.gitops.read",
+                    "workspace.gitops.push",
+                    "workspace.gitops.merge",
+                    "workspace.gitops.ref.any",
+                    "workspace.gitops.ref.delete",
+                    "workspace.secret.read",
+                    "workspace.secret.write",
+                    "workspace.connector.read",
+                    "workspace.connector.connections.manage",
+                    "workspace.connector.write",
+                    "workspace.app.read",
+                    "workspace.app.write",
+                    "workspace.app.deploy",
+                    "workspace.app.admin",
+                    "workspace.review.read",
+                    "workspace.review.submit",
+                    "workspace.review.act",
+                    "workspace.artifact.read",
+                    "workspace.artifact.comment",
+                    "workspace.artifact.write",
+                    "workspace.artifact.manage",
+                    "workspace.artifact.public",
+                    "workspace.credentials.issue",
                     "project.cr.open",
                     "project.cr.merge",
                     "project.customize.read",
@@ -3924,14 +3960,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "*",
                       "all",
+                      "*",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"

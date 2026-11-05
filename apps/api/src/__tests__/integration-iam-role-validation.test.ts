@@ -29,6 +29,15 @@ describe('validateActions', () => {
       ]);
   });
 
+  // Workspaces: a workspace name is accepted and stored as the legacy name
+  // old pods and the catalog FK read; a duplicate across the two names dedupes.
+  test('accepts workspace names, stores the legacy names, dedupes across both', async () => {
+    const r = await validateActions(['workspace.read', PROJECT_ACTIONS.PROJECT_READ, 'workspace.agent.write'], 'project');
+    expect(r).toEqual({ ok: true, actions: [PROJECT_ACTIONS.PROJECT_READ, PROJECT_ACTIONS.PROJECT_AGENT_WRITE] });
+    const wrongScope = await validateActions(['workspace.billing.read'], 'project');
+    expect(wrongScope.ok).toBe(false);
+  });
+
   test('rejects an unknown / injected action string', async () => {
     const r = await validateActions([PROJECT_ACTIONS.PROJECT_READ, 'project.everything.hax']);
     expect(r.ok).toBe(false);

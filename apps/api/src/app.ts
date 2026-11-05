@@ -193,7 +193,7 @@ app.route('/v1/drives', drivesApp); // personal, agent and company drives + thei
 // Kortix in Chrome: the user's own Chrome, driven from a session sandbox. The
 // control socket (/v1/chrome/ws) is upgraded in inbound-dispatch.ts. The sandbox
 // routes (attach, release) take only a session-scoped credential, checked in the
-// handler; enforceTokenProjectScope lets that credential through (auth-scope.ts).
+// handler; the workspace fence lets that credential through (middleware/workspace-binding.ts).
 import { chromeApp, chromeConnectionsApp, chromeMasterSwitch, registerChromeRoutes } from './chrome/routes';
 app.use('/v1/chrome/*', chromeMasterSwitch);
 app.use('/v1/chrome/*', supabaseAuth);
