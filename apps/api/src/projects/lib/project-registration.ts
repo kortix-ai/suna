@@ -16,6 +16,12 @@ import {
 } from './project-git-write';
 import { type ProjectRow, clampProjectName, deriveProjectName } from './serializers';
 import { captureProductEvent } from '../../shared/product-analytics';
+import {
+  isWorkspaceOnePerAccountConflict,
+  workspaceHasProjectBody,
+  workspaceHasProjectDenial,
+  WorkspaceHasProjectError,
+} from '../../workspaces/one-project';
 
 type GitHubInstallation = typeof accountGithubInstallations.$inferSelect;
 
@@ -54,6 +60,9 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
     githubInstallationId: true,
   });
 
+  // The route ran `enforceProjectQuota` (409 `workspace_has_project`) first. A
+  // concurrent create that won the race past it trips the 1:1 unique index
+  // here; that answers the same typed 409 instead of a 500.
   const row = await db.transaction(async (tx) => {
     const [project] = await tx
       .insert(projects)
@@ -101,6 +110,10 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       .returning();
 
     return project;
+  }).catch(async (error: unknown) => {
+    if (!isWorkspaceOnePerAccountConflict(error)) throw error;
+    const occupied = await workspaceHasProjectDenial(input.accountId);
+    throw new WorkspaceHasProjectError(occupied ?? workspaceHasProjectBody(input.accountId, null));
   });
 
   // The creator's Manager role, through the ONE write path.

@@ -14,7 +14,7 @@ import { authorize, assertAuthorized } from '../../iam/authorize';
 import { actorOf } from '../../iam/actor';
 import type { ProjectAccessAction } from '../access';
 import { authorizeProjectAccess, loadProjectRow, resolveRequestedProjectAccount } from './project-access';
-import { projectQuotaDenial } from './project-quota';
+import { projectCreationDenial } from './project-quota';
 import { normalizeString } from './serializers';
 import { isRepositoryProjectAction, sessionWorkspaceAllowsRepositoryAccess } from './session-workspace-access';
 
@@ -149,12 +149,14 @@ export async function loadProjectForUser(c: Context<AppEnv>, projectId: string, 
   return access;
 }
 
-// Enforce the per-account project cap. Returns a typed 403 response to send, or
-// null when the account may create another project.
+// Refuse one more project in the account: 409 `workspace_has_project` when the
+// account already holds its one active project (Workspaces 1:1), else 403
+// `project_limit_reached` at the plan's cap. Returns the response to send, or
+// null when the account may create a project (`projectCreationDenial`).
 export async function enforceProjectQuota(
   c: Context,
   accountId: string,
 ) {
-  const denial = await projectQuotaDenial(accountId);
-  return denial ? c.json(denial, 403) : null;
+  const denial = await projectCreationDenial(accountId);
+  return denial ? c.json(denial.body, denial.status) : null;
 }
