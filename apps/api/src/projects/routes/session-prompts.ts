@@ -333,7 +333,7 @@ export function registerSessionPromptsRoutes(): void {
           projectId,
           sessionId,
           userId: loaded.userId,
-          model: promptModelRef(overrides.model) ?? (typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null),
+          model: promptModelRef(overrides.model) ?? (typeof metadata.model === 'string' ? metadata.model : null),
         });
         if (missing) return c.json(claudeSubscriptionRequiredBody(missing), 409);
       }
@@ -423,7 +423,7 @@ export function registerSessionPromptsRoutes(): void {
         sendState.then((state) => state.held),
       );
       // This prompt runs on the pin the revert restored: drop the marker.
-      if ((visible.row.metadata as Record<string, unknown> | null)?.opencode_model_restored === true) {
+      if ((visible.row.metadata as Record<string, unknown> | null)?.model_restored === true) {
         void clearRestoredModelPin(sessionId);
       }
 
@@ -479,8 +479,8 @@ export function registerSessionPromptsRoutes(): void {
           session_id: sessionId,
           model:
             promptModelRef(overrides.model) ??
-            (typeof (visible.row.metadata as Record<string, unknown> | null)?.opencode_model === 'string'
-              ? ((visible.row.metadata as Record<string, unknown>).opencode_model as string)
+            (typeof (visible.row.metadata as Record<string, unknown> | null)?.model === 'string'
+              ? ((visible.row.metadata as Record<string, unknown>).model as string)
               : 'default'),
           attachment_count: parts.filter((part) => (part as { type?: unknown }).type === 'file').length,
         },

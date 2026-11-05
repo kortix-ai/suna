@@ -282,7 +282,8 @@ const showParameters = {
       type: 'string',
       description:
         "URL to show. Required when type is 'url'. Use for localhost previews (e.g. 'http://localhost:3000') " +
-        'or external links. For standalone HTML files, first serve them via a web server, then pass the served URL here.',
+        'or external links. For standalone HTML files, first serve them via a web server, then pass the served URL here. ' +
+        'A localhost preview works only while the session is active.',
     },
     content: {
       type: 'string',
@@ -353,6 +354,8 @@ export default {
     `(e.g. ${SERVE_EXAMPLE}); for an app, run its dev server the same way ` +
     "(e.g. `npm run dev`). Then show(type='url', url='http://localhost:3000/'). The platform auto-detects " +
     'and proxies any localhost port — just use a plain http://localhost:PORT/ URL, no special path format needed.\n' +
+    'A server you start runs only while the session is active: it stops when the session goes idle, and its link ' +
+    'stops working until the server is started again. Say so when you share the link.\n' +
     'Variants (display hints): compact, full, gallery, detail — controls layout. ' +
     'Defaults are smart per type but can be overridden.\n' +
     'aspect_ratio: auto, 1:1, 16:9, 9:16, 4:3, 3:2, 21:9 — for visual content.\n' +

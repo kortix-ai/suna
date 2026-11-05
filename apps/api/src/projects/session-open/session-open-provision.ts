@@ -68,8 +68,8 @@ export async function allocateRuntimeOnOpen(
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
   if (sandboxCallbackUnreachableReason()) return;
   await transitionSession('provision', sessionId, { error: null });
-  const opencodeModel =
-    typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
+  const sessionModel =
+    typeof session.metadata?.model === 'string' ? session.metadata.model : null;
   const runtimeMetadata = { opened_at: new Date().toISOString(), ...(extraRuntimeMetadata ?? {}) };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
   const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata, loaded.row.projectId);
@@ -107,7 +107,7 @@ export async function allocateRuntimeOnOpen(
         repoUrl: loaded.row.repoUrl,
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
-        opencodeModel,
+        sessionModel,
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata),
@@ -161,7 +161,7 @@ export async function preserveEstablishedRuntimeOnOpen(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
       reason,
     };
   }
@@ -190,7 +190,7 @@ export async function preserveEstablishedRuntimeOnOpen(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(parked ?? row),
-      opencode_session_id: null,
+      runtime_session_id: null,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason,
     };
@@ -201,7 +201,7 @@ export async function preserveEstablishedRuntimeOnOpen(
     agent_name: visible.row.agentName ?? 'default',
     retriable: false,
     sandbox: preserved ? serializeSandboxRow(preserved) : serializeSandboxRow(row),
-    opencode_session_id: null,
+    runtime_session_id: null,
     runtime_url: sessionRuntimeUrlPath(row.externalId),
     reason: RUNTIME_IDENTITY_UNAVAILABLE,
   };
@@ -317,7 +317,7 @@ export async function replaceRefusedRuntimeOnOpen(
       agent_name: visible.row.agentName ?? 'default',
       retriable: false,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: null,
+      runtime_session_id: null,
       runtime_url: row.externalId ? sessionRuntimeUrlPath(row.externalId) : undefined,
       reason: 'runtime_admission_replace_exhausted',
       failure: {
@@ -346,7 +346,7 @@ export async function replaceRefusedRuntimeOnOpen(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: null,
+      runtime_session_id: null,
       runtime_url: row.externalId ? sessionRuntimeUrlPath(row.externalId) : undefined,
       reason,
     };
@@ -358,7 +358,7 @@ export async function replaceRefusedRuntimeOnOpen(
     agent_name: visible.row.agentName ?? 'default',
     retriable: true,
     sandbox: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     reason,
   };
 }
@@ -450,7 +450,7 @@ export async function retryTransientProvisionFailure(
       agent_name: visible.row.agentName ?? 'default',
       retriable: false,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: null,
+      runtime_session_id: null,
       reason: 'provider_transient_retries_exhausted',
       failure: {
         category,
@@ -474,7 +474,7 @@ export async function retryTransientProvisionFailure(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: null,
+      runtime_session_id: null,
       reason: 'provider_transient_retry_wait',
       failure: {
         category,
@@ -498,7 +498,7 @@ export async function retryTransientProvisionFailure(
     agent_name: visible.row.agentName ?? 'default',
     retriable: true,
     sandbox: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     reason: 'provider_transient_retry',
   };
 }
@@ -533,7 +533,7 @@ export async function openUnusableRow(
         agent_name: visible.row.agentName ?? 'default',
         retriable: false,
         sandbox: row?.status === 'error' ? serializeSandboxRow(row) : null,
-        opencode_session_id: null,
+        runtime_session_id: null,
         failure: row ? sessionStartFailureFromSandbox(row) : null,
       };
     }
@@ -560,7 +560,7 @@ export async function openUnusableRow(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
     };
   }
   return null;
@@ -607,7 +607,7 @@ export function openRecoveryClaimAnswer(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: visible.row.runtimeSessionId,
+      runtime_session_id: visible.row.runtimeSessionId,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason: 'runtime_recovery_in_progress',
     };
@@ -631,7 +631,7 @@ export function openProvisioningRowAnswer(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: null,
+      runtime_session_id: null,
     };
   }
   return null;

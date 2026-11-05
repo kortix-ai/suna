@@ -1595,7 +1595,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const canonicalSession = useCanonicalRuntimeSession({
     projectId,
     sessionId,
-    pinFromStart: startData?.runtime_session_id ?? startData?.opencode_session_id ?? null,
+    pinFromStart: startData?.runtime_session_id ?? null,
     initialPin: logRootRuntimeId ?? initialRuntimeSessionId,
     // The pin comes from `/start` and the log; the box lists nothing.
     listRuntimeSessions: false,

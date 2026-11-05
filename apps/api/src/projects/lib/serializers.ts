@@ -168,12 +168,12 @@ export function serializeSession(
   },
 ): ProjectSession {
   // Computed BEFORE the metadata-derived fields below, because name,
-  // custom_name and opencode_sessions are all derived FROM metadata — redacting
+  // custom_name and runtime_sessions are all derived FROM metadata — redacting
   // the metadata object alone would still have leaked the OpenCode-synced title
   // (which summarises the conversation) and the conversation-tree snapshot.
   const canAccess = ctx?.canAccess ?? true;
   const opencodeSessions = canAccess
-    ? normalizeRuntimeSessionSnapshots(row.metadata?.opencode_sessions)
+    ? normalizeRuntimeSessionSnapshots(row.metadata?.runtime_sessions)
     : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
@@ -196,8 +196,8 @@ export function serializeSession(
   const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.runtimeSessionId);
   return {
     model: canAccess
-      ? (ctx?.conversationModel ?? (typeof row.metadata?.opencode_model === 'string'
-        ? row.metadata.opencode_model.trim() || null
+      ? (ctx?.conversationModel ?? (typeof row.metadata?.model === 'string'
+        ? row.metadata.model.trim() || null
         : null))
       : null,
     session_id: row.sessionId,
@@ -210,7 +210,6 @@ export function serializeSession(
     sandbox_id: row.sandboxId,
     sandbox_url: forRequestApiUrl(row.sandboxUrl),
     runtime_session_id: row.runtimeSessionId,
-    opencode_session_id: row.runtimeSessionId,
     name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
     labels: canAccess ? (row.labels ?? []) : [],
@@ -228,7 +227,6 @@ export function serializeSession(
         : (row.metadata ?? {})
       : {},
     runtime_sessions: opencodeSessions,
-    opencode_sessions: opencodeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,
@@ -347,7 +345,8 @@ export function serializeProject(
     // `llm_gateway` graduated on 2026-10-20 and stays `true` too: mobile builds
     // and SDKs from before then read false as the removed native model mode.
     // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
-    // and mobile builds read false as "serve the v1 transcript". `pi_harness`
+    // and mobile builds read false as "serve the v1 transcript". `session_log_restore`
+    // graduated on 2026-11-05 and stays `true`: every box restores from the log. `pi_harness`
     // graduated on 2026-10-23: every new session runs pi. `genui` graduated on
     // 2026-10-24: older web, SDK and mobile clients render blocks only while it is true.
     // `connectors_v2` and `connectors_api_discover` graduated on 2026-10-24: older SDKs and
@@ -366,6 +365,7 @@ export function serializeProject(
       apps: true,
       llm_gateway: true,
       session_log: true,
+      session_log_restore: true,
       pi_harness: true,
       genui: true,
       connectors_v2: true,

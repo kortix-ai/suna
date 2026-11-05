@@ -106,7 +106,7 @@ async function insertTurn(row: {
   await realDbModule.db.execute(sql`
     INSERT INTO kortix.session_turns
       (turn_token, session_id, sandbox_id, project_id, account_id,
-       opencode_session_id, message_id, state, end_reason, started_at, accepted_at, ended_at)
+       runtime_session_id, message_id, state, end_reason, started_at, accepted_at, ended_at)
     VALUES (${row.token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
             ${ACCOUNT_ID}::uuid, ${row.opencodeSessionId ?? null}, ${row.messageId ?? null},
             ${row.state}, ${row.endReason ?? null},
@@ -183,7 +183,6 @@ describe('GET .../turn against real Postgres', () => {
         state: 'delivering',
         message_id: 'msg_boot',
         runtime_session_id: null,
-        opencode_session_id: null,
         started_at: '2026-08-17T00:00:00.000Z',
         accepted_at: null,
       },
@@ -217,7 +216,6 @@ describe('GET .../turn against real Postgres', () => {
       state: 'active',
       message_id: 'msg_1',
       runtime_session_id: 'ses_root',
-      opencode_session_id: 'ses_root',
       started_at: '2026-08-17T00:00:00.000Z',
       accepted_at: '2026-08-17T00:00:01.000Z',
     });

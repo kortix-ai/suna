@@ -162,7 +162,7 @@ async function runOpenSession(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
       reason: 'retired_row_wake',
     };
   }
@@ -204,7 +204,7 @@ async function runOpenSession(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
       reason: 'runtime_stopping',
     };
   }
@@ -257,7 +257,7 @@ function keptStoppedAnswer(agentName: string | null): SessionStartResult {
     agent_name: agentName ?? 'default',
     retriable: false,
     sandbox: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     failure: null,
   };
 }
@@ -326,7 +326,7 @@ async function stageRunningOpen(
     agent_name: args.visible.row.agentName ?? 'default',
     retriable: readiness.booting,
     sandbox: serializeSandboxRow(synced.row),
-    opencode_session_id: readiness.ensured.pin,
+    runtime_session_id: readiness.ensured.pin,
     runtime_url: sessionRuntimeUrlPath(synced.runningExternalId),
     reason: readiness.ensured.reason,
     ...(readiness.capabilities ? { capabilities: readiness.capabilities } : {}),

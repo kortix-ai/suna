@@ -107,7 +107,6 @@ export function useCanonicalRuntimeSession(params: {
   });
   const networkPin =
     projectSessionQuery.data?.runtime_session_id ??
-    projectSessionQuery.data?.opencode_session_id ??
     null;
 
   // T6 — a synchronous local mirror of the persisted pin, so a cold

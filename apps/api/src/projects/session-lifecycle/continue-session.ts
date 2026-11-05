@@ -154,7 +154,7 @@ export async function continueSession(
   const projectEffortVariant = effortVariantForPrompt({
     stored: session.projectDefaultEffort,
     modelOverride: command.overrides?.model ?? undefined,
-    sessionModelRef: sessionMeta.opencode_model,
+    sessionModelRef: sessionMeta.model,
   });
   // The agent this turn runs: the prompt body carries it to the proxy, whose
   // pre-prompt env sync resolves that agent's grant. The delivery's env

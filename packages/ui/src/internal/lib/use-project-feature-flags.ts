@@ -37,7 +37,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const volumes = useFeatureFlag(projectId, 'volumes');
   const drives = useFeatureFlag(projectId, 'drives');
   const sessionLog = useFeatureFlag(projectId, 'session_log');
-  const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
   const chat = useFeatureFlag(projectId, 'chat');
   const sharedDrives = useFeatureFlag(projectId, 'shared_drives');
   const goals = useFeatureFlag(projectId, 'goals');
@@ -64,7 +63,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       volumes: volumes.enabled,
       drives: drives.enabled,
       session_log: sessionLog.enabled,
-      session_log_restore: sessionLogRestore.enabled,
       chat: chat.enabled,
       shared_drives: sharedDrives.enabled,
       goals: goals.enabled,

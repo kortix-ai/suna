@@ -1477,7 +1477,7 @@ flow(
             row.command_type !== 'create_session' ||
             row.source !== 'trigger:manual' ||
             row.payload?.visibility !== 'private' ||
-            body.opencode_model !== 'anthropic/claude-sonnet-4-6' ||
+            body.model !== 'anthropic/claude-sonnet-4-6' ||
             body.metadata?.trigger_slug !== 'bp-cron' ||
             typeof body.initial_prompt !== 'string' ||
             !body.initial_prompt.startsWith('Run at 20') ||

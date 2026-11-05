@@ -807,17 +807,13 @@ const catalog = {
           "name": "Composio event triggers",
           "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. Kortix also checks your connected apps itself."
         },
-        "session_log_restore": {
-          "name": "Session log restore",
-          "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
-        },
         "goals": {
           "name": "Goals",
           "description": "Give an agent an objective it owns until an independent check confirms the outcome. It plans, works, waits, follows up with people, and keeps its state in a Goals folder in Files. Needs Volumes and Loops on."
         },
         "workspace_volume": {
-          "name": "Workspace volume",
-          "description": "Keeps each new session's /workspace on its own volume, so a stopped sandbox can be deleted and the next open boots a new one on the same files and conversation. Kortix enables it per project."
+          "name": "Stateless sandboxes",
+          "description": "Every session keeps only /workspace, on its own volume. A sandbox stopped for an hour is deleted, and the next open starts a new one with the same files and conversation. Programs that ran in the old sandbox are not running. Kortix enables it per project."
         },
         "artifacts": {
           "name": "Artifacts",

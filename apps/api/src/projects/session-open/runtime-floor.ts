@@ -149,7 +149,7 @@ async function refuse(
     agent_name: args.visible.row.agentName ?? 'default',
     retriable: false,
     sandbox: serializeSandboxRow(row),
-    opencode_session_id: null,
+    runtime_session_id: null,
     runtime_url: sessionRuntimeUrlPath(externalId),
     reason: 'runtime_below_floor',
     failure: {
@@ -174,7 +174,7 @@ function holdingAnswer(args: OpenSessionArgs, row: OpenSessionRow, externalId: s
     agent_name: args.visible.row.agentName ?? 'default',
     retriable: true,
     sandbox: serializeSandboxRow(row),
-    opencode_session_id: null,
+    runtime_session_id: null,
     runtime_url: sessionRuntimeUrlPath(externalId),
     reason: 'runtime_updating',
   };

@@ -198,7 +198,7 @@ harnessFlow(
   },
   async (ctx, harness) => {
     const { projectId, sessionId } = await bootSession(ctx, harness, {
-      opencodeModel: 'morph-dsv41flash',
+      sessionModel: 'morph-dsv41flash',
     });
 
     const originalMarker = `SESS23_ORIGINAL_${Date.now()}`;
@@ -554,7 +554,7 @@ harnessFlow(
           return r.json<any>();
         };
         const body = await read();
-        const tree: any[] = Array.isArray(body.opencode_sessions) ? body.opencode_sessions : [];
+        const tree: any[] = Array.isArray(body.runtime_sessions) ? body.runtime_sessions : [];
         const root =
           tree.find((entry) => entry?.id === body.runtime_session_id) ?? tree.find((entry) => !entry?.parent_id);
         const runtimeTitle = typeof root?.title === 'string' ? root.title.trim() : '';
@@ -569,17 +569,17 @@ harnessFlow(
           );
         }
         const ids = new Set(tree.map((entry) => entry?.id));
-        const lost = (detailSnapshotBeforeStop.opencode_sessions ?? [])
+        const lost = (detailSnapshotBeforeStop.runtime_sessions ?? [])
           .map((entry: any) => entry?.id)
           .filter((id: unknown) => !ids.has(id));
         if (lost.length > 0) {
-          throw new Error(`the mirrored opencode_sessions tree lost ${lost.join(', ')} across the stop`);
+          throw new Error(`the mirrored runtime_sessions tree lost ${lost.join(', ')} across the stop`);
         }
         await new Promise((resolve) => setTimeout(resolve, 3_000));
         const again = await read();
         if (
           again.name !== body.name ||
-          JSON.stringify(again.opencode_sessions) !== JSON.stringify(body.opencode_sessions)
+          JSON.stringify(again.runtime_sessions) !== JSON.stringify(body.runtime_sessions)
         ) {
           throw new Error(
             'the stopped session\'s mirrored title/tree changed between two reads with no live runtime — the cached-paint read is not stable',

@@ -1755,7 +1755,7 @@ describe('project session runtime guards', () => {
       body: JSON.stringify({
         provider: 'platinum',
         base_ref: 'main',
-        opencode_model: 'anthropic/claude-opus-4-8',
+        model: 'anthropic/claude-opus-4-8',
         agent_name: 'default',
         secrets: ['GMAIL_TOKEN'],
       }),
@@ -1811,7 +1811,7 @@ describe('project session runtime guards', () => {
       }),
     });
     expect(res.status).toBe(201);
-    expect(((await res.json()) as { metadata: Record<string, unknown> }).metadata.opencode_model).toBe(
+    expect(((await res.json()) as { metadata: Record<string, unknown> }).metadata.model).toBe(
       'kortix/anthropic/claude-opus-4-8',
     );
     await flushUntil(() => sandboxProvisionCalls === 1);
@@ -2416,7 +2416,7 @@ describe('project session runtime guards', () => {
       metadata: {
         existing: true,
         initial_prompt: 'DO NOT REPLAY',
-        opencode_model: 'anthropic/claude-sonnet-4-6',
+        model: 'anthropic/claude-sonnet-4-6',
       },
     };
     sessionSandboxRows = [
@@ -2480,7 +2480,7 @@ describe('project session runtime guards', () => {
       metadata: {
         existing: true,
         initial_prompt: 'DO NOT REPLAY',
-        opencode_model: 'anthropic/claude-sonnet-4-6',
+        model: 'anthropic/claude-sonnet-4-6',
       },
     };
     sessionSandboxRows = [
@@ -2963,7 +2963,7 @@ describe('project session runtime guards', () => {
     expect(body.sandbox_provider).toBe('platinum');
     expect(body.base_ref).toBe('dev');
     expect(body.status).toBe('provisioning');
-    expect(body.opencode_session_id).toBeNull();
+    expect(body.runtime_session_id).toBeNull();
     expect(body.name).toBe('Contract session');
     expect(sessionRow?.baseRef).toBe('dev');
     expect(sessionRow?.runtimeSessionId).toBeNull();

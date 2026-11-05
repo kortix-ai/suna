@@ -734,7 +734,7 @@ describe('kortix channels bindings', () => {
     channelName: null,
     channelType: null,
     agentName: null,
-    opencodeModel: null,
+    model: null,
     conversationPolicy: 'project_open',
     installedAt: '2026-10-02T00:00:00.000Z',
     effectiveAgent: { agent: 'kortix', source: 'project' },
