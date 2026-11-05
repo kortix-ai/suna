@@ -296,7 +296,7 @@ function MemberSheet({
   const doRevoke = () =>
     confirm({
       title: 'Revoke access',
-      description: `${userLabel(member)} loses direct access to this project.`,
+      description: `${userLabel(member)} loses direct access to this workspace.`,
       confirmLabel: 'Revoke',
       destructive: true,
       onConfirm: () => {
@@ -310,7 +310,7 @@ function MemberSheet({
 
   return (
     <SheetBody>
-      <RolePicker title="Project role" value={member.project_role ?? 'member'} onChange={changeRole} disabled={busy} />
+      <RolePicker title="Workspace role" value={member.project_role ?? 'member'} onChange={changeRole} disabled={busy} />
       <SettingsGroup>
         <SettingsRow
           icon={Trash2}

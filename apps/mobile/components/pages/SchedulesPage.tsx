@@ -122,7 +122,7 @@ export function SchedulesPage({
           onRefresh={() => refetch()}
           emptyLabel={
             forbidden
-              ? "You don't have access to this project's schedules"
+              ? "You don't have access to this workspace's schedules"
               : filtered.length === 0
                 ? all.length === 0 ? 'No schedules yet' : 'No matching schedules'
                 : null
