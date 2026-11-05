@@ -115,7 +115,8 @@ export {
   type ProjectAdminSectionKey,
 } from '../../customize/project-settings/project-admin-sections';
 
-type SectionPage = ComponentType<{ projectId: string }>;
+/** `slot`: General renders it after the name and icon, before its Danger zone. */
+type SectionPage = ComponentType<{ projectId: string; slot?: ReactNode }>;
 
 /**
  * An account pane of the host (`apps/web` renders the account hub's panes).
@@ -462,6 +463,13 @@ export function ProjectAdminDashboard({
   const accountTab = active ? ACCOUNT_TAB_FOR_SECTION[active] : undefined;
   const AccountPage = activeRow?.account && accountTab && accountId ? accountPane : undefined;
   const title = tSettings('title');
+  // The account half of a project section (General, Git repo).
+  const companionPane =
+    AccountPage && accountTab && accountId ? (
+      <EmbeddedAccountHubProvider value={{ accountId, tab: accountTab }}>
+        <AccountPage projectId={projectId} accountId={accountId} tab={accountTab} companion />
+      </EmbeddedAccountHubProvider>
+    ) : null;
 
   return (
     <SettingsNavProvider value={settingsNav}>
@@ -532,12 +540,16 @@ export function ProjectAdminDashboard({
                   <AccountHubSheetProvider>
                     {activeRow.project && ProjectPage ? (
                       <div className="mx-auto flex min-h-0 w-full flex-1 flex-col space-y-6 px-4 py-10 pb-20 lg:py-14">
-                        <ProjectPage projectId={projectId} />
-                        {AccountPage && accountTab && accountId ? (
-                          <EmbeddedAccountHubProvider value={{ accountId, tab: accountTab }}>
-                            <AccountPage projectId={projectId} accountId={accountId} tab={accountTab} companion />
-                          </EmbeddedAccountHubProvider>
-                        ) : null}
+                        {/* General places the account half before its
+                            Danger zone; every other section appends it. */}
+                        {active === 'general' ? (
+                          <ProjectPage projectId={projectId} slot={companionPane} />
+                        ) : (
+                          <>
+                            <ProjectPage projectId={projectId} />
+                            {companionPane}
+                          </>
+                        )}
                       </div>
                     ) : AccountPage && accountTab && accountId ? (
                       <EmbeddedAccountHubProvider value={{ accountId, tab: accountTab }}>

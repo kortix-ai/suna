@@ -624,7 +624,9 @@ export function AccountHubContent({
                 </SettingsRowGroup>
               </SettingsGroup>
 
-              {canDeleteAccount ? (
+              {/* Under the workspace's General pane its own Danger zone (delete
+                  the workspace) follows: one Danger zone per page. */}
+              {canDeleteAccount && !companion ? (
                 <SettingsGroup title={tI18nComplete.raw('textfd8b8dae4421')}>
                   <DangerZoneCard />
                 </SettingsGroup>

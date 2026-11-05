@@ -489,7 +489,15 @@ function GeneralWorkspaceCard({
  *  and renders `GeneralTabView` with real data + slots. Only ever mounted
  *  while this tab is active (`SettingsTabPane` in `settings-panel.tsx`
  *  returns `null` otherwise), so nothing here fetches on panel open. */
-export function GeneralTab({ projectId }: { projectId: string }) {
+export function GeneralTab({
+  projectId,
+  slot,
+}: {
+  projectId: string;
+  /** Rendered after the name and icon, before the Danger zone: the workspace's
+   *  account settings (security policy) in Workspace settings › General. */
+  slot?: ReactNode;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.workspace');
   const queryClient = useQueryClient();
@@ -572,7 +580,12 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       errorMessage={(projectQuery.error as Error)?.message ?? ''}
       onRetry={() => projectQuery.refetch()}
       generalFieldsSlot={
-        project ? <GeneralWorkspaceCard project={project} canManage={canEdit} canManageEffort={canEditEffort} /> : undefined
+        project ? (
+          <>
+            <GeneralWorkspaceCard project={project} canManage={canEdit} canManageEffort={canEditEffort} />
+            {slot}
+          </>
+        ) : undefined
       }
       // No git-repo slot: Git repo is its own Settings section since
       // 2026-09-03 (`project-settings-sections.ts`).
