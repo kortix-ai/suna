@@ -45,7 +45,7 @@ import {
   splitPastedContent,
   type PastedContent,
 } from '@kortix/shared';
-import { Keyboard, Pressable, View, type TextInput, type TextInputInstance } from 'react-native';
+import { Keyboard, Pressable, View, type TextInputInstance } from 'react-native';
 import { useIsFocused, useRouter } from 'expo-router';
 import {
   KeyboardAvoidingView,
@@ -138,16 +138,9 @@ export interface ProjectHomeProps {
    * `notification_center` flag is off: no bell.
    */
   notifications?: { unreadCount: number; onOpen: () => void };
-  /**
-   * Read-and-clear the draft text and files to seed the composer with, if any
-   * — e.g. a project-home send the user cancelled from `SessionConnecting`
-   * before it connected (COR-146: `ProjectScreen.handleCancelConnect`). Called
-   * once, at mount; the parent's `homeKey` bump remounts this screen whenever
-   * it has a draft to hand back, so a lazy initial read is enough — no effect
-   * needed, and nothing here re-reads it on a later re-render. The files
-   * upload again (`useComposerAttachments`'s `initialFiles`).
-   */
-  takeInitialDraft?: () => { text: string; files: AttachedFile[] };
+  /** A cancelled connection's immutable draft, acknowledged after the composer commits. */
+  initialDraft?: { text: string; files: AttachedFile[] };
+  consumeInitialDraft?: (draft: { text: string; files: AttachedFile[] }) => void;
 }
 
 export function ProjectHome({
@@ -156,13 +149,17 @@ export function ProjectHome({
   onSubmitNewSession,
   onOpenDrawer,
   notifications,
-  takeInitialDraft,
+  initialDraft: initialDraftProp,
+  consumeInitialDraft,
 }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const toast = useToast();
-  // One read at mount: the text seeds the draft, the files seed the uploads.
-  const [initialDraft] = React.useState(() => takeInitialDraft?.() ?? { text: '', files: [] });
+  // Snapshot at mount; an abandoned render must not consume the parent's draft.
+  const [initialDraft] = React.useState(initialDraftProp ?? { text: '', files: [] });
+  React.useEffect(() => {
+    consumeInitialDraft?.(initialDraft);
+  }, [initialDraft, consumeInitialDraft]);
   // The first project, just created on `/new` (COR-161), or the drawer's New
   // session before home mounted: open with the keyboard up. One-shot, read
   // once at mount.

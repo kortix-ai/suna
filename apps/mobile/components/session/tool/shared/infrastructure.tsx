@@ -197,7 +197,9 @@ export const BoundActivateContext = createContext<(() => void) | null>(null);
 
 /** The call is in flight AND its turn is live: the only time a loading state may animate. */
 export function useToolLive(): boolean {
-  return useContext(ToolRunningContext) && useContext(ToolMotionContext);
+  const running = useContext(ToolRunningContext);
+  const motion = useContext(ToolMotionContext);
+  return running && motion;
 }
 
 export function useToolOpen(): boolean {

@@ -1,4 +1,3 @@
-import * as React from 'react';
 import Svg, { Defs, LinearGradient, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 /**

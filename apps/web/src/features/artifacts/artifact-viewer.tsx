@@ -859,6 +859,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     className="text-foreground min-w-0 flex-1 bg-transparent font-medium outline-none"
                     onBlur={() => setRenaming(false)}
                     onKeyDown={async (e) => {
+                      if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
                       if (e.key === 'Escape') setRenaming(false);
                       if (e.key === 'Enter') {
                         const title = e.currentTarget.value.trim();

@@ -23,7 +23,6 @@
  * keeps its size (40pt + 10pt hit slop).
  */
 
-import * as React from 'react';
 import { MenuIcon } from '@/components/icons/menu-icon';
 
 import { HEADER_BUTTON_SIZE, HEADER_ICON_SIZE } from '@/components/kortix/header-button';

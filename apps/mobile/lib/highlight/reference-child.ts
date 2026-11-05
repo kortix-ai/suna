@@ -13,7 +13,7 @@
  * `{ content, color }` tokens, unpainted) to stdout. `shiki.test.ts` paints
  * both sides with its own `paint`.
  */
-import { createHighlighterCore, type HighlighterCore } from 'shiki/core';
+import { createHighlighterCore } from 'shiki/core';
 import { createOnigurumaEngine } from 'shiki/engine/oniguruma';
 import minDark from 'shiki/themes/min-dark.mjs';
 import minLight from 'shiki/themes/min-light.mjs';
