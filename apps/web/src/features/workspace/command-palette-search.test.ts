@@ -311,10 +311,6 @@ describe('queries return the rows they name', () => {
     expect(result.sort()).toEqual([
       'nav:account-members',
       'nav:account-tokens',
-      'nav:account-usage',
-      // Credits and Plan left the overlay for the account page on 2026-09-03;
-      // their `nav:account-usage` / `nav:account-billing` rows above own the
-      // word now.
       'settings:profile',
     ]);
   });
