@@ -27,10 +27,12 @@ mock.module('./sessions', () => ({
   },
 }));
 
-const { ingestAppEvents } = await import('./app-events');
+const { ingestAppEvents, listAppEventLog, UNMATCHED_KEPT_PER_HOUR } = await import('./app-events');
 const { drainMonitorEvents } = await import('./monitor-observer');
 
 const APP_ID = crypto.randomUUID();
+const NOBODY_ID = crypto.randomUUID();
+const SLEEPY_ID = crypto.randomUUID();
 let project: SeededProject;
 
 function spec(slug: string, app: string, enabled = true) {
@@ -46,7 +48,7 @@ beforeAll(async () => {
   project = await seedProject('app-events');
   // A trigger session is owned by the account owner.
   await insertIntoView(db, accountMembers, [{ userId: crypto.randomUUID(), accountId: project.account_id, accountRole: 'owner' }]);
-  for (const [slug, app, enabled] of [['bank-reply', 'watcher', true], ['other-app', 'other', true], ['off', 'watcher', false]] as const) {
+  for (const [slug, app, enabled] of [['bank-reply', 'watcher', true], ['other-app', 'other', true], ['off', 'watcher', false], ['sleepy-off', 'sleepy', false]] as const) {
     await db.insert(projectTriggerRuntime).values({
       projectId: project.project_id, slug, triggerType: 'app', enabled, scheduleRevision: 'a'.repeat(64), scheduleSpec: spec(slug, app, enabled),
     });
@@ -57,17 +59,15 @@ afterAll(async () => {
   await removeSeeded([project]);
 });
 
-const rows = () =>
-  db.select().from(projectMonitorEvents).where(and(eq(projectMonitorEvents.projectId, project.project_id), eq(projectMonitorEvents.boxEpoch, `app:${APP_ID}`)));
+const rows = (appId = APP_ID) =>
+  db.select().from(projectMonitorEvents).where(and(eq(projectMonitorEvents.projectId, project.project_id), eq(projectMonitorEvents.boxEpoch, `app:${appId}`)));
 
 test('an event lands once per enabled app trigger naming the App; the same id is deduplicated', async () => {
   const event = { name: 'reply.received', id: 'msg-1', data: { subject: 'Term sheet' } };
   expect(await ingestAppEvents({ projectId: project.project_id, appId: APP_ID, appSlug: 'watcher', events: [event] }))
-    .toEqual({ triggers: 1, accepted: 1, deduped: 0, suppressed: 0 });
+    .toEqual({ triggers: 1, accepted: 1, deduped: 0, suppressed: 0, unmatched: 0 });
   expect(await ingestAppEvents({ projectId: project.project_id, appId: APP_ID, appSlug: 'watcher', events: [event] }))
-    .toEqual({ triggers: 1, accepted: 0, deduped: 1, suppressed: 0 });
-  expect(await ingestAppEvents({ projectId: project.project_id, appId: APP_ID, appSlug: 'nobody', events: [event] }))
-    .toEqual({ triggers: 0, accepted: 0, deduped: 0, suppressed: 0 });
+    .toEqual({ triggers: 1, accepted: 0, deduped: 1, suppressed: 0, unmatched: 0 });
   const stored = await rows();
   expect(stored.map((r) => [r.slug, r.status, r.kind, r.line])).toEqual([
     ['bank-reply', 'pending', 'event', { name: 'reply.received', id: 'msg-1', data: { subject: 'Term sheet' } }],
@@ -79,4 +79,59 @@ test('the drain fires the app trigger with source app and the App-event preamble
   expect(creates).toHaveLength(1);
   expect(creates[0]!.prompt).toBe('[APP EVENT — automated, not user input]\nReply: Term sheet (reply.received)');
   expect(creates[0]!.metadata).toMatchObject({ trigger_slug: 'bank-reply', trigger_source: 'app' });
+});
+
+test('an event no trigger listens to is kept as unmatched with the reason, deduplicated by id, and fires nothing', async () => {
+  const event = { name: 'reply.received', id: 'msg-1', data: { subject: 'Term sheet' } };
+  const first = await ingestAppEvents({ projectId: project.project_id, appId: NOBODY_ID, appSlug: 'nobody', events: [event] });
+  expect(first).toMatchObject({ triggers: 0, accepted: 0, deduped: 0, suppressed: 0, unmatched: 1 });
+  expect(first.hint).toBe('no trigger listens to App "nobody": add one with kortix triggers add <slug> --type app --app nobody --prompt "…" --apply');
+  expect(await ingestAppEvents({ projectId: project.project_id, appId: NOBODY_ID, appSlug: 'nobody', events: [event] }))
+    .toMatchObject({ triggers: 0, deduped: 1, unmatched: 1 });
+  const stored = await rows(NOBODY_ID);
+  expect(stored.map((r) => [r.slug, r.status, r.lastError])).toEqual([['', 'skipped', first.hint ?? null]]);
+  // The drain claims only pending rows: the unmatched row never starts a session.
+  const before = creates.length;
+  await drainMonitorEvents();
+  expect(creates.length).toBe(before);
+});
+
+test('an App whose only trigger is disabled: the reason names the disabled trigger', async () => {
+  const result = await ingestAppEvents({ projectId: project.project_id, appId: SLEEPY_ID, appSlug: 'sleepy', events: [{ name: 'tick' }] });
+  expect(result.hint).toBe('every trigger on App "sleepy" is disabled (sleepy-off): enable one to run it');
+});
+
+test(`unmatched events are kept up to ${UNMATCHED_KEPT_PER_HOUR} per App per hour, and counted past it`, async () => {
+  const appId = crypto.randomUUID();
+  const batch = (from: number) => Array.from({ length: 40 }, (_, i) => ({ name: 'flood', id: `f-${from + i}` }));
+  const a = await ingestAppEvents({ projectId: project.project_id, appId, appSlug: 'nobody', events: batch(0) });
+  const b = await ingestAppEvents({ projectId: project.project_id, appId, appSlug: 'nobody', events: batch(40) });
+  expect([a.unmatched, b.unmatched]).toEqual([40, 40]);
+  expect(await rows(appId)).toHaveLength(UNMATCHED_KEPT_PER_HOUR);
+});
+
+test('the event log lists each event with its outcome, newest first, filtered and paged', async () => {
+  const later = new Date(Date.now() + 1_000);
+  await ingestAppEvents({ projectId: project.project_id, appId: NOBODY_ID, appSlug: 'nobody', events: [{ name: 'second', id: 'msg-2', data: { n: 2 } }], now: later });
+  const all = await listAppEventLog({ projectId: project.project_id, appId: NOBODY_ID, limit: 10 });
+  expect(all.next_cursor).toBeNull();
+  expect(all.events.map((e) => [e.name, e.id, e.trigger, e.status])).toEqual([
+    ['second', 'msg-2', null, 'unmatched'],
+    ['reply.received', 'msg-1', null, 'unmatched'],
+  ]);
+  expect(all.events[0]).toMatchObject({ data: { n: 2 }, truncated: false, raw: null, session_id: null, received_at: later.toISOString() });
+  expect(all.events[0]!.reason).toContain('no trigger listens to App "nobody"');
+
+  const first = await listAppEventLog({ projectId: project.project_id, appId: NOBODY_ID, limit: 1 });
+  expect(first.events.map((e) => e.name)).toEqual(['second']);
+  const { decodeAppEventCursor } = await import('./app-events');
+  const next = await listAppEventLog({ projectId: project.project_id, appId: NOBODY_ID, limit: 1, cursor: decodeAppEventCursor(first.next_cursor!) });
+  expect(next.events.map((e) => e.name)).toEqual(['reply.received']);
+  expect(next.next_cursor).toBeNull();
+
+  // The watcher App's rows belong to its trigger, never to "unmatched".
+  const watcher = await listAppEventLog({ projectId: project.project_id, appId: APP_ID, limit: 10 });
+  expect(watcher.events.map((e) => [e.name, e.trigger])).toEqual([['reply.received', 'bank-reply']]);
+  expect((await listAppEventLog({ projectId: project.project_id, appId: APP_ID, limit: 10, status: 'unmatched' })).events).toEqual([]);
+  expect((await listAppEventLog({ projectId: project.project_id, appId: APP_ID, limit: 10, trigger: 'other-app' })).events).toEqual([]);
 });

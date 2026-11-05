@@ -58,6 +58,7 @@ import { commitAppFields, commitAppRemoval, manifestFieldsOf } from './app-manif
 import { probeFrameable } from './external';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
+import { registerAppEventLogRoutes } from './event-log-routes';
 import { registerAppFleetRoutes } from './fleet-routes';
 import {
   DEPRECATED_PROVIDER_CODE,
@@ -297,6 +298,7 @@ async function linkOrRefuse(c: Context<AppEnv>, app: typeof apps.$inferSelect, u
 
 export function registerAppsRoutes(): void {
   registerAppCapabilityRoutes();
+  registerAppEventLogRoutes();
   registerAppFleetRoutes();
   projectsApp.openapi(
     createRoute({

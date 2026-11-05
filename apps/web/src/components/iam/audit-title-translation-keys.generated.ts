@@ -736,6 +736,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Viewed Kortix App access policy': 'text9c9027798e45',
   'Viewed Kortix App deployment': 'text7a84bdb22767',
   'Viewed Kortix App deployment logs': 'text2d430c4c81a2',
+  'Viewed Kortix App events': 'text567cd42b6a31',
   'Viewed Kortix system skill': 'textea0b84c2ddf0',
   'Viewed Kortix system skill file': 'text16faff6ae525',
   'Viewed LLM catalog': 'text04a6fbab3598',
