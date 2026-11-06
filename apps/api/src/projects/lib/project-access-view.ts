@@ -2,6 +2,7 @@ import { accountMemberJoinRows } from '../../iam/membership-read';
 import { accountGroupNames, groupMemberRows } from '../../iam/group-read';
 import { isAccountManager, type AccountRole, type ProjectRole } from '../access';
 import { authorize } from '../../iam/authorize';
+import { workspaceFactsOf } from '../../iam/workspace-facts';
 import { normalizeProjectRole } from '../../iam/roles';
 import {
   accountRoleMap,
@@ -40,12 +41,14 @@ export interface ProjectRoster {
  * between this list and the access screen.
  */
 export async function loadProjectRosterIds(loaded: { row: { accountId: string; projectId: string } }): Promise<ProjectRoster> {
-  const [identityRows, accountRoles, grantRows, groupGrantRows] = await Promise.all([
+  const [identityRows, accountRoles, grantRows, groupGrantRows, facts] = await Promise.all([
     accountMemberJoinRows(loaded.row.accountId),
     accountRoleMap(loaded.row.accountId),
     projectRoleGrants({ accountId: loaded.row.accountId, projectId: loaded.row.projectId }),
     groupProjectGrants({ accountId: loaded.row.accountId, projectId: loaded.row.projectId }),
+    workspaceFactsOf(loaded.row.accountId),
   ]);
+  const membershipIsAccess = facts.soleProjectId === loaded.row.projectId;
   const grantGroupIds = groupGrantRows.map((g) => g.groupId);
   const members = grantGroupIds.length ? await groupMemberRows(grantGroupIds) : [];
   // A deleted group's membership is gone, so its grant contributes nobody —
@@ -72,6 +75,7 @@ export async function loadProjectRosterIds(loaded: { row: { accountId: string; p
       accountRole,
       directRole: normalizeProjectRole(grantsByUser.get(member.userId)?.projectRole),
       groupSources: groupSourcesByUser.get(member.userId) ?? [],
+      membershipIsAccess,
     });
     if (fold.effective_project_role === null) continue;
     ids.push(member.userId);
@@ -151,6 +155,7 @@ export async function buildProjectAccessView(loaded: AwaitedProjectAccessLoad) {
     customPoliciesByUser: customPolicies.byUser,
     resourceGrantsByUser: resourceGrants.byUser,
     everyoneResourceGrants: resourceGrants.everyone,
+    membershipIsAccess: (await workspaceFactsOf(loaded.row.accountId)).soleProjectId === loaded.row.projectId,
   });
 
   return {
@@ -383,6 +388,8 @@ async function buildMemberRows(input: {
   customPoliciesByUser: Map<string, CustomRolePolicyEntry[]>;
   resourceGrantsByUser: Map<string, ResourceGrantEntry[]>;
   everyoneResourceGrants: ResourceGrantEntry[];
+  /** The project is its account's one workspace: account members reach it. */
+  membershipIsAccess: boolean;
 }) {
   const {
     identityRows,
@@ -417,6 +424,7 @@ async function buildMemberRows(input: {
         accountRole,
         directRole: projectRole,
         groupSources,
+        membershipIsAccess: input.membershipIsAccess,
       });
 
       return {

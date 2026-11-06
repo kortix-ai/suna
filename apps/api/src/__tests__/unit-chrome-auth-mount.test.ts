@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { workspaceFenceVerdict } from '../middleware/workspace-binding';
 
 const WS = '11111111-1111-4111-8111-111111111111';
-const deps = { sandboxWorkspace: async () => null };
+const deps = { sandboxWorkspace: async () => null, accountWorkspace: async () => null };
 
 const appSource = readFileSync(new URL('../app.ts', import.meta.url), 'utf8');
 const deadline = readFileSync(new URL('../middleware/request-deadline.ts', import.meta.url), 'utf8');

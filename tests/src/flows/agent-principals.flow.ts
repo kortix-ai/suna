@@ -355,7 +355,7 @@ flow(
   },
 );
 
-// ── AGP-5 — permissions decide: members.manage and project.delete are ordinary ──
+// ── AGP-5 — permissions decide: members.manage is ordinary; delete and minting are HUMAN_ONLY ──
 flow(
   'AGP-5',
   {
@@ -421,16 +421,16 @@ flow(
         if (role !== 'member' && role !== 'user') throw new Error(`member role is ${role}, expected member`);
       });
 
-      await ctx.step('the one human-only action: `all` cannot mint a project token (403 agent_human_only_action)', async () => {
+      await ctx.step('HUMAN_ONLY (minting credentials): `all` cannot mint a project token (403 agent_human_only_action)', async () => {
         const r = await root.client.post('/v1/workspaces/:projectId/cli-token', {}, { params: { projectId: project.id } });
         assertDenial(r, 'agent_human_only_action', 'project.credentials.issue');
       });
 
-      await ctx.step('`all` includes project.delete: root deletes the project (2xx); the owner no longer reads it as active', async () => {
+      await ctx.step('HUMAN_ONLY (moving money): `all` cannot delete the workspace (403 agent_human_only_action); it stays active', async () => {
         const r = await root.client.del('/v1/workspaces/:projectId', { params: { projectId: project.id } });
-        if (r.statusCode < 200 || r.statusCode >= 300) throw new Error(`root delete: ${r.statusCode} ${r.text().slice(0, 400)}`);
+        assertDenial(r, 'agent_human_only_action', 'project.delete');
         const read = await world.owner.get('/v1/workspaces/:projectId', { params: { projectId: project.id } });
-        if (read.statusCode === 200 && read.json<any>().status === 'active') throw new Error('project still active after delete');
+        read.status(200).body().has('$.status', 'active');
       });
     } finally {
       await world.close();

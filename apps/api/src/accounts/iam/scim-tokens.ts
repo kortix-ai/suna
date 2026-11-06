@@ -73,7 +73,11 @@ export function registerIamScimTokensRoutes(): void {
     // A connected app's revocable `kortix_oat_` token must not mint a durable credential.
     if (c.get('authType') === 'oauth') return c.json({ error: 'Connected apps cannot mint SCIM tokens.' }, 403);
     if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const actor = await actorOf(c, accountId);
+    await assertAuthorized(actor, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    // A SCIM token is a credential: minting it is HUMAN_ONLY (design.md C8), so
+    // no agent session mints one, whatever its grant.
+    await assertAuthorized(actor, ACCOUNT_ACTIONS.TOKEN_CREATE);
     const denied = await requireEntitlement(c, accountId, 'scim');
     if (denied) return denied;
 

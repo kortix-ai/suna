@@ -3,12 +3,13 @@ import { userChanges, applyProfile } from './user-profile';
 // registerScimUsersRoutes() registers these onto the shared scimRouter.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountInvitations, accountMemberships, accountScimUsers, accountGroupMembers } from '@kortix/db';
+import { accountInvitations, accountScimUsers, accountGroupMembers } from '@kortix/db';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import { offboardMember } from '../accounts/core/offboard-member';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 import { accountRoleFor, countAccountOwners } from '../iam/read-models';
-import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
+import { SYSTEM_ACTOR } from '../iam/assignments';
+import { addWorkspaceMember } from '../iam/workspace-members';
 import { scimError } from '../middleware/scim-auth';
 import { auth, errors, json } from '../openapi';
 import { db } from '../shared/db';
@@ -88,23 +89,6 @@ async function getMember(accountId: string, userId: string): Promise<MemberRow |
  * because an audit insert hiccuped would take an enterprise's IdP sync down for
  * a bookkeeping problem.
  */
-async function assignScimMembership(accountId: string, userId: string): Promise<void> {
-  try {
-    await assignRole(SYSTEM_ACTOR, accountId, {
-      principal: { type: 'user', id: userId },
-      roleKey: 'member',
-      scope: { type: 'account' },
-      source: 'scim',
-    });
-  } catch (err) {
-    console.warn('[scim] canonical membership assignment failed', {
-      accountId,
-      userId,
-      err: (err as Error)?.message,
-    });
-  }
-}
-
 /** Last-owner guard shared by every deprovision path. */
 async function isLastOwner(accountId: string, member: MemberRow): Promise<boolean> {
   if (member.accountRole !== 'owner') return false;
@@ -167,13 +151,16 @@ async function applyDirectoryState(c: any, user: DirectoryUser, active: boolean,
       or(eq(accountInvitations.email, user.userName), eq(accountInvitations.inviteId, user.invitationId ?? user.scimId)),
     ));
   } else if (userId) {
-    await db.insert(accountMemberships).values({
-      accountId: user.accountId, userId, scimExternalId: user.externalId,
-    }).onConflictDoUpdate({
-      target: [accountMemberships.accountId, accountMemberships.userId],
-      set: { scimExternalId: user.externalId },
+    // THE membership write: the identity row (with the IdP's external id) and,
+    // for a new member only, the account `member` role. Membership is access.
+    // Best-effort role write, as before: the directory row stands.
+    await addWorkspaceMember(user.accountId, userId, 'member', [], {
+      writer: SYSTEM_ACTOR,
+      source: 'scim',
+      scimExternalId: user.externalId ?? null,
+      keepExistingRole: Boolean(member),
+      roleBestEffort: true,
     });
-    if (!member) await assignScimMembership(user.accountId, userId);
     if (groupIds.length) {
       const groups = await accountGroupsAmong(user.accountId, groupIds);
       if (groups.length) await db.insert(accountGroupMembers).values(groups.map(g => ({ groupId: g.groupId, userId }))).onConflictDoNothing();

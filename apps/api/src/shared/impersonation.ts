@@ -136,8 +136,7 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   // refused, which is what the non-GET rule below expresses.
   { re: /^\/v1\/accounts\/tokens(\/|$)/ },
   { re: /^\/v1\/accounts\/[^/]+\/tokens(\/|$)/ },
-  { re: /^\/v1\/accounts\/[^/]+\/iam\/scim\/tokens(\/|$)/ },
-  { re: /^\/v1\/accounts\/[^/]+\/iam\/service-accounts(\/|$)/ },
+  // (SCIM tokens and service accounts: the IAM subtree rule below.)
   { re: /^\/v1\/projects\/[^/]+\/cli-token(\/|$)/ },
   { re: /^\/v1\/projects\/[^/]+\/git-token(\/|$)/ },
   { re: /^\/v1\/projects\/[^/]+\/gateway\/keys(\/|$)/ },
@@ -148,16 +147,14 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   // the first thing a support question needs.
   { re: /^\/v1\/accounts\/[^/]+\/members(\/|$)/ },
   { re: /^\/v1\/accounts\/[^/]+\/invites(\/|$)/ },
-  // The account-scoped IAM surface adds durable principals too — the
-  // account-members POST above is only one door. `iam/members` carries the
-  // super-admin PATCH, `iam/groups` adds a principal to a policy-bearing
-  // group, and both outlive the grant. Refuse the whole IAM subtree's
-  // state changes (reads stay open for support). `effective:batch` is a read
-  // sent as POST — the web app's permission probe on every page.
-  { re: /^\/v1\/accounts\/[^/]+\/iam\/members(?!\/[^/]+\/effective(:batch)?$)(\/|$)/ },
-  { re: /^\/v1\/accounts\/[^/]+\/iam\/groups(\/|$)/ },
-  { re: /^\/v1\/accounts\/[^/]+\/iam\/roles(\/|$)/ },
-  { re: /^\/v1\/accounts\/[^/]+\/iam\/policies(\/|$)/ },
+  // The account-scoped IAM surface adds durable principals and durable
+  // policy: role assignments (bind anyone to owner), OAuth clients (a client
+  // secret), SSO, SCIM, groups, roles, policies, service accounts, and the
+  // MFA / session / key policies. ONE subtree rule for every state-changing
+  // method, so a new leaf can never drift out of the list (finding 14). Reads
+  // stay open for support. `iam/members/:id/effective(:batch)` is the one
+  // exemption: a read sent as POST, the web app's permission probe.
+  { re: /^\/v1\/accounts\/[^/]+\/iam\/(?!members\/[^/]+\/effective(:batch)?$)/ },
   // Project-scoped invite is a full member-add primitive: an existing user is
   // INSERTed into account_members directly (role from the body, `manager`
   // accepted), and an unknown email returns the invite_url in the response.
@@ -177,10 +174,8 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   { re: /^\/v1\/accounts\/[^/]+\/audit\/webhooks(\/|$)/ },
   { re: /^\/v1\/projects\/[^/]+\/audit\/webhooks(\/|$)/ },
   // Identity. An SSO provider the operator controls would let them
-  // authenticate INTO the customer's account directly afterwards. Covers
-  // sso, scim (directory sync), and the token routes above.
-  { re: /^\/v1\/accounts\/[^/]+\/iam\/sso(\/|$)/ },
-  { re: /^\/v1\/accounts\/[^/]+\/iam\/scim(\/|$)/ },
+  // authenticate INTO the customer's account directly afterwards: sso and
+  // scim are inside the IAM subtree rule above.
   // Connectors. A connection row carries a stored credential or OAuth state
   // for an external service; connecting a workspace or app the OPERATOR
   // controls is a durable exfiltration channel that outlives the grant, the
@@ -225,8 +220,10 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   { re: /^\/v1\/projects\/[^/]+\/change-requests\/[^/]+\/merge$/ },
   { re: /^\/v1\/projects\/[^/]+\/oauth(\/|$)/ },
   { re: /^\/v1\/projects\/[^/]+\/apps(?!\/[^/]+\/access-session$)(\/|$)/ },
-  // Repository / provider replacement rides PATCH on the project itself.
-  { re: /^\/v1\/projects\/[^/]+$/, methods: ['PATCH'] },
+  // Repository / provider replacement rides PATCH on the project itself, and
+  // DELETE closes the whole workspace (its account, subscription and wallet).
+  // Both spellings: `/v1/workspaces/:id` is judged by this legacy twin.
+  { re: /^\/v1\/projects\/[^/]+$/, methods: ['PATCH', 'DELETE'] },
   // Account deletion, both mounts. The deletion routes run as the REAL
   // caller: the request row records the operator as the requester, and the
   // deletion sweeps the sandboxes of every account the requester owns. An

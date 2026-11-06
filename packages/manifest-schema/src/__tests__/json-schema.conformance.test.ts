@@ -124,7 +124,7 @@ const FIXTURES: Fixture[] = [
   {
     name: 'agent block kortix_permissions non-grantable action',
     valid: false,
-    input: 'agents:\n  w:\n    kortix_permissions:\n      - billing.read\n',
+    input: 'agents:\n  w:\n    kortix_permissions:\n      - billing.not_an_action\n',
   },
 
   // ─── shared sections: path traversal ───────────────────────────────────
@@ -736,7 +736,7 @@ const FIXTURES: Fixture[] = [
   {
     name: 'kortix_permissions rejects a non-grantable action',
     valid: false,
-    input: 'default_agent: w\nagents:\n  w:\n    kortix_permissions: [billing.read]\n',
+    input: 'default_agent: w\nagents:\n  w:\n    kortix_permissions: [billing.not_an_action]\n',
   },
   {
     name: 'kortix_permissions accepts the wildcard',
@@ -752,7 +752,7 @@ const FIXTURES: Fixture[] = [
   {
     name: 'deprecated kortix_cli alias still rejects a non-grantable action',
     valid: false,
-    input: 'default_agent: w\nagents:\n  w:\n    kortix_cli: [billing.read]\n',
+    input: 'default_agent: w\nagents:\n  w:\n    kortix_cli: [billing.not_an_action]\n',
   },
   { name: 'workspace.project_repository false', valid: true, input: 'default_agent: a\nagents:\n  a:\n    workspace:\n      project_repository: false\n' },
   { name: 'workspace.project_repository true', valid: true, input: 'default_agent: a\nagents:\n  a:\n    workspace:\n      project_repository: true\n' },

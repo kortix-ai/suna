@@ -86,7 +86,7 @@ function pathAccountOf(c: Context): string | undefined {
 type PathTokenBinding =
   | { kind: 'none' }
   | { kind: 'workspace'; projectId: string }
-  | { kind: 'ambiguous'; workspaceIds: string[] };
+  | { kind: 'ambiguous' };
 
 async function pathTokenBinding(c: Context): Promise<PathTokenBinding> {
   const raw = c.req.param('workspaceId');
@@ -95,7 +95,7 @@ async function pathTokenBinding(c: Context): Promise<PathTokenBinding> {
     const workspace = await resolveWorkspace(raw);
     return workspace ? { kind: 'workspace', projectId: workspace.workspaceId } : { kind: 'none' };
   } catch (err) {
-    if (err instanceof WorkspaceAmbiguousError) return { kind: 'ambiguous', workspaceIds: [...err.workspaceIds] };
+    if (err instanceof WorkspaceAmbiguousError) return { kind: 'ambiguous' };
     throw err;
   }
 }
@@ -368,8 +368,10 @@ accountsRouter.openapi(
     return c.json(
       {
         error: 'This account holds several workspaces. Name one: mint under /v1/workspaces/<workspace id>/tokens, or pass project_id.',
+        // No id list: a member of a legacy account must not learn the ids of
+        // workspaces they cannot read (finding 34). GET /v1/workspaces lists
+        // the ones they can.
         code: WORKSPACE_AMBIGUOUS_CODE,
-        workspace_ids: binding.workspaceIds,
       },
       409,
     );

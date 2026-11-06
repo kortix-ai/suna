@@ -159,3 +159,32 @@ export function toLegacyAction(action: string): string {
 export function toWorkspaceAction(action: string): string {
   return isLegacyAction(action) ? WORKSPACE_ACTION_BY_LEGACY[action] : action;
 }
+
+/**
+ * HUMAN_ONLY (design.md §3.2 C8): the actions no agent session ever holds,
+ * inherited or governed, whatever its grant, its bound role or its launcher's
+ * super-admin bit says. Legacy spelling, as stored.
+ *
+ * Two classes, and only these two:
+ *   - minting credentials: a token minted by an agent carries no agent grant,
+ *     so the agent would hand itself authority outside its own permissions;
+ *   - moving money: checkout, payment methods, top-up approval, and deleting a
+ *     workspace (which cancels its subscription and forfeits its wallet).
+ *
+ * Every other action is an ordinary workspace permission an agent can hold:
+ * "the agent either can or cannot" (Marko, 2026-11-06).
+ */
+export const HUMAN_ONLY: ReadonlySet<LegacyIamAction> = new Set<LegacyIamAction>([
+  'token.create',
+  'token.personal.create',
+  'project.credentials.issue',
+  'project.gateway.keys.manage',
+  'billing.write',
+  'account.delete',
+  'project.delete',
+]);
+
+/** True when `action`, in either spelling, is HUMAN_ONLY. */
+export function isHumanOnlyAction(action: string): boolean {
+  return HUMAN_ONLY.has(toLegacyAction(action) as LegacyIamAction);
+}

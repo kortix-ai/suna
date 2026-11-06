@@ -1684,8 +1684,8 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/workspaces/:accountId/iam/roles',
-      'GET /v1/workspaces/:accountId/iam/roles/:roleId/permissions',
+      'GET /v1/accounts/:accountId/iam/roles',
+      'GET /v1/accounts/:accountId/iam/roles/:roleId/permissions',
     ],
   },
   async (ctx) => {
@@ -1696,7 +1696,7 @@ flow(
     await ctx.step('system roles come from the seeded DB rows, all six of them', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/workspaces/:accountId/iam/roles', { params: { accountId: team.id } });
+        .get('/v1/accounts/:accountId/iam/roles', { params: { accountId: team.id } });
       r.status(200).body().exists('$.roles');
       const system = (r.json<any>().roles as any[]).filter((role) => role.is_system);
       const seen = system.map((role) => `${role.resource_type}:${role.key}`).sort().join(',');
@@ -1719,7 +1719,7 @@ flow(
     await ctx.step('the advertised key is the key POST /iam/assignments accepts', async () => {
       const roles = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/workspaces/:accountId/iam/roles', { params: { accountId: team.id } });
+        .get('/v1/accounts/:accountId/iam/roles', { params: { accountId: team.id } });
       const key = (roles.json<any>().roles as any[]).find(
         (role) => role.is_system && role.resource_type === 'project' && role.key === 'member',
       ).key;
@@ -1740,7 +1740,7 @@ flow(
     await ctx.step("a system role's permissions come from role_permissions", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/workspaces/:accountId/iam/roles/:roleId/permissions', {
+        .get('/v1/accounts/:accountId/iam/roles/:roleId/permissions', {
           params: { accountId: team.id, roleId: 'builtin:user' },
         });
       r.status(200).body().has('$.key', 'member');
@@ -1753,7 +1753,7 @@ flow(
     await ctx.step('the object-grant marker is a system role and is not deletable', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/workspaces/:accountId/iam/roles/:roleId', {
+        .del('/v1/accounts/:accountId/iam/roles/:roleId', {
           params: { accountId: team.id, roleId: 'builtin:agent-user' },
         });
       r.status(400);
@@ -2304,16 +2304,18 @@ flow(
       grantId = r.json<any>().assignment_id;
     });
 
-    await ctx.step('the member now lists the agent; the account member outside the project still reaches nothing', async () => {
-      const agents = await visibleAgents(member);
-      assert({
-        kind: 'body',
-        description: 'member sees the agent granted to everyone',
-        pass: agents.includes(AGENT),
-        expected: AGENT,
-        actual: agents,
-      });
-      const r = await ctx.client.as(outsider).get('/v1/workspaces/:projectId', {
+    await ctx.step('the member and every other account member (membership is access) list the agent; a non-member reaches nothing', async () => {
+      for (const who of [member, outsider]) {
+        const agents = await visibleAgents(who);
+        assert({
+          kind: 'body',
+          description: `${who.label} sees the agent granted to everyone in the workspace`,
+          pass: agents.includes(AGENT),
+          expected: AGENT,
+          actual: agents,
+        });
+      }
+      const r = await ctx.client.as(ctx.P.NONMEMBER).get('/v1/workspaces/:projectId', {
         params: { projectId: project.id },
       });
       r.status([403, 404]);

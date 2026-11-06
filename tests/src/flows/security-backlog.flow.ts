@@ -310,9 +310,11 @@ flow(
       const r = await pat().get('/v1/workspaces/:projectId', { params: { projectId: projB.id } });
       r.status(403);
     });
-    await ctx.step('denied: enumerate /projects → 403', async () => {
+    await ctx.step('the workspace list names only its bound project → 200 [A]', async () => {
       const r = await pat().get('/v1/workspaces');
-      r.status(403);
+      r.status(200);
+      const ids = r.json<Array<{ project_id: string }>>().map((row) => row.project_id);
+      if (ids.length !== 1 || ids[0] !== projA.id) throw new Error(`listed ${JSON.stringify(ids)}`);
     });
     await ctx.step('denied: account-level GET /accounts/:id → 403', async () => {
       const r = await pat().get('/v1/accounts/:accountId', {

@@ -921,15 +921,17 @@ flow(
       ).status(404);
     });
 
-    await ctx.step("group membership does not stand in for project access", async () => {
-      // An account member INSIDE an allowed group but with no role on the
-      // project still gets nothing: the App allow-list narrows PROJECT
-      // members, it never widens the project itself. The contrast with the
-      // neither-member step (a project member without app access gets a 200
-      // list with the App filtered out) shows this 403 is the project gate
-      // firing — group membership did not buy project access.
-      const listed = await ctx.client.as(noRole).get("/v1/workspaces/:projectId/apps", { params });
-      listed.status(403).body().has("$.code", "no_project_membership").has("$.action", "project.read");
+    await ctx.step("an account member inside an allowed group is a workspace member and opens the App", async () => {
+      // Membership is access (design.md C3): an account member of this 1:1
+      // workspace holds the member tier with no project grant, so the allowed
+      // group admits them like any other member. A person outside the
+      // workspace still gets the project gate.
+      const { read, listedId, session } = await canOpen(ctx.client.as(noRole));
+      read.status(200).body().has("$.app_id", appId);
+      if (!listedId) throw new Error("an account member of an allowed group does not see the App");
+      session.status(200).body().exists("$.url");
+      const outsider = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/workspaces/:projectId/apps", { params });
+      outsider.status([403, 404]);
     });
 
     await ctx.step("narrowing the policy to one group keeps that group's members in", async () => {

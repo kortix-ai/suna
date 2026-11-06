@@ -1,6 +1,6 @@
 import { AccountSummarySchema as ContractAccountSummarySchema } from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
-import { accountInvitations, accountMemberships, type accounts } from '@kortix/db';
+import { accountInvitations, type accounts } from '@kortix/db';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
@@ -10,7 +10,8 @@ import {
 } from '../../shared/impersonation';
 import { accountOwnersByJoinDate, userAccountMembershipRow } from '../../iam/membership-read';
 import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
-import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { SYSTEM_ACTOR } from '../../iam/assignments';
+import { addWorkspaceMember } from '../../iam/workspace-members';
 import { trustedEmailForUser } from '../../iam/email-trust';
 import { accountKeyForWorkspaceId, resolveAccountId } from '../../shared/resolve-account';
 import { isUuid } from '../../shared/validate';
@@ -90,6 +91,9 @@ export const AccountMemberSchema = z
   .object({
     user_id: z.string(),
     email: z.string().nullable(),
+    /** The one workspace role ladder: owner > admin > manager > member. */
+    role: z.enum(['owner', 'admin', 'manager', 'member']),
+    /** Deprecated: the stored account-scope role. Read `role`. */
     account_role: z.string(),
     is_super_admin: z.boolean(),
     explicit_project_count: z.number(),
@@ -355,21 +359,12 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
       if ((invite.bootstrapGrants ?? []).length > 0) continue;
       if (invite.email.trim().toLowerCase() !== normalized) continue;
       try {
-        // IDENTITY, then the ROLE. `accountMemberships` is the table;
-        // `accountMembers` is a view over it plus role_assignments, and a
-        // TARGETED `ON CONFLICT` cannot run against a view (no index to infer).
-        await db
-          .insert(accountMemberships)
-          .values({ userId, accountId: invite.accountId })
-          .onConflictDoNothing({
-            target: [accountMemberships.userId, accountMemberships.accountId],
-          });
-        await assignRole(SYSTEM_ACTOR, invite.accountId, {
-          principal: { type: 'user', id: userId },
-          roleKey: invite.initialRole,
-          scope: { type: 'account' },
+        // THE membership write: identity row + account role. Membership is
+        // access, so no project grant follows.
+        await addWorkspaceMember(invite.accountId, userId, invite.initialRole === 'admin' ? 'admin' : 'member', [], {
+          writer: SYSTEM_ACTOR,
           source: 'invite',
-          exclusive: true,
+          grantedBy: invite.invitedBy,
         });
         await db
           .update(accountInvitations)

@@ -105,6 +105,44 @@ function serializeCustomRole(r: typeof iamRoles.$inferSelect) {
   };
 }
 
+/** `/v1/workspaces/…` (canonical) rather than `/v1/accounts/…` (legacy). */
+function isCanonicalWorkspacePath(path: string): boolean {
+  return path.startsWith('/v1/workspaces/');
+}
+
+/**
+ * The four ladder rows, built from the stored system roles. Each keeps the
+ * wire id and `resource_type` of the stored role a client resolves an
+ * assignment against (`member` = the project floor role an agent is bound to);
+ * `storage_role_ids` names every stored role behind the rung.
+ */
+const LADDER: ReadonlyArray<{ key: 'owner' | 'admin' | 'manager' | 'member'; name: string; storage: string[] }> = [
+  { key: 'owner', name: 'Owner', storage: ['account:owner'] },
+  { key: 'admin', name: 'Admin', storage: ['account:admin'] },
+  { key: 'manager', name: 'Manager', storage: ['project:manager'] },
+  { key: 'member', name: 'Member', storage: ['project:member', 'account:member'] },
+];
+
+function workspaceLadderRoles(system: ReadonlyArray<{ key: string; name: string; description: string | null; scopeType: string }>) {
+  const byStorage = new Map<string, (typeof system)[number]>(system.map((r) => [`${r.scopeType}:${r.key}`, r]));
+  return LADDER.flatMap((rung) => {
+    const primary = byStorage.get(rung.storage[0]!);
+    if (!primary) return [];
+    return [
+      {
+        ...serializeSystemRole(primary),
+        name: rung.name,
+        ladder: true,
+        scope: 'workspace' as const,
+        storage_role_ids: rung.storage.flatMap((id) => {
+          const stored = byStorage.get(id);
+          return stored ? [systemRoleWireId(stored.scopeType, stored.key)] : [];
+        }),
+      },
+    ];
+  });
+}
+
 const Any = z.any();
 const RoleIdParam = z.object({ workspaceId: z.string(), roleId: z.string() });
 
@@ -262,6 +300,13 @@ export function registerIamCustomRolesRoutes(): void {
       // The folder roles exist only as the level of a Files folder grant (the
       // Files access dialog sets them); they are not roles a person picks here.
       const listed = system.filter((r) => !(r.scopeType === 'project' && FOLDER_ROLE_KEYS.has(r.key)));
+      // The canonical spelling shows ONE role ladder (design.md C3, finding
+      // 13): owner > admin > manager > member, then the custom roles. No
+      // second `member` row and no `agent-user` marker. The legacy spelling
+      // (`/v1/accounts/:id/iam/roles`) keeps every stored row for old clients.
+      if (isCanonicalWorkspacePath(c.req.path)) {
+        return c.json({ roles: [...workspaceLadderRoles(listed), ...custom.map(serializeCustomRole)] });
+      }
       return c.json({
         roles: [...listed.map(serializeSystemRole), ...custom.map(serializeCustomRole)],
       });

@@ -27,9 +27,9 @@ async function matrixSessionProbes(): Promise<void> {
   await expectCli('whoami works with agent token', ['whoami'], { stdout: /kortix|agent|session/i });
   await expectCli('system-skills list works', ['system-skills'], { stdout: /kortix-system/ });
   await expectCli('projects info works for bound project', ['projects', 'info', projectId], { stdout: new RegExp(projectId) });
-  await expectCli('projects ls fails closed for project-scoped agent token', ['projects', 'ls'], {
-    code: 1,
-    stderr: /Project-scoped token cannot list projects|project-scoped token/i,
+  // One fence rule: a workspace-bound token lists its one workspace.
+  await expectCli('projects ls lists only the bound workspace for a session token', ['projects', 'ls'], {
+    stdout: new RegExp(projectId),
   });
   await expectCli('sessions ls works', ['sessions', 'ls'], { stdout: new RegExp(sessionId.slice(0, 8)) });
   await expectCli('sessions info accepts the displayed short id', ['sessions', 'info', sessionId.slice(0, 8)], {

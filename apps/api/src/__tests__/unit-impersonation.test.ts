@@ -375,6 +375,40 @@ describe('decideImpersonation', () => {
     }
   });
 
+  // Finding 14: the whole IAM subtree refuses state changes on both spellings,
+  // so a new leaf never drifts out of the list; DELETE closes the workspace.
+  test('every IAM write and the workspace DELETE are refused on the canonical and legacy spellings', () => {
+    const WS = '44444444-4444-4444-8444-444444444444';
+    const leaves = [
+      ['iam/assignments', 'POST'],
+      ['iam/assignments/a1', 'DELETE'],
+      ['iam/oauth-clients', 'POST'],
+      ['iam/oauth-clients/c1/rotate-secret', 'POST'],
+      ['iam/pat-policy', 'PATCH'],
+      ['iam/mfa-required', 'PATCH'],
+      ['iam/session-policy', 'PATCH'],
+      ['iam/session-oversight', 'PATCH'],
+      ['iam/sessions/s1/revoke', 'POST'],
+      ['iam/enterprise-demo', 'PUT'],
+      ['iam/roles/r1/permissions', 'PUT'],
+      ['iam/policies:bulk-import', 'POST'],
+      ['iam/members/u1/super-admin', 'PATCH'],
+    ] as const;
+    for (const prefix of [`/v1/workspaces/${WS}`, `/v1/accounts/${WS}`]) {
+      for (const [leaf, method] of leaves) {
+        expect(isImpersonationForbiddenPath(`${prefix}/${leaf}`, method), `${method} ${prefix}/${leaf}`).toBe(true);
+        expect(decide({ path: `${prefix}/${leaf}`, method })).toEqual({ ok: false, reason: 'route_forbidden' });
+      }
+      // Reads and the permission probe stay open.
+      expect(isImpersonationForbiddenPath(`${prefix}/iam/assignments`, 'GET')).toBe(false);
+      expect(isImpersonationForbiddenPath(`${prefix}/iam/members/u1/effective`, 'GET')).toBe(false);
+      expect(isImpersonationForbiddenPath(`${prefix}/iam/members/u1/effective:batch`, 'POST')).toBe(false);
+    }
+    expect(isImpersonationForbiddenPath(`/v1/workspaces/${WS}`, 'DELETE')).toBe(true);
+    expect(isImpersonationForbiddenPath(`/v1/projects/${WS}`, 'DELETE')).toBe(true);
+    expect(isImpersonationForbiddenPath(`/v1/workspaces/${WS}`, 'GET')).toBe(false);
+  });
+
   // The deletion routes run as the real caller, so an operator inside the
   // customer's account would become the requester of the deletion.
   test('account deletion is refused on both mounts; its status read stays open', () => {

@@ -3,7 +3,6 @@ import { and, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountInvitations,
-  accountMemberships,
   accounts,
   projects,
 } from '@kortix/db';
@@ -18,6 +17,7 @@ import { getMembership } from './core/app';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/roles';
 import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
+import { addWorkspaceMember } from '../iam/workspace-members';
 import { trustedEmailForUser } from '../iam/email-trust';
 import { getSsoProvider } from '../repositories/sso';
 import { isUuid } from '../shared/validate';
@@ -238,6 +238,17 @@ export function validateBootstrapGroup(raw: unknown): { group_id: string } | nul
 // membership itself is already committed and shouldn't roll back because a
 // project no longer exists. Each entry is validated first (see
 // validateBootstrapGrant) so a bad jsonb write can't break acceptance.
+/** A time-boxed invite's membership end (`{account_expires_at}` in bootstrap_grants), or null. */
+function inviteMembershipExpiry(invite: typeof accountInvitations.$inferSelect): Date | null {
+  for (const raw of (invite.bootstrapGrants ?? []) as unknown[]) {
+    if (raw && typeof raw === 'object' && 'account_expires_at' in raw) {
+      const at = new Date(String((raw as { account_expires_at: unknown }).account_expires_at));
+      if (!Number.isNaN(at.getTime())) return at;
+    }
+  }
+  return null;
+}
+
 async function applyBootstrapGrants(
   invite: typeof accountInvitations.$inferSelect,
   userId: string,
@@ -247,6 +258,8 @@ async function applyBootstrapGrants(
   if (rawBootstraps.length === 0 || invite.initialRole !== 'member') return applied;
 
   for (const raw of rawBootstraps) {
+    // The membership expiry entry is applied by the membership write itself.
+    if (raw && typeof raw === 'object' && 'account_expires_at' in raw) continue;
     // A SCIM Group membership parked while this user was a pending invite —
     // materialize it now that they have a real user row. Idempotent.
     const grp = validateBootstrapGroup(raw);
@@ -509,27 +522,19 @@ accountInvitesRouter.openapi(
   if (alreadyAccepted && !existingMembership) {
     return c.json({ error: 'This invite was already used. Ask the owner to send a new one.' }, 410);
   }
-  // `onConflictDoNothing` on the (user, account) primary key keeps the identity
-  // insert idempotent on re-entry. Members are unlimited and free: there is no
-  // seat check. `SYSTEM_ACTOR` below: the writer is the INVITEE, who by
-  // definition holds no permission in this account yet — the invitation is the
-  // authorization.
-  await db
-    .insert(accountMemberships)
-    .values({ userId, accountId: invite.accountId })
-    .onConflictDoNothing({
-      target: [accountMemberships.userId, accountMemberships.accountId],
-    });
-  // Re-entry of a current member never rewrites their role (an admin demotion sticks).
-  if (!alreadyAccepted) {
-    await assignRole(SYSTEM_ACTOR, invite.accountId, {
-      principal: { type: 'user', id: userId },
-      roleKey: invite.initialRole,
-      scope: { type: 'account' },
-      source: 'invite',
-      exclusive: true,
-    });
-  }
+  // THE membership write (idempotent on re-entry). Membership is access: the
+  // invitee reaches the workspace with no second grant. Members are unlimited
+  // and free: there is no seat check. `SYSTEM_ACTOR`: the writer is the
+  // INVITEE, who holds no permission here yet — the invitation is the
+  // authorization. Re-entry of a current member never rewrites their role (an
+  // admin demotion sticks).
+  await addWorkspaceMember(invite.accountId, userId, invite.initialRole === 'admin' ? 'admin' : 'member', [], {
+    writer: SYSTEM_ACTOR,
+    source: 'invite',
+    grantedBy: invite.invitedBy,
+    keepExistingRole: alreadyAccepted,
+    expiresAt: inviteMembershipExpiry(invite),
+  });
 
   // Stamp accepted_at on first accept. The isNull guard makes concurrent
   // accepts collapse to a single write without us caring who won — both

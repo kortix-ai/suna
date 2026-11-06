@@ -106,7 +106,8 @@ flow('SGRP-2', meta([ROUTES.list, ROUTES.create, ROUTES.update, ROUTES.remove, R
   const member = await team.addMember('member');
   await team.grantProjectRole(project.id, member.userId!, 'member');
   const asMember = ctx.client.as(member);
-  const outsider = ctx.client.as(await team.addMember('member'));
+  // Membership is access (design.md C3): the outsider is a person outside the workspace.
+  const outsider = ctx.client.as(ctx.P.NONMEMBER);
   const ids: Record<string, string> = {};
   try {
     await world.setFeature('session_groups', true);

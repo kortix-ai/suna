@@ -128,7 +128,7 @@ function req(method: string, path: string, secret: string, body?: unknown) {
 async function roleDenied(res: Response): Promise<boolean> {
   if (res.status !== 403) return false;
   const text = JSON.stringify(await res.json().catch(() => ({})));
-  return /doesn't let you|do not have access to this project/i.test(text);
+  return /doesn't let you|do not have access to this (project|workspace)/i.test(text);
 }
 
 const base = `/v1/projects/${PROJECT}/sessions/${SESSION}`;

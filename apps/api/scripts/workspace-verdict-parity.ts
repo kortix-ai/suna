@@ -361,14 +361,79 @@ interface Intended {
   match: (row: { method: string; path: string; ctx: string; kind: string; role: string; base: string; head: string }) => boolean;
 }
 
+const BOUND = new Set(['project_pat', 'session_pat']);
+const FENCE_RENAMES: Record<string, string[]> = {
+  'cross-project': ['cross-workspace'],
+  'default-deny': ['platform-route', 'person-route', 'default-deny'],
+  'account-level-route': ['person-route', 'account-wider-than-workspace', 'cross-workspace'],
+  'project-list': ['person-route'],
+  'foreign-sandbox': ['foreign-sandbox'],
+};
+const fenceCheck = (v: string) => /^403:token-project-scope:(.+)$/.exec(v)?.[1] ?? null;
+/** A canonical route the base tree never mounted. */
+const CANONICAL = /^\/(v1\/workspaces|v1\/me|v1\/invites|v1\/connectors\/workspaces|scim\/v2\/workspaces)(\/|$)/;
+
 const INTENDED: Intended[] = [
   {
-    why: 'Agents never inherit workspace administration: an ungoverned agent session (session PAT) acting as its launcher is refused the administration leaves (members.manage, delete, gateway keys, budget, credentials) — README "one decision" item 3.',
+    why: 'New canonical route: the base tree answers 404 (not mounted); the head serves the /v1/workspaces family (design.md §3.2 C5).',
+    match: (r) => r.base === '404' && CANONICAL.test(r.path),
+  },
+  {
+    why: 'K1, one fence rule: a workspace-bound key reaches every route of its OWN workspace, administration included (members, IAM, tokens, billing reads, the list); its holder\'s role decides (C4, findings 15, 25).',
+    match: (r) =>
+      BOUND.has(r.kind) &&
+      ['account-level-route', 'project-list'].includes(fenceCheck(r.base) ?? '') &&
+      !r.head.startsWith('403:token-project-scope:'),
+  },
+  {
+    why: 'Fence check renamed with the same refusal: cross-project → cross-workspace, default-deny → platform-route / person-route, account-level-route → person-route / account-wider-than-workspace (C4).',
+    match: (r) => {
+      const b = fenceCheck(r.base);
+      const h = fenceCheck(r.head);
+      return b !== null && h !== null && (FENCE_RENAMES[b] ?? []).includes(h);
+    },
+  },
+  {
+    why: 'K1: an inherited (ungoverned) agent session acts as its person minus HUMAN_ONLY; step 4b (agents never administer) is deleted (C8).',
+    match: (r) => r.kind === 'session_pat' && r.base === '403:agent_human_only_action' && r.head !== r.base,
+  },
+  {
+    why: 'HUMAN_ONLY (C8): minting credentials and moving money are refused to every agent session; on the account surface its reason was token_out_of_scope.',
     match: (r) => r.kind === 'session_pat' && r.head === '403:agent_human_only_action',
   },
   {
-    why: 'Same ceiling, route-specific wording: the budget routes answer their own 403 text when `project.gateway.budget.set` is denied to an ungoverned agent session.',
-    match: (r) => r.kind === 'session_pat' && r.base === 'pass' && r.head.startsWith('403:') && r.path.includes('/gateway/budgets'),
+    why: 'C4: an account-scope action is in scope for a workspace-bound key on its own 1:1 workspace (token_out_of_scope → the role decides).',
+    match: (r) => BOUND.has(r.kind) && r.ctx === 'one' && r.base === '403:token_out_of_scope',
+  },
+  {
+    why: 'Membership is access (C3, findings 3, 4): an account member of a 1:1 workspace reaches it at the member tier, so the project gate passes and the route\'s own next gate answers (pass, a role/leaf denial, a feature flag, an agent-session rule).',
+    match: (r) =>
+      r.ctx === 'one' &&
+      ['member', 'manager', 'project_member', 'group_grant', 'custom_role'].includes(r.role) &&
+      /no_project_membership|You do not have access to this project/.test(r.base) &&
+      !/no_project_membership|do not have access to this workspace/.test(r.head),
+  },
+  {
+    why: 'K1, budgets: an inherited agent session sets and deletes gateway budgets as its person (the route answered its own "You do not have permission to set budgets").',
+    match: (r) => r.kind === 'session_pat' && r.path.includes('/gateway/budgets') && /permission to set budgets/.test(r.base) && r.head === 'pass',
+  },
+  {
+    why: 'Membership is access (C3) on routes with their own denial wording: the connector gateway (403 forbidden), the sandbox proxy (Not authorized to access this sandbox), a hidden-artifact 404 that now reaches its feature gate.',
+    match: (r) =>
+      r.ctx === 'one' &&
+      r.role === 'member' &&
+      /^(403:forbidden|403:Not authorized to access this sandbox|404)$/.test(r.base) &&
+      /^\/v1\/(connectors\/(projects|workspaces)|p|projects|workspaces)\//.test(r.path) &&
+      (r.head === 'pass' || r.head === '403:feature_disabled'),
+  },
+  {
+    why: 'C4 reach param: a workspace-bound key reaches the billing surface of its own workspace (the account_id it names, or none); the route answers for itself.',
+    match: (r) =>
+      BOUND.has(r.kind) && r.path.startsWith('/v1/billing/') && fenceCheck(r.base) === 'default-deny' && !r.head.startsWith('403:token-project-scope:'),
+  },
+  {
+    why: 'Copy only (finding 20): the same denial now says "this workspace" (no_project_membership text, account denial text).',
+    match: (r) => r.base.replace(/project|account/g, 'X') === r.head.replace(/workspace/g, 'X'),
   },
 ];
 

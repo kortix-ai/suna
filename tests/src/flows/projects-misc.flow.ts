@@ -608,11 +608,11 @@ flow(
     });
 
     await ctx.step(
-      'a member with no project grant cannot read/write the config → 403',
+      'a person outside the workspace cannot read/write the config → 403',
       async () => {
-        const bare = await team.addMember('member');
+        // Membership is access (design.md C3): the outsider is a non-member.
         const r = await ctx.client
-          .as(bare)
+          .as(ctx.P.NONMEMBER)
           .get('/v1/workspaces/:projectId/agents/:agentName/config', {
             params: { projectId: project.id, agentName: 'worker' },
           });
@@ -621,7 +621,7 @@ flow(
     );
 
     await ctx.step(
-      'GET capabilities lists every tool, built-in skill and platform extension; an undeclared agent → 404; no grant → 403',
+      'GET capabilities lists every tool, built-in skill and platform extension; an undeclared agent → 404; a non-member → 403',
       async () => {
         const projectCatalog = (await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/capabilities', {
           params: { projectId: project.id },
@@ -644,8 +644,7 @@ flow(
         if (required !== 'kortix-nested-calls,kortix-presentation,kortix-turn') throw new Error(`required extensions: ${required}`);
         (await ctx.client.as(ctx.P.OWNER).get(path, { params: { projectId: project.id, agentName: 'ghost' } }))
           .status(404).body().has('$.code', 'agent_not_found');
-        const bare = await team.addMember('member');
-        (await ctx.client.as(bare).get(path, { params: { projectId: project.id, agentName: 'worker' } })).status(403);
+        (await ctx.client.as(ctx.P.NONMEMBER).get(path, { params: { projectId: project.id, agentName: 'worker' } })).status(403);
       },
     );
   },

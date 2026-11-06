@@ -1,7 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { projects } from '@kortix/db';
+import { projects, roleAssignments } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
-import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
+import { ACCOUNT_ACTIONS, assertAuthorized, authorize, workspaceFactsOf } from '../../iam';
+import { accountRoleForWorkspaceRole, parseWorkspaceRole, workspaceRoleFromRows } from '../../iam/roles';
 import { actorOf } from '../../iam/actor';
 import { visibleDirectory } from '../../iam/directory-visibility';
 import { isAudienceObjectType } from '../../iam/audience-grants';
@@ -14,9 +15,11 @@ import {
   projectRoleGrants,
 } from '../../iam/read-models';
 import {
+  assignRole,
   auditAssignmentRevoked,
   deleteProjectScopeAssignments,
   listAssignments,
+  SYSTEM_ACTOR,
   type Writer,
 } from '../../iam/assignments';
 import { db } from '../../shared/db';
@@ -32,7 +35,6 @@ import {
   countOwners,
   getMembership,
   lookupEmailsByUserIds,
-  parseRole,
 } from './app';
 import { readJsonObject } from '../../shared/http-body';
 import { accountIdParam } from '../../shared/route-params';
@@ -98,6 +100,17 @@ async function auditProjectAssignmentsRevoked(
       err: (err as Error)?.message,
     });
   }
+}
+
+/** The user's live system `manager` row on one project, or null. */
+async function projectManagerAssignment(accountId: string, userId: string, projectId: string) {
+  const rows = await listAssignments({
+    accountId,
+    principal: { type: 'user', id: userId },
+    scopeType: 'project',
+    scopeId: projectId,
+  });
+  return rows.find((row) => row.roleIsSystem && row.objectType === null && row.roleKey === 'manager') ?? null;
 }
 
 // Routes are registered via this function (called by the orchestrator in the
@@ -258,6 +271,13 @@ export function registerMemberRoutes(): void {
         string,
         Array<{ project_id: string; name: string; role: string }>
       >();
+      // The ladder role on the workspace's one project (1:1); a split_pending
+      // account has no single workspace project, so a member reads `member`.
+      const soleProjectId = activeProjects.length === 1 ? activeProjects[0]!.projectId : null;
+      const projectRoleOnWorkspace = new Map<string, string>();
+      for (const r of projectGrantRows) {
+        if (r.projectId === soleProjectId) projectRoleOnWorkspace.set(r.userId, r.role);
+      }
       for (const r of projectGrantRows) {
         projectGrantCountByUser.set(r.userId, (projectGrantCountByUser.get(r.userId) ?? 0) + 1);
         const list = projectsByUser.get(r.userId) ?? [];
@@ -284,6 +304,7 @@ export function registerMemberRoutes(): void {
             return {
               user_id: r.userId,
               email: emails.get(r.userId) ?? null,
+              role: workspaceRoleFromRows(r.accountRole, projectRoleOnWorkspace.get(r.userId) ?? null) ?? 'member',
               account_role: r.accountRole,
               is_super_admin: r.isSuperAdmin,
               explicit_project_count: showSensitive
@@ -363,6 +384,9 @@ export function registerMemberRoutes(): void {
         200: json(
           z.object({
             user_id: z.string(),
+            /** The workspace ladder role: owner | admin | manager | member. */
+            role: z.string(),
+            /** Deprecated: the stored account-scope role. */
             account_role: z.string(),
             unchanged: z.boolean().optional(),
           }),
@@ -381,8 +405,11 @@ export function registerMemberRoutes(): void {
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_UPDATE);
 
       const body = await readJsonObject(c);
-      const newRole = parseRole(body.role, ['owner', 'admin', 'member']);
-      if (!newRole) return c.json({ error: 'role must be one of owner|admin|member' }, 400);
+      // The one ladder (design.md §3.2 C3). `manager` = account member +
+      // project manager on the workspace's one project.
+      const newRole = parseWorkspaceRole(body.role);
+      if (!newRole) return c.json({ error: 'role must be one of owner|admin|manager|member' }, 400);
+      const newAccountRole = accountRoleForWorkspaceRole(newRole);
 
       const targetMembership = await getMembership(targetUserId, accountId);
       if (!targetMembership) return c.json({ error: 'Member not found' }, 404);
@@ -396,10 +423,22 @@ export function registerMemberRoutes(): void {
         return c.json({ error: 'Only an owner can assign or change the owner role' }, 403);
       }
 
-      if (targetMembership.accountRole === newRole) {
+      const { soleProjectId } = await workspaceFactsOf(accountId);
+      if (newRole === 'manager' && !soleProjectId) {
+        return c.json(
+          { error: 'manager needs the workspace project; on a legacy account with several projects, grant manager per project' },
+          400,
+        );
+      }
+      const managerRow = soleProjectId ? await projectManagerAssignment(accountId, targetUserId, soleProjectId) : null;
+      const currentRole =
+        workspaceRoleFromRows(targetMembership.accountRole, managerRow ? 'manager' : null) ?? 'member';
+
+      if (currentRole === newRole) {
         return c.json({
           user_id: targetUserId,
-          account_role: newRole,
+          role: newRole,
+          account_role: newAccountRole,
           unchanged: true,
         });
       }
@@ -411,7 +450,7 @@ export function registerMemberRoutes(): void {
         return c.json({ error: 'Only owners can grant the owner role' }, 403);
       }
 
-      if (targetMembership.accountRole === 'owner' && newRole !== 'owner') {
+      if (targetMembership.accountRole === 'owner' && newAccountRole !== 'owner') {
         const owners = await countOwners(accountId);
         if (owners <= 1) {
           return c.json({ error: 'Cannot demote the last owner' }, 409);
@@ -419,19 +458,37 @@ export function registerMemberRoutes(): void {
       }
 
       const writer = await actorOf(c, accountId);
-      await auditAccountRoleRevoked(writer, accountId, targetUserId, newRole);
-      // Demoting an owner also clears the super-admin bypass the owner held
-      // (`clearSuperAdminAfterOwnerLoss`, run by the exclusive grant).
-      await grantAccountRole(writer, accountId, targetUserId, newRole);
+      if (targetMembership.accountRole !== newAccountRole) {
+        await auditAccountRoleRevoked(writer, accountId, targetUserId, newAccountRole);
+        // Demoting an owner also clears the super-admin bypass the owner held
+        // (`clearSuperAdminAfterOwnerLoss`, run by the exclusive grant).
+        await grantAccountRole(writer, accountId, targetUserId, newAccountRole);
+      }
 
       if (newRole === 'owner' || newRole === 'admin') {
         // Owners/admins get implicit Manager on every project; their direct
         // project assignments would shadow nothing useful, so clean them up.
         await auditProjectAssignmentsRevoked(writer, accountId, targetUserId);
         await deleteProjectScopeAssignments(accountId, targetUserId);
+      } else if (newRole === 'manager' && soleProjectId) {
+        // The route asserted member.update; `SYSTEM_ACTOR` skips re-deriving
+        // project.members.manage, `grantedBy` names the caller.
+        await assignRole(SYSTEM_ACTOR, accountId, {
+          principal: { type: 'user', id: targetUserId },
+          roleKey: 'manager',
+          scope: { type: 'project', id: soleProjectId },
+          source: 'manual',
+          exclusive: true,
+          grantedBy: callerUserId,
+        });
+      } else if (newRole === 'member' && managerRow) {
+        // Membership is access: a member needs no project row, so the manager
+        // row goes and nothing replaces it.
+        await auditAssignmentRevoked(writer, accountId, managerRow);
+        await db.delete(roleAssignments).where(eq(roleAssignments.assignmentId, managerRow.assignmentId));
       }
       invalidateIamCacheForUser(targetUserId);
-      if (newRole === 'member') {
+      if (newAccountRole === 'member') {
         // An owner or admin reached every company drive; as a member they reach
         // only what is granted, and drives they attached by role leave now.
         await import('../../drives/service').then(({ enforceDriveMounts }) => enforceDriveMounts({ accountId }));
@@ -439,7 +496,8 @@ export function registerMemberRoutes(): void {
 
       return c.json({
         user_id: targetUserId,
-        account_role: newRole,
+        role: newRole,
+        account_role: newAccountRole,
       });
     },
   );
