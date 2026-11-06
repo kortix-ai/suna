@@ -600,7 +600,7 @@ export async function splitProjectIntoNewAccount(
  * pools point at the source secrets again, and every row listed in `copied`
  * is deleted. The target account row stays as a dormant record with no
  * members. Refused when the target took money (a purchase, a Stripe customer,
- * a contract) or holds another project.
+ * a RevenueCat subscription, a contract) or holds another project.
  *
  * A person added to the new workspace after the split who holds a grant on
  * the project gets a membership in the source, so the reverse never removes
@@ -616,7 +616,9 @@ export async function reverseProjectSplit(
     SELECT bool_or(project_id = ${projectId}) AS here, count(*)::int AS active,
       (EXISTS (SELECT 1 FROM kortix.credit_purchases WHERE account_id = ${toAccountId} AND status = 'completed')
         OR EXISTS (SELECT 1 FROM kortix.billing_customers WHERE account_id = ${toAccountId})
-        OR EXISTS (SELECT 1 FROM kortix.enterprise_contracts WHERE account_id = ${toAccountId})) AS money
+        OR EXISTS (SELECT 1 FROM kortix.enterprise_contracts WHERE account_id = ${toAccountId})
+        OR EXISTS (SELECT 1 FROM kortix.credit_accounts WHERE account_id = ${toAccountId}
+                     AND provider = 'revenuecat' AND revenuecat_subscription_id IS NOT NULL)) AS money
       FROM kortix.projects WHERE account_id = ${toAccountId} AND status = 'active'`);
   if (!shape?.here) throw new ProjectSplitError('reverse_refused', 'The project is no longer the active project of the split account');
   if (shape.active !== 1) throw new ProjectSplitError('reverse_refused', 'The split account holds another project');

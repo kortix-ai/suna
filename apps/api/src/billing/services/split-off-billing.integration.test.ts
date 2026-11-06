@@ -205,4 +205,23 @@ describe('split-off billing (C6)', () => {
     await expect(reverseSplitOffBilling({ runId: crypto.randomUUID(), newAccountId: paid })).rejects.toBeInstanceOf(SplitOffBillingTookMoneyError);
     expect((await row(paid)).compPlanUntil).not.toBeNull();
   });
+  test('a RevenueCat (mobile) subscription bought during the comp keeps its plan at the comp end and refuses the reverse', async () => {
+    const now = new Date('2026-11-11T00:00:00Z');
+    const source = await account('Paid keeper, mobile split-off');
+    await db.insert(creditAccounts).values({ accountId: source, tier: 'credits', planMonthlyUsd: '50', billingCycleAnchor: '2026-10-21T00:00:00Z' });
+    const target = await splitTarget('Comp, then a mobile plan', now);
+    const runId = crypto.randomUUID();
+    await applySplitOffBilling({ runId, sourceAccountId: source, newAccountId: target }, now);
+    // The RevenueCat webhook writes the plan through applyStripeSync.
+    await applyStripeSync(target, { tier: 'credits', planMonthlyUsd: '20', provider: 'revenuecat', revenuecatSubscriptionId: `rc_syn_${crypto.randomUUID()}` }, { reason: 'test' });
+    await db.update(creditAccounts).set({ balance: '25' }).where(eq(creditAccounts.accountId, target));
+
+    await expect(reverseSplitOffBilling({ runId, newAccountId: target })).rejects.toBeInstanceOf(SplitOffBillingTookMoneyError);
+
+    const result = await expireSplitOffComps(new Date('2026-11-21T00:00:01Z'));
+    expect(result.kept).toContain(target);
+    const own = await row(target);
+    expect({ tier: own.tier, comp: own.compPlanUntil, monthly: Number(own.planMonthlyUsd), balance: Number(own.balance) })
+      .toEqual({ tier: 'credits', comp: null, monthly: 20, balance: 25 });
+  });
 });

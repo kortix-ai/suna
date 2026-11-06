@@ -234,10 +234,23 @@ export async function applySplitOffBilling(
   };
 }
 
-/** The split-off took money: a top-up, a completed purchase or a live subscription. */
+/**
+ * A live paid subscription with any provider: a Stripe subscription in a live
+ * status, or a RevenueCat (App Store / Google Play) subscription whose plan is
+ * still on. The RevenueCat EXPIRATION webhook moves the tier to Free, so a
+ * paid tier with a subscription id is a plan the person still pays for.
+ */
+export function hasLivePaidSubscription(row: CreditRow, now: Date = new Date()): boolean {
+  if (hasLiveSubscription(billingSnapshotFromAccount(row))) return true;
+  if (row.provider !== 'revenuecat' || !row.revenuecatSubscriptionId) return false;
+  if (['free', 'none'].includes(row.tier ?? 'free')) return false;
+  return row.revenuecatCancelAtPeriodEnd == null || new Date(row.revenuecatCancelAtPeriodEnd) > now;
+}
+
+/** The split-off took money: a top-up, a completed purchase or a live subscription (any provider). */
 async function tookMoney(accountId: string, row: CreditRow | null): Promise<boolean> {
   if (row && Number(row.lifetimePurchased ?? 0) > 0) return true;
-  if (row && hasLiveSubscription(billingSnapshotFromAccount(row))) return true;
+  if (row && hasLivePaidSubscription(row)) return true;
   const [purchase] = await db
     .select({ id: creditPurchases.id })
     .from(creditPurchases)
@@ -301,7 +314,7 @@ export async function expireSplitOffComps(now: Date = new Date()): Promise<{ end
   const kept: string[] = [];
   for (const row of due) {
     const until = row.compPlanUntil!;
-    if (hasLiveSubscription(billingSnapshotFromAccount(row))) {
+    if (hasLivePaidSubscription(row, now)) {
       await applyAdminOverride(row.accountId, { compPlanUntil: null }, { userId: null, action: 'billing.split_off.comp_ended' });
       kept.push(row.accountId);
       continue;
