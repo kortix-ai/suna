@@ -314,18 +314,22 @@ that adds it, while the file is still mutable. Today it holds exactly one entry
 
 ## Roll-forward safety: transactions per file, and the CONCURRENTLY escape hatch
 
-`scripts/migrate.ts` runs node-pg-migrate with `singleTransaction: true`:
-**every pending `.sql` migration in one `pnpm migrate` invocation is wrapped
-in a single outer `BEGIN`/`COMMIT`** — if any one of them throws, node-pg-migrate
-rolls back the entire batch atomically (see
-[A migration failed in prod](#a-migration-failed-in-prod)). This is
-deliberate: a partially-applied migration set is worse than a deploy that
-never got past the migrate step.
+`scripts/migrate.ts` runs node-pg-migrate with `singleTransaction: false`
+(`RUNNER_TRANSACTION_MODE` in `scripts/migration-target.ts`): **each pending
+`.sql` migration runs in its own `BEGIN`/`COMMIT`.** When one throws, only
+that file rolls back. Every file before it stays applied and recorded in
+`kortix_migrations.pgmigrations`, and the next `pnpm migrate` resumes at the
+file that failed (see [A migration failed in prod](#a-migration-failed-in-prod)).
+Until 2026-10-11 the runner used `singleTransaction: true`: a 25-file prod
+backlog then ran as one transaction, held every touched table's locks until the
+last file, and deadlocked against live traffic three times (the learnings
+ledger, 2026-10-12). Never switch it back;
+`migration-transaction-mode.integration.test.ts` fails if you do.
 
 **The catch:** `CREATE INDEX CONCURRENTLY` (and `DROP INDEX CONCURRENTLY`,
 `REINDEX CONCURRENTLY`, `ALTER TABLE ... DETACH PARTITION CONCURRENTLY`)
 *cannot run inside any transaction block* — Postgres rejects it outright.
-Every `.sql` migration in this repo runs inside that outer transaction, and
+Every `.sql` migration in this repo runs inside its own transaction, and
 raw `.sql` files have no way to opt out (node-pg-migrate's opt-out,
 `pgm.noTransaction()`, is a JS-migration-builder API with no equivalent
 directive for plain SQL text). Until 2026-07-16 this meant **the zero-downtime
@@ -337,11 +341,9 @@ migration in the corpus ever used it).
 non-`.sql` file in `migrations/` via dynamic `import()` instead of treating it
 as raw SQL (this already worked; it was just never used here). A
 `<ts>_<slug>.concurrent.ts` file is a real node-pg-migrate migration that
-calls `pgm.noTransaction()`. When the runner hits it mid-batch, it:
-
-1. `COMMIT`s the outer transaction,
-2. runs this migration's SQL standalone (no transaction — CONCURRENTLY works),
-3. `BEGIN`s again for whatever runs after it in the same batch.
+calls `pgm.noTransaction()`. The runner then runs that migration's SQL with no
+transaction around it (CONCURRENTLY works), and the next file gets its own
+transaction again.
 
 This is node-pg-migrate's own documented mechanism (verified against its
 source, `dist/legacy/migration.js`), not a hack. `pnpm migrate:create <slug>
@@ -427,12 +429,13 @@ already applied.*
 | Env | How | When |
 |---|---|---|
 | **local** | `ensureSchema()` at API boot (`KORTIX_LOCAL_DEV=1`/`ENV_MODE=local`), or `pnpm migrate` | every `pnpm dev` |
-| **dev** | CI/CD `migrate-db` job against `DEV_DATABASE_URL` | on merge to the dev branch, before new code serves |
-| **preview** | **never runs migrations** — previews share the dev DB and consume its schema | n/a |
-| **prod** | CI/CD `migrate-db` job against `PROD_DATABASE_URL` | every release, after build, before the new version boots |
+| **dev** | `migrate-db` job of `deploy-dev.yml` against the dev database (ref `dev` only) | every Deploy Dev run that changes the API, before the new API rolls |
+| **preview** | the preview stack's one-shot `migrate.ts preview-up` against the preview's own `supabase-db` (`tests/src/core/preview-stack.ts`), with `checkOrder` off | every preview deploy |
+| **staging** | `migrate-db` job of `deploy-staging.yml` against the staging database (refuses any other project ref) | every staging deploy, before the API rolls |
+| **prod** | `migrate-db` job of `deploy-prod.yml` against the prod database | every release, after build, before the new version boots |
 | **self-host** | one-shot `migrate` from the image (below) | before/with the app |
 
-By default a deployed app boot **never** applies migrations — concurrent replicas (and preview branches sharing the dev DB) would race a half-applied state. A pod that finds a missing critical table logs a loud `[schema]` warning instead of mutating a shared database.
+By default a deployed app boot **never** applies migrations — concurrent replicas would race a half-applied state. A pod that finds a missing critical table logs a loud `[schema]` warning instead of mutating a shared database.
 
 ### Self-hosting (running the published image)
 
@@ -445,20 +448,27 @@ docker run --rm -e DATABASE_URL="postgres://…" kortix/kortix-api \
 
 In docker-compose, make this a `migrate` service the `api` service `depends_on`. Prerequisite: your database must already have the Supabase Auth + Basejump objects the schema references.
 
-### Preview branches share the dev database
+### Preview environments have their own database
 
-There is no separate preview database. Consequences:
+Each preview runs its own Supabase Postgres (`supabase-db` in the preview
+stack). Its one-shot `migrate.ts preview-up` applies the branch's migrations
+to that database on every deploy, with `checkOrder` off, and the ledger
+persists across redeploys. Consequences:
 
-- A preview branch's new migration is **not** applied by the preview. To exercise it, apply it to dev (merge, or apply manually and coordinate).
+- A preview branch's new migration is applied by the preview, not by dev.
+- A redeploy keeps the database. Removing the `preview` label deletes it.
 - **Two open PRs with conflicting migrations:** last one merged wins; the other rebases and regenerates. Timestamp filenames won't *collide*, but they can still be *semantically* incompatible — coordinate in the PR.
 
 ---
 
 ## CI gates (`.github/workflows/db-migrations.yml`)
 
-Runs on every push to `main` (post-merge, non-blocking) and on every pull
-request into `staging` that touches `packages/db/**`. A pull request into
-`main` runs none of it, so run the same checks in your box before the merge:
+Runs on every push to `dev` (post-merge, non-blocking) and on the release pull
+request into `prod`, when `packages/db/**` changes. A pull request into `dev`
+runs none of it, so run the same checks in your box before the merge. Right
+before `gh pr merge`, check the order against the current `dev` too:
+`sh scripts/check-migration-order.sh --pr <number>` (the pre-push hook saw
+`dev` as it was at your last push):
 
 ```bash
 pnpm --filter @kortix/db lint                                   # lint + squawk
@@ -500,7 +510,7 @@ The migration step runs **before** the new version serves traffic, so a failure 
 
 1. **Read the error** in the deploy logs (the failing `migrate up` step).
 2. `DATABASE_URL=<prod url> pnpm migrate:status` — anything pending? Read-only; the decrypt command is under [Commands](#commands).
-3. node-pg-migrate runs the pending set in a single transaction (`singleTransaction`), so a failure **rolls back atomically** — nothing was applied. *(Exception: if a `.concurrent.ts` migration in the batch already ran and committed before the failure — see [Roll-forward safety](#roll-forward-safety-transactions-per-file-and-the-concurrently-escape-hatch) — that one migration IS applied even though the batch reports failure. Check `kortix_migrations.pgmigrations` if a `.concurrent.ts` migration was in the pending set.)* Fix the migration (a NEW migration if the bad one is already applied elsewhere) and redeploy.
+3. node-pg-migrate runs each pending file in its own transaction (`singleTransaction: false`). The failing file rolled back; **every file before it is applied.** `migrate:status` (step 2) lists what is still pending, and `kortix_migrations.pgmigrations` lists what ran. Fix the migration (a NEW migration if the bad one is already applied elsewhere) and redeploy: the next run starts at the file that failed. When the error is `deadlock detected`, rerun the migrate job; do not raise `lock_timeout`.
 4. **Do not** hand-edit prod schema and walk away. If you must intervene manually, make the DB match a migration file, then record it (next section).
 5. Roll back app code the normal way (previous image). Schema rollback is a **new forward migration**, not a down — most schema changes aren't losslessly reversible. (Our migrations don't define `-- Down Migration` sections by policy.)
 
