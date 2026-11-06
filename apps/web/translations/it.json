@@ -576,7 +576,7 @@
         },
         "profile": {
           "label": "Profilo",
-          "description": "La tua immagine, il nome, l'email e i workspace."
+          "description": "La tua foto, il nome e l'email."
         },
         "security": {
           "label": "Sicurezza",
@@ -620,6 +620,10 @@
         "computer": {
           "label": "Il mio computer",
           "description": "Consenti agli agenti Kortix di lavorare con i file, il terminale e le app del tuo computer."
+        },
+        "personal-keys": {
+          "label": "Chiavi personali",
+          "description": "Chiavi che agiscono come te in ogni workspace: l'accesso della CLI e le chiavi precedenti."
         }
       }
     },
@@ -975,18 +979,17 @@
       "retry": "Riprova",
       "dangerZone": "Zona pericolosa",
       "deleteWorkspace": "Elimina workspace",
-      "deleteDescription": "Rimuove questo workspace e tutto il suo contenuto per ogni membro. Questa azione non può essere annullata.",
+      "deleteDescription": "Elimina questo workspace per tutti i membri. Puoi ripristinarlo per 14 giorni.",
       "deleteTitle": "Eliminare lo workspace?",
-      "deleteDialog": "Questa azione elimina {name} per chiunque vi abbia accesso. Non può essere annullata.",
-      "consequencesTitle": "Perdi immediatamente:",
+      "deleteDialog": "Questo elimina {name} per tutti i membri. Puoi ripristinarlo per 14 giorni.",
+      "consequencesTitle": "Subito:",
       "consequences": {
-        "sessions": "Ogni sessione in questo workspace, con file, cronologia e risultati",
-        "automation": "Tutte le esecuzioni pianificate e i trigger — smettono subito di funzionare",
-        "integrations": "Ogni integrazione connessa, segreto e chiave API limitata a questo workspace",
-        "managedRepo": "Il repository Git gestito da Kortix di questo workspace, con ogni commit incluso",
-        "access": "L'accesso per tutto il team — nessuno potrà più raggiungere questo workspace"
+        "sessions": "Dopo 14 giorni, le sue sessioni, i file e il repository gestito da Kortix vengono cancellati",
+        "automation": "I trigger e le esecuzioni pianificate smettono di partire",
+        "integrations": "Le sue chiavi API e le app collegate smettono di funzionare",
+        "access": "Tutti i membri perdono l'accesso a questo workspace"
       },
-      "reassurance": "I repository Git connessi personalmente non vengono eliminati. Il codice già inviato resta al suo posto.",
+      "reassurance": "I proprietari possono ripristinarlo dall'elenco dei workspace per 14 giorni. I repository Git che hai collegato tu non vengono eliminati.",
       "keepWorkspace": "Mantieni workspace",
       "transferWorkspace": "Trasferisci workspace",
       "transferDescription": "Sposta sessioni, file, impostazioni e accesso dei membri di questo workspace in un altro workspace.",
@@ -1695,7 +1698,8 @@
       "loadError": "Impossibile caricare gli workspace",
       "createIn": "Crea un workspace in {account}",
       "localComputer": "Il tuo computer",
-      "appsAndExtensions": "App ed estensioni"
+      "appsAndExtensions": "App ed estensioni",
+      "preferences": "Preferenze"
     },
     "manifestIssues": {
       "title": "{file} ha {errors, plural, one {# errore} other {# errori}} e {warnings, plural, one {# avviso} other {# avvisi}}",
@@ -26574,12 +26578,18 @@
       "role": {
         "owner": "Proprietario",
         "admin": "Amministratore",
-        "member": "Membro"
+        "member": "Membro",
+        "manager": "Manager"
       },
       "loadErrorTitle": "Impossibile caricare i tuoi workspace",
       "loadErrorBody": "Controlla la connessione e riprova.",
       "partialError": "Impossibile caricare tutti i workspace.",
-      "retry": "Riprova"
+      "retry": "Riprova",
+      "deletingOn": "Eliminazione il {date}",
+      "setupRequired": "Pagato, nessun repository ancora",
+      "restore": "Ripristina",
+      "setUp": "Configura",
+      "stateActionError": "Non ha funzionato. Riprova."
     },
     "switcher": {
       "switch": "Cambia workspace",
@@ -26604,32 +26614,57 @@
         "workspace": "Workspace",
         "library": "Libreria",
         "people": "Persone",
-        "billing": "Fatturazione"
+        "billing": "Fatturazione",
+        "support": "Supporto"
       },
       "sections": {
         "general": "Generale",
         "branding": "Branding",
-        "git": "Repository Git",
-        "sandbox": "Modelli sandbox",
+        "git": "Git",
+        "sandbox": "Sandbox",
         "featureFlags": "Feature flag",
         "apiKeys": "Chiavi API",
         "members": "Membri",
         "groups": "Gruppi",
-        "access": "Accesso",
         "roles": "Ruoli",
         "identity": "Identità",
         "audit": "Registro di audit",
         "help": "Aiuto",
         "plan": "Piano",
-        "usage": "Utilizzo"
+        "usage": "Utilizzo",
+        "connectors": "Connettori",
+        "skills": "Competenze",
+        "triggers": "Trigger",
+        "models": "Modelli",
+        "secrets": "Segreti",
+        "apps": "App",
+        "drives": "Drives",
+        "capture": "Capture",
+        "security": "Sicurezza",
+        "repo": "Repository"
       },
       "accessTitle": "Accesso",
       "accessDescription": "Chi può aprire questo workspace e con quale ruolo.",
       "securityTitle": "Sicurezza",
       "githubTitle": "Connessioni GitHub",
       "deleteKeepsLogin": "Il tuo accesso resta: puoi creare un altro workspace o unirti a uno.",
-      "personalKeysTitle": "Le tue chiavi di accesso personali",
-      "personalKeysDescription": "Chiavi API che agiscono come te in questo workspace: per la CLI, uno script o un job CI."
+      "personalKeysTitle": "Le tue chiavi per questo workspace",
+      "personalKeysDescription": "Chiavi API che agiscono come te solo in questo workspace: per uno script o un job CI.",
+      "keyScopeWorkspace": "Questo workspace",
+      "keyScopePersonal": "Ogni workspace",
+      "keyScopeWorkspaceHint": "La chiave agisce come te solo in questo workspace.",
+      "personalKeysEmpty": "Nessuna chiave personale. kortix login ne crea una; le chiavi per uno script si creano in Impostazioni › Chiavi API di un workspace.",
+      "securityDescription": "Regole di accesso, chi può aprire le sessioni di chi e le regole di ogni chiave API.",
+      "rolesDescription": "Ruoli predefiniti e personalizzati. Assegnali da Membri.",
+      "workspaceId": "ID del workspace",
+      "workspaceIdDescription": "Per la CLI, l'API e il supporto.",
+      "leaveWorkspace": "Lascia il workspace",
+      "leaveDescription": "Perdi l'accesso a questo workspace. Un amministratore può invitarti di nuovo.",
+      "leaveTitle": "Lasciare il workspace?",
+      "leaveDialog": "Perdi l'accesso a {name}. Un amministratore può invitarti di nuovo.",
+      "leftToast": "Hai lasciato {name}",
+      "leaveFailed": "Impossibile lasciare il workspace",
+      "deletedToast": "Workspace eliminato. I proprietari possono ripristinarlo per 14 giorni."
     },
     "cli": {
       "noWorkspaceTitle": "Crea un workspace per accedere con la CLI",
@@ -26657,6 +26692,10 @@
       "openChooser": "Crea o unisciti a un workspace",
       "workspaceLabel": "Workspace",
       "noCaptureWorkspace": "Kortix Capture non è attivo in nessuno dei tuoi workspace. Un proprietario o un amministratore può attivarlo."
+    },
+    "menu": {
+      "invite": "Invita persone in {name}",
+      "leave": "Lascia {name}"
     }
   }
 }

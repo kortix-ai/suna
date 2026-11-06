@@ -142,6 +142,7 @@
     "./internal/icons/solid-check-icon",
     "./internal/layout/connect-mcp-modal",
     "./internal/layout/open-command-palette",
+    "./internal/layout/project-settings-nav",
     "./internal/layout/settings-nav-context",
     "./internal/layout/sidebar-opener",
     "./internal/layout/sidebar-toggle",
@@ -317,6 +318,7 @@
     "./workspace/review/mock-data",
     "./workspace/review/review-center",
     "./workspace/review/types",
+    "./workspace/settings/use-leave-workspace",
     "./workspace/sidebar/footer/project-apps-nav",
     "./workspace/sidebar/footer/project-balance-warning",
     "./workspace/sidebar/footer/project-computer-nav",
@@ -332,7 +334,9 @@
     "./workspace/sidebar/session-section-labels",
     "./workspace/sidebar/session-source-icons",
     "./workspace/sidebar/use-workspace-directory",
+    "./workspace/sidebar/use-workspace-list",
     "./workspace/sidebar/workspace-grouping",
+    "./workspace/sidebar/workspace-menu-model",
     "./workspace/sidebar/workspace-menu-section",
     "./workspace/space/space-page"
   ]

@@ -5,8 +5,8 @@ import { localizedCopy } from './localized-copy';
 import { removeProfileAvatar } from './profile-avatar';
 
 /**
- * The Profile tab — profile picture, email, display name, the organizations
- * you belong to, and account deletion.
+ * The Profile tab — profile picture, email, display name, and account
+ * deletion.
  *
  * Two-factor authentication left for its own Security tab on 2026-09-02
  * (`security-tab.tsx`, with `FactorRow` and `totpQrSrc`): "who am I" and "how
@@ -89,12 +89,6 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@kortix/ui';
 import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
-import {
-  type AccountMembership,
-  type AccountMembershipsCopy,
-  AccountMembershipsSection,
-  useAccountMemberships,
-} from './account-memberships';
 import { isOfflineUploadError } from './avatar-upload-error';
 
 const PROFILE_QUERY_KEY = ['account', 'profile'] as const;
@@ -123,7 +117,6 @@ export interface ProfileTabCopy {
   nameDescription: string;
   namePlaceholder: string;
   save: string;
-  organizations: AccountMembershipsCopy;
   dangerZone: string;
   deleteAccount: string;
   deletionUnavailable: string;
@@ -167,15 +160,6 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   nameDescription: 'Your display name across Kortix.',
   namePlaceholder: 'Your name',
   save: 'Save',
-  organizations: {
-    title: 'Workspaces',
-    description: "Members, billing, roles, and audit live in each workspace's own settings.",
-    fallbackAccountName: 'Workspace',
-    owner: 'Owner',
-    admin: 'Admin',
-    member: 'Member',
-    manage: 'Manage',
-  },
   dangerZone: 'Danger zone',
   deleteAccount: 'Delete account',
   deletionUnavailable:
@@ -238,11 +222,6 @@ export interface ProfileTabViewProps {
   // Email
   userEmail?: string;
 
-  // Organizations — every account this user is a member of. See
-  // `account-memberships.tsx` for why the list lives on this tab.
-  accounts?: readonly AccountMembership[];
-  accountsLoading?: boolean;
-
   // Delete account
   /**
    * The person belongs to no workspace (Workspaces, PR 1): the row deletes
@@ -270,12 +249,8 @@ export interface ProfileTabViewProps {
   onCloseCancelDeletionDialog?: () => void;
   onConfirmCancelDeletion?: () => void;
   isCancelingDeletion?: boolean;
-  copy?: Partial<Omit<ProfileTabCopy, 'organizations'>> & {
-    organizations?: Partial<AccountMembershipsCopy>;
-  };
+  copy?: Partial<ProfileTabCopy>;
 }
-
-const NO_ACCOUNTS: readonly AccountMembership[] = [];
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
  *  read. Kept separate from `ProfileTab` so this renders under
@@ -300,8 +275,6 @@ export function ProfileTabView({
   isSavingName = false,
   onSaveName = () => {},
   userEmail = '',
-  accounts = NO_ACCOUNTS,
-  accountsLoading = false,
   loginOnly = null,
   accountDeletionSupported = true,
   hasPendingDeletion = false,
@@ -328,10 +301,6 @@ export function ProfileTabView({
   const copy: ProfileTabCopy = {
     ...DEFAULT_PROFILE_TAB_COPY,
     ...copyOverrides,
-    organizations: {
-      ...DEFAULT_PROFILE_TAB_COPY.organizations,
-      ...copyOverrides.organizations,
-    },
   };
   // The right-hand control of the Delete-account row, and the line under its
   // label. Four states, one row — an errored status check, an unavailable or
@@ -447,15 +416,8 @@ export function ProfileTabView({
         </SettingsRow>
       </SettingsRowGroup>
 
-      {/* Organizations — directly under the identity group, because it
-          answers the same question those rows do ("who am I here") and because
-          Jay asked for it to be EASY to reach: no scrolling, no tab to find
-          first. `account-memberships.tsx` carries the full rationale. */}
-      <AccountMembershipsSection
-        accounts={accounts}
-        isLoading={accountsLoading}
-        copy={copy.organizations}
-      />
+      {/* No workspace list here: the rail lists every workspace with its
+          role, one click away, and closes this dialog on the way (finding 37). */}
 
       {/* Danger zone */}
       <section className="space-y-3">
@@ -758,7 +720,6 @@ export function ProfileTab() {
   // --- Organizations ----------------------------------------------------
   // Same account-list entry `WorkspaceSwitcher` already primed on mount, so
   // this costs no extra request inside a project shell.
-  const { accounts, isLoading: accountsLoading } = useAccountMemberships();
   // No account at all (Workspaces D3: nothing is created at sign-up). The
   // deletion routes then answer 409 `no_workspace` for status and the grace
   // period, and `delete-immediately` deletes only the login (flow DEL-6).
@@ -884,8 +845,6 @@ export function ProfileTab() {
       isSavingName={saveNameMutation.isPending}
       onSaveName={() => saveNameMutation.mutate(nameDraft)}
       userEmail={profileQuery.data?.email ?? ''}
-      accounts={accounts}
-      accountsLoading={accountsLoading}
       loginOnly={loginOnly}
       accountDeletionSupported={accountDeletionSupported}
       hasPendingDeletion={!loginOnly && (deletionStatus?.has_pending_deletion ?? false)}

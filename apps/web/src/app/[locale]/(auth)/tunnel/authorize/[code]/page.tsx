@@ -58,7 +58,7 @@ function DeviceAuthorize() {
   const { data: info, isLoading, error } = useDeviceAuthInfo(code);
   const approve = useApproveDeviceAuth();
   const deny = useDenyDeviceAuth();
-  const { workspaces } = useProjectSelectorData();
+  const { openable: workspaces } = useProjectSelectorData();
 
   // `null` until the user types: a machine already paired to the caller keeps
   // its name, a new one starts from its hostname.

@@ -576,7 +576,7 @@
         },
         "profile": {
           "label": "Perfil",
-          "description": "Sua imagem, nome, e-mail e espaços de trabalho."
+          "description": "Sua foto, nome e e-mail."
         },
         "security": {
           "label": "Segurança",
@@ -620,6 +620,10 @@
         "computer": {
           "label": "Meu computador",
           "description": "Deixe os agentes do Kortix trabalharem com os arquivos, o terminal e os aplicativos do seu computador."
+        },
+        "personal-keys": {
+          "label": "Chaves pessoais",
+          "description": "Chaves que agem como você em todos os espaços de trabalho: o login da CLI e chaves antigas."
         }
       }
     },
@@ -975,18 +979,17 @@
       "retry": "Tentar novamente",
       "dangerZone": "Zona de perigo",
       "deleteWorkspace": "Excluir espaço de trabalho",
-      "deleteDescription": "Remove este espaço de trabalho e todo o seu conteúdo para todos os membros. Esta ação não pode ser desfeita.",
+      "deleteDescription": "Exclui este espaço de trabalho para todos os membros. Você pode restaurá-lo por 14 dias.",
       "deleteTitle": "Excluir espaço de trabalho?",
-      "deleteDialog": "Isso exclui {name} para todas as pessoas com acesso. Esta ação não pode ser desfeita.",
-      "consequencesTitle": "Você perde imediatamente:",
+      "deleteDialog": "Isso exclui {name} para todos os membros. Você pode restaurá-lo por 14 dias.",
+      "consequencesTitle": "Imediatamente:",
       "consequences": {
-        "sessions": "Todas as sessões deste espaço de trabalho, com arquivos, histórico e resultados",
-        "automation": "Todas as execuções agendadas e gatilhos — eles param imediatamente",
-        "integrations": "Todas as integrações conectadas, segredos e chaves de API deste espaço de trabalho",
-        "managedRepo": "O repositório Git gerenciado pela Kortix deste espaço de trabalho, com cada commit incluído",
-        "access": "O acesso de toda a equipe — ninguém poderá acessar este espaço de trabalho novamente"
+        "sessions": "Após 14 dias, suas sessões, arquivos e o repositório gerenciado pelo Kortix são apagados",
+        "automation": "Gatilhos e execuções agendadas param de disparar",
+        "integrations": "Suas chaves de API e aplicativos conectados param de funcionar",
+        "access": "Todos os membros perdem o acesso a este espaço de trabalho"
       },
-      "reassurance": "Os repositórios Git que você mesmo conectou não são excluídos. Todo código já enviado permanece no lugar.",
+      "reassurance": "Os proprietários podem restaurá-lo na lista de espaços de trabalho por 14 dias. Repositórios Git que você conectou não são excluídos.",
       "keepWorkspace": "Manter espaço de trabalho",
       "transferWorkspace": "Transferir espaço de trabalho",
       "transferDescription": "Mova as sessões, os ficheiros, as configurações e o acesso de membros deste espaço de trabalho para outro espaço de trabalho.",
@@ -1695,7 +1698,8 @@
       "loadError": "Não foi possível carregar os espaços de trabalho",
       "createIn": "Criar um espaço de trabalho em {account}",
       "localComputer": "Seu computador",
-      "appsAndExtensions": "Apps e extensões"
+      "appsAndExtensions": "Apps e extensões",
+      "preferences": "Preferências"
     },
     "manifestIssues": {
       "title": "{file} tem {errors, plural, one {# erro} other {# erros}} e {warnings, plural, one {# aviso} other {# avisos}}",
@@ -26574,12 +26578,18 @@
       "role": {
         "owner": "Proprietário",
         "admin": "Administrador",
-        "member": "Membro"
+        "member": "Membro",
+        "manager": "Gerente"
       },
       "loadErrorTitle": "Não foi possível carregar seus espaços de trabalho",
       "loadErrorBody": "Verifique sua conexão e tente novamente.",
       "partialError": "Não foi possível carregar todos os espaços de trabalho.",
-      "retry": "Tentar novamente"
+      "retry": "Tentar novamente",
+      "deletingOn": "Exclusão em {date}",
+      "setupRequired": "Pago, ainda sem repositório",
+      "restore": "Restaurar",
+      "setUp": "Configurar",
+      "stateActionError": "Não funcionou. Tente novamente."
     },
     "switcher": {
       "switch": "Trocar de espaço de trabalho",
@@ -26604,32 +26614,57 @@
         "workspace": "Espaço de trabalho",
         "library": "Biblioteca",
         "people": "Pessoas",
-        "billing": "Cobrança"
+        "billing": "Cobrança",
+        "support": "Suporte"
       },
       "sections": {
         "general": "Geral",
         "branding": "Marca",
-        "git": "Repositório Git",
-        "sandbox": "Modelos de sandbox",
+        "git": "Git",
+        "sandbox": "Sandbox",
         "featureFlags": "Recursos experimentais",
         "apiKeys": "Chaves de API",
         "members": "Membros",
         "groups": "Grupos",
-        "access": "Acesso",
         "roles": "Funções",
         "identity": "Identidade",
         "audit": "Log de auditoria",
         "help": "Ajuda",
         "plan": "Plano",
-        "usage": "Uso"
+        "usage": "Uso",
+        "connectors": "Conectores",
+        "skills": "Habilidades",
+        "triggers": "Gatilhos",
+        "models": "Modelos",
+        "secrets": "Segredos",
+        "apps": "Aplicativos",
+        "drives": "Drives",
+        "capture": "Capture",
+        "security": "Segurança",
+        "repo": "Repositório"
       },
       "accessTitle": "Acesso",
       "accessDescription": "Quem pode abrir este espaço de trabalho e com qual função.",
       "securityTitle": "Segurança",
       "githubTitle": "Conexões do GitHub",
       "deleteKeepsLogin": "Seu login continua: você pode criar ou entrar em outro espaço de trabalho.",
-      "personalKeysTitle": "Suas chaves de acesso pessoais",
-      "personalKeysDescription": "Chaves de API que agem como você neste espaço de trabalho: para a CLI, um script ou um job de CI."
+      "personalKeysTitle": "Suas chaves para este espaço de trabalho",
+      "personalKeysDescription": "Chaves de API que agem como você somente neste espaço de trabalho: para um script ou um job de CI.",
+      "keyScopeWorkspace": "Este espaço de trabalho",
+      "keyScopePersonal": "Todos os espaços de trabalho",
+      "keyScopeWorkspaceHint": "A chave age como você somente neste espaço de trabalho.",
+      "personalKeysEmpty": "Nenhuma chave pessoal. kortix login cria uma; chaves para um script são criadas em Configurações › Chaves de API de um espaço de trabalho.",
+      "securityDescription": "Regras de login, quem pode abrir as sessões de quem e as regras de cada chave de API.",
+      "rolesDescription": "Funções integradas e personalizadas. Atribua-as em Membros.",
+      "workspaceId": "ID do espaço de trabalho",
+      "workspaceIdDescription": "Para a CLI, a API e o suporte.",
+      "leaveWorkspace": "Sair do espaço de trabalho",
+      "leaveDescription": "Você perde o acesso a este espaço de trabalho. Um administrador pode convidá-lo novamente.",
+      "leaveTitle": "Sair do espaço de trabalho?",
+      "leaveDialog": "Você perde o acesso a {name}. Um administrador pode convidá-lo novamente.",
+      "leftToast": "Você saiu de {name}",
+      "leaveFailed": "Não foi possível sair do espaço de trabalho",
+      "deletedToast": "Espaço de trabalho excluído. Os proprietários podem restaurá-lo por 14 dias."
     },
     "cli": {
       "noWorkspaceTitle": "Crie um espaço de trabalho para entrar na CLI",
@@ -26657,6 +26692,10 @@
       "openChooser": "Criar ou entrar em um espaço de trabalho",
       "workspaceLabel": "Espaço de trabalho",
       "noCaptureWorkspace": "Nenhum dos seus espaços de trabalho tem o Kortix Capture ativado. Um proprietário ou administrador pode ativá-lo."
+    },
+    "menu": {
+      "invite": "Convidar pessoas para {name}",
+      "leave": "Sair de {name}"
     }
   }
 }

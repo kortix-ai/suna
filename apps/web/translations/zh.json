@@ -576,7 +576,7 @@
         },
         "profile": {
           "label": "个人资料",
-          "description": "你的头像、姓名、电子邮件和工作区。"
+          "description": "你的头像、姓名和邮箱。"
         },
         "security": {
           "label": "安全",
@@ -620,6 +620,10 @@
         "computer": {
           "label": "我的电脑",
           "description": "让 Kortix 智能体使用你电脑上的文件、终端和应用。"
+        },
+        "personal-keys": {
+          "label": "个人密钥",
+          "description": "在每个工作区中以你的身份操作的密钥:CLI 登录和旧密钥。"
         }
       }
     },
@@ -975,18 +979,17 @@
       "retry": "重试",
       "dangerZone": "危险区域",
       "deleteWorkspace": "删除工作区",
-      "deleteDescription": "为所有成员删除此工作区及其中的所有内容。此操作无法撤销。",
+      "deleteDescription": "为所有成员删除此工作区。14 天内可以恢复。",
       "deleteTitle": "删除工作区？",
-      "deleteDialog": "这会为所有有权访问 {name} 的人删除该工作区。此操作无法撤销。",
-      "consequencesTitle": "你将立即失去：",
+      "deleteDialog": "这会为所有成员删除 {name}。14 天内可以恢复。",
+      "consequencesTitle": "立即:",
       "consequences": {
-        "sessions": "此工作区中的每个会话及其文件、历史记录和输出",
-        "automation": "所有计划运行和触发器 — 它们会立即停止",
-        "integrations": "此工作区范围内的每个已连接集成、密钥和 API 密钥",
-        "managedRepo": "此工作区中由 Kortix 管理的 Git 存储库及其中的所有提交",
-        "access": "整个团队的访问权限 — 任何人都无法再次访问此工作区"
+        "sessions": "14 天后,其会话、文件和 Kortix 托管的仓库将被清除",
+        "automation": "触发器和计划运行停止触发",
+        "integrations": "其 API 密钥和已连接的应用停止工作",
+        "access": "所有成员都将失去对此工作区的访问权限"
       },
-      "reassurance": "自行连接的 Git 存储库不会被删除。已推送的代码将保留在原处。",
+      "reassurance": "所有者可在 14 天内从工作区列表中恢复它。你自己连接的 Git 仓库不会被删除。",
       "keepWorkspace": "保留工作区",
       "transferWorkspace": "转移工作区",
       "transferDescription": "将此工作区的会话、文件、设置和成员访问权限移动到另一个工作区。",
@@ -1695,7 +1698,8 @@
       "loadError": "工作区加载失败",
       "createIn": "在 {account} 中创建工作区",
       "localComputer": "你的电脑",
-      "appsAndExtensions": "应用和扩展"
+      "appsAndExtensions": "应用和扩展",
+      "preferences": "偏好设置"
     },
     "manifestIssues": {
       "title": "{file} 有 {errors, plural, other {# 个错误}}和 {warnings, plural, other {# 个警告}}",
@@ -26574,12 +26578,18 @@
       "role": {
         "owner": "所有者",
         "admin": "管理员",
-        "member": "成员"
+        "member": "成员",
+        "manager": "经理"
       },
       "loadErrorTitle": "无法加载你的工作区",
       "loadErrorBody": "请检查网络连接后重试。",
       "partialError": "无法加载全部工作区。",
-      "retry": "重试"
+      "retry": "重试",
+      "deletingOn": "将于 {date} 删除",
+      "setupRequired": "已付费,尚无仓库",
+      "restore": "恢复",
+      "setUp": "设置",
+      "stateActionError": "操作未成功。请重试。"
     },
     "switcher": {
       "switch": "切换工作区",
@@ -26604,32 +26614,57 @@
         "workspace": "工作区",
         "library": "资源库",
         "people": "成员",
-        "billing": "账单"
+        "billing": "账单",
+        "support": "支持"
       },
       "sections": {
         "general": "常规",
         "branding": "品牌",
-        "git": "Git 仓库",
-        "sandbox": "沙盒模板",
+        "git": "Git",
+        "sandbox": "沙盒",
         "featureFlags": "功能开关",
         "apiKeys": "API 密钥",
         "members": "成员",
         "groups": "群组",
-        "access": "访问权限",
         "roles": "角色",
         "identity": "身份",
         "audit": "审计日志",
         "help": "帮助",
         "plan": "套餐",
-        "usage": "用量"
+        "usage": "用量",
+        "connectors": "连接器",
+        "skills": "技能",
+        "triggers": "触发器",
+        "models": "模型",
+        "secrets": "密钥",
+        "apps": "应用",
+        "drives": "Drives",
+        "capture": "Capture",
+        "security": "安全",
+        "repo": "代码仓库"
       },
       "accessTitle": "访问权限",
       "accessDescription": "谁可以打开此工作区，以及使用哪个角色。",
       "securityTitle": "安全",
       "githubTitle": "GitHub 连接",
       "deleteKeepsLogin": "你的登录保留：你可以创建或加入另一个工作区。",
-      "personalKeysTitle": "你的个人访问密钥",
-      "personalKeysDescription": "在此工作区中代表你操作的 API 密钥：用于 CLI、脚本或 CI 任务。"
+      "personalKeysTitle": "你在此工作区的密钥",
+      "personalKeysDescription": "仅在此工作区中以你的身份操作的 API 密钥:用于脚本或 CI 任务。",
+      "keyScopeWorkspace": "此工作区",
+      "keyScopePersonal": "所有工作区",
+      "keyScopeWorkspaceHint": "该密钥仅在此工作区中以你的身份操作。",
+      "personalKeysEmpty": "没有个人密钥。kortix login 会创建一个;用于脚本的密钥在工作区的设置 › API 密钥中创建。",
+      "securityDescription": "登录规则、谁可以打开谁的会话,以及每个 API 密钥遵循的规则。",
+      "rolesDescription": "内置角色和自定义角色。在成员中分配。",
+      "workspaceId": "工作区 ID",
+      "workspaceIdDescription": "用于 CLI、API 和支持。",
+      "leaveWorkspace": "离开工作区",
+      "leaveDescription": "你将失去对此工作区的访问权限。管理员可以再次邀请你。",
+      "leaveTitle": "离开工作区?",
+      "leaveDialog": "你将失去对 {name} 的访问权限。管理员可以再次邀请你。",
+      "leftToast": "你已离开 {name}",
+      "leaveFailed": "无法离开工作区",
+      "deletedToast": "工作区已删除。所有者可在 14 天内恢复。"
     },
     "cli": {
       "noWorkspaceTitle": "创建工作区以登录 CLI",
@@ -26657,6 +26692,10 @@
       "openChooser": "创建或加入工作区",
       "workspaceLabel": "工作区",
       "noCaptureWorkspace": "你的工作区都未开启 Kortix Capture。所有者或管理员可以开启它。"
+    },
+    "menu": {
+      "invite": "邀请成员加入 {name}",
+      "leave": "离开 {name}"
     }
   }
 }

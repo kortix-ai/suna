@@ -85,7 +85,6 @@ import {
   type SettingsTab,
   resolveSettingsOverlayHref,
 } from '@kortix/ui/customize/settings/settings-tabs';
-import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
 import {
   type WorkspacePaletteRow,
   buildWorkspacePaletteRows,
@@ -120,6 +119,7 @@ import { useProjectFeatureFlags } from '@kortix/ui/internal/lib/use-project-feat
 import { cn, uiRoutes } from '@kortix/ui';
 import { DEFAULT_WALLPAPER_ID } from '@kortix/ui/theme';
 import { hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
+import { workspaceSettingsPath } from '@kortix/shared/workspace-settings';
 import { useChatSendStore } from '@kortix/ui/internal/stores/chat-send-store';
 import { firstChatHref, useFirstChatPending } from '@kortix/ui/internal/stores/first-chat-store';
 import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
@@ -136,7 +136,6 @@ import {
   type ProjectSession,
   type ProjectSessionPage,
   getProject,
-  getProjectDetail,
   listProjectSessions,
   PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   listProjectsForAccount,
@@ -1021,17 +1020,6 @@ export function CommandPalette() {
     limit: 20,
     enabled: open && !!projectId && debouncedQuery.length > 0,
   });
-  // Same query key every other project surface fetches (page.tsx,
-  // project-shell.tsx) — dedupes against that cache entry. Resolves the
-  // account the "Invite members" command lands on, via the same fallback
-  // `project-shell.tsx` uses for its account-scoped tabs.
-  const { data: paletteProjectDetail } = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId!),
-    enabled: open && !!projectId,
-    ...contract('config'),
-  });
-  const inviteMembersAccountId = useSettingsAccountId(paletteProjectDetail?.project?.account_id);
   /**
    * The open change requests, for the count on the "Review changes" row.
    *
@@ -1727,16 +1715,11 @@ export function CommandPalette() {
     }
   }, [open, page, projectId, router]);
 
-  // "Invite members" and "Workspace members". The account id arrives from
-  // `paletteProjectDetail`, whose query only runs once the palette opens, so
-  // warm the common branch the moment it resolves. The `/workspaces/<id>/members`
-  // fallback stays cold on purpose: it exists only for the window before that.
+  // "Invite people" and "Workspace members" open Members: warm its route.
   useEffect(() => {
-    if (!open || !projectId || !inviteMembersAccountId) return;
-    // The destination is the account hub, which is a modal: what needs warming
-    // is its chunk, not an RSC payload.
-    preloadAccountHub();
-  }, [open, projectId, inviteMembersAccountId]);
+    if (!open || !projectId) return;
+    router.prefetch(workspaceSettingsPath(projectId, 'members'));
+  }, [open, projectId, router]);
 
   /**
    * The identifiers people paste into support threads, CLI flags, and bug
@@ -1755,16 +1738,10 @@ export function CommandPalette() {
       },
       { id: 'user-id', label: tPalette('copyUserId'), value: user?.id ?? '', keywords: 'user id me' },
       {
-        id: 'account-id',
-        label: tPalette('copyAccountId'),
-        value: activeAccountId ?? '',
-        keywords: 'account id team organization org',
-      },
-      {
         id: 'project-id',
         label: tPalette('copyProjectId'),
         value: projectId ?? '',
-        keywords: 'project id',
+        keywords: 'workspace id project id account id',
       },
       {
         id: 'session-id',
@@ -2069,53 +2046,21 @@ export function CommandPalette() {
   }, [currentSessionId, close]);
 
   /**
-   * "Invite members" — the project Members capability tab is gone; access
-   * for a project is now granted from the account hub's Access tab, scoped to
-   * this project via `?project=`. There is no one-shot "open the grant
-   * dialog" intent to carry across (the old `membersTab: 'invite'` field
-   * belonged to the deleted page's sub-tab model, with no equivalent here) —
-   * landing pre-filtered on this project's row is enough. Nice-to-have: wire
-   * a real "open grant dialog" intent once `AccessProjectsTab` exposes a prop
-   * for it.
+   * "Invite people" and "Workspace members": one section of the Settings
+   * panel, Members. `?invite=1` opens the invite dialog on arrival, so the
+   * palette, the workspace menu and the Members button share one target.
    */
   const handleInviteMembers = useCallback(() => {
     if (!projectId) return;
-    // The account id comes from `paletteProjectDetail`, whose query is only
-    // `enabled` once the palette opens — so on the FIRST ⌘K it can still be in
-    // flight, and this used to return silently and leave the palette sitting
-    // open with nothing having happened. `/workspaces/<id>/members` exists to
-    // redirect to exactly this destination (it resolves the account id itself
-    // and appends the same `&project=` scoping), so the unresolved case costs
-    // one extra hop instead of the click doing nothing.
-    if (inviteMembersAccountId) {
-      // The hub over the page you are on — no navigation at all.
-      openAccountPanel(
-        hubTarget(inviteMembersAccountId, { tab: 'access-projects', project: projectId }),
-      );
-      close();
-      return;
-    }
-    // nav-contract: prefetch-only — the fallback only runs in the window
-    // before `inviteMembersAccountId` resolves; that route redirects to the
-    // same hub destination, resolving the account id itself.
-    router.push(`/workspaces/${projectId}/members`);
+    router.push(`${workspaceSettingsPath(projectId, 'members')}?invite=1`);
     close();
-  }, [close, projectId, inviteMembersAccountId, router]);
+  }, [close, projectId, router]);
 
-  /**
-   * "Workspace members" — the same destination `handleInviteMembers` reaches,
-   * from the other half of the vocabulary. The account hub's Access pane
-   * scoped to this workspace IS the workspace roster: `/workspaces/<id>/members`
-   * exists only to redirect here (see that route), so linking it directly
-   * would cost a second navigation and paint the capabilities shell first.
-   *
-   * Two rows, one URL, deliberately: "invite" is a verb a person types when
-   * they want to add someone, "members" is a noun they type when they want to
-   * see who is already there. Both are true of this pane, and neither query
-   * had a correct answer before — "member" returned the project SETTINGS row
-   * and the organization roster, never the workspace one.
-   */
-  const handleOpenProjectMembers = handleInviteMembers;
+  const handleOpenProjectMembers = useCallback(() => {
+    if (!projectId) return;
+    router.push(workspaceSettingsPath(projectId, 'members'));
+    close();
+  }, [close, projectId, router]);
 
   const handleReviewChanges = useCallback(() => {
     goToPage('changes');

@@ -48,6 +48,8 @@ describe('SETTINGS_TABS', () => {
       'sessions',
       'preferences',
       'chrome',
+      // The caller's keys bound to no workspace (`GET /v1/me/tokens`).
+      'personal-keys',
       // The Connect pages (KRTX-1997).
       'mcp',
       'computer',

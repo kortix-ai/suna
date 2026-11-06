@@ -82,11 +82,11 @@ import {
   DEFAULT_PROJECT_ADMIN_SECTION,
   isProjectAdminResource,
   isWorkspaceAccountSection,
-  RESOURCE_LABEL_KEYS,
   parseProjectAdminSection,
   PROJECT_ADMIN_RESOURCES,
   projectAdminHref,
   RETIRED_SECTIONS,
+  sectionLabelKey,
   WORKSPACE_SETTINGS_GROUPS,
   type ProjectAdminResourceKey,
   type ProjectAdminSectionKey,
@@ -99,7 +99,6 @@ import {
   KeyIcon,
   UsersIcon,
   NetworkIcon,
-  LockKeyIcon,
   ShieldIcon,
   FingerprintIcon,
   ScrollIcon,
@@ -107,6 +106,7 @@ import {
   CreditCardIcon,
   CoinsIcon,
   MonitorPlayIcon,
+  LockKeyIcon as SecurityIcon,
 } from '@phosphor-icons/react';
 
 export { buildProjectAdminNav } from './project-admin-nav';
@@ -138,36 +138,23 @@ export type WorkspaceAccountPane = ComponentType<{
 export type ProjectAdminHostSections = Partial<Record<'apps', SectionPage>> & {
   /** The account hub's panes. Without it, no account row is listed. */
   account?: WorkspaceAccountPane;
+  /** Drawn in General after the name and icon, before the Danger zone (Pause all triggers). */
+  generalExtras?: ComponentType<{ projectId: string; accountId: string }>;
 };
 
 /** Rail glyphs for the account rows, the account hub's own (`sections.ts`). */
 const ACCOUNT_SECTION_ICONS: Record<WorkspaceAccountSectionKey, Icon> = {
+  security: SecurityIcon,
   branding: PaintBrushIcon,
   'api-keys': KeyIcon,
   members: UsersIcon,
   groups: NetworkIcon,
-  access: LockKeyIcon,
   roles: ShieldIcon,
   identity: FingerprintIcon,
   audit: ScrollIcon,
   help: QuestionIcon,
   plan: CreditCardIcon,
   usage: CoinsIcon,
-};
-
-/** `workspaces.settings.sections.<key>` for the rows this page names itself. */
-const SECTION_LABEL_KEY: Partial<Record<ProjectAdminSectionKey, string>> = {
-  branding: 'branding',
-  'api-keys': 'apiKeys',
-  members: 'members',
-  groups: 'groups',
-  access: 'access',
-  roles: 'roles',
-  identity: 'identity',
-  audit: 'audit',
-  help: 'help',
-  plan: 'plan',
-  usage: 'usage',
 };
 
 function lazyPage<M>(load: () => Promise<M>, pick: (mod: M) => SectionPage) {
@@ -238,8 +225,7 @@ const SETTINGS_PAGES: Record<ProjectAdminSettingsKey, SectionPage> = {
 };
 
 interface RailRow {
-  /** `capture` is a link out to the workspace's Kortix Capture area. */
-  key: ProjectAdminSectionKey | 'capture';
+  key: ProjectAdminSectionKey;
   /** Where the row goes when it is not a section of this page. */
   href?: string;
   label: string;
@@ -275,7 +261,6 @@ export function ProjectAdminDashboard({
   hostSections?: ProjectAdminHostSections;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const tAdmin = useI18nTranslations('projectAdmin');
   const tSettings = useI18nTranslations('workspaces.settings');
   const isMobile = useIsMobile();
   const searchParams = useUiSearchParams();
@@ -312,7 +297,6 @@ export function ProjectAdminDashboard({
   // Kortix Capture is per workspace (its tenant is the account). The row
   // follows the rule the switcher's Capture link follows: Capture is on for
   // this workspace, for a member of its account.
-  const tCapture = useI18nTranslations('capture.account');
   const capture = useCaptureWorkspace(isAccountMember ? (accountId ?? null) : null);
   const captureOn = isAccountMember && capture.data?.enabled === true;
 
@@ -345,17 +329,29 @@ export function ProjectAdminDashboard({
         .filter((s): s is typeof s & { key: ProjectAdminSettingsKey } => s.key !== 'review')
         .map((s) => [s.key, s] as const),
     );
+    const label = (key: ProjectAdminSectionKey) => tSettings(`sections.${sectionLabelKey(key)}`);
     const rowFor = (key: ProjectAdminSectionKey): RailRow | null => {
+      // Capture is a link out to the workspace's Kortix Capture area.
+      if (key === 'capture') {
+        if (!captureOn || !accountId) return null;
+        return {
+          key,
+          href: captureHref(accountId, 'devices'),
+          label: label(key),
+          icon: MonitorPlayIcon,
+          project: false,
+          account: false,
+        };
+      }
       if (isProjectAdminResource(key)) {
         const resource = PROJECT_ADMIN_RESOURCES.find((r) => r.key === key);
         if (!resource || !projectRowsOpen) return null;
         if (resource.host && !hostSections[resource.key as 'apps']) return null;
         if (resource.capability && !allowed.has(resource.capability)) return null;
         if (resource.flag === 'drives' && !drivesOn) return null;
-        const legacy = RESOURCE_LABEL_KEYS[resource.key];
         return {
           key,
-          label: legacy ? tI18nComplete.raw(legacy) : tAdmin(resource.key),
+          label: label(key),
           icon: resource.icon,
           project: true,
           account: false,
@@ -366,7 +362,7 @@ export function ProjectAdminDashboard({
         if (!tab || !hubOpen(tab)) return null;
         return {
           key,
-          label: tSettings(`sections.${SECTION_LABEL_KEY[key]}`),
+          label: label(key),
           icon: ACCOUNT_SECTION_ICONS[key],
           project: false,
           account: true,
@@ -383,22 +379,12 @@ export function ProjectAdminDashboard({
       const tab = ACCOUNT_TAB_FOR_SECTION[key];
       const account = !!tab && hubOpen(tab);
       if (!projectOpen && !account) return null;
-      return { key, label: setting.label, icon: setting.icon, project: projectOpen, account };
+      return { key, label: label(key), icon: setting.icon, project: projectOpen, account };
     };
-    return WORKSPACE_SETTINGS_GROUPS.map((group) => {
-      const rows = group.sections.map(rowFor).filter((row): row is RailRow => row !== null);
-      if (group.id === 'workspace' && captureOn && accountId) {
-        rows.push({
-          key: 'capture',
-          href: captureHref(accountId, 'devices'),
-          label: tCapture('title'),
-          icon: MonitorPlayIcon,
-          project: false,
-          account: false,
-        });
-      }
-      return { id: group.id, rows };
-    }).filter((group) => group.rows.length > 0);
+    return WORKSPACE_SETTINGS_GROUPS.map((group) => ({
+      id: group.id,
+      rows: group.sections.map(rowFor).filter((row): row is RailRow => row !== null),
+    })).filter((group) => group.rows.length > 0);
   }, [
     allowedTabs,
     accountPane,
@@ -410,17 +396,14 @@ export function ProjectAdminDashboard({
     settingsCans,
     settingsProbeFailed,
     tI18nComplete,
-    tAdmin,
     tSettings,
     captureOn,
     accountId,
-    tCapture,
   ]);
 
   // The sections of this page; a link-out row (Capture) is never active.
-  const rows = groups.flatMap((group) => group.rows).filter(
-    (row): row is RailRow & { key: ProjectAdminSectionKey } => row.key !== 'capture',
-  );
+  const rows = groups.flatMap((group) => group.rows).filter((row) => !row.href);
+  const linkOut = groups.flatMap((group) => group.rows).find((row) => row.href && row.key === section);
 
   // A section named in the URL but not listed for this caller falls back to
   // General, else the first listed row, so a stale link lands on a real pane.
@@ -444,12 +427,17 @@ export function ProjectAdminDashboard({
       router.replace(capabilityTabHref(projectId, 'agent'));
       return;
     }
+    // `/admin/capture` opens the Capture area the row links to.
+    if (linkOut?.href) {
+      router.replace(linkOut.href);
+      return;
+    }
     if (!settled || !active || content) return;
     if (!legacyQuery && named === active) return;
     const query = new URLSearchParams(searchParams.toString());
     query.delete('section');
     router.replace(projectAdminHref(projectId, active, Object.fromEntries(query.entries())));
-  }, [retired, settled, active, named, legacyQuery, content, projectId, router, searchParams]);
+  }, [retired, linkOut, settled, active, named, legacyQuery, content, projectId, router, searchParams]);
 
   const membersTab = useSettingsPanelStore((s) => s.membersTab);
   const navigateTo = useCallback((href: string) => router.push(href), [router]);
@@ -486,13 +474,18 @@ export function ProjectAdminDashboard({
       ? null
       : isProjectAdminResource(active)
         ? (RESOURCE_PAGES[active] ?? hostSections[active as 'apps'] ?? null)
-        : SETTINGS_PAGES[active];
+        : active === 'capture'
+          ? null
+          : SETTINGS_PAGES[active];
   const accountTab = active ? ACCOUNT_TAB_FOR_SECTION[active] : undefined;
   const AccountPage = activeRow?.account && accountTab && accountId ? accountPane : undefined;
   const title = tSettings('title');
   // The account half of a project section (General, Git repo).
+  const GeneralExtras = hostSections.generalExtras;
   const companionPane =
-    AccountPage && accountTab && accountId ? (
+    active === 'general' && GeneralExtras && accountId && isAccountMember ? (
+      <GeneralExtras projectId={projectId} accountId={accountId} />
+    ) : AccountPage && accountTab && accountId ? (
       <EmbeddedAccountHubProvider value={{ accountId, tab: accountTab }}>
         <AccountPage projectId={projectId} accountId={accountId} tab={accountTab} companion />
       </EmbeddedAccountHubProvider>
@@ -622,7 +615,7 @@ function RailTrigger({
       size={horizontal ? undefined : 'md'}
       className={horizontal ? RAIL_HORIZONTAL_ROW_CLASS : RAIL_ROW_CLASS}
     >
-      <Link href={row.href ?? projectAdminHref(projectId, row.key as ProjectAdminSectionKey)} prefetch>
+      <Link href={row.href ?? projectAdminHref(projectId, row.key)} prefetch>
         <Glyph className="size-4 shrink-0" />
         <span className={cn(!horizontal && 'truncate')}>{row.label}</span>
       </Link>
@@ -630,12 +623,13 @@ function RailTrigger({
   );
 }
 
-/** The loaded rail's shape: four labelled groups of icon + label rows. */
+/** The loaded rail's shape: five labelled groups of icon + label rows. */
 const RAIL_SKELETON_GROUPS = [
-  ['w-16', 'w-20', 'w-16', 'w-28', 'w-20', 'w-16'],
-  ['w-20', 'w-14', 'w-12', 'w-12', 'w-10', 'w-16', 'w-14', 'w-10'],
-  ['w-16', 'w-14', 'w-14', 'w-12', 'w-16', 'w-16', 'w-10'],
+  ['w-16', 'w-16', 'w-20', 'w-10', 'w-16', 'w-20', 'w-16'],
+  ['w-20', 'w-14', 'w-12', 'w-12', 'w-16', 'w-14', 'w-20'],
+  ['w-16', 'w-14', 'w-12', 'w-16', 'w-16'],
   ['w-10', 'w-12'],
+  ['w-10'],
 ];
 
 function RailSkeleton() {

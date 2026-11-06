@@ -89,7 +89,7 @@ export function ChromePanelHome() {
   const { user } = useAuth();
   const userId = user?.id ?? null;
 
-  const { workspaces, listsLoading } = useProjectSelectorData();
+  const { openable: workspaces, listsLoading } = useProjectSelectorData();
   const projects = useMemo(() => workspaces.map((row) => row.project), [workspaces]);
   const [picked, setPicked] = useState<string | null>(null);
   const projectId = useMemo(() => {

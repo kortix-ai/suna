@@ -368,7 +368,7 @@ const catalog = {
         },
         "profile": {
           "label": "Profile",
-          "description": "Your picture, name, email, and workspaces."
+          "description": "Your picture, name, and email."
         },
         "security": {
           "label": "Security",
@@ -412,6 +412,10 @@ const catalog = {
         "computer": {
           "label": "My computer",
           "description": "Let Kortix agents work with the files, terminal, and applications on your computer."
+        },
+        "personal-keys": {
+          "label": "Personal keys",
+          "description": "Keys that act as you in every workspace: the CLI login and older keys."
         }
       }
     },
@@ -486,18 +490,17 @@ const catalog = {
       "retry": "Retry",
       "dangerZone": "Danger zone",
       "deleteWorkspace": "Delete workspace",
-      "deleteDescription": "Removes this workspace and everything inside it, for every member. This cannot be undone.",
+      "deleteDescription": "Deletes this workspace for every member. You can restore it for 14 days.",
       "deleteTitle": "Delete workspace?",
-      "deleteDialog": "This deletes {name} for everyone with access to it. It cannot be undone.",
-      "consequencesTitle": "You immediately lose:",
+      "deleteDialog": "This deletes {name} for every member. You can restore it for 14 days.",
+      "consequencesTitle": "Straight away:",
       "consequences": {
-        "sessions": "Every session in this workspace, with its files, history, and outputs",
-        "automation": "All scheduled runs and triggers — they stop firing straight away",
-        "integrations": "Every connected integration, secret, and API key scoped to this workspace",
-        "managedRepo": "The Kortix-managed git repository for this workspace, with every commit in it",
-        "access": "Access for everyone on the team — nobody can reach this workspace again"
+        "sessions": "After 14 days, its sessions, files, and Kortix-managed repository are erased",
+        "automation": "Triggers and scheduled runs stop firing",
+        "integrations": "Its API keys and connected apps stop working",
+        "access": "Every member loses access to this workspace"
       },
-      "reassurance": "Git repositories you connected yourself are not deleted. Any code already pushed to them stays where it is.",
+      "reassurance": "Owners can restore it from the workspace list for 14 days. Git repositories you connected yourself are not deleted.",
       "keepWorkspace": "Keep workspace",
       "transferWorkspace": "Transfer workspace",
       "transferDescription": "Move this workspace's sessions, files, settings and member access into another workspace.",
@@ -1174,7 +1177,8 @@ const catalog = {
       "loadError": "Failed to load workspaces",
       "createIn": "Create a workspace in {account}",
       "localComputer": "Your computer",
-      "appsAndExtensions": "Apps and extensions"
+      "appsAndExtensions": "Apps and extensions",
+      "preferences": "Preferences"
     },
     "manifestIssues": {
       "title": "{file} has {errors, plural, one {# error} other {# errors}} and {warnings, plural, one {# warning} other {# warnings}}",
@@ -9527,11 +9531,6 @@ const catalog = {
     "unmountProjectDescription": "New sessions stop mounting this folder, and running ones lose it now. The files stay in Files.",
     "pickerProjectDescription": "Pick a folder in Files. Every session of this workspace sees it under /drives."
   },
-  "projectAdmin": {
-    "tools": "Tools",
-    "extensions": "Extensions",
-    "drives": "Drives"
-  },
   "multiAgent": {
     "peer": {
       "message": "Message from {from}",
@@ -9947,12 +9946,18 @@ const catalog = {
       "role": {
         "owner": "Owner",
         "admin": "Admin",
-        "member": "Member"
+        "member": "Member",
+        "manager": "Manager"
       },
       "loadErrorTitle": "Could not load your workspaces",
       "loadErrorBody": "Check your connection and try again.",
       "partialError": "Could not load every workspace.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "deletingOn": "Deleting on {date}",
+      "setupRequired": "Paid, no repository yet",
+      "restore": "Restore",
+      "setUp": "Set up",
+      "stateActionError": "That did not work. Try again."
     },
     "switcher": {
       "switch": "Switch workspace",
@@ -9970,32 +9975,57 @@ const catalog = {
         "workspace": "Workspace",
         "library": "Library",
         "people": "People",
-        "billing": "Billing"
+        "billing": "Billing",
+        "support": "Support"
       },
       "sections": {
         "general": "General",
         "branding": "Branding",
-        "git": "Git repo",
-        "sandbox": "Sandbox templates",
+        "git": "Git",
+        "sandbox": "Sandbox",
         "featureFlags": "Feature flags",
         "apiKeys": "API keys",
         "members": "Members",
         "groups": "Groups",
-        "access": "Access",
         "roles": "Roles",
         "identity": "Identity",
         "audit": "Audit log",
         "help": "Help",
         "plan": "Plan",
-        "usage": "Usage"
+        "usage": "Usage",
+        "connectors": "Connectors",
+        "skills": "Skills",
+        "triggers": "Triggers",
+        "models": "Models",
+        "secrets": "Secrets",
+        "apps": "Apps",
+        "drives": "Drives",
+        "capture": "Capture",
+        "security": "Security",
+        "repo": "Repository"
       },
       "accessTitle": "Access",
       "accessDescription": "Who can open this workspace, and with which role.",
       "securityTitle": "Security",
       "githubTitle": "GitHub connections",
       "deleteKeepsLogin": "Your login stays: you can create or join another workspace.",
-      "personalKeysTitle": "Your personal access keys",
-      "personalKeysDescription": "API keys that act as you in this workspace: for the CLI, a script, or a CI job."
+      "personalKeysTitle": "Your keys for this workspace",
+      "personalKeysDescription": "API keys that act as you in this workspace only: for a script or a CI job.",
+      "keyScopeWorkspace": "This workspace",
+      "keyScopePersonal": "Every workspace",
+      "keyScopeWorkspaceHint": "The key acts as you in this workspace only.",
+      "personalKeysEmpty": "No personal keys. kortix login makes one; keys for a script are made in a workspace's Settings › API keys.",
+      "securityDescription": "Sign-in rules, who may open whose sessions, and the rules every API key follows.",
+      "rolesDescription": "Built-in and custom roles. Assign them from Members.",
+      "workspaceId": "Workspace ID",
+      "workspaceIdDescription": "For the CLI, the API, and support.",
+      "leaveWorkspace": "Leave workspace",
+      "leaveDescription": "You lose access to this workspace. An admin can invite you again.",
+      "leaveTitle": "Leave workspace?",
+      "leaveDialog": "You lose access to {name}. An admin can invite you again.",
+      "leftToast": "You left {name}",
+      "leaveFailed": "Could not leave the workspace",
+      "deletedToast": "Workspace deleted. Owners can restore it for 14 days."
     },
     "models": {
       "yourDefault": "Workspace default",

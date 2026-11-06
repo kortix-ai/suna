@@ -65,48 +65,7 @@ describe('ProfileTabView', () => {
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 
-  /**
-   * Jay, 2026-08-17: "in the user settings also have all the accounts you're a
-   * part of so you can easily go to the account settings as well from the user
-   * settings."
-   *
-   * Placement is the requirement, not just presence — "easily" means the list
-   * is reachable without scrolling past Security and Danger zone, and without
-   * finding a tab first. So it sits directly under the identity group and
-   * ABOVE Security. `account-memberships.test.tsx` covers the section itself;
-   * this pins where it lands on the pane.
-   */
-  describe('organizations', () => {
-    const withAccounts = () =>
-      renderToStaticMarkup(
-        <ProfileTabView
-          accounts={[{ account_id: 'acc_1', name: 'Acme', account_role: 'owner' }]}
-        />,
-      );
 
-    test('lists each account with a link to its settings', () => {
-      const out = withAccounts();
-      // `?accountId=acc_1` — the hub is a modal on the current page, not a
-      // route. Rendered with no router context, the href is the query-only
-      // relative form.
-      expect(out).toContain('href="?accountId=acc_1"');
-      expect(out).toContain('>Acme<');
-    });
-
-    test('sits under the identity rows and above Danger zone', () => {
-      expect(headings(withAccounts())).toEqual(['Profile', 'Workspaces', 'Danger zone']);
-      expect(withAccounts().indexOf('>Email<')).toBeLessThan(
-        withAccounts().indexOf('Workspaces'),
-      );
-    });
-
-    /** No account list, no section — the pane is unchanged for a reader whose
-     *  accounts query has not answered. This is why the heading assertion at
-     *  the top of this file still reads three headings. */
-    test('adds nothing to the pane when the list is unknown', () => {
-      expect(headings(html())).toEqual(['Profile', 'Danger zone']);
-    });
-  });
 
   test('consecutive rows share one bordered group', () => {
     // The whole point of the restyle: one border around the rows, hairlines

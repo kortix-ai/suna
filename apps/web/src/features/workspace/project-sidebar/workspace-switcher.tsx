@@ -15,21 +15,19 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * "who am I" surface since the old footer user menu was folded into this
  * control — and keeps the account rows below it.
  *
- * User settings opens the same settings surface the header `UserMenu` opens,
- * on the same `profile` tab — but by a different mechanism, and the difference
- * is not cosmetic. This control only ever renders under `ProjectShell`, which
- * mounts `SettingsPanel` as a sibling (`project-shell.tsx:195`), so poking
- * `useSettingsPanelStore.openSettings(tab)` has a renderer subscribed and the
- * overlay opens in place. `UserMenu` mounts only in the app header under the
- * `app/(app)/accounts` tree, where no `SettingsPanel` exists, so its rows
- * navigate to `/settings/<tab>` instead. `main` authored this row against the
- * deleted `SidePanelUserSettings` modal; this branch replaced that modal with
- * the panel (JAY-498), so the row was repointed rather than dropped.
- * "Switch workspace" opens one flat list of every workspace (a workspace is
- * one account and its project — no account headings), the current one
- * checked, pending invitations on top, and two actions at the bottom: "Create
- * workspace" and "Workspace settings" (`/workspaces/:id/admin`, the one settings
- * surface per workspace). See `workspace-menu-section.tsx`.
+ * The menu, top to bottom (design.md §3.1 finding 21, Slack's workspace menu):
+ * the workspace header (icon, name, the caller's role) → "Invite people to
+ * {name}" (`project.members.manage`) → "Workspace settings" (the one Settings
+ * panel, `/workspaces/<id>/admin`) → "Switch workspace" (the list, with the
+ * pending-invitation count) → "Create workspace" → "Preferences" (the
+ * person's own settings overlay; it keeps Mod+,) → Apps and extensions,
+ * Appearance, Help, Download app → "Leave {name}" (never for the last owner)
+ * → Log out, with the signed-in identity under it. Rename lives in Workspace
+ * settings › General.
+ *
+ * Preferences pokes `useSettingsPanelStore.openSettings('profile')`: this
+ * control only renders under `ProjectShell`, which mounts `SettingsPanel` as a
+ * sibling, so the overlay opens in place.
  *
  * The rows that are genuinely account-level and have nowhere else to live in
  * this panel — Install App, Theme, Help, Log out — are shared with `UserMenu`
@@ -71,8 +69,14 @@ import { COMPUTER_SETUP_EVENT } from '@kortix/ui/internal/tunnel/computer-connec
 import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
 import { PROJECT_ACTIONS } from '@kortix/sdk';
 import { useProjectCan } from '@kortix/ui/internal/lib/use-project-can';
-import { capabilityTabHref } from '@kortix/ui/workspace';
 import { WorkspaceMenuSection } from '@kortix/ui/workspace/sidebar/workspace-menu-section';
+import { workspaceMenuGroups, type WorkspaceMenuRow } from '@kortix/ui/workspace/sidebar/workspace-menu-model';
+import { useWorkspaceDirectory } from '@kortix/ui/workspace/sidebar/use-workspace-directory';
+import { useLeaveWorkspace } from '@kortix/ui/workspace/settings/use-leave-workspace';
+import { useCapabilityAccess } from '@kortix/ui/internal/layout/project-settings-nav';
+import { useMyInvites } from '@kortix/ui/internal/hooks/account/use-my-invites';
+import { CountBadge } from '@kortix/ui/count-badge';
+import { workspaceSettingsPath } from '@kortix/shared/workspace-settings';
 import { canCreateWorkspace } from '@kortix/ui/workspace/project-selector/project-selector-model';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
 import { type SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
@@ -83,15 +87,17 @@ import { cn } from '@kortix/ui';
 import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import { useAppsModalStore } from '@kortix/ui/internal/stores/apps-modal-store';
 import { getProject } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useWorkspace } from '@kortix/sdk/react';
 import {
   ArrowsLeftRightIcon,
   CaretUpDownIcon,
   GearSixIcon as CogOne,
+  DoorOpenIcon,
   SignOutIcon as LogOut,
-  PencilSimpleIcon,
   PlusIcon,
   PuzzlePieceIcon,
+  SlidersHorizontalIcon,
+  UserPlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -102,8 +108,16 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
   const tWorkspaces = useI18nTranslations('workspaces.switcher');
   const tUi = useI18nTranslations('hardcodedUi.i18nComplete');
-  const canRename = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE).allowed;
-  const tNewWorkspace = useI18nTranslations('newWorkspace');
+  const tChooser = useI18nTranslations('workspaces.chooser');
+  const tWorkspaceMenu = useI18nTranslations('workspaces.menu');
+  // "Invite people" follows the palette's gate; "Workspace settings" follows
+  // Customize › Workspace settings (`config`).
+  const canInvite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
+  const canOpenSettings = useCapabilityAccess(projectId).tabs.includes('config');
+  const role = useWorkspace(projectId).data?.role ?? null;
+  const leave = useLeaveWorkspace(projectId);
+  const inviteCount = useMyInvites().data?.length ?? 0;
+  const directory = useWorkspaceDirectory();
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
   const { user } = useAuth();
@@ -141,6 +155,11 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   // avoids offering a row the person cannot use.
   const restricted = isAccountCreationRestricted();
   const isPlatformAdmin = Boolean(adminRole?.isAdmin);
+  const canCreate = canCreateWorkspace({
+    restricted,
+    isPlatformAdmin,
+    reusableAccount: directory.reusableAccount,
+  });
 
   // For the rows that OPEN something in place — the settings panel, the log-out
   // confirmation. Navigating rows do not use it: they are anchors now, and an
@@ -175,6 +194,124 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
     sidebar?.holdPeek(true);
     return () => sidebar?.holdPeek(false);
   }, [menuOpen, sidebar]);
+
+  const menuGroups = workspaceMenuGroups({ canInvite, canOpenSettings, canCreate, canLeave: leave.canLeave });
+  const renderRow = (row: WorkspaceMenuRow): React.ReactNode => {
+    switch (row) {
+      case 'header':
+        // The workspace first (Slack's "Acme ▾"): its icon, its name and the
+        // caller's one role in it. A label, not a row.
+        return (
+          <DropdownMenuLabel className="flex min-w-0 items-center gap-2 font-normal" data-testid="workspace-menu-header">
+            {project ? (
+              <EntityAvatar label={project.name} glyph={project.icon_glyph} emoji={project.icon} size="sm" />
+            ) : null}
+            <span className="flex min-w-0 flex-col">
+              <span className="text-foreground truncate text-sm font-medium">{project?.name ?? ''}</span>
+              {role ? <span className="text-muted-foreground text-xs">{tChooser(`role.${role}`)}</span> : null}
+            </span>
+          </DropdownMenuLabel>
+        );
+      case 'invite':
+        return (
+          <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+            <Link href={`${workspaceSettingsPath(projectId, 'members')}?invite=1`} prefetch>
+              <UserPlusIcon />
+              <span className="min-w-0 flex-1 truncate">{tWorkspaceMenu('invite', { name: project?.name ?? '' })}</span>
+            </Link>
+          </DropdownMenuItem>
+        );
+      case 'settings':
+        return (
+          <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+            <Link href={workspaceSettingsPath(projectId)} prefetch>
+              <CogOne />
+              {tWorkspaces('settings')}
+            </Link>
+          </DropdownMenuItem>
+        );
+      case 'switch':
+        return (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <ArrowsLeftRightIcon weight="fill" />
+              <span className="min-w-0 flex-1 truncate">{tWorkspaces('switch')}</span>
+              {/* An invite that arrives later is found here: the count shows
+                  without opening the list. */}
+              {inviteCount > 0 ? <CountBadge count={inviteCount} tone="waiting" /> : null}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuSubContent className="w-[264px] space-y-0.5" sideOffset={6}>
+                {/* Anchors, not handlers: `router.push` from a menu row runs the
+                    RSC fetch cold at click time. */}
+                <WorkspaceMenuSection />
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
+        );
+      case 'create':
+        return (
+          <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+            <Link href="/workspaces/new" prefetch>
+              <PlusIcon />
+              {tWorkspaces('create')}
+            </Link>
+          </DropdownMenuItem>
+        );
+      case 'preferences':
+        // The person's own settings (Slack's Preferences). The keycap sits on
+        // this row because this row is what the keystroke does:
+        // `useSettingsKeyboardShortcut` calls the same `openSettings()`.
+        return (
+          <DropdownMenuItem onSelect={() => openUserSettings('profile')} size="sm">
+            <SlidersHorizontalIcon />
+            {t('workspace.preferences')}
+            <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
+          </DropdownMenuItem>
+        );
+      case 'apps':
+        return (
+          <DropdownMenuItem
+            onSelect={() => deferAfterClose(() => useAppsModalStore.getState().setOpen(true))}
+            size="sm"
+          >
+            <PuzzlePieceIcon />
+            {t('workspace.appsAndExtensions')}
+          </DropdownMenuItem>
+        );
+      case 'appearance':
+        return <ThemeSubmenu />;
+      case 'help':
+        return <HelpSubmenu onClose={() => setMenuOpen(false)} />;
+      case 'download':
+        // A modal, not a route: the user stays in the workspace.
+        return (
+          <DropdownMenuItem onSelect={() => deferAfterClose(() => setDownloadOpen(true))} size="sm" data-desktop-hidden>
+            <Download />
+            {t('workspace.downloadApp')}
+          </DropdownMenuItem>
+        );
+      case 'leave':
+        // Leave and Log out end something, so they sit last, and both confirm first.
+        return (
+          <DropdownMenuItem onSelect={() => deferAfterClose(leave.open)} size="sm">
+            <DoorOpenIcon />
+            <span className="min-w-0 flex-1 truncate">{tWorkspaceMenu('leave', { name: project?.name ?? '' })}</span>
+          </DropdownMenuItem>
+        );
+      case 'logout':
+        return (
+          <DropdownMenuItem onClick={openLogoutConfirm} size="sm">
+            <LogOut />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span>{t('workspace.logOut')}</span>
+              {/* Which session Log out ends (KRTX-1810). */}
+              {identity ? <span className="text-muted-foreground truncate text-xs">{identity}</span> : null}
+            </span>
+          </DropdownMenuItem>
+        );
+    }
+  };
 
   return (
     <>
@@ -224,7 +361,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   </>
                 )}
 
-                <CaretUpDownIcon className="text-muted-foreground/50 group-hover/workspace:text-muted-foreground size-3.5 shrink-0 group-data-[collapsible=icon]:hidden" />
+                <CaretUpDownIcon className="text-muted-foreground group-hover/workspace:text-foreground size-3.5 shrink-0 group-data-[collapsible=icon]:hidden" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
 
@@ -232,142 +369,24 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               align="start"
               side="bottom"
               sideOffset={6}
-              className="border-foreground/10 w-[15rem] space-y-0.5 overflow-hidden shadow-lg"
+              className="border-foreground/10 w-[16rem] space-y-0.5 overflow-hidden shadow-lg"
             >
-              {/* The identity header: the same "Logged in as" treatment as the
-                  account top bar (`account-top-bar.tsx`), two lines — the copy
-                  above the name or email. A label, not a row: it is not focusable
-                  and does nothing, it just tells you which session the rows below
-                  (Settings, Log out) would act on. */}
-              <DropdownMenuLabel className="flex min-w-0 flex-col gap-0.5 font-normal">
-                <span className="text-muted-foreground text-xs">
-                  {tNewWorkspace('account.loggedInAs')}
-                </span>
-                <span className="text-foreground max-w-56 truncate text-sm">
-                  {identity ?? tNewWorkspace('account.label')}
-                </span>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <ArrowsLeftRightIcon weight="fill" />
-                  {tWorkspaces('switch')}
-                </DropdownMenuSubTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuSubContent className="w-[264px] space-y-0.5" sideOffset={6}>
-                    {/* Anchors, not handlers. `router.push` from a menu row
-                        runs the RSC fetch cold at click time, and that fetch
-                        degrades into a full document load whenever it answers
-                        wrong. `onSelect` keeps the explicit close and must not
-                        call `preventDefault`: that cancels the anchor. */}
-                    <WorkspaceMenuSection
-                      actions={(directory) => (
-                        <>
-                          {canCreateWorkspace({
-                            restricted,
-                            isPlatformAdmin,
-                            reusableAccount: directory.reusableAccount,
-                          }) ? (
-                            <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                              <Link href="/workspaces/new" prefetch>
-                                <PlusIcon />
-                                {tWorkspaces('create')}
-                              </Link>
-                            </DropdownMenuItem>
-                          ) : null}
-                          <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                            <Link href={`/workspaces/${projectId}/admin`} prefetch>
-                              <CogOne />
-                              {tWorkspaces('settings')}
-                            </Link>
-                          </DropdownMenuItem>
-                        </>
-                      )}
-                    />
-                  </DropdownMenuSubContent>
-                </DropdownMenuPortal>
-              </DropdownMenuSub>
-              <DropdownMenuSeparator />
-
-              {canRename === true && (
-                <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                  <Link href={capabilityTabHref(projectId, 'config')} prefetch>
-                    <PencilSimpleIcon />
-                    {tUi('text3064d79a295c')}
-                  </Link>
-                </DropdownMenuItem>
-              )}
-
-              {/* `profile`, NOT `general`. In the merged settings vocabulary
-                  (`settings/settings-tabs.ts`) `general` is Workspace →
-                  General, a PROJECT-scoped tab — a row labelled "User
-                  Settings" that opens it lands the user on the workspace pane.
-                  The user's own name/email/avatar/delete-account surface is the
-                  `profile` tab, and it is the tab `/settings` opens on
-                  (`STANDALONE_DEFAULT_SETTINGS_TAB`). This row pokes the store
-                  rather than navigating because `ProjectSidebar` only mounts
-                  under `ProjectShell`, which renders `SettingsPanel` as a
-                  sibling (`project-layout/project-shell.tsx:195`) — the
-                  header `UserMenu` has no such renderer and must navigate. */}
-              <DropdownMenuItem onSelect={() => openUserSettings('profile')} size="sm">
-                <CogOne />
-                {t('workspace.settings')}
-                {/* The keycap sits on this row because this row is what the
-                    keystroke does — `useSettingsKeyboardShortcut` calls the
-                    same `openSettings()`. It is the only row in the app that
-                    opens the overlay, so it is the only honest place to
-                    advertise Mod+, (the old sidebar Settings row that carried
-                    it was removed on 2026-08-17, and the shortcut has been
-                    undiscoverable since). The symbol follows the platform;
-                    the handler accepts Cmd and Ctrl on all of them.
-
-                    `DropdownMenuShortcut` (plain muted text, `MENU_SHORTCUT`)
-                    rather than `<Kbd>` chips: this is a menu row, and that is
-                    the recipe every menu row in the design system uses for a
-                    trailing keystroke. */}
-                <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
-              </DropdownMenuItem>
-
-              <DropdownMenuItem
-                onSelect={() => deferAfterClose(() => useAppsModalStore.getState().setOpen(true))}
-                size="sm"
-              >
-                <PuzzlePieceIcon />
-                {t('workspace.appsAndExtensions')}
-              </DropdownMenuItem>
-
-              {/* A modal, not a route: the user stays in the workspace. It
-                  renders the same `DownloadOptions` as the public /download
-                  page, so the two surfaces never drift apart. */}
-              <DropdownMenuItem
-                onSelect={() => deferAfterClose(() => setDownloadOpen(true))}
-                size="sm"
-                data-desktop-hidden
-              >
-                <Download />
-                {t('workspace.downloadApp')}
-              </DropdownMenuItem>
-
-              <ThemeSubmenu />
-
-              <HelpSubmenu onClose={() => setMenuOpen(false)} />
-
-              {/* Log out is the only row that ends something, so it gets its own
-                  group. Nothing sits below it — the last item in a menu is the
-                  one a slipped pointer lands on. */}
-              <DropdownMenuSeparator />
-
-              <DropdownMenuItem onClick={openLogoutConfirm} size="sm">
-                <LogOut />
-                {t('workspace.logOut')}
-              </DropdownMenuItem>
+              {menuGroups.map((group, index) => (
+                <React.Fragment key={group.join('-')}>
+                  {index > 0 ? <DropdownMenuSeparator /> : null}
+                  {group.map((row) => (
+                    <React.Fragment key={row}>{renderRow(row)}</React.Fragment>
+                  ))}
+                </React.Fragment>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
         </SidebarMenuItem>
       </SidebarMenu>
 
-      {/* Sibling of the dropdown, never a child — see `useLogoutFlow`. */}
+      {/* Siblings of the dropdown, never children — see `useLogoutFlow`. */}
       {logoutDialog}
+      {leave.dialog}
 
       <DownloadModal open={downloadOpen} onOpenChange={setDownloadOpen} />
 

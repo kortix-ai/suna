@@ -576,7 +576,7 @@
         },
         "profile": {
           "label": "プロフィール",
-          "description": "画像、名前、メールアドレス、ワークスペース。"
+          "description": "写真、名前、メールアドレス。"
         },
         "security": {
           "label": "セキュリティ",
@@ -620,6 +620,10 @@
         "computer": {
           "label": "マイコンピューター",
           "description": "Kortix のエージェントが、あなたのコンピューターのファイル、ターミナル、アプリを使えるようにします。"
+        },
+        "personal-keys": {
+          "label": "個人キー",
+          "description": "すべてのワークスペースであなたとして動作するキー: CLI ログインと以前のキー。"
         }
       }
     },
@@ -975,18 +979,17 @@
       "retry": "再試行",
       "dangerZone": "危険な操作",
       "deleteWorkspace": "ワークスペースを削除",
-      "deleteDescription": "すべてのメンバーから、このワークスペースとその中のすべてを削除します。この操作は元に戻せません。",
+      "deleteDescription": "すべてのメンバーに対してこのワークスペースを削除します。14 日間は復元できます。",
       "deleteTitle": "ワークスペースを削除しますか？",
-      "deleteDialog": "アクセス権を持つすべてのユーザーから {name} を削除します。この操作は元に戻せません。",
-      "consequencesTitle": "直ちに失われるもの：",
+      "deleteDialog": "すべてのメンバーに対して {name} を削除します。14 日間は復元できます。",
+      "consequencesTitle": "すぐに:",
       "consequences": {
-        "sessions": "このワークスペース内のすべてのセッション、ファイル、履歴、出力",
-        "automation": "すべてのスケジュール実行とトリガー — 直ちに停止します",
-        "integrations": "このワークスペースに限定されたすべての連携、シークレット、API キー",
-        "managedRepo": "このワークスペースの Kortix 管理リポジトリと、その中のすべてのコミット",
-        "access": "チーム全員のアクセス権 — 誰もこのワークスペースに再びアクセスできません"
+        "sessions": "14 日後に、セッション、ファイル、Kortix 管理のリポジトリが消去されます",
+        "automation": "トリガーとスケジュール実行が止まります",
+        "integrations": "API キーと接続済みアプリが動作しなくなります",
+        "access": "すべてのメンバーがこのワークスペースにアクセスできなくなります"
       },
-      "reassurance": "自分で接続した Git リポジトリは削除されません。すでにプッシュしたコードはそのまま残ります。",
+      "reassurance": "オーナーは 14 日間、ワークスペース一覧から復元できます。自分で接続した Git リポジトリは削除されません。",
       "keepWorkspace": "ワークスペースを保持",
       "transferWorkspace": "ワークスペースを移管",
       "transferDescription": "このワークスペースのセッション・ファイル・設定・メンバーアクセスを別のワークスペースに移動します。",
@@ -1695,7 +1698,8 @@
       "loadError": "ワークスペースを読み込めませんでした",
       "createIn": "{account} にワークスペースを作成",
       "localComputer": "あなたのコンピューター",
-      "appsAndExtensions": "アプリと拡張機能"
+      "appsAndExtensions": "アプリと拡張機能",
+      "preferences": "環境設定"
     },
     "manifestIssues": {
       "title": "{file} に {errors, plural, other {# 件のエラー}}と{warnings, plural, other {# 件の警告}}があります",
@@ -26574,12 +26578,18 @@
       "role": {
         "owner": "オーナー",
         "admin": "管理者",
-        "member": "メンバー"
+        "member": "メンバー",
+        "manager": "マネージャー"
       },
       "loadErrorTitle": "ワークスペースを読み込めませんでした",
       "loadErrorBody": "接続を確認して、もう一度お試しください。",
       "partialError": "一部のワークスペースを読み込めませんでした。",
-      "retry": "再試行"
+      "retry": "再試行",
+      "deletingOn": "{date} に削除",
+      "setupRequired": "支払い済み、リポジトリはまだありません",
+      "restore": "復元",
+      "setUp": "セットアップ",
+      "stateActionError": "うまくいきませんでした。もう一度お試しください。"
     },
     "switcher": {
       "switch": "ワークスペースを切り替え",
@@ -26604,32 +26614,57 @@
         "workspace": "ワークスペース",
         "library": "ライブラリ",
         "people": "メンバー",
-        "billing": "請求"
+        "billing": "請求",
+        "support": "サポート"
       },
       "sections": {
         "general": "一般",
         "branding": "ブランディング",
-        "git": "Git リポジトリ",
-        "sandbox": "サンドボックステンプレート",
+        "git": "Git",
+        "sandbox": "サンドボックス",
         "featureFlags": "機能フラグ",
         "apiKeys": "API キー",
         "members": "メンバー",
         "groups": "グループ",
-        "access": "アクセス",
         "roles": "ロール",
         "identity": "ID 管理",
         "audit": "監査ログ",
         "help": "ヘルプ",
         "plan": "プラン",
-        "usage": "使用量"
+        "usage": "使用量",
+        "connectors": "コネクター",
+        "skills": "スキル",
+        "triggers": "トリガー",
+        "models": "モデル",
+        "secrets": "シークレット",
+        "apps": "アプリ",
+        "drives": "Drives",
+        "capture": "Capture",
+        "security": "セキュリティ",
+        "repo": "リポジトリ"
       },
       "accessTitle": "アクセス",
       "accessDescription": "このワークスペースを開ける人と、そのロール。",
       "securityTitle": "セキュリティ",
       "githubTitle": "GitHub 接続",
       "deleteKeepsLogin": "ログインは残ります。別のワークスペースを作成するか、参加できます。",
-      "personalKeysTitle": "あなたの個人アクセスキー",
-      "personalKeysDescription": "このワークスペースであなたとして動作する API キー。CLI、スクリプト、CI ジョブに使います。"
+      "personalKeysTitle": "このワークスペース用のあなたのキー",
+      "personalKeysDescription": "このワークスペースだけであなたとして動作する API キー。スクリプトや CI ジョブ用です。",
+      "keyScopeWorkspace": "このワークスペース",
+      "keyScopePersonal": "すべてのワークスペース",
+      "keyScopeWorkspaceHint": "このキーはこのワークスペースだけであなたとして動作します。",
+      "personalKeysEmpty": "個人キーはありません。kortix login で作成されます。スクリプト用のキーはワークスペースの設定 › API キーで作成します。",
+      "securityDescription": "サインインのルール、誰が誰のセッションを開けるか、各 API キーのルール。",
+      "rolesDescription": "組み込みロールとカスタムロール。メンバーから割り当てます。",
+      "workspaceId": "ワークスペース ID",
+      "workspaceIdDescription": "CLI、API、サポート用。",
+      "leaveWorkspace": "ワークスペースから退出",
+      "leaveDescription": "このワークスペースにアクセスできなくなります。管理者は再び招待できます。",
+      "leaveTitle": "ワークスペースから退出しますか?",
+      "leaveDialog": "{name} にアクセスできなくなります。管理者は再び招待できます。",
+      "leftToast": "{name} から退出しました",
+      "leaveFailed": "ワークスペースから退出できませんでした",
+      "deletedToast": "ワークスペースを削除しました。オーナーは 14 日間復元できます。"
     },
     "cli": {
       "noWorkspaceTitle": "CLI にサインインするにはワークスペースを作成してください",
@@ -26657,6 +26692,10 @@
       "openChooser": "ワークスペースを作成または参加",
       "workspaceLabel": "ワークスペース",
       "noCaptureWorkspace": "どのワークスペースでも Kortix Capture はオフです。オーナーまたは管理者がオンにできます。"
+    },
+    "menu": {
+      "invite": "{name} にメンバーを招待",
+      "leave": "{name} から退出"
     }
   }
 }

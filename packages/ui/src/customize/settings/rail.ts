@@ -5,6 +5,7 @@ import {
   ShippingContainerIcon as Container,
   CreditCardIcon as CreditCard,
   FlaskIcon as Flask,
+  KeyIcon as Key,
   LaptopIcon as Laptop,
   LinkIcon as Link,
   PaletteIcon as Palette,
@@ -58,7 +59,7 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
       {
         tab: 'profile',
         label: 'Profile',
-        description: 'Your picture, name, email, and workspaces.',
+        description: 'Your picture, name, and email.',
         icon: User,
       },
       {
@@ -99,8 +100,15 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
         // Monochrome like its neighbours; `ChromeRailIcon` takes only `className`.
         icon: ChromeRailIcon as unknown as Icon,
       },
-      // Personal access keys left this rail for Workspace settings › API
-      // keys (Workspaces, PR 1): a key acts in one workspace.
+      // Personal keys act as the person in every workspace of theirs (the
+      // CLI login, older account-wide keys): listed and revoked here. New keys
+      // are minted per workspace in Workspace settings › API keys (C4).
+      {
+        tab: 'personal-keys',
+        label: 'Personal keys',
+        description: 'Keys that act as you in every workspace: the CLI login and older keys.',
+        icon: Key,
+      },
       // MCP and the paired computers (KRTX-1997) are the person's own too: the
       // MCP URL is one per person, and a computer follows its owner into every
       // project. They sat in a separate `Connect` block at the rail's foot

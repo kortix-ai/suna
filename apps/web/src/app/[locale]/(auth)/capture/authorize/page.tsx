@@ -63,13 +63,13 @@ function CaptureAuthorize() {
   // own name and icon. An account with no project is not a workspace.
   const directory = useWorkspaceDirectory();
   const captureAccountIds = new Set(accounts.map((account) => account.account_id));
-  const workspaces = directory.workspaces.filter((row) => captureAccountIds.has(row.accountId));
+  const workspaces = directory.openable.filter((row) => captureAccountIds.has(row.accountId));
   const [picked, setPicked] = useState<string | null>(null);
   const pickedRow =
     workspaces.find((row) => row.workspaceId === picked) ?? (workspaces.length === 1 ? workspaces[0] : null);
   const accountId = pickedRow?.accountId ?? null;
   const approvedAccountId = grant.data?.account_id ?? accountId;
-  const approvedWorkspace = directory.workspaces.find((row) => row.accountId === approvedAccountId);
+  const approvedWorkspace = directory.openable.find((row) => row.accountId === approvedAccountId);
   const approvedAccount = approvedWorkspace
     ? { name: approvedWorkspace.project.name }
     : accounts.find((account) => account.account_id === approvedAccountId);
@@ -82,7 +82,7 @@ function CaptureAuthorize() {
 
   if (authLoading || !user) return <AuthPendingScreen />;
 
-  if (!directory.loading && directory.workspaces.length === 0) {
+  if (!directory.loading && directory.openable.length === 0) {
     return (
       <AuthStatusScreen
         title={tWorkspaces('noWorkspaceTitle')}

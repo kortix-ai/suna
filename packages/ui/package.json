@@ -287,6 +287,7 @@
     "./internal/icons/solid-check-icon": "./src/internal/icons/solid-check-icon.tsx",
     "./internal/layout/connect-mcp-modal": "./src/internal/layout/connect-mcp-modal.tsx",
     "./internal/layout/open-command-palette": "./src/internal/layout/open-command-palette.ts",
+    "./internal/layout/project-settings-nav": "./src/internal/layout/project-settings-nav.tsx",
     "./internal/layout/settings-nav-context": "./src/internal/layout/settings-nav-context.tsx",
     "./internal/layout/sidebar-opener": "./src/internal/layout/sidebar-opener.ts",
     "./internal/layout/sidebar-toggle": "./src/internal/layout/sidebar-toggle.tsx",
@@ -546,6 +547,7 @@
     "./workspace/review/mock-data": "./src/workspace/review/mock-data.ts",
     "./workspace/review/review-center": "./src/workspace/review/review-center.tsx",
     "./workspace/review/types": "./src/workspace/review/types.ts",
+    "./workspace/settings/use-leave-workspace": "./src/workspace/settings/use-leave-workspace.tsx",
     "./workspace/sidebar/footer/project-apps-nav": "./src/workspace/sidebar/footer/project-apps-nav.tsx",
     "./workspace/sidebar/footer/project-balance-warning": "./src/workspace/sidebar/footer/project-balance-warning.tsx",
     "./workspace/sidebar/footer/project-computer-nav": "./src/workspace/sidebar/footer/project-computer-nav.tsx",
@@ -561,7 +563,9 @@
     "./workspace/sidebar/session-section-labels": "./src/workspace/sidebar/session-section-labels.ts",
     "./workspace/sidebar/session-source-icons": "./src/workspace/sidebar/session-source-icons.ts",
     "./workspace/sidebar/use-workspace-directory": "./src/workspace/sidebar/use-workspace-directory.ts",
+    "./workspace/sidebar/use-workspace-list": "./src/workspace/sidebar/use-workspace-list.ts",
     "./workspace/sidebar/workspace-grouping": "./src/workspace/sidebar/workspace-grouping.ts",
+    "./workspace/sidebar/workspace-menu-model": "./src/workspace/sidebar/workspace-menu-model.ts",
     "./workspace/sidebar/workspace-menu-section": "./src/workspace/sidebar/workspace-menu-section.tsx",
     "./workspace/space/space-page": "./src/workspace/space/space-page.tsx"
   },
@@ -1614,6 +1618,10 @@
         "types": "./dist/internal/layout/open-command-palette.d.ts",
         "import": "./dist/internal/layout/open-command-palette.js"
       },
+      "./internal/layout/project-settings-nav": {
+        "types": "./dist/internal/layout/project-settings-nav.d.ts",
+        "import": "./dist/internal/layout/project-settings-nav.js"
+      },
       "./internal/layout/settings-nav-context": {
         "types": "./dist/internal/layout/settings-nav-context.d.ts",
         "import": "./dist/internal/layout/settings-nav-context.js"
@@ -2632,6 +2640,10 @@
         "types": "./dist/workspace/review/types.d.ts",
         "import": "./dist/workspace/review/types.js"
       },
+      "./workspace/settings/use-leave-workspace": {
+        "types": "./dist/workspace/settings/use-leave-workspace.d.ts",
+        "import": "./dist/workspace/settings/use-leave-workspace.js"
+      },
       "./workspace/sidebar/footer/project-apps-nav": {
         "types": "./dist/workspace/sidebar/footer/project-apps-nav.d.ts",
         "import": "./dist/workspace/sidebar/footer/project-apps-nav.js"
@@ -2692,9 +2704,17 @@
         "types": "./dist/workspace/sidebar/use-workspace-directory.d.ts",
         "import": "./dist/workspace/sidebar/use-workspace-directory.js"
       },
+      "./workspace/sidebar/use-workspace-list": {
+        "types": "./dist/workspace/sidebar/use-workspace-list.d.ts",
+        "import": "./dist/workspace/sidebar/use-workspace-list.js"
+      },
       "./workspace/sidebar/workspace-grouping": {
         "types": "./dist/workspace/sidebar/workspace-grouping.d.ts",
         "import": "./dist/workspace/sidebar/workspace-grouping.js"
+      },
+      "./workspace/sidebar/workspace-menu-model": {
+        "types": "./dist/workspace/sidebar/workspace-menu-model.d.ts",
+        "import": "./dist/workspace/sidebar/workspace-menu-model.js"
       },
       "./workspace/sidebar/workspace-menu-section": {
         "types": "./dist/workspace/sidebar/workspace-menu-section.d.ts",

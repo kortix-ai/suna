@@ -75,16 +75,16 @@ function CliAuthorizeInner() {
   // A CLI login acts in a workspace: with none, the API answers 409
   // `no_workspace`. Say so up front instead of after a failed approve.
   const directory = useWorkspaceDirectory();
-  const withoutWorkspace = noWorkspace || (!directory.loading && directory.workspaces.length === 0);
+  const withoutWorkspace = noWorkspace || (!directory.loading && directory.openable.length === 0);
   // A CLI key acts in ONE workspace. With 2+ the person picks which; the
   // most recently opened one is preselected. The key is account-scoped, so
   // the choice is sent as the workspace's `account_id`.
   const [pickedWorkspaceId, setPickedWorkspaceId] = useState<string | null>(null);
   const pickedRow =
-    directory.workspaces.find((row) => row.workspaceId === pickedWorkspaceId) ?? directory.workspaces[0] ?? null;
+    directory.openable.find((row) => row.workspaceId === pickedWorkspaceId) ?? directory.openable[0] ?? null;
   const targetAccountId = pickedRow?.accountId;
   const workspacePicker =
-    directory.workspaces.length > 1 ? (
+    directory.openable.length > 1 ? (
       <div className="space-y-2">
         <FieldLabel htmlFor="cli-workspace">{tCli('workspaceLabel')}</FieldLabel>
         <Select value={pickedRow?.workspaceId ?? ''} onValueChange={setPickedWorkspaceId}>
@@ -92,7 +92,7 @@ function CliAuthorizeInner() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {directory.workspaces.map((row) => (
+            {directory.openable.map((row) => (
               <SelectItem key={row.workspaceId} value={row.workspaceId} size="md">
                 <span className="flex min-w-0 items-center gap-2">
                   <EntityAvatar

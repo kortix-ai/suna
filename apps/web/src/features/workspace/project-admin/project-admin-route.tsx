@@ -3,7 +3,7 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 
 import { ConnectorsAppReturnBar } from '@kortix/ui/customize/connectors/connectors-app-return-bar';
-import { CustomizeFrame } from '@kortix/ui/customize/shared/customize-tab-bar';
+import { SettingsFrame } from '@kortix/ui/customize/shared/customize-tab-bar';
 import {
   ProjectAdminDashboard,
   type ProjectAdminHostSections,
@@ -18,7 +18,15 @@ const WorkspaceAccountPane = lazy(() =>
     default: mod.WorkspaceAccountPane,
   })),
 );
-const HOST_SECTIONS: ProjectAdminHostSections = { account: WorkspaceAccountPane };
+const WorkspaceGeneralExtras = lazy(() =>
+  import('@/features/workspace/settings/workspace-account-pane').then((mod) => ({
+    default: mod.WorkspaceGeneralExtras,
+  })),
+);
+const HOST_SECTIONS: ProjectAdminHostSections = {
+  account: WorkspaceAccountPane,
+  generalExtras: WorkspaceGeneralExtras,
+};
 
 /**
  * Every `/workspaces/[id]/admin/**` route: Workspace settings on one section, and
@@ -38,10 +46,11 @@ export function ProjectAdminRoute({
 }) {
   return (
     <div className="flex h-svh flex-col overflow-hidden">
-      {/* The Customize bar over Project admin too: one row of tabs for both trees. */}
-      <CustomizeFrame projectId={projectId}>
+      {/* One rail, no tab bar above it: the panel's title bar holds the
+          sidebar opener and the panel's name only. */}
+      <SettingsFrame>
         <ProjectAdminDashboard projectId={projectId} section={section} content={content} hostSections={HOST_SECTIONS} />
-      </CustomizeFrame>
+      </SettingsFrame>
       {section === 'connectors' ? (
         <Suspense fallback={null}>
           <ConnectorsAppReturnBar />

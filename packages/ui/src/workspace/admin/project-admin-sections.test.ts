@@ -13,16 +13,27 @@ import {
   projectAdminHref,
   projectAdminNavTarget,
   SECTION_FOR_ACCOUNT_TAB,
+  sectionLabelKey,
   WORKSPACE_SETTINGS_GROUPS,
   type ProjectAdminSectionKey,
 } from '../../customize/project-settings/project-admin-sections';
 import { VALID_TABS } from '../../internal/account-hub/sections';
+import en from '../../i18n/en';
+import {
+  WORKSPACE_SETTINGS_GROUP_LABELS,
+  WORKSPACE_SETTINGS_GROUPS as REGISTRY_GROUPS,
+  WORKSPACE_SETTINGS_LABELS,
+  WORKSPACE_SETTINGS_SECTIONS,
+} from '@kortix/shared/workspace-settings';
 
 const PID = 'project-test-1';
 
 describe('Project admin /admin/<section> scheme', () => {
   test('every resource and every settings section is a deep link that parses back', () => {
-    const keys = [...PROJECT_ADMIN_RESOURCES.map((r) => r.key), ...ALL_PROJECT_SETTINGS_SECTIONS.map((s) => s.key)];
+    const keys = [
+      ...PROJECT_ADMIN_RESOURCES.map((r) => r.key),
+      ...ALL_PROJECT_SETTINGS_SECTIONS.map((s) => s.key).filter((key) => key !== 'review'),
+    ];
     expect(new Set(keys).size).toBe(keys.length);
     for (const key of keys) {
       const href = projectAdminHref(PID, key as ProjectAdminSectionKey);
@@ -64,13 +75,15 @@ describe('Project admin /admin/<section> scheme', () => {
   });
 });
 
-describe('Workspace settings rail — four groups', () => {
-  test('Workspace, Library, People, Billing, in the order of the spec', () => {
+describe('Workspace settings rail — the shared registry', () => {
+  test('the rail is the registry: Workspace, Library, People, Billing, Support', () => {
+    expect(WORKSPACE_SETTINGS_GROUPS).toBe(REGISTRY_GROUPS);
     expect(WORKSPACE_SETTINGS_GROUPS.map((group) => [group.id, [...group.sections]])).toEqual([
-      ['workspace', ['general', 'branding', 'git', 'sandbox', 'feature-flags', 'api-keys']],
+      ['workspace', ['general', 'security', 'branding', 'git', 'sandbox', 'feature-flags', 'api-keys', 'capture']],
       ['library', ['connectors', 'secrets', 'skills', 'drives', 'apps', 'triggers', 'models', 'repo']],
-      ['people', ['members', 'groups', 'access', 'roles', 'identity', 'audit', 'help']],
+      ['people', ['members', 'groups', 'roles', 'identity', 'audit']],
       ['billing', ['plan', 'usage']],
+      ['support', ['help']],
     ]);
   });
 
@@ -80,14 +93,44 @@ describe('Workspace settings rail — four groups', () => {
     for (const key of rows) expect(parseProjectAdminSection(key)).toBe(key);
   });
 
+  test('old section ids land on the section that owns them now', () => {
+    expect(parseProjectAdminSection('access')).toBe('members');
+    expect(parseProjectAdminSection('access-projects')).toBe('members');
+    expect(parseProjectAdminSection('settings')).toBe('security');
+    expect(parseProjectAdminSection('tokens')).toBe('api-keys');
+    expect(parseProjectAdminSection('billing')).toBe('plan');
+    expect(parseProjectAdminSection('credits')).toBe('plan');
+    expect(parseProjectAdminSection('transactions')).toBe('usage');
+    expect(parseProjectAdminSection('connected')).toBe('git');
+  });
+
   test('every old account hub tab lands on a workspace section that shows that pane', () => {
     for (const tab of VALID_TABS) {
       const section = SECTION_FOR_ACCOUNT_TAB[tab];
-      expect({ tab, section, back: ACCOUNT_TAB_FOR_SECTION[section] }).toEqual({ tab, section, back: tab });
+      // Access merged into Members: its per-workspace grants render under the roster.
+      const back = tab === 'access-projects' ? 'members' : tab;
+      expect({ tab, section, back: ACCOUNT_TAB_FOR_SECTION[section] }).toEqual({ tab, section, back });
     }
-    expect(SECTION_FOR_ACCOUNT_TAB.members).toBe('members');
-    expect(SECTION_FOR_ACCOUNT_TAB['access-projects']).toBe('access');
+    expect(SECTION_FOR_ACCOUNT_TAB.settings).toBe('security');
+    expect(SECTION_FOR_ACCOUNT_TAB['access-projects']).toBe('members');
     expect(SECTION_FOR_ACCOUNT_TAB.billing).toBe('plan');
+  });
+
+  test('the en catalog holds the registry labels, word for word', () => {
+    const sections = (en as { workspaces: { settings: { sections: Record<string, string>; groups: Record<string, string> } } })
+      .workspaces.settings;
+    for (const section of WORKSPACE_SETTINGS_SECTIONS) {
+      expect({ section, label: sections.sections[sectionLabelKey(section)] }).toEqual({
+        section,
+        label: WORKSPACE_SETTINGS_LABELS[section],
+      });
+    }
+    for (const group of REGISTRY_GROUPS) {
+      expect({ group: group.id, label: sections.groups[group.id] }).toEqual({
+        group: group.id,
+        label: WORKSPACE_SETTINGS_GROUP_LABELS[group.id],
+      });
+    }
   });
 });
 

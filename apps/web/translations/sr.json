@@ -429,7 +429,7 @@
         },
         "profile": {
           "label": "Профил",
-          "description": "Ваша слика, име, имејл адреса и радни простори."
+          "description": "Ваша слика, име и имејл."
         },
         "security": {
           "label": "Безбедност",
@@ -473,6 +473,10 @@
         "computer": {
           "label": "Moj računar",
           "description": "Дозволите Kortix агентима да раде са датотекама, терминалом и апликацијама на вашем рачунару."
+        },
+        "personal-keys": {
+          "label": "Лични кључеви",
+          "description": "Кључеви који делују у ваше име у сваком радном простору: CLI пријава и старији кључеви."
         }
       }
     },
@@ -975,18 +979,17 @@
       "retry": "Покушај поново",
       "dangerZone": "Опасна зона",
       "deleteWorkspace": "Избриши радни простор",
-      "deleteDescription": "Уклања овај радни простор и сав његов садржај за све чланове. Ова радња не може да се опозове.",
+      "deleteDescription": "Брише овај радни простор за све чланове. Можете га вратити у року од 14 дана.",
       "deleteTitle": "Избрисати радни простор?",
-      "deleteDialog": "Ово брише {name} за све који имају приступ. Радња не може да се опозове.",
-      "consequencesTitle": "Одмах губите:",
+      "deleteDialog": "Ово брише {name} за све чланове. Можете га вратити у року од 14 дана.",
+      "consequencesTitle": "Одмах:",
       "consequences": {
-        "sessions": "Сваку сесију у овом радном простору, са њеним датотекама, историјом и резултатима",
-        "automation": "Сва заказана покретања и окидаче — одмах престају да се извршавају",
-        "integrations": "Сваку повезану интеграцију, тајну и API кључ ограничен на овај радни простор",
-        "managedRepo": "Git складиште којим управља Kortix за овај радни простор, са сваким комитом у њему",
-        "access": "Приступ за цео тим — нико више не може да приступи овом радном простору"
+        "sessions": "После 14 дана, његове сесије, датотеке и репозиторијум којим управља Kortix се бришу",
+        "automation": "Окидачи и заказана покретања престају да се покрећу",
+        "integrations": "Његови API кључеви и повезане апликације престају да раде",
+        "access": "Сви чланови губе приступ овом радном простору"
       },
-      "reassurance": "Git складишта која сте сами повезали се не бришу. Сав већ послат код остаје на свом месту.",
+      "reassurance": "Власници га могу вратити са листе радних простора у року од 14 дана. Git репозиторијуми које сте сами повезали се не бришу.",
       "keepWorkspace": "Задржи радни простор",
       "transferWorkspace": "Пренеси радни простор",
       "transferDescription": "Премести сесије, датотеке, подешавања и приступ чланова овог радног простора у други радни простор.",
@@ -1695,7 +1698,8 @@
       "loadError": "Учитавање радних простора није успело",
       "createIn": "Направи радни простор у {account}",
       "localComputer": "Ваш рачунар",
-      "appsAndExtensions": "Апликације и проширења"
+      "appsAndExtensions": "Апликације и проширења",
+      "preferences": "Подешавања"
     },
     "manifestIssues": {
       "title": "{file} има {errors, plural, one {# грешку} few {# грешке} other {# грешака}} и {warnings, plural, one {# упозорење} few {# упозорења} other {# упозорења}}",
@@ -26574,12 +26578,18 @@
       "role": {
         "owner": "Vlasnik",
         "admin": "Administrator",
-        "member": "Član"
+        "member": "Član",
+        "manager": "Menadžer"
       },
       "loadErrorTitle": "Nije moguće učitati vaše radne prostore",
       "loadErrorBody": "Proverite vezu i pokušajte ponovo.",
       "partialError": "Nije moguće učitati sve radne prostore.",
-      "retry": "Pokušaj ponovo"
+      "retry": "Pokušaj ponovo",
+      "deletingOn": "Briše se {date}",
+      "setupRequired": "Plaćeno, još nema repozitorijuma",
+      "restore": "Vrati",
+      "setUp": "Podesi",
+      "stateActionError": "Nije uspelo. Pokušajte ponovo."
     },
     "switcher": {
       "switch": "Promeni radni prostor",
@@ -26604,32 +26614,57 @@
         "workspace": "Radni prostor",
         "library": "Biblioteka",
         "people": "Ljudi",
-        "billing": "Naplata"
+        "billing": "Naplata",
+        "support": "Podrška"
       },
       "sections": {
         "general": "Opšte",
         "branding": "Brendiranje",
-        "git": "Git repozitorijum",
-        "sandbox": "Šabloni sandboksa",
+        "git": "Git",
+        "sandbox": "Sandboks",
         "featureFlags": "Eksperimentalne funkcije",
         "apiKeys": "API ključevi",
         "members": "Članovi",
         "groups": "Grupe",
-        "access": "Pristup",
         "roles": "Uloge",
         "identity": "Identitet",
         "audit": "Dnevnik revizije",
         "help": "Pomoć",
         "plan": "Plan",
-        "usage": "Potrošnja"
+        "usage": "Potrošnja",
+        "connectors": "Konektori",
+        "skills": "Veštine",
+        "triggers": "Okidači",
+        "models": "Modeli",
+        "secrets": "Tajne",
+        "apps": "Aplikacije",
+        "drives": "Drives",
+        "capture": "Capture",
+        "security": "Bezbednost",
+        "repo": "Repozitorijum"
       },
       "accessTitle": "Pristup",
       "accessDescription": "Ko može da otvori ovaj radni prostor i sa kojom ulogom.",
       "securityTitle": "Bezbednost",
       "githubTitle": "GitHub veze",
       "deleteKeepsLogin": "Vaša prijava ostaje: možete napraviti drugi radni prostor ili mu se pridružiti.",
-      "personalKeysTitle": "Vaši lični pristupni ključevi",
-      "personalKeysDescription": "API ključevi koji u ovom radnom prostoru deluju kao vi: za CLI, skriptu ili CI posao."
+      "personalKeysTitle": "Vaši ključevi za ovaj radni prostor",
+      "personalKeysDescription": "API ključevi koji deluju u vaše ime samo u ovom radnom prostoru: za skriptu ili CI posao.",
+      "keyScopeWorkspace": "Ovaj radni prostor",
+      "keyScopePersonal": "Svaki radni prostor",
+      "keyScopeWorkspaceHint": "Ključ deluje u vaše ime samo u ovom radnom prostoru.",
+      "personalKeysEmpty": "Нема личних кључева. kortix login прави један; кључеви за скрипту праве се у подешавањима радног простора › API кључеви.",
+      "securityDescription": "Pravila prijave, ko sme da otvori čije sesije i pravila za svaki API ključ.",
+      "rolesDescription": "Ugrađene i prilagođene uloge. Dodelite ih iz Članova.",
+      "workspaceId": "ID radnog prostora",
+      "workspaceIdDescription": "Za CLI, API i podršku.",
+      "leaveWorkspace": "Napusti radni prostor",
+      "leaveDescription": "Gubite pristup ovom radnom prostoru. Administrator vas može ponovo pozvati.",
+      "leaveTitle": "Napustiti radni prostor?",
+      "leaveDialog": "Gubite pristup prostoru {name}. Administrator vas može ponovo pozvati.",
+      "leftToast": "Napustili ste {name}",
+      "leaveFailed": "Nije moguće napustiti radni prostor",
+      "deletedToast": "Radni prostor je obrisan. Vlasnici ga mogu vratiti u roku od 14 dana."
     },
     "cli": {
       "noWorkspaceTitle": "Napravite radni prostor da biste prijavili CLI",
@@ -26657,6 +26692,10 @@
       "openChooser": "Napravi radni prostor ili mu se pridruži",
       "workspaceLabel": "Radni prostor",
       "noCaptureWorkspace": "Kortix Capture nije uključen ni u jednom vašem radnom prostoru. Vlasnik ili administrator može da ga uključi."
+    },
+    "menu": {
+      "invite": "Pozovi ljude u {name}",
+      "leave": "Napusti {name}"
     }
   }
 }
