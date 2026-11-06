@@ -39,6 +39,7 @@
  *     `enabledValueSchema` — not left to this warning-level exemption.
  */
 
+import { HUMAN_ONLY, toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { IMPORT_PATH_PATTERN } from './imports';
 import { AGENT_FILE_PATTERN, TOOL_FILE_PATTERN } from './layout';
 import {
@@ -189,6 +190,8 @@ function kortixPermissionsEnum(): readonly string[] {
     ...GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS,
     ...Object.keys(DEPRECATED_KORTIX_PERMISSION_ALIASES),
     ...RETIRED_KORTIX_PERMISSIONS,
+    // HUMAN_ONLY validates with a warning (it grants nothing), so it is accepted here too.
+    ...[...HUMAN_ONLY].flatMap((action) => [action, toWorkspaceAction(action)]),
     '*',
   ];
 }
@@ -196,7 +199,7 @@ function kortixPermissionsEnum(): readonly string[] {
 function kortixPermissionsGrantSetSchema(): JsonSchemaFragment {
   return {
     ...grantSetSchema({ type: 'string', enum: [...kortixPermissionsEnum()] }),
-    description: 'Kortix permissions: the project.* IAM actions (or their workspace.* names) this agent may exercise, or "all" / "none".',
+    description: 'Kortix permissions: the workspace.* IAM actions (or their legacy names) this agent may exercise, or "*" / "none". Minting credentials and moving money are reserved for people.',
   };
 }
 
