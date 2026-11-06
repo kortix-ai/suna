@@ -208,10 +208,10 @@ export interface NotificationPreferencesPatch {
 /** The record of a user who never saved one. Held equal to the server's defaults by a parity test. */
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences['kinds'] = {
   turn_done: { push: true, email: false },
-  turn_error: { push: true, email: true },
-  question: { push: true, email: true },
+  turn_error: { push: true, email: false },
+  question: { push: true, email: false },
   permission: { push: true, email: false },
-  shared: { push: true, email: true },
+  shared: { push: true, email: false },
   automation_failed: { push: true, email: true },
   automation_recovered: { push: true, email: false },
   capture_device_down: { push: true, email: true },
