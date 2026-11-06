@@ -23,7 +23,7 @@ const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const NAME_MAX = 64
 /** One call's limit. The API answers from one folder listing. */
 const CALL_TIMEOUT_MS = 15_000
-const FILES_OFF = 'Memory lives in Files, and Files is off in this project. Ask a project admin to turn Files on.'
+const FILES_OFF = 'Memory lives in Files, and Files is off in this workspace. Ask a workspace admin to turn Files on.'
 
 interface Entry {
   name: string
@@ -71,7 +71,7 @@ async function call(context: PlatformToolContext, method: 'GET' | 'PUT' | 'DELET
 function refused(action: string, title: string, answer: Answer, context: PlatformToolContext) {
   const code = typeof answer.body?.code === 'string' ? answer.body.code : ''
   const message = typeof answer.body?.error === 'string' && answer.body.error.trim() ? answer.body.error : `Kortix answered ${answer.status}.`
-  if (code === 'feature_disabled') return fail(TOOL, action, 'Memory is off in this project', { kind: 'failed', message: FILES_OFF }, context)
+  if (code === 'feature_disabled') return fail(TOOL, action, 'Memory is off in this workspace', { kind: 'failed', message: FILES_OFF }, context)
   if (code === 'drive_storage_unavailable') return fail(TOOL, action, title, { kind: 'failed', message: 'Files is not reachable right now. Try again in a minute.' }, context)
   if (code === 'secret_detected') return fail(TOOL, action, title, { kind: 'invalid', message: 'That looks like a password or a key. Never keep those in memory: save it as a secret in Kortix instead.' }, context)
   if (code === 'memory_not_found') return fail(TOOL, action, title, { kind: 'not_found', message: 'I have no memory with that name. `list` shows every name.' }, context)
