@@ -203,7 +203,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 ### Account deletion
 
 `DEL-1` `GET /account/deletion-status` → state.
-`DEL-2` `POST /account/request-deletion` → schedules; `POST /account/cancel-deletion` → cancels; `DELETE /account/delete-immediately` → purges. The mount and the scheduled worker run with billing on or off: a self-hosted deployment deletes accounts too. The requester's login is deleted only with their personal account (account id == user id); deleting any other account keeps the requester's login and the sessions of their other accounts. Since no account is created at sign-up, a new user's account is never a personal one: scheduling its deletion keeps the requester signed in, and `deletion-status` reads pending at once. A second request while one is pending → `400`. A request after a cancel → `200`, and `deletion-status` reads pending. Two concurrent requests → exactly one `200` and one `400`; an account never holds two pending requests.
+`DEL-2` `POST /account/request-deletion` → schedules the person's deletion 14 days out; `POST /account/cancel-deletion` → cancels. The mount and the scheduled worker run with billing on or off: a self-hosted deployment deletes accounts too. "Delete my account" deletes the person, so the request ends every sign-in: `deletion-status` with the old token → `401`; after signing in again it reads pending. A second request while one is pending → `200` with the same date. A request after a cancel → `200`, and `deletion-status` reads pending. Two concurrent requests → `200` (the other `200`, or `401` once the first ended the sign-in); one request is pending.
 
 ### Push notification device tokens (`/v1/notifications`, `supabaseAuth`)
 

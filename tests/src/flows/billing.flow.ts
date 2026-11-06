@@ -698,25 +698,26 @@ flow(
       const r = await ctx.client.as(ctx.P.ANON).get('/v1/account/deletion-status');
       r.status(401);
     });
-    await ctx.step('throwaway user schedules deletion (/account mount) → 200', async () => {
+    await ctx.step('throwaway user schedules deletion (/account mount) → 200; it ends their sign-ins → 401', async () => {
       const r = await asVictim.post('/v1/account/request-deletion', { reason: 'ke2e' });
       r.status(200);
-      // The account is not a personal one (its id is not the user id: no
-      // account is created at sign-up), so scheduling its deletion keeps the
-      // requester's sign-ins. Only a legacy personal account signs them out.
-      (await asVictim.get('/v1/account/deletion-status')).status(200).body().has('$.has_pending_deletion', true);
+      // "Delete my account" deletes the person: the request ends every
+      // sign-in, and the person signs in again to cancel it.
+      (await asVictim.get('/v1/account/deletion-status')).status(401);
       await signInAgain();
     });
-    await ctx.step(
-      'deletion-status reflects the pending request',
-      async () => {
-        const r = await asVictim.get('/v1/account/deletion-status');
-        r.status(200);
-      },
-    );
-    await ctx.step('requesting again while pending → 400 (already exists)', async () => {
+    let scheduledFor = '';
+    await ctx.step('after signing in again, deletion-status reflects the pending request', async () => {
+      const status = (await asVictim.get('/v1/account/deletion-status')).status(200);
+      status.body().has('$.has_pending_deletion', true);
+      scheduledFor = String(status.json<{ deletion_scheduled_for?: string }>().deletion_scheduled_for ?? '');
+    });
+    await ctx.step('requesting again while pending → 200 with the same date; the sign-in survives', async () => {
       const r = await asVictim.post('/v1/account/request-deletion', { reason: 'again' });
-      r.status([400, 409]);
+      r.status(200);
+      const again = r.json<{ deletion_scheduled_for: string | null }>().deletion_scheduled_for;
+      if (scheduledFor && again && Date.parse(again) !== Date.parse(scheduledFor)) throw new Error(`date moved: ${scheduledFor} → ${again}`);
+      (await asVictim.get('/v1/account/deletion-status')).status(200).body().has('$.has_pending_deletion', true);
     });
     await ctx.step('throwaway user cancels the deletion → 200', async () => {
       const r = await asVictim.post('/v1/account/cancel-deletion', {});
@@ -747,16 +748,17 @@ flow(
         throw new Error(`expected has_pending_deletion=false after cancel, got ${JSON.stringify(body)}`);
       }
     });
-    await ctx.step('two concurrent requests → exactly one 200, the other 400', async () => {
+    await ctx.step('two concurrent requests → each 200 (or 401 once the other ended the sign-in); one request is pending', async () => {
       const [a, b] = await Promise.all([
         asVictim.post('/v1/account/request-deletion', { reason: 'race-a' }),
         asVictim.post('/v1/account/request-deletion', { reason: 'race-b' }),
       ]);
       const statuses = [a.statusCode, b.statusCode].sort();
-      if (!statuses.includes(200) || !statuses.some(status => status === 400 || status === 401)) {
-        throw new Error(`expected one 200 and one 400/401, got ${JSON.stringify(statuses)}`);
+      if (!statuses.includes(200) || !statuses.every((status) => status === 200 || status === 401)) {
+        throw new Error(`expected 200 and 200/401, got ${JSON.stringify(statuses)}`);
       }
       await signInAgain();
+      (await asVictim.get('/v1/account/deletion-status')).status(200).body().has('$.has_pending_deletion', true);
       const cleanup = await asVictim.post('/v1/account/cancel-deletion', {});
       cleanup.status(200);
     });
