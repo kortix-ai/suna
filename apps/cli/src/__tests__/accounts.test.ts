@@ -254,6 +254,35 @@ describe('kortix projects use', () => {
   });
 });
 
+describe('kortix workspaces use <name>', () => {
+  const beta = {
+    project_id: 'proj_x', account_id: 'account_2', name: 'Beta', state: 'active',
+    repo_url: 'https://github.com/x/beta.git', default_branch: 'main', manifest_path: 'kortix.yaml', status: 'active',
+    last_opened_at: null, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
+  };
+  test('a name that is not an id picks the one workspace with that name', async () => {
+    mockApi((url) => {
+      if (url === 'https://api.test/v1/workspaces/beta') return new Response(JSON.stringify({ error: 'Workspace not found' }), { status: 404, headers: JSON_HEADERS });
+      if (url === 'https://api.test/v1/workspaces') return new Response(JSON.stringify([beta]), { status: 200, headers: JSON_HEADERS });
+      return undefined;
+    });
+    expect(await runProjects(['use', 'beta'])).toBe(0);
+    expect(defaultProject()).toEqual({ project_id: 'proj_x', account_id: 'account_2', name: 'Beta' });
+  });
+
+  test('a name shared by two workspaces is refused with both ids; nothing changes', async () => {
+    mockApi((url) => {
+      if (url === 'https://api.test/v1/workspaces/beta') return new Response(JSON.stringify({ error: 'Workspace not found' }), { status: 404, headers: JSON_HEADERS });
+      if (url === 'https://api.test/v1/workspaces') return new Response(JSON.stringify([beta, { ...beta, project_id: 'proj_y' }]), { status: 200, headers: JSON_HEADERS });
+      return undefined;
+    });
+    const before = loadConfig();
+    expect(await runProjects(['use', 'beta'])).toBe(1);
+    expect(stripAnsi(stderr)).toContain('proj_x, proj_y');
+    expect(loadConfig()).toEqual(before);
+  });
+});
+
 describe('kortix projects use (picker)', () => {
   test('rejects a bad /projects list and one bad row without touching state', async () => {
     mockApi((url) => url === 'https://api.test/v1/workspaces' || url === 'https://api.test/v1/workspaces?account_id=account_1'
@@ -463,7 +492,11 @@ describe('kortix workspaces ls', () => {
     const code = await runProjects(['ls', '--json']);
     expect(code).toBe(0);
     expect(requests[0]).toBe('https://api.test/v1/me');
+    // One unscoped read first (a current server lists every workspace); this
+    // mock answers like an older server (no `state`), so the CLI reads each
+    // account.
     expect([...requests.slice(1)].sort()).toEqual([
+      'https://api.test/v1/workspaces',
       'https://api.test/v1/workspaces?account_id=account_1',
       'https://api.test/v1/workspaces?account_id=account_2',
     ]);

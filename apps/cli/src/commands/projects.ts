@@ -1145,7 +1145,10 @@ async function projectsLsOlder(
   const client = clientFromAuth(auth, { accountId });
   let projects: ProjectSummary[];
   try {
-    projects = filterProjects(await client.get<ProjectSummary[]>('/workspaces'), query);
+    // GET /workspaces lists every workspace of the caller: keep the active
+    // account's, which is what this older command has always listed.
+    const every = await client.get<ProjectSummary[]>('/workspaces');
+    projects = filterProjects(accountId ? every.filter((p) => p.account_id === accountId) : every, query);
   } catch (err) {
     return surface(err);
   }
@@ -1197,18 +1200,19 @@ async function projectsLsAll(auth: Auth, json = false, query?: string, olderName
   const linked = loadLink()?.project_id;
   const def = defaultProject()?.project_id;
 
-  const sections: { account: AccountMembership; projects: ProjectSummary[] }[] = [];
-  for (const a of me.accounts) {
-    let projects: ProjectSummary[] = [];
-    try {
-      projects = await clientFromAuth(auth, { accountId: a.account_id }).get<ProjectSummary[]>(
-        '/workspaces',
-      );
-    } catch {
-      /* skip accounts we can't read; leave the section empty */
-    }
-    sections.push({ account: a, projects: filterProjects(projects, query) });
+  // One read on a server that lists every workspace of the caller (an older
+  // server: one read per account); each account section shows its own. An
+  // account whose read failed keeps an empty section, as before.
+  let rows: WorkspaceRow[] = [];
+  try {
+    rows = (await listWorkspaceRowsReport(auth, undefined, me)).rows;
+  } catch (err) {
+    return surface(err);
   }
+  const sections: { account: AccountMembership; projects: ProjectSummary[] }[] = me.accounts.map((a) => ({
+    account: a,
+    projects: filterProjects(rows.filter((r) => r.project.account_id === a.account_id).map((r) => r.project), query),
+  }));
 
   if (json) {
     emitJson(
@@ -1362,6 +1366,22 @@ function invalidDefaultProjectResponse(value: unknown): number {
   return 1;
 }
 
+/**
+ * The caller's one workspace named `name` (case-insensitive), null when none
+ * has it, or an exit code after printing why (several share it, or the list
+ * failed).
+ */
+async function workspaceNamed(auth: Auth, name: string): Promise<ProjectSummary | null | number> {
+  const report = await listWorkspaces(auth);
+  if (typeof report === 'number') return report;
+  const matches = report.rows.map((r) => r.project).filter((p) => p.name.toLowerCase() === name.toLowerCase());
+  if (matches.length <= 1) return matches[0] ?? null;
+  process.stderr.write(
+    `${status.err(`${matches.length} workspaces are named "${name}".`)} Pass one id: ${matches.map((p) => p.project_id).join(', ')}\n`,
+  );
+  return 1;
+}
+
 async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
   // --host names a logged-in host other than the active one: its credential
   // serves the request, and the default project binds on ITS host entry —
@@ -1380,11 +1400,17 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
 
   let target: ProjectSummary | null = null;
   if (arg) {
-    // An explicit id may live in any account — resolve it unscoped.
+    // An explicit id may live in any account — resolve it unscoped. A 404 on
+    // the id tries it as a name: the one workspace of the caller with that
+    // name (case-insensitive).
     try {
-      target = await clientFromAuth(auth).get<ProjectSummary>(`/workspaces/${arg}`);
+      target = await clientFromAuth(auth).get<ProjectSummary>(`/workspaces/${encodeURIComponent(arg)}`);
     } catch (err) {
-      return surface(err);
+      if (!(err instanceof ApiError && err.status === 404)) return surface(err);
+      const byName = await workspaceNamed(auth, arg);
+      if (typeof byName === 'number') return byName;
+      if (!byName) return surface(err);
+      target = byName;
     }
   } else {
     // Pick from every workspace on the target host, flat.
