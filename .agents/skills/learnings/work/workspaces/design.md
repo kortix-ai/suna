@@ -881,24 +881,34 @@ file asks the orchestrator):
    (the canonical form since #11853) can now manage members, roles, groups, policies and the
    MFA/SSO/session policy, and an inherited agent (My Kortix) can do all the person can,
    except `HUMAN_ONLY`. That is the "agent either can or cannot" model. An admin narrows an
-   agent by binding a role to its service account. Announce it in the release notes. Marko
-   confirms before merge; the alternative (default ceiling without administration writes)
-   is one constant.
+   agent by binding a role to its service account. **Decided: Marko confirmed 2026-11-06**
+   that agents with `"*"` get workspace administration, as built. The release note says it
+   (PR #11857, "Release note"). The alternative (default ceiling without administration
+   writes) stays one constant.
 2. **The split moves customer data** (633 moves on prod). Ships in `dry_run`; `apply` is a
    separate approved step; every run is reversible; the comp credits total is in the
    dry-run report before `apply`.
 3. **Comp credits are money.** K4's pro-rated plan credits for paid split-offs cost at most
    one partial period for the moved projects of the 91 paying legacy accounts; the exact
    total is a dry-run aggregate.
-4. **Delete becomes restorable for 14 days.** The repo deletion moves from the DELETE
-   request to the sweep. The DELETE description and the web copy change ("You can restore
-   it for 14 days").
+4. **Delete becomes restorable for 14 days.** **Decided: Marko confirmed 2026-11-06.** The
+   repo deletion moves from the DELETE request to the sweep. The DELETE description and the
+   web copy change ("You can restore it for 14 days"). The close revokes the workspace's
+   credentials only (keys bound to it, OAuth grants that named it, API and gateway keys,
+   SCIM tokens, service accounts); a member's personal key and unbound OAuth grant keep
+   working in their other workspaces (`revokeAccountCredentials(..., 'workspace')`,
+   flow WS-AUTH-14).
 5. **M8 load.** The `workspace_id` fill is a background job, not part of the deploy
    (§3.3 "M8 is a background job"): ~10 min after the worker takes the lease, ~4.2 GB of
    WAL at ~7 MB/s, row locks on 5,000 rows at a time. The deploy's migrate job only adds
    the columns and triggers.
 6. **Legacy `DELETE /v1/projects/:id` on a 1:1 workspace now closes the account** (K2).
    Old clients get the same 200 shape.
+7. **Open: an owner-confirmation deadline for held split accounts** (item 43, pending
+   Marko). A `held` account (paying, enterprise or ambiguous) waits for
+   `confirm-keeper` with no deadline. The proposal: a 14-day window, a reminder in the
+   notice and the owner email, then the worker applies the default keeper (the most
+   active project). Not built; the split runbook keeps held accounts for a person.
 
 ---
 

@@ -7,8 +7,8 @@
 --     Keeps split_pending true exactly while the account holds 2+ active
 --     project rows (review finding 27): archiving one project of a legacy
 --     2-project account clears the flag on the survivor, so the account comes
---     back under uq_projects_workspace_account. The same statement as
---     recomputeSplitPending (apps/api/src/projects/lib/project-transfer.ts),
+--     back under uq_projects_workspace_account. It replaced the app-level
+--     recomputeSplitPending of the transfer engine (removed on this branch),
 --     for NEW.account_id and, when it changed, OLD.account_id. Depth-guarded
 --     (pg_trigger_depth() > 1 returns): its own UPDATE never re-enters it.
 --   projects_workspaces_sync  AFTER INSERT OR UPDATE OR DELETE.
@@ -32,8 +32,10 @@
 -- (which it never reads).
 --
 -- ROLL BACK: no down migration (repo policy). A forward migration drops the
--- two triggers; the old app-level recomputeSplitPending calls still exist in
--- the transfer until the split stream removes them.
+-- two triggers. The app no longer recomputes split_pending itself, so a
+-- rollback that drops projects_split_pending_sync must ship with a release
+-- that restores that recompute, or split_pending stops following the account
+-- shape.
 set lock_timeout = '3s';
 set statement_timeout = '30s';
 

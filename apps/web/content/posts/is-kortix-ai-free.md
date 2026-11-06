@@ -12,7 +12,7 @@ Yes, Kortix is open source and free to self-host. The cloud version is metered b
 
 ## The software is free to keep
 
-Kortix is open source. Read it, fork it, audit it ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)). Self-hosting carries no fee to Kortix. `kortix self-host init` and `kortix self-host start` install a Docker Compose stack on a Linux server you control. Billing is off by default: no credits, no plan limits and no managed models ([self-hosting docs](https://kortix.com/docs/host)). You still pay the companies that supply the metal and the tokens. Sessions run on Platinum, the reference compute provider, and each project adds its own model key in the app. Those two bills exist on any host, including ours.
+Kortix is open source. Read it, fork it, audit it ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)). Self-hosting carries no fee to Kortix. `kortix self-host init` and `kortix self-host start` install a Docker Compose stack on a Linux server you control. Billing is off by default: no credits, no plan limits and no managed models ([self-hosting docs](https://kortix.com/docs/host)). You still pay the companies that supply the metal and the tokens. Sessions run on Platinum, the reference compute provider, and each workspace adds its own model key in the app. Those two bills exist on any host, including ours.
 
 ## What the Free plan includes
 
@@ -42,7 +42,7 @@ Two details matter when you forecast. The meter counts the size a sandbox reserv
 
 ## Self-hosting moves the bill to your hardware
 
-Self-hosting runs the open-source CompanyOS on a server you control, and it removes the credit balance entirely. The stack is frontend, API, LLM gateway, Supabase and Caddy, all in one Compose project. The daily updater pulls new images, migrates the database and rolls the services ([self-hosting docs](https://kortix.com/docs/host)). There are no managed models, so every project brings a provider key. Sessions still run on a cloud sandbox provider that you pay directly.
+Self-hosting runs the open-source CompanyOS on a server you control, and it removes the credit balance entirely. The stack is frontend, API, LLM gateway, Supabase and Caddy, all in one Compose project. The daily updater pulls new images, migrates the database and rolls the services ([self-hosting docs](https://kortix.com/docs/host)). There are no managed models, so every workspace brings a provider key. Sessions still run on a cloud sandbox provider that you pay directly.
 
 ```sh
 curl -fsSL https://kortix.com/install | bash
