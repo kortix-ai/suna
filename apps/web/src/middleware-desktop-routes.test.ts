@@ -17,18 +17,18 @@ const desktopNavRulesSource = readFileSync(
 );
 
 describe('desktop route allowlist', () => {
-  test('/new is reachable inside the desktop shell (web middleware half)', () => {
+  test('/workspaces (and /workspaces/new under it) is reachable inside the desktop shell (web middleware half)', () => {
     const list = source.slice(
       source.indexOf('const DESKTOP_ALLOWED_ROUTES'),
       source.indexOf('export async function middleware'),
     );
-    expect(list).toContain("'/new'");
+    expect(list).toContain("'/workspaces'");
   });
 
   // Final-review FIX 3: the web half above was pinned, but the Electron
-  // main-process half never was — that gap is exactly what let `/new` go
+  // main-process half never was — that gap is exactly what let `/workspaces/new` go
   // missing from `APP_PATH_PREFIXES` while `DESKTOP_ALLOWED_ROUTES` already
-  // had it. A full-frame navigation to `/new` (a deep link, an external
+  // had it. A full-frame navigation to `/workspaces/new` (a deep link, an external
   // open, `target=_blank`) fell through `isAppPath` and opened the create
   // page in the user's system browser instead of the desktop window. Both
   // halves of the pair must be asserted, in the SAME test file, or a future
@@ -41,6 +41,10 @@ describe('desktop route allowlist', () => {
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const shellList = desktopNavRulesSource.slice(start, end);
+    expect(shellList).toContain("'/workspaces'");
+    // Shipped builds and old links still open /projects/... and /new: they stay
+    // in the window, and next.config redirects them to /workspaces/....
+    expect(shellList).toContain("'/projects'");
     expect(shellList).toContain("'/new'");
     const webList = source.slice(
       source.indexOf('const DESKTOP_ALLOWED_ROUTES'),
@@ -55,12 +59,12 @@ describe('desktop route allowlist', () => {
     expect(source).toContain('NextResponse.redirect(new URL(PROJECT_LANDING_PATH');
   });
 
-  test('/new is NOT public — it requires authentication', () => {
+  test('/workspaces is NOT public — it requires authentication', () => {
     const publicList = source.slice(
       source.indexOf('const PUBLIC_ROUTES'),
       source.indexOf('const DESKTOP_ALLOWED_ROUTES'),
     );
-    expect(publicList).not.toContain("'/new'");
+    expect(publicList).not.toContain("'/workspaces");
   });
 });
 
@@ -78,7 +82,7 @@ describe('desktop site root', () => {
   test('a signed-out desktop `/` lands on the door, never the list or marketing', async () => {
     const response = await middleware(desktopRequest('/'));
     expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toBe('https://dev.kortix.com/projects/start');
+    expect(response.headers.get('location')).toBe('https://dev.kortix.com/workspaces/start');
   });
 
   test('desktop `/` passes the gate to the remembered-project redirect', () => {
@@ -91,6 +95,6 @@ describe('desktop site root', () => {
 
   test('other marketing paths still bounce to the door', async () => {
     const response = await middleware(desktopRequest('/pricing'));
-    expect(response.headers.get('location')).toBe('https://dev.kortix.com/projects/start');
+    expect(response.headers.get('location')).toBe('https://dev.kortix.com/workspaces/start');
   });
 });

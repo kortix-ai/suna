@@ -141,12 +141,11 @@ const PROTECTED_APP_PREFIXES = [
   '/game-of-life',
   '/invites',
   '/maintenance',
-  '/new',
   '/p',
   // The Kortix in Chrome side panel's new chat (features/chrome/panel).
   '/panel',
   '/presentations',
-  '/projects',
+  '/workspaces',
   '/rauch',
   '/settings',
   '/setup',
@@ -245,14 +244,18 @@ function supportsMarkdownNegotiation(pathname: string): boolean {
 // these route prefixes — plus /auth/* for sign-in — are allowed to render
 // inside the desktop window. Every other route (the marketing homepage, blog,
 // pricing, careers, contact, legal, help, docs, share, design-system, … which
-// all live at root-level slugs) is bounced to /projects. Docs and external
+// all live at root-level slugs) is bounced to /workspaces. Docs and external
 // links are opened in the user's real browser by the Tauri shell, never shown
 // in-app. Keep this an allowlist, not a blocklist — new marketing slugs must
 // stay blocked by default.
 const DESKTOP_ALLOWED_ROUTES = [
+  '/workspaces',
+  // The pre-2026-11-06 workspace URLs. next.config.ts redirects both to
+  // /workspaces before this runs; they stay listed so the equal list of the
+  // Electron shell (nav-rules.js) keeps an old link inside the window.
   '/projects',
   '/new',
-  // `/projects/[id]/settings*` rides the `/projects` prefix; the account-scoped
+  // `/workspaces/[id]/settings*` rides the `/workspaces` prefix; the account-scoped
   // `/settings/*` mount has no `[id]` segment, so without its own entry the
   // desktop shell bounces it to the landing door — including the post-sign-in
   // redirect to `/settings/billing`.
@@ -502,7 +505,7 @@ export async function middleware(request: NextRequest) {
   // visitors can still reach kortix.com, the blog, pricing, docs, etc.
   // So we bypass the redirect for every public route (which already includes
   // /, /auth, /maintenance, marketing pages, docs, …) plus the admin panel
-  // (so admins can disable the lockdown). Everything else — /projects,
+  // (so admins can disable the lockdown). Everything else — /workspaces,
   // /accounts, /invites and the other authed product routes — still gets the
   // maintenance takeover.
   const isPublicMaintenanceRoute =
@@ -562,7 +565,7 @@ export async function middleware(request: NextRequest) {
   // ── Desktop app: logged-in product surface only ─────────────────────────
   // The desktop shell (KortixDesktop UA) must never render marketing/docs/
   // public pages. Allow only product + auth routes; bounce everything else to
-  // /projects. Runs AFTER the Supabase-at-root handling (so OAuth callbacks
+  // /workspaces. Runs AFTER the Supabase-at-root handling (so OAuth callbacks
   // still work) and BEFORE the locale/marketing logic (irrelevant for desktop).
   // This is the authoritative gate — it catches initial loads, SSR, and
   // Next.js client/RSC navigations alike. The Tauri shell separately opens
@@ -640,7 +643,7 @@ export async function middleware(request: NextRequest) {
   // Self-host: when the landing/marketing site is disabled
   // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE — default ON for self-host), the WHOLE
   // marketing surface is deactivated: the homepage and every marketing route
-  // bounce straight to the app — authenticated users to /projects, everyone
+  // bounce straight to the app — authenticated users to /workspaces, everyone
   // else to /auth. Functional public routes (/docs, /legal,
   // /marketplace, /share, …) are unaffected. Read via process.env directly —
   // NEXT_PUBLIC_ vars are inlined at build time, so in Docker containers they'd
