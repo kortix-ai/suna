@@ -116,7 +116,7 @@ export interface GitTriggerSpec {
    * - `'fresh'` (default): every fire mints a brand-new session (new sandbox +
    *   new ephemeral branch) — the historical behavior.
    * - `'reuse'`: re-prompt the most recent session this trigger created
-   *   (resuming its sandbox + opencode root) so ONE long-lived session
+   *   (resuming its sandbox + runtime root) so ONE long-lived session
    *   accumulates context across fires. If no reusable session exists yet (or
    *   the last one is dead/failed), a fresh one is created and becomes the
    *   canonical session going forward. Primarily meant for recurring cron

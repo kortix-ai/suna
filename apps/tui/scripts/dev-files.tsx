@@ -90,7 +90,7 @@ if (INTERACTIVE) {
       .map((node) => `${node.type === 'directory' ? 'd' : 'f'} ${node.name}`)
       .join(', ')}`,
   );
-  // The screen hides dot entries by default (`.kortix`/`.opencode` exempt), so
+  // The screen hides dot entries by default (`.kortix` exempt), so
   // the walk below targets the rows that are actually on screen.
   const onScreenNodes = rootListing.filter(
     (node) => !node.name.startsWith('.') || ALWAYS_VISIBLE_DOTFILES.has(node.name),

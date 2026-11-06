@@ -2,7 +2,7 @@
 // there, what is shared, the last lines, work in flight, what is pending, the cost), speaks in it, changes its own
 // name, voice, look, style or mode, sets reminders and watches, captures the screen, camera or voice, and looks at
 // what is shared. Each tool is a thin client of the relay's HTTP contract (GET/POST {VOICE_RELAY_URL}/call), so the
-// same set serves pi and omp (pi/extension.ts) and any MCP client: OpenCode, Claude Code, Kortix agents (src/mcp.ts).
+// same set serves pi and omp (pi/extension.ts) and any MCP client, Kortix agents included (src/mcp.ts).
 // Two need no call (POST /speech, src/speech-api.ts): its voice as an audio file, and an audio file's words, so the agent
 // sends its voice to any API that takes audio and hears a voice message from any of them.
 import { readFile } from 'node:fs/promises'

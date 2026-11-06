@@ -1,5 +1,5 @@
 /**
- * A corrupt or legacy `opencode-model-store-v1` localStorage entry must never
+ * A corrupt or legacy `kortix-model-store-v1` localStorage entry must never
  * brick the app. Proven live on SampleCo 2026-08-26: a malformed store value
  * crashed every route with the full-screen "Something went wrong — a.user is
  * not iterable" card, because loadStore() returned JSON.parse(raw) unvalidated

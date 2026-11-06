@@ -85,8 +85,8 @@ type ConfigMode = 'follow-base';
  * commit and variant) nor of `release_id`.
  *
  * LANE D / daemon: render `reason` verbatim into the session notice
- * (`config-provider/notice.ts` in kortixd, composed into OpenCode `instructions` at
- * `lifecycle.ts:399-407`). It is written as a finished sentence for the agent
+ * (`config-provider/notice.ts` in kortixd; pi adds it to the system prompt in
+ * `harness/pi/runtime.ts`). It is written as a finished sentence for the agent
  * and the user; the daemon adds no wording of its own.
  */
 export interface ConfigReleaseAgentRepoint {
@@ -240,7 +240,7 @@ export async function storeConfigArchive(
   return outcome;
 }
 
-/** The `none` variant's compiled governance: a valid, empty OpenCode config. */
+/** The `none` variant's compiled governance: an empty config object, which kortixd accepts. */
 const EMPTY_GOVERNANCE = '{}';
 
 async function compileGovernance(

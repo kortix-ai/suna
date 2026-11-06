@@ -736,11 +736,11 @@ async function resolveSessionModel(params: {
   let providerSecretPools = body.provider_secret_pools as Record<string, string[]> | undefined;
 
   // Model: normalize + fail-fast at create. Validate against the same
-  // servability resolver the gateway uses and store the OPENCODE ref form
+  // servability resolver the gateway uses and store the runtime ref form
   // (`kortix/<wire>`). An unservable / retired / typo'd pin previously only
   // failed at prompt time (a dead turn); a bare managed id (`claude-opus-4-8`)
-  // silently dropped to the daemon's default because opencode addresses
-  // managed models as `kortix/<id>`.
+  // silently dropped to the daemon's default because OpenCode addressed
+  // managed models only as `kortix/<id>`.
   //
   // Runs BEFORE the billing hold so a bad model never costs a credit
   // reservation. Mirrors the channel-model gate (routes/channel-bindings.ts).
@@ -1202,7 +1202,7 @@ function buildSessionCreateMetadata(params: {
   // `metadata.custom_name`, NOT `metadata.name`: `name` is the auto-title slot
   // the first prompt fills, and it is the WEAKEST link in the display chain
   // (`custom_name ?? runtimeTitle ?? name`). Writing it there let the runtime's
-  // own auto-title (`runtimeTitle` from the OpenCode snapshot, and the client
+  // own auto-title (`runtimeTitle` from the runtime snapshot, and the client
   // mirror that copies it) displace the name the user chose, seconds after the
   // first prompt. `custom_name` is the single authoritative key every reader
   // (`serializeSession`, `getSessionDisplayTitle`, `patchKortixSessionTitleMirrors`)
@@ -1362,8 +1362,8 @@ async function insertSessionAndBindings(
       baseRef,
       sandboxProvider: providerName,
       sandboxId: sessionId,
-      // Do not set opencodeSessionId during wrapper-session creation.
-      // Runtime root discovery persists it only after OpenCode creates its root.
+      // Do not set runtimeSessionId during wrapper-session creation.
+      // Runtime root discovery persists it only after the runtime creates its root.
       agentName,
       status: 'provisioning',
       // Sessions are private to their creator by default; share via the
@@ -1575,7 +1575,7 @@ async function provisionCreatedSession(params: {
     // with gitAuth (folded into the env-build chain, not awaited inline).
     let fastBootHintTimeout: ReturnType<typeof setTimeout> | undefined;
     // The hint is what lets the daemon boot with ZERO proxied git requests
-    // (scaffold + delta) and spawn OpenCode before the checkout. Bounded by the 2 s race below; a miss
+    // (scaffold + delta) and start the runtime before the checkout. Bounded by the 2 s race below; a miss
     // just means the daemon's fetch fallback.
     const fastBootGitHintPromise = Promise.race([
       projectWithGitAuthPromise

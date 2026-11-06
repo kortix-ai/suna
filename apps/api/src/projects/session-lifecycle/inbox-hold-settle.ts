@@ -7,7 +7,7 @@
  * right after. Two things that marking cannot do are done here, after the hold
  * route has answered, because each needs the box:
  *
- *  1. A CLAIMED row's POST can land AFTER the abort. OpenCode's runner is idle
+ *  1. A CLAIMED row's POST can land AFTER the abort. The runtime is idle
  *     by then, so that prompt starts a fresh loop — the agent visibly restarts
  *     on a message the user queued BEFORE pressing Stop (measured, `queue-lab`
  *     `stop_hold`: abort at 48.367, next prompt persisted 48.397, new loop at
@@ -15,10 +15,10 @@
  *     if the box is mid-step afterwards, aborts it once more.
  *
  *  2. A forwarded prompt the loop never READ is still only text in the
- *     transcript. It is taken back out of OpenCode and becomes an ordinary HELD
+ *     transcript. It is taken back out of the runtime and becomes an ordinary HELD
  *     row — "Held — stopped", with Send now / Remove — instead of the
  *     previous "stop-paused" limbo whose release re-delivered the prompt while
- *     OpenCode still held the original, unanswered (the documented duplicate in
+ *     the runtime still held the original, unanswered (the documented duplicate in
  *     inbox-rows.ts). A forwarded prompt the loop DID read belongs to the turn
  *     the abort ended: it stays in the transcript as part of that interrupted
  *     turn (the runtime answers it with the next send) and its row closes as
@@ -46,7 +46,7 @@
  * not lift the hold either (see `INBOX_HOLD_MS`).
  *
  * "Delivers at most once more" is what step 3 below buys. Without it a held
- * forwarded row is released straight back onto the queue while OpenCode still
+ * forwarded row is released straight back onto the queue while the runtime still
  * holds the copy it was POSTed as, and the re-mint puts a SECOND user message
  * with the same text into the transcript.
  */
@@ -57,7 +57,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { abortRuntimeTurn } from './abort-runtime-turn';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
-import { resolveSessionOpencodeEndpoint, readSessionMessageTip, retractSessionMessage } from './runtime-client';
+import { resolveSessionRuntimeEndpoint, readSessionMessageTip, retractSessionMessage } from './runtime-client';
 import {
   type PlacementTipMessage,
   reachedPlacement,
@@ -76,11 +76,11 @@ const CLAIMED_SETTLE_MS = 3_000;
 const CLAIMED_POLL_MS = 100;
 /**
  * The rows this settle is about: one prompt of THIS session that has been
- * POSTed to OpenCode and is not finished.
+ * POSTed to the runtime and is not finished.
  *
  * ON THE WIRE is two `result.status` values, not one. `forwarded` is what
  * `markCommandForwarded` writes when the POST lands; `delivered` is what the
- * daemon's acceptance relay writes when OpenCode PERSISTS the message, which
+ * daemon's acceptance relay writes when the runtime PERSISTS the message, which
  * happens long before any step reads it — so a `delivered` row is just as
  * likely to be unreached by a Stop. Only recent ones: an old delivered row is
  * history.
@@ -89,7 +89,7 @@ const CLAIMED_POLL_MS = 100;
  * route runs `holdInboxPrompts(sessionId, true)` — which stamps every
  * forwarded row `{stop_paused: true, held: true}` — and THEN starts this
  * settle. Excluding held rows therefore excluded exactly the rows the Stop had
- * just paused: the ones this module exists to take back out of OpenCode. Their
+ * just paused: the ones this module exists to take back out of the runtime. Their
  * copy stayed in the transcript, the release re-POSTed the prompt under a
  * re-minted wire id, and the user saw the same prompt twice — once unanswered,
  * once answered (the "KNOWN COST" documented in `holdInboxPrompts`). The
@@ -157,7 +157,7 @@ export const liveHoldSettleDeps: HoldSettleDeps = {
     }));
   },
   async readTip(sessionId) {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+    const resolved = await resolveSessionRuntimeEndpoint(sessionId);
     return resolved ? readSessionMessageTip(resolved, { limit: TIP_LIMIT }) : null;
   },
   // This abort is part of the Stop the user pressed, and it does not pass the

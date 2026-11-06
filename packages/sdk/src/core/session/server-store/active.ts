@@ -9,13 +9,13 @@ import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../preview-o
 
 /**
  * Active-runtime resolution, framework-free. These are the read helpers the
- * isomorphic core (`createKortix`, the opencode client factory) resolves the
+ * isomorphic core (`createKortix`, the runtime client factory) resolves the
  * runtime through; the zustand read surface in `../server-store` layers on top
  * for React hosts.
  */
 
 /**
- * Resolve the active OpenCode proxy URL (routed through the backend).
+ * Resolve the active runtime proxy URL (routed through the backend).
  * Prefers the per-session runtime; falls back to the local-dev default sandbox.
  * Use in non-React contexts (API modules, etc.).
  */

@@ -73,7 +73,7 @@ const RUNTIME: { icon: Icon; title: string; description: string }[] = [
   },
   {
     icon: PlugsConnectedIcon,
-    title: 'OpenCode REST',
+    title: 'Runtime REST',
     description: 'One transport for every session, proxied through the compatibility layer.',
   },
 ];

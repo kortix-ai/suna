@@ -1,32 +1,28 @@
 /**
- * Close an orphaned OpenCode turn from the CONTROL PLANE.
+ * Close an orphaned turn from the CONTROL PLANE.
  *
- * A turn ends only when opencode emits `session.idle`/`session.error`. A killed
- * model call or a lost idle event emits neither, so the last assistant message
- * stays open on disk and every client streaming that root spins forever. The
- * daemon's OpenCode adapter (since deleted) knew how to clean this up —
- * `finalizeOrphanedTurn` — but it ran that
- * ONLY on its own boot. A box that never restarts keeps its husk forever, and
- * the reaper meanwhile deletes the turn record that was the last evidence
- * anything was ever running. This module is the same finalize, reachable from
- * the reaper pass.
+ * A turn ends only when the runtime reports its end. A killed model call or a
+ * lost end event reports nothing, so the last assistant message stays open
+ * and every client streaming that root spins forever. The daemon's OpenCode
+ * adapter (since deleted) cleaned this up ONLY on its own boot. A box that
+ * never restarts keeps its husk forever, and the reaper meanwhile deletes the
+ * turn record that was the last evidence anything was ever running. This
+ * module is the same finalize, reachable from the reaper pass.
  *
- * `/kortix/abort` cannot be used per-turn: the OpenCode adapter's `abort()`
- * resolved `readPinnedOpencodeSessionId()` and ignored
- * the session the caller asked about. It would abort the PINNED root, which is
- * a different root than a husk left by a secondary session. The abort here is
+ * `/kortix/abort` cannot be used per-turn: it interrupts the PINNED runtime
+ * session and ignores the session the caller asked about, which is a
+ * different root than a husk left by a secondary session. The abort here is
  * issued against the turn's own root (`POST /kortix/runtime/sessions/:id/abort`).
  *
  * THE ABORT IS ROOT-SCOPED, THE EVIDENCE IS MESSAGE-SCOPED. Every prompt of a
- * session runs on ONE OpenCode root (extractTurnIdentity reads it from the
+ * session runs on ONE runtime root (extractTurnIdentity reads it from the
  * request path), and `metadata.activeTurns` deliberately holds one record per
  * prompt, so a root can carry a husk AND a live turn at the same time. The
- * reaper's terminal observation is about ONE message: `opencodeDeliveryInFlight`
- * (opencode-turn-state.ts:188-193) answers false for a turn as soon as a newer
- * user message follows it. Aborting the root on that evidence would kill the
- * newer, live answer and stamp it "Interrupted". This module therefore aborts
- * only when the open assistant message is provably the answer to THIS record's
- * `messageId` (`info.parentID`), which is the same link the daemon uses.
+ * reaper's terminal observation is about ONE message, while a newer user
+ * message on the same root may already be running. Aborting the root on that
+ * evidence would kill the newer, live answer and stamp it "Interrupted". This
+ * module therefore aborts only when the open assistant message is provably the
+ * answer to THIS record's `messageId` (its `reply_to` in the session log).
  *
  * Never throws, and never fabricates: an unreadable transcript returns
  * 'unreadable' rather than terminal evidence, and the abort is only ever
@@ -37,8 +33,8 @@
  * Every read is tail-bounded (READ_MESSAGE_LIMIT) — this runs across the
  * provider ingress on a ~20s pass, not over localhost like the daemon's copy.
  *
- * WHY NOT `GET /session/status`? It exists in both 1.17.11 and 1.18.19 and it
- * is cheaper than a transcript read, but it answers a DIFFERENT question. Its
+ * WHY NOT `GET /session/status`? The box still serves it, and it is cheaper
+ * than a log read, but it answers a DIFFERENT question. Its
  * body is `{ [sessionID]: { type: 'idle' | 'busy' | 'retry' } }` — one verdict
  * per ROOT, with no message in it. This module is message-scoped by
  * construction (see the paragraph above): a root can hold a husk AND a live
@@ -63,7 +59,7 @@ export type HuskFinalizeOutcome = 'finalized' | 'not_husk' | 'unreadable' | 'unc
 export interface HuskFinalizeTarget {
   sandboxId: string;
   externalId: string;
-  opencodeSessionId: string;
+  runtimeSessionId: string;
   /**
    * The client-minted user message THIS turn record owns
    * (StoredSandboxTurn.messageId). Without it no open assistant message on the
@@ -80,39 +76,29 @@ export interface HuskFinalizeOptions {
 /** The daemon's control port. */
 const DAEMON_PORT = 8000;
 
-/** Matches the daemon's own transcript read (opencode-turn-state.ts:76). */
+/** Bound on one session-log read across the provider ingress. */
 const READ_TIMEOUT_MS = 5_000;
 
 /**
  * How many TRAILING messages each read asks for.
  *
- * The transcript route returns every message together with its full `parts`
- * array — all tool output included — and `sandboxRuntimeRequestHeaders` forces
- * `Accept-Encoding: identity` (sandbox-fetch.ts:6-10), so an unbounded read
- * drags the entire conversation uncompressed across the provider ingress under
+ * The log route returns every message together with its blocks — all tool
+ * output included — and `sandboxRuntimeRequestHeaders` forces
+ * `Accept-Encoding: identity` (sandbox-fetch.ts), so an unbounded read drags
+ * the entire conversation uncompressed across the provider ingress under
  * READ_TIMEOUT_MS, up to three times per husk, on every ~20s reaper pass. That
  * fails preferentially on long sessions — the exact population this module
  * exists for — and box-reaper.ts clears the record regardless, so the husk is
- * never closed and never retried. The daemon's own inspectRoot (main.ts:1612)
- * can afford the unbounded read: it runs over localhost inside the box, once
- * per boot.
+ * never closed and never retried.
  *
  * Four is the whole need: the target turn's assistant message, its user parent,
  * and one newer turn (user + assistant) that may land between the abort and the
  * post-condition read. Anything older than that window cannot be the root's
- * last message, so it can never be an abortable husk. Same `limit` param the
- * sibling readers send (session-transcript.ts:130).
+ * last message, so it can never be an abortable husk.
  *
- * `limit` RETURNS THE TRAILING MESSAGES — verified, not assumed. `MessageV2.page`
- * in the pinned binary reads
- * `orderBy(desc(time_created), desc(id)).limit(limit + 1)`, slices to `limit`,
- * then `.reverse()`s, and its `before` cursor filters
- * `time_created < cursor OR (time_created = cursor AND id < cursor.id)` — i.e.
- * it pages BACKWARDS into history. So the window is the NEWEST `limit`
- * messages, handed back oldest-first. Checked against the 1.18.18 binary at
- * ~/.opencode/bin/opencode on 2026-08-20; the same code shape is present in
- * 1.17.11's generated SDK surface, whose `/session/{id}/message` query is the
- * identical `{directory?, limit?}`.
+ * `limit` RETURNS THE TRAILING MESSAGES: with no `after_seq`, the daemon's
+ * `readLog` (kortixd `harness/pi/turns.ts`) answers the newest `limit`
+ * messages, oldest first.
  *
  * The window is additionally a size bound only — `inspectRoot` reads positions
  * out of whatever list comes back, so a server that ignored `limit` would
@@ -120,12 +106,12 @@ const READ_TIMEOUT_MS = 5_000;
  */
 const READ_MESSAGE_LIMIT = 4;
 
-/** Matches the daemon's `abortOpencodeTurn` (main.ts:1695-1707). */
+/** Bound on the abort call across the provider ingress. */
 const ABORT_TIMEOUT_MS = 10_000;
 
 /**
- * The daemon's `ORPHAN_SETTLE_MS` (main.ts:1608), for the same reason: an open
- * assistant message reads identically whether nobody is writing it or it is
+ * The settle window the OpenCode daemon's boot-time finalize used, for the same
+ * reason: an open assistant message reads identically whether nobody is writing it or it is
  * about to complete. Waiting separates the two — nothing writes an orphan, so
  * it is still open a moment later, while a live turn has finished. Aborting
  * without this window ends healthy answers and labels them "Interrupted".
@@ -133,9 +119,9 @@ const ABORT_TIMEOUT_MS = 10_000;
 const HUSK_SETTLE_MS = 2_000;
 
 /**
- * Reach the box the same way `abortLiveTurnBeforeStop` (stop-box.ts:72-111)
- * does. `sandboxOpencodeEndpoint` is NOT reused: it resolves a preview user
- * context, which returns null without an actor user (shared/preview-ownership.ts:284),
+ * Reach the box the same way `abortLiveTurnBeforeStop` (stop-box.ts) does.
+ * `sandboxRuntimeEndpoint` is NOT reused: it resolves a preview user context,
+ * which returns null without an actor user (`resolvePreviewUserContext`),
  * so the signed header is omitted and the daemon's auth gate 401s every
  * non-`/kortix/*` path. The reaper has no actor user.
  */
@@ -261,7 +247,7 @@ export async function finalizeHuskTurn(
   target: HuskFinalizeTarget,
   options?: HuskFinalizeOptions,
 ): Promise<HuskFinalizeOutcome> {
-  const { sandboxId, externalId, opencodeSessionId, messageId } = target;
+  const { sandboxId, externalId, runtimeSessionId, messageId } = target;
   // No message identity, no attribution. A `/command` or `/summarize` turn and
   // any pre-messageId record land here; aborting the root for them would be a
   // guess against a live turn, so they close the same way they did before this
@@ -276,7 +262,7 @@ export async function finalizeHuskTurn(
   await new Promise((resolve) => setTimeout(resolve, options?.settleMs ?? HUSK_SETTLE_MS));
 
   const second = await inspectRoot(endpoint, messageId);
-  // Never abort on the strength of the first read alone (main.ts:1667-1673).
+  // Never abort on the strength of the first read alone.
   if (!second.known) return 'unreadable';
   if (!isAbortableHusk(second)) return 'not_husk'; // it finished, or a newer turn owns the root
   if (first.lastMessageId && second.lastMessageId !== first.lastMessageId) {
@@ -284,7 +270,7 @@ export async function finalizeHuskTurn(
   }
 
   try {
-    const res = await fetch(`${endpoint.url}${runtimeVerbPaths.abort(opencodeSessionId)}`, {
+    const res = await fetch(`${endpoint.url}${runtimeVerbPaths.abort(runtimeSessionId)}`, {
       method: 'POST',
       headers: endpoint.headers,
       signal: AbortSignal.timeout(ABORT_TIMEOUT_MS),
@@ -300,22 +286,20 @@ export async function finalizeHuskTurn(
   }
 
   // POST-CONDITION. The abort's own status is not the authority — the read is.
-  // OpenCode's abort stamps `info.error` (AbortError/MessageAbortedError)
-  // without `time.completed`; the predicate above reads that as closed because
-  // the error carries no `data.isRetryable === true`.
+  // `inspectRoot` reads any status but `streaming` as closed.
   //
   // 'finalized' is a claim about ONE message, so the target must be SEEN closed.
   // A target that vanished from the window is not proof: a newer turn can push
   // it out, and a `session.revert` commit can truncate the root away entirely.
   // Both would otherwise be reported as a closure and the caller
-  // (box-reaper.ts:227) deletes the record either way, so a wrong 'finalized'
+  // (box-reaper.ts) deletes the record either way, so a wrong 'finalized'
   // is never retried and the husk stays open forever — the bug this module
   // exists to fix.
   const after = await inspectRoot(endpoint, messageId);
   if (!after.known || !after.targetFound || after.targetOpen) return 'unconfirmed';
   console.info('[husk-finalizer] finalized orphaned turn', {
     sandboxId,
-    opencodeSessionId,
+    runtimeSessionId,
     messageId,
   });
   return 'finalized';

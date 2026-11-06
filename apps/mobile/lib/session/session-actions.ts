@@ -116,9 +116,9 @@ export function changedFilesLabel(n: number): string {
 
 /**
  * The file's patch in the shape `PatchDiffView` parses: it splits on
- * `diff --git a/… b/…` headers. A patch without one (OpenCode builds some
- * with the `diff` library: `Index:` / `===` / `---` / `+++`) gets it, so the
- * hunks are not dropped.
+ * `diff --git a/… b/…` headers. A patch without one (an old OpenCode
+ * transcript holds some built with the `diff` library: `Index:` / `===` /
+ * `---` / `+++`) gets it, so the hunks are not dropped.
  */
 export function patchForFile(file: Pick<ChangedFile, 'path' | 'patch'>): string {
   const patch = file.patch;

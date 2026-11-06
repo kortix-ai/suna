@@ -5,7 +5,7 @@ import { useMemo } from 'react';
 
 /**
  * In the project-files view, "the server" is always the backend API — there
- * is no per-sandbox OpenCode instance to health-check. Treat as healthy.
+ * is no per-sandbox runtime to health-check. Treat as healthy.
  */
 export function useServerHealth(_options?: { enabled?: boolean }) {
   return useMemo(

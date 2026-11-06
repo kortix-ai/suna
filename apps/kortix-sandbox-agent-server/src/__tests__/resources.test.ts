@@ -31,7 +31,7 @@ SwapTotal:             0 kB
 SwapFree:              0 kB
 `
 
-const STATUS = `Name:\topencode.exe
+const STATUS = `Name:\tclaude
 State:\tS (sleeping)
 Pid:\t2423
 VmRSS:\t 2867200 kB
@@ -150,14 +150,14 @@ describe('readResourceSnapshot', () => {
   test('top process sampling is bounded and excludes command lines', async () => {
     const root = await mkdtemp(join(tmpdir(), 'kortix-proc-'))
     try {
-      for (const [pid, name, rss] of [[101, 'bun', 2048000], [102, 'private-project', 1024000], [103, 'opencode', 512000]] as const) {
+      for (const [pid, name, rss] of [[101, 'bun', 2048000], [102, 'private-project', 1024000], [103, 'claude', 512000]] as const) {
         await mkdir(join(root, String(pid)))
         await writeFile(join(root, String(pid), 'status'), `Name:\t${name}\nVmRSS:\t${rss} kB\n`)
       }
-      expect(await readTopMemoryProcesses(root, ['opencode'])).toEqual([
+      expect(await readTopMemoryProcesses(root, ['claude'])).toEqual([
         { pid: 101, name: 'bun', rssMb: 2000 },
         { pid: 102, name: 'other', rssMb: 1000 },
-        { pid: 103, name: 'opencode', rssMb: 500 },
+        { pid: 103, name: 'claude', rssMb: 500 },
       ])
       // A harness binary is named only when the harness declares it.
       expect((await readTopMemoryProcesses(root)).map((p) => p.name)).toEqual(['bun', 'other', 'other'])

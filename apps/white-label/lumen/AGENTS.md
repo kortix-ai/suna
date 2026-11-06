@@ -19,7 +19,6 @@ has the authority split, the id mapping and the credential flow.
 
 Do not add:
 
-- `@opencode-ai/sdk` imports.
 - Provider REST paths.
 - Runtime proxy URL construction.
 - Browser calls to `session.previewUrl()` or `session.proxyUrl()`.

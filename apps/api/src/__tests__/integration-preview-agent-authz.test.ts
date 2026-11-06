@@ -12,7 +12,7 @@
  * Only the sandbox/transport collaborators are stubbed: there is no box here.
  * The session and its `session_sandboxes` row ARE real: since 344717c09f the
  * prompt path writes the durable turn-lifecycle record to that row before the
- * first byte reaches OpenCode, and refuses the prompt (503
+ * first byte reaches the runtime, and refuses the prompt (503
  * `sandbox_lifecycle_unavailable`) when no live row exists.
  */
 import { afterAll, beforeAll, beforeEach, expect, mock, test } from 'bun:test';

@@ -143,8 +143,8 @@ ensure_dev_tunnel() {
     echo "[dev] Tunnel skipped — KORTIX_URL=$KORTIX_URL"
     if [[ "$default_provider" == "platinum" || "$default_provider" == "daytona" ]]; then
       echo "[dev] ⚠️  Default sandbox provider ($default_provider) is a cloud provider but the tunnel is off —"
-      echo "[dev]     sessions will fail with 'OpenCode runtime is not ready' because the"
-      echo "[dev]     sandbox cannot reach $api_origin. Unset KORTIX_DEV_TUNNEL to enable it."
+      echo "[dev]     sessions will fail to start ('KORTIX_URL points at a loopback address') because"
+      echo "[dev]     the sandbox cannot reach $api_origin. Unset KORTIX_DEV_TUNNEL to enable it."
     fi
     return 0
   fi

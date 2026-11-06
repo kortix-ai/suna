@@ -132,7 +132,7 @@ export function chargeSearch(provider: 'tavily' | 'serper' | 'firecrawl' | 'tavi
   charge('search', routed ? ROUTER[provider]! : price(provider).call ?? 0, provider.includes('-') ? '1 page' : '1 search', provider)
 }
 
-/** The agent's reply, as its session reports it (kortixd/pi and OpenCode assistant messages: cost in USD, tokens). */
+/** The agent's reply, as its session reports it (a kortixd assistant message: cost in USD, tokens). */
 export function chargeAgent(info: { cost?: number; modelID?: string; providerID?: string; tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } } }) {
   const t = info.tokens
   if (!t && !info.cost) return

@@ -9,7 +9,7 @@ import { db } from '../shared/db';
 //   platform default.
 // Stored `model` values are gateway wire models (bare managed id like 'glm-5.3-flash',
 // a BYOK 'provider/model', or 'codex/<id>') — never the synthetic `auto` and
-// never the opencode-only `kortix/` prefix.
+// never the runtime's `kortix/` provider prefix.
 //
 // AGENT-SCOPE ROWS ARE PROJECT-SCOPED (see the `project_id` doc comment on
 // `accountModelPreferences` in packages/db/src/schema/kortix.ts for the full

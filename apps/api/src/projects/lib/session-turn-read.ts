@@ -94,7 +94,7 @@ async function readRecentTurnFailures(sessionId: string): Promise<SessionTurnFai
 
 function projectLiveTurns(
   authority: ReturnType<typeof storedSandboxTurns>,
-  ledger: ReadonlyMap<string, { messageId: string | null; opencodeSessionId: string | null; startedAt: Date; acceptedAt: Date | null }>,
+  ledger: ReadonlyMap<string, { messageId: string | null; runtimeSessionId: string | null; startedAt: Date; acceptedAt: Date | null }>,
 ): SessionTurnState['turns'] {
   const live = authority
     .map((turn) => {
@@ -104,7 +104,7 @@ function projectLiveTurns(
       // record, which carries none.
       const startedAt =
         turn.startedAtMs !== null ? new Date(turn.startedAtMs) : (row?.startedAt ?? null);
-      const runtimeSessionId = turn.runtimeSessionId || row?.opencodeSessionId || null;
+      const runtimeSessionId = turn.runtimeSessionId || row?.runtimeSessionId || null;
       return {
         startedAtMs: startedAt ? startedAt.getTime() : null,
         turn: {
@@ -112,7 +112,7 @@ function projectLiveTurns(
           // State comes from the authority: `acceptSandboxTurn` promotes the
           // authority entry in statement one and UPSERTs the ledger in
           // statement two, so a swallowed second write leaves the row saying
-          // `delivering` for a turn OpenCode has accepted.
+          // `delivering` for a turn the runtime has accepted.
           state: turn.state,
           message_id: turn.messageId ?? row?.messageId ?? null,
           runtime_session_id: runtimeSessionId,
@@ -145,7 +145,7 @@ export async function readSessionTurnStates(sessionIds: string[]): Promise<Map<s
   const tokens = authorities.flatMap(({ turns }) => turns.map(turn => turn.token));
   const rows = tokens.length === 0 ? [] : await db.select({
     turnToken: sessionTurns.turnToken, sessionId: sessionTurns.sessionId,
-    messageId: sessionTurns.messageId, opencodeSessionId: sessionTurns.runtimeSessionId,
+    messageId: sessionTurns.messageId, runtimeSessionId: sessionTurns.runtimeSessionId,
     startedAt: sessionTurns.startedAt, acceptedAt: sessionTurns.acceptedAt,
   }).from(sessionTurns).where(and(inArray(sessionTurns.sessionId, sessionIds), inArray(sessionTurns.turnToken, tokens)));
   const ended = await db.selectDistinctOn([sessionTurns.sessionId], {
@@ -211,7 +211,7 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
     string,
     {
       messageId: string | null;
-      opencodeSessionId: string | null;
+      runtimeSessionId: string | null;
       startedAt: Date;
       acceptedAt: Date | null;
     }
@@ -221,7 +221,7 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
       .select({
         turnToken: sessionTurns.turnToken,
         messageId: sessionTurns.messageId,
-        opencodeSessionId: sessionTurns.runtimeSessionId,
+        runtimeSessionId: sessionTurns.runtimeSessionId,
         startedAt: sessionTurns.startedAt,
         acceptedAt: sessionTurns.acceptedAt,
       })

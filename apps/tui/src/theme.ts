@@ -115,6 +115,6 @@ export const glyph = {
   collapsed: '▸',
 } as const;
 
-/** Braille spinner frames, 80 ms apart. Same set opencode and the CLI use. */
+/** Braille spinner frames, 80 ms apart. Same set the CLI uses. */
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
 export const SPINNER_INTERVAL_MS = 80;

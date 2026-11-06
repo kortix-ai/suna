@@ -8,7 +8,7 @@
  *
  * It REUSES the legacy screen's connect/streaming/tab-store/sandbox engine 1:1:
  * every hook, ref, effect and handler that drives session creation, the /start
- * connect loop, and OpenCode pinning is copied verbatim from
+ * connect loop, and runtime session pinning is copied verbatim from
  * ProjectScreenLegacy (roughly lines 904–1780). Only the presentation (the old
  * three-pane drawer JSX) is replaced.
  *

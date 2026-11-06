@@ -123,8 +123,7 @@ The web and native renderers map each `name` to a component. An unknown componen
 | Web markdown | `packages/ui/src/markdown/code/markdown-code.tsx`: new branch before `isMermaidCode` (L50) |
 | Mobile markdown | `apps/mobile/components/kortix/selectable-markdown.tsx`: `FencedCode` (L183) |
 | Project flag | `apps/api/src/feature-flags/registry.ts`, next to `pi_harness` (L311), plus the other 5 places its header lists |
-| Prompt, OpenCode | File added to OpenCode `instructions`, the same pattern as `secret-capabilities` (`harness/open-code/lifecycle.ts`) |
-| Prompt, pi | Section in `systemPrompt()` (`harness/pi/runtime.ts`) |
+| Prompt | The `kortix-genui` managed system skill (`packages/starter/templates/managed/skills/kortix-genui/SKILL.md`), listed in every session. It replaced the prompt section and the OpenCode instruction file on 2026-10-13 |
 | Web analytics | `apps/web/src/lib/track.ts` closed event set (PostHog, no PII) |
 
 ## 6. Component catalog (19 components: v1's 17, then Steps and Checklist)
@@ -210,8 +209,8 @@ The Phase 0 evaluation set includes negative cases, where the correct answer is 
 - [ ] Not installing `zod` or `@openuidev/lang-core` does not break `@kortix/sdk` or `@kortix/sdk/react` (package test).
 
 **R-FLAG-1. Toggle**
-- Given project flag `genui` is off, when a session starts, then the system prompt is byte-for-byte identical to the prompt on `dev` without the feature (asserted by a snapshot test on both harnesses).
-- Given the flag is on, when the session starts on OpenCode or pi, then the instructions are present (asserted on both harnesses).
+- Given project flag `genui` is off, when a session starts, then the system prompt is byte-for-byte identical to the prompt on `dev` without the feature (asserted by a snapshot test).
+- Given the flag is on, when the session starts, then the instructions are present.
 - Given the flag changes, when the next new session starts (or a session is rebuilt from scratch), then the new value applies. An in-place restart keeps the sandbox env, so running and restarted sessions keep their prompt until a new session starts.
 - Given a user turned the personal override off, when a reply contains a block, then that user sees `toMarkdown` output. Other users still see UI.
 - Given the server kill switch is on, then new sessions get no instructions, and clients render blocks as `toMarkdown`.

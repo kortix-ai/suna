@@ -136,8 +136,8 @@ const CASES: WCase[] = [
     path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/model`,
     body: { model: 'openai/gpt-5' },
     tier: 'member',
-    // A live model change restarts opencode, so the scoped token must hold the
-    // same destructive capability as the stop route.
+    // A live model change reconfigures the running runtime, so the scoped token
+    // must hold the same capability as the stop route.
     denyGrant: [A.PROJECT_SESSION_START], allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
   },
   {

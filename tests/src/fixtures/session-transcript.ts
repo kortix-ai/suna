@@ -84,7 +84,7 @@ export async function seedSessionTranscript(
     /**
      * The saved transcript to write, in place of the default prompt and reply.
      * A message is stored under its own `info.sessionID` when it names one, so
-     * a sub-agent's messages land in their own OpenCode session, as a capture
+     * a sub-agent's messages land in their own runtime session, as a capture
      * stores them. `defaults` is the default prompt and reply.
      */
     messages?: (root: string, defaults: SavedMessage[]) => SavedMessage[];

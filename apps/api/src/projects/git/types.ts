@@ -31,20 +31,14 @@ export interface ProjectConfigSummary {
    *  (it never parses the manifest itself). See `../lib/manifest-health`. */
   manifest_health: ManifestHealth;
   env: { required: string[]; optional: string[] };
-  /**
-   * The text of the project's `opencode.jsonc`: OpenCode's own config file.
-   * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
-   */
-  open_code_raw: string | null;
   /** The project's default agent. */
   default_agent: string | null;
   /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml,
    *  `true` = on, anything else off). Set by GET /detail;
    *  `my_kortix` is the `mykortix` agent. */
   builtin_agents?: { my_kortix: boolean };
-  /** @deprecated The pre-W4 name of `default_agent`. Same value. */
-  open_code_default_agent: string | null;
-  agent_discovery: 'opencode' | 'declarative';
+  /** `kortix.yaml` declares the project's agents. The only value since kortix.yaml v3. */
+  agent_discovery: 'declarative';
   agents: Array<{
     name: string;
     path: string;
@@ -55,7 +49,7 @@ export interface ProjectConfigSummary {
     /** The agent's `model:` frontmatter (`provider/model`), null when it
      *  follows the project default. */
     model?: string | null;
-    source: 'opencode' | 'kortix.yaml';
+    source: 'kortix.yaml';
     /** True for a platform-owned agent the API injects (My Kortix), not one
      *  declared in `kortix.yaml`. Hosts render it read-only. Its `path` is
      *  empty: a built-in agent has no file in the project. */

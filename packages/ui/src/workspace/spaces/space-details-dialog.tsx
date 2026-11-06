@@ -123,7 +123,7 @@ function AboutPane({ space, onEdit, onArchive }: { space: ProjectSpace; onEdit: 
   });
   // A channel with an agent list starts a new thread on its first agent.
   const channelDefault = space.agents?.[0] ?? null;
-  const defaultAgent = channelDefault ?? detail.data?.config.default_agent ?? detail.data?.config.open_code_default_agent ?? null;
+  const defaultAgent = channelDefault ?? detail.data?.config.default_agent ?? null;
   const created = new Date(space.created_at).toLocaleDateString(locale, { dateStyle: 'medium' });
   // Its creator or a project manager; an older API sends no `can_edit`.
   const editable = space.can_edit !== false;

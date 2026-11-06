@@ -36,7 +36,7 @@ export type SlackStopOutcome =
 /**
  * End the run behind a live plan message.
  *
- * Closing the message is not ending the run. OpenCode can hold its assistant
+ * Closing the message is not ending the run. The runtime can hold its assistant
  * message open, and while it does every later prompt in the thread is accepted
  * and never runs — the failure Teams hit on dev 2026-09-19, where two of the
  * user's messages vanished over two days. Slack has the same shape and, until
@@ -44,7 +44,7 @@ export type SlackStopOutcome =
  *
  * The ordering is load-bearing, twice, and mirrors `teams/stop.ts`:
  *
- *  1. CLAIM the finalize first. The abort makes OpenCode end the turn, which
+ *  1. CLAIM the finalize first. The abort makes the runtime end the turn, which
  *     relays back as `relayTurnEnd(status: 'error')` and claims the same row —
  *     without the claim, a deliberate stop is repainted "Run failed" by the
  *     failure it caused.

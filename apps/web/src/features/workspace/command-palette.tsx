@@ -1393,7 +1393,7 @@ export function CommandPalette() {
       { providerID: string; providerName: string; models: typeof visibleModels }
     >();
     for (const m of visibleModels) {
-      // Under the gateway every model is registered as opencode provider
+      // Under the gateway every model is registered under the provider
       // `kortix`, so `m.providerName` is always "Kortix" — even for a BYOK
       // Anthropic/Bedrock model. Group/label by the resolved REAL upstream
       // provider instead. Safe to call unconditionally: for a native
@@ -2377,7 +2377,7 @@ export function CommandPalette() {
   const handleSelectModel = useCallback(
     (providerID: string, modelID: string) => {
       if (!currentAgent) return;
-      // The SAME slot the composer reads/writes (use-opencode-local.ts):
+      // The SAME slot the composer reads/writes (use-runtime-local.ts):
       // scoped by provider mode + agent. The bare-agent-name slot is the
       // legacy shared fallback — writing there lets a pick made in gateway
       // mode resurface as a candidate after the project flips to native.

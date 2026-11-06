@@ -87,16 +87,16 @@ async function main() {
       const expected = await deps.expectedRunningAssets?.();
       const c = classifyDaemonHealth(await deps.fetchHealth(), expected ?? undefined);
       const needsRepair = c.klass === 'legacy' || c.klass === 'stale';
-      const status = needsRepair ? await deps.fetchOpencodeStatus() : null;
+      const turnInFlight = needsRepair ? await deps.fetchTurnInFlight() : null;
       const manifestBuild = needsRepair ? await deps.manifestBuild() : null;
       const retry = needsRepair ? describeLegacyBootstrapRetry(row.metadata, manifestBuild, Date.now()) : null;
       console.log(
         `[sweep] ${label} → ${c.klass}` +
           (c.detail.length > 0 ? ` [${c.detail.join(' | ')}]` : '') +
-          ` build=${c.runtimeBuild ?? '-'} opencode=${c.opencode ?? '-'}` +
+          ` build=${c.runtimeBuild ?? '-'} runtime=${c.runtimeState ?? '-'}` +
           (c.klass === 'blocked' ? ' — NEVER repaired automatically, needs an operator' : '') +
           (needsRepair
-            ? ` idle=${status ? Object.keys(status).length === 0 : 'unknown'} attempts=${retry?.attempts ?? 0} retry_status=${retry?.status ?? '-'} next_retry_at=${retry?.nextRetryAt ?? '-'}${retry?.lastError ? ` last_error="${retry.lastError}"` : ''}`
+            ? ` idle=${turnInFlight === null ? 'unknown' : !turnInFlight} attempts=${retry?.attempts ?? 0} retry_status=${retry?.status ?? '-'} next_retry_at=${retry?.nextRetryAt ?? '-'}${retry?.lastError ? ` last_error="${retry.lastError}"` : ''}`
             : ''),
       );
       continue;

@@ -2,8 +2,8 @@
  * The info panel: the open session at a glance, docked left or right.
  *
  * Title, state, context use, model, agent, the session itself and its
- * forwarded ports — the column opencode and the web's session panel keep
- * beside the chat. It is a module (`layout/ui-prefs.ts`, `/info`, `Alt+I`):
+ * forwarded ports — the column the web's session panel keeps beside the
+ * chat. It is a module (`layout/ui-prefs.ts`, `/info`, `Alt+I`):
  * off until you turn it on.
  *
  * `session-view.tsx` renders it, because it reads the session's one

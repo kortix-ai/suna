@@ -2,8 +2,8 @@
  * Session runtime health — `GET /kortix/health` on the session's runtime.
  *
  * The host asks a session whether its runtime is ready; it never reasons about
- * "the sandbox" directly. This is the liveness probe used to gate "runtime
- * active" vs "OpenCode ready". The runtime-ready parsing rule lives here so
+ * "the sandbox" directly. This is the liveness probe used to gate "sandbox
+ * active" vs "runtime ready". The runtime-ready parsing rule lives here so
  * every consumer interprets a payload identically. It never throws on a non-ok
  * HTTP status — it surfaces `status`/`ok` so the caller applies its own failure
  * thresholds.
@@ -27,7 +27,7 @@ export type SessionHealthResponse = {
    * harness can take a prompt; `runtimeReady` adds the host's workspace checks.
    */
   harness?: {
-    /** `opencode` or `pi`. */
+    /** `pi`. A daemon built before 2026-10-30 can still answer `opencode`. */
     id: string;
     version: string | null;
     /** The runtime process: `starting`, `ok`, `down` or `error`. */
@@ -38,7 +38,7 @@ export type SessionHealthResponse = {
     turn: { in_flight: boolean | null; end: string | null; orphaned_prompt: boolean } | null;
     details: Record<string, unknown>;
   };
-  /** @deprecated The runtime process state before W3. Read `harness.state`. */
+  /** @deprecated The runtime process state a daemon built before W3 sends. Read `harness.state`. Removed in the next major. */
   opencode?: string | boolean;
   boot_error?: string | null;
   reason?: string | null;

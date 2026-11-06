@@ -24,7 +24,7 @@ import {
 } from './agent-availability';
 import type { SandboxRecord } from '../../sandbox-proxy/backend';
 import { forwardToSandbox } from '../../sandbox-proxy/forward';
-import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { sandboxRuntimeEndpoint } from '../runtime-session-mapping';
 import { isRuntimeUnavailableError } from '../lib/runtime-read-failure';
 import { MESSAGE_READ_CODE, STEER_NO_ACTIVE_TURN_CODE } from '@kortix/api-contract/runtime-relay';
 import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
@@ -45,19 +45,19 @@ import { newestWireIdTime } from '../wire-message-id';
 export const DAEMON_PORT = 8000;
 
 /**
- * The signed proxy endpoint + OpenCode root id for one session — the same
+ * The signed proxy endpoint + runtime root id (`runtime_session_id`) for one session — the same
  * resolution every drain-side transcript read uses. Exported for the turn-end
  * reconciliation (`forwarded-strand-reconcile.ts`), which has a session, not a
  * row.
  */
-export async function resolveSessionOpencodeEndpoint(
+export async function resolveSessionRuntimeEndpoint(
   sessionId: string | null | undefined,
   actorUserId?: string | null,
 ): Promise<ResolvedSessionRuntime & { externalId: string } | null> {
   if (!sessionId) return null;
   const [session] = await db
     .select({
-      opencodeSessionId: projectSessions.runtimeSessionId,
+      runtimeSessionId: projectSessions.runtimeSessionId,
       sandboxUrl: projectSessions.sandboxUrl,
       accountId: projectSessions.accountId,
       projectId: projectSessions.projectId,
@@ -66,7 +66,7 @@ export async function resolveSessionOpencodeEndpoint(
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
-  if (!session?.opencodeSessionId) return null;
+  if (!session?.runtimeSessionId) return null;
 
   let externalId = externalIdFromSandboxUrlField(session.sandboxUrl);
   if (!externalId) {
@@ -90,12 +90,12 @@ export async function resolveSessionOpencodeEndpoint(
   // (`verifyKortixUserContext`); with no actor the call is refused as
   // `malformed`. A caller with no row of its own (turn-end reconciliation,
   // the stop settle) reads as the session's creator.
-  const endpoint = await sandboxOpencodeEndpoint(
+  const endpoint = await sandboxRuntimeEndpoint(
     externalId,
     actorUserId ?? session.createdBy ?? undefined,
   );
   if (!endpoint) return null;
-  return { endpoint, opencodeSessionId: session.opencodeSessionId, externalId };
+  return { endpoint, runtimeSessionId: session.runtimeSessionId, externalId };
 }
 
 /** One page of the box's log is at most this long (`MAX_MESSAGE_PAGE` in kortixd). */
@@ -166,7 +166,7 @@ export async function disarmQuickQueueInterrupt(
   actorUserId: string,
   promptId: string,
 ): Promise<void> {
-  const resolved = await resolveSessionOpencodeEndpoint(sessionId, actorUserId).catch(() => null);
+  const resolved = await resolveSessionRuntimeEndpoint(sessionId, actorUserId).catch(() => null);
   if (!resolved) return;
   await sendQuickQueueControl(resolved.endpoint, { kind: 'disarm', promptId });
   // Only the head prompt arms an interrupt, so there is one mark to withdraw.
@@ -178,7 +178,7 @@ export async function disarmAllQuickQueueInterrupt(
   sessionId: string,
   actorUserId: string,
 ): Promise<void> {
-  const resolved = await resolveSessionOpencodeEndpoint(sessionId, actorUserId).catch(() => null);
+  const resolved = await resolveSessionRuntimeEndpoint(sessionId, actorUserId).catch(() => null);
   if (!resolved) return;
   await sendQuickQueueControl(resolved.endpoint, { kind: 'disarm-all' });
   await clearTurnStopRequest(sessionId, 'QueueInterrupt');
@@ -193,14 +193,14 @@ export async function disarmAllQuickQueueInterrupt(
  */
 export async function armQuickQueueInterrupt(
   row: SessionLifecycleCommandRow,
-  identity: { opencodeSessionId: string; messageId: string },
+  identity: { runtimeSessionId: string; messageId: string },
 ): Promise<boolean> {
-  const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId).catch(() => null);
-  if (!resolved || resolved.opencodeSessionId !== identity.opencodeSessionId) return true;
+  const resolved = await resolveSessionRuntimeEndpoint(row.sessionId, row.actorUserId).catch(() => null);
+  if (!resolved || resolved.runtimeSessionId !== identity.runtimeSessionId) return true;
   const outcome = await sendQuickQueueControl(resolved.endpoint, {
     kind: 'arm',
     promptId: row.commandId,
-    opencodeSessionId: identity.opencodeSessionId,
+    runtimeSessionId: identity.runtimeSessionId,
     messageId: identity.messageId,
   });
   if (!outcome.ok) {
@@ -215,7 +215,7 @@ export async function armQuickQueueInterrupt(
   // sent a prompt into it. That abort is asked for, not a failure.
   if (!row.sessionId) return true;
   await markTurnStopRequested(row.sessionId, 'QueueInterrupt', {
-    opencodeSessionId: identity.opencodeSessionId,
+    runtimeSessionId: identity.runtimeSessionId,
     messageId: identity.messageId,
   });
   return true;
@@ -279,7 +279,7 @@ export async function retractRuntimeMessage(
   session: ResolvedSessionRuntime,
   messageId: string,
 ): Promise<RetractOutcome> {
-  const res = await sessionRuntimeFetch(session.endpoint, 'POST', runtimeVerbPaths.retract(session.opencodeSessionId, messageId));
+  const res = await sessionRuntimeFetch(session.endpoint, 'POST', runtimeVerbPaths.retract(session.runtimeSessionId, messageId));
   if (res.ok) return { outcome: 'retracted' };
   if (res.status === 404) return { outcome: 'gone' };
   if (res.status === 409) {
@@ -296,7 +296,7 @@ export async function retractRuntimeMessage(
  * `caller`. A transport failure throws.
  */
 export async function retractSessionMessage(sessionId: string, messageId: string, caller: string): Promise<boolean> {
-  const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+  const resolved = await resolveSessionRuntimeEndpoint(sessionId);
   if (!resolved) return false;
   const retracted = await retractRuntimeMessage(resolved, messageId);
   if (retracted.outcome === 'retracted' || retracted.outcome === 'gone') return true;
@@ -324,7 +324,7 @@ export async function readInboxTranscriptState(
 ): Promise<InboxTranscriptState> {
   const empty: InboxTranscriptState = { newest: null, answered: false, read: false, tip: null };
   try {
-    const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId);
+    const resolved = await resolveSessionRuntimeEndpoint(row.sessionId, row.actorUserId);
     if (!resolved) return empty;
     // A FULL read only when this row has already been posted once (a
     // redelivery / re-POST), where the `answered` guard needs the reply that
@@ -341,8 +341,7 @@ export async function readInboxTranscriptState(
       tip.map((message) => message.id),
       Date.now(),
     );
-    // Same rule the daemon's `observeOpencodeDelivery` uses: an assistant
-    // message parented on the prompt is the turn having run.
+    // An assistant message parented on the prompt is the turn having run.
     const answered = tip.some(
       (message) =>
         message.role === 'assistant' &&
@@ -377,7 +376,7 @@ export async function retractStrandedMessage(
   wireMessageId: string,
 ): Promise<boolean> {
   try {
-    const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId);
+    const resolved = await resolveSessionRuntimeEndpoint(row.sessionId, row.actorUserId);
     if (!resolved) return false;
     const retracted = await retractRuntimeMessage(resolved, wireMessageId);
     if (retracted.outcome === 'retracted' || retracted.outcome === 'gone') return true;
@@ -429,7 +428,7 @@ async function sessionRuntimeAgentRoster(
   directory: string,
 ): Promise<{ names: readonly string[] | null }> {
   return runtimeAgentRoster(runtimeAgentRosterCacheKey(externalId, directory), async () => {
-    const resolved = await resolveSessionOpencodeEndpoint(callerSessionId, actorUserId);
+    const resolved = await resolveSessionRuntimeEndpoint(callerSessionId, actorUserId);
     if (!resolved) return null;
     const res = await sessionRuntimeFetch(resolved.endpoint, 'GET', runtimeVerbPaths.agents(directory));
     if (!res.ok) return null;
@@ -495,7 +494,7 @@ export async function readRuntimeMessage(session: ResolvedSessionRuntime, messag
  */
 export async function postPrompt(
   externalId: string,
-  opencodeSessionId: string,
+  runtimeSessionId: string,
   text: string,
   userId: string,
   /** The session this prompt is FOR. Passed as the caller binding so the
@@ -578,7 +577,7 @@ export async function postPrompt(
   }
   const directory = overrides?.directory || WORKSPACE;
   const send = () => {
-    const path = prompt?.steer ? runtimeVerbPaths.steer(opencodeSessionId) : runtimeVerbPaths.prompt(opencodeSessionId);
+    const path = prompt?.steer ? runtimeVerbPaths.steer(runtimeSessionId) : runtimeVerbPaths.prompt(runtimeSessionId);
     const body = new TextEncoder().encode(
       JSON.stringify({
         ...(prompt?.wireMessageId ? { message_id: prompt.wireMessageId } : {}),
@@ -681,7 +680,7 @@ async function throwIfSteerNotTaken(res: Response): Promise<void> {
 
 /** `POST .../steer` straight to the box, as the platform (see `postPrompt`). No endpoint: 503. */
 async function postSteerDirect(externalId: string, userId: string, path: string, body: string): Promise<Response> {
-  const endpoint = await sandboxOpencodeEndpoint(externalId, userId);
+  const endpoint = await sandboxRuntimeEndpoint(externalId, userId);
   if (!endpoint) return new Response(null, { status: 503 });
   return sessionRuntimeFetch(endpoint, 'POST', path, { headers: { [KORTIX_SERVICE_CALL_HEADER]: '1' }, body }, 30_000);
 }

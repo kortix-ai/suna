@@ -347,7 +347,7 @@ SessionLogSwitchLossSchema = {
 }
 
 SessionLogSwitchPreflightRequestSchema = {
-  to: SessionLogHarnessSchema
+  to: literal("pi")
 }
 
 SessionLogSwitchPreflightSchema = {

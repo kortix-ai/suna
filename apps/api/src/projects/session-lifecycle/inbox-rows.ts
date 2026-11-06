@@ -46,7 +46,7 @@ export function inboxScope(sessionId: string | string[]) {
  */
 export const INBOX_HOLD_MS = 24 * 60 * 60 * 1000;
 
-/** Is this row on the wire at OpenCode, waiting for a turn to consume it?
+/** Is this row on the wire at the runtime, waiting for a turn to consume it?
  *  See `markCommandForwarded` for why that is not the same as finished. */
 export function isForwardedInboxRow(result: unknown): boolean {
   return (result as { status?: unknown } | null)?.status === 'forwarded';
@@ -204,7 +204,7 @@ async function inboxRowNotTaken(
   // cannot be changed without lying about it, which is a 409, not a 404.
   //
   // TWO shapes are on the wire, for the same reason: a `running` row is inside
-  // `continueSession`, and a FORWARDED row has already reached OpenCode, which
+  // `continueSession`, and a FORWARDED row has already reached the runtime, which
   // has persisted the user message. Removing either would delete the inbox's
   // record of a message the session is going to answer.
   const [existing] = await db
@@ -338,7 +338,7 @@ async function interruptInboxPromptOnce(
  *
  * `payload.remintOnDelivery` is stamped because this row did NOT go out on its
  * first claim: whatever the session did in the meantime has written HIGHER wire
- * ids, and OpenCode reads a lower one as already answered. It goes in the
+ * ids, and an OpenCode box reads a lower one as already answered. It goes in the
  * PAYLOAD, which is merged, precisely because `result` below is replaced —
  * putting the fact in `result` is what let "send now" deliver a stale id. The
  * drain re-reads the transcript before it re-mints and drops the delivery if
@@ -565,7 +565,7 @@ export function retryInboxPrompt(
  * pausing a browser-local drain leaves the server free to admit the prompt the
  * user pressed Stop to get ahead of, roughly one scheduler tick later.
  *
- * THREE sets of rows, because a prompt can now be at OpenCode without having run:
+ * THREE sets of rows, because a prompt can now be at the runtime without having run:
  *
  *  - QUEUED rows are pushed out of the drain's way, as they always were.
  *  - RUNNING rows are inside `continueSession` and cannot be recalled — nothing
@@ -583,7 +583,7 @@ export function retryInboxPrompt(
  *    time. What is left is honest and narrow: Stop pressed inside the ~100ms
  *    between the claim and the POST (a live turn means an awake box) can leave
  *    that one prompt running, and the user presses Stop again.
- *  - FORWARDED rows are STOP-PAUSED. Stop aborts the running turn and OpenCode
+ *  - FORWARDED rows are STOP-PAUSED. Stop aborts the running turn and the runtime
  *    drops its in-memory queue with it, so a forwarded prompt loses the turn
  *    that was going to run it; the reaper then observes a persisted message
  *    with nothing answering it and hands it back (`requeueAbandonedPrompt`) —
@@ -595,8 +595,8 @@ export function retryInboxPrompt(
  * queue; see the release branch below for why that is not left to the reaper.
  *
  * KNOWN COST, and it is the price of stopping a prompt that already reached
- * OpenCode: a released row re-delivers under a RE-MINTED wire id
- * (`remintOnDelivery`), while OpenCode still holds the original persisted user
+ * the runtime: a released row re-delivers under a RE-MINTED wire id
+ * (`remintOnDelivery`), while the runtime still holds the original persisted user
  * message with no assistant child. The transcript then shows that prompt twice
  * — once unanswered, once answered. The drain's already-answered guard cannot
  * suppress the duplicate, precisely because nothing ever answered the original.
@@ -620,7 +620,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
       .update(sessionLifecycleCommands)
       .set({
         // `stop_paused` is its OWN key, beside `held`, rather than a value of
-        // `result.status`: the row is still forwarded — OpenCode holds that
+        // `result.status`: the row is still forwarded — the runtime holds that
         // message — and every reader of "is this row on the wire"
         // (`isForwardedInboxRow`, the confirmation, the sweep) must keep saying
         // yes. What changed is only who is waiting on it: the user.
@@ -717,17 +717,17 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
     // guard, and one that was not is sent again. So the outcome is decided by the
     // transcript rather than by reaper cadence.
     //
-    // What it does NOT undo is the duplicate documented above: OpenCode still
+    // What it does NOT undo is the duplicate documented above: the runtime still
     // holds the original persisted user message, unanswered, so the transcript
     // shows the prompt twice.
     //
     // STILL FORWARDED is half the predicate, and it is load-bearing. Stop marks
     // the row and then aborts, and the turn in front of it can end inside that
-    // window — OpenCode runs the prompt, `confirmInboxPromptConsumed` closes the
+    // window — the runtime runs the prompt, `confirmInboxPromptConsumed` closes the
     // row `delivered`, and the marker alone would put a message that was already
     // answered back on the queue. The only thing left between that and a second
     // real LLM turn is the drain's already-answered guard, which fails OPEN on an
-    // unreadable box. `forwarded` is what "OpenCode is still holding this,
+    // unreadable box. `forwarded` is what "the runtime is still holding this,
     // unanswered" means.
     const requeued = await tx
       .update(sessionLifecycleCommands)
@@ -744,7 +744,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
         // row already went out once, and the proxy's dedupe claim on that key
         // lives for 10 minutes: re-POSTing under it is answered
         // `200 {"deduplicated": true}`, which `postPrompt` reads as delivered.
-        // The released prompt would never reach OpenCode, and would be
+        // The released prompt would never reach the runtime, and would be
         // force-closed ten minutes later with no error. See
         // `withNextDeliveryAttempt`.
         payload: withNextDeliveryAttempt(sql`${sessionLifecycleCommands.payload}`),
@@ -760,7 +760,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
       )
       .returning({ commandId: sessionLifecycleCommands.commandId });
 
-    // Everything the release just made due is ONE batch: OpenCode gets each
+    // Everything the release just made due is ONE batch: the runtime gets each
     // prompt as its own user message and answers them together in one turn
     // (`noReply` on all but the last — see `executeQueuedContinue`). The stamp
     // covers every queued, un-held row rather than only the rows released above:
@@ -910,7 +910,7 @@ export async function enqueueReleasingHold(
   return { ...enqueued, row: { ...enqueued.row, result: {}, availableAt: new Date() } };
 }
 
-/** Was this row's delivery stopped by the user AFTER it reached OpenCode?
+/** Was this row's delivery stopped by the user AFTER it reached the runtime?
  *  `requeueAbandonedPrompt` reads it to bring the repair back HELD. */
 export function isStopPausedInboxRow(result: unknown): boolean {
   return isStopPaused(result as Record<string, unknown> | null);

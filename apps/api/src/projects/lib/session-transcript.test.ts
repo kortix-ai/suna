@@ -278,8 +278,8 @@ describe("a sub-agent's saved transcript is its own window", () => {
     const envelope = await buildSessionTranscriptSyncEnvelope(
       { session: session('stopped'), limit: 40, child: 'ses_child' },
       {
-        readMirror: async (_id, _limit, _before, opencodeSessionId) => {
-          asked.push(opencodeSessionId);
+        readMirror: async (_id, _limit, _before, runtimeSessionId) => {
+          asked.push(runtimeSessionId);
           return snapshot({ runtime_session_id: 'ses_child' });
         },
       },
@@ -295,8 +295,8 @@ describe("a sub-agent's saved transcript is its own window", () => {
     await buildSessionTranscriptSyncEnvelope(
       { session: session('stopped'), limit: 40 },
       {
-        readMirror: async (_id, _limit, _before, opencodeSessionId) => {
-          asked.push(opencodeSessionId);
+        readMirror: async (_id, _limit, _before, runtimeSessionId) => {
+          asked.push(runtimeSessionId);
           return snapshot();
         },
       },

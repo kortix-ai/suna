@@ -62,7 +62,7 @@
  * - 503: the operator switch `SESSION_LOG_RESTORE_ENABLED` is off; nothing was claimed.
  *
  * Switch preflight (P7.1): `POST /v1/projects/:p/sessions/:s/log/switch-preflight`, body
- * `{ to: 'pi' | 'opencode' }`, the caller's session read permission (the `GET …/log` gate). Read
+ * `{ to: 'pi' }`, the caller's session read permission (the `GET …/log` gate). Read
  * only: it claims nothing and changes nothing. 200 `SessionLogSwitchPreflight`: whether the switch
  * can happen (`available`, `reason`) and restores the log (`restores`), what the session would lose
  * (`losses`) and everything `to` lacks (`unsupported`) (`switchPreflight`, `capabilities.ts`). A
@@ -169,9 +169,14 @@ export const SessionLogRestoreTooLargeSchema = SessionLogRestoreSchema.extend({
   kept: z.enum(['model_view', 'newest']).optional(),
 });
 
-/** A harness a session can run on: the adapters with a capability manifest (`capabilities.ts`). */
+/**
+ * A harness a stored log names: the adapters with a capability manifest
+ * (`capabilities.ts`). Every session runs pi; `opencode` names the logs of
+ * sessions that ran before 2026-10-30.
+ */
 export const SessionLogHarnessSchema = z.enum(['pi', 'opencode']);
-export const SessionLogSwitchPreflightRequestSchema = z.object({ to: SessionLogHarnessSchema });
+/** A switch can only target pi: no session runs on OpenCode any more. */
+export const SessionLogSwitchPreflightRequestSchema = z.object({ to: z.literal('pi') });
 /** One thing the target harness handles worse than the source harness (`switchPreflight` in `capabilities.ts`). */
 export const SessionLogSwitchGapSchema = z.object({
   /** A `CapabilityFeatures` path (`todos`, `attachments.user`, `compaction`, ...), a `RuntimeCapability` (`session.mcp`, ...), or `history` (no restore). */

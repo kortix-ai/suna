@@ -741,7 +741,7 @@ describe('kortix sessions links', () => {
     const r = await runCli(['sessions', 'links', '--help'], config);
     expect(r.code).toBe(0);
     const flat = r.stdout.replace(/\s+/g, ' ');
-    expect(flat).toContain('Refused for 22, 3211 (the file-share server), 8000 and the opencode ports.');
+    expect(flat).toContain('Refused for 22, 3211 (the file-share server), 4096, 4097 and 8000.');
   });
 
   test('create POSTs a preview share and prints the public url', async () => {
@@ -847,7 +847,7 @@ describe('kortix sessions chat --queue', () => {
       overrides: unknown;
       client_sent_at_ms: number;
     };
-    // The API refuses anything that is not an OpenCode wire message id.
+    // The API refuses anything that is not a runtime wire message id.
     expect(body.message_id).toMatch(/^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/);
     expect(body.client_message_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.parts).toEqual([{ type: 'text', text: 'ship the thing' }]);

@@ -20,7 +20,7 @@ import {
   hasPreviewTarget,
 } from '../core/session/url';
 import { useCurrentRuntime } from './use-current-runtime';
-import { runtimeKeys, useRuntimeReady } from './use-opencode-sessions/keys';
+import { runtimeKeys, useRuntimeReady } from './use-runtime-sessions/keys';
 
 interface RuntimeResult<T> {
   data?: T;

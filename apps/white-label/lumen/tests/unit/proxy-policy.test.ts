@@ -660,9 +660,9 @@ describe('proxy policy: the shared project detail lists only the caller firm age
   const detail = {
     project: { project_id: 'p1', name: 'lumen', account_id: 'acc_operator', repo_url: 'https://git.example/x' },
     config: {
-      default_agent: 'lumen-none', open_code_default_agent: 'lumen-none',
+      default_agent: 'lumen-none',
       agents: [{ name: 'lumen-f-firma' }, { name: 'lumen-f-firmb', description: 'firm b prompt' }, { name: 'lumen-none' }, { name: 'kortix' }],
-      manifest: { agents: { 'lumen-f-firmb': {} } }, manifest_raw: 'lumen-f-firmb', open_code_raw: '{}', env: { optional: ['K'] },
+      manifest: { agents: { 'lumen-f-firmb': {} } }, manifest_raw: 'lumen-f-firmb', env: { optional: ['K'] },
       skills: [{ name: 'agent-browser' }], commands: [],
     },
     files: [{ path: 'kortix.yaml' }], file_count: 174,
@@ -672,7 +672,6 @@ describe('proxy policy: the shared project detail lists only the caller firm age
     const out = redactIdentity(`${P}/detail`, detail, 'lumen-f-firma') as typeof detail;
     expect(out.config.agents).toEqual([{ name: 'lumen-f-firma' }]);
     expect(out.config.default_agent).toBe('lumen-f-firma');
-    expect(out.config.open_code_default_agent).toBe('lumen-f-firma');
     expect([out.files, out.file_count]).toEqual([[], 0]);
     expect(JSON.stringify(out)).not.toMatch(/firmb|acc_operator|git\.example/);
     expect(redactsIdentity(`${P}/detail`)).toBe(true);

@@ -94,15 +94,10 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
     'text11c1a5b0fa54',
   'An agent decides whether to load a skill from its name and description alone. A vague description means the skill never fires — which is why the description reads like a list of the things a person would actually say.':
     'textf4b3042a5a94',
-  'An agent has exactly two homes. The markdown file carries how it thinks — its prompt, its mode, its model, its permission tree — and it is a stock OpenCode agent file, because Kortix adds no dialect to it. The manifest block carries what it may touch. Nothing about an agent lives in a database you cannot read.':
-    'text7b6762537105',
   'An agent is': 'text586ce9d865c1',
-  'An agent is an OpenCode agent: markdown at baseline, and past that your own tools, plugins, models and a per-capability permission tree. A grant in kortix.yaml decides what it reaches — its machine, its connectors and channels, its secrets, its skills. A skill encodes how your company does one specific job. Both are files in your repo. Both are reviewed like code.':
-    'texte1e906a3a02b',
   'An agent never exceeds its human': 'text467d579386a6',
   'An agent’s block lists the secrets it may use by name — identifiers, never values. A session receives only the intersection of that grant and the role of whoever started it.':
     'texta548eb412acd',
-  'An OpenCode agent, plus its grants': 'textc859e57c7ce7',
   API: 'textc8e5998f6a39',
   ask: 'text2f2fc7f2e9ce',
   'Audit trail': 'textc1ada08ce138',
@@ -204,8 +199,6 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Large Language Models': 'text0340bfb383fc',
   left: 'text360f84035942',
   Linear: 'texte6950b45d25c',
-  'Markdown is the floor, not the ceiling: the whole OpenCode surface sits beside it in the same repo — your own TypeScript tools, plugins that hook the runtime, the model and provider config. An agent can pin its own model, or inherit the project, account and platform default in that order.':
-    'text65c114ca4304',
   Marketing: 'textf5904cf7a123',
   'marketing/seo-weekly.xlsx': 'text303a578ba016',
   Marketplace: 'textc608981d8d68',
@@ -224,7 +217,6 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
     'text8338ea9fb932',
   'one directory per skill': 'text3bf308e3b077',
   'One machine per session': 'text6590dfdb580e',
-  'one OpenCode agent per file': 'text18a59ffd5fa8',
   'One platform': 'text708bb99739ea',
   'One thing this is not: a package manager. There is no lockfile, no version pin and no automatic update — an item you add becomes your own files, exactly like code you wrote. That is a deliberate trade, and it is the one we would make again.':
     'textcd3fefb94c04',
@@ -234,8 +226,6 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or fully on-prem.':
     'text1d9a8dde5629',
   OpenAI: 'text8b7d1a3187ab',
-  OpenCode: 'text3af0e55ccc96',
-  'OpenCode-native · Versioned · Deny by default · Human-merged': 'textb82db800b29f',
   OpenRouter: 'texteb70c3bc14fa',
   'ops@northwind.example': 'text44c4865ba52b',
   'Outbound, error triage, the books, the Monday report — real jobs, on real machines, landing as changes you can read.':
@@ -314,8 +304,6 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
     'text2abfd058360d',
   'The grant that applies at session start is what the agent declares, intersected with the role of whoever launched it. Grant an agent everything and it still gets exactly your own permissions — no more, on any path.':
     'textea25cb521ec9',
-  'The layer that turns a model into an agent: planning, tool use, and multi-step runs it actually finishes. Fully customizable and powered by OpenCode, so the way your agents think is yours to edit.':
-    'textcd3a5d4a1364',
   'The leading open-source alternative to': 'text3d40244f591d',
   'The manifest rejects a behavioral field in the governance block, with an error pointing at the agent’s own .md file.':
     'textec69732f4600',

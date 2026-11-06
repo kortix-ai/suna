@@ -104,7 +104,7 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
   };
 
   mock.module('../projects/session-lifecycle/runtime-client', () => ({
-    resolveSessionOpencodeEndpoint: async () => resolved,
+    resolveSessionRuntimeEndpoint: async () => resolved,
   }));
 
   const realFetch = globalThis.fetch;

@@ -10,13 +10,13 @@
  *
  * Real: the stop writer (`applyStoppedState`), the requeue, the inbox hold and
  * release, the claim, admission, the remint, the forward, the ledger read and
- * the ledger `resumed` write. Stubbed: the box. `sandboxOpencodeEndpoint`
+ * the ledger `resumed` write. Stubbed: the box. `sandboxRuntimeEndpoint`
  * returns a fixed address, `fetch` serves the transcript, `continueSession`
  * records the POST instead of waking a sandbox, and the drain kick is a no-op.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import * as realOpencodeMapping from '../projects/opencode-mapping';
+import * as realRuntimeMapping from '../projects/runtime-session-mapping';
 import * as realContinueSession from '../projects/session-lifecycle/continue-session';
 import * as realDrain from '../projects/session-lifecycle/drain';
 import { mintWireMessageId } from '../projects/wire-message-id';
@@ -34,9 +34,9 @@ let posts: Array<{ text: string; wireMessageId?: string }> = [];
 /** Answers for the next POSTs; empty = delivered. */
 let postPlan: Array<'delivered' | 'pending'> = [];
 
-mock.module('../projects/opencode-mapping', () => ({
-  ...realOpencodeMapping,
-  sandboxOpencodeEndpoint: async () => ({ url: BOX_URL, headers: {} }),
+mock.module('../projects/runtime-session-mapping', () => ({
+  ...realRuntimeMapping,
+  sandboxRuntimeEndpoint: async () => ({ url: BOX_URL, headers: {} }),
 }));
 mock.module('../projects/session-lifecycle/continue-session', () => ({
   ...realContinueSession,
@@ -100,7 +100,6 @@ async function turnEndError(token = TOKEN): Promise<{ name: string | null; messa
 const openTurn = (token: string, messageId: string, state: 'active' | 'delivering' = 'active') => ({
   token,
   state,
-  opencodeSessionId: ROOT,
   runtimeSessionId: ROOT,
   messageId,
   startedAtMs: NOW_MS - 9 * 60_000,
@@ -496,7 +495,7 @@ describe('the reaper leaves no interrupted turn without its one continuation', (
              metadata = (SELECT metadata FROM kortix.session_sandboxes WHERE sandbox_id = ${SANDBOX_ID}::uuid)
                         || ${JSON.stringify({
                           activeTurns: {
-                            [TOKEN]: { token: TOKEN, state: 'active', opencodeSessionId: ROOT, messageId: 'msg_none', startedAtMs: NOW_MS },
+                            [TOKEN]: { token: TOKEN, state: 'active', runtimeSessionId: ROOT, messageId: 'msg_none', startedAtMs: NOW_MS },
                           },
                         })}::jsonb
        WHERE sandbox_id = ${SANDBOX_ID}::uuid`);

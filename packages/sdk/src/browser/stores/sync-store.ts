@@ -257,7 +257,7 @@ interface SyncState {
 	 * `session.next.revert.staged/.cleared/.committed` (below, via
 	 * `applyEvent`), and a `Session.revert` field read off `session.created`/
 	 * `session.updated` (`syncSessionRevertFromInfo`, called from
-	 * `use-opencode-events/handle-event.ts` — the reload/cross-tab recovery
+	 * `use-runtime-events/handle-event.ts` — the reload/cross-tab recovery
 	 * path, since a hard reload observes neither of the other two).
 	 */
 	sessionRevert: Record<string, SessionRewindState | null>;
@@ -267,7 +267,7 @@ interface SyncState {
 	 * a second tab that never observed `.staged`). The store deliberately
 	 * does not guess a watermark and delete a range in that case — see
 	 * `markSessionRevertNeedsTailReconcile`'s doc comment for why — so this
-	 * is the signal a consumer (the sync controller / `use-opencode-events`)
+	 * is the signal a consumer (the sync controller / `use-runtime-events`)
 	 * reads to know it must fetch the session's real transcript instead of
 	 * trusting local messages. `true` means "reconcile owed"; absent or
 	 * `false` means nothing is owed. Cleared by
@@ -2346,7 +2346,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// own: `session.error` is the runtime's report of THIS turn
 				// failing, and the transcript read that follows it does not always
 				// carry the failure back (the same race
-				// `use-opencode-events`'s cache patch exists for). Dropping the
+				// `use-runtime-events`'s cache patch exists for). Dropping the
 				// stub against an error-free server copy would erase the only
 				// evidence the turn failed.
 				if (hasAssistantForTurn(incoming, parentId)) {
@@ -2862,7 +2862,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const sid = props.sessionID;
 			const error = props.error;
 			// Most errors terminate the response. A RETRYABLE one does not:
-			// OpenCode stamps `data.isRetryable === true` and keeps writing the
+			// the runtime stamps `data.isRetryable === true` and keeps writing the
 			// SAME assistant message, and apps/api reaches the same conclusion
 			// from this same event (`isTerminalTurnEnd`,
 			// apps/api/src/projects/sandbox-deadline-policy.ts:295). Writing
@@ -2903,7 +2903,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// rendered NOTHING), and the appended stub rode the bottom of the
 			// thread, reappearing under whichever prompt came next.
 			//
-			// The event handler in use-opencode-events.ts also fetches real
+			// The event handler in use-runtime-events.ts also fetches real
 			// messages from the server, which brings in the authoritative data
 			// via hydrate().
 			set((s) => {

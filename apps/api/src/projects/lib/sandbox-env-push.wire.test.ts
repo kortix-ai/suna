@@ -4,7 +4,7 @@ import { postEnvToDaemon } from './sandbox-env-transport';
 
 /**
  * `POST /kortix/env` across daemon builds (W3 D2). A W3 daemon reads
- * `runtimeEnv` and answers `runtime*`; an older one reads `opencodeEnv` and
+ * `runtimeEnv` and answers `runtime*`; an older one reads `runtimeEnv` and
  * answers `opencode*`. The API sends both request names and reads either answer.
  */
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -26,7 +26,7 @@ const ARGS = {
   providerHeaders: {},
   serviceKey: 'svc',
   snapshot: { env: {}, names: [], revision: 'rev-1', scope: 'inherit' as const, capabilitiesJson: '{"version":1,"capabilities":[]}' },
-  opencodeEnv: { KORTIX_MODEL: 'kortix/m', KORTIX_OPENCODE_MODEL: 'kortix/m' },
+  runtimeEnv: { KORTIX_MODEL: 'kortix/m' },
   refreshModels: true,
 };
 
@@ -34,13 +34,13 @@ describe('postEnvToDaemon across daemon builds', () => {
   test('sends the runtime env under its W3 name and its pre-W3 name', async () => {
     const posted = daemonAnswering({});
     await postEnvToDaemon(ARGS);
-    expect(posted[0]!.runtimeEnv).toEqual(posted[0]!.opencodeEnv);
-    expect(posted[0]!.runtimeEnv).toMatchObject({ KORTIX_MODEL: 'kortix/m', KORTIX_OPENCODE_MODEL: 'kortix/m' });
+    expect(posted[0]!.runtimeEnv).toEqual(posted[0]!.runtimeEnv);
+    expect(posted[0]!.runtimeEnv).toMatchObject({ KORTIX_MODEL: 'kortix/m' });
   });
 
   test('reads a W3 answer (runtime*)', async () => {
     daemonAnswering({ runtime: 'starting', runtime_reload: 'kept-old', runtime_turn_ended: false });
     const result = await postEnvToDaemon(ARGS);
-    expect(result).toMatchObject({ opencodeState: 'starting', opencodeReload: 'kept-old', opencodeTurnEnded: false });
+    expect(result).toMatchObject({ runtimeState: 'starting', runtimeReload: 'kept-old', runtimeTurnEnded: false });
   });
 });

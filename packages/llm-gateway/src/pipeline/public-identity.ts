@@ -37,7 +37,7 @@ const TOOL_DEFINITION = /tool|function|schema/i;
  * managed-model client receives. The upstream text only selects the rule; it
  * is never copied into the result.
  *
- * - 429 stays 429 so OpenCode retries it.
+ * - 429 stays 429 so the runtime retries it.
  * - A request-shape 4xx stays 400 with the most specific code the text allows.
  * - Everything else (the gateway's own key rejected, provider down, network
  *   error, timeout) is a 503: the user cannot fix it, and a retry may succeed.

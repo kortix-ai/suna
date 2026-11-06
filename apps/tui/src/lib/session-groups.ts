@@ -74,7 +74,7 @@ function timestampMs(value: unknown): number | null {
  * When this session was last really used, newest evidence first.
  *
  * Same precedence `apps/web` uses (`sessionLastActivityAt`), for the same
- * reasons: the API's prompt stamp lands before the turn runs, the OpenCode
+ * reasons: the API's prompt stamp lands before the turn runs, the runtime
  * conversation snapshot keeps advancing while the agent replies, and row
  * bookkeeping (`updated_at`) is only a fallback because a runtime stop or a
  * title sync advances it without anyone having used the session.

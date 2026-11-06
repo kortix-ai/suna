@@ -196,7 +196,7 @@ async function authenticatePublicShare(
   // one document into a key to the whole box.
   if (share.resourceType === 'preview') {
     // The blocked set exists to stop a PREVIEW share naming an infrastructure
-    // port (ssh, the daemon, opencode, static-web).
+    // port (ssh, the daemon, an old box's OpenCode ports, static-web).
     if (share.port !== port || PUBLIC_SHARE_BLOCKED_PORTS.has(port)) return null;
   } else if (share.resourceType === 'file') {
     // A file share targets the static-web port BY DESIGN — that is the port

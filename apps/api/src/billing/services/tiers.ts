@@ -470,7 +470,7 @@ export function isValidTier(name: string): boolean {
 
 /**
  * Whether a tier unlocks the full model catalog — the premium LLM gateway
- * (Claude/GPT/Gemini/…), not just OpenCode's built-in models. Pure function of
+ * (Claude/GPT/Gemini/…), not just the free and BYOK models. Pure function of
  * tier config: environment and wallet balance cannot grant it.
  */
 export function tierGrantsAllModels(tierName: string): boolean {
