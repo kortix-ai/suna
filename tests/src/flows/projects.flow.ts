@@ -255,6 +255,7 @@ flow("PROJ-8", {
   domain: "projects",
   routes: [
     "DELETE /v1/workspaces/:projectId",
+    "GET /v1/workspaces/:projectId",
     "POST /v1/connectors/workspaces/:projectId/connectors",
     "GET /v1/connectors/workspaces/:projectId/connectors",
   ],
@@ -305,25 +306,17 @@ flow("PROJ-8", {
     const rows = r.status(200).json<{ connectors: unknown[] }>().connectors;
     if (rows.length !== 1) throw new Error(`expected the project to list 1 connector, listed ${rows.length}`);
   });
-  await ctx.step("OWNER deletes the project → 200 deleted: true (permanent; archived kept for older clients)", async () => {
+  await ctx.step("OWNER deletes the workspace → 200 deleted: true, archived: true (kept for older clients), repo_deleted: false, a deletion date 14 days out", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).del("/v1/workspaces/:projectId", { params: { projectId: id } });
-    r.status(200).body().has("$.ok", true).has("$.deleted", true).has("$.archived", true).exists("$.repo_deleted");
+    r.status(200).body().has("$.ok", true).has("$.deleted", true).has("$.archived", true).has("$.repo_deleted", false).exists("$.deletion_scheduled_for");
   });
-  await ctx.step("archived project reads 404", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId", { params: { projectId: id } });
-    r.status(404);
-  });
-  await ctx.step("the purged project lists no connectors (its connector rows were purged)", async () => {
-    // An archived project is no workspace: the canonical name answers 404; the legacy name lists its rows.
+  await ctx.step("the owner still reads it during the 14-day grace: state deleting; its connector routes → 409 workspace_deleting", async () => {
+    // K2: deleting a workspace closes it. Its owner keeps reading and can
+    // restore it until the grace ends; the deletion sweep then purges its rows.
+    (await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId", { params: { projectId: id } }))
+      .status(200).body().has("$.state", "deleting");
     (await ctx.client.as(ctx.P.OWNER).get("/v1/connectors/workspaces/:projectId/connectors", { params: { projectId: id } }))
-      .status(404).body().has("$.code", "workspace_not_found");
-    const r = await ctx.client
-      .as(ctx.P.OWNER)
-      .get("/v1/connectors/projects/:projectId/connectors", { params: { projectId: id } });
-    const rows = r.status(200).json<{ connectors: unknown[] }>().connectors;
-    if (rows.length !== 0) {
-      throw new Error(`expected the purged project to list 0 connectors, listed ${rows.length}`);
-    }
+      .status(409).body().has("$.code", "workspace_deleting");
   });
 });
 
@@ -540,6 +533,18 @@ flow(
   },
 );
 
+/**
+ * The GitHub App install prompt: 409 with an `install_url` key. The local
+ * profile configures no App slug, so the value is null there and a URL on a
+ * deployed target; the CLI shows its retry prompt either way.
+ */
+function expectInstallPrompt(r: { statusCode: number; text(): string; json<T>(): T }): void {
+  if (r.statusCode !== 409) throw new Error(`expected 409 install prompt, got ${r.statusCode} ${r.text().slice(0, 200)}`);
+  const body = r.json<Record<string, unknown>>();
+  if (!("install_url" in body)) throw new Error(`409 without install_url: ${r.text().slice(0, 200)}`);
+  if (body.install_url !== null && typeof body.install_url !== "string") throw new Error(`install_url ${JSON.stringify(body.install_url)}`);
+}
+
 // PROJ-41 — the workspace rule on POST /v1/projects (import): an account holds
 // one active project, on every plan. The published CLI names its occupied
 // account; a person then gets a new workspace (byo-new-workspace.ts), created
@@ -559,12 +564,16 @@ flow(
     const first = await team.project();
     const owner = ctx.client.as(ctx.P.OWNER);
     const body = () => ({ account_id: team.id, name: ctx.fixtures.name("quota-probe"), repo_url: "https://github.com/example-org/quota-probe" });
+    // Only the accounts this import would create (a new workspace is named
+    // after its project): other flows create accounts for OWNER concurrently.
+    const probeName = body().name;
     const accountIds = async () =>
-      (await owner.get("/v1/accounts")).status(200).json<Array<{ account_id: string }>>().map((a) => a.account_id).sort();
+      (await owner.get("/v1/accounts")).status(200).json<Array<{ account_id: string; name?: string }>>()
+        .filter((a) => a.name === probeName).map((a) => a.account_id).sort();
     const personCreate = async () => {
       const before = await accountIds();
       const r = await owner.post("/v1/projects", body());
-      r.status(409).body().exists("$.install_url");
+      expectInstallPrompt(r);
       if (r.json<{ code?: string }>().code === "workspace_has_project") throw new Error("a person got workspace_has_project");
       const after = await accountIds();
       if (after.join() !== before.join()) throw new Error(`a refused import created an account: ${after.length - before.length}`);
@@ -620,8 +629,12 @@ flow(
       account_id: team.id,
       ...(token ? { github_token: token } : {}),
     });
+    // Only the accounts this link would create (a new workspace is named after
+    // its project): other flows create accounts for OWNER concurrently.
+    const probeName = shipBody().name;
     const accountIds = async () =>
-      (await owner.get("/v1/accounts")).status(200).json<Array<{ account_id: string }>>().map((a) => a.account_id).sort();
+      (await owner.get("/v1/accounts")).status(200).json<Array<{ account_id: string; name?: string }>>()
+        .filter((a) => a.name === probeName).map((a) => a.account_id).sort();
     await ctx.step("kortix ship --github-token with a token GitHub refuses → 400 from validation, never workspace_has_project, no account created", async () => {
       const before = await accountIds();
       const r = await owner.post("/v1/projects/link-repository", shipBody("ghp_synthetic_refused"));
@@ -632,7 +645,7 @@ flow(
     await ctx.step("kortix ship through the GitHub App, not installed → 409 install_url (the CLI's retry prompt), no account created", async () => {
       const before = await accountIds();
       const r = await owner.post("/v1/projects/link-repository", shipBody());
-      r.status(409).body().exists("$.install_url");
+      expectInstallPrompt(r);
       if (r.json<{ code?: string }>().code === "workspace_has_project") throw new Error("a person got workspace_has_project");
       if ((await accountIds()).join() !== before.join()) throw new Error("an install prompt created an account");
     });
