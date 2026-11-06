@@ -35,6 +35,7 @@ export {
   // Workspaces (one account + its one active project)
   workspaces,
   workspaceNameBackups,
+  personDeletionRequests,
   workspaceSplitRuns,
   auditEvents,
   auditEventsAll,
