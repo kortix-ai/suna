@@ -1567,7 +1567,11 @@ parent's session log when it needs it. The API lets a session token read every
 session up its spawn chain (`metadata.spawned_by_session`, written only when a
 box creates its own child; `isSpawnAncestor`,
 `apps/api/src/projects/lib/session-visibility.ts`), as a reader, never an
-owner. A person-set `parent_session_id` grants no read. `fork: true` (a full
+owner, and only on the read routes (`GET …/sessions/:id`, `GET …/sessions/:id/log`):
+a prompt, a permission answer or any other write to a parent stays `404`. The
+box's live log stays closed too (`403` on `/p/<box>/8000/kortix/runtime/log`);
+the CLI reads the stored log, which the box journals every 5 s during a turn.
+A person-set `parent_session_id` grants no read. `fork: true` (a full
 copy) stays opt-in: a copy is a large input, and it does not reuse the
 parent's prompt cache, because the `agent` tool text differs by depth.
 

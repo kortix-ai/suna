@@ -7,8 +7,8 @@
  * private by default, and often another person's, so the ordinary rules
  * refuse it. The spawn link (`metadata.spawned_by_session`, written only when
  * a box creates its own child) is what grants the read: a person-set
- * `parent_session_id` grants nothing, and the read never makes the child an
- * owner.
+ * `parent_session_id` grants nothing, the read never makes the child an
+ * owner, and only a read route (`spawnAncestorRead`) asks for it.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectSessions, projects } from '@kortix/db';
@@ -61,8 +61,10 @@ function boxActor(session: string): Actor {
   } as unknown as Actor;
 }
 
-const readAs = (caller: string, target: string) =>
-  loadVisibleSession({ row: projectRow, userId: LAUNCHER, actor: boxActor(caller) }, id(target), id(caller), id(caller));
+const readAs = (caller: string, target: string, spawnAncestorRead = true) =>
+  loadVisibleSession({ row: projectRow, userId: LAUNCHER, actor: boxActor(caller) }, id(target), id(caller), id(caller), {
+    spawnAncestorRead,
+  });
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'session-ancestor-read-test' });
@@ -90,6 +92,10 @@ describe('a session token reads the sessions that spawned it', () => {
     expect(access?.row.sessionId).toBe(id('root'));
     expect(access?.isOwner).toBe(false);
     expect(access?.canManageLifecycle).toBe(false);
+  });
+
+  test('a route that may change the session (a prompt, a permission answer) never sees the parent', async () => {
+    expect(await readAs('child', 'root', false)).toBeNull();
   });
 
   test('a grandchild reads every session up its spawn chain', async () => {

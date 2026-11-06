@@ -170,7 +170,10 @@ async function sessionReadGate(
   if (binding.kind === 'error') return { denied: binding.response };
   const { loaded } = binding;
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+  // A read: a subagent reads the conversation of the sessions that spawned it.
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c), {
+    spawnAncestorRead: true,
+  });
   // A deleted session reads nothing (KRTX-2744, as `GET …/transcript`): its stored log and
   // loss report are content of a session the trash model advertises as gone. The restore
   // claim takes the session sandbox credential, not this gate, so a fresh box still claims.

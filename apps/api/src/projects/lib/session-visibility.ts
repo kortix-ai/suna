@@ -317,6 +317,16 @@ async function sessionManagerStanding(
   return canManageProject;
 }
 
+/** Per-route widening of a session read. */
+export type SessionReadOptions = {
+  /**
+   * A session token may read the sessions up its spawn chain (`isSpawnAncestor`). Only a
+   * route that reads and changes nothing passes it: every other route treats a visible session
+   * as one the caller may act on (prompt it, answer its permission requests).
+   */
+  spawnAncestorRead?: boolean;
+};
+
 async function sessionReadAccess(
   loaded: VisibleSessionRequest,
   row: ProjectSessionRow,
@@ -326,6 +336,7 @@ async function sessionReadAccess(
   callerSessionId: string | null,
   boundCredentialSessionId: string | null,
   hidden: ReadonlySet<string>,
+  opts: SessionReadOptions = {},
 ): Promise<{ canManageProject: boolean; isOwner: boolean } | null> {
   const spaceVisible = spaceVisibleFor(hidden, row.spaceId);
   const ownership = {
@@ -380,10 +391,12 @@ async function sessionReadAccess(
   ) {
     visible = true;
   }
-  // A session token reads the sessions that spawned its session: a read, never ownership.
-  // Asked only when the rules above or the agent standing below would refuse the row.
+  // A session token reads the sessions that spawned its session: a read, never ownership,
+  // and only on a read route (`spawnAncestorRead`). Asked only when the rules above or the
+  // agent standing below would refuse the row.
   const agentPrincipal = Boolean(loaded.actor && isAgentPrincipalActor(loaded.actor));
   const ancestor =
+    opts.spawnAncestorRead === true &&
     (!visible || (agentPrincipal && !agentSessionStanding(boundCredentialSessionId, row, visible).visible)) &&
     spaceVisible &&
     (await isSpawnAncestor(loaded.row.projectId, boundCredentialSessionId, sessionId));
@@ -463,12 +476,13 @@ export async function loadVisibleSession(
    * ONLY the trigger-session manager override reads this field.
    */
   boundCredentialSessionId: string | null,
+  opts: SessionReadOptions = {},
 ): Promise<VisibleSessionAccess | null> {
   const prefetch = await sessionReadPrefetch(loaded, sessionId, boundCredentialSessionId);
   if (!prefetch) return null;
   const { row, subject, grants, hidden } = prefetch;
   const access = await sessionReadAccess(
-    loaded, row, sessionId, subject, grants, callerSessionId, boundCredentialSessionId, hidden,
+    loaded, row, sessionId, subject, grants, callerSessionId, boundCredentialSessionId, hidden, opts,
   );
   if (!access) return null;
   return finalizeVisibleAccess(loaded, row, subject, grants, access);

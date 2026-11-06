@@ -100,7 +100,10 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+  // A read: a subagent finds the session that spawned it (`kortix sessions log <parent>`).
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c), {
+    spawnAncestorRead: true,
+  });
   if (!visible) return c.json({ error: 'Not found' }, 404);
   // A soft-deleted session is gone for a read-by-id, exactly as it is for the
   // default list. `deleteSession` only stamps `metadata.deletedAt`
