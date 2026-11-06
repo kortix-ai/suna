@@ -6,7 +6,7 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { isAccountManager } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectAccessRequests, projects } from '@kortix/db';
+import { projectAccessRequests } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import {
   ensureOrgMembership,
@@ -22,6 +22,7 @@ import { enforceRateLimit } from '../../middleware/rate-limit';
 import { TokenBucketRateLimiter } from '../../shared/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../../shared/rate-limit-audit';
 import { workspaceIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 // replica-local, like every limiter in middleware/rate-limit.ts. Each new
 // request emails every manager, so cap new requests per requester and per project.
@@ -80,12 +81,12 @@ export function registerAccessRequestsRoutes(): void {
 
     const [project] = await db
       .select({
-        accountId: projects.accountId,
-        projectId: projects.projectId,
-        status: projects.status,
+        accountId: projectsView.accountId,
+        projectId: projectsView.projectId,
+        status: projectsView.status,
       })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
+      .from(projectsView)
+      .where(eq(projectsView.projectId, projectId))
       .limit(1);
     if (!project || project.status === 'archived') return c.json({ error: 'Not found' }, 404);
 

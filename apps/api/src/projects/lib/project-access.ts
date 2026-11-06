@@ -1,6 +1,5 @@
 import { eq } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
-import { projects } from '@kortix/db';
 // Straight from the engine + the actor builder, not the barrel: the barrel is
 // replaced wholesale by `mock.module` in several route tests, so every name
 // imported from it is a name those stubs must also declare.
@@ -24,6 +23,7 @@ import { logger } from '../../lib/logger';
 import { setContextField } from '../../lib/request-context';
 import { effectiveProjectRole, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
 import { getAccountMembership } from './user-identity';
+import { projectsView } from '../../workspaces/rows';
 
 // Memoized briefly (positive hits only) — same rationale and trade-off as
 // getAccountMembership: runs on every project request. Each statement is a
@@ -376,8 +376,8 @@ export async function loadProjectRow(projectId: string) {
   if (!isUuid(projectId)) return null;
   const [row] = await db
     .select()
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!row || row.status === 'archived') return null;
   setContextField('accountId', row.accountId);

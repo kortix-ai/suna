@@ -18,7 +18,7 @@
 // resolveSessionPlacement): a box mounts only a volume of its own region.
 
 import { logger } from '../lib/logger';
-import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, projectSpaceLinks, projectSpaceMembers, projectSpaces, projects, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, projectSpaceLinks, projectSpaceMembers, projectSpaces, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { spaceDriveFolders } from '@kortix/shared';
 import { privateChannelAccess } from '../shared/space-access';
 import { and, asc, count, desc, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
@@ -72,6 +72,7 @@ import {
 } from './volumes';
 import { isDriveSyncBox } from './sync';
 import { moveFolderGrants } from './queries';
+import { projectsView } from '../workspaces/rows';
 
 export type DriveRow = typeof drives.$inferSelect;
 
@@ -206,7 +207,7 @@ export async function ensureProjectDrive(accountId: string, projectId: string): 
   const existing = await findProjectDrive(projectId);
   if (existing) return existing;
   const driveId = crypto.randomUUID();
-  const [project] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [project] = await db.select({ metadata: projectsView.metadata }).from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   const [created] = await db
     .insert(drives)
     .values({

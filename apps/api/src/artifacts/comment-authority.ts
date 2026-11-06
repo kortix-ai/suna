@@ -1,4 +1,4 @@
-import { artifactComments, artifactCommentThreads, artifacts, jobQueue, projects, projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { artifactComments, artifactCommentThreads, artifacts, jobQueue, projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { privateChannelFoldersFor } from '../drives/service';
@@ -14,8 +14,9 @@ import { isUuid } from '../shared/validate';
 import { canView, type ArtifactRow } from './service';
 import { artifactCommentOriginIsCurrent } from './comment-mentions';
 import type { ArtifactCommentAgentPayload } from './comment-delivery';
+import { projectFields, projectsView } from '../workspaces/rows';
 
-type ProjectRow = typeof projects.$inferSelect;
+type ProjectRow = typeof projectsView.$inferSelect;
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 
 export class ArtifactCommentAuthorityError extends Error {
@@ -124,8 +125,8 @@ async function revalidateDelivery(reference: unknown, scope: DeliveryScope, crea
     || typeof target.implicit !== 'boolean' || (creating && scope.idempotencyKey !== (target.createKey ?? target.key))) throw denied();
   const original = payload.actor as unknown as Actor;
   if (original.userId !== scope.userId || original.accountId !== scope.accountId) throw denied();
-  const [source] = await db.select({ artifact: artifacts, project: projects }).from(artifacts)
-    .innerJoin(projects, and(eq(projects.projectId, artifacts.projectId), eq(projects.accountId, artifacts.accountId)))
+  const [source] = await db.select({ artifact: artifacts, project: projectFields }).from(artifacts)
+    .innerJoin(projectsView, and(eq(projectsView.projectId, artifacts.projectId), eq(projectsView.accountId, artifacts.accountId)))
     .where(and(eq(artifacts.artifactId, payload.artifactId), eq(artifacts.projectId, scope.projectId), eq(artifacts.accountId, original.accountId))).limit(1);
   if (!source || !resolveFeatureFlag(source.project.metadata, 'artifacts') || !resolveFeatureFlag(source.project.metadata, 'artifact_comments')) throw denied();
   const threadIds = [...new Set(payload.threadIds as string[])];

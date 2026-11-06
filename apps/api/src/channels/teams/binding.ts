@@ -1,14 +1,15 @@
 import { BoundedMap } from '../../shared/bounded-map';
-import { chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, chatThreads, projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { ChannelCtx } from '../slack/selection';
 import { findChatThread } from '../core/threads';
 import { stripTeamsMentions } from './util';
+import { projectsView } from '../../workspaces/rows';
 
 const PLATFORM = 'teams';
 /** A deleted project's install is no install: its tombstone keeps the row. */
-const liveProject = and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active'));
+const liveProject = and(eq(projectsView.projectId, chatInstalls.projectId), eq(projectsView.status, 'active'));
 
 export function teamsChannelCtx(tenantId: string, conversationId: string): ChannelCtx {
   return { teamId: tenantId, channelId: conversationId, platform: PLATFORM };
@@ -27,9 +28,9 @@ export async function listTenantProjects(
   // Only the installed projects. This read had no `where`, so every `/status`,
   // `/projects` and `/use` loaded the whole projects table to keep a handful.
   const rows = await db
-    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
-    .from(projects)
-    .where(and(inArray(projects.projectId, ids), eq(projects.status, 'active')));
+    .select({ projectId: projectsView.projectId, name: projectsView.name, repoUrl: projectsView.repoUrl })
+    .from(projectsView)
+    .where(and(inArray(projectsView.projectId, ids), eq(projectsView.status, 'active')));
   const byId = new Map(rows.map((r) => [r.projectId, r]));
   return ids.flatMap((id) => {
     const row = byId.get(id);
@@ -56,7 +57,7 @@ export async function resolveConversationProject(
     const [installed] = await db
       .select({ projectId: chatInstalls.projectId })
       .from(chatInstalls)
-      .innerJoin(projects, liveProject)
+      .innerJoin(projectsView, liveProject)
       .where(
         and(
           eq(chatInstalls.platform, PLATFORM),
@@ -71,7 +72,7 @@ export async function resolveConversationProject(
   const [install] = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .innerJoin(projects, liveProject)
+    .innerJoin(projectsView, liveProject)
     .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.platformTeamId, tenantId)))
     .limit(1);
   return install?.projectId ?? null;
@@ -118,7 +119,7 @@ async function resolveBoundProject(tenantId: string, conversationId: string): Pr
   const [installed] = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .innerJoin(projects, liveProject)
+    .innerJoin(projectsView, liveProject)
     .where(
       and(
         eq(chatInstalls.platform, PLATFORM),

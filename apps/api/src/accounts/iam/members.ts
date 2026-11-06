@@ -5,10 +5,7 @@ import type { Context } from 'hono';
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { and, eq } from 'drizzle-orm';
-import {
-  accountMemberships,
-  projects,
-} from '@kortix/db';
+import { accountMemberships } from '@kortix/db';
 import { db } from '../../shared/db';
 import { membershipSuperAdminRow } from '../../iam/membership-read';
 import { groupIdsOfUser, groupNamesByIds } from '../../iam/group-read';
@@ -44,6 +41,7 @@ import {
 import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { accountIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 /**
  * WHICH principal `/effective` answers about, and with WHICH credential.
@@ -250,12 +248,12 @@ export function registerIamMembersRoutes(): void {
     // Project info we'll need for every row in the response.
     const allProjects = await db
       .select({
-        projectId: projects.projectId,
-        name: projects.name,
-        status: projects.status,
+        projectId: projectsView.projectId,
+        name: projectsView.name,
+        status: projectsView.status,
       })
-      .from(projects)
-      .where(eq(projects.accountId, accountId));
+      .from(projectsView)
+      .where(eq(projectsView.accountId, accountId));
     const projectMeta = new Map(allProjects.map((p) => [p.projectId, p] as const));
 
     // 1) implicit manager via the account-scope assignment. Membership IS that

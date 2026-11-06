@@ -46,7 +46,6 @@ import { remoteBranchExists } from './git';
 import { config } from '../config';
 import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
-import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getProjectMemberRole, grantProjectRole, projectCreationDenial } from './lib/access';
@@ -57,7 +56,6 @@ import {
   resolveProjectGitAuth,
   upsertProjectGitConnection,
 } from './lib/git';
-import { metadataMerge } from './lib/metadata-merge';
 import { renameAccountOfSoleProject } from './lib/workspace-name';
 import {
   isWorkspaceOnePerAccountConflict,
@@ -94,6 +92,7 @@ import {
   newWorkspaceConflict,
   resolveNewWorkspaceAccount,
 } from './new-workspace';
+import { deleteProjectRows, insertProjectRow, metadataMerge, type ProjectRowInsert, projectsView, updateProjectRows } from '../workspaces/rows';
 
 export const PROVISION_PHASES = [
   'validating',
@@ -703,63 +702,60 @@ async function insertProvisionedProject(
     now: Date;
   },
 ): Promise<{ result: ProvisionResult } | { row: ProjectRow }> {
-  const insertProjectRow = () => db
-    .insert(projects)
-    .values({
-      projectId,
-      accountId: scope.accountId,
-      name,
-      // Recorded so a LATER retry short-circuits above, and so the partial
-      // unique index makes "one key, one project" true even when two calls
-      // race past the pre-check. Null when the caller sent no key.
-      idempotencyKey,
-      repoUrl: provisioned.upstreamUrl,
-      defaultBranch: provisioned.defaultBranch,
-      // The starter this route seeds (buildProjectSeedFiles, below) ships
-      // kortix.yaml — record that as the canonical path. A CLI `kortix ship`
-      // that pushes its own files instead of seeding still scaffolded via
-      // `kortix init` (same @kortix/starter, same kortix.yaml), so this holds
-      // for both the web and CLI creation paths.
-      manifestPath: 'kortix.yaml',
-      status: 'active',
-      metadata: {
-        git: {
-          url: provisioned.upstreamUrl,
-          upstream_url: provisioned.upstreamUrl,
-          default_branch: provisioned.defaultBranch,
-          provider,
-          managed: true,
-          auth: {
-            method: authMethod,
-            ref: provisioned.credentialRef,
-            installation_id: provisioned.installationId,
-          },
-          repo_id: provisioned.externalRepoId,
-          owner: provisioned.repoOwner,
-          name: provisioned.repoName,
-          // Scaffold-seed intent + outcome. Without this, an empty managed repo
-          // is indistinguishable from a seeded one and nothing can repair it —
-          // the defect behind "brand-new project has no files, no agents, no
-          // skills, and session start 500s on refs/heads/main".
-          seed: initialSeedState,
+  const values: ProjectRowInsert = {
+    projectId,
+    accountId: scope.accountId,
+    name,
+    // Recorded so a LATER retry short-circuits above, and so the partial
+    // unique index makes "one key, one project" true even when two calls
+    // race past the pre-check. Null when the caller sent no key.
+    idempotencyKey,
+    repoUrl: provisioned.upstreamUrl,
+    defaultBranch: provisioned.defaultBranch,
+    // The starter this route seeds (buildProjectSeedFiles, below) ships
+    // kortix.yaml — record that as the canonical path. A CLI `kortix ship`
+    // that pushes its own files instead of seeding still scaffolded via
+    // `kortix init` (same @kortix/starter, same kortix.yaml), so this holds
+    // for both the web and CLI creation paths.
+    manifestPath: 'kortix.yaml',
+    status: 'active',
+    metadata: {
+      git: {
+        url: provisioned.upstreamUrl,
+        upstream_url: provisioned.upstreamUrl,
+        default_branch: provisioned.defaultBranch,
+        provider,
+        managed: true,
+        auth: {
+          method: authMethod,
+          ref: provisioned.credentialRef,
+          installation_id: provisioned.installationId,
         },
-        // MANDATORY DECLARED AGENTS (Phase 2): every project created through this
-        // route is "new" in the spec's sense — subject to declared-agent
-        // enforcement from birth, regardless of the platform-wide
-        // KORTIX_REQUIRE_DECLARED_AGENTS flag (see projectRequiresDeclaredAgents /
-        // createProjectSession). Pre-existing projects (this flag absent/false)
-        // keep the v1 adopt-to-govern behavior untouched.
-        require_declared_agents: true,
-        ...(iconGlyph ? { icon_glyph: iconGlyph } : icon ? { icon } : {}),
+        repo_id: provisioned.externalRepoId,
+        owner: provisioned.repoOwner,
+        name: provisioned.repoName,
+        // Scaffold-seed intent + outcome. Without this, an empty managed repo
+        // is indistinguishable from a seeded one and nothing can repair it —
+        // the defect behind "brand-new project has no files, no agents, no
+        // skills, and session start 500s on refs/heads/main".
+        seed: initialSeedState,
       },
-      updatedAt: now,
-    })
-    .returning();
+      // MANDATORY DECLARED AGENTS (Phase 2): every project created through this
+      // route is "new" in the spec's sense — subject to declared-agent
+      // enforcement from birth, regardless of the platform-wide
+      // KORTIX_REQUIRE_DECLARED_AGENTS flag (see projectRequiresDeclaredAgents /
+      // createProjectSession). Pre-existing projects (this flag absent/false)
+      // keep the v1 adopt-to-govern behavior untouched.
+      require_declared_agents: true,
+      ...(iconGlyph ? { icon_glyph: iconGlyph } : icon ? { icon } : {}),
+    },
+    updatedAt: now,
+  };
 
-  let row: Awaited<ReturnType<typeof insertProjectRow>>[number];
+  let row: ProjectRow;
   emit('registering');
   try {
-    [row] = await insertProjectRow();
+    row = await insertProjectRow(values);
   } catch (error) {
     // Two unique indexes can refuse this INSERT:
     //   - `uq_projects_workspace_account`: the account gained its one active
@@ -950,17 +946,13 @@ async function seedProvisionedRepo(
       // the whole object) so this creation-seed write can't revert a pin the
       // prebuild kick may have activated concurrently. `row.metadata` above is
       // the in-memory copy the creation response serializes.
-      await db
-        .update(projects)
-        .set({
-          metadata: metadataMerge({
-            ...(seededDefaultAgent ? { default_agent: seededDefaultAgent } : {}),
-            git: { seed: verifiedSeedState },
-          }),
-          updatedAt: new Date(),
-        })
-        .where(eq(projects.projectId, row.projectId))
-        .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
+      await updateProjectRows(eq(projectsView.projectId, row.projectId), {
+        metadata: metadataMerge({
+          ...(seededDefaultAgent ? { default_agent: seededDefaultAgent } : {}),
+          git: { seed: verifiedSeedState },
+        }),
+        updatedAt: new Date(),
+      }).catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
 
       // Same switch as the create-time hint (#6973): a seeded project's FIRST
       // session must already find its base tip + scaffold delta cached.
@@ -1028,7 +1020,7 @@ async function seedProvisionedRepo(
       }
       // A surviving row points at a deleted repo, and a retry with the same
       // idempotency key would replay it as a success.
-      await db.delete(projects).where(eq(projects.projectId, row.projectId)).catch((deleteError) => {
+      await deleteProjectRows(eq(projectsView.projectId, row.projectId)).catch((deleteError) => {
         appLogger.error(
           `[projects] provision rollback left the project row ${rollbackContext}:`,
           { error: deleteError instanceof Error ? deleteError.message : String(deleteError) },

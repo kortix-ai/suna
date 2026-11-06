@@ -22,7 +22,6 @@ import { newWorkspaceCallerDenial, wantsNewWorkspace, type NewWorkspaceCaller } 
 import { isProjectSessionPrincipal } from '../../middleware/agent-scope';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
-import { projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { enforceProjectQuota, resolveProjectAccount } from '../lib/access';
 import { projectQuotaState } from '../lib/project-quota';
@@ -43,6 +42,7 @@ import { readJsonObject } from '../../shared/http-body';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 import { isNoWorkspaceError } from '../../shared/no-workspace';
 import { accountTakenForNewProject, workspaceHasProjectDenial } from '../../workspaces/one-project';
+import { projectsView } from '../../workspaces/rows';
 
 /** Who is asking, for the new-workspace caller rule (`new-workspace.ts`). */
 export function newWorkspaceCallerOf(c: Context): NewWorkspaceCaller {
@@ -151,8 +151,8 @@ export function registerProjectsRoutes(): void {
     // verdict above came from. Neither this read nor the row read needs the
     // other, so they run together.
     const baseWhere = and(
-      eq(projects.accountId, scope.accountId),
-      eq(projects.status, 'active'),
+      eq(projectsView.accountId, scope.accountId),
+      eq(projectsView.status, 'active'),
     );
 
     // mode === 'allow_only' with nothing enumerated. The 'none' case was
@@ -162,13 +162,13 @@ export function registerProjectsRoutes(): void {
       projectRoleGrants({ accountId: scope.accountId, userId: scope.userId }),
       db
         .select()
-        .from(projects)
+        .from(projectsView)
         .where(
           accessible.mode === 'all'
             ? baseWhere
-            : and(baseWhere, inArray(projects.projectId, [...accessible.allowed])),
+            : and(baseWhere, inArray(projectsView.projectId, [...accessible.allowed])),
         )
-        .orderBy(desc(projects.updatedAt)),
+        .orderBy(desc(projectsView.updatedAt)),
     ]);
     const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole]));
 

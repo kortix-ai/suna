@@ -12,7 +12,7 @@
  * (project_id, slug) key.
  */
 import { randomBytes } from 'node:crypto';
-import { projectTriggerRuntime, projects } from '@kortix/db';
+import { projectTriggerRuntime } from '@kortix/db';
 import { reminderPromptText as sharedReminderPromptText } from '@kortix/shared';
 import { formatDurationSeconds, parseDurationSeconds } from '@kortix/manifest-schema';
 import { Cron } from 'croner';
@@ -26,6 +26,7 @@ import {
   validateTriggerTimezone,
 } from '../trigger-schedule';
 import type { GitTriggerSpec } from '../triggers';
+import { projectsView } from '../../workspaces/rows';
 
 /** A recurring reminder fires at most once per 5 minutes. Each fire is a model turn. */
 export const REMINDER_MIN_INTERVAL_SECONDS = 300;
@@ -423,7 +424,7 @@ export async function disableRemindersAuthoredBy(accountId: string, userId: stri
       and(
         inArray(
           projectTriggerRuntime.projectId,
-          db.select({ projectId: projects.projectId }).from(projects).where(eq(projects.accountId, accountId)),
+          db.select({ projectId: projectsView.projectId }).from(projectsView).where(eq(projectsView.accountId, accountId)),
         ),
         sql`${projectTriggerRuntime.scheduleSpec} -> 'reminder' ->> 'promptAuthorUserId' = ${userId}`,
         ...activeReminder,

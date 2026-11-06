@@ -1,12 +1,6 @@
 import { llmValueFields, llmValueBasis } from './llm-value';
 import { numberValue, isoValue, type NumericValue, type TemporalValue } from './cost-values';
-import {
-  gatewayRequestLogs,
-  projectSessions,
-  projects,
-  sandboxComputeSessions,
-  sessionSandboxes,
-} from '@kortix/db';
+import { gatewayRequestLogs, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import {
   type AnyColumn,
   type SQL,
@@ -33,6 +27,7 @@ import {
   rowKortixBilledSpendSql,
   totalSpendSql,
 } from './llm-spend';
+import { projectsView } from '../workspaces/rows';
 
 type ProjectSessionStatus = typeof projectSessions.$inferSelect.status;
 
@@ -685,7 +680,7 @@ export async function listSessionCosts(input: {
       .select({
         sessionId: projectSessions.sessionId,
         projectId: projectSessions.projectId,
-        projectName: projects.name,
+        projectName: projectsView.name,
         ownerId: projectSessions.createdBy,
         status: projectSessions.status,
         createdAt: projectSessions.createdAt,
@@ -706,7 +701,7 @@ export async function listSessionCosts(input: {
         computeLastAt: compute.lastAt,
       })
       .from(projectSessions)
-      .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+      .innerJoin(projectsView, eq(projectsView.projectId, projectSessions.projectId))
       .leftJoin(llm, eq(llm.sessionId, projectSessions.sessionId))
       .leftJoin(compute, eq(compute.sessionId, projectSessions.sessionId))
       .where(and(...conditions))
@@ -903,14 +898,14 @@ export async function getSessionCostRecord(input: {
     .select({
       sessionId: projectSessions.sessionId,
       projectId: projectSessions.projectId,
-      projectName: projects.name,
+      projectName: projectsView.name,
       ownerId: projectSessions.createdBy,
       status: projectSessions.status,
       createdAt: projectSessions.createdAt,
       updatedAt: projectSessions.updatedAt,
     })
     .from(projectSessions)
-    .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+    .innerJoin(projectsView, eq(projectsView.projectId, projectSessions.projectId))
     .where(and(...conditions))
     .limit(1);
   if (!session) return null;

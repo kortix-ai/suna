@@ -1,6 +1,6 @@
 /** Agent questions: the sandbox `turn-question` relay and the session question read/answer routes. */
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { QuestionInfo } from '../../channels/slack-webhook';
 import { relayTurnQuestion } from '../../channels/turn-relay';
@@ -37,6 +37,7 @@ import { notifySessionEvent } from '../../notifications/session-push';
 import { notifySessionPushLegacy } from '../../notifications/session-push-legacy';
 import { askNotificationContext } from '../lib/notification-recipients';
 import { workspaceIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 export function registerTurnQuestionsRoutes(): void {
   // POST /v1/projects/:projectId/turn-question
@@ -142,10 +143,10 @@ export function registerTurnQuestionsRoutes(): void {
           origin: projectSessions.origin,
           metadata: projectSessions.metadata,
           parentSessionId: projectSessions.parentSessionId,
-          projectMetadata: projects.metadata,
+          projectMetadata: projectsView.metadata,
         })
         .from(projectSessions)
-        .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+        .innerJoin(projectsView, eq(projectsView.projectId, projectSessions.projectId))
         .where(
           and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
         )

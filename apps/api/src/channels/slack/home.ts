@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { chatInstalls, chatThreads, projects } from '@kortix/db';
+import { chatInstalls, chatThreads } from '@kortix/db';
 import { db } from '../../shared/db';
 import { loadSlackTokenForProject } from '../install-store';
 import { publishHomeView } from '../slack-api';
@@ -7,6 +7,7 @@ import { config } from '../../config';
 import { escapeMrkdwn, formatRelativeTime } from './util';
 import { isKortixHostedRepo, repoDisplayLabel, repoPreviewImages } from '../repo-preview';
 import type { HomeProjectRow, HomeRecentRow } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 export async function publishHomeForUser(teamId: string, userId: string): Promise<void> {
   const installs = await db
@@ -20,9 +21,9 @@ export async function publishHomeForUser(teamId: string, userId: string): Promis
 
   const projectIds = installs.map((i) => i.projectId);
   const projectRows = await db
-    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
-    .from(projects)
-    .where(inArray(projects.projectId, projectIds));
+    .select({ projectId: projectsView.projectId, name: projectsView.name, repoUrl: projectsView.repoUrl })
+    .from(projectsView)
+    .where(inArray(projectsView.projectId, projectIds));
 
   const recent = await db
     .select({

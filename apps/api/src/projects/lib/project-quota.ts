@@ -1,11 +1,11 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import {
   WORKSPACE_HAS_PROJECT_MESSAGE,
   type WorkspaceHasProjectBody,
   workspaceHasProjectDenial,
 } from '../../workspaces/one-project';
+import { projectsView } from '../../workspaces/rows';
 
 /**
  * The one refusal to create a project in `accountId`: `409
@@ -47,8 +47,8 @@ export async function projectQuotaState(accountId: string): Promise<ProjectQuota
     workspaceHasProjectDenial(accountId),
     db
       .select({ count: sql<number>`count(*)::int` })
-      .from(projects)
-      .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active'))),
+      .from(projectsView)
+      .where(and(eq(projectsView.accountId, accountId), eq(projectsView.status, 'active'))),
   ]);
   const capped = denial !== null;
   return { capped, limit: 1, count: counted?.count ?? 0, message: capped ? WORKSPACE_HAS_PROJECT_MESSAGE : null };

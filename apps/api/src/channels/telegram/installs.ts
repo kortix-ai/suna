@@ -5,7 +5,7 @@
  * requests are `projects.metadata.telegram` (channels/core/channel-access.ts),
  * scoped to the bot id.
  */
-import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls } from '@kortix/db';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
@@ -22,6 +22,7 @@ import {
   setChannelAllowedUsers,
 } from '../core/channel-access';
 import { deleteProjectSecrets, readSecret, upsertSecret } from '../install-store';
+import { projectsView } from '../../workspaces/rows';
 
 export const TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
 /** Same name the legacy webhook verifies against, so one secret serves both paths. */
@@ -85,9 +86,9 @@ export async function saveTelegramInstall(input: {
  */
 export async function loadTelegramInstall(projectId: string): Promise<TelegramInstall | null> {
   const [row] = await db
-    .select({ botId: chatInstalls.platformTeamId, metadata: projects.metadata })
+    .select({ botId: chatInstalls.platformTeamId, metadata: projectsView.metadata })
     .from(chatInstalls)
-    .innerJoin(projects, and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active')))
+    .innerJoin(projectsView, and(eq(projectsView.projectId, chatInstalls.projectId), eq(projectsView.status, 'active')))
     .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)))
     .limit(1);
   if (!row) return null;

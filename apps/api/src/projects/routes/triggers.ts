@@ -1,7 +1,7 @@
 /** Project triggers: list, create, update, activate, delete, and manual fire. */
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
-import { projectTriggerRuntime, projects } from '@kortix/db';
+import { projectTriggerRuntime } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { featureDisabledBody, requireFeatureFlag } from '../../feature-flags/gate';
@@ -25,7 +25,6 @@ import {
 import { guardSession } from '../lib/http-session-access';
 import { withProjectGitAuth } from '../lib/git';
 import { resolveSessionAgentName } from '../lib/session-create';
-import { metadataMerge } from '../lib/metadata-merge';
 import { requestAuditContext } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import {
@@ -87,6 +86,7 @@ import {
 } from '../triggers';
 import { capturePersonEvent } from './product-events';
 import { workspaceIdParam } from '../../shared/route-params';
+import { metadataMerge, projectsView, updateProjectRowsReturning } from '../../workspaces/rows';
 
 /**
  * The person who created or edited a trigger follows its alerts (KRTX-1742).
@@ -565,16 +565,12 @@ export function registerTriggersRoutes(): void {
       }
       // FIX-J: SQL-side atomic merge of ONLY `triggers_paused` (set true / delete)
       // so this kill-switch write can't revert a routing pin written concurrently.
-      const [row] = await db
-        .update(projects)
-        .set({
+      const [row] = await updateProjectRowsReturning(eq(projectsView.projectId, projectId), {
           metadata: paused
             ? metadataMerge({ triggers_paused: true })
             : metadataMerge({}, ['triggers_paused']),
           updatedAt: new Date(),
-        })
-        .where(eq(projects.projectId, projectId))
-        .returning();
+        });
       if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
       return c.json(await loadTriggersForResponse(projectId, row, { userId: loaded.userId, bound: callerKortixSessionId(c) }));
     },

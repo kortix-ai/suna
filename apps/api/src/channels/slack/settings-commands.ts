@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
@@ -17,6 +17,7 @@ import { currentChannelSelection } from './selection';
 import { dashboardBase, escapeMrkdwn, respondViaUrl } from './util';
 import { SLACK_PREVIEW_WAIT_MS, isKortixHostedRepo, repoDisplayLabel, repoPreviewImages } from '../repo-preview';
 import type { SlashCtx, SlashResponse } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 // The Slack rendering of channel settings: the `/kortix` panel, the project,
 // agent and model pickers, and the setters behind `/kortix switch|unbind|agent|
@@ -258,9 +259,9 @@ export async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
     };
   }
   const [p] = await db
-    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl, metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, currentId))
+    .select({ projectId: projectsView.projectId, name: projectsView.name, repoUrl: projectsView.repoUrl, metadata: projectsView.metadata })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, currentId))
     .limit(1);
   if (!p) {
     return {
@@ -485,9 +486,9 @@ export async function listWorkspaceProjects(teamId: string): Promise<WorkspacePr
   if (installs.length === 0) return [];
   const ids = installs.map((i) => i.projectId);
   return db
-    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
-    .from(projects)
-    .where(inArray(projects.projectId, ids));
+    .select({ projectId: projectsView.projectId, name: projectsView.name, repoUrl: projectsView.repoUrl })
+    .from(projectsView)
+    .where(inArray(projectsView.projectId, ids));
 }
 
 export async function currentChannelProjectId(ctx: { teamId: string; channelId: string }): Promise<string | null> {

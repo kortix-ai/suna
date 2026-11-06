@@ -8,14 +8,7 @@ import type {
 } from '@kortix/api-contract';
 import { normalizeRuntimeSessionSnapshots } from './runtime-session-snapshot';
 import { normalizeDefaultReasoningEffort } from './effort-default';
-import {
-  type accountGithubInstallations,
-  type projectGitConnections,
-  type projectGitCredentials,
-  projectSecrets,
-  type projectSessions,
-  type projects,
-} from '@kortix/db';
+import { type accountGithubInstallations, type projectGitConnections, type projectGitCredentials, projectSecrets, type projectSessions } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { sessionInitiatorLabel } from './session-initiator';
 import { sessionRestoreUntil } from '../session-log-purge';
@@ -46,10 +39,11 @@ import { normalizeProjectIcon } from './project-icon';
 import { probeProjectSecret } from '../secrets/envelope';
 import { isDeprecatedProvider } from '../../platform/providers/deprecated';
 import { isPlatinumConfigured } from '../../shared/platinum';
+import { projectsView } from '../../workspaces/rows';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
-export type ProjectRow = typeof projects.$inferSelect;
+export type ProjectRow = typeof projectsView.$inferSelect;
 
 export type ProjectGitConnectionRow = typeof projectGitConnections.$inferSelect;
 

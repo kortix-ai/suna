@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountInvitations, accountMemberships, accounts, projects } from '@kortix/db';
+import { accountInvitations, accountMemberships } from '@kortix/db';
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, addWorkspaceMember, assertAuthorized, authorize, workspaceFactsOf } from '../../iam';
 import { SYSTEM_ACTOR } from '../../iam/assignments';
@@ -23,6 +23,7 @@ import { logger } from '../../lib/logger';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { captureProductEvent } from '../../shared/product-analytics';
 import { accountIdParam } from '../../shared/route-params';
+import { accountsView, projectsView } from '../../workspaces/rows';
 
 type BootstrapEntry = NonNullable<(typeof accountInvitations.$inferInsert)['bootstrapGrants']>[number];
 
@@ -148,10 +149,10 @@ export function registerMemberInviteRoute(): void {
         // malicious payload can't plant a cross-account project_members row.
         const owned = requestedIds.length
           ? await db
-              .select({ projectId: projects.projectId })
-              .from(projects)
+              .select({ projectId: projectsView.projectId })
+              .from(projectsView)
               .where(
-                and(eq(projects.accountId, accountId), inArray(projects.projectId, requestedIds)),
+                and(eq(projectsView.accountId, accountId), inArray(projectsView.projectId, requestedIds)),
               )
           : [];
         const ownedIds = new Set(owned.map((p) => p.projectId));
@@ -174,9 +175,9 @@ export function registerMemberInviteRoute(): void {
 
       // Need account name for the invite email
       const [accountRow] = await db
-        .select({ name: accounts.name })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
+        .select({ name: accountsView.name })
+        .from(accountsView)
+        .where(eq(accountsView.accountId, accountId))
         .limit(1);
       if (!accountRow) return c.json({ error: 'Account not found' }, 404);
 
@@ -454,9 +455,9 @@ export function registerInviteRoutes(): void {
       if (!updated) return c.json({ error: 'Invite not found' }, 404);
 
       const [accountRow] = await db
-        .select({ name: accounts.name })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
+        .select({ name: accountsView.name })
+        .from(accountsView)
+        .where(eq(accountsView.accountId, accountId))
         .limit(1);
 
       let delivery: Awaited<ReturnType<typeof sendAccountInviteEmail>> | null = null;

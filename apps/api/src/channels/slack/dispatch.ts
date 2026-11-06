@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
-import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls } from '@kortix/db';
 import { db } from '../../shared/db';
 import {
   loadSlackBotIdForProject,
@@ -59,6 +59,7 @@ import type {
   SlackQuestionPress,
   SlashResponse,
 } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 type SlackTurnOpts = { ownThreadsOnly?: boolean; threadProjectResolved?: boolean; authorizedResume?: boolean; press?: SlackQuestionPress };
 
@@ -117,7 +118,7 @@ export async function resolveOauthProject(
   if (threadTs) {
     const thread = await findChatThread({ platform: 'slack', workspaceId: teamId, threadId: threadTs });
     if (thread) {
-      const [project] = await db.select({ status: projects.status }).from(projects).where(eq(projects.projectId, thread.projectId));
+      const [project] = await db.select({ status: projectsView.status }).from(projectsView).where(eq(projectsView.projectId, thread.projectId));
       return project?.status === 'archived' ? { kind: 'none' } : { kind: 'project', projectId: thread.projectId };
     }
   }
@@ -128,9 +129,9 @@ export async function resolveOauthProject(
       eq(chatChannelBindings.channelId, channelId),
     );
     const [binding] = await db
-      .select({ projectId: chatChannelBindings.projectId, status: projects.status })
+      .select({ projectId: chatChannelBindings.projectId, status: projectsView.status })
       .from(chatChannelBindings)
-      .leftJoin(projects, eq(projects.projectId, chatChannelBindings.projectId))
+      .leftJoin(projectsView, eq(projectsView.projectId, chatChannelBindings.projectId))
       .where(where)
       .limit(1);
     if (binding?.status === 'archived') {
@@ -146,7 +147,7 @@ export async function resolveOauthProject(
   const installs = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .innerJoin(projects, and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active')))
+    .innerJoin(projectsView, and(eq(projectsView.projectId, chatInstalls.projectId), eq(projectsView.status, 'active')))
     .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformTeamId, teamId)));
   if (installs.length === 0) return { kind: 'none' };
   if (installs.length === 1) {
@@ -232,9 +233,9 @@ async function postProjectPicker(opts: {
   }
 
   const projectRows = await db
-    .select({ projectId: projects.projectId, name: projects.name })
-    .from(projects)
-    .where(inArray(projects.projectId, projectIds));
+    .select({ projectId: projectsView.projectId, name: projectsView.name })
+    .from(projectsView)
+    .where(inArray(projectsView.projectId, projectIds));
 
   // The button carries only this id; the triggering message is parked in the DB
   // so the click replays it on any replica. No message (DM/assistant open) →
@@ -510,9 +511,9 @@ async function postChannelIntro(projectId: string, channelId: string): Promise<v
   const token = await loadSlackTokenForProject(projectId);
   if (!token) return;
   const [project] = await db
-    .select({ name: projects.name })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ name: projectsView.name })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   const projectLine = project?.name
     ? `This channel is connected to *${escapeMrkdwn(project.name)}*.`
@@ -646,9 +647,9 @@ export async function dispatchSlackEvent(
   if (eventClass === 'mention' && !stripMentions(event.text ?? '') && !event.files?.length) {
     if (config.SLACK_REQUIRE_USER_IDENTITY) {
       const [project] = await db
-        .select({ accountId: projects.accountId })
-        .from(projects)
-        .where(eq(projects.projectId, projectId))
+        .select({ accountId: projectsView.accountId })
+        .from(projectsView)
+        .where(eq(projectsView.projectId, projectId))
         .limit(1);
       if (!project) return;
       const slackUserId = event.user ?? '';
@@ -714,9 +715,9 @@ export async function spawnAgentTurn(
   //    to the owner (the impersonation this fixes).
   //  • OFF — legacy behavior: run as the account owner stand-in.
   const [project] = await db
-    .select({ accountId: projects.accountId, metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ accountId: projectsView.accountId, metadata: projectsView.metadata })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!project) return;
 
@@ -761,7 +762,7 @@ async function routeSlackThread(
   envelope: SlackEnvelope,
   event: SlackEvent,
   opts: SlackTurnOpts,
-  project: { accountId: string; metadata: typeof projects.$inferSelect.metadata },
+  project: { accountId: string; metadata: typeof projectsView.$inferSelect.metadata },
   actorUserId: string,
   teamId: string,
   threadId: string,
@@ -960,7 +961,7 @@ async function deliverToExistingThread(
   projectId: string,
   envelope: SlackEnvelope,
   event: SlackEvent,
-  project: { accountId: string; metadata: typeof projects.$inferSelect.metadata },
+  project: { accountId: string; metadata: typeof projectsView.$inferSelect.metadata },
   actorUserId: string,
   teamId: string,
   threadId: string,

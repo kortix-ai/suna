@@ -1,47 +1,6 @@
 import { and, eq, inArray, isNotNull, ne, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
-import {
-  accountDeletionRequests,
-  accountTokens,
-  accounts,
-  appDeploymentEvents,
-  appDeployments,
-  appSiteBlobs,
-  apps,
-  changeRequests,
-  connectorCalls,
-  connectorConnections,
-  gatewayRequestLogs,
-  gatewayApiKeys,
-  oauthAccessTokens,
-  oauthAuthorizationCodes,
-  oauthRefreshTokens,
-  scimTokens,
-  serviceAccounts,
-  impersonationGrants,
-  kortixApiKeys,
-  legacySandboxMigrations,
-  platformUserRoles,
-  projectSessionConnectorBindings,
-  projectSessions,
-  projectTriggerExecutions,
-  projectTriggerRuntime,
-  projects,
-  providerEvents,
-  pushDeviceTokens,
-  reviewItems,
-  sandboxes,
-  sandboxComputeSessions,
-  sessionLifecycleCommands,
-  sessionPendingQuestions,
-  sessionSandboxes,
-  sessionTurns,
-  sunaAccountMigrations,
-  tunnelAuditLogs,
-  tunnelConnections,
-  tunnelDeviceAuthRequests,
-  usageEvents,
-} from '@kortix/db';
+import { accountDeletionRequests, accountTokens, appDeploymentEvents, appDeployments, appSiteBlobs, apps, changeRequests, connectorCalls, connectorConnections, gatewayRequestLogs, gatewayApiKeys, oauthAccessTokens, oauthAuthorizationCodes, oauthRefreshTokens, scimTokens, serviceAccounts, impersonationGrants, kortixApiKeys, legacySandboxMigrations, platformUserRoles, projectSessionConnectorBindings, projectSessions, projectTriggerExecutions, projectTriggerRuntime, providerEvents, pushDeviceTokens, reviewItems, sandboxes, sandboxComputeSessions, sessionLifecycleCommands, sessionPendingQuestions, sessionSandboxes, sessionTurns, sunaAccountMigrations, tunnelAuditLogs, tunnelConnections, tunnelDeviceAuthRequests, usageEvents } from '@kortix/db';
 import { getSupabase } from '../../shared/supabase';
 import { deleteAccountSiteObjects } from '../../apps/static-site';
 import { getStripe } from '../../shared/stripe';
@@ -73,6 +32,7 @@ import {
 } from '../repositories/account-deletion';
 import { deleteUserSessionStates, releaseProjectEventSubscriptions } from '../../projects/surface';
 import { deleteAccountExternalStores } from './account-erasure-stores';
+import { accountsView, deleteAccountRows, projectsView } from '../../workspaces/rows';
 
 const GRACE_PERIOD_DAYS = 14;
 const ACTIVE_DELETION_REQUEST_EXISTS = 'An active deletion request already exists for this account';
@@ -785,18 +745,18 @@ async function deleteAccountData(accountId: string, keepRequestId?: string): Pro
   // Provider-side app-event instances live outside our database: release them
   // before the cascade drops the rows that name them.
   for (const { projectId } of await db
-    .select({ projectId: projects.projectId })
-    .from(projects)
-    .where(eq(projects.accountId, accountId))) {
+    .select({ projectId: projectsView.projectId })
+    .from(projectsView)
+    .where(eq(projectsView.accountId, accountId))) {
     await releaseProjectEventSubscriptions(projectId);
   }
 
   await db.transaction(async (tx) => {
     // Scopes for the child rows that carry no account_id of their own.
     const accountProjects = tx
-      .select({ projectId: projects.projectId })
-      .from(projects)
-      .where(eq(projects.accountId, accountId));
+      .select({ projectId: projectsView.projectId })
+      .from(projectsView)
+      .where(eq(projectsView.accountId, accountId));
     const accountApps = tx.select({ appId: apps.appId }).from(apps).where(eq(apps.accountId, accountId));
     const accountDeployments = tx
       .select({ deploymentId: appDeployments.deploymentId })
@@ -857,6 +817,6 @@ async function deleteAccountData(accountId: string, keepRequestId?: string): Pro
       );
 
     // Pass 3 — the row itself: the FK cascade takes every remaining table.
-    await tx.delete(accounts).where(eq(accounts.accountId, accountId));
+    await deleteAccountRows(eq(accountsView.accountId, accountId), tx);
   });
 }

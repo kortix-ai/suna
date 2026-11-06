@@ -11,7 +11,7 @@
  * A field the block does not declare stays the App's own. Everything else on
  * the row (name, access, external URL, runtime state) is not declarable.
  */
-import { appLinks, apps, projects } from '@kortix/db';
+import { appLinks, apps } from '@kortix/db';
 import { validateAppsV2, type ManifestIssue } from '@kortix/manifest-schema';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { mutateManifestWithRetry, type ManifestCommitResult } from '../connectors/manifest-mutation';
@@ -19,6 +19,7 @@ import { withProjectGitAuth } from '../projects/surface';
 import { db } from '../shared/db';
 import { AppLimitError, assertAppMachineWithinLimits } from './limits';
 import { UnknownLinkedAppError, resolveAppLinks } from './links';
+import { projectsView } from '../workspaces/rows';
 
 export interface AppManifestFields {
   cpu?: number;
@@ -71,7 +72,7 @@ export function declaredAppFields(block: unknown): AppManifestFields {
  */
 export async function commitAppFields(projectId: string, slug: string, fields: AppManifestFields): Promise<ManifestCommitResult> {
   if (Object.keys(fields).length === 0) return { ok: true };
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
   let project: Awaited<ReturnType<typeof withProjectGitAuth>>;
   try {
@@ -116,7 +117,7 @@ export function withoutApp(appsNode: Row, slug: string): Row {
 
 /** Remove `apps.<slug>` (and references to it) from kortix.yaml. Nothing is committed when the file does not declare it. */
 export async function commitAppRemoval(projectId: string, slug: string): Promise<ManifestCommitResult> {
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
   let project: Awaited<ReturnType<typeof withProjectGitAuth>>;
   try {

@@ -9,7 +9,7 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { isAccountManager } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountInvitations, accounts } from '@kortix/db';
+import { accountInvitations } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   ensureOrgMembership,
@@ -22,6 +22,7 @@ import {
 import { projectsApp } from '../lib/app';
 import { readJsonObject } from '../../shared/http-body';
 import { workspaceIdParam } from '../../shared/route-params';
+import { accountsView } from '../../workspaces/rows';
 
 export function registerProjectInvitesRoutes(): void {
   // PUT /v1/projects/:projectId/access/:userId
@@ -155,9 +156,9 @@ export function registerProjectInvitesRoutes(): void {
       // anyway so a transport-layer rejection can't surface as unhandled.
       const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
       const [accountRow] = await db
-        .select({ name: accounts.name })
-        .from(accounts)
-        .where(eq(accounts.accountId, loaded.row.accountId))
+        .select({ name: accountsView.name })
+        .from(accountsView)
+        .where(eq(accountsView.accountId, loaded.row.accountId))
         .limit(1);
       const emailConfigured = isInviteEmailConfigured();
       if (emailConfigured) {
@@ -455,9 +456,9 @@ export function registerProjectInvitesRoutes(): void {
 
     const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
     const [accountRow] = await db
-      .select({ name: accounts.name })
-      .from(accounts)
-      .where(eq(accounts.accountId, loaded.row.accountId))
+      .select({ name: accountsView.name })
+      .from(accountsView)
+      .where(eq(accountsView.accountId, loaded.row.accountId))
       .limit(1);
     const delivery = await sendAccountInviteEmail({
       email: invite.email,

@@ -6,7 +6,7 @@
  * (`chat_channel_bindings`). Re-pointing a channel bound to another project
  * also needs that project to allow the presser.
  */
-import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, chatThreads } from '@kortix/db';
 import { and, eq, inArray, ne } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { isUuid } from '../../shared/validate';
@@ -15,6 +15,7 @@ import { clip } from './render';
 import { discordGuildProjects } from './installs';
 import { projectNames, projectsAllowing } from './routing';
 import type { DiscordConversation } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 /** `kd:<project id>`: 39 bytes. The press binds the channel it is in; the token names no channel. */
 export const isProjectPress = (data: string) => data.startsWith('kd:');
@@ -61,9 +62,9 @@ export async function bindDiscordChannel(conversation: DiscordConversation, proj
   const held = conversation.direct
     ? []
     : await db
-        .select({ projectId: chatChannelBindings.projectId, metadata: projects.metadata })
+        .select({ projectId: chatChannelBindings.projectId, metadata: projectsView.metadata })
         .from(chatChannelBindings)
-        .innerJoin(projects, and(eq(projects.projectId, chatChannelBindings.projectId), eq(projects.status, 'active')))
+        .innerJoin(projectsView, and(eq(projectsView.projectId, chatChannelBindings.projectId), eq(projectsView.status, 'active')))
         .where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, channelId), ne(chatChannelBindings.projectId, projectId)));
   if (held.some((row) => !readChannelAccess(row.metadata, 'discord').allowedUserIds.includes(userId))) return false;
   return db.transaction(async (tx) => {
@@ -102,9 +103,9 @@ export async function claimDiscordChannel(conversation: DiscordConversation, pro
   if (conversation.direct) {
     // A DM's row may sit under any guild: one row at most.
     const rows = await db
-      .select({ id: chatChannelBindings.bindingId, projectId: chatChannelBindings.projectId, metadata: projects.metadata })
+      .select({ id: chatChannelBindings.bindingId, projectId: chatChannelBindings.projectId, metadata: projectsView.metadata })
       .from(chatChannelBindings)
-      .leftJoin(projects, eq(projects.projectId, chatChannelBindings.projectId))
+      .leftJoin(projectsView, eq(projectsView.projectId, chatChannelBindings.projectId))
       .where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, conversation.settingsId)));
     const stale = rows.filter((r) => r.projectId !== projectId && !readChannelAccess(r.metadata, 'discord').allowedUserIds.includes(senderId));
     if (stale.length) await db.delete(chatChannelBindings).where(inArray(chatChannelBindings.bindingId, stale.map((r) => r.id)));

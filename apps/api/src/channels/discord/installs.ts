@@ -8,7 +8,7 @@
  * and access requests are `projects.metadata.discord`
  * (channels/core/channel-access.ts), scoped to the guild id.
  */
-import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, chatThreads } from '@kortix/db';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
@@ -22,6 +22,7 @@ import {
 } from '../core/channel-access';
 import { deleteProjectSecrets, readSecret, upsertSecret } from '../install-store';
 import { discordCall, discordConfigured } from './api';
+import { projectsView } from '../../workspaces/rows';
 
 export const DISCORD_GUILD_NAME = 'DISCORD_GUILD_NAME';
 
@@ -77,9 +78,9 @@ export async function saveDiscordInstall(input: { projectId: string; guildId: st
 /** Null when the project has no Discord server, or is deleted (its tombstone keeps the row). */
 export async function loadDiscordInstall(projectId: string): Promise<DiscordInstall | null> {
   const [row] = await db
-    .select({ guildId: chatInstalls.platformTeamId, metadata: projects.metadata })
+    .select({ guildId: chatInstalls.platformTeamId, metadata: projectsView.metadata })
     .from(chatInstalls)
-    .innerJoin(projects, and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active')))
+    .innerJoin(projectsView, and(eq(projectsView.projectId, chatInstalls.projectId), eq(projectsView.status, 'active')))
     .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.projectId, projectId)))
     .limit(1);
   if (!row) return null;
@@ -95,7 +96,7 @@ export async function discordGuildProjects(guildId: string): Promise<string[]> {
   const rows = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .innerJoin(projects, and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active')))
+    .innerJoin(projectsView, and(eq(projectsView.projectId, chatInstalls.projectId), eq(projectsView.status, 'active')))
     .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.platformTeamId, guildId)))
     .orderBy(chatInstalls.connectedAt);
   return rows.map((r) => r.projectId);

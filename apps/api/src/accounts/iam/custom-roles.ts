@@ -8,7 +8,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, ne } from 'drizzle-orm';
-import { iamRoleActions, iamRoles, projects } from '@kortix/db';
+import { iamRoleActions, iamRoles } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { accountCustomRoles, roleActionRows, systemRoleDescriptionRows } from '../../iam/role-read';
@@ -28,6 +28,7 @@ import { toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { mapLimit } from '@kortix/registry';
 import { TimeoutError, withTimeout } from '../../shared/with-timeout';
 import { accountIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 // ─── Serializers (match iam-client.ts wire shapes exactly) ──────────────────
 
@@ -578,8 +579,8 @@ export function registerIamCustomRolesRoutes(): void {
 
       const projectRows = await db
         .select()
-        .from(projects)
-        .where(and(eq(projects.accountId, accountId), ne(projects.status, 'archived')))
+        .from(projectsView)
+        .where(and(eq(projectsView.accountId, accountId), ne(projectsView.status, 'archived')))
         .limit(AGENT_IDENTITIES_PROJECT_CAP);
 
       await eagerlyProvisionAgentIdentities(accountId, projectRows, byKey);

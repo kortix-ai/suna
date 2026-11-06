@@ -1,6 +1,6 @@
 import { AccountSummarySchema as ContractAccountSummarySchema } from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
-import { accountInvitations, type accounts } from '@kortix/db';
+import { accountInvitations } from '@kortix/db';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
@@ -19,6 +19,7 @@ import { suggestAccountName } from './account-name';
 import { lookupEmailsByUserIds } from './owner-emails';
 import type { AppEnv } from '../../types';
 import { captureProductEvent } from '../../shared/product-analytics';
+import { accountsView } from '../../workspaces/rows';
 
 // ─── Public router (leaf module — no route imports here to avoid cycles) ─────
 export const accountsRouter = makeOpenApiApp<AppEnv>();
@@ -297,7 +298,7 @@ export async function resolveAccountDisplayNames(
   return names;
 }
 
-export function serializeAccount(row: typeof accounts.$inferSelect) {
+export function serializeAccount(row: typeof accountsView.$inferSelect) {
   return {
     account_id: row.accountId,
     name: row.name,

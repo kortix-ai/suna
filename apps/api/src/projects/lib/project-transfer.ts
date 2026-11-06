@@ -25,60 +25,7 @@
  */
 import { and, eq, getTableName, inArray, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
-import {
-  artifacts,
-  artifactCommentThreads,
-  artifactEvents,
-  jobQueue,
-  sessionSandboxIdentities,
-  projectSessionGroups,
-  projectSpaces,
-  rooms,
-  sessionIdleWatches,
-  accountModelPreferences,
-  accountSecretResources,
-  accountSecretGrants,
-  accountTokens,
-  appArtifacts,
-  apps,
-  changeRequests,
-  connectorAttachments,
-  connectorCalls,
-  connectorHeldCalls,
-  connectorConnections,
-  connectionOAuthApplications,
-  connectionOAuthSessions,
-  connectors,
-  drives,
-  gatewayApiKeys,
-  projectAccessRequests,
-  projectGitConnections,
-  projectGitCredentials,
-  projectMonitorBoxes,
-  projectSessionConnectorBindings,
-  projectSessionPublicShares,
-  projectSessions,
-  projectSnapshotBuilds,
-  projectTriggerEventSubscriptions,
-  projectTriggerEventPolls,
-  projects,
-  accounts,
-  iamRoles,
-  promptAttachments,
-  providerTransitions,
-  reviewItems,
-  roleAssignments,
-  sandboxTemplates,
-  serviceAccounts,
-  sessionContentPurges,
-  sessionLifecycleCommands,
-  sessionLogs,
-  sessionPendingPermissions,
-  sessionPendingQuestions,
-  sessionRuntimeProjections,
-  sessionSandboxes,
-  sessionTurns,
-} from '@kortix/db';
+import { artifacts, artifactCommentThreads, artifactEvents, jobQueue, sessionSandboxIdentities, projectSessionGroups, projectSpaces, rooms, sessionIdleWatches, accountModelPreferences, accountSecretResources, accountSecretGrants, accountTokens, appArtifacts, apps, changeRequests, connectorAttachments, connectorCalls, connectorHeldCalls, connectorConnections, connectionOAuthApplications, connectionOAuthSessions, connectors, drives, gatewayApiKeys, projectAccessRequests, projectGitConnections, projectGitCredentials, projectMonitorBoxes, projectSessionConnectorBindings, projectSessionPublicShares, projectSessions, projectSnapshotBuilds, projectTriggerEventSubscriptions, projectTriggerEventPolls, iamRoles, promptAttachments, providerTransitions, reviewItems, roleAssignments, sandboxTemplates, serviceAccounts, sessionContentPurges, sessionLifecycleCommands, sessionLogs, sessionPendingPermissions, sessionPendingQuestions, sessionRuntimeProjections, sessionSandboxes, sessionTurns } from '@kortix/db';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
@@ -86,16 +33,17 @@ import { isUuid } from '../../shared/validate';
 import { workspaceHasProjectDenial } from '../../workspaces/surface';
 import { blobKey, supabaseSiteStorage, type SiteStorage } from '../../apps/static-site';
 import { mapWithConcurrency } from '../../shared/map-with-concurrency';
+import { accountsView, moveProjectRowAccount, projectsView } from '../../workspaces/rows';
 
 /**
  * Tables the transfer UPDATES (`account_id` → the target account) for the
- * moved project's rows. `projects` is first: the row that owns the move.
- * Rows whose `project_id` is NULL (account-scoped secrets, templates,
- * personal drives, manual service accounts, unbound tokens) never match the
- * `project_id = :projectId` predicate and stay put.
+ * moved project's rows, after the project row itself
+ * (`moveProjectRowAccount`, the workspaces store). Rows whose `project_id`
+ * is NULL (account-scoped secrets, templates, personal drives, manual service
+ * accounts, unbound tokens) never match the `project_id = :projectId`
+ * predicate and stay put.
  */
 export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
-  projects,
   projectSessions,
   projectGitConnections,
   projectGitCredentials,
@@ -412,8 +360,8 @@ export async function moveProjectInTransaction(
     throw new ProjectTransferError('same_account', 'Project is already in that account');
   }
   // Lock the row: the CAS against a concurrent move happens under this lock.
-  const [row] = await tx.select({ account_id: projects.accountId, status: projects.status })
-    .from(projects).where(eq(projects.projectId, projectId)).for('update');
+  const [row] = await tx.select({ account_id: projectsView.accountId, status: projectsView.status })
+    .from(projectsView).where(eq(projectsView.projectId, projectId)).for('update');
   if (!row) throw new ProjectTransferError('project_missing', 'Project not found');
   if (row.status !== 'active') {
     throw new ProjectTransferError('not_active', 'Archived projects cannot be transferred');
@@ -426,8 +374,8 @@ export async function moveProjectInTransaction(
     throw new ProjectTransferError('concurrent_move', 'Project moved while the transfer was prepared');
   }
 
-  const [target] = await tx.select({ accountId: accounts.accountId }).from(accounts)
-    .where(eq(accounts.accountId, toAccountId)).for('update');
+  const [target] = await tx.select({ accountId: accountsView.accountId }).from(accountsView)
+    .where(eq(accountsView.accountId, toAccountId)).for('update');
   if (!target) throw new ProjectTransferError('target_missing', 'Target account not found');
 
   // One workspace = one project: a plain transfer lands only in an account
@@ -573,6 +521,8 @@ export async function moveProjectRows(
     kortix.project_session_connector_bindings_connection_tenant_fk,
     kortix.connection_oauth_applications_connection_tenant_fk DEFERRED`);
 
+  // The row that owns the move goes first.
+  count('projects', { count: await moveProjectRowAccount(input, tx) });
   for (const table of PROJECT_TRANSFER_TABLES) {
     const sessionColumn = SESSION_KEYED_TRANSFER_TABLES[getTableName(table)];
     // A session-keyed table without a project_id index is reached through its

@@ -17,16 +17,7 @@
  * bypass the store, the cache contract, or the audit trail.
  */
 import { and, eq, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
-import {
-  accountGroups,
-  accountMembers,
-  accountMemberships,
-  iamRoleActions,
-  iamRoles,
-  projects,
-  roleAssignments,
-  serviceAccounts,
-} from '@kortix/db';
+import { accountGroups, accountMembers, accountMemberships, iamRoleActions, iamRoles, roleAssignments, serviceAccounts } from '@kortix/db';
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
@@ -40,6 +31,7 @@ import {
 } from './cache-invalidation';
 import { pendingPrincipalId, type Actor, type PrincipalRef } from './actor';
 import { notAnAudienceGrant } from './audience-grants';
+import { projectsView } from '../workspaces/rows';
 
 export type AssignmentSource = 'manual' | 'scim' | 'sso' | 'invite' | 'system';
 
@@ -912,9 +904,9 @@ async function assertDelegable(role: ResolvedRole): Promise<void> {
  */
 async function assertProjectInAccount(accountId: string, projectId: string): Promise<void> {
   const [row] = await db
-    .select({ projectId: projects.projectId })
-    .from(projects)
-    .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
+    .select({ projectId: projectsView.projectId })
+    .from(projectsView)
+    .where(and(eq(projectsView.projectId, projectId), eq(projectsView.accountId, accountId)))
     .limit(1);
   if (!row) throw new HTTPException(404, { message: 'project not found in this account' });
 }

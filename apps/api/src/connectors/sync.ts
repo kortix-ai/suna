@@ -1,17 +1,5 @@
 import { createHash } from 'node:crypto';
-import {
-  connectorConnections,
-  connectorActions,
-  connectorPolicies,
-  connectorPolicySets,
-  connectors,
-  connectorProjectPolicies,
-  connectorProjectSettings,
-  connectorSyncFences,
-  projectSessionConnectorBindings,
-  projects,
-  tunnelConnections,
-} from '@kortix/db';
+import { connectorConnections, connectorActions, connectorPolicies, connectorPolicySets, connectors, connectorProjectPolicies, connectorProjectSettings, connectorSyncFences, projectSessionConnectorBindings, tunnelConnections } from '@kortix/db';
 /**
  * Connector materialization sweep — read `connectors:` from kortix.yaml,
  * fetch + normalize each connector's catalog, and upsert into the DB
@@ -91,6 +79,7 @@ import {
   mergeAuthDiscoveries,
 } from './auth-discovery';
 import type { HttpRouteSpec, NormalizedAction } from './types';
+import { projectsView, updateProjectRows, updateProjectRowsReturning } from '../workspaces/rows';
 
 export interface SyncResult {
   synced: number;
@@ -263,7 +252,7 @@ export async function discoverDraftConnectorAuth(
   projectId: string,
   draft: Record<string, unknown>,
 ): Promise<ConnectorAuthDiscovery> {
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   if (!row) throw new Error('project not found');
   return discoverConnectorAuthFromSource(await withProjectGitAuth(row), draft);
 }
@@ -403,9 +392,9 @@ export async function reconcileChannelConnectors(
 ): Promise<void> {
   try {
     const [row] = await db
-      .select({ accountId: projects.accountId, metadata: projects.metadata })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
+      .select({ accountId: projectsView.accountId, metadata: projectsView.metadata })
+      .from(projectsView)
+      .where(eq(projectsView.projectId, projectId))
       .limit(1);
     if (!row) return;
     const slackInstalled = (await loadSlackInstall(projectId).catch(() => null)) != null;
@@ -484,7 +473,7 @@ export async function syncProjectConnectors(
   _accountId: string,
   opts: SyncOptions = {},
 ): Promise<SyncResult> {
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   if (!row)
     return {
       synced: 0,
@@ -500,7 +489,7 @@ export async function syncProjectConnectors(
 }
 
 async function syncProjectConnectorsFenced(
-  row: typeof projects.$inferSelect,
+  row: typeof projectsView.$inferSelect,
   accountId: string,
   fence: ConnectorSyncFence,
   opts: SyncOptions,
@@ -767,23 +756,24 @@ async function syncProjectConnectorsFenced(
   // and the marketplace gate) follows every push, not only PUT /default-agent.
   const declaredDefaultAgent = typeof manifest?.raw.default_agent === 'string' ? manifest.raw.default_agent.trim() : '';
   if (declaredDefaultAgent) {
-    await db.update(projects)
-      .set({ metadata: metadataMerge({ default_agent: declaredDefaultAgent }) })
-      .where(and(eq(projects.projectId, projectId), sql`coalesce(${projects.metadata}->>'default_agent', '') <> ${declaredDefaultAgent}`));
+    await updateProjectRows(
+      and(eq(projectsView.projectId, projectId), sql`coalesce(${projectsView.metadata}->>'default_agent', '') <> ${declaredDefaultAgent}`),
+      { metadata: metadataMerge({ default_agent: declaredDefaultAgent }) },
+    );
   }
 
   // kortix.yaml owns project.name: a push that changes it renames the project.
   if (manifest) {
-    const [current] = await db.select({ name: projects.name, metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    const [current] = await db.select({ name: projectsView.name, metadata: projectsView.metadata }).from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
     const project = manifest.raw.project as { name?: unknown } | undefined;
     const marker = (current?.metadata as Record<string, unknown> | null)?.[MANIFEST_PROJECT_NAME_KEY];
     const action = current ? projectNameAction(project?.name, marker, current.name) : 'none';
     if (action !== 'none') {
       const declaredName = String(project!.name).trim();
-      const [renamed] = await db.update(projects)
-        .set({ ...(action === 'apply' ? { name: declaredName } : {}), metadata: metadataMerge({ [MANIFEST_PROJECT_NAME_KEY]: declaredName }) })
-        .where(eq(projects.projectId, projectId))
-        .returning({ projectId: projects.projectId, accountId: projects.accountId });
+      const [renamed] = await updateProjectRowsReturning(eq(projectsView.projectId, projectId), {
+        ...(action === 'apply' ? { name: declaredName } : {}),
+        metadata: metadataMerge({ [MANIFEST_PROJECT_NAME_KEY]: declaredName }),
+      });
       if (action === 'apply' && renamed) await renameAccountOfSoleProject(renamed, declaredName);
     }
   }
@@ -1276,13 +1266,13 @@ export async function ensureProjectComputer(
   // allows reads, and the rows would outlive it.
   if (!config.TUNNEL_ENABLED || getImpersonationContext()) return;
   const [project] = await db
-    .select({ accountId: projects.accountId, existing: connectors.connectorId })
-    .from(projects)
+    .select({ accountId: projectsView.accountId, existing: connectors.connectorId })
+    .from(projectsView)
     .leftJoin(
       connectors,
-      and(eq(connectors.projectId, projects.projectId), eq(connectors.providerType, 'computer')),
+      and(eq(connectors.projectId, projectsView.projectId), eq(connectors.providerType, 'computer')),
     )
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projectsView.projectId, projectId))
     .orderBy(sql`${connectors.slug} = ${COMPUTER_SLUG} desc`, connectors.createdAt)
     .limit(1);
   if (!project) return;

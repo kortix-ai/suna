@@ -38,7 +38,7 @@
  * on the daemon's `reload.orphaned_message_id`.
  */
 
-import { projects, projectSessions } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { resolveDesiredRelease } from '../../config-releases/desired';
 import { ownerMayUseAgent } from '../../config-releases/repoint';
@@ -66,6 +66,7 @@ import { db } from '../../shared/db';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { repositoryAccessFromSessionMetadata } from './session-sandbox-metadata';
 import type { SessionConfigConvergenceOutcome } from './session-config-convergence';
+import { projectsView } from '../../workspaces/rows';
 
 /**
  * How long a resolved desired release stands for a `(project, base ref, agent,
@@ -124,18 +125,18 @@ const sessionMemo = ttlMemo({
   loader: async (sessionId: string): Promise<SessionTarget | null> => {
     const [row] = await db
       .select({
-        projectId: projects.projectId,
-        accountId: projects.accountId,
-        repoUrl: projects.repoUrl,
-        defaultBranch: projects.defaultBranch,
-        manifestPath: projects.manifestPath,
+        projectId: projectsView.projectId,
+        accountId: projectsView.accountId,
+        repoUrl: projectsView.repoUrl,
+        defaultBranch: projectsView.defaultBranch,
+        manifestPath: projectsView.manifestPath,
         baseRef: projectSessions.baseRef,
         agentName: projectSessions.agentName,
         sessionMetadata: projectSessions.metadata,
         createdBy: projectSessions.createdBy,
       })
       .from(projectSessions)
-      .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+      .innerJoin(projectsView, eq(projectsView.projectId, projectSessions.projectId))
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     if (!row) return null;

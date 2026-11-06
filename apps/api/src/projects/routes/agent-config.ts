@@ -17,7 +17,6 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { ignoredAgentSettings } from '@kortix/api-contract/runtime-relay';
-import { projects } from '@kortix/db';
 import {
   EVERY_GRANT,
   type ManifestIssue,
@@ -54,12 +53,12 @@ import {
 import { projectsApp } from '../lib/app';
 import { OpencodeAgentConfigSchema } from '../lib/compile-agent-config';
 import { withProjectGitAuth } from '../lib/git';
-import { metadataMerge } from '../lib/metadata-merge';
 import { loadManifestForEdit } from '../lib/triggers';
 import { allowStaleMirrorReads } from '../git/mirror';
 import { MANIFEST_FILENAME, manifestWrites } from '../triggers';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 import { workspaceIdParam } from '../../shared/route-params';
+import { metadataMerge, projectsView, updateProjectRows } from '../../workspaces/rows';
 
 // A grant set on the wire: an allowlist, or the "all"/"none" sentinels. The
 // deep per-entry validation (grantable kortix_permissions actions, etc.) happens in
@@ -370,10 +369,7 @@ export function registerAgentConfigRoutes(): void {
       // sits above between this handler's metadata read and write — the widest lost-
       // update window — so a whole-object write here could revert a routing pin
       // activated in that gap. The merge reads the CURRENT row under its own lock.
-      await db
-        .update(projects)
-        .set({ metadata: metadataMerge({ default_agent: agentName }), updatedAt: new Date() })
-        .where(eq(projects.projectId, projectId));
+      await updateProjectRows(eq(projectsView.projectId, projectId), { metadata: metadataMerge({ default_agent: agentName }), updatedAt: new Date() });
 
       return c.json({ ok: true, default_agent: agentName });
     },

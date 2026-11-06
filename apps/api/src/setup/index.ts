@@ -17,7 +17,6 @@ import { config } from '../config';
 import { getProvider } from '../platform/providers';
 import { supabaseAuth } from '../middleware/auth';
 import { eq, sql } from 'drizzle-orm';
-import { accounts } from '@kortix/db';
 import { db, hasDatabase } from '../shared/db';
 import { isNoWorkspaceError } from '../shared/no-workspace';
 import { resolveAccountId } from '../shared/resolve-account';
@@ -27,6 +26,7 @@ import { logger } from '../lib/logger';
 import { getSupabase } from '../shared/supabase';
 import { hasInternalServiceKey } from '../shared/internal-service-key';
 import { rethrowDatabaseError } from '../shared/database-errors';
+import { accountsView, updateAccountRows } from '../workspaces/rows';
 /** Shape mirrors the legacy LocalSandboxHealthCheck (now removed) so the
  *  frontend health UI keeps reading the same `{ok, error?}` per check. */
 type HealthCheck = { ok: boolean; error?: string };
@@ -254,10 +254,7 @@ setupApp.openapi(
       // create-a-workspace screen, which works the same way.
       try {
         const account = await createOwnedAccount({ userId, name: suggestAccountName({ email }), email });
-        await db
-          .update(accounts)
-          .set({ setupCompleteAt: null, setupWizardStep: 2, updatedAt: new Date() })
-          .where(eq(accounts.accountId, account.accountId));
+        await updateAccountRows(eq(accountsView.accountId, account.accountId), { setupCompleteAt: null, setupWizardStep: 2, updatedAt: new Date() });
       } catch (err) {
         logger.warn('[setup] Failed to create the owner account', { error: err instanceof Error ? err.message : String(err) });
       }
@@ -380,9 +377,9 @@ setupApp.openapi(
     const userId = c.get('userId') as string;
     const accountId = await resolveAccountId(userId);
     const [account] = await db
-      .select({ setupCompleteAt: accounts.setupCompleteAt })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .select({ setupCompleteAt: accountsView.setupCompleteAt })
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     const complete = !!account?.setupCompleteAt;
     return c.json({ complete, completedAt: account?.setupCompleteAt?.toISOString() ?? null });
@@ -419,10 +416,7 @@ setupApp.openapi(
   try {
     const userId = c.get('userId') as string;
     const accountId = await resolveAccountId(userId);
-    await db
-      .update(accounts)
-      .set({ setupCompleteAt: new Date(), setupWizardStep: 0, updatedAt: new Date() })
-      .where(eq(accounts.accountId, accountId));
+    await updateAccountRows(eq(accountsView.accountId, accountId), { setupCompleteAt: new Date(), setupWizardStep: 0, updatedAt: new Date() });
     return c.json({ ok: true });
   } catch (e) {
     console.error('[setup] setup-complete failed:', e);
@@ -459,9 +453,9 @@ setupApp.openapi(
     const userId = c.get('userId') as string;
     const accountId = await resolveAccountId(userId);
     const [account] = await db
-      .select({ setupWizardStep: accounts.setupWizardStep, setupCompleteAt: accounts.setupCompleteAt })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .select({ setupWizardStep: accountsView.setupWizardStep, setupCompleteAt: accountsView.setupCompleteAt })
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     // If setup is already complete, step is 0 regardless of stored value
     if (account?.setupCompleteAt) {
@@ -507,10 +501,7 @@ setupApp.openapi(
     const accountId = await resolveAccountId(userId);
     const body = await c.req.json();
     const step = typeof body.step === 'number' ? body.step : 0;
-    await db
-      .update(accounts)
-      .set({ setupWizardStep: step, updatedAt: new Date() })
-      .where(eq(accounts.accountId, accountId));
+    await updateAccountRows(eq(accountsView.accountId, accountId), { setupWizardStep: step, updatedAt: new Date() });
     return c.json({ ok: true });
   } catch (e) {
     console.error('[setup] setup-wizard-step (set) failed:', e);

@@ -1,5 +1,4 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { projects } from '@kortix/db';
 import type { Context } from 'hono';
 import { type SQL, eq, sql } from 'drizzle-orm';
 /** One project: read, detail, and update. */
@@ -22,7 +21,6 @@ import {
 import { ProjectSchema, projectsApp } from '../lib/app';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
-import { metadataMerge } from '../lib/metadata-merge';
 import { MANIFEST_PROJECT_NAME_KEY, commitProjectName } from '../lib/manifest-project-name';
 import { renameAccountOfSoleProject } from '../lib/workspace-name';
 import { MANIFEST_SYNTAX_ISSUE_PATH } from '@kortix/manifest-schema';
@@ -39,6 +37,7 @@ import {
 } from '../lib/serializers';
 import { workspaceIdParam } from '../../shared/route-params';
 import type { AppEnv } from '../../types';
+import { metadataMerge, projectsView, updateProjectRows, updateProjectRowsReturning, type ProjectRowInsert, type ProjectRowSet } from '../../workspaces/rows';
 
 /** `GET /:projectId/detail`: the project plus its git connection and the
  *  manifest summary the settings pages read. */
@@ -77,10 +76,7 @@ export async function readProjectRecord(c: Context<AppEnv>, projectId: string) {
   // page view's latency. The response now answers first and the write lands
   // behind it — the same rule the audit-pool learning fixed for
   // POST /internal/gateway/trace (KRTX-609).
-  void db
-    .update(projects)
-    .set({ lastOpenedAt: new Date(), updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId))
+  void updateProjectRows(eq(projectsView.projectId, projectId), { lastOpenedAt: new Date(), updatedAt: new Date() })
     .catch((error: unknown) => {
       console.warn('[projects] last-opened stamp failed', {
         projectId,
@@ -102,7 +98,7 @@ export async function readProjectRecord(c: Context<AppEnv>, projectId: string) {
 
 /** `projects.secret_default_strategy`: how a secret with no strategy of its own is delivered. */
 const SECRET_STRATEGIES = ['runtime', 'egress', 'broker', 'denied'] as const satisfies readonly NonNullable<
-  (typeof projects.$inferInsert)['secretDefaultStrategy']
+  ProjectRowInsert['secretDefaultStrategy']
 >[];
 
 export function registerProjectDetailRoutes(): void {
@@ -356,7 +352,7 @@ export async function patchProjectRecord(c: Context<AppEnv>): Promise<Response> 
     PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
   );
 
-  const updates: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
+  const updates: ProjectRowSet = { updatedAt: new Date() };
   const name = normalizeString(body.name);
   const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch);
   const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath);
@@ -437,17 +433,8 @@ export async function patchProjectRecord(c: Context<AppEnv>): Promise<Response> 
       : metadataMerge({ [MANIFEST_PROJECT_NAME_KEY]: name });
   }
 
-  const [row] = await db
-    .update(projects)
-    .set({
-      ...updates,
-      // Spread rather than assigned into `updates`: that object is typed
-      // `Partial<$inferInsert>`, which has no room for a SQL expression, while
-      // Drizzle's own `.set()` input accepts one per column.
-      ...(metadataExpr ? { metadata: metadataExpr } : {}),
-    })
-    .where(eq(projects.projectId, projectId))
-    .returning();
+  if (metadataExpr) updates.metadata = metadataExpr;
+  const [row] = await updateProjectRowsReturning(eq(projectsView.projectId, projectId), updates);
 
   if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
   // Workspace name = account name = project name: the account's only

@@ -1,6 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq } from 'drizzle-orm';
-import { projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { config } from '../config';
 import { slackOauthMode } from './slack-oauth-mode';
@@ -15,6 +14,7 @@ import {
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { makeOpenApiApp, errors } from '../openapi';
 import { signChannelState, verifyChannelState } from './core/signed-state';
+import { projectsView } from '../workspaces/rows';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -141,9 +141,9 @@ export async function completeSlackOauthInstall(input: {
   let project: { projectId: string } | undefined;
   try {
     [project] = await db
-      .select({ projectId: projects.projectId })
-      .from(projects)
-      .where(eq(projects.projectId, payload.projectId))
+      .select({ projectId: projectsView.projectId })
+      .from(projectsView)
+      .where(eq(projectsView.projectId, payload.projectId))
       .limit(1);
   } catch (err) {
     console.error('[slack-oauth] project lookup failed', {

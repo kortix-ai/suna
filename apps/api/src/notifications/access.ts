@@ -16,7 +16,7 @@
 // A recipient is also always a person: a member of the account
 // (`personsAmong`). A service account or any other non-person id that the IAM
 // lets in is never told.
-import { artifacts, projects, projectSessions } from '@kortix/db';
+import { artifacts, projectSessions } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { ArtifactRow } from '../artifacts/service';
 import { resolveFeatureFlag } from '../feature-flags/registry';
@@ -31,6 +31,7 @@ import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { isUuid } from '../shared/validate';
 import { hiddenSpaceIds, spaceVisibleFor } from '../shared/space-access';
+import { projectsView } from '../workspaces/rows';
 
 /** Recipient checks in flight at once: one check is up to ~7 queries on a 5-connection pool. */
 const RECIPIENT_CHECK_CONCURRENCY = 4;
@@ -40,8 +41,8 @@ export type ArtifactAccessRow = ArtifactRow & { projectMetadata: unknown };
 export async function loadArtifactAccessRows(artifactIds: readonly string[]): Promise<Map<string, ArtifactAccessRow>> {
   const ids = [...new Set(artifactIds)].filter(isUuid);
   if (!ids.length) return new Map();
-  const rows = await db.select({ artifact: artifacts, projectMetadata: projects.metadata }).from(artifacts)
-    .innerJoin(projects, and(eq(projects.projectId, artifacts.projectId), eq(projects.accountId, artifacts.accountId)))
+  const rows = await db.select({ artifact: artifacts, projectMetadata: projectsView.metadata }).from(artifacts)
+    .innerJoin(projectsView, and(eq(projectsView.projectId, artifacts.projectId), eq(projectsView.accountId, artifacts.accountId)))
     .where(inArray(artifacts.artifactId, ids));
   return new Map(rows.map((row) => [row.artifact.artifactId, { ...row.artifact, projectMetadata: row.projectMetadata }]));
 }

@@ -53,7 +53,6 @@ describe('db-suites discovery', () => {
     for (const file of files) {
       expect(file).not.toMatch(/\.live\.test\.ts$/);
     }
-    expect(files.has('apps/api/src/projects/lib/metadata-merge.test.ts')).toBe(false);
   });
 
   // The invariant that keeps a new DB suite from skipping silently in a unit

@@ -3,7 +3,6 @@ import { db } from '../../shared/db';
 import { getProjectSecretValueForConsumer } from '../secrets';
 import { loadProjectTriggers } from '../triggers';
 import { invalidateProjectMirror } from '../git';
-import { projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json } from '../../openapi';
@@ -27,6 +26,7 @@ import { logger } from '../../lib/logger';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 import { isRuntimeTriggerSlug, runtimeWebhookSpec } from '../lib/runtime-triggers';
 import { workspaceIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 export function registerTriggerWebhooksRoutes(): void {
   projectWebhooksApp.use('/projects/:workspaceId/:slug', createProjectWebhookRateLimitMiddleware());
@@ -68,10 +68,10 @@ export function registerTriggerWebhooksRoutes(): void {
 
     const [project] = await db
       .select()
-      .from(projects)
+      .from(projectsView)
       .where(and(
-        eq(projects.projectId, projectId),
-        eq(projects.status, 'active'),
+        eq(projectsView.projectId, projectId),
+        eq(projectsView.status, 'active'),
       ))
       .limit(1);
     // Every pre-authentication miss answers the same 401 as a bad signature, so a

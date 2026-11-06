@@ -1,11 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
-import {
-  accountGroupMembers,
-  accountInvitations,
-  accounts,
-  projects,
-} from '@kortix/db';
+import { accountGroupMembers, accountInvitations } from '@kortix/db';
 import type { Context } from 'hono';
 import type { AppEnv } from '../types';
 import { config } from '../config';
@@ -23,6 +18,7 @@ import { getSsoProvider } from '../repositories/sso';
 import { isUuid } from '../shared/validate';
 import { logger } from '../lib/logger';
 import { captureProductEvent } from '../shared/product-analytics';
+import { accountsView, projectsView } from '../workspaces/rows';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -203,9 +199,9 @@ async function invitedProjects(
   const projectNames = new Map<string, string>();
   if (projectIds.length > 0) {
     const projectRows = await db
-      .select({ projectId: projects.projectId, name: projects.name, accountId: projects.accountId })
-      .from(projects)
-      .where(inArray(projects.projectId, projectIds));
+      .select({ projectId: projectsView.projectId, name: projectsView.name, accountId: projectsView.accountId })
+      .from(projectsView)
+      .where(inArray(projectsView.projectId, projectIds));
     for (const row of projectRows) projectNames.set(`${row.accountId}:${row.projectId}`, row.name);
   }
   return new Map(
@@ -348,9 +344,9 @@ accountInvitesRouter.openapi(
     if (!caller.email) return c.json({ invites: [] });
 
     const rows = await db
-      .select({ invite: accountInvitations, accountName: accounts.name })
+      .select({ invite: accountInvitations, accountName: accountsView.name })
       .from(accountInvitations)
-      .leftJoin(accounts, eq(accounts.accountId, accountInvitations.accountId))
+      .leftJoin(accountsView, eq(accountsView.accountId, accountInvitations.accountId))
       .where(
         and(
           sql`lower(${accountInvitations.email}) = ${caller.email}`,
@@ -444,9 +440,9 @@ accountInvitesRouter.openapi(
   }
 
   const [accountRow] = await db
-    .select({ name: accounts.name })
-    .from(accounts)
-    .where(eq(accounts.accountId, invite.accountId))
+    .select({ name: accountsView.name })
+    .from(accountsView)
+    .where(eq(accountsView.accountId, invite.accountId))
     .limit(1);
 
   const inviterEmail = await lookupAuthEmail(invite.invitedBy);

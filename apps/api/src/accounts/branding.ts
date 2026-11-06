@@ -21,7 +21,7 @@
 
 import { createHash } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
-import { type AccountBrandingRecord, accounts } from '@kortix/db';
+import { type AccountBrandingRecord } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { accountHasEntitlement } from '../billing/services/entitlements';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
@@ -35,6 +35,7 @@ import { AccountIdParam, accountsRouter, getMembership } from './core/app';
 import { readJsonObject } from '../shared/http-body';
 import { auditIam, requireEntitlement } from './iam/http-helpers';
 import { accountIdParam } from '../shared/route-params';
+import { accountsView, updateAccountRowsReturning } from '../workspaces/rows';
 
 export const BRANDING_BUCKET = 'branding';
 /** Same ceiling the bucket enforces (`storage.buckets.file_size_limit`). */
@@ -285,9 +286,9 @@ async function removeObjects(paths: Array<string | null>): Promise<void> {
 
 async function loadBrandingRow(accountId: string) {
   const [row] = await db
-    .select({ branding: accounts.branding })
-    .from(accounts)
-    .where(eq(accounts.accountId, accountId))
+    .select({ branding: accountsView.branding })
+    .from(accountsView)
+    .where(eq(accountsView.accountId, accountId))
     .limit(1);
   return row ?? null;
 }
@@ -299,11 +300,10 @@ async function writeBranding(accountId: string, next: AccountBrandingRecord): Pr
   for (const [key, value] of Object.entries(next) as Array<[keyof AccountBrandingRecord, unknown]>) {
     if (typeof value === 'string' && value.length > 0) compact[key] = value;
   }
-  const [row] = await db
-    .update(accounts)
-    .set({ branding: compact, updatedAt: new Date() })
-    .where(eq(accounts.accountId, accountId))
-    .returning({ branding: accounts.branding });
+  const [row] = await updateAccountRowsReturning(eq(accountsView.accountId, accountId), {
+    branding: compact,
+    updatedAt: new Date(),
+  });
   return normalizeBranding(row?.branding);
 }
 

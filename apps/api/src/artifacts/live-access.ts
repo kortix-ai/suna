@@ -19,7 +19,7 @@
  *   5. `canView`: the Artifact's sharing and its private channel.
  * A failed read throws: the caller keeps the socket and retries.
  */
-import { projects, projectSessions } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../iam/actions';
@@ -34,6 +34,7 @@ import { ArtifactCommentAuthorityError, refreshArtifactCommentActor } from './co
 import { clipText, type LiveIdentity } from './live-rooms';
 import type { ArtifactLiveTicketClaims } from './live-ticket';
 import { canView, getArtifact } from './service';
+import { projectsView } from '../workspaces/rows';
 
 export type ArtifactLiveAccess =
   | { ok: true; actor: Actor; credentialExpiresAt: number | null }
@@ -80,9 +81,9 @@ export async function checkArtifactLiveAccess(input: {
     throw error;
   }
   const [project] = await db
-    .select({ accountId: projects.accountId, status: projects.status, metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, input.projectId))
+    .select({ accountId: projectsView.accountId, status: projectsView.status, metadata: projectsView.metadata })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, input.projectId))
     .limit(1);
   if (!project || project.status === 'archived' || project.accountId !== actor.accountId) return notFound();
   for (const flag of ['artifacts', 'artifact_comments'] as const) {

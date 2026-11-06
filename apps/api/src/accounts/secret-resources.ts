@@ -1,6 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { SecretValueStatusSchema } from '@kortix/api-contract';
-import { accountSecretGrants, accountSecretResources, projects, sessionProviderSecretPools } from '@kortix/db';
+import { accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import type { AppEnv } from '../types';
@@ -18,6 +18,7 @@ import { projectInAccount } from '../secrets/project-account';
 import { listLegacySubscriptionConnections, refreshLegacySubscriptionUsage } from '../llm-gateway/legacy-subscription-usage';
 import { accountIdParam } from '../shared/route-params';
 import { PATH_WORKSPACE_ID_VAR, isCanonicalWorkspacePath } from '../middleware/workspace-account';
+import { projectsView } from '../workspaces/rows';
 
 const SecretIdParam = AccountIdParam.extend({ secretId: z.string().uuid() });
 const GrantParam = SecretIdParam.extend({ userId: z.string().uuid() });
@@ -189,8 +190,8 @@ export function registerSecretResourceRoutes() {
       return c.json({ error: 'Provider and environment name do not match' }, 400);
     }
     if (body.project_id) {
-      const [project] = await db.select({ accountId: projects.accountId, metadata: projects.metadata }).from(projects)
-        .where(eq(projects.projectId, body.project_id)).limit(1);
+      const [project] = await db.select({ accountId: projectsView.accountId, metadata: projectsView.metadata }).from(projectsView)
+        .where(eq(projectsView.projectId, body.project_id)).limit(1);
       // A key only for the caller skips the `authorize` below, so this is the
       // caller's whole project check, and their request's MFA level counts.
       if (

@@ -141,7 +141,7 @@ function lastSet(): Record<string, unknown> {
 function metadataQuery(): { sql: string; params: unknown[] } {
   const value = lastSet().metadata;
   // A plain object here would mean the handler went back to read-modify-write
-  // on the jsonb, which is exactly what metadata-merge.ts exists to prevent.
+  // on the jsonb, which is exactly what the metadata merge helpers exist to prevent.
   expect(typeof (value as SQL)?.getSQL).toBe('function');
   const { sql, params } = dialect.sqlToQuery(value as SQL);
   return { sql, params };

@@ -9,7 +9,6 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq } from 'drizzle-orm';
-import { accounts } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
@@ -20,6 +19,7 @@ import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { accountIdParam } from '../../shared/route-params';
+import { accountsView, updateAccountRows } from '../../workspaces/rows';
 
 const SessionOversightStatus = z.object({
   enabled: z.boolean(),
@@ -51,9 +51,9 @@ export function registerIamSessionOversightRoutes(): void {
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
       const [row] = await db
-        .select({ enabled: accounts.adminsSeeAllSessions })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
+        .select({ enabled: accountsView.adminsSeeAllSessions })
+        .from(accountsView)
+        .where(eq(accountsView.accountId, accountId))
         .limit(1);
       if (!row) return c.json({ error: 'account not found' }, 404);
       return c.json({ enabled: row.enabled, can_change: await callerIsOwner(accountId, userId) });
@@ -101,17 +101,14 @@ export function registerIamSessionOversightRoutes(): void {
       const enabled = body.enabled;
 
       const [before] = await db
-        .select({ enabled: accounts.adminsSeeAllSessions })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
+        .select({ enabled: accountsView.adminsSeeAllSessions })
+        .from(accountsView)
+        .where(eq(accountsView.accountId, accountId))
         .limit(1);
       if (!before) return c.json({ error: 'account not found' }, 404);
       if (before.enabled === enabled) return c.json({ enabled, unchanged: true });
 
-      await db
-        .update(accounts)
-        .set({ adminsSeeAllSessions: enabled, updatedAt: new Date() })
-        .where(eq(accounts.accountId, accountId));
+      await updateAccountRows(eq(accountsView.accountId, accountId), { adminsSeeAllSessions: enabled, updatedAt: new Date() });
       invalidateSessionOversight();
 
       await auditIam(c, {

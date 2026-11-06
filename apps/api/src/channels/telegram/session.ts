@@ -21,7 +21,7 @@
  * the bot token never enters the sandbox.
  */
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
-import { chatThreads, projects } from '@kortix/db';
+import { chatThreads } from '@kortix/db';
 import type { ChannelEnvelope } from '@kortix/shared';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq, like, or } from 'drizzle-orm';
@@ -57,6 +57,7 @@ import { telegramAccessPort } from './access';
 import { TELEGRAM_UPDATES, telegramCall, telegramFile } from './api';
 import { loadTelegramBotToken, loadTelegramInstall, loadTelegramWebhookSecret } from './installs';
 import { repairTelegramMenu } from './menu';
+import { projectsView } from '../../workspaces/rows';
 
 export const TELEGRAM_MESSAGE_EVENT = 'telegram.message.created';
 
@@ -442,7 +443,7 @@ export async function handleTelegramEvent(
   run: { finalAttempt: boolean } = { finalAttempt: false },
 ): Promise<void> {
   const message = event.data.message as unknown as TelegramMessage;
-  const [project] = await db.select().from(projects).where(eq(projects.projectId, event.projectId)).limit(1);
+  const [project] = await db.select().from(projectsView).where(eq(projectsView.projectId, event.projectId)).limit(1);
   if (!project) return;
   const [install, token] = await Promise.all([
     loadTelegramInstall(event.projectId),
@@ -642,7 +643,7 @@ async function handleTelegramCommandPress(
   press: TelegramCallbackQuery,
   message: NonNullable<TelegramCallbackQuery['message']>,
 ): Promise<void> {
-  const [project] = await db.select().from(projects).where(eq(projects.projectId, event.projectId)).limit(1);
+  const [project] = await db.select().from(projectsView).where(eq(projectsView.projectId, event.projectId)).limit(1);
   if (!project) return void (await answerPress(token, press.id));
   const target: ChannelTarget = {
     platform: 'telegram',

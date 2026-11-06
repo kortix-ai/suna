@@ -4,7 +4,6 @@ import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { json, errors, auth } from '../../openapi';
 import { eq } from 'drizzle-orm';
-import { projects } from '@kortix/db';
 import { groupProjectGrants } from '../../iam/read-models';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
@@ -36,6 +35,7 @@ import {
 import { auditIam, isUniqueViolation, requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { accountIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 // Groups are an Enterprise-only construct (no free-tier group concept). The
 // `rbac` entitlement gates every route that CREATES or GROWS group state
@@ -533,9 +533,9 @@ export function registerIamGroupsRoutes(): void {
       const [assignments, projectRows] = await Promise.all([
         groupProjectGrants({ accountId, groupIds: [groupId] }),
         db
-          .select({ projectId: projects.projectId, name: projects.name })
-          .from(projects)
-          .where(eq(projects.accountId, accountId)),
+          .select({ projectId: projectsView.projectId, name: projectsView.name })
+          .from(projectsView)
+          .where(eq(projectsView.accountId, accountId)),
       ]);
       const projectById = new Map(projectRows.map((p) => [p.projectId, p] as const));
       const rows = assignments

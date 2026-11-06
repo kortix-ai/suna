@@ -1,4 +1,4 @@
-import { accountMembers, artifactComments, artifactCommentThreads, artifactEvents, jobQueue, projects, sessionLifecycleCommands } from '@kortix/db';
+import { accountMembers, artifactComments, artifactCommentThreads, artifactEvents, jobQueue, sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Actor } from '../iam/actor';
 import { db } from '../shared/db';
@@ -15,6 +15,7 @@ import { artifactCommentPrompt } from './comment-prompt';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import type { ArtifactCommentAnchor } from '@kortix/shared/artifact-comments';
+import { projectsView } from '../workspaces/rows';
 
 /**
  * The agent half of the context fails closed on its own. An unreadable agent
@@ -23,7 +24,7 @@ import type { ArtifactCommentAnchor } from '@kortix/shared/artifact-comments';
  * context and comment. `rethrowReadErrors` stays on: a failed read is never
  * replaced by the permissive synthesized manifest.
  */
-async function readAgentRoster(project: typeof projects.$inferSelect, artifact: ArtifactCommentAccess['artifact']) {
+async function readAgentRoster(project: typeof projectsView.$inferSelect, artifact: ArtifactCommentAccess['artifact']) {
   try {
     return await loadProjectAgents(project, { rethrowReadErrors: true });
   } catch (error) {
@@ -40,7 +41,7 @@ async function readAgentRoster(project: typeof projects.$inferSelect, artifact: 
 export async function readArtifactCommentContext(access: ArtifactCommentAccess, actor: Actor, options: { version?: string; agent?: string }) {
   const artifact = access.artifact;
   const historical = options.version !== undefined;
-  const [project] = await db.select().from(projects).where(and(eq(projects.projectId, artifact.projectId), eq(projects.accountId, artifact.accountId)));
+  const [project] = await db.select().from(projectsView).where(and(eq(projectsView.projectId, artifact.projectId), eq(projectsView.accountId, artifact.accountId)));
   if (!project) throw new ArtifactCommentError(404, 'Project not found', 'not_found');
   // Only a current context a caller can comment in lists agents, so only it reads the manifest.
   const agentsWanted = !historical && !!access.canComment;

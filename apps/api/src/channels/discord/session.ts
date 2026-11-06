@@ -24,7 +24,7 @@
  * the bot token never enters the sandbox.
  */
 import { createHash } from 'node:crypto';
-import { projectSessions, projects } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import type { ChannelEnvelope } from '@kortix/shared';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { eq } from 'drizzle-orm';
@@ -82,6 +82,7 @@ import {
   type DiscordStoredInteraction,
   type DiscordStoredMessage,
 } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 /** Discord's error for a thread start on a message that already has one: a retry's. */
 const THREAD_ALREADY_CREATED = 160004;
@@ -517,7 +518,7 @@ async function startThread(message: DiscordStoredMessage, conversation: DiscordC
 
 /** The project row, or null for a project deleted since the message was stored. */
 async function loadProject(projectId: string) {
-  const [project] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [project] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   return project ?? null;
 }
 

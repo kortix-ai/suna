@@ -1,9 +1,10 @@
 import { and, eq } from 'drizzle-orm';
-import { chatChannelBindings, projects } from '@kortix/db';
+import { chatChannelBindings } from '@kortix/db';
 import { db } from '../../shared/db';
 import { withProjectGitAuth } from '../../projects/lib/git';
 import { listRepoFiles, loadProjectConfig } from '../../projects/git';
 import { savedProjectConfig } from '../../projects/surface';
+import { projectsView } from '../../workspaces/rows';
 
 // Per-channel agent + model selection. A Slack channel is bound to a project
 // (chat_channel_bindings); these helpers read/write the optional agent + model
@@ -203,8 +204,8 @@ export interface ProjectAgentGovernance {
 export async function loadProjectAgentGovernance(projectId: string): Promise<ProjectAgentGovernance> {
   const [row] = await db
     .select()
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!row) return { agents: [], declared: false };
   // The saved config summary first: no git inside Slack's 3 s window.
@@ -294,7 +295,7 @@ export async function getChannelBindingById(
   return row as ChannelBindingRow;
 }
 
-async function loadLiveConfig(row: typeof projects.$inferSelect) {
+async function loadLiveConfig(row: typeof projectsView.$inferSelect) {
   const gitProject = await withProjectGitAuth(row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
   try {

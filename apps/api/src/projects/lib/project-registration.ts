@@ -1,8 +1,4 @@
-import {
-  type accountGithubInstallations,
-  projectGitConnections,
-  projects,
-} from '@kortix/db';
+import { type accountGithubInstallations, projectGitConnections } from '@kortix/db';
 
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { grantProjectRole } from './access';
@@ -22,6 +18,7 @@ import {
   workspaceHasProjectDenial,
   WorkspaceHasProjectError,
 } from '../../workspaces/one-project';
+import { insertProjectRow } from '../../workspaces/rows';
 
 type GitHubInstallation = typeof accountGithubInstallations.$inferSelect;
 
@@ -64,20 +61,16 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
   // concurrent create that won the race past it trips the 1:1 unique index
   // here; that answers the same typed 409 instead of a 500.
   const row = await db.transaction(async (tx) => {
-    const [project] = await tx
-      .insert(projects)
-      .values({
-        accountId: input.accountId,
-        name: projectName,
-        repoUrl: input.repo.clone_url,
-        defaultBranch: input.defaultBranch,
-        manifestPath: input.manifestPath,
-        status: 'active',
-        metadata,
-        updatedAt: now,
-      })
-      .returning();
-    if (!project) throw new Error('Project registration did not return the inserted project');
+    const project = await insertProjectRow({
+      accountId: input.accountId,
+      name: projectName,
+      repoUrl: input.repo.clone_url,
+      defaultBranch: input.defaultBranch,
+      manifestPath: input.manifestPath,
+      status: 'active',
+      metadata,
+      updatedAt: now,
+    }, tx);
 
     let credentialRef: string | null = null;
     if (input.auth.kind === 'project_credential') {

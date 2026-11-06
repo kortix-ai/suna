@@ -4,7 +4,7 @@
  */
 
 import { isRepositoryDisconnectedError, repositoryDisconnectedBody } from '../../shared/repository-health';
-import { projectSessions, projects, serviceAccounts, sessionLifecycleCommands } from '@kortix/db';
+import { projectSessions, serviceAccounts, sessionLifecycleCommands } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { adoptChatThreads, bindChatThread, releaseCreateClaims } from '../../channels/core/threads';
 import { logger } from '../../lib/logger';
@@ -36,6 +36,7 @@ import type {
 } from './types';
 import { deliverThroughQueue } from './follow-up-delivery';
 import { drainSessionLifecycleQueue } from './drain';
+import { projectsView } from '../../workspaces/rows';
 
 /**
  * The status of the `create_session` command under this key in this project, or
@@ -311,8 +312,8 @@ export async function executeQueuedCreate(
 
   const [project] = await db
     .select()
-    .from(projects)
-    .where(eq(projects.projectId, row.projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, row.projectId))
     .limit(1);
   if (!project) {
     return {

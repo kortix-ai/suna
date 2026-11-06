@@ -1,6 +1,6 @@
 import { eq, and, desc, gt, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { SESSION_LEASE_REFUSAL } from '../shared/session-lease-refusal';
-import { accountTokens, accounts, projects, projectSessions, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
+import { accountTokens, projectSessions, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
@@ -12,6 +12,7 @@ import {
 import type { AgentGrant } from '@kortix/db';
 import { isUuid } from '../shared/validate';
 import { createLastUsedTracker } from '../shared/throttled-last-used';
+import { accountsView, projectsView } from '../workspaces/rows';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -158,12 +159,12 @@ async function loadPatPolicy(
 } | null> {
   const [row] = await database
     .select({
-      maxLifetimeDays: accounts.patMaxLifetimeDays,
-      requireExpiry: accounts.patRequireExpiry,
-      idleRevokeDays: accounts.patIdleRevokeDays,
+      maxLifetimeDays: accountsView.patMaxLifetimeDays,
+      requireExpiry: accountsView.patRequireExpiry,
+      idleRevokeDays: accountsView.patIdleRevokeDays,
     })
-    .from(accounts)
-    .where(eq(accounts.accountId, accountId))
+    .from(accountsView)
+    .where(eq(accountsView.accountId, accountId))
     .limit(1);
   return row ?? null;
 }
@@ -191,8 +192,8 @@ export async function createAccountToken(
     // Serialize project-bound mints with archive/revocation. The lock lasts
     // through insert and owner validation; DELETE either sees this token or
     // the mint sees the committed archive.
-    const [project] = await tx.select({ status: projects.status }).from(projects)
-      .where(and(eq(projects.projectId, projectId), eq(projects.accountId, params.accountId)))
+    const [project] = await tx.select({ status: projectsView.status }).from(projectsView)
+      .where(and(eq(projectsView.projectId, projectId), eq(projectsView.accountId, params.accountId)))
       .for('share');
     if (project?.status === 'archived') throw new Error('Project is archived');
     if (params.sessionId) {
@@ -262,8 +263,8 @@ async function insertAccountToken(
   // tokens. Either its revocation sees this row or this read sees the tombstone.
   if (params.sessionId && params.projectId) {
     try {
-      const [project] = await database.select({ status: projects.status }).from(projects)
-        .where(and(eq(projects.projectId, params.projectId), eq(projects.accountId, params.accountId)));
+      const [project] = await database.select({ status: projectsView.status }).from(projectsView)
+        .where(and(eq(projectsView.projectId, params.projectId), eq(projectsView.accountId, params.accountId)));
       if (project?.status === 'archived') throw new Error('Project is archived');
       const [session] = await database.select({ metadata: projectSessions.metadata }).from(projectSessions)
         .where(and(eq(projectSessions.sessionId, params.sessionId), eq(projectSessions.accountId, params.accountId)));
@@ -353,7 +354,7 @@ export async function listAccountTokens(
     // An expired token and a token of an archived (or gone) project no longer
     // authenticate, so they are not live. `?mine=true` keeps expired keys as history.
     or(isNull(accountTokens.expiresAt), gt(accountTokens.expiresAt, sql`now()`)),
-    or(isNull(accountTokens.projectId), eq(projects.status, 'active')),
+    or(isNull(accountTokens.projectId), eq(projectsView.status, 'active')),
   );
   return db
     .select({
@@ -369,7 +370,7 @@ export async function listAccountTokens(
       revokedAt: accountTokens.revokedAt,
     })
     .from(accountTokens)
-    .leftJoin(projects, eq(projects.projectId, accountTokens.projectId))
+    .leftJoin(projectsView, eq(projectsView.projectId, accountTokens.projectId))
     .where(filter)
     .orderBy(desc(accountTokens.createdAt));
 }
@@ -697,10 +698,10 @@ async function validateAccountTokenMatching(
         agentGrant: accountTokens.agentGrant,
         onBehalfOfUserId: accountTokens.onBehalfOfUserId,
         serviceAccountId: accountTokens.serviceAccountId,
-        patIdleRevokeDays: accounts.patIdleRevokeDays,
+        patIdleRevokeDays: accountsView.patIdleRevokeDays,
       })
       .from(accountTokens)
-      .innerJoin(accounts, eq(accounts.accountId, accountTokens.accountId))
+      .innerJoin(accountsView, eq(accountsView.accountId, accountTokens.accountId))
       .where(
         and(
           match(),

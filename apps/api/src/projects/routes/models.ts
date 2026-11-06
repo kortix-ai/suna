@@ -2,7 +2,7 @@
 import { readModelAccess } from '../../llm-gateway/model-access';
 import { changeProjectModelAccess, getProjectModelAccess } from '../../repositories/project-model-access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projects, sessionSandboxes } from '@kortix/db';
+import { sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { llmPriceMarkup } from '../../billing/services/tiers';
@@ -39,6 +39,7 @@ import { rethrowDatabaseError } from '../../shared/database-errors';
 import { claudeSubscriptionPickerGroup } from '../claude-subscription/picker';
 import { checkClaudeAgentRef } from '../../llm-gateway/resolution/claude-agent';
 import { workspaceIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 // Explicit inference controls are separate from legacy picker visibility.
 const modelAccessChangeBody = z.object({
@@ -141,9 +142,9 @@ export function registerModelsRoutes(): void {
           return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
         }
         const [project] = await db
-          .select({ projectId: projects.projectId })
-          .from(projects)
-          .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
+          .select({ projectId: projectsView.projectId })
+          .from(projectsView)
+          .where(and(eq(projectsView.projectId, projectId), eq(projectsView.accountId, accountId)))
           .limit(1);
         if (!project) return c.json({ error: 'Not found' }, 404);
         ownerAccountId = accountId;

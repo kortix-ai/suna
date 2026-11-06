@@ -1,4 +1,4 @@
-import { artifactComments, artifactCommentThreads, artifacts, jobQueue, projects, projectSessions, sessionLifecycleCommands, type ArtifactCommentMention } from '@kortix/db';
+import { artifactComments, artifactCommentThreads, artifacts, jobQueue, projectSessions, sessionLifecycleCommands, type ArtifactCommentMention } from '@kortix/db';
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Actor } from '../iam/actor';
@@ -16,6 +16,7 @@ import { screenshotReferences, screenshotQueuedParts, screenshotTargetCapability
 import { ArtifactCommentScreenshotError } from './comment-screenshot-validation';
 import { wakeArtifactCommentLifecycle } from './comment-lifecycle-wake';
 import { announceArtifactLiveDelivery, publishArtifactLiveChange } from './live-publish';
+import { projectFields, projectsView } from '../workspaces/rows';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const PEOPLE = 'artifact-comment-people';
@@ -84,8 +85,8 @@ export async function enqueueArtifactCommentRouting(
 }
 
 async function source(payload: ArtifactCommentAgentPayload, executor: Pick<typeof db, 'select'> = db, allowFailedPause = false) {
-  const [row] = await executor.select({ artifact: artifacts, project: projects }).from(artifacts)
-    .innerJoin(projects, and(eq(projects.projectId, artifacts.projectId), eq(projects.accountId, artifacts.accountId)))
+  const [row] = await executor.select({ artifact: artifacts, project: projectFields }).from(artifacts)
+    .innerJoin(projectsView, and(eq(projectsView.projectId, artifacts.projectId), eq(projectsView.accountId, artifacts.accountId)))
     .where(eq(artifacts.artifactId, payload.artifactId));
   if (!row || row.artifact.accountId !== payload.actor.accountId || !resolveFeatureFlag(row.project.metadata, 'artifact_comments')) throw invalid('The Artifact is no longer available');
   const threads = await executor.select().from(artifactCommentThreads).where(and(eq(artifactCommentThreads.artifactId, row.artifact.artifactId),
@@ -513,7 +514,7 @@ export async function dispatchArtifactCommentJobs(key: string): Promise<void> {
 }
 
 export async function resolveArtifactCommentSendTarget(artifact: ArtifactRow, actor: Actor, callerSessionId: string | null, requestedAgent?: string) {
-  const [project] = await db.select().from(projects).where(and(eq(projects.projectId, artifact.projectId), eq(projects.accountId, artifact.accountId)));
+  const [project] = await db.select().from(projectsView).where(and(eq(projectsView.projectId, artifact.projectId), eq(projectsView.accountId, artifact.accountId)));
   if (!project) throw new ArtifactCommentDeliveryError(404, 'Project not found', 'not_found');
   let session = artifact.createdBySessionId ? (await db.select().from(projectSessions).where(and(eq(projectSessions.accountId, artifact.accountId),
     eq(projectSessions.projectId, artifact.projectId), eq(projectSessions.sessionId, artifact.createdBySessionId))))[0] : undefined;

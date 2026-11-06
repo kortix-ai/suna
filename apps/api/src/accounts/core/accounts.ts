@@ -1,7 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, count, eq } from "drizzle-orm";
 import { json, errors, auth } from "../../openapi";
-import { accounts, projects } from "@kortix/db";
 import { config } from "../../config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
@@ -32,6 +31,7 @@ import {
 import { readJsonObject } from '../../shared/http-body';
 import { workspaceIdsForAccounts } from '../../shared/resolve-account';
 import { accountIdParam } from '../../shared/route-params';
+import { accountsView, projectsView, updateAccountRowsReturning } from '../../workspaces/rows';
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
@@ -63,8 +63,8 @@ export function registerAccountRoutes(): void {
       if (impersonated) {
         const [row] = await db
           .select()
-          .from(accounts)
-          .where(eq(accounts.accountId, impersonated))
+          .from(accountsView)
+          .where(eq(accountsView.accountId, impersonated))
           .limit(1);
         if (!row) return c.json([]);
         const workspaceIds = await workspaceIdsForAccounts([row.accountId]);
@@ -247,8 +247,8 @@ export function registerAccountRoutes(): void {
 
       const [row] = await db
         .select()
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
+        .from(accountsView)
+        .where(eq(accountsView.accountId, accountId))
         .limit(1);
       if (!row) return c.json({ error: 'Not found' }, 404);
 
@@ -270,8 +270,8 @@ export function registerAccountRoutes(): void {
       }
       const [projectCountRow] = await db
         .select({ n: count() })
-        .from(projects)
-        .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active')));
+        .from(projectsView)
+        .where(and(eq(projectsView.accountId, accountId), eq(projectsView.status, 'active')));
 
       const displayNames = await resolveAccountDisplayNames(
         [{ accountId: row.accountId, name: row.name }],
@@ -334,11 +334,10 @@ export function registerAccountRoutes(): void {
       const project = await renameSoleProjectOfAccount(accountId, name);
       if (!project.ok) return c.json({ error: project.error, code: project.code }, project.status);
 
-      const [row] = await db
-        .update(accounts)
-        .set({ name, updatedAt: new Date() })
-        .where(eq(accounts.accountId, accountId))
-        .returning();
+      const [row] = await updateAccountRowsReturning(eq(accountsView.accountId, accountId), {
+        name,
+        updatedAt: new Date(),
+      });
       if (!row) return c.json({ error: 'Not found' }, 404);
 
       const workspaceIds = await workspaceIdsForAccounts([row.accountId]);

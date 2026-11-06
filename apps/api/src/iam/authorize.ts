@@ -32,16 +32,7 @@
  */
 import { timeStage } from '../lib/server-timing';
 import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import {
-  accountGroupMembers,
-  accountMembers,
-  accounts,
-  iamRoleActions,
-  iamRoles,
-  projects,
-  roleAssignments,
-  serviceAccounts,
-} from '@kortix/db';
+import { accountGroupMembers, accountMembers, iamRoleActions, iamRoles, roleAssignments, serviceAccounts } from '@kortix/db';
 import { ssoProviderIdOf } from '../shared/auth-identity';
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
@@ -72,6 +63,7 @@ import {
   type Actor,
   type PrincipalRef,
 } from './actor';
+import { accountsView, projectsView } from '../workspaces/rows';
 
 // ─── Public surface ─────────────────────────────────────────────────────────
 
@@ -786,7 +778,7 @@ async function resolvePrincipalUncached(
     db
       .select({
         isSuperAdmin: accountMembers.isSuperAdmin,
-        mfaRequired: accounts.mfaRequired,
+        mfaRequired: accountsView.mfaRequired,
         // SSO only: the account's IdP enforces sign-in for a domain it proved
         // control of, this person's email is in that domain, and this auth user
         // is not an identity of that IdP (a password, email-code or social
@@ -796,7 +788,7 @@ async function resolvePrincipalUncached(
           SELECT 1
             FROM kortix.account_sso_providers enforcing
             JOIN auth.users person ON person.id = ${pid}::uuid
-           WHERE enforcing.account_id = ${qualifiedColumn(accounts.accountId)}
+           WHERE enforcing.account_id = ${qualifiedColumn(accountsView.accountId)}
              AND enforcing.enforce_sso
              AND enforcing.domain_verified_at IS NOT NULL
              AND enforcing.primary_domain = split_part(lower(trim(person.email)), '@', 2)
@@ -804,7 +796,7 @@ async function resolvePrincipalUncached(
         )`,
       })
       .from(accountMembers)
-      .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
+      .innerJoin(accountsView, eq(accountsView.accountId, accountMembers.accountId))
       .where(and(eq(accountMembers.userId, pid), eq(accountMembers.accountId, accountId)))
       .limit(1),
     db
@@ -1128,9 +1120,9 @@ const workspaceAccountMemo = ttlMemo({
   loader: async (workspaceId: string): Promise<string | null> => {
     if (!isUuid(workspaceId)) return null;
     const [row] = await db
-      .select({ accountId: projects.accountId })
-      .from(projects)
-      .where(eq(projects.projectId, workspaceId))
+      .select({ accountId: projectsView.accountId })
+      .from(projectsView)
+      .where(eq(projectsView.projectId, workspaceId))
       .limit(1);
     return row?.accountId ?? null;
   },

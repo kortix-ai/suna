@@ -1,6 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq } from 'drizzle-orm';
-import { projects, serviceAccounts } from '@kortix/db';
+import { serviceAccounts } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { groupInAccountRow } from '../../iam/group-read';
@@ -17,6 +17,7 @@ import { auditIam, requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { loadSystemRoles } from '../../iam/catalog';
 import { accountIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 export function systemRoleWireId(scopeType: string, key: string): string {
   return scopeType === 'project' && key === 'member' ? 'builtin:user' : `builtin:${key}`;
@@ -489,9 +490,9 @@ async function parsePolicyInput(
   // intent). Validate existence + ownership up front.
   if (scopeType === 'project' && scopeId) {
     const [proj] = await db
-      .select({ projectId: projects.projectId })
-      .from(projects)
-      .where(and(eq(projects.projectId, scopeId), eq(projects.accountId, accountId)))
+      .select({ projectId: projectsView.projectId })
+      .from(projectsView)
+      .where(and(eq(projectsView.projectId, scopeId), eq(projectsView.accountId, accountId)))
       .limit(1);
     if (!proj) return { ok: false, status: 404, error: 'scopeId does not match a project in this account' };
   }

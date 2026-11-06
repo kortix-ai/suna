@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { projects, roleAssignments } from '@kortix/db';
+import { roleAssignments } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize, workspaceFactsOf } from '../../iam';
 import { accountRoleForWorkspaceRole, parseWorkspaceRole, workspaceRoleFromRows } from '../../iam/roles';
@@ -38,6 +38,7 @@ import {
 } from './app';
 import { readJsonObject } from '../../shared/http-body';
 import { accountIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 
 /**
@@ -181,9 +182,9 @@ export function registerMemberRoutes(): void {
         Promise.all([
           projectRoleGrants({ accountId }),
           db
-            .select({ projectId: projects.projectId, name: projects.name })
-            .from(projects)
-            .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active'))),
+            .select({ projectId: projectsView.projectId, name: projectsView.name })
+            .from(projectsView)
+            .where(and(eq(projectsView.accountId, accountId), eq(projectsView.status, 'active'))),
         ]),
         // Group memberships for every member, in one query — so the member list
         // can show which groups each person belongs to without N round-trips.

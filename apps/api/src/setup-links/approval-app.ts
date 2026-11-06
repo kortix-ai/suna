@@ -1,4 +1,4 @@
-import { connectorHeldCalls, connectors, connectorCalls, projects } from '@kortix/db';
+import { connectorHeldCalls, connectors, connectorCalls } from '@kortix/db';
 import { composioToolkitLogo } from '../connectors/composio';
 /**
  * Approval links — the AUTHENTICATED half, mounted at /v1/approval-links.
@@ -41,6 +41,7 @@ import {
 import { db } from '../shared/db';
 import { resolveSetupLink } from './token';
 import type { AppEnv } from '../types';
+import { projectsView } from '../workspaces/rows';
 
 // AppEnv: every route here is authenticated and the project gate reads the
 // auth variables the middleware sets (authType, accountId, ...).
@@ -160,9 +161,9 @@ approvalLinksApp.openapi(createRoute({
   }
 
   const [project] = await db
-    .select({ name: projects.name })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ name: projectsView.name })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
 
   // The connector's own name and logo, so the approval page can say WHICH

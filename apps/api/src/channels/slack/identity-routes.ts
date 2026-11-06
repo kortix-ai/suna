@@ -12,7 +12,6 @@
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import { inArray } from 'drizzle-orm';
-import { projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
@@ -30,6 +29,7 @@ import { chatUser, completeChatLogin } from '../core/identity';
 import { readJsonObject } from '../../shared/http-body';
 import { buildDenialError } from '../../iam/denial-message';
 import { PROJECT_ACTIONS } from '../../iam/actions';
+import { projectsView } from '../../workspaces/rows';
 
 export const slackIdentityApp = makeOpenApiApp();
 
@@ -162,9 +162,9 @@ slackIdentityApp.openapi(
       return c.json({ error: 'This Slack workspace is not connected to any Kortix project.' }, 403);
     }
     const accountRows = await db
-      .select({ accountId: projects.accountId })
-      .from(projects)
-      .where(inArray(projects.projectId, projectIds));
+      .select({ accountId: projectsView.accountId })
+      .from(projectsView)
+      .where(inArray(projectsView.projectId, projectIds));
     const accountIds = Array.from(new Set(accountRows.map((r) => r.accountId)));
 
     // Link regardless of membership. Connecting your Kortix account is decoupled

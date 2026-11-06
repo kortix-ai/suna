@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm';
-import { projects } from '@kortix/db';
 import { projectManagerUserIds } from '../../iam/project-managers';
 import { sendProjectAccessRequestEmail } from '../../accounts/email';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { lookupEmailsByUserIds } from './access';
+import { projectsView } from '../../workspaces/rows';
 
 function projectMembersUrl(projectId: string): string {
   const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
@@ -18,9 +18,9 @@ export async function notifyProjectAccessRequestManagers(input: {
   message?: string | null;
 }): Promise<void> {
   const [project] = await db
-    .select({ name: projects.name })
-    .from(projects)
-    .where(eq(projects.projectId, input.projectId))
+    .select({ name: projectsView.name })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, input.projectId))
     .limit(1);
 
   // Who can approve this: the project's managers, exactly the people the

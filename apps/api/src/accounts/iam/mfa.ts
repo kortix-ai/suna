@@ -8,7 +8,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { eq } from 'drizzle-orm';
-import { accounts } from '@kortix/db';
 import { db } from '../../shared/db';
 import { accountMemberMfaRows, accountMfaEnrolledMemberRow, accountSuperAdminRow } from '../../iam/membership-read';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
@@ -18,6 +17,7 @@ import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { accountIdParam } from '../../shared/route-params';
+import { accountsView, updateAccountRows } from '../../workspaces/rows';
 
 export function registerIamMfaRoutes(): void {
   iamRouter.openapi(
@@ -38,9 +38,9 @@ export function registerIamMfaRoutes(): void {
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
     const [row] = await db
-      .select({ mfaRequired: accounts.mfaRequired })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .select({ mfaRequired: accountsView.mfaRequired })
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     if (!row) return c.json({ error: 'account not found' }, 404);
     return c.json({ enabled: row.mfaRequired });
@@ -151,9 +151,9 @@ export function registerIamMfaRoutes(): void {
     const enabled = body.enabled;
 
     const [before] = await db
-      .select({ mfaRequired: accounts.mfaRequired })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .select({ mfaRequired: accountsView.mfaRequired })
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     if (!before) return c.json({ error: 'account not found' }, 404);
     if (before.mfaRequired === enabled) {
@@ -187,10 +187,7 @@ export function registerIamMfaRoutes(): void {
       }
     }
 
-    await db
-      .update(accounts)
-      .set({ mfaRequired: enabled, updatedAt: new Date() })
-      .where(eq(accounts.accountId, accountId));
+    await updateAccountRows(eq(accountsView.accountId, accountId), { mfaRequired: enabled, updatedAt: new Date() });
 
     // resolveActorV2 memoizes accountMfaRequired per member for IAM_CACHE_TTL_MS
     // — without this, a flip stays invisible to every cached actor (denying an

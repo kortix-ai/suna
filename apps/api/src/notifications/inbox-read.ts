@@ -6,7 +6,7 @@
 // project role, a removed member, a deleted session or an MFA step-up the
 // sign-in has not passed hides the row; it is never deleted here.
 import { and, desc, eq, inArray, isNull, lt, type SQL, sql } from 'drizzle-orm';
-import { accountMembers, notifications, projects } from '@kortix/db';
+import { accountMembers, notifications } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { db } from '../shared/db';
 import { loadArtifactAccessRows, loadSessionAccessRows, mayReadProjectArtifacts, mayReadProjectTriggers, maySeeArtifacts, maySeeSessions, type SessionAccessRow } from './access';
@@ -15,6 +15,7 @@ import { notificationsEnabled } from './enabled';
 import { mfaWithheldAccounts } from './mfa-gate';
 import { inboxStore } from './inbox-store';
 import { notificationUrl } from './push-payload';
+import { projectsView } from '../workspaces/rows';
 
 /** The unread count covers at most this many newest unread rows; clients show 99+. */
 export const INBOX_UNREAD_SCAN = 100;
@@ -107,9 +108,9 @@ async function mfaBlockedAccounts(userId: string, accountIds: string[], ctx: Inb
 async function notificationProjectGates(projectIds: string[]): Promise<Map<string, { name: string; center: boolean; artifactComments: boolean }>> {
   if (projectIds.length === 0) return new Map();
   const rows = await db
-    .select({ projectId: projects.projectId, name: projects.name, metadata: projects.metadata })
-    .from(projects)
-    .where(inArray(projects.projectId, projectIds));
+    .select({ projectId: projectsView.projectId, name: projectsView.name, metadata: projectsView.metadata })
+    .from(projectsView)
+    .where(inArray(projectsView.projectId, projectIds));
   return new Map(rows.map((row) => [row.projectId, { name: row.name, center: notificationsEnabled(row.metadata),
     artifactComments: resolveFeatureFlag(row.metadata, 'artifacts') && resolveFeatureFlag(row.metadata, 'artifact_comments') }]));
 }
@@ -173,8 +174,8 @@ async function visible<T extends InboxRowForFilter>(
  */
 export async function hiddenNotificationKinds(userId: string): Promise<NotificationKindName[]> {
   const hidden: NotificationKindName[] = [];
-  const candidates = await db.select({ id: projects.projectId, accountId: projects.accountId, metadata: projects.metadata })
-    .from(projects).innerJoin(accountMembers, eq(accountMembers.accountId, projects.accountId)).where(eq(accountMembers.userId, userId));
+  const candidates = await db.select({ id: projectsView.projectId, accountId: projectsView.accountId, metadata: projectsView.metadata })
+    .from(projectsView).innerJoin(accountMembers, eq(accountMembers.accountId, projectsView.accountId)).where(eq(accountMembers.userId, userId));
   const enabled = candidates.filter((row) => resolveFeatureFlag(row.metadata, 'artifacts') && resolveFeatureFlag(row.metadata, 'artifact_comments'));
   const groups = new Map<string, string[]>();
   for (const row of enabled) groups.set(row.accountId, [...(groups.get(row.accountId) ?? []), row.id]);

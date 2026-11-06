@@ -9,12 +9,13 @@
  * and `capture.manage` (the switch, the policy, revoking any device). Owner
  * and admin hold both by default; a custom role can grant either.
  */
-import { accounts, captureTenants } from '@kortix/db';
+import { captureTenants } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { accountMemberRow } from '../iam/membership-read';
 import { accountRolesForUser } from '../iam/read-models';
 import { db } from '../shared/db';
 import { DEFAULT_POLICY, PolicySchema, type CapturePolicy } from './format';
+import { accountsView } from '../workspaces/rows';
 
 export interface Workspace {
   accountId: string;
@@ -59,11 +60,11 @@ export async function captureAccountsFor(userId: string): Promise<Array<{ accoun
   const memberOf = [...(await accountRolesForUser(userId)).keys()];
   if (memberOf.length === 0) return [];
   return db
-    .select({ account_id: accounts.accountId, name: accounts.name })
+    .select({ account_id: accountsView.accountId, name: accountsView.name })
     .from(captureTenants)
-    .innerJoin(accounts, eq(accounts.accountId, captureTenants.accountId))
+    .innerJoin(accountsView, eq(accountsView.accountId, captureTenants.accountId))
     .where(and(inArray(captureTenants.accountId, memberOf), eq(captureTenants.enabled, true)))
-    .orderBy(accounts.name);
+    .orderBy(accountsView.name);
 }
 
 /** True when the person is still a member of the account (devices of former members stop). */

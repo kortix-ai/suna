@@ -5,21 +5,20 @@
  * projects is not one workspace (legacy multi-project accounts are
  * grandfathered, D4): its names stay independent.
  */
-import { accounts, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
 import { commitProjectName, MANIFEST_PROJECT_NAME_KEY } from './manifest-project-name';
-import { metadataMerge } from './metadata-merge';
+import { accountsView, metadataMerge, projectsView, updateAccountRows, updateProjectRowsReturning } from '../../workspaces/rows';
 
-type ProjectRow = typeof projects.$inferSelect;
+type ProjectRow = typeof projectsView.$inferSelect;
 
 /** The account's active projects, at most 2: enough to tell "exactly one". */
 async function activeProjectsOf(accountId: string): Promise<ProjectRow[]> {
   return db
     .select()
-    .from(projects)
-    .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active')))
+    .from(projectsView)
+    .where(and(eq(projectsView.accountId, accountId), eq(projectsView.status, 'active')))
     .limit(2);
 }
 
@@ -36,10 +35,7 @@ export async function soleActiveProjectOf(accountId: string): Promise<ProjectRow
 export async function renameAccountOfSoleProject(project: Pick<ProjectRow, 'projectId' | 'accountId'>, name: string): Promise<void> {
   const sole = await soleActiveProjectOf(project.accountId);
   if (!sole || sole.projectId !== project.projectId) return;
-  await db
-    .update(accounts)
-    .set({ name, updatedAt: new Date() })
-    .where(eq(accounts.accountId, project.accountId));
+  await updateAccountRows(eq(accountsView.accountId, project.accountId), { name, updatedAt: new Date() });
 }
 
 export type SoleProjectRenameResult =
@@ -65,10 +61,6 @@ export async function renameSoleProjectOfAccount(accountId: string, name: string
       status: declared.status === 400 ? 400 : 409,
     };
   }
-  const [row] = await db
-    .update(projects)
-    .set({ name, metadata: metadataMerge({ [MANIFEST_PROJECT_NAME_KEY]: name }), updatedAt: new Date() })
-    .where(eq(projects.projectId, sole.projectId))
-    .returning();
+  const [row] = await updateProjectRowsReturning(eq(projectsView.projectId, sole.projectId), { name, metadata: metadataMerge({ [MANIFEST_PROJECT_NAME_KEY]: name }), updatedAt: new Date() });
   return { ok: true, project: row ?? null };
 }

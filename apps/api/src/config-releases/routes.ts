@@ -16,7 +16,7 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../iam';
@@ -43,6 +43,7 @@ import { ownerMayUseAgent, repointSessionAgentToDeclaredDefault } from './repoin
 import { serveConfigArchive } from './serve-archive';
 import { configReleaseSnapshot } from './snapshot';
 import { workspaceIdParam } from '../shared/route-params';
+import { projectsView } from '../workspaces/rows';
 
 const HEX40 = /^[0-9a-f]{40}$/;
 
@@ -124,12 +125,12 @@ async function sandboxSession(
       agentName: projectSessions.agentName,
       metadata: projectSessions.metadata,
       createdBy: projectSessions.createdBy,
-      projectId: projects.projectId,
-      accountId: projects.accountId,
-      repoUrl: projects.repoUrl,
-      defaultBranch: projects.defaultBranch,
-      manifestPath: projects.manifestPath,
-      projectStatus: projects.status,
+      projectId: projectsView.projectId,
+      accountId: projectsView.accountId,
+      repoUrl: projectsView.repoUrl,
+      defaultBranch: projectsView.defaultBranch,
+      manifestPath: projectsView.manifestPath,
+      projectStatus: projectsView.status,
     })
     .from(sessionSandboxes)
     .innerJoin(
@@ -140,7 +141,7 @@ async function sandboxSession(
         eq(projectSessions.sessionId, sessionSandboxes.sessionId),
       ),
     )
-    .innerJoin(projects, eq(projects.projectId, sessionSandboxes.projectId))
+    .innerJoin(projectsView, eq(projectsView.projectId, sessionSandboxes.projectId))
     .where(
       and(
         eq(sessionSandboxes.sandboxId, sandboxId),

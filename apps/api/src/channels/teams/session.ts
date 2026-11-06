@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
+import { chatEventDedup, chatThreads, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import {
@@ -56,6 +56,7 @@ import {
 } from './types';
 import { describeTeamsConversation, isPersonalChat, stripTeamsMentions, teamsMessageText } from './util';
 import { ensureTeamsThreadParticipant, normalizeConversationPolicy, rememberTeamsThreadOwner } from './participants';
+import { projectsView } from '../../workspaces/rows';
 
 const defaultTeamsSessionLifecycle = {
   deliverFollowUp: deliverThroughQueue,
@@ -478,8 +479,8 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   let [project] = await db
     .select()
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!project) return;
 
@@ -499,7 +500,7 @@ export async function createOrJoinTeamsConversationSession(input: {
   const authorizedResume = Boolean(input.authorizedResume) && route.kind === 'here';
   if (route.kind === 'thread_project') {
     projectId = route.projectId;
-    [project] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    [project] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
     if (!project) return;
   }
 

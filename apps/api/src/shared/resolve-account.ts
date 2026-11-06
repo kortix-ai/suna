@@ -1,4 +1,4 @@
-import { accountMembers, accounts, projects } from "@kortix/db";
+import { accountMembers } from "@kortix/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { db } from "./db";
@@ -8,6 +8,7 @@ import {
 } from "./impersonation";
 import { isUuid } from "./validate";
 import { noWorkspaceError } from "./no-workspace";
+import { accountsView, projectsView } from "../workspaces/rows";
 
 /**
  * The account a billing request targets, from plain values: the caller's user
@@ -110,9 +111,9 @@ export async function workspaceIdsForAccounts(accountIds: readonly string[]): Pr
   const ids = [...new Set(accountIds.filter(isUuid))];
   if (ids.length === 0) return out;
   const rows = await db
-    .select({ accountId: projects.accountId, projectId: projects.projectId })
-    .from(projects)
-    .where(and(inArray(projects.accountId, ids), eq(projects.status, "active")));
+    .select({ accountId: projectsView.accountId, projectId: projectsView.projectId })
+    .from(projectsView)
+    .where(and(inArray(projectsView.accountId, ids), eq(projectsView.status, "active")));
   for (const id of ids) out.set(id, null);
   const counts = new Map<string, number>();
   for (const row of rows) counts.set(row.accountId, (counts.get(row.accountId) ?? 0) + 1);
@@ -128,9 +129,9 @@ export async function workspaceIdsForAccounts(accountIds: readonly string[]): Pr
 export async function accountKeyForWorkspaceId(id: string): Promise<string | null> {
   if (!isUuid(id)) return null;
   const [row] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
-    .where(and(eq(projects.projectId, id), eq(projects.status, "active")))
+    .select({ accountId: projectsView.accountId })
+    .from(projectsView)
+    .where(and(eq(projectsView.projectId, id), eq(projectsView.status, "active")))
     .limit(1);
   return row?.accountId ?? null;
 }
@@ -138,9 +139,9 @@ export async function accountKeyForWorkspaceId(id: string): Promise<string | nul
 async function accountExists(accountId: string): Promise<boolean> {
   if (!isUuid(accountId)) return false;
   const [row] = await db
-    .select({ accountId: accounts.accountId })
-    .from(accounts)
-    .where(eq(accounts.accountId, accountId))
+    .select({ accountId: accountsView.accountId })
+    .from(accountsView)
+    .where(eq(accountsView.accountId, accountId))
     .limit(1);
   return Boolean(row);
 }

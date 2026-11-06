@@ -4,7 +4,7 @@
  * user). The pure logic (gateway/share/execute/policy/normalize) is tested; this
  * is the glue to Postgres + the credential store + Pipedream.
  */
-import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
+import { connectorConnections, connectors, projectSessions } from '@kortix/db';
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../config';
@@ -108,6 +108,7 @@ import {
   resolveSecretReader,
 } from './db-deps-principal';
 import { connectorConnected } from './db-deps-rows';
+import { projectsView } from '../workspaces/rows';
 
 export {
   composioConnectionMetadata,
@@ -374,9 +375,9 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
           .limit(1)
       : [];
     const [project] = await db
-      .select({ accountId: projects.accountId })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
+      .select({ accountId: projectsView.accountId })
+      .from(projectsView)
+      .where(eq(projectsView.projectId, projectId))
       .limit(1);
     if (!project) return [];
     const entitled = await listEntitledConnectorConnections({

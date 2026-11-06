@@ -4,10 +4,11 @@ import {
   getProjectGitConnection,
   getProjectGitRemote,
 } from './git';
-import { accountTokens, projects, connectors, projectSessionConnectorBindings } from '@kortix/db';
+import { accountTokens, connectors, projectSessionConnectorBindings } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { ProjectGitConnectionRow, ProjectRow } from './serializers';
+import { projectsView, updateProjectRowsReturning } from '../../workspaces/rows';
 
 export interface ProjectDeletionDeps {
   getConnection(projectId: string): Promise<ProjectGitConnectionRow | null>;
@@ -66,10 +67,7 @@ export async function purgeProjectConnectors(projectId: string): Promise<void> {
 export async function archiveProjectAndRevokeTokens(projectId: string, accountId: string) {
   return db.transaction(async (tx) => {
     // The ownership CAS also locks against transfers and concurrent token mints.
-    const [archived] = await tx.update(projects)
-      .set({ status: 'archived', updatedAt: new Date() })
-      .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
-      .returning();
+    const [archived] = await updateProjectRowsReturning(and(eq(projectsView.projectId, projectId), eq(projectsView.accountId, accountId)), { status: 'archived', updatedAt: new Date() }, tx);
     if (!archived) return undefined;
     await tx.update(accountTokens)
       .set({ status: 'revoked', revokedAt: new Date() })

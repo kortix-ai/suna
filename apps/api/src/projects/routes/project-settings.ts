@@ -10,7 +10,6 @@ import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
-import { accounts, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import {
@@ -28,7 +27,6 @@ import {
 import { serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { isPlainObject } from '../../shared/json';
-import { metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
 import {
   DEFAULT_REASONING_EFFORT_METADATA_KEY,
   normalizeDefaultReasoningEffort,
@@ -62,6 +60,7 @@ import {
 } from '../provider-transition/provider-transition-service';
 import { capturePersonEvent } from './product-events';
 import { workspaceIdParam } from '../../shared/route-params';
+import { accountsView, metadataMerge, metadataMergeSubtree, projectsView, updateProjectRowsReturning } from '../../workspaces/rows';
 
 /** The body of a restore: the workspace's ids, name, lifecycle and deletion date. */
 function workspaceLifecycleBody(record: WorkspaceRecord) {
@@ -253,11 +252,7 @@ export function registerProjectSettingsRoutes(): void {
       );
     }
 
-    const [row] = await db
-      .update(projects)
-      .set({ metadata: metadataExpr, updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId))
-      .returning();
+    const [row] = await updateProjectRowsReturning(eq(projectsView.projectId, projectId), { metadata: metadataExpr, updatedAt: new Date() });
 
     if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
     return c.json(serializeProject(row, {
@@ -515,9 +510,9 @@ export function registerProjectSettingsRoutes(): void {
         return c.json({ error: 'Project is already in that account' }, 400);
       }
       const [target] = await db
-        .select({ accountId: accounts.accountId })
-        .from(accounts)
-        .where(eq(accounts.accountId, targetAccountId));
+        .select({ accountId: accountsView.accountId })
+        .from(accountsView)
+        .where(eq(accountsView.accountId, targetAccountId));
       if (!target) return c.json({ error: 'Target account not found' }, 404);
       // Gate 2 — the caller must be a member of the TARGET account with the
       // right to create projects there. Resolved inside the target, so a
@@ -782,11 +777,7 @@ export function registerProjectSettingsRoutes(): void {
       const metadataExpr = effort
         ? metadataMerge({ [DEFAULT_REASONING_EFFORT_METADATA_KEY]: effort })
         : metadataMerge({}, [DEFAULT_REASONING_EFFORT_METADATA_KEY]);
-      const [row] = await db
-        .update(projects)
-        .set({ metadata: metadataExpr, updatedAt: new Date() })
-        .where(eq(projects.projectId, projectId))
-        .returning();
+      const [row] = await updateProjectRowsReturning(eq(projectsView.projectId, projectId), { metadata: metadataExpr, updatedAt: new Date() });
 
       if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
       return c.json(serializeProject(row, {

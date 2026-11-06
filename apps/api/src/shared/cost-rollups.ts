@@ -1,11 +1,12 @@
 import { numberValue, isoValue } from './cost-values';
-import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions, storageCharges } from '@kortix/db';
+import { gatewayRequestLogs, projectSessions, sandboxComputeSessions, storageCharges } from '@kortix/db';
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 
 import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
 import { kortixBilledSpendSql, providerBilledSpendSql } from './llm-spend';
 import { billedComputeSecondsExpression } from './session-costs';
+import { projectsView } from '../workspaces/rows';
 
 export interface ProjectCostRow {
   project_id: string;
@@ -239,11 +240,11 @@ export async function listCostByProject(input: {
       )
       .groupBy(projectSessions.projectId),
     db
-      .select({ projectId: projects.projectId, name: projects.name })
-      .from(projects)
+      .select({ projectId: projectsView.projectId, name: projectsView.name })
+      .from(projectsView)
       .where(and(
-        eq(projects.accountId, accountId),
-        input.projectId ? eq(projects.projectId, input.projectId) : undefined,
+        eq(projectsView.accountId, accountId),
+        input.projectId ? eq(projectsView.projectId, input.projectId) : undefined,
       )),
     // Volume storage (idx_storage_charges_account_day), charged per UTC day.
     db

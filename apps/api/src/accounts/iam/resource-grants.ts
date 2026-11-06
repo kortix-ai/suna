@@ -18,7 +18,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { eq } from 'drizzle-orm';
-import { projects } from '@kortix/db';
 import { objectGrantRows } from '../../iam/read-models';
 import { db } from '../../shared/db';
 import { accountGroupNamesAmong } from '../../iam/group-read';
@@ -28,6 +27,7 @@ import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { isUuid } from '../../shared/validate';
 import { iamRouter, AccountIdParam } from './app';
 import { accountIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 const ResourceGrantRowSchema = z
   .object({
@@ -84,9 +84,9 @@ export function registerIamResourceGrantsRoutes(): void {
           ...(projectId && isUuid(projectId) ? { projectId } : {}),
         }),
         db
-          .select({ projectId: projects.projectId, name: projects.name })
-          .from(projects)
-          .where(eq(projects.accountId, accountId)),
+          .select({ projectId: projectsView.projectId, name: projectsView.name })
+          .from(projectsView)
+          .where(eq(projectsView.accountId, accountId)),
       ]);
       const projectById = new Map(projectRows.map((p) => [p.projectId, p] as const));
 

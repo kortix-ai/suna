@@ -744,7 +744,8 @@ withDb('project transfer', () => {
     // The whole schema namespace, not only the names `@kortix/db` re-exports
     // at its top level (`audit_activity_daily` is reachable only here).
     const { schema } = await import('@kortix/db');
-    const moved = new Set(PROJECT_TRANSFER_TABLES.map((t) => getTableName(t)));
+    // `projects` moves first, through the workspaces store (moveProjectRowAccount).
+    const moved = new Set(['projects', ...PROJECT_TRANSFER_TABLES.map((t) => getTableName(t))]);
     const leave = new Set(Object.keys(PROJECT_TRANSFER_LEAVE_TABLES));
     const both: string[] = [];
     for (const exported of Object.values(schema)) {

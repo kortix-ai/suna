@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
-import { projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { type ChatUser, resolveProjectChatActor } from './identity';
+import { projectsView } from '../../workspaces/rows';
 
 /** What a refused Stop tells the presser, in Slack and in Teams. */
 export const CHAT_TURN_STOP_REFUSED =
@@ -48,9 +48,9 @@ export async function chatTurnStopVerdict(input: {
   if (input.sentIt) return userId || !input.requireIdentity ? { allowed: true, userId } : { allowed: false };
   if (!userId) return { allowed: false };
   const [project] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
-    .where(eq(projects.projectId, input.projectId))
+    .select({ accountId: projectsView.accountId })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, input.projectId))
     .limit(1);
   if (!project) return { allowed: false };
   // Lazily imported so the channel modules keep no static edge into the

@@ -25,7 +25,6 @@
  * unique index on `(account_id, idempotency_key)` then lets exactly one of
  * them provision (provision-core.ts, the loser rollback).
  */
-import { projects } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { createOwnedAccount } from '../accounts/core/create-account';
@@ -35,6 +34,7 @@ import { db } from '../shared/db';
 import { impersonatedAccountFor } from '../shared/impersonation';
 import { isPlatformAdmin } from '../shared/platform-roles';
 import type { ProvisionResult } from './provision-core';
+import { projectsView } from '../workspaces/rows';
 
 /** Who is asking: only a person creates a workspace. */
 export interface NewWorkspaceCaller {
@@ -123,9 +123,9 @@ async function replayedAccount(userId: string, idempotencyKey: string | null): P
   const owned = [...roles].filter(([, role]) => role === 'owner').map(([accountId]) => accountId);
   if (owned.length === 0) return null;
   const [keyed] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
-    .where(and(inArray(projects.accountId, owned), eq(projects.idempotencyKey, idempotencyKey)))
+    .select({ accountId: projectsView.accountId })
+    .from(projectsView)
+    .where(and(inArray(projectsView.accountId, owned), eq(projectsView.idempotencyKey, idempotencyKey)))
     .limit(1);
   if (keyed) return keyed.accountId;
   return virginAccountOf(userId, owned, new Date(Date.now() - IN_FLIGHT_ACCOUNT_WINDOW_MS));

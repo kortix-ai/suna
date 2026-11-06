@@ -23,7 +23,7 @@
  * sequence before the first unfinished one, so the next leader's resume
  * replays it.
  */
-import { chatInstalls, platformSettings, projects } from '@kortix/db';
+import { chatInstalls, platformSettings } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { readChannelAccess } from '../core/channel-access';
@@ -42,6 +42,7 @@ import {
   type DiscordMessageEventData,
   type DiscordStoredMessage,
 } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 /**
  * GUILDS, GUILD_MESSAGES, DIRECT_MESSAGES. Discord sends a message's text
@@ -250,7 +251,7 @@ function storedMessage(m: GatewayMessage): DiscordStoredMessage {
 
 /** The project's Discord allow-list holds the user. */
 async function projectAllows(projectId: string, userId: string): Promise<boolean> {
-  const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select({ metadata: projectsView.metadata }).from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   return readChannelAccess(row?.metadata, 'discord').allowedUserIds.includes(userId);
 }
 

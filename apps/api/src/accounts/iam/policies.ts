@@ -4,7 +4,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { and, eq, sql } from 'drizzle-orm';
-import { accounts, accountSessionActivity } from '@kortix/db';
+import { accountSessionActivity } from '@kortix/db';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
@@ -12,6 +12,7 @@ import { iamRouter, AccountIdParam } from './app';
 import { auditIam, HttpError } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { accountIdParam } from '../../shared/route-params';
+import { accountsView, updateAccountRows, type AccountRowSet } from '../../workspaces/rows';
 
 // ─── Session policy ───────────────────────────────────────────────────────
 // Per-account ceilings on session age + idle gap. Null on either field
@@ -50,11 +51,11 @@ export function registerIamPoliciesRoutes(): void {
 
     const [row] = await db
       .select({
-        maxLifetimeMinutes: accounts.sessionMaxLifetimeMinutes,
-        idleTimeoutMinutes: accounts.sessionIdleTimeoutMinutes,
+        maxLifetimeMinutes: accountsView.sessionMaxLifetimeMinutes,
+        idleTimeoutMinutes: accountsView.sessionIdleTimeoutMinutes,
       })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     if (!row) return c.json({ error: 'account not found' }, 404);
 
@@ -117,22 +118,19 @@ export function registerIamPoliciesRoutes(): void {
 
     const [before] = await db
       .select({
-        maxLifetimeMinutes: accounts.sessionMaxLifetimeMinutes,
-        idleTimeoutMinutes: accounts.sessionIdleTimeoutMinutes,
+        maxLifetimeMinutes: accountsView.sessionMaxLifetimeMinutes,
+        idleTimeoutMinutes: accountsView.sessionIdleTimeoutMinutes,
       })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     if (!before) return c.json({ error: 'account not found' }, 404);
 
-    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    const updates: AccountRowSet = { updatedAt: new Date() };
     if (maxLifetimeMinutes !== undefined) updates.sessionMaxLifetimeMinutes = maxLifetimeMinutes;
     if (idleTimeoutMinutes !== undefined) updates.sessionIdleTimeoutMinutes = idleTimeoutMinutes;
 
-    await db
-      .update(accounts)
-      .set(updates)
-      .where(eq(accounts.accountId, accountId));
+    await updateAccountRows(eq(accountsView.accountId, accountId), updates);
 
     await auditIam(c, {
       accountId,
@@ -283,12 +281,12 @@ export function registerIamPoliciesRoutes(): void {
 
     const [row] = await db
       .select({
-        maxLifetimeDays: accounts.patMaxLifetimeDays,
-        requireExpiry: accounts.patRequireExpiry,
-        idleRevokeDays: accounts.patIdleRevokeDays,
+        maxLifetimeDays: accountsView.patMaxLifetimeDays,
+        requireExpiry: accountsView.patRequireExpiry,
+        idleRevokeDays: accountsView.patIdleRevokeDays,
       })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     if (!row) return c.json({ error: 'account not found' }, 404);
 
@@ -359,24 +357,21 @@ export function registerIamPoliciesRoutes(): void {
 
     const [before] = await db
       .select({
-        maxLifetimeDays: accounts.patMaxLifetimeDays,
-        requireExpiry: accounts.patRequireExpiry,
-        idleRevokeDays: accounts.patIdleRevokeDays,
+        maxLifetimeDays: accountsView.patMaxLifetimeDays,
+        requireExpiry: accountsView.patRequireExpiry,
+        idleRevokeDays: accountsView.patIdleRevokeDays,
       })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     if (!before) return c.json({ error: 'account not found' }, 404);
 
-    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    const updates: AccountRowSet = { updatedAt: new Date() };
     if (maxLifetimeDays !== undefined) updates.patMaxLifetimeDays = maxLifetimeDays;
     if (idleRevokeDays !== undefined) updates.patIdleRevokeDays = idleRevokeDays;
     if (requireExpiry !== undefined) updates.patRequireExpiry = requireExpiry;
 
-    await db
-      .update(accounts)
-      .set(updates)
-      .where(eq(accounts.accountId, accountId));
+    await updateAccountRows(eq(accountsView.accountId, accountId), updates);
 
     await auditIam(c, {
       accountId,

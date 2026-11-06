@@ -35,12 +35,13 @@
  * questions, menus) do not go through the connector.
  */
 import { and, desc, eq } from 'drizzle-orm';
-import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, chatThreads } from '@kortix/db';
 import { isRecord } from '@kortix/shared/guards';
 import { db } from '../shared/db';
 import { type DiscordChannel, discordCall, isDiscordThread } from '../channels/discord/api';
 import { discordGuildProjects } from '../channels/discord/installs';
 import { discordChannelId, sessionChannelChats } from './channel-write-scope';
+import { projectsView } from '../workspaces/rows';
 
 const CALLS_PER_MINUTE = 60;
 const REFUSED_CHANNEL_TTL_MS = 10 * 60_000;
@@ -81,7 +82,7 @@ async function holding(channelId: string, projectId: string): Promise<Holding> {
     .select({ projectId: chatChannelBindings.projectId, type: chatChannelBindings.channelType, since: chatChannelBindings.installedAt })
     .from(chatChannelBindings)
     .innerJoin(chatInstalls, installed(chatChannelBindings))
-    .innerJoin(projects, and(eq(projects.projectId, chatChannelBindings.projectId), eq(projects.status, 'active')))
+    .innerJoin(projectsView, and(eq(projectsView.projectId, chatChannelBindings.projectId), eq(projectsView.status, 'active')))
     .where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, channelId)))
     .orderBy(desc(chatChannelBindings.installedAt));
   if (bindings.length) {
@@ -95,7 +96,7 @@ async function holding(channelId: string, projectId: string): Promise<Holding> {
     .select({ projectId: chatThreads.projectId })
     .from(chatThreads)
     .innerJoin(chatInstalls, installed(chatThreads))
-    .innerJoin(projects, and(eq(projects.projectId, chatThreads.projectId), eq(projects.status, 'active')))
+    .innerJoin(projectsView, and(eq(projectsView.projectId, chatThreads.projectId), eq(projectsView.status, 'active')))
     .where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.threadId, channelId)));
   return { projects: new Set(threads.map((t) => t.projectId)), dmSince: null };
 }

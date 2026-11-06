@@ -1,10 +1,11 @@
-import { accountMembers, artifactComments, artifactCommentThreads, artifactEvents, jobQueue, projectSessions, projects, type ArtifactCommentMention } from '@kortix/db';
+import { accountMembers, artifactComments, artifactCommentThreads, artifactEvents, jobQueue, projectSessions, type ArtifactCommentMention } from '@kortix/db';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
 import type { ArtifactRow } from './service';
 import { artifactAgentMentionToken } from './comment-tokens';
+import { projectsView } from '../workspaces/rows';
 
 export type { ArtifactCommentMention } from '@kortix/db';
 
@@ -36,7 +37,7 @@ export async function resolveArtifactCommentMentions(artifact: ArtifactRow, body
   }) || ownSession.some((session) => mentionsMember(new Set([token]), { ids: [session.id], names: [session.agent] })))));
   const unresolved = new Set([...agentTokens].filter((token) => !matchedTokens.has(token)));
   if (!unresolved.size) return mentions;
-  const [project] = await db.select().from(projects).where(and(eq(projects.projectId, artifact.projectId), eq(projects.accountId, artifact.accountId)));
+  const [project] = await db.select().from(projectsView).where(and(eq(projectsView.projectId, artifact.projectId), eq(projectsView.accountId, artifact.accountId)));
   if (!project) return mentions;
   let agents: Awaited<ReturnType<typeof loadProjectAgents>>;
   try {

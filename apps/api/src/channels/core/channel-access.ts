@@ -19,13 +19,14 @@
  * its line in packages/shared/src/audit-route-labels.ts, and gate its
  * messages with gateSender and its button presses with refusedPressText.
  */
-import { chatInstalls, projects } from '@kortix/db';
+import { chatInstalls } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { metadataClearSubtreeKey, metadataMergeSubtree } from '../../projects/surface';
 import type { ChannelAccessPlatform } from '../../shared/channel-access-platforms';
 import { databaseErrorSummary } from '../../shared/database-errors';
 import { db } from '../../shared/db';
+import { projectsView, updateProjectRows } from '../../workspaces/rows';
 
 export const CHANNEL_MAX_ALLOWED_USERS = 200;
 const MAX_ACCESS_REQUESTS = 20;
@@ -137,9 +138,9 @@ async function editChannelAccess(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     const [row] = await tx
-      .select({ metadata: projects.metadata })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
+      .select({ metadata: projectsView.metadata })
+      .from(projectsView)
+      .where(eq(projectsView.projectId, projectId))
       .for('update');
     if (!row) return;
     if (scopeId) {
@@ -157,10 +158,7 @@ async function editChannelAccess(
     const patch = edit({ allowedUserIds, accessRequests: waiting });
     const accessRequests = waitingRequests(patch?.accessRequests ?? waiting, patch?.allowedUserIds ?? allowedUserIds);
     if (patch || accessRequests.length !== requests.length) {
-      await tx
-        .update(projects)
-        .set({ metadata: metadataMergeSubtree(platform, { ...patch, accessRequests }) })
-        .where(eq(projects.projectId, projectId));
+      await updateProjectRows(eq(projectsView.projectId, projectId), { metadata: metadataMergeSubtree(platform, { ...patch, accessRequests }) }, tx);
     }
   });
 }
@@ -198,10 +196,7 @@ export async function dismissChannelAccessRequest(platform: ChannelAccessPlatfor
 
 /** Drop every request; the allowed list stays. */
 export async function clearChannelAccessRequests(platform: ChannelAccessPlatform, projectId: string): Promise<void> {
-  await db
-    .update(projects)
-    .set({ metadata: metadataClearSubtreeKey(platform, 'accessRequests') })
-    .where(eq(projects.projectId, projectId));
+  await updateProjectRows(eq(projectsView.projectId, projectId), { metadata: metadataClearSubtreeKey(platform, 'accessRequests') });
 }
 
 /**

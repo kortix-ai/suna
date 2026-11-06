@@ -1,6 +1,6 @@
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { and, eq } from 'drizzle-orm';
-import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
@@ -46,6 +46,7 @@ import {
   type SlackInbound,
 } from './inbound';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 const OTHER_PROJECT_NOTICE = 'This Slack app is tied to a different Kortix project.';
 
@@ -366,9 +367,9 @@ async function handleSwitchProject(
   await backfillSlackBindingLabel(teamId, channelId, projectId);
 
   const [p] = await db
-    .select({ name: projects.name })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ name: projectsView.name })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
 
   await respondViaUrl(payload.response_url, {
@@ -941,9 +942,9 @@ export async function handleBlockAction(
     );
 
   const [proj] = await db
-    .select({ name: projects.name })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ name: projectsView.name })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (token && pickerTs) {
     // DM channel ids start with 'D' — a <#D…> mention renders as a dead link

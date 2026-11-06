@@ -1,9 +1,4 @@
-import {
-  chatChannelBindings,
-  chatEventDedup,
-  chatInstalls,
-  projects,
-} from '@kortix/db';
+import { chatChannelBindings, chatEventDedup, chatInstalls } from '@kortix/db';
 import type { ChannelEnvelope } from '@kortix/shared';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq } from 'drizzle-orm';
@@ -31,6 +26,7 @@ import {
 } from '../install-store';
 import { matchesEmailSenderRegex } from './sender-policy-regex';
 import type { InboundEmail, ResendInboxEmailReceivedEvent } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 export function resetEmailChannelForTest() {
   threadEmailLoader = getResendThreadEmail;
@@ -48,9 +44,9 @@ export async function resolveProjectForEmailInbox(inboxId: string): Promise<stri
 /** Whether the project has the email channel (`email_channel`); off, its inboxes' mail is ignored. */
 export async function emailChannelOnForProject(projectId: string): Promise<boolean> {
   const [row] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ metadata: projectsView.metadata })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   return Boolean(row) && resolveFeatureFlag(row!.metadata, 'email_channel');
 }
@@ -302,8 +298,8 @@ async function planEmailSession(projectId: string, email: InboundEmail): Promise
   const { inboxId, threadId } = email;
   const [project] = await db
     .select()
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!project) return null;
 

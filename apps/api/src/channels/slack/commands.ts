@@ -1,6 +1,6 @@
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { projectSessions, projects } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { escapeMrkdwn, formatRelativeTime, sessionWebUrl } from './util';
@@ -30,6 +30,7 @@ import {
   slashUnbind,
 } from './settings-commands';
 import type { SlashCtx, SlashResponse } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 // `/kortix` subcommands. Channel settings (panel, projects, agent, model,
 // policy) render in settings-commands.ts; this file routes every subcommand and
@@ -145,9 +146,9 @@ async function slashProjectScopedInfo(ctx: SlashCtx): Promise<SlashResponse> {
   const projectId = ctx.projectScopedProjectId;
   const [project] = projectId
     ? await db
-        .select({ name: projects.name, projectId: projects.projectId })
-        .from(projects)
-        .where(eq(projects.projectId, projectId))
+        .select({ name: projectsView.name, projectId: projectsView.projectId })
+        .from(projectsView)
+        .where(eq(projectsView.projectId, projectId))
         .limit(1)
     : [];
   return {

@@ -1,4 +1,4 @@
-import { accountMemberships, accounts } from '@kortix/db';
+import { accountMemberships } from '@kortix/db';
 
 import { claimFirstWorkspaceFreeCredits } from '../../billing/services/free-credit-claims';
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
@@ -7,8 +7,9 @@ import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
+import { insertAccountRow, type AccountRow } from '../../workspaces/rows';
 
-export type CreatedAccountRow = typeof accounts.$inferSelect;
+export type CreatedAccountRow = AccountRow;
 
 /**
  * Create an account and make `userId` its owner. The ONE place an account is
@@ -35,7 +36,7 @@ export async function createOwnedAccount(input: {
   email?: string | null;
 }): Promise<CreatedAccountRow> {
   const { userId, name, email } = input;
-  const [account] = await db.insert(accounts).values({ name }).returning();
+  const account = await insertAccountRow({ name });
 
   await db.insert(accountMemberships).values({
     userId,

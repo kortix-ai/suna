@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
+import { chatEventDedup, chatThreads, projectSessions } from '@kortix/db';
 import { slackFollowUpHeader, slackPlainText } from '@kortix/shared';
 import { db } from '../../shared/db';
 import { config } from '../../config';
@@ -36,6 +36,7 @@ import {
   planChannelSessionStart,
   projectChannelModelScope,
 } from '../model-access';
+import { projectsView } from '../../workspaces/rows';
 
 const defaultSlackSessionLifecycle = {
   deliverFollowUp: deliverThroughQueue,
@@ -155,8 +156,8 @@ export async function createOrJoinThreadSession(input: {
 
   const [project] = await db
     .select()
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!project) return;
 
@@ -235,7 +236,7 @@ async function reportSlackStartError(
 }
 
 async function launchSlackSession(
-  project: typeof projects.$inferSelect,
+  project: typeof projectsView.$inferSelect,
   { projectId, teamId, threadId, envelope, event, revived, actorUserId: userId }: Parameters<typeof createOrJoinThreadSession>[0],
   { conversationPolicy, launchAgent, start }: NonNullable<Awaited<ReturnType<typeof planSlackLaunch>>>,
   claimKey: string | null,
@@ -281,7 +282,7 @@ async function launchSlackSession(
 }
 
 async function planSlackLaunch(
-  project: typeof projects.$inferSelect,
+  project: typeof projectsView.$inferSelect,
   event: SlackEvent,
   teamId: string,
   userId: string,
@@ -339,7 +340,7 @@ async function planSlackLaunch(
 
 /** Return undefined when a mapped thread took the follow-up; otherwise its claim key. */
 async function joinExistingThread(
-  project: typeof projects.$inferSelect,
+  project: typeof projectsView.$inferSelect,
   { projectId, teamId, threadId, envelope, event, actorUserId }: Parameters<typeof createOrJoinThreadSession>[0],
 ): Promise<string | null | undefined> {
   // Claim the thread-create. Losers wait; winners check for a mapping left

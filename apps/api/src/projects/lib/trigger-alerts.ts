@@ -24,7 +24,7 @@
 // project's triggers failed ~1,250 times a day for a month, unseen).
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { projectTriggerRuntime, projects } from '@kortix/db';
+import { projectTriggerRuntime } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { logger } from '../../lib/logger';
 import { clip, INBOX_BODY_MAX_CHARS } from '../../notifications/inbox-store';
@@ -32,6 +32,7 @@ import { projectNotificationsEnabled } from '../../notifications/enabled';
 import { deliver, liveNotifierDeps, type NotifierDeps } from '../../notifications/notifier';
 import { db } from '../../shared/db';
 import { resolveTriggerWatchers } from './trigger-watchers';
+import { projectsView } from '../../workspaces/rows';
 
 /**
  * 'fire' and 'run' as below; 'silence': an app trigger heard no App event
@@ -266,9 +267,9 @@ export function commandTriggerSlug(row: { commandType: string; source: string; p
 
 async function accountOf(projectId: string): Promise<string | null> {
   const [row] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ accountId: projectsView.accountId })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   return row?.accountId ?? null;
 }
