@@ -43,7 +43,13 @@ export function ensureBuilt(): Promise<void> {
       const proc = Bun.spawn({
         cmd: [NEXT_BIN, 'build'],
         cwd: APP_ROOT,
-        env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' },
+        // next build's type-check outgrows Node's 2 GB default on a CI runner (v0.15.0
+        // release suite); 6 GB unless the caller sets NODE_OPTIONS, as apps/web's build.
+        env: {
+          ...process.env,
+          NEXT_TELEMETRY_DISABLED: '1',
+          NODE_OPTIONS: process.env.NODE_OPTIONS || '--max-old-space-size=6144',
+        },
         stdout: 'pipe',
         stderr: 'pipe',
       });
