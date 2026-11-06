@@ -18,7 +18,7 @@ import {
   type ProvisionContext,
   type ProvisionResult,
 } from '../provision-core';
-import { wantsNewWorkspace } from '../new-workspace';
+import { newWorkspaceCallerDenial, wantsNewWorkspace, type NewWorkspaceCaller } from '../new-workspace';
 import { isProjectSessionPrincipal } from '../../middleware/agent-scope';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
@@ -42,7 +42,7 @@ import {
 import { readJsonObject } from '../../shared/http-body';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 import { isNoWorkspaceError } from '../../shared/no-workspace';
-import { workspaceHasProjectDenial } from '../../workspaces/one-project';
+import { accountTakenForNewProject, workspaceHasProjectDenial } from '../../workspaces/one-project';
 
 /**
  * Reads the request body and resolves the caller's account scope — the part
@@ -52,21 +52,41 @@ import { workspaceHasProjectDenial } from '../../workspaces/one-project';
  */
 async function buildProvisionContext(c: Context): Promise<{ result: ProvisionResult } | { ctx: ProvisionContext }> {
   const body = await readJsonObject(c);
-  // `new_workspace: true`: the server picks or creates the account
-  // (../new-workspace.ts). The caller sends no account_id.
-  if (wantsNewWorkspace(body)) {
-    const built = await buildNewWorkspaceProvisionContext(body, {
-      userId: c.get('userId') as string,
-      email: (c.get('userEmail') as string | undefined) || null,
-      authType: c.get('authType') as string | undefined,
-      // A browser JWT's `sessionId` is its Supabase login session, not a
-      // Kortix session (middleware/caller-session.ts): never a scoped credential.
-      scopedCredential: Boolean(c.get('tokenProjectId')) || isProjectSessionPrincipal(c),
-    });
+  const caller: NewWorkspaceCaller = {
+    userId: c.get('userId') as string,
+    email: (c.get('userEmail') as string | undefined) || null,
+    authType: c.get('authType') as string | undefined,
+    // A browser JWT's `sessionId` is its Supabase login session, not a
+    // Kortix session (middleware/caller-session.ts): never a scoped credential.
+    scopedCredential: Boolean(c.get('tokenProjectId')) || isProjectSessionPrincipal(c),
+  };
+  const newWorkspace = async () => {
+    const built = await buildNewWorkspaceProvisionContext(body, caller);
     if ('ctx' in built) c.set('accountId', built.ctx.scope.accountId);
     return built;
+  };
+  // `new_workspace: true`: the server picks or creates the account
+  // (../new-workspace.ts). The caller sends no account_id.
+  if (wantsNewWorkspace(body)) return newWorkspace();
+
+  // A request that names no account (every client before Workspaces 1:1: the
+  // published CLI, cached web and mobile bundles, the SDK's provisionProject)
+  // always created a project. It still does: when the caller's active account
+  // already holds its one project, or the caller has no workspace yet, the
+  // request becomes a new workspace (201, the project's own account_id). A
+  // request that names an occupied account keeps the 409 workspace_has_project.
+  const namesAccount = Boolean(
+    normalizeString(c.req.query('account_id') ?? c.req.query('accountId') ?? body.account_id ?? body.accountId),
+  );
+  const mayBecomeNewWorkspace = !namesAccount && newWorkspaceCallerDenial(caller) === null;
+  let scope: Awaited<ReturnType<typeof resolveProjectAccount>>;
+  try {
+    scope = await resolveProjectAccount(c, body);
+  } catch (err) {
+    if (mayBecomeNewWorkspace && isNoWorkspaceError(err)) return newWorkspace();
+    throw err;
   }
-  const scope = await resolveProjectAccount(c, body);
+  if (mayBecomeNewWorkspace && (await accountTakenForNewProject(scope.accountId, normalizeString(body.idempotency_key ?? body.idempotencyKey) ?? null))) return newWorkspace();
   return { ctx: { body, scope } };
 }
 

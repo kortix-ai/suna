@@ -15,6 +15,14 @@
  * A new workspace is `POST /v1/projects/provision` with `new_workspace: true`
  * (`projects/new-workspace.ts`): it picks an empty account or creates one, so
  * it never meets this refusal.
+ *
+ * Compatibility: a provision request that names NO account (every client
+ * before Workspaces 1:1) never meets it either. When the caller's active
+ * account is taken (`accountTakenForNewProject`), or the caller has no
+ * workspace, the route runs the `new_workspace` path and answers 201. Only a
+ * request that names an occupied `account_id`, or a caller that may not create
+ * a workspace (an API key, a scoped token, an impersonating operator), gets
+ * the 409.
  */
 import { projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
@@ -58,6 +66,23 @@ export async function workspaceHasProjectDenial(accountId: string): Promise<Work
     .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active')))
     .limit(1);
   return existing ? workspaceHasProjectBody(accountId, existing.projectId) : null;
+}
+
+/**
+ * True when `accountId` holds an active project and the request is not a
+ * replay of a create that already landed there (same `idempotencyKey`).
+ * `POST /v1/projects/provision` without an account turns into a new workspace
+ * when this is true.
+ */
+export async function accountTakenForNewProject(accountId: string, idempotencyKey: string | null): Promise<boolean> {
+  if (!(await workspaceHasProjectDenial(accountId))) return false;
+  if (!idempotencyKey) return true;
+  const [replay] = await db
+    .select({ projectId: projects.projectId })
+    .from(projects)
+    .where(and(eq(projects.accountId, accountId), eq(projects.idempotencyKey, idempotencyKey)))
+    .limit(1);
+  return !replay;
 }
 
 /** True when `error` is the unique violation of `uq_projects_workspace_account` (postgres.js or a Drizzle wrapper). */
