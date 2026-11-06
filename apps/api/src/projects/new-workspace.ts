@@ -6,9 +6,9 @@
  * workspace id is the `project_id`). The caller names no account. The server
  * picks it (design.md §3.1 items 1 and 9: no reuse):
  *
- *   1. the account a retry of the same `idempotency_key` already provisioned
- *      into, so the replay finds its project (the key is scoped to the
- *      account, and the account is chosen here);
+ *   1. with an `idempotency_key`, the account a replay of the same create
+ *      already holds: the one its project carries the key in, or the virgin
+ *      account a concurrent attempt just created (`replayedAccount`);
  *   2. else ALWAYS a new account (`createOwnedAccount`: owner membership +
  *      owner role, free tier, Mailtrap), named after the project, unless
  *      `KORTIX_RESTRICT_ACCOUNT_CREATION` forbids it for this caller (403
@@ -75,10 +75,47 @@ export function newWorkspaceConflict(body: Record<string, unknown>): ProvisionRe
   };
 }
 
+/** How long an in-flight create's account counts as that create's (see `replayedAccount`). */
+export const IN_FLIGHT_ACCOUNT_WINDOW_MS = 15 * 60 * 1000;
+
 /**
- * The owned account an idempotent replay already provisioned into (the same
- * `idempotencyKey`), or `null`. The only account a create ever returns that
- * it did not just make.
+ * A virgin account: `userId` owns it and is its only member, it holds no
+ * project row of any status, no invitation, no deletion request and no grant
+ * for anyone else, and it was created after `since`. The one predicate for
+ * "an account nobody has used yet". A deleted workspace (a project row and a
+ * deletion request) and a shared account never match.
+ */
+async function virginAccountOf(userId: string, owned: string[], since: Date): Promise<string | null> {
+  if (owned.length === 0) return null;
+  const [row] = await db.execute<{ account_id: string }>(sql`
+    SELECT a.account_id::text AS account_id
+      FROM kortix.accounts a
+     WHERE a.account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(owned)}::jsonb))
+       AND a.created_at > ${since.toISOString()}::timestamptz
+       AND NOT EXISTS (SELECT 1 FROM kortix.projects p WHERE p.account_id = a.account_id)
+       AND NOT EXISTS (SELECT 1 FROM kortix.account_memberships m
+                        WHERE m.account_id = a.account_id AND m.user_id <> ${userId}::uuid)
+       AND NOT EXISTS (SELECT 1 FROM kortix.account_invitations i WHERE i.account_id = a.account_id)
+       AND NOT EXISTS (SELECT 1 FROM kortix.account_deletion_requests r WHERE r.account_id = a.account_id)
+       AND NOT EXISTS (SELECT 1 FROM kortix.role_assignments ra
+                        WHERE ra.account_id = a.account_id
+                          AND NOT (ra.principal_type = 'user' AND ra.principal_id = ${userId}::uuid))
+     ORDER BY a.created_at DESC
+     LIMIT 1`);
+  return row?.account_id ?? null;
+}
+
+/**
+ * The account an idempotent replay of the same create returns, or `null`.
+ * The only account a create ever returns that it did not just make:
+ *   1. the owned account whose project carries `idempotencyKey` (a retry after
+ *      a lost response);
+ *   2. else a virgin account the caller created in the last
+ *      `IN_FLIGHT_ACCOUNT_WINDOW_MS` (a concurrent attempt of the same create
+ *      that has its account but not its project yet). Under the per-person
+ *      advisory lock, so two attempts converge on one account; the unique
+ *      index on (account_id, idempotency_key) lets one of them provision.
+ * Without a key there is no "same create": always a new account.
  */
 async function replayedAccount(userId: string, idempotencyKey: string | null): Promise<string | null> {
   if (!idempotencyKey) return null;
@@ -90,7 +127,8 @@ async function replayedAccount(userId: string, idempotencyKey: string | null): P
     .from(projects)
     .where(and(inArray(projects.accountId, owned), eq(projects.idempotencyKey, idempotencyKey)))
     .limit(1);
-  return keyed?.accountId ?? null;
+  if (keyed) return keyed.accountId;
+  return virginAccountOf(userId, owned, new Date(Date.now() - IN_FLIGHT_ACCOUNT_WINDOW_MS));
 }
 
 async function chooseOrCreate(
