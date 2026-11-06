@@ -1223,7 +1223,9 @@ export function CommandPalette() {
   // A row is offered only when the caller can act on it: the same verdicts
   // the account hub nav and the sidebar rows read, joined so the memo keys on
   // the answers. Every one is false until its probe lands.
-  const { sectionVisible } = useAccountHubAccess(selectedAccountId ?? undefined);
+  // The workspace on screen, never the persisted global selection: the
+  // palette's Workspace rows open THIS workspace's settings.
+  const { sectionVisible } = useAccountHubAccess(activeAccountId ?? undefined);
   const accountSections = Object.entries(sectionVisible)
     .filter(([, visible]) => visible)
     .map(([section]) => section)
@@ -1277,7 +1279,7 @@ export function CommandPalette() {
       // An account row cannot resolve without a selected account, exactly as
       // an `{accountId}` href could not. Same guard, off the kind instead of
       // off a token, so a new account row can never ship without it.
-      if (item.kind === 'account' && !selectedAccountId) continue;
+      if (item.kind === 'account' && !activeAccountId) continue;
       if (!paletteRowPermitted(item, gates)) continue;
       let href = item.href;
       if (href?.includes('{projectId}')) {
@@ -1289,8 +1291,8 @@ export function CommandPalette() {
         if (tab && !customizeTabSet.has(tab)) continue;
       }
       if (href?.includes('{accountId}')) {
-        if (!selectedAccountId) continue;
-        href = href.replaceAll('{accountId}', selectedAccountId);
+        if (!activeAccountId) continue;
+        href = href.replaceAll('{accountId}', activeAccountId);
       }
       result.push(href === item.href ? item : { ...item, href });
     }
@@ -1300,7 +1302,7 @@ export function CommandPalette() {
     currentSessionId,
     runtimeCapabilities,
     projectId,
-    selectedAccountId,
+    activeAccountId,
     sidebarCtx,
     projectFlags,
     tI18nComplete,
@@ -2212,8 +2214,8 @@ export function CommandPalette() {
         // then leaves the palette, and the hub is already there — no fetch, no
         // transition, and Escape puts you back on this same page.
         case 'account': {
-          if (!selectedAccountId) break;
-          openAccountPanel(hubTarget(selectedAccountId, { tab: item.accountTab }));
+          if (!activeAccountId) break;
+          openAccountPanel(hubTarget(activeAccountId, { tab: item.accountTab }));
           close();
           break;
         }
@@ -2290,7 +2292,7 @@ export function CommandPalette() {
       handleSetTheme,
       handleSetWallpaper,
       actionHandlers,
-      selectedAccountId,
+      activeAccountId,
     ],
   );
 

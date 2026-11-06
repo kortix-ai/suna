@@ -446,6 +446,17 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'workspace settings organizations teams manage',
   },
   {
+    id: 'workspace-create',
+    // The switcher page offers it too; this row finds it from the first keystroke.
+    label: 'Create workspace',
+    icon: Plus,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/workspaces/new',
+    keywords: 'new workspace create add team',
+  },
+  {
     id: 'proj-home',
     label: 'Home',
     icon: Compass,
@@ -1155,17 +1166,9 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-access-projects',
-    // The account page's Access rail calls this pane "Projects". The label
-    // keeps that name and the `Account · ` prefix every sibling carries, so
-    // the row promises exactly what the destination shows.
-    //
-    // This is the WORKSPACE-level roster, as distinct from `account-members`
-    // above (the organization-level one): Members answers "who is in this
-    // account", this answers "which workspaces can they open, and with what
-    // agents". Both were reachable from the palette as one word — "members" —
-    // which returned the organization list only. `proj-members` is the same
-    // pane pre-scoped to the workspace you are standing in.
-    label: 'Workspace · Workspaces',
+    // Who can open this workspace, and with what agents: the Access pane of
+    // Workspace settings. `Workspace · Members` above lists the people.
+    label: 'Workspace · Access',
     icon: FolderOpen,
     group: 'account',
     showIn: ['commandPalette'],

@@ -2861,7 +2861,7 @@
     },
     "freeGrant": {
       "elsewhere": "This workspace has no free credits. Your monthly free credits are on {workspace}.",
-      "firstOnly": "This workspace has no free credits. Only your first workspace gets the monthly free credits.",
+      "firstOnly": "This workspace has no free credits. Each person gets monthly free credits in one workspace: the first one they create.",
       "action": "Add credits or pick a plan to run sessions here."
     },
     "costs": {
@@ -3882,7 +3882,7 @@
       "sentBody": "Your request is with the workspace's managers. This page opens on its own once one of them approves it.",
       "alreadyBody": "You asked for access earlier. A workspace manager still has to approve it.",
       "notFoundHeading": "This workspace is gone.",
-      "notFoundBody": "The link may be wrong, or someone deleted the workspace.",
+      "notFoundBody": "The link may be wrong, the workspace was deleted, or you no longer have access to it.",
       "errorHeading": "This workspace didn't load.",
       "errorBody": "The request failed before we could check your access.",
       "noteLabel": "Note to the workspace manager",
@@ -26623,7 +26623,7 @@
       "submit": "Create workspace",
       "restricted": "This server creates workspaces for invited people only. Ask an admin to invite {email}.",
       "limitReached": "Your plan's workspace limit is reached. Upgrade to create another.",
-      "freeCreditsRule": "Only your first workspace gets the monthly free credits."
+      "freeCreditsRule": "Each person gets monthly free credits in one workspace: the first one they create."
     },
     "settings": {
       "title": "Workspace settings",

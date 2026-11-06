@@ -10,6 +10,7 @@ import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
 import { workspaceAccountLabel } from '@kortix/ui/workspace/sidebar/workspace-grouping';
 import { cn } from '@kortix/ui';
 import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import type { SettingsRailChromeCopy } from '@kortix/ui/customize/settings/rail-copy-context';
 import {
   accountRoleLabel,
@@ -103,18 +104,24 @@ export function RailNav({
               );
               return (
                 <li key={account.workspace_id ?? account.account_id}>
-                  <ModalClose asChild>
-                    {/* A workspace row opens that workspace's settings. */}
-                    {account.workspace_id ? (
-                      <Link href={`/workspaces/${account.workspace_id}/admin`} className={rowClass}>
-                        {body}
-                      </Link>
-                    ) : (
+                  {/* A workspace row opens that workspace's settings. It closes
+                      the panel with its destination: on /settings, a plain
+                      close would send the route back to the last workspace. */}
+                  {account.workspace_id ? (
+                    <Link
+                      href={`/workspaces/${account.workspace_id}/admin`}
+                      className={rowClass}
+                      onClick={() => useSettingsPanelStore.getState().closeTo(`/workspaces/${account.workspace_id}/admin`)}
+                    >
+                      {body}
+                    </Link>
+                  ) : (
+                    <ModalClose asChild>
                       <HubLink to={hubTarget(account.account_id)} className={rowClass}>
                         {body}
                       </HubLink>
-                    )}
-                  </ModalClose>
+                    </ModalClose>
+                  )}
                 </li>
               );
             })}

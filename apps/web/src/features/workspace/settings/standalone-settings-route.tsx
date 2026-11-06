@@ -120,7 +120,10 @@ function StandaloneSettingsBody({ tab }: { tab: SettingsTab }) {
       return;
     }
     if (!wasOpened.current) return;
-    router.replace(resolveSettingsExitPath(readLastProjectId(user?.id)));
+    // A workspace row in the panel closed it on its way somewhere: go there,
+    // never back to the last workspace (which would overwrite the row's link).
+    const exitTo = useSettingsPanelStore.getState().exitTo;
+    router.replace(exitTo ?? resolveSettingsExitPath(readLastProjectId(user?.id)));
   }, [open, router, user?.id]);
 
   return <SettingsPanel />;

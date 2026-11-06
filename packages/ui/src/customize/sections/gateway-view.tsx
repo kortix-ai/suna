@@ -104,7 +104,7 @@ import { gatewayRoutingPolicyKey, resolveModelDefault, useModelDefaults, useProj
 import { useIsMutating } from '@tanstack/react-query';
 
 export const MODELS_PAGE_TITLE = 'Models';
-export const MODELS_PAGE_DESCRIPTION = 'Choose the providers and models this project can use.';
+export const MODELS_PAGE_DESCRIPTION = 'Choose the providers and models this workspace can use.';
 
 type LlmTab =
   'providers' | 'models' | 'custom' | 'gateway' | 'routing' | 'overview' | 'logs' | 'usage';

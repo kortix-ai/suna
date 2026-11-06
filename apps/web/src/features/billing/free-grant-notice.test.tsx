@@ -43,13 +43,13 @@ function freeState(overrides: Partial<AccountState> & { eligible?: boolean; clai
 describe('FreeGrantNotice', () => {
   test('a further workspace on Free says it has no free credits and states the rule', () => {
     const html = text(render(<FreeGrantNotice state={freeState()} />));
-    expect(html).toContain('This workspace has no free credits. Only your first workspace gets the monthly free credits.');
+    expect(html).toContain('This workspace has no free credits. Each person gets monthly free credits in one workspace: the first one they create.');
     expect(html).toContain('Add credits or pick a plan to run sessions here.');
   });
 
   test('the workspace that holds the free credits is not named before its record loads', () => {
     const html = text(render(<FreeGrantNotice state={freeState({ claimed: '11111111-1111-4111-8111-111111111111' })} />));
-    expect(html).toContain('Only your first workspace gets the monthly free credits.');
+    expect(html).toContain('Each person gets monthly free credits in one workspace: the first one they create.');
   });
 
   test('an eligible workspace, a paid plan and a comp print nothing', () => {
