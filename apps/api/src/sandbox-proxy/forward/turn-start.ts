@@ -41,11 +41,11 @@ import {
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
 import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
-import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText, withMemoryTurn, withSpaceAgents, withThreadFiles, withoutClientSystem } from '../../memory/turn-body';
+import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText, withMemoryTurn, withNoReply, withSpaceAgents, withThreadFiles, withoutClientSystem } from '../../memory/turn-body';
 import { isMyKortixAgentName } from '@kortix/shared';
 import { logger } from '../../lib/logger';
 import { isPlatinumConfigured } from '../../shared/platinum';
-import { chatThreadBoardTurn, missingClaudeSubscription, notifyMessageMentions, sessionModelPin, sessionSpaceAgents, sessionWhereTurn } from '../../projects/surface';
+import { chatThreadBoardTurn, messageAddressesOnlyPeople, missingClaudeSubscription, notifyMessageMentions, sessionModelPin, sessionSpaceAgents, sessionWhereTurn } from '../../projects/surface';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -386,8 +386,8 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
     });
     return null;
   });
-  // Thread files (`chat`): the person's message as a file, and every session of the thread told its folder.
-  const thread = await threadFilesForTurn(req, state.requestBody);
+  // Thread files (`chat`): every session of the thread told its folder and how to read the conversation (its session log).
+  const thread = await threadFilesForTurn(req);
   if (thread?.files) state.requestBody = withThreadFiles(state.requestBody, thread.files);
   // A space's agents are a boundary: the router of a thread routes only to them (kortixd front-space.ts).
   if (where?.space) {
@@ -398,7 +398,9 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
     if (spaceAgents) state.requestBody = withSpaceAgents(state.requestBody, spaceAgents);
   }
   // A person's message in a channel notifies the people it @mentions, off the turn's path.
-  if (where?.space?.kind === 'channel' && req.userId && !req.sandboxAuthored) void notifyPersonMentions(req, state.requestBody);
+  if (where?.space?.kind === 'channel' && req.userId && !req.sandboxAuthored) {
+    void notifyPersonMentions(req, state.requestBody);
+  }
   const put = (parts: readonly (string | null | undefined)[]) => {
     const system = turnSystemText(where?.system ?? null, [thread?.system, ...parts]);
     if (system) state.requestBody = withMemoryTurn(state.requestBody, { system });
@@ -443,6 +445,40 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   }
 }
 
+/**
+ * A person's message in a channel thread that @mentions only other people
+ * (`messageAddressesOnlyPeople`) is for them: the body is marked no-reply, so
+ * the message joins the thread and no turn runs. Runs before the turn identity
+ * is read (`extractTurnIdentity`), so the ledger starts no turn for it. `chat`
+ * off, a sandbox's own request, any other route or any failure: the body as it is.
+ */
+export async function markMessageForPeople(input: {
+  record: SandboxRecord;
+  userId: string | null | undefined;
+  sandboxAuthored: boolean;
+  method: string;
+  path: string;
+  body: ArrayBuffer | undefined;
+}): Promise<ArrayBuffer | undefined> {
+  if (input.sandboxAuthored || !input.userId || !isMemoryTurnRoute(input.method, input.path)) return input.body;
+  try {
+    const { personMessageOf } = await import('../../memory/thread-files');
+    const message = personMessageOf(input.body);
+    if (!message?.text.includes('@')) return input.body;
+    if (!(await memoryChannelsOn(input.record.projectId))) return input.body;
+    const where = await sessionWhereTurn(input.record.projectId, input.record.sessionId);
+    if (where?.space?.kind !== 'channel') return input.body;
+    const forPeople = await messageAddressesOnlyPeople({ accountId: input.record.accountId, projectId: input.record.projectId, authorId: input.userId, text: message.text });
+    return forPeople ? withNoReply(input.body, input.path) : input.body;
+  } catch (error) {
+    logger.warn('[space-posts] the message was forwarded as a prompt; its mentions were not read', {
+      session_id: input.record.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return input.body;
+  }
+}
+
 /** The people a person's message @mentions get a notification (`notifyMessageMentions`); `chat` off: nothing. Never throws. */
 async function notifyPersonMentions(req: ForwardRequest, body: ArrayBuffer | undefined): Promise<void> {
   try {
@@ -466,11 +502,11 @@ async function notifyPersonMentions(req: ForwardRequest, body: ArrayBuffer | und
 }
 
 /** The thread-files turn of a session in a space (`memory/thread-files.ts`), or null: `chat` off, no space, any failure. */
-async function threadFilesForTurn(req: ForwardRequest, body: ArrayBuffer | undefined) {
+async function threadFilesForTurn(req: ForwardRequest) {
   try {
     if (!(await memoryChannelsOn(req.record.projectId))) return null;
-    const [{ threadFilesTurn }, { authorName }] = await Promise.all([import('../../memory/thread-files'), import('../../memory/layers')]);
-    return await threadFilesTurn({ sessionId: req.record.sessionId, userId: req.sandboxAuthored ? null : req.userId ?? null, body, authorName });
+    const { threadFilesTurn } = await import('../../memory/thread-files');
+    return await threadFilesTurn({ sessionId: req.record.sessionId });
   } catch (error) {
     logger.warn('[thread-files] turn start forwarded without thread files', {
       session_id: req.record.sessionId,

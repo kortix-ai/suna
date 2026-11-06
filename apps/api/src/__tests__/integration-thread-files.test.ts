@@ -1,15 +1,15 @@
 /**
  * Integration test (real local DB, fake Drive volume): a space thread's files.
- * A person's prompt to a #general thread becomes a message file, once per
- * prompt id; a notice writes none; the agent's answer becomes the next file;
- * every session of the thread (its worker too) is told the thread folder, and
- * mounts the channel folder (`planSessionDrives`).
+ * The conversation is never copied into the Drive: a turn writes only the
+ * space's context.md, and every session of the thread (its worker too) is told
+ * the thread's root session (its log is the conversation), the thread folder,
+ * and mounts the channel folder (`planSessionDrives`).
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectSessions, projectSpaces, projects, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { ensureProjectDrive, planSessionDrives, sessionMountsSpaceFiles } from '../drives/service';
-import { readThreadFilesState, recordThreadReply, threadFilesTurn } from '../memory/thread-files';
+import { threadFilesTurn } from '../memory/thread-files';
 import { setVolumeOpsForTests } from '../memory/volume-ops';
 import { config } from '../config';
 import { db } from '../shared/db';
@@ -31,9 +31,7 @@ const volume = new FakeVolume();
 const short = ROUTER.replace(/-/g, '').slice(0, 8);
 const DIR = `/Company/Channels/general/threads/write-a-poem-about-rain-${short}`;
 const BOX = `/drives/general/threads/write-a-poem-about-rain-${short}`;
-const body = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).buffer as ArrayBuffer;
-const authorName = async () => 'Priya Shah';
-/** The message file is written off the turn's path: wait for it. */
+/** context.md is written off the turn's path: wait for it. */
 async function until(check: () => boolean): Promise<void> {
   for (let i = 0; i < 100 && !check(); i++) await new Promise((r) => setTimeout(r, 10));
 }
@@ -71,63 +69,37 @@ afterAll(async () => {
   await db.execute(sql`DELETE FROM auth.users WHERE id = ${PRIYA}::uuid`);
 });
 
-describe('a #general thread keeps its conversation in files', () => {
-  test('the person’s prompt is written to messages/0001-<author>.md, with context.md, and the turn names both', async () => {
-    const turn = await threadFilesTurn({
-      sessionId: ROUTER,
-      userId: PRIYA,
-      body: body({ messageID: 'msg_00000000000aaaaaaaaaaaaaaaaa', parts: [{ type: 'text', text: 'Write a poem about rain' }] }),
-      authorName,
-    });
-    expect(turn?.files).toEqual({ folder: BOX, context: '/drives/general/context.md', message: `${BOX}/messages/0001-priya-shah.md` });
+describe('a #general thread: one conversation (the session log), a shared folder for work', () => {
+  test('a router turn names its session, the thread folder and context.md; only context.md is written', async () => {
+    const turn = await threadFilesTurn({ sessionId: ROUTER });
+    expect(turn?.files).toEqual({ folder: BOX, context: '/drives/general/context.md', session: ROUTER });
+    expect(turn?.system).toContain(`The conversation: session ${ROUTER}. Read it with \`kortix sessions log ${ROUTER} -n 50\``);
     expect(turn?.system).toContain(`- Thread folder: ${BOX}/`);
-    expect(turn?.system).toContain(`- This message: ${BOX}/messages/0001-priya-shah.md`);
-    await until(() => volume.files.has(`${DIR}/messages/0001-priya-shah.md`));
-    const file = volume.files.get(`${DIR}/messages/0001-priya-shah.md`)!.text;
-    expect(file).toContain('author: "Priya Shah"\nrole: person\n');
-    expect(file).toContain(`session_id: ${ROUTER}\nid: "msg_00000000000aaaaaaaaaaaaaaaaa"\n---\n\nWrite a poem about rain\n`);
+    await until(() => volume.files.has('/Company/Channels/general/context.md'));
     expect(volume.files.get('/Company/Channels/general/context.md')?.text).toBe('# #general: context\n');
+    // No copy of any message: the thread folder holds only what agents write.
+    expect([...volume.files.keys()].filter((path) => path.startsWith(DIR))).toEqual([]);
   });
 
-  test('the same prompt again (a retry) keeps its number and writes nothing new; the next prompt is 0002', async () => {
-    const again = await threadFilesTurn({ sessionId: ROUTER, userId: PRIYA, body: body({ messageID: 'msg_00000000000aaaaaaaaaaaaaaaaa', parts: [{ type: 'text', text: 'Write a poem about rain' }] }), authorName });
-    expect(again?.files?.message).toBe(`${BOX}/messages/0001-priya-shah.md`);
-    const next = await threadFilesTurn({ sessionId: ROUTER, userId: PRIYA, body: body({ messageID: 'msg_00000000000bbbbbbbbbbbbbbbbb', parts: [{ type: 'text', text: 'Make it rhyme' }] }), authorName });
-    expect(next?.files?.message).toBe(`${BOX}/messages/0002-priya-shah.md`);
-    await until(() => volume.files.has(`${DIR}/messages/0002-priya-shah.md`));
-    expect([...volume.files.keys()].filter((path) => path.startsWith(`${DIR}/messages/`)).sort()).toEqual([
-      `${DIR}/messages/0001-priya-shah.md`,
-      `${DIR}/messages/0002-priya-shah.md`,
-    ]);
-  });
-
-  test('a worker’s notice to the router writes no file, and the turn keeps the folder without a message', async () => {
-    const before = volume.files.size;
-    const turn = await threadFilesTurn({ sessionId: ROUTER, userId: PRIYA, body: body({ parts: [{ type: 'text', text: 'poem finished', synthetic: true }] }), authorName });
-    expect(turn?.files).toEqual({ folder: BOX, context: '/drives/general/context.md' });
+  test('a second turn keeps the same folder and writes nothing; the root session metadata is not touched', async () => {
+    const before = [...volume.files.keys()].sort();
+    const turn = await threadFilesTurn({ sessionId: ROUTER });
+    expect(turn?.files?.folder).toBe(BOX);
     await new Promise((r) => setTimeout(r, 50));
-    expect(volume.files.size).toBe(before);
-  });
-
-  test('a worker is told the thread folder and its own work folder; its prompts are no thread messages', async () => {
-    const turn = await threadFilesTurn({ sessionId: WORKER, userId: PRIYA, body: body({ parts: [{ type: 'text', text: 'Write the poem in the message file.' }] }), authorName });
-    expect(turn?.files).toBeNull();
-    expect(turn?.system).toContain(`- Thread folder: ${BOX}/`);
-    expect(turn?.system).toContain(`- Your work folder: ${BOX}/work/poem/ (write your final report to ${BOX}/work/poem/result.md as well)`);
+    expect([...volume.files.keys()].sort()).toEqual(before);
     const [router] = await db.select({ metadata: projectSessions.metadata }).from(projectSessions).where(eq(projectSessions.sessionId, ROUTER));
-    expect(readThreadFilesState(router?.metadata)?.seq).toBe(2);
+    expect(router?.metadata).toEqual({ first_prompt: 'Write a poem about rain' });
   });
 
-  test('the agent’s answer is the next file, NNNN-kortix.md, once per answer', async () => {
-    const answer = async () => ({ id: 'msg_00000000000ccccccccccccccccc', text: 'Here is your poem about rain.' });
-    expect(await recordThreadReply(ROUTER, answer)).toBe(`${DIR}/messages/0003-kortix.md`);
-    expect(volume.files.get(`${DIR}/messages/0003-kortix.md`)?.text).toContain('author: "Kortix"\nrole: agent\n');
-    expect(await recordThreadReply(ROUTER, answer)).toBeNull();
-    // A worker's answer is its report, not a thread message.
-    expect(await recordThreadReply(WORKER, answer)).toBeNull();
+  test('a worker is told the conversation (its router session), the thread folder and its own work folder', async () => {
+    const turn = await threadFilesTurn({ sessionId: WORKER });
+    expect(turn?.files).toBeNull();
+    expect(turn?.system).toContain(`The conversation: session ${ROUTER}.`);
+    expect(turn?.system).toContain(`- Thread folder: ${BOX}/`);
+    expect(turn?.system).toContain(`- Your work folder: ${BOX}/work/poem/ (scratch files; your full result goes to ${BOX}/results/poem-<n>.md, <n> the next free number from 1)`);
   });
 
-  test('every session of the thread mounts the channel folder read-write; with chat off, nothing is written or mounted', async () => {
+  test('every session of the thread mounts the channel folder read-write; with chat off, nothing is mounted', async () => {
     for (const sessionId of [ROUTER, WORKER]) {
       const plan = await planSessionDrives({ accountId: ACCOUNT, projectId: PROJECT, sessionId, bootingUserId: PRIYA, agentName: 'mykortix', slots: 16 });
       expect(plan.mounts.map((m) => `${m.path}@${m.mountPath}${m.readOnly ? ':ro' : ''}`)).toContain('/Company/Channels/general@/drives/general');
@@ -137,6 +109,5 @@ describe('a #general thread keeps its conversation in files', () => {
     expect(await sessionMountsSpaceFiles(OFF_PROJECT, OFF_THREAD)).toBe(false);
     const off = await planSessionDrives({ accountId: ACCOUNT, projectId: OFF_PROJECT, sessionId: OFF_THREAD, bootingUserId: PRIYA, agentName: 'mykortix', slots: 16 });
     expect(off.mounts.map((m) => m.path)).not.toContain('/Company/Channels/general');
-    expect(await recordThreadReply(OFF_THREAD, async () => ({ id: 'msg_x', text: 'hi' }))).toBeNull();
   });
 });

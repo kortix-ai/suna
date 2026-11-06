@@ -1376,10 +1376,7 @@ export class PiRuntime {
       agent.state.model = this.selected!.model
       agent.state.thinkingLevel = this.thinkingLevel(turn.input.variant ?? this.compiledAgent()?.variant)
       this.turnSystem = turn.input.system ?? null
-      if (turn.input.threadFiles) {
-        // A turn with no message of the person (a worker's notice) keeps the folder and the newest message file.
-        this.threadFiles = { ...turn.input.threadFiles, ...(turn.input.threadFiles.message ? {} : this.threadFiles?.message ? { message: this.threadFiles.message } : {}) }
-      }
+      if (turn.input.threadFiles) this.threadFiles = turn.input.threadFiles
       // A worker's notice carries none: the space's list stays the one of the person's last message.
       if (turn.input.spaceAgents) this.spaceAgents = turn.input.spaceAgents
       if (this.subagentContext.front) await this.refreshFrontAgents()
@@ -1748,12 +1745,22 @@ export class PiRuntime {
    */
   private compactionFor(floor: number) {
     const settings = compactionSettings(this.models!.catalog, floor)
-    return this.cfg.piContext === 'summary' ? settings : { ...settings, keepRecentTokens: 1 }
+    return this.recordContext() ? { ...settings, keepRecentTokens: 1 } : settings
   }
 
-  /** Retrieval instead of compaction (`extensions/context-record.ts`), unless the agent's `context` is `summary`. */
+  /** The Kortix session whose stored log a reset points at; null on a local daemon with no session. */
+  private loggedSession(): string | null {
+    return (this.env.KORTIX_SESSION_ID ?? '').trim() || null
+  }
+
+  /** Retrieval instead of compaction, on the session log: a Kortix session, unless the agent's `context` is `summary`. */
+  private recordContext(): boolean {
+    return this.cfg.piContext !== 'summary' && this.loggedSession() !== null
+  }
+
+  /** `extensions/context-record.ts` when `recordContext()`. */
   private contextExtensions(): InlineExtension[] {
-    return this.cfg.piContext === 'summary' ? [] : [contextRecord({ dir: join(this.cfg.piStateDir, 'records') })]
+    return this.recordContext() ? [contextRecord({ session: () => this.loggedSession() })] : []
   }
 
   private turnExtension(): InlineExtension {
@@ -1848,9 +1855,9 @@ export class PiRuntime {
     return this.subagentContext.depth === 0 ? plane.sessionId : null
   }
 
-  /** `session.context_record` unless the agent's `context` is `summary` (`extensions/context-record.ts`). */
+  /** `session.context_record` when `recordContext()` (`extensions/context-record.ts`). */
   contextCapabilities(): RuntimeCapability[] {
-    return this.cfg.piContext === 'summary' ? [] : ['session.context_record']
+    return this.recordContext() ? ['session.context_record'] : []
   }
 
   /** The session features pi serves on this box (`GET /kortix/health` `capabilities`), beyond the static list. */

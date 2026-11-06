@@ -634,6 +634,29 @@ test('executeComposio rethrows any other Composio failure', async () => {
   ).rejects.toThrow('500 Internal');
 });
 
+test('executeComposio turns an HTML error page from Composio\'s edge into a short upstream 502', async () => {
+  const resumed = session({
+    id: 'persisted-session',
+    toolkit: { slug: 'linear', name: 'Linear', isNoAuth: true },
+    execute: async () => {
+      throw Object.assign(
+        new Error('502 <!DOCTYPE html>\n<!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]--><title>Bad gateway</title>'),
+        { status: 502 },
+      );
+    },
+  });
+  const result = await executeComposio({
+    projectId: 'project-1', connectorSlug: 'linear', connectionId: 'connection-1',
+    sessionId: 'persisted-session', toolkit: 'linear', toolSlug: 'LINEAR_RUN_QUERY_OR_MUTATION',
+    args: {}, connectedAccountId: null, runtime: fakeRuntime({ resumed }),
+  });
+  expect(result).toEqual({
+    ok: false,
+    status: 502,
+    data: 'composio_upstream_unavailable: Composio answered 502 with an HTML error page',
+  });
+});
+
 test('executeComposio supports no-auth direct tools without an account id', async () => {
   const resumed = session({
     id: 'persisted-session',

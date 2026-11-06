@@ -28,7 +28,7 @@ export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert'
 // Chat (`chat`): a thread's board of the chat's other threads (consumed by the turn-start path).
 export { chatThreadBoardTurn } from './lib/chat-threads';
 export { sessionWhereTurn } from './lib/session-where';
-export { notifyMessageMentions } from './lib/space-posts';
+export { messageAddressesOnlyPeople, notifyMessageMentions } from './lib/space-posts';
 export { runSpaceWatcherTick } from './lib/space-watch/wake';
 export { sessionSpaceAgents } from './lib/front-thread';
 

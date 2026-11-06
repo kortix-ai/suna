@@ -8,13 +8,14 @@
  * report comes back to the router as a notice, and the router writes the
  * person only what matters, like a person in a chat.
  *
- * The thread lives in files (the API's `memory/thread-files.ts`): each message
- * is a file in the thread folder, and every session of the thread mounts it.
- * The router hands work over by path: `frontCall` ends every worker prompt
- * with a "Context files" block (`frontContextBlock`: the thread folder, the
- * newest message file, the space's context.md and the worker's own
- * `work/<name>/` folder) from the prompt body's `thread_files`, which only the
- * API sets. Without them (an older API, a thread with no Drive) the prompt
+ * The conversation is never copied: it is the thread's session log, which
+ * every agent reads with `kortix sessions log <id>`. The thread folder (the
+ * API's `memory/thread-files.ts`) holds only work/ and results/, and every
+ * session of the thread mounts it. The router hands work over by reference:
+ * `frontCall` ends every worker prompt with a "Context files" block
+ * (`frontContextBlock`: the thread's session, the thread folder, the space's
+ * context.md and the worker's own `work/<name>/` folder) from the prompt
+ * body's `thread_files`, which only the API sets. Without them (an older API, a thread with no Drive) the prompt
  * goes as the model wrote it.
  *
  * The roster (`frontAgentsSection`) is read from the project's `/detail`
@@ -53,7 +54,7 @@ const DESCRIPTION_MAX = 240
 
 /** In the worker's system prompt: its answer reaches the thread once, as its run's report; its full result stays in the thread's results/ folder. */
 export const FRONT_WORKER_NOTE =
-  "## Your report\nA person talks to you through a chat thread. Your final answer goes back to that thread by itself, once, when your run ends. Never send_message the session that started you; end your run with the answer instead. Write the answer for the person: the result first, then any decision or input you need from them.\nThe thread lives in files. When your prompt ends with \"Context files\", read the person's message file and context.md there first, keep your scratch files in your work folder, and write your full result to the result file the block names. End your run with only that file's path and a one-line summary: the router links the file and never retypes it."
+  "## Your report\nA person talks to you through a chat thread. Your final answer goes back to that thread by itself, once, when your run ends. Never send_message the session that started you; end your run with the answer instead. Write the answer for the person: the result first, then any decision or input you need from them.\nWhen your prompt ends with \"Context files\", read the conversation it names (its session log, with the kortix CLI) and context.md first, keep your scratch files in your work folder, and write your full result to the result file the block names. End your run with only that file's path and a one-line summary: the router links the file and never retypes it."
 
 export const FRONT_PROMPT = [
   'You are Kortix, talking with a person in a chat thread. You are the router of this thread: the one the person talks to, and the one who talks to every agent behind it. Do quick work yourself. Hand longer work to the agents of this space.',
@@ -65,14 +66,14 @@ export const FRONT_PROMPT = [
   '- You may name who is on it in plain words ("I\'ll have research look into it"). Never mention sessions, tools, task ids or handles.',
   '',
   '## Do it yourself when it is quick',
-  '- Do it yourself: an answer from what you know, reading or searching the thread folder, its messages and the space folder, a short piece of writing (a message, a summary, a poem, a translation), or one quick lookup. Reply with the result at once.',
+  '- Do it yourself: an answer from what you know, reading or searching this conversation, the thread folder and the space folder, a short piece of writing (a message, a summary, a poem, a translation), or one quick lookup. Reply with the result at once.',
   '- Hand it off when it is multi-step, runs longer than a minute or two, needs an agent\'s own connectors or skills, or the person names an agent of this space.',
   '- Greetings, thanks, small talk and questions about this conversation: answer yourself, in one line.',
   '- A deliverable longer than about ten lines (a report, a document, a plan, code), whoever wrote it: it lives in a file in the thread folder or the space folder. Reply with one or two lines and link the file: `[<file name>](<path>)`. Never paste it into the chat.',
   '',
   '## Hand off longer work',
   '- A new hand-off: call `agent` once. `subagent_type`: the agent below whose description fits the request best; leave it out for the default. `name`: a short lowercase name for this piece of work, such as "flight-search". `description`: a few words. `prompt`: what to do, in a line or two, plus anything from this thread the agent needs that is not in a file.',
-  '- The thread lives in files (see "Thread files" below, when it is there): each message of the person is a file in the thread folder, and every agent can read them. Point the agent at the files instead of retyping them. A "Context files" block with the paths and the agent\'s result file is added to every prompt you send. With no thread files, put the person\'s words in full in `prompt`: the agent sees nothing of this thread otherwise.',
+  '- Every agent can read this conversation itself (see "Thread files" below, when it is there): never retype it. A "Context files" block with the conversation, the paths and the agent\'s result file is added to every prompt you send. With no thread files, put the person\'s words in full in `prompt`: the agent sees nothing of this thread otherwise.',
   '- Several independent requests in one message: one `agent` call each, in the same reply.',
   '- A follow-up, an answer or a correction for work you already handed off: call `agent` with the same `name`. That continues the same agent with everything it knows. When the call says it is still working: `send_message` to that name with the person\'s words and `notify_when_idle: true`.',
   '- "Stop" or "cancel": `task_stop` with that name.',
@@ -101,12 +102,12 @@ export interface FrontAgent {
 
 /** A thread's files as this box mounts them, from the prompt body's `thread_files` (the API sets it). */
 export interface FrontThreadFiles {
-  /** The thread folder: `messages/`, `work/`. */
+  /** The thread folder: `work/`, `results/`. */
   folder: string
   /** The space's brief. */
   context: string
-  /** The newest message file of the person. */
-  message?: string
+  /** The thread's root session: its session log is the conversation. */
+  session?: string
 }
 
 /** What the `agent` tool's handler needs to route a front's call. */
@@ -159,25 +160,30 @@ export function frontTaskName(description: string, name?: string): string {
 const SAFE_PATH = /^\/[^\0\r\n]{0,511}$/
 const safePath = (path: unknown): path is string => typeof path === 'string' && SAFE_PATH.test(path) && !path.split('/').includes('..')
 
+/** A session id the API sent: a UUID. */
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /** The prompt body's `thread_files`, or null when it is missing or malformed. */
 export function frontThreadFilesFrom(raw: unknown): FrontThreadFiles | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const record = raw as Record<string, unknown>
   if (!safePath(record.folder) || !safePath(record.context)) return null
-  return { folder: record.folder.replace(/\/+$/, ''), context: record.context, ...(safePath(record.message) ? { message: record.message } : {}) }
+  const session = typeof record.session === 'string' && SESSION_ID.test(record.session) ? record.session : null
+  return { folder: record.folder.replace(/\/+$/, ''), context: record.context, ...(session ? { session } : {}) }
 }
 
 /**
  * The block every worker prompt of a router ends with (pure): the thread's
- * files by path, and the worker's own folder (`work/<name>/`) when its name is known.
+ * conversation by session id, its files by path, and the worker's own folder
+ * (`work/<name>/`) when its name is known.
  */
 export function frontContextBlock(files: FrontThreadFiles, name: string | null): string {
   const work = name ? `${files.folder}/work/${name}` : null
   return [
     '## Context files',
-    'This task comes from a chat thread whose messages are files. Read them before you start; they are the person\'s own words.',
-    ...(files.message ? [`- The person's latest message: ${files.message}`] : []),
-    `- The thread folder: ${files.folder}/ (messages/ holds every message, oldest first; work/ holds each agent's work)`,
+    'This task comes from a chat thread. Read the conversation before you start: it is the person\'s own words.',
+    ...(files.session ? [`- The conversation: \`kortix sessions log ${files.session} -n 50\` (always current; \`--json\` for scripts, pipe to rg or jq to search). Never copy it into a file.`] : []),
+    `- The thread folder: ${files.folder}/ (work/ holds each agent's work, results/ each agent's full result)`,
     `- The space's brief: ${files.context}`,
     ...(work ? [`- Your work folder: ${work}/ (keep your scratch files here)`] : []),
     ...(name ? [`- Your result file: ${files.folder}/results/${name}-<n>.md, <n> the next free number from 1. Write your full result there; end your run with only its path and a one-line summary.`] : []),

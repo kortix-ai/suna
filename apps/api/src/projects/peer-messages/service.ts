@@ -659,11 +659,7 @@ export async function lastTurnAnswer(sessionId: string): Promise<{ id: string | 
 
 /** A turn of `sessionId` closed (`settleTurnEnd`): stamp its excerpt, then send the idle notices it owes. Never throws. */
 export async function onPeerTurnEnded(sessionId: string, outcome: 'idle' | 'error', errorName?: string | null): Promise<void> {
-  // A space thread's answer as its next message file (`memory/thread-files.ts`), off this path.
   if (outcome === 'idle') {
-    void import('../../memory/thread-files')
-      .then(({ recordThreadReply }) => recordThreadReply(sessionId, lastTurnAnswer))
-      .catch(() => undefined);
     // The space watcher (`spaces_proactive`): a watched thread's turn as a feed line, or the watcher's own decision.
     void import('../lib/space-watch/act')
       .then(({ onSpaceSessionTurnEnded }) => onSpaceSessionTurnEnded(sessionId))

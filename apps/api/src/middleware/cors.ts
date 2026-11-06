@@ -8,7 +8,6 @@ const CLOUD_ORIGINS = [
   'https://staging.kortix.com',
   'https://kortix.cloud',
   'https://www.kortix.cloud',
-  'https://new.kortix.com',
 ];
 
 const LOCAL_ORIGINS = [
