@@ -193,7 +193,7 @@ export function createMentionSuggestion(
       // An agent from outside the space only gets named: the composer asks to add it after the send.
       insertMention(editor, { kind: row.kind, label: row.label, value: row.value });
       // A Drive file rides as an attachment: the composer fetches it with the viewer's access.
-      if (row.kind === 'drive') opts.getDriveMentions?.()?.onPick({ path: row.value, name: row.label });
+      if (row.kind === 'drive') opts.getDriveMentions?.()?.onPick({ path: row.value, name: row.label, size: row.size });
     },
   };
 }

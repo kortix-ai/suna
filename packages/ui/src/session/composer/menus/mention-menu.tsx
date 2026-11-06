@@ -172,7 +172,7 @@ function RowIcon({ row }: { row: MenuRow }) {
  */
 export interface DriveMentionSource {
   projectId: string;
-  onPick: (file: { path: string; name: string }) => void;
+  onPick: (file: { path: string; name: string; size?: number }) => void;
 }
 
 export interface MentionMenuHostProps {

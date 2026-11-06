@@ -24,7 +24,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useActiveSpace } from '../../internal/stores/active-space-store';
 import { MoonIcon, WarningIcon } from '@phosphor-icons/react';
 import { downloadDriveFile, SESSION_NOTICE, type SessionLogMessage } from '@kortix/sdk';
-import { newPastedContentId, type PastedContent, splitPastedContent, trimPastedText } from '@kortix/shared';
+import { MAX_PROMPT_ATTACHMENT_BYTES, newPastedContentId, type PastedContent, splitPastedContent, trimPastedText } from '@kortix/shared';
 import type { JSONContent } from '@tiptap/core';
 import type { RefObject } from 'react';
 import {
@@ -1052,13 +1052,19 @@ function ComposerImpl(props: SessionChatInputProps) {
   // Declared before the question-lock effect below, so it holds the new value when that effect empties the editor.
   const lockForQuestionRef = useLatestRef(lockForQuestion);
   const pickDriveFile = useCallback(
-    async ({ path, name }: { path: string; name: string }) => {
+    async ({ path, name, size }: { path: string; name: string; size?: number }) => {
       const staged = driveUploadsRef.current.get(path);
       if (staged && attachedFilesRef.current.some((file) => attachedFileUploadId(file) === staged)) return;
       const dropChips = () => {
         const doc = editorRef.current?.getDocument();
         if (doc) setDocumentWithoutStealingFocus(editorRef.current, withoutDriveChips(doc, path));
       };
+      // Too large for a message: say so before the browser downloads it.
+      if (size !== undefined && size > MAX_PROMPT_ATTACHMENT_BYTES) {
+        errorToast(tComposerAttachments('refusedTooLarge', { name }));
+        dropChips();
+        return;
+      }
       let file: File;
       try {
         const drive = await queryClient.fetchQuery(projectDriveQueryOptions(projectId ?? undefined, viewerId));

@@ -109,7 +109,7 @@ describe('buildMentionSections', () => {
 });
 
 describe('buildMentionSections — Drive files', () => {
-  const hit = (path: string, kind: 'file' | 'dir' = 'file') => ({ path, name: path.slice(path.lastIndexOf('/') + 1), kind });
+  const hit = (path: string, kind: 'file' | 'dir' = 'file') => ({ path, name: path.slice(path.lastIndexOf('/') + 1), kind, size: 100 });
 
   test('lists Drive files after agents, under their own heading, with the folder as the second line', () => {
     const sections = buildMentionSections({
@@ -127,8 +127,8 @@ describe('buildMentionSections — Drive files', () => {
     ]);
     // Same name twice: the folder tells them apart, and the value is the whole Drive path.
     expect(sections[1]!.items).toEqual([
-      { index: 1, kind: 'drive', label: 'profile-picture.jpg', value: '/Company/brand/profile-picture.jpg', description: '/Company/brand' },
-      { index: 2, kind: 'drive', label: 'profile-picture.jpg', value: '/Users/ana/profile-picture.jpg', description: '/Users/ana' },
+      { index: 1, kind: 'drive', label: 'profile-picture.jpg', value: '/Company/brand/profile-picture.jpg', description: '/Company/brand', size: 100 },
+      { index: 2, kind: 'drive', label: 'profile-picture.jpg', value: '/Users/ana/profile-picture.jpg', description: '/Users/ana', size: 100 },
     ]);
   });
 

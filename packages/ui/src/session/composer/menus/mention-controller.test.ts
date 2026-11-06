@@ -261,7 +261,7 @@ describe('createMentionSuggestion — a restored draft ending in "@word"', () =>
 
 describe('createMentionSuggestion — picking a Drive file', () => {
   test('a Drive row inserts its chip and hands the file to the host; an agent row only inserts its chip', () => {
-    const picked: Array<{ path: string; name: string }> = [];
+    const picked: Array<{ path: string; name: string; size?: number }> = [];
     const inserted: unknown[] = [];
     const chain = {
       focus: () => chain,
@@ -281,10 +281,10 @@ describe('createMentionSuggestion — picking a Drive file', () => {
     const command = suggestion.command!;
     const editor = { chain: () => chain } as never;
     const range = { from: 0, to: 4 };
-    command({ editor, range, props: { index: 0, kind: 'drive', label: 'a b.png', value: '/Team/a b.png', description: '/Team' } });
+    command({ editor, range, props: { index: 0, kind: 'drive', label: 'a b.png', value: '/Team/a b.png', description: '/Team', size: 42 } });
     command({ editor, range, props: { index: 1, kind: 'agent', label: 'build', value: 'build' } });
 
-    expect(picked).toEqual([{ path: '/Team/a b.png', name: 'a b.png' }]);
+    expect(picked).toEqual([{ path: '/Team/a b.png', name: 'a b.png', size: 42 }]);
     expect(inserted).toEqual([
       [{ type: 'mention', attrs: { kind: 'drive', label: 'a b.png', value: '/Team/a b.png' } }, { type: 'text', text: ' ' }],
       [{ type: 'mention', attrs: { kind: 'agent', label: 'build', value: 'build' } }, { type: 'text', text: ' ' }],

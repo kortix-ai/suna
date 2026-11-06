@@ -15,6 +15,8 @@ export interface MenuRow {
   avatar?: { kind: 'person' | 'agent'; key: string; name: string; url: string | null };
   /** A space's `@` menu: an agent not in the space yet; picking it adds it. */
   addToSpace?: boolean;
+  /** A Drive file's bytes: one past the message limit is refused before it downloads. */
+  size?: number;
 }
 
 export interface MentionSection {
@@ -34,11 +36,12 @@ export function formatRelativeTime(timestamp: number, now: number): string {
   return `${Math.floor(days / 7)}w ago`;
 }
 
-/** A file of the project's Drive the viewer may read (`searchProject`'s hit). */
+/** A Drive search hit (`searchProject`), as the `@` menu reads it. */
 export interface DriveFileHit {
   path: string;
   name: string;
   kind: 'file' | 'dir';
+  size: number;
 }
 
 export interface BuildMentionSectionsInput {
@@ -151,7 +154,7 @@ export function buildMentionSections({
     if (driveRows.length >= DRIVE_LIMIT) break;
     if (hit.kind !== 'file' || seen.has(hit.path) || !hit.path.toLowerCase().includes(q)) continue;
     seen.add(hit.path);
-    driveRows.push({ index: index++, kind: 'drive', label: hit.name, value: hit.path, description: driveFolderOf(hit.path) });
+    driveRows.push({ index: index++, kind: 'drive', label: hit.name, value: hit.path, description: driveFolderOf(hit.path), size: hit.size });
   }
   if (driveRows.length) sections.push({ kind: 'drive', heading: driveHeading, items: driveRows });
 
