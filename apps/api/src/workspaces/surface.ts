@@ -1,5 +1,8 @@
 /**
- * The public surface of `workspaces/`: import workspace identity from here.
+ * The public surface of `workspaces/`: the ONE import path for workspace
+ * identity and lifecycle (design.md §3.2 C2). The lint rule
+ * `kortix-api/workspace-store-only` refuses an import of `accounts`,
+ * `projects` or `workspaces` from `@kortix/db` outside `src/workspaces/`.
  * (Not `index.ts`: a domain `index.ts` is the http layer in the API lint, and
  * services must be able to import this.)
  */
@@ -12,19 +15,52 @@ export {
 } from './ids';
 export {
   pickWorkspace,
+  resolveCanonicalWorkspace,
   resolveWorkspace,
   WORKSPACE_AMBIGUOUS_CODE,
   WorkspaceAmbiguousError,
   type ResolvedWorkspace,
-  type WorkspaceCandidate,
+  type WorkspaceResolveCandidate,
 } from './resolve';
 export {
+  accountIsPaying,
   getWorkspace,
-  splitWorkspacePatch,
-  updateWorkspace,
-  type WorkspacePatch,
+  listAccountWorkspaces,
+  listUserWorkspaceCandidates,
+  workspaceIdOfAccount,
+  workspaceRecordFromJson,
+  workspaceState,
+  type WorkspaceCandidate,
+  type WorkspaceLifecycle,
   type WorkspaceRecord,
+  type WorkspaceState,
 } from './store';
+export {
+  closeWorkspace,
+  fillWorkspaceIds,
+  isWorkspaceLifecycleError,
+  prepareWorkspaceSetup,
+  restoreWorkspace,
+  WORKSPACE_CLOSE_REASON,
+  WORKSPACE_CLOSE_REASON_SUBSCRIPTION,
+  WORKSPACE_DELETION_GRACE_DAYS,
+  WorkspaceLifecycleError,
+  type CloseWorkspaceResult,
+  type WorkspaceLifecycleErrorCode,
+} from './lifecycle';
+export {
+  cancelPersonDeletion,
+  deletePerson,
+  getPersonDeletionRequest,
+  PERSON_DELETION_GRACE_DAYS,
+  planPersonDeletion,
+  processScheduledPersonDeletions,
+  SOLE_OWNER_OF_SHARED_WORKSPACE_CODE,
+  SoleOwnerOfSharedWorkspaceError,
+  type PersonDeletionBlocker,
+  type PersonDeletionPlan,
+} from './person-deletion';
+export { reportShadow, SHADOW_ROW_FIELD, shadowMismatchFields } from './shadow';
 export {
   isWorkspaceOnePerAccountConflict,
   WORKSPACE_HAS_PROJECT_CODE,
@@ -37,4 +73,6 @@ export {
 } from './one-project';
 // The workspace split (runner, ledger, invariants) is NOT re-exported here:
 // it imports projects/surface, and projects/ imports this file. Import it from
-// `workspaces/split/split-runner` and `workspaces/split/invariants`.
+// `workspaces/split/split-runner` and `workspaces/split/invariants`. lifecycle.ts
+// and person-deletion.ts reach projects/, billing/ and accounts/ only through
+// dynamic imports for the same reason.

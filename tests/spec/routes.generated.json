@@ -1,7 +1,7 @@
 {
   "generatedAt": "static",
-  "count": 1720,
-  "aliases": 674,
+  "count": 1725,
+  "aliases": 676,
   "routes": [
     {
       "method": "GET",
@@ -303,6 +303,10 @@
     {
       "method": "DELETE",
       "path": "/v1/account/delete-immediately"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/account/deletion-plan"
     },
     {
       "method": "GET",
@@ -3824,6 +3828,11 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:workspaceId/restore",
+      "aliasOf": "/v1/workspaces/:workspaceId/restore"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:workspaceId/review/bulk",
       "aliasOf": "/v1/workspaces/:workspaceId/review/bulk"
     },
@@ -4454,6 +4463,11 @@
     {
       "method": "POST",
       "path": "/v1/projects/:workspaceId/sessions/warm/claim"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/setup",
+      "aliasOf": "/v1/workspaces/:workspaceId/setup"
     },
     {
       "method": "POST",
@@ -6751,6 +6765,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/restore"
+    },
+    {
+      "method": "POST",
       "path": "/v1/workspaces/:workspaceId/review/bulk"
     },
     {
@@ -7284,6 +7302,10 @@
     {
       "method": "PUT",
       "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/watch"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/setup"
     },
     {
       "method": "POST",

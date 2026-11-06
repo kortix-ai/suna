@@ -315,6 +315,9 @@ export const accountMemberships = kortixSchema.table(
     isSuperAdmin: boolean('is_super_admin').default(false).notNull(),
     scimExternalId: text('scim_external_id'),
     joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     // Composite primary key: the `INSERT ... ON CONFLICT (user_id, account_id)`
@@ -340,6 +343,9 @@ export const accountScimUsers = kortixSchema.table(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     primaryKey({ columns: [table.accountId, table.scimId] }),
@@ -394,6 +400,9 @@ export const accountInvitations = kortixSchema.table(
     expiresAt: timestamp('expires_at', { withTimezone: true })
       .default(sql`now() + interval '14 days'`)
       .notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     index('idx_account_invitations_email').on(table.email),
@@ -418,6 +427,9 @@ export const accountGithubInstallations = kortixSchema.table(
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     index('idx_account_github_installations_account').on(table.accountId),
@@ -464,6 +476,9 @@ export const accountGithubUserTokens = kortixSchema.table(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     uniqueIndex('uniq_account_github_user_tokens_account_user').on(table.accountId, table.userId),
@@ -483,6 +498,9 @@ export const accountGithubInstallationStates = kortixSchema.table(
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     index('idx_account_github_installation_states_account').on(table.accountId),
@@ -565,58 +583,137 @@ export const projects = kortixSchema.table(
 );
 
 // ─── Workspaces ─────────────────────────────────────────────────────────────
-// A workspace is ONE account and its ONE active project (the Slack model,
-// .agents/skills/learnings/work/workspaces/design.md §0). The public
-// workspace id is `project_id`; `account_id` stays the internal billing and
-// directory key. Both physical tables keep their names permanently.
+// ONE primitive, the workspace, with one public id, `workspace_id`
+// (.agents/skills/learnings/work/workspaces/design.md §0, §3.2 C1).
 
 /**
- * READ-ONLY VIEW: one row per active project, joined to its account. Built by
- * 20261105203716882_workspaces_expand.sql (`security_invoker`, so the base
- * tables' RLS applies). `accounts.name` is not exposed: triggers mirror it
- * from `projects.name`. Writes go through `apps/api/src/workspaces/store.ts`,
- * which writes both base tables. A `split_pending` row belongs to a legacy
- * multi-project account that is not split yet, so its `account_id` is shared.
+ * The workspace table. Release 1 (EXPAND): DERIVED, never written by code.
+ * Triggers on `accounts`, `projects` and `account_deletion_requests` call
+ * `kortix.workspaces_reconcile_account(account_id)`, which writes the rows of
+ * `kortix.workspaces_expected(account_id)` (the one implementation of the
+ * live-row rule) and deletes the account's other rows. Built by
+ * 20261106060100000_workspaces_table.sql and filled by
+ * 20261106060500000_workspaces_reconcile.concurrent.ts. Release 2 makes it
+ * the source of truth.
+ *
+ * Rows: one per project row (any status), plus one project-less row
+ * (`workspace_id = account_id`) for an account with no live project row.
+ * Live-row rule per account, in order:
+ *   1. each active project row is live (`active`; `closing` while a deletion
+ *      request is open); a `split_pending` account has several;
+ *   2. else, while a deletion request is open, the most recently archived
+ *      project row is live (`closing`);
+ *   3. else the project-less row is live (`dormant`, or `closing`);
+ *   4. every other project row is a `tombstone` (`legacy_account_id` NULL,
+ *      `former_account_id` set).
+ * Code reads it through `apps/api/src/workspaces/surface.ts` only (lint rule
+ * `kortix-api/workspace-store-only`).
  */
 export const workspaces = kortixSchema
-  .view('workspaces', {
-    workspaceId: uuid('workspace_id').notNull(),
-    accountId: uuid('account_id').notNull(),
-    name: varchar('name', { length: 255 }).notNull(),
-    repoUrl: text('repo_url').notNull(),
-    defaultBranch: varchar('default_branch', { length: 255 }).notNull(),
-    manifestPath: text('manifest_path').notNull(),
-    status: projectStatusEnum('status').notNull(),
-    secretDefaultStrategy: projectSecretStrategyEnum('secret_default_strategy').notNull(),
-    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
-    sandboxProviderGeneration: integer('sandbox_provider_generation').notNull(),
-    lastOpenedAt: timestamp('last_opened_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-    splitPending: boolean('split_pending').notNull(),
-    setupCompleteAt: timestamp('setup_complete_at', { withTimezone: true }),
-    setupWizardStep: integer('setup_wizard_step').notNull(),
-    mfaRequired: boolean('mfa_required').notNull(),
-    sessionMaxLifetimeMinutes: integer('session_max_lifetime_minutes'),
-    sessionIdleTimeoutMinutes: integer('session_idle_timeout_minutes'),
-    patMaxLifetimeDays: integer('pat_max_lifetime_days'),
-    patRequireExpiry: boolean('pat_require_expiry').notNull(),
-    patIdleRevokeDays: integer('pat_idle_revoke_days'),
-    adminsSeeAllSessions: boolean('admins_see_all_sessions').notNull(),
-    automationsPausedAt: timestamp('automations_paused_at', { withTimezone: true }),
-    automationsPausedBy: uuid('automations_paused_by'),
-    branding: jsonb('branding').$type<AccountBrandingRecord>().notNull(),
-  })
-  .existing();
+  .table(
+    'workspaces',
+    {
+      workspaceId: uuid('workspace_id').primaryKey().notNull(),
+      /** The old account id: the permanent lookup key. NULL only on a tombstone. */
+      legacyAccountId: uuid('legacy_account_id'),
+      /** Tombstones only: the account the archived project row belonged to. */
+      formerAccountId: uuid('former_account_id'),
+      /** = workspace_id when the workspace has a config repo (a project row), else NULL. */
+      projectId: uuid('project_id'),
+      /** active · dormant · closing · tombstone. */
+      lifecycle: text('lifecycle').notNull(),
+      splitPending: boolean('split_pending').default(false).notNull(),
+      name: varchar('name', { length: 255 }).notNull(),
+      // Config-repo columns, from the project row (NULL on a project-less row).
+      repoUrl: text('repo_url'),
+      defaultBranch: varchar('default_branch', { length: 255 }),
+      manifestPath: text('manifest_path'),
+      secretDefaultStrategy: projectSecretStrategyEnum('secret_default_strategy'),
+      metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+      sandboxProviderGeneration: integer('sandbox_provider_generation'),
+      idempotencyKey: text('idempotency_key'),
+      lastOpenedAt: timestamp('last_opened_at', { withTimezone: true }),
+      projectStatus: projectStatusEnum('project_status'),
+      // Settings columns, from the account row.
+      setupCompleteAt: timestamp('setup_complete_at', { withTimezone: true }),
+      setupWizardStep: integer('setup_wizard_step').default(0).notNull(),
+      mfaRequired: boolean('mfa_required').default(false).notNull(),
+      sessionMaxLifetimeMinutes: integer('session_max_lifetime_minutes'),
+      sessionIdleTimeoutMinutes: integer('session_idle_timeout_minutes'),
+      patMaxLifetimeDays: integer('pat_max_lifetime_days'),
+      patRequireExpiry: boolean('pat_require_expiry').default(false).notNull(),
+      patIdleRevokeDays: integer('pat_idle_revoke_days'),
+      adminsSeeAllSessions: boolean('admins_see_all_sessions').default(false).notNull(),
+      automationsPausedAt: timestamp('automations_paused_at', { withTimezone: true }),
+      automationsPausedBy: uuid('automations_paused_by'),
+      branding: jsonb('branding').default({}).notNull().$type<AccountBrandingRecord>(),
+      /** The open account deletion request's `scheduled_for`, else NULL. */
+      deletionScheduledFor: timestamp('deletion_scheduled_for', { withTimezone: true }),
+      createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+      updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+      /** When the reconcile last wrote this row. */
+      syncedAt: timestamp('synced_at', { withTimezone: true }).defaultNow().notNull(),
+    },
+    (table) => [
+      // One live row per account, except a split_pending account (several).
+      // Release 2 makes it unconditional (design.md §4 step 1).
+      uniqueIndex('uq_workspaces_live_account')
+        .on(table.legacyAccountId)
+        .where(sql`${table.lifecycle} <> 'tombstone' AND NOT ${table.splitPending}`),
+      index('idx_workspaces_legacy_account').on(table.legacyAccountId),
+      index('idx_workspaces_former_account').on(table.formerAccountId),
+      check('workspaces_lifecycle_check', sql`${table.lifecycle} IN ('active', 'dormant', 'closing', 'tombstone')`),
+      check('workspaces_project_id_check', sql`${table.projectId} IS NULL OR ${table.projectId} = ${table.workspaceId}`),
+      check(
+        'workspaces_account_key_check',
+        sql`(${table.lifecycle} = 'tombstone' AND ${table.legacyAccountId} IS NULL AND ${table.formerAccountId} IS NOT NULL AND ${table.projectId} IS NOT NULL)
+          OR (${table.lifecycle} <> 'tombstone' AND ${table.legacyAccountId} IS NOT NULL AND ${table.formerAccountId} IS NULL)`,
+      ),
+      check('workspaces_active_has_project_check', sql`${table.lifecycle} <> 'active' OR ${table.projectId} IS NOT NULL`),
+      check('workspaces_dormant_has_no_project_check', sql`${table.lifecycle} <> 'dormant' OR ${table.projectId} IS NULL`),
+    ],
+  )
+  .enableRLS();
+
+/**
+ * A person's own deletion request ("Delete my account", review finding 2):
+ * keyed by the person, never by an account. `POST /v1/account/request-deletion`
+ * writes it with a 14-day grace; the account-deletion worker runs the
+ * person's deletion plan (`planPersonDeletion`) when it is due. No foreign key:
+ * the row outlives the login as the deletion receipt.
+ */
+export const personDeletionRequests = kortixSchema
+  .table(
+    'person_deletion_requests',
+    {
+      userId: uuid('user_id').primaryKey().notNull(),
+      requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
+      scheduledFor: timestamp('scheduled_for', { withTimezone: true }).notNull(),
+      /** pending · processing · completed · cancelled */
+      status: text('status').default('pending').notNull(),
+      completedAt: timestamp('completed_at', { withTimezone: true }),
+    },
+    (table) => [
+      index('idx_person_deletion_requests_due').on(table.status, table.scheduledFor),
+      check(
+        'person_deletion_requests_status_check',
+        sql`${table.status} IN ('pending', 'processing', 'completed', 'cancelled')`,
+      ),
+    ],
+  )
+  .enableRLS();
 
 /**
  * The account name each 1:1 workspace had before the name backfill
  * (20261105203911000_workspaces_mark_and_name.concurrent.ts) set it to the
  * project name. One row per renamed account; the first backfill wins
- * (`ON CONFLICT DO NOTHING`), so `old_name` is always the original. Reverse:
- * `UPDATE kortix.accounts a SET name = b.old_name FROM kortix.workspace_name_backups b
- * WHERE a.account_id = b.account_id`. No foreign key: the record outlives a
- * deleted account.
+ * (`ON CONFLICT DO NOTHING`), so `old_name` is always the original. No foreign
+ * key: the record outlives a deleted account.
+ *
+ * Roll back the names: follow the header of
+ * 20261105203911000_workspaces_mark_and_name.concurrent.ts. It disables the
+ * `accounts_name_sync` trigger first; a bare UPDATE of accounts.name would
+ * rename every 1:1 project to its old account name (review finding 28).
  */
 export const workspaceNameBackups = kortixSchema
   .table('workspace_name_backups', {
@@ -1232,6 +1329,9 @@ export const accountSecretGrants = kortixSchema.table('account_secret_grants', {
   userId: uuid('user_id').notNull(),
   grantedBy: uuid('granted_by').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+  // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+  workspaceId: uuid('workspace_id'),
 }, (table) => [
   primaryKey({ columns: [table.secretId, table.userId] }),
   foreignKey({ columns: [table.userId, table.accountId], foreignColumns: [accountMemberships.userId, accountMemberships.accountId], name: 'account_secret_grants_member_fk' }).onDelete('cascade'),
@@ -3424,6 +3524,9 @@ export const providerEvents = kortixSchema.table(
     sessionId: text('session_id'),
     accountId: uuid('account_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     index('idx_provider_events_provider').on(table.provider),
@@ -3802,6 +3905,9 @@ export const kortixApiKeys = kortixSchema.table(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     uniqueIndex('idx_kortix_api_keys_public_key').on(table.publicKey),
@@ -4005,6 +4111,9 @@ export const oauthClients = kortixSchema.table(
     // native app that cannot keep a secret) relies on PKCE alone.
     clientType: varchar('client_type', { length: 16 }).default('confidential').notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     index('idx_oauth_clients_account').on(table.accountId),
@@ -4086,6 +4195,9 @@ export const oauthAuthorizationCodes = kortixSchema.table(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     usedAt: timestamp('used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     uniqueIndex('idx_oauth_codes_code').on(table.code),
@@ -4108,6 +4220,9 @@ export const oauthAccessTokens = kortixSchema.table(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     uniqueIndex('idx_oauth_access_token_hash').on(table.tokenHash),
@@ -4807,6 +4922,9 @@ export const billingCustomers = kortixSchema.table(
     email: text(),
     active: boolean(),
     provider: text(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [index('idx_kortix_billing_customers_account_id').on(table.accountId)],
 );
@@ -4839,6 +4957,9 @@ export const enterpriseContracts = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     endedAt: timestamp('ended_at', { withTimezone: true, mode: 'string' }),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     index('idx_enterprise_contracts_account').on(table.accountId),
@@ -5049,6 +5170,9 @@ export const creditAccounts = kortixSchema.table(
       .$type<Record<string, { value: boolean | number; expires_at?: string }>>()
       .default({})
       .notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     index('idx_credit_accounts_billing_model').on(table.billingModel),
@@ -5225,6 +5349,9 @@ export const sandboxComputeSessions = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     check(
@@ -5607,6 +5734,9 @@ export const appSiteFiles = kortixSchema.table(
     sha256: varchar('sha256', { length: 64 }).notNull(),
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
     contentType: text('content_type').notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     primaryKey({ columns: [table.deploymentId, table.path] }),
@@ -5626,6 +5756,9 @@ export const appSiteBlobs = kortixSchema.table(
     sha256: varchar('sha256', { length: 64 }).notNull(),
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     primaryKey({ columns: [table.accountId, table.sha256] }),
@@ -5665,6 +5798,9 @@ export const appVolumes = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     metadata: jsonb().default({}).notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     check('app_volumes_status_check', sql`${table.status} IN ('creating', 'ready', 'destroying', 'destroyed', 'error')`),
@@ -5711,6 +5847,9 @@ export const appRuntimes = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     metadata: jsonb().default({}).notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     check(
@@ -5782,6 +5921,9 @@ export const yoloMemberTokens = kortixSchema.table(
       .notNull(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true, mode: 'string' }),
     revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'string' }),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.accountId] }),
@@ -5817,6 +5959,9 @@ export const creditLedger = kortixSchema.table(
     stripeEventId: varchar('stripe_event_id', { length: 255 }),
     idempotencyKey: text('idempotency_key'),
     processingSource: text('processing_source'),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     unique('kortix_unique_stripe_event').on(table.stripeEventId),
@@ -5845,6 +5990,9 @@ export const creditUsage = kortixSchema.table('credit_usage', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow(),
   subscriptionTier: text('subscription_tier'),
   metadata: jsonb().default({}),
+  // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+  // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+  workspaceId: uuid('workspace_id'),
 });
 
 /**
@@ -5875,6 +6023,9 @@ export const accountDeletionRequests = kortixSchema.table(
     isDeleted: boolean('is_deleted').default(false),
     /** Set while a worker holds the `processing` claim; a stale one is reclaimable. */
     processingStartedAt: timestamp('processing_started_at', { withTimezone: true, mode: 'string' }),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     // At most one pending deletion request per account. The application
@@ -5935,6 +6086,9 @@ export const creditPurchases =kortixSchema.table('credit_purchases', {
   provider: varchar('provider', { length: 50 }).default('stripe'),
   revenuecatTransactionId: varchar('revenuecat_transaction_id', { length: 255 }),
   revenuecatProductId: varchar('revenuecat_product_id', { length: 255 }),
+  // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+  // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+  workspaceId: uuid('workspace_id'),
 });
 
 // ─── Tunnel (Reverse-Tunnel to Local Machine) ──────────────────────────────
@@ -6510,6 +6664,9 @@ export const accountGroups = kortixSchema.table(
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     index('idx_account_groups_account').on(table.accountId),
@@ -6604,6 +6761,9 @@ export const iamRoles = kortixSchema.table(
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     index('idx_iam_roles_account').on(table.accountId),
@@ -6894,6 +7054,9 @@ export const scimTokens = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     index('idx_scim_tokens_account').on(table.accountId),
@@ -6931,6 +7094,9 @@ export const auditWebhooks = kortixSchema.table(
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     index('idx_audit_webhooks_account').on(table.accountId),
@@ -7025,6 +7191,9 @@ export const accountSsoProviders = kortixSchema.table(
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     // One SSO provider per account (v1 limitation; multi-IdP can come
@@ -7123,6 +7292,9 @@ export const accountSessionActivity = kortixSchema.table(
     /** Captured at first sight for diagnostics ("which IP/UA was this?"). */
     ip: text('ip'),
     userAgent: text('user_agent'),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     primaryKey({ columns: [table.accountId, table.userId, table.sessionId] }),
@@ -7154,6 +7326,9 @@ export const accountSsoGroupMappings = kortixSchema.table(
       .references(() => accountGroups.groupId, { onDelete: 'cascade' }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     // Same claim can only map to one group within an account (avoid
@@ -8147,6 +8322,9 @@ export const auditReconciliationState = kortixSchema.table('audit_reconciliation
   accountId: uuid('account_id').primaryKey(),
   checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
   fullScanAt: timestamp('full_scan_at', { withTimezone: true }).notNull(),
+  // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+  // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+  workspaceId: uuid('workspace_id'),
 });
 
 /**
@@ -8251,6 +8429,9 @@ export const captureTenants = kortixSchema.table('capture_workspaces', {
   updatedBy: uuid('updated_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+  // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+  workspaceId: uuid('workspace_id'),
 });
 
 /** One pending RFC 8628 device authorization. Short-lived (15 min). */
@@ -8271,6 +8452,9 @@ export const captureDeviceGrants = kortixSchema.table(
     lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     uniqueIndex('idx_capture_device_grants_user_code').on(table.userCode),
@@ -8318,6 +8502,9 @@ export const captureDevices = kortixSchema.table(
     enrollmentTokenId: uuid('enrollment_token_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     uniqueIndex('idx_capture_devices_identity').on(
@@ -8359,6 +8546,9 @@ export const captureEnrollmentTokens = kortixSchema.table(
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     createdBy: uuid('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     uniqueIndex('idx_capture_enrollment_tokens_hash').on(table.tokenHash),
@@ -8397,6 +8587,9 @@ export const captureEnrollments = kortixSchema.table(
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     uniqueIndex('idx_capture_enrollments_identity').on(
@@ -8436,6 +8629,9 @@ export const timelineChunks = kortixSchema.table(
     /** That display: `{id, name, x, y, w, h, scale, main}` from the manifest. */
     display: jsonb('display').$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     uniqueIndex('idx_timeline_chunks_manifest').on(table.manifestKey),
@@ -8478,6 +8674,9 @@ export const timelineFrames = kortixSchema.table(
     displayId: bigint('display_id', { mode: 'number' }),
     /** The display holding the focused window at that moment (the app track reads these). */
     focused: boolean('focused').default(true).notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     primaryKey({ name: 'timeline_frames_pkey', columns: [table.frameId, table.ts] }),
@@ -8508,6 +8707,9 @@ export const timelineActions = kortixSchema.table(
     target: jsonb('target').$type<Record<string, unknown>>(),
     /** Content-addressed asset name of the action screenshot, or null. */
     screenshot: text('screenshot'),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     primaryKey({ name: 'timeline_actions_pkey', columns: [table.actionId, table.ts] }),
@@ -8532,6 +8734,9 @@ export const timelineAudio = kortixSchema.table(
     deviceId: uuid('device_id').notNull(),
     userId: uuid('user_id'),
     text: text('text').notNull(),
+    // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+    // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+    workspaceId: uuid('workspace_id'),
   },
   (table) => [
     primaryKey({ name: 'timeline_audio_pkey', columns: [table.lineId, table.ts] }),
@@ -9262,6 +9467,9 @@ export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {
   userId: uuid('user_id'),
   accountId: uuid('account_id'),
   status: text('status').notNull().default('pending'),
+  // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+  // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+  workspaceId: uuid('workspace_id'),
 });
 
 /**
@@ -9568,6 +9776,9 @@ export const claudeSubscriptionLogins = kortixSchema.table('claude_subscription_
   source: text('source').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
+  // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
+  workspaceId: uuid('workspace_id'),
 }, (table) => [
   primaryKey({ columns: [table.accountId, table.userId] }),
   foreignKey({ name: 'claude_subscription_logins_member_fk', columns: [table.userId, table.accountId], foreignColumns: [accountMemberships.userId, accountMemberships.accountId] }).onDelete('cascade'),

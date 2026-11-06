@@ -258,6 +258,9 @@ export async function applyWorkspaceSplitRun(runId: string, deps: ApplyDeps = {}
   }
   // The new account's wallet (Free, 0 credits, never the free grant) committed
   // with the split: splitProjectIntoNewAccount writes its credit_accounts row.
+  // design.md §3.2 C1: after a move, each account's expand rows carry its
+  // workspace id (NULL while the source is still split_pending).
+  await fillAccountWorkspaceIds(run.fromAccountId, toAccountId);
   return 'done';
 }
 
@@ -272,7 +275,13 @@ export async function reverseWorkspaceSplitRun(runId: string): Promise<void> {
       copied: run.copiedIds as unknown as SplitCopiedIds,
     });
     await tx.update(workspaceSplitRuns).set({ phase: 'reversed', updatedAt: new Date() }).where(eq(workspaceSplitRuns.runId, runId));
-  });
+    return [run.fromAccountId, run.toAccountId] as const;
+  }).then(([fromAccountId, toAccountId]) => fillAccountWorkspaceIds(fromAccountId, toAccountId));
+}
+
+/** kortix.workspace_fill_account for both accounts of a move (C1). */
+async function fillAccountWorkspaceIds(fromAccountId: string, toAccountId: string): Promise<void> {
+  await db.execute(sql`SELECT kortix.workspace_fill_account(${fromAccountId}::uuid), kortix.workspace_fill_account(${toAccountId}::uuid)`);
 }
 
 /**

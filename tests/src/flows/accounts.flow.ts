@@ -1830,14 +1830,16 @@ flow(
         .has('$.name', name)
         .has('$.project_count', 1);
     });
-    await ctx.step('a person who owns an empty account creates a workspace → the account is reused and takes the project name', async () => {
+    await ctx.step('a person who owns an empty account creates a workspace → a NEW account; the empty one is never reused', async () => {
       const owner = await ctx.fixtures.user({ label: 'EMPTY-WS' });
       const asOwner = ctx.client.as(owner);
-      const name = ctx.fixtures.name('reuse-ws');
-      const r = await asOwner.post('/v1/projects/provision', { name, new_workspace: true, idempotency_key: crypto.randomUUID() });
-      r.status(201).body().has('$.account_id', owner.accountId);
-      ctx.track('project', r.json<{ project_id: string }>().project_id);
-      (await asOwner.get('/v1/accounts/:accountId', { params: { accountId: owner.accountId! } }))
+      const name = ctx.fixtures.name('no-reuse-ws');
+      const r = await asOwner.post('/v1/projects/provision', { name, new_workspace: true });
+      r.status(201);
+      const { project_id, account_id } = r.json<{ project_id: string; account_id: string }>();
+      ctx.track('project', project_id);
+      if (account_id === owner.accountId) throw new Error('the create reused the empty account');
+      (await asOwner.get('/v1/accounts/:accountId', { params: { accountId: account_id } }))
         .status(200)
         .body()
         .has('$.name', name);

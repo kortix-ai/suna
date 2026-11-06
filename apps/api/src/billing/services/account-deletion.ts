@@ -77,6 +77,36 @@ import { deleteAccountExternalStores } from './account-erasure-stores';
 const GRACE_PERIOD_DAYS = 14;
 const ACTIVE_DELETION_REQUEST_EXISTS = 'An active deletion request already exists for this account';
 
+/**
+ * Revoke every credential of an account: workspace and personal tokens in it,
+ * API keys, gateway keys, OAuth codes and tokens, SCIM tokens, and its
+ * service accounts. Runs inside the caller's transaction (`withDbTransaction`
+ * routes `db` to it): an account deletion request and a workspace close
+ * (`workspaces/lifecycle.ts`, K2) both call it in the transaction that opens
+ * the request.
+ */
+export async function revokeAccountCredentials(accountId: string, actorUserId: string): Promise<void> {
+  await db.update(accountTokens)
+    .set({ status: 'revoked', revokedAt: new Date() })
+    .where(and(eq(accountTokens.accountId, accountId), eq(accountTokens.status, 'active')));
+  await db.update(kortixApiKeys)
+    .set({ status: 'revoked' })
+    .where(and(eq(kortixApiKeys.accountId, accountId), eq(kortixApiKeys.status, 'active')));
+  await db.update(gatewayApiKeys)
+    .set({ status: 'revoked', revokedAt: new Date() })
+    .where(and(eq(gatewayApiKeys.accountId, accountId), eq(gatewayApiKeys.status, 'active')));
+  await db.delete(oauthAuthorizationCodes).where(eq(oauthAuthorizationCodes.accountId, accountId));
+  await db.update(oauthAccessTokens).set({ revokedAt: new Date() })
+    .where(eq(oauthAccessTokens.accountId, accountId));
+  await db.update(oauthRefreshTokens).set({ revokedAt: new Date() })
+    .where(eq(oauthRefreshTokens.accountId, accountId));
+  await db.update(scimTokens).set({ revokedAt: new Date() })
+    .where(eq(scimTokens.accountId, accountId));
+  await db.update(serviceAccounts)
+    .set({ status: 'disabled', disabledAt: new Date(), disabledBy: actorUserId })
+    .where(and(eq(serviceAccounts.accountId, accountId), eq(serviceAccounts.status, 'active')));
+}
+
 export async function requestAccountDeletion(
   accountId: string,
   userId: string,
@@ -92,25 +122,7 @@ export async function requestAccountDeletion(
   try {
     request = await withDbTransaction(async () => {
       const pending = await createDeletionRequest(accountId, userId, scheduledFor, reason);
-      await db.update(accountTokens)
-        .set({ status: 'revoked', revokedAt: new Date() })
-        .where(and(eq(accountTokens.accountId, accountId), eq(accountTokens.status, 'active')));
-      await db.update(kortixApiKeys)
-        .set({ status: 'revoked' })
-        .where(and(eq(kortixApiKeys.accountId, accountId), eq(kortixApiKeys.status, 'active')));
-      await db.update(gatewayApiKeys)
-        .set({ status: 'revoked', revokedAt: new Date() })
-        .where(and(eq(gatewayApiKeys.accountId, accountId), eq(gatewayApiKeys.status, 'active')));
-      await db.delete(oauthAuthorizationCodes).where(eq(oauthAuthorizationCodes.accountId, accountId));
-      await db.update(oauthAccessTokens).set({ revokedAt: new Date() })
-        .where(eq(oauthAccessTokens.accountId, accountId));
-      await db.update(oauthRefreshTokens).set({ revokedAt: new Date() })
-        .where(eq(oauthRefreshTokens.accountId, accountId));
-      await db.update(scimTokens).set({ revokedAt: new Date() })
-        .where(eq(scimTokens.accountId, accountId));
-      await db.update(serviceAccounts)
-        .set({ status: 'disabled', disabledAt: new Date(), disabledBy: userId })
-        .where(and(eq(serviceAccounts.accountId, accountId), eq(serviceAccounts.status, 'active')));
+      await revokeAccountCredentials(accountId, userId);
       // A personal-account deletion ends existing sign-ins, not the identity:
       // a fresh sign-in can still cancel during the grace period. Deleting a
       // team account must not end the owner's access to their other accounts.
@@ -207,7 +219,7 @@ export async function runAccountDeletion(accountId: string, userId?: string, req
  * deletion for a person who belongs to no workspace (`deleteLoginWithoutAccount`).
  * Idempotent: a retry after the auth user is gone succeeds.
  */
-async function deleteLogin(userId: string): Promise<void> {
+export async function deleteLogin(userId: string): Promise<void> {
   await deleteUserAvatars(userId);
   await clearLegacyAuthUserReferences(userId);
   // A device token is the person's data; it has no foreign key to cascade.
@@ -231,6 +243,19 @@ async function deleteLogin(userId: string): Promise<void> {
 export async function deleteLoginWithoutAccount(userId: string) {
   await deleteLogin(userId);
   return { success: true, message: 'Account deleted' };
+}
+
+/**
+ * Delete one workspace of a person who is deleting their login
+ * (`workspaces/person-deletion.ts`): the account's sandboxes, external stores,
+ * money and rows, with no requester. The sandbox sweep stays inside this
+ * account, and the login is the caller's last step. An open request of the
+ * account is closed as its receipt.
+ */
+export async function deleteAccountForPerson(accountId: string): Promise<void> {
+  const request = await getActiveDeletionRequest(accountId);
+  await runAccountDeletion(accountId, undefined, request?.id);
+  if (request) await markDeletionCompleted(request.id);
 }
 
 /** Storage objects must go before GoTrue removes their owner. */

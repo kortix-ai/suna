@@ -1,6 +1,7 @@
 /**
  * DB suite: which account `new_workspace: true` provisions into
- * (projects/new-workspace.ts). Real schema, real role store; nothing mocked.
+ * (projects/new-workspace.ts): always a new one, except an idempotent replay
+ * (review findings 1 and 9). Real schema, real role store; nothing mocked.
  */
 import { afterAll, describe, expect, test } from 'bun:test';
 import { accountDeletionRequests, accountMembers, accounts, projects } from '@kortix/db';
@@ -69,11 +70,45 @@ describe('new_workspace account choice', () => {
     expect(await accountRoleFor(result.accountId, caller.userId)).toBe('owner');
   });
 
-  test('the newest owned account with no active project is reused', async () => {
+  test('an owned account with no project is never reused: a new account is created', async () => {
     const caller = await person();
-    await account(caller.userId, 'owner', { createdAt: '2026-01-01T00:00:00Z' });
-    const newest = await account(caller.userId, 'owner', { createdAt: '2026-06-01T00:00:00Z' });
-    expect(await resolve(caller)).toEqual({ ok: true, accountId: newest, created: false });
+    const empty = await account(caller.userId, 'owner', { createdAt: '2026-06-01T00:00:00Z' });
+    const result = await resolve(caller);
+    expect(result).toMatchObject({ ok: true, created: true });
+    if (result.ok) expect(result.accountId).not.toBe(empty);
+  });
+
+  test('an account holding only an archived project (a deleted workspace) is not reused, with or without a key', async () => {
+    const caller = await person();
+    const deleted = await account(caller.userId, 'owner');
+    await db.insert(projects).values({
+      projectId: crypto.randomUUID(),
+      accountId: deleted,
+      name: 'nw-deleted',
+      repoUrl: `https://example.invalid/${deleted}.git`,
+      status: 'archived',
+    });
+    for (const key of [null, 'nw-archived-key']) {
+      // (With a key, the virgin account the first iteration just made is an
+      // in-flight replay and may be returned: never the deleted one.)
+      const result = await resolve(caller, key);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.accountId).not.toBe(deleted);
+    }
+  });
+
+  test('an account with a second member is not reused, with or without a key', async () => {
+    const caller = await person();
+    const other = await person();
+    const shared = await account(caller.userId, 'owner');
+    await insertIntoView(db, accountMembers, [{ accountId: shared, userId: other.userId, accountRole: 'member' }]);
+    for (const key of [null, 'nw-shared-key']) {
+      // (With a key, the virgin account the first iteration just made is an
+      // in-flight replay and may be returned: never the shared one.)
+      const result = await resolve(caller, key);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.accountId).not.toBe(shared);
+    }
   });
 
   test('an owned account with a project, or one the person only belongs to, is not reused', async () => {
@@ -112,7 +147,7 @@ describe('new_workspace account choice', () => {
     if (a.ok && b.ok) expect(a.accountId).toBe(b.accountId);
   });
 
-  test('restricted account creation refuses a new account, and still reuses an empty one', async () => {
+  test('restricted account creation refuses a new account, even when the person owns an empty one', async () => {
     const mutable = config as { KORTIX_RESTRICT_ACCOUNT_CREATION: boolean };
     const before = mutable.KORTIX_RESTRICT_ACCOUNT_CREATION;
     mutable.KORTIX_RESTRICT_ACCOUNT_CREATION = true;
@@ -122,8 +157,11 @@ describe('new_workspace account choice', () => {
         ok: false,
         result: { status: 403, body: { code: 'account_creation_restricted' } },
       });
-      const empty = await account(caller.userId, 'owner');
-      expect(await resolve(caller)).toEqual({ ok: true, accountId: empty, created: false });
+      await account(caller.userId, 'owner', { createdAt: '2026-01-01T00:00:00Z' });
+      expect(await resolve(caller)).toMatchObject({
+        ok: false,
+        result: { status: 403, body: { code: 'account_creation_restricted' } },
+      });
     } finally {
       mutable.KORTIX_RESTRICT_ACCOUNT_CREATION = before;
     }

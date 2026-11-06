@@ -161,6 +161,12 @@ export interface ProvisionContext {
   validated?: ProvisionRequest;
   /** `new_workspace: true`: the account is this project's workspace, and takes its name. */
   newWorkspace?: boolean;
+  /**
+   * The project row's id, instead of a fresh random one. Only Set up of a
+   * project-less workspace passes it (`POST /v1/workspaces/:id/setup`):
+   * project_id = workspace_id, so the workspace keeps its id (design.md §3.2 C1).
+   */
+  projectId?: string;
 }
 
 /**
@@ -233,7 +239,7 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   // UUID, so managed repos under the shared org NEVER collide (two projects can
   // share a name). We generate the project id up front to bake it into the repo
   // name and reuse it as the project row id.
-  const projectId = randomUUID();
+  const projectId = ctx.projectId ?? randomUUID();
   const baseSlug = (
     name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') ||
     'kortix-project'

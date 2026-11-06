@@ -17,9 +17,18 @@
  *   I8  every member the split added to a split-off account holds a grant on
  *       it (its own, through a group, or on a project secret) or is an owner
  *       (design.md §2: memberships for grant holders, owners and admins)
+ *   I9  the kortix.workspaces table equals kortix.workspaces_expected for every
+ *       account (the reconcile triggers missed no write)
+ *   I10 every expand-table row carries workspace_id = the account's live id,
+ *       except the rows of a split_pending account (NULL until the split
+ *       fills them)
+ *   I11 no two credit_accounts rows share a stripe_subscription_id
+ *   I12 every account has exactly one live row, or one per active project
+ *       while split_pending
  *
  * I2, I3, I5, I7 and I8 read only the `done` split runs (scoped by `runIds` when
- * given); I1, I4 and I6 read the whole database.
+ * given); I1, I4, I6 and I9–I12 read the whole database, or only `accountIds`
+ * when given (I9, I10, I12).
  */
 import { sql } from 'drizzle-orm';
 import { getTableName } from 'drizzle-orm';
@@ -27,7 +36,7 @@ import { db } from '../../shared/db';
 import { probeAccountSecret } from '../../secrets/account-resource';
 import { PROJECT_TRANSFER_TABLES, projectGrantCounts, type SplitCopiedIds } from '../../projects/surface';
 
-export type InvariantId = 'I1' | 'I2' | 'I3' | 'I4' | 'I5' | 'I6' | 'I7' | 'I8';
+export type InvariantId = 'I1' | 'I2' | 'I3' | 'I4' | 'I5' | 'I6' | 'I7' | 'I8' | 'I9' | 'I10' | 'I11' | 'I12';
 
 export interface InvariantResult {
   ok: boolean;
@@ -201,8 +210,77 @@ async function i8(runs: DoneRun[]): Promise<InvariantResult> {
   return result(violations);
 }
 
-/** Every invariant, read-only. `runIds` narrows I2, I3, I5, I7 and I8. */
-export async function checkWorkspaceInvariants(options: { runIds?: string[] } = {}): Promise<WorkspaceInvariantReport> {
+/** The accounts an identity invariant reads: `accountIds`, or every account. */
+const accountSet = (accountIds?: string[]) =>
+  accountIds
+    ? sql`SELECT jsonb_array_elements_text(${JSON.stringify(accountIds)}::jsonb)::uuid AS id`
+    : sql`SELECT account_id AS id FROM kortix.accounts`;
+
+async function i9(accountIds?: string[]): Promise<InvariantResult> {
+  const rows = await db.execute<{ account_id: string }>(sql`
+    SELECT a.id::text AS account_id FROM (${accountSet(accountIds)}) a
+     WHERE EXISTS (
+       (SELECT to_jsonb(e) - 'synced_at' FROM kortix.workspaces_expected(a.id) e
+        EXCEPT SELECT to_jsonb(w) - 'synced_at' FROM kortix.workspaces w
+                WHERE w.legacy_account_id = a.id OR w.former_account_id = a.id)
+       UNION ALL
+       (SELECT to_jsonb(w) - 'synced_at' FROM kortix.workspaces w
+         WHERE w.legacy_account_id = a.id OR w.former_account_id = a.id
+        EXCEPT SELECT to_jsonb(e) - 'synced_at' FROM kortix.workspaces_expected(a.id) e))
+     ORDER BY 1`);
+  return result(rows.map((row) => row.account_id));
+}
+
+async function i10(accountIds?: string[]): Promise<InvariantResult> {
+  const tables = await db.execute<{ name: string }>(sql`
+    SELECT t.name FROM unnest(kortix.workspace_expand_tables()) AS t(name)
+     WHERE EXISTS (SELECT 1 FROM pg_attribute a
+                    WHERE a.attrelid = to_regclass('kortix.' || quote_ident(t.name))
+                      AND a.attname = 'workspace_id' AND NOT a.attisdropped)
+     ORDER BY 1`);
+  const filter = accountIds
+    ? sql`AND t.account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(accountIds)}::jsonb))`
+    : sql``;
+  const violations: string[] = [];
+  for (const { name } of tables) {
+    if (!/^[a-z_][a-z0-9_]*$/.test(name)) continue;
+    const [row] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM ${sql.raw(`kortix.${name}`)} t
+        LEFT JOIN kortix.workspaces w
+          ON w.legacy_account_id = t.account_id AND w.lifecycle <> 'tombstone' AND NOT w.split_pending
+       WHERE t.account_id IS NOT NULL ${filter}
+         AND NOT EXISTS (SELECT 1 FROM kortix.projects p
+                          WHERE p.account_id = t.account_id AND p.status = 'active' AND p.split_pending)
+         AND t.workspace_id IS DISTINCT FROM w.workspace_id`);
+    if (row && row.n > 0) violations.push(`${name}:${row.n}`);
+  }
+  return result(violations);
+}
+
+async function i11(): Promise<InvariantResult> {
+  const rows = await db.execute<{ id: string }>(sql`
+    SELECT stripe_subscription_id AS id FROM kortix.credit_accounts
+     WHERE stripe_subscription_id IS NOT NULL
+     GROUP BY stripe_subscription_id HAVING count(*) > 1
+     ORDER BY 1`);
+  return result(rows.map((row) => row.id));
+}
+
+async function i12(accountIds?: string[]): Promise<InvariantResult> {
+  const rows = await db.execute<{ account_id: string }>(sql`
+    SELECT a.id::text AS account_id FROM (${accountSet(accountIds)}) a
+     WHERE EXISTS (SELECT 1 FROM kortix.accounts x WHERE x.account_id = a.id)
+       AND (SELECT count(*) FROM kortix.workspaces w WHERE w.legacy_account_id = a.id AND w.lifecycle <> 'tombstone')
+           <> greatest(1, (SELECT count(*) FROM kortix.projects p
+                            WHERE p.account_id = a.id AND p.status = 'active' AND p.split_pending))
+     ORDER BY 1`);
+  return result(rows.map((row) => row.account_id));
+}
+
+/** Every invariant, read-only. `runIds` narrows I2, I3, I5, I7 and I8; `accountIds` narrows I9, I10 and I12. */
+export async function checkWorkspaceInvariants(
+  options: { runIds?: string[]; accountIds?: string[] } = {},
+): Promise<WorkspaceInvariantReport> {
   const runs = await doneRuns(options.runIds);
   return {
     I1: await i1(),
@@ -213,5 +291,9 @@ export async function checkWorkspaceInvariants(options: { runIds?: string[] } = 
     I6: await i6(),
     I7: await i7(runs),
     I8: await i8(runs),
+    I9: await i9(options.accountIds),
+    I10: await i10(options.accountIds),
+    I11: await i11(),
+    I12: await i12(options.accountIds),
   };
 }

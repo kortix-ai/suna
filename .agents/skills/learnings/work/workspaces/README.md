@@ -1,8 +1,8 @@
 ---
 title: Workspaces — one account, one project, one concept (the Slack model)
-status: planning — direction approved by Marko 2026-11-05; decisions D2–D4 open
+status: Release 1 in progress (PR #11857, branch `workspaces`) — plan approved by Marko 2026-11-06 (D8–D11); Releases 2 and 3 specified in design.md, not built
 owner: marko
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # Workspaces
@@ -134,6 +134,17 @@ Each stage is its own PR on branch `workspaces` or a sub-branch merged back.
    `projects(account_id) where status = 'active'`.
 10. **Later, separate initiative:** code repos as connected resources of a
     workspace, so a developer with 5 repos has 1 workspace, not 5.
+
+## Status (2026-11-06)
+
+- The current spec is `design.md` (§3 Release 1, §4 Release 2, §5 Release 3).
+  The stages below are the 2026-11-05 plan, kept for history.
+- D1–D5 and D8–D11 are decided (`decisions.md`). D7's "old DB names stay" is
+  superseded by D8.
+- Release 1 identity (sub-branch `ws-r1-identity`): `kortix.workspaces` is a
+  table kept in sync by triggers, the 44 expand tables carry `workspace_id`,
+  the store answers with shadow reads, delete closes the account, "Delete my
+  account" deletes the person, and a create never reuses an account.
 
 ## Open decisions
 

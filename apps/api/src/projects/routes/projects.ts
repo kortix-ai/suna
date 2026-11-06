@@ -93,7 +93,7 @@ async function buildProvisionContext(c: Context): Promise<{ result: ProvisionRes
 /** `new_workspace` on the two provision routes. */
 const NEW_WORKSPACE_FIELD = z.boolean().optional().openapi({
   description:
-    'Create a whole workspace: the server reuses your newest owned account with no active project, else creates an account named after the project, then provisions into it. Excludes account_id (400 new_workspace_with_account_id). 403 account_creation_restricted where the deployment restricts account creation.',
+    'Create a whole workspace: the server creates a new account named after the project (a retry with the same idempotency_key returns the first one), then provisions into it. Excludes account_id (400 new_workspace_with_account_id). 403 account_creation_restricted where the deployment restricts account creation.',
 });
 
 export function registerProjectsRoutes(): void {

@@ -531,6 +531,66 @@ timeout (the `20261011111553399_session_log_tables.sql` convention). No shared e
 | M8 | new `.concurrent.ts` (`// batched-dml:`) | Fill `workspace_id` where NULL: keyset on the primary key (`ctid` ranges for composite keys), 5,000 rows per batch, smallest table first, `pg_sleep(0.02)` between batches. Skips `split_pending` accounts (NULL until the split). Measure on the 1/20 prod-shape seed and record the scaled time in the PR (`credit_ledger` 8.6M rows dominates). | row locks |
 | M9 | new `.sql` (billing, wave 2) | `credit_accounts.comp_plan_until timestamptz` | `credit_accounts`, 3 s |
 
+**Built (identity, sub-branch `ws-r1-identity`, 2026-11-06).** The files, in
+order: M1 `20261105203716882_workspaces_expand.sql` (edited); M1b
+`20261106060000000_workspaces_account_name_sync.sql` (sorts after M2/M3: M2's
+rename finds the names equal, so the order does not matter); M4
+`20261106060100000_workspaces_table.sql` (plus `kortix.workspace_expand_tables()`,
+the one list of the 44, and `kortix.workspace_id_stamp()`, the M7 trigger
+function); M5a–c `20261106060200000`–`20261106060400000`; M6
+`20261106060500000_workspaces_reconcile.concurrent.ts`; M7
+`20261106060600000`–`20261106061900000` (9 hot tables one per file, then 5
+files of ≤ 7); M8 `20261106062000000_workspace_id_fill.concurrent.ts`.
+Decisions taken while building, each within C1:
+
+- The reconcile takes the account row `FOR NO KEY UPDATE` before the advisory
+  lock. A writer locks a project row before its account row; an advisory lock
+  alone deadlocks a rename (project, then account) against a settings write
+  (account, then reconcile). `FOR NO KEY UPDATE` does not block foreign-key
+  checks of rows that reference the account.
+- The reconcile deletes every row of the account that differs from its
+  expected row, then inserts what is missing. An in-place update of two rows
+  of one account (a tombstone coming back live while the live row turns
+  tombstone) collides on `uq_workspaces_live_account`.
+- When an account's live id moves from one non-NULL id to another (a new
+  account's dormant row to its first project), the reconcile calls
+  `workspace_fill_account`. A move from NULL (a `split_pending` account
+  resolving) is left to the split runner, which fills both accounts after
+  every move and reverse, and to M8: a keeper can hold millions of ledger rows.
+- `resolveWorkspace` (legacy routes) keeps the old answer: only a workspace
+  whose project row is active. `resolveCanonicalWorkspace` resolves active,
+  dormant and closing rows. `ResolvedWorkspace` gains optional `lifecycle` and
+  `projectId`; the resolver's candidate type is `WorkspaceResolveCandidate`
+  (the name `WorkspaceCandidate` is C2's list item).
+- A keyed create's concurrent attempt converges on the caller's virgin account
+  created in the last 15 minutes (`virginAccountOf` in
+  `projects/new-workspace.ts`: owned, only member, no project row, invitation,
+  deletion request or foreign grant). It is a replay of the same create, never
+  a reuse: a deleted workspace and a shared account never match.
+- `oauth_refresh_tokens` carries `account_id` only and is in neither §6.2 list.
+  It is classified `excluded` in `workspace-key-classes.ts` with a note:
+  classify it before R2a (it is workspace-owned like `oauth_access_tokens`).
+
+**Measured on the 1/20 prod-shape seed** (2,453 accounts, 472 projects, 20
+legacy accounts with 69 active projects, plus 430,000 synthetic `credit_ledger`
+rows = 8.6M / 20, 275 MB), run on a database at the `origin/dev` migration
+level, local PostgreSQL 17.6:
+
+| Migration | 1/20 | Prod estimate (×20) |
+|---|---|---|
+| M1, M1b, M4, M5a–c, M7 (each `.sql`) | 1–11 ms | the 3 s lock wait bounds each |
+| M2 mark and name | 24 ms | ~0.5 s |
+| M6 reconcile | 3.19 s | ~64 s |
+| M8 fill | 15.91 s | ~5.3 min (`credit_ledger` dominates; ~4.5 GB of new row versions) |
+
+After the run, I1–I12 report 0 violations; 3,504 ledger rows of the 20
+legacy accounts stay NULL (`split_pending`). A writer holding a row lock on
+`credit_ledger` makes the M7 file wait 3 s, fail with 55P03 and roll back (no
+column, no trigger); the rerun after the holder commits takes 49 ms. The
+`origin/dev` API run against the migrated database (create account, rename,
+add member, provision + rename + list + delete a project) answers 0 errors and
+leaves I1–I12 at 0.
+
 No index on the new `workspace_id` columns in R1 (nothing reads them until R2).
 `mixed-version-safe` annotations: the old image never names `workspaces`, the new columns,
 the functions or `person_deletion_requests`; the BEFORE triggers only set a column the old
@@ -594,8 +654,9 @@ file asks the orchestrator):
 4. **Delete becomes restorable for 14 days.** The repo deletion moves from the DELETE
    request to the sweep. The DELETE description and the web copy change ("You can restore
    it for 14 days").
-5. **M8 duration.** The `workspace_id` fill runs in the deploy's migrate job. Measured at
-   1/20 scale before merge; the release runbook states the expected prod time.
+5. **M8 duration.** The `workspace_id` fill runs in the deploy's migrate job: ~5.3 min on
+   prod by the 1/20 measurement (§3.3), holding the migration advisory lock and leaving
+   ~4.5 GB of dead `credit_ledger` row versions for autovacuum. The Promote must budget it.
 6. **Legacy `DELETE /v1/projects/:id` on a 1:1 workspace now closes the account** (K2).
    Old clients get the same 200 shape.
 
@@ -640,6 +701,12 @@ against a view (learning `2026-08-19T163833Z`).
    --project-id`): `projectId → workspaceId` properties on every table, column names
    unchanged, `KORTIX_SQL_TRACE` diff empty.
 
+10a. Before R2a ships, re-measure prod read-only (Marko approves the read): I9
+     and I10 at 0 for 7 days, the count of NULL `workspace_id` per expand table,
+     and classify `oauth_refresh_tokens` (§6.2). The store flip (step 8) is one
+     change in `apps/api/src/workspaces/store.ts` (`livePairs`: answer from
+     `s.j`, compare `e.j`); the metric and log keep their names.
+
 **R2b (deploy 2, after the last R2a task is up and no R1 task runs; migrations run first):**
 
 10. Drop the R1 reconcile triggers on `projects`, `accounts`, `account_deletion_requests`
@@ -650,6 +717,10 @@ against a view (learning `2026-08-19T163833Z`).
 11. Rewrite `role_assignments` to `scope_type = 'workspace'`, `scope_id = workspace_id`, and
     `permissions`/`role_permissions` strings to the `workspace.*` names (small tables,
     batched `.concurrent.ts`). R2a pods read both.
+11a. Drop `kortix.workspaces_expected`, `kortix.workspaces_reconcile_account` and
+     the M5 trigger functions with their triggers (step 10 removes the callers);
+     `kortix.workspace_id_of_account` stays as the lookup the expand tables'
+     reverse trigger and the legacy routes read.
 12. The compatibility views, in one transaction (`lock_timeout '3s'`):
     `ALTER TABLE kortix.accounts RENAME TO accounts_store; ALTER TABLE kortix.projects
     RENAME TO projects_store;` then `CREATE VIEW kortix.accounts` (one row per

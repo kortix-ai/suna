@@ -4,27 +4,29 @@
  *
  * A workspace is one account and its one project (Workspaces D2: the
  * workspace id is the `project_id`). The caller names no account. The server
- * picks it:
+ * picks it (design.md §3.1 items 1 and 9: no reuse):
  *
- *   1. the account a retry of the same `idempotency_key` already provisioned
- *      into, so the replay finds its project (the key is scoped to the
- *      account, and the account is chosen here);
- *   2. else the caller's NEWEST OWNED account with 0 active projects and no
- *      pending deletion, so an empty account the person already holds (an old
- *      sign-up's personal account, with whatever plan or credits it has) is
- *      reused instead of stranded;
- *   3. else a new account (`createOwnedAccount`: owner membership + owner
- *      role, free tier, Mailtrap), named after the project, unless
+ *   1. with an `idempotency_key`, the account a replay of the same create
+ *      already holds: the one its project carries the key in, or the virgin
+ *      account a concurrent attempt just created (`replayedAccount`);
+ *   2. else ALWAYS a new account (`createOwnedAccount`: owner membership +
+ *      owner role, free tier, Mailtrap), named after the project, unless
  *      `KORTIX_RESTRICT_ACCOUNT_CREATION` forbids it for this caller (403
  *      `account_creation_restricted`, the same answer as POST /v1/accounts).
+ *
+ * No other account is ever reused. An owned account with no active project
+ * is either a deleted workspace (closing: its members, grants, secrets and
+ * subscription must never reach a new workspace, review finding 1) or a
+ * dormant one (its own workspace, listed as `setup_required` when it pays,
+ * set up through `POST /v1/workspaces/:id/setup`).
  *
  * The choice runs under a per-person advisory lock when a key is present, so
  * two concurrent attempts of one create pick the same account; the partial
  * unique index on `(account_id, idempotency_key)` then lets exactly one of
  * them provision (provision-core.ts, the loser rollback).
  */
-import { accountDeletionRequests, accounts, projects } from '@kortix/db';
-import { and, desc, eq, inArray, notExists, sql } from 'drizzle-orm';
+import { projects } from '@kortix/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { createOwnedAccount } from '../accounts/core/create-account';
 import { config } from '../config';
@@ -73,52 +75,60 @@ export function newWorkspaceConflict(body: Record<string, unknown>): ProvisionRe
   };
 }
 
+/** How long an in-flight create's account counts as that create's (see `replayedAccount`). */
+export const IN_FLIGHT_ACCOUNT_WINDOW_MS = 15 * 60 * 1000;
+
 /**
- * The owned account to reuse: the one holding `idempotencyKey` first, else the
- * newest with 0 active projects. `null` when there is none.
+ * A virgin account: `userId` owns it and is its only member, it holds no
+ * project row of any status, no invitation, no deletion request and no grant
+ * for anyone else, and it was created after `since`. The one predicate for
+ * "an account nobody has used yet". A deleted workspace (a project row and a
+ * deletion request) and a shared account never match.
  */
-async function reusableOwnedAccount(userId: string, idempotencyKey: string | null): Promise<string | null> {
+async function virginAccountOf(userId: string, owned: string[], since: Date): Promise<string | null> {
+  if (owned.length === 0) return null;
+  const [row] = await db.execute<{ account_id: string }>(sql`
+    SELECT a.account_id::text AS account_id
+      FROM kortix.accounts a
+     WHERE a.account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(owned)}::jsonb))
+       AND a.created_at > ${since.toISOString()}::timestamptz
+       AND NOT EXISTS (SELECT 1 FROM kortix.projects p WHERE p.account_id = a.account_id)
+       AND NOT EXISTS (SELECT 1 FROM kortix.account_memberships m
+                        WHERE m.account_id = a.account_id AND m.user_id <> ${userId}::uuid)
+       AND NOT EXISTS (SELECT 1 FROM kortix.account_invitations i WHERE i.account_id = a.account_id)
+       AND NOT EXISTS (SELECT 1 FROM kortix.account_deletion_requests r WHERE r.account_id = a.account_id)
+       AND NOT EXISTS (SELECT 1 FROM kortix.role_assignments ra
+                        WHERE ra.account_id = a.account_id
+                          AND NOT (ra.principal_type = 'user' AND ra.principal_id = ${userId}::uuid))
+     ORDER BY a.created_at DESC
+     LIMIT 1`);
+  return row?.account_id ?? null;
+}
+
+/**
+ * The account an idempotent replay of the same create returns, or `null`.
+ * The only account a create ever returns that it did not just make:
+ *   1. the owned account whose project carries `idempotencyKey` (a retry after
+ *      a lost response);
+ *   2. else a virgin account the caller created in the last
+ *      `IN_FLIGHT_ACCOUNT_WINDOW_MS` (a concurrent attempt of the same create
+ *      that has its account but not its project yet). Under the per-person
+ *      advisory lock, so two attempts converge on one account; the unique
+ *      index on (account_id, idempotency_key) lets one of them provision.
+ * Without a key there is no "same create": always a new account.
+ */
+async function replayedAccount(userId: string, idempotencyKey: string | null): Promise<string | null> {
+  if (!idempotencyKey) return null;
   const roles = await accountRolesForUser(userId);
   const owned = [...roles].filter(([, role]) => role === 'owner').map(([accountId]) => accountId);
   if (owned.length === 0) return null;
-
-  if (idempotencyKey) {
-    const [keyed] = await db
-      .select({ accountId: projects.accountId })
-      .from(projects)
-      .where(and(inArray(projects.accountId, owned), eq(projects.idempotencyKey, idempotencyKey)))
-      .limit(1);
-    if (keyed) return keyed.accountId;
-  }
-
-  const [empty] = await db
-    .select({ accountId: accounts.accountId })
-    .from(accounts)
-    .where(
-      and(
-        inArray(accounts.accountId, owned),
-        notExists(
-          db
-            .select({ one: sql`1` })
-            .from(projects)
-            .where(and(eq(projects.accountId, accounts.accountId), eq(projects.status, 'active'))),
-        ),
-        notExists(
-          db
-            .select({ one: sql`1` })
-            .from(accountDeletionRequests)
-            .where(
-              and(
-                eq(accountDeletionRequests.accountId, accounts.accountId),
-                inArray(accountDeletionRequests.status, ['pending', 'processing']),
-              ),
-            ),
-        ),
-      ),
-    )
-    .orderBy(desc(accounts.createdAt))
+  const [keyed] = await db
+    .select({ accountId: projects.accountId })
+    .from(projects)
+    .where(and(inArray(projects.accountId, owned), eq(projects.idempotencyKey, idempotencyKey)))
     .limit(1);
-  return empty?.accountId ?? null;
+  if (keyed) return keyed.accountId;
+  return virginAccountOf(userId, owned, new Date(Date.now() - IN_FLIGHT_ACCOUNT_WINDOW_MS));
 }
 
 async function chooseOrCreate(
@@ -126,7 +136,7 @@ async function chooseOrCreate(
   name: string,
   idempotencyKey: string | null,
 ): Promise<NewWorkspaceAccount> {
-  const reused = await reusableOwnedAccount(caller.userId, idempotencyKey);
+  const reused = await replayedAccount(caller.userId, idempotencyKey);
   if (reused) return { ok: true, accountId: reused, created: false };
 
   if (config.KORTIX_RESTRICT_ACCOUNT_CREATION && !(await isPlatformAdmin(caller.userId))) {
@@ -140,10 +150,6 @@ async function chooseOrCreate(
   return { ok: true, accountId: account.accountId, created: true };
 }
 
-/**
- * Pick or create the account a new workspace provisions into. `name` is the
- * already-validated project name; `idempotencyKey` the parsed key or null.
- */
 /**
  * Who may create a workspace: a person (a browser JWT or an unscoped PAT),
  * never an API key, a service account, a project/session/agent token or an
@@ -167,6 +173,10 @@ export function newWorkspaceCallerDenial(caller: NewWorkspaceCaller): ProvisionR
   return null;
 }
 
+/**
+ * Pick or create the account a new workspace provisions into. `name` is the
+ * already-validated project name; `idempotencyKey` the parsed key or null.
+ */
 export async function resolveNewWorkspaceAccount(
   caller: NewWorkspaceCaller,
   name: string,

@@ -1583,6 +1583,13 @@
       "when": 1793919304816,
       "tag": "20261105225504_workspaces_snapshot_lineage",
       "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1793942724985,
+      "tag": "20261106052524_workspaces_table_gen",
+      "breakpoints": true
     }
   ]
 }

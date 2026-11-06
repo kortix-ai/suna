@@ -1,6 +1,6 @@
 /**
  * Workspace identity decisions that need no database: the resolver's pick, the
- * store's patch split, and the 1:1 conflict matcher. The DB suite
+ * served state, the shadow comparison and the 1:1 conflict matcher. The DB suite
  * (`workspaces.integration.test.ts`) proves the same rules against Postgres.
  */
 import { describe, expect, test } from 'bun:test';
@@ -8,7 +8,8 @@ import { describe, expect, test } from 'bun:test';
 import { asWorkspaceAccountKey, asWorkspaceId } from './ids';
 import { isWorkspaceOnePerAccountConflict, WORKSPACE_ONE_PER_ACCOUNT_INDEX } from './one-project';
 import { pickWorkspace, WorkspaceAmbiguousError } from './resolve';
-import { splitWorkspacePatch } from './store';
+import { shadowMismatchFields } from './shadow';
+import { workspaceState } from './store';
 
 const WS_A = '00000000-0000-4000-a000-00000000c101';
 const WS_B = '00000000-0000-4000-a000-00000000c102';
@@ -62,23 +63,39 @@ describe('asWorkspaceId / asWorkspaceAccountKey', () => {
   });
 });
 
-describe('splitWorkspacePatch', () => {
-  test('a 1:1 rename writes both names; settings go to the account', () => {
-    expect(splitWorkspacePatch({ name: 'Synthetic WS', mfaRequired: true, secretDefaultStrategy: 'broker' }, false)).toEqual({
-      project: { name: 'Synthetic WS', secretDefaultStrategy: 'broker' },
-      account: { name: 'Synthetic WS', mfaRequired: true },
-    });
+describe('workspaceState', () => {
+  const record = (lifecycle: 'active' | 'dormant' | 'closing') =>
+    ({ lifecycle }) as unknown as Parameters<typeof workspaceState>[0];
+
+  test('active is served as active whatever it pays', () => {
+    expect(workspaceState(record('active'), false)).toBe('active');
   });
 
-  test('a split-pending rename leaves the shared account name alone', () => {
-    expect(splitWorkspacePatch({ name: 'Synthetic WS' }, true)).toEqual({ project: { name: 'Synthetic WS' }, account: {} });
+  test('a dormant workspace is served only while it pays (setup_required)', () => {
+    expect(workspaceState(record('dormant'), true)).toBe('setup_required');
+    expect(workspaceState(record('dormant'), false)).toBeNull();
   });
 
-  test('null clears a nullable setting; undefined leaves it', () => {
-    expect(splitWorkspacePatch({ sessionMaxLifetimeMinutes: null, patIdleRevokeDays: undefined }, false)).toEqual({
-      project: {},
-      account: { sessionMaxLifetimeMinutes: null },
-    });
+  test('a closing workspace is deleting', () => {
+    expect(workspaceState(record('closing'), false)).toBe('deleting');
+  });
+});
+
+describe('shadowMismatchFields', () => {
+  test('equal rows differ in nothing; synced_at is never compared', () => {
+    expect(shadowMismatchFields({ workspace_id: WS_A, name: 'a', synced_at: '1' }, { workspace_id: WS_A, name: 'a', synced_at: '2' })).toEqual([]);
+  });
+
+  test('names the differing fields, sorted, without values', () => {
+    expect(
+      shadowMismatchFields({ workspace_id: WS_A, name: 'a', lifecycle: 'active' }, { workspace_id: WS_A, name: 'b', lifecycle: 'closing' }),
+    ).toEqual(['lifecycle', 'name']);
+  });
+
+  test('a row on one side only is the field "row"', () => {
+    expect(shadowMismatchFields({ workspace_id: WS_A }, null)).toEqual(['row']);
+    expect(shadowMismatchFields(null, { workspace_id: WS_A })).toEqual(['row']);
+    expect(shadowMismatchFields(null, null)).toEqual([]);
   });
 });
 

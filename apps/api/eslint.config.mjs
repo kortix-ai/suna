@@ -115,6 +115,44 @@ const projectsSurface = {
   },
 };
 
+/** The `@kortix/db` tables only the workspaces store reads and writes. */
+const WORKSPACE_STORE_TABLES = new Set(['accounts', 'projects', 'workspaces']);
+
+/**
+ * `kortix-api/workspace-store-only` (Workspaces design.md §3.2 C2): only
+ * src/workspaces/ imports the `accounts`, `projects` and `workspaces` tables
+ * from `@kortix/db`. Everyone else reads and writes workspace identity through
+ * `workspaces/surface.ts`. The importers that existed when the rule was added
+ * are suppressed per file in eslint-suppressions.json; the count only shrinks
+ * (Release 2 starts at 0).
+ * @type {import('eslint').Rule.RuleModule}
+ */
+const workspaceStoreOnly = {
+  meta: {
+    type: 'problem',
+    messages: {
+      table:
+        "Import '{{name}}' from @kortix/db only inside src/workspaces/. Read and write workspace identity through 'workspaces/surface' (design.md §3.2 C2).",
+    },
+    schema: [],
+  },
+  create(context) {
+    if (relative(SRC, context.filename).split(sep).join('/').startsWith('workspaces/')) return {};
+    return {
+      ImportDeclaration: (/** @type {any} */ node) => {
+        const from = node.source?.value;
+        if (from !== '@kortix/db' && from !== '@kortix/db/schema') return;
+        for (const spec of node.specifiers) {
+          const name = spec.type === 'ImportSpecifier' ? spec.imported?.name : null;
+          if (name && WORKSPACE_STORE_TABLES.has(name)) {
+            context.report({ node: spec, messageId: 'table', data: { name } });
+          }
+        }
+      },
+    };
+  },
+};
+
 /** @type {import('eslint').Rule.RuleModule} */
 const replicaLocal = {
   meta: {
@@ -152,11 +190,16 @@ export default tseslint.config(
     files: ['src/**/*.ts'],
     languageOptions: { parser: tseslint.parser },
     linterOptions: { reportUnusedDisableDirectives: 'off' },
-    plugins: { 'kortix-api': { rules: { layers, 'projects-surface': projectsSurface, 'replica-local': replicaLocal } } },
+    plugins: {
+      'kortix-api': {
+        rules: { layers, 'projects-surface': projectsSurface, 'replica-local': replicaLocal, 'workspace-store-only': workspaceStoreOnly },
+      },
+    },
     rules: {
       'kortix-api/layers': 'error',
       'kortix-api/projects-surface': 'error',
       'kortix-api/replica-local': 'error',
+      'kortix-api/workspace-store-only': 'error',
       'no-console': 'error',
       // A statement after a return is dead code that still reads as live.
       // KRTX-2987: a model assignment after a `return` saved every channel

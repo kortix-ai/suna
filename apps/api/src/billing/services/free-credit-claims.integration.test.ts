@@ -79,14 +79,33 @@ describe('free credits once per person', () => {
     expect((await wallet(again)).balance).toBe(0);
   });
 
-  test('a person who already owns an account (before this rule) gets 0 on a new workspace', async () => {
+  test('a dormant sign-up account (no project, does not pay) is not an earlier workspace: the first created one gets the grant', async () => {
     const userId = await person();
     const legacy = crypto.randomUUID();
     created.push(legacy);
     await db.insert(accounts).values({ accountId: legacy, name: 'legacy personal' });
     await insertIntoView(db, accountMembers, [{ accountId: legacy, userId, accountRole: 'owner' }]);
     const next = await workspace(userId, 'After the rule');
-    expect(await wallet(next)).toMatchObject({ balance: 0, eligible: false });
+    expect(await wallet(next)).toMatchObject({ balance: FREE_USD, eligible: true });
+  });
+
+  test('an owned account with a project row, or one that pays, is an earlier workspace: 0 on a new one', async () => {
+    const withProject = await person();
+    const used = crypto.randomUUID();
+    created.push(used);
+    await db.insert(accounts).values({ accountId: used, name: 'legacy with project' });
+    await insertIntoView(db, accountMembers, [{ accountId: used, userId: withProject, accountRole: 'owner' }]);
+    await db.execute(sql`insert into kortix.projects (account_id, name, repo_url, status)
+      values (${used}::uuid, 'legacy archived', 'https://example.invalid/legacy.git', 'archived')`);
+    expect(await wallet(await workspace(withProject, 'After a used one'))).toMatchObject({ balance: 0, eligible: false });
+
+    const payer = await person();
+    const paid = crypto.randomUUID();
+    created.push(paid);
+    await db.insert(accounts).values({ accountId: paid, name: 'legacy paying' });
+    await insertIntoView(db, accountMembers, [{ accountId: paid, userId: payer, accountRole: 'owner' }]);
+    await db.insert(creditAccounts).values({ accountId: paid, tier: 'tier_2_20' });
+    expect(await wallet(await workspace(payer, 'After a paying one'))).toMatchObject({ balance: 0, eligible: false });
   });
 
   test('the monthly rotation skips a further workspace and keeps rotating an account that holds a grant', async () => {

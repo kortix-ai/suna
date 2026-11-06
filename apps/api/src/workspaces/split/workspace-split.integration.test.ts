@@ -298,7 +298,7 @@ withDb('workspace split', () => {
     expect((await accountOfProject(PAYING_B))?.accountId).toBe(PAYING);
 
     const report = await checkWorkspaceInvariants();
-    expect(Object.fromEntries(Object.entries(report).map(([id, r]) => [id, r.violations]))).toEqual({ I1: 0, I2: 0, I3: 0, I4: 0, I5: 0, I6: 0, I7: 0, I8: 0 });
+    expect(Object.fromEntries(Object.entries(report).map(([id, r]) => [id, r.violations]))).toEqual({ I1: 0, I2: 0, I3: 0, I4: 0, I5: 0, I6: 0, I7: 0, I8: 0, I9: 0, I10: 0, I11: 0, I12: 0 });
   });
 
   test('a project secret that does not decrypt moves unchanged, marked for a reconnect; the split still lands', async () => {
