@@ -1,22 +1,27 @@
 /**
- * Workspace identity against real PostgreSQL (migrations M1–M3 applied by the
- * DB-suite runner): the `kortix.workspaces` view, `resolveWorkspace`, the
- * store, the 1:1 unique index, and the 409 `workspace_has_project` decision
- * every project create path runs (`projectCreationDenial`).
+ * Workspace identity against real PostgreSQL (the DB-suite runner applies
+ * every migration): the `kortix.workspaces` table and its reconcile triggers,
+ * the live-row rule, the `split_pending` trigger, the expand columns, shadow
+ * reads, the two resolvers, the 1:1 unique index, the 409 every project
+ * create path runs, the name mirror, and the workspace lifecycle (close,
+ * restore).
  *
  * Runs against `TEST_DATABASE_URL`; every row is synthetic, seeded and
  * cleaned here. See `.agents/skills/testing/SKILL.md` "DB suites".
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { accounts, projects, workspaces } from '@kortix/db';
+import { accountDeletionRequests, accountMemberships, accounts, projects } from '@kortix/db';
 import { eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '../shared/db';
 import { projectCreationDenial } from '../projects/lib/project-quota';
 import { asWorkspaceId } from './ids';
+import { closeWorkspace, restoreWorkspace } from './lifecycle';
 import { isWorkspaceOnePerAccountConflict, WORKSPACE_HAS_PROJECT_CODE } from './one-project';
-import { resolveWorkspace, WorkspaceAmbiguousError } from './resolve';
-import { getWorkspace, updateWorkspace } from './store';
+import { resolveCanonicalWorkspace, resolveWorkspace, WorkspaceAmbiguousError } from './resolve';
+import { shadowMismatchCount } from './shadow';
+import { checkWorkspaceInvariants } from './split/invariants';
+import { getWorkspace, listUserWorkspaceCandidates, workspaceIdOfAccount } from './store';
 
 const confirmed = Boolean(
   process.env.TEST_DATABASE_URL &&
@@ -29,11 +34,14 @@ const withDb = confirmed ? describe : describe.skip;
 const ONE_ACCOUNT = '00000000-0000-4000-a000-00000000d101';
 const LEGACY_ACCOUNT = '00000000-0000-4000-a000-00000000d102';
 const EMPTY_ACCOUNT = '00000000-0000-4000-a000-00000000d103';
+const NEW_ACCOUNT = '00000000-0000-4000-a000-00000000d104';
 const ONE_PROJECT = '00000000-0000-4000-a000-00000000d201';
 const LEGACY_P1 = '00000000-0000-4000-a000-00000000d202';
 const LEGACY_P2 = '00000000-0000-4000-a000-00000000d203';
 const ARCHIVED_PROJECT = '00000000-0000-4000-a000-00000000d204';
-const ACCOUNTS = [ONE_ACCOUNT, LEGACY_ACCOUNT, EMPTY_ACCOUNT];
+const NEW_PROJECT = '00000000-0000-4000-a000-00000000d208';
+const OWNER = '00000000-0000-4000-a000-00000000d301';
+const ACCOUNTS = [ONE_ACCOUNT, LEGACY_ACCOUNT, EMPTY_ACCOUNT, NEW_ACCOUNT];
 
 function projectValues(projectId: string, accountId: string, name: string, extra: Partial<typeof projects.$inferInsert> = {}) {
   return {
@@ -46,6 +54,8 @@ function projectValues(projectId: string, accountId: string, name: string, extra
 }
 
 async function cleanup(): Promise<void> {
+  await db.delete(accountDeletionRequests).where(inArray(accountDeletionRequests.accountId, ACCOUNTS));
+  await db.delete(accountMemberships).where(inArray(accountMemberships.accountId, ACCOUNTS));
   await db.delete(accounts).where(inArray(accounts.accountId, ACCOUNTS));
 }
 
@@ -63,6 +73,32 @@ async function seed(): Promise<void> {
     projectValues(LEGACY_P1, LEGACY_ACCOUNT, 'Synthetic legacy 1', { splitPending: true }),
     projectValues(LEGACY_P2, LEGACY_ACCOUNT, 'Synthetic legacy 2', { splitPending: true }),
   ]);
+}
+
+/** The table rows of the seeded accounts, keyed by workspace id. */
+async function tableRows(): Promise<Record<string, { lifecycle: string; account: string | null; former: string | null; split: boolean }>> {
+  const rows = await db.execute<{ workspace_id: string; lifecycle: string; legacy_account_id: string | null; former_account_id: string | null; split_pending: boolean }>(sql`
+    SELECT workspace_id::text, lifecycle, legacy_account_id::text, former_account_id::text, split_pending
+      FROM kortix.workspaces
+     WHERE legacy_account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(ACCOUNTS)}::jsonb))
+        OR former_account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(ACCOUNTS)}::jsonb))`);
+  return Object.fromEntries(
+    rows.map((r) => [r.workspace_id, { lifecycle: r.lifecycle, account: r.legacy_account_id, former: r.former_account_id, split: r.split_pending }]),
+  );
+}
+
+/** I9 for the seeded accounts only: table rows that differ from workspaces_expected. */
+async function i9Seeded(): Promise<number> {
+  const [row] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM (
+      SELECT a.id FROM (SELECT jsonb_array_elements_text(${JSON.stringify(ACCOUNTS)}::jsonb)::uuid AS id) a
+       WHERE EXISTS (
+         (SELECT to_jsonb(e) - 'synced_at' FROM kortix.workspaces_expected(a.id) e
+          EXCEPT SELECT to_jsonb(w) - 'synced_at' FROM kortix.workspaces w WHERE w.legacy_account_id = a.id OR w.former_account_id = a.id)
+         UNION ALL
+         (SELECT to_jsonb(w) - 'synced_at' FROM kortix.workspaces w WHERE w.legacy_account_id = a.id OR w.former_account_id = a.id
+          EXCEPT SELECT to_jsonb(e) - 'synced_at' FROM kortix.workspaces_expected(a.id) e))) x`);
+  return row?.n ?? -1;
 }
 
 async function accountName(accountId: string): Promise<string | undefined> {
@@ -97,41 +133,115 @@ withDb('workspaces identity', () => {
     expect(rows[0]).toEqual({ valid: true, unique: true });
   });
 
-  test('the view has one row per active project; archived projects and empty accounts have none', async () => {
-    const rows = await db
-      .select({ workspaceId: workspaces.workspaceId, accountId: workspaces.accountId, splitPending: workspaces.splitPending })
-      .from(workspaces)
-      .where(inArray(workspaces.accountId, ACCOUNTS));
-    expect(rows.sort((a, b) => a.workspaceId.localeCompare(b.workspaceId))).toEqual([
-      { workspaceId: ONE_PROJECT, accountId: ONE_ACCOUNT, splitPending: false },
-      { workspaceId: LEGACY_P1, accountId: LEGACY_ACCOUNT, splitPending: true },
-      { workspaceId: LEGACY_P2, accountId: LEGACY_ACCOUNT, splitPending: true },
-    ]);
+  test('the triggers keep kortix.workspaces equal to the live-row rule', async () => {
+    expect(await tableRows()).toEqual({
+      [ONE_PROJECT]: { lifecycle: 'active', account: ONE_ACCOUNT, former: null, split: false },
+      // An archived project of an account with an active one: a tombstone.
+      [ARCHIVED_PROJECT]: { lifecycle: 'tombstone', account: null, former: ONE_ACCOUNT, split: false },
+      [LEGACY_P1]: { lifecycle: 'active', account: LEGACY_ACCOUNT, former: null, split: true },
+      [LEGACY_P2]: { lifecycle: 'active', account: LEGACY_ACCOUNT, former: null, split: true },
+      // An account with no project row: its project-less row, workspace_id = account_id.
+      [EMPTY_ACCOUNT]: { lifecycle: 'dormant', account: EMPTY_ACCOUNT, former: null, split: false },
+    });
+    expect(await i9Seeded()).toBe(0);
   });
 
-  test('resolveWorkspace: the project id and the account key resolve to the same workspace', async () => {
-    const expected = { workspaceId: ONE_PROJECT, accountId: ONE_ACCOUNT, splitPending: false };
+  test('a deletion request turns the live row closing; its cancel turns it back', async () => {
+    const [request] = await db
+      .insert(accountDeletionRequests)
+      .values({ accountId: ONE_ACCOUNT, userId: OWNER, scheduledFor: new Date(Date.now() + 86_400_000).toISOString() })
+      .returning({ id: accountDeletionRequests.id });
+    expect((await getWorkspace(ONE_PROJECT))?.lifecycle).toBe('closing');
+    expect((await getWorkspace(ONE_PROJECT))?.deletionScheduledFor).toBeInstanceOf(Date);
+    // Archive the project too (the archive bumps updated_at): the most
+    // recently archived row stays live and keeps the id.
+    await db.update(projects).set({ status: 'archived', updatedAt: new Date() }).where(eq(projects.projectId, ONE_PROJECT));
+    expect((await tableRows())[ONE_PROJECT]?.lifecycle).toBe('closing');
+    await db.update(projects).set({ status: 'active' }).where(eq(projects.projectId, ONE_PROJECT));
+    await db.update(accountDeletionRequests).set({ status: 'cancelled' }).where(eq(accountDeletionRequests.id, request!.id));
+    expect((await getWorkspace(ONE_PROJECT))?.lifecycle).toBe('active');
+    expect(await i9Seeded()).toBe(0);
+  });
+
+  test('a new account is dormant; its first project takes over and re-stamps the expand rows', async () => {
+    await db.insert(accounts).values({ accountId: NEW_ACCOUNT, name: 'Synthetic new' });
+    await db.insert(accountMemberships).values({ accountId: NEW_ACCOUNT, userId: OWNER });
+    const stamp = async () =>
+      (await db.select({ w: accountMemberships.workspaceId }).from(accountMemberships).where(eq(accountMemberships.accountId, NEW_ACCOUNT)))[0]?.w;
+    expect(await stamp()).toBe(NEW_ACCOUNT);
+    expect(await workspaceIdOfAccount(NEW_ACCOUNT)).toBe(asWorkspaceId(NEW_ACCOUNT));
+    await db.insert(projects).values(projectValues(NEW_PROJECT, NEW_ACCOUNT, 'Synthetic new'));
+    expect(await stamp()).toBe(NEW_PROJECT);
+    expect(await workspaceIdOfAccount(NEW_ACCOUNT)).toBe(asWorkspaceId(NEW_PROJECT));
+    expect(await getWorkspace(NEW_ACCOUNT)).toBeNull();
+    // The legacy account is ambiguous: its rows stay unstamped.
+    expect(await workspaceIdOfAccount(LEGACY_ACCOUNT)).toBeNull();
+  });
+
+  test('archiving one of two legacy projects clears split_pending; the index guards the account again', async () => {
+    await db.update(projects).set({ status: 'archived' }).where(eq(projects.projectId, LEGACY_P2));
+    const [survivor] = await db.select({ split: projects.splitPending }).from(projects).where(eq(projects.projectId, LEGACY_P1));
+    expect(survivor?.split).toBe(false);
+    expect((await tableRows())[LEGACY_P1]).toEqual({ lifecycle: 'active', account: LEGACY_ACCOUNT, former: null, split: false });
+    const error = await errorOf(() =>
+      db.insert(projects).values(projectValues('00000000-0000-4000-a000-00000000d209', LEGACY_ACCOUNT, 'Synthetic legacy 3')),
+    );
+    expect(isWorkspaceOnePerAccountConflict(error)).toBe(true);
+  });
+
+  test('shadow reads: a missed trigger answers from the primary, logs the field and breaks I9', async () => {
+    const before = shadowMismatchCount('name');
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`ALTER TABLE kortix.accounts DISABLE TRIGGER accounts_workspaces_sync`);
+      await tx.update(accounts).set({ name: 'Synthetic dormant renamed' }).where(eq(accounts.accountId, EMPTY_ACCOUNT));
+      await tx.execute(sql`ALTER TABLE kortix.accounts ENABLE TRIGGER accounts_workspaces_sync`);
+    });
+    expect((await getWorkspace(EMPTY_ACCOUNT))?.name).toBe('Synthetic dormant renamed');
+    expect(shadowMismatchCount('name')).toBe(before + 1);
+    expect(await i9Seeded()).toBe(1);
+    const report = await checkWorkspaceInvariants();
+    expect(report.I9.ok).toBe(false);
+    expect(report.I9.sample).toContain(EMPTY_ACCOUNT);
+    await db.execute(sql`SELECT kortix.workspaces_reconcile_account(${EMPTY_ACCOUNT}::uuid)`);
+    expect(await i9Seeded()).toBe(0);
+  });
+
+  test('resolveWorkspace (legacy): the project id and the account key resolve to the same workspace', async () => {
+    const expected = { workspaceId: ONE_PROJECT, accountId: ONE_ACCOUNT, splitPending: false, lifecycle: 'active', projectId: ONE_PROJECT };
     expect(await resolveWorkspace(ONE_PROJECT)).toEqual(expected as never);
     expect(await resolveWorkspace(ONE_ACCOUNT)).toEqual(expected as never);
   });
 
-  test('resolveWorkspace: archived, dormant, unknown and non-uuid ids are null', async () => {
+  test('resolveWorkspace (legacy): archived, dormant, unknown and non-uuid ids are null', async () => {
     expect(await resolveWorkspace(ARCHIVED_PROJECT)).toBeNull();
     expect(await resolveWorkspace(EMPTY_ACCOUNT)).toBeNull();
     expect(await resolveWorkspace('00000000-0000-4000-a000-00000000dfff')).toBeNull();
     expect(await resolveWorkspace('not-a-uuid')).toBeNull();
   });
 
-  test('resolveWorkspace: a legacy account key is ambiguous; its project ids resolve', async () => {
+  test('resolveWorkspace (legacy): a legacy account key is ambiguous; its project ids resolve', async () => {
     const error = await errorOf(() => resolveWorkspace(LEGACY_ACCOUNT));
     expect(error).toBeInstanceOf(WorkspaceAmbiguousError);
     expect((error as WorkspaceAmbiguousError).code).toBe('workspace_ambiguous');
-    expect([...(error as WorkspaceAmbiguousError).workspaceIds].map(String).sort()).toEqual([LEGACY_P1, LEGACY_P2]);
-    expect(await resolveWorkspace(LEGACY_P2)).toEqual({
-      workspaceId: LEGACY_P2,
-      accountId: LEGACY_ACCOUNT,
-      splitPending: true,
-    } as never);
+    expect((await resolveWorkspace(LEGACY_P2))?.workspaceId).toBe(asWorkspaceId(LEGACY_P2));
+  });
+
+  test('resolveCanonicalWorkspace: workspace ids only; a dormant workspace resolves, an account key does not', async () => {
+    expect((await resolveCanonicalWorkspace(ONE_PROJECT))?.accountId).toBe(ONE_ACCOUNT as never);
+    expect(await resolveCanonicalWorkspace(ONE_ACCOUNT)).toBeNull();
+    expect(await resolveCanonicalWorkspace(ARCHIVED_PROJECT)).toBeNull();
+    expect((await resolveCanonicalWorkspace(EMPTY_ACCOUNT))?.lifecycle).toBe('dormant');
+    expect((await resolveCanonicalWorkspace(EMPTY_ACCOUNT.toUpperCase()))?.workspaceId).toBe(asWorkspaceId(EMPTY_ACCOUNT));
+  });
+
+  test('listUserWorkspaceCandidates: every live row of every account of the user, with role and paying', async () => {
+    await db.insert(accountMemberships).values([
+      { accountId: ONE_ACCOUNT, userId: OWNER },
+      { accountId: EMPTY_ACCOUNT, userId: OWNER },
+    ]);
+    const ids = (await listUserWorkspaceCandidates(OWNER)).map((c) => c.record.workspaceId).sort();
+    expect(ids).toEqual([ONE_PROJECT, EMPTY_ACCOUNT].map(asWorkspaceId).sort());
+    expect((await listUserWorkspaceCandidates(OWNER)).every((c) => c.paying === false)).toBe(true);
   });
 
   test('a second active project in a 1:1 account fails on the unique index', async () => {
@@ -141,28 +251,12 @@ withDb('workspaces identity', () => {
     expect(isWorkspaceOnePerAccountConflict(error)).toBe(true);
   });
 
-  test('a second ARCHIVED project and a split-pending project are exempt from the index', async () => {
-    await db.insert(projects).values(
-      projectValues('00000000-0000-4000-a000-00000000d206', ONE_ACCOUNT, 'Synthetic archived 2', { status: 'archived' }),
-    );
-    await db.insert(projects).values(
-      projectValues('00000000-0000-4000-a000-00000000d207', LEGACY_ACCOUNT, 'Synthetic legacy 3', { splitPending: true }),
-    );
-    const [count] = await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(projects)
-      .where(eq(projects.accountId, LEGACY_ACCOUNT));
-    expect(count?.n).toBe(3);
-  });
-
   test('projectCreationDenial: 409 workspace_has_project for an account with an active project', async () => {
     const denial = await projectCreationDenial(ONE_ACCOUNT);
     expect(denial?.status).toBe(409);
     expect(denial?.body).toMatchObject({ code: WORKSPACE_HAS_PROJECT_CODE, account_id: ONE_ACCOUNT, workspace_id: ONE_PROJECT });
-    // A legacy account may not gain a further project either.
     expect((await projectCreationDenial(LEGACY_ACCOUNT))?.status).toBe(409);
-    // An empty account is never refused with 409 (the plan cap may still apply: 403).
-    expect((await projectCreationDenial(EMPTY_ACCOUNT))?.status).not.toBe(409);
+    expect(await projectCreationDenial(EMPTY_ACCOUNT)).toBeNull();
   });
 
   test('projects_name_sync / accounts_name_sync mirror a 1:1 rename both ways', async () => {
@@ -170,8 +264,8 @@ withDb('workspaces identity', () => {
     expect(await accountName(ONE_ACCOUNT)).toBe('Synthetic renamed project');
     await db.update(accounts).set({ name: 'Synthetic renamed account' }).where(eq(accounts.accountId, ONE_ACCOUNT));
     expect(await projectName(ONE_PROJECT)).toBe('Synthetic renamed account');
-    // The archived project keeps its own name.
     expect(await projectName(ARCHIVED_PROJECT)).toBe('Synthetic archived');
+    expect((await getWorkspace(ONE_PROJECT))?.name).toBe('Synthetic renamed account');
   });
 
   // The M2 rollback (header of 20261105203911000_workspaces_mark_and_name):
@@ -184,7 +278,6 @@ withDb('workspaces identity', () => {
     const bare = sql`UPDATE kortix.accounts a SET name = b.old_name
       FROM kortix.workspace_name_backups b WHERE a.account_id = b.account_id AND a.account_id = ${ONE_ACCOUNT}::uuid`;
     try {
-      // The bare statement damages the project name.
       await db.execute(backup);
       await db.transaction(async (tx) => {
         await tx.execute(bare);
@@ -196,7 +289,6 @@ withDb('workspaces identity', () => {
       });
       expect(await projectName(ONE_PROJECT)).toBe('Synthetic one');
 
-      // The documented statement restores the account name only.
       await db.transaction(async (tx) => {
         await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
         await tx.execute(sql`ALTER TABLE kortix.accounts DISABLE TRIGGER accounts_name_sync`);
@@ -205,7 +297,6 @@ withDb('workspaces identity', () => {
       });
       expect(await accountName(ONE_ACCOUNT)).toBe('Synthetic old account name');
       expect(await projectName(ONE_PROJECT)).toBe('Synthetic one');
-      // The trigger is on again: a later account rename still syncs.
       await db.update(accounts).set({ name: 'Synthetic after rollback' }).where(eq(accounts.accountId, ONE_ACCOUNT));
       expect(await projectName(ONE_PROJECT)).toBe('Synthetic after rollback');
     } finally {
@@ -220,32 +311,34 @@ withDb('workspaces identity', () => {
     expect(await projectName(LEGACY_P2)).toBe('Synthetic legacy 2');
   });
 
-  test('updateWorkspace writes the project and the account in one call', async () => {
-    const updated = await updateWorkspace(asWorkspaceId(ONE_PROJECT), {
-      name: 'Synthetic store rename',
-      mfaRequired: true,
-      sessionIdleTimeoutMinutes: 30,
-      secretDefaultStrategy: 'broker',
-    });
-    expect(updated).toMatchObject({
-      workspaceId: ONE_PROJECT,
-      name: 'Synthetic store rename',
-      mfaRequired: true,
-      sessionIdleTimeoutMinutes: 30,
-      secretDefaultStrategy: 'broker',
-    });
-    expect(await accountName(ONE_ACCOUNT)).toBe('Synthetic store rename');
-    expect(await getWorkspace(ONE_PROJECT)).toMatchObject({ name: 'Synthetic store rename' });
+  test('closeWorkspace closes the account with the project; restoreWorkspace brings both back with the same id', async () => {
+    const closed = await closeWorkspace({ workspaceId: asWorkspaceId(ONE_PROJECT), actorUserId: OWNER });
+    expect(closed.mode).toBe('closed');
+    const record = await getWorkspace(ONE_PROJECT);
+    expect(record).toMatchObject({ lifecycle: 'closing', workspaceId: ONE_PROJECT, projectStatus: 'archived' });
+    expect(record?.automationsPausedAt).toBeInstanceOf(Date);
+    const [request] = await db.select().from(accountDeletionRequests).where(eq(accountDeletionRequests.accountId, ONE_ACCOUNT));
+    expect(request).toMatchObject({ status: 'pending', reason: 'workspace_deleted' });
+    // Idempotent.
+    expect((await closeWorkspace({ workspaceId: asWorkspaceId(ONE_PROJECT), actorUserId: OWNER })).mode).toBe('closed');
+
+    const restored = await restoreWorkspace({ workspaceId: asWorkspaceId(ONE_PROJECT), actorUserId: OWNER });
+    expect(restored).toMatchObject({ lifecycle: 'active', workspaceId: ONE_PROJECT, projectStatus: 'active', automationsPausedAt: null });
+    expect(await i9Seeded()).toBe(0);
   });
 
-  test('updateWorkspace on a split-pending workspace renames only its project', async () => {
-    await updateWorkspace(asWorkspaceId(LEGACY_P1), { name: 'Synthetic legacy store' });
-    expect(await projectName(LEGACY_P1)).toBe('Synthetic legacy store');
-    expect(await accountName(LEGACY_ACCOUNT)).toBe('Synthetic legacy');
+  test('closeWorkspace on a split_pending workspace archives its project row only', async () => {
+    expect(await closeWorkspace({ workspaceId: asWorkspaceId(LEGACY_P2), actorUserId: OWNER })).toEqual({ mode: 'archived_project' });
+    expect(await db.select().from(accountDeletionRequests).where(eq(accountDeletionRequests.accountId, LEGACY_ACCOUNT))).toEqual([]);
+    expect((await getWorkspace(LEGACY_P1))?.splitPending).toBe(false);
+    expect(await getWorkspace(LEGACY_P2)).toBeNull();
   });
 
-  test('updateWorkspace on an archived project is null and writes nothing', async () => {
-    expect(await updateWorkspace(asWorkspaceId(ARCHIVED_PROJECT), { name: 'Synthetic nope' })).toBeNull();
-    expect(await projectName(ARCHIVED_PROJECT)).toBe('Synthetic archived');
+  test('invariants I9, I10 and I12 hold after the scenarios above', async () => {
+    await db.insert(accountMemberships).values({ accountId: ONE_ACCOUNT, userId: OWNER });
+    const report = await checkWorkspaceInvariants({ accountIds: ACCOUNTS });
+    expect(report.I9).toMatchObject({ ok: true });
+    expect(report.I10).toMatchObject({ ok: true });
+    expect(report.I12).toMatchObject({ ok: true });
   });
 });
