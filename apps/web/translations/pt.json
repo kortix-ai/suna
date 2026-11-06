@@ -25054,7 +25054,7 @@
         "sent_to_agent": "enviou comentários a um agente"
       },
       "person": "Pessoa",
-      "deleteRootDescription": "O texto é removido para todos e a conversa fica somente leitura. Não é possível desfazer.",
+      "deleteRootDescription": "O texto é removido para todos, e a conversa sai da lista de comentários. Isso não pode ser desfeito.",
       "showPanel": "Mostrar comentários",
       "hidePanel": "Ocultar comentários",
       "panelTitle": "Comentários e atividade",
@@ -25097,7 +25097,14 @@
       "pagePinLabel": "Comentário {number}",
       "showPanelCount": "Mostrar comentários, {count} em aberto",
       "hidePanelCount": "Ocultar comentários, {count} em aberto",
-      "commentSelectionHint": "Comentar a seleção"
+      "commentSelectionHint": "Comentar a seleção",
+      "threadReopened": "Conversa reaberta",
+      "noCommentsReadOnlyHint": "Os comentários sobre este artefato aparecem aqui.",
+      "commentTooLong": "Um comentário pode ter até {max} caracteres. Remova {over}.",
+      "discardDrawingTitle": "Descartar este desenho?",
+      "discardDrawingHint": "Seus traços não estão salvos. Isso não pode ser desfeito.",
+      "discardDrawing": "Descartar",
+      "keepDrawing": "Continuar desenhando"
     },
     "moveTo": "Mover para espaço",
     "projectWide": "Todo o projeto",
@@ -25126,13 +25133,24 @@
       "writing": "{name} está escrevendo…"
     },
     "coedit": {
-      "offLarge": "A edição ao vivo está desativada: este documento tem mais de 1 MiB. As alterações são salvas enquanto você digita.",
-      "offLineEndings": "A edição ao vivo está desativada: este documento mistura finais de linha CRLF e LF. As alterações são salvas enquanto você digita.",
-      "offShape": "A edição ao vivo está desativada: o editor reescreveria parte do Markdown. As alterações são salvas enquanto você digita.",
+      "offLarge": "A edição ao vivo está desativada: este documento é grande demais. As alterações são salvas enquanto você digita.",
+      "offLineEndings": "A edição ao vivo está desativada: este documento mistura dois tipos de quebra de linha. As alterações são salvas enquanto você digita.",
+      "offShape": "A edição ao vivo está desativada: o editor não consegue manter parte deste documento exatamente como foi escrita. As alterações são salvas enquanto você digita.",
       "stoppedLarge": "A edição ao vivo parou: uma alteração era grande demais para compartilhar. As alterações são salvas enquanto você digita.",
       "stoppedFailed": "A edição ao vivo parou: a conexão falhou. As alterações são salvas enquanto você digita.",
-      "stoppedHistory": "A edição ao vivo parou: o histórico de edições deste documento é grande demais. As alterações são salvas enquanto você digita."
-    }
+      "stoppedHistory": "A edição ao vivo parou: o histórico de edições deste documento é grande demais. As alterações são salvas enquanto você digita.",
+      "offFailed": "A edição ao vivo está desativada: não foi possível conectar. As alterações são salvas enquanto você digita."
+    },
+    "conflictTitle": "Outra pessoa alterou este documento",
+    "conflictReloadTitle": "Carregar a versão mais recente?",
+    "conflictReloadHint": "Suas alterações desde o último salvamento são descartadas. Isso não pode ser desfeito.",
+    "docLoadError": "Não foi possível carregar este documento.",
+    "openError": "Não foi possível abrir este artefato.",
+    "viewOnly": "Somente leitura",
+    "viewingOldUndated": "Você está vendo uma versão anterior.",
+    "exportWaiting": "Salvando suas alterações e depois exportando…",
+    "exportBlocked": "Exportação interrompida: suas últimas alterações não estão salvas.",
+    "clearFilters": "Limpar filtros"
   },
   "emailConnect": {
     "homeTitle": "Onde a caixa fica",

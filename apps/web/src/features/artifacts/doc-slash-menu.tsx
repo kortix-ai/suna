@@ -118,6 +118,10 @@ function keyLabel(key: string, mac: boolean): string {
 /** First-frame guess of the full list's height, before it is measured. */
 const MENU_HEIGHT = 440;
 const GAP = 6;
+/** The least room kept between the menu and the window's edge. */
+const EDGE = 8;
+/** First-frame guess of the list's width (`w-64` at this app's 0.23rem spacing), before it is measured. */
+const MENU_WIDTH = 236;
 
 /**
  * The `/` menu: the block types in four groups with their shortcuts. Typing
@@ -140,6 +144,7 @@ export function SlashMenu({
   const [mac] = useState(isMac);
   const list = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(MENU_HEIGHT);
+  const [width, setWidth] = useState(MENU_WIDTH);
   const query = state.query.trim().toLowerCase();
   const groups = GROUPS.map((group) =>
     group.filter((item) => !query || `${t(item.labelKey)} ${item.aliases}`.toLowerCase().includes(query)),
@@ -178,16 +183,28 @@ export function SlashMenu({
     };
   });
 
-  // The list shows every row with no scroll, so placement uses its real height.
+  // Placement uses the list's full height (`scrollHeight`: a capped list still reports all rows).
   useLayoutEffect(() => {
-    if (list.current) setHeight(list.current.offsetHeight);
+    if (!list.current) return;
+    setHeight(list.current.scrollHeight);
+    setWidth(list.current.offsetWidth);
   }, [items.length]);
+  // ↑ ↓ past the visible rows of a capped list scroll the active row into view.
+  useLayoutEffect(() => {
+    list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
 
   if (!state.rect) return null;
-  const below = state.rect.bottom + GAP + height <= window.innerHeight;
+  // Below the caret when the whole list fits there, else on the roomier side, capped to the
+  // window with a scroll (a short window: 720 × 480 holds fewer rows than the list has). It never
+  // runs past the right edge either.
+  const roomBelow = window.innerHeight - state.rect.bottom - GAP - EDGE;
+  const roomAbove = state.rect.top - GAP - EDGE;
+  const below = height <= roomBelow || roomBelow >= roomAbove;
+  const left = Math.max(EDGE, Math.min(state.rect.left, window.innerWidth - width - EDGE));
   const style: React.CSSProperties = below
-    ? { top: state.rect.bottom + GAP, left: state.rect.left }
-    : { bottom: window.innerHeight - state.rect.top + GAP, left: state.rect.left };
+    ? { top: state.rect.bottom + GAP, left, maxHeight: Math.max(0, roomBelow) }
+    : { bottom: window.innerHeight - state.rect.top + GAP, left, maxHeight: Math.max(0, roomAbove) };
 
   // Each group's first row in the flat list, for the active highlight.
   const starts = groups.map((_, g) => groups.slice(0, g).reduce((n, group) => n + group.length, 0));
@@ -198,7 +215,7 @@ export function SlashMenu({
       aria-label={t('blockMenu')}
       style={style}
       onMouseDown={(e) => e.preventDefault()}
-      className={`${MENU_PANEL_STATIC} fixed z-50 w-64 overflow-hidden`}
+      className={`${MENU_PANEL_STATIC} fixed z-50 w-64 overflow-x-hidden overflow-y-auto overscroll-contain`}
     >
       {items.length === 0 ? (
         <p className="text-muted-foreground px-2 py-1.5 text-sm">{t('blockMenuEmpty')}</p>
