@@ -2152,7 +2152,7 @@ const catalog = {
     },
     "inbox": {
       "title": "Inbox",
-      "description": "Updates about the sessions, triggers, and artifacts that concern you, from every project.",
+      "description": "Updates about the sessions, triggers, and artifacts that concern you, from every workspace.",
       "unreadLabel": "Inbox: {count} unread",
       "unreadCount": "{count} unread",
       "markAllRead": "Mark all as read",
@@ -7859,16 +7859,16 @@ const catalog = {
       "session_cap": "It used all {max} sessions it may start.",
       "owner_lost": "Its agent session failed, and no session took over.",
       "storage": "Its folder in Files could not be read or written.",
-      "flag_off": "Goals is turned off for this project.",
+      "flag_off": "Goals is turned off for this workspace.",
       "setup": "Kortix is still setting it up."
     },
     "blockedNext": {
       "credits": "Add credits, then resume it.",
       "wake_cap": "It goes on by itself after midnight UTC.",
-      "session_cap": "Stop it, or ask a project admin to raise its session limit.",
+      "session_cap": "Stop it, or ask a workspace admin to raise its session limit.",
       "owner_lost": "Start it again to give it a new session.",
       "storage": "Check the folder in Files, then resume it.",
-      "flag_off": "Turn on Goals for this project, then resume it.",
+      "flag_off": "Turn on Goals for this workspace, then resume it.",
       "setup": "This finishes by itself within a minute."
     }
   },

@@ -2855,7 +2855,7 @@
       "action": "Add credits or pick a plan to run sessions here."
     },
     "costs": {
-      "billedElsewhere": "{amount} credits of this cost were billed to the workspace this project moved from."
+      "billedElsewhere": "{amount} credits of this cost were billed to the workspace it moved from."
     }
   },
   "ssoRequired": {
@@ -3427,7 +3427,7 @@
     },
     "inbox": {
       "title": "Inbox",
-      "description": "Updates about the sessions, triggers, and artifacts that concern you, from every project.",
+      "description": "Updates about the sessions, triggers, and artifacts that concern you, from every workspace.",
       "unreadLabel": "Inbox: {count} unread",
       "unreadCount": "{count} unread",
       "markAllRead": "Mark all as read",
@@ -11303,7 +11303,7 @@
       "text1bffac0197ca": "goes fullscreen, and",
       "text1c01c6630cab": "Icon: {value0}. Change it",
       "text1c049715ebdd": "- connectors: warehouse, metabase",
-      "text1c1a67e4558f": "Members will be able to sign in with a password alone. Any policy you set a second-factor condition on individually still enforces it — only the account-wide rule is removed.",
+      "text1c1a67e4558f": "Members will be able to sign in with a password alone. Any policy you set a second-factor condition on individually still enforces it — only the workspace-wide rule is removed.",
       "text1c22fac2a9fd": "Shared with the workspace",
       "text1c27f2b12cec": "On the app’s \"Sign On\" tab, in the \"Metadata details\" section, locate the \"Metadata URL\" and click \"Copy\". Paste it below to continue.",
       "text1c2fb82a41c4": "Could not delete that app",
@@ -24463,7 +24463,7 @@
     "restartedToast": "Goal started again",
     "restartError": "Could not start the goal again. Try again.",
     "noAccess": "You do not have access to this goal.",
-    "noAccessHint": "Ask the person it is for, or a project admin, to share it with you.",
+    "noAccessHint": "Ask the person it is for, or a workspace admin, to share it with you.",
     "notFoundHint": "It was deleted, or the link is wrong.",
     "chooseGoal": "More than one goal has this name. Pick one.",
     "goalLoadError": "Could not load this goal. Try again.",
@@ -24476,16 +24476,16 @@
       "session_cap": "It used all {max} sessions it may start.",
       "owner_lost": "Its agent session failed, and no session took over.",
       "storage": "Its folder in Files could not be read or written.",
-      "flag_off": "Goals is turned off for this project.",
+      "flag_off": "Goals is turned off for this workspace.",
       "setup": "Kortix is still setting it up."
     },
     "blockedNext": {
       "credits": "Add credits, then resume it.",
       "wake_cap": "It goes on by itself after midnight UTC.",
-      "session_cap": "Stop it, or ask a project admin to raise its session limit.",
+      "session_cap": "Stop it, or ask a workspace admin to raise its session limit.",
       "owner_lost": "Start it again to give it a new session.",
       "storage": "Check the folder in Files, then resume it.",
-      "flag_off": "Turn on Goals for this project, then resume it.",
+      "flag_off": "Turn on Goals for this workspace, then resume it.",
       "setup": "This finishes by itself within a minute."
     },
     "legacyUnverifiedTitle": "Not verified by Kortix",

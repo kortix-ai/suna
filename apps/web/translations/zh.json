@@ -2855,7 +2855,7 @@
       "action": "添加积分或选择套餐即可在此运行会话。"
     },
     "costs": {
-      "billedElsewhere": "此费用中的 {amount} 积分已计入此项目迁出前所在的工作区。"
+      "billedElsewhere": "此费用中的 {amount} 积分已计入其迁出前所在的工作区。"
     }
   },
   "ssoRequired": {
@@ -3382,7 +3382,7 @@
     },
     "inbox": {
       "title": "收件箱",
-      "description": "来自所有项目、与你相关的会话、触发器和工件的动态。",
+      "description": "来自所有工作区、与你相关的会话、触发器和工件的动态。",
       "unreadLabel": "收件箱：{count} 条未读",
       "unreadCount": "{count} 条未读",
       "markAllRead": "全部标记为已读",
@@ -11258,7 +11258,7 @@
       "text1bffac0197ca": "进入全屏，按",
       "text1c01c6630cab": "图标：{value0}。改变它",
       "text1c049715ebdd": "- 连接器: warehouse, metabase",
-      "text1c1a67e4558f": "成员将可以仅使用密码登录。你单独设置为要求第二重身份验证因素的策略仍会继续执行 — 仅移除全局账户规则。",
+      "text1c1a67e4558f": "成员将可以仅使用密码登录。你单独设置为要求第二重身份验证因素的策略仍会继续执行 — 仅移除整个工作区的规则。",
       "text1c22fac2a9fd": "已与工作区共享",
       "text1c27f2b12cec": "在应用的“Sign On”选项卡的“Metadata details”部分中，找到“Metadata URL”并点击“Copy”。将其粘贴到下方以继续。",
       "text1c2fb82a41c4": "无法删除该应用",
@@ -24463,7 +24463,7 @@
     "restartedToast": "目标已重新开始",
     "restartError": "无法重新开始目标。请重试。",
     "noAccess": "你无权访问此目标。",
-    "noAccessHint": "请负责人或项目管理员与你共享。",
+    "noAccessHint": "请负责人或工作区管理员与你共享。",
     "notFoundHint": "它已被删除，或链接有误。",
     "chooseGoal": "有多个目标使用此名称。请选择一个。",
     "goalLoadError": "无法加载此目标。请重试。",
@@ -24476,16 +24476,16 @@
       "session_cap": "可启动的 {max} 个会话已全部用完。",
       "owner_lost": "其智能体会话失败，且没有会话接手。",
       "storage": "无法读写其在文件中的文件夹。",
-      "flag_off": "此项目已关闭目标功能。",
+      "flag_off": "此工作区已关闭目标功能。",
       "setup": "Kortix 仍在设置它。"
     },
     "blockedNext": {
       "credits": "添加积分后恢复它。",
       "wake_cap": "UTC 午夜后它会自动继续。",
-      "session_cap": "停止它，或请项目管理员提高会话上限。",
+      "session_cap": "停止它，或请工作区管理员提高会话上限。",
       "owner_lost": "重新启动它以分配新会话。",
       "storage": "检查文件中的文件夹，然后恢复它。",
-      "flag_off": "为此项目开启目标功能，然后恢复它。",
+      "flag_off": "为此工作区开启目标功能，然后恢复它。",
       "setup": "一分钟内会自动完成。"
     },
     "legacyUnverifiedTitle": "未经 Kortix 验证",

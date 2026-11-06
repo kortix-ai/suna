@@ -20,7 +20,7 @@ describe('the workspace alias map is the API catalog', () => {
   test('one workspace name for every catalog action, and nothing else', () => {
     expect(new Set(Object.keys(WORKSPACE_ACTION_BY_LEGACY))).toEqual(new Set(VALID_ACTIONS));
     expect(Object.keys(ACCOUNT_ACTIONS)).toHaveLength(31);
-    expect(Object.keys(PROJECT_ACTIONS)).toHaveLength(54);
+    expect(Object.keys(PROJECT_ACTIONS)).toHaveLength(53); // 54 → 53: project.artifact.comment was removed (2026-11-06)
   });
 
   test('both names are known and classify to the same scope', () => {

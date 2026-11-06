@@ -2855,7 +2855,7 @@
       "action": "Adicione créditos ou escolha um plano para executar sessões aqui."
     },
     "costs": {
-      "billedElsewhere": "{amount} créditos deste custo foram cobrados do espaço de trabalho de onde este projeto foi movido."
+      "billedElsewhere": "{amount} créditos deste custo foram cobrados do espaço de trabalho de onde ele foi movido."
     }
   },
   "ssoRequired": {
@@ -3382,7 +3382,7 @@
     },
     "inbox": {
       "title": "Caixa de entrada",
-      "description": "Atualizações das sessões, gatilhos e artefatos que envolvem você, de todos os projetos.",
+      "description": "Atualizações das sessões, gatilhos e artefatos que envolvem você, de todos os espaços de trabalho.",
       "unreadLabel": "Caixa de entrada: {count} não lidas",
       "unreadCount": "{count} não lidas",
       "markAllRead": "Marcar tudo como lido",
@@ -11258,7 +11258,7 @@
       "text1bffac0197ca": "entra em tela cheia, e",
       "text1c01c6630cab": "Ícone: {value0}. Mude",
       "text1c049715ebdd": "- conectores: warehouse, metabase",
-      "text1c1a67e4558f": "Os membros poderão entrar usando apenas uma senha. Qualquer política em que você tenha definido individualmente uma condição de segundo fator continuará exigindo-o — apenas a regra para toda a conta será removida.",
+      "text1c1a67e4558f": "Os membros poderão entrar usando apenas uma senha. Qualquer política em que você tenha definido individualmente uma condição de segundo fator continuará exigindo-o — apenas a regra para todo o espaço de trabalho será removida.",
       "text1c22fac2a9fd": "Compartilhada com o espaço de trabalho",
       "text1c27f2b12cec": "Na aba \"Sign On\" do app, na seção \"Metadata details\", localize a \"Metadata URL\" e clique em \"Copy\". Cole-a abaixo para continuar.",
       "text1c2fb82a41c4": "Não foi possível excluir esse app",
@@ -24463,7 +24463,7 @@
     "restartedToast": "Meta reiniciada",
     "restartError": "Não foi possível reiniciar a meta. Tente novamente.",
     "noAccess": "Você não tem acesso a esta meta.",
-    "noAccessHint": "Peça à pessoa a quem ela se destina, ou a um administrador do projeto, para compartilhá-la com você.",
+    "noAccessHint": "Peça à pessoa a quem ela se destina, ou a um administrador do espaço de trabalho, para compartilhá-la com você.",
     "notFoundHint": "Ela foi excluída, ou o link está errado.",
     "chooseGoal": "Mais de uma meta tem este nome. Escolha uma.",
     "goalLoadError": "Não foi possível carregar esta meta. Tente de novo.",
@@ -24476,16 +24476,16 @@
       "session_cap": "Ela usou as {max} sessões que pode iniciar.",
       "owner_lost": "A sessão do agente falhou e nenhuma sessão assumiu.",
       "storage": "Não foi possível ler ou gravar a pasta dela em Arquivos.",
-      "flag_off": "Metas estão desativadas neste projeto.",
+      "flag_off": "Metas estão desativadas neste espaço de trabalho.",
       "setup": "O Kortix ainda está configurando a meta."
     },
     "blockedNext": {
       "credits": "Adicione créditos e retome a meta.",
       "wake_cap": "Ela continua sozinha depois da meia-noite UTC.",
-      "session_cap": "Pare a meta, ou peça a um administrador do projeto para aumentar o limite de sessões.",
+      "session_cap": "Pare a meta, ou peça a um administrador do espaço de trabalho para aumentar o limite de sessões.",
       "owner_lost": "Inicie de novo para dar a ela uma nova sessão.",
       "storage": "Verifique a pasta em Arquivos e retome a meta.",
-      "flag_off": "Ative Metas neste projeto e retome a meta.",
+      "flag_off": "Ative Metas neste espaço de trabalho e retome a meta.",
       "setup": "Isso termina sozinho em menos de um minuto."
     },
     "legacyUnverifiedTitle": "Não verificada pelo Kortix",

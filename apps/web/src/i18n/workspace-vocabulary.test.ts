@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import en from '../../translations/en.json';
 
 // "Workspace" is the one container noun (brand kit decision D40, 2026-11-05):
@@ -98,4 +101,43 @@ describe('English copy says "workspace", not "project"', () => {
     expect(withoutCode('Back to projects')).toMatch(PROJECT_WORD);
     expect(withoutCode('Create a project')).toMatch(PROJECT_WORD);
   });
+});
+
+/**
+ * Each locale's word for the old container. A value whose English says
+ * "workspace" (and not "project") must not say it: a translation that kept
+ * the old word after its English changed is the drift this catches.
+ */
+const LOCALE_PROJECT_WORD: Readonly<Record<string, RegExp>> = {
+  de: /\bprojekt/i,
+  es: /\bproyectos?\b/i,
+  fr: /\bprojets?\b/i,
+  it: /\bprogett[oi]\b/i,
+  pt: /\bprojetos?\b/i,
+  ja: /プロジェクト/,
+  zh: /项目/,
+  sr: /пројек|\bprojek/i,
+};
+
+const WORKSPACE_WORD = /\bworkspaces?\b/i;
+
+function catalog(locale: string): Map<string, string> {
+  const raw = readFileSync(join(import.meta.dir, '../../translations', `${locale}.json`), 'utf8');
+  return flatten(JSON.parse(raw), '', new Map());
+}
+
+describe('every locale follows the English workspace noun', () => {
+  for (const [locale, word] of Object.entries(LOCALE_PROJECT_WORD)) {
+    test(`${locale}: no value keeps the old container word where English says "workspace"`, () => {
+      const offenders = [...catalog(locale)]
+        .filter(([key, value]) => {
+          const source = english.get(key);
+          if (source === undefined || key in ALLOWED) return false;
+          const plain = withoutCode(source);
+          return WORKSPACE_WORD.test(plain) && !PROJECT_WORD.test(plain) && word.test(withoutCode(value));
+        })
+        .map(([key, value]) => `${key} = ${value}`);
+      expect(offenders).toEqual([]);
+    });
+  }
 });

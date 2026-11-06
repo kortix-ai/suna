@@ -281,6 +281,9 @@ function existingProjectRow() {
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
+    // `workspaceFactsOf` (iam/workspace-facts.ts) reads the account's shape in
+    // one raw query: no active project and no open deletion request.
+    execute: async () => [{ active_projects: [], deletion_open: false }],
     select: (projection?: any) => ({
       from: (table: unknown) => ({
         where: () => {

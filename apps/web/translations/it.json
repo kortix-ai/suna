@@ -2855,7 +2855,7 @@
       "action": "Aggiungi crediti o scegli un piano per avviare sessioni qui."
     },
     "costs": {
-      "billedElsewhere": "{amount} crediti di questo costo sono stati addebitati al workspace da cui è stato spostato questo progetto."
+      "billedElsewhere": "{amount} crediti di questo costo sono stati addebitati al workspace da cui è stato spostato."
     }
   },
   "ssoRequired": {
@@ -3382,7 +3382,7 @@
     },
     "inbox": {
       "title": "Posta in arrivo",
-      "description": "Aggiornamenti su sessioni, trigger e artefatti che ti riguardano, da tutti i progetti.",
+      "description": "Aggiornamenti su sessioni, trigger e artefatti che ti riguardano, da tutti i workspace.",
       "unreadLabel": "Posta in arrivo: {count} non lette",
       "unreadCount": "{count} non lette",
       "markAllRead": "Segna tutto come letto",
@@ -11258,7 +11258,7 @@
       "text1bffac0197ca": "passa a schermo intero e",
       "text1c01c6630cab": "Icona: {value0}. Cambialo",
       "text1c049715ebdd": "- connettori: warehouse, metabase",
-      "text1c1a67e4558f": "I membri potranno accedere usando solo una password. Qualsiasi criterio a cui hai applicato individualmente una condizione sul secondo fattore continuerà a imporla: verrà rimossa solo la regola per l’intero account.",
+      "text1c1a67e4558f": "I membri potranno accedere usando solo una password. Qualsiasi criterio a cui hai applicato individualmente una condizione sul secondo fattore continuerà a imporla: verrà rimossa solo la regola per l’intero workspace.",
       "text1c22fac2a9fd": "Condivisa con il workspace",
       "text1c27f2b12cec": "Nella scheda \"Sign On\" dell’app, nella sezione \"Metadata details\", individua il \"Metadata URL\" e fai clic su \"Copy\". Incollalo qui sotto per continuare.",
       "text1c2fb82a41c4": "Impossibile eliminare l’app",
@@ -24463,7 +24463,7 @@
     "restartedToast": "Obiettivo riavviato",
     "restartError": "Impossibile riavviare l'obiettivo. Riprova.",
     "noAccess": "Non hai accesso a questo obiettivo.",
-    "noAccessHint": "Chiedi alla persona a cui è destinato, o a un amministratore del progetto, di condividerlo con te.",
+    "noAccessHint": "Chiedi alla persona a cui è destinato, o a un amministratore del workspace, di condividerlo con te.",
     "notFoundHint": "È stato eliminato, oppure il link è errato.",
     "chooseGoal": "Più obiettivi hanno questo nome. Scegline uno.",
     "goalLoadError": "Impossibile caricare questo obiettivo. Riprova.",
@@ -24476,16 +24476,16 @@
       "session_cap": "Ha usato tutte le {max} sessioni che può avviare.",
       "owner_lost": "La sua sessione agente è fallita e nessuna sessione è subentrata.",
       "storage": "Non è stato possibile leggere o scrivere la sua cartella in File.",
-      "flag_off": "Gli obiettivi sono disattivati per questo progetto.",
+      "flag_off": "Gli obiettivi sono disattivati per questo workspace.",
       "setup": "Kortix lo sta ancora configurando."
     },
     "blockedNext": {
       "credits": "Aggiungi crediti, poi riprendilo.",
       "wake_cap": "Riprende da solo dopo la mezzanotte UTC.",
-      "session_cap": "Fermalo, o chiedi a un amministratore del progetto di aumentare il limite di sessioni.",
+      "session_cap": "Fermalo, o chiedi a un amministratore del workspace di aumentare il limite di sessioni.",
       "owner_lost": "Avvialo di nuovo per dargli una nuova sessione.",
       "storage": "Controlla la cartella in File, poi riprendilo.",
-      "flag_off": "Attiva gli obiettivi per questo progetto, poi riprendilo.",
+      "flag_off": "Attiva gli obiettivi per questo workspace, poi riprendilo.",
       "setup": "Si completa da solo entro un minuto."
     },
     "legacyUnverifiedTitle": "Non verificato da Kortix",

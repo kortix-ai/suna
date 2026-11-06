@@ -12,7 +12,7 @@ type Param = { name: string; in: string };
 type Doc = { paths: Record<string, Record<string, { parameters?: Param[] } | Param[]>> };
 
 const served = (await (await app.request('http://localhost/v1/openapi.json')).json()) as Doc;
-const CANONICAL = /^\/(v1\/workspaces|v1\/me|v1\/invites|v1\/connectors\/workspaces|scim\/v2\/workspaces)(\/|$)/;
+const CANONICAL = /^\/(v1\/workspaces|v1\/me|v1\/invites|v1\/connectors\/workspaces|v1\/webhooks\/workspaces|scim\/v2\/workspaces)(\/|$)/;
 
 describe('legacy path parameter names in /v1/openapi.json', () => {
   test('no legacy path publishes {workspaceId}', () => {

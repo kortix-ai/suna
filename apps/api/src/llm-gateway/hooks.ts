@@ -23,9 +23,7 @@ import {
 import { validateAccountToken } from '../repositories/account-tokens';
 import { tokenRefusalReason } from '../shared/session-lease-refusal';
 import { keyScopeAllows } from '../iam/key-scope';
-
-/** The permission a workspace key's scope must hold to call a model. */
-const GATEWAY_KEY_ACTION = 'project.session.start';
+import { PROJECT_ACTIONS } from '../iam/actions';
 import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
@@ -35,6 +33,9 @@ import { validateGatewayKey } from './gateway-keys';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { fallbackSwitchOf, switchSessionToFallback } from './resolution/session-model-fallback';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
+
+/** The permission a workspace key's scope must hold to call a model. */
+const GATEWAY_KEY_ACTION = PROJECT_ACTIONS.PROJECT_SESSION_START;
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
 //

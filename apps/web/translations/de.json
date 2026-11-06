@@ -2855,7 +2855,7 @@
       "action": "Füge Credits hinzu oder wähle einen Plan, um hier Sitzungen zu starten."
     },
     "costs": {
-      "billedElsewhere": "{amount} Credits dieser Kosten wurden dem Workspace berechnet, aus dem dieses Projekt verschoben wurde."
+      "billedElsewhere": "{amount} Credits dieser Kosten wurden dem Workspace berechnet, aus dem sie verschoben wurden."
     }
   },
   "ssoRequired": {
@@ -3382,7 +3382,7 @@
     },
     "inbox": {
       "title": "Posteingang",
-      "description": "Neuigkeiten zu den Sitzungen, Triggern und Artefakten, die dich betreffen, aus allen Projekten.",
+      "description": "Neuigkeiten zu den Sitzungen, Triggern und Artefakten, die dich betreffen, aus allen Workspaces.",
       "unreadLabel": "Posteingang: {count} ungelesen",
       "unreadCount": "{count} ungelesen",
       "markAllRead": "Alle als gelesen markieren",
@@ -11258,7 +11258,7 @@
       "text1bffac0197ca": "wechselt in den Vollbildmodus und",
       "text1c01c6630cab": "Symbol: {value0}. Ändere es",
       "text1c049715ebdd": "- Anschlüsse: warehouse, metabase",
-      "text1c1a67e4558f": "Mitglieder können sich nur mit einem Passwort anmelden. Jede Richtlinie, für die du individuell eine Bedingung für den zweiten Faktor festgelegt hast, bleibt weiterhin wirksam — nur die kontoweite Regel wird entfernt.",
+      "text1c1a67e4558f": "Mitglieder können sich nur mit einem Passwort anmelden. Jede Richtlinie, für die du individuell eine Bedingung für den zweiten Faktor festgelegt hast, bleibt weiterhin wirksam — nur die workspaceweite Regel wird entfernt.",
       "text1c22fac2a9fd": "Mit dem Workspace geteilt",
       "text1c27f2b12cec": "Suche im Tab „Sign On“ der App im Bereich „Metadata details“ die „Metadata URL“ und klicke auf „Copy“. Füge sie unten ein, um fortzufahren.",
       "text1c2fb82a41c4": "Diese App konnte nicht gelöscht werden",
@@ -24463,7 +24463,7 @@
     "restartedToast": "Ziel erneut gestartet",
     "restartError": "Das Ziel konnte nicht erneut gestartet werden. Versuche es noch einmal.",
     "noAccess": "Du hast keinen Zugriff auf dieses Ziel.",
-    "noAccessHint": "Bitte die Person, für die es ist, oder einen Projektadmin, es mit dir zu teilen.",
+    "noAccessHint": "Bitte die Person, für die es ist, oder einen Workspace-Admin, es mit dir zu teilen.",
     "notFoundHint": "Es wurde gelöscht, oder der Link ist falsch.",
     "chooseGoal": "Mehrere Ziele haben diesen Namen. Wähle eines aus.",
     "goalLoadError": "Dieses Ziel konnte nicht geladen werden. Versuche es erneut.",
@@ -24476,16 +24476,16 @@
       "session_cap": "Alle {max} Sitzungen, die es starten darf, sind verbraucht.",
       "owner_lost": "Seine Agent-Sitzung ist fehlgeschlagen, und keine Sitzung hat übernommen.",
       "storage": "Sein Ordner in Dateien konnte nicht gelesen oder geschrieben werden.",
-      "flag_off": "Ziele sind für dieses Projekt ausgeschaltet.",
+      "flag_off": "Ziele sind für diesen Workspace ausgeschaltet.",
       "setup": "Kortix richtet es noch ein."
     },
     "blockedNext": {
       "credits": "Lade Credits auf und setze es dann fort.",
       "wake_cap": "Es geht nach Mitternacht UTC von selbst weiter.",
-      "session_cap": "Stoppe es, oder bitte einen Projektadmin, das Sitzungslimit zu erhöhen.",
+      "session_cap": "Stoppe es, oder bitte einen Workspace-Admin, das Sitzungslimit zu erhöhen.",
       "owner_lost": "Starte es erneut, um ihm eine neue Sitzung zu geben.",
       "storage": "Prüfe den Ordner in Dateien und setze es dann fort.",
-      "flag_off": "Schalte Ziele für dieses Projekt ein und setze es dann fort.",
+      "flag_off": "Schalte Ziele für diesen Workspace ein und setze es dann fort.",
       "setup": "Das erledigt sich innerhalb einer Minute von selbst."
     },
     "legacyUnverifiedTitle": "Nicht von Kortix geprüft",

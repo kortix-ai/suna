@@ -2855,7 +2855,7 @@
       "action": "Додај кредите или изабери план да би овде покретао сесије."
     },
     "costs": {
-      "billedElsewhere": "{amount} кредита овог трошка наплаћено је радном простору из ког је овај пројекат премештен."
+      "billedElsewhere": "{amount} кредита овог трошка наплаћено је радном простору из ког је премештен."
     }
   },
   "ssoRequired": {
@@ -3382,7 +3382,7 @@
     },
     "inbox": {
       "title": "Пријемно сандуче",
-      "description": "Новости о сесијама, окидачима и артефактима који вас се тичу, из свих пројеката.",
+      "description": "Новости о сесијама, окидачима и артефактима који вас се тичу, из свих радних простора.",
       "unreadLabel": "Пријемно сандуче: непрочитаних {count}",
       "unreadCount": "непрочитаних {count}",
       "markAllRead": "Означи све као прочитано",
@@ -11258,7 +11258,7 @@
       "text1bffac0197ca": "отвара цео екран, а",
       "text1c01c6630cab": "Икона: {value0}. Промени то",
       "text1c049715ebdd": "- конектори: warehouse, metabase",
-      "text1c1a67e4558f": "Чланови ће моћи да се пријаве само лозинком. Свака смерница за коју сте појединачно поставили услов за други фактор и даље ће га захтевати — уклања се само правило за цео налог.",
+      "text1c1a67e4558f": "Чланови ће моћи да се пријаве само лозинком. Свака смерница за коју сте појединачно поставили услов за други фактор и даље ће га захтевати — уклања се само правило за цео радни простор.",
       "text1c22fac2a9fd": "Дели се са радним простором",
       "text1c27f2b12cec": "На картици „Sign On“ апликације, у одељку „Metadata details“, пронађите „Metadata URL“ и кликните на „Copy“. Налепите га испод да бисте наставили.",
       "text1c2fb82a41c4": "Та апликација није могла да се обрише",
@@ -24463,7 +24463,7 @@
     "restartedToast": "Cilj je ponovo pokrenut",
     "restartError": "Nije moguće ponovo pokrenuti cilj. Pokušaj ponovo.",
     "noAccess": "Nemaš pristup ovom cilju.",
-    "noAccessHint": "Zamoli osobu kojoj je namenjen, ili administratora projekta, da ga podeli s tobom.",
+    "noAccessHint": "Замоли особу којој је намењен, или администратора радног простора, да га подели с тобом.",
     "notFoundHint": "Obrisan je, ili je link pogrešan.",
     "chooseGoal": "Više ciljeva ima ovo ime. Izaberi jedan.",
     "goalLoadError": "Cilj nije učitan. Pokušaj ponovo.",
@@ -24476,16 +24476,16 @@
       "session_cap": "Iskoristio je svih {max} sesija koje sme da pokrene.",
       "owner_lost": "Njegova sesija agenta nije uspela i nijedna sesija je nije preuzela.",
       "storage": "Njegova fascikla u Fajlovima nije mogla da se čita ili upisuje.",
-      "flag_off": "Ciljevi su isključeni za ovaj projekat.",
+      "flag_off": "Циљеви су искључени за овај радни простор.",
       "setup": "Kortix ga još podešava."
     },
     "blockedNext": {
       "credits": "Dodaj kredite, pa ga nastavi.",
       "wake_cap": "Nastavlja sam posle ponoći UTC.",
-      "session_cap": "Zaustavi ga, ili zamoli administratora projekta da poveća ograničenje sesija.",
+      "session_cap": "Заустави га, или замоли администратора радног простора да повећа ограничење сесија.",
       "owner_lost": "Pokreni ga ponovo da dobije novu sesiju.",
       "storage": "Proveri fasciklu u Fajlovima, pa ga nastavi.",
-      "flag_off": "Uključi Ciljeve za ovaj projekat, pa ga nastavi.",
+      "flag_off": "Укључи Циљеве за овај радни простор, па га настави.",
       "setup": "Ovo se završava samo za manje od minuta."
     },
     "legacyUnverifiedTitle": "Kortix nije proverio",

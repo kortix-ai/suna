@@ -2855,7 +2855,7 @@
       "action": "Ajoutez des crédits ou choisissez un forfait pour lancer des sessions ici."
     },
     "costs": {
-      "billedElsewhere": "{amount} crédits de ce coût ont été facturés à l’espace de travail d’où ce projet a été déplacé."
+      "billedElsewhere": "{amount} crédits de ce coût ont été facturés à l’espace de travail d’où il a été déplacé."
     }
   },
   "ssoRequired": {
@@ -3382,7 +3382,7 @@
     },
     "inbox": {
       "title": "Boîte de réception",
-      "description": "Les nouvelles des sessions, déclencheurs et artefacts qui vous concernent, dans tous les projets.",
+      "description": "Les nouvelles des sessions, déclencheurs et artefacts qui vous concernent, dans tous les espaces de travail.",
       "unreadLabel": "Boîte de réception : {count} non lues",
       "unreadCount": "{count} non lues",
       "markAllRead": "Tout marquer comme lu",
@@ -11258,7 +11258,7 @@
       "text1bffac0197ca": "passe en plein écran et",
       "text1c01c6630cab": "Icône : {value0}. Changez-le",
       "text1c049715ebdd": "- connecteurs: warehouse, metabase",
-      "text1c1a67e4558f": "Les membres pourront se connecter avec leur seul mot de passe. Toute règle à laquelle vous avez appliqué individuellement une condition de second facteur continuera de l’imposer — seule la règle applicable à tout le compte est supprimée.",
+      "text1c1a67e4558f": "Les membres pourront se connecter avec leur seul mot de passe. Toute règle à laquelle vous avez appliqué individuellement une condition de second facteur continuera de l’imposer — seule la règle applicable à tout l’espace de travail est supprimée.",
       "text1c22fac2a9fd": "Partagée avec l’espace de travail",
       "text1c27f2b12cec": "Dans l’onglet « Sign On » de l’application, dans la section « Metadata details », repérez « Metadata URL » et cliquez sur « Copy ». Collez-la ci-dessous pour continuer.",
       "text1c2fb82a41c4": "Impossible de supprimer cette application",
@@ -24463,7 +24463,7 @@
     "restartedToast": "Objectif relancé",
     "restartError": "Impossible de relancer l'objectif. Réessayez.",
     "noAccess": "Vous n'avez pas accès à cet objectif.",
-    "noAccessHint": "Demandez à la personne concernée, ou à un administrateur du projet, de le partager avec vous.",
+    "noAccessHint": "Demandez à la personne concernée, ou à un administrateur de l’espace de travail, de le partager avec vous.",
     "notFoundHint": "Il a été supprimé, ou le lien est incorrect.",
     "chooseGoal": "Plusieurs objectifs portent ce nom. Choisissez-en un.",
     "goalLoadError": "Impossible de charger cet objectif. Réessayez.",
@@ -24476,16 +24476,16 @@
       "session_cap": "Il a utilisé les {max} sessions qu'il peut démarrer.",
       "owner_lost": "Sa session d'agent a échoué et aucune session n'a pris le relais.",
       "storage": "Son dossier dans Fichiers n'a pas pu être lu ou écrit.",
-      "flag_off": "Les objectifs sont désactivés pour ce projet.",
+      "flag_off": "Les objectifs sont désactivés pour cet espace de travail.",
       "setup": "Kortix est encore en train de le configurer."
     },
     "blockedNext": {
       "credits": "Ajoutez des crédits, puis reprenez-le.",
       "wake_cap": "Il reprend seul après minuit UTC.",
-      "session_cap": "Arrêtez-le, ou demandez à un administrateur du projet d'augmenter sa limite de sessions.",
+      "session_cap": "Arrêtez-le, ou demandez à un administrateur de l’espace de travail d’augmenter sa limite de sessions.",
       "owner_lost": "Relancez-le pour lui donner une nouvelle session.",
       "storage": "Vérifiez le dossier dans Fichiers, puis reprenez-le.",
-      "flag_off": "Activez les objectifs pour ce projet, puis reprenez-le.",
+      "flag_off": "Activez les objectifs pour cet espace de travail, puis reprenez-le.",
       "setup": "Cela se termine seul en moins d'une minute."
     },
     "legacyUnverifiedTitle": "Non vérifié par Kortix",
