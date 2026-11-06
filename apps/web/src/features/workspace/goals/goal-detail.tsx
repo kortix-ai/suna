@@ -73,7 +73,7 @@ import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 
 /**
- * /projects/[id]/goals/[scope]/[slug] — one goal's home, in two columns.
+ * /workspaces/[id]/goals/[scope]/[slug] — one goal's home, in two columns.
  *
  * The main column reads top to bottom: the outcome, where it stands (or the
  * question it waits on, answered in place), its context, the done criteria

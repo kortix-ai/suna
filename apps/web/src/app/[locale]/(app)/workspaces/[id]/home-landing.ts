@@ -1,5 +1,5 @@
 /**
- * Where `/projects/<id>` lands. One answer for both of the page's navigations
+ * Where `/workspaces/<id>` lands. One answer for both of the page's navigations
  * (the `chat` redirect and the `?q=` strip), so they cannot race.
  *
  * - `wait`: draw nothing and navigate nowhere yet (the flag is loading).

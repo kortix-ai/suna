@@ -7,7 +7,7 @@
  *
  * Routing:
  *
- *   - Plain left-click on a `/projects/[id]/sessions/[sessionId]` page →
+ *   - Plain left-click on a `/workspaces/[id]/sessions/[sessionId]` page →
  *     populate that session's preview tab (`session-preview:{sessionId}`
  *     in `useTabStore`), flip the side panel to Browser view, and let
  *     `BrowserPanel` render the iframe through the proxy.

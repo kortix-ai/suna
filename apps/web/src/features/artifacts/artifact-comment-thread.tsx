@@ -346,7 +346,7 @@ export function ArtifactCommentThreadView({
             {author.kind === 'session' ? (
               <Link
                 className="text-foreground min-w-0 truncate text-sm font-medium hover:underline"
-                href={`/projects/${projectId}/sessions/${author.session_id}`}
+                href={`/workspaces/${projectId}/sessions/${author.session_id}`}
               >
                 {name}
               </Link>
@@ -526,7 +526,7 @@ export function ArtifactCommentThreadView({
               <span aria-hidden>·</span>
               <Link
                 className="text-foreground shrink-0 underline-offset-2 hover:underline"
-                href={`/projects/${projectId}/sessions/${thread.sent_session_id}`}
+                href={`/workspaces/${projectId}/sessions/${thread.sent_session_id}`}
               >
                 {t('openSession')}
               </Link>

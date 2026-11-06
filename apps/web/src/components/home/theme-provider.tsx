@@ -13,7 +13,7 @@ import * as React from 'react';
 /**
  * Mirrors the stored light and dark palettes onto `<html>` as
  * `data-light-theme` / `data-dark-theme` while a themed route (/new,
- * /projects/**, /settings) is showing, and clears them on every other page.
+ * /workspaces/**, /settings) is showing, and clears them on every other page.
  * `INTERFACE_THEME_INIT_SCRIPT` covers the first paint of a page load; this
  * covers client-side navigation and a new pick. A layout effect, so the
  * change lands in the same frame as the route that caused it.

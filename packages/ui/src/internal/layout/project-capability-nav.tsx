@@ -49,7 +49,7 @@ export function sortCustomizeAgents<T extends Pick<Agent, 'name'> & { hidden?: b
 /** Whether the pathname is a Project admin (Settings) page. The locale prefix
  *  the host may not strip is tolerated. */
 export function isProjectAdminPath(pathname: string | null | undefined): boolean {
-  return !!pathname && /\/projects\/[^/]+\/admin(?:[/?#]|$)/.test(pathname);
+  return !!pathname && /\/(?:workspaces|projects)\/[^/]+\/admin(?:[/?#]|$)/.test(pathname);
 }
 
 /** A row's glyph in a 20px box (literal px, as the sidebar's agent marks), so

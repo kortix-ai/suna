@@ -418,14 +418,14 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'navigate',
     // Static registry entry — no user id to resolve the latest project with,
-    // so this is the id-free landing door, never the removed `/projects`
+    // so this is the id-free landing door, never the removed `/workspaces`
     // list. Selecting the row normally opens the in-palette switcher
     // (`SUBMENU_PAGE_BY_ID` in command-palette.tsx); this href is the routed
     // fallback if that map ever loses the id.
     href: PROJECT_LANDING_PATH,
     shortcut: 'Ctrl+O',
     // `project`/`projects` stay in the bag deliberately. It is the word the
-    // product used until recently, the word the URL still uses
+    // product used until recently, the word the URL used until 2026-11-06
     // (`/projects/<id>`), and the word anyone arriving from the API or the
     // CLI will type. Dropping it would make the rename cost users a search.
     keywords: 'switch workspace workspaces project projects change move open all list',
@@ -433,7 +433,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'nav-workspace-settings',
     // The switcher's bottom action: the one settings surface per workspace
-    // (`/projects/<id>/admin`), which opens on the first section the caller
+    // (`/workspaces/<id>/admin`), which opens on the first section the caller
     // may see. It replaced the "Accounts" switcher row: a workspace is one
     // account and its project, so there is no account to switch to.
     label: 'Workspace settings',
@@ -441,7 +441,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin',
+    href: '/workspaces/{projectId}/admin',
     requiresProject: true,
     keywords: 'workspace settings organizations teams manage',
   },
@@ -452,11 +452,11 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // `/projects/<id>` — the workspace's own landing page (`ProjectHome`), the
-    // composer plus the setup tiles. Every OTHER page under `/projects/<id>`
+    // `/workspaces/<id>` — the workspace's own landing page (`ProjectHome`), the
+    // composer plus the setup tiles. Every OTHER page under `/workspaces/<id>`
     // had a palette row and this one did not, so the only way back to it was
     // the sidebar's workspace name.
-    href: '/projects/{projectId}',
+    href: '/workspaces/{projectId}',
     requiresProject: true,
     keywords: 'home overview landing start composer ask',
   },
@@ -470,7 +470,7 @@ export const menuRegistry: MenuItemDef[] = [
     // Opens the in-palette "Open Session" sub-picker (see SUBMENU_PAGE_BY_ID);
     // the href is the routed fallback for surfaces that consume this registry
     // without the palette's nested picker.
-    href: '/projects/{projectId}/sessions',
+    href: '/workspaces/{projectId}/sessions',
     requiresProject: true,
     // 'project' dropped with the rest of the legacy "project customize" tail:
     // it names 'nav-projects', and carrying it here made a one-word query for
@@ -509,7 +509,7 @@ export const menuRegistry: MenuItemDef[] = [
     // sidebar's Customize row lands (Marko, 2026-09-01: Customize is
     // agent-centric). It is kept as the palette's href rather than `/agent`
     // so the two cannot drift: one redirect owns the landing rule.
-    href: '/projects/{projectId}/customize',
+    href: '/workspaces/{projectId}/customize',
     requiresProject: true,
     keywords: 'customize configure setup capabilities overview hub',
   },
@@ -523,7 +523,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/general',
+    href: '/workspaces/{projectId}/admin/general',
     requiresProject: true,
     keywords:
       'settings general workspace rename delete danger zone name description git repo repository github clone branch remote',
@@ -535,7 +535,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/sandbox',
+    href: '/workspaces/{projectId}/admin/sandbox',
     requiresProject: true,
     // Snapshots merged into this section — a snapshot is a sandbox template's
     // build history — so both vocabularies answer here.
@@ -548,7 +548,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/feature-flags',
+    href: '/workspaces/{projectId}/admin/feature-flags',
     requiresProject: true,
     keywords: 'feature flags flag experimental labs beta toggle enable disable',
   },
@@ -559,7 +559,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/models',
+    href: '/workspaces/{projectId}/admin/models',
     requiresProject: true,
     // The reported bug's row. `llm gateway providers budgets anthropic openai
     // openrouter` came off `proj-customize`'s bag, where they pointed at
@@ -576,7 +576,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/models?tab=usage&provider=codex',
+    href: '/workspaces/{projectId}/admin/models?tab=usage&provider=codex',
     requiresProject: true,
     keywords: 'chatgpt openai codex subscription usage limits weekly allowance quota',
   },
@@ -587,7 +587,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/models?tab=usage&provider=claude-agent',
+    href: '/workspaces/{projectId}/admin/models?tab=usage&provider=claude-agent',
     requiresProject: true,
     keywords: 'anthropic claude code subscription usage limits weekly allowance quota fable',
   },
@@ -601,7 +601,7 @@ export const menuRegistry: MenuItemDef[] = [
     // The standalone page, not `/customize/agents`. That href still works —
     // `legacySectionRedirect` bounces it here — but routing through the
     // redirect costs a second navigation and paints the overlay route first.
-    href: '/projects/{projectId}/customize/agents',
+    href: '/workspaces/{projectId}/customize/agents',
     requiresProject: true,
     keywords: 'agents subagents ai',
   },
@@ -612,7 +612,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/skills',
+    href: '/workspaces/{projectId}/admin/skills',
     requiresProject: true,
     keywords: 'skills abilities',
   },
@@ -627,7 +627,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/connectors',
+    href: '/workspaces/{projectId}/admin/connectors',
     requiresProject: true,
     // 'apps' removed: it is the label of `proj-apps` (deployments), so the
     // one-word query for that page returned Connectors as well. 'connector' /
@@ -646,7 +646,7 @@ export const menuRegistry: MenuItemDef[] = [
     // "slack" and "inbox" are words people type, and the scope query lands
     // them on the inbound half rather than the outbound one.
     // 'connections' stays off this bag — it names `proj-connectors`.
-    href: '/projects/{projectId}/admin/connectors?scope=channels',
+    href: '/workspaces/{projectId}/admin/connectors?scope=channels',
     requiresProject: true,
     keywords: 'channels channel slack teams discord email telegram inbox inbound messaging',
   },
@@ -662,7 +662,7 @@ export const menuRegistry: MenuItemDef[] = [
     // `?rules=1` opens the Global rules sheet on arrival — the Connectors page
     // hosts `PoliciesPanel` and reads that param (`connectors-page.tsx`), so
     // this entry now reaches the destination its label names.
-    href: '/projects/{projectId}/admin/connectors?rules=1',
+    href: '/workspaces/{projectId}/admin/connectors?rules=1',
     requiresProject: true,
     keywords: 'policies approval block require_approval rules tools connector guardrails',
   },
@@ -675,10 +675,10 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     // Schedules and Webhooks merged into one Triggers capability page,
     // alongside Connectors / Agents / Skills — a trigger is one resource with
-    // two ways to start it, not two separate rows. `/projects/{id}/settings/
+    // two ways to start it, not two separate rows. `/workspaces/{id}/settings/
     // schedules` and `/settings/webhooks` no longer resolve to a tab; both
     // redirect here via `legacySectionRedirect`.
-    href: '/projects/{projectId}/admin/triggers',
+    href: '/workspaces/{projectId}/admin/triggers',
     requiresProject: true,
     // The combined bag both retired rows carried, so neither query goes dark.
     keywords:
@@ -691,7 +691,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/secrets',
+    href: '/workspaces/{projectId}/admin/secrets',
     requiresProject: true,
     keywords: 'secrets secret env environment variables credentials vault egress store',
   },
@@ -707,7 +707,7 @@ export const menuRegistry: MenuItemDef[] = [
     // (`/accounts/<acct>?tab=access-projects&project=<id>`), and the account
     // id is a field on the project detail — a network read the registry
     // cannot do. `openProjectMembers` in command-palette.tsx resolves it, the
-    // same way `inviteMembers` does. `/projects/<id>/members` still resolves
+    // same way `inviteMembers` does. `/workspaces/<id>/members` still resolves
     // and redirects to the same place, but routing through it costs a second
     // navigation and paints the capabilities shell first.
     actionId: 'openProjectMembers',
@@ -723,7 +723,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/files',
+    href: '/workspaces/{projectId}/files',
     requiresProject: true,
     keywords: 'files repository drive browser explorer',
   },
@@ -737,7 +737,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/drive',
+    href: '/workspaces/{projectId}/drive',
     requiresProject: true,
     keywords: 'files folders drive shared company my folder access share',
   },
@@ -750,7 +750,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/artifacts',
+    href: '/workspaces/{projectId}/artifacts',
     requiresProject: true,
     requiresFlag: 'artifacts',
     keywords: 'artifacts docs doc slides deck presentation board design dashboard page published share',
@@ -764,7 +764,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/goals',
+    href: '/workspaces/{projectId}/goals',
     requiresProject: true,
     requiresFlag: 'goals',
     keywords: 'goals goal objectives outcomes',
@@ -779,7 +779,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/repo',
+    href: '/workspaces/{projectId}/admin/repo',
     requiresProject: true,
     keywords: 'repo repository git files browser explorer code',
   },
@@ -790,12 +790,12 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/apps',
+    href: '/workspaces/{projectId}/apps',
     requiresProject: true,
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
   // `proj-config-general`, `proj-config-sandbox`, `proj-config-feature-flags`
-  // are gone with `/projects/<id>/config` (retired 2026-09-02). General,
+  // are gone with `/workspaces/<id>/config` (retired 2026-09-02). General,
   // Sandbox templates, Feature flags and Upgrades are Settings-overlay tabs
   // now, and the palette derives those rows from the overlay's rail
   // (`settings-palette-items.ts`) — a registry href would be a second,
@@ -804,7 +804,7 @@ export const menuRegistry: MenuItemDef[] = [
   //
   // `proj-config-feature-flags` outlived that sentence by a day. The row was
   // still here on 2026-09-03, twenty-five lines under its own obituary, with
-  // `href: '/projects/{projectId}/admin/feature-flags'` — a route
+  // `href: '/workspaces/{projectId}/admin/feature-flags'` — a route
   // `app/` no longer contains. Typing "feature flag" returned TWO rows: this
   // one, under Navigation, labelled "Settings · Feature flags" and landing on
   // a dead URL, and the derived `settings-tab-feature-flags` under "Settings ·
@@ -831,7 +831,7 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'navigate',
     // Review's own page (`reviewHref`), outside Customize since 2026-11-04.
-    href: '/projects/{projectId}/review',
+    href: '/workspaces/{projectId}/review',
     requiresProject: true,
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },
@@ -1077,7 +1077,7 @@ export const menuRegistry: MenuItemDef[] = [
   // referral modal was removed with them.
   // ──────────────────────────────────────────────────────────────────────────
   // `pref-general` is gone. It declared `settingsTab: 'general'` — the project
-  // WORKSPACE tab — which is a `?section=` on `/projects/[id]/admin/general` now, not
+  // WORKSPACE tab — which is a `?section=` on `/workspaces/[id]/admin/general` now, not
   // a settings tab at all. A `kind: 'settings'` row can only name a tab, and
   // there is no user-scoped tab this row meant, so it was removed rather than
   // repointed at an unrelated pane. Nothing rendered it: its only declared

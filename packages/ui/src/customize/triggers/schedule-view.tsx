@@ -2,7 +2,7 @@
 
 import { useTranslations } from '../../i18n';
 /**
- * Triggers — the single capability page at `/projects/<id>/triggers`,
+ * Triggers — the single capability page at `/workspaces/<id>/triggers`,
  * mounted by `packages/ui/src/customize/triggers/triggers-page.tsx`.
  *
  * A trigger is one resource with two ways to start it: on a schedule, or from

@@ -272,7 +272,7 @@ export async function GET(request: NextRequest) {
             // created at sign-up (Workspaces D3): a new user has no workspace
             // until they create or join one, on the chooser the door opens.
             // `PROJECT_LANDING_PATH` paints instantly and decides there.
-            // `/settings/billing`, not `/projects/start`: this branch exists
+            // `/settings/billing`, not `/workspaces/start`: this branch exists
             // so an account with no app access lands on billing first. The
             // door never creates anything: with no workspace it shows the
             // create-or-join chooser. The settings route mounts the panel

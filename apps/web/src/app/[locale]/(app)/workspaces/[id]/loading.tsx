@@ -1,7 +1,7 @@
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 
 /**
- * Navigation Suspense boundary for /projects/[id].
+ * Navigation Suspense boundary for /workspaces/[id].
  *
  * Two jobs, the same two as the sibling boundary at files/loading.tsx:
  *  1. Paint feedback the instant the click lands, instead of leaving the

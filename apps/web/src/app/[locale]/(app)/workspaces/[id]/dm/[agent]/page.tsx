@@ -7,7 +7,7 @@ import { useFeatureFlag } from '@kortix/sdk/react';
 import { uiRoutes } from '@kortix/ui';
 
 /**
- * /projects/[id]/dm/[agent] — an address from before Spaces were the only
+ * /workspaces/[id]/dm/[agent] — an address from before Spaces were the only
  * place to work (`chat` flag). A space is never "an agent": agents are
  * members of spaces. Every old DM link opens the person's own space
  * (`/chat`, their space with My Kortix). The rows stay in the database;

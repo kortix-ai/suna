@@ -12,7 +12,7 @@
  * the hub's JS chunk and a shell teardown, twice, for a surface that was never
  * a page in the first place.
  *
- * `/projects/p_1?accountId=acc_1&accountTab=members` is a complete, shareable
+ * `/workspaces/p_1?accountId=acc_1&accountTab=members` is a complete, shareable
  * address: reload it, paste it, and the modal comes back over the same page.
  *
  * **Open is derived, never stored.** The param present IS the modal being
@@ -171,7 +171,7 @@ function currentUrl(): string {
  * The host's router for a hub place (Workspaces, ux.md section 4).
  *
  * The account hub is no longer a surface of its own: each of its sections is
- * a section of the current workspace's settings (`/projects/<id>/admin/…`).
+ * a section of the current workspace's settings (`/workspaces/<id>/admin/…`).
  * The host registers a navigator that turns a `HubTarget` into that page and
  * navigates. It returns `false` when it cannot resolve the workspace yet;
  * `openAccountPanel` then writes `?accountId=` and the host's URL router

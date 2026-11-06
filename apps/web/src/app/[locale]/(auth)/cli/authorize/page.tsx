@@ -123,7 +123,7 @@ function CliAuthorizeInner() {
   }
 
   if (withoutWorkspace && (userCode || (callback && state && validation.ok))) {
-    // `/new` comes back here once the workspace exists (`returnUrl`), and
+    // `/workspaces/new` comes back here once the workspace exists (`returnUrl`), and
     // the person approves the sign-in with a workspace to act in.
     const here = `/cli/authorize?${params.toString()}`;
     return (
@@ -132,7 +132,7 @@ function CliAuthorizeInner() {
         description={tCli('noWorkspaceBody')}
         action={
           <Button asChild size="lg" className="w-full gap-1.5">
-            <Link href={`/new?returnUrl=${encodeURIComponent(here)}`}>
+            <Link href={`/workspaces/new?returnUrl=${encodeURIComponent(here)}`}>
               <PlusIcon className="size-4 shrink-0" />
               {tCli('createAction')}
             </Link>

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /projects/[id]/customize — a redirect, in two directions.
+ * /workspaces/[id]/customize — a redirect, in two directions.
  *
  *  1. No `?section=` → the first capability tab the caller may open, through
  *     the same `capabilityAccess()` rule the sidebar's Customize row uses. That is
@@ -46,7 +46,7 @@ export default function ProjectCustomizePage() {
   useEffect(() => {
     if (!projectId || !rawSection) return;
     if (legacy.pending) return;
-    router.replace(legacy.href ?? `/projects/${projectId}/settings`);
+    router.replace(legacy.href ?? `/workspaces/${projectId}/settings`);
   }, [projectId, rawSection, legacy.href, legacy.pending, router]);
 
   // Same batch and same preference order as the sidebar row, so the two can
@@ -62,7 +62,7 @@ export default function ProjectCustomizePage() {
     // Denied every tab: `ProjectCustomizeNavItem` never rendered a row for
     // this caller, so this is a typed URL. The project home is the honest
     // place to send them — nothing under Customize would open.
-    router.replace(landing ? capabilityTabHref(projectId, landing) : `/projects/${projectId}`);
+    router.replace(landing ? capabilityTabHref(projectId, landing) : `/workspaces/${projectId}`);
   }, [projectId, rawSection, settled, landing, router]);
 
   if (!rawSection && projectId) return <CapabilitiesSkeleton />;

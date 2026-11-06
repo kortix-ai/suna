@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /projects/[id]/settings/[tab] — deep-link entry into the merged Settings
+ * /workspaces/[id]/settings/[tab] — deep-link entry into the merged Settings
  * overlay for a specific tab (e.g. `/settings/secrets`).
  *
  * Mirrors `customize/[section]/page.tsx`'s parse-or-redirect shape: a
@@ -16,10 +16,10 @@
  * same path carries `/settings/schedules` and `/settings/webhooks`: both
  * graduated out of the overlay into their own capability pages, so
  * `parseSettingsTab` returns `null` for them and `legacySectionRedirect`'s
- * `GRADUATED` map sends them to `/projects/[id]/schedules` and
- * `/projects/[id]/webhooks` instead of opening a tab that no longer exists.
+ * `GRADUATED` map sends them to `/workspaces/[id]/schedules` and
+ * `/workspaces/[id]/webhooks` instead of opening a tab that no longer exists.
  * Anything else (a typo, a truly dead id) falls back to the bare
- * `/projects/[id]/settings` route rather than opening on a tab that doesn't
+ * `/workspaces/[id]/settings` route rather than opening on a tab that doesn't
  * exist.
  *
  * The account-scoped ids (`/settings/billing`, `/settings/api-keys`,
@@ -65,11 +65,11 @@ export default function ProjectSettingsTabPage() {
       // The redirect never returns this same URL for an unparseable segment:
       // it resolves only known legacy ids, and every rename target is a live
       // tab, so it cannot loop back here.
-      router.replace(legacy.href ?? `/projects/${projectId}/settings`);
+      router.replace(legacy.href ?? `/workspaces/${projectId}/settings`);
       return;
     }
     useSettingsPanelStore.getState().openSettings(tab);
-    router.replace(`/projects/${projectId}`);
+    router.replace(`/workspaces/${projectId}`);
   }, [projectId, tab, legacy.href, legacy.pending, router]);
 
   return null;

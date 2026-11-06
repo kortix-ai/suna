@@ -19,7 +19,7 @@
  * exit, finish before anything refetches, never be undone, and which leaves
  * mounted observers attached so they immediately refetch anyway.
  *
- * That gap was not theoretical. `/new` resolves its create target out of this
+ * That gap was not theoretical. `/workspaces/new` resolves its create target out of this
  * list (`resolveTargetAccountId`, `new-workspace-form.ts`), so a leftover
  * single-account list belonging to the previous user made
  * `POST /projects/provision` go out with a foreign `account_id` under the new
@@ -71,7 +71,7 @@ export interface UseAccountsListOptions {
    */
   enabled?: boolean;
   /**
-   * Retry budget. Only `/projects/start` sets one (it resolves a landing
+   * Retry budget. Only `/workspaces/start` sets one (it resolves a landing
    * destination from this list, so a single transient failure there strands
    * the user on a spinner). Left `undefined` elsewhere so React Query's
    * default applies — passing a value here would be a behaviour change, not a

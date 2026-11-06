@@ -102,7 +102,7 @@ const ICON_WIDTH = '2.8rem';
  * the form says to ask an admin for an invite.
  *
  * Layout: one centered column, no card. A user must never be trapped here:
- * the web row links back to `/projects`, the desktop shell shows its close
+ * the web row links back to `/workspaces`, the desktop shell shows its close
  * button, and Log out stays in the account menu.
  */
 export function NewWorkspacePage() {
@@ -163,7 +163,7 @@ export function NewWorkspacePage() {
     enterProject: returnUrl
       ? () => router.replace(returnUrl)
       : connectComputer
-        ? (projectId) => router.replace(`/projects/${encodeURIComponent(projectId)}/settings/computer`)
+        ? (projectId) => router.replace(`/workspaces/${encodeURIComponent(projectId)}/settings/computer`)
         : undefined,
   });
   const openUpgradeDialog = useUpgradeDialogStore((store) => store.openUpgradeDialog);
@@ -236,11 +236,11 @@ export function NewWorkspacePage() {
           setSigningOut(true);
           void performSignOut();
         }}
-        back={{ href: '/projects', label: t('actions.back') }}
+        back={{ href: '/workspaces', label: t('actions.back') }}
         // Desktop only. The shell has no browser toolbar, so without this the
         // account menu was the only way off this page there. `replace`, not
-        // `push`: `/new` is where the user left, not somewhere to return to.
-        trailing={<DesktopCloseButton onClose={() => router.replace('/projects')} />}
+        // `push`: `/workspaces/new` is where the user left, not somewhere to return to.
+        trailing={<DesktopCloseButton onClose={() => router.replace('/workspaces')} />}
       />
 
       {/* TWO states, one swap — see the `SWAP_IN`/`SWAP_OUT` doc comment above.
@@ -248,7 +248,7 @@ export function NewWorkspacePage() {
 
           The swap runs only while the create is in flight — the handoff holds
           the page from the click until the provision finishes; on success the
-          orchestration navigates to `/projects/<id>` (KRTX-1419), so there is
+          orchestration navigates to `/workspaces/<id>` (KRTX-1419), so there is
           no post-create window on this page for the form to reappear in.
 
           The header lives INSIDE the form branch, not above the swap. It is
@@ -530,7 +530,7 @@ export function NewWorkspacePage() {
           hosts are `AppProviders` (mounted by `project-shell.tsx` and the share
           page, never by `app/(app)/layout.tsx`) and
           `accounts/[id]/page.tsx`, which mounts one bare — the precedent that
-          this mount follows. Neither covers `/new`, so billing can be enabled
+          this mount follows. Neither covers `/workspaces/new`, so billing can be enabled
           here with no host at all and that button would be a dead click. Same
           flag and same line as `app-providers.tsx:139`. */}
       {isBillingEnabled() && <GlobalUpgradeModal />}

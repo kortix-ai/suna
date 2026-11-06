@@ -11,7 +11,7 @@ import { useLocalizedUiCatalog } from '../../../i18n/ui-catalog/use-localized-ui
  *
  * This exports `ChannelsSection`: the channels CONTENT and nothing else — no
  * heading, no column, no scroll container. Its one mount is the Channels scope
- * of `/projects/<id>/connectors` (`connectors-page.tsx`), which owns the
+ * of `/workspaces/<id>/connectors` (`connectors-page.tsx`), which owns the
  * `CapabilityPageShell` around it.
  *
  * Channels was briefly its own top-level Customize tab and rendered its own
@@ -20,8 +20,8 @@ import { useLocalizedUiCatalog } from '../../../i18n/ui-catalog/use-localized-ui
  * same job as a person wiring up any other outside tool, and asking them to
  * know that one lives under "Channels" and the other under "Connectors" is
  * asking them to know our table layout. The two are still different backend
- * resources — `/projects/{id}/channels/*` (inbound: installations, chat
- * identity, per-channel bindings) versus `/projects/{id}/connectors/*`
+ * resources — `/workspaces/{id}/channels/*` (inbound: installations, chat
+ * identity, per-channel bindings) versus `/workspaces/{id}/connectors/*`
  * (outbound: tool and OAuth access) — and nothing here merges them. Only the
  * navigation merged.
  *

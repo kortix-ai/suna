@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation';
 
 /**
- * /projects/[id]/customize/review — Review's address from 2026-10-17 to
- * 2026-11-04. Review is its own page now (`/projects/[id]/review`); this
+ * /workspaces/[id]/customize/review — Review's address from 2026-10-17 to
+ * 2026-11-04. Review is its own page now (`/workspaces/[id]/review`); this
  * redirects there and keeps the query, so a shared `?id=<review item id>`
  * link still opens the same review.
  */
@@ -21,5 +21,5 @@ export default async function LegacyCustomizeReviewPage({
     }
   }
   const suffix = search.toString();
-  redirect(`/projects/${id}/review${suffix ? `?${suffix}` : ''}`);
+  redirect(`/workspaces/${id}/review${suffix ? `?${suffix}` : ''}`);
 }

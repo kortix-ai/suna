@@ -38,7 +38,7 @@ import { preloadAccountHub } from './account-hub-entry';
 
 /**
  * The account panes mounted INSIDE Workspace settings
- * (`/projects/<id>/admin/<section>`), not over a page.
+ * (`/workspaces/<id>/admin/<section>`), not over a page.
  *
  * The hub's panes read their account and section through the two hooks
  * below. Under this provider those come from the workspace page instead of

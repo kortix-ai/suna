@@ -2,7 +2,7 @@ import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-ske
 
 /**
  * Navigation Suspense boundary for
- * /projects/[id]/{agent,connectors,skills,schedules,webhooks}.
+ * /workspaces/[id]/{agent,connectors,skills,schedules,webhooks}.
  *
  * One file covers every one of them: `(capabilities)` is a route group whose
  * `layout.tsx` renders the shared tab bar around `{children}`; Next scopes

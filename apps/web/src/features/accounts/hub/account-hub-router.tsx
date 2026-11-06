@@ -4,7 +4,7 @@
  * The account hub, as a router (Workspaces ux.md section 4).
  *
  * The hub used to be a full-screen modal over the page (`?accountId=`). Its
- * panes are sections of Workspace settings now (`/projects/<id>/admin/…`), so
+ * panes are sections of Workspace settings now (`/workspaces/<id>/admin/…`), so
  * this component draws nothing. It does two things:
  *
  * 1. registers the navigator `openAccountPanel` and `HubLink` use: a hub
@@ -119,7 +119,7 @@ export function AccountHubRouter() {
       if (cancelled) return;
       // `replace` overwrites the entry the hub pushed, if it pushed one.
       forgetPushedEntry();
-      router.replace(projectId ? workspaceSettingsHref(projectId, target) : '/projects');
+      router.replace(projectId ? workspaceSettingsHref(projectId, target) : '/workspaces');
     });
     return () => {
       cancelled = true;

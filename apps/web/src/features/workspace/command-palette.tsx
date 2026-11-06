@@ -699,7 +699,7 @@ function ChangeRequestsPage({
  * the current workspace, by name, with its switch.
  *
  * Same data, same route, same permission gate as the Feature flags section of
- * `/projects/<id>/config` (`settings/tabs/experimental-tab.tsx`): the project
+ * `/workspaces/<id>/config` (`settings/tabs/experimental-tab.tsx`): the project
  * summary's `experimental_features`, `PATCH /projects/:id/features` through
  * `updateFeatureFlag`, and `PROJECT_SETTINGS_WRITE`. Two doors onto one
  * behaviour, not a second implementation of it — the cache writes below are
@@ -901,7 +901,7 @@ export function CommandPalette() {
   const params = useParams<{ id?: string; sessionId?: string }>();
   const queryClient = useQueryClient();
   const openProjectTab = useProjectSessionTabsStore((s) => s.openTab);
-  const projectId = rawPathname?.startsWith('/projects/') ? (params?.id ?? null) : null;
+  const projectId = rawPathname?.startsWith('/workspaces/') ? (params?.id ?? null) : null;
   const currentSessionId = useMemo(() => {
     if (params?.sessionId) return params.sessionId;
     const match = pathname?.match(/^\/sessions\/([^/]+)/);
@@ -945,7 +945,7 @@ export function CommandPalette() {
    * (`workspace-menu-section.tsx`) already fans out over every account, so a
    * workspace in a second account was reachable by trackpad and invisible to
    * ⌘K. There is no single unscoped call that returns everything — `GET
-   * /projects` with no `account_id` resolves server-side to ONE default
+   * /workspaces` with no `account_id` resolves server-side to ONE default
    * account (apps/api `resolveProjectAccount`) — so it is one request per
    * account, exactly as the sidebar does it.
    *
@@ -1354,7 +1354,7 @@ export function CommandPalette() {
   }, [allPaletteItems, hasQuery, debouncedQuery]);
 
   // No `flags` argument any more: Marketplace, Review and Voice were the only
-  // flag-gated rail rows and all three moved to `/projects/<id>/config`, whose
+  // flag-gated rail rows and all three moved to `/workspaces/<id>/config`, whose
   // own sub-nav composes them. Nothing left in the rail varies by flag.
   const chromeOffered = useChromeOffered(open);
   const allSettingsGroups = useMemo(
@@ -1476,7 +1476,7 @@ export function CommandPalette() {
       .mutateAsync()
       .then((session) => {
         // LEGACY, unreachable in the product: this branch runs only when
-        // there is NO projectId, and every authed route is `/projects/[id]/*`.
+        // there is NO projectId, and every authed route is `/workspaces/[id]/*`.
         // `/sessions/<id>` is not a route — see `packages/ui/src/internal/lib/navigation/session-href.ts`.
         openTabAndNavigate({
           id: session.id,
@@ -1523,7 +1523,7 @@ export function CommandPalette() {
       if (workspace.account_id !== selectedAccountId) setSelectedAccountId(workspace.account_id);
       // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
       // push must follow `beginSwitch`. The workspace-rows effect warms it.
-      router.push(`/projects/${workspace.project_id}`);
+      router.push(`/workspaces/${workspace.project_id}`);
       close();
     },
     [beginSwitch, selectedAccountId, setSelectedAccountId, router, close],
@@ -1535,7 +1535,7 @@ export function CommandPalette() {
       openProjectTab(projectId, s.session_id);
       // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
       // push must follow `openProjectTab`. The session-rows effect warms it.
-      router.push(`/projects/${projectId}/sessions/${s.session_id}`);
+      router.push(`/workspaces/${projectId}/sessions/${s.session_id}`);
       close();
     },
     [projectId, openProjectTab, router, close],
@@ -1665,7 +1665,7 @@ export function CommandPalette() {
    * PALETTE_PREFETCH_LIMIT.
    */
 
-  // Root — registry Navigation rows. Only /projects and /accounts hrefs reach
+  // Root — registry Navigation rows. Only /workspaces and /accounts hrefs reach
   // `router.push` in `handleRegistryItem`; the rest open the settings overlay
   // or a workspace tab.
   useEffect(() => {
@@ -1680,7 +1680,7 @@ export function CommandPalette() {
         continue;
       }
       if (item.kind !== 'navigate' || !href) continue;
-      if (href.startsWith('/projects')) router.prefetch(href);
+      if (href.startsWith('/workspaces')) router.prefetch(href);
     }
   }, [open, page, hasQuery, filteredNavItems, rootSuggestionItems, router]);
 
@@ -1695,24 +1695,24 @@ export function CommandPalette() {
   }, [open, page, projectId, filteredSettingsGroups, router]);
 
   // Workspace rows — the root hits and the dedicated page both land on
-  // /projects/<id>.
+  // /workspaces/<id>.
   useEffect(() => {
     if (!open) return;
     const rows =
       page === 'workspaces' ? workspacePageRows : page === 'root' ? rootWorkspaceRows : [];
     for (const row of rows.slice(0, PALETTE_PREFETCH_LIMIT)) {
-      router.prefetch(`/projects/${row.workspace.project_id}`);
+      router.prefetch(`/workspaces/${row.workspace.project_id}`);
     }
   }, [open, page, workspacePageRows, rootWorkspaceRows, router]);
 
   // Session rows — the root hits and the dedicated page both land on
-  // /projects/<projectId>/sessions/<id>.
+  // /workspaces/<projectId>/sessions/<id>.
   useEffect(() => {
     if (!open || !projectId) return;
     const rows =
       page === 'sessions' ? filteredProjectSessionsList : page === 'root' ? rootSessionResults : [];
     for (const s of rows.slice(0, PALETTE_PREFETCH_LIMIT)) {
-      router.prefetch(`/projects/${projectId}/sessions/${s.session_id}`);
+      router.prefetch(`/workspaces/${projectId}/sessions/${s.session_id}`);
     }
   }, [open, page, projectId, filteredProjectSessionsList, rootSessionResults, router]);
 
@@ -1720,16 +1720,16 @@ export function CommandPalette() {
   // page opens.
   useEffect(() => {
     if (!open) return;
-    if (page === 'files' && projectId) router.prefetch(`/projects/${projectId}/files`);
+    if (page === 'files' && projectId) router.prefetch(`/workspaces/${projectId}/files`);
     if (page === 'workspaces') {
-      router.prefetch('/new');
-      if (projectId) router.prefetch(`/projects/${projectId}/admin`);
+      router.prefetch('/workspaces/new');
+      if (projectId) router.prefetch(`/workspaces/${projectId}/admin`);
     }
   }, [open, page, projectId, router]);
 
   // "Invite members" and "Workspace members". The account id arrives from
   // `paletteProjectDetail`, whose query only runs once the palette opens, so
-  // warm the common branch the moment it resolves. The `/projects/<id>/members`
+  // warm the common branch the moment it resolves. The `/workspaces/<id>/members`
   // fallback stays cold on purpose: it exists only for the window before that.
   useEffect(() => {
     if (!open || !projectId || !inviteMembersAccountId) return;
@@ -1878,7 +1878,7 @@ export function CommandPalette() {
       if (!projectId) return close();
       // nav-contract: prefetch-only — a cmdk row activated by keyboard. The
       // 'files' page effect warms this one destination as the page opens.
-      router.push(`/projects/${projectId}/files`);
+      router.push(`/workspaces/${projectId}/files`);
       close();
     },
     [projectId, router, close],
@@ -1959,11 +1959,11 @@ export function CommandPalette() {
    *
    * **The rule: open the overlay only where it is mounted, otherwise
    * navigate.** `SettingsPanel` has exactly two mounts — `ProjectShell`
-   * (`project-layout/project-shell.tsx`, every `/projects/*` route) and
+   * (`project-layout/project-shell.tsx`, every `/workspaces/*` route) and
    * `StandaloneSettingsRoute` (`/settings`, which mounts no palette). This
    * palette also mounts under `AppHeader`, whose only route group is
    * `/accounts/**`, and that layout renders no panel. `projectId` is non-null
-   * exactly on `/projects/*` (see its definition above), so it is precisely
+   * exactly on `/workspaces/*` (see its definition above), so it is precisely
    * the "is the panel mounted?" signal.
    *
    * Calling `openSettings()` where no panel is mounted did two things, both
@@ -2083,7 +2083,7 @@ export function CommandPalette() {
     // The account id comes from `paletteProjectDetail`, whose query is only
     // `enabled` once the palette opens — so on the FIRST ⌘K it can still be in
     // flight, and this used to return silently and leave the palette sitting
-    // open with nothing having happened. `/projects/<id>/members` exists to
+    // open with nothing having happened. `/workspaces/<id>/members` exists to
     // redirect to exactly this destination (it resolves the account id itself
     // and appends the same `&project=` scoping), so the unresolved case costs
     // one extra hop instead of the click doing nothing.
@@ -2098,14 +2098,14 @@ export function CommandPalette() {
     // nav-contract: prefetch-only — the fallback only runs in the window
     // before `inviteMembersAccountId` resolves; that route redirects to the
     // same hub destination, resolving the account id itself.
-    router.push(`/projects/${projectId}/members`);
+    router.push(`/workspaces/${projectId}/members`);
     close();
   }, [close, projectId, inviteMembersAccountId, router]);
 
   /**
    * "Workspace members" — the same destination `handleInviteMembers` reaches,
    * from the other half of the vocabulary. The account hub's Access pane
-   * scoped to this workspace IS the workspace roster: `/projects/<id>/members`
+   * scoped to this workspace IS the workspace roster: `/workspaces/<id>/members`
    * exists only to redirect here (see that route), so linking it directly
    * would cost a second navigation and paint the capabilities shell first.
    *
@@ -2293,7 +2293,7 @@ export function CommandPalette() {
             break;
           }
 
-          if (href.startsWith('/projects')) {
+          if (href.startsWith('/workspaces')) {
             // nav-contract: prefetch-only — a cmdk row activated by keyboard,
             // and `href` is resolved from the registry item at click time. The
             // root-navigation effect warms the rendered rows.
@@ -3192,7 +3192,7 @@ export function CommandPalette() {
                       value={sanitizeCmdkValue(`create workspace new ${tWorkspaces('create')}`)}
                       onSelect={() => {
                         // nav-contract: prefetch-only — a cmdk row activated by keyboard; the 'workspaces' page effect warms it.
-                        router.push('/new');
+                        router.push('/workspaces/new');
                         close();
                       }}
                     >
@@ -3205,7 +3205,7 @@ export function CommandPalette() {
                       value={sanitizeCmdkValue(`workspace settings ${tWorkspaces('settings')}`)}
                       onSelect={() => {
                         // nav-contract: prefetch-only — a cmdk row activated by keyboard; the 'workspaces' page effect warms it.
-                        router.push(`/projects/${projectId}/admin`);
+                        router.push(`/workspaces/${projectId}/admin`);
                         close();
                       }}
                     >

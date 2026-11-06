@@ -149,7 +149,7 @@ import {
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 /**
- * /projects/[id]/sessions/[sessionId] — project-scoped session view.
+ * /workspaces/[id]/sessions/[sessionId] — project-scoped session view.
  *
  * The entire runtime lifecycle (POST /start, the sandbox switch, the SSE stream,
  * readiness seeding, and the canonical OpenCode pin) is owned by the SDK's
@@ -161,7 +161,7 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
  * the connection store). The local `useSandboxConnection` poller is still mounted
  * — purely for MID-SESSION reconnect detection (the box dropping after it was
  * healthy), which drives the reconnect/offline UI. The URL stays at
- * `/projects/<id>/sessions/<sessionId>` the whole time.
+ * `/workspaces/<id>/sessions/<sessionId>` the whole time.
  *
  * The route itself is deliberately thin: it reads the ids and hands them to a
  * view KEYED by session id. See {@link ProjectSessionView} for why that key is
@@ -182,7 +182,7 @@ export default function ProjectSessionPage() {
           message={tSessionPage('missing.message')}
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href={`/projects/${projectId}`} prefetch>
+              <Link href={`/workspaces/${projectId}`} prefetch>
                 {tSessionPage('backToProject')}
               </Link>
             </Button>
@@ -957,7 +957,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           message={tSessionPage('missing.message')}
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href={`/projects/${projectId}`} prefetch>
+              <Link href={`/workspaces/${projectId}`} prefetch>
                 {tSessionPage('backToProject')}
               </Link>
             </Button>
@@ -1350,7 +1350,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         }
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        onDeleted={() => router.push(`/projects/${projectId}`)}
+        onDeleted={() => router.push(`/workspaces/${projectId}`)}
       />
     </>
   );
@@ -1687,8 +1687,8 @@ function ActiveSessionChat({
       null,
       '',
       query
-        ? `/projects/${projectId}/sessions/${sessionId}?${query}`
-        : `/projects/${projectId}/sessions/${sessionId}`,
+        ? `/workspaces/${projectId}/sessions/${sessionId}?${query}`
+        : `/workspaces/${projectId}/sessions/${sessionId}`,
     );
   }, [
     selectedRuntimeSessionId,

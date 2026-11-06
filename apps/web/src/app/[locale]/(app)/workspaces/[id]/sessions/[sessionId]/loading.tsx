@@ -9,7 +9,7 @@ import { readStartStash } from '@kortix/sdk/react';
 import ProjectHomeLoading from '../../loading';
 
 /**
- * Navigation Suspense boundary for /projects/[id]/sessions/[sessionId].
+ * Navigation Suspense boundary for /workspaces/[id]/sessions/[sessionId].
  *
  * The session layout is dynamic (it resolves the tab title on the server), so
  * every navigation into a session paints a loading boundary for the length of

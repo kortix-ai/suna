@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { ProjectFilesView } from '@kortix/ui/workspace';
 
 /**
- * /projects/[id]/files — the standalone Files page (Google-Drive-style browser
+ * /workspaces/[id]/files — the standalone Files page (Google-Drive-style browser
  * over the project repo). A regular routed page inside the project shell, NOT
  * a Customize section. Requires `project.file.read` (editor-tier): the sidebar
  * entry hides for floor members and the API 403s their reads (silently — the

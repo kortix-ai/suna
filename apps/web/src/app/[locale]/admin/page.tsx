@@ -37,7 +37,7 @@ const DESTINATIONS: { href: string; label: string; description: string; icon: Ic
     icon: UsersIcon,
   },
   {
-    href: '/admin/projects',
+    href: '/admin/workspaces',
     label: 'Workspaces',
     description: 'Every workspace across every account, most-active first.',
     icon: KanbanIcon,

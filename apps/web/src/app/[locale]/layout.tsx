@@ -270,7 +270,7 @@ export default async function RootLayout({
         {/* Desktop runtime detection — runs before hydration so CSS reacts on first paint. */}
         <script dangerouslySetInnerHTML={{ __html: DESKTOP_INIT_SCRIPT }} />
 
-        {/* Interface theme palettes on /new, /projects/** and /settings — set
+        {/* Interface theme palettes on /new, /workspaces/** and /settings — set
             before first paint so the stored palette never flashes the default. */}
         <script dangerouslySetInnerHTML={{ __html: INTERFACE_THEME_INIT_SCRIPT }} />
 
@@ -315,7 +315,7 @@ export default async function RootLayout({
                   context = { master_group: 'General', content_group: 'Other', page_type: 'home', language: lang };
                 } else if (pathname.indexOf('/auth') === 0) {
                   context = { master_group: 'General', content_group: 'User', page_type: 'auth', language: lang };
-                } else if (pathname.indexOf('/workspace') === 0 || pathname.indexOf('/projects') === 0 || pathname.indexOf('/thread') === 0) {
+                } else if (pathname.indexOf('/workspace') === 0 || pathname.indexOf('/workspaces') === 0 || pathname.indexOf('/thread') === 0) {
                   context = { master_group: 'Platform', content_group: 'Projects', page_type: 'thread', language: lang };
                 } else if (pathname.indexOf('/settings') === 0) {
                   context = { master_group: 'Platform', content_group: 'User', page_type: 'settings', language: lang };

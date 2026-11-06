@@ -54,7 +54,7 @@ import {
 } from './project-settings-sections';
 
 /**
- * The page body for `/projects/[id]/config` — the Customize bar's "Settings"
+ * The page body for `/workspaces/[id]/config` — the Customize bar's "Settings"
  * tab, and the home of the PROJECT-scoped configuration that is not important
  * enough to earn its own top-level Customize tab.
  *
@@ -96,7 +96,7 @@ import {
  * **The section lives in the URL, not in a store.** `?section=<key>` is
  * shareable, survives a reload, and is what `settings-tabs.ts`'s `GRADUATED`
  * map points every retired `/settings/<tab>` bookmark at. No query means the
- * default section (`general`), so `/projects/<id>/config` is a stable link.
+ * default section (`general`), so `/workspaces/<id>/config` is a stable link.
  *
  * **Only the active section mounts.** Every pane fetches on mount, and six
  * panes mounting at once would fire six query sets for the one a person is

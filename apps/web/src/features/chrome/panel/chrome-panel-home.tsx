@@ -175,7 +175,7 @@ export function ChromePanelHome() {
         .getState()
         .setPrefill(projectId, prompt, { submit: 'when-ready', ...(files.length ? { files } : {}) });
       // nav-contract: prefetch-only — project home consumes the prefill and opens the new session
-      router.push(`/projects/${projectId}`);
+      router.push(`/workspaces/${projectId}`);
     } catch (error) {
       errorToast(error instanceof Error && error.message ? error.message : t('readFailed'));
       setSending(false);
@@ -226,7 +226,7 @@ export function ChromePanelHome() {
           <div className="space-y-2">
             <p className="text-muted-foreground text-sm text-pretty">{t('noProjects')}</p>
             <Button asChild variant="outline" size="sm">
-              <Link href="/projects/start">{t('createProject')}</Link>
+              <Link href="/workspaces/start">{t('createProject')}</Link>
             </Button>
           </div>
         ) : (
@@ -278,7 +278,7 @@ export function ChromePanelHome() {
                   {recent.map((session) => (
                     <li key={session.id}>
                       <Link
-                        href={`/projects/${projectId}/sessions/${session.id}`}
+                        href={`/workspaces/${projectId}/sessions/${session.id}`}
                         className="hover:bg-muted -mx-2 flex items-center rounded-md px-2 py-1.5 text-sm"
                       >
                         <span className="truncate">{session.title}</span>

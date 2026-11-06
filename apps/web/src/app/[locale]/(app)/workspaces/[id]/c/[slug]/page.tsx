@@ -10,7 +10,7 @@ import { decodeSpaceSegment } from '@kortix/ui';
 import { SpaceView } from '@kortix/ui/workspace';
 
 /**
- * /projects/[id]/c/[slug] — a space: its timeline of threads, the composer
+ * /workspaces/[id]/c/[slug] — a space: its timeline of threads, the composer
  * that starts a new thread per message, its own tabs, and the open thread beside it. It
  * exists only with the project's `chat` flag on.
  */

@@ -239,7 +239,7 @@ export default function AdminProjectsPage() {
                   <TableCell>
                     <div className="max-w-[320px] min-w-0">
                       <Link
-                        href={`/projects/${project.projectId}`}
+                        href={`/workspaces/${project.projectId}`}
                         className="group inline-flex max-w-full items-center gap-1.5 text-sm font-medium"
                       >
                         <span className="truncate group-hover:underline">

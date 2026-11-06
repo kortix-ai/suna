@@ -11,7 +11,7 @@ const AppsView = dynamic(() => import('@/features/apps/apps-view').then((m) => m
 });
 
 /**
- * /projects/[id]/agent/[name] — one agent, as a page. The Agents tab opened on
+ * /workspaces/[id]/agent/[name] — one agent, as a page. The Agents tab opened on
  * a single agent: its instructions, model, triggers, grants, and who may use
  * it. See `packages/ui/src/customize/agents/agent-page.tsx`.
  *

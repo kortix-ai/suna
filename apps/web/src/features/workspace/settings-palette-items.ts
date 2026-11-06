@@ -163,7 +163,7 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   // Every other bag is gone with the tab it named. Thirteen project-
   // configuration tabs (General, Members, Secrets, Channels, Repositories,
   // Models, Sandbox templates, Snapshots, Marketplace, Review, Voice, Feature
-  // flags, Upgrades) moved to `/projects/<id>/config`, and eight
+  // flags, Upgrades) moved to `/workspaces/<id>/config`, and eight
   // account-scoped ones to `/accounts/[id]`. Their words moved with them, onto
   // the `proj-settings` and `account-*` rows in `lib/menu-registry.ts` — the
   // same place every other out-of-overlay destination is searched from. A tab
@@ -196,7 +196,7 @@ export interface SettingsPaletteParams {
   /** The platform offers Kortix in Chrome (`useChromeOffered`); off, its Settings row is not offered. */
   chromeOffered?: boolean;
   // `flags: RailFlags` used to sit here. Marketplace, Review and Voice were
-  // the only flag-gated rows and all three moved to `/projects/<id>/config`,
+  // the only flag-gated rows and all three moved to `/workspaces/<id>/config`,
   // whose own sub-nav composes them
   // (`capabilities/project-settings/project-settings-sections.ts`). Nothing
   // left in this rail varies by flag, so `railGroups()` takes none either.

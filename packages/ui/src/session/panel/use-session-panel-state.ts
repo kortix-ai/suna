@@ -95,7 +95,7 @@ export function useSessionPanelSessionSync({
   const isInTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
   // "This layout is the one on screen." A session inside the tab system is
   // visible when it is the active tab; a session on the standalone
-  // /projects/:id/sessions/:id route has no tab and is always the visible one.
+  // /workspaces/:id/sessions/:id route has no tab and is always the visible one.
   const isVisibleLayout = isInTabSystem ? isActiveTab : true;
 
   // Tell the store which session owns the right side, and close it.

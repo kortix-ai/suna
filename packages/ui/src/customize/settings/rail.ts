@@ -32,7 +32,7 @@ type RailGroupDefinition = RailGroup & {
  * A plain 1:1 match. It used to carry a `models` stand-in for the seven
  * legacy `llm-*` sub-page ids, which went with the Models tab when project
  * configuration moved out of this rail. Those ids resolve through `GRADUATED`
- * in `settings-tabs.ts` onto `/projects/<id>/models` now — the config page
+ * in `settings-tabs.ts` onto `/workspaces/<id>/models` now — the config page
  * that briefly owned them was retired on 2026-09-02. Every tab left in this
  * rail matches its own id and nothing else.
  */
@@ -44,7 +44,7 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
   /**
    * No Workspace group. Project configuration — General, Sandbox templates,
    * Feature flags — is the Customize bar's Settings tab
-   * (`/projects/<id>/config`, `capability-tab-routes.ts`), where the rest of
+   * (`/workspaces/<id>/config`, `capability-tab-routes.ts`), where the rest of
    * the project is configured. It sat here between 2026-09-02 and
    * 2026-09-03; Marko: the overlay is for the PERSON, so it holds only what
    * is theirs — their profile and their account.

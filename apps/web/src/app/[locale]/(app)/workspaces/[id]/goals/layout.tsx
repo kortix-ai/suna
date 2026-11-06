@@ -8,7 +8,7 @@ import { FeatureGateScreen } from '@kortix/ui/customize/shared/feature-gate-scre
 import { useFeatureFlag } from '@kortix/sdk/react';
 
 /**
- * /projects/[id]/goals* — the project's goals. It exists only with the
+ * /workspaces/[id]/goals* — the project's goals. It exists only with the
  * project's `goals` flag on: off, a deep link shows only that the flag is off,
  * and no goal data loads.
  */

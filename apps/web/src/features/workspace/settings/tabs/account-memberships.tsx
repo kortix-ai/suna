@@ -4,7 +4,7 @@ import { workspaceAccountLabel } from '@kortix/ui/workspace/sidebar/workspace-gr
 
 /**
  * Every workspace the signed-in user belongs to, each linking to that
- * workspace's settings (`/projects/<id>/admin`). A workspace is one account
+ * workspace's settings (`/workspaces/<id>/admin`). A workspace is one account
  * and its project, so this is one row per workspace (Workspaces ux.md); an
  * account with no project is not a workspace and is not listed.
  *
@@ -22,7 +22,7 @@ import { workspaceAccountLabel } from '@kortix/ui/workspace/sidebar/workspace-gr
  * to click, and Jay asked for "easily", which means no scrolling and no tab
  * hunt.
  *
- * **Why `/projects/<id>/admin` with no section.** It opens General, else the
+ * **Why `/workspaces/<id>/admin` with no section.** It opens General, else the
  * first section the caller may open — the same destination as the switcher's
  * "Workspace settings" row: one link in the product, one target.
  *
@@ -133,7 +133,7 @@ export function AccountMembershipsSection({
             >
               <Button asChild variant="outline" size="sm">
                 {account.workspace_id ? (
-                  <Link href={`/projects/${account.workspace_id}/admin`}>{copy.manage}</Link>
+                  <Link href={`/workspaces/${account.workspace_id}/admin`}>{copy.manage}</Link>
                 ) : (
                   <HubLink to={hubTarget(account.account_id)}>{copy.manage}</HubLink>
                 )}

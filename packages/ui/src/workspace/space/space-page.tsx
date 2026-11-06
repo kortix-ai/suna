@@ -58,7 +58,7 @@ export function visibleSpaceTabs(
 }
 
 /**
- * /projects/[id]/spaces/[slug]: a space is a channel. One header block: the
+ * /workspaces/[id]/spaces/[slug]: a space is a channel. One header block: the
  * title bar names it and shows what `spaces.<slug>.header` picks (its agents,
  * the sessions that wait on you, and the actions), and the tabs from
  * `spaces.<slug>.tabs` sit directly under it. The first tab is the default;

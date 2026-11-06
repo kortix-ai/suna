@@ -12,7 +12,7 @@ import {
 /* The account panes (People, Billing, Branding, API keys, and the account
    halves of General and Git repo) live in this app: one lazy chunk, loaded
    when a section that shows one opens. Apps is not a host section: its page
-   is the sidebar's Apps (`/projects/:id/apps`), and `/admin/apps` redirects. */
+   is the sidebar's Apps (`/workspaces/:id/apps`), and `/admin/apps` redirects. */
 const WorkspaceAccountPane = lazy(() =>
   import('@/features/workspace/settings/workspace-account-pane').then((mod) => ({
     default: mod.WorkspaceAccountPane,
@@ -21,7 +21,7 @@ const WorkspaceAccountPane = lazy(() =>
 const HOST_SECTIONS: ProjectAdminHostSections = { account: WorkspaceAccountPane };
 
 /**
- * Every `/projects/[id]/admin/**` route: Workspace settings on one section, and
+ * Every `/workspaces/[id]/admin/**` route: Workspace settings on one section, and
  * optionally a page below it (a connector) in that section's pane.
  *
  * `h-svh` bounds the page so each section scrolls inside its own pane; see

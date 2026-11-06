@@ -12,7 +12,7 @@ import { parseAccountSection } from './sections';
  * The account hub is a router now (Workspaces ux.md section 4): every place in
  * it — `?accountId=<a>&accountTab=<t>` on an old link, or a `hubTarget()` a
  * pane still opens — is a section of the workspace's settings,
- * `/projects/<id>/admin/<section>`.
+ * `/workspaces/<id>/admin/<section>`.
  */
 
 /** The workspace page a hub place opens, for the workspace `projectId`. */
@@ -56,9 +56,9 @@ export function pickWorkspaceForAccount(input: {
   return recent?.project_id ?? null;
 }
 
-/** The project id of a `/projects/<id>/…` path, or null. */
+/** The project id of a `/workspaces/<id>/…` path, or null. */
 export function routeProjectIdOf(pathname: string | null | undefined): string | null {
-  const match = /^\/(?:[a-z]{2}\/)?projects\/([^/?#]+)/.exec(pathname ?? '');
+  const match = /^\/(?:[a-z]{2}\/)?(?:workspaces|projects)\/([^/?#]+)/.exec(pathname ?? '');
   const id = match?.[1];
-  return id && id !== 'start' ? decodeURIComponent(id) : null;
+  return id && id !== 'start' && id !== 'new' ? decodeURIComponent(id) : null;
 }

@@ -1,5 +1,5 @@
 /**
- * Navigation Suspense boundary for `/new` — the "Create a project" entry in the
+ * Navigation Suspense boundary for `/workspaces/new` — the "Create a project" entry in the
  * sidebar workspace switcher and the landing chooser.
  *
  * Present for the same reason as `settings/loading.tsx`: every route here is

@@ -41,7 +41,7 @@ export function speculativeProjectListAccountId(input: {
 }
 
 /**
- * Every read the chooser and the `/projects/start` door need: the accounts,
+ * Every read the chooser and the `/workspaces/start` door need: the accounts,
  * one project list per account, and the caller's pending invites — folded
  * into one flat workspace list (`buildWorkspaceRows`).
  *

@@ -34,7 +34,7 @@ function withCurrentQuery(path: string): string {
   return search ? `${path}?${search}` : path;
 }
 
-/** `/projects/start?account=<id>`: the account an invite accept asked for
+/** `/workspaces/start?account=<id>`: the account an invite accept asked for
  *  (KRTX-1731). */
 const REQUESTED_ACCOUNT_PARAM = 'account';
 
@@ -44,7 +44,7 @@ function requestedAccountId(): string | null {
 }
 
 /**
- * `/projects/start` — the id-free door into the product.
+ * `/workspaces/start` — the id-free door into the product.
  *
  * Every default entry point (post-auth redirect, `/`, the desktop shell) sends
  * the user here when the destination project id is not already known. It
@@ -54,9 +54,9 @@ function requestedAccountId(): string | null {
  *  - the workspace this browser last had open, if it still exists, or
  *  - the user's only workspace.
  *
- * Yes: replace the URL with `/projects/<id>`. No — several workspaces and no
+ * Yes: replace the URL with `/workspaces/<id>`. No — several workspaces and no
  * memory, no workspace at all, or a pending invite — replace it with
- * `/projects`, the create-or-join chooser (`decideDoor`). The door never
+ * `/workspaces`, the create-or-join chooser (`decideDoor`). The door never
  * creates a workspace and never renders a form of its own.
  */
 export default function ProjectStartPage() {
@@ -88,9 +88,9 @@ export default function ProjectStartPage() {
         // navigation must agree with where the user landed.
         setSelectedAccountId(decision.accountId);
         writeLastProjectId(user?.id, decision.projectId);
-        decided.current = withCurrentQuery(`/projects/${decision.projectId}`);
+        decided.current = withCurrentQuery(`/workspaces/${decision.projectId}`);
       } else {
-        decided.current = withCurrentQuery('/projects');
+        decided.current = withCurrentQuery('/workspaces');
       }
     }
     router.replace(decided.current);
@@ -158,9 +158,9 @@ function StartSignOutButton() {
 }
 
 /**
- * Failure stays on this route with an explicit retry. `/projects` would
- * re-run the same failing reads, so the secondary action goes to `/new`,
- * which the user chooses here. No default path forwards a user to `/new`.
+ * Failure stays on this route with an explicit retry. `/workspaces` would
+ * re-run the same failing reads, so the secondary action goes to `/workspaces/new`,
+ * which the user chooses here. No default path forwards a user to `/workspaces/new`.
  */
 function ProjectStartError({ onRetry }: { onRetry: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -173,7 +173,7 @@ function ProjectStartError({ onRetry }: { onRetry: () => void }) {
       <div className="flex items-center gap-2">
         <Button onClick={onRetry}>{tI18nComplete.raw('textd8b8392e2c54')}</Button>
         <Button variant="secondary" asChild>
-          <Link href="/new">{tI18nComplete.raw('text954bd1fe66b4')}</Link>
+          <Link href="/workspaces/new">{tI18nComplete.raw('text954bd1fe66b4')}</Link>
         </Button>
       </div>
     </div>
@@ -185,7 +185,7 @@ function ProjectStartError({ onRetry }: { onRetry: () => void }) {
  *
  * This used to be a skeleton of the project page — header bar, title, composer,
  * chips. It was a guess: this route never renders that page, it resolves a
- * project id and replaces the URL with `/projects/<id>`, so the skeleton only
+ * project id and replaces the URL with `/workspaces/<id>`, so the skeleton only
  * ever flashed a layout the user was not about to receive.
  *
  * `ProjectPendingScreen` is shared with `loading.tsx` above and with

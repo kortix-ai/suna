@@ -487,7 +487,7 @@ function SettingsTabPane({
   if (!active) return null;
 
   // Workspace name and icon have one implementation and one set of mutations,
-  // and this is now its only mount: `/projects/<id>/config` and the
+  // and this is now its only mount: `/workspaces/<id>/config` and the
   // `capabilities/project-settings/` directory behind it were both retired on
   // 2026-09-02. This pane was the second door; it is the only door.
   //

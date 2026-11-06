@@ -86,7 +86,7 @@ function withFirstReadFromMemory(base: KeyValueStorage) {
 
 /** The `projectId` and `sessionId` of a session URL (any locale prefix), or null. */
 function sessionInUrl(): { projectId: string; sessionId: string } | null {
-  const match = /\/projects\/([^/]+)\/sessions\/([^/?#]+)/.exec(window.location?.pathname ?? '');
+  const match = /\/(?:workspaces|projects)\/([^/]+)\/sessions\/([^/?#]+)/.exec(window.location?.pathname ?? '');
   return match ? { projectId: match[1], sessionId: match[2] } : null;
 }
 

@@ -6,7 +6,7 @@ import { CapabilityAccessGate } from '@kortix/ui/customize/shared/capability-acc
 import { CustomizeFrame } from '@kortix/ui/customize/shared/customize-tab-bar';
 
 /**
- * Shared shell for /projects/[id]/customize/* (and the retired `members` and
+ * Shared shell for /workspaces/[id]/customize/* (and the retired `members` and
  * `channels` redirects). The `(capabilities)` route group keeps the segment out
  * of the URL.
  *

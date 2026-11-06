@@ -3,11 +3,11 @@ import { redirect } from 'next/navigation';
 import { channelsHref } from '@kortix/ui/workspace';
 
 /**
- * `/projects/[id]/channels` — retired, and kept only to forward.
+ * `/workspaces/[id]/channels` — retired, and kept only to forward.
  *
  * Channels was a top-level Customize tab for exactly as long as it took to see
  * that it is the inbound half of Connectors, not a peer of it. It is a scope of
- * `/projects/[id]/connectors` now (`?scope=channels`), and this route exists so
+ * `/workspaces/[id]/connectors` now (`?scope=channels`), and this route exists so
  * that every bookmark, every link in a Slack thread, and every legacy nav id
  * taken while it WAS a tab still lands on the surface it named.
  *

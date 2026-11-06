@@ -1,5 +1,5 @@
 /**
- * /projects/[id]/settings — the project's settings.
+ * /workspaces/[id]/settings — the project's settings.
  *
  * The project's own settings are Project admin, `/admin/general` (General, Git
  * repository, Sandbox templates, Feature flags, Upgrades). This URL used to
@@ -9,7 +9,7 @@
  * (`/settings/<unknown tab>`, `/customize/<unknown section>`, `/members`), so
  * they now land on the project's settings too.
  *
- * Account tabs keep their deep links: `/projects/[id]/settings/[tab]` opens
+ * Account tabs keep their deep links: `/workspaces/[id]/settings/[tab]` opens
  * the overlay on that tab.
  */
 
@@ -21,5 +21,5 @@ export default async function ProjectSettingsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  redirect(`/projects/${id}/admin/general`);
+  redirect(`/workspaces/${id}/admin/general`);
 }

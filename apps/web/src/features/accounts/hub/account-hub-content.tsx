@@ -370,7 +370,7 @@ export function AccountHubContent({
                   // it from `window.location` rather than from a hard-coded
                   // path is also what keeps the person on the page they opened
                   // the hub over.
-                  returnUrl={typeof window !== 'undefined' ? window.location.href : '/projects'}
+                  returnUrl={typeof window !== 'undefined' ? window.location.href : '/workspaces'}
                   isActive
                 />
                 {/* The plan picker's subscribe button starts checkout, and the

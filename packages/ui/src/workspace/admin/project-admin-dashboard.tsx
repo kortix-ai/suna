@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /projects/[id]/admin/<section> — Workspace settings, the one settings
+ * /workspaces/[id]/admin/<section> — Workspace settings, the one settings
  * surface per workspace (Workspaces ux.md section 4).
  *
  * One page, one rail in four groups (`WORKSPACE_SETTINGS_GROUPS`):
@@ -677,7 +677,7 @@ function AdminAccessDenied({ projectId }: { projectId: string }) {
         }
         action={
           <Button asChild variant="outline" size="sm">
-            <Link href={`/projects/${projectId}`}>{tI18nComplete.raw('text37737d817d12')}</Link>
+            <Link href={`/workspaces/${projectId}`}>{tI18nComplete.raw('text37737d817d12')}</Link>
           </Button>
         }
       />

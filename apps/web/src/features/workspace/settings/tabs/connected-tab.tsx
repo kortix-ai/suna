@@ -217,7 +217,7 @@ export function ConnectedAccountsTab({ accountId }: { accountId?: string }) {
     rememberGitHubSetupReturn(
       typeof window !== 'undefined'
         ? window.location.pathname + window.location.search
-        : '/projects',
+        : '/workspaces',
     );
     router.push(`/github/setup?account_id=${encodeURIComponent(resolvedAccountId)}`);
   };

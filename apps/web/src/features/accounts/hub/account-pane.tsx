@@ -2,7 +2,7 @@
 
 /**
  * The content column of an account pane in Workspace settings
- * (`/projects/<id>/admin/<section>`), right of the settings rail.
+ * (`/workspaces/<id>/admin/<section>`), right of the settings rail.
  *
  * A centred column (`max-w-2xl` by default) whose first block is the page
  * title and its one-line description, followed by the section's own panels.

@@ -13,7 +13,7 @@ import { FeatureGateScreen } from '@kortix/ui/customize/shared/feature-gate-scre
 import { SpaceView } from '@kortix/ui/workspace';
 
 /**
- * /projects/[id]/chat — Chat (flag `chat`): the person's chat with
+ * /workspaces/[id]/chat — Chat (flag `chat`): the person's chat with
  * Kortix. Every message is a thread; Kortix's newest reply shows under it.
  */
 export default function OneChatPage() {

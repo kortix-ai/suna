@@ -18,7 +18,7 @@ import { GithubLogoIcon as Github } from '@phosphor-icons/react';
 
 /**
  * "Add a GitHub account" — the ONE dialog for linking a GitHub personal
- * account or organization to a Kortix account. The account Git tab and `/new`
+ * account or organization to a Kortix account. The account Git tab and `/workspaces/new`
  * both open it, so the two surfaces can never drift into two different
  * stories about how a connection is made.
  *

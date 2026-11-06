@@ -154,7 +154,7 @@ export function gateAction(state: AccessGateState): GateAction {
  * the user can actually open (or renders its own inline empty state).
  */
 export function gateEscapePath(appHome: string, projectId: string): string {
-  return appHome === `/projects/${projectId}` ? PROJECT_LANDING_PATH : appHome;
+  return appHome === `/workspaces/${projectId}` ? PROJECT_LANDING_PATH : appHome;
 }
 
 /**
@@ -315,7 +315,7 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   }, [unrenderable, projectId, user?.id]);
 
   // The full-page frame every "opening a project" surface shares — the Kortix
-  // mark, nothing else. This is what a hard refresh of `/projects/<id>` or of
+  // mark, nothing else. This is what a hard refresh of `/workspaces/<id>` or of
   // a session route shows for the length of one session check plus one
   // getProject, so it is the most-seen loading surface in the product.
   //
@@ -380,7 +380,7 @@ function AccessGateScreen({
   // Where both "Back to projects" controls below point. Leaving THIS project
   // (access denied, or the user just left it) is not a browse-the-list escape,
   // so it goes to the latest project this user has open, never the removed
-  // `/projects` list.
+  // `/workspaces` list.
   //
   // `useAppHome` reads a cookie, so it is browser-only. This screen never
   // reaches the server render — the boundary above returns the pending frame

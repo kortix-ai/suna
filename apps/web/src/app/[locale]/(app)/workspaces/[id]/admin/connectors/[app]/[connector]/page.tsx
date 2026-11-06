@@ -6,7 +6,7 @@ import { ConnectorPage } from '@kortix/ui/customize/connectors/detail/connector-
 
 import { decodeSegment, ProjectAdminRoute } from '@/features/workspace/project-admin/project-admin-route';
 
-/** /projects/[id]/admin/connectors/<app>/<connector> — one connector, in the Connectors pane. */
+/** /workspaces/[id]/admin/connectors/<app>/<connector> — one connector, in the Connectors pane. */
 export default function ProjectAdminConnectorPage() {
   const { id: projectId, app, connector } = useParams<{ id: string; app: string; connector: string }>();
   const connectorSlug = decodeSegment(connector);

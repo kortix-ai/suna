@@ -19,7 +19,7 @@ import {
 } from './project-settings-sections';
 
 /**
- * The sections of Workspace settings (`/projects/<id>/admin`), the one
+ * The sections of Workspace settings (`/workspaces/<id>/admin`), the one
  * settings surface per workspace (Workspaces ux.md section 4). It absorbed
  * the account hub's panes: a workspace is one account and its project, so
  * the account's members, roles, billing and keys are the workspace's.
@@ -179,7 +179,7 @@ export const PROJECT_ADMIN_RESOURCES: readonly ProjectAdminResource[] = [
 /** Sections that no longer exist here: their links open the Agents list. */
 export const RETIRED_SECTIONS: readonly string[] = ['tools', 'extensions'];
 
-/** `/projects/<id>/admin` with no section opens General, else the first row the caller may open. */
+/** `/workspaces/<id>/admin` with no section opens General, else the first row the caller may open. */
 export const DEFAULT_PROJECT_ADMIN_SECTION: ProjectAdminSectionKey = 'general';
 
 export function isProjectAdminResource(key: ProjectAdminSectionKey): key is ProjectAdminResourceKey {
@@ -203,7 +203,7 @@ export function parseProjectAdminSection(
 }
 
 /**
- * The link to one section: `/projects/<id>/admin/<section>`. `extra` adds page
+ * The link to one section: `/workspaces/<id>/admin/<section>`. `extra` adds page
  * params (`scope=channels` for the Connectors page's Channels scope).
  */
 export function projectAdminHref(

@@ -6,7 +6,7 @@
  *
  * - With a project id: `useFeatureFlag`, fail-closed, on the shared bare
  *   project row (`qk.project.summary(id)`) that the project shell reads.
- * - Without one (`/projects`, `/new`, standalone `/settings`): on when any
+ * - Without one (`/workspaces`, `/workspaces/new`, standalone `/settings`): on when any
  *   project already in this client's query cache has the flag on. The scan
  *   reads the cached project rows, project details and project lists. It sends no request,
  *   so a cold load of such a page with nothing cached reads off.
@@ -153,7 +153,7 @@ export function useNotificationInboxEnabled(projectId?: string | null): boolean 
 /**
  * The inbox gate of `NotificationHost`, except while the
  * project's row loads. Then a cached detail or project list answers, else the
- * previous answer stays. So entering a flag-on project from `/projects` or
+ * previous answer stays. So entering a flag-on project from `/workspaces` or
  * from another flag-on project does not unmount the host and subscribe Web
  * Push again. Only a loaded detail without the flag turns it off. A cold
  * load of a project page starts off. Only a loaded row (or, before it, a

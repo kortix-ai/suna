@@ -1,11 +1,11 @@
 /**
- * `/new?source=github-import` — which repository source the form opens on.
+ * `/workspaces/new?source=github-import` — which repository source the form opens on.
  *
  * Exists for one flow: a user picks a GitHub source, has no GitHub account
  * connected yet, and follows the link to `/github/setup`. That is a real
  * navigation, so the in-progress form state is gone when they come back. The
  * setup page returns them to whatever path `rememberGitHubSetupReturn` stored,
- * so `advanced-fields.tsx` stores `/new?source=<their choice>` and this reads
+ * so `advanced-fields.tsx` stores `/workspaces/new?source=<their choice>` and this reads
  * it back — otherwise they land on a form reset to `managed` and have to
  * rediscover the option that sent them away.
  *
@@ -32,10 +32,10 @@ export function newWorkspaceReturnPath(
   const params = new URLSearchParams();
   if (source !== 'managed') params.set('source', source);
   // The account survives the round trip too. Without it a multi-account user
-  // came back to `/new` on their PERSONAL account and was told "No GitHub
+  // came back to `/workspaces/new` on their PERSONAL account and was told "No GitHub
   // account is connected" about the wrong account (dev, 2026-09-17).
   if (accountId) params.set('account', accountId);
   if (connectComputer) params.set('connect', 'computer');
   const qs = params.toString();
-  return qs ? `/new?${qs}` : '/new';
+  return qs ? `/workspaces/new?${qs}` : '/workspaces/new';
 }

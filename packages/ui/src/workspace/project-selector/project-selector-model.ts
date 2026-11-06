@@ -10,8 +10,8 @@ import {
 import { workspaceAccountLabel } from '../sidebar/workspace-grouping';
 
 /**
- * The pure half of every workspace list: the `/projects` chooser, the
- * `/projects/start` door, the sidebar switcher and the command palette.
+ * The pure half of every workspace list: the `/workspaces` chooser, the
+ * `/workspaces/start` door, the sidebar switcher and the command palette.
  *
  * A workspace is ONE `projects` row and the `accounts` row that owns it — the
  * Slack model (`.agents/skills/learnings/work/workspaces/ux.md`). So the list is
@@ -160,11 +160,11 @@ export function canCreateWorkspace(input: {
 export function inviteLandingPath(landing: AccountInviteLanding): string {
   return landing.kind === 'project'
     ? uiRoutes().project(landing.projectId)
-    : `/projects/start?account=${encodeURIComponent(landing.accountId)}`;
+    : `/workspaces/start?account=${encodeURIComponent(landing.accountId)}`;
 }
 
 /**
- * `/projects/start` — open a workspace directly, or show the chooser.
+ * `/workspaces/start` — open a workspace directly, or show the chooser.
  *
  * The chooser is skipped only when there is exactly one obvious answer:
  *  - the workspace the browser last had open still exists, or
@@ -172,7 +172,7 @@ export function inviteLandingPath(landing: AccountInviteLanding): string {
  * A pending invite always shows the chooser, so an invite is never skipped
  * past on the way into a workspace.
  *
- * `requestedAccountId` (`/projects/start?account=<id>`, after an invite
+ * `requestedAccountId` (`/workspaces/start?account=<id>`, after an invite
  * accept) bounds both answers to that account, and wins over a pending
  * invite: the user just chose where to go (KRTX-1731).
  */

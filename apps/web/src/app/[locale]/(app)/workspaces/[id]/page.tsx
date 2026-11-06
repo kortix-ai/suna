@@ -72,9 +72,9 @@ export default function ProjectIndexPage() {
     );
   }, [accountState, projectAccountId, openUpgradeDialog, tI18nComplete]);
 
-  // `/projects/start?q=<prompt>` forwards its query string onto this route
+  // `/workspaces/start?q=<prompt>` forwards its query string onto this route
   // unchanged (see `withCurrentQuery` in `../start/page.tsx`), landing here as
-  // `/projects/<id>?q=<prompt>`. Seed the one-shot prefill store — ProjectHome
+  // `/workspaces/<id>?q=<prompt>`. Seed the one-shot prefill store — ProjectHome
   // and the channel composer (space-view.tsx) consume it — then leave the URL
   // without `q` so a refresh doesn't re-seed the same prompt. `seededRef`
   // guards against re-seeding on every render once the navigation lands.

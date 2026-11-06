@@ -9,6 +9,6 @@
  * shell (KRTX-2931). This renders `[sessionId]/loading.tsx` instead, which
  * paints the shell with the user's bubble from the first frame.
  *
- * `/projects/[id]/sessions` (no session id) gets the project mark, as before.
+ * `/workspaces/[id]/sessions` (no session id) gets the project mark, as before.
  */
 export { default } from './[sessionId]/loading';

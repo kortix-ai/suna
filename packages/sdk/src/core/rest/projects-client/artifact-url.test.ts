@@ -11,6 +11,11 @@ describe('parseArtifactUrl', () => {
     expect(parseArtifactUrl(`http://localhost:3000/projects/${P}/artifacts/${A}/`)).toEqual({ projectId: P, artifactId: A });
   });
 
+  test('the /workspaces app link (the web path since 2026-11-06) parses like the /projects one', () => {
+    expect(parseArtifactUrl(`https://kortix.com/workspaces/${P}/artifacts/${A}`)).toEqual({ projectId: P, artifactId: A });
+    expect(parseArtifactUrl(`/de/workspaces/${P}/artifacts/${A}/`)).toEqual({ projectId: P, artifactId: A });
+  });
+
   test('ids come back lower-case', () => {
     expect(parseArtifactUrl(`https://kortix.com/projects/${P.toUpperCase()}/artifacts/${A.toUpperCase()}`)).toEqual({
       projectId: P,

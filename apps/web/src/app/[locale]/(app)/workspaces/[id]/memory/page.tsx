@@ -8,7 +8,7 @@ import { FeatureGateScreen } from '@kortix/ui/customize/shared/feature-gate-scre
 import { CompanyMemoryPage } from '@kortix/ui/workspace';
 
 /**
- * /projects/[id]/memory — the Company memory: what every agent in the project
+ * /workspaces/[id]/memory — the Company memory: what every agent in the project
  * knows. It exists only with the project's `chat` flag on: off, a
  * deep link shows only that the flag is off, and no memory loads.
  */

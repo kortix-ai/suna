@@ -194,7 +194,7 @@ export function TemplateSessionInstallDialog({
           actions: [
             {
               label: tI18nComplete.raw(sessionHref ? 'textb205bb47f81a' : 'texted077f3d8125'),
-              onClick: () => router.push(sessionHref ?? `/projects/${projectId}`),
+              onClick: () => router.push(sessionHref ?? `/workspaces/${projectId}`),
             },
           ],
         },

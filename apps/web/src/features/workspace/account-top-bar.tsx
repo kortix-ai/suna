@@ -28,7 +28,7 @@ const NotificationBell = dynamic(
 
 /**
  * The top row of the account-level pages that sit outside a project —
- * `/projects` and `/new`.
+ * `/workspaces` and `/workspaces/new`.
  *
  * Left: an optional way back. Right: the notification bell (KRTX-1742, behind
  * the `notification_center` flag), then who you are, as a button. Log out lives

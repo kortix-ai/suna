@@ -34,7 +34,7 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
  * `updateProjectGroupGrant`, `detachGroupFromProject`) — no reimplementation.
  *
  * **The extended access contract these rows render.** `GET
- * /projects/:id/access` (`listProjectAccess`) carries, per member,
+ * /workspaces/:id/access` (`listProjectAccess`) carries, per member,
  * `custom_role_policies` (this member's custom IAM-role bindings, direct or
  * inherited via a group) and `resource_grants` (which agents/skills this
  * member is scoped to, same direct-or-via-group shape), plus a top-level
@@ -1051,7 +1051,7 @@ export function ProjectAccessPanel({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button asChild type="button" variant="ghost" size="sm">
-              <Link href={`/projects/${projectId}`}>{tI18nComplete.raw('text5e5eba7f41ab')}</Link>
+              <Link href={`/workspaces/${projectId}`}>{tI18nComplete.raw('text5e5eba7f41ab')}</Link>
             </Button>
             {grantButton}
           </div>

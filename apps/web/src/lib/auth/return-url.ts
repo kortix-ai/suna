@@ -78,8 +78,8 @@ export function sanitizeAuthReturnUrl(
   // password flow to attach auth_event, the callback to prepend the origin —
   // and that collapses dot segments. So a prefix test against the raw string
   // is testing a path the browser will never visit:
-  // `/marketplace/../projects/<id>` passes a `/marketplace` check and then
-  // lands on `/projects/<id>`, which is exactly the foreign-project bug the
+  // `/marketplace/../workspaces/<id>` passes a `/marketplace` check and then
+  // lands on `/workspaces/<id>`, which is exactly the foreign-project bug the
   // signup rule below exists to prevent (and would equally slip a
   // `/x/../dashboard` past LEGACY_AUTH_RETURN_PREFIXES). Normalizing here
   // means every downstream rule sees the path that will actually be opened.
@@ -96,7 +96,7 @@ export function sanitizeAuthReturnUrl(
   // path. A request for the bare chooser still enters through the landing
   // door, so a returning user with one workspace opens it instead of a list
   // of one.
-  if (normalizedValue === '/projects') return PROJECT_LANDING_PATH;
+  if (normalizedValue === '/workspaces') return PROJECT_LANDING_PATH;
 
   if (LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => matchesReturnPrefix(normalizedValue, prefix))) {
     return fallback;
@@ -198,7 +198,7 @@ export function isInviteReturnUrl(returnUrl: string | null | undefined): boolean
  * resolves to the internal wildcard BIND address `https://0.0.0.0:3000` instead
  * of the public host. Redirecting there drops the user on a dead address right
  * after they authenticate (observed live: SSO on a self-host landing on
- * `https://0.0.0.0:3000/projects?auth_event=signup&auth_method=sso:...`).
+ * `https://0.0.0.0:3000/workspaces?auth_event=signup&auth_method=sso:...`).
  *
  * A wildcard bind address (0.0.0.0 / [::]) and an AWS private compute hostname
  * are never client-facing origins. ECS can expose the latter as

@@ -457,7 +457,7 @@ export function ArtifactDiscussionSidebar({
       actions: [
         {
           label: t('openSession'),
-          onClick: () => router.push(`/projects/${projectId}/sessions/${sessionId}`),
+          onClick: () => router.push(`/workspaces/${projectId}/sessions/${sessionId}`),
         },
       ],
     });

@@ -13,7 +13,7 @@ import { ProjectSwitchWatcher } from '@/features/workspace/project-switch-watche
  * Its only job is to host behaviour that must not depend on WHICH app route the
  * user happens to be on. Returning from Stripe is the first such case: the
  * handling used to live in the projects list page, which forced every checkout
- * `success_url` to point at `/projects` — the one surface that is deliberately
+ * `success_url` to point at `/workspaces` — the one surface that is deliberately
  * never a destination. Ending a workspace switch is the second: the picker that
  * starts one closes immediately, and the route it navigates to is a different
  * one on either side, so only a shell above both can watch it land.

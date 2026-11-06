@@ -89,7 +89,7 @@ function CaptureAuthorize() {
         description={tWorkspaces('noWorkspaceBody')}
         action={
           <Button asChild size="lg" className="w-full">
-            <Link href="/projects">{tWorkspaces('openChooser')}</Link>
+            <Link href="/workspaces">{tWorkspaces('openChooser')}</Link>
           </Button>
         }
       />

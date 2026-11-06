@@ -514,7 +514,7 @@ export function SessionChat({
   // only the visible tab may be treated as "active" — otherwise every busy
   // session would react to global shortcuts (ESC-to-stop, auto question
   // handling) at the same time. The standalone project session route
-  // (/projects/[id]/sessions/[sessionId]) mounts a single SessionChat whose id
+  // (/workspaces/[id]/sessions/[sessionId]) mounts a single SessionChat whose id
   // is never registered in this tab store; there it's the only chat mounted, so
   // it's always active.
   //

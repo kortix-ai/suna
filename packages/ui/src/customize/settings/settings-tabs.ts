@@ -6,7 +6,7 @@ import { accountPanelUrl, hubTarget } from '../../internal/stores/account-panel-
  * This is the merged vocabulary for Kortix's three former settings surfaces —
  * the project Customize overlay, the user settings modal, and the account
  * settings page — now collapsed into one project-scoped settings overlay at
- * `/projects/[id]/settings(/<tab>)?`. It reads its active tab from the path
+ * `/workspaces/[id]/settings(/<tab>)?`. It reads its active tab from the path
  * segment or, for legacy links, the old `?section=` / `?customize=` query
  * params. This module keeps the tab enum, the default, and a parser in one
  * spot so the overlay, the sidebar, and any deep-link helpers all agree on
@@ -20,7 +20,7 @@ import { accountPanelUrl, hubTarget } from '../../internal/stores/account-panel-
  * many. Those ids live in `ACCOUNT_GRADUATED` now and redirect to that page.
  *
  * Files, Changes, Agent(s), Connectors, and Skills are NOT settings tabs —
- * they are standalone `/projects/[id]/<section>` pages (any member can
+ * they are standalone `/workspaces/[id]/<section>` pages (any member can
  * browse Files; Agent/Connectors/Skills gate on their own read leaf — see
  * capabilities/capability-tab-routes.ts). Everything else that used to live
  * across the three old surfaces now lives here, in some cases under a new
@@ -92,13 +92,13 @@ export type SettingsTab =
   // with no label on the way naming what it does.
   //
   // The id is `workspace`, not `general`: `general` is already spent on a
-  // GRADUATED redirect to `/projects/<id>/config` (see the map below), and a
+  // GRADUATED redirect to `/workspaces/<id>/config` (see the map below), and a
   // live tab sharing that key would shadow every bookmark pointing at it. The
   // rail row is still LABELLED "General" under a "Workspace" group, which is
   // what it was called before it graduated — see `rail.ts`.
   //
   // It renders `tabs/general-tab.tsx`. That component had two mounts while
-  // `/projects/<id>/config?section=general` existed; since that page was
+  // `/workspaces/<id>/config?section=general` existed; since that page was
   // retired on 2026-09-02 this tab is its ONLY mount, and the `general`
   // redirect below is all that is left of the other one.
   | 'workspace'
@@ -127,7 +127,7 @@ export type SettingsTab =
 // The project's own configuration left too — General, Members, Secrets,
 // Channels, Repositories, Models, Sandbox templates, Snapshots, Marketplace,
 // Review, Voice and Feature flags (was `experimental`). All twelve
-// became sections of the Customize bar's Settings tab, `/projects/[id]/config
+// became sections of the Customize bar's Settings tab, `/workspaces/[id]/config
 // ?section=<key>`, and that page was itself retired on 2026-09-02: each id now
 // resolves through `GRADUATED` to a capability page, or is a live tab of this
 // overlay again (`workspace`, `sandbox`, `feature-flags`).
@@ -137,7 +137,7 @@ export type SettingsTab =
 /**
  * The default must be a tab that survives every gate, or the overlay opens on
  * nothing. It was `general` until project configuration moved to
- * `/projects/[id]/config`; `profile` is the first surviving tab and the one
+ * `/workspaces/[id]/config`; `profile` is the first surviving tab and the one
  * every signed-in user can always open — no permission, no flag, no project.
  */
 export const DEFAULT_SETTINGS_TAB: SettingsTab = 'profile';
@@ -173,8 +173,8 @@ export function parseSettingsTab(raw: string | null | undefined): SettingsTab | 
  * land on the new page instead of opening the overlay.
  */
 export const GRADUATED: Record<string, (projectId: string) => string> = {
-  files: (p) => `/projects/${p}/files`,
-  changes: (p) => `/projects/${p}/files?panel=proposed-changes`,
+  files: (p) => `/workspaces/${p}/files`,
+  changes: (p) => `/workspaces/${p}/files?panel=proposed-changes`,
   // The overlay section was `agents`; the route segment is `agent`. Both
   // spellings redirect, because every bookmark and stale href in the wild
   // points at the plural one.
@@ -196,7 +196,7 @@ export const GRADUATED: Record<string, (projectId: string) => string> = {
   webhooks: (p) => capabilityTabHref(p, 'triggers'),
 
   // ── Project configuration → the Customize bar's Settings tab ────────────
-  // `/projects/<id>/config` holds General, Sandbox templates and Feature
+  // `/workspaces/<id>/config` holds General, Sandbox templates and Feature
   // flags. It was retired on 2026-09-02 for the overlay's Workspace
   // group and brought back on 2026-09-03 (Marko), and the overlay group went
   // — so every id that ever named one of these sections, the overlay's own
@@ -231,7 +231,7 @@ export const GRADUATED: Record<string, (projectId: string) => string> = {
   secrets: (p) => capabilityTabHref(p, 'secrets'),
   // Channels graduated a second time and then came back down: it is a scope of
   // the Connectors page now, not a tab of its own. `channelsHref` is that one
-  // URL, shared with the retired `/projects/<id>/channels` route so the two
+  // URL, shared with the retired `/workspaces/<id>/channels` route so the two
   // cannot disagree about the param.
   channels: (p) => channelsHref(p),
   models: (p) => capabilityTabHref(p, 'models'),
@@ -246,7 +246,7 @@ export const GRADUATED: Record<string, (projectId: string) => string> = {
   // closest honest destination for a stale bookmark is the Customize index —
   // it lists every surface that replaced it, rather than a 404 or a pane that
   // no longer exists.
-  marketplace: (p) => `/projects/${p}/customize`,
+  marketplace: (p) => `/workspaces/${p}/customize`,
 };
 
 /**
@@ -374,7 +374,7 @@ export function legacySectionRedirect(
   // depends on whether the caller has an account id in hand yet. `Object.hasOwn`
   // for the same prototype-pollution reason as the two maps below.
   const tab = resolveOverlayTab(rawSection);
-  if (tab) return `/projects/${projectId}/settings/${tab}`;
+  if (tab) return `/workspaces/${projectId}/settings/${tab}`;
 
   // `isAccountGraduatedSection`, not a bare `ACCOUNT_GRADUATED[rawSection]`:
   // a plain object literal inherits `Object.prototype`, so the bare lookup
@@ -391,13 +391,13 @@ export function legacySectionRedirect(
     // a screen they never chose.
     //
     // `members` is scoped, every other account-graduated id is not: a stale
-    // `/projects/<id>/members` bookmark should open the account's Access ›
+    // `/workspaces/<id>/members` bookmark should open the account's Access ›
     // Projects pane pre-filtered to the project it was a bookmark for, not
     // every project the account can see. No other legacy id carries a
     // project-specific destination, so this stays a narrow special case rather
     // than a second parameter every entry pays for.
     return accountPanelUrl(
-      projectId ? `/projects/${projectId}` : '/projects',
+      projectId ? `/workspaces/${projectId}` : '/workspaces',
       hubTarget(accountId, {
         tab: ACCOUNT_GRADUATED[rawSection],
         transactions: rawSection === 'credits' ? 'credit-ledger' : undefined,

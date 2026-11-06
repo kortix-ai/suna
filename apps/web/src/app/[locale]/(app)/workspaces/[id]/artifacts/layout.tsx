@@ -8,7 +8,7 @@ import { FeatureGateScreen } from '@kortix/ui/customize/shared/feature-gate-scre
 import { useFeatureFlag } from '@kortix/sdk/react';
 
 /**
- * /projects/[id]/artifacts* — the project's artifacts. They exist only with
+ * /workspaces/[id]/artifacts* — the project's artifacts. They exist only with
  * the project's `artifacts` flag on: off, a deep link shows only that the flag
  * is off, and no artifact data loads.
  */

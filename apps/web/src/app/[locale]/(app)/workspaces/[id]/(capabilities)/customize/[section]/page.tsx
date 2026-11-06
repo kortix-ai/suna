@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /projects/[id]/customize/[section] — legacy deep-link entry into what is
+ * /workspaces/[id]/customize/[section] — legacy deep-link entry into what is
  * now the Settings overlay (e.g. `/customize/git`, `/customize/agents`). The
  * Customize overlay itself no longer exists — it was merged into Settings
  * (see `features/workspace/settings/settings-panel.tsx`) — and this route is
@@ -41,7 +41,7 @@ export default function ProjectCustomizeSectionRedirect() {
   useEffect(() => {
     if (!projectId) return;
     if (fromSegment.pending || fromQuery.pending) return;
-    router.replace(fromSegment.href ?? fromQuery.href ?? `/projects/${projectId}/settings`);
+    router.replace(fromSegment.href ?? fromQuery.href ?? `/workspaces/${projectId}/settings`);
   }, [projectId, fromSegment.href, fromSegment.pending, fromQuery.href, fromQuery.pending, router]);
 
   return null;

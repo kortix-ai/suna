@@ -39,7 +39,7 @@ import { GoalStarter } from './goal-starter';
 import { NewGoalModal } from './new-goal-modal';
 
 /**
- * /projects/[id]/goals — every goal the viewer can see, grouped by who acts
+ * /workspaces/[id]/goals — every goal the viewer can see, grouped by who acts
  * next: the goals that need the viewer, the ones with a problem, the ones the
  * agent is working, the paused ones, and the closed ones. Each row says in
  * one sentence where the goal stands and what happens next

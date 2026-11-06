@@ -50,7 +50,7 @@ const SWAP_REDUCED = {
  * `icon` / `icon_glyph` was NOT just written, so modelling the value as one
  * field rather than two is what makes it impossible for a host to construct a
  * state (and therefore a request) that sets both, or that clears one without
- * the other reflecting it. `NewWorkspacePage` (`/new`, create) and
+ * the other reflecting it. `NewWorkspacePage` (`/workspaces/new`, create) and
  * `GeneralProjectCard` (workspace Settings, edit — `settings-view.tsx`) hold
  * exactly this type as their icon state and pass it straight through.
  */
@@ -70,7 +70,7 @@ function resolveGlyphFace(glyph: GlyphSelection | null) {
   return GlyphComponent ? { GlyphComponent, name: glyph.name, color: glyph.color } : null;
 }
 
-/** Icon trigger for `/new`'s create form and workspace Settings' edit
+/** Icon trigger for `/workspaces/new`'s create form and workspace Settings' edit
  *  section. Sits beside the name input and opens the Emoji/Icon picker in a
  *  popover. Controlled: the host owns the icon so it can send it with its
  *  payload (create) or diff it against the stored project (edit), and reset
@@ -86,7 +86,7 @@ export function ProjectIconField({
   align = 'start',
 }: {
   /**
-   * Sizing override for the trigger. `/new` renders this as the page's own
+   * Sizing override for the trigger. `/workspaces/new` renders this as the page's own
    * `size-12` subject above the name field; everywhere else it sits inline
    * beside a `size="sm"` input and keeps the `size-9` default that matches it.
    */
@@ -104,7 +104,7 @@ export function ProjectIconField({
   fallbackLabel?: string;
   /**
    * Where the picker hangs relative to the trigger. Defaults to `start` —
-   * `/new` and the create modal put the trigger on the leading edge of its
+   * `/workspaces/new` and the create modal put the trigger on the leading edge of its
    * row, so `center`/`end` would push a ~278px popover past the edge.
    * Settings' Icon row passes `end` because the control sits on the trailing
    * side of a `SettingsRow`.
@@ -129,7 +129,7 @@ export function ProjectIconField({
    * field offers a remove control at all — so "can this field clear?" is a host
    * decision expressed in the type, not a runtime flag.
    *
-   * `/new` deliberately does not pass it: there is nothing saved to undo
+   * `/workspaces/new` deliberately does not pass it: there is nothing saved to undo
    * there, and the trigger already stays live so you reopen it and switch.
    * Workspace Settings does, because an existing project's icon IS saved, and
    * without this there would be no way to ever take one back off.
@@ -198,12 +198,12 @@ export function ProjectIconField({
     // 240.31px of the picker, including the point the wheel was aimed at.
     // `modal` leaves the popover's geometry byte-identical to before.
     //
-    // On `/new` this field has no Dialog ancestor at all, so the bug above
+    // On `/workspaces/new` this field has no Dialog ancestor at all, so the bug above
     // cannot occur there — `modal` is simply inert in that host, not wrong.
     <Popover open={open && !disabled} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
-          // On `/new` the field renders inside that page's <form>, where a
+          // On `/workspaces/new` the field renders inside that page's <form>, where a
           // missing `type="button"` would submit it on click. Workspace
           // Settings has no surrounding <form>, so this is a no-op there —
           // still correct to keep, since a shared control should not assume

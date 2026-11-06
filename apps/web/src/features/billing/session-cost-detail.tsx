@@ -126,7 +126,7 @@ export function SessionCostDetailContent({
           </p>
         </div>
         <Button variant="outline" size="sm" asChild>
-          <Link href={`/projects/${detail.project_id}/sessions/${detail.session_id}`}>
+          <Link href={`/workspaces/${detail.project_id}/sessions/${detail.session_id}`}>
             {tI18nComplete.raw('textb205bb47f81a')}
             <ExternalLink className="size-3.5" />
           </Link>

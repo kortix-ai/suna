@@ -10,7 +10,7 @@ export type NewWorkspaceInput = CreateWorkspaceInput;
  * then provisions its project (Workspaces D3). A restricted self-host answers
  * `403 account_creation_restricted` when a new account would be needed.
  *
- * For the hosts that create a workspace outside `/new` (a marketplace item, a
+ * For the hosts that create a workspace outside `/workspaces/new` (a marketplace item, a
  * use-case template). The SDK's `createWorkspace` carries the flag.
  */
 export function provisionNewWorkspace(input: NewWorkspaceInput): Promise<KortixProject> {

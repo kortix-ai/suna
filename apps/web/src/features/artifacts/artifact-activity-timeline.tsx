@@ -147,7 +147,7 @@ export function ArtifactActivityTimeline({
                     <p className="text-sm break-words">
                       {actor.kind === 'session' ? (
                         <Link
-                          href={`/projects/${projectId}/sessions/${actor.id}`}
+                          href={`/workspaces/${projectId}/sessions/${actor.id}`}
                           className="relative z-10 font-medium hover:underline"
                         >
                           {actorName}

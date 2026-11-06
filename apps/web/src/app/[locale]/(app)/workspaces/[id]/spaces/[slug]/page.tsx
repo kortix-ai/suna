@@ -7,7 +7,7 @@ import { SPACES_FLAG } from '@kortix/ui/workspace';
 import { SpacePage } from '@kortix/ui/workspace/space/space-page';
 
 /**
- * /projects/[id]/spaces/[slug] — one space: its configured
+ * /workspaces/[id]/spaces/[slug] — one space: its configured
  * tabs (`?tab=`). Spaces are Work in progress: the page exists only with the
  * project's `chat` flag on, like a channel page (`c/[slug]`).
  */

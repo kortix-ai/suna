@@ -28,7 +28,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * "Switch workspace" opens one flat list of every workspace (a workspace is
  * one account and its project — no account headings), the current one
  * checked, pending invitations on top, and two actions at the bottom: "Create
- * workspace" and "Workspace settings" (`/projects/:id/admin`, the one settings
+ * workspace" and "Workspace settings" (`/workspaces/:id/admin`, the one settings
  * surface per workspace). See `workspace-menu-section.tsx`.
  *
  * The rows that are genuinely account-level and have nowhere else to live in
@@ -107,7 +107,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
   const { user } = useAuth();
-  // The identity line the account top bar shows on /projects and /new — same
+  // The identity line the account top bar shows on /workspaces and /new — same
   // precedence, same fallback — so the shell's menu says who is signed in the
   // same way those pages do (KRTX-1810).
   const identity = user?.user_metadata?.name?.trim() || user?.email || null;
@@ -269,14 +269,14 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                             reusableAccount: directory.reusableAccount,
                           }) ? (
                             <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                              <Link href="/new" prefetch>
+                              <Link href="/workspaces/new" prefetch>
                                 <PlusIcon />
                                 {tWorkspaces('create')}
                               </Link>
                             </DropdownMenuItem>
                           ) : null}
                           <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                            <Link href={`/projects/${projectId}/admin`} prefetch>
+                            <Link href={`/workspaces/${projectId}/admin`} prefetch>
                               <CogOne />
                               {tWorkspaces('settings')}
                             </Link>

@@ -160,7 +160,7 @@ export function AddToProjectModal({
             label: tI18nComplete.raw(sessionHref ? 'textb205bb47f81a' : 'texted077f3d8125'),
             onClick: () => {
               closeCustomize();
-              router.push(sessionHref ?? `/projects/${projectId}`);
+              router.push(sessionHref ?? `/workspaces/${projectId}`);
             },
           },
         ],

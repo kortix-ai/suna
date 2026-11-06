@@ -10,7 +10,7 @@ import { NotFoundCard, NotFoundNoise } from '@/components/common/not-found-state
 import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
 /**
- * Dashboard 404 — the not-found boundary for `/projects/[id]/*`.
+ * Dashboard 404 — the not-found boundary for `/workspaces/[id]/*`.
  *
  * Same `<NotFoundCard />` as the marketing 404, but framed by the project
  * shell (sidebar + tab bar) so a mistyped project sub-route still feels like
@@ -18,7 +18,7 @@ import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing
  * rather than the marketing site.
  *
  * not-found boundaries don't receive route params, so the project id is read
- * back off the pathname (`/projects/<id>/…`).
+ * back off the pathname (`/workspaces/<id>/…`).
  */
 export default function ProjectNotFound() {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -26,7 +26,7 @@ export default function ProjectNotFound() {
 
   const projectId = useMemo(() => {
     const segments = pathname?.split('/').filter(Boolean) ?? [];
-    return segments[0] === 'projects' ? segments[1] : undefined;
+    return segments[0] === 'workspaces' || segments[0] === 'projects' ? segments[1] : undefined;
   }, [pathname]);
 
   const card = (
@@ -35,7 +35,7 @@ export default function ProjectNotFound() {
       <NotFoundCard
         actions={[
           {
-            href: projectId ? `/projects/${projectId}` : PROJECT_LANDING_PATH,
+            href: projectId ? `/workspaces/${projectId}` : PROJECT_LANDING_PATH,
             label: tHardcodedUi.raw('appNotFound.line100JsxTextReturnHome'),
             icon: <ArrowLeft className="h-4 w-4" />,
           },

@@ -3,7 +3,7 @@
 import { useLocalizedUiCatalog } from '../../i18n/ui-catalog/use-localized-ui-catalog';
 import { useTranslations } from '../../i18n';
 /**
- * Models — the whole `/projects/[id]/models` page: the shared capability
+ * Models — the whole `/workspaces/[id]/models` page: the shared capability
  * shell, one tab strip, and whichever section that strip has selected.
  *
  * ## It is the same page as Connectors, Agents and Skills, or it is wrong

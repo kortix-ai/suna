@@ -14,7 +14,7 @@ import type { UiTranslator } from '../../i18n';
 import type { CustomizeSection } from '../../internal/lib/project-actions';
 
 /**
- * The project-configuration sections of `/projects/[id]/config` — the
+ * The project-configuration sections of `/workspaces/[id]/config` — the
  * "Settings" tab of the Customize bar.
  *
  * These six sections used to be part of the `Workspace` and `Agent` groups of

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /projects/[id]/members — legacy entry into the standalone Members page,
+ * /workspaces/[id]/members — legacy entry into the standalone Members page,
  * which no longer exists: Members moved off the project and onto the
  * account's Access rail (`/accounts/[id]?tab=access-projects`), scoped back
  * down to this project via `&project=<id>` so the account page opens
@@ -36,7 +36,7 @@ export default function ProjectMembersRedirect() {
     // resolving, and replacing now would drop the `&project=` scoping and
     // land on the bare settings overlay instead of the account page.
     if (legacy.pending) return;
-    router.replace(legacy.href ?? `/projects/${projectId}/settings`);
+    router.replace(legacy.href ?? `/workspaces/${projectId}/settings`);
   }, [projectId, legacy.href, legacy.pending, router]);
 
   return null;

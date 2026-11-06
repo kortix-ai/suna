@@ -106,7 +106,7 @@ export function RailNav({
                   <ModalClose asChild>
                     {/* A workspace row opens that workspace's settings. */}
                     {account.workspace_id ? (
-                      <Link href={`/projects/${account.workspace_id}/admin`} className={rowClass}>
+                      <Link href={`/workspaces/${account.workspace_id}/admin`} className={rowClass}>
                         {body}
                       </Link>
                     ) : (

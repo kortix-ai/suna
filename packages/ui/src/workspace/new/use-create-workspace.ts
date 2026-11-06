@@ -42,7 +42,7 @@ export type CreateStatus = 'idle' | 'creating' | 'error';
 
 /**
  * Backoff for a 409 `provision_in_flight` retry, ms — one entry per retry.
- * Identical to `/projects/start`'s `RETRY_DELAY_MS`
+ * Identical to `/workspaces/start`'s `RETRY_DELAY_MS`
  * (`app/(app)/workspaces/start/page.tsx:36`, `const RETRY_DELAY_MS = [400,
  * 1200]`): both doors run the SAME logical create against the same persisted
  * `idempotency_key`, so their backoffs must not diverge.
@@ -193,7 +193,7 @@ const LOST_PROVISION_REASON_RE = /^(?:Provision failed: )?HTTP \d{3}(?::|$)/;
  * `isManagedGitUnavailableError` (`project-create-modal.tsx:352`,
  * `add-to-project-modal.tsx:188`) for their 502/503s: they toast a title with
  * no body, where a raw upstream sentence has nowhere readable to go; the
- * inline alert on `/new` is the one surface built to carry a full sentence.
+ * inline alert on `/workspaces/new` is the one surface built to carry a full sentence.
  *
  * `project_limit_reached` (final-review FIX 2) is checked BEFORE the generic
  * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`
@@ -583,7 +583,7 @@ export type CreateOrchestrationClient = {
   /**
    * The projects the target account already had, as this session last cached
    * them — `qk.projects.list(accountId)`, the entry the door and the project
-   * selector warm before the user ever reaches `/new`. `undefined` is a cold
+   * selector warm before the user ever reaches `/workspaces/new`. `undefined` is a cold
    * cache: no read happened this session, which counts as "possibly the
    * account's first project". Read BEFORE `primeProjectCache`, which
    * prepends the new project and would otherwise make the list never empty.
@@ -603,10 +603,10 @@ export type CreateOrchestrationClient = {
    */
   completeOnboarding: (projectId: string) => Promise<unknown>;
   /**
-   * Hand off to the created workspace's page (`/projects/:id`), the one
+   * Hand off to the created workspace's page (`/workspaces/:id`), the one
    * destination the journey and the user both expect right after Create.
    *
-   * This replaced the `/new?onboarding=<id>` redirect: the wizard held the
+   * This replaced the `/workspaces/new?onboarding=<id>` redirect: the wizard held the
    * page full-screen from the moment the create succeeded until the user
    * completed three steps or clicked "Skip for now", so the app never landed
    * on the project by itself (KRTX-1419).
@@ -670,11 +670,11 @@ async function runSourceAttempt(
  * mint/reuse key -> provision (with retry) ->
  *   [on success only] clear key -> read the account's prior projects ->
  *   prime cache -> invalidate -> write cookie
- *   -> [later projects only] stamp onboarded -> hand off to /projects/:id
+ *   -> [later projects only] stamp onboarded -> hand off to /workspaces/:id
  * ```
  *
  * **No onboarding wizard in the create flow — for accounts that already have
- * a project.** The redirect used to go to `/new?onboarding=<id>`, which
+ * a project.** The redirect used to go to `/workspaces/new?onboarding=<id>`, which
  * mounted the full-screen three-step wizard over the page; the app never
  * landed on the project by itself (KRTX-1419). The stamp is what keeps the
  * shell's copy of that wizard from mounting over the landing page instead.
@@ -747,7 +747,7 @@ export async function runCreate(
 }
 
 /**
- * Drives the `/new` submit button: mints/reuses the idempotency key, POSTs
+ * Drives the `/workspaces/new` submit button: mints/reuses the idempotency key, POSTs
  * the create (with retry-on-in-flight via `runCreateAttempt`), primes the
  * workspace caches, stamps the project onboarded, and lands the user on the
  * new project's page on success. All of that sequencing lives in `runCreate`,
