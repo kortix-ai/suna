@@ -15,10 +15,12 @@
 // mean the session sandbox's `/workspace` directory. `CaptureWorkspace` is a
 // Kortix Capture tenant. Neither is a Kortix workspace.
 //
-// Routes: every function here calls the canonical `/v1/workspaces/:workspaceId/*`
-// name with the workspace id; none resolves the account first. The API serves
-// the older `/v1/projects/*` and `/v1/accounts/*` names permanently, and the
-// older `Project*` / `Account*` functions keep calling them.
+// Routes: every function here calls the canonical `/v1/workspaces[/:workspaceId/*]`
+// name with the WORKSPACE id; none resolves the account first. A canonical
+// path takes the workspace id only: an account id answers 404
+// `workspace_not_found`. The API serves the older `/v1/projects/*` and
+// `/v1/accounts/*` names permanently (either id), and the older `Project*` /
+// `Account*` functions keep calling them.
 
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import {
@@ -27,7 +29,6 @@ import {
   type AccountInvitation,
   type AccountMember,
   type InviteMemberResult,
-  type InviteProjectGrant,
   type KortixAccount,
   type ResendInviteResult,
   listAccounts,
@@ -38,7 +39,16 @@ import { type GetAccountStateOptions, getAccountState } from './billing';
 import { iamGet, iamUnwrap } from './iam-shared';
 import type { PermissionProbeInput, PermissionProbeResult } from './iam-probe';
 import type { AccountGroup, IamRole } from './iam-types';
-import { type KortixProject, type ProjectInput, listProjectsForAccount } from './projects';
+import {
+  type KortixProject,
+  type ProjectInput,
+  type ProvisionProjectInput,
+  type ProvisionStreamEvent,
+  listProjectsForAccount,
+  provisionProject,
+  provisionProjectStream,
+} from './projects';
+import { readProvisionStream } from './provision-stream';
 import { type AccountRole, type ProjectRole, unwrap } from './shared';
 import type { AccountToken, CreateAccountTokenInput, CreatedAccountToken, ListAccountTokensOptions } from './tokens';
 
@@ -50,15 +60,29 @@ import type { AccountToken, CreateAccountTokenInput, CreatedAccountToken, ListAc
 export type WorkspaceRole = 'owner' | 'admin' | 'manager' | 'member';
 
 /**
- * One workspace in a list: the workspace's row plus its id and the caller's
- * role. It carries every `KortixProject` field, so it works wherever a
- * `KortixProject` is expected.
+ * The served state of a workspace. `active`: in use. `setup_required`: it pays
+ * (a plan or bought credits) but has no repository yet: {@link setupWorkspace}.
+ * `deleting`: deleted and inside its restore window ({@link restoreWorkspace});
+ * only its owners see it.
+ */
+export type WorkspaceState = 'active' | 'setup_required' | 'deleting';
+
+/**
+ * One workspace in a list: the workspace's row plus its id, the caller's
+ * role and the workspace state. It carries every `KortixProject` field, so it
+ * works wherever a `KortixProject` is expected.
  */
 export interface WorkspaceSummary extends KortixProject {
   /** The workspace id: the same value as `project_id`. Use it in every URL and call. */
   workspace_id: string;
   /** The caller's role in this workspace. */
   role: WorkspaceRole;
+  /** `active` on an older API, which lists active workspaces only. */
+  state: WorkspaceState;
+  /** True while a legacy account still holds other workspaces. Absent on older APIs. */
+  split_pending?: boolean;
+  /** When a `deleting` workspace is erased; null otherwise. Absent on older APIs. */
+  deletion_scheduled_for?: string | null;
 }
 
 /**
@@ -92,14 +116,30 @@ export interface WorkspaceSettings {
   split_pending?: boolean;
 }
 
+/** How a secret with no strategy of its own reaches a session. */
+export type WorkspaceSecretStrategy = 'runtime' | 'egress' | 'broker' | 'denied';
+
 /** One workspace with its settings: what {@link getWorkspace} returns. */
-export interface Workspace extends WorkspaceSummary, WorkspaceSettings {}
+export interface Workspace extends WorkspaceSummary, WorkspaceSettings {
+  /** How a secret with no strategy of its own reaches a session. Absent on older APIs. */
+  secret_default_strategy?: WorkspaceSecretStrategy;
+}
 
-/** The fields {@link updateWorkspace} changes. Omitted fields stay as they are. */
-export type WorkspaceUpdateInput = Partial<Omit<ProjectInput, 'account_id' | 'repo_url'>>;
+/**
+ * The fields {@link updateWorkspace} changes. Omitted fields stay as they are.
+ * A workspace setting (MFA, session and key policy, branding, automations) is
+ * not one of them: the API answers 400 `workspace_setting_read_only` and
+ * names the route that writes it.
+ */
+export type WorkspaceUpdateInput = Partial<Omit<ProjectInput, 'account_id' | 'repo_url'>> & {
+  secret_default_strategy?: WorkspaceSecretStrategy;
+};
 
-/** One account's loaded project list, as {@link buildWorkspaceSummaries} reads it. */
-export interface WorkspaceProjectList {
+/**
+ * One account's loaded list, as {@link buildWorkspaceSummaries} reads it (the
+ * one-list-per-account read of an older API).
+ */
+export interface WorkspaceSourceList {
   accountId: string;
   /** `undefined` while the list loads or after it failed. */
   data: KortixProject[] | undefined;
@@ -109,14 +149,70 @@ export interface WorkspaceProjectList {
 export type WorkspaceMember = AccountMember;
 /** A pending invitation into a workspace. */
 export type WorkspaceInvitation = AccountInvitation;
-/** What {@link inviteWorkspaceMember} sends. */
+/** What {@link inviteWorkspaceMember} sends. An owner is made by transfer, never by invite. */
 export interface InviteWorkspaceMemberInput {
   email: string;
-  role?: AccountRole;
-  project_grants?: InviteProjectGrant[];
+  /** Default `member`. */
+  role?: Exclude<WorkspaceRole, 'owner'>;
+  /** ISO-8601: the membership ends then. */
+  expires_at?: string;
 }
-/** What {@link createWorkspaceToken} sends. The workspace names the account. */
-export type CreateWorkspaceTokenInput = Omit<CreateAccountTokenInput, 'accountId'>;
+/** What {@link createWorkspaceToken} sends. The key acts on the workspace in the path only. */
+export type CreateWorkspaceTokenInput = Omit<CreateAccountTokenInput, 'accountId' | 'projectId'>;
+
+/** A personal key of the caller (`GET /v1/me/tokens`): acts as the person in each workspace. */
+export interface PersonalToken extends AccountToken {
+  /** `null`: a personal key is bound to no workspace. */
+  workspace_id?: string | null;
+}
+
+/** What {@link deleteWorkspace} answers. */
+export interface DeleteWorkspaceResult {
+  ok: boolean;
+  deleted: boolean;
+  archived: boolean;
+  repo_deleted: boolean;
+  /** When the workspace is erased; until then its owners can restore it. Null for a legacy split workspace. */
+  deletion_scheduled_for: string | null;
+}
+
+/** One workspace that blocks deleting the person: they are its sole owner and others are in it. */
+export interface PersonDeletionBlocker {
+  workspace_id: string;
+  name: string;
+  member_count: number;
+}
+
+/** What deleting the caller's account would do (`GET /v1/account/deletion-plan`). */
+export interface PersonDeletionPlan {
+  /** Workspaces deleted with the person: they are the sole owner and only member. */
+  delete_workspaces: string[];
+  /** Workspaces the person leaves. */
+  leave_workspaces: string[];
+  /** Transfer ownership or remove the members of these first. */
+  blockers: PersonDeletionBlocker[];
+}
+
+/** What {@link setupWorkspace} sends: the repository fields of a new workspace. */
+export type SetupWorkspaceInput = Omit<ProvisionProjectInput, 'account_id' | 'name'>;
+
+// ── Error codes ─────────────────────────────────────────────────────────────
+
+/** 409: the account already holds its workspace's project. The body names it (`workspace_id`). */
+export const WORKSPACE_HAS_PROJECT_CODE = 'workspace_has_project' as const;
+/** 404: no such workspace, an account id on a canonical path, or no access. */
+export const WORKSPACE_NOT_FOUND_CODE = 'workspace_not_found' as const;
+/** 409: the workspace has no repository yet: {@link setupWorkspace}. */
+export const WORKSPACE_SETUP_REQUIRED_CODE = 'workspace_setup_required' as const;
+/** 409: the workspace is being deleted; an owner restores it first ({@link restoreWorkspace}). */
+export const WORKSPACE_DELETING_CODE = 'workspace_deleting' as const;
+/** 400: `updateWorkspace` named a setting; the body's `writer` names the route that writes it. */
+export const WORKSPACE_SETTING_READ_ONLY_CODE = 'workspace_setting_read_only' as const;
+
+/** True when `error` is the API's 409 `workspace_has_project`. Duck-typed on `code`. */
+export function isWorkspaceHasProjectError(error: unknown): boolean {
+  return !!error && typeof error === 'object' && (error as { code?: unknown }).code === WORKSPACE_HAS_PROJECT_CODE;
+}
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
 
@@ -146,6 +242,7 @@ export function workspaceFromProject(
   return {
     ...project,
     workspace_id: project.project_id,
+    state: (project as Partial<WorkspaceSummary>).state ?? 'active',
     role:
       served ??
       workspaceRole({
@@ -163,7 +260,7 @@ export function workspaceFromProject(
  */
 export function buildWorkspaceSummaries(input: {
   accounts: Pick<KortixAccount, 'account_id' | 'account_role'>[];
-  lists: WorkspaceProjectList[];
+  lists: WorkspaceSourceList[];
 }): WorkspaceSummary[] {
   const accountById = new Map(input.accounts.map((account) => [account.account_id, account]));
   const seen = new Set<string>();
@@ -192,15 +289,42 @@ export function compareWorkspacesByRecent(
 
 // ── Reads and writes ────────────────────────────────────────────────────────
 
+/** What {@link listWorkspaces} takes. */
+export interface ListWorkspacesOptions {
+  /** Also list `setup_required` and (for owners) `deleting` workspaces. Default: active only. */
+  includeInactive?: boolean;
+}
+
+function isServedSummary(row: unknown): row is WorkspaceSummary {
+  const r = row as Partial<WorkspaceSummary> | null;
+  return !!r && typeof r.project_id === 'string' && typeof r.role === 'string' && typeof r.state === 'string';
+}
+
 /**
- * Every workspace the caller can open, most recently opened first.
+ * Every workspace the caller can open, across every account, in ONE request
+ * (`GET /v1/workspaces`), most recently opened first. A workspace-bound key
+ * lists its one workspace. `setup_required` and `deleting` workspaces are
+ * left out unless `includeInactive`.
  *
- * Today this is `GET /accounts` and then `GET /projects?account_id=` per
- * account, in parallel. An account with no project (a dormant account) is
- * not a workspace. One account whose list fails does not hide the others; the
- * call rejects only when the account read fails or every list fails.
+ * An older API (list items without `state`, or a 404) is read the older way:
+ * `GET /accounts`, then `GET /projects?account_id=` per account, in parallel.
+ * There one account whose list fails does not hide the others; the call
+ * rejects only when the account read fails or every list fails.
  */
-export async function listWorkspaces(): Promise<WorkspaceSummary[]> {
+export async function listWorkspaces(options: ListWorkspacesOptions = {}): Promise<WorkspaceSummary[]> {
+  const served = await backendApi.get<unknown[]>('/workspaces', { showErrors: false });
+  if (served.success && Array.isArray(served.data) && served.data.length > 0 && served.data.every(isServedSummary)) {
+    const rows = served.data as WorkspaceSummary[];
+    return options.includeInactive ? rows : rows.filter((row) => row.state === 'active');
+  }
+  if (!served.success && served.error?.status !== 404) {
+    throw served.error ?? new Error('Workspace list request failed');
+  }
+  return listWorkspacesPerAccount();
+}
+
+/** The older API's read: the accounts, then each account's projects. */
+async function listWorkspacesPerAccount(): Promise<WorkspaceSummary[]> {
   const accounts = await listAccounts();
   if (accounts.length === 0) return [];
   const settled = await Promise.allSettled(
@@ -247,13 +371,22 @@ type ServedWorkspace = KortixProject & Partial<Workspace> & { workspace?: Served
  * Rejects with the API's `ApiError` (404: no such workspace, or no access).
  */
 export async function getWorkspace(workspaceId: string, options?: ApiClientOptions): Promise<Workspace> {
-  const served = unwrap(await backendApi.get<ServedWorkspace>(`/workspaces/${workspaceId}`, options));
+  return workspaceFromServed(unwrap(await backendApi.get<ServedWorkspace>(`/workspaces/${workspaceId}`, options)));
+}
+
+/**
+ * A served Workspace record, flattened: the `workspace` settings block's
+ * fields move to the top level (its duplicated ids and its `account_role`
+ * are dropped), and the served `role` and `state` win over derived ones.
+ * Reads the account the older way when an older API sent no block and no role.
+ */
+async function workspaceFromServed(served: ServedWorkspace): Promise<Workspace> {
   const { workspace: block, ...project } = served;
-  if (project.role !== undefined) return workspaceFromProject(project) as Workspace;
   if (block) {
     const { account_role: accountRole, workspace_id: _id, account_id: _account, ...settings } = block;
     return { ...workspaceFromProject(project, accountRole ? { account_role: accountRole } : null), ...settings };
   }
+  if (project.role !== undefined) return workspaceFromProject(project) as Workspace;
   // No settings block (the workspace row is not readable as a workspace):
   // read the account the older way, quietly.
   let settings: (WorkspaceSettings & { role: AccountRole }) | null = null;
@@ -278,15 +411,132 @@ async function getAccountQuietly(accountId: string): Promise<AccountDetail> {
 }
 
 /**
- * Change the workspace's name, icon or other editable fields. A rename
- * changes the one workspace name everywhere (the API keeps `kortix.yaml` and
- * the account in step). Answers with the updated workspace summary.
+ * Change the workspace's name, icon, branch, manifest path or secret default.
+ * A rename changes the one workspace name everywhere (the API keeps
+ * `kortix.yaml` and the account in step). Answers with the updated workspace.
  */
-export async function updateWorkspace(
-  workspaceId: string,
-  input: WorkspaceUpdateInput,
-): Promise<WorkspaceSummary> {
-  return workspaceFromProject(unwrap(await backendApi.patch<KortixProject>(`/workspaces/${workspaceId}`, input)));
+export async function updateWorkspace(workspaceId: string, input: WorkspaceUpdateInput): Promise<Workspace> {
+  return workspaceFromServed(unwrap(await backendApi.patch<ServedWorkspace>(`/workspaces/${workspaceId}`, input)));
+}
+
+// ── Create, delete, restore, set up ─────────────────────────────────────────
+
+/**
+ * What {@link createWorkspace} takes: the name and the repository fields of a
+ * new workspace. A new workspace names no account: it always gets its own.
+ */
+export type CreateWorkspaceInput = Omit<ProvisionProjectInput, 'account_id'>;
+
+/** True when `POST /v1/workspaces` is not the workspace create on this API (an older server). */
+function isOlderCreateRoute(error: { status?: number; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  if (error.status === 404 || error.status === 405) return true;
+  // Before the workspace resource, POST /v1/workspaces was the GitHub import of POST /v1/projects.
+  return error.status === 400 && error.message === 'repo_url is required';
+}
+
+function createdFromProject(project: KortixProject): Workspace {
+  return { ...workspaceFromProject(project, { account_role: 'owner' }), state: 'active' } as Workspace;
+}
+
+/**
+ * Create a whole workspace in one call: `POST /v1/workspaces`. It always gets
+ * a new account; only a replay of the same `idempotency_key` answers the
+ * workspace that key already created. Answers the {@link Workspace} (the
+ * caller is its owner).
+ *
+ * - `onEvent` given: streams the same request (`Accept: text/event-stream`)
+ *   and reports the {@link ProvisionStreamEvent}s (`validating` →
+ *   `creating_repository` → `registering` → `seeding`). Needs a streaming
+ *   `fetch`; on React Native omit `onEvent`.
+ * - `onEvent` omitted: one request and response.
+ *
+ * On an older API the call sends `new_workspace: true` to
+ * `POST /v1/projects/provision` (or `/provision-stream`) instead.
+ *
+ * Rejects with an `ApiError`. Codes a host handles: `account_creation_restricted`
+ * (403: this deployment lets only its admin create workspaces; ask for an
+ * invite), `new_workspace_requires_person` (403: an API key, a service
+ * account or a workspace key), `impersonation_invalid` (403),
+ * `provision_in_flight` (409: retry with the same key).
+ */
+export async function createWorkspace(
+  input: CreateWorkspaceInput,
+  onEvent?: (event: ProvisionStreamEvent) => void,
+  options: ApiClientOptions = {},
+): Promise<Workspace> {
+  const { account_id: _account, new_workspace: _flag, ...fields } = input as CreateWorkspaceInput & {
+    account_id?: unknown;
+    new_workspace?: unknown;
+  };
+  const body = { seed_starter: true, ...fields };
+  const legacyBody = { ...fields, new_workspace: true } as ProvisionProjectInput & { new_workspace: true };
+
+  if (onEvent) {
+    const response = await backendApi.postStream('/workspaces', body, options);
+    if (!response.ok) {
+      const error = (await response.json().catch(() => null)) as { error?: string; message?: string; code?: string } | null;
+      const message = error?.error && typeof error.error === 'string' ? error.error : error?.message;
+      if (isOlderCreateRoute({ status: response.status, message })) {
+        return createdFromProject(await provisionProjectStream(legacyBody, onEvent, options));
+      }
+      throw new ApiError(message || `Create workspace failed: HTTP ${response.status}`, {
+        status: response.status,
+        code: error?.code,
+      });
+    }
+    const done = await readProvisionStream(response, onEvent);
+    return done.workspace ? workspaceFromServed(done.workspace as ServedWorkspace) : createdFromProject(done.project);
+  }
+
+  const created = await backendApi.post<ServedWorkspace>('/workspaces', body, { ...options, showErrors: false });
+  if (created.success && created.data) return workspaceFromServed(created.data);
+  if (isOlderCreateRoute(created.error)) return createdFromProject(await provisionProject(legacyBody, options));
+  throw created.error ?? new Error('Create workspace failed');
+}
+
+/**
+ * Delete a workspace: `DELETE /v1/workspaces/:id`. Its members lose access at
+ * once, its plan is cancelled at the end of the period, and it is erased at
+ * `deletion_scheduled_for`. Until then its owners see it as `deleting` and can
+ * {@link restoreWorkspace} it.
+ */
+export async function deleteWorkspace(workspaceId: string): Promise<DeleteWorkspaceResult> {
+  return unwrap(await backendApi.delete<DeleteWorkspaceResult>(`/workspaces/${workspaceId}`));
+}
+
+/** Restore a `deleting` workspace (owners): `POST /v1/workspaces/:id/restore`. */
+export async function restoreWorkspace(workspaceId: string): Promise<Workspace> {
+  return workspaceFromServed(unwrap(await backendApi.post<ServedWorkspace>(`/workspaces/${workspaceId}/restore`, {})));
+}
+
+/**
+ * Set up a `setup_required` workspace (one that pays but has no repository
+ * yet): `POST /v1/workspaces/:id/setup` creates its repository. The workspace
+ * id does not change.
+ */
+export async function setupWorkspace(workspaceId: string, input: SetupWorkspaceInput = {}): Promise<Workspace> {
+  return workspaceFromServed(unwrap(await backendApi.post<ServedWorkspace>(`/workspaces/${workspaceId}/setup`, input)));
+}
+
+// ── The person: personal keys and account deletion ──────────────────────────
+
+/** The caller's personal keys (the CLI login and older account-wide keys): `GET /v1/me/tokens`. */
+export async function listPersonalTokens(): Promise<PersonalToken[]> {
+  return unwrap(await backendApi.get<PersonalToken[]>('/me/tokens'));
+}
+
+/** Revoke one of the caller's personal keys: `DELETE /v1/me/tokens/:tokenId`. */
+export async function revokePersonalToken(tokenId: string) {
+  return unwrap(await backendApi.delete<{ ok: boolean }>(`/me/tokens/${encodeURIComponent(tokenId)}`));
+}
+
+/**
+ * What deleting the caller's account would do: the workspaces deleted with
+ * them, the ones they leave, and the shared ones they must hand over first.
+ */
+export async function getPersonDeletionPlan(): Promise<PersonDeletionPlan> {
+  return unwrap(await backendApi.get<PersonDeletionPlan>('/account/deletion-plan'));
 }
 
 /**
@@ -318,10 +568,11 @@ export async function inviteWorkspaceMember(
   );
 }
 
+/** Change a person's role. Only an owner makes an owner. */
 export async function updateWorkspaceMemberRole(
   workspaceId: string,
   userId: string,
-  role: AccountRole,
+  role: WorkspaceRole,
 ): Promise<WorkspaceMember> {
   return unwrap(
     await backendApi.patch<AccountMember>(`/workspaces/${workspaceId}/members/${userId}`, { role }),
@@ -363,18 +614,16 @@ export async function listWorkspaceTokens(workspaceId: string, options?: ListAcc
 }
 
 /**
- * Mint a personal access token bound to the workspace: it acts on that
- * workspace only (`project_id` in the response). `secret_key` is returned
- * once. On the account key of a legacy multi-workspace account the API
- * answers 409 `workspace_ambiguous` unless `projectId` names one of them.
+ * Mint a workspace key: it acts on this workspace only (`workspace_id` in the
+ * response). `secret_key` is returned once. A person's own key that acts in
+ * every workspace of theirs is a personal key ({@link listPersonalTokens}).
  */
 export async function createWorkspaceToken(workspaceId: string, input: CreateWorkspaceTokenInput) {
-  const { expiresAt, projectId, name } = input;
+  const { expiresAt, name } = input;
   return unwrap(
     await backendApi.post<CreatedAccountToken>(`/workspaces/${workspaceId}/tokens`, {
       name,
       ...(expiresAt ? { expires_at: expiresAt } : {}),
-      ...(projectId ? { project_id: projectId } : {}),
     }),
   );
 }

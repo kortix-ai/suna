@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as P from '../rest/projects-client';
+import { WORKSPACE_HANDLE_OVERRIDES } from './facade-workspaces';
 import { createKortix, type WorkspaceHandle } from './kortix';
 
 // Synthetic ids: the workspace id and its account id always differ.
@@ -54,13 +55,40 @@ describe('kortix.workspace(id)', () => {
     expect(ws.role).toBe('owner');
   });
 
-  test('carries the whole project handle: sessions, secrets, connectors', () => {
-    const handle: WorkspaceHandle = kortix.workspace(WS);
-    const project = kortix.project(WS);
+  test('carries the whole project handle; the overridden keys are exactly the listed ones', () => {
+    const handle = kortix.workspace(WS) as unknown as Record<string, unknown>;
+    const project = kortix.project(WS) as unknown as Record<string, unknown>;
+    // The keys whose workspace meaning replaces the project meaning. A new
+    // project member that collides with a workspace member fails this list.
+    expect([...WORKSPACE_HANDLE_OVERRIDES]).toEqual(['get', 'update', 'tokens']);
+    const workspaceOnly = Object.keys(handle).filter((key) => !(key in project));
+    const collisions = Object.keys(project).filter(
+      (key) => key in handle && !(WORKSPACE_HANDLE_OVERRIDES as readonly string[]).includes(key) && workspaceOnly.includes(key),
+    );
+    expect(collisions).toEqual([]);
     for (const key of Object.keys(project)) {
-      expect(key in handle).toBe(true);
+      expect({ key, present: key in handle }).toEqual({ key, present: true });
+    }
+    for (const key of ['id', 'accountId', 'members', 'leave', 'billing', 'iam', 'cliTokens', 'delete', 'restore', 'setup']) {
+      expect({ key, present: key in handle }).toEqual({ key, present: true });
     }
     expect(handle.id).toBe(WS);
+  });
+
+  test('the project CLI tokens stay reachable as cliTokens', async () => {
+    const handle: WorkspaceHandle = kortix.workspace(WS);
+    await handle.cliTokens.list();
+    expect(calls.at(-1)).toMatchObject({ method: 'GET', url: `/workspaces/${WS}/cli-token` });
+    await handle.tokens.list();
+    expect(calls.at(-1)).toMatchObject({ method: 'GET', url: `/workspaces/${WS}/tokens` });
+  });
+
+  test('delete and restore act on the workspace', async () => {
+    const handle = kortix.workspace(WS);
+    await handle.delete().catch(() => undefined);
+    await handle.restore().catch(() => undefined);
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toContain(`DELETE /workspaces/${WS}`);
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toContain(`POST /workspaces/${WS}/restore`);
   });
 
   test('members, billing, tokens and IAM call the workspace routes, one request each', async () => {

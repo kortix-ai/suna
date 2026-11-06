@@ -169,50 +169,99 @@ describe('compareWorkspacesByRecent', () => {
 });
 
 describe('listWorkspaces', () => {
-  test('reads the accounts, then each account\'s projects, and returns one flat list, most recent first', async () => {
+  const served = (id: string, accountId: string, extra: Record<string, unknown> = {}) => ({
+    ...project(id, accountId),
+    workspace_id: id,
+    role: 'owner',
+    state: 'active',
+    split_pending: false,
+    deletion_scheduled_for: null,
+    ...extra,
+  });
+
+  test('one GET /workspaces: every workspace across accounts, in the server order', async () => {
+    route('GET', /^\/workspaces$/, [
+      served(WS_B, ACC_B, { role: 'admin', last_opened_at: '2026-01-03T00:00:00.000Z' }),
+      served(WS_A, ACC_A, { role: 'manager' }),
+    ]);
+    const workspaces = await listWorkspaces();
+    expect(calls.map((c) => c.url)).toEqual(['/workspaces']);
+    expect(workspaces.map((w) => [w.workspace_id, w.role, w.state])).toEqual([
+      [WS_B, 'admin', 'active'],
+      [WS_A, 'manager', 'active'],
+    ]);
+  });
+
+  test('a workspace in setup or being deleted is left out unless includeInactive', async () => {
+    route('GET', /^\/workspaces$/, [
+      served(WS_A, ACC_A),
+      served(WS_B, ACC_B, { state: 'setup_required' }),
+      served(WS_SHARED, ACC_FOREIGN, { state: 'deleting', deletion_scheduled_for: '2026-12-01T00:00:00.000Z' }),
+    ]);
+    expect((await listWorkspaces()).map((w) => w.workspace_id)).toEqual([WS_A]);
+    expect((await listWorkspaces({ includeInactive: true })).map((w) => [w.workspace_id, w.state])).toEqual([
+      [WS_A, 'active'],
+      [WS_B, 'setup_required'],
+      [WS_SHARED, 'deleting'],
+    ]);
+  });
+
+  test('an older API (list items without state): reads the accounts, then each account\'s projects', async () => {
+    route('GET', /^\/workspaces$/, [project(WS_A, ACC_A)]);
     route('GET', /^\/accounts$/, [account(ACC_A, 'owner'), account(ACC_B, 'admin')]);
-    route('GET', new RegExp(`^/workspaces\\?account_id=${ACC_A}$`), [
+    route('GET', new RegExp(`^/projects\\?account_id=${ACC_A}$`), [
       project(WS_A, ACC_A, { last_opened_at: '2026-01-02T00:00:00.000Z' }),
     ]);
-    route('GET', new RegExp(`^/workspaces\\?account_id=${ACC_B}$`), [
+    route('GET', new RegExp(`^/projects\\?account_id=${ACC_B}$`), [
       project(WS_B, ACC_B, { last_opened_at: '2026-01-03T00:00:00.000Z' }),
     ]);
 
     const workspaces = await listWorkspaces();
-    expect(workspaces.map((w) => [w.workspace_id, w.role])).toEqual([
-      [WS_B, 'admin'],
-      [WS_A, 'owner'],
+    expect(workspaces.map((w) => [w.workspace_id, w.role, w.state])).toEqual([
+      [WS_B, 'admin', 'active'],
+      [WS_A, 'owner', 'active'],
     ]);
     expect(calls.map((c) => c.url)).toEqual([
+      '/workspaces',
       '/accounts',
-      `/workspaces?account_id=${ACC_A}`,
-      `/workspaces?account_id=${ACC_B}`,
+      `/projects?account_id=${ACC_A}`,
+      `/projects?account_id=${ACC_B}`,
     ]);
   });
 
-  test('an account with no project (a dormant account) is not a workspace', async () => {
+  test('an older API: an account with no project (a dormant account) is not a workspace', async () => {
+    route('GET', /^\/workspaces$/, { error: 'not found' }, 404);
     route('GET', /^\/accounts$/, [account(ACC_A, 'owner'), account(ACC_B, 'owner')]);
     route('GET', new RegExp(`account_id=${ACC_A}`), [project(WS_A, ACC_A)]);
     route('GET', new RegExp(`account_id=${ACC_B}`), []);
     expect((await listWorkspaces()).map((w) => w.workspace_id)).toEqual([WS_A]);
   });
 
-  test('one account whose list fails does not hide the others', async () => {
+  test('an older API: one account whose list fails does not hide the others', async () => {
+    route('GET', /^\/workspaces$/, { error: 'not found' }, 404);
     route('GET', /^\/accounts$/, [account(ACC_A, 'owner'), account(ACC_B, 'owner')]);
     route('GET', new RegExp(`account_id=${ACC_A}`), [project(WS_A, ACC_A)]);
     route('GET', new RegExp(`account_id=${ACC_B}`), { error: 'boom' }, 500);
     expect((await listWorkspaces()).map((w) => w.workspace_id)).toEqual([WS_A]);
   });
 
-  test('rejects when every account list fails: an error is not "no workspaces"', async () => {
+  test('an older API: rejects when every account list fails: an error is not "no workspaces"', async () => {
+    route('GET', /^\/workspaces$/, { error: 'not found' }, 404);
     route('GET', /^\/accounts$/, [account(ACC_A, 'owner')]);
     route('GET', new RegExp(`account_id=${ACC_A}`), { error: 'boom' }, 500);
     await expect(listWorkspaces()).rejects.toBeInstanceOf(ApiError);
   });
 
-  test('a caller with no account has no workspace', async () => {
+  test('a caller with no workspace: [] (the account read confirms it)', async () => {
+    route('GET', /^\/workspaces$/, []);
     route('GET', /^\/accounts$/, []);
     expect(await listWorkspaces()).toEqual([]);
+  });
+
+  test('a server error on the list rejects: it is not "no workspaces"', async () => {
+    route('GET', /^\/workspaces$/, { error: 'boom' }, 500);
+    await expect(listWorkspaces()).rejects.toBeInstanceOf(ApiError);
+    expect(calls.map((c) => c.url)).toEqual(['/workspaces']);
   });
 });
 
@@ -302,6 +351,24 @@ describe('getWorkspace', () => {
     await expect(getWorkspace(WS_A)).rejects.toMatchObject({ status: 404 });
   });
 
+  test('the served role and state win over the derived ones; the block flattens', async () => {
+    route('GET', new RegExp(`^/workspaces/${WS_A}$`), {
+      ...project(WS_A, ACC_A, { effective_project_role: 'manager' }),
+      workspace_id: WS_A,
+      role: 'admin',
+      state: 'deleting',
+      deletion_scheduled_for: '2026-12-01T00:00:00.000Z',
+      split_pending: false,
+      workspace: settingsBlock({ account_role: 'admin', member_count: 7 }),
+    });
+    const ws = await getWorkspace(WS_A);
+    expect(ws.role).toBe('admin');
+    expect(ws.state).toBe('deleting');
+    expect(ws.deletion_scheduled_for).toBe('2026-12-01T00:00:00.000Z');
+    expect(ws.member_count).toBe(7);
+    expect(calls.map((c) => c.url)).toEqual([`/workspaces/${WS_A}`]);
+  });
+
   test('a response that already names its role needs no second read', async () => {
     route('GET', new RegExp(`^/workspaces/${WS_A}$`), {
       ...project(WS_A, ACC_A),
@@ -316,12 +383,26 @@ describe('getWorkspace', () => {
 });
 
 describe('updateWorkspace', () => {
-  test('PATCHes /workspaces/:id and answers with a workspace', async () => {
-    route('PATCH', new RegExp(`^/workspaces/${WS_A}$`), project(WS_A, ACC_A, { name: 'Renamed' }));
-    const ws = await updateWorkspace(WS_A, { name: 'Renamed' });
-    expect(calls[0]).toMatchObject({ method: 'PATCH', url: `/workspaces/${WS_A}`, body: { name: 'Renamed' } });
+  test('PATCHes /workspaces/:id and answers with the Workspace', async () => {
+    route('PATCH', new RegExp(`^/workspaces/${WS_A}$`), {
+      ...project(WS_A, ACC_A, { name: 'Renamed' }),
+      workspace_id: WS_A,
+      role: 'owner',
+      state: 'active',
+      secret_default_strategy: 'egress',
+      workspace: { workspace_id: WS_A, account_id: ACC_A, account_role: 'owner', member_count: 1, mfa_required: false },
+    });
+    const ws = await updateWorkspace(WS_A, { name: 'Renamed', secret_default_strategy: 'egress' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: 'PATCH',
+      url: `/workspaces/${WS_A}`,
+      body: { name: 'Renamed', secret_default_strategy: 'egress' },
+    });
     expect(ws.workspace_id).toBe(WS_A);
     expect(ws.name).toBe('Renamed');
+    expect(ws.secret_default_strategy).toBe('egress');
+    expect(ws.member_count).toBe(1);
   });
 });
 

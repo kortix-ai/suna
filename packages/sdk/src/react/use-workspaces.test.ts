@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { KortixAccount, KortixProject } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
-import { workspaceQueryOptions, workspacesState } from './use-workspaces';
+import { workspaceQueryOptions, workspacesQueryOptions, workspacesState } from './use-workspaces';
 
 // Synthetic ids; workspace id != account id.
 const WS_A = '11111111-1111-4111-8111-111111111111';
@@ -105,5 +105,21 @@ describe('workspaceQueryOptions', () => {
 
   test('carries the config freshness contract', () => {
     expect(workspaceQueryOptions(WS_A).staleTime).toBe(contract('config').staleTime);
+  });
+});
+
+describe('workspacesQueryOptions', () => {
+  test('keys the one-request list per user under the projects scope, so a create or a rename refetches it', () => {
+    const key = workspacesQueryOptions('u1').queryKey;
+    expect(key).toEqual(qk.projects.workspaces('u1'));
+    expect(key.slice(0, qk.projects.scope().length)).toEqual([...qk.projects.scope()]);
+    expect(qk.projects.workspaces('u1')).not.toEqual(qk.projects.workspaces('u2'));
+    expect(qk.projects.workspaces('u1')).not.toEqual(qk.projects.list('u1'));
+  });
+
+  test('honours the caller gate and carries the inventory freshness contract', () => {
+    expect(workspacesQueryOptions('u1').enabled).toBe(true);
+    expect(workspacesQueryOptions('u1', false).enabled).toBe(false);
+    expect(workspacesQueryOptions('u1').staleTime).toBe(contract('inventory').staleTime);
   });
 });

@@ -230,6 +230,13 @@ export const qk = {
      *  same key refetches a fresh answer. */
     quota: (accountId?: string) =>
       [...qk.projects.scope(), 'quota', accountId ?? 'default'] as const,
+
+    /** `listWorkspaces()` — every workspace of the user, one request. Keyed by
+     *  user like `accounts.list`, and under `scope()` so a create, a rename or
+     *  a delete (which invalidate that prefix) refetches it. The `'workspaces'`
+     *  segment is never an account id, so it collides with no `list(id)`. */
+    workspaces: (userId?: string | null) =>
+      [...qk.projects.scope(), 'workspaces', userId ?? 'anonymous'] as const,
   },
 
   /**

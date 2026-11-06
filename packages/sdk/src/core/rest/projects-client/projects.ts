@@ -1,6 +1,7 @@
 // Projects — project CRUD, detail, feature flags, onboarding.
 
 import type { CatalogModel } from '@kortix/llm-catalog';
+import { readProvisionStream } from './provision-stream';
 import type { ManifestIssue } from './change-request-recovery';
 import type { ManifestSpace } from './manifest-spaces';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
@@ -876,51 +877,6 @@ export type ProvisionStreamEvent =
   | { type: 'error'; error: string; code?: string; status?: number };
 
 /**
- * Parse ONE SSE frame — the text between two `\n\n` boundaries — into a
- * `ProvisionStreamEvent`, or `null` if the frame carries no `data:` line.
- *
- * Line-by-line, not `frame.startsWith('data: ')` against the whole frame:
- * SSE permits `: comment` lines and an `event:` line ahead of `data:`, and
- * the wire contract here is data-only (no `event:` line) ONLY as an
- * implementation choice the server documents, not a protocol guarantee a
- * client should hard-fail without. A parser that rejects any frame that
- * isn't EXACTLY `data: <json>` breaks the moment a spec-legal frame shows up
- * that it wasn't exactly expecting. Per the SSE spec, multiple `data:` lines
- * in one frame are joined with `\n` before parsing.
- */
-/** How much of an unparseable frame's payload to surface in the thrown error.
- *  Bounded hard: a frame can be arbitrarily large, and — in the wrong build,
- *  on the wrong route — could in principle carry something sensitive (a push
- *  token). Never include more than this, and never log the payload anywhere. */
-const FRAME_PARSE_ERROR_EXCERPT_LENGTH = 200;
-
-function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
-  const dataLines = frame
-    .split('\n')
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice(5).replace(/^ /, ''));
-  if (dataLines.length === 0) return null;
-
-  const payload = dataLines.join('\n');
-  try {
-    return JSON.parse(payload) as ProvisionStreamEvent;
-  } catch (cause) {
-    const excerpt =
-      payload.length > FRAME_PARSE_ERROR_EXCERPT_LENGTH
-        ? `${payload.slice(0, FRAME_PARSE_ERROR_EXCERPT_LENGTH)}…`
-        : payload;
-    // Named + attributed: a bare `SyntaxError: JSON Parse error: Expected
-    // '}'` gives someone debugging a proxy that mangled one frame in
-    // production nothing to go on — no mention of provisionProjectStream, no
-    // mention that this came from an SSE frame, no sight of what the frame
-    // actually contained.
-    throw new Error(`provisionProjectStream: received an unparseable SSE frame (${excerpt})`, {
-      cause,
-    });
-  }
-}
-
-/**
  * Create a managed-repo project, reporting which phase the server is in as
  * it happens.
  *
@@ -991,123 +947,29 @@ export async function provisionProjectStream(
     });
   }
 
-  const reader = response.body?.getReader();
-  if (!reader) {
-    throw new Error('Provision stream is unavailable on this runtime (no response body)');
-  }
-
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let settled: KortixProject | null = null;
-
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let boundary = buffer.indexOf('\n\n');
-      while (boundary !== -1) {
-        const frame = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        boundary = buffer.indexOf('\n\n');
-
-        const event = parseProvisionStreamFrame(frame);
-        if (!event) continue;
-        onEvent(event);
-        // Same `ApiError` shape as the pre-stream-denial branch above, so a
-        // host classifying create failures gets identical `.status`/`.code`
-        // whichever branch fired.
-        if (event.type === 'error') {
-          throw new ApiError(event.error, { status: event.status, code: event.code });
-        }
-        if (event.type === 'done') settled = event.project;
-      }
-    }
-  } finally {
-    reader.cancel().catch(() => {});
-  }
-
-  // A stream that closes without a terminal event is a failure, not a
-  // success. Resolving here would hand the caller an undefined project id
-  // and route a user to `/projects/undefined`.
-  //
-  // `ApiError` with a stable code, not a bare `Error`: the close means the
-  // create's result is UNKNOWN — the route's handler outlives a lost reader
-  // and may still commit or roll back — so a host cannot tell this apart
-  // from a real failure without sniffing the message. The code is what lets
-  // the host (`apps/web`'s `runProvisionAttempt`) replay the SAME
-  // idempotency key over the plain route and recover the true outcome
-  // (KRTX-1754) instead of reporting jargon. The message is unchanged for
-  // every existing reader.
-  if (!settled) {
-    throw new ApiError('Provision stream ended without a result', {
-      code: PROVISION_STREAM_UNTERMINATED_CODE,
-    });
-  }
-  return settled;
-}
-
-/**
- * What {@link createWorkspace} takes: the provision fields without
- * `account_id`. A new workspace names no account; the server picks it.
- */
-export type CreateWorkspaceInput = Omit<ProvisionProjectInput, 'account_id'>;
-
-/**
- * Create a whole workspace in one call: its account and its project.
- *
- * A workspace is one account and its one project, and the workspace id is the
- * returned `project_id`. The server (`new_workspace: true` on
- * `POST /projects/provision`) reuses the caller's newest OWNED account that has
- * no active project — an empty account they already hold keeps its plan and
- * credits — else creates an account named after the workspace, then
- * provisions the project into it. The account takes the project's name.
- *
- * - `onEvent` given: streams `POST /projects/provision-stream` and reports the
- *   same {@link ProvisionStreamEvent}s as {@link provisionProjectStream}
- *   (`validating` → `creating_repository` → `registering` → `seeding`). Needs a
- *   streaming `fetch`; on React Native omit `onEvent`.
- * - `onEvent` omitted: one `POST /projects/provision` request and response.
- *
- * Send an `idempotency_key` and reuse it on retries: a retry returns the same
- * workspace instead of creating a second one.
- *
- * Rejects with an `ApiError`. Codes a host handles: `account_creation_restricted`
- * (403: this deployment lets only its admin create workspaces; ask for an
- * invite), `new_workspace_requires_person` (403: a project, session or agent
- * token), `provision_in_flight` (409: retry with the same key).
- */
-export async function createWorkspace(
-  input: CreateWorkspaceInput,
-  onEvent?: (event: ProvisionStreamEvent) => void,
-  options: ApiClientOptions = {},
-): Promise<KortixProject> {
-  const { account_id: _ignored, ...fields } = input as CreateWorkspaceInput & { account_id?: unknown };
-  const body = { ...fields, new_workspace: true } as ProvisionProjectInput & { new_workspace: true };
-  if (onEvent) return provisionProjectStream(body, onEvent, options);
-  return provisionProject(body, options);
+  return (await readProvisionStream(response, onEvent)).project;
 }
 
 export interface ProjectQuota {
-  /** True when the account cannot create another project right now. */
+  /** True when the account cannot create its project: it already holds one. */
   capped: boolean;
-  /** The active-project cap. `Number.MAX_SAFE_INTEGER` when the plan does not cap. */
+  /** 1: a workspace holds one project. An older API sent the plan's project cap. */
   limit: number;
-  /** Active projects in the account; null when the plan does not cap (no count ran). */
+  /** Active projects in the account (2+ only on a legacy account the split has not reached). */
   count: number | null;
-  /** The denial message a create would answer with; null when not capped. */
+  /** The create gate's message when capped; null otherwise. */
   message: string | null;
 }
 
 /**
- * The account's project-cap state — `GET /projects/quota`. Lets a create UI
- * pre-check whether `provisionProject` would be denied by the plan cap
- * BEFORE the user fills the form and hits the 403, so the page can show the
- * cap reason up front and keep the submit disabled. Omit `accountId` to
- * resolve the same default account the create itself targets (the server's
- * `resolveProjectAccount` default); pass the account when the UI has already
- * resolved one.
+ * Whether an account may create its project — `GET /v1/projects/quota`, from
+ * the create gate's own rule, so a create form can keep its submit disabled
+ * up front. To make another workspace use `createWorkspace`. Omit `accountId`
+ * to resolve the same default account the create itself targets.
+ *
+ * An older API answered the plan's project cap and a create past it with the
+ * now-deprecated 403 `project_limit_reached`; current APIs answer 409
+ * `workspace_has_project` (`isWorkspaceHasProjectError`).
  */
 export async function getProjectQuota(options?: { accountId?: string }): Promise<ProjectQuota> {
   const query = options?.accountId ? `?account_id=${encodeURIComponent(options.accountId)}` : '';
@@ -1414,13 +1276,15 @@ export async function fetchProjectsForAccountWithToken(
 
 export type ProvisionProjectWithTokenResult =
   | { ok: true; project: KortixProject }
+  /** `limitReached`: the account already holds its project (409 `workspace_has_project`; 403 `project_limit_reached` on an older API). */
   | { ok: false; limitReached: boolean };
 
 /**
- * Server-side / explicit-token variant of {@link provisionProject}. Mirrors
- * the original bootstrap behavior: a 403 with `code: 'project_limit_reached'`
- * is reported distinctly so the caller can fall back to re-listing existing
- * projects instead of treating it as a hard failure.
+ * Server-side / explicit-token variant of {@link provisionProject}. An
+ * account that already holds its project (409 `workspace_has_project`, or the
+ * deprecated 403 `project_limit_reached` of an older API) is reported as
+ * `limitReached` so the caller can re-list the existing project instead of
+ * treating it as a hard failure.
  */
 export async function provisionProjectWithToken(
   opts: ServerTokenOptions,
@@ -1446,9 +1310,12 @@ export async function provisionProjectWithToken(
       if (!project?.project_id) return { ok: false, limitReached: false };
       return { ok: true, project };
     }
-    if (res.status === 403) {
+    if (res.status === 403 || res.status === 409) {
       const body = (await res.json().catch(() => null)) as { code?: string } | null;
-      return { ok: false, limitReached: body?.code === 'project_limit_reached' };
+      // 409 `workspace_has_project`: the account already holds its project.
+      // 403 `project_limit_reached`: the same answer from an API before the
+      // workspace rule (deprecated code; current APIs never send it).
+      return { ok: false, limitReached: body?.code === 'workspace_has_project' || body?.code === 'project_limit_reached' };
     }
     return { ok: false, limitReached: false };
   } catch {

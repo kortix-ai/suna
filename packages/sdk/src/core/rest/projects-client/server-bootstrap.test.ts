@@ -81,6 +81,14 @@ test('provisionProjectWithToken reports project_limit_reached distinctly from ot
     { name: 'x' },
   );
   expect(forbidden).toEqual({ ok: false, limitReached: false });
+
+  // The workspace rule: the account already holds its project.
+  nextResponse = { status: 409, body: { code: 'workspace_has_project', workspace_id: 'w1' } };
+  const occupied = await provisionProjectWithToken(
+    { backendUrl: 'http://backend.local/v1', accessToken: 'server-token' },
+    { name: 'x' },
+  );
+  expect(occupied).toEqual({ ok: false, limitReached: true });
 });
 
 test('provisionProjectWithToken returns a non-limit failure without throwing on other errors', async () => {
