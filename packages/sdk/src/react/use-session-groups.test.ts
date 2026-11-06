@@ -7,12 +7,12 @@ import type { ProjectSessionGroup } from '../core/rest/projects-client/session-g
 import type { ProjectSession } from '../core/rest/projects-client/sessions';
 import { qk } from './query-keys';
 import {
-  useCreateProjectSessionGroup,
-  useDeleteProjectSessionGroup,
-  useProjectSessionGroups,
-  useRenameProjectSessionGroup,
-  useReorderProjectSessionGroups,
-  useSetProjectSessionGroup,
+  useCreateWorkspaceSessionGroup,
+  useDeleteWorkspaceSessionGroup,
+  useWorkspaceSessionGroups,
+  useRenameWorkspaceSessionGroup,
+  useReorderWorkspaceSessionGroups,
+  useSetWorkspaceSessionGroup,
 } from './use-session-groups';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -53,12 +53,12 @@ beforeEach(() => {
 let renderer: ReactTestRenderer | null = null;
 let client: QueryClient;
 let api: {
-  groups: ReturnType<typeof useProjectSessionGroups>;
-  create: ReturnType<typeof useCreateProjectSessionGroup>;
-  rename: ReturnType<typeof useRenameProjectSessionGroup>;
-  remove: ReturnType<typeof useDeleteProjectSessionGroup>;
-  reorder: ReturnType<typeof useReorderProjectSessionGroups>;
-  file: ReturnType<typeof useSetProjectSessionGroup>;
+  groups: ReturnType<typeof useWorkspaceSessionGroups>;
+  create: ReturnType<typeof useCreateWorkspaceSessionGroup>;
+  rename: ReturnType<typeof useRenameWorkspaceSessionGroup>;
+  remove: ReturnType<typeof useDeleteWorkspaceSessionGroup>;
+  reorder: ReturnType<typeof useReorderWorkspaceSessionGroups>;
+  file: ReturnType<typeof useSetWorkspaceSessionGroup>;
 };
 
 afterEach(async () => {
@@ -69,12 +69,12 @@ afterEach(async () => {
 
 function Probe({ enabled }: { enabled: boolean }) {
   api = {
-    groups: useProjectSessionGroups('P1', { enabled }),
-    create: useCreateProjectSessionGroup('P1'),
-    rename: useRenameProjectSessionGroup('P1'),
-    remove: useDeleteProjectSessionGroup('P1'),
-    reorder: useReorderProjectSessionGroups('P1'),
-    file: useSetProjectSessionGroup('P1'),
+    groups: useWorkspaceSessionGroups('P1', { enabled }),
+    create: useCreateWorkspaceSessionGroup('P1'),
+    rename: useRenameWorkspaceSessionGroup('P1'),
+    remove: useDeleteWorkspaceSessionGroup('P1'),
+    reorder: useReorderWorkspaceSessionGroups('P1'),
+    file: useSetWorkspaceSessionGroup('P1'),
   };
   return null;
 }

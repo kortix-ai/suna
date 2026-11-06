@@ -3899,7 +3899,7 @@ for (;;) {
 | Sign-in | `token(appId)`, `authEnv(appId)` |
 
 React hooks in `@kortix/sdk/react`:
-`useProjectApps`, `useAppDeployments`, `useAppDeployment`, `useAppAccess`,
+`useWorkspaceApps`, `useAppDeployments`, `useAppDeployment`, `useAppAccess`,
 `useAppMachines`, `useAppVolumes` and `useAppVolumeSnapshots`. Signatures and
 types: [SDK reference](/docs/developers#the-workspace-handle) and
 [React hooks](/docs/developers#react-hooks).
@@ -6069,7 +6069,7 @@ const p = kortix.project(process.env.KORTIX_PROJECT_ID!);
 
 ### List and read workspaces
 
-`kortix.workspaces.list()` (`listWorkspaces()`) returns every workspace the caller can open, across every account, as `WorkspaceSummary[]` in one request (`GET /v1/workspaces`), most recently opened first. Each row carries every `KortixProject` field, `workspace_id` (equal to `project_id`), `role` (`owner`, `admin`, `manager` or `member`) and `state`. A workspace that is `setup_required` (it pays but has no repository yet) or `deleting` (owners only, until `deletion_scheduled_for`) is left out unless you pass `{ includeInactive: true }`. A workspace key lists its one workspace. On an older API the call reads the accounts and then each account's list.
+`kortix.workspaces.list()` (`listWorkspaces()`) returns every workspace the caller can open, across every account, as `WorkspaceSummary[]` in one request (`GET /v1/workspaces`), most recently opened first. Each row carries every `KortixWorkspace` field, `workspace_id` (equal to `project_id`), `role` (`owner`, `admin`, `manager` or `member`) and `state`. A workspace that is `setup_required` (it pays but has no repository yet) or `deleting` (owners only, until `deletion_scheduled_for`) is left out unless you pass `{ includeInactive: true }`. A workspace key lists its one workspace. On an older API the call reads the accounts and then each account's list.
 
 `kortix.workspace(id).get()` (`getWorkspace(id)`) returns one `Workspace`: the summary plus `state` and the settings the caller may read (`mfa_required`, `branding`, `member_count`, the session and personal-access-key policy, `secret_default_strategy`). `update(input)` changes the name, icon, branch, manifest path or `secret_default_strategy`; a workspace setting answers `400 workspace_setting_read_only` and names the route that writes it.
 
@@ -6087,7 +6087,7 @@ const { secret_key } = await ws.tokens.create({ name: 'ci' }); // returned once
 const assignments = await ws.iam.assignments.list();
 ```
 
-Every response that names a workspace carries `workspace_id`. Older servers omit it: read `project_id` for them. The older `Project*` and `Account*` names keep working permanently. A name with an exact workspace equivalent is marked `@deprecated` and names it, for example `listAccountMembers` → `listWorkspaceMembers`.
+Every response that names a workspace carries `workspace_id`. Older servers omit it: read `project_id` for them. The older `Project*` and `Account*` names keep working permanently. Every `Project*` name has a workspace twin, the same function, class, value or type (`listProjectSessions` → `listWorkspaceSessions`, `ProjectSession` → `WorkspaceSession`, `useProjectTriggers` → `useWorkspaceTriggers`), and is marked `@deprecated` with it. An `Account*` name with an exact workspace equivalent is marked `@deprecated` and names it, for example `listAccountMembers` → `listWorkspaceMembers`. [Legacy names](#legacy-names) lists the project names whose replacement is not identical.
 
 `Workspace` here is the Kortix workspace. `RuntimeWorkspace*`, `@kortix/sdk/workspace-search` and `toWorkspaceRelative` are about the session sandbox's `/workspace` directory. `CaptureWorkspace` is a Kortix Capture tenant.
 
@@ -6131,7 +6131,7 @@ Renaming the workspace renames both rows: `PATCH /v1/workspaces/:id` with a new 
 | `source_item_id` | Clone a `registry:project` marketplace item instead of the starter. It wins over `starter_template`. |
 | `marketplace_items` | Marketplace item ids to install. |
 | `default_branch` | The branch of the new repository. Omit it for the server default. |
-| `icon` · `icon_glyph` | An emoji string, or a `ProjectGlyph` object. `icon_glyph` wins when both are set. An invalid value is dropped and never fails the create. |
+| `icon` · `icon_glyph` | An emoji string, or a `WorkspaceGlyph` object. `icon_glyph` wins when both are set. An invalid value is dropped and never fails the create. |
 
 A `409` with code `provision_in_flight` (`PROVISION_IN_FLIGHT_CODE`) means an earlier call with the same key is still running. Retry with the same key.
 
@@ -6160,7 +6160,7 @@ Read and change the workspace through its handle:
 
 | Method | Returns |
 | --- | --- |
-| `p.get()` | The `KortixProject` row: `project_id`, `account_id`, `name`, `repo_url`, `default_branch`, `manifest_path`, `status` (`active` or `archived`). |
+| `p.get()` | The `KortixWorkspace` row: `project_id`, `account_id`, `name`, `repo_url`, `default_branch`, `manifest_path`, `status` (`active` or `archived`). |
 | `p.detail()` | The workspace with its configuration. |
 | `p.update(input)` | The updated row. `input` takes `name`, `default_branch`, `manifest_path`, `icon` and `icon_glyph`. Omit a key to keep its value. `icon: null` removes the icon. |
 | `p.archive()` | `{ ok }`. The workspace moves to `status: 'archived'`. |
@@ -6582,15 +6582,15 @@ export function Providers({ children }: { children: ReactNode }) {
 }
 ```
 </Step>
-<Step title="Optional: KortixProjectProvider">
-The SDK reads no router. Some hooks need "the workspace on screen", for example `useRuntimeProviders` and `useRuntimeLocal`. `KortixProjectProvider` supplies that id, and `useKortixRouteProjectId()` reads it. Outside the provider the id is `null`. `useSession` does not need it.
+<Step title="Optional: KortixWorkspaceProvider">
+The SDK reads no router. Some hooks need "the workspace on screen", for example `useRuntimeProviders` and `useRuntimeLocal`. `KortixWorkspaceProvider` supplies that id, and `useKortixRouteWorkspaceId()` reads it. Outside the provider the id is `null`. `useSession` does not need it.
 
 ```tsx
-import { KortixProjectProvider } from '@kortix/sdk/react';
+import { KortixWorkspaceProvider } from '@kortix/sdk/react';
 import type { ReactNode } from 'react';
 
 export function ProjectScope({ projectId, children }: { projectId: string | null; children: ReactNode }) {
-  return <KortixProjectProvider projectId={projectId}>{children}</KortixProjectProvider>;
+  return <KortixWorkspaceProvider projectId={projectId}>{children}</KortixProjectProvider>;
 }
 ```
 </Step>
@@ -7672,17 +7672,17 @@ The modules compose at any depth. Pick the level you need.
 | Single blocks | `UserMessage`, `ThrottledMarkdown`, `ToolPartRenderer`, `ModelSelector`, `AgentSelector`, `SessionPermissionPrompt`, `QuestionPrompt` from `@kortix/ui/session`; `ComposerChatInput` from `@kortix/ui/composer` |
 | Every part drawn by your own components | No `@kortix/ui/session`. Use `useChatTurns` and `renderParts` from `@kortix/sdk/react`: [Render messages yourself](/docs/developers#render-messages-yourself). |
 
-A block outside `SessionThread`, `SessionWorkspace` and `ProjectHome` needs the two scopes those screens mount for you: `KortixProjectProvider` from `@kortix/sdk/react` and `SessionIdsProvider` from `@kortix/ui`. Without `SessionIdsProvider`, `useSessionIds()` returns no ids.
+A block outside `SessionThread`, `SessionWorkspace` and `ProjectHome` needs the two scopes those screens mount for you: `KortixWorkspaceProvider` from `@kortix/sdk/react` and `SessionIdsProvider` from `@kortix/ui`. Without `SessionIdsProvider`, `useSessionIds()` returns no ids.
 
 ```tsx title="ask.tsx"
-import { KortixProjectProvider } from '@kortix/sdk/react';
+import { KortixWorkspaceProvider } from '@kortix/sdk/react';
 import { SessionIdsProvider } from '@kortix/ui';
 import { ComposerChatInput } from '@kortix/ui/composer';
 
 // The composer before a session exists. You decide what a send does.
 export function Ask({ projectId, onAsk }: { projectId: string; onAsk: (text: string) => void }) {
   return (
-    <KortixProjectProvider projectId={projectId}>
+    <KortixWorkspaceProvider projectId={projectId}>
       <SessionIdsProvider projectId={projectId}>
         <ComposerChatInput projectId={projectId} onSend={(text) => onAsk(text)} />
       </SessionIdsProvider>
@@ -8066,29 +8066,29 @@ export function ProjectShell() {
 </Step>
 <Step title="Add the pages">
 ```tsx title="src/pages.tsx"
-import { useProjects, useSession } from '@kortix/sdk/react';
+import { useSession, useWorkspaces } from '@kortix/sdk/react';
 import { Card, CardContent, CardHeader, CardTitle } from '@kortix/ui';
 import Loading from '@kortix/ui/loading';
 import { ProjectFilesView, ProjectHome, SessionWorkspace } from '@kortix/ui/workspace';
 import { Link, useParams } from 'react-router-dom';
 
 export function ProjectsPage() {
-  const projects = useProjects();
+  const { workspaces, isLoading } = useWorkspaces();
   return (
     <main className="mx-auto flex max-w-xl flex-col gap-4 p-8">
       <Card>
         <CardHeader>
-          <CardTitle>Projects</CardTitle>
+          <CardTitle>Workspaces</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-1">
-          {projects.isLoading && <Loading />}
-          {projects.data?.map((project) => (
+          {isLoading && <Loading />}
+          {workspaces.map((workspace) => (
             <Link
-              key={project.project_id}
-              to={`/projects/${project.project_id}`}
+              key={workspace.workspace_id}
+              to={`/projects/${workspace.workspace_id}`}
               className="hover:bg-accent rounded-md px-2 py-1.5"
             >
-              {project.name}
+              {workspace.name}
             </Link>
           ))}
         </CardContent>
@@ -8217,7 +8217,7 @@ createRoot(document.getElementById('root')!).render(
 </Step>
 </Steps>
 
-- More data comes from the hooks in [React hooks](/docs/developers#react-hooks), for example `useProjectSessions`, `useProjectApps` and `useProjectTriggers`.
+- More data comes from the hooks in [React hooks](/docs/developers#react-hooks), for example `useWorkspaceSessions`, `useWorkspaceApps` and `useWorkspaceTriggers`.
 - Never `fetch` the Kortix API yourself. If the SDK lacks a call you need, report it as an SDK gap.
 - Three white-label examples follow this structure ([overview](https://github.com/kortix-ai/CompanyOS/tree/dev/apps/white-label)):
   - [Lumen Workspace](https://github.com/kortix-ai/CompanyOS/tree/dev/apps/white-label/reskin): the Kortix workspace under its own theme, with direct mode (the browser holds the credential) or wrapper mode (its own server holds it).
@@ -8526,7 +8526,7 @@ Options of `list` and `listPage`:
 | Option | Values |
 | --- | --- |
 | `scope` | `visible` (default) or `project`: the manager inventory. Both leave out sessions the caller cannot open. |
-| `limit` · `cursor` | 1 to `PROJECT_SESSION_PAGE_MAX_LIMIT` (200) rows · the `next_cursor` of the previous page. |
+| `limit` · `cursor` | 1 to `WORKSPACE_SESSION_PAGE_MAX_LIMIT` (200) rows · the `next_cursor` of the previous page. |
 | `parent` | `root`: top-level sessions, each with `child_count`. A session id: that session's children. |
 | `startedBy` | `me`, `others` or `automated`. |
 | `createdBy` | A user id: the sessions that person started. |
@@ -8614,7 +8614,7 @@ Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`,
 | `triggers.list()` | Every trigger, with parse errors and `triggers_paused`. |
 | `triggers.eventApps()` · `triggers.eventTypes(…)` | The connectors that can fire `event` triggers, with connection state · the event types of one app. Needs the `event_triggers` flag. |
 | `triggers.create(input)` · `.update(slug, input)` · `.remove(slug)` | Write a trigger. `name` and `type` are required. `type` is `cron`, `webhook`, `event`, `app` or `change_request`. The API rejects `type: monitor` with `MONITOR_REMOVED` and names the replacement: an App and a `type: app` trigger. `prompt_template` is required unless `target` (`{ app, path?, method?, payload? }`) calls an App. A schedule takes `cron`, `every` or `run_at`. `type: 'app'` takes `app` and, optionally, `filter: { 'event.name': … }`. `type: 'change_request'` takes an optional `filter: { base: '<branch>' }`. |
-| `triggers.fire(slug, { payload?, dryRun? }?)` | Runs one trigger now, also while triggers are paused. `payload` deep-merges over the manual payload. `dryRun: true` writes nothing and returns `ProjectTriggerDryRunResult` (`rendered_prompt`, `filter_matches`, `session_key`, `payload`). A real fire returns `status` (`fired`, `queued` or `deduped`), `session_id`, `command_id` and `run_id`. |
+| `triggers.fire(slug, { payload?, dryRun? }?)` | Runs one trigger now, also while triggers are paused. `payload` deep-merges over the manual payload. `dryRun: true` writes nothing and returns `WorkspaceTriggerDryRunResult` (`rendered_prompt`, `filter_matches`, `session_key`, `payload`). A real fire returns `status` (`fired`, `queued` or `deduped`), `session_id`, `command_id` and `run_id`. |
 | `triggers.runs(slug, { cursor?, limit? }?)` · `triggers.projectRuns({ status?, cursor?, limit? }?)` | One trigger's runs · every run of the workspace, newest first: `{ runs, next_cursor }`. `limit` is 1 to 100, default 25. A page can hold fewer than `limit` runs while `next_cursor` is set. |
 | `triggers.replay(slug, runId, { confirmUnverified? }?)` | Fires again with the run's stored payload and the current spec. `409 run_in_progress` while the run is queued or running. `409 payload_unverified` for an unverified webhook payload without `confirmUnverified: true`. `422 payload_truncated` for a payload over 64 KiB. |
 | `triggers.setActivation(paused)` | Pauses or resumes every trigger of the workspace. |
@@ -8687,23 +8687,23 @@ Routes: `/projects/{projectId}/artifacts…`, `/projects/{projectId}/artifact-co
 
 #### Goals
 
-Goals are root exports that take `projectId` first. Kortix keeps each goal as a record and is the only authority for its state, pause, owner and verifier sessions, limits and verification. A goal's Drive folder holds the brief (`GOAL.md`), `log.md` and `evidence/`. Writing a state into `GOAL.md` changes nothing. Every `/projects/{projectId}/goals…` route returns `403 feature_disabled` while the `goals` flag is off, and `listProjectGoals` returns `[]` then.
+Goals are root exports that take `projectId` first. Kortix keeps each goal as a record and is the only authority for its state, pause, owner and verifier sessions, limits and verification. A goal's Drive folder holds the brief (`GOAL.md`), `log.md` and `evidence/`. Writing a state into `GOAL.md` changes nothing. Every `/projects/{projectId}/goals…` route returns `403 feature_disabled` while the `goals` flag is off, and `listWorkspaceGoals` returns `[]` then.
 
 | Root export | What it does |
 | --- | --- |
-| `listProjectGoals(projectId)` | Every goal the caller may read: their own, the ones assigned to them, the ones in folders shared with them, every goal for a project admin. |
-| `getProjectGoal(projectId, goalId)` | One goal by `goal_id`. `ApiError` 404: no such goal. 403: no access. |
-| `listProjectGoalEvents(projectId, goalId, { cursor? })` | The audit trail, oldest first: `{ events, nextCursor }`. |
-| `createProjectGoal(projectId, { outcome, criteria?, agent?, assignedUser?, goalId? })` | Creates a goal in the caller's own folder and starts its owner session. `goalId` is the idempotency key: a retry with the same id returns the same goal. `sessionId` is deprecated and is sent as the goal id. |
-| `pauseProjectGoal(projectId, goal, reason)` · `resumeProjectGoal(projectId, goal)` · `stopProjectGoal(projectId, goal, reason)` · `restartProjectGoal(projectId, goal, reason)` | Person controls. Pause keeps the state and starts no new turn. Stop closes the goal and stops the owner's running turn; a retry on a stopped goal succeeds. |
-| `replyToProjectGoal(projectId, goal, text, { answerId? })` | Answers the goal as the caller. `answerId` is the idempotency key: the owner gets one answer per id. A goal that waits on a person goes back to active. |
-| `setProjectGoalBinding(goal, { space?, agent? })` | Groups the goal under a space or an agent. `null` clears a field. It grants nothing. |
-| `getProjectGoalFiles(driveId, folder)` | `GOAL.md` (`brief`), `log.md`, `notes.md` and `evidence/verification.md` as text, `null` when absent. |
+| `listWorkspaceGoals(projectId)` | Every goal the caller may read: their own, the ones assigned to them, the ones in folders shared with them, every goal for a project admin. |
+| `getWorkspaceGoal(projectId, goalId)` | One goal by `goal_id`. `ApiError` 404: no such goal. 403: no access. |
+| `listWorkspaceGoalEvents(projectId, goalId, { cursor? })` | The audit trail, oldest first: `{ events, nextCursor }`. |
+| `createWorkspaceGoal(projectId, { outcome, criteria?, agent?, assignedUser?, goalId? })` | Creates a goal in the caller's own folder and starts its owner session. `goalId` is the idempotency key: a retry with the same id returns the same goal. `sessionId` is deprecated and is sent as the goal id. |
+| `pauseWorkspaceGoal(projectId, goal, reason)` · `resumeWorkspaceGoal(projectId, goal)` · `stopWorkspaceGoal(projectId, goal, reason)` · `restartWorkspaceGoal(projectId, goal, reason)` | Person controls. Pause keeps the state and starts no new turn. Stop closes the goal and stops the owner's running turn; a retry on a stopped goal succeeds. |
+| `replyToWorkspaceGoal(projectId, goal, text, { answerId? })` | Answers the goal as the caller. `answerId` is the idempotency key: the owner gets one answer per id. A goal that waits on a person goes back to active. |
+| `setWorkspaceGoalBinding(goal, { space?, agent? })` | Groups the goal under a space or an agent. `null` clears a field. It grants nothing. |
+| `getWorkspaceGoalFiles(driveId, folder)` | `GOAL.md` (`brief`), `log.md`, `notes.md` and `evidence/verification.md` as text, `null` when absent. |
 | `goalHealth(goalOrRecord, heartbeat, now?)` | `healthy`, `attention` or `closed`, with issues. For a record it reads `blocked_reason` (issue `blocked`), `next_wake_at` (`missed_wake` after 15 minutes, `no_heartbeat` for an active goal with no wake) and a pending verification older than 24 hours (`verification_stalled`). |
 
-Every write sends the `revision` the caller read. A stale revision throws `ProjectGoalConflictError` (`409 goal_conflict`), whose `goal` is the goal as it is now: show it, and let the person act again. Every write returns the document as before plus `projectGoal`, the goal with its new revision.
+Every write sends the `revision` the caller read. A stale revision throws `WorkspaceGoalConflictError` (`409 goal_conflict`), whose `goal` is the goal as it is now: show it, and let the person act again. Every write returns the document as before plus `projectGoal`, the goal with its new revision.
 
-A `ProjectGoal` keeps its older fields and adds the server's: `goalId`, `projectId`, `revision`, `capabilities`, `blockedReason`, `verification`, `criteria` and `record`. Read these rules:
+A `WorkspaceGoal` keeps its older fields and adds the server's: `goalId`, `projectId`, `revision`, `capabilities`, `blockedReason`, `verification`, `criteria` and `record`. Read these rules:
 
 - **Capabilities.** `capabilities` (`pause`, `resume`, `stop`, `restart`, `answer`, `edit`, `edit_criteria`) says what the caller may do on this goal now. Show only those controls. A session credential gets none of them.
 - **Verified vs reported.** In `criteria`, `reported_met` is the owner agent's claim and `verified` is set only by a passed verification of the current criteria. `goal.success_criteria[].met` is `reported_met`.
@@ -8712,7 +8712,7 @@ A `ProjectGoal` keeps its older fields and adds the server's: `goalId`, `project
 - **Limits.** `max_wakes_per_day` and `max_sessions` are checked before a turn starts; `wakes_today` counts this UTC day.
 - **Deprecated.** `heartbeat` is always `null` (the API owns the heartbeat); `items`, `transitions` and `links` of `goal` are empty (read the events).
 
-React: `useProjectGoals(projectId)`, `useProjectGoal(projectId, goalId)`, `useProjectGoalEvents(projectId, goalId)`, `useProjectGoalFiles(projectId, goal)` and `useSessionGoal(projectId, sessionId)` read; `useProjectGoalControl(projectId)` runs `pause`, `resume`, `stop`, `restart` and `answer` as one mutation. It sends one request for a double submit, writes the result into the cache, and on a conflict writes the current goal before it rethrows.
+React: `useWorkspaceGoals(projectId)`, `useWorkspaceGoal(projectId, goalId)`, `useWorkspaceGoalEvents(projectId, goalId)`, `useWorkspaceGoalFiles(projectId, goal)` and `useSessionGoal(projectId, sessionId)` read; `useWorkspaceGoalControl(projectId)` runs `pause`, `resume`, `stop`, `restart` and `answer` as one mutation. It sends one request for a double submit, writes the result into the cache, and on a conflict writes the current goal before it rethrows.
 
 Routes: `/projects/{projectId}/goals`, `/projects/{projectId}/goals/{goalId}` and its `events`, `pause`, `resume`, `stop`, `restart` and `answer`. See [Outcomes](/docs/guide#outcomes).
 
@@ -8847,22 +8847,22 @@ Every hook is in `@kortix/sdk/react`. Most are React Query hooks: unless a row s
 | Hook | What it returns |
 | --- | --- |
 | `useAccounts({ userId, enabled })` | The caller's accounts. Pass the signed-in person's `userId` in a host where the person can change without a reload. |
-| `useProjects(accountId?, options?)` | The workspaces of one account. |
-| `useProjectSessions(projectId, options)` | One workspace's sessions, paged, newest activity first. Read `sessions` (flat) and `fetchNextPage`. Filters as in [Sessions](#sessions). Adds `keepPreviousData` (keep the old rows while a new filter loads), `refetchInterval` and `pollFirstPageOnly` (experimental). |
-| `useProjectModels(projectId)` | Selectable models as `FlatModel[]`. Empty while the list loads. |
-| `useProjectModelPickerCatalog(projectId)` | The model-picker record per model (`reasoning_options`, `temperature`, `limit`). |
+| `useWorkspaces({ userId, enabled })` | Every workspace the caller can open, across accounts: `{ workspaces, accounts, isLoading, isError, refetch }`. (`useProjects(accountId?)`, one account's list, is deprecated.) |
+| `useWorkspaceSessions(projectId, options)` | One workspace's sessions, paged, newest activity first. Read `sessions` (flat) and `fetchNextPage`. Filters as in [Sessions](#sessions). Adds `keepPreviousData` (keep the old rows while a new filter loads), `refetchInterval` and `pollFirstPageOnly` (experimental). |
+| `useWorkspaceModels(projectId)` | Selectable models as `FlatModel[]`. Empty while the list loads. |
+| `useWorkspaceModelPickerCatalog(projectId)` | The model-picker record per model (`reasoning_options`, `temperature`, `limit`). |
 | `useModelAccess(projectId)` | Disabled providers and models, and `setEnabled({ target, id, enabled })`. |
 | `useCustomLlmProviders(projectId)` | `{ providers, isLoading, error, save(providerId, input), remove(providerId), isSaving }`. |
-| `useProjectConfig(projectId)` | The config summary (default agent, slash commands) as `ProjectConfigSummary`. |
+| `useWorkspaceConfig(projectId)` | The config summary (default agent, slash commands) as `WorkspaceConfigSummary`. |
 | `useVisibleAgents({ projectId })` | The agents a person can pick, as `Agent[]`. |
-| `useProjectSecrets(projectId)` | Secrets, with `upsert`, `remove`, `setPersonal` and `removePersonal`. |
+| `useWorkspaceSecrets(projectId)` | Secrets, with `upsert`, `remove`, `setPersonal` and `removePersonal`. |
 | `useAccountSecretResources(accountId, projectId?)` | Account secret resources. |
-| `useProjectTriggers(projectId)` | Triggers, with `create`, `update`, `remove`, `fire`, `dryRun` and `replay`. `fire.mutate(slug)` or `fire.mutate({ slug, payload? })` returns `FireProjectTriggerResponse`. `dryRun.mutate(slug \| { slug, payload? })` returns `ProjectTriggerDryRunResult` and writes nothing. `replay.mutate({ slug, runId, confirmUnverified? })`. A fire and a replay refresh the triggers and every run list. |
-| `useTriggerRuns(projectId, slug, { enabled?, refetchInterval?, limit? }?)` · `useProjectTriggerRuns(projectId, { status? }?, { enabled?, refetchInterval? }?)` | Runs as an infinite query paged by `next_cursor`. Read `data.pages[].runs`; call `fetchNextPage()` while `hasNextPage`. No polling unless you pass `refetchInterval` (ms). `limit` is 1 to 100 (server default 25), and a set limit is its own cache entry. |
-| `useProjectReminders(projectId)` | The workspace's loops, with `update`, `remove`, `updateMany` and `removeMany`. |
+| `useWorkspaceTriggers(projectId)` | Triggers, with `create`, `update`, `remove`, `fire`, `dryRun` and `replay`. `fire.mutate(slug)` or `fire.mutate({ slug, payload? })` returns `FireWorkspaceTriggerResponse`. `dryRun.mutate(slug \| { slug, payload? })` returns `WorkspaceTriggerDryRunResult` and writes nothing. `replay.mutate({ slug, runId, confirmUnverified? })`. A fire and a replay refresh the triggers and every run list. |
+| `useTriggerRuns(projectId, slug, { enabled?, refetchInterval?, limit? }?)` · `useWorkspaceTriggerRuns(projectId, { status? }?, { enabled?, refetchInterval? }?)` | Runs as an infinite query paged by `next_cursor`. Read `data.pages[].runs`; call `fetchNextPage()` while `hasNextPage`. No polling unless you pass `refetchInterval` (ms). `limit` is 1 to 100 (server default 25), and a set limit is its own cache entry. |
+| `useWorkspaceReminders(projectId)` | The workspace's loops, with `update`, `remove`, `updateMany` and `removeMany`. |
 | `useChangeRequests(projectId, status?)` | Change requests, with `open`, `merge`, `close` and `requestChanges`. |
 | `useReviewItemPages(projectId, query)` · `useReviewSummary(projectId)` · `useSessionsNeedingInput(projectId)` | The review inbox as an infinite query (rows: `reviewItemsOf(query.data)`) · the summary, polled every 60 s · blocked sessions, polled every 30 s. |
-| `useProjectApps(projectId)` | Apps, with `create`, `update`, `start`, `stop` and `remove`. |
+| `useWorkspaceApps(projectId)` | Apps, with `create`, `update`, `start`, `stop` and `remove`. |
 | `useAppDeployments` · `useAppDeployment` | Deployments with `deploy` and `rollback` · one deployment with its build log. |
 | `useAppMachines(projectId, appId)` · `useAppVolumes(projectId, appId)` · `useAppVolumeSnapshots(projectId, appId, volumeId)` · `useAppAccess` | Machines with `start`, `stop`, `restart`, `destroy`, `scale`, polled every 5 s · volumes with `snapshot`, `restore`, `fork`, `extend`, `destroy` · snapshots, newest first · `{ policy, session, update }`. |
 | `useKortixAppViewer()` | Inside an App: `{ status: 'loading' \| 'anonymous' \| 'viewer', viewer }`. |
@@ -8874,7 +8874,7 @@ Every hook is in `@kortix/sdk/react`. Most are React Query hooks: unless a row s
 | `useSetBillingPlan()` | A mutation over `billing.setPlan`. |
 | `useGatewayOverview` · `useGatewaySeries` · `useGatewayBreakdown` · `useGatewaySessions` · `useGatewayErrors` | Gateway usage over `days` (default 30). |
 | `useGatewayLogs` · `useGatewayLog` · `useGatewayBudgets` · `useSetGatewayBudget` · `useDeleteGatewayBudget` · `useGatewayKeys` · `useCreateGatewayKey` · `useRevokeGatewayKey` · `useGatewayRoutingPolicy(projectId)` | Gateway logs, budgets, keys and routing policy. |
-| `useProjectName(projectId)` | The workspace's display name, from one cached source. |
+| `useWorkspaceName(projectId)` | The workspace's display name, from one cached source. |
 | `useKortixViewer({ basePath? })` | In an app that signs in with Kortix: the viewer from `<basePath>/me`, and `reload()`. See [Sign in with Kortix](/docs/developers#sign-in-with-kortix). |
 | `useArtifacts(projectId, { scope?, type?, q?, limit? }?)` · `useArtifact(projectId, artifactId, version?)` · `useArtifactText(projectId, artifact)` | The Artifact list · one Artifact, now or at a save · a doc's Markdown. `prefetchArtifact(queryClient, projectId, artifactId)` loads one Artifact, and a doc's Markdown, before a click. See [Artifacts](#artifacts). |
 | `useArtifactVersions(projectId, artifactId, enabled?)` · `useArtifactTypes(projectId)` | The saves · the two types. |
@@ -8883,8 +8883,8 @@ Every hook is in `@kortix/sdk/react`. Most are React Query hooks: unless a row s
 | `useArtifactCommentContext(projectId, artifactId, { version?, agent?, enabled? }?)` | The comment context: rights, mention tokens, the Send target and `agents_unavailable`. A comment write refreshes it. |
 | `useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? }?)` · `useInfiniteArtifactActivity(projectId, artifactId, { limit?, enabled? }?)` | One activity page · every page, as ordered and deduplicated `items`, with `olderVersions` and `fetchNextPage`. |
 | `useArtifactCommentScreenshot(projectId, artifactId, commentId)` | One comment's screenshot as a `Blob`. The hook keeps no copy after unmount. |
-| `useProjectGoals` · `useProjectGoal` · `useProjectGoalEvents` · `useSessionGoal` · `useProjectGoalFiles` · `useProjectGoalControl` | Goals, one goal by id, its events, the goal a session works on, one goal's files, and the person controls. See [Goals](#goals). Goals are experimental and off by default. Turn them on in **Workspace admin** → **Feature flags**. |
-| `useProjectTriggerEventApps` · `useProjectTriggerEventTypes` | The connectors and event types for `event` triggers. |
+| `useWorkspaceGoals` · `useWorkspaceGoal` · `useWorkspaceGoalEvents` · `useSessionGoal` · `useWorkspaceGoalFiles` · `useWorkspaceGoalControl` | Goals, one goal by id, its events, the goal a session works on, one goal's files, and the person controls. See [Goals](#goals). Goals are experimental and off by default. Turn them on in **Workspace admin** → **Feature flags**. |
+| `useWorkspaceTriggerEventApps` · `useWorkspaceTriggerEventTypes` | The connectors and event types for `event` triggers. |
 | `useConnectorLinkInfo(token, options)` | The `ConnectorSetupLinkInfo` behind a connect token, for a card. `undefined` while it loads, `null` when the request failed. |
 | `useCaptureWorkspace` · `useSetCaptureEnabled` · `useCaptureDevices` · `useRevokeCaptureDevice` · `useCapturePolicy` · `useSetCapturePolicy` · `useCaptureDays` · `useCaptureTimeline` · `useCaptureTimelineItems` · `useCaptureSearch` · `useCaptureChunkMedia` · `useCaptureDeviceGrant` · `useApproveCaptureDevice` · `useDenyCaptureDevice` · `useCaptureStorage` · `useSetCaptureStorage` · `useCaptureEnrollments` · `useCaptureEnrollmentTokens` and their create, approve, deny and revoke hooks · `useLinkCaptureDevice` | Kortix Capture. Each account hook takes the account id first. A `null` id sends no request. `useCaptureDevices` polls every 10 s. |
 
@@ -8899,7 +8899,7 @@ Rules for several hooks:
 | Name | What it does |
 | --- | --- |
 | `qk` | The query key factory of every hook. Families: `qk.accounts`, `qk.projects`, `qk.project`, `qk.notifications`, `qk.drives`, `qk.capture`. Each family except `qk.capture` has `scope(…)`, the prefix of all its keys; `qk.capture.account(accountId)` is the prefix of one account's Capture keys. Example: `qk.project.detail(projectId)`, `qk.project.secrets(projectId)`. |
-| `invalidateProject(queryClient, projectId)` | Invalidates every query under `qk.project.scope(projectId)`. |
+| `invalidateWorkspace(queryClient, projectId)` | Invalidates every query under `qk.project.scope(projectId)`. |
 | `invalidatePermissionProbes(queryClient, { accountId?, userId? })` | Invalidates cached `useCan` verdicts. |
 | `resetRuntimeQueries(queryClient)` | Removes every runtime query, so the next read comes from the new runtime. |
 | `resetIdentityState(…)` | Clears per-person state on sign-out. See [Sign-out and identity changes](/docs/developers#sign-out-and-identity-changes). |
@@ -9134,7 +9134,7 @@ Pure functions over v1 messages (`MessageWithParts`, `kortix.transcript.v1`, `KO
 | `getTurnStatus(parts, childMessages?)` · `getWorkingState(…)` · `formatDuration(ms)` | A status line such as `Reading files...`. Pass `childMessages` to show a sub-agent's activity. |
 | `getTurnError(turn)` · `getChildSessionError(messages)` · `unwrapError(error)` | Turn and sub-agent errors, normalized. |
 | `getRetryInfo(status)` · `getRetryMessage(status)` | Retry state `{ attempt, message, next, details? }` · the full retry message. |
-| `getChildSessionId(part)` · `getChildSessionToolParts(messages)` · `rootRuntimeSession` · `directSubsessions` · `runtimeSessionsOf` · `projectSessionForRuntimeId` | Connect a delegating tool call to its child conversation. |
+| `getChildSessionId(part)` · `getChildSessionToolParts(messages)` · `rootRuntimeSession` · `directSubsessions` · `runtimeSessionsOf` · `workspaceSessionForRuntimeId` | Connect a delegating tool call to its child conversation. |
 | `getHiddenToolParts(…)` · `isToolPartHidden(…)` | Which tool parts a transcript hides. |
 | `isTextPart`, `isToolPart`, `isReasoningPart`, `isFilePart`, `isAgentPart`, `isCompactionPart`, `isSnapshotPart`, `isPatchPart`, `isStepPart`, `getPartText` | Type guards. |
 | `sortSessions(now)` · `childMapByParent(sessions)` · `allDescendantIds(map, id)` | Session list order and hierarchy. |
@@ -9181,6 +9181,21 @@ Each name below carries `@deprecated` and resolves until a later major version. 
 | `setCachedAuthToken` · `setBootstrapAuthToken` | Return the token from your own `getToken`. |
 | `billing.checkout.createSession` · `billing.checkout.confirmSession` · `createPerSeatCheckout` · `claimPerSeatBilling` | `billing.setPlan(input)`. They reject with `ENDPOINT_RETIRED` and send no request. |
 | `billing.subscription.scheduleDowngrade` · `.cancelScheduledChange` · `.prorationPreview` | `billing.setPlan(input)` or `billing.subscription.createPortalSession`. They reject with `ENDPOINT_RETIRED`. |
+
+#### Legacy names
+
+Every name that says Project has a workspace twin: `Project` → `Workspace`, `project` → `workspace`, `PROJECT` → `WORKSPACE`. The twin is the same function, class, value or type; the project name stays exported permanently, marked `@deprecated`. Facade members (`kortix.projects.*`, `kortix.project(id).*`) keep their names. These have no identical twin:
+
+| Legacy name | Use instead |
+| --- | --- |
+| `listProjects()` · `useProjects(accountId?)` · `UseProjectsOptions` · `projectsQueryOptions` · `ProjectsKey` · `ProjectsListKey` | `listWorkspaces()` · `useWorkspaces()` · `UseWorkspacesOptions`: every workspace of the caller, across accounts. The legacy calls list one account. |
+| `getProject(id)` · `updateProject(id, input)` | `getWorkspace(id)` · `updateWorkspace(id, input)` |
+| `createProject(input)` | `linkRepository(input)` (`POST /v1/workspaces/link-repository`) |
+| `inviteProjectMember(id, email, role)` | `inviteWorkspaceMember(id, input)` |
+| `ProjectHandle` · `ProjectRole` | `WorkspaceHandle` · `WorkspaceRole` |
+| `PROJECT_ACTIONS` · `ProjectAction` | Current: the values are the IAM action ids (`project.*`). `WorkspaceAction` and `toWorkspaceAction` give the workspace ids. |
+
+Names that say project and are not the Kortix workspace keep their names: the sandbox daemon's board project (`KortixMasterProject`, `listKortixProjects`, …), the session runtime's project record (`Project`, `ProjectVcs`, `RuntimeProjectInfo`), and the verb "project" (`projectWorking`, `projectSessionConnection`).
 
 Other deprecated root names wrap routes that the API does not serve. They reject with `ENDPOINT_RETIRED`, resolve `null`, or return `404`, and have no replacement.
 

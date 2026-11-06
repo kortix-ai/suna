@@ -7,7 +7,11 @@ import { unwrap } from './shared';
 // Git history — branches (Versions), commits (Checkpoints), diffs
 // ---------------------------------------------------------------------------
 
-/** Which session a session branch belongs to. A session branch is named by its session id. */
+/**
+ * Which session a session branch belongs to. A session branch is named by its session id.
+ *
+ * @deprecated Use `WorkspaceBranchSession`. Kept permanently.
+ */
 export interface ProjectBranchSession {
   /** The session's title. Null when it has none yet, or when the caller may not open the session. */
   title: string | null;
@@ -18,6 +22,10 @@ export interface ProjectBranchSession {
   deleted: boolean;
 }
 
+/** The workspace name of {@link ProjectBranchSession}: the same type. */
+export type WorkspaceBranchSession = ProjectBranchSession;
+
+/** @deprecated Use `WorkspaceBranch`. Kept permanently. */
 export interface ProjectBranch {
   name: string;
   is_default: boolean;
@@ -33,11 +41,19 @@ export interface ProjectBranch {
   session?: ProjectBranchSession;
 }
 
+/** The workspace name of {@link ProjectBranch}: the same type. */
+export type WorkspaceBranch = ProjectBranch;
+
+/** @deprecated Use `WorkspaceBranchesResponse`. Kept permanently. */
 export interface ProjectBranchesResponse {
   default_branch: string;
   branches: ProjectBranch[];
 }
 
+/** The workspace name of {@link ProjectBranchesResponse}: the same type. */
+export type WorkspaceBranchesResponse = ProjectBranchesResponse;
+
+/** @deprecated Use `WorkspaceCommit`. Kept permanently. */
 export interface ProjectCommit {
   hash: string;
   short_hash: string;
@@ -52,6 +68,10 @@ export interface ProjectCommit {
   body: string;
 }
 
+/** The workspace name of {@link ProjectCommit}: the same type. */
+export type WorkspaceCommit = ProjectCommit;
+
+/** @deprecated Use `WorkspaceCommitsResponse`. Kept permanently. */
 export interface ProjectCommitsResponse {
   ref: string;
   path: string | null;
@@ -59,6 +79,10 @@ export interface ProjectCommitsResponse {
   hasMore: boolean;
 }
 
+/** The workspace name of {@link ProjectCommitsResponse}: the same type. */
+export type WorkspaceCommitsResponse = ProjectCommitsResponse;
+
+/** @deprecated Use `WorkspaceCommitFile`. Kept permanently. */
 export interface ProjectCommitFile {
   path: string;
   old_path: string | null;
@@ -73,10 +97,18 @@ export interface ProjectCommitFile {
   deletions: number;
 }
 
+/** The workspace name of {@link ProjectCommitFile}: the same type. */
+export type WorkspaceCommitFile = ProjectCommitFile;
+
+/** @deprecated Use `WorkspaceCommitDetail`. Kept permanently. */
 export interface ProjectCommitDetail extends ProjectCommit {
   files: ProjectCommitFile[];
 }
 
+/** The workspace name of {@link ProjectCommitDetail}: the same type. */
+export type WorkspaceCommitDetail = ProjectCommitDetail;
+
+/** @deprecated Use `WorkspaceCommitDiffResponse`. Kept permanently. */
 export interface ProjectCommitDiffResponse {
   hash: string;
   parent: string | null;
@@ -84,6 +116,10 @@ export interface ProjectCommitDiffResponse {
   patch: string;
 }
 
+/** The workspace name of {@link ProjectCommitDiffResponse}: the same type. */
+export type WorkspaceCommitDiffResponse = ProjectCommitDiffResponse;
+
+/** @deprecated Use `WorkspaceFileHistoryResponse`. Kept permanently. */
 export interface ProjectFileHistoryResponse {
   path: string;
   ref: string;
@@ -91,6 +127,10 @@ export interface ProjectFileHistoryResponse {
   hasMore: boolean;
 }
 
+/** The workspace name of {@link ProjectFileHistoryResponse}: the same type. */
+export type WorkspaceFileHistoryResponse = ProjectFileHistoryResponse;
+
+/** @deprecated Use `ListWorkspaceBranchesOptions`. Kept permanently. */
 export interface ListProjectBranchesOptions {
   /** Case-insensitive substring match on branch name. */
   q?: string;
@@ -104,7 +144,10 @@ export interface ListProjectBranchesOptions {
   includeSessionBranches?: boolean;
 }
 
-export async function listProjectBranches(
+/** The workspace name of {@link ListProjectBranchesOptions}: the same type. */
+export type ListWorkspaceBranchesOptions = ListProjectBranchesOptions;
+
+export async function listWorkspaceBranches(
   projectId: string,
   options?: ListProjectBranchesOptions,
 ) {
@@ -122,7 +165,10 @@ export async function listProjectBranches(
   );
 }
 
-export async function listProjectCommits(
+/** @deprecated Use `listWorkspaceBranches`. Kept permanently. */
+export const listProjectBranches = listWorkspaceBranches;
+
+export async function listWorkspaceCommits(
   projectId: string,
   options?: { ref?: string; path?: string; limit?: number; skip?: number },
 ) {
@@ -139,7 +185,10 @@ export async function listProjectCommits(
   );
 }
 
-export async function getProjectCommit(projectId: string, sha: string) {
+/** @deprecated Use `listWorkspaceCommits`. Kept permanently. */
+export const listProjectCommits = listWorkspaceCommits;
+
+export async function getWorkspaceCommit(projectId: string, sha: string) {
   return unwrap(
     await backendApi.get<ProjectCommitDetail>(
       `/workspaces/${projectId}/commits/${encodeURIComponent(sha)}`,
@@ -147,7 +196,10 @@ export async function getProjectCommit(projectId: string, sha: string) {
   );
 }
 
-export async function getProjectCommitDiff(
+/** @deprecated Use `getWorkspaceCommit`. Kept permanently. */
+export const getProjectCommit = getWorkspaceCommit;
+
+export async function getWorkspaceCommitDiff(
   projectId: string,
   sha: string,
   options?: { path?: string },
@@ -162,7 +214,10 @@ export async function getProjectCommitDiff(
   );
 }
 
-export async function getProjectFileHistory(
+/** @deprecated Use `getWorkspaceCommitDiff`. Kept permanently. */
+export const getProjectCommitDiff = getWorkspaceCommitDiff;
+
+export async function getWorkspaceFileHistory(
   projectId: string,
   path: string,
   options?: { ref?: string; limit?: number; skip?: number },
@@ -177,3 +232,6 @@ export async function getProjectFileHistory(
     ),
   );
 }
+
+/** @deprecated Use `getWorkspaceFileHistory`. Kept permanently. */
+export const getProjectFileHistory = getWorkspaceFileHistory;

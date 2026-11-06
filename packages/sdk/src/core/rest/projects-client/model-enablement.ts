@@ -12,7 +12,7 @@ import { unwrap } from './shared';
  * Replace the project's model overrides (`wireModelId -> enabled`). An empty
  * object clears every exception, restoring the pure catalog default.
  */
-export async function setProjectModelEnablement(
+export async function setWorkspaceModelEnablement(
   projectId: string,
   modelOverrides: Record<string, boolean>,
 ) {
@@ -23,3 +23,6 @@ export async function setProjectModelEnablement(
     ),
   );
 }
+
+/** @deprecated Use `setWorkspaceModelEnablement`. Kept permanently. */
+export const setProjectModelEnablement = setWorkspaceModelEnablement;

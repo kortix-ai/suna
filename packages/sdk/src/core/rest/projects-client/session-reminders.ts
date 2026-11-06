@@ -167,15 +167,25 @@ export function deleteSessionReminders(projectId: string, reminders: readonly Se
   return runBatch(reminders, (r) => deleteSessionReminder(projectId, r.sessionId, r.reminderId));
 }
 
-/** A reminder as the project list returns it: plus its session's display name. */
+/**
+ * A reminder as the project list returns it: plus its session's display name.
+ *
+ * @deprecated Use `WorkspaceReminder`. Kept permanently.
+ */
 export interface ProjectReminder extends SessionReminder {
   session_name: string | null;
 }
+
+/** The workspace name of {@link ProjectReminder}: the same type. */
+export type WorkspaceReminder = ProjectReminder;
 
 /**
  * Every reminder in a project on a session the caller can open, soonest
  * active first, then paused, then done. At most 200.
  */
-export async function listProjectReminders(projectId: string) {
+export async function listWorkspaceReminders(projectId: string) {
   return unwrap(await backendApi.get<{ reminders: ProjectReminder[] }>(`/workspaces/${projectId}/reminders`));
 }
+
+/** @deprecated Use `listWorkspaceReminders`. Kept permanently. */
+export const listProjectReminders = listWorkspaceReminders;

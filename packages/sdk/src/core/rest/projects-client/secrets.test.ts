@@ -9,19 +9,19 @@ import type {
   SecretValueStatus,
 } from './secrets';
 import {
-  brokerProjectSecretRequest,
-  deletePersonalProjectSecret,
-  deleteProjectProviderOAuth,
-  deleteProjectSecret,
-  listProjectProviderOAuth,
-  listProjectSecrets,
-  pollProjectProviderOAuth,
-  runProjectProviderOAuthFlow,
-  setPersonalProjectSecret,
-  setProjectSecretStrategy,
-  startProjectProviderOAuth,
-  upsertProjectGitCredential,
-  upsertProjectSecret,
+  brokerWorkspaceSecretRequest,
+  deletePersonalWorkspaceSecret,
+  deleteWorkspaceProviderOAuth,
+  deleteWorkspaceSecret,
+  listWorkspaceProviderOAuth,
+  listWorkspaceSecrets,
+  pollWorkspaceProviderOAuth,
+  runWorkspaceProviderOAuthFlow,
+  setPersonalWorkspaceSecret,
+  setWorkspaceSecretStrategy,
+  startWorkspaceProviderOAuth,
+  upsertWorkspaceGitCredential,
+  upsertWorkspaceSecret,
 } from './secrets';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -48,7 +48,7 @@ const last = () => calls[calls.length - 1];
 
 test('listProjectSecrets hits GET /projects/:id/secrets and returns the parsed body', async () => {
   nextResponse = { status: 200, body: { items: [], required: [], optional: [] } };
-  const result = await listProjectSecrets('P1');
+  const result = await listWorkspaceSecrets('P1');
   expect(last().url).toContain('/workspaces/P1/secrets');
   expect(last().method).toBe('GET');
   expect(result).toEqual({ items: [], required: [], optional: [] });
@@ -56,7 +56,7 @@ test('listProjectSecrets hits GET /projects/:id/secrets and returns the parsed b
 
 test('listProjectSecrets throws when the response is unsuccessful', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
-  await expect(listProjectSecrets('P1')).rejects.toBeTruthy();
+  await expect(listWorkspaceSecrets('P1')).rejects.toBeTruthy();
 });
 
 test('listProjectSecrets is a silent background read — a 403 never hits the global error sink', async () => {
@@ -66,7 +66,7 @@ test('listProjectSecrets is a silent background read — a 403 never hits the gl
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
   try {
     nextResponse = { status: 403, body: { message: 'forbidden' } };
-    await expect(listProjectSecrets('P1')).rejects.toBeTruthy();
+    await expect(listWorkspaceSecrets('P1')).rejects.toBeTruthy();
     expect(onError).not.toHaveBeenCalled();
   } finally {
     configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
@@ -75,7 +75,7 @@ test('listProjectSecrets is a silent background read — a 403 never hits the gl
 
 test('upsertProjectSecret POSTs name/value as the raw body', async () => {
   nextResponse = { status: 200, body: { name: 'FOO' } };
-  await upsertProjectSecret('P1', { name: 'FOO', value: 'bar' });
+  await upsertWorkspaceSecret('P1', { name: 'FOO', value: 'bar' });
   expect(last().url).toContain('/workspaces/P1/secrets');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ name: 'FOO', value: 'bar' });
@@ -83,13 +83,13 @@ test('upsertProjectSecret POSTs name/value as the raw body', async () => {
 
 test('upsertProjectSecret includes an explicit identifier when given', async () => {
   nextResponse = { status: 200, body: { name: 'FOO' } };
-  await upsertProjectSecret('P1', { name: 'FOO', identifier: 'GMAPS-backup', value: 'bar' });
+  await upsertWorkspaceSecret('P1', { name: 'FOO', identifier: 'GMAPS-backup', value: 'bar' });
   expect(last().body).toEqual({ name: 'FOO', identifier: 'GMAPS-backup', value: 'bar' });
 });
 
 test('upsertProjectSecret sends who can use the value as shared_with ([] = everyone)', async () => {
   nextResponse = { status: 200, body: { name: 'DEEL_API_TOKEN' } };
-  await upsertProjectSecret('P1', {
+  await upsertWorkspaceSecret('P1', {
     name: 'DEEL_API_TOKEN',
     value: 'token',
     shared_with: [{ principal_type: 'user', principal_id: 'U1' }],
@@ -99,14 +99,14 @@ test('upsertProjectSecret sends who can use the value as shared_with ([] = every
     value: 'token',
     shared_with: [{ principal_type: 'user', principal_id: 'U1' }],
   });
-  await upsertProjectSecret('P1', { name: 'DEEL_API_TOKEN', shared_with: [] });
+  await upsertWorkspaceSecret('P1', { name: 'DEEL_API_TOKEN', shared_with: [] });
   expect(last().body).toEqual({ name: 'DEEL_API_TOKEN', shared_with: [] });
 });
 
 test('upsertProjectSecret can share a value with an agent (its service account)', async () => {
   nextResponse = { status: 200, body: { name: 'NIGHTLY_REPORT_KEY' } };
   const shared_with: SecretSharePrincipal[] = [{ principal_type: 'agent', principal_id: 'SA1' }];
-  await upsertProjectSecret('P1', { name: 'NIGHTLY_REPORT_KEY', shared_with });
+  await upsertWorkspaceSecret('P1', { name: 'NIGHTLY_REPORT_KEY', shared_with });
   expect(last().body).toEqual({ name: 'NIGHTLY_REPORT_KEY', shared_with });
   const agentShare: ConnectionShare = {
     grant_id: 'G2',
@@ -134,7 +134,7 @@ test("listProjectSecrets returns each value's audience and whether the caller ca
       optional: [],
     },
   };
-  const res = await listProjectSecrets('P1');
+  const res = await listWorkspaceSecrets('P1');
   const item = res.items[0]!;
   const sharedWith: ConnectionShare[] | undefined = item.shared_with;
   const usable: boolean | undefined = item.usable;
@@ -155,7 +155,7 @@ test('listProjectSecrets says which stored values the server can no longer decry
       optional: [],
     },
   };
-  const res = await listProjectSecrets('P1');
+  const res = await listWorkspaceSecrets('P1');
   const statuses: Array<SecretValueStatus | undefined> = res.items.map((item) => item.status);
   expect(statuses).toEqual(['undecryptable', 'ok', undefined]);
 });
@@ -177,7 +177,7 @@ test("listProjectSecrets reports the caller's own override apart from the shared
       optional: [],
     },
   };
-  const [item] = (await listProjectSecrets('P1')).items;
+  const [item] = (await listWorkspaceSecrets('P1')).items;
   const mine: SecretValueStatus | undefined = item?.mine?.status;
   expect(item?.status).toBe('ok');
   expect(mine).toBe('undecryptable');
@@ -185,7 +185,7 @@ test("listProjectSecrets reports the caller's own override apart from the shared
 
 test('upsertProjectSecret sends an explicit server consumer without a plaintext transition', async () => {
   nextResponse = { status: 200, body: { name: 'OPENAI_API_KEY' } };
-  await upsertProjectSecret('P1', {
+  await upsertWorkspaceSecret('P1', {
     name: 'OPENAI_API_KEY',
     value: 'key',
     strategy: 'broker',
@@ -210,7 +210,7 @@ test('setProjectSecretStrategy PUTs the strategy to the encoded identifier route
     },
   };
 
-  const result = await setProjectSecretStrategy('P1', 'API/key', 'denied');
+  const result = await setWorkspaceSecretStrategy('P1', 'API/key', 'denied');
 
   expect(last().url).toContain('/workspaces/P1/secrets/API%2Fkey/strategy');
   expect(last().method).toBe('PUT');
@@ -221,7 +221,7 @@ test('setProjectSecretStrategy PUTs the strategy to the encoded identifier route
 test('setProjectSecretStrategy sends broker policy options', async () => {
   nextResponse = { status: 200, body: { identifier: 'API_KEY', strategy: 'broker' } };
 
-  await setProjectSecretStrategy('P1', 'API_KEY', 'broker', {
+  await setWorkspaceSecretStrategy('P1', 'API_KEY', 'broker', {
     consumer: 'http_broker',
     egress_policy: {
       backend: 'kortix_fetch',
@@ -249,7 +249,7 @@ test('brokerProjectSecretRequest POSTs a policy-bound HTTPS request', async () =
     body: { status: 201, headers: { 'content-type': 'application/json' }, body_base64: 'e30=' },
   };
 
-  const result = await brokerProjectSecretRequest('P1', 'primary/key', {
+  const result = await brokerWorkspaceSecretRequest('P1', 'primary/key', {
     url: 'https://api.example.com/v1/messages',
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -274,7 +274,7 @@ test('listProjectProviderOAuth returns the connected provider logins', async () 
     { provider_id: 'opencode-go', expires_in_ms: 1000, updated_at: '2026-10-01T00:00:00.000Z' },
   ];
   nextResponse = { status: 200, body: { items } };
-  const result = await listProjectProviderOAuth('P1');
+  const result = await listWorkspaceProviderOAuth('P1');
   expect(last().url).toContain('/workspaces/P1/oauth');
   expect(last().url.endsWith('/oauth')).toBe(true);
   expect(last().method).toBe('GET');
@@ -292,7 +292,7 @@ test('startProjectProviderOAuth posts to the provider start endpoint with the sh
       interval_ms: 500,
     },
   };
-  const result = await startProjectProviderOAuth('P1', 'chatgpt', { sharing: { mode: 'project' } });
+  const result = await startWorkspaceProviderOAuth('P1', 'chatgpt', { sharing: { mode: 'project' } });
   expect(last().url).toContain('/workspaces/P1/oauth/chatgpt/start');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ sharing: { mode: 'project' } });
@@ -304,7 +304,7 @@ test('startProjectProviderOAuth sends sharing: undefined when no input is given'
     status: 200,
     body: { flow_id: 'f1', verification_url: 'x', user_code: null, expires_at: 1, interval_ms: 1 },
   };
-  await startProjectProviderOAuth('P1', 'chatgpt');
+  await startWorkspaceProviderOAuth('P1', 'chatgpt');
   expect(last().body).toEqual({ sharing: undefined });
 });
 
@@ -319,7 +319,7 @@ test('startProjectProviderOAuth sends a named account resource request', async (
       interval_ms: 3000,
     },
   };
-  await startProjectProviderOAuth('P1', 'openai', { resourceLabel: 'My ChatGPT' });
+  await startWorkspaceProviderOAuth('P1', 'openai', { resourceLabel: 'My ChatGPT' });
   expect(last().body).toMatchObject({ resource_label: 'My ChatGPT' });
 });
 
@@ -334,7 +334,7 @@ test('startProjectProviderOAuth reconnects an existing account resource by id al
       interval_ms: 3000,
     },
   };
-  await startProjectProviderOAuth('P1', 'openai', {
+  await startWorkspaceProviderOAuth('P1', 'openai', {
     resourceId: '77777777-7777-4777-8777-777777777777',
   });
   expect(last().url).toContain('/workspaces/P1/oauth/openai/start');
@@ -347,7 +347,7 @@ test('startProjectProviderOAuth reconnects an existing account resource by id al
 
 test('pollProjectProviderOAuth posts the flow_id and returns the poll result', async () => {
   nextResponse = { status: 200, body: { status: 'pending', next_poll_ms: 2000 } };
-  const result = await pollProjectProviderOAuth('P1', 'chatgpt', 'flow-123');
+  const result = await pollWorkspaceProviderOAuth('P1', 'chatgpt', 'flow-123');
   expect(last().url).toContain('/workspaces/P1/oauth/chatgpt/poll');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ flow_id: 'flow-123' });
@@ -359,7 +359,7 @@ test('upsertProjectGitCredential PUTs the token to /git-credential', async () =>
     status: 200,
     body: { configured: true, provider: 'github', git_connection: {} },
   };
-  const result = await upsertProjectGitCredential('P1', { token: 'ghp_abc' });
+  const result = await upsertWorkspaceGitCredential('P1', { token: 'ghp_abc' });
   expect(last().url).toContain('/workspaces/P1/git-credential');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ token: 'ghp_abc' });
@@ -368,14 +368,14 @@ test('upsertProjectGitCredential PUTs the token to /git-credential', async () =>
 
 test('deleteProjectSecret DELETEs the encoded secret name', async () => {
   nextResponse = { status: 200, body: { ok: true } };
-  await deleteProjectSecret('P1', 'MY KEY');
+  await deleteWorkspaceSecret('P1', 'MY KEY');
   expect(last().url).toContain('/workspaces/P1/secrets/MY%20KEY');
   expect(last().method).toBe('DELETE');
 });
 
 test('deleteProjectProviderOAuth DELETEs the encoded provider', async () => {
   nextResponse = { status: 200, body: { ok: true } };
-  await deleteProjectProviderOAuth('P1', 'openai/codex');
+  await deleteWorkspaceProviderOAuth('P1', 'openai/codex');
   expect(last().url).toContain('/workspaces/P1/oauth/openai%2Fcodex');
   expect(last().method).toBe('DELETE');
 });
@@ -385,7 +385,7 @@ test('setPersonalProjectSecret PUTs to the /personal sub-route', async () => {
     status: 200,
     body: { name: 'FOO', mine: { active: true, updated_at: '2026-01-01' } },
   };
-  await setPersonalProjectSecret('P1', 'FOO', { value: 'mine-value', active: true });
+  await setPersonalWorkspaceSecret('P1', 'FOO', { value: 'mine-value', active: true });
   expect(last().url).toContain('/workspaces/P1/secrets/FOO/personal');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ value: 'mine-value', active: true });
@@ -393,14 +393,14 @@ test('setPersonalProjectSecret PUTs to the /personal sub-route', async () => {
 
 test('deletePersonalProjectSecret DELETEs the /personal sub-route', async () => {
   nextResponse = { status: 200, body: { ok: true } };
-  await deletePersonalProjectSecret('P1', 'FOO');
+  await deletePersonalWorkspaceSecret('P1', 'FOO');
   expect(last().url).toContain('/workspaces/P1/secrets/FOO/personal');
   expect(last().method).toBe('DELETE');
 });
 
 test('deletePersonalProjectSecret encodes special characters in the secret name', async () => {
   nextResponse = { status: 200, body: { ok: true } };
-  await deletePersonalProjectSecret('P1', 'FOO/BAR');
+  await deletePersonalWorkspaceSecret('P1', 'FOO/BAR');
   expect(last().url).toContain('/workspaces/P1/secrets/FOO%2FBAR/personal');
 });
 
@@ -430,7 +430,7 @@ test('listProjectSecrets surfaces both delivery axes an egress secret depends on
     },
   };
 
-  const [secret] = (await listProjectSecrets('P1')).items;
+  const [secret] = (await listWorkspaceSecrets('P1')).items;
 
   const blockedReason: SecretDeliveryBlockedReason | null | undefined =
     secret?.delivery_blocked_reason;
@@ -459,7 +459,7 @@ test('a deliverable boundary secret reports the boundary present and no grant bl
     },
   };
 
-  const [secret] = (await listProjectSecrets('P1')).items;
+  const [secret] = (await listWorkspaceSecrets('P1')).items;
 
   expect(secret?.delivery_blocked_reason).toBeNull();
   expect(secret?.network_boundary_available).toBe(true);
@@ -475,7 +475,7 @@ test('an older server that omits both fields still parses', async () => {
     },
   };
 
-  const [secret] = (await listProjectSecrets('P1')).items;
+  const [secret] = (await listWorkspaceSecrets('P1')).items;
 
   expect(secret?.delivery_blocked_reason).toBeUndefined();
   expect(secret?.network_boundary_available).toBeUndefined();
@@ -493,7 +493,7 @@ test('setProjectSecretStrategy sends a host-list-only egress policy (no inject s
   };
   expect(egress_policy.inject).toBeUndefined();
 
-  await setProjectSecretStrategy('P1', 'STRIPE_KEY', 'egress', {
+  await setWorkspaceSecretStrategy('P1', 'STRIPE_KEY', 'egress', {
     consumer: 'network',
     egress_policy,
   });
@@ -514,7 +514,7 @@ test('setProjectSecretStrategy still sends a legacy policy that carries an injec
     on_no_match: 'deny',
   };
 
-  await setProjectSecretStrategy('P1', 'STRIPE_KEY', 'egress', {
+  await setWorkspaceSecretStrategy('P1', 'STRIPE_KEY', 'egress', {
     consumer: 'network',
     egress_policy,
   });
@@ -537,7 +537,7 @@ test('listProjectSecrets surfaces the calling agent own secrets grant', async ()
     },
   };
 
-  const scope: ProjectSecretsAgentScope | null | undefined = (await listProjectSecrets('P1'))
+  const scope: ProjectSecretsAgentScope | null | undefined = (await listWorkspaceSecrets('P1'))
     .agent_scope;
   expect(scope).toEqual({ agent: 'analyst', secrets: ['OTHER_KEY'] });
 });
@@ -614,7 +614,7 @@ test('runProjectProviderOAuthFlow resolves the challenge before the first poll',
   });
   const clock = fakeClock();
   const challenges: unknown[] = [];
-  const result = await runProjectProviderOAuthFlow({
+  const result = await runWorkspaceProviderOAuthFlow({
     projectId: 'P1',
     provider: 'openai',
     onChallenge: (challenge) => {
@@ -650,7 +650,7 @@ test('runProjectProviderOAuthFlow retries a transient poll failure and then succ
     },
   });
   const clock = fakeClock();
-  const result = await runProjectProviderOAuthFlow({
+  const result = await runWorkspaceProviderOAuthFlow({
     projectId: 'P1',
     provider: 'openai',
     ...clock,
@@ -667,7 +667,7 @@ test('runProjectProviderOAuthFlow maps failed and expired polls and stops pollin
     script.push({ status: 200, body: startBody });
     script.push({ status: 200, body: { status: 'failed', error: 'The user denied the request' } });
     const clock = fakeClock();
-    const result = await runProjectProviderOAuthFlow({
+    const result = await runWorkspaceProviderOAuthFlow({
       projectId: 'P1',
       provider: 'openai',
       ...clock,
@@ -681,7 +681,7 @@ test('runProjectProviderOAuthFlow maps failed and expired polls and stops pollin
     script.push({ status: 200, body: startBody });
     script.push({ status: 200, body: { status: 'expired' } });
     const clock = fakeClock();
-    const result = await runProjectProviderOAuthFlow({
+    const result = await runWorkspaceProviderOAuthFlow({
       projectId: 'P1',
       provider: 'openai',
       ...clock,
@@ -704,7 +704,7 @@ test('runProjectProviderOAuthFlow floors the cadence at 2s and falls back to 3s'
       },
     });
     const clock = fakeClock();
-    await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+    await runWorkspaceProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
     expect(clock.sleeps).toEqual([2_000]);
   }
   // No suggestion falls back to 3s.
@@ -719,7 +719,7 @@ test('runProjectProviderOAuthFlow floors the cadence at 2s and falls back to 3s'
       },
     });
     const clock = fakeClock();
-    await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+    await runWorkspaceProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
     expect(clock.sleeps).toEqual([3_000]);
   }
 });
@@ -729,7 +729,7 @@ test('runProjectProviderOAuthFlow times out at the 10-minute fallback deadline w
   script.push({ status: 200, body: { ...startBody, expires_at: 0, interval_ms: 0 } });
   for (let i = 0; i < 200; i++) script.push({ status: 200, body: { status: 'pending' } });
   const clock = fakeClock();
-  const result = await runProjectProviderOAuthFlow({
+  const result = await runWorkspaceProviderOAuthFlow({
     projectId: 'P1',
     provider: 'openai',
     ...clock,
@@ -749,7 +749,7 @@ test('runProjectProviderOAuthFlow honours the expiry the server sends', async ()
   script.push({ status: 200, body: { status: 'pending' } });
   script.push({ status: 200, body: { status: 'pending' } });
   const clock = fakeClock();
-  const result = await runProjectProviderOAuthFlow({
+  const result = await runWorkspaceProviderOAuthFlow({
     projectId: 'P1',
     provider: 'openai',
     ...clock,
@@ -765,7 +765,7 @@ test('runProjectProviderOAuthFlow can be cancelled after start, during the wait,
     const script = scriptedFetch();
     script.push({ status: 200, body: startBody });
     const clock = fakeClock();
-    const result = await runProjectProviderOAuthFlow({
+    const result = await runWorkspaceProviderOAuthFlow({
       projectId: 'P1',
       provider: 'openai',
       isCancelled: () => true,
@@ -781,7 +781,7 @@ test('runProjectProviderOAuthFlow can be cancelled after start, during the wait,
     script.push({ status: 200, body: startBody });
     const clock = fakeClock();
     let cancelled = false;
-    const result = await runProjectProviderOAuthFlow({
+    const result = await runWorkspaceProviderOAuthFlow({
       projectId: 'P1',
       provider: 'openai',
       isCancelled: () => cancelled,
@@ -811,7 +811,7 @@ test('runProjectProviderOAuthFlow can be cancelled after start, during the wait,
     });
     const clock = fakeClock();
     let cancelledAfterPoll = false;
-    const result = await runProjectProviderOAuthFlow({
+    const result = await runWorkspaceProviderOAuthFlow({
       projectId: 'P1',
       provider: 'openai',
       isCancelled: () => cancelledAfterPoll,
@@ -827,7 +827,7 @@ test('runProjectProviderOAuthFlow lets start failures propagate', async () => {
   script.push({ status: 403, body: { message: 'forbidden' } });
   const clock = fakeClock();
   await expect(
-    runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock }),
+    runWorkspaceProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock }),
   ).rejects.toBeTruthy();
   expect(patch('POST', pollRoute)).toBe(0);
 });

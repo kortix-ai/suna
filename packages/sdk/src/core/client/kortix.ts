@@ -188,7 +188,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 }
 
 export type Kortix = ReturnType<typeof createKortix>;
-/** The id-bound project handle returned by `kortix.project(id)`. */
+/**
+ * The id-bound project handle returned by `kortix.project(id)`.
+ *
+ * @deprecated Use `WorkspaceHandle` (`kortix.workspace(id)`): every member of this handle plus the workspace itself. Kept permanently.
+ */
 export type ProjectHandle = ReturnType<Kortix['project']>;
 /** The id-bound workspace handle returned by `kortix.workspace(id)`. */
 export type WorkspaceHandle = ReturnType<Kortix['workspace']>;

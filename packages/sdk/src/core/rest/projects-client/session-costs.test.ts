@@ -5,7 +5,7 @@ import {
   fetchCostExportCsv,
   getCostSummary,
   getSessionCostRecord,
-  listCostByProject,
+  listCostByWorkspace,
   listSessionCosts,
   type CostSummary,
   type CostSummaryTotals,
@@ -230,7 +230,7 @@ const projectCostPage = {
 test('listCostByProject targets the rollup route with account, window, sort and paging', async () => {
   nextResponse = projectCostPage;
 
-  const result = await listCostByProject({
+  const result = await listCostByWorkspace({
     accountId: 'acct-1',
     from: '2026-07-01T00:00:00.000Z',
     to: '2026-08-01T00:00:00.000Z',
@@ -252,7 +252,7 @@ test('listCostByProject targets the rollup route with account, window, sort and 
 test('listCostByProject omits the query string when no options are supplied', async () => {
   nextResponse = projectCostPage;
 
-  await listCostByProject();
+  await listCostByWorkspace();
 
   expect(last().url).toBe('http://test.local/usage/cost-by-project');
 });
@@ -260,7 +260,7 @@ test('listCostByProject omits the query string when no options are supplied', as
 test('listCostByProject accepts the project-only name_asc sort', async () => {
   nextResponse = projectCostPage;
 
-  await listCostByProject({ sort: 'name_asc' });
+  await listCostByWorkspace({ sort: 'name_asc' });
 
   expect(last().url).toBe('http://test.local/usage/cost-by-project?sort=name_asc');
 });

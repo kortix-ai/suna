@@ -1,28 +1,28 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
-  approveProjectAccessRequest,
-  attachGroupToProject,
-  createProjectResourceGrant,
-  deleteProjectResourceGrant,
-  detachGroupFromProject,
+  approveWorkspaceAccessRequest,
+  attachGroupToWorkspace,
+  createWorkspaceResourceGrant,
+  deleteWorkspaceResourceGrant,
+  detachGroupFromWorkspace,
   inviteProjectMember,
   isInviteSent,
   listPendingApprovals,
-  listPendingProjectInvites,
-  listProjectAccess,
-  listProjectAccessRequests,
-  listProjectGroupGrants,
-  listProjectResourceGrants,
+  listPendingWorkspaceInvites,
+  listWorkspaceAccess,
+  listWorkspaceAccessRequests,
+  listWorkspaceGroupGrants,
+  listWorkspaceResourceGrants,
   listSessionsNeedingInput,
-  rejectProjectAccessRequest,
-  requestProjectAccess,
-  resendPendingProjectInvite,
+  rejectWorkspaceAccessRequest,
+  requestWorkspaceAccess,
+  resendPendingWorkspaceInvite,
   resolveApproval,
-  revokePendingProjectInvite,
-  revokeProjectAccess,
-  updateProjectAccess,
-  updateProjectGroupGrant,
+  revokePendingWorkspaceInvite,
+  revokeWorkspaceAccess,
+  updateWorkspaceAccess,
+  updateWorkspaceGroupGrant,
   type ProjectAccessMember,
   type ProjectResourceGrant,
 } from './access';
@@ -91,7 +91,7 @@ test('requestProjectAccess POSTs a trimmed message to access-requests', async ()
       request: { request_id: 'r1', status: 'pending' },
     },
   };
-  await requestProjectAccess('P1', '  please add me  ');
+  await requestWorkspaceAccess('P1', '  please add me  ');
   expect(last().url).toContain('/workspaces/P1/access-requests');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ message: 'please add me' });
@@ -99,13 +99,13 @@ test('requestProjectAccess POSTs a trimmed message to access-requests', async ()
 
 test('requestProjectAccess omits message entirely when only whitespace is given', async () => {
   nextResponse = { status: 200, body: { status: 'created', request: {} } };
-  await requestProjectAccess('P1', '   ');
+  await requestWorkspaceAccess('P1', '   ');
   expect(last().body).toEqual({ message: undefined });
 });
 
 test('listProjectAccessRequests GETs the access-requests list', async () => {
   nextResponse = { status: 200, body: { requests: [] } };
-  const result = await listProjectAccessRequests('P1');
+  const result = await listWorkspaceAccessRequests('P1');
   expect(last().url).toContain('/workspaces/P1/access-requests');
   expect(last().method).toBe('GET');
   expect(result).toEqual({ requests: [] });
@@ -113,12 +113,12 @@ test('listProjectAccessRequests GETs the access-requests list', async () => {
 
 test('listProjectAccess throws on a failed response', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
-  await expect(listProjectAccess('P1')).rejects.toBeTruthy();
+  await expect(listWorkspaceAccess('P1')).rejects.toBeTruthy();
 });
 
 test('approveProjectAccessRequest defaults role to "member" and POSTs to /approve', async () => {
   nextResponse = { status: 200, body: { request: { request_id: 'r1' }, member: { user_id: 'u1' } } };
-  await approveProjectAccessRequest('P1', 'r1');
+  await approveWorkspaceAccessRequest('P1', 'r1');
   expect(last().url).toContain('/workspaces/P1/access-requests/r1/approve');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ role: 'member' });
@@ -126,13 +126,13 @@ test('approveProjectAccessRequest defaults role to "member" and POSTs to /approv
 
 test('approveProjectAccessRequest forwards an explicit role', async () => {
   nextResponse = { status: 200, body: { request: { request_id: 'r1' }, member: { user_id: 'u1' } } };
-  await approveProjectAccessRequest('P1', 'r1', 'manager');
+  await approveWorkspaceAccessRequest('P1', 'r1', 'manager');
   expect(last().body).toEqual({ role: 'manager' });
 });
 
 test('rejectProjectAccessRequest POSTs an empty body to /reject', async () => {
   nextResponse = { status: 200, body: { request: { request_id: 'r1' } } };
-  await rejectProjectAccessRequest('P1', 'r1');
+  await rejectWorkspaceAccessRequest('P1', 'r1');
   expect(last().url).toContain('/workspaces/P1/access-requests/r1/reject');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
@@ -145,7 +145,7 @@ test('listProjectAccess GETs the project access roster', async () => {
     status: 200,
     body: { project_id: 'P1', account_id: 'A1', can_manage: true, viewer_user_id: 'u1', members: [] },
   };
-  const result = await listProjectAccess('P1');
+  const result = await listWorkspaceAccess('P1');
   expect(last().url).toContain('/workspaces/P1/access');
   expect(last().method).toBe('GET');
   expect(result.can_manage).toBe(true);
@@ -153,7 +153,7 @@ test('listProjectAccess GETs the project access roster', async () => {
 
 test('updateProjectAccess PUTs { role } to /access/:userId', async () => {
   nextResponse = { status: 200, body: { user_id: 'u1', project_role: 'manager' } };
-  await updateProjectAccess('P1', 'u1', 'manager');
+  await updateWorkspaceAccess('P1', 'u1', 'manager');
   expect(last().url).toContain('/workspaces/P1/access/u1');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ role: 'manager' });
@@ -161,7 +161,7 @@ test('updateProjectAccess PUTs { role } to /access/:userId', async () => {
 
 test('revokeProjectAccess DELETEs /access/:userId', async () => {
   nextResponse = { status: 200, body: { ok: true } };
-  await revokeProjectAccess('P1', 'u1');
+  await revokeWorkspaceAccess('P1', 'u1');
   expect(last().url).toContain('/workspaces/P1/access/u1');
   expect(last().method).toBe('DELETE');
 });
@@ -191,7 +191,7 @@ test('inviteProjectMember POSTs { email, role } to /access/invite', async () => 
 
 test('listPendingProjectInvites GETs the pending-invites list', async () => {
   nextResponse = { status: 200, body: { pending: [] } };
-  const result = await listPendingProjectInvites('P1');
+  const result = await listPendingWorkspaceInvites('P1');
   expect(last().url).toContain('/workspaces/P1/access/pending-invites');
   expect(last().method).toBe('GET');
   expect(result).toEqual({ pending: [] });
@@ -199,7 +199,7 @@ test('listPendingProjectInvites GETs the pending-invites list', async () => {
 
 test('revokePendingProjectInvite DELETEs a pending invite by id', async () => {
   nextResponse = { status: 200, body: { ok: true, invitation_cancelled: true } };
-  const result = await revokePendingProjectInvite('P1', 'inv-1');
+  const result = await revokePendingWorkspaceInvite('P1', 'inv-1');
   expect(last().url).toContain('/workspaces/P1/access/pending-invites/inv-1');
   expect(last().method).toBe('DELETE');
   expect(result.invitation_cancelled).toBe(true);
@@ -210,7 +210,7 @@ test('resendPendingProjectInvite POSTs to the resend endpoint', async () => {
     status: 200,
     body: { ok: true, expires_at: '2026-02-01', invite_url: 'https://x', email_sent: true, email_skip_reason: null },
   };
-  const result = await resendPendingProjectInvite('P1', 'inv-1');
+  const result = await resendPendingWorkspaceInvite('P1', 'inv-1');
   expect(last().url).toContain('/workspaces/P1/access/pending-invites/inv-1/resend');
   expect(last().method).toBe('POST');
   expect(result.ok).toBe(true);
@@ -220,7 +220,7 @@ test('resendPendingProjectInvite POSTs to the resend endpoint', async () => {
 
 test('listProjectGroupGrants GETs the group-grants list', async () => {
   nextResponse = { status: 200, body: { grants: [] } };
-  const result = await listProjectGroupGrants('P1');
+  const result = await listWorkspaceGroupGrants('P1');
   expect(last().url).toContain('/workspaces/P1/group-grants');
   expect(last().method).toBe('GET');
   expect(result).toEqual({ grants: [] });
@@ -228,7 +228,7 @@ test('listProjectGroupGrants GETs the group-grants list', async () => {
 
 test('attachGroupToProject omits expires_at entirely when expiresAt is undefined', async () => {
   nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'member' } };
-  await attachGroupToProject('P1', 'g1', 'member');
+  await attachGroupToWorkspace('P1', 'g1', 'member');
   expect(last().url).toContain('/workspaces/P1/group-grants');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ group_id: 'g1', role: 'member' });
@@ -236,19 +236,19 @@ test('attachGroupToProject omits expires_at entirely when expiresAt is undefined
 
 test('attachGroupToProject sends expires_at: null to explicitly clear expiry', async () => {
   nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'member' } };
-  await attachGroupToProject('P1', 'g1', 'member', null);
+  await attachGroupToWorkspace('P1', 'g1', 'member', null);
   expect(last().body).toEqual({ group_id: 'g1', role: 'member', expires_at: null });
 });
 
 test('attachGroupToProject sends a real expires_at string when given', async () => {
   nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'member' } };
-  await attachGroupToProject('P1', 'g1', 'member', '2026-12-31T00:00:00Z');
+  await attachGroupToWorkspace('P1', 'g1', 'member', '2026-12-31T00:00:00Z');
   expect(last().body).toEqual({ group_id: 'g1', role: 'member', expires_at: '2026-12-31T00:00:00Z' });
 });
 
 test('updateProjectGroupGrant PATCHes with { role } only when expiresAt is undefined', async () => {
   nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'manager' } };
-  await updateProjectGroupGrant('P1', 'g1', 'manager');
+  await updateWorkspaceGroupGrant('P1', 'g1', 'manager');
   expect(last().url).toContain('/workspaces/P1/group-grants/g1');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ role: 'manager' });
@@ -256,19 +256,19 @@ test('updateProjectGroupGrant PATCHes with { role } only when expiresAt is undef
 
 test('updateProjectGroupGrant PATCHes with expires_at: null to clear expiry', async () => {
   nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'manager' } };
-  await updateProjectGroupGrant('P1', 'g1', 'manager', null);
+  await updateWorkspaceGroupGrant('P1', 'g1', 'manager', null);
   expect(last().body).toEqual({ role: 'manager', expires_at: null });
 });
 
 test('updateProjectGroupGrant PATCHes with a real expires_at string when given', async () => {
   nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'manager' } };
-  await updateProjectGroupGrant('P1', 'g1', 'manager', '2026-12-31T00:00:00Z');
+  await updateWorkspaceGroupGrant('P1', 'g1', 'manager', '2026-12-31T00:00:00Z');
   expect(last().body).toEqual({ role: 'manager', expires_at: '2026-12-31T00:00:00Z' });
 });
 
 test('detachGroupFromProject DELETEs /group-grants/:groupId', async () => {
   nextResponse = { status: 200, body: { ok: true } };
-  await detachGroupFromProject('P1', 'g1');
+  await detachGroupFromWorkspace('P1', 'g1');
   expect(last().url).toContain('/workspaces/P1/group-grants/g1');
   expect(last().method).toBe('DELETE');
 });
@@ -280,7 +280,7 @@ test('listProjectResourceGrants GETs the resource-grants list', async () => {
     status: 200,
     body: { resources: { agents: [], skills: [], secrets: [] }, grants: [] },
   };
-  const result = await listProjectResourceGrants('P1');
+  const result = await listWorkspaceResourceGrants('P1');
   expect(last().url).toContain('/workspaces/P1/resource-grants');
   expect(last().method).toBe('GET');
   expect(result.grants).toEqual([]);
@@ -302,13 +302,13 @@ test('listProjectResourceGrants carries a grant to everyone in the project', asy
     status: 200,
     body: { resources: { agents: [], skills: [] }, grants: [everyone] },
   };
-  const result = await listProjectResourceGrants('P1');
+  const result = await listWorkspaceResourceGrants('P1');
   expect(result.grants[0]?.principal_type).toBe('project');
 });
 
 test('createProjectResourceGrant POSTs snake_case fields, omitting expires_at when not given', async () => {
   nextResponse = { status: 200, body: { grant_id: 'gr1' } };
-  await createProjectResourceGrant('P1', {
+  await createWorkspaceResourceGrant('P1', {
     resourceType: 'agent',
     resourceId: 'researcher',
     principalType: 'member',
@@ -326,7 +326,7 @@ test('createProjectResourceGrant POSTs snake_case fields, omitting expires_at wh
 
 test('createProjectResourceGrant includes expires_at when explicitly given (including null)', async () => {
   nextResponse = { status: 200, body: { grant_id: 'gr2' } };
-  await createProjectResourceGrant('P1', {
+  await createWorkspaceResourceGrant('P1', {
     resourceType: 'skill',
     resourceId: 'deploy',
     principalType: 'group',
@@ -341,7 +341,7 @@ test('createProjectResourceGrant includes expires_at when explicitly given (incl
     expires_at: '2026-12-31T00:00:00Z',
   });
 
-  await createProjectResourceGrant('P1', {
+  await createWorkspaceResourceGrant('P1', {
     resourceType: 'secret',
     resourceId: 'api_key',
     principalType: 'member',
@@ -359,7 +359,7 @@ test('createProjectResourceGrant includes expires_at when explicitly given (incl
 
 test('deleteProjectResourceGrant DELETEs /resource-grants/:grantId', async () => {
   nextResponse = { status: 200, body: { ok: true } };
-  await deleteProjectResourceGrant('P1', 'gr1');
+  await deleteWorkspaceResourceGrant('P1', 'gr1');
   expect(last().url).toContain('/workspaces/P1/resource-grants/gr1');
   expect(last().method).toBe('DELETE');
 });

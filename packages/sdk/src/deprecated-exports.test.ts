@@ -64,9 +64,9 @@ const TRANSCRIPT_SHARE_EXPORTS = [
  * that has an exact `Workspace*` equivalent carries `@deprecated` naming the
  * replacement. Compatibility is PERMANENT: these names are never removed, so
  * the tag says `Kept permanently.` and never `Removed in the next major.`.
- * A name with no exact equivalent (`getProject`: one database read, where
- * `getWorkspace` also reads the settings; the IAM functions, until the one
- * workspace scope lands) is not deprecated.
+ * A name with no exact equivalent (the IAM functions, until the one
+ * workspace scope lands) is not deprecated. Every project-named export is
+ * covered by `workspace-names.test.ts`.
  */
 const WORKSPACE_EQUIVALENTS: Record<string, string> = {
   updateProject: 'updateWorkspace',
@@ -162,7 +162,10 @@ describe('deprecated exports', () => {
   // createAccountToken mints a PERSONAL key (acts as the person in every
   // workspace); createWorkspaceToken mints a key bound to one workspace.
   // Different reach: not an equivalent.
-  test.each(['getProject', 'listProjectsForAccount', 'KortixAccount', 'listAccounts', 'createAccountToken'])(
+  // The project names (getProject, listProjectsForAccount, …) are covered by
+  // workspace-names.test.ts since the Naming stage (2026-11-06): each has a
+  // workspace twin or a named replacement.
+  test.each(['KortixAccount', 'listAccounts', 'createAccountToken'])(
     '%s has no exact workspace equivalent and stays current',
     (name) => {
       expect(isDeprecated(name)).toBe(false);

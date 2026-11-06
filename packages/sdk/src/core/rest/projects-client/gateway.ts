@@ -316,6 +316,7 @@ export interface GatewayModelGenerationConfig {
   maxOutputTokens?: number;
 }
 
+/** @deprecated Use `GatewayWorkspaceRoutingPolicy`. Kept permanently. */
 export interface GatewayProjectRoutingPolicy {
   defaultModel: string | null;
   visionModel: string | null;
@@ -325,6 +326,9 @@ export interface GatewayProjectRoutingPolicy {
    *  the server defaults it to `{}` when omitted. */
   modelGenerationConfig?: Record<string, GatewayModelGenerationConfig>;
 }
+
+/** The workspace name of {@link GatewayProjectRoutingPolicy}: the same type. */
+export type GatewayWorkspaceRoutingPolicy = GatewayProjectRoutingPolicy;
 
 export interface GatewayRoutingPolicyDocument {
   version: 1;

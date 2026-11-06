@@ -144,8 +144,13 @@ export type SessionCostSort = 'total_desc' | 'total_asc' | 'recent';
  * The four sorts `GET /usage/cost-by-project` accepts (`PROJECT_COST_SORTS`
  * in the same route file) — every `SessionCostSort` plus `name_asc`, since a
  * project rollup row has a name to sort on.
+ *
+ * @deprecated Use `WorkspaceCostSort`. Kept permanently.
  */
 export type ProjectCostSort = SessionCostSort | 'name_asc';
+
+/** The workspace name of {@link ProjectCostSort}: the same type. */
+export type WorkspaceCostSort = ProjectCostSort;
 
 export interface ListSessionCostsOptions extends CostWindowOptions {
   accountId?: string;
@@ -214,6 +219,7 @@ export async function getSessionCostRecord(
 // attribute to any project is folded into the account-wide totals returned
 // by `getCostSummary` below, never surfaced as a synthetic row here.
 
+/** @deprecated Use `WorkspaceCostRow`. Kept permanently. */
 export interface ProjectCostRow {
   project_id: string;
   project_name: string;
@@ -245,6 +251,10 @@ export interface ProjectCostRow {
   moved?: boolean;
 }
 
+/** The workspace name of {@link ProjectCostRow}: the same type. */
+export type WorkspaceCostRow = ProjectCostRow;
+
+/** @deprecated Use `WorkspaceCostPage`. Kept permanently. */
 export interface ProjectCostPage {
   projects: ProjectCostRow[];
   total: number;
@@ -253,6 +263,10 @@ export interface ProjectCostPage {
   next_offset: number | null;
 }
 
+/** The workspace name of {@link ProjectCostPage}: the same type. */
+export type WorkspaceCostPage = ProjectCostPage;
+
+/** @deprecated Use `ListCostByWorkspaceOptions`. Kept permanently. */
 export interface ListCostByProjectOptions extends CostWindowOptions {
   accountId?: string;
   sort?: ProjectCostSort;
@@ -260,7 +274,10 @@ export interface ListCostByProjectOptions extends CostWindowOptions {
   offset?: number;
 }
 
-export async function listCostByProject(
+/** The workspace name of {@link ListCostByProjectOptions}: the same type. */
+export type ListCostByWorkspaceOptions = ListCostByProjectOptions;
+
+export async function listCostByWorkspace(
   options: ListCostByProjectOptions = {},
 ): Promise<ProjectCostPage> {
   const query = new URLSearchParams();
@@ -271,6 +288,9 @@ export async function listCostByProject(
   if (options.offset != null) query.set('offset', String(options.offset));
   return unwrap(await backendApi.get<ProjectCostPage>(`/usage/cost-by-project${suffix(query)}`));
 }
+
+/** @deprecated Use `listCostByWorkspace`. Kept permanently. */
+export const listCostByProject = listCostByWorkspace;
 
 // ── Spend summary — GET /usage/cost-summary ─────────────────────────────────
 // Mirrors `CostSummaryTotals` / `CostSeriesPoint` / `CostModelRow` /
@@ -362,12 +382,18 @@ export async function getCostSummary(
 // published.
 
 /** Options accepted by `costExportUrl('projects', …)` / `fetchCostExportCsv('projects', …)`.
- *  `projectId` narrows a project-scoped export; `ownerId` belongs to sessions. */
+ *  `projectId` narrows a project-scoped export; `ownerId` belongs to sessions.
+ *
+ * @deprecated Use `WorkspaceCostExportOptions`. Kept permanently.
+ */
 export interface ProjectCostExportOptions extends CostWindowOptions {
   accountId?: string;
   projectId?: string;
   sort?: ProjectCostSort;
 }
+
+/** The workspace name of {@link ProjectCostExportOptions}: the same type. */
+export type WorkspaceCostExportOptions = ProjectCostExportOptions;
 
 /** Options accepted by `costExportUrl('sessions', …)` / `fetchCostExportCsv('sessions', …)`.
  *  `sort` is `SessionCostSort`, not `ProjectCostSort` — `name_asc` is only

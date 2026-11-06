@@ -15,7 +15,7 @@ import {
   type PeerMessage,
   type SessionTask,
 } from './multi-agent';
-import { listProjectSessionsPage } from './sessions';
+import { listWorkspaceSessionsPage } from './sessions';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextBody: unknown = {};
@@ -137,7 +137,7 @@ test('updateSessionTask rejects a 409 task_taken', async () => {
 
 test('listProjectSessionsPage sends teamLead as team_lead', async () => {
   nextBody = [];
-  await listProjectSessionsPage('p1', { teamLead: 's1' });
+  await listWorkspaceSessionsPage('p1', { teamLead: 's1' });
   expect(last().url).toBe('http://test.local/workspaces/p1/sessions?team_lead=s1');
 });
 

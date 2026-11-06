@@ -1,7 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 
 import { configureKortix } from '../../http/config';
-import { getProjectModelPicker } from './projects';
+import { getWorkspaceModelPicker } from './projects';
 
 let calls: Array<{ url: string; method: string }> = [];
 
@@ -24,7 +24,7 @@ configureKortix({
 });
 
 test('loads the compact project model picker instead of the full runtime catalog', async () => {
-  const result = await getProjectModelPicker('P1');
+  const result = await getWorkspaceModelPicker('P1');
   expect(result.models['glm-5.3-flash']?.name).toBe('GLM 5.3 Flash');
   expect(calls.at(-1)).toEqual({
     url: 'http://test.local/workspaces/P1/model-picker',

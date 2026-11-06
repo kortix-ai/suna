@@ -7,8 +7,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import {
-  getProjectModelAccess,
-  setProjectModelAccess,
+  getWorkspaceModelAccess,
+  setWorkspaceModelAccess,
   type ProjectModelAccessChange,
 } from "../core/rest/projects-client/model-access";
 import { contract } from "./query-contracts";
@@ -20,7 +20,7 @@ export function useModelAccess(projectId: string | null | undefined) {
   const queryKey = qk.project.modelAccess(projectId ?? "");
   const query = useQuery({
     queryKey,
-    queryFn: () => getProjectModelAccess(projectId as string),
+    queryFn: () => getWorkspaceModelAccess(projectId as string),
     enabled: !!projectId,
     ...contract("config"),
   });
@@ -29,7 +29,7 @@ export function useModelAccess(projectId: string | null | undefined) {
     mutationKey: queryKey,
     scope: { id: `project-model-access:${projectId}` },
     mutationFn: (change: ProjectModelAccessChange) =>
-      setProjectModelAccess(projectId as string, change),
+      setWorkspaceModelAccess(projectId as string, change),
     onSuccess: async (policy) => {
       queryClient.setQueryData(queryKey, policy);
       await queryClient.invalidateQueries({

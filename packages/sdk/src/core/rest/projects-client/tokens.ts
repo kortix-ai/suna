@@ -257,6 +257,7 @@ export async function signOutDevice(sessionId: string) {
   );
 }
 
+/** @deprecated Use `WorkspaceCliToken`. Kept permanently. */
 export interface ProjectCliToken {
   token_id: string;
   name: string;
@@ -268,6 +269,10 @@ export interface ProjectCliToken {
   revoked_at: string | null;
 }
 
+/** The workspace name of {@link ProjectCliToken}: the same type. */
+export type WorkspaceCliToken = ProjectCliToken;
+
+/** @deprecated Use `WorkspaceCliTokenListResponse`. Kept permanently. */
 export interface ProjectCliTokenListResponse {
   items: ProjectCliToken[];
   /** Session-bound tokens the list hides — the runtime mints one per session
@@ -277,7 +282,14 @@ export interface ProjectCliTokenListResponse {
   session_tokens: number;
 }
 
-/** The newly minted project-scoped token — `secret_key` is returned once. */
+/** The workspace name of {@link ProjectCliTokenListResponse}: the same type. */
+export type WorkspaceCliTokenListResponse = ProjectCliTokenListResponse;
+
+/**
+ * The newly minted project-scoped token — `secret_key` is returned once.
+ *
+ * @deprecated Use `CreatedWorkspaceCliToken`. Kept permanently.
+ */
 export interface CreatedProjectCliToken {
   token_id: string;
   name: string;
@@ -289,14 +301,20 @@ export interface CreatedProjectCliToken {
   created_at: string;
 }
 
-export async function listProjectCliTokens(projectId: string) {
+/** The workspace name of {@link CreatedProjectCliToken}: the same type. */
+export type CreatedWorkspaceCliToken = CreatedProjectCliToken;
+
+export async function listWorkspaceCliTokens(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectCliTokenListResponse>(`/workspaces/${projectId}/cli-token`),
   );
 }
 
+/** @deprecated Use `listWorkspaceCliTokens`. Kept permanently. */
+export const listProjectCliTokens = listWorkspaceCliTokens;
+
 /** Mint a project-scoped CLI PAT. Defaults `name` to "cli · <project name>" server-side. */
-export async function createProjectCliToken(
+export async function createWorkspaceCliToken(
   projectId: string,
   input?: { name?: string },
 ) {
@@ -308,10 +326,16 @@ export async function createProjectCliToken(
   );
 }
 
-export async function revokeProjectCliToken(projectId: string, tokenId: string) {
+/** @deprecated Use `createWorkspaceCliToken`. Kept permanently. */
+export const createProjectCliToken = createWorkspaceCliToken;
+
+export async function revokeWorkspaceCliToken(projectId: string, tokenId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
       `/workspaces/${projectId}/cli-token/${tokenId}`,
     ),
   );
 }
+
+/** @deprecated Use `revokeWorkspaceCliToken`. Kept permanently. */
+export const revokeProjectCliToken = revokeWorkspaceCliToken;

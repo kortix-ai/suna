@@ -1,7 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { auditFilterQuery } from './audit-filter';
-import { exportAccountAudit, getAccountAuditActivity, listAccountAudit, listProjectAudit } from './audit';
+import { exportAccountAudit, getAccountAuditActivity, listAccountAudit, listWorkspaceAudit } from './audit';
 import { listAuditEvents } from './iam';
 
 let calls: Array<{ url: string; method: string }> = [];
@@ -112,7 +112,7 @@ test('listAuditEvents sends project and session reconstruction filters', async (
 });
 
 test('listProjectAudit uses the canonical project route and forwards phase/cursor filters', async () => {
-  await listProjectAudit('project-1', {
+  await listWorkspaceAudit('project-1', {
     action: 'opencode.tool',
     phase: 'completed',
     cursor: 'cursor-1',

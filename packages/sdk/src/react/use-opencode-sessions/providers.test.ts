@@ -32,7 +32,7 @@ mock.module('@tanstack/react-query', () => ({
 }));
 
 mock.module('../route-project', () => ({
-  useKortixRouteProjectId: () => routeProjectId,
+  useKortixRouteWorkspaceId: () => routeProjectId,
 }));
 
 mock.module('./keys', () => ({
@@ -42,9 +42,9 @@ mock.module('./keys', () => ({
 
 mock.module('../../core/rest/projects-client', () => ({
   getProject: async () => rowData,
-  getProjectModelPicker: async () => ({ models: [] }),
-  getProjectLlmCatalogProviders: async () => ({ providers: [] }),
-  listProjectSecrets: async () => ({ items: [] }),
+  getWorkspaceModelPicker: async () => ({ models: [] }),
+  getWorkspaceLlmCatalogProviders: async () => ({ providers: [] }),
+  listWorkspaceSecrets: async () => ({ items: [] }),
 }));
 
 const providers = await import('./providers');

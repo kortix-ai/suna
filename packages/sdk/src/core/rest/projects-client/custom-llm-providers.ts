@@ -2,7 +2,7 @@
 // through the Kortix gateway as `<id>/<model>` (BYOK, no Kortix credits).
 
 import { backendApi } from '../../http/api-client';
-import { deleteProjectSecret } from './secrets';
+import { deleteWorkspaceSecret } from './secrets';
 import { unwrap } from './shared';
 
 /** One custom OpenAI-compatible endpoint of a project. */
@@ -72,7 +72,7 @@ export async function deleteCustomLlmProvider(projectId: string, providerId: str
     throw res.error ?? new Error('Failed to delete the custom provider');
   }
   const secretName = `CUSTOM_${providerId.toUpperCase().replace(/-/g, '_')}_API_KEY`;
-  await deleteProjectSecret(projectId, secretName).catch((error: unknown) => {
+  await deleteWorkspaceSecret(projectId, secretName).catch((error: unknown) => {
     if (!isNotFound(error)) throw error;
   });
 }

@@ -13,7 +13,7 @@ mock.module('@tanstack/react-query', () => ({
   }),
 }));
 
-const { useProjectReminders, useSessionReminders } = await import('./use-reminders');
+const { useWorkspaceReminders, useSessionReminders } = await import('./use-reminders');
 const { qk } = await import('./query-keys');
 
 beforeEach(() => {
@@ -22,7 +22,7 @@ beforeEach(() => {
 
 describe('useProjectReminders / useSessionReminders', () => {
   test('the session key nests under the project key, so one invalidation refreshes both', () => {
-    const project = useProjectReminders('p1') as any;
+    const project = useWorkspaceReminders('p1') as any;
     const session = useSessionReminders('p1', 's1') as any;
     expect(project.queryKey).toEqual(qk.project.reminders('p1'));
     expect(session.queryKey).toEqual(qk.project.sessionReminders('p1', 's1'));
@@ -30,15 +30,15 @@ describe('useProjectReminders / useSessionReminders', () => {
   });
 
   test('disabled until every id is known', () => {
-    expect((useProjectReminders(null) as any).enabled).toBe(false);
-    expect((useProjectReminders('p1') as any).enabled).toBe(true);
+    expect((useWorkspaceReminders(null) as any).enabled).toBe(false);
+    expect((useWorkspaceReminders('p1') as any).enabled).toBe(true);
     expect((useSessionReminders('p1', null) as any).enabled).toBe(false);
     expect((useSessionReminders(null, 's1') as any).enabled).toBe(false);
     expect((useSessionReminders('p1', 's1') as any).enabled).toBe(true);
   });
 
   test('update and remove invalidate the project reminders key from either hook', () => {
-    const project = useProjectReminders('p1') as any;
+    const project = useWorkspaceReminders('p1') as any;
     const session = useSessionReminders('p1', 's1') as any;
     project.update.onSuccess();
     project.remove.onSuccess();
@@ -56,7 +56,7 @@ describe('useProjectReminders / useSessionReminders', () => {
       calls.push(`${opts.method ?? 'GET'} ${String(url)}`);
       return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
     }) as unknown as typeof fetch;
-    const project = useProjectReminders('p1') as any;
+    const project = useWorkspaceReminders('p1') as any;
     const reminders = [
       { sessionId: 's1', reminderId: 'reminder.a' },
       { sessionId: 's2', reminderId: 'reminder.b' },
@@ -86,7 +86,7 @@ describe('useProjectReminders / useSessionReminders', () => {
       calls.push(`${opts.method ?? 'GET'} ${String(url)}`);
       return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
     }) as unknown as typeof fetch;
-    const project = useProjectReminders('p1') as any;
+    const project = useWorkspaceReminders('p1') as any;
     const session = useSessionReminders('p1', 's1') as any;
     await project.update.mutationFn({ sessionId: 's9', reminderId: 'reminder.a', enabled: false });
     await project.remove.mutationFn({ sessionId: 's9', reminderId: 'reminder.a' });

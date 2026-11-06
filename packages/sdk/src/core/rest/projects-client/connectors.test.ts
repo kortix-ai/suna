@@ -5,13 +5,13 @@ import {
   checkMcpServerSignIn,
   listConnectorMoves,
   moveConnector,
-  addComputerToProject,
+  addComputerToWorkspace,
   createConnector,
   deleteConnector,
   discoverConnectionOAuth2,
   discoverConnectionOAuth2Resource,
   discoverConnectorAuth,
-  ensureProjectConnectorConnection,
+  ensureWorkspaceConnectorConnection,
   getConnectStatus,
   getConnectionPolicies,
   getConnectionOAuth2Application,
@@ -149,7 +149,7 @@ test('connection APIs expose only connection identifiers', async () => {
 
 test('native OAuth2 lifecycle methods use connection-scoped generic routes', async () => {
   nextResponse = { status: 200, body: { connection_id: 'connection-1' } };
-  await ensureProjectConnectorConnection('P1', 'generic-api');
+  await ensureWorkspaceConnectorConnection('P1', 'generic-api');
   expect(last()).toMatchObject({ method: 'POST' });
   expect(last().url).toContain('/workspaces/P1/connectors/generic-api/oauth2/connection');
 
@@ -368,7 +368,7 @@ test('connection methods use the canonical connection route contract', async () 
   expect(last().body).toEqual({ principals: [] });
 
   nextResponse = { status: 200, body: { connection_id: 'connection-1' } };
-  await ensureProjectConnectorConnection('P1', 'gmail');
+  await ensureWorkspaceConnectorConnection('P1', 'gmail');
   expect(last().url).toContain('/connectors/gmail/oauth2/connection');
 
   nextResponse = { status: 200, body: { token: 'connect-token' } };
@@ -842,7 +842,7 @@ test('listConnections passes the machine access state through', async () => {
 
 test('addComputerToProject POSTs { tunnel_id, share } and returns the connection view', async () => {
   nextResponse = { status: 200, body: computerConnection };
-  const result = await addComputerToProject('P1', {
+  const result = await addComputerToWorkspace('P1', {
     tunnelId: '11111111-1111-4111-8111-111111111111',
     share: 'project',
   });
@@ -858,13 +858,13 @@ test('addComputerToProject POSTs { tunnel_id, share } and returns the connection
 
 test('addComputerToProject omits share so the server applies its private default', async () => {
   nextResponse = { status: 200, body: computerConnection };
-  await addComputerToProject('P1', { tunnelId: '11111111-1111-4111-8111-111111111111' });
+  await addComputerToWorkspace('P1', { tunnelId: '11111111-1111-4111-8111-111111111111' });
   expect(last().body).toEqual({ tunnel_id: '11111111-1111-4111-8111-111111111111' });
 });
 
 test('addComputerToProject surfaces a refusal as an ApiError with the status', async () => {
   nextResponse = { status: 409, body: { error: 'computer belongs to another account' } };
-  const error = await addComputerToProject('P1', {
+  const error = await addComputerToWorkspace('P1', {
     tunnelId: '11111111-1111-4111-8111-111111111111',
   }).catch((e: unknown) => e);
   expect((error as { status?: number }).status).toBe(409);

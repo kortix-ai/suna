@@ -7,7 +7,7 @@ import {
   connectorAccountNeedsSignIn,
   connectorAccountVisibility,
   connectorConnectionRows,
-  emptyProjectConnectionSlot,
+  emptyWorkspaceConnectionSlot,
   listedConnectorAccounts,
   newConnectorAccountAudienceFor,
   newConnectorAccountGrantees,
@@ -242,15 +242,15 @@ const connector = (provider: string, requestAuthType: string) =>
 
 describe('emptyProjectConnectionSlot', () => {
   test('a managed app’s unsigned slot is the empty slot, though Composio holds its auth', () => {
-    expect(emptyProjectConnectionSlot(connector('composio', 'none'), [slot])).toBe(slot);
+    expect(emptyWorkspaceConnectionSlot(connector('composio', 'none'), [slot])).toBe(slot);
   });
 
   test('a direct connector that needs no credential has no empty slot: its account works', () => {
-    expect(emptyProjectConnectionSlot(connector('mcp', 'none'), [slot])).toBeNull();
+    expect(emptyWorkspaceConnectionSlot(connector('mcp', 'none'), [slot])).toBeNull();
   });
 
   test('a direct connector with an auth scheme has one', () => {
-    expect(emptyProjectConnectionSlot(connector('mcp', 'bearer'), [slot])).toBe(slot);
+    expect(emptyWorkspaceConnectionSlot(connector('mcp', 'bearer'), [slot])).toBe(slot);
   });
 });
 

@@ -130,7 +130,7 @@ test('useApproveDeviceAuth leaves project_id and share out when the caller omits
 });
 
 test('useAddComputerToProject POSTs the machine to the project and refreshes connections', async () => {
-  const config = tunnel.useAddComputerToProject() as unknown as Config;
+  const config = tunnel.useAddComputerToWorkspace() as unknown as Config;
   const vars = { projectId: 'project-1', tunnelId: 'tunnel-1', share: 'me' as const };
   await config.mutationFn!(vars);
   expect(requests).toEqual([

@@ -934,7 +934,7 @@ function connectionOAuth2Path(
   return `/workspaces/${projectId}/connections/${connectionId}/oauth2/${suffix}`;
 }
 
-export async function ensureProjectConnectorConnection(projectId: string, slug: string) {
+export async function ensureWorkspaceConnectorConnection(projectId: string, slug: string) {
   return unwrap(
     await backendApi.post<{ connection_id: string }>(
       `/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
@@ -942,6 +942,9 @@ export async function ensureProjectConnectorConnection(projectId: string, slug: 
     ),
   );
 }
+
+/** @deprecated Use `ensureWorkspaceConnectorConnection`. Kept permanently. */
+export const ensureProjectConnectorConnection = ensureWorkspaceConnectorConnection;
 
 export async function putConnectionOAuth2Application(
   projectId: string,
@@ -1128,7 +1131,7 @@ export async function renameConnection(projectId: string, connectionId: string, 
  * owner returns the existing account. `409` when the machine cannot join this
  * project's account.
  */
-export async function addComputerToProject(
+export async function addComputerToWorkspace(
   projectId: string,
   input: { tunnelId: string; share?: ConnectorConnectOwner },
 ) {
@@ -1139,6 +1142,9 @@ export async function addComputerToProject(
     }),
   );
 }
+
+/** @deprecated Use `addComputerToWorkspace`. Kept permanently. */
+export const addComputerToProject = addComputerToWorkspace;
 
 /** Who may use a shared account: a person, a group, or everyone in the project. */
 export interface ConnectionSharePrincipal {

@@ -5,7 +5,7 @@ import {
   type AgentCapabilities,
   capabilityGranted,
   getAgentCapabilities,
-  getProjectCapabilities,
+  getWorkspaceCapabilities,
   setCapabilityGranted,
 } from './agent-capabilities';
 import type { AgentConfigBlock } from './agent-config';
@@ -41,7 +41,7 @@ describe('getAgentCapabilities', () => {
 describe('getProjectCapabilities', () => {
   test("reads the project's catalog route: every tool, skill and extension any agent can get", async () => {
     urls = [];
-    await getProjectCapabilities('p1');
+    await getWorkspaceCapabilities('p1');
     expect(urls).toEqual(['http://test.local/workspaces/p1/capabilities']);
   });
 });

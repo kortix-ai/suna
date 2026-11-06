@@ -92,11 +92,15 @@ export interface AccountMemberGroup {
   name: string;
 }
 
+/** @deprecated Use `AccountMemberWorkspace`. Kept permanently. */
 export interface AccountMemberProject {
   project_id: string;
   name: string;
   role: ProjectRole;
 }
+
+/** The workspace name of {@link AccountMemberProject}: the same type. */
+export type AccountMemberWorkspace = AccountMemberProject;
 
 export interface AccountMember {
   user_id: string;
@@ -117,10 +121,14 @@ export interface AccountMember {
   joined_at: string;
 }
 
+/** @deprecated Use `InviteWorkspaceGrant`. Kept permanently. */
 export interface InviteProjectGrant {
   project_id: string;
   role?: ProjectRole;
 }
+
+/** The workspace name of {@link InviteProjectGrant}: the same type. */
+export type InviteWorkspaceGrant = InviteProjectGrant;
 
 export type InviteMemberResult =
   | {

@@ -7,6 +7,7 @@ import { backendApi } from '../../http/api-client';
 import type { ConnectorConnectOwner } from './connectors';
 import { unwrap } from './shared';
 
+/** @deprecated Use `RequestWorkspaceSecretInput`. Kept permanently. */
 export interface RequestProjectSecretInput {
   /** One or more env var names to request (A-Z, 0-9, _; max 64 chars each). */
   names: string[];
@@ -19,6 +20,9 @@ export interface RequestProjectSecretInput {
   expiresInMinutes?: number;
 }
 
+/** The workspace name of {@link RequestProjectSecretInput}: the same type. */
+export type RequestWorkspaceSecretInput = RequestProjectSecretInput;
+
 export interface SecretRequestLink {
   kind: 'secret';
   url: string;
@@ -28,7 +32,7 @@ export interface SecretRequestLink {
 }
 
 /** Mint a link a human opens to enter one or more secret values. */
-export async function requestProjectSecret(
+export async function requestWorkspaceSecret(
   projectId: string,
   input: RequestProjectSecretInput,
 ): Promise<SecretRequestLink> {
@@ -44,6 +48,10 @@ export async function requestProjectSecret(
   );
 }
 
+/** @deprecated Use `requestWorkspaceSecret`. Kept permanently. */
+export const requestProjectSecret = requestWorkspaceSecret;
+
+/** @deprecated Use `RequestWorkspaceConnectorInput`. Kept permanently. */
 export interface RequestProjectConnectorInput {
   /** The Pipedream connector slug (already declared in kortix.yaml). */
   slug: string;
@@ -62,6 +70,9 @@ export interface RequestProjectConnectorInput {
   expiresInMinutes?: number;
 }
 
+/** The workspace name of {@link RequestProjectConnectorInput}: the same type. */
+export type RequestWorkspaceConnectorInput = RequestProjectConnectorInput;
+
 export interface ConnectorRequestLink {
   kind: 'connector';
   url: string;
@@ -73,7 +84,7 @@ export interface ConnectorRequestLink {
 }
 
 /** Mint a link a human opens to 1-click connect a Pipedream app (Quick Connect). */
-export async function requestProjectConnector(
+export async function requestWorkspaceConnector(
   projectId: string,
   input: RequestProjectConnectorInput,
 ): Promise<ConnectorRequestLink> {
@@ -89,6 +100,9 @@ export async function requestProjectConnector(
     'Failed to mint connect link',
   );
 }
+
+/** @deprecated Use `requestWorkspaceConnector`. Kept permanently. */
+export const requestProjectConnector = requestWorkspaceConnector;
 
 /** What a human is being asked to approve, behind an approval link. */
 export interface ApprovalLinkDetails {

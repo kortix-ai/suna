@@ -44,9 +44,9 @@ import {
   type ProjectInput,
   type ProvisionProjectInput,
   type ProvisionStreamEvent,
-  listProjectsForAccount,
-  provisionProject,
-  provisionProjectStream,
+  listWorkspacesForAccount,
+  provisionWorkspace,
+  provisionWorkspaceStream,
 } from './projects';
 import { readProvisionStream } from './provision-stream';
 import { type AccountRole, type ProjectRole, unwrap } from './shared';
@@ -353,7 +353,7 @@ async function listWorkspacesPerAccount(): Promise<WorkspaceSummary[]> {
   const accounts = await listAccounts();
   if (accounts.length === 0) return [];
   const settled = await Promise.allSettled(
-    accounts.map((account) => listProjectsForAccount(account.account_id)),
+    accounts.map((account) => listWorkspacesForAccount(account.account_id)),
   );
   const firstFailure = settled.find((result) => result.status === 'rejected');
   if (firstFailure && settled.every((result) => result.status === 'rejected')) {
@@ -503,7 +503,7 @@ export async function createWorkspace(
       const error = (await response.json().catch(() => null)) as { error?: string; message?: string; code?: string } | null;
       const message = error?.error && typeof error.error === 'string' ? error.error : error?.message;
       if (isOlderCreateRoute({ status: response.status, message })) {
-        return createdFromProject(await provisionProjectStream(legacyBody, onEvent, options));
+        return createdFromProject(await provisionWorkspaceStream(legacyBody, onEvent, options));
       }
       throw new ApiError(message || `Create workspace failed: HTTP ${response.status}`, {
         status: response.status,
@@ -516,7 +516,7 @@ export async function createWorkspace(
 
   const created = await backendApi.post<ServedWorkspace>('/workspaces', body, { ...options, showErrors: false });
   if (created.success && created.data) return workspaceFromServed(created.data);
-  if (isOlderCreateRoute(created.error)) return createdFromProject(await provisionProject(legacyBody, options));
+  if (isOlderCreateRoute(created.error)) return createdFromProject(await provisionWorkspace(legacyBody, options));
   throw created.error ?? new Error('Create workspace failed');
 }
 

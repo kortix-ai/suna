@@ -777,5 +777,12 @@ export const qk = {
   },
 } as const;
 
+/** @deprecated Use `WorkspaceScopeKey`. Kept permanently. */
 export type ProjectScopeKey = ReturnType<typeof qk.project.scope>;
+
+/** The workspace name of {@link ProjectScopeKey}: the same type. */
+export type WorkspaceScopeKey = ProjectScopeKey;
+/**
+ * @deprecated The query key of `useProjects`; use `useWorkspaces`. Kept permanently.
+ */
 export type ProjectsListKey = ReturnType<typeof qk.projects.list>;

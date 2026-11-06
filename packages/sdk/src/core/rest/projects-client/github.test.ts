@@ -7,7 +7,7 @@ import {
   type LinkableGitHubInstallationsResponse,
   linkGitHubInstallation,
   linkRepository,
-  replaceProjectRepository,
+  replaceWorkspaceRepository,
   listGitHubRepositories,
   listGitHubRepositoryBranches,
   listLinkableGitHubInstallations,
@@ -26,7 +26,7 @@ test('replaces one project repository with a credential and an expected old URL'
     return Response.json({ project: { project_id: 'proj-1', repo_url: 'https://github.com/acme/new.git' }, git_connection: null });
   }) as unknown as typeof fetch;
 
-  const result = await replaceProjectRepository({
+  const result = await replaceWorkspaceRepository({
     project_id: 'proj-1',
     repo_url: 'https://github.com/acme/new.git',
     expected_repo_url: 'https://github.com/acme/old.git',
@@ -49,7 +49,7 @@ test('sends a repository-scoped App grant and shared secret copy without a store
     body = JSON.parse(String(init?.body));
     return Response.json({ project: { project_id: 'proj-1' }, git_connection: null });
   }) as unknown as typeof fetch;
-  await replaceProjectRepository({
+  await replaceWorkspaceRepository({
     project_id: 'proj-1', repo_url: 'https://github.com/acme/new.git',
     expected_repo_url: 'https://github.com/acme/old.git',
     installation_id: '123', github_user_token: 'temporary-user-token',

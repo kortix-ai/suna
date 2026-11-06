@@ -77,8 +77,8 @@ export type {
   AccountRole,
   ProjectRole,
   ConnectorSharing,
-  ProjectGitConnection,
-  ProjectFileEntry,
+  ProjectGitConnection, WorkspaceGitConnection,
+  ProjectFileEntry, WorkspaceFileEntry,
 } from './shared';
 
 export * from './model-access';

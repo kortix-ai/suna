@@ -219,13 +219,17 @@ export async function grantSecretToAgent(
   );
 }
 
+/** @deprecated Use `UpdateWorkspaceDefaultAgentResponse`. Kept permanently. */
 export interface UpdateProjectDefaultAgentResponse {
   ok: boolean;
   default_agent: string;
 }
 
+/** The workspace name of {@link UpdateProjectDefaultAgentResponse}: the same type. */
+export type UpdateWorkspaceDefaultAgentResponse = UpdateProjectDefaultAgentResponse;
+
 /** Set the declared project default in `kortix.yaml` (v2 and v3 projects). */
-export async function updateProjectDefaultAgent(projectId: string, agentName: string) {
+export async function updateWorkspaceDefaultAgent(projectId: string, agentName: string) {
   return unwrap(
     await backendApi.put<UpdateProjectDefaultAgentResponse>(
       `/workspaces/${projectId}/default-agent`,
@@ -233,3 +237,6 @@ export async function updateProjectDefaultAgent(projectId: string, agentName: st
     ),
   );
 }
+
+/** @deprecated Use `updateWorkspaceDefaultAgent`. Kept permanently. */
+export const updateProjectDefaultAgent = updateWorkspaceDefaultAgent;

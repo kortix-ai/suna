@@ -5,8 +5,15 @@ import { unwrap } from './shared';
 
 // ─── Sandbox templates + snapshot build log ──────────────────────────────
 
-/** Lifecycle status of a single build attempt. */
+/**
+ * Lifecycle status of a single build attempt.
+ *
+ * @deprecated Use `WorkspaceSnapshotStatus`. Kept permanently.
+ */
 export type ProjectSnapshotStatus = 'building' | 'ready' | 'failed';
+
+/** The workspace name of {@link ProjectSnapshotStatus}: the same type. */
+export type WorkspaceSnapshotStatus = ProjectSnapshotStatus;
 
 /** Classified reason a snapshot build failed. */
 /** Mirrors apps/api/src/snapshots/error-classify.ts — keep in sync. */
@@ -88,6 +95,7 @@ export interface SandboxTemplatesResponse {
   warm_pool_available?: boolean;
 }
 
+/** @deprecated Use `WorkspaceSnapshotBuild`. Kept permanently. */
 export interface ProjectSnapshotBuild {
   build_id: string;
   /**
@@ -111,6 +119,9 @@ export interface ProjectSnapshotBuild {
   started_at: string;
   finished_at: string | null;
 }
+
+/** The workspace name of {@link ProjectSnapshotBuild}: the same type. */
+export type WorkspaceSnapshotBuild = ProjectSnapshotBuild;
 
 /**
  * Whether a session can boot from this project's sandbox right now, and if not
@@ -157,6 +168,7 @@ export interface SandboxRuntimeStatus {
   fix_with_agent_available: boolean;
 }
 
+/** @deprecated Use `WorkspaceSnapshotsResponse`. Kept permanently. */
 export interface ProjectSnapshotsResponse {
   templates: SandboxTemplate[];
   templates_error: string | null;
@@ -169,6 +181,10 @@ export interface ProjectSnapshotsResponse {
   warm_pool_available?: boolean;
 }
 
+/** The workspace name of {@link ProjectSnapshotsResponse}: the same type. */
+export type WorkspaceSnapshotsResponse = ProjectSnapshotsResponse;
+
+/** @deprecated Use `WorkspaceSandboxHealth`. Kept permanently. */
 export interface ProjectSandboxHealth {
   primary_slug: string | null;
   primary_template: SandboxTemplate | null;
@@ -186,6 +202,9 @@ export interface ProjectSandboxHealth {
   selected_provider?: 'platinum' | 'daytona' | null;
 }
 
+/** The workspace name of {@link ProjectSandboxHealth}: the same type. */
+export type WorkspaceSandboxHealth = ProjectSandboxHealth;
+
 export interface RebuildSnapshotResponse {
   status: 'started';
   slug: string;
@@ -200,7 +219,7 @@ export interface RebuildSnapshotResponse {
  * NOT the legacy one-project-one-sandbox instances. The endpoint path keeps the
  * historical `/sandboxes` name; the function is named for what it returns.
  */
-export async function listProjectSandboxTemplates(projectId: string) {
+export async function listWorkspaceSandboxTemplates(projectId: string) {
   return unwrap(
     await backendApi.get<SandboxTemplatesResponse>(
       `/workspaces/${projectId}/sandboxes`,
@@ -208,7 +227,10 @@ export async function listProjectSandboxTemplates(projectId: string) {
   );
 }
 
-export async function listProjectSnapshots(projectId: string) {
+/** @deprecated Use `listWorkspaceSandboxTemplates`. Kept permanently. */
+export const listProjectSandboxTemplates = listWorkspaceSandboxTemplates;
+
+export async function listWorkspaceSnapshots(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectSnapshotsResponse>(
       `/workspaces/${projectId}/snapshots`,
@@ -216,7 +238,10 @@ export async function listProjectSnapshots(projectId: string) {
   );
 }
 
-export async function getProjectSandboxHealth(projectId: string) {
+/** @deprecated Use `listWorkspaceSnapshots`. Kept permanently. */
+export const listProjectSnapshots = listWorkspaceSnapshots;
+
+export async function getWorkspaceSandboxHealth(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectSandboxHealth>(
       `/workspaces/${projectId}/sandbox-health`,
@@ -231,7 +256,10 @@ export async function getProjectSandboxHealth(projectId: string) {
   );
 }
 
-export async function rebuildProjectSnapshot(projectId: string, slug?: string) {
+/** @deprecated Use `getWorkspaceSandboxHealth`. Kept permanently. */
+export const getProjectSandboxHealth = getWorkspaceSandboxHealth;
+
+export async function rebuildWorkspaceSnapshot(projectId: string, slug?: string) {
   return unwrap(
     await backendApi.post<RebuildSnapshotResponse>(
       `/workspaces/${projectId}/snapshots/rebuild`,
@@ -239,6 +267,9 @@ export async function rebuildProjectSnapshot(projectId: string, slug?: string) {
     ),
   );
 }
+
+/** @deprecated Use `rebuildWorkspaceSnapshot`. Kept permanently. */
+export const rebuildProjectSnapshot = rebuildWorkspaceSnapshot;
 
 export async function fixSandboxWithAgent(projectId: string) {
   return unwrap(
@@ -323,8 +354,11 @@ export async function buildSandboxTemplate(projectId: string, templateId: string
   );
 }
 
-export async function listProjectSandboxes(projectId: string) {
+export async function listWorkspaceSandboxes(projectId: string) {
   return unwrap(
     await backendApi.get<SandboxTemplatesResponse>(`/workspaces/${projectId}/sandboxes`),
   );
 }
+
+/** @deprecated Use `listWorkspaceSandboxes`. Kept permanently. */
+export const listProjectSandboxes = listWorkspaceSandboxes;

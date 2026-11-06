@@ -63,6 +63,7 @@ export interface LinkRepositoryResponse {
   git_connection: ProjectGitConnection | null;
 }
 
+/** @deprecated Use `ReplaceWorkspaceRepositoryInput`. Kept permanently. */
 export interface ReplaceProjectRepositoryInput {
   project_id: string;
   repo_url: string;
@@ -78,7 +79,14 @@ export interface ReplaceProjectRepositoryInput {
   copy_shared_secret_identifiers?: string[];
 }
 
+/** The workspace name of {@link ReplaceProjectRepositoryInput}: the same type. */
+export type ReplaceWorkspaceRepositoryInput = ReplaceProjectRepositoryInput;
+
+/** @deprecated Use `ReplaceWorkspaceRepositoryResponse`. Kept permanently. */
 export type ReplaceProjectRepositoryResponse = LinkRepositoryResponse;
+
+/** The workspace name of {@link ReplaceProjectRepositoryResponse}: the same type. */
+export type ReplaceWorkspaceRepositoryResponse = ReplaceProjectRepositoryResponse;
 
 export interface GitHubInstallationStatus {
   account_id: string;
@@ -129,6 +137,8 @@ export interface LinkableGitHubInstallationsResponse {
  * `reconnect_required` carries `install_url`, the GitHub App install link that
  * reconnects it. With `reason: 'repository_disconnected'` it also carries
  * `disconnected_reason` and `message` (the cause and the fix).
+ *
+ * @deprecated Use `WorkspaceGitConnectionState`. Kept permanently.
  */
 export interface ProjectGitConnectionState {
   state: 'connected' | 'reconnect_required' | 'unavailable' | 'not_connected';
@@ -138,13 +148,19 @@ export interface ProjectGitConnectionState {
   message?: string;
 }
 
+/** The workspace name of {@link ProjectGitConnectionState}: the same type. */
+export type WorkspaceGitConnectionState = ProjectGitConnectionState;
+
 /** `GET /projects/:projectId/git/connection`. */
-export async function getProjectGitConnectionState(projectId: string) {
+export async function getWorkspaceGitConnectionState(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectGitConnectionState>(`/workspaces/${projectId}/git/connection`),
     'Failed to read the Git connection',
   );
 }
+
+/** @deprecated Use `getWorkspaceGitConnectionState`. Kept permanently. */
+export const getProjectGitConnectionState = getWorkspaceGitConnectionState;
 
 export async function linkRepository(input: LinkRepositoryInput) {
   return unwrap(
@@ -159,7 +175,7 @@ export async function linkRepository(input: LinkRepositoryInput) {
 }
 
 /** Change the Git repository for an existing project after validating access. */
-export async function replaceProjectRepository(input: ReplaceProjectRepositoryInput) {
+export async function replaceWorkspaceRepository(input: ReplaceProjectRepositoryInput) {
   const { project_id, ...body } = input;
   return unwrap(
     await backendApi.put<ReplaceProjectRepositoryResponse>(
@@ -169,6 +185,9 @@ export async function replaceProjectRepository(input: ReplaceProjectRepositoryIn
     ),
   );
 }
+
+/** @deprecated Use `replaceWorkspaceRepository`. Kept permanently. */
+export const replaceProjectRepository = replaceWorkspaceRepository;
 
 export async function getGitHubInstallation(accountId: string) {
   return unwrap(
