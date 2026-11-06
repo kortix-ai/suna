@@ -29,12 +29,11 @@
  */
 import type { Context, MiddlewareHandler } from 'hono';
 
-import { PROJECT_ACTIONS, authorize } from '../iam';
-import { accountRolesForUser } from '../iam/read-models';
+import { PROJECT_ACTIONS, authorize, workspaceRoleFor } from '../iam';
 import { actorOf } from './actor';
 import { WORKSPACE_ACCOUNT_ID_VAR } from '../shared/route-params';
 import { isUuid } from '../shared/validate';
-import { getWorkspace, resolveWorkspace, WorkspaceAmbiguousError } from '../workspaces/surface';
+import { accountIsPaying, getWorkspace, resolveWorkspace, WorkspaceAmbiguousError } from '../workspaces/surface';
 
 /** Set when the path id is a workspace id (`project_id`). */
 export const PATH_WORKSPACE_ID_VAR = 'pathWorkspaceId';
@@ -75,33 +74,28 @@ export interface CanonicalWorkspace {
   projectId: string | null;
   splitPending: boolean;
   lifecycle: 'active' | 'dormant' | 'closing';
+  /** When a `closing` workspace is erased; null otherwise. */
+  deletionScheduledFor: Date | null;
 }
 
 /**
  * A workspace id → the workspace, for canonical paths. `null` for an account
- * id, a tombstone, an unknown id and a non-uuid. Lowercases the id.
- *
- * Reads the workspaces store (`getWorkspace`). Fields the store does not carry
- * yet (`projectId`, `lifecycle`; C2 adds them) default to an active 1:1
- * workspace, which every row of the active-project view is.
+ * id, a tombstone, an unknown id, a non-uuid, and a project-less workspace
+ * that does not pay (a dormant row is served only as `setup_required`, C1).
+ * Lowercases the id. Reads the workspaces store (`getWorkspace`, live rows only).
  */
 export async function resolveCanonicalPathWorkspace(id: string): Promise<CanonicalWorkspace | null> {
   if (!isUuid(id)) return null;
-  const row = (await getWorkspace(id.toLowerCase())) as
-    | ({ workspaceId: string; accountId: string; splitPending: boolean } & {
-        projectId?: string | null;
-        lifecycle?: string;
-      })
-    | null;
-  if (!row) return null;
-  if (row.lifecycle === 'tombstone') return null;
-  const lifecycle = row.lifecycle === 'dormant' || row.lifecycle === 'closing' ? row.lifecycle : 'active';
+  const ws = await getWorkspace(id.toLowerCase());
+  if (!ws) return null;
+  if (ws.lifecycle === 'dormant' && !(await accountIsPaying(ws.accountId))) return null;
   return {
-    workspaceId: row.workspaceId.toLowerCase(),
-    accountId: row.accountId,
-    projectId: row.projectId === undefined ? row.workspaceId.toLowerCase() : row.projectId,
-    splitPending: row.splitPending,
-    lifecycle,
+    workspaceId: ws.workspaceId.toLowerCase(),
+    accountId: ws.accountId,
+    projectId: ws.projectId,
+    splitPending: ws.splitPending,
+    lifecycle: ws.lifecycle,
+    deletionScheduledFor: ws.deletionScheduledFor,
   };
 }
 
@@ -161,18 +155,24 @@ export async function canonicalWorkspaceDecision(
   if (!ws) return workspaceNotFound(c);
 
   const userId = getVar(c, 'userId');
-  if (typeof userId === 'string' && userId.length > 0 && !opts.outsiderAllowed) {
-    const actor = await actorOf(c, ws.accountId);
+  const signedIn = typeof userId === 'string' && userId.length > 0;
+  const actor = signedIn ? await actorOf(c, ws.accountId) : null;
+  if (actor && !opts.outsiderAllowed) {
     const verdict = await authorize(actor, PROJECT_ACTIONS.PROJECT_READ, {
       type: 'project',
       id: ws.projectId ?? ws.workspaceId,
     });
-    if (!verdict.allowed && !ACTIONABLE_DENIALS.has(verdict.reason)) return workspaceNotFound(c);
+    // A project-less (`setup_required`) workspace has no project to read: its members reach it (C3).
+    const reachable =
+      verdict.allowed ||
+      ACTIONABLE_DENIALS.has(verdict.reason) ||
+      (ws.projectId === null && (await workspaceRoleFor(actor, ws.workspaceId)) !== null);
+    if (!reachable) return workspaceNotFound(c);
   }
 
   if (ws.lifecycle === 'closing') {
     // Owners keep the record read and restore (C3); everyone else sees nothing.
-    const role = typeof userId === 'string' && userId ? (await accountRolesForUser(userId)).get(ws.accountId) : undefined;
+    const role = actor ? await workspaceRoleFor(actor, ws.workspaceId) : null;
     const ownerRead = c.req.method === 'GET' && canonicalTail(c.req.path) === '';
     const restore = c.req.method === 'POST' && canonicalTail(c.req.path) === 'restore';
     if (role !== 'owner') return workspaceNotFound(c);

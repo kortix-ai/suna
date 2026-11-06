@@ -12,10 +12,9 @@ import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
 import { autoClaimPendingInvites } from '../../accounts/core/app';
-import { ACCOUNT_ACTIONS, authorize, listAccessible } from '../../iam';
+import { ACCOUNT_ACTIONS, authorize, workspaceRoleFor, type WorkspaceRole } from '../../iam';
 import { actorOf } from '../../iam/actor';
-import { userAccountRows } from '../../iam/membership-read';
-import { accountRolesForUser, projectRoleGrants } from '../../iam/read-models';
+import { projectRoleGrants } from '../../iam/read-models';
 import {
   CANONICAL_WORKSPACE_VAR,
   type CanonicalWorkspace,
@@ -28,27 +27,22 @@ import { workspaceIdParam } from '../../shared/route-params';
 import { isUuid } from '../../shared/validate';
 import type { AppEnv } from '../../types';
 import { readWorkspaceSettings, type WorkspaceSettings } from '../../workspaces/settings';
+import {
+  accountIsPaying,
+  listAccountWorkspaces,
+  listUserWorkspaceCandidates,
+  type WorkspaceCandidate,
+  workspaceState,
+  type WorkspaceState,
+} from '../../workspaces/surface';
 import { buildNewWorkspaceProvisionContext, runProvision } from '../provision-core';
 import type { ProjectRole } from '../access';
 import { serializeProject } from '../lib/serializers';
-import { activeProjectsOfAccounts, compareWorkspaceRows, type WorkspaceProjectRow } from '../lib/workspace-list';
+import { compareWorkspaceRows, projectRowOfRecord } from '../lib/workspace-list';
 import { patchProjectRecord, readProjectRecord } from './project-detail';
 import { newWorkspaceCallerOf, provisionStreamResponse } from './projects';
 
-/** The role ladder of a workspace (C3). */
-export type WorkspaceRole = 'owner' | 'admin' | 'manager' | 'member';
-/** The served state of a workspace (C1). */
-export type WorkspaceState = 'active' | 'setup_required' | 'deleting';
-
-/**
- * The caller's role: the account role (`owner`/`admin`) wins; a project
- * `manager` is `manager`; anyone else who reaches the workspace is `member`.
- * The SDK's `workspaceRole()` is the same ladder.
- */
-export function workspaceRoleOf(accountRole: string | null | undefined, projectRole: string | null | undefined): WorkspaceRole {
-  if (accountRole === 'owner' || accountRole === 'admin') return accountRole;
-  return projectRole === 'manager' ? 'manager' : 'member';
-}
+export type { WorkspaceRole, WorkspaceState };
 
 function stateOf(ws: CanonicalWorkspace | undefined): WorkspaceState {
   if (ws?.lifecycle === 'closing') return 'deleting';
@@ -56,32 +50,24 @@ function stateOf(ws: CanonicalWorkspace | undefined): WorkspaceState {
   return 'active';
 }
 
-/** A list item: the project record plus the workspace fields (C5). */
-function listItem(
-  row: WorkspaceProjectRow,
-  access: { accountRole: string | null; projectRole: string | null; accountManager: boolean },
-) {
-  const projectRole = (access.projectRole ?? null) as ProjectRole | null;
-  return {
-    ...serializeProject(row, {
-      projectRole,
-      effectiveRole: access.accountManager ? 'manager' : (projectRole ?? 'member'),
-    }),
-    role: workspaceRoleOf(access.accountRole, access.projectRole),
-    state: 'active' as WorkspaceState,
-    split_pending: row.splitPending,
-    deletion_scheduled_for: null as string | null,
-  };
-}
-
 function isRevokedSession(error: unknown): boolean {
   if (error instanceof HTTPException) return error.status === 401;
   return (error as { code?: unknown } | null)?.code === 'session_token_revoked';
 }
 
+/** The candidates of a caller that is not a person signed in as themselves: one account, its live rows. */
+async function accountCandidates(accountId: string, accountRole: WorkspaceCandidate['accountRole']): Promise<WorkspaceCandidate[]> {
+  const [records, paying] = await Promise.all([listAccountWorkspaces(accountId), accountIsPaying(accountId)]);
+  return records.map((record) => ({ record, paying, accountRole }));
+}
+
 /**
  * `GET /v1/workspaces`: every workspace the caller may open, across every
- * account, in one request. A workspace-bound credential gets its one
+ * account, in one request (K3). The candidates are the workspaces store's
+ * (`listUserWorkspaceCandidates`); `workspaceRoleFor` (C3) decides each one
+ * and `workspaceState` its served state: an `active` workspace, a
+ * `setup_required` one (it pays and has no config repo yet), and a `deleting`
+ * one, which only its owners reach. A workspace-bound credential gets its one
  * workspace. An account whose session policy revoked this session is left
  * out; the others still list.
  */
@@ -93,12 +79,12 @@ export async function listCallerWorkspaces(c: Context<AppEnv>): Promise<Response
   if (boundWorkspaceId) {
     const record = await readProjectRecord(c, boundWorkspaceId);
     if (!record) return c.json([]);
-    const roles = await accountRolesForUser(userId);
-    const accountRole = roles.get(record.loaded.row.accountId) ?? null;
+    const role = await workspaceRoleFor(await actorOf(c, record.loaded.row.accountId), boundWorkspaceId);
+    if (!role) return c.json([]);
     return c.json([
       {
         ...record.project,
-        role: workspaceRoleOf(accountRole, record.loaded.effectiveRole === 'manager' ? 'manager' : record.loaded.projectRole),
+        role,
         state: 'active' as WorkspaceState,
         split_pending: record.loaded.row.splitPending,
         deletion_scheduled_for: null,
@@ -107,28 +93,26 @@ export async function listCallerWorkspaces(c: Context<AppEnv>): Promise<Response
   }
 
   const impersonated = impersonatedAccountFor(userId);
-  let accountIds: string[];
+  let candidates: WorkspaceCandidate[];
   if (impersonated) {
-    accountIds = [impersonated];
+    candidates = await accountCandidates(impersonated, 'owner');
   } else if (authType === 'service_account') {
     const own = c.get('accountId') as string | undefined;
-    accountIds = own ? [own] : [];
+    candidates = own ? await accountCandidates(own, null) : [];
   } else {
     // A pending invite becomes a membership on the first list, as on GET /v1/accounts.
     const email = c.get('userEmail') as string | undefined;
     if (email) await autoClaimPendingInvites(userId, email);
-    accountIds = [...new Set((await userAccountRows(userId)).map((row) => row.accountId))];
+    candidates = await listUserWorkspaceCandidates(userId);
   }
 
-  const [rows, accountRoles] = await Promise.all([
-    activeProjectsOfAccounts(accountIds),
-    impersonated ? Promise.resolve(new Map([[impersonated, 'owner' as const]])) : accountRolesForUser(userId),
-  ]);
-  const byAccount = new Map<string, WorkspaceProjectRow[]>();
-  for (const row of rows) byAccount.set(row.accountId, [...(byAccount.get(row.accountId) ?? []), row]);
+  const byAccount = new Map<string, WorkspaceCandidate[]>();
+  for (const candidate of candidates) {
+    byAccount.set(candidate.record.accountId, [...(byAccount.get(candidate.record.accountId) ?? []), candidate]);
+  }
 
   const perAccount = await Promise.all(
-    [...byAccount.entries()].map(async ([accountId, accountRows]) => {
+    [...byAccount.entries()].map(async ([accountId, accountCandidatesList]) => {
       let actor: Awaited<ReturnType<typeof actorOf>>;
       try {
         actor = await actorOf(c, accountId);
@@ -136,25 +120,45 @@ export async function listCallerWorkspaces(c: Context<AppEnv>): Promise<Response
         if (isRevokedSession(error)) return [];
         throw error;
       }
-      const accessible = await listAccessible(actor, 'project.read', 'project');
-      if (accessible.mode === 'none') return [];
-      const visible =
-        accessible.mode === 'all' ? accountRows : accountRows.filter((row) => accessible.allowed.has(row.projectId));
-      if (visible.length === 0) return [];
-      const accountRole: string | null = accountRoles.get(accountId) ?? null;
-      const accountManager = accountRole === 'owner' || accountRole === 'admin';
-      const grants = accountManager ? [] : await projectRoleGrants({ accountId, userId });
-      const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole as string]));
-      return visible.map((row) =>
-        listItem(row, { accountRole, projectRole: roleByProject.get(row.projectId) ?? null, accountManager }),
+      const decided = await Promise.all(
+        accountCandidatesList.map(async ({ record, paying }) => {
+          const state = workspaceState(record, paying);
+          if (!state) return null;
+          const role = await workspaceRoleFor(actor, record.workspaceId);
+          if (!role) return null;
+          if (state === 'deleting' && role !== 'owner') return null;
+          return { record, state, role };
+        }),
       );
+      const visible = decided.filter((item): item is NonNullable<typeof item> => item !== null);
+      if (visible.length === 0) return [];
+      const accountManager = visible.some((item) => item.role === 'owner' || item.role === 'admin');
+      const grants = accountManager || !userId ? [] : await projectRoleGrants({ accountId, userId });
+      const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole as ProjectRole]));
+      return visible.map(({ record, state, role }) => {
+        const row = projectRowOfRecord(record);
+        const projectRole = roleByProject.get(row.projectId) ?? null;
+        const managing = role === 'owner' || role === 'admin';
+        return {
+          sortKey: row,
+          item: {
+            ...serializeProject(row, {
+              projectRole,
+              effectiveRole: managing ? 'manager' : (projectRole ?? ('member' as ProjectRole)),
+            }),
+            role,
+            state,
+            split_pending: record.splitPending,
+            deletion_scheduled_for: record.deletionScheduledFor?.toISOString() ?? null,
+          },
+        };
+      });
     }),
   );
 
-  const order = new Map(rows.map((row) => [row.projectId, row]));
   const items = perAccount.flat();
-  items.sort((a, b) => compareWorkspaceRows(order.get(a.project_id)!, order.get(b.project_id)!));
-  return c.json(items);
+  items.sort((a, b) => compareWorkspaceRows(a.sortKey, b.sortKey));
+  return c.json(items.map((entry) => entry.item));
 }
 
 /** The workspace record body: the project record, the role, the state and the settings block. */
@@ -162,16 +166,14 @@ function workspaceBody(
   record: NonNullable<Awaited<ReturnType<typeof readProjectRecord>>>,
   settings: WorkspaceSettings | null,
   ws: CanonicalWorkspace | undefined,
-  impersonatedAccount: string | null,
+  role: WorkspaceRole,
 ) {
-  const accountRole =
-    impersonatedAccount === record.loaded.row.accountId ? 'owner' : (settings?.account_role ?? null);
   return {
     ...record.project,
-    role: workspaceRoleOf(accountRole, record.loaded.effectiveRole === 'manager' ? 'manager' : record.loaded.projectRole),
+    role,
     state: stateOf(ws),
     split_pending: record.loaded.row.splitPending,
-    deletion_scheduled_for: null as string | null,
+    deletion_scheduled_for: ws?.deletionScheduledFor?.toISOString() ?? null,
     secret_default_strategy: record.loaded.row.secretDefaultStrategy,
     workspace: settings,
   };
@@ -195,7 +197,9 @@ export async function readWorkspace(c: Context<AppEnv>): Promise<Response> {
   const userId = c.get('userId') as string | undefined;
   const settings = await readWorkspaceSettings(id, userId ?? null);
   const ws = c.get(CANONICAL_WORKSPACE_VAR as never) as CanonicalWorkspace | undefined;
-  return c.json(workspaceBody(record, settings, ws, impersonatedAccountFor(userId)));
+  const role = await workspaceRoleFor(await actorOf(c, record.loaded.row.accountId), id);
+  if (!role) return workspaceNotFound(c);
+  return c.json(workspaceBody(record, settings, ws, role));
 }
 
 /**

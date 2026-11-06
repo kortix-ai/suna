@@ -1,22 +1,36 @@
 /**
- * The rows behind `GET /v1/workspaces` (design.md §3.2 C5): every active
- * project row of a set of accounts, in one query. The route composes them
- * with the caller's access per account (`routes/workspace-records.ts`).
+ * The rows behind `GET /v1/workspaces` (design.md §3.2 C5): the caller's
+ * workspace candidates come from the workspaces store
+ * (`listUserWorkspaceCandidates`); this file turns one record into the
+ * project row the serializer takes, and orders the list.
  */
-import { projects } from '@kortix/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import type { WorkspaceRecord } from '../../workspaces/surface';
+import type { ProjectRow } from './serializers';
 
-import { db } from '../../shared/db';
-
-export type WorkspaceProjectRow = typeof projects.$inferSelect;
-
-/** Every active project of `accountIds`. `[]` for no account (no query). */
-export async function activeProjectsOfAccounts(accountIds: readonly string[]): Promise<WorkspaceProjectRow[]> {
-  if (accountIds.length === 0) return [];
-  return db
-    .select()
-    .from(projects)
-    .where(and(inArray(projects.accountId, [...accountIds]), eq(projects.status, 'active')));
+/**
+ * The project row of a workspace record, for `serializeProject`. A
+ * `setup_required` workspace (no config repo yet) has `project_id =
+ * workspace_id` and empty config-repo fields (design.md §3.2 C5). A `deleting`
+ * workspace serves its archived project row. Pure: exported for tests.
+ */
+export function projectRowOfRecord(record: WorkspaceRecord): ProjectRow {
+  return {
+    projectId: record.projectId ?? record.workspaceId,
+    accountId: record.accountId,
+    name: record.name,
+    repoUrl: record.repoUrl ?? '',
+    defaultBranch: record.defaultBranch ?? 'main',
+    manifestPath: record.manifestPath ?? 'kortix.yaml',
+    status: record.projectStatus ?? 'active',
+    secretDefaultStrategy: (record.secretDefaultStrategy ?? 'runtime') as ProjectRow['secretDefaultStrategy'],
+    metadata: record.metadata ?? {},
+    idempotencyKey: record.idempotencyKey,
+    sandboxProviderGeneration: record.sandboxProviderGeneration ?? 0,
+    lastOpenedAt: record.lastOpenedAt,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    splitPending: record.splitPending,
+  } as ProjectRow;
 }
 
 /**

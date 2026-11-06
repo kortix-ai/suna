@@ -48,6 +48,9 @@ mockIamAssignments();
 
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,
+  // workspaces/lifecycle.ts (in the graph through workspaces/surface) imports these.
+  withDbTransaction: async (fn: (tx: unknown) => unknown) => fn(undefined),
+  afterDbCommit: (fn: () => unknown) => fn(),
   db: {
     insert: (table: any) => ({
       values: (vals: any) => {
