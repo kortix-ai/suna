@@ -90,6 +90,24 @@ const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
       { status: 201 },
     );
   }
+  if (p === '/v1/workspaces/p1/tokens' && req.method === 'POST') {
+    const b = body as { name: string; scopes?: unknown; expires_at?: string | null };
+    return Response.json(
+      {
+        token_id: 'tok_scoped',
+        name: b.name,
+        project_id: 'p1',
+        public_key: 'kx_pub_scoped',
+        secret_key: 'kx_sec_SCOPED_ONCE',
+        status: 'active',
+        expires_at: b.expires_at === undefined ? '2027-02-01T00:00:00.000Z' : b.expires_at,
+        created_at: '2026-08-01T00:00:00.000Z',
+        scope: b.scopes === 'read' ? 'read' : Array.isArray(b.scopes) ? 'custom' : 'full',
+        workspace_permissions: Array.isArray(b.scopes) ? b.scopes : null,
+      },
+      { status: 201 },
+    );
+  }
   if (p === '/v1/accounts/tokens/tok_a' && req.method === 'DELETE') {
     return Response.json({ ok: true });
   }
@@ -234,8 +252,8 @@ describe('kortix tokens', () => {
     const config = boot();
     const all = await runCommand(runner, ['ls'], { cwd: tmp, configFile: config });
     expect(all.code).toBe(0);
-    expect(all.stdout).toMatch(/laptop\s+kx_pub_a\s+active\s+never/);
-    expect(all.stdout).toMatch(/ci\s+kx_pub_b\s+revoked\s+2026-12-01/);
+    expect(all.stdout).toMatch(/laptop\s+kx_pub_a\s+active\s+full\s+never/);
+    expect(all.stdout).toMatch(/ci\s+kx_pub_b\s+revoked\s+full\s+2026-12-01/);
     expect(api!.requests[0]!.query).toContain(`account_id=${ACCOUNT}`);
     expect(api!.requests[0]!.query).not.toContain('mine=');
 
@@ -336,6 +354,35 @@ describe('kortix tokens', () => {
     expect(new Date(body.expires_at).getTime()).toBeGreaterThan(Date.now());
     expect(r.stdout).toContain('kx_sec_PLAINTEXT_ONCE');
     expect(r.stdout).toContain('only time the secret is shown');
+  });
+
+  test('new --scope mints a workspace key under the workspace; --expires never sends null', async () => {
+    const config = boot();
+    const read = await runCommand(runner, ['new', 'dash', '--scope', 'read', '--workspace', 'p1'], { cwd: tmp, configFile: config });
+    expect(read.code).toBe(0);
+    expect(api!.requests.at(-1)).toMatchObject({ method: 'POST', path: '/v1/workspaces/p1/tokens', body: { name: 'dash', scopes: 'read' } });
+    expect(read.stdout).toMatch(/scope\s+read/);
+
+    const custom = await runCommand(
+      runner,
+      ['new', 'runner', '--scope', 'workspace.session.read,workspace.session.start', '--expires', 'never', '--workspace', 'p1'],
+      { cwd: tmp, configFile: config },
+    );
+    expect(custom.code).toBe(0);
+    expect(api!.requests.at(-1)!.body).toEqual({
+      name: 'runner',
+      scopes: ['workspace.session.read', 'workspace.session.start'],
+      expires_at: null,
+    });
+    expect(custom.stdout).toMatch(/expires\s+never/);
+    expect(custom.stdout).toMatch(/scope\s+custom \(2\)/);
+  });
+
+  test('an empty --scope exits 2 before any HTTP call', async () => {
+    const config = boot();
+    const r = await runCommand(runner, ['new', 'x', '--scope', ' , ', '--workspace', 'p1'], { cwd: tmp, configFile: config });
+    expect(r.code).toBe(2);
+    expect(api!.requests).toHaveLength(0);
   });
 
   test('an unparseable --expires exits 2 before any HTTP call', async () => {
