@@ -168,7 +168,7 @@ function wakeText(args: Record<string, any>, action: 'follow_up' | 'wake_on'): s
   const key = TEXT_KEYS.find((k) => typeof args[k] === 'string' && args[k].trim())
   const text = key ? String(args[key]).trim() : ''
   if (!text) {
-    return { error: `Missing \`text\`: what the woken turn reads (what was done, what to check, what to do on each outcome, an end date). Call again with it, e.g. ${TEXT_EXAMPLE[action]}` }
+    return { error: `Missing \`text\`: what the woken turn reads (what was done, what to check, what to do on each outcome, an end date). If you did send it, it did not arrive: send this call from codemode. Call again with it, e.g. ${TEXT_EXAMPLE[action]}` }
   }
   const problem = cliArgProblem('text', text, 'text')
   return problem ? { error: problem } : text
@@ -187,6 +187,18 @@ function word(args: Record<string, any>, field: string, hint: string): string | 
 }
 
 const isError = (value: unknown): value is { error: string } => typeof value === 'object' && value !== null && 'error' in value
+
+/**
+ * `expect_event_within` on the work of an App event: the watcher's silence alert. No App event for that long
+ * tells the person once; the next event clears it. Nothing when absent; only for on=app_event.
+ */
+function expectEventWithinFlags(args: Record<string, any>, on: string): string[] | { error: string } {
+  const raw = args.expect_event_within
+  if (raw === undefined || raw === null || raw === '') return []
+  if (on !== 'app_event') return { error: '`expect_event_within` is only for on=app_event: how long the App may stay quiet, e.g. "1h".' }
+  const value = word(args, 'expect_event_within', 'how long the App may stay quiet before the person hears, e.g. "1h" (5m to 30d)')
+  return isError(value) ? value : [`--expect-event-within=${value}`]
+}
 
 /**
  * A follow-up call without `text` is refused once. A model that repeats the
@@ -259,6 +271,8 @@ async function followUp(args: Record<string, any>, context: PlatformToolContext)
 /** The `--on …` flags of a wake-on, with the plain condition, or why there are none. */
 function wakeFlags(args: Record<string, any>): { flags: string[]; condition: string; extra?: string } | { error: string } {
   const on = String(args.on ?? '')
+  const within = expectEventWithinFlags(args, on)
+  if (isError(within)) return within
   if (on === 'cr_merged') {
     const cr = word(args, 'cr', 'the change request id or number, as kortix_change_requests shows it')
     if (isError(cr)) return cr
@@ -287,9 +301,10 @@ function wakeFlags(args: Record<string, any>): { flags: string[]; condition: str
     // The CLI wakes on every event the App emits (`--on app` has no event filter): the text names the one that matters.
     const event = args.event === undefined || args.event === '' ? null : word(args, 'event', 'the App event name')
     if (isError(event)) return event
+    const flags = ['--on=app', `--app=${app}`, ...within]
     return event
-      ? { flags: ['--on=app', `--app=${app}`], condition: `App ${app} sends ${event}`, extra: ` (This wakes on every event from App ${app}; act only on "${event}" and end the turn on any other.)` }
-      : { flags: ['--on=app', `--app=${app}`], condition: `App ${app} sends an event` }
+      ? { flags, condition: `App ${app} sends ${event}`, extra: ` (This wakes on every event from App ${app}; act only on "${event}" and end the turn on any other.)` }
+      : { flags, condition: `App ${app} sends an event` }
   }
   return { error: `\`on\` must be one of: ${WAKE_ON.join(', ')}.` }
 }
@@ -557,6 +572,9 @@ async function automate(args: Record<string, any>, context: PlatformToolContext)
     wordFlag('model', 'model', 'a model id, as kortix_agents models lists it', false),
   ].find(Boolean)
   if (problems) return invalid('Check the automation', problems.error)
+  const within = expectEventWithinFlags(args, on)
+  if (isError(within)) return invalid('Check the silence alert', within.error)
+  flags.push(...within)
   if (targetApp) flags.push(`--target-app=${targetApp}`, `--target-path=${targetPath}`)
   if (on === 'schedule') {
     const schedule = scheduleFlags({ every: args.every, cron: args.cron, timezone: args.timezone })
@@ -708,7 +726,7 @@ export default {
   description:
     'Follow-through and work that starts by itself. ' +
     'FOLLOW-THROUGH RULE: after any action whose result arrives later (an email or message sent and a reply expected, an order or form submitted, a change request opened, a deploy started, a question asked of a person, a page or vendor to watch), set your own wake-up BEFORE you end the turn, without being asked. ' +
-    '1) Prefer an event: `wake_on` with on=cr_merged (cr), connector_event (connector + event; run `events` first to pick a real event type), webhook (secret_env; give the outside system the returned URL) or app_event (app). ' +
+    '1) Prefer an event: `wake_on` with on=cr_merged (cr), connector_event (connector + event; run `events` first to pick a real event type), webhook (secret_env; give the outside system the returned URL) or app_event (app, + expect_event_within such as "1h": the person hears when the App goes quiet). ' +
     '2) Add a fallback `follow_up` when the event might never come: replies first in 2-4h during the recipient\'s working hours, then 2-4 times a day; deploys/CI every 10-30m; slow vendors daily. ' +
     '3) Write `text` for the woken turn: what was sent, to whom, what to check, what to do on each outcome, and when to stop, with an end date (default 14 days). ' +
     '4) Tell the person in one line, e.g. "I\'ll check for replies every 3 hours until 14 Nov." ' +
@@ -719,7 +737,7 @@ export default {
     '`wake_on` (text + on); `events` (connector); `list` (this session\'s follow-ups and wake-ons, and the project schedules, with ids); ' +
     '`create` (prompt + agent + one schedule: each run starts a new session of that agent); `pause`, `resume`, `run_now`, `remove` (each needs `id` as list shows it; `delete` = remove). ' +
     'AUTOMATIONS (work that starts by itself whenever something happens, with no one asking: each new email from a customer, each new issue, each form submission, each failed build, every weekday at 9): `automate` (name + on + agent + prompt; on=connector_event: connector + event (+ config), run `events` first; webhook: secret_env, give the outside system the returned URL; app_event: app (+ event); schedule: every or cron + timezone). ' +
-    'No event fits (none, or too coarse): have a colleague build a watcher App that posts App events, then `automate` its check (on=schedule + every + target_app + target_path "/tick": calls the App, no session, no model) and its work (on=app_event). ' +
+    'No event fits (none, or too coarse): have a colleague build a watcher App that posts App events, then `automate` its check (on=schedule + every + target_app + target_path "/tick": calls the App, no session, no model) and its work (on=app_event, with expect_event_within of a few check intervals). To tell the person in this chat instead, the work is `wake_on` on=app_event with expect_event_within. ' +
     'Do it well: 1) `filter` at the source so noise never starts a run (skip bots and Kortix itself, keep only the actions that matter: { "body.action": ["opened"], "body.sender.login": { "not": "kortix-bot" } }); ' +
     '2) `session_key` per thing ("{{ event.data.thread_id }}", "{{ body.issue.number }}", "{{ body.email }}") so a follow-up about the same thing lands in the same session; ' +
     '3) a prompt that judges first: "If this is not <what matters>, stop: do nothing and send no message. Otherwise …", with the event fields it needs; ' +
@@ -747,6 +765,7 @@ export default {
       event: { type: 'string', description: 'For wake_on connector_event: the event type, as `events` lists it. For app_event: the App event that matters (optional).' },
       config: { type: 'object', description: 'For wake_on connector_event: the event\'s config fields, as `events` lists them (only when it has required ones).' },
       app: { type: 'string', description: 'For wake_on app_event: the App slug.' },
+      expect_event_within: { type: 'string', description: 'For wake_on and automate with on=app_event: the silence alert, e.g. "1h" (5m to 30d, a few check intervals). No App event for that long tells the person once; the next event clears it.' },
       prompt: { type: 'string', description: 'For create and automate: the message each run starts with. In automate, read the event with {{ event.data.<field> }} or {{ body.<field> }}.' },
       agent: { type: 'string', description: 'For create and automate: the agent each run starts a session of. Without it, create is a reminder to this session (prefer follow_up), and automate runs the project default agent.' },
       every: { type: 'string', description: 'For follow_up, create and automate (schedule): repeat interval, e.g. "4h", "1d".' },

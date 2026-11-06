@@ -128,10 +128,21 @@ function snapshot(windows: UsageEndpointWindow[], limited: boolean, now: number)
   };
 }
 
+/**
+ * The instant `Date` can represent, else null: the provider's body is untrusted
+ * input, and a reset past year 275760 is no reset time. `Date.parse` agrees on
+ * the string form (`NaN` for an unrepresentable one).
+ */
+function representable(milliseconds: number): Date | null {
+  const date = new Date(milliseconds);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function isoOrNull(value: unknown, now: number, afterSeconds?: unknown): string | null {
-  if (typeof value === 'number' && value > 0) return new Date(value * 1000).toISOString();
-  if (typeof value === 'string' && !Number.isNaN(Date.parse(value))) return new Date(value).toISOString();
-  if (typeof afterSeconds === 'number' && afterSeconds >= 0) return new Date(now + afterSeconds * 1000).toISOString();
+  const at = (value: number) => representable(value)?.toISOString() ?? null;
+  if (typeof value === 'number' && value > 0) return at(value * 1000);
+  if (typeof value === 'string' && !Number.isNaN(Date.parse(value))) return at(Date.parse(value));
+  if (typeof afterSeconds === 'number' && afterSeconds >= 0) return at(now + afterSeconds * 1000);
   return null;
 }
 
@@ -154,7 +165,7 @@ export function codexUsageFromBody(body: unknown, now = Date.now()): Subscriptio
   return snapshot(windows, rateLimit.limit_reached === true || rateLimit.allowed === false, now);
 }
 
-const CLAUDE_WINDOWS: Record<string, number | null> = { five_hour: 300, seven_day: 7 * 24 * 60, seven_day_opus: 7 * 24 * 60, seven_day_sonnet: 7 * 24 * 60 };
+const CLAUDE_WINDOWS: Record<string, number | null> = { five_hour: 300, seven_day: 7 * 24 * 60, seven_day_opus: 7 * 24 * 60, seven_day_sonnet: 7 * 24 * 60, seven_day_fable: 7 * 24 * 60 };
 
 /** Claude's `oauth/usage` body: `{ five_hour, seven_day, seven_day_opus, … }`, `utilization` 0–100. */
 export function claudeUsageFromBody(body: unknown, now = Date.now()): SubscriptionUsage | null {

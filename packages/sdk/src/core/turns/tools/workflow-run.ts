@@ -398,7 +398,7 @@ function cutStringFields(body: string): [string, string][] | null {
     const head = pair.exec(body);
     // No `"key": "` here: either the cut fell inside the next key (fine), or the next value is data,
     // and a document recovered without it would drop that data silently.
-    if (!head) return /^\s*(?:"(?:[^"\\]|\\.)*(?:"\s*:?\s*)?)?$/.test(body.slice(at)) ? fields : null;
+    if (!head) return /^\s*(?:"(?:[^"\\]|\\.)*(?:"\s*(?::\s*)?)?)?$/.test(body.slice(at)) ? fields : null;
     let value = '';
     let i = pair.lastIndex;
     let closed = false;

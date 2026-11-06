@@ -360,22 +360,18 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     expect(api.count.restore).toBe(1)
   })
 
-  test('flag off: no manifest read, no restore; the box journals at its persisted generation', async () => {
-    delete process.env.KORTIX_SESSION_LOG_RESTORE
-    const api = fakeApi({ manifest: [manifest(0, LIVE)], restore: [restoreAnswer(1, STORED)] })
-    const store = fakeStore(null)
-
-    expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 0, cursors: [] })
-    expect(api.requests).toEqual([])
-
-    // A box that restored while the flag was on keeps posting at its generation after the flag goes off.
-    process.env.KORTIX_SESSION_LOG_RESTORE = '1'
-    fakeApi({ manifest: [manifest(0, LIVE)], restore: [restoreAnswer(7, STORED)] })
-    expect((await reconcileSessionLog(fakeStore(null).port, RETRY))?.generation).toBe(7)
-    process.env.KORTIX_SESSION_LOG_RESTORE = '0'
-    const off = fakeApi({})
-    expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 7, cursors: [], harness: carry(3) })
-    expect(off.requests).toEqual([])
+  test('every box reconciles, whatever KORTIX_SESSION_LOG_RESTORE says: a box with no store restores from the log', async () => {
+    // The restore graduated (2026-11-05). An API before it sent no key while the project flag was off, and an
+    // OpenCode-era box never had one; the operator switch is SESSION_LOG_RESTORE_ENABLED on the API (503).
+    let generation = 0
+    for (const value of [undefined, '0', '1']) {
+      if (value === undefined) delete process.env.KORTIX_SESSION_LOG_RESTORE
+      else process.env.KORTIX_SESSION_LOG_RESTORE = value
+      generation++
+      const api = fakeApi({ manifest: [manifest(generation - 1, LIVE)], restore: [restoreAnswer(generation, STORED)] })
+      expect({ value, generation: (await reconcileSessionLog(fakeStore(null).port, RETRY))?.generation }).toEqual({ value, generation })
+      expect(api.count.restore).toBe(1)
+    }
   })
 
   test('no control plane: nothing is read and no journal starts', async () => {
@@ -694,8 +690,8 @@ describe('the harness history across a switch (P7.1)', () => {
   })
 
   test('a box that never restored sends the history its adapter exports', async () => {
-    delete process.env.KORTIX_SESSION_LOG_RESTORE
-    const api = fakeApi({})
+    // No stored log yet: the manifest answers 404 and nothing is restored.
+    const api = fakeApi({ manifest: [new Response('no log', { status: 404 })] })
     const port = box('pi', '1.0.3')
     expect(await sent(port, await reconcileSessionLog(port, RETRY), api)).toEqual({ current: 'pi', history: [{ harness: 'pi', version: '1.0.3', from_seq: 1, at: AT }] })
   })

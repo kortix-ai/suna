@@ -60,7 +60,6 @@ export const FeatureFlagMapSchema = z.object({
   us_region: z.boolean(),
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
-  session_log_restore: z.boolean(),
   chat: z.boolean(),
   shared_drives: z.boolean(),
   goals: z.boolean(),
@@ -74,6 +73,7 @@ export const FeatureFlagMapSchema = z.object({
   voice_call: z.boolean(),
   chat_input: z.boolean(),
   chat_front: z.boolean(),
+  spaces_proactive: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -194,6 +194,8 @@ export const ProjectSchema = z.object({
     llm_gateway: z.literal(true).optional(),
     /** Not a flag (the session log is every session's saved history); always `true` for older SDK, CLI and mobile clients. */
     session_log: z.literal(true).optional(),
+    /** Not a flag since 2026-11-05 (every box restores from the session log when its store is behind); always `true` from this server. A server before then sent `false` for a project an operator turned off. */
+    session_log_restore: z.boolean().optional(),
     /** Not a flag (every new session runs pi; OpenCode is sunset); always `true` for older SDK, CLI and mobile clients. */
     pi_harness: z.literal(true).optional(),
     /** Not a flag (generative UI is always on); always `true` for older SDK, web and mobile clients, which render blocks only while it is on. */
@@ -659,7 +661,7 @@ const OAuth2AdditionalTokenParametersSchema = z
     if (entries.length > 32) {
       ctx.addIssue({
         code: z.ZodIssueCode.too_big,
-        type: 'array',
+        origin: 'array',
         maximum: 32,
         inclusive: true,
         message: 'at most 32 additional token parameters are allowed',
@@ -760,8 +762,8 @@ const OAuth2ApplicationFields = {
   scopes: z.array(z.string().trim().min(1).max(2048)).max(64).optional(),
   resource: z.string().trim().min(1).max(4096).optional(),
   audience: z.string().trim().min(1).max(4096).optional(),
-  authorization_params: z.record(z.string().max(4096)).optional(),
-  token_params: z.record(z.string().max(4096)).optional(),
+  authorization_params: z.record(z.string(), z.string().max(4096)).optional(),
+  token_params: z.record(z.string(), z.string().max(4096)).optional(),
   // RFC 7591/7592: present when Kortix registered this client dynamically.
   registration_client_uri: OAuth2HttpsUrlSchema.optional(),
   registration_access_token: z.string().min(1).max(65536).optional(),
@@ -1042,10 +1044,8 @@ export const SessionCreateInputSchema = z
     // rendered envelope (channel scaffolding, a coordinator's session
     // contract, a --with-file manifest) rather than the user's own words.
     title_source: z.string().optional(),
-    /** The session's `provider/model` pin. Wins over `opencode_model`. */
+    /** The session's `provider/model` pin. Wins over `model`. */
     model: z.string().min(1).optional(),
-    /** @deprecated The pre-W4 name of `model`. */
-    opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     labels: SessionLabelsSchema.optional(),
     /**
@@ -1100,7 +1100,6 @@ export const SessionCreateInputSchema = z
     sandboxSlug: z.string().min(1).optional(),
     initialPrompt: z.string().optional(),
     initialContext: z.string().min(1).max(SESSION_INITIAL_CONTEXT_MAX_CHARS).optional(),
-    opencodeModel: z.string().min(1).optional(),
     sessionId: z
       .string()
       .regex(
@@ -1190,8 +1189,6 @@ export const ProjectSessionSchema = z.object({
   sandbox_url: z.string().nullable(),
   /** The session's root conversation in its runtime (OpenCode or pi). */
   runtime_session_id: z.string().nullable(),
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: z.string().nullable(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
   /** The user-set override alone, so clients can tell it apart from the auto title. */
@@ -1203,8 +1200,6 @@ export const ProjectSessionSchema = z.object({
   metadata: JsonObjectSchema,
   /** The runtime's conversation tree snapshot; `[]` for a caller who cannot open the session. */
   runtime_sessions: z.array(RuntimeSessionSnapshotSchema),
-  /** @deprecated The pre-W4 name of `runtime_sessions`. Same value. */
-  opencode_sessions: z.array(RuntimeSessionSnapshotSchema),
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
   owner_name: z.string().nullable().optional(),
@@ -1236,6 +1231,8 @@ export const ProjectSessionSchema = z.object({
    * every other read.
    */
   reply_count: z.number().int().nullable(),
+  /** A space's thread list: the agent of a child session (a router's hidden worker) working now, else null. Absent elsewhere. */
+  active_child_agent: z.string().nullable().optional(),
   /** List with `parent=root` only: the session's non-deleted children. */
   child_count: z.number().int().optional(),
   /** List with `parent=root&q=` only: the session matched itself, or only a child matched. */
@@ -1889,9 +1886,7 @@ export const SessionStartResultSchema = z.object({
   /** Serialized session_sandboxes row, or null while none is usable. */
   sandbox: ProjectSessionSandboxSchema.nullable(),
   /** Canonical runtime root pin, resolved server-side once the box is up. */
-  runtime_session_id: z.string().nullable().optional(),
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: z.string().nullable(),
+  runtime_session_id: z.string().nullable(),
   /** Stable terminal failure. Raw provider text remains in sandbox metadata. */
   failure: SessionStartFailureSchema.nullable().optional(),
   /** Server-selected OpenCode REST transport. */
@@ -1985,8 +1980,12 @@ export const TriggerSchema = z.object({
   mode: z.enum(['poll', 'stream']).nullable(),
   /** For mode=poll only — the poll period, in whole seconds. */
   interval_seconds: z.number().nullable(),
-  /** For type=monitor only — the silence watchdog, in whole seconds. */
+  /** For type=app only — the silence alert (`expect_event_within`), in whole seconds. Null otherwise. */
   expect_event_within_seconds: z.number().nullable(),
+  /** For type=app only — when its App last posted to it (a deduplicated post and a heartbeat count). */
+  last_event_at: z.string().nullable().optional(),
+  /** Set while the App has been silent past `expect_event_within`: when the silence alert started. */
+  silent_since: z.string().nullable().optional(),
   /** For type=app only — the slug of the App whose emitted events fire the trigger. */
   app: z.string().nullable().optional(),
   /** A fire calls this App (method path) instead of running an agent. Null: an agent run. */
@@ -2209,8 +2208,6 @@ const SessionTranscriptHeadShape = {
   /** When the mirror was last written. Null for a live read. */
   captured_at: z.string().nullable(),
   runtime_session_id: z.string().nullable(),
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: z.string().nullable(),
   /** Messages in THIS window. */
   message_count: z.number(),
 };
@@ -2258,8 +2255,6 @@ export const SessionTurnSchema = z.object({
   state: SessionTurnStateSchema,
   message_id: z.string().nullable(),
   runtime_session_id: z.string().nullable(),
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: z.string().nullable(),
   started_at: z.string().nullable(),
   accepted_at: z.string().nullable(),
 });
@@ -2450,10 +2445,6 @@ export const RuntimeProjectionIdentitySchema = z.object({
   harness: z.string().nullable(),
   runtime_session_id: z.string().nullable(),
   harness_version: z.string().nullable(),
-  /** @deprecated The pre-W5 name of `runtime_session_id`. */
-  opencode_session_id: z.string().nullable(),
-  /** @deprecated The pre-W5 name of `harness_version`. */
-  opencode_version: z.string().nullable(),
   daemon_build: z.number().nullable(),
   agent_config_etag: z.string().nullable(),
   head_seq: z.record(z.string(), z.number()).nullable(),

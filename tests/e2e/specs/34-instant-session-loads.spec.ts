@@ -392,7 +392,7 @@ test('34 — a stopped session with no computer shows its conversation and a liv
           agent_name: 'kortix',
           retriable: false,
           sandbox: null,
-          opencode_session_id: root,
+          runtime_session_id: root,
           failure: null,
         },
       });
@@ -1071,7 +1071,7 @@ test('34 — loading older messages leaves the turn the reader is reading where 
       if (route.request().method() !== 'POST') return route.continue();
       await route.fulfill({
         status: 200,
-        json: { stage: 'stopped', agent_name: 'kortix', retriable: false, sandbox: null, opencode_session_id: root, failure: null },
+        json: { stage: 'stopped', agent_name: 'kortix', retriable: false, sandbox: null, runtime_session_id: root, failure: null },
       });
     });
     await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });

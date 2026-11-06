@@ -12,7 +12,6 @@
 import {
 	createRuntimeRestClient,
 	type RuntimeClient,
-	type RuntimeClientConfig,
 } from "./runtime-rest-client";
 
 // The types a host reads runtime data with: the Kortix transcript
@@ -32,12 +31,6 @@ export type {
 	RuntimeResult,
 } from "./runtime-rest-client";
 export type { createRuntimeRestClient as createRuntimeClient };
-/** @deprecated Renamed to `RuntimeClient`. Removed in the next major. */
-export type OpencodeClient = RuntimeClient;
-/** @deprecated Renamed to `RuntimeClientConfig`. Removed in the next major. */
-export type OpencodeClientConfig = RuntimeClientConfig;
-/** @deprecated Renamed to `createRuntimeClient`. Removed in the next major. */
-export type createOpencodeClient = typeof createRuntimeRestClient;
 
 import { authenticatedFetch } from "../http/auth";
 import { isConfigured } from "../http/config";
@@ -68,7 +61,6 @@ export {
 } from "./pty";
 import { RuntimeNotReadyError } from './runtime-not-ready-error';
 export * from "./kortix-master";
-
 
 /**
  * Per-URL client cache. Unlike `getClient()` (which tracks only the single

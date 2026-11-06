@@ -4,7 +4,8 @@ import type { ReactNode } from 'react';
 import { Hint } from './hint';
 import { emojiTint } from './emoji-tint';
 import { glyphFace } from './glyph-face';
-import { glyphForeground, glyphTint } from './glyph-tint';
+import { glyphForeground, glyphStyle, glyphTint } from './glyph-tint';
+import { FULL_BLEED_BORDER, useFullBleedGlyph } from './kortix-glyphs';
 import type { Icon } from './kortix-icons';
 import { cn } from '../lib/utils';
 import { chalkColors } from '@kortix/shared';
@@ -102,6 +103,8 @@ export function EntityAvatar({
   const initial = (label?.trim()?.charAt(0) || '?').toUpperCase();
   const chalk = chalkColors(`${label?.trim()}` || initial);
   const resolvedGlyph = resolveGlyph(glyph);
+  // An Enterprise brand icon fills the whole tile, edge to edge.
+  const fullBleed = useFullBleedGlyph(resolvedGlyph ? glyph?.name : undefined);
 
   const tile = (
     <span
@@ -113,7 +116,9 @@ export function EntityAvatar({
       // emoji tile drops the style entirely and rebuilds itself from its own
       // tint tokens. See the class list.
       style={
-        resolvedGlyph || emoji
+        resolvedGlyph
+          ? glyphStyle(resolvedGlyph.color)
+          : emoji
           ? undefined
           : {
               backgroundColor: chalk.background,
@@ -124,6 +129,7 @@ export function EntityAvatar({
       className={cn(
         'inline-flex shrink-0 items-center justify-center border font-semibold',
         sizes.box,
+        fullBleed && FULL_BLEED_BORDER,
         // After `sizes.box`, so tailwind-merge resolves `sizes.emoji` over the
         // initial's text size — and so `border-0` resolves over the base
         // `border`, which is what stops a neutral hairline being drawn OUTSIDE
@@ -159,7 +165,8 @@ export function EntityAvatar({
         // sized like the plain `icon` prop below, not like a text-rendered
         // emoji grapheme.
         <resolvedGlyph.GlyphComponent
-          className={cn(sizes.icon, glyphForeground(resolvedGlyph.color))}
+          weight="fill"
+          className={cn(fullBleed ? 'size-full' : sizes.icon, glyphForeground(resolvedGlyph.color))}
         />
       ) : emoji ? (
         // The tile always sits beside the name it belongs to, so the glyph is

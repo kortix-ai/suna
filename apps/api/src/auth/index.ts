@@ -243,7 +243,7 @@ authRouter.openapi(
           'application/json': {
             // `.strict()` is doing real work: it is what turns a smuggled
             // `password` into a 400 instead of a silently ignored field.
-            schema: z.object({ data: z.record(z.unknown()) }).strict(),
+            schema: z.object({ data: z.record(z.string(), z.unknown()) }).strict(),
           },
         },
       },

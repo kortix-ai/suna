@@ -140,9 +140,8 @@ import type {
   SystemReloadMode,
 } from '../core/runtime/client';
 
-// Re-export the request/response types unchanged — hosts that today import
-// them from `@kortix/sdk/opencode-client` (via the web hook files) keep that
-// path working; hosts consuming this module directly get the same names.
+// Re-export the request/response types unchanged, so a host reads the hooks
+// and their types from one module.
 export type {
   CredentialItem,
   CredentialWithValue,

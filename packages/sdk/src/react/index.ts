@@ -57,15 +57,13 @@ export {
 // The framework-free SSE event-stream primitive that `useRuntimeEventStream`
 // (exported above via `./opencode`) wraps. Re-exported here too so a host
 // already importing from `@kortix/sdk/react` can build its own binding
-// (e.g. a non-QueryClient consumer) without a second import from
-// `@kortix/sdk/event-stream`.
+// (e.g. a non-QueryClient consumer) without a second import from `@kortix/sdk`.
 export {
   openEventStream,
   type EventStreamClient,
   type EventStreamConnectionState,
   type EventStreamHandle,
   type EventStreamTimers,
-  type OpenCodeEvent,
   type RuntimeEvent,
   type OpenEventStreamOptions,
 } from '../core/stream/event-stream';
@@ -94,7 +92,6 @@ export {
   STOP_HOLD_DEADLINE_MS,
   applyOptimisticAbort,
   replayStartStash,
-  type OpenCodeMessagesClient,
   type RuntimeMessagesClient,
   type SendWithReceiptArgs,
   type StopWithReceiptOptions,
@@ -113,7 +110,7 @@ export {
 
 // The headless chat kit — `useChatTurns` (memoized `classifyTurn` over a
 // message list) + `renderParts` (compile-time-exhaustive part -> T
-// dispatcher). Framework-free classification lives in `@kortix/sdk/turns`;
+// dispatcher). Framework-free classification lives in `@kortix/sdk`;
 // this is the thin React binding over it. Kept inside the `react` barrel
 // rather than a new `@kortix/sdk/react/chat` subpath — no package.json
 // exports-map change needed to reach it.
@@ -138,7 +135,7 @@ export {
   type UseProjectsOptions,
 } from './use-accounts';
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
-export { useAccountSecretResources, useSessionProviderSecretPools, useSubscriptionUsage } from './use-provider-secrets';
+export { useAccountSecretResources, useSessionProviderSecretPools, useSubscriptionUsage, useSubscriptionConnections } from './use-provider-secrets';
 export {
   useProjectTriggers,
   projectTriggersKey,
@@ -202,22 +199,16 @@ export {
   projectAppsKey,
   appDeploymentsKey,
   appDeploymentKey,
+  useAppEvents,
+  useSendAppTestEvent,
+  appEventsKey,
 } from './use-project-apps';
 
-// The expected "no compaction model configured" configuration state thrown by
-// `useSummarizeRuntimeSession`'s mutation when every model-resolution fallback
-// tier fails. Re-exported here so hosts + the telemetry noise gate can
-// `instanceof`-match it without reaching into the hook's internal path.
-export { NoCompactionModelError } from './use-opencode-sessions/no-compaction-model-error';
 export * from './use-admin-accounts';
 export * from './use-admin-role';
 export * from './use-admin-projects';
-export * from './use-admin-analytics';
 export * from './use-admin-activity-analytics';
-export * from './use-admin-feedback';
-export * from './use-system-status';
 export * from './use-ops-overview';
-export * from './use-admin-billing';
 export * from './use-billing-plan';
 export * from './use-impersonation';
 export * from './use-teams-installations';
@@ -281,6 +272,8 @@ export {
   useRemoveProjectSpaceLink,
   useSetProjectSpaceTabs,
   useUpdateProjectSpace,
+  useProjectSpaceProactive,
+  useSetProjectSpaceProactive,
 } from './use-project-spaces';
 // Session groups (`session_groups`): the project's shared folders of sessions.
 export {
@@ -292,6 +285,7 @@ export {
   useSetProjectSessionGroup,
 } from './use-session-groups';
 export * from './use-sessions-needing-input';
+export * from './use-session-asks';
 // The review inbox: needs-you counts for badges, and the paged list (KRTX-2316).
 export * from './use-review-summary';
 // The caller's notification inbox, preferences and session watch (KRTX-1742).

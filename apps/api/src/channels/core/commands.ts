@@ -223,7 +223,7 @@ async function chatSession(ctx: CommandContext): Promise<ChatThreadSession | nul
 }
 
 function pinOf(session: ChatThreadSession | null): string | null {
-  const pin = (session?.metadata as Record<string, unknown> | null | undefined)?.opencode_model;
+  const pin = (session?.metadata as Record<string, unknown> | null | undefined)?.model;
   return typeof pin === 'string' && pin.trim() ? pin.trim() : null;
 }
 
@@ -283,7 +283,7 @@ const PICKERS: Record<'model' | 'agent', (ctx: CommandContext, page: number) => 
       sharedChatScope(ctx.project).then(listChannelModels),
     ]);
     if (!models.length) return notice('No model is available to this chat. A project admin can share a provider key with the whole project in Kortix.');
-    const current = selection?.opencodeModel ?? pinOf(session);
+    const current = selection?.sessionModel ?? pinOf(session);
     const labels = new Map<string, number>();
     for (const m of models) labels.set(m.label, (labels.get(m.label) ?? 0) + 1);
     const defaultName = defaultModel && (models.find((m) => m.id === defaultModel)?.label ?? labelForModelRef(defaultModel));
@@ -378,7 +378,7 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
       chatSelection(ctx.settings, ctx.project.projectId),
       session ? readRunningTurn(session.sessionId) : null,
     ]);
-    const model = await modelRow(ctx, session, selection?.opencodeModel ?? null);
+    const model = await modelRow(ctx, session, selection?.sessionModel ?? null);
     const sessionAgent = session?.agentName || 'default';
     const agent = !session
       ? selection?.agentName || 'project default'

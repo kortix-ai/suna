@@ -1,4 +1,4 @@
-import { type SpawnSyncReturns, spawnSync } from 'node:child_process';
+import { type GitResult, runGit } from './git-run.ts';
 
 import type { Auth } from './api/auth.ts';
 import { type ApiClient, ApiError } from './api/client.ts';
@@ -114,31 +114,31 @@ export function manifestProjectName(): string | undefined {
 }
 
 export function detectOrigin(): string | null {
-  const r = run('git', ['remote', 'get-url', 'origin']);
+  const r = run(['remote', 'get-url', 'origin']);
   const url = r.stdout.trim();
   return r.ok && url ? url : null;
 }
 
 export function setOrigin(url: string): void {
   if (detectOrigin()) {
-    run('git', ['remote', 'set-url', 'origin', url]);
+    run(['remote', 'set-url', 'origin', url]);
   } else {
-    run('git', ['remote', 'add', 'origin', url]);
+    run(['remote', 'add', 'origin', url]);
   }
 }
 
 /** Add `origin` only if it's missing — don't clobber an existing remote. */
 export function ensureOrigin(url: string): void {
-  if (!detectOrigin()) run('git', ['remote', 'add', 'origin', url]);
+  if (!detectOrigin()) run(['remote', 'add', 'origin', url]);
 }
 
 /** Returns 'ok' (committed or clean) or 'error'. */
 export function commitIfNeeded(flags: { noCommit: boolean; message?: string }): 'ok' | 'error' {
   const dirty =
-    !run('git', ['diff', '--quiet']).ok || !run('git', ['diff', '--cached', '--quiet']).ok;
-  const untracked = run('git', ['ls-files', '--others', '--exclude-standard']);
+    !run(['diff', '--quiet']).ok || !run(['diff', '--cached', '--quiet']).ok;
+  const untracked = run(['ls-files', '--others', '--exclude-standard']);
   const hasUntracked = untracked.ok && untracked.stdout.trim().length > 0;
-  const hasHead = run('git', ['rev-parse', '--verify', 'HEAD']).ok;
+  const hasHead = run(['rev-parse', '--verify', 'HEAD']).ok;
 
   if (!dirty && !hasUntracked && hasHead) {
     process.stdout.write(`  ${C.dim}clean working tree${C.reset}\n`);
@@ -152,7 +152,7 @@ export function commitIfNeeded(flags: { noCommit: boolean; message?: string }): 
     return 'error';
   }
   const msg = flags.message ?? 'kortix: ship';
-  const add = run('git', ['add', '-A']);
+  const add = run(['add', '-A']);
   if (!add.ok) {
     const detail = (add.stderr || add.stdout).trim();
     process.stderr.write(`${status.err('git add -A failed.')}\n`);
@@ -167,7 +167,7 @@ export function commitIfNeeded(flags: { noCommit: boolean; message?: string }): 
     }
     return 'error';
   }
-  const commit = run('git', ['commit', '-m', msg]);
+  const commit = run(['commit', '-m', msg]);
   if (!commit.ok && !/nothing to commit/i.test(commit.stdout + commit.stderr)) {
     process.stderr.write(
       `${status.err('git commit failed.')}\n${commit.stderr || commit.stdout}\n`,
@@ -180,9 +180,9 @@ export function commitIfNeeded(flags: { noCommit: boolean; message?: string }): 
 
 /** Current branch name, robust to unborn branches (fresh `git init`). */
 export function currentBranch(): string {
-  const sym = run('git', ['symbolic-ref', '--short', 'HEAD']);
+  const sym = run(['symbolic-ref', '--short', 'HEAD']);
   if (sym.ok && sym.stdout.trim()) return sym.stdout.trim();
-  const ref = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
+  const ref = run(['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
   return ref && ref !== 'HEAD' ? ref : 'main';
 }
 
@@ -209,7 +209,7 @@ function pushCurrentBranch(
   gitUsername = 'x-access-token',
   opts: { quietOnFailure?: boolean; managedProjectId?: string } = {},
 ): string | null | false {
-  const branch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
+  const branch = run(['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
   if (!branch || branch === 'HEAD') {
     process.stderr.write(
       `${status.err('Not on a branch (detached HEAD?) — check out a branch and retry.')}\n`,
@@ -220,11 +220,11 @@ function pushCurrentBranch(
   // project already contains work; a fresh local init must not overwrite it.
   if (opts.managedProjectId) {
     const env = pushToken ? authGitEnv(repoUrl, pushToken, gitUsername) : undefined;
-    const shallow = run('git', ['rev-parse', '--is-shallow-repository']).stdout.trim() === 'true';
-    const fetched = run('git', [
+    const shallow = run(['rev-parse', '--is-shallow-repository']).stdout.trim() === 'true';
+    const fetched = run([
       'fetch', '--no-tags', ...(shallow ? ['--unshallow'] : []), 'origin', `refs/heads/${branch}`,
     ], { env });
-    if (fetched.ok && !run('git', ['merge-base', '--is-ancestor', 'FETCH_HEAD', 'HEAD']).ok) {
+    if (fetched.ok && !run(['merge-base', '--is-ancestor', 'FETCH_HEAD', 'HEAD']).ok) {
       managedShipRecovery(opts.managedProjectId);
       return false;
     }
@@ -232,7 +232,7 @@ function pushCurrentBranch(
   const refspec = `${branch}:refs/heads/${branch}`;
   const args = ['push', '-u', 'origin', refspec];
 
-  const push = run('git', args, {
+  const push = run(args, {
     inheritStdio: true,
     env: pushToken ? authGitEnv(repoUrl, pushToken, gitUsername) : undefined,
   });
@@ -361,31 +361,8 @@ export async function resolvePushCredential(
   return { pushToken: null, pushUsername: 'x-access-token' };
 }
 
-interface RunResult {
-  ok: boolean;
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-export function run(
-  cmd: string,
-  args: string[],
-  opts?: { inheritStdio?: boolean; env?: Record<string, string> },
-): RunResult {
-  let result: SpawnSyncReturns<Buffer | string>;
-  const env = opts?.env ? { ...process.env, ...opts.env } : undefined;
-  if (opts?.inheritStdio) {
-    result = spawnSync(cmd, args, { stdio: 'inherit', env });
-    return { ok: result.status === 0, code: result.status ?? 1, stdout: '', stderr: '' };
-  }
-  result = spawnSync(cmd, args, { encoding: 'utf8', env });
-  return {
-    ok: result.status === 0,
-    code: result.status ?? 1,
-    stdout: (result.stdout as string) ?? '',
-    stderr: (result.stderr as string) ?? '',
-  };
+export function run(args: string[], opts?: { inheritStdio?: boolean; env?: Record<string, string> }): GitResult {
+  return runGit(undefined, args, opts);
 }
 
 /**

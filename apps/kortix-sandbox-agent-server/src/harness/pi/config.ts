@@ -44,7 +44,7 @@ const EnvironmentSchema = z.object({
   // compiled agent's `codemode`, else `on` (runtime.ts `codemode`).
   KORTIX_PI_CODEMODE: z.enum(['off', 'on', 'only']).optional().catch(undefined),
   // The session agent's context handling (`agents.<name>.context`), sent by the API only when it is
-  // `summary`: pi's own summary compaction. Absent or invalid: `record` (extensions/context-record.ts).
+  // `summary`: pi's own summary compaction. Absent or invalid: `record` (extensions/context-record.ts: a reset onto the stored session log).
   KORTIX_PI_CONTEXT: z.enum(['record', 'summary']).optional().catch(undefined),
   // Cloud subagent guardrails (cloud-subagent.ts): children one parent waits on at
   // once, and the depth a cloud child may still delegate from. Invalid: the default.

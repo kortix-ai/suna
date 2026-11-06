@@ -52,6 +52,36 @@ export const uncoveredAllow: AllowEntry[] = [
     path: "/v1/system/confirmed-signups",
     reason: "sales reconciliation export behind its own token; covered by sales-outbox.integration.test.ts",
   },
+  // Routes of this cycle proven over real HTTP + PostgreSQL in apps/api's
+  // integration suites rather than a flow: the subscription ones read a
+  // connected ChatGPT/Claude plan (an external login the local profile has
+  // not got), and chat threads and space posts are session-principal routes
+  // (only an agent's box calls them).
+  {
+    method: "GET",
+    path: "/v1/accounts/:accountId/subscription-connections",
+    reason: "lists connected ChatGPT/Claude subscriptions (#11816); needs a real plan login; covered by integration-subscription-discovery-http.test.ts",
+  },
+  {
+    method: "POST",
+    path: "/v1/accounts/:accountId/subscription-connections/:connectionId/usage",
+    reason: "refreshes a connected plan's usage from its vendor (#11816); needs a real plan login; covered by integration-subscription-discovery-http.test.ts",
+  },
+  {
+    method: "POST",
+    path: "/v1/projects/:projectId/chat/threads",
+    reason: "only a session's own box starts a thread in its person's chat (#11712); covered by integration-chat-threads-http.test.ts",
+  },
+  {
+    method: "POST",
+    path: "/v1/projects/:projectId/spaces/:spaceId/posts",
+    reason: "an agent posts into a space for its person (#11783); session-principal only; covered by integration-space-posts-http.test.ts",
+  },
+  {
+    method: "PUT",
+    path: "/v1/projects/:projectId/spaces/:spaceId/tabs",
+    reason: "free space tabs behind the chat flag (#11712); covered by integration-space-tabs-http.test.ts",
+  },
   // The CLI device-login (RFC 8628-style) routes. Covered by the CLI's own
   // device flow rather than by a browser journey: start → poll → decide is a
   // terminal handshake, and the CLI is not in the flow-runner matrix. They

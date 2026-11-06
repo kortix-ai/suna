@@ -64,6 +64,12 @@ export interface GitTriggerSpec {
    */
   maxLatenessSeconds?: number;
   /**
+   * For type=app only (`expect_event_within`): the silence alert. No event for
+   * this many seconds tells the trigger's watchers once; the next event
+   * clears it (lib/app-trigger-silence.ts). Omitted when unset.
+   */
+  expectEventWithinSeconds?: number;
+  /**
    * Any trigger type (`max_runs_per_hour`, KRTX-1721): runs started in any 60
    * minutes. A fire past it is recorded as a throttled, skipped run. Omitted
    * when unset: the platform default (60) applies.

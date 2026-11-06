@@ -17,6 +17,7 @@
 
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { parseWorkflowResult, parseWorkflowRun, type WorkflowRun } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { CaretRightIcon, TreeStructureIcon } from '@/lib/icons';
@@ -318,7 +319,7 @@ function PhaseHeader({
   const rowStyle = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: webSpace(2.5), paddingHorizontal: PHASE_PAD, minHeight: 44, borderRadius: 8 };
   if (!onPress) return <View style={rowStyle}>{body}</View>;
   return (
-    <Pressable
+    <PressableSurface
       accessibilityRole="button"
       accessibilityLabel={`${title}${progress ? `, ${progress}` : ''}`}
       accessibilityState={{ expanded: !!expanded }}
@@ -326,7 +327,7 @@ function PhaseHeader({
       style={({ pressed }) => [rowStyle, pressed && { backgroundColor: palette.pressed }]}
     >
       {body}
-    </Pressable>
+    </PressableSurface>
   );
 }
 
@@ -359,14 +360,14 @@ function AgentRowView({ row, onPress }: { row: WorkflowAgentRowModel; onPress?: 
   const rowStyle = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: webSpace(2.5), paddingHorizontal: webSpace(2.5), minHeight: 44, borderRadius: 8 };
   if (!onPress) return <View style={rowStyle}>{body}</View>;
   return (
-    <Pressable
+    <PressableSurface
       accessibilityRole="button"
       accessibilityLabel={`Open ${row.label}${row.state ? `, ${row.state}` : ''}`}
       onPress={onPress}
       style={({ pressed }) => [rowStyle, pressed && { backgroundColor: palette.pressed }]}
     >
       {body}
-    </Pressable>
+    </PressableSurface>
   );
 }
 

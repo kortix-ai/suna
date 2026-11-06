@@ -1,7 +1,6 @@
 // The agent seam: what the voice needs from the agent behind it. The voice (src/cascade.ts, src/server.ts) reaches it
-// only through src/brain.ts, which picks a backend: src/agents/wire.ts (the OpenCode-shaped HTTP+SSE wire of kortixd
-// or `opencode serve`) or src/agents/pi.ts (a pi / omp AgentSession in this process, or the session of the pi host the
-// relay runs inside). A backend is a plain object of these functions; nothing above this line knows which one runs.
+// only through src/brain.ts, whose backend is src/agents/pi.ts (a pi / omp AgentSession in this process, or the
+// session of the pi host the relay runs inside). A backend is a plain object of these functions; nothing above this line knows which one runs.
 import type { ThreadSeed } from './thread'
 
 /** What one agent turn says while it runs: its text as it streams, each tool it starts, and an error it reports. */
@@ -10,8 +9,8 @@ export type TurnEvents = { text(delta: string): void; tool(name: string, title: 
 /**
  * One event stream per call. Every turn reads it, and so does the call's watch for turns the agent starts itself.
  * The one frame every backend sends and the voice relies on: `('session.status', { status: { type: 'busy' | 'idle' } })`
- * when the session starts or stops working. Other frames are the backend's own (the wire's `message.part.*`, pi's
- * `message_update`, `tool_execution_start`, …) and only its own `turn` reads them.
+ * when the session starts or stops working. Other frames are the backend's own (pi's `message_update`,
+ * `tool_execution_start`, …) and only its own `turn` reads them.
  */
 export type Bus = { on(fn: (type: string, e: any) => void): () => void; close(): void }
 

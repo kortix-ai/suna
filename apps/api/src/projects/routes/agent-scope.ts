@@ -24,7 +24,7 @@ import { extractAgents, grantsByAgent } from '../agents';
 import { builtinAgentWriteRefusal, enabledBuiltinAgentKey, projectBuiltinAgents } from '../lib/my-kortix-agent';
 import { extractConnectors } from '../connectors';
 import { canonicalConnectorAlias } from '../../shared/connector-alias';
-import { policySetNameError } from '@kortix/manifest-schema';
+import { isEveryGrant, policySetNameError } from '@kortix/manifest-schema';
 import {
   applyAgentScopeV2,
   grantSecretToAgentV2,
@@ -45,7 +45,8 @@ import { rethrowDatabaseError } from '../../shared/database-errors';
 
 // `'all'` = every item the launcher can see; a list = an explicit allowlist;
 // `[]` = none. Mirrors the AgentSpec GrantSet.
-const GrantSetSchema = z.union([z.literal('all'), z.array(z.string().min(1).max(200)).max(500)]);
+// `"*"` (kortix.yaml's spelling) is accepted as `all`; the write emits `"*"`.
+const GrantSetSchema = z.union([z.literal('all'), z.literal('*').transform(() => 'all' as const), z.array(z.string().min(1).max(200)).max(500)]);
 
 const AgentScopeBody = z.object({
   env: GrantSetSchema.optional(),
@@ -496,7 +497,7 @@ function policySetAssignmentError(
   granted: unknown,
   requested: Record<string, string | null>,
 ): { error: string; code: string } | null {
-  const grantsAll = granted === 'all' || (Array.isArray(granted) && granted.includes('*'));
+  const grantsAll = isEveryGrant(granted);
   const grantedSlugs = new Set(
     (Array.isArray(granted) ? granted : [])
       .filter((slug): slug is string => typeof slug === 'string')

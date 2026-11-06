@@ -3,6 +3,7 @@ import { configureKortix } from '../../http/config';
 import { formatGoalFile, parseGoalFile } from './goal-file';
 import {
   createProjectGoal,
+  defaultGoalAgent,
   getProjectGoalFiles,
   goalHealth,
   listProjectGoals,
@@ -10,6 +11,7 @@ import {
   makeSessionGoal,
   pauseProjectGoal,
   replyToProjectGoal,
+  restartProjectGoal,
   resumeProjectGoal,
   setProjectGoalBinding,
   stopProjectGoal,
@@ -697,8 +699,117 @@ describe('person controls: create, pause, resume', () => {
     expect(doc).toMatchObject({ status: 'stopped', paused_at: null, paused_by: null });
   });
 
+  const STOPPED_DOC: ProjectGoalDocument = {
+    ...OPEN_DOC,
+    status: 'stopped',
+    reminder_id: null,
+    next_wake_at: null,
+    transitions: [
+      ...OPEN_DOC.transitions,
+      { from: 'active', to: 'stopped', at: '2026-11-02T09:00:00Z', reason: 'Stopped from the Goal page', by: 'person' },
+    ],
+  };
+
+  test('restartProjectGoal moves a stopped goal back to active on the version it read, logs it and wakes the owner once per stop', async () => {
+    goalRoutes(STOPPED_DOC);
+    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
+    const doc = await restartProjectGoal('p1', { ...goalRef, heartbeat: null }, 'Started again from the Goal page');
+    expect(doc.status).toBe('active');
+    expect(doc.transitions.at(-1)).toMatchObject({ from: 'stopped', to: 'active', reason: 'Started again from the Goal page', by: 'person' });
+    const goalPut = requested.find((r) => r.method === 'PUT' && r.key.endsWith('GOAL.md'))!;
+    expect(goalPut.ifMatch).toBe('v1');
+    expect(parseGoalFile(goalPut.body)?.status).toBe('active');
+    expect(requested.find((r) => r.method === 'PUT' && r.key.endsWith('log.md'))!.body).toContain('stopped → active: Started again from the Goal page');
+    // GOAL.md first, then the wake: the owner never wakes on a goal that still reads stopped.
+    expect(requested.filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.key.split('?')[0]}`)).toEqual([
+      'PUT /drives/d1/files/content',
+      'PUT /drives/d1/files/content',
+      'POST /projects/p1/sessions/s-owner/prompts',
+    ]);
+    const wake = JSON.parse(requested.find((r) => r.method === 'POST')!.body);
+    expect(wake.parts[0].text).toContain('Goal wake: /drives/company/Goals/bank-close.');
+    expect(wake.client_message_id).toBe('goal-restart:s-owner:2026-11-02T09:00:00Z');
+  });
+
+  test('restartProjectGoal sends a stopped goal with no done criteria back to draft, so the owner writes them first', async () => {
+    goalRoutes({ ...STOPPED_DOC, success_criteria: [] });
+    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
+    const doc = await restartProjectGoal('p1', { ...goalRef, heartbeat: null }, 'again');
+    expect(doc.status).toBe('draft');
+  });
+
+  test('a retry of a restart whose wake failed writes nothing and wakes the owner with the same id', async () => {
+    const restarted = { ...STOPPED_DOC, status: 'active' as const, transitions: [...STOPPED_DOC.transitions, { from: 'stopped' as const, to: 'active' as const, at: '2026-11-03T09:00:00Z', reason: 'again', by: 'person' }] };
+    goalRoutes(restarted);
+    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
+    const doc = await restartProjectGoal('p1', { ...goalRef, heartbeat: null }, 'again');
+    expect(doc.status).toBe('active');
+    expect(requested.filter((r) => r.method === 'PUT')).toEqual([]);
+    expect(JSON.parse(requested.find((r) => r.method === 'POST')!.body).client_message_id).toBe('goal-restart:s-owner:2026-11-02T09:00:00Z');
+  });
+
+  test('restartProjectGoal refuses a goal that is not stopped and still has a live heartbeat', async () => {
+    goalRoutes(OPEN_DOC);
+    await expect(restartProjectGoal('p1', goalRef, 'x')).rejects.toThrow('not stopped');
+    goalRoutes({ ...OPEN_DOC, status: 'done' });
+    await expect(restartProjectGoal('p1', goalRef, 'x')).rejects.toThrow('not stopped');
+    expect(requested.some((r) => r.method !== 'GET')).toBe(false);
+  });
+
+  test('createProjectGoal names the goal after the first line of a brief and keeps the whole brief in GOAL.md', async () => {
+    drive();
+    put('/Users/u1/Goals/draft-our-investor-update-for/GOAL.md');
+    put('/Users/u1/Goals/draft-our-investor-update-for/log.md');
+    sessionCreated();
+    const brief = 'Draft our investor update for October.\n- Highlights: two launches\n- Asks: intros to CFOs\nCompare every number with the prior period.';
+    const created = await createProjectGoal('p1', { outcome: brief, sessionId: SESSION });
+    expect(created.slug).toBe('draft-our-investor-update-for');
+    const doc = parseGoalFile(requested.find((r) => r.method === 'PUT' && r.key.endsWith('GOAL.md'))!.body)!;
+    expect(doc.objective).toBe('Draft our investor update for October.');
+    // The title is the heading, not repeated; a sentence after the list stays its own paragraph.
+    expect(doc.body).toBe(
+      '# Draft our investor update for October.\n\n## Context\n\n- Highlights: two launches\n- Asks: intros to CFOs\n\nCompare every number with the prior period.\n',
+    );
+    expect(JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/projects/p1/sessions')!.body).name).toBe('Draft our investor update for October.');
+  });
+
+  test('a goal started again is waking, not broken, until the missed-wake window passes without a heartbeat', () => {
+    const restarted = { ...STOPPED_DOC, status: 'active' as const, transitions: [...STOPPED_DOC.transitions, { from: 'stopped' as const, to: 'active' as const, at: '2026-10-21T11:55:00Z', reason: 'again', by: 'person' }] };
+    expect(goalHealth(restarted, null, NOW)).toEqual({ state: 'healthy', issues: [] });
+    expect(goalHealth(restarted, null, NOW + 15 * 60_000).issues).toEqual(['no_heartbeat']);
+  });
+
   test('paused_at and paused_by round-trip through GOAL.md', () => {
     const doc = { ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person', body: '' };
     expect(parseGoalFile(formatGoalFile(doc))).toMatchObject({ paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
+  });
+});
+
+describe('defaultGoalAgent', () => {
+  const agent = (name: string, extra: Record<string, unknown> = {}) => ({ name, description: null, mode: 'primary', ...extra });
+
+  test('the project default, when it can work a goal', () => {
+    expect(defaultGoalAgent({ default_agent: 'sales', agents: [agent('kortix'), agent('sales')] })).toBe('sales');
+  });
+
+  test('skips agents without Files (My Kortix), hidden, disabled and platform agents', () => {
+    const agents = [
+      agent('mykortix'),
+      agent('quiet', { hidden: true }),
+      agent('off', { enabled: false }),
+      agent('suna', { platform: true }),
+      agent('meta-box', { sandbox: 'meta' }),
+      agent('worker'),
+    ];
+    expect(defaultGoalAgent({ default_agent: 'mykortix', agents })).toBe('worker');
+  });
+
+  test('prefers a primary agent over a subagent', () => {
+    expect(defaultGoalAgent({ agents: [agent('helper', { mode: 'subagent' }), agent('lead')] })).toBe('lead');
+  });
+
+  test('null when no agent can work a goal', () => {
+    expect(defaultGoalAgent({ default_agent: 'mykortix', agents: [agent('mykortix')] })).toBeNull();
+    expect(defaultGoalAgent({ agents: [] })).toBeNull();
   });
 });

@@ -53,9 +53,10 @@ import {
   StackActions,
   useIsFocused,
   useNavigation,
+  useRoute,
   type ParamListBase,
 } from 'expo-router/react-navigation';
-import type { NativeStackNavigationProp } from 'expo-router/build/react-navigation/native-stack';
+import type { NativeStackNavigationProp } from 'expo-router/native-stack';
 
 import { useLocalSearchParams } from 'expo-router';
 import type { ProjectSession } from '@/lib/projects/projects-client';
@@ -174,6 +175,7 @@ export function ProjectHomeRoute() {
 export function ProjectViewRoute() {
   const { view, isHome, goHome, onViewCovered } = useProjectRoute();
   const navigation = useNavigation<ProjectStackNavigation>();
+  const routeKey = useRoute().key;
   const isFocused = useIsFocused();
   // Set once the route is leaving, so the pop below never runs a second time.
   const removingRef = React.useRef(false);
@@ -188,8 +190,11 @@ export function ProjectViewRoute() {
 
   React.useEffect(() => {
     // Any removal (Android back, New session, a drawer route replacing this
-    // one) resets the store before the route leaves the navigation state.
-    const offBeforeRemove = navigation.addListener('beforeRemove', () => {
+    // one) resets the store as soon as the navigator's state drops this
+    // route. React Navigation 8 (Expo SDK 58) no longer emits `beforeRemove`.
+    const offState = navigation.addListener('state', (event) => {
+      if (removingRef.current) return;
+      if (event.data.state.routes.some((route) => route.key === routeKey)) return;
       removingRef.current = true;
       callbacksRef.current.goHome();
     });
@@ -197,11 +202,11 @@ export function ProjectViewRoute() {
       if (!event.data.closing) callbacksRef.current.onViewCovered();
     });
     return () => {
-      offBeforeRemove();
+      offState();
       offTransitionEnd();
       callbacksRef.current.goHome();
     };
-  }, [navigation]);
+  }, [navigation, routeKey]);
 
   React.useEffect(() => {
     if (!isHome || !isFocused || removingRef.current) return;

@@ -8,7 +8,7 @@
  * "something about the box did not answer".
  *
  * Not hypothetical. The module's own comment records the 401 case disabling
- * the opencode_sessions snapshot for three weeks unnoticed (0 of 2804 staging
+ * the runtime_sessions snapshot for three weeks unnoticed (0 of 2804 staging
  * sessions, 2026-08). And on 2026-09-28 a dev session cycled
  * `starting/unreachable` -> `failed/runtime_unreachable_timeout` for 1447s
  * while its daemon answered the API's own service key with

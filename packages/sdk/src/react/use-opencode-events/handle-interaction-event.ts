@@ -14,6 +14,12 @@ export function handleInteractionEvent(event: RuntimeEvent, ctx: HandlerContext)
   if (event.type.startsWith('question.') && ctx.projectId) {
     ctx.queryClient.invalidateQueries({ queryKey: qk.project.needsInput(ctx.projectId) });
   }
+  // Every ask lives in the project's stored asks (Review, "Needs you"): an ask
+  // asked, answered or parked moves that list now, not at its next poll.
+  if ((event.type.startsWith('question.') || event.type.startsWith('permission.')) && ctx.projectId) {
+    ctx.queryClient.invalidateQueries({ queryKey: qk.project.asks(ctx.projectId) });
+    if (event.type.startsWith('permission.')) ctx.queryClient.invalidateQueries({ queryKey: qk.project.needsInput(ctx.projectId) });
+  }
   switch (event.type) {
     case 'permission.asked': {
       const props = event.properties;
@@ -31,7 +37,10 @@ export function handleInteractionEvent(event: RuntimeEvent, ctx: HandlerContext)
       }
       break;
     }
-    case 'permission.replied': {
+    case 'permission.replied':
+    // Parked: nobody answered live, the call returned, and the ask waits in
+    // Review. The live card goes; the stored ask card shows it.
+    case 'permission.parked': {
       const requestID = event.properties.requestID;
       if (requestID) removePermission(requestID);
       break;
@@ -52,7 +61,8 @@ export function handleInteractionEvent(event: RuntimeEvent, ctx: HandlerContext)
       break;
     }
     case 'question.replied':
-    case 'question.rejected': {
+    case 'question.rejected':
+    case 'question.parked': {
       const requestID = event.properties.requestID;
       if (requestID) removeQuestion(requestID);
       break;

@@ -32,7 +32,7 @@ import { UserAvatar } from '../../primitives/user-avatar';
 import { useUiViewerId } from '../../providers/ui-provider';
 import type { SessionDisplayStatus } from '../../session/actions/session-label';
 import { participantLabel } from '../../session/participants/session-participants';
-import { SessionStatusMark } from '../sidebar/session-status-mark';
+import { SessionStatusMark } from '../../session/list/session-status-mark';
 import {
   agentLabel,
   spaceRoster,

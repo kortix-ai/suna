@@ -31,6 +31,13 @@
         "null"
       ]
     },
+    "lastError": {
+      "description": "While reason is `error`: the recorder's last capture error, at most 300 characters. Absent or null otherwise and from app versions before 0.14.20.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "missingPermissions": {
       "type": "array",
       "items": {
@@ -195,6 +202,136 @@
           "minimum": 0
         }
       }
+    },
+    "update": {
+      "description": "The self-update state from the machine service (update.json), or null on a computer without one.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "current",
+                "behind",
+                "updating",
+                "failed",
+                "disabled"
+              ]
+            },
+            "installed": {
+              "type": "string"
+            },
+            "channel": {
+              "type": "string"
+            },
+            "latest": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "lastCheckMs": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "lastCheck": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "What the last check did, in a sentence."
+            },
+            "updatingTo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "lastResult": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "at_ms",
+                    "from",
+                    "to",
+                    "outcome"
+                  ],
+                  "properties": {
+                    "at_ms": {
+                      "type": "integer"
+                    },
+                    "from": {
+                      "type": "string"
+                    },
+                    "to": {
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "updated",
+                        "rolled_back",
+                        "failed",
+                        "install_failed"
+                      ]
+                    },
+                    "detail": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Why it failed: the installer error, or the health probe's reason (`session 2: no_new_frame (…)`)."
+                    }
+                  }
+                }
+              ]
+            },
+            "badVersions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "skipped": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "version"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "string"
+                  },
+                  "failedAtMs": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "retryAtMs": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

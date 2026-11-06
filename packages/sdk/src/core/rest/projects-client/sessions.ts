@@ -80,6 +80,8 @@ export interface ProjectSession {
    * messages after the first prompt. Null on every other read. Absent on older APIs.
    */
   reply_count?: number | null;
+  /** A space's thread list: the agent of a child session (a router's hidden worker) working now, else null. Absent from other lists and older APIs. */
+  active_child_agent?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;
@@ -91,8 +93,6 @@ export interface ProjectSession {
   sandbox_url: string | null;
   /** The session's root conversation in its runtime. Served by APIs since W4. */
   runtime_session_id?: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: string | null;
   /**
    * Resolved display name. Precedence: the user-set `custom_name`, then the
    * runtime's own root-conversation title (the `runtime_sessions` snapshot —
@@ -124,8 +124,6 @@ export interface ProjectSession {
   metadata: ProjectSessionMetadata;
   /** The runtime's conversation tree. Served by APIs since W4. */
   runtime_sessions?: ProjectRuntimeSession[];
-  /** @deprecated The pre-W4 name of `runtime_sessions`. Same value. */
-  opencode_sessions: ProjectRuntimeSession[];
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
   /** The session that spawned this one, or null for a top-level session. */
@@ -295,10 +293,8 @@ export interface CreateProjectSessionInput {
   initial_context?: string;
   /** Durable recovery copy. The server never delivers this field automatically. */
   pending_prompt?: PendingSessionPrompt;
-  /** The session's `provider/model` pin. Accepted by APIs since W4; wins over `opencode_model`. */
+  /** The session's `provider/model` pin. Accepted by APIs since W4; wins over `model`. */
   model?: string;
-  /** @deprecated The pre-W4 name of `model`. Every API version accepts it. */
-  opencode_model?: string;
   name?: string;
   /** Free-form labels: each trimmed, 1..64 characters; at most 20. */
   labels?: string[];
@@ -379,9 +375,6 @@ export interface ProjectRuntimeSession {
   updated_at: number | null;
   archived_at: number | null;
 }
-
-/** @deprecated Renamed to `ProjectRuntimeSession`. Removed in the next major. */
-export type ProjectOpenCodeSession = ProjectRuntimeSession;
 
 /** Default page size the API applies when `limit` is omitted. Mirrors
  *  `SESSION_PAGE_DEFAULT_LIMIT` in `apps/api/src/projects/lib/session-inventory.ts`. */
@@ -1045,8 +1038,6 @@ export interface SessionTranscript {
   captured_at: string | null;
   /** The runtime session this belongs to. Served by APIs since W4. */
   runtime_session_id?: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: string | null;
   message_count: number;
   messages: SessionTranscriptMessage[];
 }
@@ -1079,8 +1070,6 @@ export interface SessionTranscriptSyncEnvelope {
   captured_at: string | null;
   /** The runtime session this belongs to. Served by APIs since W4. */
   runtime_session_id?: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: string | null;
   /** How many messages are in THIS window of the transcript. */
   message_count: number;
   /**
@@ -1198,8 +1187,6 @@ export interface SessionTurn {
   message_id: string | null;
   /** The runtime session this belongs to. Served by APIs since W4. */
   runtime_session_id?: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: string | null;
   /** Null only for a legacy authority record written before the control plane
    *  recorded a start instant. The turn is running either way — a missing
    *  timestamp is not a reason to read it as idle. */
@@ -1378,10 +1365,6 @@ export type SessionOpenBundleRuntime =
         harness: string | null;
         runtime_session_id: string | null;
         harness_version: string | null;
-        /** @deprecated The pre-W5 name of `runtime_session_id`. */
-        opencode_session_id: string | null;
-        /** @deprecated The pre-W5 name of `harness_version`. */
-        opencode_version: string | null;
         daemon_build: number | null;
         agent_config_etag: string | null;
         head_seq: Record<string, number> | null;
@@ -2096,7 +2079,7 @@ export interface SessionReloadResult {
     | 'not-requested'
     | 'unknown';
   /** Runtime replacement outcome. Absent when an older API did not report it. */
-  opencode_reload?: 'disposed' | 'restarted' | 'kept-old' | null;
+  runtime_reload?: 'disposed' | 'restarted' | 'kept-old' | null;
   /** True when the replacement ended an incomplete turn. */
   turn_ended?: boolean | null;
   /** Why nothing was applied. Internal wording — map it, don't render it. */
@@ -2262,7 +2245,7 @@ export async function reloadProjectSessionConfigStream(
 /**
  * Change the model a session uses, mid-flight.
  *
- * `opencode_model` is set at create; this re-points an existing session. When
+ * `model` is set at create; this re-points an existing session. When
  * the sandbox is live the change takes effect immediately (opencode restarts to
  * rebuild its config), which ends any in-flight turn. `applied_live: false`
  * means it was stored and will apply when the sandbox next starts.
@@ -2376,8 +2359,6 @@ export async function setProjectSessionScope(
 export interface SessionModelChangeResult {
   /** The stored model. Served by APIs since W4. */
   model?: string;
-  /** @deprecated The pre-W4 name of `model`. Same value. */
-  opencode_model: string;
   /** True only when a LIVE sandbox took the new model. */
   applied_live: boolean;
   /**
@@ -2433,8 +2414,7 @@ export async function setProjectSessionModel(
   return unwrap(
     await backendApi.put<SessionModelChangeResult>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
-      // `model` since W4; `opencode_model` is the same pin for an older API.
-      { model, opencode_model: model },
+      { model },
     ),
   );
 }
@@ -2442,12 +2422,12 @@ export async function setProjectSessionModel(
 /**
  * The `provider/model` a session is pinned to, or null when it follows the
  * project default. The pin is stored under the pre-W4 metadata key
- * `opencode_model`; read it through this function, not from `metadata`.
+ * `model`; read it through this function, not from `metadata`.
  */
 export function sessionModelPin(session: { metadata?: Record<string, unknown> | null }):
   | string
   | null {
-  const stored = session.metadata?.opencode_model;
+  const stored = session.metadata?.model;
   return typeof stored === 'string' && stored.trim() ? stored.trim() : null;
 }
 

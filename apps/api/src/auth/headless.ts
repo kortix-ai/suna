@@ -26,11 +26,14 @@ import type { AppEnv } from '../types';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { auditLoginFail } from '../middleware/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueUser } from './gotrue';
+import { authEmailState } from './email-cooldown';
 import { ssoEnforcedForEmail } from '../repositories/sso';
 import { isLoopbackHost } from '../repositories/oauth-clients';
 import { canSignUp } from '../shared/access-control-cache';
 import { requestClientIp, requestClientKey } from '../middleware/client-ip';
 import { config } from '../config';
+import { captureProductEvent } from '../shared/product-analytics';
+import { analyticsSource } from '../middleware/analytics-source';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
 
@@ -61,6 +64,24 @@ function throttled(c: Context): Response | null {
     { error: 'over_request_rate_limit', error_description: 'Too many authentication attempts. Try again shortly.' },
     429,
     { 'retry-after': String(Math.ceil((verdict.retryAfterMs ?? verdict.resetMs) / 1000)) },
+  );
+}
+
+/**
+ * 429 `over_email_send_rate_limit` when an auth email went to this address less
+ * than a minute ago (auth/email-cooldown.ts). GoTrue answers the same code for
+ * its own per-user interval, so a client handles both the same way.
+ */
+async function emailCoolingDown(c: Context, email: string): Promise<Response | null> {
+  const { retryAfterSeconds } = await authEmailState(email);
+  if (!retryAfterSeconds) return null;
+  return c.json(
+    {
+      error: 'over_email_send_rate_limit',
+      error_description: `An email was sent to this address less than a minute ago. Check the inbox and the spam folder, or retry in ${retryAfterSeconds} s.`,
+    },
+    429,
+    { 'retry-after': String(retryAfterSeconds) },
   );
 }
 
@@ -114,12 +135,36 @@ async function ssoRequired(c: Context, email: string): Promise<Response | null> 
   );
 }
 
-function sessionResponse(c: Context, body: Record<string, unknown>, status: 200 | 201 = 200) {
+/** The OAuth provider of a session body (`google`, `github`, …), or `oauth`. */
+function oauthProvider(body: Record<string, unknown>): string {
+  const provider = (body.user as { app_metadata?: { provider?: unknown } } | undefined)?.app_metadata?.provider;
+  return typeof provider === 'string' && /^[a-z0-9_-]{1,32}$/.test(provider) ? provider : 'oauth';
+}
+
+/**
+ * `loginMethod`: a sign-in (password, otp, oauth) reports `user_logged_in`; a
+ * token refresh passes none and reports nothing.
+ */
+function sessionResponse(
+  c: Context,
+  body: Record<string, unknown>,
+  status: 200 | 201 = 200,
+  loginMethod?: string,
+) {
   const session = sessionFrom(body);
   if (!session) {
     return c.json({ error: 'auth_error', error_description: 'Supabase returned no session' }, 502);
   }
-  return c.json({ session, user: (body.user as GoTrueUser | undefined) ?? null }, status);
+  const user = (body.user as GoTrueUser | undefined) ?? null;
+  const userId = (user as { id?: unknown } | null)?.id;
+  if (loginMethod && typeof userId === 'string') {
+    captureProductEvent({
+      userId,
+      event: 'user_logged_in',
+      properties: { method: loginMethod, source: analyticsSource(c) },
+    });
+  }
+  return c.json({ session, user }, status);
 }
 
 // ─── GET /client-config ──────────────────────────────────────────────────────
@@ -184,7 +229,7 @@ headlessAuthRouter.openapi(
             schema: z.object({
               email: Email,
               password: z.string().min(8).max(256),
-              data: z.record(z.unknown()).optional(),
+              data: z.record(z.string(), z.unknown()).optional(),
               redirect_to: z.string().optional(),
             }),
           },
@@ -213,6 +258,8 @@ headlessAuthRouter.openapi(
       auditLoginFail({ c, reason: 'signup_closed', authType: 'supabase' });
       return c.json({ error: 'signup_closed', error_description: 'Sign-ups are closed for this email address.' }, 403);
     }
+    const coolingDown = await emailCoolingDown(c, email);
+    if (coolingDown) return coolingDown;
     const result = await gotrue<Record<string, unknown>>('/signup', {
       body: { email, password: body.password, data: body.data ?? {} },
       clientIp: requestClientIp(c),
@@ -255,7 +302,7 @@ headlessAuthRouter.openapi(
       auditLoginFail({ c, reason: `password_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
       return upstreamError(c, result);
     }
-    return sessionResponse(c, result.body);
+    return sessionResponse(c, result.body, 200, 'password');
   },
 );
 
@@ -276,7 +323,7 @@ headlessAuthRouter.openapi(
               email: Email,
               create_user: z.boolean().optional(),
               redirect_to: z.string().optional(),
-              data: z.record(z.unknown()).optional(),
+              data: z.record(z.string(), z.unknown()).optional(),
             }),
           },
         },
@@ -290,6 +337,8 @@ headlessAuthRouter.openapi(
     const body = c.req.valid('json');
     const denied = await ssoRequired(c, body.email);
     if (denied) return denied;
+    const coolingDown = await emailCoolingDown(c, body.email);
+    if (coolingDown) return coolingDown;
     const result = await gotrue('/otp', {
       body: { email: body.email.trim().toLowerCase(), create_user: body.create_user ?? true, data: body.data ?? {} },
       clientIp: requestClientIp(c),
@@ -335,7 +384,7 @@ headlessAuthRouter.openapi(
       auditLoginFail({ c, reason: `otp_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
       return upstreamError(c, result);
     }
-    return sessionResponse(c, result.body);
+    return sessionResponse(c, result.body, 200, 'otp');
   },
 );
 
@@ -414,7 +463,7 @@ headlessAuthRouter.openapi(
       auditLoginFail({ c, reason: `oauth_exchange_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
       return upstreamError(c, result);
     }
-    return sessionResponse(c, result.body);
+    return sessionResponse(c, result.body, 200, oauthProvider(result.body));
   },
 );
 
@@ -520,6 +569,11 @@ headlessAuthRouter.openapi(
     const limited = throttled(c);
     if (limited) return limited;
     const body = c.req.valid('json');
+    // One auth email per address per minute, the same guard /signup and
+    // /sign-in/magic-link already apply (CWE-770): a reset is exactly the flow
+    // a user clicks repeatedly while waiting for the mail.
+    const coolingDown = await emailCoolingDown(c, body.email);
+    if (coolingDown) return coolingDown;
     const result = await gotrue('/recover', {
       body: { email: body.email.trim().toLowerCase() },
       clientIp: requestClientIp(c),

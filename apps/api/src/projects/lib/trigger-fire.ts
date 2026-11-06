@@ -1,6 +1,6 @@
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
-import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
+import { toSessionModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
 import { privateSpaceMemberIds } from '../../shared/space-access';
@@ -21,6 +21,7 @@ import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './tr
 import { alertTriggerAutoPaused, alertTriggerThrottled, clearTriggerAlert } from './trigger-alerts';
 import { autoPauseTrigger, readTriggerAutoPause, triggerAutoPauseReason, triggerRunCapVerdict } from './trigger-run-caps';
 import { triggerChecksOverlap, triggerOverlapReason } from './trigger-overlap';
+import { captureAccountProductEvent } from '../../iam/account-analytics';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -251,7 +252,7 @@ export async function findKeyedTriggerSession(
  */
 /**
  * A trigger's `model` is a wire ref (`codex/gpt-5.6-luna`, `kortix/glm-5.2`).
- * A FRESH session bakes it into the session (`opencode_model`); a re-prompted
+ * A FRESH session bakes it into the session (`model`); a re-prompted
  * session must carry it on the prompt itself, or the prompt silently runs on
  * whatever default the session was created with — on prod that was a July
  * session pinned to a managed model the account can no longer use.
@@ -262,7 +263,7 @@ export async function findKeyedTriggerSession(
 export function triggerModelOverride(model: string | null | undefined): PromptOverridesWire | undefined {
   const trimmed = (model ?? '').trim();
   if (!trimmed) return undefined;
-  const ref = toOpencodeModelRef(trimmed);
+  const ref = toSessionModelRef(trimmed);
   const slash = ref.indexOf('/');
   if (slash <= 0 || slash === ref.length - 1) return undefined;
   return { model: { providerID: ref.slice(0, slash), modelID: ref.slice(slash + 1) } };
@@ -348,9 +349,31 @@ async function enqueueTriggerPrompt(input: {
  * Fire a git-backed trigger. Triggers are file-defined (kortix.yaml), so there
  * is no DB trigger/event row — the project_sessions row carries `trigger_slug`
  * in metadata so audits can still reconstruct the firing path.
+ *
+ * Every source (cron, webhook, manual, monitor, …) fires through here, so this
+ * is where `trigger_fired` is reported: one event per fire that started or
+ * queued a run, attributed to the account owner (a fire has no person).
  */
+export async function fireGitTrigger(
+  input: Parameters<typeof fireGitTriggerOnce>[0],
+): ReturnType<typeof fireGitTriggerOnce> {
+  const result = await fireGitTriggerOnce(input);
+  if (result.status === 'fired' || result.status === 'queued') {
+    captureAccountProductEvent({
+      accountId: input.project.accountId,
+      event: 'trigger_fired',
+      properties: {
+        project_id: input.project.projectId,
+        fire_source: input.source,
+        status: result.status,
+        deduped: Boolean(result.deduped),
+      },
+    });
+  }
+  return result;
+}
 
-export async function fireGitTrigger(input: {
+async function fireGitTriggerOnce(input: {
   spec: GitTriggerSpec;
   project: ProjectRow;
   payload: Record<string, unknown>;
@@ -723,7 +746,7 @@ async function createGitTriggerSession(
       // A trigger-level model pins this run's session to that model, taking
       // precedence over the agent/account/platform default chain. Omitted
       // (null) leaves resolution to that chain — see GitTriggerSpec.model.
-      ...(spec.model ? { opencode_model: spec.model } : {}),
+      ...(spec.model ? { model: spec.model } : {}),
       metadata: {
         trigger_source: source,
         trigger_kind: 'git',

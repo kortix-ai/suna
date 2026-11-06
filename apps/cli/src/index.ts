@@ -37,6 +37,7 @@ import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runReminders } from './commands/reminders.ts';
 import { runGoals } from './commands/goals.ts';
+import { runSpaces } from './commands/spaces.ts';
 import { runTasks } from './commands/tasks.ts';
 import { runArtifacts } from './commands/artifacts.ts';
 import { runReview } from './commands/review.ts';
@@ -255,6 +256,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   goals: (rest) => runGoals(rest),
   artifacts: (rest) => runArtifacts(rest),
   capture: (rest) => runCapture(rest),
+  spaces: (rest) => runSpaces(rest),
   loop: (rest) => runReminders(rest, true),
   remind: (rest) => runReminders(rest, true),
   connectors: (rest) => runConnectors(rest),

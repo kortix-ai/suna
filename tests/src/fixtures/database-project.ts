@@ -290,7 +290,7 @@ export async function seedDatabaseRunningTurn(
       );
       await client.query(
         `INSERT INTO kortix.session_turns
-           (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state, accepted_at)
+           (turn_token, session_id, sandbox_id, project_id, account_id, runtime_session_id, message_id, state, accepted_at)
          VALUES ($1, $2::text, $2::uuid, $3::uuid, $4::uuid, 'ses_ke2e_root', $5, 'active', now())`,
         [turnToken, input.sessionId, input.projectId, input.accountId, input.messageId],
       );

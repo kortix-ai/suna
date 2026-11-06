@@ -24,7 +24,7 @@ afterEach(() => {
   resetSessionOpenPrefetches();
 });
 
-const ROW = { session_id: 'S1', project_id: 'P1', opencode_session_id: 'ses_root' };
+const ROW = { session_id: 'S1', project_id: 'P1', runtime_session_id: 'ses_root' };
 const BUNDLE = {
   observed_at: '2026-09-23T12:00:00.000Z',
   session: ROW,

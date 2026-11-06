@@ -24,7 +24,6 @@ import { BackHandler, Pressable, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';

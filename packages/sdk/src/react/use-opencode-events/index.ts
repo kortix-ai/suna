@@ -22,7 +22,6 @@ import { openSessionStream, sessionStreamEventClient } from '../../core/session/
 const SESSION_STREAM_WATCHDOG_OFF_MS = 24 * 60 * 60_000;
 import { useKortixRouteProjectId } from '../route-project';
 import { useCurrentRuntime } from '../use-current-runtime';
-import { clearConfigOverrides } from '../use-opencode-config';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
 import { resolveClientEvictionUrl } from './helpers';
@@ -152,7 +151,6 @@ export function useRuntimeEventStream(
     if (evictUrl) dropClientForUrl(evictUrl);
 
     if (isFirstMount || isServerSwitch) {
-      clearConfigOverrides();
       clearPending();
       // NOTE: we intentionally do NOT wipe the sync store or the opencode
       // query cache here anymore. Those are now scoped per-sandbox (see
@@ -321,8 +319,3 @@ export function RuntimeEventStreamProvider() {
   return null;
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `RuntimeEventStreamProvider`. Removed in the next major. */
-export const OpenCodeEventStreamProvider = RuntimeEventStreamProvider;
-/** @deprecated Renamed to `useRuntimeEventStream`. Removed in the next major. */
-export const useOpenCodeEventStream = useRuntimeEventStream;

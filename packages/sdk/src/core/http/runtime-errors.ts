@@ -1,25 +1,4 @@
-/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
-export interface RuntimeConfigIssue {
-  path?: unknown[];
-  message?: string;
-}
 
-/**
- * OpenCode's `ConfigInvalidError`: its own config (`opencode.jsonc`, agent frontmatter) failed to load.
- * @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support.
- */
-export interface RuntimeConfigInvalidError {
-  name: 'ConfigInvalidError';
-  data?: {
-    path?: string;
-    issues?: RuntimeConfigIssue[];
-  };
-}
-
-/** @deprecated Renamed to `RuntimeConfigIssue`. Removed in the next major. */
-export type OpenCodeConfigIssue = RuntimeConfigIssue;
-/** @deprecated Renamed to `RuntimeConfigInvalidError`. Removed in the next major. */
-export type OpenCodeConfigInvalidError = RuntimeConfigInvalidError;
 
 function rawErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -57,28 +36,6 @@ export function parseRuntimeErrorPayload(error: unknown): unknown {
 
   return null;
 }
-
-/** @deprecated Renamed to `parseRuntimeErrorPayload`. Removed in the next major. */
-export const parseOpenCodeErrorPayload = parseRuntimeErrorPayload;
-
-/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
-export function getRuntimeConfigInvalidError(error: unknown): RuntimeConfigInvalidError | null {
-  const payload = parseRuntimeErrorPayload(error);
-  if (!payload || typeof payload !== 'object') return null;
-  const maybe = payload as Partial<RuntimeConfigInvalidError>;
-  return maybe.name === 'ConfigInvalidError' ? (maybe as RuntimeConfigInvalidError) : null;
-}
-
-/** @deprecated Renamed to `getRuntimeConfigInvalidError`. Removed in the next major. */
-export const getOpenCodeConfigInvalidError = getRuntimeConfigInvalidError;
-
-/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
-export function isRuntimeConfigInvalidError(error: unknown): boolean {
-  return getRuntimeConfigInvalidError(error) !== null;
-}
-
-/** @deprecated Renamed to `isRuntimeConfigInvalidError`. Removed in the next major. */
-export const isOpenCodeConfigInvalidError = isRuntimeConfigInvalidError;
 
 // Every readiness phrase the API can answer with while a sandbox (or the
 // runtime inside it) is provisioning, resuming, or parked. Each line maps to a
@@ -190,24 +147,6 @@ export function formatRuntimeError(error: unknown): {
   message: string;
   detail?: string;
 } {
-  const configError = getRuntimeConfigInvalidError(error);
-  if (configError) {
-    // `ConfigInvalidError` is OpenCode's own error about its own config files.
-    const workspacePath = configError.data?.path ?? 'OpenCode config';
-    const repoPath = workspacePath.replace(/^\/workspace\//, '');
-    const issue = configError.data?.issues?.[0]?.message;
-    const issuePath = configError.data?.issues?.[0]?.path?.join('.');
-    const permissionHint = issuePath?.startsWith('permission')
-      ? 'Remove the invalid permission frontmatter entry or replace it with valid OpenCode permission config.'
-      : 'Fix the invalid config entry, then restart this session.';
-
-    return {
-      title: 'OpenCode config is invalid',
-      message: `${repoPath} is preventing OpenCode from loading. ${permissionHint}`,
-      detail: issue ? `${issuePath ? `${issuePath}: ` : ''}${issue}` : undefined,
-    };
-  }
-
   const raw = rawErrorMessage(error);
 
   // A parked or still-provisioning box is not a crash. The proxy answers with
@@ -236,5 +175,3 @@ export function formatRuntimeError(error: unknown): {
   };
 }
 
-/** @deprecated Renamed to `formatRuntimeError`. Removed in the next major. */
-export const formatOpenCodeRuntimeError = formatRuntimeError;

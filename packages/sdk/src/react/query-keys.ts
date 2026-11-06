@@ -273,6 +273,8 @@ export const qk = {
 
     /** `listSessionsNeedingInput` — which sessions wait on a human decision or answer. */
     needsInput: (id: string) => [...qk.project.scope(id), 'needs-input'] as const,
+    /** `listSessionAsks` — every open ask (question, permission ask, connector approval) the viewer may decide. */
+    asks: (id: string) => [...qk.project.scope(id), 'asks'] as const,
 
     /** `getReviewSummary` — the needs-you counts the always-mounted badges poll. */
     reviewSummary: (id: string) => [...qk.project.scope(id), 'review-summary'] as const,
@@ -531,6 +533,8 @@ export const qk = {
     /** Immutable deployment history for one App. */
     appDeployments: (id: string, appId: string) =>
       [...qk.project.apps(id), appId, 'deployments'] as const,
+    /** The event log of one App: what it posted and what came of each event. */
+    appEvents: (id: string, appId: string) => [...qk.project.apps(id), appId, 'events'] as const,
     /** Machines of one App (capability `machines`). */
     appMachines: (id: string, appId: string) => [...qk.project.apps(id), appId, 'machines'] as const,
     /** Volumes of one App (capability `volumes`). */
@@ -625,6 +629,8 @@ export const qk = {
     spaceLinks: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'links'] as const,
     /** `listProjectSpaceMembers` — a channel's people (the header roster, the Members tab). Under `spaces`, so a spaces refresh refreshes it. */
     spaceMembers: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'members'] as const,
+    /** `getProjectSpaceProactive` — a space's watcher settings (`spaces_proactive`). Under `spaces`, so a spaces refresh refreshes it. */
+    spaceProactive: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'proactive'] as const,
     /** `getProjectSpaceGeneralNotice` — `#general`'s turned-on-again line. Under `spaces`, so a spaces refresh refreshes it. */
     spaceGeneralNotice: (id: string) => [...qk.project.spaces(id), 'general-notice'] as const,
     /** `getPrivateChannelsAvailable`. Under `spaces`, so a spaces refresh refreshes it. */

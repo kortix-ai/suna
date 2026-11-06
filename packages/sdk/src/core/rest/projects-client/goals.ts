@@ -185,7 +185,12 @@ export function goalHealth(
   // that still runs means GOAL.md alone claims the pause (any session can write it): judge it as any other.
   if (goal.paused_at && heartbeat?.state !== 'active') return { state: 'healthy', issues: [] };
   const issues: ProjectGoalIssue[] = [];
-  if (!heartbeat || heartbeat.state === 'done') issues.push('no_heartbeat');
+  // Started again: the owner's turn end arms the heartbeat, so its absence is a problem only after the missed-wake window.
+  const restartedAt = [...(goal.transitions ?? [])].reverse().find((t) => t.from === 'stopped')?.at;
+  const waking = !!restartedAt && Date.parse(restartedAt) > now - MISSED_WAKE_MS;
+  if (!heartbeat || heartbeat.state === 'done') {
+    if (!waking) issues.push('no_heartbeat');
+  }
   else if (heartbeat.state === 'paused') issues.push('heartbeat_paused');
   else if (heartbeat.last_status === 'failed') issues.push('heartbeat_failed');
   else if (heartbeat.next_fire_at && Date.parse(heartbeat.next_fire_at) < now - MISSED_WAKE_MS) issues.push('missed_wake');
@@ -465,6 +470,46 @@ export async function resumeProjectGoal(
   return next;
 }
 
+/**
+ * A person starts a stopped goal again, in place: GOAL.md moves `stopped` →
+ * `active` (→ `draft` when it has no done criteria yet, so the owner writes
+ * them first) on the version it read (a concurrent write throws `ApiError`
+ * 409), `log.md` records the move, and then the owner session wakes. Its turn
+ * end (`kortix goals check --enforce`) arms the heartbeat the stop removed.
+ * The wake id names the stop, so a retry is deduped. A retry after the wake
+ * failed (the goal is open again, but no live heartbeat wakes it) writes
+ * nothing and only wakes the owner. Throws on any other goal.
+ */
+export async function restartProjectGoal(
+  projectId: string,
+  goal: Pick<ProjectGoal, 'driveId' | 'folder' | 'heartbeat' | 'scope' | 'slug' | 'coordinatorSessionId'>,
+  reason: string,
+): Promise<ProjectGoalDocument> {
+  const { doc: current, version } = await readGoalForWrite(goal);
+  const heartbeatLive = !!goal.heartbeat?.session_id && goal.heartbeat.state !== 'done';
+  const retry = !CLOSED.has(current.status) && !current.paused_at && !heartbeatLive;
+  if (current.status !== 'stopped' && !retry) throw new Error(`The goal is ${current.status}, not stopped.`);
+  const stoppedAt = [...current.transitions].reverse().find((t) => t.to === 'stopped')?.at ?? null;
+  const to: ProjectGoalStatus = retry ? current.status : current.success_criteria.length ? 'active' : 'draft';
+  let next = current;
+  if (!retry) {
+    const at = new Date().toISOString();
+    next = { ...current, status: to, transitions: [...current.transitions, { from: 'stopped', to, at, reason, by: 'person' }] };
+    await uploadDriveFile(goal.driveId, `${goal.folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
+    await appendGoalLog(goal, `- ${at} stopped → ${to}: ${reason}`);
+  }
+  const owner = ownerSessionId(current) ?? goal.coordinatorSessionId;
+  if (owner) {
+    const first =
+      to === 'draft'
+        ? 'A person started it again: write 1 to 8 done criteria someone else can check into GOAL.md, then move it to active and continue the work.'
+        : 'A person started it again: read log.md for where it stopped and continue the work.';
+    const wakeId = stoppedAt ? `goal-restart:${owner}:${stoppedAt}` : generateSessionId();
+    await queueText(projectId, owner, `${goalWakePrompt(goalBoxFolder(goal))} ${first}`, wakeId);
+  }
+  return next;
+}
+
 /** The prompt every wake of a goal starts with; the API finds a goal's heartbeat by it. Same text as `kortix goals`. */
 function goalWakePrompt(boxFolder: string): string {
   return `Goal wake: ${boxFolder}. Load the kortix-goals skill and run one wake.`;
@@ -477,7 +522,8 @@ function goalSlug(text: string): string {
       .toLowerCase()
       .normalize('NFKD')
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
+      // One `-` at most at each end: the line above leaves no `--` (and a `-+$` would backtrack).
+      .replace(/^-|-$/g, '')
       .split('-')
       .slice(0, 5)
       .join('-') || 'goal'
@@ -494,18 +540,41 @@ const NO_FILES_SANDBOXES = new Set(['mykortix', 'meta']);
  * if it can. Omitted: the project's default agent, else the first enabled,
  * visible agent that can. Throws when none can.
  */
+type GoalAgentCandidate = Pick<ProjectConfigSummary['agents'][number], 'name' | 'mode' | 'enabled' | 'hidden' | 'platform' | 'sandbox'>;
+
+/** The project config fields that decide which agent works a goal. */
+export interface GoalAgentConfig {
+  default_agent?: string | null;
+  agents?: readonly GoalAgentCandidate[];
+}
+
+function goalAgents(config: GoalAgentConfig): GoalAgentCandidate[] {
+  return (config.agents ?? []).filter(
+    (a) => a.enabled !== false && !a.hidden && !a.platform && !NO_FILES_SANDBOXES.has(a.sandbox ?? '') && !NO_FILES_SANDBOXES.has(a.name),
+  );
+}
+
+/**
+ * The agent a new goal runs when none is named: the project's default agent
+ * if it can work a goal, else the first primary agent that can, else the
+ * first that can. Null when none can (no agent with Files). A composer that
+ * starts goals opens its agent picker on this agent.
+ */
+export function defaultGoalAgent(config: GoalAgentConfig): string | null {
+  const agents = goalAgents(config);
+  const pick = agents.find((a) => a.name === config.default_agent) ?? agents.find((a) => a.mode !== 'subagent') ?? agents[0];
+  return pick?.name ?? null;
+}
+
 async function resolveGoalAgent(projectId: string, requested: string | null | undefined): Promise<string> {
   const { config } = await getProjectDetail(projectId);
-  const canWork = (a: ProjectConfigSummary['agents'][number]) =>
-    a.enabled !== false && !a.hidden && !a.platform && !NO_FILES_SANDBOXES.has(a.sandbox ?? '') && !NO_FILES_SANDBOXES.has(a.name);
-  const agents = (config.agents ?? []).filter(canWork);
   if (requested) {
-    if (!agents.some((a) => a.name === requested)) throw new Error(`${requested} cannot work a goal: it has no Files. Pick another agent.`);
+    if (!goalAgents(config).some((a) => a.name === requested)) throw new Error(`${requested} cannot work a goal: it has no Files. Pick another agent.`);
     return requested;
   }
-  const pick = agents.find((a) => a.name === config.default_agent) ?? agents.find((a) => a.mode !== 'subagent') ?? agents[0];
+  const pick = defaultGoalAgent(config);
   if (!pick) throw new Error('This project has no agent that can work a goal. Add an agent, then try again.');
-  return pick.name;
+  return pick;
 }
 
 export interface CreateProjectGoalInput {
@@ -550,8 +619,12 @@ export interface CreatedProjectGoal {
  * exists, a folder it owns is reused, and the first wake is deduped.
  */
 export async function createProjectGoal(projectId: string, input: CreateProjectGoalInput): Promise<CreatedProjectGoal> {
-  const outcome = input.outcome.trim();
-  if (!outcome) throw new Error('Describe the outcome.');
+  const brief = input.outcome.trim();
+  if (!brief) throw new Error('Describe the outcome.');
+  // A brief (a template filled in) names the goal by its first line; the lines after it are the Context.
+  const [firstLine = '', ...rest] = brief.split('\n');
+  const outcome = firstLine.trim();
+  const context = briefContext(rest) || "The request in the person's words, constraints, and what was learned.";
   const criteria = (input.criteria ?? []).map((c) => c.trim()).filter(Boolean);
   if (criteria.length > MAX_GOAL_CRITERIA) throw new Error(`A goal has at most ${MAX_GOAL_CRITERIA} done criteria.`);
   const agent = await resolveGoalAgent(projectId, input.agent);
@@ -621,7 +694,7 @@ export async function createProjectGoal(projectId: string, input: CreateProjectG
       next_wake_at: heartbeat.next_fire_at ?? null,
       verified_by: null,
       transitions: [{ from: null, to: 'draft', at, reason: 'goal created', by: 'person' }],
-      body: `# ${outcome}\n\n## Context\n\nThe request in the person's words, constraints, and what was learned.\n`,
+      body: `# ${outcome}\n\n## Context\n\n${context}\n`,
     };
     await uploadDriveFile(drive.driveId, `${folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(doc)));
     await uploadDriveFile(drive.driveId, `${folder}/log.md`, new TextEncoder().encode(`# Log\n\n- ${at} Goal created: ${outcome}\n`));
@@ -636,6 +709,22 @@ export async function createProjectGoal(projectId: string, input: CreateProjectG
     : 'It is new: write 1 to 8 done criteria someone else can check into GOAL.md, then move it to active and start the work.';
   await queueText(projectId, sessionId, `${goalWakePrompt(boxFolder)} ${first}`, `goal-start:${sessionId}`);
   return { slug, scope: 'personal', driveId: drive.driveId, folder, sessionId };
+}
+
+/**
+ * A brief's lines after its first, as Markdown that reads as written: a plain
+ * line right after a list item gets a blank line before it, so it is not
+ * folded into that item (Markdown's lazy continuation).
+ */
+function briefContext(lines: string[]): string {
+  const out: string[] = [];
+  const item = /^\s*([-*+]|\d+[.)])\s/;
+  for (const line of lines) {
+    const previous = out.at(-1);
+    if (previous !== undefined && item.test(previous) && line.trim() && !item.test(line) && !/^\s/.test(line)) out.push('');
+    out.push(line.trimEnd());
+  }
+  return out.join('\n').trim();
 }
 
 /**

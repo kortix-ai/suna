@@ -140,6 +140,14 @@ export function parseRunCapFlags(
     }
     out[field] = value;
   }
+  // --expect-event-within (app triggers): the silence alert, a duration such
+  // as 30m; the API checks the 5m floor and the type. On `set`, none removes it.
+  const silence = tf.expectEventWithin?.trim();
+  if (silence !== undefined) {
+    if (allowClear && silence === 'none') out.expect_event_within = null;
+    else if (/^[1-9][0-9]*[smhd]$/.test(silence)) out.expect_event_within = silence;
+    else return { error: `--expect-event-within must be a duration such as 30m or 2h${allowClear ? ', or none to remove it' : ''} (got "${silence}").` };
+  }
   // --overlap (KRTX-1721): skip | allow; on `set`, default resets it.
   const overlap = tf.overlap?.trim();
   if (overlap !== undefined) {

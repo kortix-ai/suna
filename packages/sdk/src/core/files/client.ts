@@ -23,8 +23,7 @@ import type {
   WriteFileResult,
 } from './types';
 
-// Re-export the file types from the `@kortix/sdk/files` subpath too, so hosts can
-// import both the ops and the types from one place.
+// Re-export the file types too, so hosts import the ops and the types from one place.
 export type * from './types';
 
 function unwrap<T>(result: { data?: T; error?: unknown }): T {

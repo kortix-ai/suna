@@ -18,7 +18,7 @@ import { dismissOnboarding, dismissWelcomeCard } from "../helpers/ui";
 
 /**
  * A session keeps its own model in the web. The CLI, the SDK and Slack set a
- * session's model as its pin (`metadata.opencode_model`). The web composer
+ * session's model as its pin (`metadata.model`). The web composer
  * ignored the pin, showed this browser's pick or the account default, and its
  * first message ran on that model instead (audit #68). The composer must open
  * on the pinned model and send it, and must not carry it into another session.
@@ -104,7 +104,7 @@ test("55 — a session opens on its own model and its first web message keeps it
       projectId,
       accountId,
       userId: user.id,
-      metadata: { opencode_model: `kortix/${PINNED_MODEL}`, opencode_model_source: "explicit" },
+      metadata: { model: `kortix/${PINNED_MODEL}`, model_source: "explicit" },
     });
     await seedDatabaseRunningFirstPrompt(env, { projectId, sessionId: pinned, accountId, userId: user.id });
     // A session of the same agent with no pin of its own.
@@ -151,7 +151,7 @@ test("55 — a session opens on its own model and its first web message keeps it
             agent_name: AGENT,
             retriable: true,
             sandbox: null,
-            opencode_session_id: null,
+            runtime_session_id: null,
             failure: null,
           }),
         });

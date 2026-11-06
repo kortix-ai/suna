@@ -9,7 +9,7 @@
  * To re-enable billing, restore the original implementation from git history.
  */
 
-import React, { createContext, useContext, ReactNode } from 'react';
+import { createContext, useContext, ReactNode } from 'react';
 import type { SubscriptionInfo, CreditBalance, BillingStatus } from '@/lib/billing';
 
 // ============================================================================

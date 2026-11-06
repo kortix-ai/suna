@@ -73,6 +73,20 @@ export interface AccountSecretResource {
   status?: SecretValueStatus;
 }
 
+/** Storage identity is separate from the ID: older logins remain in their original store. */
+export interface SubscriptionConnection extends AccountSecretResource {
+  storage: 'account_resource' | 'project';
+}
+
+export async function listSubscriptionConnections(accountId: string, projectId: string) {
+  return unwrap(await backendApi.get<{ subscriptions: SubscriptionConnection[] }>(`/accounts/${encodeURIComponent(accountId)}/subscription-connections?project_id=${encodeURIComponent(projectId)}`));
+}
+
+export async function refreshSubscriptionConnectionUsage(accountId: string, secretId: string, projectId: string, storage: SubscriptionConnection['storage']) {
+  const path = `/accounts/${encodeURIComponent(accountId)}/subscription-connections/${encodeURIComponent(secretId)}/usage`;
+  return unwrap(await backendApi.post<{ usage: SubscriptionUsage | null; provider_account?: SubscriptionAccount | null }>(`${path}?project_id=${encodeURIComponent(projectId)}&storage=${storage}`));
+}
+
 export interface CreateAccountSecretResourceInput {
   /** The owning project. With this set, access defaults to all project members. */
   project_id?: string;
@@ -117,8 +131,9 @@ export async function retryAccountSecretResource(accountId: string, secretId: st
  * provider at most once a minute per login (no plan quota) and otherwise answers
  * the stored snapshot; `usage` is null when the provider reports none.
  */
-export async function refreshAccountSecretUsage(accountId: string, secretId: string) {
-  return unwrap(await backendApi.post<{ usage: SubscriptionUsage | null; provider_account?: SubscriptionAccount | null }>(`${secretPath(accountId, secretId)}/usage`));
+export async function refreshAccountSecretUsage(accountId: string, secretId: string, projectId?: string) {
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
+  return unwrap(await backendApi.post<{ usage: SubscriptionUsage | null; provider_account?: SubscriptionAccount | null }>(`${secretPath(accountId, secretId)}/usage${query}`));
 }
 export async function deleteAccountSecretResource(accountId: string, secretId: string) {
   return unwrap(await backendApi.delete<{ ok: boolean }>(secretPath(accountId, secretId)));

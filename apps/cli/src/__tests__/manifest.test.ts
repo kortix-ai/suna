@@ -57,6 +57,15 @@ describe('validateManifestFile', () => {
     ]);
   });
 
+  test('a legacy file (kortix_version) with a YAML syntax error is a <yaml> error at its line, with the bare-* hint', () => {
+    const file = join(dir, 'kortix.yaml');
+    writeFileSync(file, 'kortix_version: 3\nagents:\n  main:\n    tools: *\n');
+    const result = validateManifestFile(file);
+    expect(result.parsed).toBeNull();
+    expect(result.issues[0]).toMatchObject({ path: '<yaml>', severity: 'error', file, line: 4 });
+    expect(result.issues[0]!.message).toContain('Quote it: `tools: "*"`');
+  });
+
   test('a YAML syntax error has no parsed document and keeps its position', () => {
     const file = join(dir, 'kortix.yaml');
     writeFileSync(file, 'project:\n  name: [x\n');

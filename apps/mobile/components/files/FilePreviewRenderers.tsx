@@ -26,7 +26,6 @@ import type { SharedImageSource } from '@/lib/files/shared-image';
 import {
   constructHtmlPreviewUrl,
   FilePreviewBottomInsetContext,
-  PreviewStatus,
   PreviewWebView,
   usePreviewNavigationGuard,
 } from './file-preview-webview';

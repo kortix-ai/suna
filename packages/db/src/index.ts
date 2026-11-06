@@ -92,6 +92,8 @@ export {
   projectSpaces,
   projectSpaceLinks,
   projectSpaceMembers,
+  projectSpaceWatchers,
+  projectSpaceEvents,
   projectSpaceKindEnum,
   projectSpaceVisibilityEnum,
   // Memory ("Used memory" records)
@@ -210,6 +212,7 @@ export {
   appSiteBlobs,
   appDeploymentEvents,
   sessionPendingQuestions,
+  sessionPendingPermissions,
   yoloMemberTokens,
   stripeWebhookEventsProcessed,
   // Tunnel

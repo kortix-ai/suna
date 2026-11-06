@@ -48,7 +48,7 @@ agents:
     tools: none
 ```
 
-Set `tools` on every agent; `tools: all` is every tool. A name must be a
+Set `tools` on every agent; `tools: "*"` is every tool (`all` is the same). A name must be a
 runtime, Kortix or registered tool. `tools` hides a tool; `permission`
 decides calls to a visible one. A subagent gets the tools both its own list
 and the caller's list allow. Leave `agent` and `task` (its old name) out to

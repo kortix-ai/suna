@@ -393,7 +393,7 @@ export async function runPrePromptEnvSync(
   const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
   // A prompt is the one moment this sandbox is guaranteed awake, so off it we
   // (1) generate the Kortix-owned session title from this first prompt, using
-  // the model the user picked, and (2) refresh the opencode_sessions snapshot
+  // the model the user picked, and (2) refresh the runtime_sessions snapshot
   // the conversation list reads. Both are fire-and-forget and never block the
   // prompt.
   //

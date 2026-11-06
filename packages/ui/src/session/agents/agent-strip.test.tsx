@@ -80,7 +80,7 @@ const { resolveEffectiveBusy } = await import('../status/session-chat-busy');
 const { AgentsLineView, AgentsPanel, stripRuns, runSessionIds } = await import('./agent-strip');
 const { agentRowOf } = await import('./agent-model');
 const { TasksPanel, groupTasks } = await import('./tasks-panel');
-const { HeldMessageList, heldPreview } = await import('./held-messages');
+const { HeldMessageList } = await import('./held-messages');
 const { WorkflowRunControls, workflowFileName, isLargeRun } = await import('./workflow-run-controls');
 const { SessionPromptContext } = await import('./session-prompt');
 const { parseWorkflowRun } = await import('../tool/tools/workflow-run');
@@ -445,9 +445,7 @@ describe('held messages', () => {
     expect(denied).toEqual(['m3']);
   });
 
-  test('the card names the sender and previews the summary, else the first line', () => {
-    expect(heldPreview(message('m', 'held'))).toBe('The schema migration finished.');
-    expect(heldPreview(message('m', 'held', { summary: 'Migration done' }))).toBe('Migration done');
+  test('the card names the sender and asks for approval', () => {
     const approve = { mutate: noop, isPending: false } as never;
     const text = textOf(renderToStaticMarkup(wrap(<HeldMessageList messages={[message('m1', 'held')]} approve={approve} deny={approve} />)));
     expect(text).toContain('reviewer');

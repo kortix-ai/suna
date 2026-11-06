@@ -47,6 +47,9 @@ const FORBIDDEN = [
 // Scoped to the (file, id) pair on purpose: any OTHER theme id in these files
 // is still a hit, so an exemption cannot quietly widen into a blind spot.
 const EXEMPT: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  // The glyph registry lists `horizon` as a search keyword for the
+  // RoadHorizon / SunHorizon icons, not as a Shiki theme.
+  [join(PKG_ROOT, 'src/primitives/glyph-registry.tsx'), new Set(['horizon'])],
   // shiki-highlighter.test.ts quotes a real bundled id, 'github-dark', inside
   // an '@ts-expect-error' directive to prove the type lock rejects a
   // foreign-but-real theme, not just a typo — see that file's "the lock"
@@ -61,7 +64,7 @@ const EXEMPT: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // one — so it always matches its own source. That is this guard quoting
   // itself, not app code naming a second palette. Every other forbidden id is
   // still a hit here too.
-  [import.meta.path, new Set(['pierre-dark', 'pierre-light', 'github-dark', 'tokyo-night'])],
+  [import.meta.path, new Set(['pierre-dark', 'pierre-light', 'github-dark', 'tokyo-night', 'horizon'])],
   // The command palette searches terminal themes by family; 'tokyo-night' is a terminal
   // theme family (TERMINAL_THEMES), not a Shiki code theme.
   [

@@ -14,7 +14,6 @@
  * (no project session resolved) — the same guard `ProjectHeaderActions`'s
  * `···` already uses (`ProjectScreen.tsx`'s `activeProjectSession`).
  */
-import * as React from 'react';
 
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';

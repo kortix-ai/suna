@@ -61,7 +61,7 @@ import {
 } from './space-tab-list';
 
 /** The glyph of each kind, in the add menu and the empty state of a tab whose target is gone. */
-const KIND_ICON: Record<ProjectSpaceTabKind, Icon> = {
+export const KIND_ICON: Record<ProjectSpaceTabKind, Icon> = {
   file: FileIcon,
   artifact: FileTextIcon,
   app: AppWindowIcon,
@@ -88,7 +88,7 @@ export function useSpaceTabs(projectId: string, space: ProjectSpace) {
   return { tabs, canEdit, save };
 }
 
-type SpaceTabsState = ReturnType<typeof useSpaceTabs>;
+export type SpaceTabsState = ReturnType<typeof useSpaceTabs>;
 
 /**
  * One stored tab in the tab row. A right click opens its menu; the open tab
@@ -192,11 +192,14 @@ export function AddTabMenu({
   space,
   state,
   onAdded,
+  label,
 }: {
   projectId: string;
   space: ProjectSpace;
   state: SpaceTabsState;
   onAdded: (id: string) => void;
+  /** A text trigger ("Add tab", the details panel) instead of the tab row's "+". */
+  label?: string;
 }) {
   const t = useTranslations('spaces.view.tabEdit');
   const artifactsOn = useFeatureFlag(projectId, 'artifacts').enabled;
@@ -224,9 +227,16 @@ export function AddTabMenu({
       <DropdownMenu>
         <Hint label={full ? t('full', { max: SPACE_TABS_MAX }) : t('add')} side="bottom">
           <DropdownMenuTrigger asChild>
-            <Button size="icon-xs" variant="ghost" aria-label={t('add')} disabled={full} className="ml-1 shrink-0">
-              <PlusIcon />
-            </Button>
+            {label ? (
+              <Button size="sm" variant="ghost" disabled={full} className="text-muted-foreground hover:text-foreground gap-1.5 self-start">
+                <PlusIcon className="size-3.5 shrink-0" />
+                {label}
+              </Button>
+            ) : (
+              <Button size="icon-xs" variant="ghost" aria-label={t('add')} disabled={full} className="ml-1 shrink-0">
+                <PlusIcon />
+              </Button>
+            )}
           </DropdownMenuTrigger>
         </Hint>
         <DropdownMenuContent align="start" className="w-56">

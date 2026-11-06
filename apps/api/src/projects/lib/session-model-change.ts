@@ -1,7 +1,7 @@
 /**
  * Changing the model a RUNNING session uses.
  *
- * `opencode_model` was create-only: the sandbox reads `KORTIX_OPENCODE_MODEL`
+ * `model` was create-only: the sandbox reads `KORTIX_OPENCODE_MODEL`
  * when it builds opencode's config at spawn, and nothing re-pushed it, so a live
  * box kept its boot-time model forever. Worse, the stored value was reachable
  * through `PATCH /sessions/{id}` metadata WITHOUT the create-time validation, so
@@ -81,8 +81,6 @@ export function modelChangeNeedsLivePush(input: {
 /** The 200 body of `PUT /projects/:p/sessions/:s/model`. */
 export interface ModelChangeResult {
   model: string;
-  /** @deprecated The pre-W4 name of `model`. Same value. */
-  opencode_model: string;
   /** True only when a live sandbox took the new model NOW. */
   applied_live: boolean;
   /**
@@ -120,7 +118,6 @@ export function modelChangeResult(input: {
   if (!input.needsPush) {
     return {
       model: input.model,
-      opencode_model: input.model,
       applied_live: false,
       detail:
         input.current === input.model
@@ -129,11 +126,10 @@ export function modelChangeResult(input: {
     };
   }
   if (input.push?.applied) {
-    return { model: input.model, opencode_model: input.model, applied_live: true };
+    return { model: input.model, applied_live: true };
   }
   return {
     model: input.model,
-    opencode_model: input.model,
     applied_live: false,
     push_failed: true,
     detail: `stored, but not pushed: ${input.push?.reason ?? 'unknown'}`,

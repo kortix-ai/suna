@@ -16,7 +16,9 @@ import { redactSentryRequestSecrets } from './redact-url-secrets';
 
 const SENTRY_DSN = process.env.BETTERSTACK_API_SENTRY_DSN;
 const ENV = process.env.INTERNAL_KORTIX_ENV || 'dev';
-const VERSION = process.env.SANDBOX_VERSION || 'dev';
+// The release, as /health reports it. Deploys stamp KORTIX_VERSION on the task
+// definition; SANDBOX_VERSION is set nowhere, so every error read `kortix-api@dev`.
+const VERSION = process.env.KORTIX_VERSION || 'dev';
 
 // ─── Noise filter (ignoreErrors) ────────────────────────────────────────────
 //

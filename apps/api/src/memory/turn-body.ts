@@ -48,15 +48,49 @@ function jsonObject(body: ArrayBuffer | undefined): Record<string, unknown> | nu
 const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).buffer as ArrayBuffer;
 
 /**
- * The body without a `system` a client sent: only the API sets a turn's
- * system text, so a member who may prompt a thread cannot add to its agent's
- * system prompt. A body without `system` is returned as it is (byte for byte).
+ * The body without a `system` (or `thread_files`) a client sent: only the API
+ * sets a turn's system text, so a member who may prompt a thread cannot add to
+ * its agent's system prompt. A body without `system` is returned as it is (byte for byte).
  */
 export function withoutClientSystem(body: ArrayBuffer | undefined): ArrayBuffer | undefined {
   const parsed = jsonObject(body);
-  if (!parsed || !('system' in parsed)) return body;
-  const { system: _client, ...rest } = parsed;
+  if (!parsed || (!('system' in parsed) && !(THREAD_FILES_BODY_KEY in parsed) && !(SPACE_AGENTS_BODY_KEY in parsed))) return body;
+  const { system: _client, [THREAD_FILES_BODY_KEY]: _files, [SPACE_AGENTS_BODY_KEY]: _agents, ...rest } = parsed;
   return encode(rest);
+}
+
+/**
+ * The prompt body key of the thread's space agents (a router routes only to
+ * them, kortixd `harness/pi/front-space.ts`); only the API sets it.
+ */
+export const SPACE_AGENTS_BODY_KEY = 'space_agents';
+
+/** The JSON object body with `space_agents` set; any other body is returned as it is. */
+export function withSpaceAgents(body: ArrayBuffer | undefined, agents: readonly string[]): ArrayBuffer | undefined {
+  const parsed = jsonObject(body);
+  if (!parsed) return body;
+  return encode({ ...parsed, [SPACE_AGENTS_BODY_KEY]: [...agents] });
+}
+
+/** The prompt body key of a thread's sandbox file paths (`memory/thread-files.ts`); only the API sets it. kortixd's router reads it. */
+export const THREAD_FILES_BODY_KEY = 'thread_files';
+
+/** The JSON object body with `thread_files` set; any other body is returned as it is. */
+export function withThreadFiles(body: ArrayBuffer | undefined, files: { folder: string; context: string; session: string }): ArrayBuffer | undefined {
+  const parsed = jsonObject(body);
+  if (!parsed) return body;
+  return encode({ ...parsed, [THREAD_FILES_BODY_KEY]: files });
+}
+
+/**
+ * The JSON object body marked "no reply": the message joins the conversation
+ * and no turn runs. The runtime relay route (`kortix/runtime/...`) spells it
+ * `no_reply`, the session route `noReply`. Any other body is returned as it is.
+ */
+export function withNoReply(body: ArrayBuffer | undefined, path: string): ArrayBuffer | undefined {
+  const parsed = jsonObject(body);
+  if (!parsed) return body;
+  return encode({ ...parsed, [/(^|\/)kortix\/runtime\/sessions\//.test(path) ? 'no_reply' : 'noReply']: true });
 }
 
 /** The JSON object body with the memory `system` set (any `system` in it is replaced); any other body is returned as it is. */

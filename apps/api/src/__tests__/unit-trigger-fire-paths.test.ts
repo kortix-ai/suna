@@ -149,8 +149,10 @@ function resetState() {
   watcherFailure = null;
 }
 
-function sign(rawBody: string, secret: string) {
-  return `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+// KRTX-4098: signature auth requires X-Kortix-Timestamp and signs `<ts>.<body>`.
+const webhookTimestamp = () => String(Math.floor(Date.now() / 1000));
+function sign(rawBody: string, timestamp: string, secret: string) {
+  return `sha256=${createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex')}`;
 }
 
 mockIamEngineAllowAll();
@@ -1040,8 +1042,8 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(sandboxProvisionCalls).toBe(1);
     expect(sessionRows.at(-1)?.agentName).toBe('asana-refresher');
     expect(sessionRows.at(-1)?.metadata).toMatchObject({
-      opencode_model: 'kortix/glm-5.3-flash',
-      opencode_model_source: 'project',
+      model: 'kortix/glm-5.3-flash',
+      model_source: 'project',
     });
   });
 
@@ -1334,11 +1336,13 @@ describe('git-backed triggers — runtime fire paths', () => {
     secretValues.set('HOOK_SECRET', 'shhh');
     automationActor = null;
     const rawBody = JSON.stringify({ action: 'opened' });
+    const stamp = webhookTimestamp();
     const res = await createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+        'X-Kortix-Timestamp': stamp,
+        'X-Kortix-Signature': sign(rawBody, stamp, 'shhh'),
         'X-Kortix-Delivery-Id': 'failing-delivery-1',
       },
       body: rawBody,
@@ -1364,11 +1368,13 @@ describe('git-backed triggers — runtime fire paths', () => {
     seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'New {{ body.action }}' }));
     secretValues.set('HOOK_SECRET', 'shhh');
     const rawBody = JSON.stringify({ action: 'opened' });
+    const stamp = webhookTimestamp();
     const res = await createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+        'X-Kortix-Timestamp': stamp,
+        'X-Kortix-Signature': sign(rawBody, stamp, 'shhh'),
         'X-Kortix-Delivery-Id': 'model-less-1',
       },
       body: rawBody,
@@ -1405,11 +1411,13 @@ describe('git-backed triggers — runtime fire paths', () => {
     seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'New {{ body.action }}' }));
     secretValues.set('HOOK_SECRET', 'shhh');
     const rawBody = JSON.stringify({ action: 'opened' });
+    const stamp = webhookTimestamp();
     const res = await createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+        'X-Kortix-Timestamp': stamp,
+        'X-Kortix-Signature': sign(rawBody, stamp, 'shhh'),
         'X-Kortix-Delivery-Id': 'model-ok-1',
       },
       body: rawBody,
@@ -1453,6 +1461,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     secretValues.set('HOOK_SECRET', 'shhh');
     walletBalance = 0;
     const rawBody = JSON.stringify({ action: 'opened' });
+    const stamp = webhookTimestamp();
     const billingWasEnabled = config.KORTIX_BILLING_INTERNAL_ENABLED;
     config.KORTIX_BILLING_INTERNAL_ENABLED = true;
     try {
@@ -1460,7 +1469,8 @@ describe('git-backed triggers — runtime fire paths', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Kortix-Signature': sign(rawBody, 'shhh'),
+          'X-Kortix-Timestamp': stamp,
+          'X-Kortix-Signature': sign(rawBody, stamp, 'shhh'),
           'X-Kortix-Delivery-Id': 'empty-wallet-1',
         },
         body: rawBody,
@@ -1484,6 +1494,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     const app = createApp();
 
     const rawBody = JSON.stringify({ action: 'opened' });
+    const stamp = webhookTimestamp();
     const missing = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1497,7 +1508,8 @@ describe('git-backed triggers — runtime fire paths', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Kortix-Signature': sign(rawBody, 'wrong-secret'),
+        'X-Kortix-Timestamp': stamp,
+        'X-Kortix-Signature': sign(rawBody, stamp, 'wrong-secret'),
       },
       body: rawBody,
     });
@@ -1509,13 +1521,47 @@ describe('git-backed triggers — runtime fire paths', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Kortix-Signature': sign(rawBody, 'another-wrong-secret'),
+        'X-Kortix-Timestamp': stamp,
+        'X-Kortix-Signature': sign(rawBody, stamp, 'another-wrong-secret'),
       },
       body: rawBody,
     });
     expect(repeated.status).toBe(401);
     expect(mirrorInvalidationCalls).toBe(1);
     expect(manifestReadCalls).toBe(2);
+  });
+
+  // KRTX-4098 (CWE-294): the body-only HMAC verified forever, so a captured
+  // signed delivery replayed on every window. The timestamp is now required.
+  test('a signed delivery with no timestamp is refused, so a captured signature cannot replay', async () => {
+    seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'New {{ body.action }}' }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    const app = createApp();
+    const rawBody = JSON.stringify({ action: 'opened' });
+    const stamp = webhookTimestamp();
+
+    const bodyOnly = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // The pre-KRTX-4098 scheme: HMAC of the bare body.
+        'X-Kortix-Signature': `sha256=${createHmac('sha256', 'shhh').update(rawBody).digest('hex')}`,
+      },
+      body: rawBody,
+    });
+    expect(bodyOnly.status).toBe(401);
+    expect((await bodyOnly.json()).error).toBe('Invalid webhook signature');
+
+    const stale = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Kortix-Timestamp': String(Number(stamp) - 3600),
+        'X-Kortix-Signature': sign(rawBody, String(Number(stamp) - 3600), 'shhh'),
+      },
+      body: rawBody,
+    });
+    expect(stale.status).toBe(401);
   });
 
   test('webhook fires with a valid HMAC spawn a session', async () => {
@@ -1529,11 +1575,13 @@ describe('git-backed triggers — runtime fire paths', () => {
     const app = createApp();
 
     const rawBody = JSON.stringify({ action: 'opened' });
+    const stamp = webhookTimestamp();
     const res = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+        'X-Kortix-Timestamp': stamp,
+        'X-Kortix-Signature': sign(rawBody, stamp, 'shhh'),
         'X-Kortix-Delivery-Id': 'delivery-1',
       },
       body: rawBody,
@@ -1555,7 +1603,8 @@ describe('git-backed triggers — runtime fire paths', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+        'X-Kortix-Timestamp': stamp,
+        'X-Kortix-Signature': sign(rawBody, stamp, 'shhh'),
         'X-Kortix-Delivery-Id': 'delivery-1',
       },
       body: rawBody,
@@ -1579,11 +1628,13 @@ describe('git-backed triggers — runtime fire paths', () => {
     const app = createApp();
 
     const rawBody = JSON.stringify({ action: 'opened' });
+    const stamp = webhookTimestamp();
     const res = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+        'X-Kortix-Timestamp': stamp,
+        'X-Kortix-Signature': sign(rawBody, stamp, 'shhh'),
         'X-Kortix-Delivery-Id': 'queued-delivery-1',
       },
       body: rawBody,
@@ -1613,11 +1664,13 @@ describe('git-backed triggers — runtime fire paths', () => {
       seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'New {{ body.action }}' }));
       secretValues.set('HOOK_SECRET', 'shhh');
       const rawBody = JSON.stringify({ action: 'opened' });
+      const stamp = webhookTimestamp();
       return createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Kortix-Signature': sign(rawBody, 'shhh'),
+          'X-Kortix-Timestamp': stamp,
+          'X-Kortix-Signature': sign(rawBody, stamp, 'shhh'),
           'X-Kortix-Delivery-Id': deliveryId,
         },
         body: rawBody,
@@ -1647,9 +1700,16 @@ describe('git-backed triggers — runtime fire paths', () => {
         metadata: { trigger_slug: 'hook', trigger_kind: 'git' },
       });
       const rawBody = JSON.stringify({ action: 'opened' });
+      const stamp = webhookTimestamp();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Kortix-Timestamp': stamp,
+        'X-Kortix-Signature': sign(rawBody, stamp, 'shhh'),
+        'X-Kortix-Delivery-Id': 'reuse-alert-1',
+      };
       const res = await createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Kortix-Signature': sign(rawBody, 'shhh'), 'X-Kortix-Delivery-Id': 'reuse-alert-1' },
+        headers,
         body: rawBody,
       });
       expect(res.status).toBe(202);

@@ -91,3 +91,12 @@ describe('parseFilterFlags', () => {
     });
   });
 });
+
+describe('parseRunCapFlags: --expect-event-within', () => {
+  test('a duration rides with the run limits; none removes it on set only', () => {
+    expect(parseRunCapFlags({ expectEventWithin: '30m' }, false)).toEqual({ caps: { expect_event_within: '30m' } });
+    expect(parseRunCapFlags({ expectEventWithin: 'none' }, true)).toEqual({ caps: { expect_event_within: null } });
+    expect(parseRunCapFlags({ expectEventWithin: 'none' }, false)).toEqual({ error: '--expect-event-within must be a duration such as 30m or 2h (got "none").' });
+    expect(parseRunCapFlags({ expectEventWithin: '30' }, true)).toEqual({ error: '--expect-event-within must be a duration such as 30m or 2h, or none to remove it (got "30").' });
+  });
+});

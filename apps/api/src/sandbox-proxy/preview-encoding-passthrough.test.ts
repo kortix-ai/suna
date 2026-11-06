@@ -1,12 +1,12 @@
 /**
- * Compression passthrough to the daemon's `/kortix/opencode/*` namespace.
+ * Compression passthrough to the daemon's `/kortix/runtime/*` namespace.
  *
  * WS-Z1's first requirement of the API half: *"The preview proxy must forward
  * the client's `Accept-Encoding` to the daemon and return `Content-Encoding`
  * untouched, or the 0.9 KB `/state` becomes 8.7 KB again."* The proxy forces
  * `Accept-Encoding: identity` on every other path, and that default is correct
- * — it is what makes the response REWRITERS (`stripInlineAttachmentBytes` does
- * `await upstream.text()`) safe.
+ * — it is what makes a response REWRITER (one that reads `await upstream.text()`)
+ * safe.
  *
  * So this file pins two things:
  *   1. exactly which paths are exempted, and that the SSE route is not one of
@@ -26,10 +26,9 @@ const { forwardsClientEncoding } = await import('./routes/preview');
 describe('forwardsClientEncoding', () => {
   test('the daemon runtime namespace on port 8000 forwards the client negotiation', () => {
     expect(forwardsClientEncoding(8000, '/kortix/runtime/state')).toBe(true);
-    expect(forwardsClientEncoding(8000, '/kortix/runtime/messages/ses_abc')).toBe(true);
-    // The same namespace on a daemon built before W3.
-    expect(forwardsClientEncoding(8000, '/kortix/opencode/state')).toBe(true);
-    expect(forwardsClientEncoding(8000, '/kortix/opencode/messages/ses_abc')).toBe(true);
+    expect(forwardsClientEncoding(8000, '/kortix/runtime/log')).toBe(true);
+    // The pre-W3 name of the namespace is no longer matched.
+    expect(forwardsClientEncoding(8000, '/kortix/opencode/state')).toBe(false);
   });
 
   test('the SSE route is NEVER exempted, even inside the namespace', () => {
@@ -37,13 +36,9 @@ describe('forwardsClientEncoding', () => {
     // defect as buffering the proxy itself, wearing a compression hat.
     expect(forwardsClientEncoding(8000, '/kortix/runtime/events')).toBe(false);
     expect(forwardsClientEncoding(8000, '/kortix/runtime/events?since=41')).toBe(false);
-    expect(forwardsClientEncoding(8000, '/kortix/opencode/events')).toBe(false);
-    expect(forwardsClientEncoding(8000, '/kortix/opencode/events?since=41')).toBe(false);
   });
 
   test('every other daemon path keeps identity, so the body rewriters stay safe', () => {
-    // `/session/:id/message` is the one this protects: the proxy strips inline
-    // attachment bytes out of it with `await upstream.text()`.
     expect(forwardsClientEncoding(8000, '/session/ses_abc/message')).toBe(false);
     expect(forwardsClientEncoding(8000, '/kortix/health')).toBe(false);
     expect(forwardsClientEncoding(8000, '/kortix/diag')).toBe(false);
@@ -51,13 +46,13 @@ describe('forwardsClientEncoding', () => {
   });
 
   test('a user app port never gets it, whatever the path looks like', () => {
-    expect(forwardsClientEncoding(3000, '/kortix/opencode/state')).toBe(false);
-    expect(forwardsClientEncoding(4096, '/kortix/opencode/state')).toBe(false);
+    expect(forwardsClientEncoding(3000, '/kortix/runtime/state')).toBe(false);
+    expect(forwardsClientEncoding(4096, '/kortix/runtime/state')).toBe(false);
   });
 
   test('a prefix that merely starts with the namespace name does not match', () => {
-    expect(forwardsClientEncoding(8000, '/kortix/opencodex/state')).toBe(false);
-    expect(forwardsClientEncoding(8000, '/prefix/kortix/opencode/state')).toBe(false);
+    expect(forwardsClientEncoding(8000, '/kortix/runtimex/state')).toBe(false);
+    expect(forwardsClientEncoding(8000, '/prefix/kortix/runtime/state')).toBe(false);
   });
 });
 

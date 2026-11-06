@@ -1,6 +1,7 @@
 'use client';
 
-import type { PeerMessageKind, PeerMessagePromptInfo } from '@kortix/shared';
+import { peerMessagePreview } from '@kortix/sdk';
+import type { PeerMessagePromptInfo } from '@kortix/shared';
 import { peerHandleLabel } from '@kortix/shared';
 import { useTranslations } from '../../i18n';
 import { UnifiedMarkdown } from '../../markdown/unified-markdown';
@@ -20,23 +21,6 @@ import { BasicTool } from '../tool/shared/infrastructure';
  * An idle notice says only that a teammate finished: one row like an agent's
  * finish, that opens to the rest. A shutdown request and its answer say so on the right.
  */
-
-/**
- * The preview after the sender: the summary, else the first line of the text. CSS cuts it with `…`.
- * An idle notice (`firePeerIdleNotices` in the API) previews its "Its last answer:" line; its
- * first line ("reviewer finished its turn and is idle.") repeats the headline, so it shows only
- * when it says something else (an error).
- */
-export function peerMessagePreview(info: Pick<PeerMessagePromptInfo, 'summary' | 'text'> & { kind?: PeerMessageKind }): string {
-  if (info.summary?.trim()) return info.summary.trim();
-  const lines = info.text.split('\n').map((line) => line.trim()).filter(Boolean);
-  if (info.kind === 'idle_notice') {
-    const answer = lines.find((line) => line.startsWith('Its last answer:'));
-    if (answer) return answer.slice('Its last answer:'.length).trim();
-    return lines[0] && !/finished its turn and is idle\.?$/.test(lines[0]) ? lines[0] : '';
-  }
-  return lines[0] ?? '';
-}
 
 /** An idle notice's text without the line that repeats the state, and its answer without the "Its last answer:" label. */
 export function idleNoticeBody(text: string): string {

@@ -13,7 +13,7 @@
  */
 import { createHash } from 'node:crypto';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
+import { accountSecretResources, claudeSubscriptionLogins, sessionProviderSecretPools } from '@kortix/db';
 import { GatewayResolutionError, type ClaudeCodeCredentials } from '@kortix/llm-gateway';
 import { CLAUDE_AGENT_PROVIDER_ID } from '@kortix/api-contract/claude-agent';
 import { getProjectGatewayResolution } from '../repositories/project-model-access';
@@ -221,7 +221,13 @@ export async function deleteOwnClaudeAccounts(accountId: string, projectId: stri
         .where(sql`${sessionProviderSecretPools.secretIds} @> jsonb_build_array(${secretId}::text)`);
       await tx.delete(accountSecretResources).where(eq(accountSecretResources.secretId, secretId));
     }
-    return own.length;
+    // The pre-named-account login is private to this member across the account.
+    // Disconnect must remove it too, or usage discovery resurrects the login.
+    const legacy = await tx.delete(claudeSubscriptionLogins).where(and(
+      eq(claudeSubscriptionLogins.accountId, accountId),
+      eq(claudeSubscriptionLogins.userId, userId),
+    )).returning({ userId: claudeSubscriptionLogins.userId });
+    return own.length + legacy.length;
   });
 }
 

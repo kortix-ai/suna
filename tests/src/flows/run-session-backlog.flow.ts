@@ -84,7 +84,7 @@ harnessFlow(
 
     let mirrored: any = null;
     await ctx.step('the session read exposes a non-placeholder root title and tree', async () => {
-      // `metadata.opencode_sessions` follows the runtime's state document: it
+      // `metadata.runtime_sessions` follows the runtime's state document: it
       // is written when the turn end refreshes the projection and when the
       // daemon pushes one for a new session or title (R7.4). No timer, so a
       // poll needs no second prompt to re-arm a writer.
@@ -98,9 +98,9 @@ harnessFlow(
         },
         {
           until: (row) => {
-            const root = Array.isArray(row?.opencode_sessions)
-              ? row.opencode_sessions.find(
-                  (entry: any) => entry?.id === row?.opencode_session_id && !entry?.parent_id,
+            const root = Array.isArray(row?.runtime_sessions)
+              ? row.runtime_sessions.find(
+                  (entry: any) => entry?.id === row?.runtime_session_id && !entry?.parent_id,
                 )
               : null;
             const title = typeof root?.title === 'string' ? root.title.trim() : '';
@@ -128,7 +128,7 @@ harnessFlow(
       if (listed.name !== mirrored.name) {
         throw new Error(`list title ${String(listed.name)} != detail title ${String(mirrored.name)}`);
       }
-      if (JSON.stringify(listed.opencode_sessions) !== JSON.stringify(mirrored.opencode_sessions)) {
+      if (JSON.stringify(listed.runtime_sessions) !== JSON.stringify(mirrored.runtime_sessions)) {
         throw new Error('list and detail returned different session trees');
       }
     });
@@ -157,7 +157,7 @@ harnessFlow(
           params: { projectId: session.projectId, sessionId: session.sessionId },
         });
       r.status(200).body().has('$.session_id', session.sessionId);
-      const root = r.json<any>()?.opencode_session_id;
+      const root = r.json<any>()?.runtime_session_id;
       if (typeof root !== 'string' || !root) {
         throw new Error(`a ready ${harness} session names no root conversation: ${r.text()}`);
       }
@@ -218,7 +218,7 @@ harnessFlow(
       const detail = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
-      const root = detail.status(200).json<any>()?.opencode_session_id;
+      const root = detail.status(200).json<any>()?.runtime_session_id;
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get(runtimePath(session.sandboxId, `/kortix/runtime/messages/${root}?limit=200`), { headers: { 'accept-encoding': 'gzip' } });

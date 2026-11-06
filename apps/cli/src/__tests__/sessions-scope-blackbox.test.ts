@@ -33,7 +33,7 @@ function session() {
     sandbox_provider: "daytona",
     sandbox_id: SESSION_ID,
     sandbox_url: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     name: "Scope target",
     agent_name: "default",
     status: "running",

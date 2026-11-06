@@ -172,7 +172,7 @@ describe('a legacy format (kortix_version 2, kortix.toml)', () => {
       const manifest = p.read('kortix.yaml');
       expect(manifest).not.toContain('kortix_version');
       expect(manifest).toContain('prompt_file: agents/lead.md');
-      expect(manifest).toContain('tools: all');
+      expect(manifest).toContain('tools: "*"');
       expect(p.read('agents/lead.md')).toBe('You lead.\n');
       expect(p.exists('harnesses/opencode/opencode.jsonc')).toBe(false);
       expect((JSON.parse(p.run(['validate', '--json', '--no-dockerfile-lint']).stdout.toString()) as Report).issues).toEqual([]);

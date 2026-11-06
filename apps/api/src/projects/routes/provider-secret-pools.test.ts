@@ -167,9 +167,9 @@ const fakeDb = {
       return [{ sessionId }];
     } }),
   }) }),
-  update: (table: unknown) => ({ set: (values: { metadata: { opencode_model: string } }) => ({ where: async () => {
+  update: (table: unknown) => ({ set: (values: { metadata: { model: string } }) => ({ where: async () => {
     if (table !== projectSessions) throw new Error('unexpected update');
-    storedModel = values.metadata.opencode_model;
+    storedModel = values.metadata.model;
   } }) }),
   delete: () => ({ where: async (condition: SQL) => {
     writes++;
@@ -182,7 +182,7 @@ mock.module('../../shared/db', () => ({ db: fakeDb }));
 const { MAX_KEYS_PER_PROVIDER } = await import('../../secrets/provider-key-selection');
 
 const putModel = (model: string) => app.request(`/${projectId}/sessions/${sessionId}/model`, {
-  method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ opencode_model: model }),
+  method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: model }),
 });
 
 const put = (providerId: string, secretIds: string[] | null) => app.request(`${base}/${providerId}`, {
@@ -414,7 +414,7 @@ describe('PUT /sessions/:id/model to a model only pooled keys reach', () => {
     const response = await putModel(model);
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.opencode_model).toBe(storedModel!);
+    expect(body.model).toBe(storedModel!);
     expect(storedModel).toContain(model);
     expect(pools.get('anthropic')).toEqual([keyId(1), keyId(2)]);
     // Listed as the owner, a member, with nobody's grants: the caller is not the owner.
@@ -434,7 +434,7 @@ describe('PUT /sessions/:id/model to a model only pooled keys reach', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.model).toBe(storedModel!);
-    expect(body.opencode_model).toBe(storedModel!);
+    expect(body.model).toBe(storedModel!);
     expect(storedModel).toContain(model);
   });
 

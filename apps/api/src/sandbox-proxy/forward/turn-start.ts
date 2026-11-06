@@ -41,11 +41,11 @@ import {
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
 import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
-import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText, withMemoryTurn, withoutClientSystem } from '../../memory/turn-body';
+import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText, withMemoryTurn, withNoReply, withSpaceAgents, withThreadFiles, withoutClientSystem } from '../../memory/turn-body';
 import { isMyKortixAgentName } from '@kortix/shared';
 import { logger } from '../../lib/logger';
 import { isPlatinumConfigured } from '../../shared/platinum';
-import { chatThreadBoardTurn, missingClaudeSubscription, sessionModelPin, sessionWhereTurn } from '../../projects/surface';
+import { chatThreadBoardTurn, messageAddressesOnlyPeople, missingClaudeSubscription, notifyMessageMentions, sessionModelPin, sessionSpaceAgents, sessionWhereTurn } from '../../projects/surface';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -185,7 +185,7 @@ export function claimPromptDeliveryOnce(input: {
     // cannot dedupe is still the user acting on this session. Past the claim,
     // so a re-sent prompt cannot double-count, and outside the retry loop
     // below, so a wake retry cannot either. This is the sidebar's authoritative
-    // "last activity" — unlike the opencode_sessions snapshot scheduled further
+    // "last activity" — unlike the runtime_sessions snapshot scheduled further
     // down, it needs no sandbox round-trip, so a session stays correctly dated
     // even when the box is unreachable. See projects/session-activity.ts.
     void recordSessionActivity({
@@ -386,8 +386,23 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
     });
     return null;
   });
+  // Thread files (`chat`): every session of the thread told its folder and how to read the conversation (its session log).
+  const thread = await threadFilesForTurn(req);
+  if (thread?.files) state.requestBody = withThreadFiles(state.requestBody, thread.files);
+  // A space's agents are a boundary: the router of a thread routes only to them (kortixd front-space.ts).
+  if (where?.space) {
+    const spaceAgents = await sessionSpaceAgents(sessionId).catch((error: unknown) => {
+      logger.warn('[turn] turn start forwarded without its space agents', { session_id: sessionId, error: error instanceof Error ? error.message : String(error) });
+      return null;
+    });
+    if (spaceAgents) state.requestBody = withSpaceAgents(state.requestBody, spaceAgents);
+  }
+  // A person's message in a channel notifies the people it @mentions, off the turn's path.
+  if (where?.space?.kind === 'channel' && req.userId && !req.sandboxAuthored) {
+    void notifyPersonMentions(req, state.requestBody);
+  }
   const put = (parts: readonly (string | null | undefined)[]) => {
-    const system = turnSystemText(where?.system ?? null, parts);
+    const system = turnSystemText(where?.system ?? null, [thread?.system, ...parts]);
     if (system) state.requestBody = withMemoryTurn(state.requestBody, { system });
   };
   try {
@@ -427,6 +442,77 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
       session_id: sessionId,
       error: error instanceof Error ? error.message : String(error),
     });
+  }
+}
+
+/**
+ * A person's message in a channel thread that @mentions only other people
+ * (`messageAddressesOnlyPeople`) is for them: the body is marked no-reply, so
+ * the message joins the thread and no turn runs. Runs before the turn identity
+ * is read (`extractTurnIdentity`), so the ledger starts no turn for it. `chat`
+ * off, a sandbox's own request, any other route or any failure: the body as it is.
+ */
+export async function markMessageForPeople(input: {
+  record: SandboxRecord;
+  userId: string | null | undefined;
+  sandboxAuthored: boolean;
+  method: string;
+  path: string;
+  body: ArrayBuffer | undefined;
+}): Promise<ArrayBuffer | undefined> {
+  if (input.sandboxAuthored || !input.userId || !isMemoryTurnRoute(input.method, input.path)) return input.body;
+  try {
+    const { personMessageOf } = await import('../../memory/thread-files');
+    const message = personMessageOf(input.body);
+    if (!message?.text.includes('@')) return input.body;
+    if (!(await memoryChannelsOn(input.record.projectId))) return input.body;
+    const where = await sessionWhereTurn(input.record.projectId, input.record.sessionId);
+    if (where?.space?.kind !== 'channel') return input.body;
+    const forPeople = await messageAddressesOnlyPeople({ accountId: input.record.accountId, projectId: input.record.projectId, authorId: input.userId, text: message.text });
+    return forPeople ? withNoReply(input.body, input.path) : input.body;
+  } catch (error) {
+    logger.warn('[space-posts] the message was forwarded as a prompt; its mentions were not read', {
+      session_id: input.record.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return input.body;
+  }
+}
+
+/** The people a person's message @mentions get a notification (`notifyMessageMentions`); `chat` off: nothing. Never throws. */
+async function notifyPersonMentions(req: ForwardRequest, body: ArrayBuffer | undefined): Promise<void> {
+  try {
+    if (!(await memoryChannelsOn(req.record.projectId))) return;
+    const { personMessageOf } = await import('../../memory/thread-files');
+    const message = personMessageOf(body);
+    if (!message?.text.includes('@') || !req.userId) return;
+    await notifyMessageMentions({
+      projectId: req.record.projectId,
+      sessionId: req.record.sessionId,
+      authorId: req.userId,
+      text: message.text,
+      messageKey: message.id ?? `${req.record.sessionId}:${message.text.length}:${message.text.slice(0, 64)}`,
+    });
+  } catch (error) {
+    logger.warn('[space-posts] message mentions were not checked', {
+      session_id: req.record.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** The thread-files turn of a session in a space (`memory/thread-files.ts`), or null: `chat` off, no space, any failure. */
+async function threadFilesForTurn(req: ForwardRequest) {
+  try {
+    if (!(await memoryChannelsOn(req.record.projectId))) return null;
+    const { threadFilesTurn } = await import('../../memory/thread-files');
+    return await threadFilesTurn({ sessionId: req.record.sessionId });
+  } catch (error) {
+    logger.warn('[thread-files] turn start forwarded without thread files', {
+      session_id: req.record.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
   }
 }
 

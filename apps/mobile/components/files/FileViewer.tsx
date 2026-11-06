@@ -3,7 +3,7 @@
  * Full-screen file viewer with preview and actions
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Modal,

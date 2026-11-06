@@ -7,7 +7,7 @@ import { Hint } from '../../../primitives/hint';
 
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
-import { SessionStatusMark } from '../../../workspace/sidebar/session-status-mark';
+import { SessionStatusMark } from '../../list/session-status-mark';
 import { runGlyphStatus } from '../../agents/agent-state-mark';
 import { RunProgressRing, type AgentStopState } from './workflow-progress';
 import {

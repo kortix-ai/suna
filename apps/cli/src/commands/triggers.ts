@@ -211,6 +211,11 @@ Run limits (any type; add, add --apply, and set):
   --max-runs-per-day <n>   Runs it may start in a UTC day (default: no cap).
                            On \`set\`, \`none\` removes either cap.
 A manual \`fire\` is never held, but it counts.
+  --expect-event-within <dur>
+                           App triggers: no App event for this long (5m or
+                           more, e.g. 30m) tells the trigger's watchers once;
+                           the App's next event clears it. On \`set\`, \`none\`
+                           removes it.
   --overlap skip|allow     skip holds a fire while the previous run is still
                            active. In reuse, pinned and keyed mode: while its
                            previous prompt still waits in the session queue.
@@ -290,6 +295,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     tf.maxRunsPerHour = takeFlagValue(rest, ['--max-runs-per-hour']);
     tf.maxRunsPerDay = takeFlagValue(rest, ['--max-runs-per-day']);
     tf.overlap = takeFlagValue(rest, ['--overlap']);
+    tf.expectEventWithin = takeFlagValue(rest, ['--expect-event-within']);
     tf.sessionKey = takeFlagValue(rest, ['--session-key']);
     tf.sessionId = takeFlagValue(rest, ['--session-id']);
     tf.sessionAccess = takeFlagValue(rest, ['--session-access']);
@@ -802,6 +808,9 @@ async function triggersInfo(
     rows.push(['secret_env', t.secret_env ?? '—']);
     if (t.webhook_url) rows.push(['webhook_url', t.webhook_url]);
     rows.push(['signature', `${WEBHOOK_SIGNATURE_HEADER}: ${WEBHOOK_SIGNATURE_ALGORITHM}`]);
+  }
+  if (t.type === 'app') {
+    rows.push(['expect_event_within', t.expect_event_within_seconds ? formatDurationSeconds(t.expect_event_within_seconds) : '— (no silence alert)']);
   }
   rows.push(['max_runs_per_hour', String(t.max_runs_per_hour ?? '60 (default)')]);
   if (t.max_runs_per_day) rows.push(['max_runs_per_day', String(t.max_runs_per_day)]);

@@ -311,6 +311,8 @@ describe('kortix_schedules follow-through', () => {
     const missing = await run('kortix_schedules', { at: '2026-11-04T08:00:00Z', id: 'sticker-quote-check', in: '4d', action: 'follow_up' })
     expect(missing.error?.kind).toBe('invalid')
     expect(missing.error?.message).toStartWith('Missing `text`')
+    // A model whose long field was dropped in transit retried 5 times on dev: the error names the way out.
+    expect(missing.error?.message).toContain('send this call from codemode')
     // The example is a whole call the model can copy.
     const example = missing.error!.message.slice(missing.error!.message.indexOf('{'))
     expect(JSON.parse(example)).toMatchObject({ action: 'follow_up', in: '4d' })
@@ -624,6 +626,30 @@ describe('kortix_schedules automate: an App as the event source', () => {
       expect({ bad, kind: result.error?.kind }).toEqual({ bad, kind: 'invalid' })
     }
     expect(argvs()).toHaveLength(1)
+  })
+
+  test('the work on an App event takes expect_event_within: wake_on (this chat) and automate both pass it; any other source refuses it', async () => {
+    const TEXT = 'GitHub status changed: tell the person what changed; stop on 2026-12-05.'
+    const trigger = `{"id":"trigger.cccccccccccc","origin":"runtime","name":null,"prompt":"x","agent":"meta","state":"active","source":{"type":"app","app":"github-status"},"target":{"kind":"session","session_id":"ses_1","session_name":null},"next_fire_at":null,"last_fired_at":null,"last_status":null,"last_error":null}`
+    fakeKortix(`'triggers add ${TEXT} --on=app --app=github-status --expect-event-within=1h --json') echo '${trigger}' ;;
+  'triggers add status-work '*' --apply') printf 'Added status-work (live)\\n' ;;`)
+    const woken = await run('kortix_schedules', { action: 'wake_on', text: TEXT, on: 'app_event', app: 'github-status', expect_event_within: '1h' })
+    expect(woken.ok).toBe(true)
+    const work = await run('kortix_schedules', { action: 'automate', name: 'status-work', on: 'app_event', app: 'github-status', prompt: 'Status changed.', expect_event_within: '1h' })
+    expect(work.ok).toBe(true)
+    expect(argvs()).toEqual([
+      `triggers add ${TEXT} --on=app --app=github-status --expect-event-within=1h --json`,
+      'triggers add status-work --type=app --prompt=Status changed. --app=github-status --expect-event-within=1h --apply',
+    ])
+    for (const bad of [
+      { action: 'wake_on', text: TEXT, on: 'cr_merged', cr: '42', expect_event_within: '1h' },
+      { action: 'automate', name: 'x', on: 'schedule', every: '15m', target_app: 'github-status', expect_event_within: '1h' },
+      { action: 'wake_on', text: TEXT, on: 'app_event', app: 'github-status', expect_event_within: '--all' },
+    ]) {
+      const result = await run('kortix_schedules', bad)
+      expect({ bad, kind: result.error?.kind }).toEqual({ bad, kind: 'invalid' })
+    }
+    expect(argvs()).toHaveLength(2)
   })
 })
 

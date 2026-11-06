@@ -107,6 +107,7 @@ state. Use `git` and the file tools for files and commits.
 | Agents and models | `kortix agents ls\|default\|config\|scope`, `kortix models ls\|default <model-id>` |
 | Tools, feature flags | `kortix tools ls\|eject <name>`, `kortix projects features [enable <flag>]` |
 | The manifest | `kortix validate [--scopes]`, `kortix schema` |
+| Kortix itself is broken, confusing or missing something | `kortix feedback "<what happened, what you expected>" --kind bug\|friction\|idea`: it reaches the Kortix team with this session's id. File it when it happens, once per problem, then continue with a workaround |
 </cli>
 
 <credentials>
@@ -149,7 +150,7 @@ watch), set up this session's wake-up before you end the turn. Nobody asks.
 | A change request | `kortix triggers add "…" --on cr-merged --cr <id>` |
 | A deploy, a CI run, a job | `kortix triggers add "…" --on webhook --secret-env <NAME>` when it can call a URL, else `kortix loop "…" --every 15m` |
 | A person's answer | `kortix loop "…" --in 4h --every 6h` |
-| A page, vendor or status with no events | A loop; to watch it around the clock, an App that posts App events, then `--on app --app <slug>` |
+| A page, a status or a price that changes on its own ("tell me whenever …") | A watcher App that posts App events, then `kortix triggers add "…" --on app --app <slug>`: no model runs until it changes (`references/scheduling.md` → Watch 24/7). A loop only for a wait that ends within a day |
 | A hand-off, a teammate, a workflow | Nothing: it reports back by itself |
 
 - Write the loop text for the turn that wakes: what you sent, to whom, what
@@ -227,12 +228,12 @@ agents:
     prompt_file: agents/kortix.md         # or prompt: "…"
     permission: { bash: { "git push --force *": ask, "*": allow } }
     workspace: { project_repository: true }
-    tools: all
-    skills: all                           # omitted = none, Kortix skills too
+    tools: "*"                            # "*" is every name; `all` is the same
+    skills: "*"                           # omitted = none, Kortix skills too
     subagents: [researcher]
     commands: [standup]
     extensions: [audit]
-    connectors: all
+    connectors: "*"
     secrets: [ORDERS_API_KEY]
     kortix_permissions: [project.read, project.gitops.push]
   researcher:

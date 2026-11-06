@@ -146,6 +146,3 @@ export function resolveComposerAgent(input: {
   return { selected: selectable[0].name, disabled: false, reason: 'first_accessible' };
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `projectConfigAgentsToRuntimeAgents`. Removed in the next major. */
-export const projectConfigAgentsToOpenCodeAgents = projectConfigAgentsToRuntimeAgents;

@@ -10,6 +10,26 @@
  */
 import { CHANNEL_PLATFORM_IDS, channelConnectorSlug } from '@kortix/shared/channel-descriptors';
 
+/** The canonical spelling of "every name" in kortix.yaml. `all` is its accepted alias. */
+export const EVERY_GRANT = '*';
+
+/** The `agents.<name>` keys whose value may be "every name". */
+export const EVERY_GRANT_KEYS = ['tools', 'skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets', 'apps', 'kortix_permissions'] as const;
+
+/**
+ * True when a grant value means "every name": `"*"` (canonical), `all` in any
+ * case (alias), or a list that holds `"*"`. The one test for it: code that
+ * reads a grant from kortix.yaml calls this, never `=== 'all'`. `{ exclude }`
+ * is not this form (it names what is left out); `excludedNamesV3` reads it.
+ */
+export function isEveryGrant(value: unknown): boolean {
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    return v === '*' || v === 'all';
+  }
+  return Array.isArray(value) && value.some((item) => typeof item === 'string' && item.trim() === '*');
+}
+
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
 
@@ -114,6 +134,13 @@ export const EVENT_FORBIDDEN_KEYS = [
 
 /** Floor for a cron trigger's `max_lateness` (the misfire bound, KRTX-1743). */
 export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
+/**
+ * Floor for an app trigger's `expect_event_within`: the silence alert. The
+ * check runs once a minute; a shorter window would alert on ordinary jitter.
+ */
+export const TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
+/** Ceiling for `expect_event_within`: 30 days. A watcher quiet that long is not a watcher. */
+export const TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS = 30 * 86_400;
 /**
  * A trigger starts at most this many runs in any 60 minutes when its
  * `max_runs_per_hour` is unset (KRTX-1721). Twice the busiest production

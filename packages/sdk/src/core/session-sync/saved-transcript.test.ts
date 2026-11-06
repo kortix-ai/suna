@@ -149,7 +149,7 @@ describe('savedCopyEmptyRoot', () => {
       source: 'mirror',
       complete: true,
       captured_at: '2026-09-28T00:00:00Z',
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       message_count: 0,
       total: 0,
       messages: [],
@@ -168,7 +168,7 @@ describe('savedCopyEmptyRoot', () => {
     // An older API sends no total, and never an available empty window.
     expect(savedCopyEmptyRoot(window({ total: undefined }))).toBeNull();
     expect(savedCopyEmptyRoot(window({ total: 1 }))).toBeNull();
-    expect(savedCopyEmptyRoot(window({ opencode_session_id: null }))).toBeNull();
+    expect(savedCopyEmptyRoot(window({ runtime_session_id: null }))).toBeNull();
     expect(
       savedCopyEmptyRoot(
         window({ messages: [{ info: { id: 'msg_1' }, parts: [] }] as SessionTranscriptSyncEnvelope['messages'] }),

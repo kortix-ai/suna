@@ -86,7 +86,7 @@ describe('patchForFile', () => {
 });
 
 describe('isOpenThreadSession', () => {
-  const session = { session_id: 'k-1', opencode_session_id: 'oc-1' };
+  const session = { session_id: 'k-1', runtime_session_id: 'oc-1' };
   test('matches either id', () => {
     expect(isOpenThreadSession(session, 'oc-1')).toBe(true);
     expect(isOpenThreadSession(session, 'k-1')).toBe(true);
@@ -94,7 +94,7 @@ describe('isOpenThreadSession', () => {
   test('no thread or another thread', () => {
     expect(isOpenThreadSession(session, null)).toBe(false);
     expect(isOpenThreadSession(session, 'oc-2')).toBe(false);
-    expect(isOpenThreadSession({ session_id: 'k-1', opencode_session_id: null }, 'oc-1')).toBe(false);
+    expect(isOpenThreadSession({ session_id: 'k-1', runtime_session_id: null }, 'oc-1')).toBe(false);
   });
 });
 

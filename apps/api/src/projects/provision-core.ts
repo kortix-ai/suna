@@ -337,7 +337,12 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
     dedupeKey: row.projectId,
     properties: {
       project_id: row.projectId,
-      source: 'provision',
+      // The starter is normalized to a default; only a named one is a template.
+      origin: sourceItemId
+        ? 'marketplace'
+        : ((ctx.body as Record<string, unknown>).starter_template ?? (ctx.body as Record<string, unknown>).starterTemplate)
+          ? 'template'
+          : 'blank',
       provider: String(provider),
       from_marketplace: Boolean(sourceItemId),
       starter_template: starterTemplate ? String(starterTemplate) : null,

@@ -79,9 +79,6 @@ const isOpenCodeBox = (id: string | undefined): boolean => {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const host = loadHostConfig(env)
   const definition = resolveHarness(host)
-  // apps/api never set the restore key on a box OpenCode booted, and pi starts there on an empty
-  // store: ask for the session-log restore (`reconcileSessionLog`), as apps/api does on a new box.
-  if (isOpenCodeBox(host.harness)) env.KORTIX_SESSION_LOG_RESTORE = '1'
   return { ...definition.loadConfig(env), ...host, harness: definition.id }
 }
 

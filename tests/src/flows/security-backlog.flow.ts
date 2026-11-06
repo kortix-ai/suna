@@ -725,7 +725,7 @@ flow(
     });
 
     await ctx.step('an anonymous App-events body with 20,000 bad elements under a union → 400 under 20 KB, not one error per element', async () => {
-      // Zod nests a union branch's whole issue list in ONE issue (`unionErrors`); a count cap alone kept it.
+      // Zod nests a union branch's whole issue list in ONE issue (`errors`); a count cap alone kept it.
       const response = await ctx.client.post(
         '/v1/projects/:projectId/apps/:appId/events',
         { events: Array(20000).fill({}) },

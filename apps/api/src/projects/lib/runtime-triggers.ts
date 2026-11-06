@@ -152,7 +152,11 @@ export function parseRuntimeTriggerBody(body: Record<string, unknown>, now: Date
         },
       };
     case 'app':
-      return { ...common, triggerBody: { type: 'app', app: source.app } };
+      // `expect_event_within`: the watcher's silence alert, as on a kortix.yaml app trigger.
+      return {
+        ...common,
+        triggerBody: { type: 'app', app: source.app, ...(source.expect_event_within != null ? { expect_event_within: source.expect_event_within } : {}) },
+      };
     case 'change_request':
       return { ...common, triggerBody: { type: 'change_request', cr_id: normalizeString(source.cr_id) ?? null, base: normalizeString(source.base) ?? null } };
   }

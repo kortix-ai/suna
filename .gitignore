@@ -141,6 +141,10 @@ infra/terraform/**/.terraform.lock.hcl
 infra/terraform/**/*.tfplan
 infra/terraform/**/*.tfstate
 infra/terraform/**/*.tfstate.*
+infra/posthog/.terraform/
+infra/posthog/*.tfplan
+infra/posthog/*.tfstate
+infra/posthog/*.tfstate.*
 infra/terraform/**/*.tfvars
 self-host/terraform/**/.terraform/
 self-host/terraform/**/.terraform.lock.hcl

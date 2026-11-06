@@ -25,7 +25,7 @@ import * as React from 'react';
 import { Keyboard, View } from 'react-native';
 
 import { HEADER_BUTTON_SIZE, HEADER_ICON_SIZE } from '@/components/kortix/header-button';
-import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
+import { GlassButtons, LIQUID_GLASS_AVAILABLE } from '@/components/kortix/liquid-glass';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { DotsThreeIcon } from '@/lib/icons';
@@ -42,19 +42,20 @@ export function ProjectHeaderActions({ onOpenMore, children }: ProjectHeaderActi
     <View className="shrink flex-row items-center">
       {children}
       {onOpenMore ? (
-        <Button
-          variant="ghost"
-          size={HEADER_BUTTON_SIZE}
-          className={LIQUID_GLASS_AVAILABLE ? 'rounded-full' : '-mr-2.5 rounded-full bg-background'}
-          onPress={() => {
-            Keyboard.dismiss();
-            onOpenMore();
-          }}
-          accessibilityLabel="Session actions"
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          {LIQUID_GLASS_AVAILABLE ? <LiquidGlassCapsule /> : null}
-          <Icon as={DotsThreeIcon} size={HEADER_ICON_SIZE} className="text-foreground" />
-        </Button>
+        <GlassButtons>
+          <Button
+            variant="ghost"
+            size={HEADER_BUTTON_SIZE}
+            className={LIQUID_GLASS_AVAILABLE ? 'rounded-full' : '-mr-2.5 rounded-full bg-background'}
+            onPress={() => {
+              Keyboard.dismiss();
+              onOpenMore();
+            }}
+            accessibilityLabel="Session actions"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Icon as={DotsThreeIcon} size={HEADER_ICON_SIZE} className="text-foreground" />
+          </Button>
+        </GlassButtons>
       ) : null}
     </View>
   );

@@ -23,7 +23,7 @@ import { assertAgentScope } from '../../iam/agent-scope';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { canChangeSessionModel, mayChangeSessionModel, modelChangeResult, validateModelChangeShape } from '../lib/session-model-change';
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
-import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
+import { toSessionModelRef } from '../../llm-gateway/resolution/effective';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { admitSessionModelChange } from '../lib/session-model-keys';
 import { validateProviderSecretPool } from './provider-secret-pools';
@@ -44,6 +44,7 @@ import { drainSessionLifecycleQueue } from '../session-lifecycle';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { capturePersonEvent } from './product-events';
 
 export function registerSessionScopeRoutes(): void {
   projectsApp.openapi(
@@ -314,7 +315,7 @@ export function registerSessionScopeRoutes(): void {
   /**
    * Change the model a session uses, mid-flight.
    *
-   * `opencode_model` was create-only: the sandbox reads `KORTIX_OPENCODE_MODEL`
+   * `model` was create-only: the sandbox reads `KORTIX_OPENCODE_MODEL`
    * when opencode builds its config at spawn, and nothing re-pushed it — so a live
    * box kept its boot model for the rest of the session. The only way to "change"
    * it was to plant a value through PATCH metadata, which skipped the account
@@ -338,12 +339,10 @@ export function registerSessionScopeRoutes(): void {
         body: {
           content: {
             'application/json': {
-              // `model` wins; `opencode_model` is its pre-W4 name.
               schema: z.object({
                 model: z.string().min(1).max(128).optional(),
                 prompt: z.string().min(1).max(32000).optional(),
                 idempotency_key: z.string().min(1).max(128).optional(),
-                opencode_model: z.string().min(1).max(128).optional(),
               }),
             },
           },
@@ -353,8 +352,6 @@ export function registerSessionScopeRoutes(): void {
         200: json(
           z.object({
             model: z.string(),
-            /** @deprecated The pre-W4 name of `model`. Same value. */
-            opencode_model: z.string(),
             /** True when a live sandbox took it; false when it applies at next boot. */
             applied_live: z.boolean(),
             /**
@@ -401,7 +398,7 @@ export function registerSessionScopeRoutes(): void {
       const body = await readJsonObject(c);
       const switchInput = parseModelSwitchInput(body);
       if (switchInput.kind === 'invalid') return c.json({ error: switchInput.error }, 400);
-      const named = body.model ?? body.opencode_model;
+      const named = body.model;
       const requested = typeof named === 'string' ? named : '';
       const shapeError = validateModelChangeShape(requested);
       if (shapeError) {
@@ -455,12 +452,12 @@ export function registerSessionScopeRoutes(): void {
           400,
         );
       }
-      nextModel = toOpencodeModelRef(trimmed);
+      nextModel = toSessionModelRef(trimmed);
       // The session model lives in metadata, not a column (sessions.ts:1102) —
       // which is precisely why the PATCH metadata back door was dangerous.
       const currentMetadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
       const currentModel =
-        typeof currentMetadata.opencode_model === 'string' ? currentMetadata.opencode_model : null;
+        typeof currentMetadata.model === 'string' ? currentMetadata.model : null;
       if (switchInput.kind === 'switch') {
         assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
         await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_START);
@@ -471,7 +468,14 @@ export function registerSessionScopeRoutes(): void {
           if (missing) return c.json(claudeSubscriptionRequiredBody(missing), 409);
         }
         const billing = await checkBillingAdmission(loaded.row.accountId);
-        if (!billing.ok) return c.json({ error: billing.message, code: billing.reason }, 402);
+        if (!billing.ok) {
+          capturePersonEvent(c, loaded, projectId, 'billing_gate_hit', {
+            reason: billing.reason,
+            where: 'model_switch',
+            session_id: sessionId,
+          });
+          return c.json({ error: billing.message, code: billing.reason }, 402);
+        }
       }
       const stored = await storeSessionModelSwitch({
         projectId, accountId: loaded.row.accountId, sessionId, actorUserId: loaded.userId,
@@ -485,6 +489,14 @@ export function registerSessionScopeRoutes(): void {
       if (stored.kind === 'limited') return c.json({ error: 'At most three self model switches per hour' }, 409);
       if (switchInput.kind === 'switch') {
         void drainSessionLifecycleQueue({ idempotencyKey: `model-switch:${sessionId}:${switchInput.key}` }).catch(() => undefined);
+      }
+      if (!stored.deduped && stored.model !== currentModel) {
+        capturePersonEvent(c, loaded, projectId, 'model_changed', {
+          session_id: sessionId,
+          from: currentModel,
+          to: stored.model,
+          live_push: Boolean(stored.push?.applied),
+        });
       }
       return c.json({ ...modelChangeResult({ model: stored.model, needsPush: stored.needsPush,
         push: stored.deduped ? undefined : stored.push, current: stored.deduped ? stored.model : currentModel }),

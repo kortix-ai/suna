@@ -142,9 +142,7 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
     // trigger — three separate trees with no shared state.
     const classes = classesOf(render({ label: 'Demo', emoji: '🌿' }));
 
-    expect(classes).toContain('bg-emoji-fill-green');
-    expect(classes).toContain('inset-ring-emoji-ring-green');
-    expect(classes).toContain('inset-ring-1');
+    expect(classes).toContain('bg-emoji-ring-green/15');
   });
 
   test('a different-hued emoji gets a different tile', () => {
@@ -153,9 +151,9 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
     const leafy = classesOf(render({ label: 'Demo', emoji: '🌿' }));
     const fiery = classesOf(render({ label: 'Demo', emoji: '🔥' }));
 
-    expect(leafy).toContain('bg-emoji-fill-green');
-    expect(fiery).toContain('bg-emoji-fill-amber');
-    expect(fiery).not.toContain('bg-emoji-fill-green');
+    expect(leafy).toContain('bg-emoji-ring-green/15');
+    expect(fiery).toContain('bg-emoji-ring-amber/15');
+    expect(fiery).not.toContain('bg-emoji-ring-green/15');
   });
 
   test('the tint replaces the neutral fill and the hairline lift', () => {
@@ -190,7 +188,7 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
     for (const plain of [render({ label: 'Demo' }), render({ label: 'Demo', icon: RocketIcon })]) {
       const classes = classesOf(plain);
 
-      expect(classes.some((c) => c.startsWith('bg-emoji-fill-'))).toBe(false);
+      expect(classes.some((c) => c.startsWith('bg-emoji-ring-'))).toBe(false);
       expect(classes.some((c) => c.startsWith('inset-ring-'))).toBe(false);
       expect(classes).not.toContain('border-0');
     }
@@ -203,12 +201,11 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
     // label, the size, a render counter — breaks here.
     const tintOf = (html: string) =>
       classesOf(html)
-        .filter((c) => c.includes('emoji-fill-') || c.includes('emoji-ring-'))
+        .filter((c) => c.includes('emoji-ring-'))
         .sort();
 
     const sizes = SIZES.map((size) => tintOf(render({ label: 'Demo', emoji: '🌿', size })));
 
-    expect(sizes[0]).toEqual(['bg-emoji-fill-green', 'inset-ring-emoji-ring-green']);
     for (const classes of sizes) expect(classes).toEqual(sizes[0] ?? []);
 
     // …and the label must not reach the hue, or two projects that picked the
@@ -227,7 +224,7 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
     const classes = classesOf(render({ label: 'Demo', emoji: '🌿', className: 'bg-background' }));
 
     expect(classes).toContain('bg-background');
-    expect(classes).not.toContain('bg-emoji-fill-green');
+    expect(classes).not.toContain('bg-emoji-ring-green/15');
   });
 
   test('the emoji tile is still an entity-avatar slot', () => {
@@ -252,7 +249,7 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
    * surviving fragment of the chalk object puts it back.
    */
   const EMOJI_TILE =
-    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center font-semibold size-8 rounded-md border-0 bg-emoji-fill-red inset-ring-1 inset-ring-emoji-ring-red text-base"><span aria-hidden="true" class="leading-none">🚀</span></span>';
+    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center font-semibold size-8 rounded-md border-0 bg-emoji-ring-red/15 dark:bg-emoji-ring-red/30 text-base"><span aria-hidden="true" class="leading-none">🚀</span></span>';
 
   /**
    * The same, for the exact call shape the project card uses — which no longer
@@ -261,7 +258,7 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
    * beat `bg-emoji-fill-*` and left the card's tile ringed but grey.
    */
   const EMOJI_CARD_TILE =
-    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center font-semibold size-10 rounded-md border-0 bg-emoji-fill-red inset-ring-1 inset-ring-emoji-ring-red text-xl"><span aria-hidden="true" class="leading-none">🚀</span></span>';
+    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center font-semibold size-10 rounded-md border-0 bg-emoji-ring-red/15 dark:bg-emoji-ring-red/30 text-xl"><span aria-hidden="true" class="leading-none">🚀</span></span>';
 
   test('the emoji tile drops the WHOLE chalk object, not just its background', () => {
     // 🚀 is not in the anchor table, so `red` here is the HASH's answer — which
@@ -289,7 +286,7 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
     expect(code).toMatch(/emojiTint\(emoji\)/);
 
     // …and it must not spell the classes out itself, which is the fork.
-    expect(code).not.toMatch(/'[^']*bg-emoji-fill-/);
+    expect(code).not.toMatch(/'[^']*bg-emoji-ring-/);
   });
 });
 
@@ -421,8 +418,8 @@ describe('EntityAvatar — the glyph tile', () => {
       <EntityAvatar label="Demo" glyph={{ name: 'Rocket', color: 'magenta' }} size="lg" />,
     );
     expect(html).toContain('<svg');
-    expect(html).toContain('bg-glyph-fill-magenta');
-    expect(html).toContain('text-glyph-ring-magenta');
+    expect(html).toContain('[--glyph:var(--glyph-solid-magenta)]');
+    expect(html).toContain('text-[color:var(--glyph)]');
   });
 
   test('a glyph beats an emoji, an icon, and the initial', () => {
@@ -437,7 +434,7 @@ describe('EntityAvatar — the glyph tile', () => {
     // The server rejects these, but a client rendering stale cached data must
     // not paint an empty tile.
     const html = renderToStaticMarkup(
-      <EntityAvatar label="Demo" glyph={{ name: 'Skull', color: 'blue' }} size="lg" />,
+      <EntityAvatar label="Demo" glyph={{ name: 'NoSuchGlyph', color: 'blue' }} size="lg" />,
     );
     expect(html).toContain('D');
   });

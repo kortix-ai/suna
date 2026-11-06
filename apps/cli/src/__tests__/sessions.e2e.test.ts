@@ -154,7 +154,7 @@ describe('sessions new CLI flow', () => {
             sandbox_provider: 'daytona',
             sandbox_id: `sandbox-${sessionId}`,
             sandbox_url: null,
-            opencode_session_id: null,
+            runtime_session_id: null,
             name: null,
             agent_name: 'default',
             status: 'provisioning',
@@ -436,12 +436,12 @@ describe('sessions new CLI flow', () => {
         sandbox_provider: 'daytona',
         sandbox_id: runningId,
         sandbox_url: `http://127.0.0.1/v1/p/external-${runningId}/8000`,
-        opencode_session_id: 'ses_test',
+        runtime_session_id: 'ses_test',
         name: 'Digest target',
         agent_name: 'harness-reflector',
         status: 'running',
         error: null,
-        metadata: { opencode_sessions: [{ title: 'Digest target' }] },
+        runtime_sessions: [{ title: 'Digest target' }],
         created_at: '2026-06-20T00:00:00.000Z',
         updated_at: '2026-06-20T00:05:00.000Z',
       },
@@ -454,7 +454,7 @@ describe('sessions new CLI flow', () => {
         sandbox_provider: 'daytona',
         sandbox_id: stoppedId,
         sandbox_url: null,
-        opencode_session_id: null,
+        runtime_session_id: null,
         name: 'Stopped target',
         agent_name: 'default',
         status: 'stopped',
@@ -489,13 +489,9 @@ describe('sessions new CLI flow', () => {
       }>;
     };
     expect(parsed.sessions).toHaveLength(2);
-    // The API here predates W4 (only opencode_* names); the digest still
-    // serves the neutral keys, with the pre-W4 ones beside them.
     expect((parsed.sessions[0] as unknown as { session: unknown }).session).toMatchObject({
       runtime_session_id: 'ses_test',
       runtime_titles: ['Digest target'],
-      opencode_session_id: 'ses_test',
-      opencode_titles: ['Digest target'],
     });
     for (const session of parsed.sessions) {
       expect(session.transcript).toMatchObject({ available: true, source: 'log', complete: true });

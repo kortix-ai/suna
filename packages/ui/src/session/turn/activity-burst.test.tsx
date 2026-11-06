@@ -615,7 +615,8 @@ describe('ActivityBurst', () => {
     ]);
     // Bare in every other respect: no summary line over one call.
     expect(markup).not.toContain('Completed 1 step');
-    expect(markup).toContain('Agent · general');
+    // Since #11581 an agent row is titled by the agent's name, not "Agent · <type>".
+    expect(markup).toContain('>General<');
     expect(markup).not.toContain('&gt;span:first-child]:hidden');
   });
 

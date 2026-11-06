@@ -28,6 +28,9 @@ export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert'
 // Chat (`chat`): a thread's board of the chat's other threads (consumed by the turn-start path).
 export { chatThreadBoardTurn } from './lib/chat-threads';
 export { sessionWhereTurn } from './lib/session-where';
+export { messageAddressesOnlyPeople, notifyMessageMentions } from './lib/space-posts';
+export { runSpaceWatcherTick } from './lib/space-watch/wake';
+export { sessionSpaceAgents } from './lib/front-thread';
 
 // A person's pins and archive (consumed by account erasure and offboarding).
 export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';
@@ -86,9 +89,19 @@ export { approvalCallerOf } from './lib/http-approval-caller';
 export { approvalTargetSession, expireDueApprovals } from './lib/connector-approval-decision';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
-export { listProjectSecretNamesForConsumer, listResolvedProjectSecrets } from './secrets';
+export { listProjectSecretNamesForConsumer, listResolvedProjectSecrets, resolveProjectSecretForConsumer } from './secrets';
 // App events (`type: app` triggers): apps/event-routes.ts appends through these.
-export { ingestAppEvents, parseAppEventsBody, type AppEventInput } from './lib/app-events';
+export {
+  APP_EVENT_LOG_STATUSES,
+  asTestEvents,
+  decodeAppEventCursor,
+  ingestAppEvents,
+  listAppEventLog,
+  parseAppEventsBody,
+  type AppEventInput,
+  type AppEventLogEntry,
+  type AppEventLogStatus,
+} from './lib/app-events';
 // One-off App runs (runAfter / runAt) on the trigger engine.
 export { cancelAppRun, insertAppRun } from './lib/app-runs';
 export { currentInstanceId } from './instance-scope';
@@ -139,6 +152,7 @@ export { flushDriveSyncBeforeStop } from './reaping/stop-box';
 
 // Close the stored copy of a question a client answered (consumed by ../sandbox-proxy).
 export { clearOpenQuestions } from './lib/pending-questions';
+export { closeRepliedPermission } from './lib/pending-permissions';
 
 // A chat button answers a stored question, in the turn it blocks or as a
 // follow-up (consumed by channels/telegram).

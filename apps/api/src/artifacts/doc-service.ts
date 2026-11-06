@@ -19,6 +19,7 @@ import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, sql } from 'drizzle-or
 import { artifactDocClients, artifactDocRoots, artifactDocState, artifactDocUpdates, artifacts } from '@kortix/db';
 import { logger } from '../lib/logger';
 import { recordAuditEvent } from '../shared/audit';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { db } from '../shared/db';
 import {
   DOC_COMPACTION_BACKOFF_MS,
@@ -402,10 +403,11 @@ export async function appendArtifactDocUpdate(
         rootRows: sql`${artifactDocState.rootRows} + ${index.roots}`,
         clientRows: sql`${artifactDocState.clientRows} + ${index.clients}`,
         // Who wrote, with this push's seq (the old next_seq): named once, by the flush that covers it (`settleWriters`).
-        pendingWriters: sql`case when (${artifactDocState.pendingWriters} -> ${input.userId}::text) is not null
-            or (select count(*) from jsonb_object_keys(${artifactDocState.pendingWriters})) < ${DOC_MAX_CONTRIBUTORS}
-          then ${artifactDocState.pendingWriters} || jsonb_build_object(${input.userId}::text, ${artifactDocState.nextSeq})
-          else ${artifactDocState.pendingWriters} end`,
+        // The count subquery reads the row being updated: qualified, so it can never bind elsewhere (INC-2026-09-15).
+        pendingWriters: sql`case when (${qualifiedColumn(artifactDocState.pendingWriters)} -> ${input.userId}::text) is not null
+            or (select count(*) from jsonb_object_keys(${qualifiedColumn(artifactDocState.pendingWriters)})) < ${DOC_MAX_CONTRIBUTORS}
+          then ${qualifiedColumn(artifactDocState.pendingWriters)} || jsonb_build_object(${input.userId}::text, ${qualifiedColumn(artifactDocState.nextSeq)})
+          else ${qualifiedColumn(artifactDocState.pendingWriters)} end`,
         updatedAt: sql`now()`,
       })
       .where(eq(artifactDocState.artifactId, artifactId))

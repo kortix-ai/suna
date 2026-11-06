@@ -118,12 +118,10 @@ beforeAll(async () => {
 });
 
 const MAX_BYTES = config.SESSION_LOG_RESTORE_MAX_BYTES;
-const RESTORE_DEFAULT = config.SESSION_LOG_RESTORE_DEFAULT_ENABLED;
 
 afterAll(async () => {
   config.SESSION_LOG_RESTORE_ENABLED = true;
   config.SESSION_LOG_RESTORE_MAX_BYTES = MAX_BYTES;
-  config.SESSION_LOG_RESTORE_DEFAULT_ENABLED = RESTORE_DEFAULT;
   await db.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, project.account_id));
   await db.execute(sql`delete from kortix.account_tokens where account_id = ${project.account_id}`);
   await removeSeeded([project]);
@@ -414,7 +412,6 @@ describe('POST .../log/restore', () => {
       return (await res.json()) as { restores: boolean; losses: Array<{ feature: string; used: number; status: string }> };
     };
     try {
-      config.SESSION_LOG_RESTORE_DEFAULT_ENABLED = true;
       // 2/5 of 400,000 = 160,000.
       config.SESSION_LOG_RESTORE_MAX_BYTES = records + 160_000;
       expect((await restore(session)).status).toBe(200);
@@ -442,7 +439,6 @@ describe('POST .../log/restore', () => {
       expect(lost.losses[0]!.used).toBeGreaterThan(0);
     } finally {
       config.SESSION_LOG_RESTORE_MAX_BYTES = MAX_BYTES;
-      config.SESSION_LOG_RESTORE_DEFAULT_ENABLED = RESTORE_DEFAULT;
     }
   });
 });

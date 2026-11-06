@@ -179,6 +179,79 @@ describe('relayStream', () => {
     });
   });
 
+  test('a client that closes right after [DONE] got the whole answer: it settles as served, not as a client stop', async () => {
+    // The OpenAI SDK (pi's model client) closes the response as soon as it reads [DONE],
+    // often before the upstream's own end of body reaches the gateway.
+    const settlements: Array<{ usage: unknown; error: unknown; observed: unknown }> = [];
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Paris"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":1}}\n\ndata: [DONE]\n\n'));
+      },
+    });
+    const reader = relayStream({
+      upstreamBody: upstream,
+      requestId: 'req_done_then_close',
+      logger: console,
+      settle: async (usage, error, observed) => {
+        settlements.push({ usage, error, observed });
+      },
+    }).getReader();
+    const decoder = new TextDecoder();
+    let seen = '';
+    while (!seen.includes('[DONE]')) seen += decoder.decode((await reader.read()).value);
+    await reader.cancel();
+    expect(settlements).toHaveLength(1);
+    // Not an error, and still a client close: settlement estimates usage the upstream did not report.
+    expect(settlements[0]).toMatchObject({
+      usage: { promptTokens: 5, completionTokens: 1 },
+      error: null,
+      observed: { clientStopped: true },
+    });
+  });
+
+  test('an empty answer without a usage frame, closed after [DONE], still settles as a client close so its prompt is estimated', async () => {
+    const settlements: Array<{ usage: unknown; error: unknown; observed: unknown }> = [];
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));
+      },
+    });
+    const reader = relayStream({
+      upstreamBody: upstream,
+      requestId: 'req_empty_done_close',
+      logger: console,
+      settle: async (usage, error, observed) => {
+        settlements.push({ usage, error, observed });
+      },
+    }).getReader();
+    const decoder = new TextDecoder();
+    let seen = '';
+    while (!seen.includes('[DONE]')) seen += decoder.decode((await reader.read()).value);
+    await reader.cancel();
+    expect(settlements).toEqual([{ usage: null, error: null, observed: { outputChars: 0, clientStopped: true } }]);
+  });
+
+  test('a client that closes after finish_reason but before [DONE] is still a client stop', async () => {
+    const settlements: Array<{ error: unknown; observed: unknown }> = [];
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Paris"},"finish_reason":"stop"}]}\n\n'));
+      },
+    });
+    const reader = relayStream({
+      upstreamBody: upstream,
+      requestId: 'req_finish_then_close',
+      logger: console,
+      settle: async (_usage, error, observed) => {
+        settlements.push({ error, observed });
+      },
+    }).getReader();
+    await reader.read();
+    await reader.cancel();
+    expect(settlements).toHaveLength(1);
+    expect(settlements[0]).toMatchObject({ error: { code: 'client_aborted' }, observed: { clientStopped: true } });
+  });
+
   function upstreamOf(bytes: Uint8Array | null): ReadableStream<Uint8Array> {
     return new ReadableStream({
       start(controller) {

@@ -32,7 +32,7 @@ const providers = {
 // The account default the web resolves through `useModelDefaults`.
 const resolveServerDefault = () => kortix('model-a');
 const pinned = (pin: string, source: string) => ({
-  metadata: { opencode_model: pin, opencode_model_source: source },
+  metadata: { model: pin, model_source: source },
 });
 
 let root: ReactTestRenderer | undefined;

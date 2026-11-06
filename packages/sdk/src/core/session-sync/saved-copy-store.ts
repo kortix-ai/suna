@@ -80,8 +80,8 @@ export function isPaintableSavedCopy(
     envelope.source === 'mirror' &&
     Array.isArray(envelope.messages) &&
     envelope.messages.length > 0 &&
-    // A copy saved by an SDK before W4 names the root only `opencode_session_id`.
-    !!(envelope.runtime_session_id ?? envelope.opencode_session_id)
+    // A copy saved by an SDK before W4 names the root only `runtime_session_id`.
+    !!envelope.runtime_session_id
   );
 }
 

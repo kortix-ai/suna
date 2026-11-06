@@ -70,25 +70,4 @@ describe('runtime actions', () => {
     expect(calls).toContainEqual(['file.read', { path: 'src/index.ts' }]);
   });
 
-  test('owns provider authentication and refresh operations', async () => {
-    expect(await actions.getRuntimeProviderAuthMethods()).toHaveProperty('openai');
-    await actions.authorizeRuntimeProvider('openai', 1);
-    await actions.completeRuntimeProviderOAuth('openai', 1, 'CODE');
-    await actions.setRuntimeProviderApiKey('openai', 'secret');
-    await actions.refreshRuntimeConfiguration();
-
-    expect(calls).toContainEqual([
-      'provider.oauth.authorize',
-      { providerID: 'openai', method: 1 },
-    ]);
-    expect(calls).toContainEqual([
-      'provider.oauth.callback',
-      { providerID: 'openai', method: 1, code: 'CODE' },
-    ]);
-    expect(calls).toContainEqual([
-      'auth.set',
-      { providerID: 'openai', auth: { type: 'api', key: 'secret' } },
-    ]);
-    expect(calls).toContainEqual(['global.dispose']);
-  });
 });

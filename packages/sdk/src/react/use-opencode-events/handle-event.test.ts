@@ -833,7 +833,7 @@ describe('session stream notifications carry the project of the stream', () => {
 // ============================================================================
 // Kortix session-title mirroring — a runtime title change lands in the cached
 // Kortix session reads immediately, without waiting for the server-side
-// opencode_sessions snapshot (~20s) to make the next refetch carry it.
+// runtime_sessions snapshot (~20s) to make the next refetch carry it.
 // ============================================================================
 
 describe('kortix session title mirroring', () => {
@@ -843,7 +843,7 @@ describe('kortix session title mirroring', () => {
   function kortixRow(overrides: Record<string, unknown> = {}) {
     return {
       session_id: PROJECT_SESSION_ID,
-      opencode_session_id: 'ses_a',
+      runtime_session_id: 'ses_a',
       name: 'Generated Title',
       custom_name: null,
       ...overrides,
@@ -888,7 +888,7 @@ describe('kortix session title mirroring', () => {
     const renamed = kortixRow({ custom_name: 'Mine', name: 'Mine' });
     const other = kortixRow({
       session_id: '99999999-8888-4777-8666-555555555555',
-      opencode_session_id: 'ses_other',
+      runtime_session_id: 'ses_other',
       name: 'Other Session',
     });
     queryClient.setQueryData(qk.project.sessions(PROJECT_ID), [renamed, other]);
@@ -1000,6 +1000,28 @@ describe('session-log control frames', () => {
     expect(addPermission.calls.map(([req]) => req.id)).toEqual(['perm_new']);
     expect(removePermission.calls).toEqual([['perm_old']]);
     useRuntimePendingStore.setState({ permissions: {}, questions: {} });
+  });
+});
+
+describe('a parked ask', () => {
+  const PROJECT_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+  test('question.parked and permission.parked drop the live card and refetch the stored asks', () => {
+    const { handleEvent, queryClient, removeQuestion, removePermission } = buildHandler({ projectId: PROJECT_ID, sessionId: 'kortix-1' });
+    const invalidated: string[] = [];
+    const real = queryClient.invalidateQueries.bind(queryClient);
+    queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
+      invalidated.push(JSON.stringify(opts.queryKey));
+      return real(opts);
+    }) as typeof queryClient.invalidateQueries;
+
+    handleEvent({ id: 'evt_1', type: 'question.parked', properties: { sessionID: 'ses_1', requestID: 'que_1' } } as never);
+    handleEvent({ id: 'evt_2', type: 'permission.parked', properties: { sessionID: 'ses_1', requestID: 'perm_1' } } as never);
+
+    expect(removeQuestion.calls).toEqual([['que_1']]);
+    expect(removePermission.calls).toEqual([['perm_1']]);
+    expect(invalidated.filter((key) => key === JSON.stringify(qk.project.asks(PROJECT_ID)))).toHaveLength(2);
+    expect(invalidated).toContain(JSON.stringify(qk.project.needsInput(PROJECT_ID)));
   });
 });
 

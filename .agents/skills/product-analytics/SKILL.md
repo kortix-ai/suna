@@ -14,19 +14,24 @@ person.
 | Part | File |
 |---|---|
 | Hosts that report, consent, URL scrubbing | `apps/web/src/lib/analytics/posthog-config.ts` (+ `.test.ts`) |
-| The browser client (init, consent switch, replay rules) | `apps/web/src/lib/analytics/posthog-client.ts` |
+| The browser client (init, consent switch, masking) | `apps/web/src/lib/analytics/posthog-client.ts` |
 | Start, identify, per-page rules | `apps/web/src/components/analytics/posthog-host.tsx` |
 | Browser events (closed list) | `apps/web/src/lib/track.ts` |
 | Server events (closed list) | `apps/api/src/shared/product-analytics.ts` |
-| Billing events as the account owner | `apps/api/src/billing/services/billing-analytics.ts` |
+| Events that know only the account (billing, trigger fires) | `apps/api/src/iam/account-analytics.ts` |
+| Route events for the person behind a request | `apps/api/src/projects/routes/product-events.ts` |
+| The request surface (`source`) | `apps/api/src/middleware/analytics-source.ts` |
+| Dashboards as code | `infra/posthog/` |
 | Same-origin proxy `/ingest` | `apps/web/next.config.ts` rewrites |
 
 ## Rules
 
 1. **No customer data in an event.** Properties are kinds, counts, USD amounts,
-   our own route names and our own ids. Never a name, an email (except the one
-   `identify` call), a prompt, a message, a file name, a title, a URL query or
-   anything a customer typed. The CLAUDE.md PII rule applies to PostHog too.
+   our own route names and our own ids. Never a name, an email, a prompt, a
+   message, a file name, a title, a URL query, a trigger or connector slug, a
+   secret name, or anything a customer typed. `identify` sends the user id
+   only (decision 2026-11-04: data minimization). The CLAUDE.md PII rule
+   applies to PostHog too.
 2. **Every event name is in a closed list.** Web: `PANEL_EVENTS` or
    `JOURNEY_EVENTS` in `track.ts`. API: the `ProductEvent` union. Never call
    `posthog.capture` directly.
@@ -44,10 +49,14 @@ person.
    those pages.
 6. **Consent decides storage.** Until the CookieYes banner grants analytics,
    the anonymous id lives in memory only (no cookie, no local storage). A grant
-   switches to `localStorage+cookie`. Replays record only with that grant, only
-   on public pages, never in the desktop app, with every input masked.
-7. **Session replay is the expensive part.** It caused the December 2025 bill.
-   Keep it limited to public pages and keep the billing cap in PostHog.
+   switches to `localStorage+cookie`. A signed-in user without consent starts
+   with their own user id (`bootstrap`), so no anonymous id is merged per page.
+7. **No session replay** (decision 2026-11-04). The recorder is not bundled,
+   and the project setting is off. Turning it on is a privacy-policy change.
+8. **A person's events only.** Route events go through `capturePersonEvent`
+   (`projects/routes/product-events.ts`): an agent's session token, an API
+   key, a service account or an OAuth app sends nothing. Server-side session
+   and turn events count only sessions with `initiator_type = member`.
 
 ## Events
 
@@ -57,25 +66,43 @@ person.
 | `cta_signup_clicked` | web | a sign-up button on a marketing page | `location` |
 | `auth_completed` | web | the browser lands after sign-up or sign-in | `kind` (`signup`/`login`), `method` |
 | panel events (`panel_opened`, …) | web (`@kortix/ui`) | session panel and conversation UI | `source`, `kind`, `count` |
-| `account_created` | API | a new user's personal account is created | — |
-| `project_created` | API | a project is provisioned or linked | `project_id`, `source`, `provider`, `from_marketplace`, `starter_template` |
-| `session_created` | API | a person starts a session (not triggers, channels, agents) | `project_id`, `session_id`, `source`, `with_prompt` |
-| `message_sent` | API | a person sends a prompt | `project_id`, `session_id` |
-| `checkout_started` | API | a Stripe checkout is created | `kind` (`subscription`/`credits`), `amount_usd` |
-| `subscription_started` | API | a paid plan becomes active (Stripe or app store) | `store`, `plan`, `amount_usd`, `billing_period` |
-| `subscription_canceled` | API | a paid plan ends | `store`, `previous_tier`, `amount_usd` |
-| `credits_purchased` | API | a one-off credit purchase is paid | `store`, `amount_usd` |
+| `user_signed_up` | API | a new user's personal account is created | `method` (email, google, github, apple) |
+| `user_logged_in` | API | a CLI device login or a headless sign-in (not a token refresh) | `method` |
+| `project_created` | API | a project is provisioned or linked | `origin` (blank, template, marketplace, github_import), `provider` |
+| `session_created` | API | a person creates a session (not triggers, channels, agents) | `session_id`, `source`, `with_prompt` |
+| `session_started` | API | the session's runtime answers for the first time this boot | `provider`, `boot_ms` |
+| `session_restarted` | API | a person restarts a session | `provider` |
+| `session_stopped` | API | a person's session's sandbox stops | `reason`, `active_ms` |
+| `prompt_sent` | API | a person sends a prompt | `model` (`default` = the project default), `attachment_count` |
+| `turn_completed` | API | an agent turn of a person's session ends | `status` (ok, error, aborted), `end_reason`, `duration_ms` |
+| `secret_created` | API | a new project secret (never its name or value) | `name_kind` (provider, other), `strategy` |
+| `provider_configured` | API | an LLM provider is connected | `provider`, `method` (api_key, oauth, subscription) |
+| `provider_verified` | API | a provider credential check | `provider`, `state` |
+| `model_changed` | API | a person switches a session's model | `from`, `to`, `live_push` |
+| `connector_added` | API | a connector is added (never its slug) | `provider`, `app` |
+| `connector_connected` | API | a connector finishes connecting | `method`, `provider` |
+| `trigger_created` | API | a trigger is created (never its slug) | `type` |
+| `trigger_fired` | API | a trigger started or queued a run (account owner) | `fire_source`, `status`, `deduped` |
+| `app_deployed` | API | an app deployment is queued | `app_kind`, `hosting_provider`, `actor_type` |
+| `feature_flag_toggled` | API | a project feature flag is set or cleared | `key`, `enabled` |
+| `billing_gate_hit` | API | a person is refused for billing | `reason`, `where` (session_create, session_start, prompt, model_switch) |
+| `checkout_started` | API | a Stripe checkout is created | `kind`, `tier`, `amount_usd` |
+| `subscription_activated` | API | a paid plan becomes active (Stripe or app store) | `tier`, `amount_usd`, `store`, `via` |
+| `subscription_cancelled` | API | a paid plan ends | `store`, `previous_tier`, `amount_usd` |
+| `credits_topped_up` | API | a one-off credit purchase is paid | `amount_usd`, `store` |
 | `member_joined` | API | a user joins an account by invite | `via`, `role` |
 
-API events that two code paths can report carry a fixed uuid (`dedupeKey`),
-so PostHog stores one event.
+Request-driven events carry `source` (web, cli, mobile, desktop). API events
+that two code paths can report carry a fixed uuid (`dedupeKey`), and the
+Stripe activation and credit grant report only when their keyed wallet grant
+was not a replay.
 
 ## Campaign attribution
 
 PostHog stores the first campaign a person arrived with as person properties
 (`$initial_utm_source`, `$initial_utm_campaign`, `$initial_gclid`,
 `$initial_fbclid`, `$initial_referring_domain`, …). Every later event, including
-`subscription_started` from the API, can be broken down by them. Ad platforms
+`subscription_activated` from the API, can be broken down by them. Ad platforms
 that add a click id (`gclid`, `fbclid`, `msclkid`, `li_fat_id`, `ttclid`) need
 no tagging beyond their own auto-tagging.
 
@@ -104,23 +131,29 @@ shown once, 15 s after an app page (`/projects…`) loads, to people whose
 
 ## Where to look
 
-| Question | Place |
+The dashboards are code: `infra/posthog/` (Terraform, state in S3; see its
+README). They follow the design of the closed PR #7144.
+
+| Question | Dashboard |
 |---|---|
-| Which campaign brings accounts and revenue | dashboard "Acquisition: campaign to revenue" (`/project/334925/dashboard/1085118`) |
-| Do new accounts start sessions and come back | dashboard "Activation and usage" (`/project/334925/dashboard/1085119`) |
-| Visitors, sources, UTM tables | PostHog → Web analytics |
+| Do new users reach a completed turn, and how fast? | Kortix · Activation |
+| DAU/WAU/MAU, retention, stickiness, surface mix | Kortix · Engagement |
+| Providers, key checks, prompts by model | Kortix · Providers & models |
+| Boot time, active time, turn outcomes | Kortix · Sessions |
+| Connectors, secrets, triggers, apps, flags, billing gates | Kortix · Setup & adoption |
+| Visitors, referrers, UTM, landing pages, first-touch signups, survey answers | Kortix · Acquisition |
+| Goals, visitor → paid, signup → paid, time to paid | Kortix · Conversion |
 | One person's journey | PostHog → People → the person → Events |
 
-Every dashboard insight uses the project's test-account filter, on by
-default: `environment = production`, no `@kortix.ai` / `@kortix.com` email,
-not the internal cohort. Local, dev and staging events never reach the charts.
+Every insight sets `filterTestAccounts`: `environment = production`, no
+`@kortix.ai` / `@kortix.com` person, not the internal cohort. Local, dev and
+staging events never reach the charts.
 
 ## PostHog project settings (set 2026-11-04)
 
-- Session replay on, only from `https://kortix.com` (`recording_domains`),
-  minimum 2 s, console logs off, network timings off, a URL blocklist for
-  every private path (a second guard behind the client rule). Free plan:
-  5,000 web recordings a month.
+- Session replay off. The recording domain (`https://kortix.com`), the 2 s
+  minimum, console and network capture off and the private-path blocklist
+  stay set, so turning it on later starts from safe settings.
 - Surveys on. Authorized URL `https://kortix.com` (toolbar, heatmaps).
 - IP anonymization on; GeoIP country and city still resolve.
 - Free plan hard limits: 1 M events a month. Past it PostHog drops events until

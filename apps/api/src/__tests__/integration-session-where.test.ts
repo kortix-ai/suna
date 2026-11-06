@@ -65,7 +65,7 @@ describe('sessionWhereTurn', () => {
   test('a DM thread names the DM and its agent', async () => {
     const where = await sessionWhereTurn(PROJECT, DM_THREAD);
     expect(where!.space).toEqual({ kind: 'dm', dmAgent: 'mykortix' });
-    expect(where!.system).toContain(`- Space: the direct message with mykortix, space ${DM}`);
+    expect(where!.system).toContain(`- Space: the person's personal space (private: only they and you), space ${DM}`);
   });
 
   test('a session in no space, started by a cron trigger; a session of another project is null', async () => {

@@ -58,18 +58,18 @@ const patch = (body: unknown) =>
 const stored = async () =>
   (await db.select({ model: chatChannelBindings.model }).from(chatChannelBindings).where(eq(chatChannelBindings.bindingId, binding)))[0]?.model;
 
-describe('PATCH /v1/projects/:projectId/channels/bindings/:bindingId opencodeModel', () => {
+describe('PATCH /v1/projects/:projectId/channels/bindings/:bindingId model', () => {
   test('a servable model is the model stored and returned', async () => {
-    const response = await patch({ opencodeModel: MODEL });
+    const response = await patch({ model: MODEL });
     expect(response.status).toBe(200);
-    expect(((await response.json()) as { opencodeModel: string | null }).opencodeModel).toBe(toWireModel(MODEL));
+    expect(((await response.json()) as { model: string | null }).model).toBe(toWireModel(MODEL));
     expect(await stored()).toBe(toWireModel(MODEL));
   });
 
   test('null clears the pin', async () => {
-    const response = await patch({ opencodeModel: null });
+    const response = await patch({ model: null });
     expect(response.status).toBe(200);
-    expect(((await response.json()) as { opencodeModel: string | null }).opencodeModel).toBeNull();
+    expect(((await response.json()) as { model: string | null }).model).toBeNull();
     expect(await stored()).toBeNull();
   });
 });

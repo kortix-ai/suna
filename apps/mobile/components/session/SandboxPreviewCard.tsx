@@ -12,7 +12,7 @@
  */
 
 import * as Haptics from 'expo-haptics';
-import React, { useCallback } from 'react';
+import { useCallback } from 'react';
 
 import { ResultRow } from '@/components/session/tool/shared/result-row';
 import { useToolNavigation } from '@/components/session/tool/shared/navigation';

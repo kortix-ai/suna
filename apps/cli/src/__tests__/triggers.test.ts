@@ -534,10 +534,12 @@ describe('kortix triggers info — webhook signing', () => {
     const parsed = JSON.parse(result.stdout);
     expect(parsed.webhook_signing).toEqual({
       header: 'X-Kortix-Signature',
-      algorithm: 'HMAC-SHA256 over the exact raw request body',
+      algorithm: 'HMAC-SHA256 over `<X-Kortix-Timestamp>.<exact raw request body>`',
       sample_request: expect.stringContaining(`curl -X POST ${WEBHOOK_TRIGGER.webhook_url}`),
     });
     expect(parsed.webhook_signing.sample_request).toContain('X-Kortix-Signature: sha256=');
+    // KRTX-4098: the sample sends the timestamp it signed.
+    expect(parsed.webhook_signing.sample_request).toContain('X-Kortix-Timestamp: $TS');
   });
 
   test('a cron trigger carries no signing metadata', async () => {

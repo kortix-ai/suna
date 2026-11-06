@@ -85,7 +85,7 @@ function excludeOf(grant: unknown): string[] | null {
 }
 
 /**
- * Is `id` on under `grant`? `all` and `*` grant every id, `{ exclude }` every
+ * Is `id` on under `grant`? `all` and `"*"` (any case, or a list holding `"*"`) grant every id, `{ exclude }` every
  * id but those, a list its ids, `none` nothing. An omitted grant reads as
  * `omitted`: `all` for `tools`, `none` for v3 `skills` and `extensions`.
  */
@@ -97,9 +97,15 @@ export function capabilityGranted(
   const value = grant ?? omitted;
   const excluded = excludeOf(value);
   if (excluded) return !excluded.includes(id);
-  if (value === 'all') return true;
-  if (Array.isArray(value)) return value.includes(id) || value.includes('*');
+  if (grantsEvery(value)) return true;
+  if (Array.isArray(value)) return value.includes(id);
   return false;
+}
+
+/** Every id: `all` (the wire), `"*"` (kortix.yaml), any case, or a list holding `"*"`. */
+function grantsEvery(value: unknown): boolean {
+  if (typeof value === 'string') return ['*', 'all'].includes(value.trim().toLowerCase());
+  return Array.isArray(value) && value.some((item) => typeof item === 'string' && item.trim() === '*');
 }
 
 /**
@@ -117,7 +123,7 @@ export function setCapabilityGranted(
   const ids = Array.isArray(id) ? id : [id];
   const value = grant ?? omitted;
   if (ids.every((name) => capabilityGranted(value, name, omitted) === on)) return value;
-  const excluded = excludeOf(value) ?? (value === 'all' || (Array.isArray(value) && value.includes('*')) ? [] : null);
+  const excluded = excludeOf(value) ?? (grantsEvery(value) ? [] : null);
   if (excluded) {
     const next = on ? excluded.filter((name) => !ids.includes(name)) : [...excluded, ...ids.filter((name) => !excluded.includes(name))];
     return next.length === 0 ? 'all' : { exclude: next };

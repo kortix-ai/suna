@@ -147,4 +147,8 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'theme light mode pure white': 'texte6ebf219f591',
   'Pure Dark Theme': 'textc433363f9a4e',
   'theme dark mode pure black': 'textbc9543239440',
+  'ChatGPT subscription usage': 'textba98740fde39',
+  'Claude subscription usage': 'text856bf8853b69',
+  Goals: 'text116cd3982a9b',
+  'goals goal objectives outcomes': 'textb0571ad96905',
 };
