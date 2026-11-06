@@ -27,6 +27,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   accountMemberships,
+  accountModelPreferences,
   accountSecretResources,
   accountSecretGrants,
   accountTokens,
@@ -51,6 +52,7 @@ import { db } from '../../shared/db';
 import { archiveProjectAndRevokeTokens } from './project-deletion';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
 import { authorize } from '../../iam/authorize';
+import { getAccountModelDefaults } from '../../repositories/model-preferences';
 import { decryptProjectSecret, encryptProjectSecret } from '../secrets/envelope';
 import {
   PROJECT_TRANSFER_LEAVE_TABLES,
@@ -704,6 +706,32 @@ withDb('project transfer', () => {
       { projectId: PROJECT_ID, accountId: TARGET_ACCOUNT, splitPending: false },
       { projectId: SECOND, accountId: SOURCE_ACCOUNT, splitPending: false },
     ]);
+  });
+
+  test('the project default model follows the project; a stale target row for it is replaced; the target account default stays', async () => {
+    await db.insert(accountModelPreferences).values([
+      { accountId: SOURCE_ACCOUNT, scope: 'project', scopeKey: PROJECT_ID, model: 'synthetic-project-model' },
+      { accountId: SOURCE_ACCOUNT, scope: 'account', scopeKey: 'default', model: 'synthetic-source-default' },
+      // An earlier transfer and reverse left this row in the target.
+      { accountId: TARGET_ACCOUNT, scope: 'project', scopeKey: PROJECT_ID, model: 'synthetic-stale-model' },
+      { accountId: TARGET_ACCOUNT, scope: 'account', scopeKey: 'default', model: 'synthetic-target-default' },
+    ]);
+    await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
+    expect(await getAccountModelDefaults(TARGET_ACCOUNT, PROJECT_ID)).toMatchObject({
+      account: 'synthetic-target-default', projects: { [PROJECT_ID]: 'synthetic-project-model' },
+    });
+    const source = await getAccountModelDefaults(SOURCE_ACCOUNT);
+    expect(source.account).toBe('synthetic-source-default');
+    expect(PROJECT_ID in source.projects).toBe(false);
+  });
+
+  test('a target workspace that already has its project is refused with workspace_has_project, and nothing moves', async () => {
+    await db.insert(projects).values({
+      projectId: '00000000-0000-4000-a000-00000000a122', accountId: TARGET_ACCOUNT, name: 'Occupied', repoUrl: 'https://example.invalid/occupied.git',
+    });
+    await expect(transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT }))
+      .rejects.toMatchObject({ name: 'ProjectTransferError', code: 'workspace_has_project' });
+    expect(await accountOf('session', SESSION_ID)).toBe(SOURCE_ACCOUNT);
   });
 
   test('every schema table carrying both account_id and project_id is classified', async () => {

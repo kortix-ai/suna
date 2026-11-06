@@ -3,20 +3,25 @@
  * check returns how many rows break it and up to 10 internal ids as a sample.
  * Run after every split batch: `apps/api/scripts/workspace-invariants.ts`.
  *
- *   I1  no account holds 2+ active projects that are not split-pending
- *   I2  on every moved table, a split project's rows carry its account
+ *   I1  no account holds 2+ active projects that are not split-pending, and
+ *       no account holds exactly 1 active project that is still split-pending
+ *   I2  on every moved table, a split project's rows carry its account; the
+ *       project default model (keyed by scope_key) too
  *   I3  every secret of a split-off account decrypts with that account's key
  *   I4  every user holding a grant is a member of the grant's account
- *   I5  money stayed: each split-off account had no billing at the move, the
- *       source kept its Stripe customers, and the split-off wallet is Free
- *       with no free grant (credit_accounts.free_credits_eligible = false);
- *       no open compute row of the moved boxes still bills the source
+ *   I5  money stayed: each split-off account had no billing of its own at
+ *       the move, the source kept its Stripe customers, the split-off holds
+ *       one wallet with at most one split-off grant (C6), its billing applied
+ *       within 10 minutes of the move (plan.billing), and no open compute row
+ *       of the moved boxes still bills the source
  *   I6  a 1:1 workspace's account name equals its project name
  *   I7  each principal reaches the moved workspace through as many grants as
  *       before the move
- *   I8  every member the split added to a split-off account holds a grant on
- *       it (its own, through a group, or on a project secret) or is an owner
- *       (design.md §2: memberships for grant holders, owners and admins)
+ *   I8  every member the split added to a split-off account reaches the
+ *       moved workspace by the split's own rule (reachingUsersSql: a grant on
+ *       it, an owner/admin or custom account role, a reaching group, a
+ *       project secret grant, super admin); an account member grant alone
+ *       does not count (design.md §3.1 row 6)
  *   I9  the kortix.workspaces table equals kortix.workspaces_expected for every
  *       account (the reconcile triggers missed no write)
  *   I10 every expand-table row carries workspace_id = the account's live id,
@@ -34,7 +39,7 @@ import { sql } from 'drizzle-orm';
 import { getTableName } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { probeAccountSecret } from '../../secrets/account-resource';
-import { PROJECT_TRANSFER_TABLES, projectGrantCounts, type SplitCopiedIds } from '../../projects/surface';
+import { PROJECT_TRANSFER_TABLES, projectGrantCounts, reachingUsersSql, type SplitCopiedIds } from '../../projects/surface';
 
 export type InvariantId = 'I1' | 'I2' | 'I3' | 'I4' | 'I5' | 'I6' | 'I7' | 'I8' | 'I9' | 'I10' | 'I11' | 'I12';
 
@@ -67,10 +72,14 @@ async function doneRuns(runIds?: string[]): Promise<DoneRun[]> {
 }
 
 async function i1(): Promise<InvariantResult> {
-  const rows = await db.execute<{ account_id: string }>(sql`
-    SELECT account_id::text FROM kortix.projects WHERE status = 'active' AND NOT split_pending
-     GROUP BY account_id HAVING count(*) > 1`);
-  return result(rows.map((row) => row.account_id));
+  const rows = await db.execute<{ id: string }>(sql`
+    SELECT account_id::text AS id FROM kortix.projects WHERE status = 'active' AND NOT split_pending
+     GROUP BY account_id HAVING count(*) > 1
+    UNION ALL
+    -- The reverse: a flag left on an account's only active project (finding 27).
+    SELECT 'stale_flag:' || account_id::text FROM kortix.projects WHERE status = 'active'
+     GROUP BY account_id HAVING count(*) = 1 AND bool_or(split_pending)`);
+  return result(rows.map((row) => row.id));
 }
 
 async function i2(runs: DoneRun[]): Promise<InvariantResult> {
@@ -93,6 +102,11 @@ async function i2(runs: DoneRun[]): Promise<InvariantResult> {
        WHERE a.project_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(projectIds)}::jsonb)) AND v.account_id <> a.account_id`],
     ['role_assignments', sql`SELECT count(*)::int AS n FROM kortix.role_assignments ra JOIN kortix.projects p ON p.project_id = ra.scope_id
        WHERE ra.scope_type = 'project' AND ra.scope_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(projectIds)}::jsonb)) AND ra.account_id <> p.account_id`],
+    // The project default model is keyed by scope_key (its project_id is NULL).
+    ['account_model_preferences.scope_key', sql`SELECT count(*)::int AS n FROM kortix.account_model_preferences mp
+       JOIN kortix.projects p ON p.project_id::text = mp.scope_key
+       WHERE mp.scope = 'project' AND mp.project_id IS NULL
+         AND mp.scope_key IN (SELECT jsonb_array_elements_text(${JSON.stringify(projectIds)}::jsonb)) AND mp.account_id <> p.account_id`],
   ] as const) {
     const [row] = await db.execute<{ n: number }>(query);
     if (row && row.n > 0) violations.push(`${name}:${row.n}`);
@@ -131,17 +145,21 @@ async function i4(): Promise<InvariantResult> {
   return result(rows.map((row) => row.id));
 }
 
+/** How long a done run may wait for its billing (applySplitOffBilling after commit, retried by the tick). */
+const BILLING_GRACE = '10 minutes';
+
 async function i5(runs: DoneRun[]): Promise<InvariantResult> {
   const violations: string[] = [];
   for (const run of runs) {
-    const [money] = await db.execute<{ target_billing: number; source_customers: number; target_wallet: number; target_free_grants: number; source_open_compute: number }>(sql`
+    const [money] = await db.execute<{ target_billing: number; source_customers: number; target_wallet: number; split_grants: number; billing_late: boolean; source_open_compute: number }>(sql`
       SELECT
         (SELECT count(*)::int FROM kortix.billing_customers WHERE account_id = ${run.to_account_id})
         + (SELECT count(*)::int FROM kortix.credit_purchases WHERE account_id = ${run.to_account_id} AND created_at <= ${run.completed_at}::timestamptz)
         + (SELECT count(*)::int FROM kortix.enterprise_contracts WHERE account_id = ${run.to_account_id} AND created_at <= ${run.completed_at}::timestamptz) AS target_billing,
         (SELECT count(*)::int FROM kortix.billing_customers WHERE account_id = ${run.from_account_id}) AS source_customers,
-        (SELECT count(*)::int FROM kortix.credit_accounts WHERE account_id = ${run.to_account_id} AND NOT free_credits_eligible) AS target_wallet,
-        (SELECT count(*)::int FROM kortix.credit_ledger WHERE account_id = ${run.to_account_id} AND type = 'free_tier_grant') AS target_free_grants,
+        (SELECT count(*)::int FROM kortix.credit_accounts WHERE account_id = ${run.to_account_id}) AS target_wallet,
+        (SELECT count(*)::int FROM kortix.credit_ledger WHERE account_id = ${run.to_account_id} AND stripe_event_id LIKE 'split\_off\_%') AS split_grants,
+        (NOT (${JSON.stringify(run.plan)}::jsonb ? 'billing') AND ${run.completed_at}::timestamptz < now() - ${BILLING_GRACE}::interval) AS billing_late,
         (SELECT count(*)::int FROM kortix.sandbox_compute_sessions c
           WHERE c.ended_at IS NULL AND c.account_id = ${run.from_account_id} AND c.sandbox_id IN (
             SELECT sandbox_id FROM kortix.session_sandboxes WHERE project_id = ${run.project_id} AND sandbox_id IS NOT NULL
@@ -153,9 +171,10 @@ async function i5(runs: DoneRun[]): Promise<InvariantResult> {
     if (!money) continue;
     if (money.target_billing > 0) violations.push(`target_billing:${run.run_id}`);
     if (money.source_customers < planned) violations.push(`source_lost_customer:${run.run_id}`);
-    // One free grant per person: the split-off wallet exists, is not eligible, and was never granted.
     if (money.target_wallet !== 1) violations.push(`target_wallet:${run.run_id}`);
-    if (money.target_free_grants > 0) violations.push(`target_free_grant:${run.run_id}`);
+    // One split-off grant per move (C6: split_off_grant / split_off_comp, keyed by run).
+    if (money.split_grants > 1) violations.push(`split_grants:${run.run_id}`);
+    if (money.billing_late) violations.push(`billing_pending:${run.run_id}`);
     // The moved boxes' running meters bill the workspace that holds them now.
     if (money.source_open_compute > 0) violations.push(`source_open_compute:${run.run_id}`);
   }
@@ -189,21 +208,13 @@ async function i8(runs: DoneRun[]): Promise<InvariantResult> {
   const violations: string[] = [];
   for (const run of runs) {
     const added = JSON.stringify(run.copied_ids.memberships ?? []);
+    // Only while the project still lives in its split-off account.
     const rows = await db.execute<{ user_id: string }>(sql`
       SELECT m.user_id::text FROM kortix.account_memberships m
-       WHERE m.account_id = ${run.to_account_id} AND NOT m.is_super_admin
+       WHERE m.account_id = ${run.to_account_id}
          AND m.user_id::text IN (SELECT jsonb_array_elements_text(${added}::jsonb))
-         AND NOT EXISTS (SELECT 1 FROM kortix.role_assignments ra
-               WHERE ra.account_id = m.account_id AND ra.principal_type = 'user' AND ra.principal_id = m.user_id
-                 AND (ra.expires_at IS NULL OR ra.expires_at > now()))
-         AND NOT EXISTS (SELECT 1 FROM kortix.group_members gm
-               JOIN kortix.account_groups g ON g.group_id = gm.group_id AND g.account_id = m.account_id
-               JOIN kortix.role_assignments ra ON ra.account_id = m.account_id AND ra.principal_type = 'group' AND ra.principal_id = g.group_id
-                 AND (ra.expires_at IS NULL OR ra.expires_at > now())
-               WHERE gm.user_id = m.user_id)
-         AND NOT EXISTS (SELECT 1 FROM kortix.account_secret_grants sg
-               JOIN kortix.account_secret_resources r ON r.secret_id = sg.secret_id
-               WHERE r.account_id = m.account_id AND r.project_id = ${run.project_id} AND sg.user_id = m.user_id)
+         AND EXISTS (SELECT 1 FROM kortix.projects p WHERE p.project_id = ${run.project_id} AND p.account_id = ${run.to_account_id})
+         AND m.user_id NOT IN (${reachingUsersSql(run.to_account_id, run.project_id)})
        ORDER BY 1`);
     violations.push(...rows.map((row) => `${run.to_account_id}:${row.user_id}`));
   }
@@ -275,6 +286,11 @@ async function i12(accountIds?: string[]): Promise<InvariantResult> {
                             WHERE p.account_id = a.id AND p.status = 'active' AND p.split_pending))
      ORDER BY 1`);
   return result(rows.map((row) => row.account_id));
+}
+
+/** I2 alone for the given done runs: the split runner's repair pass checks its run with it. */
+export async function checkSplitRunsMoved(runIds: string[]): Promise<InvariantResult> {
+  return i2(await doneRuns(runIds));
 }
 
 /** Every invariant, read-only. `runIds` narrows I2, I3, I5, I7 and I8; `accountIds` narrows I9, I10 and I12. */

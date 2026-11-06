@@ -27,6 +27,7 @@ import { workspaceIdParam } from '../../shared/route-params';
 import { isUuid } from '../../shared/validate';
 import type { AppEnv } from '../../types';
 import { readWorkspaceSettings, type WorkspaceSettings } from '../../workspaces/settings';
+import { workspaceSplitNotice, type WorkspaceSplitNotice } from '../../workspaces/split/notice';
 import {
   accountIsPaying,
   getWorkspace,
@@ -168,6 +169,7 @@ function workspaceBody(
   settings: WorkspaceSettings | null,
   ws: CanonicalWorkspace | undefined,
   role: WorkspaceRole,
+  splitNotice: WorkspaceSplitNotice | null,
 ) {
   return {
     ...record.project,
@@ -176,6 +178,7 @@ function workspaceBody(
     split_pending: record.loaded.row.splitPending,
     deletion_scheduled_for: ws?.deletionScheduledFor?.toISOString() ?? null,
     secret_default_strategy: record.loaded.row.secretDefaultStrategy,
+    split_notice: splitNotice,
     workspace: settings,
   };
 }
@@ -209,6 +212,7 @@ async function readWorkspaceWithoutLiveProject(c: Context<AppEnv>, gated: Canoni
     split_pending: record.splitPending,
     deletion_scheduled_for: record.deletionScheduledFor?.toISOString() ?? null,
     secret_default_strategy: row.secretDefaultStrategy,
+    split_notice: await workspaceSplitNotice(record.accountId),
     workspace: settings,
   });
 }
@@ -228,7 +232,7 @@ export async function readWorkspace(c: Context<AppEnv>): Promise<Response> {
   const ws = c.get(CANONICAL_WORKSPACE_VAR as never) as CanonicalWorkspace | undefined;
   const role = await workspaceRoleFor(await actorOf(c, record.loaded.row.accountId), id);
   if (!role) return workspaceNotFound(c);
-  return c.json(workspaceBody(record, settings, ws, role));
+  return c.json(workspaceBody(record, settings, ws, role, await workspaceSplitNotice(record.loaded.row.accountId)));
 }
 
 /**
@@ -251,6 +255,7 @@ export const WORKSPACE_READ_ONLY_FIELDS: Readonly<Record<string, string | null>>
   account_role: 'PATCH /v1/workspaces/:workspaceId/members/:userId',
   member_count: null,
   split_pending: null,
+  split_notice: null,
   state: null,
   deletion_scheduled_for: null,
   workspace: null,
