@@ -11,7 +11,7 @@ export type AttachFrame = {
   projectName: string; bridgePath: string; ticket: string; consent: boolean;
 };
 /** Persisted in chrome.storage.session so a worker restart re-dials the bridge. */
-export type AttachmentRecord = Omit<AttachFrame, 'type' | 'consent' | 'ticket'> & { groupId: number; tabIds?: number[] };
+export type AttachmentRecord = Omit<AttachFrame, 'type' | 'consent' | 'ticket'> & { groupId: number; tabIds?: number[]; paused?: boolean };
 /** chrome.storage.local */
 export type Stored = {
   apiUrl?: string; token?: string; refreshToken?: string; expiresAt?: number;

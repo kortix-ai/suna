@@ -136,3 +136,18 @@ describe('the five /start producer shapes, bound to their real call site', () =>
     expect(shouldPaintFatalCard({ stage: 'failed' })).toBe(true);
   });
 });
+
+describe('shouldPaintFatalCard: every stage is named', () => {
+  test('only the server verdicts paint', () => {
+    expect(shouldPaintFatalCard({ stage: 'stopped' })).toBe(true);
+    expect(shouldPaintFatalCard({ stage: 'failed' })).toBe(true);
+  });
+
+  // A cached `stopped|error` row from an earlier `/start`, read while the
+  // re-poll has no verdict yet, painted the Restart card for one poll.
+  test('no verdict yet, or a contradicting ready, does not paint', () => {
+    expect(shouldPaintFatalCard({ stage: null })).toBe(false);
+    expect(shouldPaintFatalCard({ stage: 'provisioning' })).toBe(false);
+    expect(shouldPaintFatalCard({ stage: 'ready' })).toBe(false);
+  });
+});

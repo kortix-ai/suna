@@ -18,7 +18,7 @@ import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toWireModel } from '../../llm-gateway/resolution/effective';
-import { abortRuntimeTurn, readRunningTurn } from '../../projects/surface';
+import { PROVISIONING_SESSION_STATUSES, abortRuntimeTurn, readRunningTurn } from '../../projects/surface';
 import { applyChannelSessionKeys, checkChannelModel, listChannelModels } from '../model-access';
 import { chatAgents } from '../scoped-agents';
 import { CHANNEL_COMMANDS, type ChannelCommandName, type ParsedCommand } from './command-list';
@@ -212,7 +212,7 @@ async function bindForSetting(ctx: CommandContext, projectId: string): Promise<C
 /** A create holds the chat: the session it binds was planned before the choice changed. */
 const CREATING = "Kortix is still creating this chat's session, which keeps its own";
 /** A queued session has no sandbox yet: its turn cannot run, or be stopped. */
-const STARTING = new Set(['queued', 'branching', 'provisioning']);
+const STARTING = new Set<string>(PROVISIONING_SESSION_STATUSES);
 
 const sessionUrl = (ctx: CommandContext, sessionId: string) => sessionWebUrl(config.FRONTEND_URL, ctx.project.projectId, sessionId);
 

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1042,
+  "count": 1059,
   "routes": [
     {
       "method": "GET",
@@ -2897,6 +2897,74 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/git/repository"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/goals"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/goals"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/goals/:goalId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/goals/:goalId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/goals/:goalId/activate"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/goals/:goalId/answer"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/goals/:goalId/criteria"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/goals/:goalId/events"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/goals/:goalId/handover"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/goals/:goalId/pause"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/goals/:goalId/progress"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/goals/:goalId/request-verification"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/goals/:goalId/restart"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/goals/:goalId/resume"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/goals/:goalId/stop"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/goals/:goalId/verdict"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/goals/:goalId/wait"
     },
     {
       "method": "GET",

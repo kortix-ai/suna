@@ -27,7 +27,8 @@ export { useRuntimeSupports } from './use-runtime-supports';
 export { useHasSessionDesktop } from './use-has-session-desktop';
 // The session's one live connection (R5.3). `useSession` mounts it; a host that
 // runs its own copy of a poll (self-heal, sync) gates it on this.
-export { useSessionStreamConnected } from './use-session-stream';
+export { useSessionStreamConnected, useSessionStreamEnded } from './use-session-stream';
+export type { SessionStreamEnd, SessionStreamEndReason } from './use-session-stream';
 
 // `useSession`'s reply/error-classification surface — not (yet) re-exported by
 // `./opencode`'s explicit barrel list, so re-exported directly here.
@@ -151,7 +152,16 @@ export {
 } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export { useUnifiedTriggers } from './use-unified-triggers';
-export { useProjectGoalFiles, useProjectGoals, useSessionGoal } from './use-goals';
+export {
+  runProjectGoalControl,
+  useProjectGoal,
+  useProjectGoalControl,
+  useProjectGoalEvents,
+  useProjectGoalFiles,
+  useProjectGoals,
+  useSessionGoal,
+  type ProjectGoalControlInput,
+} from './use-goals';
 export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms, useSpaceRoom } from './use-rooms';
 export { usePeerMessages, useReachableAgents, useSessionWorkflows, useTeamTasks, useTeammates } from './use-multi-agent';
 export { useArtifactLive, type ArtifactLiveState, type UseArtifactLiveOptions } from './use-artifact-live';

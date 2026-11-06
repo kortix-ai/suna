@@ -505,7 +505,10 @@ registerJobHandler(AGENTS, agents, 5 * 60_000);
 export async function dispatchArtifactCommentJobs(key: string): Promise<void> {
   const jobs = await db.update(jobQueue).set({ attempts: sql`${jobQueue.attempts} + 1`, lockedUntil: sql`now() + interval '5 minutes'`, updatedAt: new Date() })
     .where(and(inArray(jobQueue.queue, [PEOPLE, AGENTS]), eq(jobQueue.jobKey, key), eq(jobQueue.status, 'queued'),
-      sql`${jobQueue.runAt} <= now()`, sql`(${jobQueue.lockedUntil} is null or ${jobQueue.lockedUntil} < now())`)).returning();
+      sql`${jobQueue.runAt} <= now()`, sql`(${jobQueue.lockedUntil} is null or ${jobQueue.lockedUntil} < now())`,
+      // A job whose attempts are spent is the queue runner's to end `dead`
+      // (shared/job-queue.ts runJob): an inline dispatch never claims it again.
+      sql`${jobQueue.attempts} < ${jobQueue.maxAttempts}`)).returning();
   for (const job of jobs) {
     try { await (job.queue === PEOPLE ? people(job) : agents(job)); await completeJob(job); }
     catch { await failJob(job, new Error(job.queue === PEOPLE ? 'Artifact notification delivery failed' : FAILURE)); }

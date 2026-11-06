@@ -8,6 +8,7 @@ import {
 } from '@kortix/db';
 import { and, eq, inArray, isNull, like, lt, ne, or, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { revokeConnections } from '../../connectors/connection-status';
 import { decryptChannelSecret, deleteProjectSecrets, encryptChannelSecret } from '../install-store';
 
 /**
@@ -409,16 +410,14 @@ export async function updateEmailInboxAccount(
  */
 export async function revokeEmailInboxAccount(account: EmailInboxAccount): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx
-      .update(connectorConnections)
-      .set({
-        status: 'revoked',
-        isDefault: false,
-        label: `${account.label} (removed ${account.connectionId.slice(0, 8)})`.slice(0, 200),
-        metadata: sql`${connectorConnections.metadata} || '{"revokedReason":"inbox removed"}'::jsonb`,
-        updatedAt: new Date(),
-      })
-      .where(eq(connectorConnections.connectionId, account.connectionId));
+    await revokeConnections(
+      eq(connectorConnections.connectionId, account.connectionId),
+      {
+        set: { isDefault: false, label: `${account.label} (removed ${account.connectionId.slice(0, 8)})`.slice(0, 200) },
+        metadata: { revokedReason: 'inbox removed' },
+      },
+      tx,
+    );
     await tx
       .delete(connectionCredentials)
       .where(eq(connectionCredentials.connectionId, account.connectionId));
@@ -541,20 +540,17 @@ export async function purgeLegacyEmailState(projectId: string): Promise<number> 
   const connectorId = await emailConnectorId(projectId);
   let revoked = 0;
   if (connectorId) {
-    const stale = await db
-      .update(connectorConnections)
-      .set({ status: 'revoked', isDefault: false, updatedAt: new Date() })
-      .where(
-        and(
-          eq(connectorConnections.connectorId, connectorId),
-          eq(connectorConnections.status, 'active'),
-          or(
-            eq(connectorConnections.ownerType, 'external'),
-            sql`not (${connectorConnections.metadata} ? 'inbox_id')`,
-          ),
+    const stale = await revokeConnections(
+      and(
+        eq(connectorConnections.connectorId, connectorId),
+        eq(connectorConnections.status, 'active'),
+        or(
+          eq(connectorConnections.ownerType, 'external'),
+          sql`not (${connectorConnections.metadata} ? 'inbox_id')`,
         ),
-      )
-      .returning({ connectionId: connectorConnections.connectionId });
+      ),
+      { set: { isDefault: false } },
+    );
     revoked = stale.length;
     await db
       .update(connectorConnections)

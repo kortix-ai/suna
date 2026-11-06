@@ -262,9 +262,9 @@ export function startProxy(
     return true
   })
   // A swap must not exit this process while the runtime is COMING UP. The turn
-  // oracle cannot see a boot: it reads the root's newest assistant message, and
-  // a box whose runtime is still starting has no turn in flight by that test, so
-  // it answers `false` and the swap proceeds — turning a recoverable restart (an
+  // oracle (`PiRuntime.busy()`: the turn queue and the active turn) cannot see a
+  // boot: a box whose runtime is still starting has no turn in flight, so it
+  // answers `false` and the swap proceeds — turning a recoverable restart (an
   // in-place runtime restart, a boot fallback) into a dead box plus a
   // supervisor restart.
   // `getState()` is the harness's own answer to "am I serving", so it is the

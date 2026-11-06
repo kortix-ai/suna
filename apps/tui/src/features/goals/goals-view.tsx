@@ -46,6 +46,9 @@ export interface GoalsViewProps {
   onReply(goalId: string, text: string): void;
   /** `reason` is empty when the person typed none. */
   onStop(goalId: string, reason: string): void;
+  onPause(goalId: string): void;
+  onResume(goalId: string): void;
+  onRestart(goalId: string): void;
   onOpenWeb(goalId: string): void;
   onRefresh(): void;
   /** Esc with nothing open. */
@@ -110,6 +113,9 @@ export function GoalsView({
   onCreate,
   onReply,
   onStop,
+  onPause,
+  onResume,
+  onRestart,
   onOpenWeb,
   onRefresh,
   onBack,
@@ -199,6 +205,15 @@ export function GoalsView({
         if (detail?.canStop) startInput('stop');
         return;
       }
+      if (matchesGoalsBinding(key, 'goals.pause')) {
+        if (detail?.canPause) onPause(detail.id);
+        else if (detail?.canResume) onResume(detail.id);
+        return;
+      }
+      if (matchesGoalsBinding(key, 'goals.restart')) {
+        if (detail?.canRestart) onRestart(detail.id);
+        return;
+      }
       if (matchesGoalsBinding(key, 'goals.web')) {
         if (detail) onOpenWeb(detail.id);
       }
@@ -233,6 +248,8 @@ export function GoalsView({
       detailBody[detailCursor]?.sessionId ? 'Enter open session' : null,
       detail.canReply ? 'a answer' : null,
       detail.canStop ? 's stop' : null,
+      detail.canPause ? 'p pause' : detail.canResume ? 'p resume' : null,
+      detail.canRestart ? 'R start again' : null,
       'o web',
       'Esc back',
     ]

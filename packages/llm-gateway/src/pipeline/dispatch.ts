@@ -553,7 +553,8 @@ export async function dispatch(
   let attempt = first;
   for (;;) {
     const key = breakerKey(attempt.descriptor, attempt.model);
-    if (!breakers.allow(key)) {
+    const admitted = breakers.allow(key);
+    if (!admitted) {
       // The circuit is open: skip this upstream without an attempt, as a
       // rate limit would (pool peers and fallback models take over). With
       // nothing else to try, it is tried anyway.
@@ -575,21 +576,34 @@ export async function dispatch(
         continue;
       }
     }
-    const result = await run(attempt);
-    if (result instanceof Response) {
-      breakers.success(key);
-      const { descriptor, model: servedModel } = attempt;
-      return { descriptor, model: servedModel, attempts, candidatesTried, attemptFailures, response: result };
-    }
-    if (result.error instanceof ClientAbortError || ctx.signal?.aborted) return finish(result);
-    if (tripsBreaker(result.status)) {
-      const state = breakers.failure(key, {
-        provider: attempt.descriptor.provider,
-        model: attempt.descriptor.resolvedModel ?? attempt.model,
-        reason: result.status === undefined ? 'network_error' : String(result.status),
-        publicListing: attempt.descriptor.billingMode !== 'none',
-      });
-      if (state === 'open') logger.warn(`[gateway] ${requestId}: ${attempt.descriptor.provider} circuit OPEN for ${attempt.descriptor.resolvedModel ?? attempt.model} (${result.status ?? 'network error'})`);
+    // Every attempt reports exactly one outcome to its circuit: success,
+    // failure, or release (no verdict). A half-open probe that ends with no
+    // verdict would otherwise refuse every later caller. Only an admitted
+    // attempt can hold the probe, so only it releases one.
+    const admittedAt = breakers.now();
+    let reported = false;
+    let result: Response | Failure;
+    try {
+      result = await run(attempt);
+      if (result instanceof Response) {
+        breakers.success(key, admittedAt);
+        reported = true;
+        const { descriptor, model: servedModel } = attempt;
+        return { descriptor, model: servedModel, attempts, candidatesTried, attemptFailures, response: result };
+      }
+      if (result.error instanceof ClientAbortError || ctx.signal?.aborted) return finish(result);
+      if (tripsBreaker(result.status)) {
+        const state = breakers.failure(key, {
+          provider: attempt.descriptor.provider,
+          model: attempt.descriptor.resolvedModel ?? attempt.model,
+          reason: result.status === undefined ? 'network_error' : String(result.status),
+          publicListing: attempt.descriptor.billingMode !== 'none',
+        });
+        reported = true;
+        if (state === 'open') logger.warn(`[gateway] ${requestId}: ${attempt.descriptor.provider} circuit OPEN for ${attempt.descriptor.resolvedModel ?? attempt.model} (${result.status ?? 'network error'})`);
+      }
+    } finally {
+      if (!reported && admitted) breakers.release(key);
     }
     await notePoolRateLimit(result);
     const next = await nextAttempt(result);

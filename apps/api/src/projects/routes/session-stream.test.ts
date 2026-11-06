@@ -408,7 +408,7 @@ describe('box down — the stream still serves', () => {
     const frames = await readFrames(response, 3);
 
     const status = frames.find((frame) => frame.event === 'kortix.runtime.status');
-    expect(status?.data).toMatchObject({ state: 'down', reason: 'no_sandbox' });
+    expect(status?.data).toMatchObject({ state: 'down', reason: 'no_sandbox', parked: true });
 
     const queue = frames.find((frame) => frame.event === 'kortix.control.queue');
     expect(queue?.data).toMatchObject({ channel: 'control', cseq: 1 });
@@ -422,7 +422,7 @@ describe('box down — the stream still serves', () => {
     const frames = await readFrames(response, 2);
     expect(
       frames.find((frame) => frame.event === 'kortix.runtime.status')?.data,
-    ).toMatchObject({ state: 'down', reason: 'sandbox_stopped' });
+    ).toMatchObject({ state: 'down', reason: 'sandbox_stopped', parked: true });
     expect(attachCalls).toHaveLength(0);
   });
 
@@ -465,7 +465,7 @@ describe('box down — the stream still serves', () => {
     expect(response.status).toBe(200);
     expect(
       frames.find((frame) => frame.event === 'kortix.runtime.status')?.data,
-    ).toMatchObject({ state: 'down', reason: 'daemon_503' });
+    ).toMatchObject({ state: 'down', reason: 'daemon_503', parked: false });
   });
 
   test('a control-plane read failure degrades to a reason, not to a dead stream', async () => {
@@ -474,7 +474,7 @@ describe('box down — the stream still serves', () => {
     const frames = await readFrames(response, 2);
     expect(
       frames.find((frame) => frame.event === 'kortix.runtime.status')?.data,
-    ).toMatchObject({ state: 'down', reason: 'control_plane_unavailable' });
+    ).toMatchObject({ state: 'down', reason: 'control_plane_unavailable', parked: false });
   });
 });
 

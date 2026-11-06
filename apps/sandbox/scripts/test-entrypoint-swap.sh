@@ -32,6 +32,9 @@ EOF
 }
 
 run_case() { # <name>  (expects $TMP prepared by caller)
+  # Not the machine's PID 1: on a box whose PID 1 is pt-init (a Platinum box)
+  # the supervisor relaunches on every exit and no case would end.
+  PID1_CMDLINE="${PID1_CMDLINE:-/dev/null}" \
   KORTIX_TEST_LOG="${TMP}/log" \
   KORTIX_AGENT_BIN="${TMP}/bin/kortix-agent" \
   KORTIX_AGENT_STATE_DIR="${TMP}/state" \
@@ -231,6 +234,37 @@ code=$(run_case)
 ! grep -q AGENT:v2 "${TMP}/log" && [ ! -f "${TMP}/state/agent.next" ] \
   && ok "pinned box refuses staged updates" \
   || no "pinned" "log=$(tr '\n' ',' < "${TMP}/log")"
+rm -rf "${TMP}"
+
+# ---------------------------------------------------------------------------
+# 8. Early exits count only in a row. An updated binary that crashed once on
+#    start, then served healthily and was OOM-killed, then crashed once more on
+#    start, is not a bad update: a healthy run resets the early-exit budget.
+#    Before, the two early exits hours apart rolled back and pinned for good.
+#    KORTIX_AGENT_HEALTHY_AFTER_S=1 stands in for the 60 s window.
+# ---------------------------------------------------------------------------
+setup
+make_agent "${TMP}/bin/kortix-agent" baked 0
+cat > "${TMP}/state/agent.current" <<'EOF'
+#!/usr/bin/env bash
+n=$(( $(cat "${KORTIX_AGENT_STATE_DIR}/runs" 2>/dev/null || echo 0) + 1 ))
+echo "${n}" > "${KORTIX_AGENT_STATE_DIR}/runs"
+echo "AGENT:updated-${n}" >> "${KORTIX_TEST_LOG}"
+case "${n}" in
+  1) exit 1 ;;               # early crash
+  2) sleep 2; exit 137 ;;    # a healthy run, then the OOM killer
+  3) exit 1 ;;               # early crash again, hours later
+  *) exit 0 ;;
+esac
+EOF
+chmod +x "${TMP}/state/agent.current"
+code=$(KORTIX_AGENT_HEALTHY_AFTER_S=1 PID1_CMDLINE=/dev/null run_case)
+if [ "${code}" = "0" ] && [ ! -f "${TMP}/state/agent.pinned" ] && [ -f "${TMP}/state/agent.current" ] \
+   && [ "$(grep -c AGENT:updated "${TMP}/log")" = "4" ] && ! grep -q AGENT:baked "${TMP}/log"; then
+  ok "a healthy run resets the early-exit budget: no rollback for crashes far apart"
+else
+  no "early-exit reset" "code=${code} pinned=$([ -f "${TMP}/state/agent.pinned" ] && echo yes || echo no) log=$(tr '\n' ',' < "${TMP}/log")"
+fi
 rm -rf "${TMP}"
 
 # ---------------------------------------------------------------------------

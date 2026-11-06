@@ -17,6 +17,8 @@
 #   API_RESULT, GATEWAY_RESULT, WEB_RESULT
 #                      success | failure | cancelled | skipped | unchanged
 #   NOW_EPOCH          optional, for tests
+#   STALE_SWEEP        1 (default) corrects stale "Not live on dev yet"
+#                      comments of recent pull requests outside the range
 #
 # Never fails the deploy: a GitHub API error becomes a ::warning:: and exit 0.
 
@@ -131,7 +133,49 @@ for number in "${prs[@]}"; do
   summary+=("| #${number} | $([ "$live" = true ] && echo live || echo 'not live') |")
 done
 
+# ── correct stale "Not live on dev yet" comments outside this range ───────────
+# A pull request whose deploy failed stays "Not live" until a run's range
+# contains it again. Deploy Dev diffs each surface against the commit it
+# serves, so the next run that builds the failed surface covers it. A surface
+# that failed its check but serves the commit anyway is not rebuilt, so check
+# the recent ones here: when every surface (API, gateway, web) serves a commit
+# that contains the pull request's merge commit, it is live.
+corrected=()
+if [ "$live" = true ] && [ "${STALE_SWEEP:-1}" = 1 ]; then
+  served=()
+  for url in https://dev-api.kortix.com/v1/health https://gateway-dev.kortix.com/health/live https://dev.kortix.com/api/health; do
+    served+=("$(curl -fsS --max-time 10 "$url" 2>/dev/null | jq -r '.commit // empty' 2>/dev/null || true)")
+  done
+  candidates="$(gh api "repos/${repo}/pulls?state=closed&base=dev&sort=updated&direction=desc&per_page=30" 2>/dev/null \
+    | jq -r '.[] | select(.merged_at != null) | "\(.number) \(.merge_commit_sha)"' 2>/dev/null || true)"
+  while read -r number merge; do
+    [ -n "$number" ] && [ -n "$merge" ] || continue
+    case " ${prs[*]:-} " in *" ${number} "*) continue ;; esac
+    comment="$(gh api --paginate "repos/${repo}/issues/${number}/comments" 2>/dev/null \
+      | jq -cs --arg m "$marker" '[.[][] | select(.body | startswith($m))][0] // empty' 2>/dev/null || true)"
+    [ -n "$comment" ] || continue
+    jq -e '.body | contains("### Not live on dev yet")' <<<"$comment" >/dev/null 2>&1 || continue
+    contained=true
+    for commit in "${served[@]}"; do
+      status=""
+      [ -z "$commit" ] || status="$(gh api "repos/${repo}/compare/${merge}...${commit}" 2>/dev/null | jq -r '.status // empty' 2>/dev/null || true)"
+      case "$status" in ahead|identical) ;; *) contained=false; break ;; esac
+    done
+    [ "$contained" = true ] || continue
+    id="$(jq -r .id <<<"$comment")"
+    body="$(printf '%s\n' "$marker" '### Live on dev' '' \
+      "Every surface serves a commit that contains this pull request's merge \`${merge:0:10}\`, checked on \`/health\` (API \`${served[0]:0:10}\`, gateway \`${served[1]:0:10}\`, web \`${served[2]:0:10}\`)." '' \
+      "Corrected by deploy run: ${run_url}. It replaces an earlier \"Not live on dev yet\".")"
+    if gh api -X PATCH "repos/${repo}/issues/comments/${id}" -f body="$body" >/dev/null; then
+      corrected+=("$number")
+      summary+=("| #${number} | live (corrected) |")
+    else
+      warn "could not correct the comment on #${number}"
+    fi
+  done <<<"$candidates"
+fi
+
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   printf '%s\n' "${summary[@]}" '' '| Surface | Result |' '|---|---|' "${rows[@]}" >>"$GITHUB_STEP_SUMMARY"
 fi
-echo "announce-dev-live: $([ "$live" = true ] && echo live || echo 'not live') → ${prs[*]}"
+echo "announce-dev-live: $([ "$live" = true ] && echo live || echo 'not live') → ${prs[*]}${corrected[0]:+; corrected: ${corrected[*]}}"

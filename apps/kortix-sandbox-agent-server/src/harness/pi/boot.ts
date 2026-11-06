@@ -55,6 +55,34 @@ import { readPiSnapshot } from './session-log-restore'
 import { afterFirstTurn } from '../shared/after-first-turn'
 import { preloadPiRuntimeModules } from './runtime'
 
+/** The waits between boot's start attempts: a transient failure (a catalog or package fetch) gets two more tries. */
+export const BOOT_START_RETRY_DELAYS_MS = [2_000, 10_000] as const
+
+/**
+ * Start the runtime at boot, retrying a failed start. After the last attempt the failure is
+ * terminal: `bootState.runtimeStartError` holds it and readiness reports `runtime_start_failed`
+ * with the message, not a `pi_not_ready` that looks like a start still in progress.
+ */
+export async function startRuntimeAtBoot(lifecycle: { start(): Promise<void> }, bootState: PiBootState): Promise<boolean> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await lifecycle.start()
+      bootState.runtimeStartError = null
+      return true
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const delay = BOOT_START_RETRY_DELAYS_MS[attempt]
+      if (delay === undefined) {
+        bootState.runtimeStartError = message
+        logger.error('[boot] pi runtime failed to start; the box stays observable', { err: message, attempts: attempt + 1 })
+        return false
+      }
+      logger.warn('[boot] pi runtime failed to start; retrying', { err: message, attempt: attempt + 1, retryInMs: delay })
+      await Bun.sleep(delay)
+    }
+  }
+}
+
 /** The first runtime-assets pass waits for the first turn to end, at most this long after ready. */
 const FIRST_ASSETS_PASS_MAX_DELAY_MS = 15_000
 
@@ -241,12 +269,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     return
   }
   await gitReady
-  try {
-    await harness.lifecycle.start()
-  } catch (err) {
-    logger.error('[boot] pi runtime failed to start; the box stays observable', { err: (err as Error).message })
-    return
-  }
+  if (!(await startRuntimeAtBoot(harness.lifecycle, bootState))) return
   const runtime = harness.runtime()!
   // A restore at boot means this box did not hold the conversation: on a volume session that is a new
   // computer, so the model hears that programs from before are not running (TEMPORARY_COMPUTER).
