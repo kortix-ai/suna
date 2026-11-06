@@ -55,6 +55,7 @@ import {
 } from './split-runner';
 import { checkWorkspaceInvariants } from './invariants';
 import { workspaceSplitNotice } from './notice';
+import { renderSplitOwnerEmail } from './owner-email';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
 import { resolveOpencodeLogin } from '../../llm-gateway/credentials/opencode-console';
 
@@ -542,6 +543,42 @@ withDb('workspace split', () => {
     }
   });
 
+  test('an account with an identity provider (SSO or a SCIM token) is held, keeper confirmed or not', async () => {
+    // The split-off would copy the members but not the IdP: SSO enforcement
+    // and SCIM deprovisioning would stop at the keeper (design.md §3.1).
+    const idps = [
+      sql`INSERT INTO kortix.account_sso_providers (account_id, supabase_sso_provider_id, name, primary_domain)
+            VALUES (${LEGACY}, ${crypto.randomUUID()}, 'Synthetic IdP', 'example.test')`,
+      sql`INSERT INTO kortix.scim_tokens (account_id, name, secret_hash, public_prefix)
+            VALUES (${LEGACY}, 'synthetic scim', ${`h_${crypto.randomUUID()}`}, 'kortix_scim_syn')`,
+    ];
+    for (const insert of idps) {
+      await db.delete(workspaceSplitRuns);
+      await db.execute(sql`DELETE FROM kortix.account_sso_providers WHERE account_id = ${LEGACY}`);
+      await db.execute(sql`DELETE FROM kortix.scim_tokens WHERE account_id = ${LEGACY}`);
+      await db.execute(insert);
+      await planWorkspaceSplits({ accountIds: [LEGACY] });
+      expect((await runFor(MOVED))?.phase).toBe('held');
+      expect((await runFor(MOVED))?.plan.held_reason).toBe('account_has_identity_provider');
+      expect(await applyWorkspaceSplitRun((await runFor(MOVED))!.runId, { siteStorage: storage })).toBe('busy');
+      expect((await accountOfProject(MOVED))?.accountId).toBe(LEGACY);
+    }
+    await db.execute(sql`DELETE FROM kortix.account_sso_providers WHERE account_id = ${LEGACY}`);
+    await db.execute(sql`DELETE FROM kortix.scim_tokens WHERE account_id = ${LEGACY}`);
+  });
+
+  test('apply re-checks the hold: an account that starts paying or adds an IdP after the plan pass is held, nothing moves', async () => {
+    await planWorkspaceSplits({ accountIds: [LEGACY] });
+    const planned = (await runFor(MOVED))!;
+    expect(planned.phase).toBe('planned');
+    await db.delete(creditAccounts).where(eq(creditAccounts.accountId, LEGACY));
+    await db.insert(creditAccounts).values({ accountId: LEGACY, tier: 'credits', planMonthlyUsd: '20' });
+    expect(await applyWorkspaceSplitRun(planned.runId, { siteStorage: storage })).toBe('skipped');
+    expect((await runFor(MOVED))?.phase).toBe('held');
+    expect((await runFor(MOVED))?.plan.held_reason).toBe('account_has_billing');
+    expect((await accountOfProject(MOVED))?.accountId).toBe(LEGACY);
+  });
+
   test('an owner confirming the keeper releases a held account', async () => {
     await planWorkspaceSplits();
     expect((await runFor(PAYING_B))?.phase).toBe('held');
@@ -733,6 +770,27 @@ withDb('workspace split', () => {
     // The tick and a second finish send nothing more.
     await processWorkspaceSplits({ mode: 'apply', deps: { siteStorage: storage, sendEmail: mail.sendEmail } });
     expect(mail.sent).toHaveLength(1);
+  });
+
+  test('no owner email while a done move has no billing recorded; it goes out once the billing lands', async () => {
+    const mail = mailStub();
+    await planWorkspaceSplits();
+    expect(await applyWorkspaceSplitRun((await runFor(MOVED))!.runId, { siteStorage: storage, sendEmail: mail.sendEmail })).toBe('done');
+    // The moved run's billing failed every retry: plan.billing is absent.
+    const moved = (await runFor(MOVED))!;
+    await db.execute(sql`UPDATE kortix.workspace_split_runs SET plan = (plan - 'billing') || '{"billing_attempts": 5}'::jsonb WHERE run_id = ${moved.runId}`);
+    expect(await applyWorkspaceSplitRun((await runFor(OLDEST))!.runId, { siteStorage: storage, sendEmail: mail.sendEmail })).toBe('done');
+    await processWorkspaceSplits({ mode: 'apply', deps: { siteStorage: storage, sendEmail: mail.sendEmail } });
+    expect(mail.sent).toEqual([]);
+    // An operator fixes the billing: the next tick sends the email, and it never says Free for a run it has no billing for.
+    await db.execute(sql`UPDATE kortix.workspace_split_runs SET plan = plan || '{"billing": {"kind": "free", "grantedCredits": 500}}'::jsonb WHERE run_id = ${moved.runId}`);
+    await processWorkspaceSplits({ mode: 'apply', deps: { siteStorage: storage, sendEmail: mail.sendEmail } });
+    expect(mail.sent).toHaveLength(1);
+    const unbilled = renderSplitOwnerEmail({
+      email: 'owner@example.test', sourceName: 'Synthetic legacy', keeperWorkspaceId: KEEPER,
+      workspaces: [{ name: 'Moved', role: 'moved', billing: null, compedUntil: null }],
+    });
+    expect(unbilled.text).not.toContain('Free');
   });
 
   test('split_notice: the moved workspace and the keeper each say where they came from, for 30 days', async () => {

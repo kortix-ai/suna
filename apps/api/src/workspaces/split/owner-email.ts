@@ -46,7 +46,9 @@ function lineText(line: SplitWorkspaceLine): string {
   if (line.role === 'keeper') return 'keeps the plan, the credits and the billing history';
   if (line.billing === 'comped' && line.compedUntil) return `on your plan at no charge until ${day(line.compedUntil)}, then Free`;
   if (line.billing === 'comped') return 'on your plan at no charge until the current period ends, then Free';
-  return 'on Free, with this month’s free credits';
+  if (line.billing === 'free') return 'on Free, with this month’s free credits';
+  // Never claim a plan the split did not record.
+  return 'its plan is being set up: open its Billing settings to see it';
 }
 
 /** The owner email without sending it (brand voice 5.5: subject = the action, one button, one note). */

@@ -61,7 +61,6 @@ import {
 } from '../../projects/surface';
 import {
   applySplitOffBilling,
-  isPayingAccount,
   previewSplitOffBilling,
   reverseSplitOffBilling,
 } from '../../billing/services/split-off-billing';
@@ -144,6 +143,34 @@ async function projectPlanFacts(projectId: string, accountId: string): Promise<R
   return facts ?? {};
 }
 
+type HoldReason = 'account_has_identity_provider' | 'account_has_billing';
+
+/**
+ * Why a move out of `accountId` must wait, or null. The planner and the move
+ * transaction both ask, so an account that changes between two plan passes
+ * never moves on a stale plan.
+ *   - account_has_identity_provider: an SSO provider or a live SCIM token. The
+ *     split-off would copy the members but not the IdP, so SSO enforcement and
+ *     SCIM deprovisioning would stop at the keeper. Held until the split
+ *     carries identity (design.md §3.1); confirming the keeper does not
+ *     release it.
+ *   - account_has_billing: the one paying rule (C6, kortix.account_is_paying)
+ *     and no keeper confirmed by an owner.
+ */
+async function holdReasonFor(
+  executor: Pick<typeof db, 'execute'>,
+  accountId: string,
+  keeperConfirmed: boolean,
+): Promise<HoldReason | null> {
+  const [row] = await executor.execute<{ idp: boolean; paying: boolean }>(sql`
+    SELECT (EXISTS (SELECT 1 FROM kortix.account_sso_providers WHERE account_id = ${accountId})
+             OR EXISTS (SELECT 1 FROM kortix.scim_tokens WHERE account_id = ${accountId} AND revoked_at IS NULL)) AS idp,
+           kortix.account_is_paying(${accountId}) AS paying`);
+  if (row?.idp) return 'account_has_identity_provider';
+  if (row?.paying && !keeperConfirmed) return 'account_has_billing';
+  return null;
+}
+
 /** Plan one legacy account: upsert a ledger row per non-keeper project. */
 async function planAccount(accountId: string): Promise<{ planned: number; held: number; skipped: number }> {
   const projects = await db.execute<AccountProject>(sql`
@@ -158,8 +185,8 @@ async function planAccount(accountId: string): Promise<{ planned: number; held: 
   // was set, bought credits, a completed purchase, an active enterprise
   // contract. A Stripe subscription id on a Free account is stale and pays
   // nothing (149 legacy prod accounts carry one).
-  const paying = await isPayingAccount(accountId);
-  const phase: WorkspaceSplitPhase = paying && !confirmed ? 'held' : 'planned';
+  const holdReason = await holdReasonFor(db, accountId, confirmed);
+  const phase: WorkspaceSplitPhase = holdReason ? 'held' : 'planned';
   const open = await db.execute<{ run_id: string; project_id: string; phase: WorkspaceSplitPhase }>(sql`
     SELECT run_id::text, project_id::text, phase FROM kortix.workspace_split_runs
      WHERE from_account_id = ${accountId} AND phase IN ('planned', 'held', 'storage_copied', 'reversed')`);
@@ -175,7 +202,7 @@ async function planAccount(accountId: string): Promise<{ planned: number; held: 
       keeper_confirmed: confirmed,
       keeper_frozen: frozen,
       last_opened_at: project.last_opened_at,
-      held_reason: phase === 'held' ? 'account_has_billing' : null,
+      held_reason: holdReason,
       account: facts,
       project: await projectPlanFacts(project.project_id, accountId),
       planned_at: new Date().toISOString(),
@@ -289,18 +316,31 @@ export async function applyWorkspaceSplitRun(runId: string, deps: ApplyDeps = {}
       run = { ...run, phase: 'storage_copied' };
     }
     const attempts = run.attempts;
-    await db.transaction(async (tx) => {
+    const moved = await db.transaction(async (tx) => {
       const [locked] = await tx.execute<{ phase: string; attempts: number }>(sql`
         SELECT phase, attempts FROM kortix.workspace_split_runs WHERE run_id = ${runId} FOR UPDATE`);
       // Fencing: a newer claim (a reclaimed lease) owns the run now.
       if (locked?.phase !== 'storage_copied' || locked.attempts !== attempts) throw new Error('lease_lost');
+      // The plan may be up to one plan interval old: re-check the hold under
+      // the run lock. A held run moves nothing; the copied site blobs are
+      // copies and stay harmless.
+      const holdReason = await holdReasonFor(tx, run!.fromAccountId, (run!.plan as Record<string, unknown>)?.keeper_confirmed === true);
+      if (holdReason) {
+        await tx.execute(sql`UPDATE kortix.workspace_split_runs
+          SET phase = 'held', heartbeat_at = NULL, updated_at = now(),
+              plan = plan || ${JSON.stringify({ held_reason: holdReason })}::jsonb
+          WHERE run_id = ${runId}`);
+        return 'held' as const;
+      }
       const grantsBefore = await projectGrantCounts(tx, run!.fromAccountId, run!.projectId);
       const copied = await splitProjectIntoNewAccount(tx, { projectId: run!.projectId, fromAccountId: run!.fromAccountId, toAccountId });
       await tx.execute(sql`UPDATE kortix.workspace_split_runs
         SET phase = 'done', copied_ids = ${JSON.stringify(copied)}::jsonb, error = NULL, heartbeat_at = NULL,
             completed_at = now(), updated_at = now(), plan = plan || ${JSON.stringify({ grants_before: grantsBefore })}::jsonb
         WHERE run_id = ${runId}`);
+      return 'moved' as const;
     });
+    if (moved === 'held') return 'skipped';
   } catch (error) {
     if (error instanceof Error && error.message === 'lease_lost') return 'busy';
     return recordFailure(run, error);
@@ -365,9 +405,12 @@ async function applyRunBilling(run: MovedRun): Promise<boolean> {
  * emails (C9). Only after an apply: a dry run never reaches here.
  */
 async function finishAccountIfLast(fromAccountId: string, deps: ApplyDeps): Promise<void> {
+  // The email states each split-off's plan, so it waits until every done run
+  // has its billing recorded (finishDoneRuns retries both).
   const [state] = await db.execute<{ open: number; active: number; targets: string[] }>(sql`
     SELECT (SELECT count(*)::int FROM kortix.workspace_split_runs
-             WHERE from_account_id = ${fromAccountId} AND phase IN ('planned', 'held', 'storage_copied')) AS open,
+             WHERE from_account_id = ${fromAccountId}
+               AND (phase IN ('planned', 'held', 'storage_copied') OR (phase = 'done' AND NOT (plan ? 'billing')))) AS open,
            (SELECT count(*)::int FROM kortix.projects WHERE account_id = ${fromAccountId} AND status = 'active') AS active,
            COALESCE((SELECT jsonb_agg(to_account_id::text) FROM kortix.workspace_split_runs
              WHERE from_account_id = ${fromAccountId} AND phase = 'done'), '[]'::jsonb) AS targets`);
