@@ -62,7 +62,7 @@ Resolution order, highest first:
 | Flag | Effect |
 | --- | --- |
 | `--host <name>` | Open this configured host. Reaches the child as `KORTIX_TUI_HOST`, which outranks a stale `KORTIX_TOKEN`. |
-| `--project <id>` | The workspace to open (its id is the `project_id`). Reaches the child as `KORTIX_PROJECT_ID`. |
+| `--project <id>` | The workspace to open (its id is the `project_id`). Reaches the child as both `KORTIX_WORKSPACE_ID` and `KORTIX_PROJECT_ID`. |
 | `--session <id>` | Reaches the child as `KORTIX_SESSION_ID`. |
 | `--sidebar` / `--no-sidebar` | Show or hide the sidebar for this run (`KORTIX_TUI_SIDEBAR=1` / `0`). Without either, the saved `/sidebar` choice. |
 | `--install` | Install and exit. No prompt — the form for a script or CI. |
@@ -129,8 +129,8 @@ except `KORTIX_TOKEN`, which the CLI reads too (see Troubleshooting).
 | `KORTIX_API_KEY` | Bearer token. With it, the CLI config is not read at all. |
 | `KORTIX_TOKEN` | Same as `KORTIX_API_KEY` (the name the CLI uses inside a sandbox). |
 | `KORTIX_API_URL` | Backend origin, with or without `/v1`. Defaults to `https://api.kortix.com`. |
-| `KORTIX_PROJECT_ID` | The workspace whose sessions are listed. Defaults to the host's default workspace, else the first workspace in the host's account, else the first workspace in any account. |
-| `KORTIX_WORKSPACE_ID` | Same as `KORTIX_PROJECT_ID`, read when `KORTIX_PROJECT_ID` is unset. |
+| `KORTIX_WORKSPACE_ID` | The workspace whose sessions are listed. Defaults to `KORTIX_PROJECT_ID`, else the host's default workspace, else the first workspace in the host's account, else the first workspace in any account. Read first, as in the CLI and kortixd. |
+| `KORTIX_PROJECT_ID` | The older name of `KORTIX_WORKSPACE_ID` (the platform injects it in a session box), read when `KORTIX_WORKSPACE_ID` is unset. |
 | `KORTIX_SESSION_ID` | Open this session at boot. |
 | `KORTIX_CONFIG_FILE` | Read hosts from this file instead of `~/.config/kortix/config.json`. |
 | `KORTIX_TUI_THEME` | `dark` or `light`. Otherwise `COLORFGBG` decides, defaulting to dark. |
