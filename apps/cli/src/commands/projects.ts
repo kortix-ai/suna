@@ -982,8 +982,10 @@ async function projectsCreate(argv: string[]): Promise<number> {
     ? { name, account_id: accountArg }
     : { name, new_workspace: true };
   try {
+    // Legacy-only route: provision and link-repository have no /v1/workspaces name
+    // (WORKSPACE_LEGACY_ONLY_ROUTES); POST /v1/workspaces is the new-workspace create.
     const project = await clientFromAuth(auth, { accountId: accountArg }).post<ProjectSummary>(
-      '/workspaces/provision',
+      '/projects/provision',
       body,
     );
     if (!isDefaultProjectResponse(project)) return invalidDefaultProjectResponse(project);

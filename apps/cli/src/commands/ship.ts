@@ -443,7 +443,9 @@ async function shipFirstTime(
       );
       return 0;
     }
-    const prov = await client.post<ProvisionResponse>('/workspaces/provision', {
+    // Legacy-only route: provision and link-repository have no /v1/workspaces name
+    // (WORKSPACE_LEGACY_ONLY_ROUTES); POST /v1/workspaces is the new-workspace create.
+    const prov = await client.post<ProvisionResponse>('/projects/provision', {
       name,
       ...(accountId ? { account_id: accountId } : { new_workspace: true }),
       // WE own the first commit: this folder is already a `kortix init` scaffold

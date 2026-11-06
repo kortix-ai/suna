@@ -9,7 +9,7 @@ test.each([false, true])('workspaces create (json=%s) creates a whole workspace 
   const server = Bun.serve({ port: 0, async fetch(req) {
     expect(req.headers.get('authorization')).toBe('Bearer synthetic-token');
     if (new URL(req.url).pathname === '/v1/workspaces/synthetic-project') return Response.json({ project_id: 'synthetic-project', name: 'Synthetic', account_id: 'synthetic-account' });
-    expect(new URL(req.url).pathname).toBe('/v1/workspaces/provision');
+    expect(new URL(req.url).pathname).toBe('/v1/projects/provision');
     bodies.push(await req.json());
     return Response.json({ project_id: 'synthetic-project', name: 'Synthetic', account_id: 'synthetic-account', push_token: 'must-not-print' });
   }});

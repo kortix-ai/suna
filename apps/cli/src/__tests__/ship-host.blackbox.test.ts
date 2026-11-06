@@ -37,7 +37,7 @@ beforeEach(() => {
       const path = new URL(req.url).pathname;
       hits.push({ path, auth: req.headers.get('authorization') });
       if (path === '/v1/me') return Response.json({ accounts: [] });
-      if (path === '/v1/workspaces/provision') {
+      if (path === '/v1/projects/provision') {
         provisionBodies.push(await req.json());
         if (refuseCreation) return Response.json({ error: 'Free accounts are limited to 1 project.' }, { status: 403 });
         return Response.json({
@@ -281,7 +281,7 @@ test.each([false, true])('first ship dismisses onboarding without failing a push
   ]);
   expect(hits.every((hit) => hit.auth === 'Bearer tok_other')).toBe(true);
   expect(hits.map((hit) => hit.path)).toEqual([
-    '/v1/workspaces/provision',
+    '/v1/projects/provision',
     '/v1/workspaces/created_workspace/onboarding',
     '/v1/connectors/workspaces/created_workspace/connectors/sync',
   ]);
@@ -394,7 +394,7 @@ test('creation dismisses onboarding even if credential resolution fails before t
   expect(result.stderr).toContain('credential refused');
   expect(onboardingBodies).toEqual([{ completed: true }]);
   expect(hits.map((hit) => hit.path)).toEqual([
-    '/v1/workspaces/provision',
+    '/v1/projects/provision',
     '/v1/workspaces/created_workspace/onboarding',
     '/v1/workspaces/created_workspace/git-token',
   ]);

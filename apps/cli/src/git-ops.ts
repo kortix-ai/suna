@@ -55,10 +55,12 @@ export async function linkGitHubBackedProject(
     ...(token ? { github_token: token } : {}),
   });
 
+  // Legacy-only route: provision and link-repository have no /v1/workspaces name
+  // (WORKSPACE_LEGACY_ONLY_ROUTES); POST /v1/workspaces is the new-workspace create.
   // PAT path: one shot, no app needed.
   if (opts.githubToken) {
     const res = await client.post<LinkRepoResponse>(
-      '/workspaces/link-repository',
+      '/projects/link-repository',
       body(opts.githubToken),
     );
     return res.project;
@@ -67,7 +69,7 @@ export async function linkGitHubBackedProject(
   // App path: retry around the one-click install.
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
-      const res = await client.post<LinkRepoResponse>('/workspaces/link-repository', body());
+      const res = await client.post<LinkRepoResponse>('/projects/link-repository', body());
       return res.project;
     } catch (err) {
       const installUrl =
