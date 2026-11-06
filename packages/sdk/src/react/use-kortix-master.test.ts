@@ -1,16 +1,16 @@
 import { describe, expect, test, beforeEach, mock } from 'bun:test';
 
 // This file must be hermetic against process-wide `mock.module` registrations
-// made by OTHER test files (per the `../opencode/kortix-master.test.ts`
+// made by OTHER test files (per the `../core/runtime/kortix-master.test.ts`
 // comment: several files already mock '../platform/auth', the ONE lowest
 // network boundary every transport call in this package goes through).
-// Deliberately mocking that shared boundary — rather than '../opencode/client'
-// itself — matters here for a reason beyond style: '../opencode/client' is
-// the exact module `../opencode/client.test.ts` dynamically imports as ITS
+// Deliberately mocking that shared boundary — rather than '../core/runtime/client'
+// itself — matters here for a reason beyond style: '../core/runtime/client' is
+// the exact module `../core/runtime/client.test.ts` dynamically imports as ITS
 // OWN module-under-test, and Bun's `mock.module` is process-wide for the
 // whole `bun test` sweep — replacing that path here would race with (and can
 // clobber) that file's real import. Mocking `../platform/auth` instead lets
-// the REAL `use-kortix-master.ts` -> `../opencode/client` -> `../opencode/
+// the REAL `use-kortix-master.ts` -> `../core/runtime/client` -> `../core/runtime/
 // kortix-master` chain run for real, with only the actual fetch boundary
 // faked, matching `kortix-master.test.ts`'s own established pattern.
 //

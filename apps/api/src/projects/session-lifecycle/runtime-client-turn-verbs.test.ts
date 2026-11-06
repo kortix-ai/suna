@@ -1,7 +1,7 @@
 // Every runtime call of the session lifecycle goes to a Kortix route. Bun
 // mocks are process-global; run this file in isolation (`bun test --isolate`).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realOpencodeMapping from '../opencode-mapping';
+import * as realRuntimeMapping from '../runtime-session-mapping';
 
 const forwarded: Array<{ method: string; path: string; query: string; body: unknown; headers: Headers }> = [];
 let forwardStatus = 202;
@@ -32,9 +32,9 @@ mock.module('../../sandbox-proxy/forward', () => ({
   },
 }));
 
-mock.module('../opencode-mapping', () => ({
-  ...realOpencodeMapping,
-  sandboxOpencodeEndpoint: async () => ({ url: 'https://daemon.test', headers: {} }),
+mock.module('../runtime-session-mapping', () => ({
+  ...realRuntimeMapping,
+  sandboxRuntimeEndpoint: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 
 const { SteerNotTaken, postPrompt, readRuntimeMessage, readSessionMessageTip, retractRuntimeMessage } = await import('./runtime-client');
@@ -73,7 +73,7 @@ beforeEach(() => {
   }) as typeof fetch;
 });
 
-const session = { endpoint: { url: 'https://daemon.test', headers: {} }, opencodeSessionId: 'ses_1', externalId: 'ext-1' };
+const session = { endpoint: { url: 'https://daemon.test', headers: {} }, runtimeSessionId: 'ses_1', externalId: 'ext-1' };
 const deliver = () =>
   postPrompt('ext-1', 'ses_1', 'hello', 'user-1', 'sess-1', 'idem-1', {
     parts: [{ type: 'text', text: 'hello' }],

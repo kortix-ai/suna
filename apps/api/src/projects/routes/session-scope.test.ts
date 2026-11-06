@@ -256,7 +256,7 @@ describe('PUT scope — secrets-only narrowing envelope', () => {
       connector_bindings_inherit_unbound: true,
       applied_live: true,
       detail:
-        'Dropped secrets are cleared from the running sandbox now; new shells and the OpenCode process no longer see them. ' +
+        'Dropped secrets are cleared from the running sandbox now; new shells and the agent runtime no longer see them. ' +
         'Values the agent already read remain in its context and in shells it already started — rotate them if that matters.',
     });
     expect(pushCalls).toBe(1);
@@ -310,7 +310,7 @@ describe('PUT scope — secrets-only narrowing envelope', () => {
     expect(body.retroactive).toBe(true);
     expect(body.applied_live).toBe(true);
     expect(body.detail).toBe(
-      'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.',
+      'Applied to the running sandbox now — the agent runtime and new shells see the new scope.',
     );
   });
 

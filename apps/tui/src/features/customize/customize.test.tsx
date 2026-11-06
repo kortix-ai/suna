@@ -47,7 +47,7 @@ describe('agentRows', () => {
     agents: [
       {
         name: 'default',
-        path: '.opencode/agent/default.md',
+        path: 'agents/default.md',
         description: 'The everyday agent',
         mode: 'primary',
         model: 'openai/gpt-5.6-sol',
@@ -61,10 +61,9 @@ describe('agentRows', () => {
       },
     ],
     default_agent: 'auditor',
-    open_code_default_agent: 'default',
   };
 
-  test('marks the provider-neutral default, not the deprecated one', () => {
+  test('marks the project default', () => {
     const rows = agentRows(config);
     expect(rows.map((row) => [row.name, row.isDefault])).toEqual([
       ['default', false],
@@ -72,9 +71,9 @@ describe('agentRows', () => {
     ]);
   });
 
-  test('falls back to the deprecated default when the new field is absent', () => {
+  test('marks no agent when the project has no default', () => {
     const rows = agentRows({ ...config, default_agent: null });
-    expect(rows.find((row) => row.name === 'default')?.isDefault).toBe(true);
+    expect(rows.some((row) => row.isDefault)).toBe(false);
   });
 
   test('an agent with no `enabled` field is enabled', () => {
@@ -86,7 +85,7 @@ describe('agentRows', () => {
 describe('skillScope / skillRows', () => {
   test('a path under .kortix is a platform skill, anything else the project’s', () => {
     expect(skillScope('/workspace/.kortix/skills/pdf/SKILL.md')).toBe('kortix');
-    expect(skillScope('.opencode/skill/deal-desk/SKILL.md')).toBe('project');
+    expect(skillScope('skills/deal-desk/SKILL.md')).toBe('project');
   });
 
   test('skillRows carries the path as the row id source', () => {
@@ -431,7 +430,7 @@ describe('<AgentsTabView/>', () => {
       description: 'The everyday agent',
       model: 'openai/gpt-5.6-sol',
       mode: 'primary',
-      path: '.opencode/agent/default.md',
+      path: 'agents/default.md',
       enabled: true,
       isDefault: true,
       scope: null,
@@ -509,7 +508,7 @@ describe('<SkillsTabView/>', () => {
         rows={[
           {
             name: 'deal-desk',
-            path: '.opencode/skill/deal-desk/SKILL.md',
+            path: 'skills/deal-desk/SKILL.md',
             description: 'Build a deal memo',
             scope: 'project',
           },
@@ -527,7 +526,7 @@ describe('<SkillsTabView/>', () => {
     expect(captureCharFrame()).toContain('deal-desk · Build a deal memo');
     await act(async () => mockInput.pressEnter());
     await flush();
-    expect(captureCharFrame()).toContain('.opencode/skill/deal-desk/SKILL.md');
+    expect(captureCharFrame()).toContain('skills/deal-desk/SKILL.md');
     renderer.destroy();
   });
 });

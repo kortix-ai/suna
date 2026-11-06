@@ -262,21 +262,8 @@ describe('servesThroughProbeMiss — a box proven this boot is never parked by i
   });
 });
 
-describe('neutral readiness keys: runtime* written, pre-W4 opencode* still read', () => {
+describe('readiness keys: runtime* written and read', () => {
   const t0 = new Date('2026-09-30T10:00:00.000Z');
-  const PRE_W4_SPELLING: Record<string, string> = {
-    runtimeReadyWaitStartedAt: 'opencodeReadyWaitStartedAt',
-    runtimeReadyWaitReason: 'opencodeReadyWaitReason',
-    runtimeUnreachableWaitStartedAt: 'opencodeUnreachableWaitStartedAt',
-    runtimeNotReadyWaitStartedAt: 'opencodeNotReadyWaitStartedAt',
-    runtimeBootPhase: 'opencodeBootPhase',
-    runtimeBootWaitFirstSeenAt: 'opencodeBootWaitFirstSeenAt',
-    runtimeUnreachableCause: 'opencodeUnreachableCause',
-    runtimeUnreachableCauseAt: 'opencodeUnreachableCauseAt',
-    runtimeUnreachableResponder: 'opencodeUnreachableResponder',
-    runtimeUnreachableDetail: 'opencodeUnreachableDetail',
-  };
-
   test('an observation writes only runtime* keys', () => {
     expect(runtimeReadyWaitPatch({}, 'unreachable', 'boot|state=starting', t0)).toEqual({
       runtimeReadyWaitStartedAt: t0.toISOString(),
@@ -285,55 +272,6 @@ describe('neutral readiness keys: runtime* written, pre-W4 opencode* still read'
       runtimeBootWaitFirstSeenAt: t0.toISOString(),
       runtimeBootPhase: 'boot|state=starting',
     });
-  });
-
-  test('a row an older API stamped keeps its budgets', () => {
-    const preW4 = {
-      opencodeReadyWaitStartedAt: t0.toISOString(),
-      opencodeReadyWaitReason: 'not_ready',
-      opencodeNotReadyWaitStartedAt: t0.toISOString(),
-      opencodeBootWaitFirstSeenAt: t0.toISOString(),
-      opencodeBootPhase: 'p0',
-    };
-    // Same phase, clock running: nothing to write.
-    expect(runtimeReadyWaitPatch(preW4, 'not_ready', 'p0', new Date(t0.getTime() + 60_000))).toBeNull();
-    // The per-reason clock still spends.
-    expect(staleRuntimeReadyReason(preW4, 'not_ready', t0.getTime() + 90_001, 90_000)).toBe(
-      'runtime_not_ready_timeout',
-    );
-    // The hard cap still spends.
-    expect(
-      staleRuntimeReadyReason(
-        { opencodeBootWaitFirstSeenAt: t0.toISOString() },
-        'not_ready',
-        t0.getTime() + STALE_RUNTIME_BOOT_HARD_MS + 1_000,
-      ),
-    ).toBe('runtime_not_ready_timeout');
-    // A new phase moves the first-seen clock to the neutral key without resetting it.
-    const next = runtimeReadyWaitPatch(preW4, 'not_ready', 'p1', new Date(t0.getTime() + 80_000))!;
-    expect(next.runtimeBootWaitFirstSeenAt).toBe(t0.toISOString());
-    expect(next.runtimeBootPhase).toBe('p1');
-  });
-
-  test('the neutral key wins over a pre-W4 key on the same row', () => {
-    const both = {
-      opencodeNotReadyWaitStartedAt: t0.toISOString(),
-      runtimeNotReadyWaitStartedAt: new Date(t0.getTime() + 80_000).toISOString(),
-    };
-    expect(staleRuntimeReadyReason(both, 'not_ready', t0.getTime() + 90_001, 90_000)).toBeNull();
-  });
-
-  test('every clearing list strips both spellings', () => {
-    for (const [neutral, preW4] of Object.entries(PRE_W4_SPELLING)) {
-      for (const list of [
-        RUNTIME_READINESS_CLOCK_KEYS,
-        RUNTIME_WAKE_CLAIM_CLEARED_KEYS,
-        IN_PLACE_RESTART_CLEARED_KEYS,
-      ]) {
-        expect(list as readonly string[]).toContain(neutral);
-        expect(list as readonly string[]).toContain(preW4);
-      }
-    }
   });
 });
 

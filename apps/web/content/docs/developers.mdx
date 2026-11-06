@@ -8257,7 +8257,7 @@ A connector call carries `can_resolve` (on a `SessionAuditAction`) or `canResolv
 | `acceptEnterpriseOffer(…)` | A Stripe Checkout link for the open Enterprise offer. Needs `billing.write`. `404` when no offer is open, `409` when the offer is invoiced. |
 | `contactSales(…)` | Sends a contact request to Kortix sales. |
 | `subscription.createPortalSession(returnUrl, accountId?)` · `.cancel(feedback?, accountId?)` · `.reactivate(accountId?)` | Manage the subscription. |
-| `credits.purchase(input)` · `credits.autoTopupSettings(accountId?)` · `credits.configureAutoTopup(input)` | Buy credits · read and set auto top-up. |
+| `credits.purchase(input)` · `credits.redeem({ code, accountId })` · `credits.autoTopupSettings(accountId?)` · `credits.configureAutoTopup(input)` | Buy credits · redeem a credit code (once per account; a refusal throws an `ApiError` with `code` `credit_code_invalid`, `credit_code_expired`, `credit_code_exhausted` or `credit_code_already_redeemed`) · read and set auto top-up. |
 
 `canOfferTopup(state)` and `canManageBilling(state)` (root exports) read an account state. `canOfferTopup` is `true` only when the plan may buy credits and the caller may change billing. Both return `false` while `state` is `undefined` or `null`. Retired billing calls are in [Deprecated names](#deprecated-names).
 

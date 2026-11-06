@@ -8,7 +8,7 @@ import {
 } from '../browser/session-sync/session-sync-registry';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { getClientForUrl } from '../core/runtime/client';
-import { canQueryRuntimeSession, type Session } from './use-opencode-sessions';
+import { canQueryRuntimeSession, type Session } from './use-runtime-sessions';
 
 /** Load a bounded session tail before navigation or through a known runtime URL. */
 export async function prefetchSession(sessionId: string, runtimeUrl?: string): Promise<void> {

@@ -68,7 +68,7 @@ export const FILES_KEYS: readonly FilesBinding[] = [
     id: 'files.toggleHidden',
     scope: 'files',
     chords: [{ key: '.' }],
-    description: 'Show or hide dot-prefixed entries (.kortix and .opencode always show).',
+    description: 'Show or hide dot-prefixed entries (.kortix always shows).',
   },
   {
     id: 'files.refresh',

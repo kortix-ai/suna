@@ -51,7 +51,7 @@ export const config = {
   // refused with 413 before a byte is read. 0 disables the per-request cap.
   maxRequestBytes: optionalInt('GATEWAY_MAX_REQUEST_BYTES', DEFAULT_MAX_REQUEST_BYTES),
   // Inline-image cap per request (see @kortix/llm-gateway pipeline/image-window.ts).
-  // Count: default 20 (Bedrock Converse's hard limit); on overflow 13 images survive.
+  // Count: default 20 (a choice: Bedrock accepts 600); on overflow 13 images survive.
   // Bytes: default 22 MiB of base64 images (Bedrock and Anthropic refuse a ~32 MB
   // body); on overflow 16 MiB survive. 0 disables either cap.
   // Anthropic's origin for Claude Code's model calls on Claude accounts

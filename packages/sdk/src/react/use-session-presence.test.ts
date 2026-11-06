@@ -5,7 +5,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { configureKortix } from '../core/http/config';
 import { PRESENCE_AWAKE_REFRESH_MS } from './human-presence';
-import { useSession } from './opencode';
+import { useSession } from './runtime-hooks';
 import { qk } from './query-keys';
 import { sessionStartKey } from '../core/rest/projects-client/session-sandbox';
 

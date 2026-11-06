@@ -135,7 +135,7 @@ describe('the unreachable warn gate against the real row', () => {
     const before = warns.length;
     await poll(sandboxId, 'http_502');
     expect(warnsSince(before)).toBe(1);
-    expect(warns[warns.length - 1][0]).toBe('[start] opencode session list unreachable');
+    expect(warns[warns.length - 1][0]).toBe('[start] runtime session list unreachable');
     const afterWarn = await readMetadata(sandboxId);
     expect(typeof afterWarn.metadata.runtimeUnreachableWarnedAt).toBe('string');
     expect(

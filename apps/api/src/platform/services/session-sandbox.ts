@@ -86,18 +86,6 @@ import { resolveSessionResidentialProxy } from './residential-proxy';
 import type { WorkspaceVolume } from './workspace-volume';
 import { logger } from '../../lib/logger';
 
-/**
- * Bound for the pre-active hook. Generous, because the hook is a data restore and
- * cutting it short mid-write is worse than waiting — but finite, because it sits
- * between "VM exists" and "row is active", i.e. directly on time-to-usable. See
- * the call site for the measured cost of it being unbounded.
- */
-const BEFORE_ACTIVE_HOOK_TIMEOUT_MS = configuredTimeoutMs(
-  'KORTIX_BEFORE_ACTIVE_HOOK_TIMEOUT_MS',
-  20_000,
-  1_000,
-);
-
 // Fallback spec for sandboxes that don't declare `sandbox:` in kortix.yaml.
 // Mirrors the platform default sandbox size (2 vCPU / 4 GB / 20 GB).
 const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
@@ -548,14 +536,6 @@ export async function provisionSessionSandbox(opts: {
    * `[[sandbox.templates]]` entries. Empty/undefined → platform default.
    */
   sandboxSlug?: string;
-  /**
-   * Runs after the provider sandbox is created but BEFORE the row is flipped to
-   * `active`. Used by legacy migration to restore the original opencode store
-   * into the sandbox before the frontend's `ensure-opencode` pin runs (which
-   * would otherwise re-pin to a fresh session). Best-effort: a throw is logged
-   * and provisioning still completes to `active`.
-   */
-  beforeActive?: (externalId: string) => Promise<void>;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType } = opts;
   // An explicit caller location wins; otherwise where the project's Files
@@ -711,9 +691,9 @@ export async function provisionSessionSandbox(opts: {
   const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
   const llmBaseUrl = resolveLlmGatewayBaseUrl(kortixOrigin);
 
-  // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is
-  // injected (otherwise OpenCode falls back to showing only its built-in Zen
-  // catalog). It authenticates the gateway with the per-session connector PAT,
+  // The runtime's `kortix` provider needs KORTIX_LLM_* (pi refuses to start
+  // without KORTIX_LLM_BASE_URL and KORTIX_TOKEN). It authenticates the
+  // gateway with the per-session connector PAT,
   // which the gateway resolves via validateAccountToken and meters.
   //
   // YOLO is gone — we no longer mint/inject a per-member kyolo_ token here. That
@@ -1224,36 +1204,6 @@ async function activateProvisionedSandbox(
   const { accountId, userId } = opts;
   const { providerName, provider } = state;
   const { result, attempts, timeline, firstStage, branch, boot } = created;
-  // Pre-active hook (legacy migration chat restore). Runs while the row is
-  // still 'provisioning' so the frontend hasn't started ensure-opencode yet.
-  //
-  // The comment here used to say "never block the session opening on it" while
-  // the code awaited it UNBOUNDED — and the telemetry shows what that cost
-  // when the hook was live: `before-active-hook` p50 12 267ms, p90 33 762ms,
-  // max 62 490ms across 162 provisions, every millisecond of it added to
-  // time-to-usable because the row cannot flip to 'active' until this returns
-  // (last live occurrence 2026-07-12; no caller passes `beforeActive` today,
-  // so this is currently unreachable).
-  //
-  // Left in place as the documented extension point it is, but now bounded so
-  // re-enabling it cannot silently reintroduce a 12-60s stall. On timeout the
-  // hook keeps running detached — it is a data-restore, so abandoning the WAIT
-  // is right while abandoning the WORK is not — and the session proceeds to
-  // 'active' as the original comment always promised.
-  if (opts.beforeActive) {
-    try {
-      await withTimeout(
-        opts.beforeActive(result.externalId),
-        BEFORE_ACTIVE_HOOK_TIMEOUT_MS,
-        `beforeActive(${sandbox.sandboxId})`,
-      );
-      tl.mark('before-active-hook');
-    } catch (err) {
-      console.warn(`[session-sandbox] beforeActive hook failed or timed out for ${sandbox.sandboxId}:`, err);
-      tl.mark('before-active-hook-abandoned');
-    }
-  }
-
   // Async providers leave the row at 'provisioning' so the dashboard
   // poller can flip it to 'active' once port 8000 is reachable. Sync
   // providers (none today) would be ready immediately on create.

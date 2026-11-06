@@ -12,7 +12,7 @@
  * surfaced via /kortix/health `boot_error`, a terminal /start answer, or the
  * connect loop's own timeout), the failure is a card with the composer's
  * surface, the detail, Restart, and a way back to project home, centred in the
- * page, with no composer (Jay, 2026-10-02: nothing can be sent). Web parity with the dashboard's "OpenCode runtime is not ready"
+ * page, with no composer (Jay, 2026-10-02: nothing can be sent). Web parity with the dashboard's "Session runtime is not ready"
  * screen (apps/web/.../sessions/[sessionId]/page.tsx InlineSessionError).
  *
  * With a SAVED COPY (`thread`: the copy this device kept, then the server's;

@@ -10,7 +10,7 @@ and responses to the standalone service without reading their bodies.
 ## Request path
 
 ```text
-OpenCode
+pi (inside kortixd)
   -> API streaming bridge or gateway load balancer
   -> standalone gateway
   -> authenticate and reserve billing
@@ -21,7 +21,7 @@ OpenCode
 ```
 
 The gateway does not retry, fail over, probe completions, capture bodies, or
-retain response streams. OpenCode owns request retries. The provider owns its
+retain response streams. The client (pi inside kortixd) owns request retries. The provider owns its
 internal availability policy.
 
 OpenAI-compatible providers use one direct `fetch` to `/chat/completions`.
@@ -71,7 +71,7 @@ awaited forever holding the lease; capacity then shrank permanently and the
 process eventually refused everything while completely idle.
 
 Inline images are also bounded per request, by count and by bytes.
-`GATEWAY_MAX_INLINE_IMAGES` (default 20, Bedrock Converse's hard limit) caps
+`GATEWAY_MAX_INLINE_IMAGES` (default 20; Bedrock itself accepts 600, probed 2026-11-06) caps
 image parts per request; over the cap 13 images survive
 (`GATEWAY_IMAGE_KEEP_ON_OVERFLOW`, default 12, plus the newest).
 `GATEWAY_MAX_INLINE_IMAGE_BYTES` (default 22 MiB of base64) caps their bytes;

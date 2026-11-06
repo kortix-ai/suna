@@ -7,7 +7,7 @@
 //     drain must deliver it instead of dead-lettering it as "missing text".
 //  2. A prompt posted during a live turn must be re-minted before it goes out.
 //     The running turn has written messages with HIGHER ids than the client id,
-//     and OpenCode reads a lower id as already answered — the turn silently
+//     and an OpenCode box reads a lower id as already answered — the turn silently
 //     never runs.
 //  3. A redelivery must prove the prompt is still unanswered. A `delivering`
 //     record is only evidence that the ACCEPTANCE write failed; if the
@@ -52,7 +52,7 @@ const NEWER_TRANSCRIPT_ID = mintWireMessageId({ nowMs: NOW_MS - 60_000, random: 
  * `WIRE_ID_BACKDATE_MS` and so the case where the mint is LIFTED above the
  * transcript rather than merely clocked past it.
  */
-const OPENCODE_MINTED_ID = `msg_${(((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0'))}AbCdEfGhIjKlMn`;
+const RUNTIME_MINTED_ID = `msg_${(((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0'))}AbCdEfGhIjKlMn`;
 
 let completeDuringRequeue = false;
 let deliveryStarts: string[] = [];
@@ -365,12 +365,12 @@ mock.module('../store', () => ({
   },
 }));
 
-mock.module('../../opencode-mapping', () => ({
-  sandboxOpencodeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
+mock.module('../../runtime-session-mapping', () => ({
+  sandboxRuntimeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
 
 // The proxy converges the box before every delivery. The wake path pushes an
-// `opencodeEnv` override itself (deliver.ts): it reads the service key and
+// `runtimeEnv` override itself (deliver.ts): it reads the service key and
 // ingress and calls `syncSandboxEnvForPrompt`; this file records whether it ran.
 let serviceKeyAvailable = true;
 let envSyncCalls = 0;
@@ -521,7 +521,7 @@ beforeEach(() => {
     sandboxProvider: 'daytona',
     baseRef: 'main',
     agentName: 'agent',
-    opencodeSessionId: OC_SESSION_ID,
+    runtimeSessionId: OC_SESSION_ID,
     sandboxUrl: `https://sandbox.test/p/${EXTERNAL_ID}/8000/`,
   };
   boxRow = null;
@@ -645,7 +645,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       expect(await executeQueuedContinue(baseRow({ payload: {
         text: scenario.delivery === 'not-landed' ? OVER_EDGE_TEXT : 'say hi',
         ...(scenario.delivery === 'not-landed' ? { wireMessageId: SUBMITTED_WIRE_ID } : {}),
-        ...(scenario.delivery === 'pending' ? { opencodeEnv: ENV_OVERRIDE } : {}),
+        ...(scenario.delivery === 'pending' ? { runtimeEnv: ENV_OVERRIDE } : {}),
       } }))).toBe(scenario.result);
       expect({
         succeeded: succeededCalls.length,
@@ -661,7 +661,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       parkedCalls = [];
       unlandedRequeues = [];
       failedCalls = [];
-      sessionRow = { accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'running', metadata: {}, opencodeSessionId: OC_SESSION_ID };
+      sessionRow = { accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'running', metadata: {}, runtimeSessionId: OC_SESSION_ID };
       serviceKeyAvailable = true;
       runtimeDropsFirstDelivery = false;
       capturedBodies = [];
@@ -681,11 +681,11 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies[0]!.no_reply).toBe(true);
     expect(forwardedCalls[0]!.noReply).toBe(true);
   });
-  // The proxy never sees an `opencodeEnv` override, so a box that cannot be
+  // The proxy never sees an `runtimeEnv` override, so a box that cannot be
   // given it would run the prompt without it. It waits instead.
   test('an env override onto a box whose service key cannot be read is not delivered blind — the prompt stays queued', async () => {
     serviceKeyAvailable = false;
-    expect(await executeQueuedContinue(baseRow({ payload: { text: 'say hi', opencodeEnv: ENV_OVERRIDE } }))).toBe('queued');
+    expect(await executeQueuedContinue(baseRow({ payload: { text: 'say hi', runtimeEnv: ENV_OVERRIDE } }))).toBe('queued');
     expect(envSyncCalls).toBe(0);
     expect(capturedBodies).toHaveLength(0);
   });
@@ -700,7 +700,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const liveTurn = {
       status: 'active',
       metadata: { activeTurns: {
-        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+        't-1': { token: 't-1', state: 'active', runtimeSessionId: OC_SESSION_ID,
           messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
       } },
     };
@@ -725,7 +725,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     boxRow = {
       status: 'active',
       metadata: { activeTurns: {
-        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+        't-1': { token: 't-1', state: 'active', runtimeSessionId: OC_SESSION_ID,
           messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
       } },
     };
@@ -746,7 +746,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     boxRow = {
       status: 'active',
       metadata: { activeTurns: {
-        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+        't-1': { token: 't-1', state: 'active', runtimeSessionId: OC_SESSION_ID,
           messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
       } },
     };
@@ -764,7 +764,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     boxRow = {
       status: 'active',
       metadata: { activeTurns: {
-        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+        't-1': { token: 't-1', state: 'active', runtimeSessionId: OC_SESSION_ID,
           messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
       } },
     };
@@ -1047,8 +1047,8 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
 
   test('a prompt that WAITED is re-minted above the transcript before it is sent', async () => {
     // The running turn wrote messages while this prompt sat in the inbox. The
-    // id the client minted at submit time now sorts BELOW them, and OpenCode
-    // reads that as already answered — the turn would never run.
+    // id the client minted at submit time now sorts BELOW them, and an OpenCode
+    // box reads that as already answered — the turn would never run.
     transcript = [
       { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
       { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other' } },
@@ -1074,7 +1074,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     // re-mint decision. The marker that survives lives in the PAYLOAD, which is
     // merged rather than replaced. Without this, "send now" on a prompt that
     // queued behind another prompt delivers the id minted when the user
-    // pressed Enter, and OpenCode reads it as already answered.
+    // pressed Enter, and an OpenCode box reads it as already answered.
     transcript = [
       { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
       { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other' } },
@@ -1269,7 +1269,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
           't-1': {
             token: 't-1',
             state: 'active',
-            opencodeSessionId: OC_SESSION_ID,
+            runtimeSessionId: OC_SESSION_ID,
             messageId: 'msg_other',
             startedAtMs: NOW_MS - 30_000,
           },
@@ -1314,7 +1314,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     //
     // The floor the inbox keeps itself is what separates them: the first
     // prompt's delivered id is on its row before the second one mints.
-    const running = OPENCODE_MINTED_ID;
+    const running = RUNTIME_MINTED_ID;
     const firstDelivered = wireIdTime(running)! + BigInt(1);
     deliveredFloor = firstDelivered;
     transcript = [
@@ -1332,13 +1332,13 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
   });
 
   // `kortix sessions send` ≤ 2026-09 minted the HIGH 12 hex digits of the id
-  // clock: ~40 days ahead of every id OpenCode writes. POST stamps such a row
+  // clock: ~40 days ahead of every id a box writes. POST stamps such a row
   // `remintOnDelivery`; the drain must then place it against the transcript and
   // must never let the far-future value act as a floor.
   const CLI_HIGH_BITS_ID = `msg_${((BigInt(NOW_MS) * BigInt(0x1000)) >> BigInt(8)).toString(16).slice(0, 12)}SyntheticCli03`;
 
   test('a far-future CLI id goes out re-placed just above the transcript, not ~40 days ahead', async () => {
-    transcript = [{ info: { id: OPENCODE_MINTED_ID, role: 'assistant', parentID: 'msg_other' } }];
+    transcript = [{ info: { id: RUNTIME_MINTED_ID, role: 'assistant', parentID: 'msg_other' } }];
 
     const outcome = await executeQueuedContinue(
       baseRow({
@@ -1350,12 +1350,12 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const sent = capturedBodies[0].message_id as string;
     expect(sent).not.toBe(CLI_HIGH_BITS_ID);
     expect(isWireIdAheadOf(sent, NOW_MS)).toBe(false);
-    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(OPENCODE_MINTED_ID)!);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(RUNTIME_MINTED_ID)!);
   });
 
   test('a far-future id on an earlier row does not veto the lift above the transcript', async () => {
     deliveredFloor = wireIdTime(CLI_HIGH_BITS_ID);
-    transcript = [{ info: { id: OPENCODE_MINTED_ID, role: 'assistant', parentID: 'msg_other' } }];
+    transcript = [{ info: { id: RUNTIME_MINTED_ID, role: 'assistant', parentID: 'msg_other' } }];
 
     const outcome = await executeQueuedContinue(
       baseRow({ result: { admission_reason: 'older_prompt_pending' } }),
@@ -1364,7 +1364,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(outcome).toBe('succeeded');
     const sent = capturedBodies[0].message_id as string;
     expect(isWireIdAheadOf(sent, NOW_MS)).toBe(false);
-    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(OPENCODE_MINTED_ID)!);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(RUNTIME_MINTED_ID)!);
   });
 
   test('a STOPPED box holds no turn, so an idle send still keeps its id', async () => {
@@ -1375,7 +1375,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       status: 'stopped',
       metadata: {
         activeTurns: {
-          't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID },
+          't-1': { token: 't-1', state: 'active', runtimeSessionId: OC_SESSION_ID },
         },
       },
     };
@@ -1630,14 +1630,14 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       'queue-c',
     ]);
     // A queue that no Stop released keeps one prompt per turn: nothing on the
-    // wire asks OpenCode to hold its reply.
+    // wire asks the runtime to hold its reply.
     expect(capturedBodies.every((body) => !('no_reply' in body))).toBe(true);
     expect(forwardedCalls.every((call) => !('noReply' in call))).toBe(true);
   });
 
   // KRTX-683. Stop held A and B; C is a message sent while stopped, and
   // sending it released the hold, which stamped all three with one
-  // `releasedBatchId`. The owner's contract: OpenCode gets A, B and C as three
+  // `releasedBatchId`. The owner's contract: the runtime gets A, B and C as three
   // SEPARATE user messages, in the order the user sent them, answered in ONE
   // turn. So A and B go out `noReply` (persisted, no loop) and only C starts
   // the turn — one POST at a time, each next one re-minted after the last
@@ -1645,7 +1645,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
   const releasedRow = (
     name: 'a' | 'b' | 'c' | 'd',
     clientSentAtMs: number,
-    extra: { releasedBatchId?: string; result?: Record<string, unknown>; opencodeEnv?: Record<string, string> } = {},
+    extra: { releasedBatchId?: string; result?: Record<string, unknown>; runtimeEnv?: Record<string, string> } = {},
   ) =>
     baseRow({
       commandId: `cmd-${name}`,
@@ -1661,7 +1661,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
         // No `remintOnDelivery`: a batch row re-mints at delivery because it
         // is a batch row (`placeQueuedContinue`), even the send that never waited.
         ...(extra.releasedBatchId ? { releasedBatchId: extra.releasedBatchId } : {}),
-        ...(extra.opencodeEnv ? { opencodeEnv: extra.opencodeEnv } : {}),
+        ...(extra.runtimeEnv ? { runtimeEnv: extra.runtimeEnv } : {}),
       },
     });
   /** What a row looks like when the chain's wake claims it after the lane put
@@ -1839,7 +1839,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     siblingSweeps = [[a, b], [releasedRow('c', NOW_MS - 7 * 60_000, { releasedBatchId: 'b1', ...waited })]];
     promotionResults = ['queue-b'];
     // B carries an env override, which the wake path must push itself.
-    targetedClaims.set('queue-b', [releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1', opencodeEnv: ENV_OVERRIDE, ...waited })]);
+    targetedClaims.set('queue-b', [releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1', runtimeEnv: ENV_OVERRIDE, ...waited })]);
     releasedPending = [a, b, c];
     // The box stops answering between A and B: B's delivery ends retryable.
     onPromotion = () => {
@@ -1867,7 +1867,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
 
 test('a turn ending during admission requeue immediately wakes the head again', async () => {
   boxRow = { status: 'active', metadata: { activeTurns: {
-    't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+    't-1': { token: 't-1', state: 'active', runtimeSessionId: OC_SESSION_ID,
       messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
   } } };
   completeDuringRequeue = true;
@@ -1883,7 +1883,7 @@ test('a turn ending during admission requeue immediately wakes the head again', 
 
 test('a refused claim never announces delivery', async () => {
   boxRow = { status: 'active', metadata: { activeTurns: {
-    't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+    't-1': { token: 't-1', state: 'active', runtimeSessionId: OC_SESSION_ID,
       messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
   } } };
   expect(await executeQueuedContinue(baseRow())).toBe('queued');

@@ -67,12 +67,6 @@ const TRANSPORT_RULES = [
 const RULES = [
   {
     scope: 'all',
-    rule: 'opencode-package',
-    pattern: /['"]@opencode-ai\/sdk(?:\/[^'"]*)?['"]/gi,
-    message: 'Client code must not import the OpenCode SDK.',
-  },
-  {
-    scope: 'all',
     rule: 'direct-runtime-import',
     // An allowlist: every other subpath is deprecated or internal.
     pattern: SDK_SUBPATH_OUTSIDE_PUBLIC,
@@ -111,16 +105,17 @@ const RULES = [
   },
   {
     scope: 'all',
-    rule: 'opencode-rest-path',
+    // The session runtime's REST routes on the box (kortixd serves them).
+    rule: 'runtime-rest-path',
     pattern:
       /\/(?:global\/event|prompt_async)|['"`]\/(?:session\/[^'"`\s]+\/(?:abort|command|message|prompt)|message\/[^'"`\s]+)/gi,
-    message: 'Client code must not construct OpenCode REST paths.',
+    message: 'Client code must not construct session runtime REST paths.',
   },
   {
     scope: 'all',
     rule: 'legacy-runtime-store',
     pattern:
-      /\b(?:server-store|sync-store|sandbox-connection-store|opencode-pending-store|idb-sync-cache)\b/gi,
+      /\b(?:server-store|sync-store|sandbox-connection-store|idb-sync-cache)\b/gi,
     message: 'Client code must not use legacy runtime stores.',
   },
   {

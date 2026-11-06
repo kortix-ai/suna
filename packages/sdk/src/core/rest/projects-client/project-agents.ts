@@ -43,7 +43,7 @@ export function selectableProjectAgents(
   config: ProjectConfigSummary,
 ): ProjectConfigSummary['agents'] {
   const agents = config.agents.filter(isSelectableAgent);
-  const defaultName = config.default_agent ?? config.open_code_default_agent;
+  const defaultName = config.default_agent;
   if (!defaultName) return agents;
   return agents.sort((left, right) => {
     if (left.name === defaultName) return -1;

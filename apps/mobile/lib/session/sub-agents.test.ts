@@ -93,7 +93,7 @@ describe('subAgentRelation', () => {
   });
 
   test('the same relation the session list nests by: a runtime sub-session is not a sub-agent', () => {
-    // `runtime_sessions[].parent_id` is OpenCode's own tree. Neither the list
+    // `runtime_sessions[].parent_id` is the runtime's own tree. Neither the list
     // nor the header reads it.
     const root = session('root', {
       runtime_sessions: [

@@ -21,7 +21,7 @@ import { positiveEnvInt } from './reaper-constants';
  * Application cap for observations that are not durable active-turn evidence.
  * Preview traffic and gateway activity cannot keep one
  * provider run alive forever. sandbox-turn-lifecycle.ts intentionally does not
- * use this cap: an exact OpenCode turn with fresh control-plane evidence renews
+ * use this cap: an exact runtime turn with fresh control-plane evidence renews
  * until that evidence becomes terminal or unreadable past its deadline.
  */
 export const NON_TURN_DEADLINE_CAP_MS = 24 * 3_600_000;
@@ -41,7 +41,7 @@ export const NON_TURN_DEADLINE_CAP_MS = 24 * 3_600_000;
  * This grant is not the active-turn authority. A confirmed prompt delivery
  * creates a token-keyed `metadata.activeTurns` entry through
  * sandbox-turn-lifecycle.ts. The reaper renews this grant only after it observes
- * the exact OpenCode turn in flight.
+ * the exact runtime turn in flight.
  * Therefore an LLM-silent tool call, retry backoff, or pending question can
  * outlive one grant without losing its sandbox. Terminal evidence removes the
  * record.
@@ -52,9 +52,9 @@ export function turnGrantMs(): number {
 }
 
 /**
- * Granted before a prompt reaches OpenCode. This covers env synchronization,
+ * Granted before a prompt reaches the runtime. This covers env synchronization,
  * token reminting, and one upstream delivery attempt. It does not assert that
- * an agent is running. A successful OpenCode response upgrades the deadline to
+ * an agent is running. A successful upstream response upgrades the deadline to
  * {@link turnGrantMs}; a failed delivery expires on this short grace instead of
  * retaining a four-hour active-turn window.
  */
@@ -95,23 +95,24 @@ export function turnAbsoluteMaxMs(): number {
 /**
  * The wall-clock ceiling on an `active` turn record that has NO `messageId`.
  *
- * `messageId` is set by `relayTurnBeginToApi` (the daemon's boot.ts) within
- * seconds of OpenCode accepting a prompt — it is the earliest thing a healthy
+ * `messageId` is set by the daemon's turn-begin relay (`relayTurnBegin`, kortixd
+ * `harness/shared/turn-relay.ts`) within seconds of the runtime accepting a
+ * prompt — it is the earliest thing a healthy
  * turn establishes. A record still missing it after this ceiling did not lose
  * a race; it lost its runtime before that relay ever ran.
  *
  * THIS BOUND EXISTS BECAUSE `turnAbsoluteMaxMs` CANNOT CATCH IT, and neither
  * can ordinary observation. `observeSandboxTurn` asks the daemon a ROOT-scoped
- * question when no `messageId` exists to scope it by, and the daemon's own
- * turn-in-flight oracle (`opencode-turn-state.ts`'s `inspectOpencodeRoot`)
- * deliberately reads an incomplete assistant message as "still in flight" even
- * when `/session/status` reports the box idle — a rule that exists to protect
- * a genuine husk recovery, but that means a turn severed by a daemon-level
- * restart (2026-09-29 incident: an env-driven OpenCode respawn SIGTERMed a
- * process 200ms after the API accepted its turn) reads `observation: 'active'`
- * FOREVER: the reaper's per-pass branches below never see it as `terminal`,
- * so it renews the record's deadline on every pass and only `kortix sessions
- * stop` ever clears it. This ceiling settles the record on age + missing
+ * question when no `messageId` exists to scope it by. The OpenCode-era
+ * daemon's turn-in-flight oracle (`inspectOpencodeRoot`, deleted with the
+ * OpenCode harness) deliberately read an incomplete assistant message as
+ * "still in flight" even when `/session/status` reported the box idle — a rule
+ * that protected a genuine husk recovery, but that meant a turn severed by a
+ * daemon-level restart (2026-09-29 incident: an env-driven OpenCode respawn
+ * SIGTERMed a process 200ms after the API accepted its turn) read
+ * `observation: 'active'` FOREVER: the reaper's per-pass branches below never
+ * saw it as `terminal`, so it renewed the record's deadline on every pass and
+ * only `kortix sessions stop` ever cleared it. This ceiling settles the record on age + missing
  * identity alone, independent of that ambiguous signal — the one thing this
  * incident's daemon-side fix (relaying its own turn-end by identity) is
  * itself supposed to make unnecessary, and the backstop for when it doesn't.
@@ -140,7 +141,7 @@ export function turnNoBeginRelayMaxMs(): number {
  * hours. It buys the turn one more horizon at a time for as long as the record
  * is still fresh FOR ITS STATE — {@link turnGrantMs} for an accepted record,
  * {@link turnDeliveryGraceMs} for a `delivering` one nothing has confirmed
- * reached OpenCode — so a runtime that stays silent stops receiving it within
+ * reached the runtime — so a runtime that stays silent stops receiving it within
  * one horizon of that bound.
  *
  * The wall-clock anchor cap is NOT the bound here: `renewActiveSandboxTurn` is
@@ -350,19 +351,21 @@ export function isPreviewUseObservation(opts: {
 }
 
 /**
- * Did this sandbox-reported turn end TERMINATE the turn, or is opencode merely
- * about to try again?
+ * Did this sandbox-reported turn end TERMINATE the turn, or is the runtime
+ * merely about to try again?
  *
- * `session.error` fires for transient upstream failures too — a 429 rate-limit
- * backoff, a 5xx the provider will serve on retry — and opencode's own
- * `APIError.data.isRetryable` is the signal for exactly that. Treating a
+ * An old OpenCode box fires `session.error` for transient upstream failures
+ * too — a 429 rate-limit backoff, a 5xx the provider will serve on retry — and
+ * its `APIError.data.isRetryable` is the signal for exactly that. pi does not
+ * end a turn on a transient error: it retries and reports the `retry` status
+ * (kortixd `harness/pi/transient-retry.ts`). Treating a
  * retryable error as a turn end shortened the box to the 15-minute idle tail
  * WHILE THE TURN WAS STILL RUNNING, so a backoff longer than 15 minutes killed
  * the box mid-work. That is the one state the deleted execution lease got right:
- * it renewed while opencode reported 'busy' OR 'retry'.
+ * it renewed while the runtime reported 'busy' OR 'retry'.
  *
  * Only a turn we can see has genuinely finished may pull the deadline in:
- *   - status 'idle'                → opencode went quiet. Terminal.
+ *   - status 'idle'                → the runtime went quiet. Terminal.
  *   - status 'error', isRetryable false/undefined → a real failure. Terminal.
  *   - status 'error', isRetryable true            → a RETRY. Not terminal.
  *

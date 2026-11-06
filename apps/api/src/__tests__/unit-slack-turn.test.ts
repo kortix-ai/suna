@@ -379,8 +379,8 @@ describe('relayTurnEnd', () => {
     expect(calls('addReaction').length).toBe(0);
   });
 
-  // The server no longer re-checks the relayed opencode id against the DB pin —
-  // the sandbox filters subagents by parentID before relaying, and a stale-pin
+  // The server no longer re-checks the relayed runtime session id against the
+  // DB pin — the daemon relays only the root session's turn end, and a stale-pin
   // re-check here is exactly what used to drop a real turn's idle and spin the ⏳
   // forever. So a relayed root idle ALWAYS finalizes, with no pin lookup.
   test('finalizes unconditionally — no pin lookup gates the close', async () => {

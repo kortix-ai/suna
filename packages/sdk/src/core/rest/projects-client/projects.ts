@@ -301,17 +301,23 @@ export interface ProjectConfigSummary {
   manifest_raw: string | null;
   /** kortix.yaml problems for this project. Absent from an API released before the one-schema manifest. */
   manifest_health?: ProjectManifestHealth;
-  /** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
-  open_code_raw: string | null;
-  /** Provider-neutral project default. The SDK derives this from legacy servers. */
+  /** @deprecated The API no longer sends it (an older API sends `null`). Removed in the next major. */
+  open_code_raw?: string | null;
+  /** The project's default agent (`kortix.yaml` `default_agent`), or null. */
   default_agent?: string | null;
-  /** @deprecated Use `default_agent`. */
-  open_code_default_agent: string | null;
+  /** @deprecated The API no longer sends it; read `default_agent`. Removed in the next major. */
+  open_code_default_agent?: string | null;
   /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml;
    *  `true` = on, absent = off). `my_kortix` is My Kortix, the agent named `mykortix`.
    *  Absent from an older API. */
   builtin_agents?: { my_kortix: boolean };
-  agent_discovery: 'opencode' | 'declarative';
+  /**
+   * Where `agents` comes from. The API sends `declarative` (the agents
+   * `kortix.yaml` declares) for every project; a response filtered by the
+   * caller's `project.agent.read` access sends `null`.
+   * `opencode` is `@deprecated`: no API sends it. It stays in the union until the next major.
+   */
+  agent_discovery: 'declarative' | 'opencode';
   agents: Array<{
     name: string;
     path: string;
@@ -322,7 +328,8 @@ export interface ProjectConfigSummary {
     /** The agent's `model:` frontmatter (`provider/model`); absent on older
      *  servers, null when it follows the project default. */
     model?: string | null;
-    /** The server sends `kortix.yaml`. `kortix.toml` is never sent; it stays in the union until the next major. */
+    /** The server sends `kortix.yaml`. `opencode` and `kortix.toml` are never sent; they stay
+     *  in the union until the next major. */
     source?: 'opencode' | 'kortix.yaml' | 'kortix.toml';
     enabled?: boolean;
     /** True for a platform-owned agent (SUNA — the coordinator) that the API
@@ -336,8 +343,8 @@ export interface ProjectConfigSummary {
      *  null/absent is Project-wide (see `groupBySpace`). */
     space?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
-     *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
-     *  OpenCode-discovered agents (not governed by `agents:`). */
+     *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent when
+     *  `agents:` does not govern the agent. */
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';
@@ -412,7 +419,7 @@ export interface GatewayCatalogModel {
   /**
    * The REAL upstream provider serving this model ('anthropic', 'openai',
    * 'amazon-bedrock', ...). Every gateway model is registered under the one
-   * synthetic `kortix` opencode provider, so this is the ONLY reliable way to
+   * synthetic `kortix` runtime provider, so this is the ONLY reliable way to
    * group/label a model by who actually serves it — Bedrock ids are
    * dot-namespaced (`us.anthropic.claude-opus-4-8`), so the legacy
    * split-on-slash heuristic cannot recover it.
@@ -712,7 +719,7 @@ export async function getProjectDetail(projectId: string, options?: ApiClientOpt
     ...detail,
     config: {
       ...detail.config,
-      default_agent: detail.config.default_agent ?? detail.config.open_code_default_agent ?? null,
+      default_agent: detail.config.default_agent ?? null,
     },
   };
 }
@@ -729,7 +736,7 @@ export async function getProjectLlmCatalog(projectId: string, options?: ApiClien
 /**
  * Load the compact, connection-aware catalog intended for interactive model
  * selectors. Unlike `getProjectLlmCatalog`, this does not transfer the complete
- * runtime models.dev projection used to configure OpenCode sandboxes.
+ * runtime models.dev projection used to configure sandboxes.
  */
 export async function getProjectModelPicker(projectId: string, options?: ApiClientOptions) {
   return unwrap(

@@ -9,7 +9,7 @@ import { createElement } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { ProviderListResponse } from '../core/runtime/runtime-types';
 import { runIdentityResets } from './identity-reset-registry';
-import { type RuntimeLocal, type UseRuntimeLocalOptions, useRuntimeLocal } from './use-opencode-local';
+import { type RuntimeLocal, type UseRuntimeLocalOptions, useRuntimeLocal } from './use-runtime-local';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

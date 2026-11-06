@@ -1325,19 +1325,6 @@ export function ProjectDetailPage({
                   </RNText>
                 </View>
               )}
-              {project.opencode_id && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <FolderGit2 size={14} color={mutedStrong} />
-                  <RNText
-                    style={{
-                      fontSize: 12,
-                      fontFamily: monoFont,
-                      color: isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground,
-                    }}>
-                    {project.opencode_id}
-                  </RNText>
-                </View>
-              )}
             </View>
           </View>
         )}

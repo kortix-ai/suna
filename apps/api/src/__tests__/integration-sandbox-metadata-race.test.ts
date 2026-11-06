@@ -241,14 +241,13 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
 
     // 2026-11-02 prod: the first poll of a fresh box met a daemon not yet
     // listening (502), and that stamp stayed on the row for the whole boot.
-    test('a daemon that answers not_ready drops the unreachable stamps of the poll before, under both names', async () => {
+    test('a daemon that answers not_ready drops the unreachable stamps of the poll before', async () => {
       const { markRuntimeReadyWaitStarted } = await import('../projects/session-open');
       await seed({
         initStatus: 'ready',
         runtimeUnreachableCause: 'http_502',
         runtimeUnreachableCauseAt: '2026-11-02T11:48:09.648Z',
         runtimeUnreachableDetail: 'upstream unreachable: Failed to connect',
-        opencodeUnreachableCause: 'http_502',
         runtimeUnreachableWaitStartedAt: '2026-11-02T11:48:09.652Z',
       });
       const row = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
@@ -259,7 +258,6 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
       expect(metadata.runtimeUnreachableCause).toBeUndefined();
       expect(metadata.runtimeUnreachableCauseAt).toBeUndefined();
       expect(metadata.runtimeUnreachableDetail).toBeUndefined();
-      expect(metadata.opencodeUnreachableCause).toBeUndefined();
       expect(metadata.runtimeReadyWaitReason).toBe('not_ready');
       expect(typeof metadata.runtimeNotReadyWaitStartedAt).toBe('string');
       // The wait clocks are not diagnosis: they stay.

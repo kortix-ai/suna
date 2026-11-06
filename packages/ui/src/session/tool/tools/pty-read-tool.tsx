@@ -41,7 +41,7 @@ const VISIBLE_TAIL_LINES = 24;
  * actually appears, while re-creating inline the nested-scroll wheel trap the
  * comment further down records. Folding works on both surfaces: the tail stays
  * visible, the history is one click away, and no second scroller is created.
- * @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
+ * @deprecated Renders an OpenCode-only tool or todo list (pi has none). Only a transcript OpenCode wrote holds one; this keeps it readable. No new code.
  */
 export function splitTerminalBuffer(content: string): {
   earlier: string;
@@ -59,7 +59,7 @@ export function splitTerminalBuffer(content: string): {
   };
 }
 
-/** @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
+/** @deprecated Renders an OpenCode-only tool or todo list (pi has none). Only a transcript OpenCode wrote holds one; this keeps it readable. No new code. */
 export function PtyReadTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(call);

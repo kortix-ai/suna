@@ -13,8 +13,8 @@
  * (`apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts`, poked by
  * `projects/lib/sandbox-runtime-refresh.ts`), so a box booted from the PREVIOUS
  * ready image ends up serving the same CLI, skills and daemon as one booted
- * from the new image — it just pays a convergence pass (seconds, up to ~1 min
- * when the pass installs a new OpenCode pin) instead of a 14-minute build.
+ * from the new image — it just pays a convergence pass (seconds) instead of a
+ * 14-minute build.
  *
  * What that convergence does NOT cover is the base rootfs: interpreter
  * versions, apt packages, anything baked by the Dockerfile. So the fallback is

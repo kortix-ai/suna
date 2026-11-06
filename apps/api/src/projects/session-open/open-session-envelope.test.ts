@@ -10,13 +10,13 @@
  * The six branches are the ones `runOpenSession` serves without touching a
  * real provider or database: a stopped-wake replay, a wake cooldown, a
  * terminal stamped failure, a hibernated resume, an in-place recovery claim
- * on a removed box, OpenCode booting, and the ready hand-off. `db`,
- * `getProvider`, `ensureOpencodeSessionPin`, and the recovery collaborators
+ * on a removed box, the runtime booting, and the ready hand-off. `db`,
+ * `getProvider`, `ensureRuntimeSessionPin`, and the recovery collaborators
  * are scripted per test; the projection/fence modules under test stay real.
  */
 import type { sessionSandboxes } from '@kortix/db';
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realOpencodeMapping from '../opencode-mapping';
+import * as realRuntimeMapping from '../runtime-session-mapping';
 import * as realProviders from '../../platform/providers';
 import * as realRuntimeIdentity from '../runtime-identity';
 import * as realRuntimeWakeFence from '../session-lifecycle/runtime-wake-fence';
@@ -114,9 +114,9 @@ mock.module('../session-lifecycle/runtime-wake-fence', () => ({
 
 /** The daemon round trip is scripted; every branch below decides off its answer. */
 let pinResults: Array<Record<string, unknown>> = [];
-mock.module('../opencode-mapping', () => ({
-  ...realOpencodeMapping,
-  ensureOpencodeSessionPin: async () => pinResults.shift() ?? { pin: null, changed: false, reason: 'not_ready' },
+mock.module('../runtime-session-mapping', () => ({
+  ...realRuntimeMapping,
+  ensureRuntimeSessionPin: async () => pinResults.shift() ?? { pin: null, changed: false, reason: 'not_ready' },
 }));
 
 /** Runtime admission runs on every open of a running box; it admits every box here. */
@@ -178,9 +178,9 @@ const VISIBLE = {
 };
 const LOADED = { row: {} as never, userId: 'user-1' };
 
-const args = (agentName = 'default', opencodeSessionId: string | null = null) => ({
+const args = (agentName = 'default', runtimeSessionId: string | null = null) => ({
   loaded: LOADED,
-  visible: { ...VISIBLE, row: { ...VISIBLE.row, agentName, runtimeSessionId: opencodeSessionId } },
+  visible: { ...VISIBLE, row: { ...VISIBLE.row, agentName, runtimeSessionId: runtimeSessionId } },
   projectId: 'proj-1',
   sessionId: 'sess-1',
 });

@@ -1,4 +1,4 @@
-// Voice pipeline: STT → our turn manager → the Kortix agent session itself (OpenCode, with its own
+// Voice pipeline: STT → our turn manager → the Kortix agent session itself (pi inside kortixd, with its own
 // tools and memory) → TTS. No LLM runs in the voice layer: every word spoken is the agent's own text
 // or a fixed phrase (disclosure, acknowledgment, progress named after the agent's real tool calls).
 // Turn-taking follows RESEARCH.md §2.2–2.3 and §4.6:

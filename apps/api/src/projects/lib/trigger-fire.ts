@@ -699,7 +699,7 @@ async function queueExistingTriggerSession(
 
   // Session reuse — when a trigger opts into `session_mode = "reuse"`, re-prompt
   // the canonical session this trigger already created (resuming its sandbox +
-  // opencode root) so ONE long-lived session accumulates context across fires,
+  // runtime root) so ONE long-lived session accumulates context across fires,
   // instead of minting a brand-new session every time. If no reusable session
   // exists yet, or the last one is gone/failed, we fall through to createSession
   // below and that fresh session becomes the canonical one for next time. Also

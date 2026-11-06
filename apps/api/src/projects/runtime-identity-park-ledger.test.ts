@@ -129,7 +129,7 @@ const ROW = {
   externalId: 'ext-1',
   metadata: {
     activeTurns: {
-      'open-token': { token: 'open-token', state: 'active', opencodeSessionId: 'ses_root' },
+      'open-token': { token: 'open-token', state: 'active', runtimeSessionId: 'ses_root' },
     },
   },
   provider: 'daytona',

@@ -45,7 +45,7 @@ import { FileSearch } from './file-search';
 import { isPartialListing, LoadMoreRow } from './load-more-row';
 import { type FilesRightPanel, requestedFilesRightPanel } from './file-route-state';
 
-const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
+const ELEVATED_DIRS = new Set(['.kortix']);
 
 /**
  * The project-level file explorer. It has no session context — sharing is

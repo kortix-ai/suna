@@ -6,7 +6,7 @@ import { isForwarded, isHeld } from '../session-lifecycle/delivery-state';
  * Map a durable command row onto the inbox's four user-visible states.
  *
  * `succeeded` no longer means "never appears". A FORWARDED row is `succeeded`
- * so the drain can never re-claim it, and still unanswered: OpenCode has
+ * so the drain can never re-claim it, and still unanswered: the runtime has
  * persisted the message and queued it behind the turn in flight. It reads
  * `delivering` until the `session_turns` ledger confirms a turn consumed it —
  * which is what keeps the composer working across that interval instead of
@@ -34,7 +34,7 @@ export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   if (isHeld(result)) return { state: 'waiting', reason: 'held' };
   // Then FORWARDED, above `running`: this is a `succeeded` row, so every branch
   // below would otherwise fall through to `queued` and show a prompt that is
-  // already at OpenCode as if it had never been sent.
+  // already at the runtime as if it had never been sent.
   if (isForwarded(result)) return { state: 'delivering', reason: 'forwarded' };
   // A claim only checks admission. It must not flash Sending during a live turn.
   if (row.status === 'running' && typeof result.delivery_started_at === 'string') {

@@ -5,7 +5,7 @@
  * regex copy of the same code.
  */
 
-import { isDigit, isLineTerminator, isWhitespace, lineEnd, whitespaceEnd } from './scan';
+import { isDigit, isLineTerminator, isWhitespace, lineEnd, nextOf, whitespaceEnd } from './scan';
 
 // The project and connector renderers read markdown table rows and
 // `name (source)` lines with line-anchored regexes. Their lazy cells retried a
@@ -22,18 +22,7 @@ const PIPE = 124; // |
 const STAR = 42; // *
 const BACKTICK = 96; // `
 const PAREN_OPEN = 40; // (
-
-/** The first `character` at or after a position, remembered while the queries move forward. */
-function nextOf(text: string, character: string): (at: number) => number {
-  let from = Number.POSITIVE_INFINITY;
-  let found = -1;
-  return (at: number): number => {
-    if (at >= from && (found === -1 || at <= found)) return found;
-    from = at;
-    found = text.indexOf(character, at);
-    return found;
-  };
-}
+const PAREN_CLOSE = 41; // )
 
 /** Each line start in order, as `^` with the `m` flag matched them: after every line terminator. */
 function* lineStarts(text: string): Generator<number> {
@@ -65,9 +54,9 @@ function trimmedEnd(text: string, start: number, end: number): number {
  */
 export function projectRows(text: string, columns: 3 | 4): string[][] {
   const rows: string[][] = [];
-  const nextStar = nextOf(text, '*');
-  const nextBacktick = nextOf(text, '`');
-  const nextPipe = nextOf(text, '|');
+  const nextStar = nextOf(text, [STAR]);
+  const nextBacktick = nextOf(text, [BACKTICK]);
+  const nextPipe = nextOf(text, [PIPE]);
   const rowAt = (start: number): { cells: string[]; end: number } | null => {
     const stars = whitespaceEnd(text, start + 1);
     if (text.charCodeAt(stars) !== STAR || text.charCodeAt(stars + 1) !== STAR) return null;
@@ -132,7 +121,7 @@ export function projectId(text: string): string | null {
  */
 export function connectorRows(text: string): string[][] {
   const rows: string[][] = [];
-  const nextPipe = nextOf(text, '|');
+  const nextPipe = nextOf(text, [PIPE]);
   // `\s*([^|]+)` before the `|` at `pipe`: the cell runs to that `|`; when only
   // whitespace is left, `\s*` gives the cell its last character.
   const cellStart = (from: number, pipe: number): number => {
@@ -175,7 +164,7 @@ export function connectorRows(text: string): string[][] {
 /** The name and source of every `name (source)` line, as `/^([^\s(]+)\s*\(([^)]+)\)/gm` read them. */
 export function setupRows(text: string): string[][] {
   const rows: string[][] = [];
-  const nextClose = nextOf(text, ')');
+  const nextClose = nextOf(text, [PAREN_CLOSE]);
   let from = 0;
   for (const start of lineStarts(text)) {
     if (start < from || start >= text.length) continue;

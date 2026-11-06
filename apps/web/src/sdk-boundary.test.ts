@@ -31,24 +31,26 @@ function scanPlanted(name: string, code: string): string[] {
 
 describe('harness-neutral runtime rules (F2)', () => {
   test('a not-ready phrase spelled in the host is rejected: the SDK classifies it', () => {
-    expect(scanPlanted('toast.ts', "export const quiet = (m: string) => /opencode not ready/i.test(m);\n")).toEqual([
-      'runtime-not-ready-string /opencode not ready/i',
+    expect(scanPlanted('toast.ts', "export const quiet = (m: string) => /sandbox runtime not ready/i.test(m);\n")).toEqual([
+      'runtime-not-ready-string /sandbox runtime not ready/i',
     ]);
-    expect(scanPlanted('list.ts', "export const REFUSED = ['OpenCode not ready', 'forbidden'];\n")).toEqual([
-      'runtime-not-ready-string OpenCode not ready',
+    expect(scanPlanted('list.ts', "export const REFUSED = ['runtime_not_ready', 'forbidden'];\n")).toEqual([
+      'runtime-not-ready-string runtime_not_ready',
     ]);
-    expect(scanPlanted('tpl.ts', 'export const m = (r: string) => `opencode not ready: ${r}`;\n')).toEqual([
-      'runtime-not-ready-string opencode not ready: ${}',
+    expect(scanPlanted('tpl.ts', 'export const m = (r: string) => `Sandbox runtime not ready: ${r}`;\n')).toEqual([
+      'runtime-not-ready-string Sandbox runtime not ready: ${}',
     ]);
+    // The API's park reason is a different word.
+    expect(scanPlanted('park.ts', "export const reason = 'runtime_not_ready_timeout';\n")).toEqual([]);
   });
 
   test('a hand-written runtime query key is rejected: the SDK owns the cache keys', () => {
     expect(
-      scanPlanted('restart.ts', "export const reset = (qc: any) => qc.removeQueries({ queryKey: ['opencode'] });\n"),
-    ).toEqual(['runtime-query-key opencode']);
+      scanPlanted('restart.ts', "export const reset = (qc: any) => qc.removeQueries({ queryKey: ['runtime'] });\n"),
+    ).toEqual(['runtime-query-key runtime']);
     expect(
-      scanPlanted('seed.ts', "export const seed = (qc: any, id: string) => qc.setQueryData(['opencode', 'session-todo', id], []);\n"),
-    ).toEqual(['runtime-query-key opencode']);
+      scanPlanted('seed.ts', "export const seed = (qc: any, id: string) => qc.setQueryData(['runtime', 'session-todo', id], []);\n"),
+    ).toEqual(['runtime-query-key runtime']);
   });
 
   test('the SDK names and unrelated uses of the word pass', () => {
@@ -58,6 +60,7 @@ describe('harness-neutral runtime rules (F2)', () => {
         [
           "import { isRuntimeNotReadyResponse } from '@kortix/sdk';",
           "import { resetRuntimeQueries, runtimeKeys } from '@kortix/sdk/react';",
+          "export const kinds = ['runtime', 'build'];",
           "export const providers = ['opencode', 'anthropic'];",
           "export const label = 'OpenCode Zen';",
           'export const use = [isRuntimeNotReadyResponse, resetRuntimeQueries, runtimeKeys.all];',

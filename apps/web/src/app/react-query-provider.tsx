@@ -78,7 +78,7 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
               return;
             }
             // The daemon's transient "runtime not ready" 503 surfaces while a
-            // sandbox is still booting its runtime (OpenCode or pi). The
+            // sandbox is still booting its runtime. The
             // auto-create + SDK call sites already retry internally; a user
             // toast is just noise during the boot window. Suppress it.
             if (isRuntimeNotReadyResponse(error?.message)) {

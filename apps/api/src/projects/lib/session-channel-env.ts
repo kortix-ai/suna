@@ -43,3 +43,12 @@ export function sessionSpaceEnv(
   if (!space || !name) return {};
   return { KORTIX_SPACE_ID: space.spaceId, KORTIX_SPACE_KIND: space.kind, KORTIX_SPACE_SLUG: name };
 }
+
+/** The session that started this one: the parent column, else the spawn link a box wrote (`metadata.spawned_by_session`). */
+export function sessionParentEnv(
+  row: { parentSessionId?: string | null; metadata?: unknown } | undefined,
+): Record<string, string> {
+  const spawnedBy = (row?.metadata as Record<string, unknown> | null | undefined)?.spawned_by_session;
+  const parent = row?.parentSessionId?.trim() || (typeof spawnedBy === 'string' ? spawnedBy.trim() : '');
+  return parent ? { KORTIX_PARENT_SESSION_ID: parent } : {};
+}

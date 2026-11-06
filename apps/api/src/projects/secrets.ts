@@ -344,7 +344,7 @@ export type SecretHandleMinter = (row: ResolvedProjectSecret) => Promise<string>
  * Does the LLM-gateway strip apply to this row?
  *
  * The strip exists so a PLATFORM-managed model credential never reaches
- * opencode while the gateway owns that provider. It used to key off the NAME
+ * the sandbox while the gateway owns that provider. It used to key off the NAME
  * alone, via `isGatewayManagedEnv`, which answers from the models.dev catalog —
  * a 204-provider registry that maps `github-copilot` to `GITHUB_TOKEN`. So a
  * project's own `GITHUB_TOKEN`, stored by the secrets UI as
@@ -365,7 +365,7 @@ export type SecretHandleMinter = (row: ResolvedProjectSecret) => Promise<string>
  *
  * What this deliberately does NOT weaken: managed credentials and anything the
  * provider-connect flow stored keep their stamp and stay withheld, and
- * `CODEX_AUTH_JSON`/`OPENCODE_AUTH_JSON` are unconditionally gateway-managed.
+ * `CODEX_AUTH_JSON` is unconditionally gateway-managed.
  *
  * Pure so the rule is testable without a model catalog.
  */

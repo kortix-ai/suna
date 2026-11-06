@@ -1,5 +1,5 @@
 /**
- * Where an inbox prompt's wire id lands in the OpenCode transcript: the
+ * Where an inbox prompt's wire id lands in the runtime transcript: the
  * re-mint above everything on record, the proof read after a live-turn
  * delivery, and the repair of a prompt that landed below a newer answer.
  * The pure placement rules live in `forwarded-placement.ts`.
@@ -53,7 +53,7 @@ const DELIVERED_WIRE_ID_FLOOR_ROW_LIMIT = 500;
 
 /**
  * The newest wire id THIS SESSION has already put on the wire, read from our
- * own rows rather than from OpenCode's transcript.
+ * own rows rather than from the runtime's transcript.
  *
  * SQL returns the ids; the SDK orders them (`newestWireIdTime`, on the 48-bit
  * ring). A SQL `max()` over the decoded clock would rank every pre-wrap id
@@ -132,7 +132,7 @@ async function readDeliveredWireIdFloor(
  * must not mint blind. `mintWireMessageId` backdates by `WIRE_ID_BACKDATE_MS`
  * (2 min) on purpose: too early is self-correcting when there IS a transcript
  * to lift against. With no transcript there is nothing to lift against, and
- * OpenCode mints its own ids from a raw `Date.now()` with no backdate — so the
+ * the runtime mints its own ids from a raw `Date.now()` with no backdate — so the
  * fallback would land two minutes BELOW every message the box wrote in the last
  * two minutes, which is the exact silent drop this function exists to prevent.
  * The un-backdated clock is the floor instead. An unreadable box is also the
@@ -154,7 +154,7 @@ export async function remintWireMessageId(
   // inside that window read the SAME `newest` and mint the SAME clock. The
   // user's own two messages then sort by 14 random base62 characters: either
   // they run in the wrong order, or the loser sorts under an assistant reply
-  // and OpenCode reads it as already answered and never runs it. The inbox
+  // and an OpenCode box reads it as already answered and never runs it. The inbox
   // already knows every id it put on the wire; that is the missing floor.
   // `remintFloorTime` merges the three floors on the 48-bit ring.
   const newest = remintFloorTime({
@@ -311,7 +311,7 @@ export async function remintForRepair(
 /**
  * A placement repair re-sent a forwarded prompt under `wireMessageId`. The
  * first forward already closed the claim (`markCommandForwarded`), so this is
- * not a lease write: it moves the one forwarded row to the id OpenCode now
+ * not a lease write: it moves the one forwarded row to the id the runtime now
  * holds, which the consumption confirmation and the forwarded sweep key on.
  */
 export async function recordRepairedForward(commandId: string, wireMessageId: string): Promise<void> {

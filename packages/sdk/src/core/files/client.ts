@@ -209,7 +209,7 @@ async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl?: st
 // A host transcript can show hundreds of binary file cards, and the live event
 // stream refetches every mounted card at once — `binaryBlobKeys.all` is
 // invalidated on each `file.edited` event and at turn end
-// (`use-opencode-events/handle-event.ts`). Unbounded, that fan-out saturates a
+// (`use-runtime-events/handle-event.ts`). Unbounded, that fan-out saturates a
 // box's dial path: on 2026-10-10 one web client fired 649 `GET /file/raw` in one
 // minute at a single box and the route's p95 reached 20 s (Linear KRTX-471).
 // Eight concurrent reads keep every request fast and still drain a 700-card

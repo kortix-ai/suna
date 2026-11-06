@@ -167,7 +167,7 @@ describe('the replied-turn marker', () => {
     {
       status: 'active',
       metadata: {
-        activeTurns: Object.fromEntries(tokens.map((t) => [t, { token: t, state: 'active', opencodeSessionId: 'ses_1' }])),
+        activeTurns: Object.fromEntries(tokens.map((t) => [t, { token: t, state: 'active', runtimeSessionId: 'ses_1' }])),
       },
     },
   ];

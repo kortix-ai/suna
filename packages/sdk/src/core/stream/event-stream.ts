@@ -1,7 +1,7 @@
 /**
  * Framework-free SSE event-stream machine, extracted verbatim (same constants,
  * same branch order, same semantics) from the connect/reconnect loop that used
- * to live inline inside `react/use-opencode-events/index.ts`'s `useEffect`.
+ * to live inline inside `react/use-runtime-events/index.ts`'s `useEffect`.
  *
  * Zero imports of `react`, `react-query`, or any `react/*` module — this file
  * can run in any JS host (a worker, a CLI, a non-React UI). Everything that
@@ -9,7 +9,7 @@
  * lookups) stays in the React wrapper and reaches this module only through the
  * injected `onEvent` / `onGapRehydrate` callbacks.
  *
- * Owns: connecting to the opencode SSE endpoint (with a connect timeout), the
+ * Owns: connecting to the runtime SSE endpoint (with a connect timeout), the
  * idle heartbeat watchdog, event coalescing + 16ms flush batching, gap
  * detection on reconnect, the exponential-backoff reconnect loop (fast 250ms
  * resume after an eventful stream, capped exponential backoff otherwise), and
@@ -29,17 +29,17 @@ import {
   parkStream,
   reconnectDelay,
 } from './event-attempt';
-import type { Event as OpenCodeSdkEvent } from '../runtime/runtime-types';
+import type { Event as RuntimeWireEvent } from '../runtime/runtime-types';
 import { getClientForUrl } from '../runtime/client';
 import { logger } from '../http/logger';
 
 /**
  * The event union this stream dispatches. Re-exported (unchanged shape) from
- * `react/use-opencode-events/types.ts` so existing importers keep working —
+ * `react/use-runtime-events/types.ts` so existing importers keep working —
  * this module is now the canonical definition.
  */
 export type RuntimeEvent =
-  | OpenCodeSdkEvent
+  | RuntimeWireEvent
   | {
       id: string;
       type: 'lsp.client.diagnostics';
@@ -210,7 +210,7 @@ interface LiveStream {
  * Keyed by `EventStreamClient` object identity. `getClientForUrl`
  * (`core/runtime/client.ts`) caches exactly one client per resolved runtime
  * URL, so every `openEventStream()` call targeting the SAME runtime (the
- * same sandbox, the same OpenCode session) is handed the identical client
+ * same sandbox, the same runtime session) is handed the identical client
  * reference, and every call for a DIFFERENT runtime gets a different one.
  * That makes the client itself the natural "scope" key — no caller has to
  * mint or thread an explicit session/scope id, and two genuinely unrelated
@@ -386,7 +386,7 @@ function createLiveStream(
 }
 
 /**
- * Connects to the opencode SSE event stream and keeps it alive: heartbeat
+ * Connects to the runtime SSE event stream and keeps it alive: heartbeat
  * watchdog, event coalescing + batched flush, gap-triggered rehydrate signal,
  * and exponential-backoff reconnect. Framework-free — safe to call from any
  * host (the React wrapper calls this once per effect run; a non-React host can

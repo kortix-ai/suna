@@ -29,7 +29,7 @@ const gateway = Bun.serve({
       f.forEach((v, k) => (typeof v === 'string' ? (form[k] = v) : (file = { name: (v as File).name, size: v.size })))
       got.push({ path: u.pathname, form, file })
       // A file of 1111 bytes: unclear audio, where Whisper reads its prompt back.
-      if (file?.size === 1111) return Response.json({ language: 'english', duration: 2, segments: [{ text: ' Kortix, OpenCode, Bun.', no_speech_prob: 0.2, avg_logprob: -0.5, compression_ratio: 1 }] })
+      if (file?.size === 1111) return Response.json({ language: 'english', duration: 2, segments: [{ text: ' Kortix, Bun, TypeScript.', no_speech_prob: 0.2, avg_logprob: -0.5, compression_ratio: 1 }] })
       return Response.json({ language: 'serbian', duration: 3.42, text: 'Здраво, како си? Thank you.', segments: [
         { text: 'Здраво, како си?', no_speech_prob: 0.01, avg_logprob: -0.2, compression_ratio: 1.1 },
         { text: ' Thank you.', no_speech_prob: 0.9, avg_logprob: -1.3, compression_ratio: 1 }, // noise Whisper made words of

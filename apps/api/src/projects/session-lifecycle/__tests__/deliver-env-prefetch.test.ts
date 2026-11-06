@@ -82,7 +82,7 @@ function deliver(input: { turnAgent?: string | null; overrideAgent?: string; awa
     userId: 'user-1',
     ...(input.turnAgent !== undefined ? { turnAgent: input.turnAgent } : {}),
     awakeEarly: Promise.resolve(
-      input.awake ? { stage: 'ready' as const, externalId: 'ext-1', opencodeSessionId: 'oc-1' } : null,
+      input.awake ? { stage: 'ready' as const, externalId: 'ext-1', runtimeSessionId: 'oc-1' } : null,
     ),
     sendPrompt: async () => true,
   });

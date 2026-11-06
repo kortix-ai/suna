@@ -4,7 +4,7 @@ import type { AttachedFile } from './attachments';
 import { firstPromptSeed, SEED_BUSY_WATCHDOG_MS, seedUndelivered } from './first-prompt-seed';
 import { mintWireMessageId } from './wire-message-id';
 
-const ROOT = 'ses_opencode_root';
+const ROOT = 'ses_runtime_root';
 const NOW = 1755500000000;
 const PHOTO: AttachedFile = {
   uri: 'file:///cache/photo_1.jpg',
@@ -35,7 +35,7 @@ describe('firstPromptSeed', () => {
     expect(seed({ knownMessageIds: ['msg_8bbf25e40000AAAAAAAAAAAAAA'] })).toBeNull();
   });
 
-  test('text seeds one user message under the OpenCode root with one prt_ text part', () => {
+  test('text seeds one user message under the runtime root with one prt_ text part', () => {
     const result = seed({ text: 'hello' })!;
     expect(result.info.role).toBe('user');
     expect(result.info.sessionID).toBe(ROOT);
