@@ -74,6 +74,7 @@ describe('team results', () => {
     expect(parseReachable({ agents: [{ handle: '@scout', session_id: 's1', state: 'dreaming' }] })).toEqual([
       { handle: 'scout', sessionId: 's1', title: null, agentName: null, relation: 'session', state: null, canReceive: true },
     ]);
+    expect(parseReachable({ agents: [{ handle: 'busy', session_id: 's2', can_receive: false }] })?.[0]?.canReceive).toBe(false);
     const many = Array.from({ length: 60 }, (_, index) => ({ handle: `a${index}`, session_id: `s${index}` }));
     expect(parseReachable({ agents: many })).toHaveLength(50);
     expect(parseReachable({ agents: 'none' })).toBeNull();
