@@ -19,6 +19,7 @@ import { listLegacySubscriptionConnections, refreshLegacySubscriptionUsage } fro
 import { accountIdParam } from '../shared/route-params';
 import { PATH_WORKSPACE_ID_VAR, isCanonicalWorkspacePath } from '../middleware/workspace-account';
 import { projectsView } from '../workspaces/rows';
+import { workspaceFactsOf } from '../iam/workspace-facts';
 
 const SecretIdParam = AccountIdParam.extend({ secretId: z.string().uuid() });
 const GrantParam = SecretIdParam.extend({ userId: z.string().uuid() });
@@ -91,17 +92,22 @@ async function view(row: typeof accountSecretResources.$inferSelect, actorId: st
  * omitted `project_id` means the path workspace. On a legacy path an omitted
  * `project_id` keeps its old meaning (account-wide rows only).
  */
-function scopedProjectId(c: Context, queried: string | undefined): string | undefined {
+async function scopedProjectId(c: Context, queried: string | undefined): Promise<string | undefined> {
   if (queried) return queried;
-  if (!isCanonicalWorkspacePath(c.req.path)) return undefined;
-  const pathWorkspace = c.get(PATH_WORKSPACE_ID_VAR as never) as string | undefined;
-  return pathWorkspace || undefined;
+  if (isCanonicalWorkspacePath(c.req.path)) {
+    const pathWorkspace = c.get(PATH_WORKSPACE_ID_VAR as never) as string | undefined;
+    return pathWorkspace || undefined;
+  }
+  // The legacy spelling (`/v1/accounts/:id/…`): a 1:1 account has one
+  // workspace, so it needs no project_id. A split_pending legacy account
+  // still must name one.
+  return (await workspaceFactsOf(accountIdParam(c))).soleProjectId ?? undefined;
 }
 
 export function registerSecretResourceRoutes() {
   const SubscriptionQuery = z.object({
     project_id: z.string().uuid().optional().openapi({
-      description: 'The workspace (project) to scope to. Required on `/v1/accounts/…`; defaults to the path workspace on `/v1/workspaces/…`.',
+      description: 'The workspace (project) to scope to. Defaults to the path workspace on `/v1/workspaces/…` and to the account\'s one workspace on `/v1/accounts/…`; required there only for a legacy account with several.',
     }),
   });
   accountsRouter.openapi(createRoute({
@@ -111,7 +117,7 @@ export function registerSecretResourceRoutes() {
     responses: { 200: json(z.object({ subscriptions: z.array(View.extend({ storage: z.enum(['account_resource', 'project']) })) }), 'Connected subscriptions'), ...errors(400, 403) },
   }), async (c) => {
     const accountId = accountIdParam(c);
-    const projectId = scopedProjectId(c, c.req.valid('query').project_id);
+    const projectId = await scopedProjectId(c, c.req.valid('query').project_id);
     if (!projectId) return c.json({ error: 'project_id is required' }, 400);
     const userId = c.get('userId') as string;
     if (!(await getMembership(userId, accountId)) || !(await projectInAccount(accountId, projectId)) || !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) return c.json({ error: 'Forbidden' }, 403);
@@ -135,7 +141,7 @@ export function registerSecretResourceRoutes() {
     const { secretId } = c.req.valid('param');
     const accountId = accountIdParam(c);
     const { storage } = c.req.valid('query');
-    const projectId = scopedProjectId(c, c.req.valid('query').project_id);
+    const projectId = await scopedProjectId(c, c.req.valid('query').project_id);
     if (!projectId) return c.json({ error: 'project_id is required' }, 400);
     const userId = c.get('userId') as string;
     if (!(await getMembership(userId, accountId)) || !(await projectInAccount(accountId, projectId)) || !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) return c.json({ error: 'Forbidden' }, 403);
@@ -161,7 +167,7 @@ export function registerSecretResourceRoutes() {
     const userId = c.get('userId') as string;
     const membership = await getMembership(userId, accountId);
     if (!membership) return c.json({ error: 'Forbidden' }, 403);
-    const projectId = scopedProjectId(c, c.req.query('project_id') as string | undefined);
+    const projectId = await scopedProjectId(c, c.req.query('project_id') as string | undefined);
     if (projectId && !(await projectInAccount(accountId, projectId))) return c.json({ error: 'Forbidden' }, 403);
     // This route authorizes the caller's own request here, so MFA counts.
     if (projectId && !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) {

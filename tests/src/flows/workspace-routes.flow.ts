@@ -602,3 +602,23 @@ flow(
     });
   },
 );
+
+// ── WS-ROUTE-11 — a legacy account route needs no project_id on a 1:1 workspace ──
+flow(
+  'WS-ROUTE-11',
+  {
+    domain: 'workspaces',
+    routes: [
+      'GET /v1/workspaces/:workspaceId/subscription-connections',
+      'GET /v1/accounts/:workspaceId/subscription-connections',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const w = await team.project();
+    await ctx.step('GET /accounts/:team/subscription-connections (no project_id) answers like /workspaces/:w/subscription-connections → 200', async () => {
+      const status = await sameAnswer(ctx, ctx.P.OWNER, `/v1/accounts/${team.id}/subscription-connections`, `/v1/workspaces/${w.id}/subscription-connections`);
+      if (status !== 200) throw new Error(`expected 200, got ${status}`);
+    });
+  },
+);
