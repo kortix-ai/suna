@@ -11,6 +11,8 @@
  *      an aliased prefix has its canonical twin, except the merged routes (the
  *      canonical name is another route), the legacy-only routes (no canonical
  *      name, K3) and the retired 410 routes;
+ *   4. every route that names projects or accounts has a workspace name, or a
+ *      written reason (the naming rule, below);
  *   3. the committed manifest's `aliasOf` rows are exactly what the name map
  *      in `@kortix/shared/workspace-routes` computes.
  */
@@ -20,6 +22,7 @@ import {
   canonicalWorkspaceRoute,
   legacyWorkspaceRoute,
   WORKSPACE_LEGACY_ONLY_ROUTES,
+  WORKSPACE_LEGACY_REPLACEMENTS,
   WORKSPACE_MERGED_LEGACY_ROUTES,
   workspaceAliasOf,
 } from '@kortix/shared/workspace-routes';
@@ -53,8 +56,8 @@ const manifest = JSON.parse(
   readFileSync(new URL('../../../../tests/spec/routes.generated.json', import.meta.url), 'utf8'),
 ) as { routes: Array<{ method: string; path: string; aliasOf?: string }> };
 
-const ALIASED_PREFIX = /^(\/v1\/projects|\/v1\/accounts\/:workspaceId\/|\/v1\/accounts\/me|\/v1\/account-invites|\/v1\/connectors\/projects\/|\/scim\/v2\/accounts\/)/;
-const CANONICAL_PREFIX = /^(\/v1\/workspaces|\/v1\/me(\/|$)|\/v1\/invites|\/v1\/connectors\/workspaces\/|\/scim\/v2\/workspaces\/)/;
+const ALIASED_PREFIX = /^(\/v1\/projects|\/v1\/accounts\/:workspaceId\/|\/v1\/accounts\/me|\/v1\/account-invites|\/v1\/connectors\/projects\/|\/scim\/v2\/accounts\/|\/v1\/webhooks\/projects\/)/;
+const CANONICAL_PREFIX = /^(\/v1\/workspaces|\/v1\/me(\/|$)|\/v1\/invites|\/v1\/connectors\/workspaces\/|\/scim\/v2\/workspaces\/|\/v1\/webhooks\/workspaces\/)/;
 const merged = new Set(WORKSPACE_MERGED_LEGACY_ROUTES);
 const legacyOnly = new Set(WORKSPACE_LEGACY_ONLY_ROUTES);
 const retired = new Set(RETIRED_ROUTES.map(([m, p]) => `${m} ${p}`));
@@ -125,6 +128,61 @@ describe('workspace route aliases', () => {
   test('the legacy and canonical name maps invert each other', () => {
     for (const row of aliasRows) {
       expect(legacyWorkspaceRoute(row.aliasOf!)).toBe(row.path);
+    }
+  });
+});
+
+/**
+ * "In the API routes it is all workspaces; projects and accounts are aliases"
+ * (Marko, 2026-11-06). Every route whose path has a `projects` or `accounts`
+ * segment is one of:
+ *   - an alias of a canonical route (`aliasOf` in the manifest);
+ *   - a legacy route with its own meaning, deprecated in the OpenAPI spec for
+ *     its canonical replacement (`WORKSPACE_LEGACY_REPLACEMENTS`);
+ *   - a retired route (410, `routes/retired.ts`);
+ *   - on {@link NAMING_ALLOWLIST}, with the reason.
+ * Staff routes (`/v1/admin/*`) are out of scope here. A new route that names
+ * projects or accounts fails this test until it gets a workspace name.
+ */
+const NAMING_ALLOWLIST: Record<string, string> = {
+  // A connector's connected third-party accounts (a Gmail address, a Slack
+  // workspace): not Kortix accounts. The legacy twin under
+  // /v1/connectors/projects/ is an alias of this canonical route.
+  'GET /v1/connectors/workspaces/:workspaceId/connectors/:slug/accounts': 'third-party connected accounts',
+};
+
+describe('route naming: workspaces are canonical', () => {
+  const NAMES_LEGACY_ENTITY = /\/(projects|accounts)(\/|$)/;
+  const STAFF = /^\/v1\/admin(\/|$)/;
+
+  test('every non-staff route that names projects or accounts is an alias, a deprecated legacy route, retired, or allowlisted', () => {
+    const unexplained = manifest.routes
+      .filter((r) => NAMES_LEGACY_ENTITY.test(r.path) && !STAFF.test(r.path))
+      .map((r) => ({ key: `${r.method} ${r.path}`, aliasOf: r.aliasOf }))
+      .filter(({ key, aliasOf }) => !aliasOf && !(key in WORKSPACE_LEGACY_REPLACEMENTS) && !retired.has(key) && !(key in NAMING_ALLOWLIST))
+      .map(({ key }) => key);
+    expect(unexplained).toEqual([]);
+  });
+
+  test('every allowlist and replacement row is a served route', () => {
+    const keys = new Set(manifest.routes.map((r) => `${r.method} ${r.path}`));
+    for (const key of [...Object.keys(NAMING_ALLOWLIST), ...Object.keys(WORKSPACE_LEGACY_REPLACEMENTS), ...Object.values(WORKSPACE_LEGACY_REPLACEMENTS)]) {
+      expect({ key, served: keys.has(key) }).toEqual({ key, served: true });
+    }
+  });
+
+  test('the project audit slice and the webhook fire are served under workspace names, same handlers', () => {
+    for (const [legacy, canonical] of [
+      ['GET /v1/projects/:workspaceId/audit', 'GET /v1/workspaces/:workspaceId/audit/events'],
+      ['POST /v1/webhooks/projects/:workspaceId/:slug', 'POST /v1/webhooks/workspaces/:workspaceId/:slug'],
+      ['POST /v1/projects/:workspaceId/transfer', 'POST /v1/workspaces/:workspaceId/transfer'],
+      ['POST /v1/projects/create-repo', 'POST /v1/workspaces/create-repo'],
+      ['POST /v1/projects/link-repository', 'POST /v1/workspaces/link-repository'],
+    ] as const) {
+      const a = endpoints.get(legacy)?.map(unwrap);
+      const b = endpoints.get(canonical)?.map(unwrap);
+      expect({ legacy, served: Boolean(a && b) }).toEqual({ legacy, served: true });
+      expect({ legacy, same: a!.length === b!.length && a!.every((h, i) => h === b![i]) }).toEqual({ legacy, same: true });
     }
   });
 });

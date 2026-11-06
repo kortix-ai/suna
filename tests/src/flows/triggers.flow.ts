@@ -1633,6 +1633,7 @@ flow(
       'GET /v1/workspaces/:projectId/triggers',
       'PATCH /v1/workspaces/:projectId/triggers/:slug',
       'PATCH /v1/workspaces/:projectId/triggers/activation',
+      'POST /v1/webhooks/workspaces/:projectId/:slug',
       'POST /v1/webhooks/projects/:projectId/:slug',
     ],
   },
@@ -1648,12 +1649,16 @@ flow(
       'x-kortix-timestamp': String(ts),
       'x-kortix-signature': sign(`${ts}.${rawBody}`),
     });
-    const deliver = (headers: Record<string, string>, slug = 'hook', projectId = p.id) =>
-      ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
-        params: { projectId, slug },
-        raw: true,
-        headers: { 'content-type': 'application/json', ...headers },
-      });
+    // The URL Kortix shows names the workspace; the project path answers the same, permanently.
+    const deliverAt = (route: '/v1/webhooks/workspaces/:projectId/:slug' | '/v1/webhooks/projects/:projectId/:slug') =>
+      (headers: Record<string, string>, slug = 'hook', projectId = p.id) =>
+        ctx.client.as(ctx.P.ANON).post(route, rawBody, {
+          params: { projectId, slug },
+          raw: true,
+          headers: { 'content-type': 'application/json', ...headers },
+        });
+    const deliver = deliverAt('/v1/webhooks/workspaces/:projectId/:slug');
+    const deliverLegacy = deliverAt('/v1/webhooks/projects/:projectId/:slug');
     const rejected = async (headers: Record<string, string>, slug?: string) => {
       (await deliver(headers, slug)).status(401).body().has('$.error', 'Invalid webhook signature');
     };
@@ -1686,12 +1691,12 @@ flow(
       r.status(409).body().has('$.code', 'webhook_secret_delivery_mismatch');
     });
 
-    await ctx.step('connector-delivered secret → 201; the listing carries secret_env and the public webhook_url', async () => {
+    await ctx.step('connector-delivered secret → 201; the listing carries secret_env and the public webhook_url on the workspace path', async () => {
       (await owner.post('/v1/workspaces/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params }))
         .status(200).body().has('$.strategy', 'broker').has('$.consumer', 'connector');
       (await owner.post('/v1/workspaces/:projectId/triggers', webhookTrigger('hook', 'HOOK_SECRET'), { params })).status(201);
       const row = (await listed()).find((t) => t.slug === 'hook');
-      if (!row || row.type !== 'webhook' || row.secret_env !== 'HOOK_SECRET' || !row.webhook_url?.endsWith(`/v1/webhooks/projects/${p.id}/hook`)) {
+      if (!row || row.type !== 'webhook' || row.secret_env !== 'HOOK_SECRET' || !row.webhook_url?.endsWith(`/v1/webhooks/workspaces/${p.id}/hook`)) {
         throw new Error(`webhook trigger listing is wrong: ${JSON.stringify(row)}`);
       }
     });
@@ -1716,6 +1721,11 @@ flow(
       const ts = Math.floor(Date.now() / 1000);
       await accepted(signed(ts));
       await accepted({ 'x-kortix-timestamp': String(ts), 'x-hub-signature-256': sign(`${ts}.${rawBody}`) });
+    });
+
+    await ctx.step('the older /v1/webhooks/projects path: a valid signature → the same 200 skipped, a wrong one → the same 401', async () => {
+      (await deliverLegacy(signed())).status(200).body().has('$.status', 'skipped');
+      (await deliverLegacy({})).status(401).body().has('$.error', 'Invalid webhook signature');
     });
 
     await ctx.step('X-Kortix-Timestamp signs <timestamp>.<body>: 1 h stale or 1 h ahead → 401, current → 200', async () => {

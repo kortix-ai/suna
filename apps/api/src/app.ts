@@ -61,6 +61,7 @@ import {
   meApp,
   registerWorkspaceRootRoutes,
   scimWorkspacesApp,
+  webhookWorkspacesApp,
   workspaceAccountFamiliesApp,
   workspaceProjectsApp,
   workspacesRootApp,
@@ -301,6 +302,8 @@ app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /agen
 }
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
+// /v1/webhooks/workspaces/:workspaceId/:slug — canonical name of /v1/webhooks/projects/:workspaceId/:slug.
+app.route('/v1/webhooks', webhookWorkspacesApp(projectWebhooksApp));
 
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 registerSlackWebhookRoutes();

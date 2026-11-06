@@ -200,7 +200,7 @@ triggers:
 | `cron` (+ `timezone`, default UTC) | At each slot of a 6-field croner expression, at most once a minute. |
 | `every` | Each fixed period: `5m`, `2h`; at least `60s`. |
 | `at` | Once, at an ISO-8601 instant. |
-| `webhook: { secret: <NAME> }` | On a signed `POST /v1/webhooks/projects/<project_id>/<slug>`. |
+| `webhook: { secret: <NAME> }` | On a signed `POST /v1/webhooks/workspaces/<workspace_id>/<slug>` (the older `/v1/webhooks/projects/<workspace_id>/<slug>` answers the same). |
 | `event: <name> \| "*"`, `app: <slug>` | When that App posts the event (`../scheduling.md` → Watch 24/7). |
 | `event: <TYPE>`, `connector: <slug>` | When the connected app reports that event (flag `event_triggers`; types: `kortix triggers events --connector <slug>`). |
 

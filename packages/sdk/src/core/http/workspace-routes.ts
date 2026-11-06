@@ -12,6 +12,8 @@
  * | `/v1/invites[/…]`                           | `/v1/account-invites[/…]`                |
  * | `/v1/connectors/workspaces/:workspaceId/…`  | `/v1/connectors/projects/:workspaceId/…` |
  * | `/scim/v2/workspaces/:workspaceId/…`        | `/scim/v2/accounts/:workspaceId/…`       |
+ * | `/v1/workspaces/:workspaceId/audit/events`  | `/v1/projects/:workspaceId/audit`        |
+ * | `/v1/webhooks/workspaces/:workspaceId/…`    | `/v1/webhooks/projects/:workspaceId/…`   |
  *
  * The map is a copy of `@kortix/shared/workspace-routes`: this package is
  * published and cannot depend on the private `@kortix/shared`.
@@ -57,8 +59,17 @@ function swapPrefix(path: string, from: string, to: string): string {
   return `${to}${path.slice(from.length)}`;
 }
 
+/** The project audit slice, `/v1/projects/<id>/audit` ↔ `/v1/workspaces/<id>/audit/events`. */
+const PROJECT_AUDIT = /^\/v1\/projects\/([^/]+)\/audit$/;
+const WORKSPACE_AUDIT_EVENTS = /^\/v1\/workspaces\/([^/]+)\/audit\/events$/;
+
 /** The canonical name of a legacy workspace path, or `null`. Same as `@kortix/shared`. */
 export function canonicalWorkspaceRoute(path: string): string | null {
+  const audit = PROJECT_AUDIT.exec(path);
+  if (audit) return `/v1/workspaces/${audit[1]}/audit/events`;
+  if (path.startsWith('/v1/webhooks/projects/')) {
+    return swapPrefix(path, '/v1/webhooks/projects/', '/v1/webhooks/workspaces/');
+  }
   if (under(path, '/v1/projects')) return swapPrefix(path, '/v1/projects', '/v1/workspaces');
   if (under(path, '/v1/accounts/me')) return swapPrefix(path, '/v1/accounts/me', '/v1/me');
   if (under(path, '/v1/account-invites')) return swapPrefix(path, '/v1/account-invites', '/v1/invites');
@@ -73,6 +84,11 @@ export function canonicalWorkspaceRoute(path: string): string | null {
 
 /** The legacy name of a canonical workspace path, or `null`. Same as `@kortix/shared`. */
 export function legacyWorkspaceRoute(path: string): string | null {
+  const audit = WORKSPACE_AUDIT_EVENTS.exec(path);
+  if (audit) return `/v1/projects/${audit[1]}/audit`;
+  if (path.startsWith('/v1/webhooks/workspaces/')) {
+    return swapPrefix(path, '/v1/webhooks/workspaces/', '/v1/webhooks/projects/');
+  }
   if (under(path, '/v1/workspaces')) {
     const family = /^\/v1\/workspaces\/[^/]+\/([^/]+)/.exec(path)?.[1];
     return isFamily(family)
@@ -96,8 +112,7 @@ export function legacyWorkspaceRoute(path: string): string | null {
  * remembering the base.
  */
 const LEGACY_ONLY_PATHS: readonly RegExp[] = [
-  /^\/v1\/projects\/(provision|provision-stream|quota|link-repository|create-repo)$/,
-  /^\/v1\/projects\/[^/]+\/transfer$/,
+  /^\/v1\/projects\/(provision|provision-stream|quota)$/,
 ];
 
 function isLegacyOnly(legacyUrl: string): boolean {

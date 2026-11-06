@@ -1,4 +1,8 @@
-/** Inbound trigger webhooks: `POST /v1/webhooks/projects/:projectId/:slug` fires a webhook trigger. */
+/**
+ * Inbound trigger webhooks: `POST /v1/webhooks/workspaces/:workspaceId/:slug`
+ * (canonical, `webhookWorkspacesApp`) and `POST /v1/webhooks/projects/:workspaceId/:slug`
+ * (permanent) fire a webhook trigger.
+ */
 import { db } from '../../shared/db';
 import { getProjectSecretValueForConsumer } from '../secrets';
 import { loadProjectTriggers } from '../triggers';

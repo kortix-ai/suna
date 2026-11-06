@@ -187,6 +187,9 @@ export const WORKSPACE_BINDINGS: readonly WorkspaceBindingRule[] = [
   // The account families under the canonical name (design.md §3.2 C5). The
   // workspace audit log (`GET …/audit`) is the workspace's own, not a family.
   { pattern: '/v1/workspaces/:workspaceId/audit', methods: ['GET'], binding: PATH_OR_ACCOUNT },
+  // The project audit slice, canonical name of `GET /v1/projects/:workspaceId/audit`
+  // (a project route, PATH there): the same binding, before the audit family.
+  { pattern: '/v1/workspaces/:workspaceId/audit/events', methods: ['GET'], binding: PATH },
   ...WORKSPACE_ACCOUNT_FAMILIES.flatMap((family) => both(`/v1/workspaces/:workspaceId/${family}`, ACCOUNT_FAMILY)),
   ...both('/v1/projects/:workspaceId', PATH),
   ...both('/v1/connectors/projects/:workspaceId', PATH),

@@ -689,6 +689,7 @@ flow(
   {
     domain: 'audit',
     routes: [
+      'GET /v1/workspaces/:projectId/audit/events',
       'GET /v1/projects/:projectId/audit',
       'POST /v1/accounts/:accountId/audit/reconcile',
       'GET /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries',
@@ -711,6 +712,15 @@ flow(
         query: { limit: '10' },
       });
       r.status(200).body().exists('$.events').has('$.next_cursor', null);
+    });
+
+    await ctx.step('the canonical name GET /v1/workspaces/:id/audit/events → 200, the same page shape; an account id → 404 workspace_not_found', async () => {
+      const canonical = await owner.get('/v1/workspaces/:projectId/audit/events', { params: { projectId: project.id }, query: { limit: '10' } });
+      canonical.status(200).body().exists('$.events').has('$.next_cursor', null);
+      if (team.id !== project.id) {
+        (await owner.get('/v1/workspaces/:projectId/audit/events', { params: { projectId: team.id }, query: { limit: '10' } }))
+          .status(404).body().has('$.code', 'workspace_not_found');
+      }
     });
 
     await ctx.step('create a webhook scoped to reconciliation events', async () => {

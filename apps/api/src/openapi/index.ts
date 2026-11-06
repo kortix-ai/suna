@@ -6,7 +6,7 @@
  * error contract. Routes are defined with `createRoute()` + zod; the spec is
  * served at /v1/openapi.json and rendered by Scalar at /v1/docs.
  */
-import { workspaceAliasOf } from '@kortix/shared/workspace-routes';
+import { WORKSPACE_LEGACY_REPLACEMENTS, workspaceAliasOf } from '@kortix/shared/workspace-routes';
 import { OpenAPIHono, z, type RouteConfig } from '@hono/zod-openapi';
 import { ErrorEnvelopeSchema } from '@kortix/api-contract';
 import type { Env } from 'hono';
@@ -174,6 +174,11 @@ const OPENAPI_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'pat
  * `/v1/workspaces/…` operation exists: `deprecated: true` and
  * `x-kortix-alias-of: "<METHOD> <canonical path>"`. The legacy names stay
  * served permanently; the spec points readers and generators at one name.
+ *
+ * A legacy route with its own meaning (`WORKSPACE_LEGACY_REPLACEMENTS`:
+ * `GET /v1/projects`, `/v1/accounts`, `/v1/accounts/tokens`, …) is no alias:
+ * it gets `deprecated: true` and `x-kortix-replaced-by: "<METHOD> <canonical
+ * path>"`, the route a client calls instead.
  * Pure + exported for unit tests. Returns a shallow-cloned doc.
  */
 export function markWorkspaceAliases<T extends { paths?: object }>(doc: T): T {
@@ -189,6 +194,21 @@ export function markWorkspaceAliases<T extends { paths?: object }>(doc: T): T {
       const op = item[method] as Record<string, unknown> | undefined;
       if (!op) continue;
       const canonicalRouting = workspaceAliasOf(method, routing, has);
+      const replacement = WORKSPACE_LEGACY_REPLACEMENTS[`${method.toUpperCase()} ${routing}`];
+      if (!canonicalRouting && replacement) {
+        const [rMethod, rRouting] = replacement.split(' ') as [string, string];
+        const replacedBy = `${rMethod} ${routingToOpenApiPath(rRouting)}`;
+        changed = true;
+        marked[method] = {
+          ...op,
+          deprecated: true,
+          'x-kortix-replaced-by': replacedBy,
+          description: `Legacy route with its own meaning, served permanently. Use \`${replacedBy}\`.${
+            typeof op.description === 'string' && op.description ? `\n\n${op.description}` : ''
+          }`,
+        };
+        continue;
+      }
       if (!canonicalRouting) continue;
       const canonical = routingToOpenApiPath(canonicalRouting);
       changed = true;

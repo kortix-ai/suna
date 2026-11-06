@@ -106,7 +106,7 @@ flow(
         }, { params });
         r.status(201).body().has('$.target.kind', 'agent').has('$.source.type', 'webhook');
         const created = r.json<TriggerRow>();
-        if (!created.source.webhook_url?.endsWith(`/v1/webhooks/projects/${project.id}/${created.id}`)) {
+        if (!created.source.webhook_url?.endsWith(`/v1/webhooks/workspaces/${project.id}/${created.id}`)) {
           throw new Error(`webhook_url wrong: ${created.source.webhook_url}`);
         }
       });

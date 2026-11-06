@@ -115,7 +115,7 @@ One table per domain. The route column shows the method and route template. `any
 
 | Action | Title | Route |
 | --- | --- | --- |
-| `audit.project.list` | Viewed project audit log | `GET /v1/projects/:workspaceId/audit` |
+| `audit.project.list` | Viewed project audit log | `GET /v1/workspaces/:workspaceId/audit/events` (also `GET /v1/projects/:workspaceId/audit`) |
 | `audit.session.ingest` | Ingested session audit events | `POST /v1/workspaces/:workspaceId/sessions/:sessionId/audit/events` (also `POST /v1/projects/:workspaceId/sessions/:sessionId/audit/events`) |
 | `audit.session.list` | Viewed session audit log | `GET /v1/workspaces/:workspaceId/sessions/:sessionId/audit` (also `GET /v1/projects/:workspaceId/sessions/:sessionId/audit`) |
 
@@ -762,8 +762,8 @@ One table per domain. The route column shows the method and route template. `any
 | `project.quota.read` | Viewed project quota | `GET /v1/projects/quota` |
 | `project.read` | Viewed project | `GET /v1/projects/:workspaceId` |
 | `project.reminder.list` | Listed project loops | `GET /v1/workspaces/:workspaceId/reminders` (also `GET /v1/projects/:workspaceId/reminders`) |
-| `project.repository.create` | Created project with new GitHub repository | `POST /v1/projects/create-repo` |
-| `project.repository.link` | Linked repository as project | `POST /v1/projects/link-repository` |
+| `project.repository.create` | Created project with new GitHub repository | `POST /v1/workspaces/create-repo` (also `POST /v1/projects/create-repo`) |
+| `project.repository.link` | Linked repository as project | `POST /v1/workspaces/link-repository` (also `POST /v1/projects/link-repository`) |
 | `project.resource_grant.create` | Granted resource access | `POST /v1/workspaces/:workspaceId/resource-grants` (also `POST /v1/projects/:workspaceId/resource-grants`) |
 | `project.resource_grant.list` | Viewed resource access grants | `GET /v1/workspaces/:workspaceId/resource-grants` (also `GET /v1/projects/:workspaceId/resource-grants`) |
 | `project.resource_grant.revoke` | Revoked resource access | `DELETE /v1/workspaces/:workspaceId/resource-grants/:grantId` (also `DELETE /v1/projects/:workspaceId/resource-grants/:grantId`) |
@@ -776,7 +776,7 @@ One table per domain. The route column shows the method and route template. `any
 | `project.suna_migration.start` | Started project migration | `POST /v1/projects/suna-migration/start` |
 | `project.token_issuer.keys.read` | Read project token signing keys | `GET /v1/workspaces/:workspaceId/jwks.json` (also `GET /v1/projects/:workspaceId/jwks.json`) |
 | `project.token_issuer.read` | Read project token issuer metadata | `GET /v1/workspaces/:workspaceId/.well-known/openid-configuration` (also `GET /v1/projects/:workspaceId/.well-known/openid-configuration`) |
-| `project.transfer` | Transferred project to another account | `POST /v1/projects/:workspaceId/transfer` |
+| `project.transfer` | Transferred project to another account | `POST /v1/workspaces/:workspaceId/transfer` (also `POST /v1/projects/:workspaceId/transfer`) |
 | `project.update` | Updated project | `PATCH /v1/projects/:workspaceId` |
 
 ### `response_share.`
@@ -1133,7 +1133,7 @@ One table per domain. The route column shows the method and route template. `any
 | `webhook.teams.activity.receive` | Received Teams activity | `POST /v1/webhooks/teams/messages` |
 | `webhook.teams.custom_app.activity.receive` | Received custom Teams app activity | `POST /v1/webhooks/teams/:workspaceId/messages` |
 | `webhook.telegram.update.receive` | Received Telegram update | `POST /v1/webhooks/telegram/:workspaceId` |
-| `webhook.trigger.receive` | Received trigger webhook | `POST /v1/webhooks/projects/:workspaceId/:slug` |
+| `webhook.trigger.receive` | Received trigger webhook | `POST /v1/webhooks/workspaces/:workspaceId/:slug` (also `POST /v1/webhooks/projects/:workspaceId/:slug`) |
 
 ## Events outside a request
 

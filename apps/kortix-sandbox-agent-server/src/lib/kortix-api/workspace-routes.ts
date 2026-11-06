@@ -42,6 +42,12 @@ function swapPrefix(path: string, from: string, to: string): string {
 
 /** The legacy name of a canonical workspace path, or `null`. Same as `@kortix/shared`. */
 export function legacyWorkspaceRoute(path: string): string | null {
+  // The project audit slice: `/v1/workspaces/:id/audit` is the workspace audit log.
+  const audit = /^\/v1\/workspaces\/([^/]+)\/audit\/events$/.exec(path)
+  if (audit) return `/v1/projects/${audit[1]}/audit`
+  if (path.startsWith('/v1/webhooks/workspaces/')) {
+    return swapPrefix(path, '/v1/webhooks/workspaces/', '/v1/webhooks/projects/')
+  }
   if (under(path, '/v1/workspaces')) {
     const family = /^\/v1\/workspaces\/[^/]+\/([^/]+)/.exec(path)?.[1]
     return family !== undefined && WORKSPACE_ACCOUNT_FAMILIES.has(family)

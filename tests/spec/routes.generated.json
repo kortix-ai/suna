@@ -1,7 +1,7 @@
 {
   "generatedAt": "static",
-  "count": 1757,
-  "aliases": 686,
+  "count": 1762,
+  "aliases": 691,
   "routes": [
     {
       "method": "GET",
@@ -2904,7 +2904,8 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:workspaceId/audit"
+      "path": "/v1/projects/:workspaceId/audit",
+      "aliasOf": "/v1/workspaces/:workspaceId/audit/events"
     },
     {
       "method": "GET",
@@ -4686,7 +4687,8 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:workspaceId/transfer"
+      "path": "/v1/projects/:workspaceId/transfer",
+      "aliasOf": "/v1/workspaces/:workspaceId/transfer"
     },
     {
       "method": "GET",
@@ -4790,7 +4792,8 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/create-repo"
+      "path": "/v1/projects/create-repo",
+      "aliasOf": "/v1/workspaces/create-repo"
     },
     {
       "method": "GET",
@@ -4854,7 +4857,8 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/link-repository"
+      "path": "/v1/projects/link-repository",
+      "aliasOf": "/v1/workspaces/link-repository"
     },
     {
       "method": "GET",
@@ -5171,7 +5175,8 @@
     },
     {
       "method": "POST",
-      "path": "/v1/webhooks/projects/:workspaceId/:slug"
+      "path": "/v1/webhooks/projects/:workspaceId/:slug",
+      "aliasOf": "/v1/webhooks/workspaces/:workspaceId/:slug"
     },
     {
       "method": "POST",
@@ -5224,6 +5229,10 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/telegram/:workspaceId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/workspaces/:workspaceId/:slug"
     },
     {
       "method": "GET",
@@ -5652,6 +5661,10 @@
     {
       "method": "GET",
       "path": "/v1/workspaces/:workspaceId/audit/activity"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/audit/events"
     },
     {
       "method": "GET",
@@ -7586,6 +7599,10 @@
       "path": "/v1/workspaces/:workspaceId/top-up-requests"
     },
     {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/transfer"
+    },
+    {
       "method": "GET",
       "path": "/v1/workspaces/:workspaceId/trigger-runs"
     },
@@ -7666,6 +7683,10 @@
       "path": "/v1/workspaces/:workspaceId/version-diff"
     },
     {
+      "method": "POST",
+      "path": "/v1/workspaces/create-repo"
+    },
+    {
       "method": "GET",
       "path": "/v1/workspaces/git/backend"
     },
@@ -7712,6 +7733,10 @@
     {
       "method": "POST",
       "path": "/v1/workspaces/github/user-token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/link-repository"
     },
     {
       "method": "GET",

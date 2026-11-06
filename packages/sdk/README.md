@@ -1769,7 +1769,11 @@ permanently:
 | `/v1/workspaces/:id/<family>` (members, invites, iam, audit, tokens, branding, capture, …) | `/v1/accounts/:accountId/<family>` | Same handler; `GET …/audit` is the workspace log, not the project slice |
 | `/v1/me[/…]` · `/v1/invites[/…]` | `/v1/accounts/me[/…]` · `/v1/account-invites[/…]` | Same handler |
 | `/v1/connectors/workspaces/:id/…` · `/scim/v2/workspaces/:id/…` | `/v1/connectors/projects/:id/…` · `/scim/v2/accounts/:accountId/…` | Same handler |
-| — | `/v1/projects/{provision,provision-stream,quota,link-repository,create-repo}` · `/v1/projects/:id/transfer` | Legacy only: account-scoped create, quota and transfer |
+| `GET /v1/workspaces/:id/audit/events` | `GET /v1/projects/:id/audit` | Same handler: the project audit slice |
+| `POST /v1/workspaces/{link-repository,create-repo}` · `/v1/workspaces/:id/transfer` | `POST /v1/projects/{link-repository,create-repo}` · `/v1/projects/:id/transfer` | Same handler |
+| `POST /v1/webhooks/workspaces/:id/:slug` | `POST /v1/webhooks/projects/:id/:slug` | Same handler |
+| — | `/v1/projects/{provision,provision-stream,quota}` | Legacy only: account-scoped managed create and quota; `POST /v1/workspaces` has no quota |
+| `GET`/`POST /v1/workspaces` · `GET`/`PATCH /v1/workspaces/:id` · `/v1/workspaces/:id/tokens` | `/v1/accounts` · `/v1/accounts/:accountId` · `/v1/accounts/tokens` | Not aliases: deprecated in the OpenAPI spec (`x-kortix-replaced-by`) |
 
 **Ids.** A canonical path takes the workspace id only. An account id, an
 unknown id or a workspace the caller cannot read answers `404

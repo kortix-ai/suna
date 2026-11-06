@@ -42,6 +42,8 @@ describe('the kortixd copy of the workspace route map', () => {
       '/v1/connectors/workspaces/p1/x',
       '/scim/v2/workspaces/a1/Users',
       '/v1/projects/p1',
+      '/v1/workspaces/p1/audit/events',
+      '/v1/webhooks/workspaces/p1/hook',
       '/v1/billing',
       '/v1/p/ext/8000/v1/me',
     ]) {

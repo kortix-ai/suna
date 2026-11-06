@@ -160,7 +160,7 @@ export function workspaceAccountFamiliesApp(accountsRouter: AnyApp): AnyApp {
  * `METHOD routing-path` inside `projectsApp`: the legacy routes of
  * `WORKSPACE_MERGED_LEGACY_ROUTES` (their canonical name is another route:
  * `./routes.ts`, or the workspace audit log of the account-key family) and of
- * `WORKSPACE_LEGACY_ONLY_ROUTES` (account-scoped create, quota, transfer).
+ * `WORKSPACE_LEGACY_ONLY_ROUTES` (the account-scoped managed creates and the quota).
  */
 export const WORKSPACE_PROJECT_ROUTES_NOT_ALIASED: ReadonlySet<string> = new Set(
   [...WORKSPACE_MERGED_LEGACY_ROUTES, ...WORKSPACE_LEGACY_ONLY_ROUTES]
@@ -170,8 +170,19 @@ export const WORKSPACE_PROJECT_ROUTES_NOT_ALIASED: ReadonlySet<string> = new Set
 );
 
 /**
+ * The `projectsApp` routes whose canonical name has another tail, as
+ * `routing-path` inside `projectsApp` → the path under `/v1/workspaces`: the
+ * project audit slice, because `GET /v1/workspaces/:workspaceId/audit` is the
+ * workspace audit log (`canonicalWorkspaceRoute` in `@kortix/shared`).
+ */
+export const WORKSPACE_PROJECT_ROUTE_RENAMES: Readonly<Record<string, string>> = {
+  '/:workspaceId/audit': '/:workspaceId/audit/events',
+};
+
+/**
  * `projectsApp` for `/v1/workspaces`: every route, in the same order, except
- * {@link WORKSPACE_PROJECT_ROUTES_NOT_ALIASED}. After auth, the canonical gate
+ * {@link WORKSPACE_PROJECT_ROUTES_NOT_ALIASED}, with
+ * {@link WORKSPACE_PROJECT_ROUTE_RENAMES} applied. After auth, the canonical gate
  * answers 404 `workspace_not_found` for an id that is not a readable
  * workspace and 409 `workspace_setup_required` for a workspace with no
  * project yet.
@@ -179,6 +190,7 @@ export const WORKSPACE_PROJECT_ROUTES_NOT_ALIASED: ReadonlySet<string> = new Set
 export function workspaceProjectsApp(projectsApp: AnyApp): AnyApp {
   return aliasApp(projectsApp, {
     include: (p, method) => !WORKSPACE_PROJECT_ROUTES_NOT_ALIASED.has(`${method} ${p}`),
+    rewrite: (p) => WORKSPACE_PROJECT_ROUTE_RENAMES[p] ?? p,
     middlewarePaths: ['/*'],
     after: { paths: ['/:workspaceId', '/:workspaceId/*'], handler: canonicalWorkspaceGate() as RouteEntry['handler'] },
     tag: 'workspaces',
@@ -199,6 +211,20 @@ export function connectorWorkspacesApp(connectorApp: AnyApp): AnyApp {
     include: (p) => p.startsWith('/projects/'),
     rewrite: (p) => `/workspaces/${p.slice('/projects/'.length)}`,
     middlewarePaths: ['/workspaces/*'],
+  });
+}
+
+/**
+ * `projectWebhooksApp`'s `/projects/:workspaceId/:slug` trigger fire as
+ * `/workspaces/:workspaceId/:slug`, for `/v1/webhooks`. The URL Kortix shows
+ * for a webhook trigger names the workspace path; the project path answers
+ * permanently, so a sender configured before 2026-11-06 needs no change.
+ */
+export function webhookWorkspacesApp(projectWebhooksApp: AnyApp): AnyApp {
+  return aliasApp(projectWebhooksApp, {
+    include: (p) => p.startsWith('/projects/'),
+    rewrite: (p) => `/workspaces/${p.slice('/projects/'.length)}`,
+    middlewarePaths: [],
   });
 }
 

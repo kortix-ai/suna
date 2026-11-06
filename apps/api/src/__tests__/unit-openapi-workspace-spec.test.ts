@@ -10,9 +10,10 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
 import { app } from '../index';
+import { WORKSPACE_LEGACY_REPLACEMENTS } from '@kortix/shared/workspace-routes';
 import { canonicalSummary } from '../workspaces';
 
-type Op = { summary?: string; tags?: string[]; deprecated?: boolean; 'x-kortix-alias-of'?: string; responses?: Record<string, any> };
+type Op = { summary?: string; description?: string; tags?: string[]; deprecated?: boolean; 'x-kortix-alias-of'?: string; 'x-kortix-replaced-by'?: string; responses?: Record<string, any> };
 type Doc = {
   paths: Record<string, Record<string, Op>>;
   components: { schemas: Record<string, Schema> };
@@ -64,11 +65,31 @@ describe('the workspace resource in /v1/openapi.json', () => {
     expect(spec.paths['/v1/projects']?.get?.['x-kortix-alias-of']).toBeUndefined();
     expect(spec.paths['/v1/projects']?.post?.['x-kortix-alias-of']).toBeUndefined();
     expect(spec.paths['/v1/projects/{projectId}']?.get?.['x-kortix-alias-of']).toBeUndefined();
-    expect(spec.paths['/v1/projects/{projectId}/audit']?.get?.['x-kortix-alias-of']).toBeUndefined();
+    // The project audit slice is an alias of /audit/events, not of the workspace audit log.
+    expect(spec.paths['/v1/projects/{projectId}/audit']?.get?.['x-kortix-alias-of']).toBe(
+      'GET /v1/workspaces/{workspaceId}/audit/events',
+    );
     // Account-scoped create and quota have no canonical name.
     expect(spec.paths['/v1/workspaces/provision']).toBeUndefined();
     expect(spec.paths['/v1/workspaces/quota']).toBeUndefined();
   });
+});
+
+describe('legacy routes with their own meaning', () => {
+  test.each(Object.entries(WORKSPACE_LEGACY_REPLACEMENTS))(
+    '%s is deprecated and names %s',
+    (legacy, replacement) => {
+      const [method, routing] = legacy.split(' ') as [string, string];
+      const path = Object.keys(spec.paths).find((p) => toRouting(p) === routing);
+      const op = path ? spec.paths[path]?.[method.toLowerCase()] : undefined;
+      expect({ legacy, published: Boolean(op) }).toEqual({ legacy, published: true });
+      expect(op?.deprecated).toBe(true);
+      expect(op?.['x-kortix-alias-of']).toBeUndefined();
+      const [rMethod, rRouting] = replacement.split(' ') as [string, string];
+      expect(op?.['x-kortix-replaced-by']).toBe(`${rMethod} ${rRouting.replace(/(^|\/):([A-Za-z0-9_]+)/g, '$1{$2}')}`);
+      expect(op?.description).toContain(`\`${rMethod} ${rRouting.replace(/(^|\/):([A-Za-z0-9_]+)/g, '$1{$2}')}\``);
+    },
+  );
 });
 
 describe('aliases in the spec and the manifest', () => {
