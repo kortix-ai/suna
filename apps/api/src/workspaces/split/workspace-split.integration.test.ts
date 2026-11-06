@@ -298,7 +298,7 @@ withDb('workspace split', () => {
     const copied = run.copiedIds as unknown as SplitCopiedIds;
     expect(copied.undecryptableSecrets).toContain(PROJECT_SECRET);
     const [projectSecret] = await db.select().from(accountSecretResources).where(eq(accountSecretResources.secretId, PROJECT_SECRET));
-    expect(projectSecret?.accountId).toBe(run.toAccountId);
+    expect(projectSecret?.accountId).toBe(run.toAccountId!);
     expect(projectSecret?.valueEnc).toBe(corrupt);
     expect(projectSecret?.needsReauthAt).not.toBeNull();
     const report = await checkWorkspaceInvariants();

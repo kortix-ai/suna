@@ -378,12 +378,13 @@ const jsonMap = (map: Readonly<Record<string, string>>) => JSON.stringify(map);
 export async function transferProjectOwnership(
   input: TransferProjectOwnershipInput,
   options: TransferProjectOwnershipOptions = {},
-): Promise<{ projectId: string; accountId: string; undecryptableSecrets: string[] }> {
+): Promise<{ projectId: string; accountId: string }> {
   if (input.fromAccountId === input.toAccountId) {
     throw new ProjectTransferError('same_account', 'Project is already in that account');
   }
   await copyProjectSiteBlobs(input, options.siteStorage);
-  return db.transaction((tx) => moveProjectInTransaction(tx, input, options));
+  const moved = await db.transaction((tx) => moveProjectInTransaction(tx, input, options));
+  return { projectId: moved.projectId, accountId: moved.accountId };
 }
 
 /**
@@ -503,6 +504,7 @@ export async function moveProjectInTransaction(
     kortix.connection_oauth_applications_connection_tenant_fk IMMEDIATE`);
 
   await moveAppHostingRows(tx, projectId, fromAccountId, toAccountId);
+  await moveOpenComputeSessions(tx, projectId, fromAccountId, toAccountId);
 
   if (keptGrants.length) {
     await tx.insert(accountSecretGrants).values(keptGrants.map((grant) => ({ ...grant, accountId: toAccountId })));
@@ -540,6 +542,34 @@ export async function moveProjectInTransaction(
     split: Boolean(split),
   });
   return { projectId, accountId: toAccountId, undecryptableSecrets };
+}
+
+/**
+ * Box metering rows that carry `account_id` but no `project_id`. Compute
+ * metering settles each window against the row's own `account_id`
+ * (`billing/services/compute-metering.ts`), and one box keeps one open row
+ * for as long as it runs. Left behind, the source keeps paying a moved
+ * always-on App runtime or monitor box with no end.
+ */
+export const PROJECT_TRANSFER_COMPUTE_TABLES: Readonly<Record<string, string>> = {
+  sandbox_compute_sessions:
+    'OPEN rows of the moved boxes (session sandboxes, App runtimes, monitor boxes) re-pointed; closed rows stay with the account that paid them',
+};
+
+/**
+ * The open compute rows of the project's boxes follow the project
+ * ({@link PROJECT_TRANSFER_COMPUTE_TABLES}). The window since the row's last
+ * settle (at most one metering tick) bills the target; every settled window
+ * stays on the source's ledger.
+ */
+async function moveOpenComputeSessions(tx: TransferTx, projectId: string, fromAccountId: string, toAccountId: string): Promise<void> {
+  await tx.execute(sql`UPDATE kortix.sandbox_compute_sessions SET account_id = ${toAccountId}, updated_at = now()
+    WHERE account_id = ${fromAccountId} AND ended_at IS NULL AND sandbox_id IN (
+      SELECT sandbox_id FROM kortix.session_sandboxes WHERE project_id = ${projectId} AND sandbox_id IS NOT NULL
+      UNION SELECT r.runtime_id FROM kortix.app_runtimes r
+        JOIN kortix.app_deployments d ON d.deployment_id = r.deployment_id
+        JOIN kortix.apps a ON a.app_id = d.app_id WHERE a.project_id = ${projectId}
+      UNION SELECT box_id FROM kortix.project_monitor_boxes WHERE project_id = ${projectId})`);
 }
 
 /** App hosting rows follow the project by `app_id` ({@link PROJECT_TRANSFER_APP_TABLES}). */

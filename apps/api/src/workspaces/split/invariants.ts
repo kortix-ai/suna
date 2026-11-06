@@ -9,7 +9,8 @@
  *   I4  every user holding a grant is a member of the grant's account
  *   I5  money stayed: each split-off account had no billing at the move, the
  *       source kept its Stripe customers, and the split-off wallet is Free
- *       with no free grant (credit_accounts.free_credits_eligible = false)
+ *       with no free grant (credit_accounts.free_credits_eligible = false);
+ *       no open compute row of the moved boxes still bills the source
  *   I6  a 1:1 workspace's account name equals its project name
  *   I7  each principal reaches the moved workspace through as many grants as
  *       before the move
@@ -121,14 +122,21 @@ async function i4(): Promise<InvariantResult> {
 async function i5(runs: DoneRun[]): Promise<InvariantResult> {
   const violations: string[] = [];
   for (const run of runs) {
-    const [money] = await db.execute<{ target_billing: number; source_customers: number; target_wallet: number; target_free_grants: number }>(sql`
+    const [money] = await db.execute<{ target_billing: number; source_customers: number; target_wallet: number; target_free_grants: number; source_open_compute: number }>(sql`
       SELECT
         (SELECT count(*)::int FROM kortix.billing_customers WHERE account_id = ${run.to_account_id})
         + (SELECT count(*)::int FROM kortix.credit_purchases WHERE account_id = ${run.to_account_id} AND created_at <= ${run.completed_at}::timestamptz)
         + (SELECT count(*)::int FROM kortix.enterprise_contracts WHERE account_id = ${run.to_account_id} AND created_at <= ${run.completed_at}::timestamptz) AS target_billing,
         (SELECT count(*)::int FROM kortix.billing_customers WHERE account_id = ${run.from_account_id}) AS source_customers,
         (SELECT count(*)::int FROM kortix.credit_accounts WHERE account_id = ${run.to_account_id} AND NOT free_credits_eligible) AS target_wallet,
-        (SELECT count(*)::int FROM kortix.credit_ledger WHERE account_id = ${run.to_account_id} AND type = 'free_tier_grant') AS target_free_grants`);
+        (SELECT count(*)::int FROM kortix.credit_ledger WHERE account_id = ${run.to_account_id} AND type = 'free_tier_grant') AS target_free_grants,
+        (SELECT count(*)::int FROM kortix.sandbox_compute_sessions c
+          WHERE c.ended_at IS NULL AND c.account_id = ${run.from_account_id} AND c.sandbox_id IN (
+            SELECT sandbox_id FROM kortix.session_sandboxes WHERE project_id = ${run.project_id} AND sandbox_id IS NOT NULL
+            UNION SELECT r.runtime_id FROM kortix.app_runtimes r
+              JOIN kortix.app_deployments d ON d.deployment_id = r.deployment_id
+              JOIN kortix.apps a ON a.app_id = d.app_id WHERE a.project_id = ${run.project_id}
+            UNION SELECT box_id FROM kortix.project_monitor_boxes WHERE project_id = ${run.project_id})) AS source_open_compute`);
     const planned = Number((run.plan.account as Record<string, unknown> | undefined)?.billing_customers ?? 0);
     if (!money) continue;
     if (money.target_billing > 0) violations.push(`target_billing:${run.run_id}`);
@@ -136,6 +144,8 @@ async function i5(runs: DoneRun[]): Promise<InvariantResult> {
     // One free grant per person: the split-off wallet exists, is not eligible, and was never granted.
     if (money.target_wallet !== 1) violations.push(`target_wallet:${run.run_id}`);
     if (money.target_free_grants > 0) violations.push(`target_free_grant:${run.run_id}`);
+    // The moved boxes' running meters bill the workspace that holds them now.
+    if (money.source_open_compute > 0) violations.push(`source_open_compute:${run.run_id}`);
   }
   return result(violations);
 }

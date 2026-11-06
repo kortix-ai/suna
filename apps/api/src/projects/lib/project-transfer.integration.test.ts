@@ -654,6 +654,41 @@ withDb('project transfer', () => {
     }
   });
 
+  test('the open compute rows of the moved boxes bill the target; closed rows and other boxes stay', async () => {
+    const { sessionSandboxes, sandboxComputeSessions, apps, appDeployments, appRuntimes } = await import('@kortix/db');
+    const SANDBOX = '00000000-0000-4000-a000-00000000a150';
+    const OTHER_BOX = '00000000-0000-4000-a000-00000000a151';
+    await db.insert(sessionSandboxes).values({
+      sandboxId: SANDBOX, sessionId: SESSION_ID, accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, provider: 'platinum', externalId: 'sbx-metered',
+    });
+    const [app] = await db.insert(apps).values({
+      accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, slug: 'transfer-metered', name: 'Metered', routeKey: 'xfer0002',
+    }).returning();
+    const [deployment] = await db.insert(appDeployments).values({
+      appId: app!.appId, version: 1, sourceKind: 'static', hostingType: 'static', runtimeVersion: 'synthetic', createdBy: OWNER_A,
+    }).returning();
+    const [runtime] = await db.insert(appRuntimes).values({
+      deploymentId: deployment!.deploymentId, accountId: SOURCE_ACCOUNT, provider: 'platinum',
+      externalId: 'synthetic-runtime-metered', controlTokenHash: 'h'.repeat(64),
+    }).returning();
+    const spec = { provider: 'platinum' as const, cpuCores: 1, memoryGb: 1, diskGb: 1 };
+    const rows = await db.insert(sandboxComputeSessions).values([
+      { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: SANDBOX, sessionId: SESSION_ID },
+      { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: SANDBOX, sessionId: SESSION_ID, state: 'stopped', endedAt: new Date(Date.now() - 60_000).toISOString() },
+      { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: runtime!.runtimeId, workloadType: 'app', appRuntimeId: runtime!.runtimeId },
+      { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: OTHER_BOX },
+    ]).returning({ id: sandboxComputeSessions.id });
+    try {
+      await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
+      const after = await db.select({ id: sandboxComputeSessions.id, accountId: sandboxComputeSessions.accountId })
+        .from(sandboxComputeSessions).where(sql`${sandboxComputeSessions.id} IN (${sql.join(rows.map((r) => sql`${r.id}`), sql`, `)})`);
+      const accountOfRow = new Map(after.map((r) => [r.id, r.accountId]));
+      expect(rows.map((r) => accountOfRow.get(r.id))).toEqual([TARGET_ACCOUNT, SOURCE_ACCOUNT, TARGET_ACCOUNT, SOURCE_ACCOUNT]);
+    } finally {
+      await db.delete(sandboxComputeSessions).where(sql`${sandboxComputeSessions.id} IN (${sql.join(rows.map((r) => sql`${r.id}`), sql`, `)})`);
+    }
+  });
+
   test('split_pending follows the account shape: cleared on both sides once each holds one project', async () => {
     const SECOND = '00000000-0000-4000-a000-00000000a121';
     await db.update(projects).set({ splitPending: true }).where(eq(projects.projectId, PROJECT_ID));
