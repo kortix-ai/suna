@@ -2425,6 +2425,27 @@
       "autoTopupOn": "Recharge automatique : ajoute {amount} quand le solde passe sous {threshold} crédits",
       "ledgerBonus": "Bonus de recharge"
     },
+    "redeem": {
+      "toggle": "Utiliser un code de crédits",
+      "codeLabel": "Code de crédits",
+      "placeholder": "Saisissez un code",
+      "action": "Utiliser le code",
+      "redeemed": "Code utilisé",
+      "redeemedDescription": "{credits} crédits ajoutés à votre solde.",
+      "invalid": "Ce code n'est pas valide. Vérifiez l'orthographe et réessayez.",
+      "expired": "Ce code a expiré.",
+      "exhausted": "Ce code n'a plus d'utilisations disponibles.",
+      "alreadyRedeemed": "Ce compte a déjà utilisé ce code.",
+      "noPermission": "Seuls les propriétaires et les administrateurs de ce compte peuvent utiliser un code.",
+      "rateLimited": "Trop de tentatives. Attendez une minute et réessayez.",
+      "failed": "Impossible d'utiliser le code. Réessayez.",
+      "pageTitle": "Utiliser un code de crédits",
+      "pageDescription": "Les crédits d'un code vont sur le solde de votre compte et n'expirent jamais.",
+      "successTitle": "{credits} crédits ajoutés",
+      "successDescription": "Votre solde est maintenant de {balance} crédits. Les crédits d'un code n'expirent jamais.",
+      "openKortix": "Ouvrir Kortix",
+      "backToKortix": "Retour à Kortix"
+    },
     "autoTopup": {
       "bufferError": "Saisissez {minimum} ou plus : un rechargement doit ajouter au moins {buffer} crédits de plus que le seuil.",
       "addPaymentFirst": "Ajoutez un moyen de paiement avant d'activer le rechargement automatique.",

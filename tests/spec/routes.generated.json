@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1059,
+  "count": 1063,
   "routes": [
     {
       "method": "GET",
@@ -867,6 +867,18 @@
       "path": "/v1/admin/api/accounts/:id/users"
     },
     {
+      "method": "GET",
+      "path": "/v1/admin/api/credit-codes"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/credit-codes"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/admin/api/credit-codes/:id"
+    },
+    {
       "method": "POST",
       "path": "/v1/admin/api/impersonate"
     },
@@ -1149,6 +1161,10 @@
     {
       "method": "POST",
       "path": "/v1/billing/reactivate-subscription"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/redeem-code"
     },
     {
       "method": "POST",

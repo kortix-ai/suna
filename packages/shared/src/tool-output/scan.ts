@@ -32,6 +32,24 @@ export function lineEnd(text: string, from: number): number {
   return text.length;
 }
 
+/** The first of `characters` at or after a position, remembered while the queries move forward. */
+export function nextOf(text: string, characters: readonly number[]): (at: number) => number {
+  let from = Number.POSITIVE_INFINITY;
+  let found = -1;
+  return (at: number): number => {
+    if (at >= from && (found === -1 || at <= found)) return found;
+    from = at;
+    found = -1;
+    for (let i = at; i < text.length; i++) {
+      if (characters.includes(text.charCodeAt(i))) {
+        found = i;
+        break;
+      }
+    }
+    return found;
+  };
+}
+
 /** The end of the run of regex `\s` characters that starts at `from`. */
 export function whitespaceEnd(text: string, from: number): number {
   let i = from;

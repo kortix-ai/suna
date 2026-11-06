@@ -2425,6 +2425,27 @@
       "autoTopupOn": "Auto top-up: adds {amount} when the balance drops below {threshold} credits",
       "ledgerBonus": "Top-up bonus"
     },
+    "redeem": {
+      "toggle": "Redeem a credit code",
+      "codeLabel": "Credit code",
+      "placeholder": "Enter a code",
+      "action": "Redeem code",
+      "redeemed": "Code redeemed",
+      "redeemedDescription": "{credits} credits added to your balance.",
+      "invalid": "This code is not valid. Check the spelling and try again.",
+      "expired": "This code has expired.",
+      "exhausted": "This code has no redemptions left.",
+      "alreadyRedeemed": "This account already redeemed this code.",
+      "noPermission": "Only owners and admins of this account can redeem a code.",
+      "rateLimited": "Too many attempts. Wait a minute and try again.",
+      "failed": "Could not redeem the code. Try again.",
+      "pageTitle": "Redeem a credit code",
+      "pageDescription": "Credits from a code go to your account balance and never expire.",
+      "successTitle": "{credits} credits added",
+      "successDescription": "Your balance is now {balance} credits. Credits from a code never expire.",
+      "openKortix": "Open Kortix",
+      "backToKortix": "Back to Kortix"
+    },
     "autoTopup": {
       "bufferError": "Enter {minimum} or more: a top-up must add at least {buffer} credits more than the threshold.",
       "addPaymentFirst": "Add a payment method before turning on auto top-up.",

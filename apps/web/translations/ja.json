@@ -2425,6 +2425,27 @@
       "autoTopupOn": "自動チャージ: 残高が {threshold} クレジットを下回ると {amount} を追加",
       "ledgerBonus": "チャージボーナス"
     },
+    "redeem": {
+      "toggle": "クレジットコードを利用",
+      "codeLabel": "クレジットコード",
+      "placeholder": "コードを入力",
+      "action": "コードを利用",
+      "redeemed": "コードを利用しました",
+      "redeemedDescription": "{credits} クレジットを残高に追加しました。",
+      "invalid": "このコードは無効です。つづりを確認して、もう一度お試しください。",
+      "expired": "このコードは有効期限が切れています。",
+      "exhausted": "このコードの利用回数は上限に達しました。",
+      "alreadyRedeemed": "このアカウントはこのコードをすでに利用しています。",
+      "noPermission": "コードを利用できるのは、このアカウントのオーナーと管理者だけです。",
+      "rateLimited": "試行回数が多すぎます。1 分待ってから、もう一度お試しください。",
+      "failed": "コードを利用できませんでした。もう一度お試しください。",
+      "pageTitle": "クレジットコードを利用",
+      "pageDescription": "コードのクレジットはアカウント残高に追加され、有効期限はありません。",
+      "successTitle": "{credits} クレジットを追加しました",
+      "successDescription": "現在の残高は {balance} クレジットです。コードのクレジットに有効期限はありません。",
+      "openKortix": "Kortix を開く",
+      "backToKortix": "Kortix に戻る"
+    },
     "autoTopup": {
       "bufferError": "{minimum} 以上を入力してください。チャージ額はしきい値より {buffer} クレジット以上多くする必要があります。",
       "addPaymentFirst": "自動チャージを有効にする前に、支払い方法を追加してください。",

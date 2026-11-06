@@ -2425,6 +2425,27 @@
       "autoTopupOn": "Recarga automática: añade {amount} cuando el saldo baja de {threshold} créditos",
       "ledgerBonus": "Bonificación de recarga"
     },
+    "redeem": {
+      "toggle": "Canjear un código de créditos",
+      "codeLabel": "Código de créditos",
+      "placeholder": "Introduce un código",
+      "action": "Canjear código",
+      "redeemed": "Código canjeado",
+      "redeemedDescription": "Se añadieron {credits} créditos a tu saldo.",
+      "invalid": "Este código no es válido. Revisa cómo está escrito e inténtalo de nuevo.",
+      "expired": "Este código ha caducado.",
+      "exhausted": "Este código ya no tiene canjes disponibles.",
+      "alreadyRedeemed": "Esta cuenta ya canjeó este código.",
+      "noPermission": "Solo los propietarios y administradores de esta cuenta pueden canjear un código.",
+      "rateLimited": "Demasiados intentos. Espera un minuto e inténtalo de nuevo.",
+      "failed": "No se pudo canjear el código. Inténtalo de nuevo.",
+      "pageTitle": "Canjear un código de créditos",
+      "pageDescription": "Los créditos de un código van al saldo de tu cuenta y nunca caducan.",
+      "successTitle": "{credits} créditos añadidos",
+      "successDescription": "Tu saldo ahora es de {balance} créditos. Los créditos de un código nunca caducan.",
+      "openKortix": "Abrir Kortix",
+      "backToKortix": "Volver a Kortix"
+    },
     "autoTopup": {
       "bufferError": "Introduce {minimum} o más: una recarga debe añadir al menos {buffer} créditos más que el umbral.",
       "addPaymentFirst": "Añade un método de pago antes de activar la recarga automática.",
