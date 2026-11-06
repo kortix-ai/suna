@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import {
   createMockCreditAccount,
   createMockStripeClient,
@@ -11,6 +11,9 @@ import {
 
 // Register global mocks once
 registerGlobalMocks();
+// The contract half of the closure is DB-backed and covered by
+// integration-billing-webhook-ordering.test.ts.
+mock.module('../../billing/services/enterprise-contracts', () => ({ endContractForClosedAccount: async () => undefined }));
 registerWalletMock();
 
 // ─── Track calls ──────────────────────────────────────────────────────────────
