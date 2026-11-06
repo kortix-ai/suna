@@ -99,6 +99,9 @@ async function resolvePrincipal(token: string): Promise<Principal | null> {
   if (isOAuthAccessToken(token)) {
     const r = await validateOAuthAccessToken(token);
     if (!r.isValid || !r.userId || !r.scopes?.includes(OAUTH_SCOPE_KORTIX)) return null;
+    // Chrome is the person's own surface: a workspace-bound token is refused,
+    // as the fence refuses it on every person route.
+    if (r.boundWorkspaceId) return null;
     return { userId: r.userId, accountId: r.accountId ?? (await resolveAccountId(r.userId)) };
   }
   if (isAccountToken(token)) {

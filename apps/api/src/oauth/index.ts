@@ -61,6 +61,8 @@ import {
 import { isUuid } from '../shared/validate';
 import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../iam/actor';
+import { authorize } from '../iam/authorize';
+import { resolveWorkspace, WorkspaceAmbiguousError } from '../workspaces/surface';
 import { noWorkspaceError } from '../shared/no-workspace';
 import { resolveAccountId } from '../shared/resolve-account';
 import { bearerToken } from '../shared/bearer-token';
@@ -294,6 +296,41 @@ async function consumeAuthorizationRequest(
   return pendingAuthorizationRequest(row);
 }
 
+// ─── Workspace binding ──────────────────────────────────────────────────────
+
+/** Every client's consent names a workspace, except the Kortix browser
+ *  extension's: Chrome is the person's own surface (a person route). */
+function asksWorkspace(client: Pick<ClientRow, 'redirectUris'>): boolean {
+  return !hasOnlyExtensionRedirect(client.redirectUris ?? []);
+}
+
+/**
+ * The workspace a consent binds its grant to (design.md §3.2 C4a): a workspace
+ * id (never a legacy account key) with an active project that the person may
+ * open. Null for an unknown workspace, one of a split_pending account's key,
+ * and one the person cannot read: the consent answers all three the same.
+ */
+async function consentWorkspace(
+  c: Context,
+  userId: string,
+  workspaceId: string,
+): Promise<{ workspaceId: string; accountId: string } | null> {
+  let resolved;
+  try {
+    resolved = await resolveWorkspace(workspaceId);
+  } catch (err) {
+    if (err instanceof WorkspaceAmbiguousError) return null;
+    throw err;
+  }
+  if (!resolved || resolved.workspaceId !== workspaceId.toLowerCase()) return null;
+  const verdict = await authorize(await actorOf(c, resolved.accountId), 'project.read', {
+    type: 'workspace',
+    id: resolved.workspaceId,
+  }).catch(() => ({ allowed: false }));
+  if (!verdict.allowed || !userId) return null;
+  return { workspaceId: resolved.workspaceId, accountId: resolved.accountId };
+}
+
 // ─── Remembered consent ─────────────────────────────────────────────────────
 
 async function rememberedScopes(userId: string, clientId: string): Promise<string[] | null> {
@@ -344,6 +381,8 @@ async function issueTokenPair(params: {
   userId: string;
   accountId: string;
   scopes: string[];
+  /** The workspace the consent bound the grant to; null = unbound (acts as the person). */
+  boundWorkspaceId: string | null;
 }) {
   const accessToken = generateAccessToken();
   const refreshToken = generateRefreshToken();
@@ -360,6 +399,7 @@ async function issueTokenPair(params: {
       accountId: params.accountId,
       scopes: params.scopes,
       expiresAt: accessExpiresAt,
+      boundWorkspaceId: params.boundWorkspaceId,
     })
     .returning();
 
@@ -370,6 +410,8 @@ async function issueTokenPair(params: {
     userId: params.userId,
     accountId: params.accountId,
     expiresAt: refreshExpiresAt,
+    // A refresh keeps the binding: every access token it mints is bound too.
+    boundWorkspaceId: params.boundWorkspaceId,
   });
 
   return {
@@ -544,6 +586,10 @@ oauthApp.openapi(
           self_registered: z.boolean(),
           /** Where the browser goes after approval: the origin, or the scheme of a native app. */
           redirect_to: z.string(),
+          /** True when the consent screen asks which workspace the app gets
+           *  (`workspace_id` on POST /authorize/consent). False for the Kortix
+           *  browser extension, whose surfaces are the person's own. */
+          asks_workspace: z.boolean(),
         }),
         'The pending authorization request',
       ),
@@ -580,6 +626,7 @@ oauthApp.openapi(
       remembered,
       self_registered: isSelfRegistered(client),
       redirect_to: redirectTarget(request.redirectUri),
+      asks_workspace: asksWorkspace(client),
     });
   },
 );
@@ -600,6 +647,10 @@ oauthApp.openapi(
             schema: z.object({
               request_id: z.string().optional(),
               approved: z.boolean().optional(),
+              workspace_id: z.string().uuid().optional().openapi({
+                description:
+                  'The workspace the app gets. The issued token is bound to it: it reaches that workspace only, like a workspace key. Omitted: an unbound token that acts as you in every workspace (deprecated; the consent screen always names one).',
+              }),
             }),
           },
         },
@@ -607,7 +658,7 @@ oauthApp.openapi(
     },
     responses: {
       200: json(z.object({ redirect_uri: z.string() }), 'Redirect URI to send the user back to'),
-      ...errors(400, 401, 409),
+      ...errors(400, 401, 403, 409),
     },
   }),
   async (c: any) => {
@@ -615,6 +666,20 @@ oauthApp.openapi(
     const requestId = typeof body.request_id === 'string' ? body.request_id : '';
     const approved = body.approved === true;
     if (!requestId) return c.json({ error: 'invalid_request' }, 400);
+    const userId = (c as any).get('userId') as string;
+    // The workspace the grant binds to: checked BEFORE the request is consumed,
+    // so a wrong pick leaves the request open for a second try.
+    let bound: { workspaceId: string; accountId: string } | null = null;
+    if (approved && body.workspace_id !== undefined) {
+      if (typeof body.workspace_id !== 'string' || !isUuid(body.workspace_id)) {
+        return c.json({ error: 'invalid_request', error_description: 'workspace_id must be a workspace id' }, 400);
+      }
+      bound = await consentWorkspace(c, userId, body.workspace_id);
+      if (!bound) {
+        // An unknown workspace and one the person cannot open answer the same.
+        return c.json({ error: 'access_denied', error_description: 'You cannot open that workspace', code: 'workspace_not_found' }, 403);
+      }
+    }
 
     const request = await consumeAuthorizationRequest(requestId);
     if (!request) {
@@ -644,13 +709,17 @@ oauthApp.openapi(
       return c.json({ redirect_uri: redirect.toString() });
     }
 
-    const userId = (c as any).get('userId') as string;
-    const [membership] = await anyAccountMembershipOf(userId);
-    // A grant acts in an account. A person with no workspace has none to
-    // grant, so the consent is refused (409 `no_workspace`), never issued
-    // against a made-up account id.
-    if (!membership) throw noWorkspaceError();
-    const accountId = membership.accountId;
+    // A grant acts in an account: the bound workspace's, else any membership.
+    // A person with no workspace has none to grant, so the consent is refused
+    // (409 `no_workspace`), never issued against a made-up account id.
+    let accountId: string;
+    if (bound) {
+      accountId = bound.accountId;
+    } else {
+      const [membership] = await anyAccountMembershipOf(userId);
+      if (!membership) throw noWorkspaceError();
+      accountId = membership.accountId;
+    }
 
     const code = generateAuthCode();
     await db.insert(oauthAuthorizationCodes).values({
@@ -663,6 +732,7 @@ oauthApp.openapi(
       codeChallenge: request.codeChallenge,
       codeChallengeMethod: request.codeChallengeMethod,
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      boundWorkspaceId: bound?.workspaceId ?? null,
     });
     await rememberConsent(userId, request.clientId, scopes);
 
@@ -985,6 +1055,7 @@ async function handleAuthorizationCodeGrant(
       userId: authCode.userId,
       accountId: authCode.accountId,
       scopes: (authCode.scopes as string[]) ?? [],
+      boundWorkspaceId: authCode.boundWorkspaceId ?? null,
     }),
   );
 }
@@ -1062,6 +1133,7 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
       userId: refreshRow.userId,
       accountId: refreshRow.accountId,
       scopes: (oldAccess?.scopes as string[]) ?? [],
+      boundWorkspaceId: refreshRow.boundWorkspaceId ?? null,
     }),
   );
 }

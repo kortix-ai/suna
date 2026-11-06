@@ -6,9 +6,11 @@
  *
  * A workspace-bound credential is a workspace key, a project CLI token or a
  * session token (`account_tokens.project_id` = W; the workspace id IS the
- * project id). Person credentials (a Supabase JWT, a personal key with
- * `project_id IS NULL`, an OAuth token) are never judged here: they act as the
- * person in each workspace, and `authorize` decides per workspace. A
+ * project id), or an OAuth token whose consent named W
+ * (`oauth_access_tokens.bound_workspace_id`, `middleware/auth-oauth.ts`).
+ * Person credentials (a Supabase JWT, a personal key with `project_id IS
+ * NULL`, an unbound OAuth token) are never judged here: they act as the person
+ * in each workspace, and `authorize` decides per workspace. A
  * service-account bearer belongs to exactly one account, and `authorize`
  * resolves it only inside that account (`resolvePrincipal`), so the engine
  * already confines it to its workspace.

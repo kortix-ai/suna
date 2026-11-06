@@ -48,7 +48,7 @@ export function extractPreviewSandboxId(path: string): string | null {
 export async function enforceTokenProjectScope(
   c: Context,
   tokenProjectId: string,
-  opts: { sessionBound?: boolean } = {},
+  opts: { sessionBound?: boolean; principal?: string } = {},
 ): Promise<void> {
   const path = c.req.path;
   const method = c.req.method;
@@ -69,7 +69,7 @@ export async function enforceTokenProjectScope(
   const message =
     `${verdict.reason} ` +
     `[check=token-project-scope:${verdict.check} ` +
-    `principal=${opts.sessionBound ? 'session-scoped-pat' : 'project-scoped-pat'} ` +
+    `principal=${opts.principal ?? (opts.sessionBound ? 'session-scoped-pat' : 'project-scoped-pat')} ` +
     `project=${workspaceId} path=${path}]`;
   // A typed body: the CLI picks its remedy from `code`, and no kortix.yaml
   // grant can lift a fence refusal, so it must never read as a grant miss.
