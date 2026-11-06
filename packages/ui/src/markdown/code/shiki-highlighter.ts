@@ -84,7 +84,7 @@ const shikiTransformers: ShikiTransformer[] = [
 let highlighterReady: HighlighterCore | null = null;
 let highlighterPromise: Promise<HighlighterCore | null> | null = null;
 const loadedLangs = new Set<string>();
-const langLoadPromises = new Map<string, Promise<void>>();
+const langLoadPromises = new Map<string, Promise<boolean>>();
 
 function loadHighlighter(): Promise<HighlighterCore | null> {
   if (highlighterPromise) return highlighterPromise;
@@ -122,16 +122,23 @@ export function warmHighlighter() {
   else setTimeout(run, 1500);
 }
 
-function ensureLangLoaded(h: HighlighterCore, lang: string): Promise<void> {
-  if (PLAIN_LANGS.has(lang) || loadedLangs.has(lang)) return Promise.resolve();
+/**
+ * Resolves `false` for a hint Shiki has no grammar for (`conf`, a typo): an
+ * expected state, so no Error. A rejected promise here reached Sentry as an
+ * unhandled rejection from engines that report it before `await` attaches a
+ * handler (KRTX-4265). Rejects only when a real grammar chunk fails to load.
+ */
+function ensureLangLoaded(h: HighlighterCore, lang: string): Promise<boolean> {
+  if (PLAIN_LANGS.has(lang) || loadedLangs.has(lang)) return Promise.resolve(true);
   const existing = langLoadPromises.get(lang);
   if (existing) return existing;
   const importer = bundledLanguages[lang as keyof typeof bundledLanguages];
-  if (!importer) return Promise.reject(new Error(`no bundled grammar for "${lang}"`));
+  if (!importer) return Promise.resolve(false);
   const p = h
     .loadLanguage(importer())
     .then(() => {
       loadedLangs.add(lang);
+      return true;
     })
     .finally(() => {
       langLoadPromises.delete(lang);
@@ -237,10 +244,11 @@ export function highlightAsync(
     .then(async (h) => {
       if (!h) return null;
       try {
-        await ensureLangLoaded(h, lang);
+        // Unknown hint: plain text, quietly.
+        if (!(await ensureLangLoaded(h, lang))) return null;
       } catch (err) {
-        // Unknown hint or a grammar chunk that failed to load: plain text is
-        // the honest rendering. Not cached, so a later mount can retry.
+        // A grammar chunk that failed to load: plain text is the honest
+        // rendering. Not cached, so a later mount can retry.
         console.warn(
           `[markdown-code] failed to load Shiki lang "${lang}":`,
           (err as Error)?.message || err,
