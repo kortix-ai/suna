@@ -98,7 +98,7 @@ export async function approveCliDevice(userCode: string, options?: { accountId?:
  *  caller must persist it immediately; subsequent reads only ever see `public_key`.
  *
  * @deprecated Use `createWorkspaceToken(workspaceId, input)`, which binds the
- * token to that workspace. Kept permanently, account-wide as before.
+ * token to that workspace. Kept permanently. Account-wide, as before.
  */
 export async function createAccountToken(input: CreateAccountTokenInput) {
   const { accountId, expiresAt, projectId, name } = input;

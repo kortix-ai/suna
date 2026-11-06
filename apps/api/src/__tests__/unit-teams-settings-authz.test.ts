@@ -46,6 +46,10 @@ mock.module('../shared/db', () => ({
     }),
   },
   hasDatabase: () => true,
+  // Imported by modules in this route's graph; no test here opens a transaction.
+  withDbTransaction: async () => {
+    throw new Error('unit-teams-settings-authz: no transaction expected');
+  },
 }));
 
 let settingsActor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
@@ -219,7 +223,7 @@ describe('Teams setting commands need a linked project manager', () => {
       { kind: 'agent', value: 'reviewer' },
       { kind: 'policy', value: 'owner_only' },
     ]);
-    expect(inserts).toEqual([{ platform: 'teams', workspaceId: TENANT, channelId: CONVO, projectId: OTHER, pickerTs: null }]);
+    expect(inserts).toEqual([{ platform: 'teams', platformTeamId: TENANT, channelId: CONVO, projectId: OTHER, pickerTs: null }]);
     expect(actorChecks.map((c) => c.projectId)).toEqual([PROJECT, PROJECT, PROJECT, PROJECT, OTHER]);
   });
 });
